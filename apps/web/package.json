@@ -13,12 +13,18 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@better-auth/core": "catalog:",
+		"@usirin/forge": "catalog:",
+		"better-auth": "catalog:",
+		"better-call": "catalog:",
+		"drizzle-orm": "catalog:",
 		"effect": "catalog:",
 		"graphql": "catalog:",
 		"graphql-yoga": "catalog:",
 		"hono": "catalog:",
 		"react": "catalog:",
-		"react-dom": "catalog:"
+		"react-dom": "catalog:",
+		"zod": "catalog:"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "catalog:",
@@ -29,6 +35,7 @@
 		"@types/react-dom": "catalog:",
 		"@typescript/native-preview": "catalog:",
 		"@vitejs/plugin-react-swc": "catalog:",
+		"drizzle-kit": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:",
 		"vitest": "catalog:",

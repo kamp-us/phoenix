@@ -15,12 +15,12 @@
 	"observability": {
 		"enabled": true
 	},
+	"durable_objects": {
+		"bindings": [{ "name": "PASAPORT", "class_name": "Pasaport" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Pasaport"] }],
+	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {
 		"ENVIRONMENT": "development"
 	}
-	// Durable Objects added per-feature. Pattern:
-	// "durable_objects": {
-	//   "bindings": [{"name": "PASAPORT", "class_name": "Pasaport"}]
-	// },
-	// "migrations": [{"tag": "v1", "new_sqlite_classes": ["Pasaport"]}]
 }
