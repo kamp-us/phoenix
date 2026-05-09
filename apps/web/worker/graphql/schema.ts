@@ -1,26 +1,39 @@
-import {createSchema} from "graphql-yoga";
+import {
+	GraphQLNonNull,
+	GraphQLObjectType,
+	GraphQLSchema,
+	GraphQLString,
+	lexicographicSortSchema,
+	printSchema,
+} from "graphql";
+import {CloudflareEnv} from "../services";
+import {resolver} from "./resolver";
 
-const typeDefs = /* GraphQL */ `
-	type Query {
-		health: Health!
-	}
+const HealthType = new GraphQLObjectType({
+	name: "Health",
+	fields: {
+		status: {type: new GraphQLNonNull(GraphQLString)},
+		environment: {type: new GraphQLNonNull(GraphQLString)},
+	},
+});
 
-	type Health {
-		status: String!
-		environment: String!
-	}
-`;
-
-export type SchemaContext = Env & ExecutionContext;
-
-export const schema = createSchema<SchemaContext>({
-	typeDefs,
-	resolvers: {
-		Query: {
-			health: (_, __, ctx) => ({
-				status: "ok",
-				environment: ctx.ENVIRONMENT,
+const QueryType = new GraphQLObjectType({
+	name: "Query",
+	fields: {
+		health: {
+			type: new GraphQLNonNull(HealthType),
+			resolve: resolver(function* () {
+				const env = yield* CloudflareEnv;
+				return {status: "ok", environment: env.ENVIRONMENT};
 			}),
 		},
 	},
 });
+
+export const schema = new GraphQLSchema({query: QueryType});
+
+/**
+ * Stable, sorted SDL printout — used by the relay-compiler in apps/web
+ * to generate __generated__ artifacts.
+ */
+export const printSchemaSDL = (): string => printSchema(lexicographicSortSchema(schema));

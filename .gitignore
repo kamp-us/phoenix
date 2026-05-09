@@ -19,6 +19,9 @@ schema.graphql.generated
 .env.*
 !.env.example
 
+# Playwright MCP scratch artifacts
+.playwright-mcp
+
 # OS
 .DS_Store
 

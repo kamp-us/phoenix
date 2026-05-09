@@ -1,28 +1,39 @@
 import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
-import {type SchemaContext, schema} from "./graphql/schema";
+import type {EffectContext} from "./graphql/resolver";
+import {GraphQLRuntime} from "./graphql/runtime";
+import {printSchemaSDL, schema} from "./graphql/schema";
 
 const app = new Hono<{Bindings: Env}>();
 
 app.get("/api/health", (c) => c.json({status: "ok", environment: c.env.ENVIRONMENT}));
 
-const yoga = createYoga<SchemaContext>({
-	graphqlEndpoint: "/graphql",
-	schema,
-	graphiql: true,
-	logging: true,
-});
+// SDL for relay-compiler (`pnpm schema:fetch`).
+app.get("/graphql/schema", (c) => c.text(printSchemaSDL()));
 
-// Yoga's response carries its own Response class (from @whatwg-node/server),
-// which fails workerd's `instanceof Response` check on the way out. Rewrap
-// with the runtime's native Response constructor.
+// Per-request: build a ManagedRuntime that provides services to resolvers,
+// dispose after. Yoga's response carries its own Response class (from
+// @whatwg-node/server) which fails workerd's `instanceof Response` check;
+// rewrap with the runtime-native Response constructor.
 app.on(["GET", "POST"], "/graphql", async (c) => {
-	const r = await yoga.fetch(c.req.raw, c.env, c.executionCtx);
-	return new Response(r.body, {
-		status: r.status,
-		statusText: r.statusText,
-		headers: r.headers,
-	});
+	const runtime = GraphQLRuntime.make(c.env, c.req.raw);
+	try {
+		const yoga = createYoga<EffectContext<GraphQLRuntime.Context>>({
+			graphqlEndpoint: "/graphql",
+			schema,
+			graphiql: true,
+			logging: true,
+			context: () => ({runtime}),
+		});
+		const r = await yoga.fetch(c.req.raw);
+		return new Response(r.body, {
+			status: r.status,
+			statusText: r.statusText,
+			headers: r.headers,
+		});
+	} finally {
+		await runtime.dispose();
+	}
 });
 
 export default {
