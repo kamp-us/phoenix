@@ -1,0 +1,23 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "phoenix",
+	"main": "worker/index.ts",
+	"compatibility_date": "2026-05-09",
+	"compatibility_flags": ["nodejs_compat"],
+	"assets": {
+		"directory": "./dist/client",
+		"binding": "ASSETS",
+		"not_found_handling": "single-page-application"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"vars": {
+		"ENVIRONMENT": "development"
+	}
+	// Durable Objects added per-feature. Pattern:
+	// "durable_objects": {
+	//   "bindings": [{"name": "PASAPORT", "class_name": "Pasaport"}]
+	// },
+	// "migrations": [{"tag": "v1", "new_sqlite_classes": ["Pasaport"]}]
+}

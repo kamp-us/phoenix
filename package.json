@@ -1,0 +1,27 @@
+{
+	"name": "phoenix",
+	"version": "0.0.0",
+	"private": true,
+	"description": "kamp.us — single Cloudflare Worker rebirth",
+	"packageManager": "pnpm@10.27.0",
+	"scripts": {
+		"dev": "turbo run dev",
+		"build": "turbo run build",
+		"typecheck": "turbo run typecheck",
+		"test": "turbo run test",
+		"lint": "biome check .",
+		"format": "biome check --write .",
+		"postinstall": "effect-tsgo patch"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "catalog:",
+		"@effect/language-service": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"turbo": "catalog:",
+		"typescript": "catalog:"
+	},
+	"volta": {
+		"node": "25.2.1"
+	}
+}

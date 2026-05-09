@@ -1,0 +1,29 @@
+node_modules
+.pnpm-store
+.turbo
+.cache
+.wrangler
+
+dist
+build
+*.tsbuildinfo
+.next
+
+# Generated
+__generated__
+worker-configuration.d.ts
+schema.graphql.generated
+
+# Local env
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea

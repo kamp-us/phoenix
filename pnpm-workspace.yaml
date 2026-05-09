@@ -1,0 +1,36 @@
+packages:
+  - packages/*
+  - apps/*
+
+# Catalog: every entry is consumed somewhere. Add only when used.
+# effect-* pinned to 4.0.0-beta.65 to track ~/code/github.com/usirin/effect-smol exactly.
+catalog:
+  '@biomejs/biome': ^2.4.15
+  '@cloudflare/vite-plugin': ^1.36.3
+  '@cloudflare/workers-types': ^4.20260509.1
+  '@effect/language-service': ^0.85.1
+  '@effect/tsgo': ^0.5.2
+  '@types/node': ^25.6.2
+  '@types/react': ^19.2.14
+  '@types/react-dom': ^19.2.3
+  '@typescript/native-preview': ^7.0.0-dev.20260509.2
+  '@vitejs/plugin-react-swc': ^4.3.0
+  effect: 4.0.0-beta.65
+  graphql: ^16.14.0
+  graphql-yoga: ^5.21.0
+  hono: ^4.12.18
+  react: 19.2.6
+  react-dom: 19.2.6
+  turbo: ^2.9.12
+  typescript: ^6.0.3
+  vite: ^8.0.11
+  vitest: ^4.1.5
+  wrangler: ^4.90.0
+
+cleanupUnusedCatalogs: true
+
+onlyBuiltDependencies:
+  - '@parcel/watcher'
+  - '@swc/core'
+  - esbuild
+  - workerd
