@@ -10,3 +10,4 @@ One row per ADR. Read the file for the why.
 | [0004](0004-product-dos-bootstrap-as-singletons.md) | Product DOs bootstrap as singletons; refactor to per-atom shards on demand | superseded | 2026-05-09 |
 | [0005](0005-product-dos-shard-by-coordination-atom.md) | Product DOs shard by coordination atom from day one | accepted | 2026-05-09 |
 | [0006](0006-product-dos-extend-cloudflare-agent.md) | Product DOs extend Cloudflare's Agent base class | accepted | 2026-05-09 |
+| [0007](0007-view-layer-outbox-workflows-d1.md) | View layer — outbox + Workflows + single D1, triggered inline | accepted | 2026-05-09 |
