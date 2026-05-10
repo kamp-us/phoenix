@@ -90,7 +90,7 @@ function PanoDetailRoute() {
 
 function PanoSiteFeedRoute() {
 	const {host} = useParams<{host: string}>();
-	return <PanoFeed posts={POSTS} host={host} />;
+	return <PanoFeed {...(host ? {host} : {})} />;
 }
 
 export function App() {
@@ -98,7 +98,7 @@ export function App() {
 		<Routes>
 			<Route element={<Layout />}>
 				<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
-				<Route path="/pano" element={<PanoFeed posts={POSTS} />} />
+				<Route path="/pano" element={<PanoFeed />} />
 				<Route path="/pano/yeni" element={<PanoSubmitPage />} />
 				<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
 				<Route path="/pano/:id" element={<PanoDetailRoute />} />
