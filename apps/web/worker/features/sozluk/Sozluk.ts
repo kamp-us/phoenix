@@ -12,7 +12,7 @@ export interface UpsertDefinitionInput {
 	authorId: string;
 	authorName: string;
 	body: string;
-	score?: number;
+	score?: number | undefined;
 }
 
 export interface UpsertTermInput {

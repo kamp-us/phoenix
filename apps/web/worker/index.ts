@@ -1,5 +1,6 @@
 import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
+import {z} from "zod";
 import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
@@ -11,6 +12,39 @@ export {Pano} from "./features/pano/Pano";
 const app = new Hono<{Bindings: Env}>();
 
 app.get("/api/health", (c) => c.json({status: "ok", environment: c.env.ENVIRONMENT}));
+
+// Dev-only sözlük admin endpoints. Backs the `pnpm sozluk:import` script that
+// pulls MDX content from the legacy monorepo into the Sozluk DO. Gated on
+// ENVIRONMENT === "development" — the binding is `vars.ENVIRONMENT` in
+// wrangler.jsonc and is overridden per-deploy.
+const upsertTermSchema = z.object({
+	slug: z.string().min(1),
+	title: z.string().min(1),
+	definitions: z
+		.array(
+			z.object({
+				authorId: z.string().min(1),
+				authorName: z.string().min(1),
+				body: z.string().min(1),
+				score: z.number().int().optional(),
+			}),
+		)
+		.min(1),
+});
+
+app.post("/api/admin/sozluk/upsert-term", async (c) => {
+	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
+	const parsed = upsertTermSchema.safeParse(await c.req.json());
+	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
+	const stub = c.env.SOZLUK.get(c.env.SOZLUK.idFromName("kampus"));
+	return c.json(await stub.upsertTerm(parsed.data));
+});
+
+app.post("/api/admin/sozluk/clear", async (c) => {
+	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
+	const stub = c.env.SOZLUK.get(c.env.SOZLUK.idFromName("kampus"));
+	return c.json(await stub.clearAll());
+});
 
 // Better Auth handler — forwarded to the Pasaport DO.
 // Single global Pasaport instance for now (one auth realm); shard later if needed.
