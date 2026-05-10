@@ -1,5 +1,5 @@
 import {DurableObject} from "cloudflare:workers";
-import {asc, count, desc, eq, sql} from "drizzle-orm";
+import {and, asc, count, desc, eq, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/durable-sqlite";
 import {migrate} from "drizzle-orm/durable-sqlite/migrator";
 import migrations from "./drizzle/migrations/migrations";
@@ -7,6 +7,13 @@ import * as schema from "./drizzle/schema";
 import {SEED_POSTS} from "./seed";
 
 export type PostSort = "hot" | "new" | "top";
+
+/** -1 retracts the (synthetic) score, 1 boosts it, 0 clears any existing vote. */
+export type VoteValue = -1 | 0 | 1;
+
+export interface VoteResult {
+	score: number;
+}
 
 export interface PostTag {
 	kind: string;
@@ -143,6 +150,128 @@ export class Pano extends DurableObject<Env> {
 			score: c.score,
 			createdAt: c.createdAt ?? new Date(0),
 		}));
+	}
+
+	/**
+	 * Cast a vote on a post for `userId`. `value: 0` retracts; ±1 upserts.
+	 *
+	 * The vote write and the `post.score` recompute happen in a single
+	 * transaction so the denormalized score never disagrees with the
+	 * underlying votes. Score is `seedScore + sum(vote.value)` — the seed
+	 * acts as the synthetic baseline so existing posts don't reset to zero
+	 * the first time someone votes on them.
+	 *
+	 * Implementation note: we don't carry a separate `seedScore` column.
+	 * Instead, on the first vote against a post, we snapshot the current
+	 * score into the seed by computing `currentScore - oldVoteSum + newVoteSum`.
+	 * Since `oldVoteSum` and `newVoteSum` are both fully reflected in the
+	 * `post_vote` table after the write, the recompute reduces to:
+	 *   newScore = (current - oldVote) + newVote
+	 * — which is exactly `oldScore - oldValue + newValue`. We capture
+	 * `oldValue` before mutating, then write `oldScore + (newValue - oldValue)`.
+	 */
+	async voteOnPost(input: {
+		userId: string;
+		postId: string;
+		value: VoteValue;
+	}): Promise<VoteResult> {
+		const {userId, postId, value} = input;
+
+		return this.db.transaction((tx) => {
+			const existing = tx
+				.select({value: schema.postVote.value})
+				.from(schema.postVote)
+				.where(
+					and(eq(schema.postVote.userId, userId), eq(schema.postVote.postId, postId)),
+				)
+				.all();
+			const oldValue = existing[0]?.value ?? 0;
+
+			if (value === 0) {
+				if (oldValue !== 0) {
+					tx.delete(schema.postVote)
+						.where(
+							and(
+								eq(schema.postVote.userId, userId),
+								eq(schema.postVote.postId, postId),
+							),
+						)
+						.run();
+				}
+			} else {
+				tx.insert(schema.postVote)
+					.values({userId, postId, value})
+					.onConflictDoUpdate({
+						target: [schema.postVote.userId, schema.postVote.postId],
+						set: {value},
+					})
+					.run();
+			}
+
+			const delta = value - oldValue;
+			const updated = tx
+				.update(schema.post)
+				.set({score: sql`${schema.post.score} + ${delta}`})
+				.where(eq(schema.post.id, postId))
+				.returning({score: schema.post.score})
+				.all();
+			const score = updated[0]?.score ?? 0;
+			return {score};
+		});
+	}
+
+	/** Mirrors `voteOnPost` for comments — see that method for the score-recompute reasoning. */
+	async voteOnComment(input: {
+		userId: string;
+		commentId: string;
+		value: VoteValue;
+	}): Promise<VoteResult> {
+		const {userId, commentId, value} = input;
+
+		return this.db.transaction((tx) => {
+			const existing = tx
+				.select({value: schema.commentVote.value})
+				.from(schema.commentVote)
+				.where(
+					and(
+						eq(schema.commentVote.userId, userId),
+						eq(schema.commentVote.commentId, commentId),
+					),
+				)
+				.all();
+			const oldValue = existing[0]?.value ?? 0;
+
+			if (value === 0) {
+				if (oldValue !== 0) {
+					tx.delete(schema.commentVote)
+						.where(
+							and(
+								eq(schema.commentVote.userId, userId),
+								eq(schema.commentVote.commentId, commentId),
+							),
+						)
+						.run();
+				}
+			} else {
+				tx.insert(schema.commentVote)
+					.values({userId, commentId, value})
+					.onConflictDoUpdate({
+						target: [schema.commentVote.userId, schema.commentVote.commentId],
+						set: {value},
+					})
+					.run();
+			}
+
+			const delta = value - oldValue;
+			const updated = tx
+				.update(schema.comment)
+				.set({score: sql`${schema.comment.score} + ${delta}`})
+				.where(eq(schema.comment.id, commentId))
+				.returning({score: schema.comment.score})
+				.all();
+			const score = updated[0]?.score ?? 0;
+			return {score};
+		});
 	}
 
 	private async seedIfEmpty(): Promise<void> {
