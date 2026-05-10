@@ -1,23 +1,25 @@
 import {useState} from "react";
+import {Tabs} from "../components/ui/Tabs";
 import {SignInForm} from "./SignInForm";
 import {SignUpForm} from "./SignUpForm";
 
-type Tab = "sign-in" | "sign-up";
+type Mode = "sign-in" | "sign-up";
 
 export function AuthPanel() {
-	const [tab, setTab] = useState<Tab>("sign-in");
+	const [mode, setMode] = useState<Mode>("sign-in");
 
 	return (
-		<section className="auth-panel">
-			<nav className="auth-tabs" aria-label="auth mode">
-				<button type="button" aria-current={tab === "sign-in"} onClick={() => setTab("sign-in")}>
-					sign in
-				</button>
-				<button type="button" aria-current={tab === "sign-up"} onClick={() => setTab("sign-up")}>
-					sign up
-				</button>
-			</nav>
-			{tab === "sign-in" ? <SignInForm /> : <SignUpForm />}
-		</section>
+		<Tabs.Root variant="pill" value={mode} onValueChange={(v) => setMode(v as Mode)}>
+			<Tabs.List>
+				<Tabs.Tab value="sign-in">giriş</Tabs.Tab>
+				<Tabs.Tab value="sign-up">kayıt</Tabs.Tab>
+			</Tabs.List>
+			<Tabs.Panel value="sign-in" style={{paddingTop: "var(--s-3)"}}>
+				<SignInForm />
+			</Tabs.Panel>
+			<Tabs.Panel value="sign-up" style={{paddingTop: "var(--s-3)"}}>
+				<SignUpForm />
+			</Tabs.Panel>
+		</Tabs.Root>
 	);
 }
