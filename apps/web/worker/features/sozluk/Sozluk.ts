@@ -1,5 +1,5 @@
 import {DurableObject} from "cloudflare:workers";
-import {asc, count, desc, eq, sql, sum} from "drizzle-orm";
+import {and, asc, count, desc, eq, sql, sum} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/durable-sqlite";
 import {migrate} from "drizzle-orm/durable-sqlite/migrator";
 import migrations from "./drizzle/migrations/migrations";
@@ -7,6 +7,29 @@ import * as schema from "./drizzle/schema";
 import {SEED_TERMS} from "./seed";
 
 export type ListSort = "recent" | "popular";
+
+export interface UpsertDefinitionInput {
+	authorId: string;
+	authorName: string;
+	body: string;
+	score?: number;
+}
+
+export interface UpsertTermInput {
+	slug: string;
+	title: string;
+	definitions: UpsertDefinitionInput[];
+}
+
+export interface UpsertTermResult {
+	termId: string;
+	insertedDefinitions: number;
+}
+
+export interface ClearAllResult {
+	terms: number;
+	definitions: number;
+}
 
 export interface TermSummary {
 	id: string;
@@ -154,6 +177,69 @@ export class Sozluk extends DurableObject<Env> {
 				});
 			}
 		}
+	}
+
+	/**
+	 * Idempotent term + definitions insert. Used by the dev-only importer that
+	 * reads MDX content from the legacy monorepo. Existing terms are preserved;
+	 * existing definitions (matched by `(authorId, body)` per term) are skipped
+	 * so re-running the importer is a no-op.
+	 */
+	async upsertTerm(input: UpsertTermInput): Promise<UpsertTermResult> {
+		const existing = await this.db.query.term.findFirst({
+			where: eq(schema.term.slug, input.slug),
+		});
+
+		const termId = await (async () => {
+			if (existing) return existing.id;
+			const [row] = await this.db
+				.insert(schema.term)
+				.values({slug: input.slug, title: input.title})
+				.returning({id: schema.term.id});
+			if (!row) throw new Error(`Failed to insert term ${input.slug}`);
+			return row.id;
+		})();
+
+		let insertedDefinitions = 0;
+		for (const def of input.definitions) {
+			const dupe = await this.db.query.definition.findFirst({
+				where: and(
+					eq(schema.definition.termId, termId),
+					eq(schema.definition.authorId, def.authorId),
+					eq(schema.definition.body, def.body),
+				),
+			});
+			if (dupe) continue;
+			await this.db.insert(schema.definition).values({
+				termId,
+				authorId: def.authorId,
+				authorName: def.authorName,
+				body: def.body,
+				score: def.score ?? 0,
+			});
+			insertedDefinitions++;
+		}
+
+		return {termId, insertedDefinitions};
+	}
+
+	/**
+	 * Wipe every term and definition. Definitions cascade via the term FK, but
+	 * we delete both explicitly to return accurate counts.
+	 */
+	async clearAll(): Promise<ClearAllResult> {
+		const [defCount] = await this.db
+			.select({n: count(schema.definition.id)})
+			.from(schema.definition);
+		const [termCount] = await this.db.select({n: count(schema.term.id)}).from(schema.term);
+
+		await this.db.delete(schema.definition);
+		await this.db.delete(schema.term);
+
+		return {
+			terms: Number(termCount?.n ?? 0),
+			definitions: Number(defCount?.n ?? 0),
+		};
 	}
 }
 
