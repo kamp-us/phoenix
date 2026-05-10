@@ -50,3 +50,7 @@ pnpm format       # biome check --write
 - Biome formatting: tabs, 100 col, no bracket spacing.
 - Effect for backend control flow; resolvers run via a per-request runtime.
 - Make invalid states unrepresentable. Domain logic in domain objects.
+
+## Decisions
+
+See [.decisions/index.md](./.decisions/index.md) — read the row, open the file when you need the why. Record new decisions with `/adr`.
