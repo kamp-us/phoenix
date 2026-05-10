@@ -1,4 +1,3 @@
-import * as React from 'react';
 import type { PanoPostData, CommentData } from './components/pano';
 import type { TermRow } from './components/sozluk';
 import { Code, Mark } from './components/ui/atoms';
@@ -71,4 +70,23 @@ export const TERMS: TermRow[] = [
   { slug: 'static-site',      title: 'static site',      count: 6 },
   { slug: 'turkce-yazisma',   title: 'türkçe yazışma',   count: 11 },
   { slug: 'irc',              title: 'irc',              count: 7 },
+];
+
+/* Landing-row variant — terms with gloss + author + ago for the activity column. */
+export const LANDING_TERMS = [
+  { slug: 'race-condition',     title: 'race condition',      count: 17,
+    gloss: 'yarış halinde erişimden doğan belirsizlik',
+    author: 'umutsirin', agoLabel: '2 gün' },
+  { slug: 'onbellek',           title: 'önbellek',            count: 12,
+    gloss: 'hesaplanmış olanı saklama tekniği',
+    author: 'arthur',    agoLabel: '3 gün' },
+  { slug: 'yatay-olcekleme',    title: 'yatay ölçekleme',     count: 9,
+    gloss: 'sunucu eklemekle olan',
+    author: 'elif',      agoLabel: '4 gün' },
+  { slug: 'crdt',               title: 'CRDT',                count: 8,
+    gloss: 'çatışmasız çoğaltılan veri tipi',
+    author: 'meriç',     agoLabel: '5 gün' },
+  { slug: 'kimlik-dogrulama',   title: 'kimlik doğrulama',    count: 6,
+    gloss: '"sen kimsin" sorusu',
+    author: 'canyilmaz', agoLabel: '6 gün' },
 ];

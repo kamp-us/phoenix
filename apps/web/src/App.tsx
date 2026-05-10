@@ -4,19 +4,20 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
-import {COMMENTS, POSTS, TERMS} from "./fixtures";
+import {COMMENTS, LANDING_TERMS, POSTS, TERMS} from "./fixtures";
 import {AuthPage} from "./pages/AuthPage";
+import {LandingPage} from "./pages/LandingPage";
 import {PanoCreateDialog} from "./pages/PanoCreateDialog";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {SozlukHome} from "./pages/SozlukHome";
 
-type Route = "pano" | "pano-detail" | "sozluk" | "auth";
+type Route = "landing" | "pano" | "pano-detail" | "sozluk" | "auth";
 type Mode = "dark" | "light";
 
 export function App() {
 	const session = useSession();
-	const [route, setRoute] = useState<Route>("pano");
+	const [route, setRoute] = useState<Route>("landing");
 	const [mode, setMode] = useState<Mode>("dark");
 	const [createOpen, setCreateOpen] = useState(false);
 
@@ -27,7 +28,7 @@ export function App() {
 	}, [mode]);
 
 	useEffect(() => {
-		if (session.data && route === "auth") setRoute("pano");
+		if (session.data && route === "auth") setRoute("landing");
 	}, [session.data, route]);
 
 	async function onSignOut() {
@@ -54,7 +55,7 @@ export function App() {
 						{href: "#sozluk", label: "sözlük", current: route === "sozluk"},
 					]}
 					{...userProps}
-					onBrandClick={() => setRoute("pano")}
+					onBrandClick={() => setRoute("landing")}
 					onToggleTheme={() => setMode(mode === "dark" ? "light" : "dark")}
 					onLogout={onSignOut}
 					actions={
@@ -78,6 +79,14 @@ export function App() {
 					}
 				/>
 				<Main>
+					{route === "landing" ? (
+						<LandingPage
+							posts={POSTS}
+							terms={LANDING_TERMS}
+							onPanoClick={() => setRoute("pano")}
+							onSozlukClick={() => setRoute("sozluk")}
+						/>
+					) : null}
 					{route === "auth" ? <AuthPage /> : null}
 					{route === "pano" ? <PanoFeed posts={POSTS} /> : null}
 					{route === "pano-detail" && POSTS[0] ? (

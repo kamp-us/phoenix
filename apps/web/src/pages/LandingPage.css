@@ -1,0 +1,176 @@
+/* LandingPage — kamp.us /. Mirrors dense .landing surface.
+   Hero (brand + tagline + manifesto on the left, CTA cards on the right) over
+   two columns of recent activity (pano + sözlük), capped by a stats strip. */
+
+.kp-landing {
+	background: var(--surface);
+	padding: var(--s-7) var(--s-6) var(--s-6);
+	display: grid;
+	gap: var(--s-7);
+}
+
+.kp-landing__hero {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: var(--s-6);
+	align-items: end;
+	padding-bottom: var(--s-6);
+	border-bottom: 1px solid var(--border-faint);
+}
+
+.kp-landing__brand {
+	font: 600 32px/1 var(--font-body);
+	letter-spacing: -0.03em;
+	color: var(--text-primary);
+	margin: 0 0 var(--s-3);
+}
+.kp-landing__brand .dot {
+	color: var(--accent);
+}
+
+.kp-landing__tagline {
+	font: 400 18px/1.4 var(--font-body);
+	color: var(--text-secondary);
+	margin: 0 0 var(--s-3);
+	max-width: 38ch;
+}
+
+.kp-landing__manifesto {
+	font: var(--t-body);
+	color: var(--text-muted);
+	max-width: 56ch;
+	margin: 0;
+}
+.kp-landing__manifesto strong {
+	color: var(--text-secondary);
+	font-weight: 500;
+}
+
+.kp-landing__cta {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--s-2);
+}
+.kp-landing__cta a {
+	border: none;
+	background: var(--surface-raised);
+	padding: var(--s-3) var(--s-4);
+	font: 500 13px/1.2 var(--font-body);
+	text-decoration: none;
+	color: var(--text-primary);
+	border-radius: var(--r-sm);
+	display: grid;
+	gap: 4px;
+	min-width: 100px;
+}
+.kp-landing__cta a:hover {
+	background: var(--accent-soft);
+	color: var(--accent);
+	text-decoration: none;
+}
+.kp-landing__cta a .label {
+	font-weight: 600;
+	font-size: 14px;
+}
+.kp-landing__cta a .sub {
+	font-size: 11px;
+	color: var(--text-muted);
+	font-weight: 400;
+}
+.kp-landing__cta a:hover .sub {
+	color: var(--text-secondary);
+}
+
+.kp-landing__cols {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: var(--s-6);
+}
+
+.kp-landing__col-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	border-bottom: 1px solid var(--border);
+	padding-bottom: var(--s-2);
+	margin-bottom: var(--s-3);
+}
+.kp-landing__col-head h3 {
+	font: 600 13px/1 var(--font-body);
+	margin: 0;
+	color: var(--text-primary);
+	text-transform: lowercase;
+}
+.kp-landing__col-head a {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	text-decoration: none;
+}
+.kp-landing__col-head a:hover {
+	color: var(--accent);
+}
+
+.kp-landing__col ul {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: grid;
+	gap: var(--s-3);
+}
+
+.kp-landing-row {
+	display: grid;
+	grid-template-columns: 22px 1fr;
+	gap: var(--s-3);
+	align-items: baseline;
+}
+.kp-landing-row__rank {
+	font: var(--t-meta);
+	color: var(--text-faint);
+	text-align: right;
+}
+.kp-landing-row__title {
+	font: 500 13px/1.4 var(--font-body);
+	color: var(--text-primary);
+	text-decoration: none;
+	display: block;
+}
+.kp-landing-row__title:hover {
+	color: var(--accent);
+	text-decoration: none;
+}
+.kp-landing-row__title .gloss {
+	font-weight: 400;
+	color: var(--text-muted);
+}
+.kp-landing-row__meta {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin-top: 2px;
+}
+.kp-landing-row__meta .author {
+	color: var(--text-secondary);
+	font-weight: 500;
+}
+.kp-landing-row__meta .dot {
+	margin: 0 4px;
+	color: var(--border-strong);
+}
+
+.kp-landing__stats {
+	display: flex;
+	gap: var(--s-6);
+	border-top: 1px solid var(--border-faint);
+	padding-top: var(--s-4);
+}
+.kp-landing__stat .n {
+	font: 600 18px/1 var(--font-body);
+	color: var(--text-primary);
+	letter-spacing: -0.01em;
+}
+.kp-landing__stat .l {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin-top: 4px;
+	text-transform: lowercase;
+}
