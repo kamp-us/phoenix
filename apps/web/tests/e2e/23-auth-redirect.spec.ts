@@ -62,15 +62,15 @@ test.describe("T17 auth-redirect with returnTo", () => {
 		// Layout's effect navigates off /auth honoring `returnTo` (T17).
 		await page.waitForURL(`**/sozluk/${slug}`, {timeout: 10_000});
 
-		// Bootstrap form may pop up — fill it so the page is interactable.
+		// Bootstrap form WILL render — voter B has just signed up with no username.
+		// `me` lands a tick after the route navigation, so wait unconditionally.
 		const bootstrap = page.locator("input#bootstrap-username");
-		if (await bootstrap.isVisible().catch(() => false)) {
-			await bootstrap.fill(`b-${slug}`);
-			await page.getByRole("button", {name: /devam et/i}).click();
-			await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
-				timeout: 10_000,
-			});
-		}
+		await expect(bootstrap).toBeVisible({timeout: 10_000});
+		await bootstrap.fill(`b-${slug}`);
+		await page.getByRole("button", {name: /devam et/i}).click();
+		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
+			timeout: 10_000,
+		});
 
 		// --- assert: vote click now lands the +1 ------------------------------
 		// Wait for the term heading first — the page may briefly render the
