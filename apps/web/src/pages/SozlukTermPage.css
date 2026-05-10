@@ -1,0 +1,223 @@
+/* SozlukTermPage — head (crumbs + title + meta), definitions list, composer.
+   Mirrors dense .sozluk-term__* + .sozluk-definition + .sozluk-composer. */
+
+.kp-sozluk-term__head {
+	padding: 8px 0;
+	border-bottom: 1px solid var(--border);
+}
+.kp-sozluk-term__crumbs {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: 0 0 4px;
+}
+.kp-sozluk-term__crumbs a {
+	color: var(--text-secondary);
+	text-decoration: none;
+}
+.kp-sozluk-term__crumbs a:hover {
+	color: var(--accent);
+}
+.kp-sozluk-term__title {
+	font-size: 20px;
+	font-weight: 700;
+	margin: 0 0 4px;
+	letter-spacing: -0.01em;
+	color: var(--text-primary);
+}
+.kp-sozluk-term__meta {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	display: flex;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+/* Definition card */
+.kp-sozluk-definition {
+	display: grid;
+	grid-template-columns: 32px 1fr;
+	gap: var(--s-3);
+	padding: var(--s-3) 0;
+	border-bottom: 1px solid var(--border-faint);
+}
+.kp-sozluk-definition--top {
+	background: var(--accent-faint);
+	padding: var(--s-3);
+	margin: 0 -8px;
+	border-radius: var(--r-sm);
+}
+.kp-sozluk-definition__vote {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+}
+.kp-sozluk-definition__vote-btn {
+	width: 26px;
+	height: 26px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-muted);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	cursor: pointer;
+	padding: 0;
+}
+.kp-sozluk-definition__vote-btn .triangle {
+	width: 0;
+	height: 0;
+	border-left: 6px solid transparent;
+	border-right: 6px solid transparent;
+	border-bottom: 9px solid currentColor;
+}
+.kp-sozluk-definition__vote-btn:hover {
+	color: var(--accent);
+	border-color: var(--accent);
+}
+.kp-sozluk-definition__vote-btn[aria-pressed="true"] {
+	color: var(--accent-fg);
+	background: var(--accent);
+	border-color: var(--accent);
+}
+.kp-sozluk-definition__vote-count {
+	font: var(--t-meta);
+	font-weight: 700;
+	color: var(--text-primary);
+	margin-top: 4px;
+}
+.kp-sozluk-definition__rank {
+	font: var(--t-micro);
+	color: var(--text-faint);
+	margin-top: 2px;
+}
+.kp-sozluk-definition__body {
+	font: var(--t-body);
+	color: var(--text-primary);
+}
+.kp-sozluk-definition__body p {
+	margin: 0 0 6px;
+}
+.kp-sozluk-definition__body p:last-child {
+	margin-bottom: 0;
+}
+.kp-sozluk-definition__body code,
+.kp-sozluk-definition__body pre {
+	font: var(--t-mono);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	border-radius: 2px;
+}
+.kp-sozluk-definition__body code {
+	padding: 0 4px;
+}
+.kp-sozluk-definition__body pre {
+	padding: 8px 10px;
+	margin: 6px 0;
+	overflow-x: auto;
+	color: var(--text-primary);
+}
+.kp-sozluk-definition__body strong {
+	color: var(--text-primary);
+	font-weight: 600;
+}
+.kp-sozluk-definition__foot {
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	margin-top: 6px;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	flex-wrap: wrap;
+}
+.kp-sozluk-definition__foot .author {
+	color: var(--text-secondary);
+	font-weight: 600;
+}
+.kp-sozluk-definition__foot .dot {
+	color: var(--text-faint);
+}
+.kp-sozluk-definition__foot .actions {
+	margin-left: auto;
+	display: flex;
+	gap: 10px;
+}
+.kp-sozluk-definition__foot button {
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+.kp-sozluk-definition__foot button:hover {
+	color: var(--text-primary);
+}
+
+/* "more definitions" rule */
+.kp-sozluk-term__more {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	text-align: center;
+	margin: var(--s-3) 0;
+}
+.kp-sozluk-term__more a {
+	color: var(--accent);
+	text-decoration: none;
+}
+.kp-sozluk-term__more a:hover {
+	text-decoration: underline;
+}
+
+/* Composer */
+.kp-sozluk-composer {
+	margin-top: var(--s-4);
+	padding: var(--s-3);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+}
+.kp-sozluk-composer__head {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: var(--s-2);
+}
+.kp-sozluk-composer__title {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--text-primary);
+}
+.kp-sozluk-composer__textarea {
+	width: 100%;
+	min-height: 120px;
+	resize: vertical;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 8px;
+	font: var(--t-mono);
+	color: var(--text-primary);
+	outline: none;
+	box-sizing: border-box;
+}
+.kp-sozluk-composer__textarea:focus {
+	border-color: var(--accent);
+}
+.kp-sozluk-composer__foot {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: var(--s-2);
+}
+.kp-sozluk-composer__hint {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+.kp-sozluk-composer__hint kbd {
+	padding: 0 4px;
+	border: 1px solid var(--border);
+	border-radius: 2px;
+	font: var(--t-micro);
+	background: var(--surface);
+}

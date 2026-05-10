@@ -1,6 +1,7 @@
 import type { PanoPostData, CommentData } from './components/pano';
 import type { TermRow } from './components/sozluk';
 import { Code, Mark } from './components/ui/atoms';
+import type { TermPageData } from './pages/SozlukTermPage';
 
 export const POSTS: PanoPostData[] = [
   {
@@ -102,6 +103,87 @@ export const SOZLUK_POPULAR = [
   { slug: 'kestirme-yol',           title: 'kestirme yol (hack)',    score: 219 },
   { slug: 'premature-optimization', title: 'premature optimization', score: 203 },
 ];
+
+/* Sozluk term page — full definitions data for /sozluk/:slug. */
+
+export const SOZLUK_TERM_PAGES: Record<string, TermPageData> = {
+  'race-condition': {
+    slug: 'race-condition',
+    title: 'race condition',
+    totalDefinitions: 14,
+    totalScore: 847,
+    firstAt: '2024-01-14',
+    lastEditAgo: '4 gün önce',
+    moreCount: 10,
+    definitions: [
+      {
+        id: 'd1', score: 312, author: 'merve.kaya', agoLabel: '14 oca 2024',
+        editsLabel: 'düzenlendi 3 kez',
+        body: (
+          <>
+            <p>
+              İki ya da daha fazla iş parçacığının (thread, goroutine, fiber, ne dersen)
+              paylaşılan bir kaynağa eşzamanlı erişip <strong>doğru sıralamayı yapamaması</strong>.
+              Sonuç: bazen çalışır, bazen çalışmaz, bazen sadece pazartesi sabahı patlar.
+            </p>
+            <p>Klasik örnek — bir sayaç:</p>
+            <pre>{`// hayır, böyle yapma
+let count = 0;
+async function increment() {
+  const v = await read();   // ← burada başkası araya girer
+  await write(v + 1);
+}`}</pre>
+            <p>
+              İki <Code>increment()</Code> paralel çalışırsa ikisi de aynı <Code>v</Code>'yi okur,
+              ikisi de <Code>v + 1</Code> yazar; bir artış kaybolur. Çözüm: kilit (mutex), atomik op,
+              ya da en iyisi paylaşılan değişkeni hiç tutmamak.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: 'd2', score: 187, author: 'canyilmaz', agoLabel: '2 ay önce',
+        body: (
+          <>
+            <p>
+              Türkçesi: <strong>yarış durumu</strong>. "Koşulu" değil, "durumu" çevirisi yerleşmiş;
+              bir <Code>state</Code>'ten bahsediyoruz, <Code>condition</Code>'dan değil. Yine de
+              kimse "yarış durumu" demiyor toplantıda.
+            </p>
+            <p>
+              Pratikte iki türü ayır: <em>data race</em> (paylaşılan belleğe senkronsuz erişim — UB)
+              ve <em>logical race</em> (sıralama doğru olmadığı için sonuç yanlış). İkincisi kilitle
+              çözülmez; akışı yeniden düşünmek gerekir.
+            </p>
+          </>
+        ),
+      },
+      {
+        id: 'd3', score: 94, author: 'ali.tuncay', agoLabel: '4 ay önce',
+        body: (
+          <>
+            <p>
+              Junior'a anlatınca: "İki kişi aynı anda kapıdan geçmeye çalışıyor. Kapı bir kişilik.
+              Birisi ezilir." Senior'a anlatınca: "<Code>happens-before</Code>'u garanti eden bir
+              şey yoksa zaten compiler ne dilerse onu yapar."
+            </p>
+            <p>İkisi de aynı şeyi söylüyor.</p>
+          </>
+        ),
+      },
+      {
+        id: 'd4', score: 61, author: 'kaaneren', agoLabel: '5 ay önce',
+        body: (
+          <p>
+            Go takımının ilk söylediği şey: <Code>go run -race</Code>. Compile-time değil, runtime
+            detector. Production'da çalıştırmazsın çünkü 2-20x yavaşlatır; ama CI'da koşturmak ucuz
+            bir sigorta.
+          </p>
+        ),
+      },
+    ],
+  },
+};
 
 /* Landing-row variant — terms with gloss + author + ago for the activity column. */
 export const LANDING_TERMS = [

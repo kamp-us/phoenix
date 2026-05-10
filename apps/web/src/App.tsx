@@ -5,13 +5,14 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
-import {COMMENTS, LANDING_TERMS, POSTS, SOZLUK_POPULAR, SOZLUK_RECENT} from "./fixtures";
+import {COMMENTS, LANDING_TERMS, POSTS, SOZLUK_POPULAR, SOZLUK_RECENT, SOZLUK_TERM_PAGES} from "./fixtures";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
 import {PanoCreateDialog} from "./pages/PanoCreateDialog";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {SozlukHome} from "./pages/SozlukHome";
+import {SozlukTermPage} from "./pages/SozlukTermPage";
 
 type Mode = "dark" | "light";
 
@@ -96,6 +97,7 @@ export function App() {
 				<Route path="/pano" element={<PanoFeed posts={POSTS} />} />
 				<Route path="/pano/:id" element={<PanoDetailRoute />} />
 				<Route path="/sozluk" element={<SozlukHome recent={SOZLUK_RECENT} popular={SOZLUK_POPULAR} />} />
+				<Route path="/sozluk/:slug" element={<SozlukTermPage terms={SOZLUK_TERM_PAGES} />} />
 				<Route path="/auth" element={<AuthPage />} />
 			</Route>
 		</Routes>
