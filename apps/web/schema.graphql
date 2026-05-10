@@ -21,6 +21,11 @@ type Health {
   status: String!
 }
 
+type Mutation {
+  voteOnComment(input: VoteInput!): VoteResult!
+  voteOnPost(input: VoteInput!): VoteResult!
+}
+
 type Post {
   author: String!
   body: String
@@ -78,4 +83,13 @@ type User {
   id: ID!
   image: String
   name: String
+}
+
+input VoteInput {
+  targetId: ID!
+  value: Int!
+}
+
+type VoteResult {
+  score: Int!
 }

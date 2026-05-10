@@ -1,7 +1,9 @@
 import {Effect} from "effect";
 import {
 	GraphQLEnumType,
+	GraphQLError,
 	GraphQLID,
+	GraphQLInputObjectType,
 	GraphQLInt,
 	GraphQLList,
 	GraphQLNonNull,
@@ -17,6 +19,7 @@ import type {
 	PostSort,
 	PostSummary,
 	PostTag,
+	VoteValue,
 } from "../features/pano/Pano";
 import type {
 	DefinitionRow,
@@ -262,7 +265,79 @@ const QueryType = new GraphQLObjectType({
 	},
 });
 
-export const schema = new GraphQLSchema({query: QueryType});
+const VoteResultType = new GraphQLObjectType({
+	name: "VoteResult",
+	fields: {
+		score: {type: new GraphQLNonNull(GraphQLInt)},
+	},
+});
+
+const VoteInputType = new GraphQLInputObjectType({
+	name: "VoteInput",
+	fields: {
+		targetId: {type: new GraphQLNonNull(GraphQLID)},
+		/** -1 | 0 | 1 — runtime-validated in the resolver. */
+		value: {type: new GraphQLNonNull(GraphQLInt)},
+	},
+});
+
+interface VoteInput {
+	targetId: string;
+	value: number;
+}
+
+/**
+ * Narrow `value: number` to {-1, 0, 1} or throw the user-facing GraphQL error.
+ * Centralized so both vote resolvers report the same wording.
+ */
+function parseVoteValue(raw: number): VoteValue {
+	if (raw === -1 || raw === 0 || raw === 1) return raw;
+	throw new GraphQLError("Invalid vote value");
+}
+
+const MutationType = new GraphQLObjectType({
+	name: "Mutation",
+	fields: {
+		voteOnPost: {
+			type: new GraphQLNonNull(VoteResultType),
+			args: {input: {type: new GraphQLNonNull(VoteInputType)}},
+			resolve: resolver(function* (_source, args: {input: VoteInput}) {
+				const auth = yield* Auth;
+				if (!auth.user) throw new GraphQLError("Sign in required");
+				const value = parseVoteValue(args.input.value);
+				const env = yield* CloudflareEnv;
+				const stub = env.PANO.get(env.PANO.idFromName("kampus"));
+				return yield* Effect.promise(() =>
+					stub.voteOnPost({
+						userId: auth.user!.id,
+						postId: args.input.targetId,
+						value,
+					}),
+				);
+			}),
+		},
+		voteOnComment: {
+			type: new GraphQLNonNull(VoteResultType),
+			args: {input: {type: new GraphQLNonNull(VoteInputType)}},
+			resolve: resolver(function* (_source, args: {input: VoteInput}) {
+				const auth = yield* Auth;
+				if (!auth.user) throw new GraphQLError("Sign in required");
+				const value = parseVoteValue(args.input.value);
+				const env = yield* CloudflareEnv;
+				const stub = env.PANO.get(env.PANO.idFromName("kampus"));
+				return yield* Effect.promise(() =>
+					stub.voteOnComment({
+						userId: auth.user!.id,
+						commentId: args.input.targetId,
+						value,
+					}),
+				);
+			}),
+		},
+	},
+});
+
+export const schema = new GraphQLSchema({query: QueryType, mutation: MutationType});
 
 /**
  * Stable, sorted SDL printout — used by relay-compiler in apps/web
