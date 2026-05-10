@@ -4,6 +4,7 @@ import { Link, useParams } from 'react-router';
 import type { SozlukTermPageQuery } from '../__generated__/SozlukTermPageQuery.graphql';
 import { Button } from '../components/ui/Button';
 import { formatAgoTR, formatDateTR } from '../lib/datetime';
+import { renderMarkdownInline, splitMarkdownBlocks } from '../lib/markdown';
 import { QueryBoundary } from '../relay/QueryBoundary';
 import './SozlukTermPage.css';
 
@@ -142,93 +143,23 @@ function DefinitionCard({
 }
 
 /**
- * Bare-bones markdown rendering for definition bodies — split paragraphs on
- * blank lines, preserve fenced/inline code as <pre>/<code>. A real markdown
- * renderer (react-markdown + sanitizer) replaces this when content gets richer.
+ * Definition body — split paragraphs on blank lines, fenced code as <pre>,
+ * inline `code` and **strong** via the shared lib/markdown helpers. A real
+ * markdown renderer (react-markdown + sanitizer) replaces this when content
+ * gets richer.
  */
 function Body({ text }: { text: string }) {
-  const blocks = splitBlocks(text);
+  const blocks = splitMarkdownBlocks(text);
   return (
     <div className="kp-sozluk-definition__body">
       {blocks.map((block, i) => {
         if (block.kind === 'code') {
           return <pre key={i}>{block.text}</pre>;
         }
-        return <p key={i}>{renderInline(block.text)}</p>;
+        return <p key={i}>{renderMarkdownInline(block.text)}</p>;
       })}
     </div>
   );
-}
-
-type Block = {kind: 'text'; text: string} | {kind: 'code'; text: string};
-
-function splitBlocks(src: string): Block[] {
-  const blocks: Block[] = [];
-  const fence = /```([\s\S]*?)```/g;
-  let last = 0;
-  let m: RegExpExecArray | null;
-  // biome-ignore lint/suspicious/noAssignInExpressions: standard regex.exec pattern
-  while ((m = fence.exec(src)) !== null) {
-    if (m.index > last) {
-      const text = src.slice(last, m.index).trim();
-      if (text) {
-        for (const para of text.split(/\n{2,}/)) {
-          if (para.trim()) blocks.push({kind: 'text', text: para.trim()});
-        }
-      }
-    }
-    blocks.push({kind: 'code', text: (m[1] ?? '').replace(/^\n|\n$/g, '')});
-    last = m.index + m[0].length;
-  }
-  if (last < src.length) {
-    const text = src.slice(last).trim();
-    if (text) {
-      for (const para of text.split(/\n{2,}/)) {
-        if (para.trim()) blocks.push({kind: 'text', text: para.trim()});
-      }
-    }
-  }
-  return blocks;
-}
-
-/**
- * Inline markdown — `code`, **strong**. Returns React children (string or element).
- * Walks left-to-right; for now intentionally simple.
- */
-function renderInline(src: string): React.ReactNode[] {
-  const out: React.ReactNode[] = [];
-  let i = 0;
-  let buf = '';
-  const flush = () => {
-    if (buf) {
-      out.push(buf);
-      buf = '';
-    }
-  };
-  while (i < src.length) {
-    if (src[i] === '`') {
-      const close = src.indexOf('`', i + 1);
-      if (close > i) {
-        flush();
-        out.push(<code key={out.length}>{src.slice(i + 1, close)}</code>);
-        i = close + 1;
-        continue;
-      }
-    }
-    if (src[i] === '*' && src[i + 1] === '*') {
-      const close = src.indexOf('**', i + 2);
-      if (close > i + 1) {
-        flush();
-        out.push(<strong key={out.length}>{src.slice(i + 2, close)}</strong>);
-        i = close + 2;
-        continue;
-      }
-    }
-    buf += src[i];
-    i++;
-  }
-  flush();
-  return out;
 }
 
 function Composer() {

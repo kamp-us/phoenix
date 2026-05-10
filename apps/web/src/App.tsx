@@ -5,7 +5,7 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
-import {COMMENTS, LANDING_TERMS, POSTS} from "./fixtures";
+import {LANDING_TERMS, POSTS} from "./fixtures";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
 import {PanoFeed} from "./pages/PanoFeed";
@@ -82,12 +82,6 @@ function Layout() {
 	);
 }
 
-function PanoDetailRoute() {
-	const post = POSTS[0];
-	if (!post) return null;
-	return <PanoPostDetail post={post} comments={COMMENTS} />;
-}
-
 function PanoSiteFeedRoute() {
 	const {host} = useParams<{host: string}>();
 	return <PanoFeed {...(host ? {host} : {})} />;
@@ -101,7 +95,7 @@ export function App() {
 				<Route path="/pano" element={<PanoFeed />} />
 				<Route path="/pano/yeni" element={<PanoSubmitPage />} />
 				<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
-				<Route path="/pano/:id" element={<PanoDetailRoute />} />
+				<Route path="/pano/:id" element={<PanoPostDetail />} />
 				<Route path="/sozluk" element={<SozlukHome />} />
 				<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
 				<Route path="/auth" element={<AuthPage />} />
