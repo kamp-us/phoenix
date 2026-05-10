@@ -6,6 +6,7 @@ import {printSchemaSDL, schema} from "./graphql/schema";
 
 export {Pasaport} from "./features/pasaport/Pasaport";
 export {Sozluk} from "./features/sozluk/Sozluk";
+export {Pano} from "./features/pano/Pano";
 
 const app = new Hono<{Bindings: Env}>();
 

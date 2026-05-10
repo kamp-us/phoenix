@@ -18,12 +18,14 @@
 	"durable_objects": {
 		"bindings": [
 			{ "name": "PASAPORT", "class_name": "Pasaport" },
-			{ "name": "SOZLUK", "class_name": "Sozluk" }
+			{ "name": "SOZLUK", "class_name": "Sozluk" },
+			{ "name": "PANO", "class_name": "Pano" }
 		]
 	},
 	"migrations": [
 		{ "tag": "v1", "new_sqlite_classes": ["Pasaport"] },
-		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] }
+		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] },
+		{ "tag": "v3", "new_sqlite_classes": ["Pano"] }
 	],
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {
