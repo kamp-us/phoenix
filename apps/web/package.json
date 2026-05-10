@@ -10,6 +10,9 @@
 		"deploy": "pnpm build && wrangler deploy",
 		"typecheck": "tsgo -b",
 		"test": "vitest run",
+		"test:e2e": "playwright test",
+		"test:e2e:ui": "playwright test --ui",
+		"test:e2e:install": "playwright install chromium",
 		"cf-typegen": "wrangler types",
 		"relay": "mkdir -p src/__generated__ && relay-compiler",
 		"relay:watch": "mkdir -p src/__generated__ && relay-compiler --watch",
@@ -36,6 +39,7 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "catalog:",
+		"@playwright/test": "catalog:",
 		"@cloudflare/workers-types": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@swc/plugin-relay": "catalog:",
