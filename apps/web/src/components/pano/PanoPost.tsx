@@ -1,9 +1,7 @@
-import * as React from 'react';
 import { Tag, type TagKind } from '../ui/atoms';
-import { Tooltip } from '../ui/Tooltip';
 import './PanoPost.css';
 
-/* Vote control — up/down arrows with count between. */
+/* Vote control — single triangle upvote with count below (lobsters-shape). */
 export function VoteControl({
   count,
   myVote = 0,
@@ -14,32 +12,18 @@ export function VoteControl({
   onVote?: (delta: -1 | 1) => void;
 }) {
   return (
-    <div className="kp-vote" aria-label="Oy">
+    <div className="kp-pano-post__vote" aria-label="Oy">
       <button
-        className="kp-vote__btn"
-        data-active={myVote === 1 ? '' : undefined}
+        type="button"
+        className="kp-pano-post__vote-btn"
         aria-pressed={myVote === 1}
         aria-label="Yukarı oy"
         onClick={() => onVote?.(1)}
-      >▲</button>
-      <span className="kp-vote__count">{count}</span>
-      <button
-        className="kp-vote__btn"
-        data-active={myVote === -1 ? '' : undefined}
-        aria-pressed={myVote === -1}
-        aria-label="Aşağı oy"
-        onClick={() => onVote?.(-1)}
-      >▼</button>
+      >
+        <span className="triangle" />
+      </button>
+      <span className="kp-pano-post__vote-count">{count}</span>
     </div>
-  );
-}
-
-/* Site host pill (github.com on a post). */
-export function SiteHostPill({ host, children }: { host: string; children?: React.ReactNode }) {
-  return (
-    <a className="kp-site" href={`/pano/site/${host}`}>
-      {children ?? host}
-    </a>
   );
 }
 
@@ -61,41 +45,59 @@ export type PanoPostData = {
 export function PanoPost({
   post,
   onVote,
+  onSave,
+  onHide,
 }: {
   post: PanoPostData;
   onVote?: (id: string, delta: -1 | 1) => void;
+  onSave?: (id: string) => void;
+  onHide?: (id: string) => void;
 }) {
-  const titleEl = (
-    <a href={post.href}>{post.title}</a>
-  );
+  /* Site label — host in parens for external links, "yazı" for self-posts. */
+  const siteLabel = post.host ?? (post.url ? null : 'yazı');
+
   return (
     <article className="kp-pano-post">
-      <div className="kp-pano-post__rank">
-        {post.rank != null ? post.rank : ''}
-      </div>
+      <span className="kp-pano-post__rank">
+        {post.rank != null ? String(post.rank).padStart(2, '0') : ''}
+      </span>
       <VoteControl
         count={post.score}
         myVote={post.myVote}
         onVote={onVote ? (d) => onVote(post.id, d) : undefined}
       />
-      <div className="kp-pano-post__main">
+      <div className="kp-pano-post__body">
         <div className="kp-pano-post__title-row">
-          <h3 className="kp-pano-post__title">
-            {post.url ? (
-              <Tooltip content={post.url} side="top">{titleEl}</Tooltip>
-            ) : titleEl}
-          </h3>
-          {post.tags?.map((t, i) => (
-            <Tag key={i} kind={t.kind} href={t.href}>{t.label}</Tag>
-          ))}
-          {post.host ? <SiteHostPill host={post.host} /> : null}
+          {post.tags?.length ? (
+            <span className="kp-pano-post__tags">
+              {post.tags.map((t, i) => (
+                <Tag key={i} kind={t.kind} href={t.href}>{t.label}</Tag>
+              ))}
+            </span>
+          ) : null}
+          <a className="kp-pano-post__title" href={post.url ?? post.href}>
+            {post.title}
+          </a>
+          {siteLabel ? <span className="kp-pano-post__site">{siteLabel}</span> : null}
         </div>
         <div className="kp-pano-post__meta">
-          <a href={`/u/${post.author}`}>@{post.author}</a>
-          <span>·</span>
+          <span className="author">@{post.author}</span>
+          <span className="dot">·</span>
           <span>{post.agoLabel}</span>
-          <span>·</span>
+          <span className="dot">·</span>
           <a href={`${post.href}#comments`}>{post.commentCount} yorum</a>
+          {onSave ? (
+            <>
+              <span className="dot">·</span>
+              <button type="button" onClick={() => onSave(post.id)}>kaydet</button>
+            </>
+          ) : null}
+          {onHide ? (
+            <>
+              <span className="dot">·</span>
+              <button type="button" onClick={() => onHide(post.id)}>gizle</button>
+            </>
+          ) : null}
         </div>
       </div>
     </article>
@@ -105,13 +107,19 @@ export function PanoPost({
 export function PanoPostList({
   posts,
   onVote,
+  onSave,
+  onHide,
 }: {
   posts: PanoPostData[];
   onVote?: (id: string, delta: -1 | 1) => void;
+  onSave?: (id: string) => void;
+  onHide?: (id: string) => void;
 }) {
   return (
     <div className="kp-pano-list">
-      {posts.map((p) => <PanoPost key={p.id} post={p} onVote={onVote} />)}
+      {posts.map((p) => (
+        <PanoPost key={p.id} post={p} onVote={onVote} onSave={onSave} onHide={onHide} />
+      ))}
     </div>
   );
 }

@@ -2,7 +2,6 @@ import * as React from 'react';
 import { Avatar } from '../ui/Avatar';
 import { Menu } from '../ui/Menu';
 import { Collapsible } from '../ui/Collapsible';
-import { VoteControl } from './PanoPost';
 import './PanoComment.css';
 
 export type CommentData = {
