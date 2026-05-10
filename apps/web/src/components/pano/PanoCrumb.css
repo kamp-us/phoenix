@@ -1,0 +1,32 @@
+/* PanoCrumb — site-filter breadcrumb strip. Mirrors dense .pano-crumb. */
+
+.kp-pano-crumb {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	padding: var(--s-2) var(--s-4);
+	background: var(--surface-sunken);
+	border-bottom: 1px solid var(--border-faint);
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+.kp-pano-crumb a {
+	color: var(--text-secondary);
+	text-decoration: none;
+}
+.kp-pano-crumb a:hover {
+	color: var(--accent);
+}
+.kp-pano-crumb .sep {
+	color: var(--border-strong);
+}
+.kp-pano-crumb .host {
+	background: var(--accent-soft);
+	color: var(--accent);
+	padding: 1px 6px;
+	border-radius: var(--r-sm);
+	font-weight: 600;
+}
+.kp-pano-crumb .clear {
+	margin-left: auto;
+}

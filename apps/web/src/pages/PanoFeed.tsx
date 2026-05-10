@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { Subnav } from '../components/layout/Subnav';
-import { PanoPostList, type PanoPostData } from '../components/pano/index';
+import { PanoCrumb, PanoPostList, type PanoPostData } from '../components/pano/index';
 
 const FILTERS = [
   { id: 'sicak',    label: 'sıcak' },
@@ -9,19 +9,28 @@ const FILTERS = [
   { id: 'tartisma', label: 'tartışma' },
 ];
 
-export function PanoFeed({ posts }: { posts: PanoPostData[] }) {
+export function PanoFeed({
+  posts,
+  host,
+}: {
+  posts: PanoPostData[];
+  host?: string;
+}) {
   const [filter, setFilter] = React.useState('sicak');
+  const filtered = host ? posts.filter((p) => p.host === host) : posts;
+
   return (
     <>
       <Subnav
         filters={FILTERS}
         activeFilter={filter}
         onFilterChange={setFilter}
-        meta={`${posts.length} başlık`}
+        meta={host ? `${filtered.length} başlık · ${host}` : `${filtered.length} başlık`}
       />
+      {host ? <PanoCrumb host={host} /> : null}
       <div className="kp-page">
         <div className="kp-page__inner">
-          <PanoPostList posts={posts} />
+          <PanoPostList posts={filtered} />
         </div>
       </div>
     </>

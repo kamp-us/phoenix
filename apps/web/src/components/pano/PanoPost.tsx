@@ -1,3 +1,4 @@
+import { Link } from 'react-router';
 import { Tag, type TagKind } from '../ui/atoms';
 import './PanoPost.css';
 
@@ -78,7 +79,13 @@ export function PanoPost({
           <a className="kp-pano-post__title" href={post.url ?? post.href}>
             {post.title}
           </a>
-          {siteLabel ? <span className="kp-pano-post__site">{siteLabel}</span> : null}
+          {post.host ? (
+            <Link className="kp-pano-post__site" to={`/pano/site/${post.host}`}>
+              {post.host}
+            </Link>
+          ) : siteLabel ? (
+            <span className="kp-pano-post__site">{siteLabel}</span>
+          ) : null}
         </div>
         <div className="kp-pano-post__meta">
           <span className="author">@{post.author}</span>

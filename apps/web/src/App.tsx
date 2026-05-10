@@ -1,5 +1,5 @@
 import {useEffect, useState} from "react";
-import {Outlet, Route, Routes, useLocation, useNavigate} from "react-router";
+import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
@@ -88,6 +88,11 @@ function PanoDetailRoute() {
 	return <PanoPostDetail post={post} comments={COMMENTS} />;
 }
 
+function PanoSiteFeedRoute() {
+	const {host} = useParams<{host: string}>();
+	return <PanoFeed posts={POSTS} host={host} />;
+}
+
 export function App() {
 	return (
 		<Routes>
@@ -95,6 +100,7 @@ export function App() {
 				<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
 				<Route path="/pano" element={<PanoFeed posts={POSTS} />} />
 				<Route path="/pano/yeni" element={<PanoSubmitPage />} />
+				<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
 				<Route path="/pano/:id" element={<PanoDetailRoute />} />
 				<Route path="/sozluk" element={<SozlukHome recent={SOZLUK_RECENT} popular={SOZLUK_POPULAR} />} />
 				<Route path="/sozluk/:slug" element={<SozlukTermPage terms={SOZLUK_TERM_PAGES} />} />
