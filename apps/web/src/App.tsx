@@ -5,7 +5,7 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
-import {COMMENTS, LANDING_TERMS, POSTS, TERMS} from "./fixtures";
+import {COMMENTS, LANDING_TERMS, POSTS, SOZLUK_POPULAR, SOZLUK_RECENT} from "./fixtures";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
 import {PanoCreateDialog} from "./pages/PanoCreateDialog";
@@ -95,7 +95,7 @@ export function App() {
 				<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
 				<Route path="/pano" element={<PanoFeed posts={POSTS} />} />
 				<Route path="/pano/:id" element={<PanoDetailRoute />} />
-				<Route path="/sozluk" element={<SozlukHome terms={TERMS} />} />
+				<Route path="/sozluk" element={<SozlukHome recent={SOZLUK_RECENT} popular={SOZLUK_POPULAR} />} />
 				<Route path="/auth" element={<AuthPage />} />
 			</Route>
 		</Routes>

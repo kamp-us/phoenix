@@ -1,0 +1,77 @@
+/* Sozluk home — masthead with title + searchbar; two-column layout below
+   alphabet (recent on the left, popular on the right). Mirrors dense .sozluk-home__*. */
+
+.kp-sozluk-home__masthead {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: var(--s-3);
+	align-items: end;
+	padding: var(--s-2) 0 var(--s-3);
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-sozluk-home__title {
+	font-size: 14px;
+	font-weight: 700;
+	margin: 0;
+	color: var(--text-primary);
+}
+.kp-sozluk-home__title small {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin-left: 8px;
+	font-weight: 400;
+}
+
+.kp-sozluk-home__searchbar {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	height: 28px;
+	padding: 0 10px;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	width: 320px;
+}
+.kp-sozluk-home__searchbar:focus-within {
+	border-color: var(--accent);
+}
+.kp-sozluk-home__searchbar svg {
+	color: var(--text-muted);
+	flex-shrink: 0;
+}
+.kp-sozluk-home__searchbar input {
+	flex: 1;
+	background: transparent;
+	border: 0;
+	outline: none;
+	font: var(--t-body-sm);
+	min-width: 0;
+}
+.kp-sozluk-home__searchbar input::placeholder {
+	color: var(--text-faint);
+}
+
+.kp-sozluk-home__columns {
+	display: grid;
+	grid-template-columns: 1.4fr 1fr;
+	gap: var(--s-6);
+	margin-top: var(--s-4);
+}
+
+.kp-sozluk-home__col-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	padding-bottom: var(--s-2);
+	margin-bottom: var(--s-2);
+	border-bottom: 1px solid var(--border);
+	font-size: 13px;
+	font-weight: 400;
+	color: var(--text-secondary);
+}
+.kp-sozluk-home__col-head .title {
+	color: var(--text-primary);
+	font-weight: 600;
+}

@@ -1,62 +1,144 @@
-/* Sözlük — term row, definition card, alphabet bar. */
+/* Sözlük — term-row, popular-row, alphabet, definition. Mirrors dense .sozluk-* */
 
-.kp-sozluk-term {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: var(--s-3);
-  padding: var(--term-row-y) var(--s-3);
-  border-bottom: 1px solid var(--border-faint);
-}
-.kp-sozluk-term:last-child { border-bottom: 0; }
-
-.kp-sozluk-term__title {
-  font: var(--t-body);
-  font-weight: 500;
-  color: var(--text-primary);
-  margin: 0;
-}
-.kp-sozluk-term__title a { color: inherit; }
-.kp-sozluk-term__title a:hover { color: var(--accent-9); text-decoration: none; }
-
-.kp-sozluk-term__count {
-  font: var(--t-meta);
-  font-family: var(--font-mono);
-  color: var(--text-faint);
-}
-
+/* Term row — title + excerpt + count, two-column with title growing */
 .kp-sozluk-list {
-  background: var(--surface);
-  border: 1px solid var(--border-faint);
-  border-radius: var(--r-md);
+	display: flex;
+	flex-direction: column;
+}
+
+.kp-sozluk-term-row {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	align-items: baseline;
+	gap: 8px;
+	padding: var(--term-row-y) 0;
+	border-bottom: 1px solid var(--border-faint);
+	text-decoration: none;
+}
+.kp-sozluk-term-row:hover {
+	background: var(--surface-sunken);
+	text-decoration: none;
+}
+.kp-sozluk-term-row__title {
+	font: var(--t-h-feed);
+	font-weight: 600;
+	color: var(--text-primary);
+}
+.kp-sozluk-term-row__excerpt {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin-top: 1px;
+	display: -webkit-box;
+	-webkit-line-clamp: 1;
+	-webkit-box-orient: vertical;
+	overflow: hidden;
+}
+.kp-sozluk-term-row__count {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	white-space: nowrap;
+}
+
+/* Popular column */
+.kp-sozluk-popular {
+	display: flex;
+	flex-direction: column;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.kp-sozluk-popular__row {
+	display: grid;
+	grid-template-columns: 22px minmax(0, 1fr) auto;
+	align-items: baseline;
+	gap: 8px;
+	padding: var(--pop-row-y) 0;
+	border-bottom: 1px solid var(--border-faint);
+	font: var(--t-body-sm);
+}
+.kp-sozluk-popular__rank {
+	font: var(--t-meta);
+	color: var(--text-faint);
+	text-align: right;
+}
+.kp-sozluk-popular__title {
+	color: var(--text-primary);
+	font-weight: 500;
+	text-decoration: none;
+}
+.kp-sozluk-popular__title:hover {
+	color: var(--accent);
+	text-decoration: none;
+}
+.kp-sozluk-popular__meta {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+/* Alphabet — letter buttons in a flex row */
+.kp-sozluk-alphabet {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 2px;
+	padding: var(--s-2) 0;
+	border-bottom: 1px solid var(--border-faint);
+	font: var(--t-body-sm);
+	font-weight: 500;
+}
+.kp-sozluk-alphabet__letter {
+	width: var(--letter-size);
+	height: var(--letter-size);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	color: var(--text-secondary);
+	border-radius: 2px;
+	text-transform: uppercase;
+	text-decoration: none;
+	background: none;
+	border: 0;
+	cursor: pointer;
+	font: inherit;
+	padding: 0;
+}
+.kp-sozluk-alphabet__letter:hover {
+	background: var(--surface-sunken);
+	color: var(--text-primary);
+	text-decoration: none;
+}
+.kp-sozluk-alphabet__letter.is-active {
+	background: var(--accent);
+	color: var(--accent-fg);
+}
+.kp-sozluk-alphabet__letter.is-empty {
+	color: var(--text-faint);
+	cursor: default;
 }
 
 /* Definition card */
 .kp-definition {
-  padding: var(--def-y) var(--s-4);
-  border-bottom: 1px solid var(--border-faint);
-  background: var(--surface);
+	padding: var(--def-y) var(--s-4);
+	border-bottom: 1px solid var(--border-faint);
+	background: var(--surface);
 }
-.kp-definition:last-child { border-bottom: 0; }
+.kp-definition:last-child {
+	border-bottom: 0;
+}
 .kp-definition__body {
-  font: var(--t-body);
-  color: var(--text-primary);
-  line-height: 1.55;
-  margin-bottom: var(--s-2);
+	font: var(--t-body);
+	color: var(--text-primary);
+	line-height: 1.55;
+	margin-bottom: var(--s-2);
 }
 .kp-definition__meta {
-  display: flex;
-  gap: var(--s-2);
-  font: var(--t-meta);
-  color: var(--text-secondary);
+	display: flex;
+	gap: var(--s-2);
+	font: var(--t-meta);
+	color: var(--text-secondary);
 }
-.kp-definition__meta a { color: var(--text-secondary); }
-.kp-definition__meta a:hover { color: var(--text-primary); }
-
-/* Alphabet bar */
-.kp-alphabet {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
-  padding: var(--s-2) 0;
+.kp-definition__meta a {
+	color: var(--text-secondary);
+}
+.kp-definition__meta a:hover {
+	color: var(--text-primary);
 }
