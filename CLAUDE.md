@@ -54,3 +54,12 @@ pnpm format       # biome check --write
 ## Decisions
 
 See [.decisions/index.md](./.decisions/index.md) — read the row, open the file when you need the why. Record new decisions with `/adr`.
+
+## Sözlük seed
+
+Content lives in `~/code/github.com/kamp-us/monorepo/packages/sozluk-content/terms`, NOT in this repo. To seed the local Sozluk DO:
+
+1. `pnpm dev` — worker must be running on localhost:3000
+2. `pnpm --filter @phoenix/web sozluk:import` (append `-- --clear` to wipe first, `-- --base-url=...` to target a different worker)
+
+The DO endpoints `POST /api/admin/sozluk/upsert-term` and `POST /api/admin/sozluk/clear` are dev-only — guarded by `ENVIRONMENT === "development"`. The importer is idempotent: re-runs skip terms and definitions that already exist.

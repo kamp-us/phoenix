@@ -4,7 +4,6 @@ import {drizzle} from "drizzle-orm/durable-sqlite";
 import {migrate} from "drizzle-orm/durable-sqlite/migrator";
 import migrations from "./drizzle/migrations/migrations";
 import * as schema from "./drizzle/schema";
-import {SEED_TERMS} from "./seed";
 
 export type ListSort = "recent" | "popular";
 
@@ -69,7 +68,6 @@ export class Sozluk extends DurableObject<Env> {
 		super(ctx, env);
 		this.ctx.blockConcurrencyWhile(async () => {
 			await migrate(this.db, migrations);
-			await this.seedIfEmpty();
 		});
 	}
 
@@ -155,28 +153,6 @@ export class Sozluk extends DurableObject<Env> {
 				updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
 			})),
 		};
-	}
-
-	private async seedIfEmpty(): Promise<void> {
-		const rows = await this.db.select({n: count(schema.term.id)}).from(schema.term);
-		if (Number(rows[0]?.n ?? 0) > 0) return;
-
-		for (const t of SEED_TERMS) {
-			const [inserted] = await this.db
-				.insert(schema.term)
-				.values({slug: t.slug, title: t.title})
-				.returning({id: schema.term.id});
-			if (!inserted) continue;
-			for (const d of t.definitions) {
-				await this.db.insert(schema.definition).values({
-					termId: inserted.id,
-					authorId: d.authorId,
-					authorName: d.authorName,
-					body: d.body,
-					score: d.score,
-				});
-			}
-		}
 	}
 
 	/**
