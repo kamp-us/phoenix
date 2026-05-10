@@ -4,7 +4,6 @@ import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {Controls, type ColorTheme, type Density, type Mode} from "./components/controls/Controls";
-import {Button} from "./components/ui/Button";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {COMMENTS, POSTS, TERMS} from "./fixtures";
 import {AuthPage} from "./pages/AuthPage";
@@ -47,7 +46,7 @@ export function App() {
 		<TooltipProvider>
 			<AppShell>
 				<Topbar
-					brand="kampüs"
+					brandName="kamp.us"
 					nav={[
 						{
 							href: "#pano",
@@ -57,28 +56,27 @@ export function App() {
 						{href: "#sozluk", label: "sözlük", current: route === "sozluk"},
 					]}
 					{...userProps}
+					onBrandClick={() => setRoute("pano")}
+					onToggleTheme={() => setMode(mode === "dark" ? "light" : "dark")}
 					onLogout={onSignOut}
 					actions={
-						<>
-							<Button variant="tertiary" onClick={() => setRoute("pano")}>
-								pano
-							</Button>
-							<Button variant="tertiary" onClick={() => setRoute("pano-detail")}>
-								başlık
-							</Button>
-							<Button variant="tertiary" onClick={() => setRoute("sozluk")}>
-								sözlük
-							</Button>
-							{isSignedIn ? (
-								<Button variant="primary" onClick={() => setCreateOpen(true)}>
-									+ ekle
-								</Button>
-							) : (
-								<Button variant="primary" onClick={() => setRoute("auth")}>
-									giriş
-								</Button>
-							)}
-						</>
+						isSignedIn ? (
+							<button
+								type="button"
+								className="kp-topbar__btn"
+								onClick={() => setCreateOpen(true)}
+							>
+								+ gönderi
+							</button>
+						) : (
+							<button
+								type="button"
+								className="kp-topbar__btn"
+								onClick={() => setRoute("auth")}
+							>
+								giriş yap
+							</button>
+						)
 					}
 				/>
 				<div
