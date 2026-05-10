@@ -18,14 +18,47 @@
 	"durable_objects": {
 		"bindings": [
 			{ "name": "PASAPORT", "class_name": "Pasaport" },
+			// Singleton DOs — slated for delete in T18 once the per-atom
+			// SozlukTerm / PanoPost classes own all read + write paths.
 			{ "name": "SOZLUK", "class_name": "Sozluk" },
-			{ "name": "PANO", "class_name": "Pano" }
+			{ "name": "PANO", "class_name": "Pano" },
+			// Per-atom Agent DOs (ADR 0005 + 0006). Class definitions land
+			// in T2 (SozlukTerm) and T3 (PanoPost); bindings + sqlite
+			// migration tag declared up-front so the v4 wrangler tag is a
+			// no-op rename when those classes ship.
+			{ "name": "SOZLUK_TERM", "class_name": "SozlukTerm" },
+			{ "name": "PANO_POST", "class_name": "PanoPost" }
 		]
 	},
+	// One D1 binding holds every cross-entity view-model (term_summary,
+	// post_summary, *_view, *_stats, user_vote, user_profile) per ADR 0007.
+	// `database_id` is filled in per-environment via `wrangler d1 create`;
+	// the placeholder stays until the operator provisions the DB.
+	"d1_databases": [
+		{
+			"binding": "PHOENIX_DB",
+			"database_name": "phoenix-view",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "worker/view/drizzle/migrations"
+		}
+	],
+	// Single projection workflow consumes outbox events and writes PHOENIX_DB.
+	// Class lives in worker/view/PhoenixProjection.ts.
+	"workflows": [
+		{
+			"name": "phoenix-projection",
+			"binding": "PHOENIX_PROJECTION",
+			"class_name": "PhoenixProjection"
+		}
+	],
 	"migrations": [
 		{ "tag": "v1", "new_sqlite_classes": ["Pasaport"] },
 		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] },
-		{ "tag": "v3", "new_sqlite_classes": ["Pano"] }
+		{ "tag": "v3", "new_sqlite_classes": ["Pano"] },
+		// v4: introduces the per-atom Agent classes alongside the singleton
+		// classes. T18 amends this tag with `delete_classes: ["Sozluk", "Pano"]`
+		// once the migration off the singletons is complete.
+		{ "tag": "v4", "new_sqlite_classes": ["SozlukTerm", "PanoPost"] }
 	],
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {

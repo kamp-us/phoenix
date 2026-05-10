@@ -5,9 +5,18 @@ import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
 
+export {Pano} from "./features/pano/Pano";
+export {PanoPost} from "./features/pano/PanoPost";
 export {Pasaport} from "./features/pasaport/Pasaport";
 export {Sozluk} from "./features/sozluk/Sozluk";
-export {Pano} from "./features/pano/Pano";
+// Per-atom Agent classes (DO bindings declared in wrangler v4). Shipped as
+// minimal stubs in T1 so the bindings compile; T2 (SozlukTerm) and T3
+// (PanoPost) replace these with full Agent implementations.
+export {SozlukTerm} from "./features/sozluk/SozlukTerm";
+// View-layer projection workflow (binding: PHOENIX_PROJECTION). Skeleton
+// lives in worker/view/PhoenixProjection.ts; step bodies are no-ops in T1
+// and get filled in per event kind across T2..T15.
+export {PhoenixProjection} from "./view/PhoenixProjection";
 
 const app = new Hono<{Bindings: Env}>();
 
