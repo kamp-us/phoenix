@@ -37,13 +37,21 @@ test.describe("Sözlük voteDefinition (task_5)", () => {
 		await composerBody.fill(definitionBody);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 
-		// Wait for the new definition to render.
+		// The addDefinition mutation bumps fetchKey, which triggers a Relay
+		// refetch under the "yükleniyor…" fallback. Wait for the new entry
+		// to land, then reload to escape the Suspense double-mount race
+		// (mirrors the pattern in commit 17ed98a — sidestep stale orphan
+		// trees from useLazyLoadQuery's fetchKey-driven refetch).
+		await expect(page.getByText(definitionBody)).toBeVisible({timeout: 15_000});
+		await page.reload();
+
+		const composerBodyAgain = page.locator('[data-testid="sozluk-composer-body"]');
+		await expect(composerBodyAgain).toBeVisible({timeout: 10_000});
 		await expect(page.getByText(definitionBody)).toBeVisible({timeout: 10_000});
 
-		// Find the vote button + score on the only card.
 		const voteBtn = page.locator('[data-testid^="definition-vote-"]').first();
 		const score = page.locator('[data-testid^="definition-score-"]').first();
-		await expect(voteBtn).toBeVisible();
+		await expect(voteBtn).toBeVisible({timeout: 5_000});
 		await expect(score).toHaveText("0");
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
