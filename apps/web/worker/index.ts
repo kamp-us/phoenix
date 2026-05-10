@@ -8,13 +8,11 @@ import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
 
-export {Pano} from "./features/pano/Pano";
 export {PanoPost} from "./features/pano/PanoPost";
 export {Pasaport} from "./features/pasaport/Pasaport";
-export {Sozluk} from "./features/sozluk/Sozluk";
-// Per-atom Agent classes (DO bindings declared in wrangler v4). Shipped as
-// minimal stubs in T1 so the bindings compile; T2 (SozlukTerm) and T3
-// (PanoPost) replace these with full Agent implementations.
+// Per-atom Agent classes own all read + write paths (ADR 0005 / 0006). The
+// legacy singleton Sozluk / Pano DOs were deleted in T18 via the wrangler
+// `delete_classes` migration.
 export {SozlukTerm} from "./features/sozluk/SozlukTerm";
 // View-layer projection workflow (binding: PHOENIX_PROJECTION). Skeleton
 // lives in worker/view/PhoenixProjection.ts; step bodies are no-ops in T1

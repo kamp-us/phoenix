@@ -40,13 +40,17 @@ import {
 	lookupProfile,
 	type ProfileRow,
 } from "../features/pasaport/userProfileReader";
-import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
+import type {DefinitionRow, TermPage} from "../features/sozluk/SozlukTerm";
 import {
 	DefinitionNotFoundError,
 	DefinitionValidationError,
 	UnauthorizedDefinitionMutationError,
 } from "../features/sozluk/SozlukTerm";
-import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
+import {
+	listTermSummaries,
+	type ListSort,
+	type TermSummaryRow,
+} from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
 import {Auth, CloudflareEnv} from "../services";
 import {type LandingStats, readLandingStats} from "../view/landingStatsReader";
@@ -128,12 +132,13 @@ const DefinitionType = new GraphQLObjectType<DefinitionRow>({
 });
 
 /**
- * Single Term type backs both list (TermSummary) and detail (TermPage)
- * queries. Fields specific to one shape (excerpt, definitions, firstAt,
- * lastEdit) resolve to null / empty when the source doesn't carry them —
- * matches GraphQL execution: clients only request what they need.
+ * Single Term type backs both list (TermSummaryRow from D1) and detail
+ * (TermPage from per-term Agent) queries. Fields specific to one shape
+ * (excerpt, definitions, firstAt, lastEdit) resolve to null / empty when
+ * the source doesn't carry them — matches GraphQL execution: clients only
+ * request what they need.
  */
-const TermType: GraphQLObjectType = new GraphQLObjectType<TermSummary | TermPage | TermSummaryRow>({
+const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummaryRow>({
 	name: "Term",
 	fields: () => ({
 		id: {type: new GraphQLNonNull(GraphQLID)},

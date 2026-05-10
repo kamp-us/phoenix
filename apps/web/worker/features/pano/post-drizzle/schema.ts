@@ -13,10 +13,9 @@
  *   the durability primitive: every mutation writes a row in the same
  *   `transactionSync` block; `flushOutbox` ships it to `PHOENIX_PROJECTION`.
  *
- * NOTE: this lives next to `Pano.ts`'s legacy schema (under `drizzle/`)
- * during the T3 → T18 migration window. The legacy directory ships the old
- * singleton `post`/`comment`/etc. tables; this directory ships the per-post
- * shape. T18 deletes the old class + directory under `delete_classes`.
+ * Per-post shape. The legacy singleton `Pano.ts` + its `drizzle/` directory
+ * were dropped in T18 via the wrangler v4 `deleted_classes` migration; this
+ * is the only Pano persistence shape now.
  */
 import {id} from "@usirin/forge";
 import {

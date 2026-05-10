@@ -13,10 +13,9 @@
  *   the durability primitive: every mutation writes a row in the same
  *   `transactionSync` block; `flushOutbox` ships it to `PHOENIX_PROJECTION`.
  *
- * NOTE: this lives next to `Sozluk.ts`'s legacy schema (under `drizzle/`)
- * during the T2 → T18 migration window. The legacy directory ships the old
- * singleton `term`/`definition` tables; this directory ships the per-term
- * shape. T18 deletes the old class + directory under `delete_classes`.
+ * Per-term shape. The legacy singleton `Sozluk.ts` + its `drizzle/` directory
+ * were dropped in T18 via the wrangler v4 `deleted_classes` migration; this
+ * is the only Sozluk persistence shape now.
  */
 import {id} from "@usirin/forge";
 import {integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
