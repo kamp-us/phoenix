@@ -1,4 +1,5 @@
 import {useEffect, useState} from "react";
+import {Outlet, Route, Routes, useLocation, useNavigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
@@ -12,24 +13,22 @@ import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {SozlukHome} from "./pages/SozlukHome";
 
-type Route = "landing" | "pano" | "pano-detail" | "sozluk" | "auth";
 type Mode = "dark" | "light";
 
-export function App() {
+function Layout() {
 	const session = useSession();
-	const [route, setRoute] = useState<Route>("landing");
+	const navigate = useNavigate();
+	const location = useLocation();
 	const [mode, setMode] = useState<Mode>("dark");
 	const [createOpen, setCreateOpen] = useState(false);
 
 	useEffect(() => {
 		document.documentElement.dataset.theme = mode;
-		/* color theme + density default to ember/compact via index.html attrs;
-		   no in-product picker yet — bring back the Controls strip if/when needed. */
 	}, [mode]);
 
 	useEffect(() => {
-		if (session.data && route === "auth") setRoute("landing");
-	}, [session.data, route]);
+		if (session.data && location.pathname === "/auth") navigate("/", {replace: true});
+	}, [session.data, location.pathname, navigate]);
 
 	async function onSignOut() {
 		await authClient.signOut();
@@ -47,15 +46,10 @@ export function App() {
 				<Topbar
 					brandName="kamp.us"
 					nav={[
-						{
-							href: "#pano",
-							label: "pano",
-							current: route === "pano" || route === "pano-detail",
-						},
-						{href: "#sozluk", label: "sözlük", current: route === "sozluk"},
+						{to: "/sozluk", label: "sözlük"},
+						{to: "/pano", label: "pano"},
 					]}
 					{...userProps}
-					onBrandClick={() => setRoute("landing")}
 					onToggleTheme={() => setMode(mode === "dark" ? "light" : "dark")}
 					onLogout={onSignOut}
 					actions={
@@ -71,7 +65,7 @@ export function App() {
 							<button
 								type="button"
 								className="kp-topbar__btn"
-								onClick={() => setRoute("auth")}
+								onClick={() => navigate("/auth")}
 							>
 								giriş yap
 							</button>
@@ -79,24 +73,31 @@ export function App() {
 					}
 				/>
 				<Main>
-					{route === "landing" ? (
-						<LandingPage
-							posts={POSTS}
-							terms={LANDING_TERMS}
-							onPanoClick={() => setRoute("pano")}
-							onSozlukClick={() => setRoute("sozluk")}
-						/>
-					) : null}
-					{route === "auth" ? <AuthPage /> : null}
-					{route === "pano" ? <PanoFeed posts={POSTS} /> : null}
-					{route === "pano-detail" && POSTS[0] ? (
-						<PanoPostDetail post={POSTS[0]} comments={COMMENTS} />
-					) : null}
-					{route === "sozluk" ? <SozlukHome terms={TERMS} /> : null}
+					<Outlet />
 				</Main>
 				<Footer />
 				<PanoCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
 			</AppShell>
 		</TooltipProvider>
+	);
+}
+
+function PanoDetailRoute() {
+	const post = POSTS[0];
+	if (!post) return null;
+	return <PanoPostDetail post={post} comments={COMMENTS} />;
+}
+
+export function App() {
+	return (
+		<Routes>
+			<Route element={<Layout />}>
+				<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
+				<Route path="/pano" element={<PanoFeed posts={POSTS} />} />
+				<Route path="/pano/:id" element={<PanoDetailRoute />} />
+				<Route path="/sozluk" element={<SozlukHome terms={TERMS} />} />
+				<Route path="/auth" element={<AuthPage />} />
+			</Route>
+		</Routes>
 	);
 }

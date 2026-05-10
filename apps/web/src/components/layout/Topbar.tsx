@@ -1,25 +1,26 @@
 import * as React from 'react';
+import { Link, NavLink } from 'react-router';
 import { Avatar } from '../ui/Avatar';
 import { Menu } from '../ui/Menu';
 import './Topbar.css';
 
-export type NavItem = { href: string; label: string; current?: boolean };
+export type NavItem = { to: string; label: string };
 
 export function Topbar({
   brandName = 'kamp.us',
+  brandTo = '/',
   nav = [],
   user,
   actions,
-  onBrandClick,
   onSearchSubmit,
   onToggleTheme,
   onLogout,
 }: {
   brandName?: string;
+  brandTo?: string;
   nav?: NavItem[];
   user?: { name: string; src?: string };
   actions?: React.ReactNode;
-  onBrandClick?: () => void;
   onSearchSubmit?: (query: string) => void;
   onToggleTheme?: () => void;
   onLogout?: () => void;
@@ -31,26 +32,22 @@ export function Topbar({
 
   return (
     <header className="kp-topbar">
-      <a
-        className="kp-topbar__brand"
-        href="/"
-        onClick={(e) => {
-          if (onBrandClick) {
-            e.preventDefault();
-            onBrandClick();
-          }
-        }}
-      >
+      <Link className="kp-topbar__brand" to={brandTo}>
         {before}
         {dotAt >= 0 ? <span className="dot">.</span> : null}
         {after}
-      </a>
+      </Link>
       <span className="kp-topbar__sep" />
       <nav className="kp-topbar__nav">
         {nav.map((n) => (
-          <a key={n.href} href={n.href} aria-current={n.current ? 'page' : undefined}>
+          <NavLink
+            key={n.to}
+            to={n.to}
+            aria-current={undefined}
+            /* NavLink sets aria-current="page" on match by default */
+          >
             {n.label}
-          </a>
+          </NavLink>
         ))}
       </nav>
       <span className="kp-topbar__spacer" />
@@ -58,7 +55,7 @@ export function Topbar({
         className="kp-topbar__search"
         onSubmit={(e) => {
           e.preventDefault();
-          const input = (e.currentTarget.elements.namedItem('q') as HTMLInputElement | null);
+          const input = e.currentTarget.elements.namedItem('q') as HTMLInputElement | null;
           onSearchSubmit?.(input?.value ?? '');
         }}
       >

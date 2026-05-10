@@ -1,3 +1,4 @@
+import {Link} from "react-router";
 import type {PanoPostData} from "../components/pano";
 import type {TermRow} from "../components/sozluk";
 import "./LandingPage.css";
@@ -12,14 +13,10 @@ export function LandingPage({
 	posts,
 	terms,
 	stats,
-	onPanoClick,
-	onSozlukClick,
 }: {
 	posts: PanoPostData[];
 	terms: LandingTerm[];
 	stats?: {label: string; value: string}[];
-	onPanoClick?: () => void;
-	onSozlukClick?: () => void;
 }) {
 	const defaultStats = stats ?? [
 		{value: "1.247", label: "tanım"},
@@ -47,30 +44,14 @@ export function LandingPage({
 					</p>
 				</div>
 				<div className="kp-landing__cta">
-					<a
-						href="#pano"
-						onClick={(e) => {
-							if (onPanoClick) {
-								e.preventDefault();
-								onPanoClick();
-							}
-						}}
-					>
+					<Link to="/pano">
 						<span className="label">pano →</span>
 						<span className="sub">başlıklar · tartışmalar</span>
-					</a>
-					<a
-						href="#sozluk"
-						onClick={(e) => {
-							if (onSozlukClick) {
-								e.preventDefault();
-								onSozlukClick();
-							}
-						}}
-					>
+					</Link>
+					<Link to="/sozluk">
 						<span className="label">sözlük →</span>
 						<span className="sub">terimler · tanımlar</span>
-					</a>
+					</Link>
 				</div>
 			</div>
 
@@ -78,26 +59,16 @@ export function LandingPage({
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
 						<h3>panoda son 24 saat</h3>
-						<a
-							href="#pano"
-							onClick={(e) => {
-								if (onPanoClick) {
-									e.preventDefault();
-									onPanoClick();
-								}
-							}}
-						>
-							hepsini gör →
-						</a>
+						<Link to="/pano">hepsini gör →</Link>
 					</header>
 					<ul>
 						{posts.slice(0, 5).map((p, i) => (
 							<li key={p.id} className="kp-landing-row">
 								<span className="kp-landing-row__rank">{String(i + 1).padStart(2, "0")}</span>
 								<div>
-									<a className="kp-landing-row__title" href={p.url ?? p.href}>
+									<Link className="kp-landing-row__title" to={`/pano/${p.id}`}>
 										{p.title}
-									</a>
+									</Link>
 									<div className="kp-landing-row__meta">
 										<span>{p.score} oy</span>
 										<span className="dot">·</span>
@@ -116,27 +87,17 @@ export function LandingPage({
 				<section className="kp-landing__col">
 					<header className="kp-landing__col-head">
 						<h3>sözlüğe son eklenenler</h3>
-						<a
-							href="#sozluk"
-							onClick={(e) => {
-								if (onSozlukClick) {
-									e.preventDefault();
-									onSozlukClick();
-								}
-							}}
-						>
-							hepsini gör →
-						</a>
+						<Link to="/sozluk">hepsini gör →</Link>
 					</header>
 					<ul>
 						{terms.slice(0, 5).map((t) => (
 							<li key={t.slug} className="kp-landing-row">
 								<span className="kp-landing-row__rank">·</span>
 								<div>
-									<a className="kp-landing-row__title" href={`/sozluk/${t.slug}`}>
+									<Link className="kp-landing-row__title" to={`/sozluk/${t.slug}`}>
 										{t.title}
 										{t.gloss ? <span className="gloss"> — {t.gloss}</span> : null}
-									</a>
+									</Link>
 									<div className="kp-landing-row__meta">
 										{t.author ? (
 											<>
