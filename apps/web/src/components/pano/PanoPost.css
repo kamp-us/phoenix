@@ -92,9 +92,6 @@
 	color: var(--text-primary);
 	text-decoration: none;
 }
-.kp-pano-post__title:visited {
-	color: var(--text-secondary);
-}
 .kp-pano-post__title:hover {
 	color: var(--accent);
 	text-decoration: none;

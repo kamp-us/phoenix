@@ -98,8 +98,6 @@
   --black-a35: rgba(0, 0, 0, 0.35);
   --black-a10: rgba(0, 0, 0, 0.1);
   --black-a04: rgba(0, 0, 0, 0.04);
-  --visited-dark: #b8a8ff;
-  --visited-light: #5b3dba;
 }
 
 /* ──────────── 1. RAW SCALES (light) ──────────── */
@@ -240,9 +238,6 @@
   --link:           var(--accent-11);
   --accent-fg:      var(--accent-contrast);
 }
-:root,
-[data-theme="dark"]   { --link-visited: var(--visited-dark); }
-[data-theme="light"]  { --link-visited: var(--visited-light); }
 
 /* status / categorical (theme-invariant — same in every accent) */
 :root,

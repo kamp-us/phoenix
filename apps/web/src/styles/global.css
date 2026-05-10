@@ -25,9 +25,6 @@ a:hover {
   text-decoration: underline;
   text-underline-offset: 2px;
 }
-a:visited {
-  color: var(--link-visited);
-}
 
 button {
   font: inherit;
