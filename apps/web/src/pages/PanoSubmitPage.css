@@ -1,0 +1,157 @@
+/* PanoSubmitPage — link / yazı submit form. Mirrors dense .pano-submit */
+
+.kp-pano-submit {
+	max-width: 640px;
+	margin: 0 auto;
+	padding: var(--s-4) 0;
+}
+
+.kp-pano-submit__back {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	padding: 6px 0;
+	text-decoration: none;
+}
+.kp-pano-submit__back:hover {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.kp-pano-submit__title {
+	font-size: 16px;
+	font-weight: 600;
+	margin: 0 0 4px;
+	color: var(--text-primary);
+}
+
+.kp-pano-submit__lede {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+	margin: 0 0 var(--s-4);
+}
+
+.kp-pano-submit__toggle {
+	display: inline-flex;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 2px;
+	margin-bottom: var(--s-3);
+	background: var(--surface-sunken);
+}
+.kp-pano-submit__toggle button {
+	padding: 4px 12px;
+	font: var(--t-body-sm);
+	font-weight: 500;
+	color: var(--text-muted);
+	background: none;
+	border: 0;
+	border-radius: 2px;
+	cursor: pointer;
+}
+.kp-pano-submit__toggle button[aria-pressed="true"] {
+	background: var(--surface-raised);
+	color: var(--text-primary);
+	box-shadow: var(--shadow-sm);
+}
+
+.kp-pano-submit__form {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-pano-submit__field {
+	display: grid;
+	gap: 4px;
+}
+.kp-pano-submit__field label {
+	font: 500 12px/1.2 var(--font-body);
+	color: var(--text-secondary);
+	letter-spacing: 0.01em;
+}
+.kp-pano-submit__field input,
+.kp-pano-submit__field textarea {
+	width: 100%;
+	box-sizing: border-box;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-sm);
+	padding: 7px 10px;
+	font: 13px/1.5 var(--font-body);
+	color: var(--text-primary);
+	outline: none;
+	resize: vertical;
+}
+.kp-pano-submit__field input::placeholder,
+.kp-pano-submit__field textarea::placeholder {
+	color: var(--text-faint);
+}
+.kp-pano-submit__field input:focus,
+.kp-pano-submit__field textarea:focus {
+	border-color: var(--accent);
+}
+.kp-pano-submit__field textarea {
+	min-height: 80px;
+}
+.kp-pano-submit__hint {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-pano-submit__url-preview {
+	display: grid;
+	grid-template-columns: 32px 1fr;
+	gap: 10px;
+	align-items: center;
+	padding: 8px;
+	background: var(--surface-sunken);
+	border: 1px dashed var(--border);
+	border-radius: var(--r-sm);
+}
+.kp-pano-submit__url-preview .fav {
+	width: 32px;
+	height: 32px;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 2px;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font: 16px var(--font-mono);
+	font-weight: 700;
+	color: var(--accent);
+}
+.kp-pano-submit__url-preview .host {
+	font: var(--t-meta);
+	color: var(--link);
+}
+.kp-pano-submit__url-preview .ttl {
+	font: var(--t-body-sm);
+	font-weight: 500;
+	color: var(--text-primary);
+}
+
+.kp-pano-submit__tagrow {
+	display: flex;
+	gap: 6px;
+	flex-wrap: wrap;
+	padding-top: 4px;
+}
+.kp-pano-submit__tagrow .kp-tag {
+	cursor: pointer;
+	opacity: 0.55;
+}
+.kp-pano-submit__tagrow .kp-tag.is-on {
+	opacity: 1;
+	outline: 1px solid currentColor;
+}
+
+.kp-pano-submit__form-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 6px;
+	margin-top: 4px;
+}

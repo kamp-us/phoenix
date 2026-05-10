@@ -8,9 +8,9 @@ import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {COMMENTS, LANDING_TERMS, POSTS, SOZLUK_POPULAR, SOZLUK_RECENT, SOZLUK_TERM_PAGES} from "./fixtures";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
-import {PanoCreateDialog} from "./pages/PanoCreateDialog";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
+import {PanoSubmitPage} from "./pages/PanoSubmitPage";
 import {ProfilePage} from "./pages/ProfilePage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
@@ -22,7 +22,6 @@ function Layout() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [mode, setMode] = useState<Mode>("dark");
-	const [createOpen, setCreateOpen] = useState(false);
 
 	useEffect(() => {
 		document.documentElement.dataset.theme = mode;
@@ -59,7 +58,7 @@ function Layout() {
 							<button
 								type="button"
 								className="kp-topbar__btn"
-								onClick={() => setCreateOpen(true)}
+								onClick={() => navigate("/pano/yeni")}
 							>
 								+ gönderi
 							</button>
@@ -78,7 +77,6 @@ function Layout() {
 					<Outlet />
 				</Main>
 				<Footer />
-				<PanoCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
 			</AppShell>
 		</TooltipProvider>
 	);
@@ -96,6 +94,7 @@ export function App() {
 			<Route element={<Layout />}>
 				<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
 				<Route path="/pano" element={<PanoFeed posts={POSTS} />} />
+				<Route path="/pano/yeni" element={<PanoSubmitPage />} />
 				<Route path="/pano/:id" element={<PanoDetailRoute />} />
 				<Route path="/sozluk" element={<SozlukHome recent={SOZLUK_RECENT} popular={SOZLUK_POPULAR} />} />
 				<Route path="/sozluk/:slug" element={<SozlukTermPage terms={SOZLUK_TERM_PAGES} />} />
