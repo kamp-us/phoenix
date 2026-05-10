@@ -10,11 +10,14 @@ catalog:
   '@biomejs/biome': ^2.4.15
   '@cloudflare/vite-plugin': ^1.36.3
   '@cloudflare/workers-types': ^4.20260509.1
+  '@swc/plugin-relay': ^12.9.0
   '@effect/language-service': ^0.85.1
   '@effect/tsgo': ^0.5.2
   '@types/node': ^25.6.2
   '@types/react': ^19.2.14
   '@types/react-dom': ^19.2.3
+  '@types/react-relay': ^18.2.1
+  '@types/relay-runtime': ^20.1.0
   '@typescript/native-preview': ^7.0.0-dev.20260509.2
   '@usirin/forge': ^0.2.0
   '@vitejs/plugin-react-swc': ^4.3.0
@@ -28,7 +31,10 @@ catalog:
   hono: ^4.12.18
   react: 19.2.6
   react-dom: 19.2.6
+  react-relay: ^20.1.1
   react-router: ^7.15.0
+  relay-compiler: ^20.1.1
+  relay-runtime: ^20.1.1
   turbo: ^2.9.12
   typescript: ^6.0.3
   vite: ^8.0.11
