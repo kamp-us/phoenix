@@ -192,6 +192,12 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 		host: {type: GraphQLString},
 		body: {type: GraphQLString},
 		author: {type: new GraphQLNonNull(GraphQLString)},
+		/**
+		 * Pasaport user id of the author. Powers the frontend's
+		 * "is the current user the author?" check that gates edit / delete
+		 * affordances (T9). Mirrors `Definition.authorId` from T6.
+		 */
+		authorId: {type: new GraphQLNonNull(GraphQLID)},
 		score: {type: new GraphQLNonNull(GraphQLInt)},
 		commentCount: {type: new GraphQLNonNull(GraphQLInt)},
 		createdAt: {
@@ -443,6 +449,14 @@ function mapDefinitionMutationError(err: unknown): GraphQLError {
  */
 function mapPostMutationError(err: unknown): GraphQLError {
 	const e = err as Error & {code?: string};
+	if (e?.name === "UnauthorizedPostMutationError") {
+		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
+	}
+	if (e?.name === "PostNotFoundError") {
+		return new GraphQLError(e.message ?? "post not found", {
+			extensions: {code: "POST_NOT_FOUND"},
+		});
+	}
 	if (e?.name === "PostValidationError") {
 		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
 		return new GraphQLError(e.message ?? "post validation failed", {
@@ -793,6 +807,7 @@ const MutationType = new GraphQLObjectType({
 					host: r.host,
 					body: r.body,
 					author: r.authorName,
+					authorId: r.authorId,
 					score: r.score,
 					commentCount: r.commentCount,
 					createdAt: r.createdAt,
@@ -819,6 +834,7 @@ const MutationType = new GraphQLObjectType({
 						host: result.host,
 						body: result.body,
 						author: result.authorName,
+						authorId: result.authorId,
 						score: result.score,
 						commentCount: result.commentCount,
 						createdAt: result.createdAt,
@@ -856,6 +872,7 @@ const MutationType = new GraphQLObjectType({
 						host: result.host,
 						body: result.body,
 						author: result.authorName,
+						authorId: result.authorId,
 						score: result.score,
 						commentCount: result.commentCount,
 						createdAt: result.createdAt,
@@ -870,6 +887,83 @@ const MutationType = new GraphQLObjectType({
 					}
 					throw err;
 				}
+			}),
+		},
+		editPost: {
+			type: new GraphQLNonNull(PostType),
+			args: {
+				id: {type: new GraphQLNonNull(GraphQLID)},
+				title: {type: GraphQLString},
+				body: {type: GraphQLString},
+			},
+			resolve: resolver(function* (
+				_source,
+				args: {id: string; title?: string | null; body?: string | null},
+			) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+
+				// At least one of title/body must be provided. The Agent re-checks
+				// (defense-in-depth) but a resolver-side check yields a faster
+				// failure with a typed code.
+				if (args.title == null && args.body == null) {
+					throw new GraphQLError("başlık veya metin gerekli", {
+						extensions: {code: "TITLE_REQUIRED"},
+					});
+				}
+
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.id));
+				const result = yield* Effect.promise(() =>
+					stub
+						.editPost({
+							actorId: user.id,
+							...(args.title != null ? {title: args.title} : {}),
+							...(args.body != null ? {body: args.body} : {}),
+						})
+						.then(
+							(value) => ({ok: true as const, value}),
+							(error: unknown) => ({ok: false as const, error}),
+						),
+				);
+				if (!result.ok) {
+					throw mapPostMutationError(result.error);
+				}
+				const r = result.value;
+				return {
+					id: r.postId,
+					slug: null,
+					title: r.title,
+					url: r.url,
+					host: r.host,
+					body: r.body,
+					author: r.authorName,
+					authorId: r.authorId,
+					score: r.score,
+					commentCount: r.commentCount,
+					createdAt: r.createdAt,
+					tags: r.tags,
+				} satisfies PostPage;
+			}),
+		},
+		deletePost: {
+			type: new GraphQLNonNull(GraphQLString),
+			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {id: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.id));
+				const result = yield* Effect.promise(() =>
+					stub.deletePost({actorId: user.id}).then(
+						(value) => ({ok: true as const, value}),
+						(error: unknown) => ({ok: false as const, error}),
+					),
+				);
+				if (!result.ok) {
+					throw mapPostMutationError(result.error);
+				}
+				// SDL is `deletePost: String!` — return the deleted id so the SPA
+				// can confirm + invalidate caches. Mirrors `deleteDefinition` (T6).
+				return result.value.postId;
 			}),
 		},
 		voteOnComment: {

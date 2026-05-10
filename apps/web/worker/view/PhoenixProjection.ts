@@ -98,6 +98,8 @@ export interface PostChangedEvent extends ProjectionEventBase {
 export interface PostDeletedEvent extends ProjectionEventBase {
 	kind: "PostDeleted";
 	postId: string;
+	/** Author of the deleted post — surfaced for downstream user_profile stats. */
+	authorId: string;
 	deletedAt: number;
 }
 
@@ -371,6 +373,73 @@ async function projectPostChanged(env: Env, e: PostChangedEvent): Promise<void> 
 }
 
 /**
+ * `PostDeleted` removes the post from `post_summary` entirely (the post
+ * disappears from the feed per the PRD spec — vs. soft-stamping like
+ * definitions). Also:
+ * - Decrements `pano_stats.total_posts` and adjusts `total_comments` by the
+ *   deleted row's `comment_count` so the landing counters stay honest.
+ * - Deletes any `comment_view` rows whose `post_id` matches so the profile
+ *   contribution feed doesn't reference an orphaned post (T14 reads).
+ *
+ * `user_vote` rows are intentionally LEFT in place — they're cross-product
+ * (user × target) and cascade-deleting them would require iterating every
+ * voter on the post. An orphan vote row pointing at a no-longer-existent
+ * post is a tolerable inconsistency: the `myVote` resolver only reads on
+ * detail / list paths where the post must exist to be rendered.
+ *
+ * Convergence: the row removal is unconditional (`DELETE WHERE id = ?`) — once
+ * a delete event lands, any subsequent `PostChanged` event must lose the
+ * `last_event_id` guard on a missing row (the upsert re-creates the row).
+ * Order: producer-side outbox FIFO + workflow.create's idempotency on event
+ * id keeps a delete-after-create chain serialized. A stale `PostChanged`
+ * arriving after the delete would resurrect the row; if this becomes a real
+ * concern, a `deleted_at` stamp on `post_summary` (already present in the
+ * column list) could gate future upserts. For now the producer doesn't emit
+ * `PostChanged` after `PostDeleted` (the Agent's `editPost` / vote paths read
+ * `deleted_at` first and bail), so resurrection isn't reachable.
+ */
+async function projectPostDeleted(env: Env, e: PostDeletedEvent): Promise<void> {
+	// Read the pre-delete row so we can apply the right stats deltas.
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const previous = await db
+		.select({
+			commentCount: schema.postSummary.commentCount,
+		})
+		.from(schema.postSummary)
+		.where(sql`${schema.postSummary.id} = ${e.postId}`)
+		.limit(1);
+	const previousRow = previous[0];
+
+	const result = await env.PHOENIX_DB.prepare(`DELETE FROM post_summary WHERE id = ?`)
+		.bind(e.postId)
+		.run();
+
+	// Cascade: drop any comment_view rows for comments on this post so the
+	// profile feed doesn't reference an orphan post. Safe to run even when
+	// nothing matches; D1's DELETE returns changes=0 in that case.
+	await env.PHOENIX_DB.prepare(`DELETE FROM comment_view WHERE post_id = ?`)
+		.bind(e.postId)
+		.run();
+
+	// If the post row was already gone (idempotent retry), don't double-touch
+	// pano_stats. The DELETE above returned changes=0; nothing else to do.
+	if (result.meta.changes === 0) return;
+
+	const deletedAt = Math.floor(e.deletedAt / 1000);
+	const commentDelta = -(previousRow?.commentCount ?? 0);
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO pano_stats (id, total_posts, total_comments, total_authors, updated_at)
+		VALUES (1, 0, 0, 0, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			total_posts    = MAX(0, pano_stats.total_posts - 1),
+			total_comments = MAX(0, pano_stats.total_comments + ?),
+			updated_at     = ?`,
+	)
+		.bind(deletedAt, commentDelta, deletedAt)
+		.run();
+}
+
+/**
  * `DefinitionAdded` writes a denormalized `definition_view` row used by the
  * profile contribution feed (T14). The row carries the term slug + title so
  * the feed renders without RPCing back into `SozlukTerm`. Convergent overwrite
@@ -593,7 +662,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 				case "PostChanged":
 					return projectPostChanged(this.env, e);
 				case "PostDeleted":
-					return;
+					return projectPostDeleted(this.env, e);
 				case "CommentAdded":
 					return;
 				case "CommentChanged":

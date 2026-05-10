@@ -73,6 +73,12 @@ export interface PostPage {
 	host: string | null;
 	body: string | null;
 	author: string;
+	/**
+	 * Pasaport user id of the author. Powers the frontend's
+	 * "is the current user the author?" check that gates edit / delete
+	 * affordances (T9). Mirrors `Definition.authorId` from T6.
+	 */
+	authorId: string;
 	score: number;
 	commentCount: number;
 	createdAt: Date;
@@ -207,6 +213,61 @@ export interface VoteOnPostResult {
 	myVote: number | null;
 	/** `true` if the vote row state changed; `false` on idempotent no-op. */
 	changed: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Edit / Delete shapes                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Thrown by `editPost` / `deletePost` when the calling user is not the
+ * author of the target post. The GraphQL resolver translates this to a clean
+ * error with `code: 'UNAUTHORIZED'` so the SPA can surface a typed error.
+ * Mirrors `UnauthorizedDefinitionMutationError` (T6) — same wire shape across
+ * the RPC boundary (workerd drops class identity; `name` survives).
+ */
+export class UnauthorizedPostMutationError extends Error {
+	readonly code = "unauthorized" as const;
+	constructor(postId: string) {
+		super(`not authorized to mutate post ${postId}`);
+		this.name = "UnauthorizedPostMutationError";
+	}
+}
+
+export interface EditPostInput {
+	/** Calling user's id — used for the ownership check. */
+	actorId: string;
+	/** New title (if provided; at least one of title/body required). */
+	title?: string | undefined;
+	/** New body (if provided; at least one of title/body required). */
+	body?: string | undefined;
+}
+
+export interface EditPostResult {
+	postId: string;
+	title: string;
+	url: string | null;
+	host: string | null;
+	body: string | null;
+	authorId: string;
+	authorName: string;
+	score: number;
+	hotScore: number;
+	commentCount: number;
+	tags: PostTagRow[];
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export interface DeletePostInput {
+	/** Calling user's id — used for the ownership check. */
+	actorId: string;
+}
+
+export interface DeletePostResult {
+	postId: string;
+	/** `true` if the row was soft-deleted; `false` on idempotent no-op. */
+	deleted: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -346,6 +407,7 @@ export class PanoPost extends Agent<Env, PostState> {
 			host: meta.host,
 			body: meta.body,
 			author: meta.authorName,
+			authorId: meta.authorId,
 			score: meta.score,
 			commentCount: meta.commentCount,
 			createdAt: meta.createdAt ?? new Date(0),
@@ -759,6 +821,212 @@ export class PanoPost extends Agent<Env, PostState> {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Edit a post's title and/or body (T9). Ownership is enforced inside the
+	 * Agent — the resolver has already proven the caller is signed-in via
+	 * `Auth.required`, but only the row's `author_id` decides who is allowed
+	 * to mutate it. A mismatch throws `UnauthorizedPostMutationError`, which
+	 * the resolver translates to a GraphQL error with `code: 'UNAUTHORIZED'`.
+	 *
+	 * Atomicity per ADR 0007: one `transactionSync` block updates the
+	 * `title`/`body` + `updated_at` columns and emits a `PostChanged` outbox
+	 * row (so `post_summary.title` + `body_excerpt` converge via the existing
+	 * projection step). Score, commentCount, hotScore are unchanged on edit;
+	 * we recompute hot_score against `now` to refresh the decay window so
+	 * frequent edits don't accidentally re-rank the post.
+	 *
+	 * Validation:
+	 * - At least one of `title` / `body` must be provided.
+	 * - `title` (when given) non-empty after trim, ≤ 200 chars.
+	 * - `body` (when given) ≤ 10 000 chars. Empty / blank body clears the
+	 *   body to `null` (parity with submitPost's `null` semantics).
+	 *
+	 * Throws:
+	 * - `PostNotFoundError` when the DO is empty (idFromName hit a fresh DO).
+	 * - `UnauthorizedPostMutationError` on author mismatch.
+	 * - `PostValidationError` on validation failure (re-used from submitPost).
+	 */
+	async editPost(input: EditPostInput): Promise<EditPostResult> {
+		const meta = await this.db.query.postMeta.findFirst();
+		if (!meta || meta.deletedAt) {
+			throw new PostNotFoundError(this.name);
+		}
+		if (meta.authorId !== input.actorId) {
+			throw new UnauthorizedPostMutationError(this.name);
+		}
+
+		// At least one of title/body required.
+		const hasTitle = input.title !== undefined;
+		const hasBody = input.body !== undefined;
+		if (!hasTitle && !hasBody) {
+			throw new PostValidationError("title_required", "başlık veya metin gerekli");
+		}
+
+		// Normalize title (if provided).
+		let nextTitle = meta.title;
+		if (hasTitle) {
+			const trimmed = (input.title ?? "").trim();
+			if (trimmed.length === 0) {
+				throw new PostValidationError("title_required", "başlık boş olamaz");
+			}
+			if (trimmed.length > POST_TITLE_MAX) {
+				throw new PostValidationError(
+					"title_too_long",
+					`başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
+				);
+			}
+			nextTitle = trimmed;
+		}
+
+		// Normalize body (if provided). Empty / blank body clears to null.
+		let nextBody: string | null = meta.body;
+		if (hasBody) {
+			const raw = input.body ?? "";
+			if (raw.length > POST_BODY_MAX) {
+				throw new PostValidationError(
+					"body_too_long",
+					`metin en fazla ${POST_BODY_MAX} karakter olabilir`,
+				);
+			}
+			nextBody = raw.length === 0 ? null : raw;
+		}
+
+		const tagRows = await this.db
+			.select({kind: schema.tag.kind, label: schema.tag.label})
+			.from(schema.tag);
+
+		const now = Date.now();
+		const postId = this.name;
+		const createdAtMs = meta.createdAt ? meta.createdAt.getTime() : now;
+		const eventId = id("evt");
+		const bodyExcerpt = nextBody ? excerpt(nextBody) : null;
+		const hotScore = computeHotScore(meta.score, createdAtMs, now);
+
+		const payload = JSON.stringify({
+			kind: "PostChanged",
+			eventId,
+			postId,
+			slug: meta.slug,
+			title: nextTitle,
+			url: meta.url,
+			host: meta.host,
+			bodyExcerpt,
+			authorId: meta.authorId,
+			authorName: meta.authorName,
+			tags: tagRows.map((t) => t.kind),
+			score: meta.score,
+			commentCount: meta.commentCount,
+			hotScore,
+			createdAt: createdAtMs,
+			updatedAt: now,
+			lastActivityAt: now,
+		});
+
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				UPDATE post_meta
+				SET title = ${nextTitle}, body = ${nextBody}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = '1'
+			`;
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${eventId}, ${payload}, ${now})
+			`;
+		});
+
+		this.setState({
+			...this.state,
+			title: nextTitle,
+			hotScore,
+			lastActivityAt: now,
+			lastEventId: eventId,
+		});
+
+		try {
+			await this.flushOutbox({eventId});
+		} catch (err) {
+			console.error("[PanoPost.editPost] flushOutbox failed", err);
+		}
+
+		return {
+			postId,
+			title: nextTitle,
+			url: meta.url,
+			host: meta.host,
+			body: nextBody,
+			authorId: meta.authorId,
+			authorName: meta.authorName,
+			score: meta.score,
+			hotScore,
+			commentCount: meta.commentCount,
+			tags: tagRows,
+			createdAt: meta.createdAt ?? new Date(createdAtMs),
+			updatedAt: new Date(now),
+		};
+	}
+
+	/**
+	 * Delete a post (T9). Ownership-checked the same way as `editPost`.
+	 * Stamps `deleted_at` on `post_meta` (so `getPost` returns null), then emits
+	 * a `PostDeleted` outbox event. The projection step (`PostDeleted`) REMOVES
+	 * the row from `post_summary` entirely (vs. soft-stamping like definitions)
+	 * per the PRD spec — deleted posts disappear from the feed.
+	 *
+	 * Idempotent: re-deleting an already-deleted post is a no-op (returns
+	 * `deleted: false`, no events).
+	 */
+	async deletePost(input: DeletePostInput): Promise<DeletePostResult> {
+		const meta = await this.db.query.postMeta.findFirst();
+		if (!meta) {
+			throw new PostNotFoundError(this.name);
+		}
+		if (meta.authorId !== input.actorId) {
+			throw new UnauthorizedPostMutationError(this.name);
+		}
+		if (meta.deletedAt) {
+			// Already deleted → idempotent no-op.
+			return {postId: this.name, deleted: false};
+		}
+
+		const now = Date.now();
+		const postId = this.name;
+		const eventId = id("evt");
+
+		const payload = JSON.stringify({
+			kind: "PostDeleted",
+			eventId,
+			postId,
+			authorId: meta.authorId,
+			deletedAt: now,
+		});
+
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				UPDATE post_meta
+				SET deleted_at = ${Math.floor(now / 1000)}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = '1'
+			`;
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${eventId}, ${payload}, ${now})
+			`;
+		});
+
+		this.setState({
+			...this.state,
+			lastActivityAt: now,
+			lastEventId: eventId,
+		});
+
+		try {
+			await this.flushOutbox({eventId});
+		} catch (err) {
+			console.error("[PanoPost.deletePost] flushOutbox failed", err);
+		}
+
+		return {postId, deleted: true};
 	}
 
 	/* -------- Seed surface ---------------------------------------------- */

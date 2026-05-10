@@ -29,6 +29,8 @@ export interface PostSummaryRow {
 	host: string | null;
 	body: string | null;
 	author: string;
+	/** Author's Pasaport user id — powers the frontend's edit/delete gate (T9). */
+	authorId: string;
 	score: number;
 	commentCount: number;
 	createdAt: Date;
@@ -65,6 +67,7 @@ export async function listPostSummaries(
 			url: schema.postSummary.url,
 			host: schema.postSummary.host,
 			bodyExcerpt: schema.postSummary.bodyExcerpt,
+			authorId: schema.postSummary.authorId,
 			authorName: schema.postSummary.authorName,
 			score: schema.postSummary.score,
 			commentCount: schema.postSummary.commentCount,
@@ -84,6 +87,7 @@ export async function listPostSummaries(
 		host: r.host,
 		body: r.bodyExcerpt,
 		author: r.authorName,
+		authorId: r.authorId,
 		score: r.score,
 		commentCount: r.commentCount,
 		createdAt: r.createdAt ?? new Date(0),

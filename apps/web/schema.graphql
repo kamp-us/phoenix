@@ -26,7 +26,9 @@ type Health {
 type Mutation {
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
   deleteDefinition(id: ID!): String!
+  deletePost(id: ID!): String!
   editDefinition(body: String!, id: ID!): Definition!
+  editPost(body: String, id: ID!, title: String): Post!
   retractDefinitionVote(definitionId: ID!): Definition!
   retractPostVote(postId: ID!): Post!
   setUsername(value: String!): User!
@@ -38,6 +40,7 @@ type Mutation {
 
 type Post {
   author: String!
+  authorId: ID!
   body: String
   commentCount: Int!
   createdAt: String!
