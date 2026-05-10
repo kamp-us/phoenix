@@ -1,0 +1,31 @@
+/* Switch — Base UI primitive wrapper. Used for binary toggles. */
+
+.kp-switch {
+  position: relative;
+  width: 28px;
+  height: 16px;
+  border-radius: var(--r-pill);
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 120ms, border-color 120ms;
+}
+.kp-switch[data-checked] {
+  background: var(--accent-9);
+  border-color: var(--accent-9);
+}
+.kp-switch:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+
+.kp-switch__thumb {
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--accent-fg);
+  transition: transform 120ms;
+}
+.kp-switch[data-checked] .kp-switch__thumb {
+  transform: translateX(12px);
+}

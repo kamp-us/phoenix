@@ -1,0 +1,62 @@
+/* Sözlük — term row, definition card, alphabet bar. */
+
+.kp-sozluk-term {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s-3);
+  padding: var(--term-row-y) var(--s-3);
+  border-bottom: 1px solid var(--border-faint);
+}
+.kp-sozluk-term:last-child { border-bottom: 0; }
+
+.kp-sozluk-term__title {
+  font: var(--t-body);
+  font-weight: 500;
+  color: var(--text-primary);
+  margin: 0;
+}
+.kp-sozluk-term__title a { color: inherit; }
+.kp-sozluk-term__title a:hover { color: var(--accent-9); text-decoration: none; }
+
+.kp-sozluk-term__count {
+  font: var(--t-meta);
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.kp-sozluk-list {
+  background: var(--surface);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--r-md);
+}
+
+/* Definition card */
+.kp-definition {
+  padding: var(--def-y) var(--s-4);
+  border-bottom: 1px solid var(--border-faint);
+  background: var(--surface);
+}
+.kp-definition:last-child { border-bottom: 0; }
+.kp-definition__body {
+  font: var(--t-body);
+  color: var(--text-primary);
+  line-height: 1.55;
+  margin-bottom: var(--s-2);
+}
+.kp-definition__meta {
+  display: flex;
+  gap: var(--s-2);
+  font: var(--t-meta);
+  color: var(--text-secondary);
+}
+.kp-definition__meta a { color: var(--text-secondary); }
+.kp-definition__meta a:hover { color: var(--text-primary); }
+
+/* Alphabet bar */
+.kp-alphabet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: var(--s-2) 0;
+}

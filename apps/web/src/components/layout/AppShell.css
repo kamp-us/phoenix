@@ -1,0 +1,16 @@
+/* AppShell — outermost wrapper.
+   Establishes content width + applies focus ring + handles theme/density data attrs. */
+
+.kp-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.kp-shell__main {
+  flex: 1;
+  width: 100%;
+  max-width: var(--content-w);
+  margin: 0 auto;
+  padding: var(--s-3) var(--s-4);
+}

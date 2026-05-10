@@ -1,0 +1,49 @@
+/* Subnav — secondary nav row + filter chips. */
+
+.kp-subnav {
+  height: var(--subnav-h);
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  padding: 0 var(--s-4);
+  border-bottom: 1px solid var(--border-faint);
+  background: var(--surface);
+  position: sticky;
+  top: var(--topbar-h);
+  z-index: 49;
+  font: var(--t-body-sm);
+}
+
+.kp-subnav__title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.kp-subnav__count {
+  color: var(--text-secondary);
+}
+
+.kp-subnav__spacer { flex: 1; }
+
+.kp-subnav__filters {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+
+/* Breadcrumb (site-filtered feed) */
+.kp-subnav__crumb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px var(--s-2);
+  background: var(--accent-faint);
+  border-radius: var(--r-sm);
+  color: var(--text-primary);
+  font: var(--t-meta);
+}
+.kp-subnav__crumb-clear {
+  color: var(--text-secondary);
+  margin-left: 4px;
+}
+.kp-subnav__crumb-clear:hover { color: var(--text-primary); }

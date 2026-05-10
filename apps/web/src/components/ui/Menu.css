@@ -1,0 +1,49 @@
+/* Menu — Base UI primitive wrapper.
+   Used by: comment owner ⋯, topbar user dropdown. */
+
+.kp-menu__popup {
+  min-width: 160px;
+  background: var(--surface-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-md);
+  padding: var(--s-1) 0;
+  z-index: 70;
+  animation: kp-menu-pop 120ms ease-out;
+}
+
+.kp-menu__item {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  padding: 6px var(--s-3);
+  font: var(--t-body-sm);
+  color: var(--text-primary);
+  cursor: pointer;
+  user-select: none;
+  outline: none;
+}
+.kp-menu__item[data-highlighted] { background: var(--accent-faint); color: var(--text-primary); }
+.kp-menu__item[data-disabled] { color: var(--text-faint); cursor: not-allowed; }
+
+.kp-menu__item--danger[data-highlighted] {
+  background: var(--accent-9);
+  color: var(--accent-fg);
+}
+
+.kp-menu__separator {
+  height: 1px;
+  background: var(--border-faint);
+  margin: var(--s-1) 0;
+}
+
+.kp-menu__shortcut {
+  margin-left: auto;
+  font: var(--t-micro);
+  color: var(--text-faint);
+}
+
+@keyframes kp-menu-pop {
+  from { opacity: 0; transform: translateY(-2px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}

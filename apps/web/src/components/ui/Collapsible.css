@@ -1,0 +1,26 @@
+/* Collapsible — Base UI primitive wrapper. Used by comment [—] collapser. */
+
+.kp-collapsible__panel {
+  overflow: hidden;
+  height: var(--collapsible-panel-height);
+  transition: height 160ms ease;
+}
+.kp-collapsible__panel[data-starting-style],
+.kp-collapsible__panel[data-ending-style] {
+  height: 0;
+}
+
+.kp-collapsible__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  border-radius: var(--r-sm);
+  color: var(--text-faint);
+  font: var(--t-micro);
+  font-weight: 600;
+  cursor: pointer;
+}
+.kp-collapsible__trigger:hover { background: var(--surface-raised); color: var(--text-primary); }
+.kp-collapsible__trigger:focus-visible { outline: var(--focus-ring); outline-offset: 1px; }

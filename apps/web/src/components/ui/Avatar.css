@@ -1,0 +1,28 @@
+/* Avatar — Base UI primitive wrapper. */
+
+.kp-avatar {
+  display: inline-grid;
+  place-items: center;
+  width: var(--avatar-size, 22px);
+  height: var(--avatar-size, 22px);
+  border-radius: var(--r-sm);
+  background: var(--surface-raised);
+  color: var(--text-secondary);
+  font: var(--t-micro);
+  font-weight: 600;
+  font-family: var(--font-body);
+  letter-spacing: 0.02em;
+  overflow: hidden;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.kp-avatar__image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.kp-avatar--md  { --avatar-size: 28px; }
+.kp-avatar--lg  { --avatar-size: 36px; }
+.kp-avatar--xl  { --avatar-size: 56px; }

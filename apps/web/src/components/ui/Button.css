@@ -1,0 +1,55 @@
+/* Button — atom. Base UI Button only adds focusableWhenDisabled + render-as,
+   so we wrap it for the variants. */
+
+.kp-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 5px var(--s-3);
+  font: var(--t-body-sm);
+  font-weight: 500;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+  transition: background 80ms, color 80ms, border-color 80ms;
+}
+.kp-btn:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
+.kp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.kp-btn--primary {
+  background: var(--accent-9);
+  color: var(--accent-fg);
+  border-color: var(--accent-9);
+  font-weight: 600;
+}
+.kp-btn--primary:hover:not(:disabled) { filter: brightness(1.06); }
+
+.kp-btn--secondary {
+  background: var(--surface-raised);
+  color: var(--text-primary);
+  border-color: var(--border);
+}
+.kp-btn--secondary:hover:not(:disabled) { background: var(--accent-faint); border-color: var(--accent-soft); }
+
+.kp-btn--tertiary {
+  background: transparent;
+  color: var(--text-secondary);
+}
+.kp-btn--tertiary:hover:not(:disabled) { background: var(--surface-raised); color: var(--text-primary); }
+
+.kp-btn--danger {
+  background: transparent;
+  color: var(--danger);
+}
+.kp-btn--danger:hover:not(:disabled) {
+  background: var(--accent-9);
+  color: var(--accent-fg);
+}
+
+.kp-btn--sm { padding: 3px var(--s-2); font: var(--t-meta); font-weight: 500; }
+.kp-btn--lg { padding: 8px var(--s-4); font: var(--t-body); font-weight: 600; }
+
+.kp-btn--block { width: 100%; }

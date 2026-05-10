@@ -1,0 +1,339 @@
+/* ============================================================
+   KAMPÜS DESIGN TOKENS
+   ─────────────────────────────────────────────────────────────
+   Three-layer system (Radix Colors discipline):
+
+   1. RAW SCALES  ── --mauve-1..12, --tomato-3/5/9/11, etc.
+                    Hex values live ONLY here.
+   2. SEMANTIC    ── --gray-N, --accent-N (resolved per theme)
+   3. ROLE        ── --surface, --text-primary, --link, --accent-fg
+                    Components consume only role tokens.
+
+   Themes are switched via [data-color-theme="..."] on <html>.
+   Light/dark via [data-theme="light"|"dark"].
+   Density via [data-density="compact"|"normal"|"spacious"].
+   ============================================================ */
+
+/* ──────────── 1. RAW SCALES (dark) ──────────── */
+:root,
+[data-theme="dark"] {
+  /* paired neutrals */
+  --mauve-1: #121113;
+  --mauve-2: #1a191b;
+  --mauve-3: #232225;
+  --mauve-4: #2b292d;
+  --mauve-5: #323035;
+  --mauve-6: #3c393f;
+  --mauve-7: #49474e;
+  --mauve-8: #625f69;
+  --mauve-9: #6f6d78;
+  --mauve-10: #7c7a85;
+  --mauve-11: #b5b2bc;
+  --mauve-12: #eeeef0;
+
+  --sand-1: #11110f;
+  --sand-2: #191917;
+  --sand-3: #222220;
+  --sand-4: #2a2a27;
+  --sand-5: #31312e;
+  --sand-6: #3b3a37;
+  --sand-7: #494844;
+  --sand-8: #62605b;
+  --sand-9: #6f6d66;
+  --sand-10: #7c7b74;
+  --sand-11: #b5b3ad;
+  --sand-12: #eeeeec;
+
+  --sage-1: #101211;
+  --sage-2: #171918;
+  --sage-3: #202221;
+  --sage-4: #272a29;
+  --sage-5: #2e3130;
+  --sage-6: #373b39;
+  --sage-7: #444947;
+  --sage-8: #5b625f;
+  --sage-9: #63706b;
+  --sage-10: #717d79;
+  --sage-11: #adb5b2;
+  --sage-12: #eceeed;
+
+  --slate-1: #111113;
+  --slate-2: #18191b;
+  --slate-3: #212225;
+  --slate-4: #272a2d;
+  --slate-5: #2e3135;
+  --slate-6: #373a3f;
+  --slate-7: #43474c;
+  --slate-8: #5a5e66;
+  --slate-9: #696e77;
+  --slate-10: #777b84;
+  --slate-11: #b0b4ba;
+  --slate-12: #edeef0;
+
+  /* accent scales — only steps used in the app */
+  --tomato-3: #391714;   --tomato-5: #5e1c16;   --tomato-9: #e54d2e;   --tomato-11: #ff977d;
+  --crimson-3: #381525;  --crimson-5: #5c1839;  --crimson-9: #e93d82;  --crimson-11: #ff92ad;
+  --amber-3: #302008;    --amber-5: #4d3000;    --amber-9: #ffc53d;    --amber-11: #ffca16;
+  --jade-3: #0f2e22;     --jade-5: #114837;     --jade-9: #29a383;     --jade-11: #1fd8a4;
+  --teal-3: #0d2c2a;     --teal-5: #084a47;     --teal-9: #12a594;     --teal-11: #0bd8b6;
+  --cyan-3: #082c36;     --cyan-5: #004558;     --cyan-9: #00a2c7;     --cyan-11: #00c2d7;
+  --indigo-3: #182449;   --indigo-5: #253974;   --indigo-9: #3e63dd;   --indigo-11: #9eb1ff;
+  --iris-3: #202248;     --iris-5: #2f347b;     --iris-9: #5b5bd6;     --iris-11: #b1a9ff;
+  --plum-3: #351a35;     --plum-5: #512454;     --plum-9: #ab4aba;     --plum-11: #e796f3;
+
+  /* accent contrast text — Radix accentContrast values */
+  --tomato-contrast: #fff;
+  --crimson-contrast: #fff;
+  --amber-contrast: #4f3422;
+  --jade-contrast: #fff;
+  --teal-contrast: #fff;
+  --cyan-contrast: #fff;
+  --indigo-contrast: #fff;
+  --iris-contrast: #fff;
+  --plum-contrast: #fff;
+  --mauve-contrast: #fff;
+
+  /* misc raw */
+  --black-a40: rgba(0, 0, 0, 0.4);
+  --black-a35: rgba(0, 0, 0, 0.35);
+  --black-a10: rgba(0, 0, 0, 0.1);
+  --black-a04: rgba(0, 0, 0, 0.04);
+  --visited-dark: #b8a8ff;
+  --visited-light: #5b3dba;
+}
+
+/* ──────────── 1. RAW SCALES (light) ──────────── */
+[data-theme="light"] {
+  --mauve-1: #fdfcfd;  --mauve-2: #f9f9fb;  --mauve-3: #f4f2f4;  --mauve-4: #eeedef;  --mauve-5: #e9e8ea;  --mauve-6: #e4e2e4;  --mauve-7: #dcdbdd;  --mauve-8: #c8c7cb;  --mauve-9: #8e8c99;  --mauve-10: #84828e;  --mauve-11: #6f6e77;  --mauve-12: #1a1523;
+  --sand-1: #fdfdfc;   --sand-2: #f9f9f8;   --sand-3: #f1f0ef;   --sand-4: #e9e8e6;   --sand-5: #e2e1de;   --sand-6: #dad9d6;   --sand-7: #cfceca;   --sand-8: #bcbbb5;   --sand-9: #8d8d86;   --sand-10: #82827c;   --sand-11: #63635e;   --sand-12: #21201c;
+  --sage-1: #fbfdfc;   --sage-2: #f7f9f8;   --sage-3: #eef1f0;   --sage-4: #e6e9e8;   --sage-5: #dfe2e0;   --sage-6: #d7dad9;   --sage-7: #cbcfcd;   --sage-8: #b8bcba;   --sage-9: #868e8b;   --sage-10: #7c8481;   --sage-11: #5f6563;   --sage-12: #1a211e;
+  --slate-1: #fcfcfd;  --slate-2: #f9f9fb;  --slate-3: #f0f0f3;  --slate-4: #e8e8ec;  --slate-5: #e0e1e6;  --slate-6: #d9d9e0;  --slate-7: #cdced6;  --slate-8: #b9bbc6;  --slate-9: #8b8d98;  --slate-10: #80838d;  --slate-11: #60646c;  --slate-12: #1c2024;
+
+  --tomato-3: #feebe7;   --tomato-5: #fbcdc2;   --tomato-9: #e54d2e;   --tomato-11: #ca3214;
+  --crimson-3: #feeaf3;  --crimson-5: #fcd3e7;  --crimson-9: #e93d82;  --crimson-11: #cb1d63;
+  --amber-3: #fff7c2;    --amber-5: #ffe7b3;    --amber-9: #ffc53d;    --amber-11: #915930;
+  --jade-3: #daf3e6;     --jade-5: #a7e9c9;     --jade-9: #29a383;     --jade-11: #117a5b;
+  --teal-3: #d6f3ec;     --teal-5: #a3e8d8;     --teal-9: #12a594;     --teal-11: #007570;
+  --cyan-3: #d4f1f4;     --cyan-5: #a8e1ec;     --cyan-9: #00a2c7;     --cyan-11: #0078a1;
+  --indigo-3: #e1e9ff;   --indigo-5: #c2d1ff;   --indigo-9: #3e63dd;   --indigo-11: #3a5bc7;
+  --iris-3: #e6e6ff;     --iris-5: #c8c8ff;     --iris-9: #5b5bd6;     --iris-11: #4a4ec1;
+  --plum-3: #f6e8f5;     --plum-5: #ebcae9;     --plum-9: #ab4aba;     --plum-11: #823591;
+}
+
+/* ──────────── 2. SEMANTIC SCALES (per theme) ────────────
+   Each theme rebinds --gray-N and --accent-N to specific raw scales.
+   Components NEVER reference raw scale names directly.            */
+
+:root,
+[data-color-theme="ember"] {
+  --gray-1: var(--mauve-1);  --gray-2: var(--mauve-2);   --gray-3: var(--mauve-3);
+  --gray-5: var(--mauve-5);  --gray-6: var(--mauve-6);   --gray-7: var(--mauve-7);
+  --gray-9: var(--mauve-9);  --gray-10: var(--mauve-10); --gray-11: var(--mauve-11); --gray-12: var(--mauve-12);
+  --accent-3: var(--tomato-3);  --accent-5: var(--tomato-5);
+  --accent-9: var(--tomato-9);  --accent-11: var(--tomato-11);
+  --accent-contrast: var(--tomato-contrast);
+}
+
+[data-color-theme="crimson"] {
+  --gray-1: var(--mauve-1);  --gray-2: var(--mauve-2);   --gray-3: var(--mauve-3);
+  --gray-5: var(--mauve-5);  --gray-6: var(--mauve-6);   --gray-7: var(--mauve-7);
+  --gray-9: var(--mauve-9);  --gray-10: var(--mauve-10); --gray-11: var(--mauve-11); --gray-12: var(--mauve-12);
+  --accent-3: var(--crimson-3);  --accent-5: var(--crimson-5);
+  --accent-9: var(--crimson-9);  --accent-11: var(--crimson-11);
+  --accent-contrast: var(--crimson-contrast);
+}
+
+[data-color-theme="amber"] {
+  --gray-1: var(--sand-1);  --gray-2: var(--sand-2);   --gray-3: var(--sand-3);
+  --gray-5: var(--sand-5);  --gray-6: var(--sand-6);   --gray-7: var(--sand-7);
+  --gray-9: var(--sand-9);  --gray-10: var(--sand-10); --gray-11: var(--sand-11); --gray-12: var(--sand-12);
+  --accent-3: var(--amber-3);  --accent-5: var(--amber-5);
+  --accent-9: var(--amber-9);  --accent-11: var(--amber-11);
+  --accent-contrast: var(--amber-contrast);
+}
+
+[data-color-theme="jade"] {
+  --gray-1: var(--sage-1);  --gray-2: var(--sage-2);   --gray-3: var(--sage-3);
+  --gray-5: var(--sage-5);  --gray-6: var(--sage-6);   --gray-7: var(--sage-7);
+  --gray-9: var(--sage-9);  --gray-10: var(--sage-10); --gray-11: var(--sage-11); --gray-12: var(--sage-12);
+  --accent-3: var(--jade-3);  --accent-5: var(--jade-5);
+  --accent-9: var(--jade-9);  --accent-11: var(--jade-11);
+  --accent-contrast: var(--jade-contrast);
+}
+
+[data-color-theme="teal"] {
+  --gray-1: var(--sage-1);  --gray-2: var(--sage-2);   --gray-3: var(--sage-3);
+  --gray-5: var(--sage-5);  --gray-6: var(--sage-6);   --gray-7: var(--sage-7);
+  --gray-9: var(--sage-9);  --gray-10: var(--sage-10); --gray-11: var(--sage-11); --gray-12: var(--sage-12);
+  --accent-3: var(--teal-3);  --accent-5: var(--teal-5);
+  --accent-9: var(--teal-9);  --accent-11: var(--teal-11);
+  --accent-contrast: var(--teal-contrast);
+}
+
+[data-color-theme="cyan"] {
+  --gray-1: var(--slate-1);  --gray-2: var(--slate-2);   --gray-3: var(--slate-3);
+  --gray-5: var(--slate-5);  --gray-6: var(--slate-6);   --gray-7: var(--slate-7);
+  --gray-9: var(--slate-9);  --gray-10: var(--slate-10); --gray-11: var(--slate-11); --gray-12: var(--slate-12);
+  --accent-3: var(--cyan-3);  --accent-5: var(--cyan-5);
+  --accent-9: var(--cyan-9);  --accent-11: var(--cyan-11);
+  --accent-contrast: var(--cyan-contrast);
+}
+
+[data-color-theme="indigo"] {
+  --gray-1: var(--slate-1);  --gray-2: var(--slate-2);   --gray-3: var(--slate-3);
+  --gray-5: var(--slate-5);  --gray-6: var(--slate-6);   --gray-7: var(--slate-7);
+  --gray-9: var(--slate-9);  --gray-10: var(--slate-10); --gray-11: var(--slate-11); --gray-12: var(--slate-12);
+  --accent-3: var(--indigo-3);  --accent-5: var(--indigo-5);
+  --accent-9: var(--indigo-9);  --accent-11: var(--indigo-11);
+  --accent-contrast: var(--indigo-contrast);
+}
+
+[data-color-theme="iris"] {
+  --gray-1: var(--slate-1);  --gray-2: var(--slate-2);   --gray-3: var(--slate-3);
+  --gray-5: var(--slate-5);  --gray-6: var(--slate-6);   --gray-7: var(--slate-7);
+  --gray-9: var(--slate-9);  --gray-10: var(--slate-10); --gray-11: var(--slate-11); --gray-12: var(--slate-12);
+  --accent-3: var(--iris-3);  --accent-5: var(--iris-5);
+  --accent-9: var(--iris-9);  --accent-11: var(--iris-11);
+  --accent-contrast: var(--iris-contrast);
+}
+
+[data-color-theme="plum"] {
+  --gray-1: var(--mauve-1);  --gray-2: var(--mauve-2);   --gray-3: var(--mauve-3);
+  --gray-5: var(--mauve-5);  --gray-6: var(--mauve-6);   --gray-7: var(--mauve-7);
+  --gray-9: var(--mauve-9);  --gray-10: var(--mauve-10); --gray-11: var(--mauve-11); --gray-12: var(--mauve-12);
+  --accent-3: var(--plum-3);  --accent-5: var(--plum-5);
+  --accent-9: var(--plum-9);  --accent-11: var(--plum-11);
+  --accent-contrast: var(--plum-contrast);
+}
+
+[data-color-theme="mauve"] {
+  --gray-1: var(--mauve-1);  --gray-2: var(--mauve-2);   --gray-3: var(--mauve-3);
+  --gray-5: var(--mauve-5);  --gray-6: var(--mauve-6);   --gray-7: var(--mauve-7);
+  --gray-9: var(--mauve-9);  --gray-10: var(--mauve-10); --gray-11: var(--mauve-11); --gray-12: var(--mauve-12);
+  --accent-3: var(--mauve-3);  --accent-5: var(--mauve-5);
+  --accent-9: var(--mauve-10); --accent-11: var(--mauve-11);
+  --accent-contrast: var(--mauve-contrast);
+}
+
+/* ──────────── 3. ROLE ALIASES ────────────
+   These are the ONLY tokens components should reference.
+   Radix only sanctions step 11 (low-contrast) and step 12 (high-contrast)
+   for text. We collapse muted/faint onto gray-11 so all body/meta passes AA;
+   only --text-primary uses gray-12.                                         */
+:root {
+  --surface:        var(--gray-2);
+  --surface-sunken: var(--gray-1);
+  --surface-raised: var(--gray-3);
+
+  --border-faint:   var(--gray-5);
+  --border:         var(--gray-6);
+  --border-strong:  var(--gray-7);
+
+  --text-faint:     var(--gray-11);
+  --text-muted:     var(--gray-11);
+  --text-secondary: var(--gray-11);
+  --text-primary:   var(--gray-12);
+
+  --accent:         var(--accent-9);
+  --accent-soft:    var(--accent-5);
+  --accent-faint:   var(--accent-3);
+  --link:           var(--accent-11);
+  --accent-fg:      var(--accent-contrast);
+}
+:root,
+[data-theme="dark"]   { --link-visited: var(--visited-dark); }
+[data-theme="light"]  { --link-visited: var(--visited-light); }
+
+/* status / categorical (theme-invariant — same in every accent) */
+:root,
+[data-theme="dark"] {
+  --success: oklch(0.72 0.10 145);
+  --warning: oklch(0.78 0.11 80);
+  --danger:  oklch(0.68 0.16 25);
+
+  --tag-discuss-bg: oklch(0.30 0.06 260);  --tag-discuss-fg: oklch(0.85 0.10 260);
+  --tag-ask-bg:     oklch(0.30 0.05 145);  --tag-ask-fg:     oklch(0.84 0.10 145);
+  --tag-show-bg:    oklch(0.30 0.06 80);   --tag-show-fg:    oklch(0.86 0.11 80);
+  --tag-rant-bg:    oklch(0.30 0.06 22);   --tag-rant-fg:    oklch(0.82 0.12 22);
+  --tag-meta-bg:    oklch(0.28 0.02 60);   --tag-meta-fg:    oklch(0.78 0.01 70);
+  --tag-news-bg:    oklch(0.30 0.06 320);  --tag-news-fg:    oklch(0.85 0.10 320);
+
+  --shadow-sm: 0 1px 0 0 var(--black-a40);
+  --shadow-md: 0 2px 4px 0 var(--black-a35);
+}
+[data-theme="light"] {
+  --tag-discuss-bg: oklch(0.95 0.04 260);  --tag-discuss-fg: oklch(0.36 0.10 260);
+  --tag-ask-bg:     oklch(0.94 0.05 145);  --tag-ask-fg:     oklch(0.32 0.10 145);
+  --tag-show-bg:    oklch(0.95 0.06 80);   --tag-show-fg:    oklch(0.36 0.11 80);
+  --tag-rant-bg:    oklch(0.95 0.05 22);   --tag-rant-fg:    oklch(0.40 0.14 22);
+  --tag-meta-bg:    oklch(0.93 0.005 60);  --tag-meta-fg:    oklch(0.40 0.01 60);
+  --tag-news-bg:    oklch(0.95 0.05 320);  --tag-news-fg:    oklch(0.38 0.10 320);
+
+  --shadow-sm: 0 1px 0 0 var(--black-a04);
+  --shadow-md: 0 1px 3px 0 var(--black-a10);
+}
+
+/* ──────────── TYPE / SPACE / RADIUS / DENSITY ──────────── */
+:root {
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  --t-body:    13px / 1.45 var(--font-body);
+  --t-body-sm: 12px / 1.45 var(--font-body);
+  --t-meta:    11px / 1.4  var(--font-body);
+  --t-micro:   10.5px / 1.4 var(--font-body);
+  --t-h-feed:  14px / 1.35 var(--font-body);
+  --t-h-page:  18px / 1.3  var(--font-body);
+  --t-mono:    12px / 1.45 var(--font-mono);
+
+  --r-sm: 2px;
+  --r-md: 4px;
+  --r-lg: 6px;
+  --r-pill: 9999px;
+
+  --content-w: 980px;
+
+  /* density — compact (default) */
+  --s-1: 4px;  --s-2: 8px;  --s-3: 12px;  --s-4: 16px;
+  --s-5: 20px; --s-6: 24px; --s-7: 32px;  --s-8: 40px;
+  --row-y: 6px;       --row-x: 4px;
+  --comment-y: 8px;   --def-y: var(--s-3);
+  --subnav-h: 32px;   --topbar-h: 38px;
+  --term-row-y: 4px;  --pop-row-y: 3px;
+  --result-y: 6px;    --letter-size: 22px;
+  --rank-w: 22px;     --vote-w: 26px;
+  --post-gap: 10px;   --post-meta-y: 4px;
+  --title-row-gap: 6px;
+  --comment-head-y: 4px;
+  --comment-foot-y: 6px;
+}
+
+[data-density="normal"] {
+  --s-1: 5px;  --s-2: 10px; --s-3: 16px;  --s-4: 22px;
+  --s-5: 28px; --s-6: 34px; --s-7: 44px;  --s-8: 56px;
+  --row-y: 11px;      --row-x: 8px;
+  --comment-y: 14px;
+  --subnav-h: 40px;   --topbar-h: 46px;
+  --term-row-y: 8px;  --pop-row-y: 6px;
+  --result-y: 10px;   --letter-size: 26px;
+  --rank-w: 24px;     --vote-w: 30px;
+  --post-gap: 14px;   --post-meta-y: 8px;
+  --title-row-gap: 8px;
+  --comment-head-y: 8px;
+  --comment-foot-y: 10px;
+}
+
+[data-density="spacious"] {
+  --s-1: 6px;  --s-2: 14px; --s-3: 22px;  --s-4: 30px;
+  --s-5: 38px; --s-6: 48px; --s-7: 60px;  --s-8: 76px;
+  --row-y: 18px;      --row-x: 10px;
+  --comment-y: 22px;
+  --subnav-h: 50px;   --topbar-h: 56px;
+  --term-row-y: 14px; --pop-row-y: 10px;
+  --result-y: 16px;   --letter-size: 30px;
+  --rank-w: 28px;     --vote-w: 34px;
+  --post-gap: 18px;   --post-meta-y: 12px;
+  --title-row-gap: 10px;
+  --comment-head-y: 12px;
+  --comment-foot-y: 14px;
+}

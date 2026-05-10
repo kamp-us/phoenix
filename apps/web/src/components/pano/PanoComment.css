@@ -1,0 +1,60 @@
+/* Pano comment — recursive thread node. */
+
+.kp-comment {
+  position: relative;
+  padding: var(--comment-y) var(--s-3) var(--comment-y) calc(var(--s-3) + var(--depth, 0) * 14px);
+  background: var(--surface);
+  border-bottom: 1px solid var(--border-faint);
+}
+.kp-comment:last-child { border-bottom: 0; }
+.kp-comment[data-highlight] {
+  background: var(--accent-faint);
+  border-left: 2px solid var(--accent-9);
+  padding-left: calc(var(--s-3) + var(--depth, 0) * 14px - 2px);
+}
+
+.kp-comment__head {
+  display: flex;
+  align-items: center;
+  gap: var(--s-2);
+  margin-bottom: var(--comment-head-y);
+  font: var(--t-meta);
+  color: var(--text-secondary);
+}
+.kp-comment__head a { color: var(--text-secondary); }
+.kp-comment__author { font-weight: 500; color: var(--text-primary); }
+.kp-comment__hash {
+  margin-left: auto;
+  font-family: var(--font-mono);
+  color: var(--text-faint);
+}
+
+.kp-comment__body {
+  font: var(--t-body);
+  color: var(--text-primary);
+  line-height: 1.55;
+}
+.kp-comment__body p { margin: 0 0 var(--s-2); }
+.kp-comment__body p:last-child { margin-bottom: 0; }
+
+.kp-comment__foot {
+  display: flex;
+  gap: var(--s-3);
+  margin-top: var(--comment-foot-y);
+  font: var(--t-meta);
+}
+.kp-comment__foot button,
+.kp-comment__foot a {
+  color: var(--text-faint);
+  font-weight: 500;
+}
+.kp-comment__foot button:hover,
+.kp-comment__foot a:hover { color: var(--text-primary); }
+
+.kp-comment-list {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--border-faint);
+  border-radius: var(--r-md);
+}

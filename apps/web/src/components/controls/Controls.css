@@ -1,0 +1,20 @@
+/* Theme/density/mode controls — small panel that lives in the header or floats. */
+
+.kp-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--s-3);
+  font: var(--t-meta);
+  color: var(--text-secondary);
+}
+
+.kp-controls__group {
+  display: flex;
+  align-items: center;
+  gap: var(--s-1);
+}
+.kp-controls__label {
+  font: var(--t-micro);
+  color: var(--text-faint);
+  text-transform: lowercase;
+}

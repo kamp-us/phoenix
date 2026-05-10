@@ -1,0 +1,10 @@
+/* Footer */
+
+.kp-footer {
+  border-top: 1px solid var(--border-faint);
+  padding: var(--s-4);
+  font: var(--t-meta);
+  color: var(--text-faint);
+  text-align: center;
+}
+.kp-footer a { color: var(--text-secondary); }
