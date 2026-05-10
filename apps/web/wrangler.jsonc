@@ -16,9 +16,15 @@
 		"enabled": true
 	},
 	"durable_objects": {
-		"bindings": [{ "name": "PASAPORT", "class_name": "Pasaport" }]
+		"bindings": [
+			{ "name": "PASAPORT", "class_name": "Pasaport" },
+			{ "name": "SOZLUK", "class_name": "Sozluk" }
+		]
 	},
-	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["Pasaport"] }],
+	"migrations": [
+		{ "tag": "v1", "new_sqlite_classes": ["Pasaport"] },
+		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] }
+	],
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {
 		"ENVIRONMENT": "development"

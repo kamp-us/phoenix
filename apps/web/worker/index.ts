@@ -5,6 +5,7 @@ import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
 
 export {Pasaport} from "./features/pasaport/Pasaport";
+export {Sozluk} from "./features/sozluk/Sozluk";
 
 const app = new Hono<{Bindings: Env}>();
 
