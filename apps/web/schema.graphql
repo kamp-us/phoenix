@@ -55,6 +55,14 @@ type Health {
 	status: String!
 }
 
+type LandingStats {
+	totalAuthors: Int!
+	totalComments: Int!
+	totalDefinitions: Int!
+	totalPosts: Int!
+	version: String!
+}
+
 type Mutation {
 	addComment(body: String!, parentId: ID, postId: ID!): Comment!
 	addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
@@ -125,6 +133,7 @@ union ProfileContribution = CommentContribution | DefinitionContribution | PostC
 
 type Query {
 	health: Health!
+	landingStats: LandingStats!
 	me: User
 	post(idOrSlug: String!): Post
 	postComments(postId: String!): [Comment!]!

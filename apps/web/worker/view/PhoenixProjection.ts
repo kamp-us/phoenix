@@ -21,9 +21,6 @@
  * - Errors throw so the workflow runtime retries the step with backoff.
  */
 import {WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep} from "cloudflare:workers";
-import {sql} from "drizzle-orm";
-import {drizzle} from "drizzle-orm/d1";
-import * as schema from "./drizzle/schema";
 
 /* -------------------------------------------------------------------------- */
 /* Event payloads                                                             */
@@ -223,6 +220,84 @@ export type ProjectionEvent =
 	| UserProfileChangedEvent;
 
 /* -------------------------------------------------------------------------- */
+/* Stats recompute helpers                                                    */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Recompute the single-row `sozluk_stats` aggregate from the underlying view
+ * tables. Cheap and convergent: three small COUNT queries against indexed
+ * columns, then one UPSERT.
+ *
+ * - `total_terms` = COUNT(*) FROM term_summary
+ * - `total_definitions` = COUNT(*) FROM definition_view WHERE deleted_at IS NULL
+ * - `total_authors` = COUNT(DISTINCT author_id) FROM definition_view
+ *                     WHERE deleted_at IS NULL
+ *
+ * Called by every projection step that writes to `term_summary` or
+ * `definition_view`. Idempotent: out-of-order retries land at the same row.
+ */
+async function recomputeSozlukStats(env: Env, updatedAt: number): Promise<void> {
+	const totalTerms = await env.PHOENIX_DB.prepare("SELECT COUNT(*) as n FROM term_summary").first<{
+		n: number;
+	}>();
+	const totalDefs = await env.PHOENIX_DB.prepare(
+		"SELECT COUNT(*) as n FROM definition_view WHERE deleted_at IS NULL",
+	).first<{n: number}>();
+	const totalAuthors = await env.PHOENIX_DB.prepare(
+		"SELECT COUNT(DISTINCT author_id) as n FROM definition_view WHERE deleted_at IS NULL",
+	).first<{n: number}>();
+
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO sozluk_stats (id, total_definitions, total_terms, total_authors, updated_at)
+		VALUES (1, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			total_definitions = excluded.total_definitions,
+			total_terms       = excluded.total_terms,
+			total_authors     = excluded.total_authors,
+			updated_at        = excluded.updated_at`,
+	)
+		.bind(totalDefs?.n ?? 0, totalTerms?.n ?? 0, totalAuthors?.n ?? 0, updatedAt)
+		.run();
+}
+
+/**
+ * Recompute the single-row `pano_stats` aggregate from the underlying view
+ * tables. Same shape as `recomputeSozlukStats` — three COUNT queries + one
+ * UPSERT. `total_authors` is the distinct author union across `post_summary`
+ * and `comment_view` (same person posting AND commenting only counts once).
+ *
+ * Called by every projection step that writes to `post_summary` or
+ * `comment_view`. Idempotent on retry.
+ */
+async function recomputePanoStats(env: Env, updatedAt: number): Promise<void> {
+	const totalPosts = await env.PHOENIX_DB.prepare(
+		"SELECT COUNT(*) as n FROM post_summary WHERE deleted_at IS NULL",
+	).first<{n: number}>();
+	const totalComments = await env.PHOENIX_DB.prepare(
+		"SELECT COUNT(*) as n FROM comment_view WHERE deleted_at IS NULL",
+	).first<{n: number}>();
+	const totalAuthors = await env.PHOENIX_DB.prepare(
+		`SELECT COUNT(DISTINCT author_id) as n FROM (
+			SELECT author_id FROM post_summary WHERE deleted_at IS NULL
+			UNION
+			SELECT author_id FROM comment_view WHERE deleted_at IS NULL
+		)`,
+	).first<{n: number}>();
+
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO pano_stats (id, total_posts, total_comments, total_authors, updated_at)
+		VALUES (1, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			total_posts    = excluded.total_posts,
+			total_comments = excluded.total_comments,
+			total_authors  = excluded.total_authors,
+			updated_at     = excluded.updated_at`,
+	)
+		.bind(totalPosts?.n ?? 0, totalComments?.n ?? 0, totalAuthors?.n ?? 0, updatedAt)
+		.run();
+}
+
+/* -------------------------------------------------------------------------- */
 /* Projection step bodies                                                     */
 /* -------------------------------------------------------------------------- */
 
@@ -231,27 +306,13 @@ export type ProjectionEvent =
  * overwrite guarded by `WHERE last_event_id < excluded.last_event_id` (forge
  * ULID lex ordering — out-of-order retries become no-ops).
  *
- * `sozluk_stats` totals are touched as part of the same step: we delta the
- * `total_terms` row only on first-time inserts (existing slug → no-op on the
- * delta). `total_definitions` is recomputed from the event payload's
- * authoritative count for this term, so we apply the delta against the
- * previous row's `definition_count`. `total_authors` waits for T4
- * (`DefinitionAdded` knows authors); seed runs through here without bumping
- * authors since the seed author (`kampus`) is denormalized everywhere.
+ * `sozluk_stats` totals (`total_terms`, `total_definitions`, `total_authors`)
+ * are recomputed via `recomputeSozlukStats` after the term row lands. The
+ * recompute is cheap (three small COUNT queries against indexed columns) and
+ * convergent regardless of event delivery order.
  */
 async function projectTermChanged(env: Env, e: TermChangedEvent): Promise<void> {
-	const db = drizzle(env.PHOENIX_DB, {schema});
 	const firstLetter = e.slug.charAt(0).toLowerCase();
-
-	const previous = await db
-		.select({
-			definitionCount: schema.termSummary.definitionCount,
-			lastEventId: schema.termSummary.lastEventId,
-		})
-		.from(schema.termSummary)
-		.where(sql`${schema.termSummary.slug} = ${e.slug}`)
-		.limit(1);
-	const previousRow = previous[0];
 
 	const result = await env.PHOENIX_DB.prepare(
 		`INSERT INTO term_summary (
@@ -287,27 +348,10 @@ async function projectTermChanged(env: Env, e: TermChangedEvent): Promise<void> 
 		.run();
 
 	// If the guard rejected the upsert (out-of-order retry), bail — no
-	// stats delta either.
+	// stats touch either.
 	if (result.meta.changes === 0) return;
 
-	const isNewTerm = !previousRow;
-	const previousDefinitionCount = previousRow?.definitionCount ?? 0;
-	const definitionDelta = e.definitionCount - previousDefinitionCount;
-	const termDelta = isNewTerm ? 1 : 0;
-
-	if (termDelta === 0 && definitionDelta === 0) return;
-
-	const updatedAt = Math.floor(e.lastActivityAt / 1000);
-	await env.PHOENIX_DB.prepare(
-		`INSERT INTO sozluk_stats (id, total_definitions, total_terms, total_authors, updated_at)
-		VALUES (1, ?, ?, 0, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			total_definitions = sozluk_stats.total_definitions + ?,
-			total_terms       = sozluk_stats.total_terms + ?,
-			updated_at        = ?`,
-	)
-		.bind(Math.max(0, definitionDelta), termDelta, updatedAt, definitionDelta, termDelta, updatedAt)
-		.run();
+	await recomputeSozlukStats(env, Math.floor(e.lastActivityAt / 1000));
 }
 
 /**
@@ -315,25 +359,11 @@ async function projectTermChanged(env: Env, e: TermChangedEvent): Promise<void> 
  * overwrite guarded by `WHERE last_event_id < excluded.last_event_id` (forge
  * ULID lex ordering).
  *
- * `pano_stats` totals are touched as part of the same step: we delta the
- * `total_posts` row only on first-time inserts (existing post → no-op on the
- * delta). `total_comments` is recomputed from the event payload's authoritative
- * `commentCount` for this post, so we apply the delta against the previous
- * row's `comment_count`. `total_authors` waits for T13 (UserProfileChanged).
+ * `pano_stats` totals are recomputed from the underlying view tables after the
+ * post row lands. See `recomputePanoStats` for the recompute strategy.
  */
 async function projectPostChanged(env: Env, e: PostChangedEvent): Promise<void> {
-	const db = drizzle(env.PHOENIX_DB, {schema});
 	const tagsCsv = e.tags.join(",");
-
-	const previous = await db
-		.select({
-			commentCount: schema.postSummary.commentCount,
-			lastEventId: schema.postSummary.lastEventId,
-		})
-		.from(schema.postSummary)
-		.where(sql`${schema.postSummary.id} = ${e.postId}`)
-		.limit(1);
-	const previousRow = previous[0];
 
 	const result = await env.PHOENIX_DB.prepare(
 		`INSERT INTO post_summary (
@@ -379,27 +409,10 @@ async function projectPostChanged(env: Env, e: PostChangedEvent): Promise<void> 
 		.run();
 
 	// If the guard rejected the upsert (out-of-order retry), bail — no
-	// stats delta either.
+	// stats touch either.
 	if (result.meta.changes === 0) return;
 
-	const isNewPost = !previousRow;
-	const previousCommentCount = previousRow?.commentCount ?? 0;
-	const commentDelta = e.commentCount - previousCommentCount;
-	const postDelta = isNewPost ? 1 : 0;
-
-	if (postDelta === 0 && commentDelta === 0) return;
-
-	const updatedAt = Math.floor(e.lastActivityAt / 1000);
-	await env.PHOENIX_DB.prepare(
-		`INSERT INTO pano_stats (id, total_posts, total_comments, total_authors, updated_at)
-		VALUES (1, ?, ?, 0, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			total_posts    = pano_stats.total_posts + ?,
-			total_comments = pano_stats.total_comments + ?,
-			updated_at     = ?`,
-	)
-		.bind(postDelta, Math.max(0, commentDelta), updatedAt, postDelta, commentDelta, updatedAt)
-		.run();
+	await recomputePanoStats(env, Math.floor(e.lastActivityAt / 1000));
 }
 
 /**
@@ -429,17 +442,6 @@ async function projectPostChanged(env: Env, e: PostChangedEvent): Promise<void> 
  * `deleted_at` first and bail), so resurrection isn't reachable.
  */
 async function projectPostDeleted(env: Env, e: PostDeletedEvent): Promise<void> {
-	// Read the pre-delete row so we can apply the right stats deltas.
-	const db = drizzle(env.PHOENIX_DB, {schema});
-	const previous = await db
-		.select({
-			commentCount: schema.postSummary.commentCount,
-		})
-		.from(schema.postSummary)
-		.where(sql`${schema.postSummary.id} = ${e.postId}`)
-		.limit(1);
-	const previousRow = previous[0];
-
 	const result = await env.PHOENIX_DB.prepare(`DELETE FROM post_summary WHERE id = ?`)
 		.bind(e.postId)
 		.run();
@@ -453,18 +455,7 @@ async function projectPostDeleted(env: Env, e: PostDeletedEvent): Promise<void> 
 	// pano_stats. The DELETE above returned changes=0; nothing else to do.
 	if (result.meta.changes === 0) return;
 
-	const deletedAt = Math.floor(e.deletedAt / 1000);
-	const commentDelta = -(previousRow?.commentCount ?? 0);
-	await env.PHOENIX_DB.prepare(
-		`INSERT INTO pano_stats (id, total_posts, total_comments, total_authors, updated_at)
-		VALUES (1, 0, 0, 0, ?)
-		ON CONFLICT(id) DO UPDATE SET
-			total_posts    = MAX(0, pano_stats.total_posts - 1),
-			total_comments = MAX(0, pano_stats.total_comments + ?),
-			updated_at     = ?`,
-	)
-		.bind(deletedAt, commentDelta, deletedAt)
-		.run();
+	await recomputePanoStats(env, Math.floor(e.deletedAt / 1000));
 }
 
 /**
@@ -479,7 +470,7 @@ async function projectPostDeleted(env: Env, e: PostDeletedEvent): Promise<void> 
  */
 async function projectDefinitionAdded(env: Env, e: DefinitionAddedEvent): Promise<void> {
 	const createdAt = Math.floor(e.createdAt / 1000);
-	await env.PHOENIX_DB.prepare(
+	const result = await env.PHOENIX_DB.prepare(
 		`INSERT INTO definition_view (
 			id, author_id, author_name, term_slug, term_title,
 			body_excerpt, score, created_at, updated_at, deleted_at, last_event_id
@@ -504,6 +495,11 @@ async function projectDefinitionAdded(env: Env, e: DefinitionAddedEvent): Promis
 			e.eventId,
 		)
 		.run();
+
+	// Out-of-order retry on the same id is a no-op; only recompute when the
+	// row actually changed (insert or convergent update).
+	if (result.meta.changes === 0) return;
+	await recomputeSozlukStats(env, createdAt);
 }
 
 /**
@@ -540,7 +536,7 @@ async function projectDefinitionEdited(env: Env, e: DefinitionEditedEvent): Prom
  */
 async function projectDefinitionDeleted(env: Env, e: DefinitionDeletedEvent): Promise<void> {
 	const deletedAt = Math.floor(e.deletedAt / 1000);
-	await env.PHOENIX_DB.prepare(
+	const result = await env.PHOENIX_DB.prepare(
 		`UPDATE definition_view SET
 			deleted_at    = ?,
 			updated_at    = ?,
@@ -549,6 +545,8 @@ async function projectDefinitionDeleted(env: Env, e: DefinitionDeletedEvent): Pr
 	)
 		.bind(deletedAt, deletedAt, e.eventId, e.definitionId, e.eventId)
 		.run();
+	if (result.meta.changes === 0) return;
+	await recomputeSozlukStats(env, deletedAt);
 }
 
 /**
@@ -567,7 +565,7 @@ async function projectDefinitionDeleted(env: Env, e: DefinitionDeletedEvent): Pr
  */
 async function projectCommentAdded(env: Env, e: CommentAddedEvent): Promise<void> {
 	const createdAt = Math.floor(e.createdAt / 1000);
-	await env.PHOENIX_DB.prepare(
+	const result = await env.PHOENIX_DB.prepare(
 		`INSERT INTO comment_view (
 			id, author_id, author_name, post_id, post_title,
 			body_excerpt, score, created_at, updated_at, deleted_at, last_event_id
@@ -592,6 +590,8 @@ async function projectCommentAdded(env: Env, e: CommentAddedEvent): Promise<void
 			e.eventId,
 		)
 		.run();
+	if (result.meta.changes === 0) return;
+	await recomputePanoStats(env, createdAt);
 }
 
 /**
@@ -662,7 +662,7 @@ async function projectCommentEdited(env: Env, e: CommentEditedEvent): Promise<vo
 async function projectCommentDeleted(env: Env, e: CommentDeletedEvent): Promise<void> {
 	const deletedAt = Math.floor(e.deletedAt / 1000);
 	if (e.hasReplies) {
-		await env.PHOENIX_DB.prepare(
+		const result = await env.PHOENIX_DB.prepare(
 			`UPDATE comment_view SET
 				body_excerpt  = ?,
 				deleted_at    = ?,
@@ -672,9 +672,15 @@ async function projectCommentDeleted(env: Env, e: CommentDeletedEvent): Promise<
 		)
 			.bind("[silindi]", deletedAt, deletedAt, e.eventId, e.commentId, e.eventId)
 			.run();
+		if (result.meta.changes === 0) return;
+		await recomputePanoStats(env, deletedAt);
 		return;
 	}
-	await env.PHOENIX_DB.prepare(`DELETE FROM comment_view WHERE id = ?`).bind(e.commentId).run();
+	const result = await env.PHOENIX_DB.prepare(`DELETE FROM comment_view WHERE id = ?`)
+		.bind(e.commentId)
+		.run();
+	if (result.meta.changes === 0) return;
+	await recomputePanoStats(env, deletedAt);
 }
 
 /**

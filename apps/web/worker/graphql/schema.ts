@@ -49,6 +49,7 @@ import {
 import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
 import {Auth, CloudflareEnv} from "../services";
+import {type LandingStats, readLandingStats} from "../view/landingStatsReader";
 import {resolver} from "./resolver";
 
 const HealthType = new GraphQLObjectType({
@@ -488,6 +489,30 @@ const ProfileType = new GraphQLObjectType<ProfileRow>({
 	},
 });
 
+/* -------------------------------------------------------------------------- */
+/* Landing stats (T15)                                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Single object backing the landing-page stats card. Sourced from the
+ * `sozluk_stats` + `pano_stats` MV rows (maintained by the `PhoenixProjection`
+ * workflow) plus a cross-product distinct-author union. `version` is the build
+ * tag the SPA renders alongside the counts — currently hardcoded; T18's
+ * wrangler config / cf-typegen pass can swap it for a build-time env var.
+ */
+const LandingStatsType = new GraphQLObjectType<LandingStats & {version: string}>({
+	name: "LandingStats",
+	fields: {
+		totalDefinitions: {type: new GraphQLNonNull(GraphQLInt)},
+		totalPosts: {type: new GraphQLNonNull(GraphQLInt)},
+		totalComments: {type: new GraphQLNonNull(GraphQLInt)},
+		totalAuthors: {type: new GraphQLNonNull(GraphQLInt)},
+		version: {type: new GraphQLNonNull(GraphQLString)},
+	},
+});
+
+const PHOENIX_BUILD_VERSION = "v0.3";
+
 const QueryType = new GraphQLObjectType({
 	name: "Query",
 	fields: {
@@ -597,6 +622,21 @@ const QueryType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {username: string}) {
 				const env = yield* CloudflareEnv;
 				return yield* Effect.promise(() => lookupProfile(env.PHOENIX_DB, args.username));
+			}),
+		},
+		/**
+		 * Landing-page stats card (T15). Reads the single-row aggregates
+		 * maintained by the `PhoenixProjection` workflow plus a cross-product
+		 * distinct-author union. Always returns a non-null object even on a
+		 * cold DB — counts default to 0 so the SPA doesn't have to special-case
+		 * the empty state.
+		 */
+		landingStats: {
+			type: new GraphQLNonNull(LandingStatsType),
+			resolve: resolver(function* () {
+				const env = yield* CloudflareEnv;
+				const stats = yield* Effect.promise(() => readLandingStats(env.PHOENIX_DB));
+				return {...stats, version: PHOENIX_BUILD_VERSION};
 			}),
 		},
 	},
