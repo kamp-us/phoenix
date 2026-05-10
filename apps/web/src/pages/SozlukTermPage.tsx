@@ -2,11 +2,14 @@ import * as React from "react";
 import {graphql, useLazyLoadQuery, useMutation} from "react-relay";
 import {Link, useNavigate, useParams} from "react-router";
 import type {SozlukTermPageAddDefinitionMutation} from "../__generated__/SozlukTermPageAddDefinitionMutation.graphql";
+import type {SozlukTermPageDeleteDefinitionMutation} from "../__generated__/SozlukTermPageDeleteDefinitionMutation.graphql";
+import type {SozlukTermPageEditDefinitionMutation} from "../__generated__/SozlukTermPageEditDefinitionMutation.graphql";
 import type {SozlukTermPageQuery} from "../__generated__/SozlukTermPageQuery.graphql";
 import type {SozlukTermPageRetractVoteMutation} from "../__generated__/SozlukTermPageRetractVoteMutation.graphql";
 import type {SozlukTermPageVoteMutation} from "../__generated__/SozlukTermPageVoteMutation.graphql";
 import {useSession} from "../auth/client";
 import {Button} from "../components/ui/Button";
+import {Dialog} from "../components/ui/Dialog";
 import {formatAgoTR, formatDateTR} from "../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../lib/markdown";
 import {QueryBoundary} from "../relay/QueryBoundary";
@@ -26,6 +29,7 @@ const TermQuery = graphql`
         id
         body
         author
+        authorId
         score
         myVote
         createdAt
@@ -125,7 +129,14 @@ function SozlukTermContent({
 			</header>
 
 			{term.definitions.map((d, i) => (
-				<DefinitionCard key={d.id} definition={d} rank={i + 1} top={i === 0} slug={slug} />
+				<DefinitionCard
+					key={d.id}
+					definition={d}
+					rank={i + 1}
+					top={i === 0}
+					slug={slug}
+					onMutated={onMutated}
+				/>
 			))}
 
 			<Composer slug={slug} onAdded={onMutated} />
@@ -159,16 +170,44 @@ const RetractDefinitionVoteMutation = graphql`
   }
 `;
 
+/**
+ * Edit mutation for definitions (T6). Returns the updated body + updatedAt so
+ * Relay can write the change into the store keyed by `id` without a refetch.
+ */
+const EditDefinitionMutation = graphql`
+  mutation SozlukTermPageEditDefinitionMutation($id: ID!, $body: String!) {
+    editDefinition(id: $id, body: $body) {
+      id
+      body
+      score
+      updatedAt
+    }
+  }
+`;
+
+/**
+ * Delete (soft-delete) mutation for definitions (T6). Returns the deleted id
+ * as a stable token; the parent re-fetches the term query to drop the row
+ * from the rendered list.
+ */
+const DeleteDefinitionMutation = graphql`
+  mutation SozlukTermPageDeleteDefinitionMutation($id: ID!) {
+    deleteDefinition(id: $id)
+  }
+`;
+
 function DefinitionCard({
 	definition,
 	rank,
 	top,
 	slug,
+	onMutated,
 }: {
 	definition: DefinitionNode;
 	rank: number;
 	top: boolean;
 	slug: string;
+	onMutated: () => void;
 }) {
 	const session = useSession();
 	const navigate = useNavigate();
@@ -177,10 +216,23 @@ function DefinitionCard({
 	const [retractCommit, retractInFlight] = useMutation<SozlukTermPageRetractVoteMutation>(
 		RetractDefinitionVoteMutation,
 	);
+	const [editCommit, editInFlight] = useMutation<SozlukTermPageEditDefinitionMutation>(
+		EditDefinitionMutation,
+	);
+	const [deleteCommit, deleteInFlight] = useMutation<SozlukTermPageDeleteDefinitionMutation>(
+		DeleteDefinitionMutation,
+	);
+
+	const [editing, setEditing] = React.useState(false);
+	const [editBody, setEditBody] = React.useState(definition.body);
+	const [editError, setEditError] = React.useState<string | null>(null);
+	const [confirmDelete, setConfirmDelete] = React.useState(false);
+	const [deleteError, setDeleteError] = React.useState<string | null>(null);
 
 	const inFlight = voteInFlight || retractInFlight;
 	const voted = (definition.myVote ?? 0) === 1;
 	const cls = top ? "kp-sozluk-definition kp-sozluk-definition--top" : "kp-sozluk-definition";
+	const isAuthor = !!session.data?.user && session.data.user.id === definition.authorId;
 
 	function onVoteClick() {
 		if (!session.data?.user) {
@@ -216,8 +268,49 @@ function DefinitionCard({
 		}
 	}
 
+	function onEditSubmit(e: React.FormEvent) {
+		e.preventDefault();
+		const trimmed = editBody.trim();
+		if (trimmed.length === 0) {
+			setEditError("tanım boş olamaz");
+			return;
+		}
+		if (editBody.length > BODY_MAX) {
+			setEditError(`tanım en fazla ${BODY_MAX} karakter olabilir`);
+			return;
+		}
+		setEditError(null);
+		editCommit({
+			variables: {id: definition.id, body: editBody},
+			onCompleted: (_data, errors) => {
+				if (errors && errors.length > 0) {
+					setEditError(errors[0]?.message ?? "tanım güncellenemedi");
+					return;
+				}
+				setEditing(false);
+			},
+			onError: (err) => setEditError(err.message),
+		});
+	}
+
+	function onDeleteConfirm() {
+		setDeleteError(null);
+		deleteCommit({
+			variables: {id: definition.id},
+			onCompleted: (_data, errors) => {
+				if (errors && errors.length > 0) {
+					setDeleteError(errors[0]?.message ?? "tanım silinemedi");
+					return;
+				}
+				setConfirmDelete(false);
+				onMutated();
+			},
+			onError: (err) => setDeleteError(err.message),
+		});
+	}
+
 	return (
-		<article className={cls}>
+		<article className={cls} data-testid={`definition-card-${definition.id}`}>
 			<div className="kp-sozluk-definition__vote">
 				<button
 					type="button"
@@ -239,7 +332,55 @@ function DefinitionCard({
 				<span className="kp-sozluk-definition__rank">#{rank}</span>
 			</div>
 			<div>
-				<Body text={definition.body} />
+				{editing ? (
+					<form className="kp-sozluk-composer" onSubmit={onEditSubmit}>
+						<textarea
+							className="kp-sozluk-composer__textarea"
+							value={editBody}
+							onChange={(e) => setEditBody(e.target.value)}
+							disabled={editInFlight}
+							data-testid={`definition-edit-body-${definition.id}`}
+							maxLength={BODY_MAX + 100}
+						/>
+						{editError ? (
+							<p
+								className="kp-sozluk-composer__error"
+								role="alert"
+								data-testid={`definition-edit-error-${definition.id}`}
+							>
+								{editError}
+							</p>
+						) : null}
+						<footer className="kp-sozluk-composer__foot">
+							<span style={{display: "flex", gap: 6}}>
+								<Button
+									variant="tertiary"
+									size="sm"
+									type="button"
+									disabled={editInFlight}
+									onClick={() => {
+										setEditing(false);
+										setEditBody(definition.body);
+										setEditError(null);
+									}}
+								>
+									iptal
+								</Button>
+								<Button
+									variant="primary"
+									size="sm"
+									type="submit"
+									disabled={editInFlight || editBody.trim().length === 0}
+									data-testid={`definition-edit-save-${definition.id}`}
+								>
+									{editInFlight ? "kaydediliyor…" : "kaydet"}
+								</Button>
+							</span>
+						</footer>
+					</form>
+				) : (
+					<Body text={definition.body} />
+				)}
 				<footer className="kp-sozluk-definition__foot">
 					<span className="author">@{definition.author}</span>
 					<span className="dot">·</span>
@@ -248,8 +389,59 @@ function DefinitionCard({
 						<button type="button">paylaş</button>
 						<button type="button">kalıcı bağlantı</button>
 						<button type="button">bildir</button>
+						{isAuthor && !editing ? (
+							<>
+								<button
+									type="button"
+									data-testid={`definition-edit-${definition.id}`}
+									onClick={() => {
+										setEditBody(definition.body);
+										setEditError(null);
+										setEditing(true);
+									}}
+								>
+									düzenle
+								</button>
+								<button
+									type="button"
+									data-testid={`definition-delete-${definition.id}`}
+									onClick={() => setConfirmDelete(true)}
+								>
+									sil
+								</button>
+							</>
+						) : null}
 					</span>
 				</footer>
+				{isAuthor ? (
+					<Dialog.Root open={confirmDelete} onOpenChange={setConfirmDelete}>
+						<Dialog.Popup>
+							<Dialog.Head
+								title="tanımı sil"
+								description="bu tanımı silmek istediğine emin misin? geri alınamaz."
+							/>
+							<Dialog.Body>
+								{deleteError ? (
+									<p className="kp-sozluk-composer__error" role="alert">
+										{deleteError}
+									</p>
+								) : null}
+							</Dialog.Body>
+							<Dialog.Foot>
+								<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+								<Button
+									variant="primary"
+									type="button"
+									disabled={deleteInFlight}
+									data-testid={`definition-delete-confirm-${definition.id}`}
+									onClick={onDeleteConfirm}
+								>
+									{deleteInFlight ? "siliniyor…" : "sil"}
+								</Button>
+							</Dialog.Foot>
+						</Dialog.Popup>
+					</Dialog.Root>
+				) : null}
 			</div>
 		</article>
 	);

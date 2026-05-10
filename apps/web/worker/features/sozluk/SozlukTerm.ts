@@ -10,9 +10,9 @@
  *   + `onStart` reconciliation).
  *
  * T2 scope: read paths + admin seed paths. The mutation surface
- * (`addDefinition`, `voteDefinition`, …) lands in T4+. The outbox table and
- * reconciliation skeletons exist now so T4 can wire mutations without another
- * schema migration.
+ * (`addDefinition`, `voteDefinition`, `editDefinition`, `deleteDefinition`,
+ * …) lands in T4–T6. The outbox table and reconciliation skeletons exist now
+ * so those tasks can wire mutations without another schema migration.
  */
 import {id} from "@usirin/forge";
 import {Agent} from "agents";
@@ -62,6 +62,8 @@ export interface DefinitionRow {
 	score: number;
 	body: string;
 	author: string;
+	/** Pasaport user id of the author. Used by ownership checks (T6). */
+	authorId: string;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -160,6 +162,53 @@ export class DefinitionNotFoundError extends Error {
 export interface VoteDefinitionInput {
 	definitionId: string;
 	voterId: string;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Edit / Delete shapes                                                        */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Thrown by `editDefinition` / `deleteDefinition` when the calling user is
+ * not the author of the target definition. The GraphQL resolver translates
+ * this to a clean error with `code: 'UNAUTHORIZED'` so the SPA can
+ * surface a typed error.
+ */
+export class UnauthorizedDefinitionMutationError extends Error {
+	readonly code = "unauthorized" as const;
+	constructor(definitionId: string) {
+		super(`not authorized to mutate definition ${definitionId}`);
+		this.name = "UnauthorizedDefinitionMutationError";
+	}
+}
+
+export interface EditDefinitionInput {
+	definitionId: string;
+	/** Calling user's id — used for the ownership check. */
+	actorId: string;
+	body: string;
+}
+
+export interface EditDefinitionResult {
+	definitionId: string;
+	score: number;
+	body: string;
+	authorId: string;
+	authorName: string;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export interface DeleteDefinitionInput {
+	definitionId: string;
+	/** Calling user's id — used for the ownership check. */
+	actorId: string;
+}
+
+export interface DeleteDefinitionResult {
+	definitionId: string;
+	/** `true` if the row was soft-deleted; `false` on idempotent no-op. */
+	deleted: boolean;
 }
 
 /**
@@ -295,6 +344,7 @@ export class SozlukTerm extends Agent<Env, TermState> {
 				score: d.score,
 				body: d.body,
 				author: d.authorName,
+				authorId: d.authorId,
 				createdAt: d.createdAt ?? new Date(0),
 				updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
 			})),
@@ -804,6 +854,281 @@ export class SozlukTerm extends Agent<Env, TermState> {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Edit a definition's body (T6). Ownership is enforced inside the Agent —
+	 * the resolver has already proven the caller is signed-in via `Auth.required`,
+	 * but only the row's `author_id` decides who is allowed to mutate it. A
+	 * mismatch throws `UnauthorizedDefinitionMutationError`, which the resolver
+	 * translates to a GraphQL error with `code: 'UNAUTHORIZED'`.
+	 *
+	 * Atomicity per ADR 0007: a single `transactionSync` block updates the
+	 * `body` + `updated_at` columns, recomputes the term's `lastEditAt`, and
+	 * emits TWO outbox rows (TermChanged for the recomputed lastEditAt;
+	 * DefinitionEdited for the `definition_view.body_excerpt` refresh). Score
+	 * stays unchanged on edit; the term's `totalScore` and `definitionCount`
+	 * are unaffected — we still emit `TermChanged` so live readers see the
+	 * `lastEditAt` bump.
+	 *
+	 * Validation mirrors `addDefinition`: trim-empty rejects with
+	 * `body_required`; > 10 000 chars rejects with `body_too_long`.
+	 */
+	async editDefinition(input: EditDefinitionInput): Promise<EditDefinitionResult> {
+		// ----- validation --------------------------------------------------
+		const body = input.body ?? "";
+		if (body.trim().length === 0) {
+			throw new DefinitionValidationError("body_required", "tanım boş olamaz");
+		}
+		if (body.length > DEFINITION_BODY_MAX) {
+			throw new DefinitionValidationError(
+				"body_too_long",
+				`tanım en fazla ${DEFINITION_BODY_MAX} karakter olabilir`,
+			);
+		}
+
+		// ----- existence + ownership check ---------------------------------
+		const definitionRow = await this.db.query.definition.findFirst({
+			where: and(eq(schema.definition.id, input.definitionId), isNull(schema.definition.deletedAt)),
+		});
+		if (!definitionRow) {
+			throw new DefinitionNotFoundError(input.definitionId);
+		}
+		if (definitionRow.authorId !== input.actorId) {
+			throw new UnauthorizedDefinitionMutationError(input.definitionId);
+		}
+
+		const now = Date.now();
+		const slug = this.name;
+		const termEventId = id("evt");
+		const definitionEventId = id("evt");
+
+		const bodyExcerpt = excerpt(body);
+
+		// Recompute term aggregates from current sqlite state (post-edit).
+		// totalScore and definitionCount don't change on edit; firstAt is
+		// stable; lastEditAt becomes `now`. Top excerpt only changes if the
+		// edited definition is the current top; recompute defensively.
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				UPDATE definition
+				SET body = ${body}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = ${input.definitionId}
+			`;
+
+			// Recompute aggregates from sqlite truth inside the closure.
+			const aggRows = this.sql<{
+				id: string;
+				body: string;
+				score: number;
+				created_at: number | null;
+			}>`
+				SELECT id, body, score, created_at
+				FROM definition
+				WHERE deleted_at IS NULL
+				ORDER BY score DESC, created_at ASC
+			`;
+			const definitionCount = aggRows.length;
+			const totalScore = aggRows.reduce((s, r) => s + r.score, 0);
+			const top = aggRows[0];
+			const topDefinitionId = top?.id ?? null;
+			const topExcerpt = top ? excerpt(top.body) : null;
+			const firstAtMs = aggRows.reduce<number | null>((acc, r) => {
+				if (r.created_at == null) return acc;
+				const ms = r.created_at * 1000;
+				return acc == null || ms < acc ? ms : acc;
+			}, null);
+
+			const termPayload = JSON.stringify({
+				kind: "TermChanged",
+				eventId: termEventId,
+				slug,
+				title: this.state.title,
+				definitionCount,
+				totalScore,
+				topDefinitionId,
+				excerpt: topExcerpt,
+				firstAt: firstAtMs ?? now,
+				lastActivityAt: now,
+				lastEditAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${termEventId}, ${termPayload}, ${now})
+			`;
+
+			const definitionPayload = JSON.stringify({
+				kind: "DefinitionEdited",
+				eventId: definitionEventId,
+				definitionId: input.definitionId,
+				bodyExcerpt,
+				updatedAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${definitionEventId}, ${definitionPayload}, ${now})
+			`;
+		});
+
+		// Update Agent state — definitionCount + totalScore unchanged on edit.
+		this.setState({
+			...this.state,
+			lastActivityAt: now,
+			lastEventId: definitionEventId,
+		});
+
+		// Best-effort inline flush. Failures absorbed by reconcileOutbox.
+		try {
+			await this.flushOutbox({eventId: termEventId});
+		} catch (err) {
+			console.error("[SozlukTerm.editDefinition] flushOutbox(term) failed", err);
+		}
+		try {
+			await this.flushOutbox({eventId: definitionEventId});
+		} catch (err) {
+			console.error("[SozlukTerm.editDefinition] flushOutbox(definition) failed", err);
+		}
+
+		return {
+			definitionId: input.definitionId,
+			score: definitionRow.score,
+			body,
+			authorId: definitionRow.authorId,
+			authorName: definitionRow.authorName,
+			createdAt: definitionRow.createdAt ?? new Date(now),
+			updatedAt: new Date(now),
+		};
+	}
+
+	/**
+	 * Soft-delete a definition (T6). Ownership-checked the same way as
+	 * `editDefinition`. Sets `deleted_at = now` so reads (`getTerm`) filter it
+	 * out via `WHERE deleted_at IS NULL` (already the read-path contract from
+	 * T2). The term's `definitionCount` and `totalScore` recompute from
+	 * non-deleted definitions only.
+	 *
+	 * Idempotent: re-deleting a row that's already soft-deleted is a no-op
+	 * (returns `deleted: false`, no events).
+	 *
+	 * Outbox: emits `TermChanged` (decremented counts + recomputed top) +
+	 * `DefinitionDeleted` (so the `definition_view` row gets `deleted_at`
+	 * stamped and the profile feed filters it out).
+	 */
+	async deleteDefinition(input: DeleteDefinitionInput): Promise<DeleteDefinitionResult> {
+		// ----- existence + ownership check ---------------------------------
+		// Read the row WITHOUT the deletedAt filter so we can detect "already
+		// deleted" as an idempotent no-op (vs. "not found at all").
+		const definitionRow = await this.db.query.definition.findFirst({
+			where: eq(schema.definition.id, input.definitionId),
+		});
+		if (!definitionRow) {
+			throw new DefinitionNotFoundError(input.definitionId);
+		}
+		if (definitionRow.authorId !== input.actorId) {
+			throw new UnauthorizedDefinitionMutationError(input.definitionId);
+		}
+		if (definitionRow.deletedAt) {
+			// Already soft-deleted → idempotent no-op.
+			return {definitionId: input.definitionId, deleted: false};
+		}
+
+		const now = Date.now();
+		const slug = this.name;
+		const termEventId = id("evt");
+		const definitionEventId = id("evt");
+
+		// Closure-captured aggregates so setState (after the transactionSync
+		// returns) can update Agent state from the same recompute pass.
+		let nextDefinitionCount = this.state.definitionCount;
+		let nextTotalScore = this.state.totalScore;
+
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				UPDATE definition
+				SET deleted_at = ${Math.floor(now / 1000)}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = ${input.definitionId}
+			`;
+
+			// Recompute aggregates from non-deleted definitions only.
+			const aggRows = this.sql<{
+				id: string;
+				body: string;
+				score: number;
+				created_at: number | null;
+				updated_at: number | null;
+			}>`
+				SELECT id, body, score, created_at, updated_at
+				FROM definition
+				WHERE deleted_at IS NULL
+				ORDER BY score DESC, created_at ASC
+			`;
+			nextDefinitionCount = aggRows.length;
+			nextTotalScore = aggRows.reduce((s, r) => s + r.score, 0);
+			const top = aggRows[0];
+			const topDefinitionId = top?.id ?? null;
+			const topExcerpt = top ? excerpt(top.body) : null;
+			const firstAtMs = aggRows.reduce<number | null>((acc, r) => {
+				if (r.created_at == null) return acc;
+				const ms = r.created_at * 1000;
+				return acc == null || ms < acc ? ms : acc;
+			}, null);
+			const lastEditAtMs = aggRows.reduce<number | null>((acc, r) => {
+				const t = r.updated_at ?? r.created_at;
+				if (t == null) return acc;
+				const ms = t * 1000;
+				return acc == null || ms > acc ? ms : acc;
+			}, null);
+
+			const termPayload = JSON.stringify({
+				kind: "TermChanged",
+				eventId: termEventId,
+				slug,
+				title: this.state.title,
+				definitionCount: nextDefinitionCount,
+				totalScore: nextTotalScore,
+				topDefinitionId,
+				excerpt: topExcerpt,
+				firstAt: firstAtMs ?? now,
+				lastActivityAt: now,
+				lastEditAt: lastEditAtMs ?? now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${termEventId}, ${termPayload}, ${now})
+			`;
+
+			const definitionPayload = JSON.stringify({
+				kind: "DefinitionDeleted",
+				eventId: definitionEventId,
+				definitionId: input.definitionId,
+				deletedAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${definitionEventId}, ${definitionPayload}, ${now})
+			`;
+		});
+
+		this.setState({
+			...this.state,
+			definitionCount: nextDefinitionCount,
+			totalScore: nextTotalScore,
+			lastActivityAt: now,
+			lastEventId: definitionEventId,
+		});
+
+		try {
+			await this.flushOutbox({eventId: termEventId});
+		} catch (err) {
+			console.error("[SozlukTerm.deleteDefinition] flushOutbox(term) failed", err);
+		}
+		try {
+			await this.flushOutbox({eventId: definitionEventId});
+		} catch (err) {
+			console.error("[SozlukTerm.deleteDefinition] flushOutbox(definition) failed", err);
+		}
+
+		return {definitionId: input.definitionId, deleted: true};
 	}
 
 	/* -------- Outbox dispatcher ----------------------------------------- */

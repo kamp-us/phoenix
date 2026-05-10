@@ -22,7 +22,11 @@ import {
 } from "../features/pano/postSummaryReader";
 import {UsernameValidationError} from "../features/pasaport/Pasaport";
 import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
-import {DefinitionNotFoundError, DefinitionValidationError} from "../features/sozluk/SozlukTerm";
+import {
+	DefinitionNotFoundError,
+	DefinitionValidationError,
+	UnauthorizedDefinitionMutationError,
+} from "../features/sozluk/SozlukTerm";
 import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
 import {Auth, CloudflareEnv} from "../services";
@@ -55,6 +59,12 @@ const DefinitionType = new GraphQLObjectType<DefinitionRow>({
 		id: {type: new GraphQLNonNull(GraphQLID)},
 		body: {type: new GraphQLNonNull(GraphQLString)},
 		author: {type: new GraphQLNonNull(GraphQLString)},
+		/**
+		 * Pasaport user id of the author. Powers the frontend's
+		 * "is the current user the author?" check that gates edit / delete
+		 * affordances (T6).
+		 */
+		authorId: {type: new GraphQLNonNull(GraphQLID)},
 		score: {type: new GraphQLNonNull(GraphQLInt)},
 		createdAt: {
 			type: new GraphQLNonNull(GraphQLString),
@@ -332,6 +342,35 @@ function parseVoteValue(raw: number): VoteValue {
 	throw new GraphQLError("Invalid vote value");
 }
 
+/**
+ * Map an Agent-thrown definition mutation error onto the SPA-facing GraphQL
+ * error shape with a stable `code` extension. Errors come back across the
+ * RPC boundary as plain Error objects (the class identity is lost in
+ * marshaling) — name + message preserve.
+ */
+function mapDefinitionMutationError(err: unknown): GraphQLError {
+	const e = err as Error & {code?: string};
+	if (e?.name === "UnauthorizedDefinitionMutationError") {
+		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
+	}
+	if (e?.name === "DefinitionNotFoundError") {
+		return new GraphQLError(e.message ?? "definition not found", {
+			extensions: {code: "DEFINITION_NOT_FOUND"},
+		});
+	}
+	if (e?.name === "DefinitionValidationError") {
+		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
+		return new GraphQLError(e.message ?? "definition validation failed", {
+			extensions: {code},
+		});
+	}
+	// Unknown — surface as a generic GraphQL error so the SPA can render it
+	// instead of seeing Yoga's "Unexpected error" mask.
+	return new GraphQLError(e?.message ?? "definition mutation failed", {
+		extensions: {code: "INTERNAL_SERVER_ERROR"},
+	});
+}
+
 const MutationType = new GraphQLObjectType({
 	name: "Mutation",
 	fields: {
@@ -390,6 +429,7 @@ const MutationType = new GraphQLObjectType({
 						id: result.definitionId,
 						body: result.body,
 						author: result.authorName,
+						authorId: result.authorId,
 						score: result.score,
 						createdAt: result.createdAt,
 						updatedAt: result.updatedAt,
@@ -433,6 +473,7 @@ const MutationType = new GraphQLObjectType({
 						id: result.definitionId,
 						body: result.body,
 						author: result.authorName,
+						authorId: result.authorId,
 						score: result.score,
 						createdAt: result.createdAt,
 						updatedAt: result.updatedAt,
@@ -470,6 +511,7 @@ const MutationType = new GraphQLObjectType({
 						id: result.definitionId,
 						body: result.body,
 						author: result.authorName,
+						authorId: result.authorId,
 						score: result.score,
 						createdAt: result.createdAt,
 						updatedAt: result.updatedAt,
@@ -482,6 +524,87 @@ const MutationType = new GraphQLObjectType({
 					}
 					throw err;
 				}
+			}),
+		},
+		editDefinition: {
+			type: new GraphQLNonNull(DefinitionType),
+			args: {
+				id: {type: new GraphQLNonNull(GraphQLID)},
+				body: {type: new GraphQLNonNull(GraphQLString)},
+			},
+			resolve: resolver(function* (_source, args: {id: string; body: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, args.id),
+				);
+				if (!slug) {
+					throw new GraphQLError("definition not found", {
+						extensions: {code: "DEFINITION_NOT_FOUND"},
+					});
+				}
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
+				// Run the RPC as a plain Promise we can `try/catch` against — keeps
+				// the agent-thrown error classes catchable on the Yoga request path.
+				try {
+					const result = yield* Effect.promise(() =>
+						stub
+							.editDefinition({
+								definitionId: args.id,
+								actorId: user.id,
+								body: args.body,
+							})
+							.then(
+								(value) => ({ok: true as const, value}),
+								(error: unknown) => ({ok: false as const, error}),
+							),
+					);
+					if (!result.ok) {
+						throw mapDefinitionMutationError(result.error);
+					}
+					const r = result.value;
+					return {
+						id: r.definitionId,
+						body: r.body,
+						author: r.authorName,
+						authorId: r.authorId,
+						score: r.score,
+						createdAt: r.createdAt,
+						updatedAt: r.updatedAt,
+					} satisfies DefinitionRow;
+				} catch (err) {
+					if (err instanceof GraphQLError) throw err;
+					throw err;
+				}
+			}),
+		},
+		deleteDefinition: {
+			type: new GraphQLNonNull(GraphQLString),
+			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {id: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, args.id),
+				);
+				if (!slug) {
+					throw new GraphQLError("definition not found", {
+						extensions: {code: "DEFINITION_NOT_FOUND"},
+					});
+				}
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
+				const result = yield* Effect.promise(() =>
+					stub.deleteDefinition({definitionId: args.id, actorId: user.id}).then(
+						(value) => ({ok: true as const, value}),
+						(error: unknown) => ({ok: false as const, error}),
+					),
+				);
+				if (!result.ok) {
+					throw mapDefinitionMutationError(result.error);
+				}
+				// SDL is `deleteDefinition: String!` — return the id as a stable
+				// success token so the SPA can confirm + invalidate caches.
+				return result.value.definitionId;
 			}),
 		},
 		voteOnPost: {

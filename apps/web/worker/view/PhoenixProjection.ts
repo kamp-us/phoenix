@@ -410,6 +410,51 @@ async function projectDefinitionAdded(env: Env, e: DefinitionAddedEvent): Promis
 }
 
 /**
+ * `DefinitionEdited` refreshes the `definition_view.body_excerpt` and
+ * `updated_at` for the row matching `definitionId`. Convergent overwrite
+ * guarded by `WHERE last_event_id < excluded.last_event_id` (forge ULID
+ * lex ordering — out-of-order retries become no-ops).
+ *
+ * The row is created by `DefinitionAdded` (T4); this step only updates the
+ * editable columns. If the row doesn't exist yet (the projection arrived
+ * before the `DefinitionAdded` event landed — possible under workflow
+ * out-of-order delivery), the UPDATE is a no-op and the eventual
+ * `DefinitionAdded` retry will write the latest body via its own guard.
+ */
+async function projectDefinitionEdited(env: Env, e: DefinitionEditedEvent): Promise<void> {
+	const updatedAt = Math.floor(e.updatedAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`UPDATE definition_view SET
+			body_excerpt  = ?,
+			updated_at    = ?,
+			last_event_id = ?
+		WHERE id = ? AND last_event_id < ?`,
+	)
+		.bind(e.bodyExcerpt, updatedAt, e.eventId, e.definitionId, e.eventId)
+		.run();
+}
+
+/**
+ * `DefinitionDeleted` stamps `deleted_at` on the matching `definition_view`
+ * row so the profile feed (T14) filters it out via `WHERE deleted_at IS NULL`.
+ * Convergent overwrite guarded by `last_event_id`. The per-term DO's
+ * `getTerm()` already filters deleted rows from the on-page list (T2 contract);
+ * this step only owns the `definition_view` MV side.
+ */
+async function projectDefinitionDeleted(env: Env, e: DefinitionDeletedEvent): Promise<void> {
+	const deletedAt = Math.floor(e.deletedAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`UPDATE definition_view SET
+			deleted_at    = ?,
+			updated_at    = ?,
+			last_event_id = ?
+		WHERE id = ? AND last_event_id < ?`,
+	)
+		.bind(deletedAt, deletedAt, e.eventId, e.definitionId, e.eventId)
+		.run();
+}
+
+/**
  * `VoteRecorded` updates the cross-product MV state for an upvote/retract:
  *
  * - `user_vote`: presence-only row keyed by (user_id, target_kind, target_id).
@@ -540,9 +585,9 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 				case "DefinitionAdded":
 					return projectDefinitionAdded(this.env, e);
 				case "DefinitionEdited":
-					return;
+					return projectDefinitionEdited(this.env, e);
 				case "DefinitionDeleted":
-					return;
+					return projectDefinitionDeleted(this.env, e);
 
 				// Pano
 				case "PostChanged":

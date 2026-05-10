@@ -44,6 +44,8 @@ export interface DefinitionRow {
 	score: number;
 	body: string;
 	author: string;
+	/** Pasaport user id of the author. Used by ownership checks (T6). */
+	authorId: string;
 	createdAt: Date;
 	updatedAt: Date;
 }
@@ -153,6 +155,7 @@ export class Sozluk extends DurableObject<Env> {
 				score: d.score,
 				body: d.body,
 				author: d.authorName,
+				authorId: d.authorId,
 				createdAt: d.createdAt ?? new Date(0),
 				updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
 			})),

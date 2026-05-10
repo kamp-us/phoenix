@@ -9,6 +9,7 @@ type Comment {
 
 type Definition {
   author: String!
+  authorId: ID!
   body: String!
   createdAt: String!
   id: ID!
@@ -24,6 +25,8 @@ type Health {
 
 type Mutation {
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
+  deleteDefinition(id: ID!): String!
+  editDefinition(body: String!, id: ID!): Definition!
   retractDefinitionVote(definitionId: ID!): Definition!
   setUsername(value: String!): User!
   voteDefinition(definitionId: ID!): Definition!
