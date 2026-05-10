@@ -95,7 +95,11 @@ export class Sozluk extends DurableObject<Env> {
 			.from(schema.term)
 			.leftJoin(schema.definition, eq(schema.definition.termId, schema.term.id))
 			.groupBy(schema.term.id)
-			.orderBy(sort === "popular" ? desc(sql`totalScore`) : desc(schema.term.createdAt))
+			.orderBy(
+				sort === "popular"
+					? desc(sql`coalesce(${sum(schema.definition.score)}, 0)`)
+					: desc(schema.term.createdAt),
+			)
 			.limit(limit);
 
 		return rows.map((r) => ({
