@@ -1,0 +1,44 @@
+type Definition {
+  author: String!
+  body: String!
+  createdAt: String!
+  id: ID!
+  score: Int!
+  updatedAt: String!
+}
+
+type Health {
+  environment: String!
+  status: String!
+}
+
+type Query {
+  health: Health!
+  me: User
+  term(slug: String!): Term
+  terms(limit: Int, sort: TermSort): [Term!]!
+}
+
+type Term {
+  count: Int!
+  definitions: [Definition!]!
+  excerpt: String
+  firstAt: String
+  id: ID!
+  lastEdit: String
+  slug: String!
+  title: String!
+  totalScore: Int!
+}
+
+enum TermSort {
+  popular
+  recent
+}
+
+type User {
+  email: String!
+  id: ID!
+  image: String
+  name: String
+}

@@ -10,7 +10,10 @@
 		"deploy": "pnpm build && wrangler deploy",
 		"typecheck": "tsgo -b",
 		"test": "vitest run",
-		"cf-typegen": "wrangler types"
+		"cf-typegen": "wrangler types",
+		"relay": "mkdir -p src/__generated__ && relay-compiler",
+		"relay:watch": "mkdir -p src/__generated__ && relay-compiler --watch",
+		"schema:fetch": "curl -sf http://localhost:3000/graphql/schema -o schema.graphql"
 	},
 	"dependencies": {
 		"@base-ui/react": "catalog:",
