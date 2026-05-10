@@ -89,6 +89,13 @@ export interface CommentRow {
 	id: string;
 	parentId: string | null;
 	author: string;
+	/**
+	 * Pasaport user id of the comment's author. Powers the frontend's
+	 * "is the current user the author?" check that gates edit / delete
+	 * affordances (T12). Mirrors `Definition.authorId` (T6) and
+	 * `Post.authorId` (T9).
+	 */
+	authorId: string;
 	body: string;
 	score: number;
 	createdAt: Date;
@@ -131,13 +138,7 @@ export const POST_BODY_MAX = 10_000;
  * Stored on `post_summary.tags` as comma-separated values; rendered in Turkish
  * via `postSummaryReader`'s `TAG_LABELS`.
  */
-export const ALLOWED_POST_TAG_KINDS = [
-	"göster",
-	"tartışma",
-	"soru",
-	"söylenme",
-	"meta",
-] as const;
+export const ALLOWED_POST_TAG_KINDS = ["göster", "tartışma", "soru", "söylenme", "meta"] as const;
 
 export type AllowedPostTagKind = (typeof ALLOWED_POST_TAG_KINDS)[number];
 
@@ -306,6 +307,69 @@ export interface AddCommentResult {
 	score: number;
 	commentCount: number;
 	createdAt: Date;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Comment edit / delete shapes                                                */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Placeholder body rendered in place of a soft-deleted comment that still has
+ * non-deleted replies (T12). Used by both the per-DO `listComments` read and
+ * the cross-product `comment_view` projection so the tree shape is identical
+ * across both surfaces.
+ */
+export const SILINDI_PLACEHOLDER = "[silindi]";
+
+/**
+ * Thrown by `editComment` / `deleteComment` when the calling user is not the
+ * author of the target comment. The GraphQL resolver translates this to a
+ * clean error with `code: 'UNAUTHORIZED'`. Mirrors
+ * `UnauthorizedPostMutationError` (T9).
+ */
+export class UnauthorizedCommentMutationError extends Error {
+	readonly code = "unauthorized" as const;
+	constructor(commentId: string) {
+		super(`not authorized to mutate comment ${commentId}`);
+		this.name = "UnauthorizedCommentMutationError";
+	}
+}
+
+export interface EditCommentInput {
+	commentId: string;
+	/** Calling user's id — used for the ownership check. */
+	actorId: string;
+	body: string;
+}
+
+export interface EditCommentResult {
+	commentId: string;
+	postId: string;
+	parentId: string | null;
+	authorId: string;
+	authorName: string;
+	body: string;
+	score: number;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export interface DeleteCommentInput {
+	commentId: string;
+	/** Calling user's id — used for the ownership check. */
+	actorId: string;
+}
+
+export interface DeleteCommentResult {
+	commentId: string;
+	/** `true` if the row was soft-deleted; `false` on idempotent no-op. */
+	deleted: boolean;
+	/**
+	 * `true` when the comment had at least one non-deleted child at delete
+	 * time → tree-preserving `[silindi]` placeholder; `false` when the
+	 * comment was a leaf → fully removed from the tree.
+	 */
+	hasReplies: boolean;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -510,25 +574,58 @@ export class PanoPost extends Agent<Env, PostState> {
 
 	/**
 	 * All comments for this post, ordered by score then createdAt (matching
-	 * the legacy singleton `Pano.listComments` contract). Soft-deleted rows
-	 * are filtered out; the per-comment placeholder semantics for
-	 * deleted-with-children land in T12.
+	 * the legacy singleton `Pano.listComments` contract).
+	 *
+	 * Reply-aware soft-delete (T12): a soft-deleted comment with non-deleted
+	 * children stays in the tree with `body = '[silindi]'` and an empty
+	 * authorId/authorName so the thread structure visible to readers is
+	 * preserved; a soft-deleted comment without non-deleted children is
+	 * omitted from the tree entirely so it disappears. The same logic runs
+	 * inside the `CommentDeleted` projection step against `comment_view`,
+	 * keeping per-DO and cross-product reads in lockstep.
 	 */
 	async listComments(): Promise<CommentRow[]> {
 		const rows = await this.db
 			.select()
 			.from(schema.comment)
-			.where(isNull(schema.comment.deletedAt))
 			.orderBy(desc(schema.comment.score), asc(schema.comment.createdAt));
 
-		return rows.map((c) => ({
-			id: c.id,
-			parentId: c.parentId,
-			author: c.authorName,
-			body: c.body,
-			score: c.score,
-			createdAt: c.createdAt ?? new Date(0),
-		}));
+		// Build set of parent ids that have at least one non-deleted child.
+		// `parentsWithLiveChildren` is the source of truth for the placeholder
+		// rewrite — a deleted comment with a live descendant must stay so the
+		// tree doesn't lose intermediate structure.
+		const parentsWithLiveChildren = new Set<string>();
+		for (const c of rows) {
+			if (c.deletedAt) continue;
+			if (c.parentId) parentsWithLiveChildren.add(c.parentId);
+		}
+
+		const out: CommentRow[] = [];
+		for (const c of rows) {
+			if (c.deletedAt) {
+				if (!parentsWithLiveChildren.has(c.id)) continue;
+				out.push({
+					id: c.id,
+					parentId: c.parentId,
+					author: "",
+					authorId: "",
+					body: SILINDI_PLACEHOLDER,
+					score: c.score,
+					createdAt: c.createdAt ?? new Date(0),
+				});
+				continue;
+			}
+			out.push({
+				id: c.id,
+				parentId: c.parentId,
+				author: c.authorName,
+				authorId: c.authorId,
+				body: c.body,
+				score: c.score,
+				createdAt: c.createdAt ?? new Date(0),
+			});
+		}
+		return out;
 	}
 
 	/* -------- Mutation surface ------------------------------------------ */
@@ -744,10 +841,7 @@ export class PanoPost extends Agent<Env, PostState> {
 	 * `VoteRecorded` event's `value` field. Centralizing keeps the outbox +
 	 * setState contract identical. Mirrors `SozlukTerm.applyVote` (T5).
 	 */
-	private async applyVote(
-		input: VoteOnPostInput,
-		isVote: boolean,
-	): Promise<VoteOnPostResult> {
+	private async applyVote(input: VoteOnPostInput, isVote: boolean): Promise<VoteOnPostResult> {
 		const meta = await this.db.query.postMeta.findFirst();
 		if (!meta || meta.deletedAt) {
 			throw new PostNotFoundError(this.name);
@@ -1137,10 +1231,7 @@ export class PanoPost extends Agent<Env, PostState> {
 				SELECT id FROM comment WHERE id = ${parentId} AND deleted_at IS NULL
 			`;
 			if (parentRows.length === 0) {
-				throw new CommentValidationError(
-					"parent_not_found",
-					"yanıtlanan yorum bulunamadı",
-				);
+				throw new CommentValidationError("parent_not_found", "yanıtlanan yorum bulunamadı");
 			}
 		}
 
@@ -1252,6 +1343,237 @@ export class PanoPost extends Agent<Env, PostState> {
 			commentCount: newCommentCount,
 			createdAt: new Date(now),
 		};
+	}
+
+	/**
+	 * Edit a comment's body (T12). Ownership is enforced inside the Agent —
+	 * the resolver has already proven the caller is signed-in via
+	 * `Auth.required`, but only the row's `author_id` decides who is allowed
+	 * to mutate it. A mismatch throws `UnauthorizedCommentMutationError`,
+	 * which the resolver translates to a GraphQL error with
+	 * `code: 'UNAUTHORIZED'`.
+	 *
+	 * Atomicity per ADR 0007: one `transactionSync` block updates the `body`
+	 * + `updated_at` columns and emits a `CommentEdited` outbox row so
+	 * `comment_view.body_excerpt` converges via the existing projection step.
+	 *
+	 * Validation mirrors `addComment`:
+	 * - body trim-non-empty
+	 * - body ≤ 5 000 chars
+	 *
+	 * Throws:
+	 * - `CommentNotFoundError` when the comment doesn't exist or is soft-deleted.
+	 * - `UnauthorizedCommentMutationError` on author mismatch.
+	 * - `CommentValidationError` on validation failure.
+	 */
+	async editComment(input: EditCommentInput): Promise<EditCommentResult> {
+		const rawBody = input.body ?? "";
+		if (rawBody.trim().length === 0) {
+			throw new CommentValidationError("body_required", "yorum boş olamaz");
+		}
+		if (rawBody.length > COMMENT_BODY_MAX) {
+			throw new CommentValidationError(
+				"body_too_long",
+				`yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
+			);
+		}
+
+		const row = await this.db.query.comment.findFirst({
+			where: (c, {eq}) => eq(c.id, input.commentId),
+		});
+		if (!row || row.deletedAt) {
+			throw new CommentNotFoundError(input.commentId);
+		}
+		if (row.authorId !== input.actorId) {
+			throw new UnauthorizedCommentMutationError(input.commentId);
+		}
+
+		const now = Date.now();
+		const eventId = id("evt");
+		const bodyExcerpt = excerpt(rawBody);
+
+		const payload = JSON.stringify({
+			kind: "CommentEdited",
+			eventId,
+			commentId: input.commentId,
+			bodyExcerpt,
+			updatedAt: now,
+		});
+
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				UPDATE comment
+				SET body = ${rawBody}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = ${input.commentId}
+			`;
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${eventId}, ${payload}, ${now})
+			`;
+		});
+
+		this.setState({
+			...this.state,
+			lastActivityAt: now,
+			lastEventId: eventId,
+		});
+
+		try {
+			await this.flushOutbox({eventId});
+		} catch (err) {
+			console.error("[PanoPost.editComment] flushOutbox failed", err);
+		}
+
+		return {
+			commentId: input.commentId,
+			postId: this.name,
+			parentId: row.parentId,
+			authorId: row.authorId,
+			authorName: row.authorName,
+			body: rawBody,
+			score: row.score,
+			createdAt: row.createdAt ?? new Date(now),
+			updatedAt: new Date(now),
+		};
+	}
+
+	/**
+	 * Soft-delete a comment (T12). Ownership-checked the same way as
+	 * `editComment`. Sets `deleted_at = now` so `listComments` either omits
+	 * the row (leaf) or rewrites it to `[silindi]` (has live replies);
+	 * decrements `post_meta.commentCount` since reads filter deleted out.
+	 *
+	 * Reply-aware: the producer computes `hasReplies` (any non-deleted
+	 * children) inside the same `transactionSync` and bakes it into the
+	 * `CommentDeleted` event. The projection step uses `hasReplies` to decide
+	 * whether to UPDATE `comment_view` to `body = '[silindi]'` (preserve thread
+	 * shape) or DELETE the `comment_view` row entirely (remove from tree).
+	 *
+	 * Idempotent: re-deleting an already-deleted comment is a no-op
+	 * (returns `deleted: false`, no events).
+	 *
+	 * Outbox: emits `CommentDeleted` (drives `comment_view` rewrite/removal)
+	 * + `PostChanged` (decremented `commentCount` on `post_summary`).
+	 *
+	 * Throws:
+	 * - `CommentNotFoundError` when the comment doesn't exist at all.
+	 * - `UnauthorizedCommentMutationError` on author mismatch.
+	 */
+	async deleteComment(input: DeleteCommentInput): Promise<DeleteCommentResult> {
+		// Read the row WITHOUT the deletedAt filter so we can detect "already
+		// deleted" as an idempotent no-op (vs. "not found at all").
+		const row = await this.db.query.comment.findFirst({
+			where: (c, {eq}) => eq(c.id, input.commentId),
+		});
+		if (!row) {
+			throw new CommentNotFoundError(input.commentId);
+		}
+		if (row.authorId !== input.actorId) {
+			throw new UnauthorizedCommentMutationError(input.commentId);
+		}
+		if (row.deletedAt) {
+			// Already soft-deleted → idempotent no-op.
+			return {commentId: input.commentId, deleted: false, hasReplies: false};
+		}
+
+		const meta = await this.db.query.postMeta.findFirst();
+		if (!meta) {
+			throw new PostNotFoundError(this.name);
+		}
+
+		const tagRows = await this.db
+			.select({kind: schema.tag.kind, label: schema.tag.label})
+			.from(schema.tag);
+
+		const now = Date.now();
+		const postId = this.name;
+		const createdAtMs = meta.createdAt ? meta.createdAt.getTime() : now;
+		const commentEventId = id("evt");
+		const postEventId = id("evt");
+
+		// Compute hasReplies (any non-deleted child) — drives the projection's
+		// reply-aware tree rewrite.
+		const childRows = this.sql<{n: number}>`
+			SELECT COUNT(*) as n FROM comment
+			WHERE parent_id = ${input.commentId} AND deleted_at IS NULL
+		`;
+		const hasReplies = (childRows[0]?.n ?? 0) > 0;
+
+		const newCommentCount = Math.max(0, meta.commentCount - 1);
+		const hotScore = computeHotScore(meta.score, createdAtMs, now);
+
+		const commentDeletedPayload = JSON.stringify({
+			kind: "CommentDeleted",
+			eventId: commentEventId,
+			commentId: input.commentId,
+			postId,
+			parentId: row.parentId,
+			authorId: row.authorId,
+			hasReplies,
+			deletedAt: now,
+		});
+
+		const postChangedPayload = JSON.stringify({
+			kind: "PostChanged",
+			eventId: postEventId,
+			postId,
+			slug: meta.slug,
+			title: meta.title,
+			url: meta.url,
+			host: meta.host,
+			bodyExcerpt: meta.body ? excerpt(meta.body) : null,
+			authorId: meta.authorId,
+			authorName: meta.authorName,
+			tags: tagRows.map((t) => t.kind),
+			score: meta.score,
+			commentCount: newCommentCount,
+			hotScore,
+			createdAt: createdAtMs,
+			updatedAt: now,
+			lastActivityAt: now,
+		});
+
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				UPDATE comment
+				SET deleted_at = ${Math.floor(now / 1000)}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = ${input.commentId}
+			`;
+			this.sql`
+				UPDATE post_meta
+				SET comment_count = ${newCommentCount}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = '1'
+			`;
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${commentEventId}, ${commentDeletedPayload}, ${now})
+			`;
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${postEventId}, ${postChangedPayload}, ${now})
+			`;
+		});
+
+		this.setState({
+			...this.state,
+			commentCount: newCommentCount,
+			hotScore,
+			lastActivityAt: now,
+			lastEventId: postEventId,
+		});
+
+		try {
+			await this.flushOutbox({eventId: commentEventId});
+		} catch (err) {
+			console.error("[PanoPost.deleteComment] flushOutbox(comment) failed", err);
+		}
+		try {
+			await this.flushOutbox({eventId: postEventId});
+		} catch (err) {
+			console.error("[PanoPost.deleteComment] flushOutbox(post) failed", err);
+		}
+
+		return {commentId: input.commentId, deleted: true, hasReplies};
 	}
 
 	/**

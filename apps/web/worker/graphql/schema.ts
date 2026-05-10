@@ -18,8 +18,8 @@ import {lookupCommentPostId} from "../features/pano/commentViewReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
 	CommentNotFoundError,
-	CommentValidationError,
 	type CommentRow,
+	CommentValidationError,
 	PostNotFoundError,
 	type PostPage,
 	type PostTagRow,
@@ -247,6 +247,13 @@ const CommentType = new GraphQLObjectType<CommentRow>({
 		id: {type: new GraphQLNonNull(GraphQLID)},
 		parentId: {type: GraphQLID},
 		author: {type: new GraphQLNonNull(GraphQLString)},
+		/**
+		 * Pasaport user id of the comment's author. Powers the frontend's
+		 * "is the current user the author?" check that gates edit / delete
+		 * affordances (T12). Mirrors `Definition.authorId` (T6) and
+		 * `Post.authorId` (T9).
+		 */
+		authorId: {type: new GraphQLNonNull(GraphQLID)},
 		body: {type: new GraphQLNonNull(GraphQLString)},
 		score: {type: new GraphQLNonNull(GraphQLInt)},
 		createdAt: {
@@ -469,6 +476,39 @@ function mapPostMutationError(err: unknown): GraphQLError {
 	});
 }
 
+/**
+ * Map an Agent-thrown comment mutation error onto a GraphQL error. Agent
+ * errors cross the RPC boundary as plain `Error` (class identity is lost),
+ * so we match on `name` + `code` and bake a stable `code` extension into the
+ * GraphQL error so the SPA can localize without parsing free-text messages.
+ * Mirrors `mapPostMutationError` (T9) and `mapDefinitionMutationError` (T6).
+ */
+function mapCommentMutationError(err: unknown): GraphQLError {
+	const e = err as Error & {code?: string};
+	if (e?.name === "UnauthorizedCommentMutationError") {
+		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
+	}
+	if (e?.name === "CommentNotFoundError") {
+		return new GraphQLError(e.message ?? "comment not found", {
+			extensions: {code: "COMMENT_NOT_FOUND"},
+		});
+	}
+	if (e?.name === "PostNotFoundError") {
+		return new GraphQLError(e.message ?? "post not found", {
+			extensions: {code: "POST_NOT_FOUND"},
+		});
+	}
+	if (e?.name === "CommentValidationError") {
+		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
+		return new GraphQLError(e.message ?? "comment validation failed", {
+			extensions: {code},
+		});
+	}
+	return new GraphQLError(e?.message ?? "comment mutation failed", {
+		extensions: {code: "INTERNAL_SERVER_ERROR"},
+	});
+}
+
 const MutationType = new GraphQLObjectType({
 	name: "Mutation",
 	fields: {
@@ -637,9 +677,7 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string; body: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, args.id),
-				);
+				const slug = yield* Effect.promise(() => lookupDefinitionTermSlug(env.PHOENIX_DB, args.id));
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
 						extensions: {code: "DEFINITION_NOT_FOUND"},
@@ -686,9 +724,7 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, args.id),
-				);
+				const slug = yield* Effect.promise(() => lookupDefinitionTermSlug(env.PHOENIX_DB, args.id));
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
 						extensions: {code: "DEFINITION_NOT_FOUND"},
@@ -824,9 +860,7 @@ const MutationType = new GraphQLObjectType({
 				const env = yield* CloudflareEnv;
 				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
 				try {
-					const result = yield* Effect.promise(() =>
-						stub.voteOnPost({voterId: user.id}),
-					);
+					const result = yield* Effect.promise(() => stub.voteOnPost({voterId: user.id}));
 					return {
 						id: result.postId,
 						slug: null,
@@ -862,9 +896,7 @@ const MutationType = new GraphQLObjectType({
 				const env = yield* CloudflareEnv;
 				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
 				try {
-					const result = yield* Effect.promise(() =>
-						stub.retractPostVote({voterId: user.id}),
-					);
+					const result = yield* Effect.promise(() => stub.retractPostVote({voterId: user.id}));
 					return {
 						id: result.postId,
 						slug: null,
@@ -1009,6 +1041,7 @@ const MutationType = new GraphQLObjectType({
 						id: result.commentId,
 						parentId: result.parentId,
 						author: result.authorName,
+						authorId: result.authorId,
 						body: result.body,
 						score: result.score,
 						createdAt: result.createdAt,
@@ -1060,6 +1093,7 @@ const MutationType = new GraphQLObjectType({
 						id: result.commentId,
 						parentId: result.parentId,
 						author: result.authorName,
+						authorId: result.authorId,
 						body: result.body,
 						score: result.score,
 						createdAt: result.createdAt,
@@ -1104,6 +1138,7 @@ const MutationType = new GraphQLObjectType({
 						id: result.commentId,
 						parentId: result.parentId,
 						author: result.authorName,
+						authorId: result.authorId,
 						body: result.body,
 						score: result.score,
 						createdAt: result.createdAt,
@@ -1117,6 +1152,96 @@ const MutationType = new GraphQLObjectType({
 					}
 					throw err;
 				}
+			}),
+		},
+		/**
+		 * Edit a comment's body (T12). `Auth.required` enforces sign-in;
+		 * ownership is enforced inside the per-post `PanoPost` Agent. The
+		 * frontend only knows the comment id, so we lean on `comment_view`'s
+		 * denormalized `post_id` to route the RPC into the correct DO
+		 * (mirrors `voteOnComment` from T11).
+		 */
+		editComment: {
+			type: new GraphQLNonNull(CommentType),
+			args: {
+				id: {type: new GraphQLNonNull(GraphQLID)},
+				body: {type: new GraphQLNonNull(GraphQLString)},
+			},
+			resolve: resolver(function* (_source, args: {id: string; body: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+
+				const trimmed = (args.body ?? "").trim();
+				if (trimmed.length === 0) {
+					throw new GraphQLError("yorum boş olamaz", {
+						extensions: {code: "BODY_REQUIRED"},
+					});
+				}
+				if (args.body.length > 5_000) {
+					throw new GraphQLError("yorum en fazla 5000 karakter olabilir", {
+						extensions: {code: "BODY_TOO_LONG"},
+					});
+				}
+
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, args.id));
+				if (!postId) {
+					throw new GraphQLError("comment not found", {
+						extensions: {code: "COMMENT_NOT_FOUND"},
+					});
+				}
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
+				const result = yield* Effect.promise(() =>
+					stub.editComment({commentId: args.id, actorId: user.id, body: args.body}).then(
+						(value) => ({ok: true as const, value}),
+						(error: unknown) => ({ok: false as const, error}),
+					),
+				);
+				if (!result.ok) {
+					throw mapCommentMutationError(result.error);
+				}
+				const r = result.value;
+				return {
+					id: r.commentId,
+					parentId: r.parentId,
+					author: r.authorName,
+					authorId: r.authorId,
+					body: r.body,
+					score: r.score,
+					createdAt: r.createdAt,
+				} satisfies CommentRow;
+			}),
+		},
+		/**
+		 * Soft-delete a comment (T12). `Auth.required` + ownership inside the
+		 * Agent. Reply-aware: the per-DO read and the cross-product
+		 * `comment_view` projection both treat a deleted-with-children
+		 * comment as `[silindi]` (preserve thread shape) and a deleted-leaf
+		 * as fully removed. The SDL returns the deleted comment id (mirrors
+		 * `deletePost` / `deleteDefinition`).
+		 */
+		deleteComment: {
+			type: new GraphQLNonNull(GraphQLString),
+			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {id: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, args.id));
+				if (!postId) {
+					throw new GraphQLError("comment not found", {
+						extensions: {code: "COMMENT_NOT_FOUND"},
+					});
+				}
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
+				const result = yield* Effect.promise(() =>
+					stub.deleteComment({commentId: args.id, actorId: user.id}).then(
+						(value) => ({ok: true as const, value}),
+						(error: unknown) => ({ok: false as const, error}),
+					),
+				);
+				if (!result.ok) {
+					throw mapCommentMutationError(result.error);
+				}
+				return result.value.commentId;
 			}),
 		},
 	},

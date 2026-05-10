@@ -144,6 +144,24 @@ export interface CommentEditedEvent extends ProjectionEventBase {
 export interface CommentDeletedEvent extends ProjectionEventBase {
 	kind: "CommentDeleted";
 	commentId: string;
+	postId: string;
+	/**
+	 * Parent comment id (null for top-level). Carried for parity with the
+	 * per-DO read shape; not required by the current projection step but the
+	 * cross-product profile feed (T14) uses it to walk reply chains.
+	 */
+	parentId: string | null;
+	/**
+	 * Author of the deleted comment — surfaced for downstream user_profile
+	 * aggregates (e.g. comment_count decrement in T13/T14).
+	 */
+	authorId: string;
+	/**
+	 * Producer-computed: `true` iff the comment had at least one non-deleted
+	 * child at delete time. Drives the projection's reply-aware tree rewrite:
+	 * - `true` → UPDATE `comment_view` SET body_excerpt = '[silindi]', deleted_at = ?
+	 * - `false` → DELETE FROM `comment_view` (row vanishes from the tree)
+	 */
 	hasReplies: boolean;
 	deletedAt: number;
 }
@@ -429,9 +447,7 @@ async function projectPostDeleted(env: Env, e: PostDeletedEvent): Promise<void> 
 	// Cascade: drop any comment_view rows for comments on this post so the
 	// profile feed doesn't reference an orphan post. Safe to run even when
 	// nothing matches; D1's DELETE returns changes=0 in that case.
-	await env.PHOENIX_DB.prepare(`DELETE FROM comment_view WHERE post_id = ?`)
-		.bind(e.postId)
-		.run();
+	await env.PHOENIX_DB.prepare(`DELETE FROM comment_view WHERE post_id = ?`).bind(e.postId).run();
 
 	// If the post row was already gone (idempotent retry), don't double-touch
 	// pano_stats. The DELETE above returned changes=0; nothing else to do.
@@ -605,6 +621,63 @@ async function projectCommentChanged(env: Env, e: CommentChangedEvent): Promise<
 }
 
 /**
+ * `CommentEdited` refreshes `comment_view.body_excerpt` + `updated_at` after
+ * an author-initiated body edit (T12). Convergent overwrite guarded by
+ * `WHERE last_event_id < ?` (forge ULID lex ordering — out-of-order retries
+ * become no-ops). Score is owned by `CommentChanged` so it isn't touched
+ * here.
+ */
+async function projectCommentEdited(env: Env, e: CommentEditedEvent): Promise<void> {
+	const updatedAt = Math.floor(e.updatedAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`UPDATE comment_view SET
+			body_excerpt  = ?,
+			updated_at    = ?,
+			last_event_id = ?
+		WHERE id = ? AND last_event_id < ?`,
+	)
+		.bind(e.bodyExcerpt, updatedAt, e.eventId, e.commentId, e.eventId)
+		.run();
+}
+
+/**
+ * `CommentDeleted` is reply-aware (T12):
+ *
+ * - **Has live replies** (`hasReplies: true`) → UPDATE `comment_view` SET
+ *   `body_excerpt = '[silindi]'`, `deleted_at = now`. The row stays so the
+ *   profile contribution feed and any future tree views can preserve thread
+ *   structure (`parent_id` chains rooted at this comment continue to render).
+ * - **Leaf** (`hasReplies: false`) → DELETE the `comment_view` row entirely;
+ *   the comment vanishes from the tree.
+ *
+ * The producer (`PanoPost.deleteComment`) computes `hasReplies` against the
+ * per-post DO sqlite (the source of truth for `parent_id`) inside the same
+ * `transactionSync` as the soft-delete UPDATE, so the decision can never
+ * race against a concurrent reply landing on the same comment.
+ *
+ * Convergence guard (`last_event_id < ?`) is on the UPDATE branch only; the
+ * DELETE branch is naturally idempotent (re-deleting a missing row is a
+ * no-op via `WHERE id = ?`).
+ */
+async function projectCommentDeleted(env: Env, e: CommentDeletedEvent): Promise<void> {
+	const deletedAt = Math.floor(e.deletedAt / 1000);
+	if (e.hasReplies) {
+		await env.PHOENIX_DB.prepare(
+			`UPDATE comment_view SET
+				body_excerpt  = ?,
+				deleted_at    = ?,
+				updated_at    = ?,
+				last_event_id = ?
+			WHERE id = ? AND last_event_id < ?`,
+		)
+			.bind("[silindi]", deletedAt, deletedAt, e.eventId, e.commentId, e.eventId)
+			.run();
+		return;
+	}
+	await env.PHOENIX_DB.prepare(`DELETE FROM comment_view WHERE id = ?`).bind(e.commentId).run();
+}
+
+/**
  * `VoteRecorded` updates the cross-product MV state for an upvote/retract:
  *
  * - `user_vote`: presence-only row keyed by (user_id, target_kind, target_id).
@@ -749,9 +822,9 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 				case "CommentChanged":
 					return projectCommentChanged(this.env, e);
 				case "CommentEdited":
-					return;
+					return projectCommentEdited(this.env, e);
 				case "CommentDeleted":
-					return;
+					return projectCommentDeleted(this.env, e);
 
 				// Cross-product
 				case "VoteRecorded":

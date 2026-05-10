@@ -1,5 +1,6 @@
 type Comment {
   author: String!
+  authorId: ID!
   body: String!
   createdAt: String!
   id: ID!
@@ -27,8 +28,10 @@ type Health {
 type Mutation {
   addComment(body: String!, parentId: ID, postId: ID!): Comment!
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
+  deleteComment(id: ID!): String!
   deleteDefinition(id: ID!): String!
   deletePost(id: ID!): String!
+  editComment(body: String!, id: ID!): Comment!
   editDefinition(body: String!, id: ID!): Definition!
   editPost(body: String, id: ID!, title: String): Post!
   retractCommentVote(commentId: ID!): Comment!
