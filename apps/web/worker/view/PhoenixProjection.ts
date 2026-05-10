@@ -81,6 +81,7 @@ export interface PostChangedEvent extends ProjectionEventBase {
 	postId: string;
 	slug: string | null;
 	title: string;
+	url: string | null;
 	host: string | null;
 	bodyExcerpt: string | null;
 	authorId: string;
@@ -274,6 +275,98 @@ async function projectTermChanged(env: Env, e: TermChangedEvent): Promise<void> 
 		.run();
 }
 
+/**
+ * `PostChanged` projects per-post aggregates into `post_summary`. Convergent
+ * overwrite guarded by `WHERE last_event_id < excluded.last_event_id` (forge
+ * ULID lex ordering).
+ *
+ * `pano_stats` totals are touched as part of the same step: we delta the
+ * `total_posts` row only on first-time inserts (existing post → no-op on the
+ * delta). `total_comments` is recomputed from the event payload's authoritative
+ * `commentCount` for this post, so we apply the delta against the previous
+ * row's `comment_count`. `total_authors` waits for T13 (UserProfileChanged).
+ */
+async function projectPostChanged(env: Env, e: PostChangedEvent): Promise<void> {
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const tagsCsv = e.tags.join(",");
+
+	const previous = await db
+		.select({
+			commentCount: schema.postSummary.commentCount,
+			lastEventId: schema.postSummary.lastEventId,
+		})
+		.from(schema.postSummary)
+		.where(sql`${schema.postSummary.id} = ${e.postId}`)
+		.limit(1);
+	const previousRow = previous[0];
+
+	const result = await env.PHOENIX_DB.prepare(
+		`INSERT INTO post_summary (
+			id, slug, title, url, host, body_excerpt, author_id, author_name,
+			tags, score, comment_count, hot_score, created_at, updated_at,
+			last_activity_at, deleted_at, last_event_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			slug             = excluded.slug,
+			title            = excluded.title,
+			url              = excluded.url,
+			host             = excluded.host,
+			body_excerpt     = excluded.body_excerpt,
+			author_id        = excluded.author_id,
+			author_name      = excluded.author_name,
+			tags             = excluded.tags,
+			score            = excluded.score,
+			comment_count    = excluded.comment_count,
+			hot_score        = excluded.hot_score,
+			updated_at       = excluded.updated_at,
+			last_activity_at = excluded.last_activity_at,
+			last_event_id    = excluded.last_event_id
+		WHERE post_summary.last_event_id < excluded.last_event_id`,
+	)
+		.bind(
+			e.postId,
+			e.slug ?? null,
+			e.title,
+			e.url ?? null,
+			e.host ?? null,
+			e.bodyExcerpt ?? null,
+			e.authorId,
+			e.authorName,
+			tagsCsv,
+			e.score,
+			e.commentCount,
+			e.hotScore,
+			Math.floor(e.createdAt / 1000),
+			Math.floor(e.updatedAt / 1000),
+			Math.floor(e.lastActivityAt / 1000),
+			e.eventId,
+		)
+		.run();
+
+	// If the guard rejected the upsert (out-of-order retry), bail — no
+	// stats delta either.
+	if (result.meta.changes === 0) return;
+
+	const isNewPost = !previousRow;
+	const previousCommentCount = previousRow?.commentCount ?? 0;
+	const commentDelta = e.commentCount - previousCommentCount;
+	const postDelta = isNewPost ? 1 : 0;
+
+	if (postDelta === 0 && commentDelta === 0) return;
+
+	const updatedAt = Math.floor(e.lastActivityAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO pano_stats (id, total_posts, total_comments, total_authors, updated_at)
+		VALUES (1, ?, ?, 0, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			total_posts    = pano_stats.total_posts + ?,
+			total_comments = pano_stats.total_comments + ?,
+			updated_at     = ?`,
+	)
+		.bind(postDelta, Math.max(0, commentDelta), updatedAt, postDelta, commentDelta, updatedAt)
+		.run();
+}
+
 /* -------------------------------------------------------------------------- */
 /* Workflow                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -296,7 +389,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 
 				// Pano
 				case "PostChanged":
-					return;
+					return projectPostChanged(this.env, e);
 				case "PostDeleted":
 					return;
 				case "CommentAdded":

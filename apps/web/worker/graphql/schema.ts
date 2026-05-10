@@ -13,14 +13,13 @@ import {
 	lexicographicSortSchema,
 	printSchema,
 } from "graphql";
-import type {
-	CommentRow,
-	PostPage,
-	PostSort,
-	PostSummary,
-	PostTag,
-	VoteValue,
-} from "../features/pano/Pano";
+import type {VoteValue} from "../features/pano/Pano";
+import type {CommentRow, PostPage, PostTagRow} from "../features/pano/PanoPost";
+import {
+	listPostSummaries,
+	type PostSort,
+	type PostSummaryRow,
+} from "../features/pano/postSummaryReader";
 import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
 import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
 import {Auth, CloudflareEnv} from "../services";
@@ -115,7 +114,7 @@ const TermSortEnum = new GraphQLEnumType({
 	},
 });
 
-const TagType = new GraphQLObjectType<PostTag>({
+const TagType = new GraphQLObjectType<PostTagRow>({
 	name: "Tag",
 	fields: {
 		kind: {type: new GraphQLNonNull(GraphQLString)},
@@ -124,11 +123,12 @@ const TagType = new GraphQLObjectType<PostTag>({
 });
 
 /**
- * Single Post type backs both list (PostSummary) and detail (PostPage)
- * queries — same shape on both code paths today, kept as separate type
- * aliases on the DO so they can diverge without touching the GraphQL layer.
+ * Single Post type backs both list (PostSummaryRow from D1) and detail
+ * (PostPage from per-post DO) queries — same shape on both code paths today,
+ * kept as separate type aliases so they can diverge without touching the
+ * GraphQL layer.
  */
-const PostType = new GraphQLObjectType<PostSummary | PostPage>({
+const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 	name: "Post",
 	fields: () => ({
 		id: {type: new GraphQLNonNull(GraphQLID)},
@@ -172,6 +172,7 @@ const PostSortEnum = new GraphQLEnumType({
 		hot: {value: "hot"},
 		new: {value: "new"},
 		top: {value: "top"},
+		discuss: {value: "discuss"},
 	},
 });
 
@@ -235,9 +236,8 @@ const QueryType = new GraphQLObjectType({
 				args: {sort?: PostSort; limit?: number; host?: string},
 			) {
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO.get(env.PANO.idFromName("kampus"));
 				return yield* Effect.promise(() =>
-					stub.listPosts({
+					listPostSummaries(env.PHOENIX_DB, {
 						...(args.sort ? {sort: args.sort} : {}),
 						...(args.limit != null ? {limit: args.limit} : {}),
 						...(args.host ? {host: args.host} : {}),
@@ -250,8 +250,8 @@ const QueryType = new GraphQLObjectType({
 			args: {idOrSlug: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {idOrSlug: string}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO.get(env.PANO.idFromName("kampus"));
-				return yield* Effect.promise(() => stub.getPost(args.idOrSlug));
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.idOrSlug));
+				return yield* Effect.promise(() => stub.getPost());
 			}),
 		},
 		postComments: {
@@ -259,8 +259,8 @@ const QueryType = new GraphQLObjectType({
 			args: {postId: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {postId: string}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO.get(env.PANO.idFromName("kampus"));
-				return yield* Effect.promise(() => stub.listComments(args.postId));
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				return yield* Effect.promise(() => stub.listComments());
 			}),
 		},
 	},

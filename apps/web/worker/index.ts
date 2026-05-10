@@ -1,6 +1,8 @@
+import {id} from "@usirin/forge";
 import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
+import {SEED_POSTS} from "./features/pano/seed";
 import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
@@ -77,6 +79,61 @@ app.post("/api/admin/sozluk/clear", async (c) => {
 	await c.env.PHOENIX_DB.prepare("DELETE FROM sozluk_stats").run();
 
 	return c.json({terms, definitions});
+});
+
+// Dev-only pano admin endpoints. Mirrors the sozluk seed surface but for the
+// per-post `PanoPost` Agents (`idFromName(postId)`). Each call seeds one post
+// via its DO; a single `PostChanged` event per post hydrates `post_summary`.
+const panoSeedSchema = z.object({
+	clear: z.boolean().optional(),
+	postIds: z.array(z.string().min(1)).optional(),
+});
+
+app.post("/api/admin/pano/seed", async (c) => {
+	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
+	const body = (await c.req.json().catch(() => ({}))) as unknown;
+	const parsed = panoSeedSchema.safeParse(body);
+	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
+
+	const cleared = {posts: 0, comments: 0, tags: 0};
+	if (parsed.data.clear && parsed.data.postIds?.length) {
+		for (const postId of parsed.data.postIds) {
+			const stub = c.env.PANO_POST.get(c.env.PANO_POST.idFromName(postId));
+			const r = await stub.clearAll();
+			if (r.post) cleared.posts++;
+			cleared.comments += r.comments;
+			cleared.tags += r.tags;
+		}
+		await c.env.PHOENIX_DB.prepare("DELETE FROM post_summary").run();
+		await c.env.PHOENIX_DB.prepare("DELETE FROM pano_stats").run();
+	}
+
+	const postIds: string[] = [];
+	let inserted = 0;
+	for (const seed of SEED_POSTS) {
+		const postId = id("post");
+		postIds.push(postId);
+		const stub = c.env.PANO_POST.get(c.env.PANO_POST.idFromName(postId));
+		const result = await stub.seed({
+			title: seed.title,
+			...(seed.url ? {url: seed.url} : {}),
+			...(seed.body ? {body: seed.body} : {}),
+			authorId: seed.authorId,
+			authorName: seed.authorName,
+			score: seed.score,
+			tags: seed.tags,
+			comments: seed.comments.map((c) => ({
+				authorId: c.authorId,
+				authorName: c.authorName,
+				body: c.body,
+				score: c.score,
+				...(c.parentIdx != null ? {parentIdx: c.parentIdx} : {}),
+			})),
+		});
+		if (result.created) inserted++;
+	}
+
+	return c.json({inserted, postIds, cleared});
 });
 
 // Better Auth handler — forwarded to the Pasaport DO.

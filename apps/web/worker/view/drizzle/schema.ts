@@ -115,6 +115,9 @@ export const postSummary = sqliteTable(
 		// Optional human-friendly slug; resolver may dual-key on id or slug.
 		slug: text("slug"),
 		title: text("title").notNull(),
+		// Original submission URL (when the post is a link, not a self-post).
+		// Denormalized so the feed renders without RPCing into the per-post DO.
+		url: text("url"),
 		// Extracted via `new URL(url).host` on submit. Powers host filter.
 		host: text("host"),
 		bodyExcerpt: text("body_excerpt"),
