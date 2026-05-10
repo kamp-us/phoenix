@@ -22,6 +22,10 @@ schema.graphql.generated
 # Playwright MCP scratch artifacts
 .playwright-mcp
 
+# Playwright test artifacts
+test-results
+playwright-report
+
 # OS
 .DS_Store
 
