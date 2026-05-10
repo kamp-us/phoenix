@@ -1,4 +1,7 @@
 import * as React from 'react';
+import { graphql, useMutation } from 'react-relay';
+import type { PanoCommentVoteMutation } from '../../__generated__/PanoCommentVoteMutation.graphql';
+import { useSession } from '../../auth/client';
 import { Menu } from '../ui/Menu';
 import './PanoComment.css';
 
@@ -16,23 +19,33 @@ export type CommentData = {
   children?: CommentData[];
 };
 
+const CommentVoteMutation = graphql`
+  mutation PanoCommentVoteMutation($input: VoteInput!) {
+    voteOnComment(input: $input) {
+      score
+    }
+  }
+`;
+
 export function PanoComment({
   comment,
   depth = 0,
-  onVote,
   onEdit,
   onDelete,
   onReply,
 }: {
   comment: CommentData;
   depth?: number;
-  onVote?: (id: string, d: -1 | 1) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
   onReply?: (id: string) => void;
 }) {
+  const session = useSession();
   const [open, setOpen] = React.useState(true);
   const [voted, setVoted] = React.useState((comment.myVote ?? 0) === 1);
+  const [delta, setDelta] = React.useState(0);
+  const [commit, isInFlight] = useMutation<PanoCommentVoteMutation>(CommentVoteMutation);
+
   const cls = [
     'kp-comment',
     depth === 1 ? 'kp-comment--depth-1' : '',
@@ -40,7 +53,27 @@ export function PanoComment({
     comment.highlight ? 'kp-comment--highlighted' : '',
   ].filter(Boolean).join(' ');
 
-  const score = comment.score + (voted && (comment.myVote ?? 0) !== 1 ? 1 : 0);
+  const score = comment.score + delta;
+
+  const onUpvote = () => {
+    if (!session.data?.user) {
+      console.warn('[pano] vote requires sign-in');
+      return;
+    }
+    if (isInFlight) return;
+    const nextVoted = !voted;
+    const nextValue: 0 | 1 = nextVoted ? 1 : 0;
+    const nextDelta = nextValue - (voted ? 1 : 0);
+    setVoted(nextVoted);
+    setDelta((d) => d + nextDelta);
+    commit({
+      variables: {input: {targetId: comment.id, value: nextValue}},
+      onError: () => {
+        setVoted(voted);
+        setDelta((d) => d - nextDelta);
+      },
+    });
+  };
 
   return (
     <article className={cls} id={comment.hash}>
@@ -55,10 +88,7 @@ export function PanoComment({
           className={`kp-comment__upvote ${voted ? 'kp-comment__upvote--active' : ''}`}
           aria-pressed={voted}
           aria-label="Yukarı oy"
-          onClick={() => {
-            setVoted(!voted);
-            onVote?.(comment.id, 1);
-          }}
+          onClick={onUpvote}
         >
           <span className="triangle" /> {score}
         </button>
@@ -103,7 +133,6 @@ export function PanoComment({
                   key={c.id}
                   comment={c}
                   depth={depth + 1}
-                  onVote={onVote}
                   onEdit={onEdit}
                   onDelete={onDelete}
                   onReply={onReply}
@@ -122,7 +151,6 @@ export function PanoCommentTree({
   ...handlers
 }: {
   comments: CommentData[];
-  onVote?: (id: string, d: -1 | 1) => void;
   onEdit?: (id: string) => void;
   onDelete?: (id: string) => void;
   onReply?: (id: string) => void;

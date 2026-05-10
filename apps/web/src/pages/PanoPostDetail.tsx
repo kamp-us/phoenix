@@ -3,7 +3,7 @@ import { graphql, useLazyLoadQuery } from 'react-relay';
 import { Link, useParams } from 'react-router';
 import type { PanoPostDetailCommentsQuery } from '../__generated__/PanoPostDetailCommentsQuery.graphql';
 import type { PanoPostDetailPostQuery } from '../__generated__/PanoPostDetailPostQuery.graphql';
-import { PanoCommentTree, VoteControl, type CommentData } from '../components/pano/index';
+import { PanoCommentTree, PostVoteWidget, type CommentData } from '../components/pano/index';
 import { Tag, type TagKind } from '../components/ui/atoms';
 import { Button } from '../components/ui/Button';
 import { formatAgoTR } from '../lib/datetime';
@@ -87,7 +87,7 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
   return (
     <>
       <header className="kp-pano-postpage__head">
-        <VoteControl count={post.score} />
+        <PostVoteWidget postId={post.id} baseScore={post.score} />
         <div>
           <h1 className="kp-pano-postpage__title">{post.title}</h1>
           {post.url ? (
