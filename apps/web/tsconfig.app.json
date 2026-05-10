@@ -10,7 +10,8 @@
 		"moduleResolution": "Bundler",
 		"jsx": "react-jsx",
 		"noEmit": true,
-		"types": ["vite/client"]
+		"types": ["vite/client"],
+		"exactOptionalPropertyTypes": false
 	},
 	"include": ["src"]
 }
