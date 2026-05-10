@@ -1,6 +1,8 @@
-import type { PanoPostData, CommentData } from './components/pano';
-import { Code, Mark } from './components/ui/atoms';
+import type { PanoPostData } from './components/pano';
 
+/* POSTS still backs the landing page's "panoda son 24 saat" column —
+   the landing page hasn't been wired to the live `posts(...)` query yet.
+   The /pano feed itself reads from GraphQL via PanoFeed (see App.tsx). */
 export const POSTS: PanoPostData[] = [
   {
     id: 'p1', rank: 1, title: 'türkiye\'de kendi web yığınını çalıştırmak: nginx + caddy notları',
@@ -31,30 +33,6 @@ export const POSTS: PanoPostData[] = [
     href: '#',
     tags: [{ kind: 'meta', label: 'meta' }],
     author: 'kerem', agoLabel: '1 gün önce', commentCount: 17, score: 34,
-  },
-];
-
-export const COMMENTS: CommentData[] = [
-  {
-    id: 'c1', hash: 'c_2814', author: 'eda_k', agoLabel: '2 saat önce',
-    score: 12, isOwner: true, highlight: true,
-    body: <p>caddy ile başlamak çok daha kolay, özellikle TLS otomatik. nginx benim için sadece eski projeler için kalıyor artık. <Code>caddy reverse_proxy</Code> tek satır yeter.</p>,
-    children: [
-      {
-        id: 'c2', author: 'mert', agoLabel: '1 saat önce', score: 5,
-        body: <p>katılıyorum ama büyük setup'larda hala nginx daha öngörülebilir geliyor bana. config örneklerin bol.</p>,
-        children: [
-          {
-            id: 'c3', author: 'eda_k', agoLabel: '45 dakika önce', score: 3, isOwner: true,
-            body: <p>haklısın, ölçek meselesi. küçük foruma <Mark>caddy</Mark> sevimli geliyor, kurumsal bir şey için nginx mantıklı.</p>,
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: 'c4', author: 'arda', agoLabel: '30 dakika önce', score: 2,
-    body: <p>yazıdaki rate-limit kısmı çok temiz, teşekkürler. ufak bir not: leaky-bucket yerine token-bucket örneği koysan daha iyi olabilir, kullanıcılar pratikte burst istiyor.</p>,
   },
 ];
 
