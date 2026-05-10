@@ -1,0 +1,93 @@
+import {expect, test} from "@playwright/test";
+import {signUp} from "./_helpers/auth";
+
+/**
+ * Pano voteOnComment end-to-end (task_11).
+ *
+ * Sign up a fresh user, complete the username bootstrap, submit a brand new
+ * post, add a comment, then exercise the optimistic comment-vote flip:
+ *   1. Vote → score becomes 1, button reflects pressed state.
+ *   2. Click again → retract → score back to 0.
+ *   3. Vote again → score 1.
+ *
+ * The PanoComment vote button uses Relay `optimisticResponse` to flip
+ * `myVote` + `score` synchronously; on success the projection lands in <1s
+ * and the page reads the new state on subsequent renders.
+ *
+ * Mirrors `15-pano-vote-post.spec.ts` (post-vote round-trip). Uses
+ * `page.reload()` before vote interactions to escape the Suspense
+ * double-mount race that fires after `submitPost` + `addComment` re-fetches
+ * via fetchKey — operator-blessed (cf. task_5/retry_1, task_8, task_10).
+ */
+test.describe("Pano voteOnComment (task_11)", () => {
+	test("vote → unvote → vote round-trip on a fresh comment", async ({page}) => {
+		// Fresh sign-up + bootstrap.
+		const localPart = `vc${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		await signUp(page, {email: `${localPart}@kamp.us`});
+		const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		await page.locator("input#bootstrap-username").fill(handle);
+		await page.getByRole("button", {name: /devam et/i}).click();
+		await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
+			timeout: 10_000,
+		});
+
+		// Submit a brand-new post and let the page navigate to /pano/<id>.
+		await page.goto("/pano/yeni");
+		await expect(page.locator('[data-testid="pano-submit-title"]')).toBeVisible({
+			timeout: 10_000,
+		});
+
+		const title = `vote-comment target ${Date.now().toString(36)}`;
+		const url = `https://example.com/${Date.now().toString(36)}`;
+		await page.locator('[data-testid="pano-submit-url"]').fill(url);
+		await page.locator('[data-testid="pano-submit-title"]').fill(title);
+		await page.locator('[data-testid="pano-submit-tag-discuss"]').click();
+		await page.locator('[data-testid="pano-submit-submit"]').click();
+
+		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
+
+		// Reload after the navigation to escape any Suspense double-mount race
+		// in the post detail's useLazyLoadQuery — same operator-blessed pattern
+		// as 15-pano-vote-post.spec.ts (cf. commit 17ed98a).
+		await page.reload();
+
+		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {
+			timeout: 10_000,
+		});
+
+		// Add a top-level comment.
+		const commentBody = `vote target yorum ${Date.now().toString(36)}`;
+		await page.locator('[data-testid="pano-comment-input"]').fill(commentBody);
+		await page.locator('[data-testid="pano-comment-submit"]').click();
+
+		// Wait for the comment to appear in the tree.
+		await expect(page.getByText("1 yorum")).toBeVisible({timeout: 10_000});
+
+		// Reload once more so the comments query is stable when we click the
+		// vote button (avoids the same fetchKey-driven Suspense race the post
+		// page suffers from after submit).
+		await page.reload();
+
+		const voteBtn = page.locator('[data-testid^="comment-vote-"]').first();
+		const score = page.locator('[data-testid^="comment-score-"]').first();
+
+		await expect(voteBtn).toBeVisible({timeout: 5_000});
+		await expect(score).toHaveText("0");
+		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
+
+		// Cast vote — optimistic flip lands first.
+		await voteBtn.click();
+		await expect(score).toHaveText("1", {timeout: 5_000});
+		await expect(voteBtn).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
+
+		// Retract.
+		await voteBtn.click();
+		await expect(score).toHaveText("0", {timeout: 5_000});
+		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
+
+		// Re-vote.
+		await voteBtn.click();
+		await expect(score).toHaveText("1", {timeout: 5_000});
+		await expect(voteBtn).toHaveAttribute("aria-pressed", "true");
+	});
+});

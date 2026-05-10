@@ -1,5 +1,7 @@
 import * as React from 'react';
 import { graphql, useMutation } from 'react-relay';
+import { useNavigate } from 'react-router';
+import type { PanoCommentRetractVoteMutation } from '../../__generated__/PanoCommentRetractVoteMutation.graphql';
 import type { PanoCommentVoteMutation } from '../../__generated__/PanoCommentVoteMutation.graphql';
 import { useSession } from '../../auth/client';
 import { Menu } from '../ui/Menu';
@@ -12,7 +14,7 @@ export type CommentData = {
   agoLabel: string;
   body: React.ReactNode;
   score: number;
-  myVote?: -1 | 0 | 1;
+  myVote?: number | null;
   isOwner?: boolean;
   isOp?: boolean;
   highlight?: boolean;  /* hash-targeted */
@@ -23,10 +25,31 @@ export type CommentData = {
   children?: CommentData[];
 };
 
+/**
+ * Cast an upvote on a comment (task_11). Returns the updated `score` + `myVote`
+ * so Relay merges into the store keyed by `id` — the vote button and any
+ * other place that renders this comment node update authoritatively without
+ * a refetch.
+ */
 const CommentVoteMutation = graphql`
-  mutation PanoCommentVoteMutation($input: VoteInput!) {
-    voteOnComment(input: $input) {
+  mutation PanoCommentVoteMutation($commentId: ID!) {
+    voteOnComment(commentId: $commentId) {
+      id
       score
+      myVote
+    }
+  }
+`;
+
+/**
+ * Retract a previously cast upvote (task_11). Symmetric to voteOnComment.
+ */
+const CommentRetractVoteMutation = graphql`
+  mutation PanoCommentRetractVoteMutation($commentId: ID!) {
+    retractCommentVote(commentId: $commentId) {
+      id
+      score
+      myVote
     }
   }
 `;
@@ -45,10 +68,15 @@ export function PanoComment({
   onReply?: (id: string) => void;
 }) {
   const session = useSession();
+  const navigate = useNavigate();
   const [open, setOpen] = React.useState(true);
-  const [voted, setVoted] = React.useState((comment.myVote ?? 0) === 1);
-  const [delta, setDelta] = React.useState(0);
-  const [commit, isInFlight] = useMutation<PanoCommentVoteMutation>(CommentVoteMutation);
+  const [voteCommit, voteInFlight] = useMutation<PanoCommentVoteMutation>(CommentVoteMutation);
+  const [retractCommit, retractInFlight] =
+    useMutation<PanoCommentRetractVoteMutation>(CommentRetractVoteMutation);
+
+  const voted = (comment.myVote ?? 0) === 1;
+  const score = comment.score;
+  const inFlight = voteInFlight || retractInFlight;
 
   const cls = [
     'kp-comment',
@@ -57,26 +85,43 @@ export function PanoComment({
     comment.highlight ? 'kp-comment--highlighted' : '',
   ].filter(Boolean).join(' ');
 
-  const score = comment.score + delta;
-
   const onUpvote = () => {
     if (!session.data?.user) {
-      console.warn('[pano] vote requires sign-in');
+      navigate(`/auth?returnTo=${encodeURIComponent(window.location.pathname)}`);
       return;
     }
-    if (isInFlight) return;
-    const nextVoted = !voted;
-    const nextValue: 0 | 1 = nextVoted ? 1 : 0;
-    const nextDelta = nextValue - (voted ? 1 : 0);
-    setVoted(nextVoted);
-    setDelta((d) => d + nextDelta);
-    commit({
-      variables: {input: {targetId: comment.id, value: nextValue}},
-      onError: () => {
-        setVoted(voted);
-        setDelta((d) => d - nextDelta);
-      },
-    });
+    if (inFlight) return;
+    if (voted) {
+      // Optimistic flip: -1 score, myVote → null.
+      retractCommit({
+        variables: {commentId: comment.id},
+        optimisticResponse: {
+          retractCommentVote: {
+            id: comment.id,
+            score: Math.max(0, score - 1),
+            myVote: null,
+          },
+        },
+        onError: (err) => {
+          console.warn('[pano] retract comment vote failed', err);
+        },
+      });
+    } else {
+      // Optimistic flip: +1 score, myVote → 1.
+      voteCommit({
+        variables: {commentId: comment.id},
+        optimisticResponse: {
+          voteOnComment: {
+            id: comment.id,
+            score: score + 1,
+            myVote: 1,
+          },
+        },
+        onError: (err) => {
+          console.warn('[pano] vote on comment failed', err);
+        },
+      });
+    }
   };
 
   return (
@@ -93,8 +138,10 @@ export function PanoComment({
           aria-pressed={voted}
           aria-label="Yukarı oy"
           onClick={onUpvote}
+          data-testid={`comment-vote-${comment.id}`}
         >
-          <span className="triangle" /> {score}
+          <span className="triangle" />{' '}
+          <span data-testid={`comment-score-${comment.id}`}>{score}</span>
         </button>
         <button
           type="button"

@@ -14,9 +14,10 @@ import {
 	lexicographicSortSchema,
 	printSchema,
 } from "graphql";
-import type {VoteValue} from "../features/pano/Pano";
+import {lookupCommentPostId} from "../features/pano/commentViewReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
+	CommentNotFoundError,
 	CommentValidationError,
 	type CommentRow,
 	PostNotFoundError,
@@ -252,6 +253,35 @@ const CommentType = new GraphQLObjectType<CommentRow>({
 			type: new GraphQLNonNull(GraphQLString),
 			resolve: (c) => c.createdAt.toISOString(),
 		},
+		/**
+		 * `1` if the requesting user has upvoted this comment; `null` if the
+		 * user is signed-out or hasn't voted. Looked up in `PHOENIX_DB.user_vote`
+		 * (cross-product MV maintained by the `VoteRecorded` projection step).
+		 *
+		 * Symmetric with `Definition.myVote` (T5) and `Post.myVote` (T8).
+		 * Signed-out short-circuits without touching D1.
+		 *
+		 * Vote mutation resolvers stamp `myVote` directly on the returned row
+		 * (authoritative from the per-post Agent's vote-table state) so the
+		 * field doesn't race against the cross-product projection landing.
+		 */
+		myVote: {
+			type: GraphQLInt,
+			resolve: resolver(function* (parent: CommentRow) {
+				const stamped = (parent as {myVote?: number | null}).myVote;
+				if (stamped !== undefined) return stamped;
+				const auth = yield* Auth;
+				if (!auth.user) return null;
+				const env = yield* CloudflareEnv;
+				return yield* Effect.promise(() =>
+					readMyVote(env.PHOENIX_DB, {
+						userId: auth.user!.id,
+						targetKind: "comment",
+						targetId: parent.id,
+					}),
+				);
+			}),
+		},
 	},
 });
 
@@ -362,27 +392,6 @@ const QueryType = new GraphQLObjectType({
 	},
 });
 
-const VoteResultType = new GraphQLObjectType({
-	name: "VoteResult",
-	fields: {
-		score: {type: new GraphQLNonNull(GraphQLInt)},
-	},
-});
-
-const VoteInputType = new GraphQLInputObjectType({
-	name: "VoteInput",
-	fields: {
-		targetId: {type: new GraphQLNonNull(GraphQLID)},
-		/** -1 | 0 | 1 — runtime-validated in the resolver. */
-		value: {type: new GraphQLNonNull(GraphQLInt)},
-	},
-});
-
-interface VoteInput {
-	targetId: string;
-	value: number;
-}
-
 /**
  * Input for the `submitPost` mutation. The `kind` is one of the fixed enum
  * values (`göster` / `tartışma` / `soru` / `söylenme` / `meta`) — validated
@@ -402,15 +411,6 @@ const TagInputType = new GraphQLInputObjectType({
 interface TagInput {
 	kind: string;
 	label?: string | null;
-}
-
-/**
- * Narrow `value: number` to {-1, 0, 1} or throw the user-facing GraphQL error.
- * Centralized so both vote resolvers report the same wording.
- */
-function parseVoteValue(raw: number): VoteValue {
-	if (raw === -1 || raw === 0 || raw === 1) return raw;
-	throw new GraphQLError("Invalid vote value");
 }
 
 /**
@@ -1029,21 +1029,94 @@ const MutationType = new GraphQLObjectType({
 			}),
 		},
 		voteOnComment: {
-			type: new GraphQLNonNull(VoteResultType),
-			args: {input: {type: new GraphQLNonNull(VoteInputType)}},
-			resolve: resolver(function* (_source, args: {input: VoteInput}) {
-				const auth = yield* Auth;
-				if (!auth.user) throw new GraphQLError("Sign in required");
-				const value = parseVoteValue(args.input.value);
+			type: new GraphQLNonNull(CommentType),
+			args: {commentId: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {commentId: string}) {
+				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO.get(env.PANO.idFromName("kampus"));
-				return yield* Effect.promise(() =>
-					stub.voteOnComment({
-						userId: auth.user!.id,
-						commentId: args.input.targetId,
-						value,
-					}),
+				// The comment lives inside its containing post's DO. The frontend
+				// always knows the post id from the page URL (vote button lives on
+				// a post page) but the GraphQL surface only takes the comment id,
+				// so we lean on the projection's denormalized `comment_view.post_id`
+				// to route the RPC. Mirrors the `lookupDefinitionTermSlug` pattern
+				// from T5's `voteDefinition`.
+				const postId = yield* Effect.promise(() =>
+					lookupCommentPostId(env.PHOENIX_DB, args.commentId),
 				);
+				if (!postId) {
+					throw new GraphQLError("comment not found", {
+						extensions: {code: "COMMENT_NOT_FOUND"},
+					});
+				}
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.voteOnComment({
+							commentId: args.commentId,
+							voterId: user.id,
+						}),
+					);
+					return {
+						id: result.commentId,
+						parentId: result.parentId,
+						author: result.authorName,
+						body: result.body,
+						score: result.score,
+						createdAt: result.createdAt,
+						// Stamp myVote authoritatively so the Comment.myVote
+						// resolver doesn't race against the user_vote projection
+						// landing. Same parent-stamping pattern as T5/T8.
+						myVote: result.myVote,
+					} as CommentRow & {myVote: number | null};
+				} catch (err) {
+					if (err instanceof CommentNotFoundError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: "COMMENT_NOT_FOUND"},
+						});
+					}
+					throw err;
+				}
+			}),
+		},
+		retractCommentVote: {
+			type: new GraphQLNonNull(CommentType),
+			args: {commentId: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {commentId: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const postId = yield* Effect.promise(() =>
+					lookupCommentPostId(env.PHOENIX_DB, args.commentId),
+				);
+				if (!postId) {
+					throw new GraphQLError("comment not found", {
+						extensions: {code: "COMMENT_NOT_FOUND"},
+					});
+				}
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.retractCommentVote({
+							commentId: args.commentId,
+							voterId: user.id,
+						}),
+					);
+					return {
+						id: result.commentId,
+						parentId: result.parentId,
+						author: result.authorName,
+						body: result.body,
+						score: result.score,
+						createdAt: result.createdAt,
+						myVote: result.myVote,
+					} as CommentRow & {myVote: number | null};
+				} catch (err) {
+					if (err instanceof CommentNotFoundError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: "COMMENT_NOT_FOUND"},
+						});
+					}
+					throw err;
+				}
 			}),
 		},
 	},

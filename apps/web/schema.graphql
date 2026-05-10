@@ -3,6 +3,7 @@ type Comment {
   body: String!
   createdAt: String!
   id: ID!
+  myVote: Int
   parentId: ID
   score: Int!
 }
@@ -30,12 +31,13 @@ type Mutation {
   deletePost(id: ID!): String!
   editDefinition(body: String!, id: ID!): Definition!
   editPost(body: String, id: ID!, title: String): Post!
+  retractCommentVote(commentId: ID!): Comment!
   retractDefinitionVote(definitionId: ID!): Definition!
   retractPostVote(postId: ID!): Post!
   setUsername(value: String!): User!
   submitPost(body: String, tags: [TagInput!]!, title: String!, url: String): Post!
   voteDefinition(definitionId: ID!): Definition!
-  voteOnComment(input: VoteInput!): VoteResult!
+  voteOnComment(commentId: ID!): Comment!
   voteOnPost(postId: ID!): Post!
 }
 
@@ -105,13 +107,4 @@ type User {
   image: String
   name: String
   username: String
-}
-
-input VoteInput {
-  targetId: ID!
-  value: Int!
-}
-
-type VoteResult {
-  score: Int!
 }

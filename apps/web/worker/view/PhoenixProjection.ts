@@ -579,6 +579,32 @@ async function projectCommentAdded(env: Env, e: CommentAddedEvent): Promise<void
 }
 
 /**
+ * `CommentChanged` refreshes the `comment_view.score` + `updated_at` for the
+ * comment row matching `commentId`. Convergent overwrite guarded by
+ * `WHERE last_event_id < ?` (forge ULID lex ordering — out-of-order retries
+ * become no-ops).
+ *
+ * The row is created by `CommentAdded` (T10); this step only updates the
+ * score column. If the row doesn't exist yet (the projection arrived before
+ * the `CommentAdded` event landed — possible under workflow out-of-order
+ * delivery), the UPDATE is a no-op and the eventual `CommentAdded` retry will
+ * write the row via its own guard. The vote-table truth lives in the per-post
+ * DO; this MV side is for the cross-product profile feed.
+ */
+async function projectCommentChanged(env: Env, e: CommentChangedEvent): Promise<void> {
+	const updatedAt = Math.floor(e.updatedAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`UPDATE comment_view SET
+			score         = ?,
+			updated_at    = ?,
+			last_event_id = ?
+		WHERE id = ? AND last_event_id < ?`,
+	)
+		.bind(e.score, updatedAt, e.eventId, e.commentId, e.eventId)
+		.run();
+}
+
+/**
  * `VoteRecorded` updates the cross-product MV state for an upvote/retract:
  *
  * - `user_vote`: presence-only row keyed by (user_id, target_kind, target_id).
@@ -721,7 +747,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 				case "CommentAdded":
 					return projectCommentAdded(this.env, e);
 				case "CommentChanged":
-					return;
+					return projectCommentChanged(this.env, e);
 				case "CommentEdited":
 					return;
 				case "CommentDeleted":

@@ -216,6 +216,51 @@ export interface VoteOnPostResult {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Vote-on-comment shapes                                                      */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Thrown by `voteOnComment` / `retractCommentVote` when the target comment id
+ * doesn't exist in this DO (or is soft-deleted). Mirrors `PostNotFoundError`.
+ */
+export class CommentNotFoundError extends Error {
+	readonly code = "comment_not_found" as const;
+	constructor(commentId: string) {
+		super(`comment ${commentId} not found`);
+		this.name = "CommentNotFoundError";
+	}
+}
+
+export interface VoteOnCommentInput {
+	commentId: string;
+	voterId: string;
+}
+
+/**
+ * Result returned by both `voteOnComment` and `retractCommentVote`. Mirrors
+ * the post-write state of the comment so the GraphQL resolver can return a
+ * full `Comment` payload without a round-trip read.
+ *
+ * `myVote` is stamped authoritatively from the comment_vote table state so
+ * the `Comment.myVote` field doesn't race against the cross-product MV
+ * projection (same pattern as `VoteOnPostResult.myVote` in T8).
+ */
+export interface VoteOnCommentResult {
+	commentId: string;
+	postId: string;
+	parentId: string | null;
+	authorId: string;
+	authorName: string;
+	body: string;
+	score: number;
+	createdAt: Date;
+	/** `1` if the voter has voted on this comment (post-write), `null` otherwise. */
+	myVote: number | null;
+	/** `true` if the vote row state changed; `false` on idempotent no-op. */
+	changed: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Add-comment shapes                                                          */
 /* -------------------------------------------------------------------------- */
 
@@ -866,6 +911,183 @@ export class PanoPost extends Agent<Env, PostState> {
 			await this.flushOutbox({eventId: voteEventId});
 		} catch (err) {
 			console.error("[PanoPost.applyVote] flushOutbox(vote) failed", err);
+		}
+
+		return result;
+	}
+
+	/**
+	 * Cast an upvote on a comment in this post (T11). Idempotent: a second
+	 * vote from the same voter is a no-op — score stays put, no events emitted.
+	 *
+	 * Atomicity per ADR 0007: a single `transactionSync` block writes the
+	 * comment_vote row, recomputes the comment's denormalized `score` from
+	 * the vote table, and emits TWO outbox rows (CommentChanged for the
+	 * `comment_view.score` convergence + VoteRecorded for the cross-product
+	 * `user_vote` MV + karma side effect).
+	 *
+	 * Throws `CommentNotFoundError` when the comment doesn't exist or is
+	 * soft-deleted in this DO.
+	 */
+	async voteOnComment(input: VoteOnCommentInput): Promise<VoteOnCommentResult> {
+		return this.applyCommentVote(input, /* isVote */ true);
+	}
+
+	/**
+	 * Retract a previously cast upvote on a comment (T11). Idempotent.
+	 */
+	async retractCommentVote(input: VoteOnCommentInput): Promise<VoteOnCommentResult> {
+		return this.applyCommentVote(input, /* isVote */ false);
+	}
+
+	/**
+	 * Shared body for `voteOnComment` / `retractCommentVote` — mirrors
+	 * `applyVote` (post-level T8) and `SozlukTerm.applyVote` (T5).
+	 */
+	private async applyCommentVote(
+		input: VoteOnCommentInput,
+		isVote: boolean,
+	): Promise<VoteOnCommentResult> {
+		const row = await this.db.query.comment.findFirst({
+			where: (c, {eq}) => eq(c.id, input.commentId),
+		});
+		if (!row || row.deletedAt) {
+			throw new CommentNotFoundError(input.commentId);
+		}
+
+		const now = Date.now();
+		const postId = this.name;
+		const createdAtMs = row.createdAt ? row.createdAt.getTime() : now;
+		const meta = await this.db.query.postMeta.findFirst();
+		const targetAuthorId = row.authorId;
+
+		const commentEventId = id("evt");
+		const voteEventId = id("evt");
+
+		let changed = false;
+		let newScore = row.score;
+
+		this.ctx.storage.transactionSync(() => {
+			if (isVote) {
+				const before = this.sql<{n: number}>`
+					SELECT COUNT(*) as n FROM comment_vote
+					WHERE comment_id = ${input.commentId} AND voter_id = ${input.voterId}
+				`;
+				const existed = (before[0]?.n ?? 0) > 0;
+				if (!existed) {
+					this.sql`
+						INSERT INTO comment_vote (comment_id, voter_id, created_at)
+						VALUES (${input.commentId}, ${input.voterId}, ${Math.floor(now / 1000)})
+						ON CONFLICT(comment_id, voter_id) DO NOTHING
+					`;
+					changed = true;
+				}
+			} else {
+				const before = this.sql<{n: number}>`
+					SELECT COUNT(*) as n FROM comment_vote
+					WHERE comment_id = ${input.commentId} AND voter_id = ${input.voterId}
+				`;
+				const existed = (before[0]?.n ?? 0) > 0;
+				if (existed) {
+					this.sql`
+						DELETE FROM comment_vote
+						WHERE comment_id = ${input.commentId} AND voter_id = ${input.voterId}
+					`;
+					changed = true;
+				}
+			}
+
+			if (!changed) {
+				newScore = row.score;
+				return;
+			}
+
+			// Recompute denormalized score from the vote table (presence-only,
+			// COUNT(*) is the canonical sum).
+			const scoreRows = this.sql<{n: number}>`
+				SELECT COUNT(*) as n FROM comment_vote WHERE comment_id = ${input.commentId}
+			`;
+			newScore = scoreRows[0]?.n ?? 0;
+
+			// Persist the recomputed score + updated_at on the comment row.
+			this.sql`
+				UPDATE comment
+				SET score = ${newScore}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = ${input.commentId}
+			`;
+
+			// Outbox: CommentChanged → comment_view.score convergence.
+			const commentPayload = JSON.stringify({
+				kind: "CommentChanged",
+				eventId: commentEventId,
+				commentId: input.commentId,
+				score: newScore,
+				updatedAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${commentEventId}, ${commentPayload}, ${now})
+			`;
+
+			// Outbox: VoteRecorded → user_vote MV + karma side effect on
+			// the comment's author.
+			const votePayload = JSON.stringify({
+				kind: "VoteRecorded",
+				eventId: voteEventId,
+				userId: input.voterId,
+				targetKind: "comment",
+				targetId: input.commentId,
+				targetAuthorId,
+				value: isVote,
+				createdAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${voteEventId}, ${votePayload}, ${now})
+			`;
+		});
+
+		const myVote = isVote ? 1 : null;
+
+		const result: VoteOnCommentResult = {
+			commentId: input.commentId,
+			postId,
+			parentId: row.parentId,
+			authorId: row.authorId,
+			authorName: row.authorName,
+			body: row.body,
+			score: newScore,
+			createdAt: row.createdAt ?? new Date(createdAtMs),
+			myVote,
+			changed,
+		};
+
+		if (!changed) return result;
+
+		// Update Agent state for live-update subscribers (T16). We don't track
+		// individual comment scores in PostState — the state bump just refreshes
+		// `lastActivityAt` + `lastEventId` so the post page's WebSocket sees
+		// activity. Keep meta-driven fields stable.
+		this.setState({
+			...this.state,
+			title: meta?.title ?? this.state.title,
+			host: meta?.host ?? this.state.host,
+			score: meta?.score ?? this.state.score,
+			commentCount: meta?.commentCount ?? this.state.commentCount,
+			lastActivityAt: now,
+			lastEventId: voteEventId,
+		});
+
+		// Best-effort inline flush; reconcileOutbox is the safety net.
+		try {
+			await this.flushOutbox({eventId: commentEventId});
+		} catch (err) {
+			console.error("[PanoPost.applyCommentVote] flushOutbox(comment) failed", err);
+		}
+		try {
+			await this.flushOutbox({eventId: voteEventId});
+		} catch (err) {
+			console.error("[PanoPost.applyCommentVote] flushOutbox(vote) failed", err);
 		}
 
 		return result;

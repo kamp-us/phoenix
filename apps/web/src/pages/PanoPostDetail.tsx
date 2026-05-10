@@ -47,6 +47,7 @@ const CommentsQuery = graphql`
       author
       body
       score
+      myVote
       createdAt
     }
   }
@@ -628,6 +629,7 @@ function buildTree(
       author: r.author,
       agoLabel: formatAgoTR(r.createdAt),
       score: r.score,
+      myVote: r.myVote ?? null,
       body: <CommentBody text={r.body} />,
       replyComposer:
         handlers.replyTo === r.id ? (
