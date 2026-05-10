@@ -7,6 +7,7 @@ import {
 	GraphQLID,
 	GraphQLInputObjectType,
 	GraphQLInt,
+	GraphQLInterfaceType,
 	GraphQLList,
 	GraphQLNonNull,
 	GraphQLObjectType,
@@ -16,6 +17,7 @@ import {
 	lexicographicSortSchema,
 	printSchema,
 } from "graphql";
+import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encodeNodeId";
 import {lookupCommentPostId} from "../features/pano/commentViewReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
@@ -38,6 +40,7 @@ import {
 	type ContributionNode,
 	listContributions,
 	lookupProfile,
+	lookupProfileById,
 	type ProfileRow,
 } from "../features/pasaport/userProfileReader";
 import type {DefinitionRow, TermPage} from "../features/sozluk/SozlukTerm";
@@ -47,8 +50,8 @@ import {
 	UnauthorizedDefinitionMutationError,
 } from "../features/sozluk/SozlukTerm";
 import {
-	listTermSummaries,
 	type ListSort,
+	listTermSummaries,
 	type TermSummaryRow,
 } from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
@@ -64,10 +67,44 @@ const HealthType = new GraphQLObjectType({
 	},
 });
 
-const UserType = new GraphQLObjectType({
-	name: "User",
+/**
+ * Relay `Node` interface (task_1, phoenix-relay-idiom). Every entity that a
+ * Relay client can refetch via `@refetchable` or load via the top-level
+ * `node(id)` query implements `Node` and exposes a globally-unique `id`.
+ *
+ * Concrete types stamp a `__typename` property on the rows they return from
+ * the {@link nodeResolver} dispatch path; everywhere else, `resolveType`
+ * inspects whichever per-entity discriminator is most natural (slug / kind).
+ */
+const NodeInterfaceType = new GraphQLInterfaceType({
+	name: "Node",
 	fields: {
 		id: {type: new GraphQLNonNull(GraphQLID)},
+	},
+	resolveType: (value: {__typename?: string}) => value.__typename,
+});
+
+/**
+ * Stamp a `__typename` on a row before returning it from the `node(id)`
+ * dispatch — the {@link NodeInterfaceType} `resolveType` reads it to pick
+ * the concrete GraphQL type. Plain reads from query fields like `term(slug)`
+ * already know their concrete type, so they don't need this.
+ */
+function asNode<T extends object>(typename: string, value: T): T & {__typename: string} {
+	return Object.assign({__typename: typename}, value);
+}
+
+const UserType = new GraphQLObjectType({
+	name: "User",
+	interfaces: () => [NodeInterfaceType],
+	fields: {
+		// Relay global id: base64 of `User:${userId}`. Local id is recoverable
+		// via `decodeNodeId` (or `extractLocalId`, lenient) at any mutation
+		// entry point that takes a `User` reference.
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (u: {id: string}) => encodeNodeId("User", u.id),
+		},
 		email: {type: new GraphQLNonNull(GraphQLString)},
 		name: {type: GraphQLString},
 		image: {type: GraphQLString},
@@ -79,8 +116,12 @@ const UserType = new GraphQLObjectType({
 
 const DefinitionType = new GraphQLObjectType<DefinitionRow>({
 	name: "Definition",
+	interfaces: () => [NodeInterfaceType],
 	fields: {
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (d) => encodeNodeId("Definition", d.id),
+		},
 		body: {type: new GraphQLNonNull(GraphQLString)},
 		author: {type: new GraphQLNonNull(GraphQLString)},
 		/**
@@ -140,8 +181,12 @@ const DefinitionType = new GraphQLObjectType<DefinitionRow>({
  */
 const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummaryRow>({
 	name: "Term",
+	interfaces: () => [NodeInterfaceType],
 	fields: () => ({
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (t) => encodeNodeId("Term", t.slug),
+		},
 		slug: {type: new GraphQLNonNull(GraphQLString)},
 		title: {type: new GraphQLNonNull(GraphQLString)},
 		count: {
@@ -201,8 +246,12 @@ const TagType = new GraphQLObjectType<PostTagRow>({
  */
 const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 	name: "Post",
+	interfaces: () => [NodeInterfaceType],
 	fields: () => ({
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (p) => encodeNodeId("Post", p.id),
+		},
 		slug: {type: GraphQLString},
 		title: {type: new GraphQLNonNull(GraphQLString)},
 		url: {type: GraphQLString},
@@ -265,8 +314,12 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 
 const CommentType = new GraphQLObjectType<CommentRow>({
 	name: "Comment",
+	interfaces: () => [NodeInterfaceType],
 	fields: {
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (c) => encodeNodeId("Comment", c.id),
+		},
 		parentId: {type: GraphQLID},
 		author: {type: new GraphQLNonNull(GraphQLString)},
 		/**
@@ -447,10 +500,32 @@ const ContributionEdgeType = new GraphQLObjectType<{cursor: string; node: Contri
 	},
 });
 
-const PageInfoType = new GraphQLObjectType<{hasNextPage: boolean; endCursor: string | null}>({
+/**
+ * Relay-spec `PageInfo` (task_1, phoenix-relay-idiom). The fields are the
+ * full Relay set so future page-migration tasks can wire bidirectional
+ * pagination if they ever need it. Today's connection resolvers only
+ * populate `hasNextPage` / `endCursor`; the others default to safe values
+ * (`hasPreviousPage: false`, `startCursor: null`) so the SDL contract
+ * holds without forcing every reader to manufacture them.
+ */
+interface PageInfoLike {
+	hasNextPage: boolean;
+	endCursor: string | null;
+	hasPreviousPage?: boolean;
+	startCursor?: string | null;
+}
+const PageInfoType = new GraphQLObjectType<PageInfoLike>({
 	name: "PageInfo",
 	fields: {
 		hasNextPage: {type: new GraphQLNonNull(GraphQLBoolean)},
+		hasPreviousPage: {
+			type: new GraphQLNonNull(GraphQLBoolean),
+			resolve: (p) => p.hasPreviousPage ?? false,
+		},
+		startCursor: {
+			type: GraphQLString,
+			resolve: (p) => p.startCursor ?? null,
+		},
 		endCursor: {type: GraphQLString},
 	},
 });
@@ -470,7 +545,14 @@ const ContributionConnectionType = new GraphQLObjectType<ContributionConnection>
 
 const ProfileType = new GraphQLObjectType<ProfileRow>({
 	name: "Profile",
+	interfaces: () => [NodeInterfaceType],
 	fields: {
+		// Relay global id keyed off `userId` — that's the immutable
+		// per-user identifier; `username` may be NULL until bootstrap.
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (p) => encodeNodeId("Profile", p.userId),
+		},
 		user: {
 			type: new GraphQLNonNull(UserType),
 			resolve: (p) => ({
@@ -535,6 +617,78 @@ const PHOENIX_BUILD_VERSION = "v0.3";
 const QueryType = new GraphQLObjectType({
 	name: "Query",
 	fields: {
+		/**
+		 * Relay `node(id)` dispatch (task_1, phoenix-relay-idiom). Decodes a
+		 * global id into `(typename, localId)` and routes to the right
+		 * per-atom Agent or D1 reader. Returns `null` for any unresolved
+		 * id rather than throwing — matches Relay's expectation for a
+		 * `Node` lookup that can legitimately miss.
+		 *
+		 * Definition / Comment lookups walk through the parent atom (term
+		 * for Definition, post for Comment) because the per-atom Agent is
+		 * the source of truth for the full row shape; the cross-product
+		 * MV only carries excerpts. The walk is one D1 lookup + one DO
+		 * RPC — fine for the rare `node()` access pattern (refetches and
+		 * direct deeplinks); page reads still go through their dedicated
+		 * top-level fields.
+		 */
+		node: {
+			type: NodeInterfaceType,
+			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {id: string}) {
+				const env = yield* CloudflareEnv;
+				let decoded: ReturnType<typeof decodeNodeId>;
+				try {
+					decoded = decodeNodeId(args.id);
+				} catch {
+					// Unresolvable id — surface as null rather than a 500.
+					return null;
+				}
+				switch (decoded.typename) {
+					case "Term": {
+						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(decoded.id));
+						const term = yield* Effect.promise(() => stub.getTerm());
+						return term ? asNode("Term", term) : null;
+					}
+					case "Post": {
+						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(decoded.id));
+						const post = yield* Effect.promise(() => stub.getPost());
+						return post ? asNode("Post", post) : null;
+					}
+					case "Definition": {
+						const slug = yield* Effect.promise(() =>
+							lookupDefinitionTermSlug(env.PHOENIX_DB, decoded.id),
+						);
+						if (!slug) return null;
+						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
+						const term = yield* Effect.promise(() => stub.getTerm());
+						const def = term?.definitions.find((d) => d.id === decoded.id) ?? null;
+						return def ? asNode("Definition", def) : null;
+					}
+					case "Comment": {
+						const postId = yield* Effect.promise(() =>
+							lookupCommentPostId(env.PHOENIX_DB, decoded.id),
+						);
+						if (!postId) return null;
+						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
+						const comments = yield* Effect.promise(() => stub.listComments());
+						const c = comments.find((row) => row.id === decoded.id) ?? null;
+						return c ? asNode("Comment", c) : null;
+					}
+					case "User": {
+						const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
+						const user = yield* Effect.promise(() => stub.getUserById(decoded.id));
+						return user ? asNode("User", user) : null;
+					}
+					case "Profile": {
+						const profile = yield* Effect.promise(() =>
+							lookupProfileById(env.PHOENIX_DB, decoded.id),
+						);
+						return profile ? asNode("Profile", profile) : null;
+					}
+				}
+			}),
+		},
 		health: {
 			type: new GraphQLNonNull(HealthType),
 			resolve: resolver(function* () {
@@ -850,6 +1004,10 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {definitionId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
+				// Accept either a Relay global id (post-migration FE) or a raw
+				// local id (current MVP FE). `extractLocalId` is a no-op for raw
+				// ids — see encodeNodeId.ts for the migration rationale.
+				const definitionId = extractLocalId(args.definitionId, "Definition");
 				// The definition's term is encoded by the DO instance the resolver
 				// targets. The frontend always knows the term slug from the page
 				// URL (vote button lives on a term page) — but the GraphQL surface
@@ -857,7 +1015,7 @@ const MutationType = new GraphQLObjectType({
 				// `definition_view` row carries `term_slug` so we lean on it for
 				// the dispatch.
 				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, args.definitionId),
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
 				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
@@ -867,7 +1025,7 @@ const MutationType = new GraphQLObjectType({
 				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				try {
 					const result = yield* Effect.promise(() =>
-						stub.voteDefinition({definitionId: args.definitionId, voterId: user.id}),
+						stub.voteDefinition({definitionId, voterId: user.id}),
 					);
 					return {
 						id: result.definitionId,
@@ -897,8 +1055,9 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {definitionId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
+				const definitionId = extractLocalId(args.definitionId, "Definition");
 				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, args.definitionId),
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
 				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
@@ -908,7 +1067,7 @@ const MutationType = new GraphQLObjectType({
 				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				try {
 					const result = yield* Effect.promise(() =>
-						stub.retractDefinitionVote({definitionId: args.definitionId, voterId: user.id}),
+						stub.retractDefinitionVote({definitionId, voterId: user.id}),
 					);
 					return {
 						id: result.definitionId,
@@ -939,7 +1098,10 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string; body: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const slug = yield* Effect.promise(() => lookupDefinitionTermSlug(env.PHOENIX_DB, args.id));
+				const definitionId = extractLocalId(args.id, "Definition");
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
 						extensions: {code: "DEFINITION_NOT_FOUND"},
@@ -952,7 +1114,7 @@ const MutationType = new GraphQLObjectType({
 					const result = yield* Effect.promise(() =>
 						stub
 							.editDefinition({
-								definitionId: args.id,
+								definitionId,
 								actorId: user.id,
 								body: args.body,
 							})
@@ -986,7 +1148,10 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const slug = yield* Effect.promise(() => lookupDefinitionTermSlug(env.PHOENIX_DB, args.id));
+				const definitionId = extractLocalId(args.id, "Definition");
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
 						extensions: {code: "DEFINITION_NOT_FOUND"},
@@ -994,7 +1159,7 @@ const MutationType = new GraphQLObjectType({
 				}
 				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				const result = yield* Effect.promise(() =>
-					stub.deleteDefinition({definitionId: args.id, actorId: user.id}).then(
+					stub.deleteDefinition({definitionId, actorId: user.id}).then(
 						(value) => ({ok: true as const, value}),
 						(error: unknown) => ({ok: false as const, error}),
 					),
@@ -1123,7 +1288,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {postId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				const postId = extractLocalId(args.postId, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				try {
 					const result = yield* Effect.promise(() => stub.voteOnPost({voterId: user.id}));
 					return {
@@ -1163,7 +1329,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {postId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				const postId = extractLocalId(args.postId, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				try {
 					const result = yield* Effect.promise(() => stub.retractPostVote({voterId: user.id}));
 					return {
@@ -1214,7 +1381,8 @@ const MutationType = new GraphQLObjectType({
 					});
 				}
 
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.id));
+				const postId = extractLocalId(args.id, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
 					stub
 						.editPost({
@@ -1257,7 +1425,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.id));
+				const postId = extractLocalId(args.id, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
 					stub.deletePost({actorId: user.id}).then(
 						(value) => ({ok: true as const, value}),
@@ -1300,14 +1469,16 @@ const MutationType = new GraphQLObjectType({
 					});
 				}
 
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				const postId = extractLocalId(args.postId, "Post");
+				const parentId = args.parentId ? extractLocalId(args.parentId, "Comment") : null;
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				try {
 					const result = yield* Effect.promise(() =>
 						stub.addComment({
 							authorId: user.id,
 							authorName: user.name ?? user.email,
 							body: args.body,
-							...(args.parentId ? {parentId: args.parentId} : {}),
+							...(parentId ? {parentId} : {}),
 						}),
 					);
 					return {
@@ -1343,15 +1514,14 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {commentId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
+				const commentId = extractLocalId(args.commentId, "Comment");
 				// The comment lives inside its containing post's DO. The frontend
 				// always knows the post id from the page URL (vote button lives on
 				// a post page) but the GraphQL surface only takes the comment id,
 				// so we lean on the projection's denormalized `comment_view.post_id`
 				// to route the RPC. Mirrors the `lookupDefinitionTermSlug` pattern
 				// from T5's `voteDefinition`.
-				const postId = yield* Effect.promise(() =>
-					lookupCommentPostId(env.PHOENIX_DB, args.commentId),
-				);
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1361,7 +1531,7 @@ const MutationType = new GraphQLObjectType({
 				try {
 					const result = yield* Effect.promise(() =>
 						stub.voteOnComment({
-							commentId: args.commentId,
+							commentId,
 							voterId: user.id,
 						}),
 					);
@@ -1399,9 +1569,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {commentId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const postId = yield* Effect.promise(() =>
-					lookupCommentPostId(env.PHOENIX_DB, args.commentId),
-				);
+				const commentId = extractLocalId(args.commentId, "Comment");
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1411,7 +1580,7 @@ const MutationType = new GraphQLObjectType({
 				try {
 					const result = yield* Effect.promise(() =>
 						stub.retractCommentVote({
-							commentId: args.commentId,
+							commentId,
 							voterId: user.id,
 						}),
 					);
@@ -1465,7 +1634,8 @@ const MutationType = new GraphQLObjectType({
 					});
 				}
 
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, args.id));
+				const commentId = extractLocalId(args.id, "Comment");
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1473,7 +1643,7 @@ const MutationType = new GraphQLObjectType({
 				}
 				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
-					stub.editComment({commentId: args.id, actorId: user.id, body: args.body}).then(
+					stub.editComment({commentId, actorId: user.id, body: args.body}).then(
 						(value) => ({ok: true as const, value}),
 						(error: unknown) => ({ok: false as const, error}),
 					),
@@ -1511,7 +1681,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, args.id));
+				const commentId = extractLocalId(args.id, "Comment");
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1519,7 +1690,7 @@ const MutationType = new GraphQLObjectType({
 				}
 				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
-					stub.deleteComment({commentId: args.id, actorId: user.id}).then(
+					stub.deleteComment({commentId, actorId: user.id}).then(
 						(value) => ({ok: true as const, value}),
 						(error: unknown) => ({ok: false as const, error}),
 					),

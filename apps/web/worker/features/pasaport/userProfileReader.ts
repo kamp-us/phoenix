@@ -59,6 +59,58 @@ export async function lookupProfile(d1: D1Database, username: string): Promise<P
 	const row = profile[0];
 	if (!row || row.username == null) return null;
 
+	return await hydrateProfile(d1, {...row, username: row.username});
+}
+
+/**
+ * Look up a profile by `userId` (the immutable Pasaport user id, not the
+ * mutable username). Powers the Relay `node(id)` dispatch — the Profile
+ * global id is `Profile:${userId}`, so the resolver decodes and lands here.
+ *
+ * Returns `null` when the row exists but `username` is still NULL (the user
+ * hasn't completed bootstrap) — that profile isn't addressable as a public
+ * page yet, mirroring `lookupProfile`'s behavior.
+ */
+export async function lookupProfileById(
+	d1: D1Database,
+	userId: string,
+): Promise<ProfileRow | null> {
+	const db = drizzle(d1, {schema});
+
+	const profile = await db
+		.select({
+			userId: schema.userProfile.userId,
+			username: schema.userProfile.username,
+			displayName: schema.userProfile.displayName,
+			image: schema.userProfile.image,
+			totalKarma: schema.userProfile.totalKarma,
+		})
+		.from(schema.userProfile)
+		.where(eq(schema.userProfile.userId, userId))
+		.limit(1);
+
+	const row = profile[0];
+	if (!row || row.username == null) return null;
+
+	return await hydrateProfile(d1, {...row, username: row.username});
+}
+
+/**
+ * Shared aggregate hydration for the two `lookup*` entry points. Counters
+ * are derived live from the per-kind view tables (filtered by author and
+ * `deleted_at IS NULL`) — same rationale as the file-level docstring.
+ */
+async function hydrateProfile(
+	d1: D1Database,
+	row: {
+		userId: string;
+		username: string;
+		displayName: string | null;
+		image: string | null;
+		totalKarma: number;
+	},
+): Promise<ProfileRow> {
+	const db = drizzle(d1, {schema});
 	const authorId = row.userId;
 	const [defCount, postCount, commentCount] = await Promise.all([
 		db

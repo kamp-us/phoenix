@@ -10,5 +10,9 @@
 		"noEmit": true,
 		"types": ["@cloudflare/workers-types"]
 	},
-	"include": ["worker", "worker-configuration.d.ts"]
+	"include": [
+		"worker",
+		"worker-configuration.d.ts",
+		"src/relay/encodeNodeId.ts"
+	]
 }

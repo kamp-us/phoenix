@@ -1,4 +1,4 @@
-type Comment {
+type Comment implements Node {
   author: String!
   authorId: ID!
   body: String!
@@ -30,7 +30,7 @@ type ContributionEdge {
   node: ProfileContribution!
 }
 
-type Definition {
+type Definition implements Node {
   author: String!
   authorId: ID!
   body: String!
@@ -83,12 +83,18 @@ type Mutation {
   voteOnPost(postId: ID!): Post!
 }
 
+interface Node {
+  id: ID!
+}
+
 type PageInfo {
   endCursor: String
   hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
 }
 
-type Post {
+type Post implements Node {
   author: String!
   authorId: ID!
   body: String
@@ -122,10 +128,11 @@ enum PostSort {
   top
 }
 
-type Profile {
+type Profile implements Node {
   commentCount: Int!
   contributions(after: String, first: Int): ContributionConnection!
   definitionCount: Int!
+  id: ID!
   postCount: Int!
   totalKarma: Int!
   user: User!
@@ -137,6 +144,7 @@ type Query {
   health: Health!
   landingStats: LandingStats!
   me: User
+  node(id: ID!): Node
   post(idOrSlug: String!): Post
   postComments(postId: String!): [Comment!]!
   posts(host: String, limit: Int, sort: PostSort): [Post!]!
@@ -155,7 +163,7 @@ input TagInput {
   label: String
 }
 
-type Term {
+type Term implements Node {
   count: Int!
   definitions: [Definition!]!
   excerpt: String
@@ -172,7 +180,7 @@ enum TermSort {
   recent
 }
 
-type User {
+type User implements Node {
   email: String!
   id: ID!
   image: String
