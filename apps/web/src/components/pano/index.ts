@@ -1,3 +1,5 @@
 export * from './PanoPost';
-export * from './PanoComment';
+export * from './PanoPostCard';
+export * from './CommentTreeNode';
+export * from './PanoPostHeader';
 export * from './PanoCrumb';

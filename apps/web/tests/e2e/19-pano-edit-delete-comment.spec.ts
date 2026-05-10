@@ -12,10 +12,11 @@ import {signOut, signUp} from "./_helpers/auth";
  *   2. Cross-user flow: sign up B → user B does NOT see the düzenle/sil
  *      affordances on user A's comments.
  *
- * Mirrors the page.reload() pattern from 17-pano-add-comment.spec.ts to dodge
- * the Suspense double-mount race after submitPost (operator.md / task_5
- * retry-1 lesson). Reloads after comment add/edit/delete also keep the
- * comments query refetch from racing the contested interaction.
+ * phoenix-relay-idiom task_3: every historical `page.reload()` workaround
+ * after a mutation has been removed. The post-detail page no longer
+ * unmounts on `addComment` / `editComment` / `deleteComment` — manual
+ * `updater` + `@deleteRecord` keep the tree mounted, so the Suspense
+ * double-mount race the reloads were dodging no longer fires.
  */
 test.describe("Pano editComment / deleteComment (task_12)", () => {
 	test("author can edit a comment, delete a parent → [silindi], delete a leaf → removed", async ({
@@ -42,9 +43,6 @@ test.describe("Pano editComment / deleteComment (task_12)", () => {
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 		const postUrl = page.url();
 
-		// Reload escapes the Suspense double-mount race (operator-blessed pattern
-		// from task_5 retry 1 / task_11).
-		await page.reload();
 		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 		await expect(page.getByRole("heading", {name: /0 yorum/i})).toBeVisible({timeout: 10_000});
 
@@ -75,7 +73,6 @@ test.describe("Pano editComment / deleteComment (task_12)", () => {
 		await editInput.fill(editedBody);
 		await page.locator(`[data-testid="pano-comment-edit-save-${parentCommentId}"]`).click();
 
-		await page.reload();
 		await expect(page.getByText(editedBody, {exact: false}).first()).toBeVisible({
 			timeout: 10_000,
 		});
@@ -92,8 +89,7 @@ test.describe("Pano editComment / deleteComment (task_12)", () => {
 		await expect(page.getByText(replyBody, {exact: false})).toBeVisible({timeout: 10_000});
 
 		// Resolve the reply id. There are now two vote buttons; the second one
-		// is the reply (top-level rendered first by buildTree).
-		await page.reload();
+		// is the reply (top-level rendered first by the page's tree builder).
 		await expect(page.getByRole("heading", {name: /2 yorum/i})).toBeVisible({timeout: 10_000});
 		const allVoteBtns = page.locator('[data-testid^="comment-vote-comm_"]');
 		await expect(allVoteBtns).toHaveCount(2, {timeout: 10_000});
@@ -112,7 +108,6 @@ test.describe("Pano editComment / deleteComment (task_12)", () => {
 		await expect(confirm).toBeVisible({timeout: 5_000});
 		await confirm.click();
 
-		await page.reload();
 		// Parent comment now shows [silindi]; reply still visible.
 		await expect(page.getByText("[silindi]").first()).toBeVisible({timeout: 10_000});
 		await expect(page.getByText(replyBody, {exact: false})).toBeVisible({timeout: 10_000});
@@ -127,7 +122,6 @@ test.describe("Pano editComment / deleteComment (task_12)", () => {
 		await expect(confirm2).toBeVisible({timeout: 5_000});
 		await confirm2.click();
 
-		await page.reload();
 		await expect(page.getByText(replyBody, {exact: false})).toHaveCount(0, {timeout: 10_000});
 		// `[silindi]` is gone too — parent had no live children left.
 		await expect(page.getByText("[silindi]")).toHaveCount(0);
@@ -157,7 +151,6 @@ test.describe("Pano editComment / deleteComment (task_12)", () => {
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 		const postUrl = page.url();
 
-		await page.reload();
 		await expect(page.getByRole("heading", {name: /0 yorum/i})).toBeVisible({timeout: 10_000});
 
 		const aBody = `A's comment body ${aSuffix}`;

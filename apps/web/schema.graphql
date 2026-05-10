@@ -3,11 +3,23 @@ type Comment implements Node {
   authorId: ID!
   body: String!
   createdAt: String!
+  deletedAt: String
   id: ID!
   myVote: Int
   parentId: ID
   score: Int!
   updatedAt: String!
+}
+
+type CommentConnection {
+  edges: [CommentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type CommentEdge {
+  cursor: String!
+  node: Comment!
 }
 
 type CommentContribution {
@@ -64,12 +76,17 @@ type LandingStats {
   version: String!
 }
 
+type DeleteCommentPayload {
+  comment: Comment
+  deletedCommentId: ID
+}
+
 type Mutation {
   addComment(body: String!, parentId: ID, postId: ID!): Comment!
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
-  deleteComment(id: ID!): String!
+  deleteComment(id: ID!): DeleteCommentPayload!
   deleteDefinition(id: ID!): String!
-  deletePost(id: ID!): String!
+  deletePost(id: ID!): ID!
   editComment(body: String!, id: ID!): Comment!
   editDefinition(body: String!, id: ID!): Definition!
   editPost(body: String, id: ID!, title: String): Post!
@@ -99,6 +116,7 @@ type Post implements Node {
   authorId: ID!
   body: String
   commentCount: Int!
+  comments(after: String, first: Int): CommentConnection!
   createdAt: String!
   host: String
   id: ID!
@@ -111,6 +129,12 @@ type Post implements Node {
   url: String
 }
 
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
 type PostContribution {
   bodyExcerpt: String
   createdAt: String!
@@ -119,6 +143,11 @@ type PostContribution {
   score: Int!
   slug: String
   title: String!
+}
+
+type PostEdge {
+  cursor: String!
+  node: Post!
 }
 
 enum PostSort {
@@ -147,7 +176,7 @@ type Query {
   node(id: ID!): Node
   post(idOrSlug: String!): Post
   postComments(postId: String!): [Comment!]!
-  posts(host: String, limit: Int, sort: PostSort): [Post!]!
+  posts(after: String, first: Int, host: String, sort: PostSort): PostConnection!
   profile(username: String!): Profile
   term(slug: String!): Term
   terms(limit: Int, sort: TermSort): [Term!]!

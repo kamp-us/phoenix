@@ -110,6 +110,31 @@ export interface CommentRow {
 	 * "düzenlendi" indicator when `updatedAt > createdAt + 60s` (T17).
 	 */
 	updatedAt: Date;
+	/**
+	 * Soft-delete timestamp (task_3, phoenix-relay-idiom). Surfaced for the
+	 * reply-aware projection: a parent-with-replies row appears with
+	 * `body = '[silindi]'` AND `deletedAt` set so the SPA can render the
+	 * placeholder via a typed `deletedAt != null` check rather than the
+	 * fragile body-string match. `null` for live comments. Mirrors the
+	 * same `deletedAt` field already exposed at the projection layer
+	 * (`comment_view.deleted_at`).
+	 */
+	deletedAt?: Date | null;
+}
+
+/**
+ * Page returned by the connection-shaped comment reader (task_3,
+ * phoenix-relay-idiom). Mirrors `PostConnectionPage` from
+ * `postSummaryReader.ts`. `endCursor` is `null` on an empty page or when
+ * `hasNextPage` is `false`. Cursor encoding is opaque to the client; today
+ * it's the comment id (forge ULID, lex-sortable) which already matches
+ * chronological order.
+ */
+export interface CommentConnectionPage {
+	rows: CommentRow[];
+	hasNextPage: boolean;
+	endCursor: string | null;
+	totalCount: number;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -381,6 +406,13 @@ export interface DeleteCommentResult {
 	 * comment was a leaf → fully removed from the tree.
 	 */
 	hasReplies: boolean;
+	/**
+	 * The post-delete `[silindi]` placeholder row (task_3, phoenix-relay-idiom)
+	 * surfaced when `hasReplies === true`, so the GraphQL `deleteComment`
+	 * resolver can return it without a follow-up `listComments` round-trip.
+	 * `null` for the leaf path (the row is omitted from the tree entirely).
+	 */
+	placeholder: CommentRow | null;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -625,6 +657,7 @@ export class PanoPost extends Agent<Env, PostState> {
 					score: c.score,
 					createdAt: c.createdAt ?? new Date(0),
 					updatedAt: c.updatedAt ?? c.createdAt ?? new Date(0),
+					deletedAt: c.deletedAt,
 				});
 				continue;
 			}
@@ -637,9 +670,59 @@ export class PanoPost extends Agent<Env, PostState> {
 				score: c.score,
 				createdAt: c.createdAt ?? new Date(0),
 				updatedAt: c.updatedAt ?? c.createdAt ?? new Date(0),
+				deletedAt: null,
 			});
 		}
 		return out;
+	}
+
+	/**
+	 * Connection-shaped read for `Post.comments(first, after)` (task_3,
+	 * phoenix-relay-idiom). Builds on `listComments` (which already does the
+	 * reply-aware soft-delete pass) and slices out a forward page in
+	 * chronological-asc order — comments default to oldest-first on link
+	 * aggregator UIs, matching `@appendNode`-style adds for new replies.
+	 *
+	 * Cursor is the comment id (forge ULID; lex-sortable) — `after` selects
+	 * rows with `id > cursor.id`. The total-count is the materialized list
+	 * length AFTER reply-aware filtering, so the FE's `LoadMoreButton` count
+	 * matches what the user actually sees.
+	 *
+	 * Trade-off: full materialization happens in memory rather than as a
+	 * narrow SQL slice. Acceptable for the MVP scale (per-post comment
+	 * threads cap in the low hundreds at the busiest); can lift into pure
+	 * SQL keyset pagination if a flame graph ever pins this hop.
+	 */
+	async listCommentsConnection(opts: {
+		first?: number;
+		after?: string | null;
+	}): Promise<CommentConnectionPage> {
+		const all = await this.listComments();
+		// Stable chronological-asc order; same comparator as the legacy
+		// reader's secondary `asc(createdAt)` (createdAt ties broken by id).
+		const sorted = [...all].sort((a, b) => {
+			const at = a.createdAt.getTime();
+			const bt = b.createdAt.getTime();
+			if (at !== bt) return at - bt;
+			return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+		});
+		const first = Math.max(1, Math.min(opts.first ?? 50, 200));
+		const after = opts.after ?? null;
+		const startIndex = after ? sorted.findIndex((c) => c.id === after) + 1 : 0;
+		// `findIndex` returns -1 on a stale cursor; +1 lands at 0, which
+		// collapses to "page from the head". The FE then sees the head as
+		// the next page and reconciles against its store. This is the same
+		// behavior `listPostConnection` exhibits on a stale cursor.
+		const safeStart = startIndex < 0 ? 0 : startIndex;
+		const page = sorted.slice(safeStart, safeStart + first);
+		const hasNextPage = safeStart + first < sorted.length;
+		const last = page.at(-1) ?? null;
+		return {
+			rows: page,
+			hasNextPage,
+			endCursor: last ? last.id : null,
+			totalCount: sorted.length,
+		};
 	}
 
 	/* -------- Mutation surface ------------------------------------------ */
@@ -1487,7 +1570,12 @@ export class PanoPost extends Agent<Env, PostState> {
 		}
 		if (row.deletedAt) {
 			// Already soft-deleted → idempotent no-op.
-			return {commentId: input.commentId, deleted: false, hasReplies: false};
+			return {
+				commentId: input.commentId,
+				deleted: false,
+				hasReplies: false,
+				placeholder: null,
+			};
 		}
 
 		const meta = await this.db.query.postMeta.findFirst();
@@ -1587,7 +1675,20 @@ export class PanoPost extends Agent<Env, PostState> {
 			console.error("[PanoPost.deleteComment] flushOutbox(post) failed", err);
 		}
 
-		return {commentId: input.commentId, deleted: true, hasReplies};
+		const placeholder: CommentRow | null = hasReplies
+			? {
+					id: input.commentId,
+					parentId: row.parentId,
+					author: "",
+					authorId: "",
+					body: SILINDI_PLACEHOLDER,
+					score: row.score,
+					createdAt: row.createdAt ?? new Date(0),
+					updatedAt: new Date(now),
+					deletedAt: new Date(now),
+				}
+			: null;
+		return {commentId: input.commentId, deleted: true, hasReplies, placeholder};
 	}
 
 	/**

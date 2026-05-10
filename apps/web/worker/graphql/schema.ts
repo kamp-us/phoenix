@@ -21,6 +21,7 @@ import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encode
 import {lookupCommentPostId} from "../features/pano/commentViewReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
+	type CommentConnectionPage,
 	CommentNotFoundError,
 	type CommentRow,
 	CommentValidationError,
@@ -30,7 +31,8 @@ import {
 	PostValidationError,
 } from "../features/pano/PanoPost";
 import {
-	listPostSummaries,
+	listPostConnection,
+	type PostConnectionPage,
 	type PostSort,
 	type PostSummaryRow,
 } from "../features/pano/postSummaryReader";
@@ -44,11 +46,7 @@ import {
 	type ProfileRow,
 } from "../features/pasaport/userProfileReader";
 import type {DefinitionRow, TermPage} from "../features/sozluk/SozlukTerm";
-import {
-	DefinitionNotFoundError,
-	DefinitionValidationError,
-	UnauthorizedDefinitionMutationError,
-} from "../features/sozluk/SozlukTerm";
+import {DefinitionNotFoundError, DefinitionValidationError} from "../features/sozluk/SozlukTerm";
 import {
 	type ListSort,
 	listTermSummaries,
@@ -309,6 +307,95 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 				);
 			}),
 		},
+		/**
+		 * Connection-shaped comment list (task_3, phoenix-relay-idiom). Replaces
+		 * the legacy top-level `postComments(postId)` flat-array field as the
+		 * canonical read path for the post-detail page (the legacy field stays
+		 * during the migration window so coexisting page mounts don't break;
+		 * cleanup task drops it).
+		 *
+		 * Cursor pagination is keyset on the comment id (forge ULID;
+		 * lex-sortable, matches chronological-asc). The `LoadMoreButton` reads
+		 * `pageInfo.hasNextPage`; `totalCount` reflects the materialized
+		 * post-reply-aware list length.
+		 */
+		comments: {
+			type: new GraphQLNonNull(CommentConnectionType),
+			args: {
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
+			},
+			resolve: resolver(function* (
+				parent: PostSummaryRow | PostPage,
+				args: {first?: number | null; after?: string | null},
+			) {
+				const env = yield* CloudflareEnv;
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(parent.id));
+				return yield* Effect.promise(() =>
+					stub.listCommentsConnection({
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
+					}),
+				);
+			}),
+		},
+	}),
+});
+
+/* -------------------------------------------------------------------------- */
+/* Comment connection (task_3, phoenix-relay-idiom)                            */
+/* -------------------------------------------------------------------------- */
+
+const CommentEdgeType = new GraphQLObjectType<{cursor: string; node: CommentRow}>({
+	name: "CommentEdge",
+	fields: () => ({
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(CommentType)},
+	}),
+});
+
+const CommentConnectionType = new GraphQLObjectType<CommentConnectionPage>({
+	name: "CommentConnection",
+	fields: () => ({
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(CommentEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.id, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
+	}),
+});
+
+/**
+ * Two-shape mutation payload for `deleteComment` (task_3, phoenix-relay-idiom).
+ * Exactly one of `deletedCommentId` / `comment` is non-null per call:
+ *
+ *  - **Leaf path** — comment had no live children. `deletedCommentId` is the
+ *    Relay global id; the FE `@deleteRecord`s it out of the store, the
+ *    connection edge auto-clears.
+ *  - **Parent-with-replies path** — comment had at least one live child. The
+ *    server returns the same `Comment` with `body = '[silindi]'` and
+ *    `deletedAt` set; Relay's automatic store update merges the new scalars
+ *    into the existing `Comment:<global-id>` record. The row stays in the
+ *    connection so the thread shape is preserved.
+ */
+const DeleteCommentPayloadType = new GraphQLObjectType<{
+	deletedCommentId: string | null;
+	comment: CommentRow | null;
+}>({
+	name: "DeleteCommentPayload",
+	fields: () => ({
+		deletedCommentId: {type: GraphQLID},
+		comment: {type: CommentType},
 	}),
 });
 
@@ -340,6 +427,21 @@ const CommentType = new GraphQLObjectType<CommentRow>({
 			resolve: (c) => {
 				const u = (c as {updatedAt?: Date}).updatedAt;
 				return (u ?? c.createdAt).toISOString();
+			},
+		},
+		/**
+		 * Soft-delete timestamp (task_3, phoenix-relay-idiom). `null` for live
+		 * comments; ISO string when the comment was soft-deleted but still
+		 * appears in the tree as a `[silindi]` placeholder (parent-with-replies
+		 * path). The leaf-delete path removes the row entirely so it never
+		 * surfaces here. The SPA reads this typed flag instead of the fragile
+		 * body-string match against `[silindi]`.
+		 */
+		deletedAt: {
+			type: GraphQLString,
+			resolve: (c) => {
+				const d = (c as {deletedAt?: Date | null}).deletedAt;
+				return d ? d.toISOString() : null;
 			},
 		},
 		/**
@@ -543,6 +645,39 @@ const ContributionConnectionType = new GraphQLObjectType<ContributionConnection>
 	},
 });
 
+/* -------------------------------------------------------------------------- */
+/* Pano feed connection (task_2, phoenix-relay-idiom)                          */
+/* -------------------------------------------------------------------------- */
+
+const PostEdgeType = new GraphQLObjectType<{cursor: string; node: PostSummaryRow}>({
+	name: "PostEdge",
+	fields: {
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(PostType)},
+	},
+});
+
+const PostConnectionType = new GraphQLObjectType<PostConnectionPage>({
+	name: "PostConnection",
+	fields: {
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(PostEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.id, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
+	},
+});
+
 const ProfileType = new GraphQLObjectType<ProfileRow>({
 	name: "Profile",
 	interfaces: () => [NodeInterfaceType],
@@ -741,22 +876,41 @@ const QueryType = new GraphQLObjectType({
 				return yield* Effect.promise(() => stub.getTerm());
 			}),
 		},
+		/**
+		 * Pano feed connection (task_2, phoenix-relay-idiom). Replaces the
+		 * legacy flat-array `posts(sort, limit, host)` field — `PanoFeed.tsx`
+		 * is the only consumer and migrates in the same PR. The connection
+		 * shape unlocks Relay's idiomatic `usePaginationFragment` +
+		 * `@connection` mutation updaters.
+		 *
+		 * Cursor is the post id (forge ULID; lex-sortable). The reader resolves
+		 * the cursor row once per page to support keyset pagination across
+		 * non-monotonic sort keys (`hot_score`, `score`, `comment_count`); for
+		 * the `new` sort it shortcuts to a direct id comparison.
+		 */
 		posts: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(PostType))),
+			type: new GraphQLNonNull(PostConnectionType),
 			args: {
 				sort: {type: PostSortEnum},
-				limit: {type: GraphQLInt},
 				host: {type: GraphQLString},
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
 			},
 			resolve: resolver(function* (
 				_source,
-				args: {sort?: PostSort; limit?: number; host?: string},
+				args: {
+					sort?: PostSort;
+					host?: string | null;
+					first?: number | null;
+					after?: string | null;
+				},
 			) {
 				const env = yield* CloudflareEnv;
 				return yield* Effect.promise(() =>
-					listPostSummaries(env.PHOENIX_DB, {
+					listPostConnection(env.PHOENIX_DB, {
 						...(args.sort ? {sort: args.sort} : {}),
-						...(args.limit != null ? {limit: args.limit} : {}),
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
 						...(args.host ? {host: args.host} : {}),
 					}),
 				);
@@ -1419,8 +1573,15 @@ const MutationType = new GraphQLObjectType({
 				} satisfies PostPage;
 			}),
 		},
+		/**
+		 * Delete a post (task_2, phoenix-relay-idiom). Returns the global id
+		 * of the deleted post; the FE attaches `@deleteRecord` to that field
+		 * so Relay removes the record from its store, which in turn auto-clears
+		 * every edge in every `PanoFeed_posts` connection variant that
+		 * references it. No `$connections` plumbing required.
+		 */
 		deletePost: {
-			type: new GraphQLNonNull(GraphQLString),
+			type: new GraphQLNonNull(GraphQLID),
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
@@ -1436,9 +1597,10 @@ const MutationType = new GraphQLObjectType({
 				if (!result.ok) {
 					throw mapPostMutationError(result.error);
 				}
-				// SDL is `deletePost: String!` — return the deleted id so the SPA
-				// can confirm + invalidate caches. Mirrors `deleteDefinition` (T6).
-				return result.value.postId;
+				// Return the Relay global id so `@deleteRecord` can find the
+				// store record under the same DataID Relay normalized the
+				// `Post` to (`encodeNodeId("Post", localId)`).
+				return encodeNodeId("Post", result.value.postId);
 			}),
 		},
 		addComment: {
@@ -1668,15 +1830,19 @@ const MutationType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Soft-delete a comment (T12). `Auth.required` + ownership inside the
-		 * Agent. Reply-aware: the per-DO read and the cross-product
-		 * `comment_view` projection both treat a deleted-with-children
-		 * comment as `[silindi]` (preserve thread shape) and a deleted-leaf
-		 * as fully removed. The SDL returns the deleted comment id (mirrors
-		 * `deletePost` / `deleteDefinition`).
+		 * Soft-delete a comment (T12 + task_3 phoenix-relay-idiom). Reply-aware:
+		 * the leaf path returns `deletedCommentId` so the FE can `@deleteRecord`
+		 * the row out of the Relay store; the parent-with-replies path returns
+		 * the same `Comment` with `body = '[silindi]'` and `deletedAt` set so
+		 * Relay's automatic store update handles the placeholder rerender.
+		 * Exactly one of the two payload fields is non-null per call.
+		 *
+		 * `Auth.required` + ownership inside the Agent. The per-DO read and the
+		 * cross-product `comment_view` projection both treat a deleted-with-
+		 * children comment as `[silindi]` and a deleted-leaf as fully removed.
 		 */
 		deleteComment: {
-			type: new GraphQLNonNull(GraphQLString),
+			type: new GraphQLNonNull(DeleteCommentPayloadType),
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
@@ -1698,7 +1864,22 @@ const MutationType = new GraphQLObjectType({
 				if (!result.ok) {
 					throw mapCommentMutationError(result.error);
 				}
-				return result.value.commentId;
+				const r = result.value;
+				if (r.hasReplies && r.placeholder) {
+					// Parent-with-replies path: return the placeholder Comment row
+					// with `body = '[silindi]'` + `deletedAt` set. Relay merges the
+					// new scalar values into the same DataID (`Comment:<global-id>`)
+					// the page already rendered, so the row stays in the connection
+					// edge and the SPA rerenders the placeholder in place.
+					return {deletedCommentId: null, comment: r.placeholder};
+				}
+				// Leaf path (or idempotent no-op): return the global id so the FE
+				// `@deleteRecord` directive removes the record from the store and
+				// the connection edge auto-clears.
+				return {
+					deletedCommentId: encodeNodeId("Comment", r.commentId),
+					comment: null,
+				};
 			}),
 		},
 	},

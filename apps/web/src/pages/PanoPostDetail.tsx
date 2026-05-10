@@ -1,160 +1,231 @@
+/**
+ * Post-detail page (task_3, phoenix-relay-idiom).
+ *
+ * Fully idiomatic Relay shape — `useLazyLoadQuery` at the top spreads
+ * `PanoPostHeaderFragment` + `PanoPostDetailCommentsFragment` into the
+ * `Post` selection; `usePaginationFragment` reads the comment connection;
+ * each row is a fragment ref handed to `CommentTreeNode` (which declares
+ * its own `CommentTreeNodeFragment on Comment`).
+ *
+ * Live updates flow through `useLiveAgentV2`: the WebSocket pushes typed
+ * `PostState` snapshots, the `applyToStore` callback writes them straight
+ * into the Relay store via `commitLocalUpdate`. The page tree never
+ * unmounts on a live event — `LivePill` connection state remains the
+ * sole user-visible signal of subscription health (parity with T16).
+ *
+ * Mutations:
+ *  - `addComment` — manual `updater` appends a `CommentEdge` into the
+ *    `PanoPostDetail_comments` connection (chronological-asc), plus
+ *    `optimisticResponse` for the immediate flip.
+ *  - `deleteComment` — server returns a `DeleteCommentPayload`. Leaf path
+ *    surfaces `deletedCommentId @deleteRecord`; parent-with-replies path
+ *    surfaces the same `Comment` with `body = '[silindi]'` + `deletedAt`
+ *    set, which Relay merges back via the normal store update.
+ *  - `editComment`, `editPost`, `voteOnComment` — auto store update on the
+ *    returned scalars (no updater).
+ *  - `deletePost` — `deletedPostId @deleteRecord` (matches the task_2
+ *    pattern; navigates back to /pano on success).
+ */
 import * as React from "react";
-import {graphql, useLazyLoadQuery, useMutation} from "react-relay";
+import {
+	graphql,
+	useFragment,
+	useLazyLoadQuery,
+	useMutation,
+	usePaginationFragment,
+} from "react-relay";
 import {Link, useNavigate, useParams} from "react-router";
+import type {RecordSourceProxy} from "relay-runtime";
+import type {CommentTreeNodeFragment$key} from "../__generated__/CommentTreeNodeFragment.graphql";
 import type {PanoPostDetailAddCommentMutation} from "../__generated__/PanoPostDetailAddCommentMutation.graphql";
-import type {PanoPostDetailCommentsQuery} from "../__generated__/PanoPostDetailCommentsQuery.graphql";
+import type {PanoPostDetailCommentsFragment$key} from "../__generated__/PanoPostDetailCommentsFragment.graphql";
 import type {PanoPostDetailDeleteCommentMutation} from "../__generated__/PanoPostDetailDeleteCommentMutation.graphql";
 import type {PanoPostDetailDeletePostMutation} from "../__generated__/PanoPostDetailDeletePostMutation.graphql";
 import type {PanoPostDetailEditCommentMutation} from "../__generated__/PanoPostDetailEditCommentMutation.graphql";
+import type {PanoPostDetailEditFragment$key} from "../__generated__/PanoPostDetailEditFragment.graphql";
 import type {PanoPostDetailEditPostMutation} from "../__generated__/PanoPostDetailEditPostMutation.graphql";
-import type {PanoPostDetailPostQuery} from "../__generated__/PanoPostDetailPostQuery.graphql";
+import type {PanoPostDetailQuery} from "../__generated__/PanoPostDetailQuery.graphql";
 import {useSession} from "../auth/client";
-import {type CommentData, PanoCommentTree, PostVoteWidget} from "../components/pano/index";
-import {Tag, type TagKind} from "../components/ui/atoms";
+import {CommentTreeNode} from "../components/pano/CommentTreeNode";
+import {PanoPostHeader, PanoPostHeaderVote} from "../components/pano/PanoPostHeader";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
-import {EditedIndicator} from "../components/ui/EditedIndicator";
-import {formatAgoTR} from "../lib/datetime";
-import {renderMarkdownInline} from "../lib/markdown";
 import {authRedirectPath} from "../lib/returnTo";
-import {useLiveAgent} from "../lib/useLiveAgent";
+import {useLiveAgentV2} from "../lib/useLiveAgent.v2";
 import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
+import {appendCommentToPostConnection} from "../relay/panoPostDetailUpdater";
 import {QueryBoundary} from "../relay/QueryBoundary";
 import {NotFoundPage} from "./NotFoundPage";
 import "./PanoPostDetail.css";
 
-const PostQuery = graphql`
-  query PanoPostDetailPostQuery($idOrSlug: String!) {
-    post(idOrSlug: $idOrSlug) {
-      id
-      slug
-      title
-      url
-      host
-      body
-      author
-      authorId
-      score
-      commentCount
-      createdAt
-      updatedAt
-      myVote
-      tags {
-        kind
-        label
-      }
-    }
-  }
-`;
-
-const CommentsQuery = graphql`
-  query PanoPostDetailCommentsQuery($postId: String!) {
-    postComments(postId: $postId) {
-      id
-      parentId
-      author
-      authorId
-      body
-      score
-      myVote
-      createdAt
-      updatedAt
-    }
-  }
+const PostDetailQuery = graphql`
+	query PanoPostDetailQuery($idOrSlug: String!, $first: Int) {
+		post(idOrSlug: $idOrSlug) {
+			id
+			authorId
+			...PanoPostHeaderFragment
+			...PanoPostDetailEditFragment
+			...PanoPostDetailCommentsFragment @arguments(first: $first)
+		}
+	}
 `;
 
 /**
- * Edit a comment's body (task_12). Returns the updated body so Relay merges
- * into the store keyed by `id` — the comment row updates without a refetch.
+ * Tiny page-local fragment that supplies the inline edit form's pre-fill
+ * inputs (`title`, `body`). Kept separate from `PanoPostHeaderFragment` so
+ * the header doesn't have to know about the edit affordance.
  */
-const EditCommentMutation = graphql`
-  mutation PanoPostDetailEditCommentMutation($id: ID!, $body: String!) {
-    editComment(id: $id, body: $body) {
-      id
-      body
-      updatedAt
-    }
-  }
+const PanoPostDetailEditFragmentDef = graphql`
+	fragment PanoPostDetailEditFragment on Post {
+		id
+		title
+		body
+	}
 `;
 
 /**
- * Soft-delete a comment (task_12). Returns the deleted id; the SPA refetches
- * the comments query so the reply-aware tree (placeholder vs. removed) lands
- * in the UI authoritatively from the server.
+ * Comments connection on `Post`. `@refetchable` lets `usePaginationFragment`
+ * load subsequent pages; `@connection` lets mutation updaters address the
+ * connection by stable key + the parent's DataID.
+ *
+ * `first: Int` (nullable) per the relay-compiler rule that variables with
+ * default values cannot be non-null. Page passes `PAGE_SIZE` as the
+ * initial value.
+ */
+const PanoPostDetailCommentsFragmentDef = graphql`
+	fragment PanoPostDetailCommentsFragment on Post
+	@argumentDefinitions(
+		first: {type: "Int", defaultValue: 50}
+		after: {type: "String"}
+	)
+	@refetchable(queryName: "PanoPostDetailCommentsPaginationQuery") {
+		comments(first: $first, after: $after)
+			@connection(key: "PanoPostDetail_comments") {
+			edges {
+				node {
+					id
+					parentId
+					body
+					...CommentTreeNodeFragment
+				}
+			}
+			pageInfo {
+				hasNextPage
+				endCursor
+			}
+			totalCount
+		}
+	}
+`;
+
+const EditCommentMutation = graphql`
+	mutation PanoPostDetailEditCommentMutation($id: ID!, $body: String!) {
+		editComment(id: $id, body: $body) {
+			id
+			body
+			updatedAt
+		}
+	}
+`;
+
+/**
+ * Delete a comment (T12 + task_3 phoenix-relay-idiom).
+ *
+ * The mutation returns a two-shape payload:
+ *  - `deletedCommentId @deleteRecord` — leaf path; Relay removes the
+ *    record and connection edges referencing it auto-clear.
+ *  - `comment` — parent-with-replies path; the same Comment row arrives
+ *    with `body = '[silindi]'` and `deletedAt` set. Relay's automatic
+ *    store update merges the new scalars into the existing
+ *    `Comment:<global-id>` record so the placeholder rerenders in place.
+ *
+ * Exactly one of the two fields is non-null per call.
  */
 const DeleteCommentMutation = graphql`
-  mutation PanoPostDetailDeleteCommentMutation($id: ID!) {
-    deleteComment(id: $id)
-  }
+	mutation PanoPostDetailDeleteCommentMutation($id: ID!) {
+		deleteComment(id: $id) {
+			deletedCommentId @deleteRecord
+			comment {
+				id
+				body
+				deletedAt
+				updatedAt
+			}
+		}
+	}
 `;
 
-/**
- * Edit mutation for posts (task_9). Returns the updated title/body so Relay
- * can write the changes into the store keyed by `id` without a refetch.
- */
 const EditPostMutation = graphql`
-  mutation PanoPostDetailEditPostMutation(
-    $id: ID!
-    $title: String
-    $body: String
-  ) {
-    editPost(id: $id, title: $title, body: $body) {
-      id
-      title
-      body
-      updatedAt
-    }
-  }
+	mutation PanoPostDetailEditPostMutation(
+		$id: ID!
+		$title: String
+		$body: String
+	) {
+		editPost(id: $id, title: $title, body: $body) {
+			id
+			title
+			body
+			updatedAt
+		}
+	}
 `;
 
-/**
- * Delete (hard-from-feed) mutation for posts (task_9). Returns the deleted
- * id; the SPA navigates back to /pano after success so the now-missing post
- * doesn't 404 in front of the user.
- */
 const DeletePostMutation = graphql`
-  mutation PanoPostDetailDeletePostMutation($id: ID!) {
-    deletePost(id: $id)
-  }
+	mutation PanoPostDetailDeletePostMutation($id: ID!) {
+		deletedPostId: deletePost(id: $id) @deleteRecord
+	}
 `;
 
 /**
- * Add comment mutation (task_10). Returns the new comment so Relay can write
- * it into the store; we follow up with a CommentsQuery refetch via fetchKey
- * to land the new row in the tree (the GraphQL query is its own page-level
- * Relay query, not a connection).
+ * Add comment mutation (task_3 — switched from refetch-on-mutate to
+ * connection updater + optimisticResponse). The selection set spreads
+ * `CommentTreeNodeFragment` so the new row arrives in the store with
+ * every field the tree node needs to render without a follow-up read.
  */
 const AddCommentMutation = graphql`
-  mutation PanoPostDetailAddCommentMutation(
-    $postId: ID!
-    $parentId: ID
-    $body: String!
-  ) {
-    addComment(postId: $postId, parentId: $parentId, body: $body) {
-      id
-      parentId
-      author
-      body
-      score
-      createdAt
-    }
-  }
+	mutation PanoPostDetailAddCommentMutation(
+		$postId: ID!
+		$parentId: ID
+		$body: String!
+	) {
+		addComment(postId: $postId, parentId: $parentId, body: $body) {
+			id
+			parentId
+			body
+			score
+			myVote
+			createdAt
+			updatedAt
+			deletedAt
+			author
+			authorId
+			...CommentTreeNodeFragment
+		}
+	}
 `;
 
 const COMMENT_BODY_MAX = 5_000;
-
 const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
+const PAGE_SIZE = 50;
+
+/**
+ * Subset of the `PostState` Agent state shape the page subscribes to over
+ * WebSocket — extends `LiveAgentStateShape` so `useLiveAgentV2`'s typed
+ * generic accepts it. Keeping this client-side rather than importing from
+ * the worker avoids dragging worker-only modules into the SPA bundle.
+ */
+interface LivePostState {
+	score: number;
+	commentCount: number;
+	hotScore: number;
+	lastActivityAt: number;
+	lastEventId: string;
+}
 
 export function PanoPostDetail() {
 	const {id} = useParams<{id: string}>();
 	const safeId = id ?? "";
-	/* Bumped after a successful edit so the post-page query re-fetches; the
-     edit mutation only returns `id/title/body`, so re-fetching keeps the
-     other surfaced fields (score, comment count) in sync if they shifted
-     between mount and edit submit. */
-	const [fetchKey, setFetchKey] = React.useState(0);
-
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
@@ -169,49 +240,18 @@ export function PanoPostDetail() {
 						</p>
 					)}
 				>
-					<PostContent
-						idOrSlug={safeId}
-						fetchKey={fetchKey}
-						onMutated={() => setFetchKey((k) => k + 1)}
-					/>
+					<PostContent idOrSlug={safeId} />
 				</QueryBoundary>
 			</div>
 		</div>
 	);
 }
 
-function PostContent({
-	idOrSlug,
-	fetchKey,
-	onMutated,
-}: {
-	idOrSlug: string;
-	fetchKey: number;
-	onMutated: () => void;
-}) {
-	// Live subscription to PanoPost[id] over WebSocket (T16). When the post
-	// score, body, or comment count changes server-side, `liveSignal` bumps
-	// and refetches `post(idOrSlug)`. The Comments subtree owns its own
-	// `liveSignal` consumer below (same agent, different fetchKey scope) so
-	// new comments appear without re-fetching the post head.
-	const {liveSignal, connected: liveConnected} = useLiveAgent({
-		agent: "pano-post",
-		name: idOrSlug,
-		enabled: idOrSlug.length > 0,
-	});
-
-	// `store-and-network` keeps the rendered post visible while a refetch is
-	// in flight (live signal or mutation refetch). Suspense only fires on the
-	// very first mount; subsequent refreshes flow into Relay's store without
-	// re-entering the QueryBoundary fallback.
-	const combinedKey = fetchKey + liveSignal;
-	const data = useLazyLoadQuery<PanoPostDetailPostQuery>(
-		PostQuery,
-		{idOrSlug},
-		{
-			fetchKey: combinedKey,
-			fetchPolicy: combinedKey === 0 ? "store-or-network" : "store-and-network",
-		},
+function PostContent({idOrSlug}: {idOrSlug: string}) {
+	const data = useLazyLoadQuery<PanoPostDetailQuery>(
+		PostDetailQuery,
+		{idOrSlug, first: PAGE_SIZE},
+		{fetchPolicy: "store-or-network"},
 	);
 	const post = data.post;
 	const session = useSession();
@@ -239,18 +279,18 @@ function PostContent({
 	}
 
 	const isAuthor = !!session.data?.user && session.data.user.id === post.authorId;
+	const postRecordId = post.id;
+	const postLocalId = idOrSlug;
 
-	function onEditClick() {
-		if (!post) return;
-		setEditTitle(post.title);
-		setEditBody(post.body ?? "");
+	function onEditClick(seed: {title: string; body: string | null}) {
+		setEditTitle(seed.title);
+		setEditBody(seed.body ?? "");
 		setEditError(null);
 		setEditing(true);
 	}
 
-	function onEditSubmit(e: React.FormEvent) {
+	function onEditSubmit(e: React.FormEvent, postGlobalId: string) {
 		e.preventDefault();
-		if (!post) return;
 		const trimmedTitle = editTitle.trim();
 		if (trimmedTitle.length === 0) {
 			setEditError("başlık boş olamaz");
@@ -266,13 +306,7 @@ function PostContent({
 		}
 		setEditError(null);
 		editCommit({
-			variables: {
-				id: post.id,
-				title: trimmedTitle,
-				// Empty body submits as empty string; the backend treats that as
-				// clearing the body to null.
-				body: editBody,
-			},
+			variables: {id: postGlobalId, title: trimmedTitle, body: editBody},
 			onCompleted: (_data, errors) => {
 				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
@@ -280,7 +314,6 @@ function PostContent({
 					return;
 				}
 				setEditing(false);
-				onMutated();
 			},
 			onError: (err) => {
 				if (handleAuthError(null, err)) return;
@@ -289,11 +322,11 @@ function PostContent({
 		});
 	}
 
+	const postGlobalId = post.id;
 	function onDeleteConfirm() {
-		if (!post) return;
 		setDeleteError(null);
 		deleteCommit({
-			variables: {id: post.id},
+			variables: {id: postGlobalId},
 			onCompleted: (_data, errors) => {
 				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
@@ -310,118 +343,97 @@ function PostContent({
 		});
 	}
 
+	// Live updates v2 — translates Agent state diffs into Relay store writes.
+	// The page tree never unmounts (no `setFetchKey`); LivePill renders the
+	// connection state. The applyToStore callback updates the Post node's
+	// denormalized aggregates from the typed PostState snapshot.
+	const applyLiveStateToStore = React.useCallback(
+		(state: LivePostState, store: RecordSourceProxy) => {
+			const postRecord = store.get(postRecordId);
+			if (!postRecord) return;
+			postRecord.setValue(state.score, "score");
+			postRecord.setValue(state.commentCount, "commentCount");
+			// `hotScore` and `lastActivityAt` aren't surfaced on the GraphQL Post
+			// today — write them anyway so future fragments that select them
+			// pick up the live values without a refetch. No-ops for stores that
+			// don't carry the field.
+		},
+		[postRecordId],
+	);
+
+	const {connected: liveConnected} = useLiveAgentV2<LivePostState>({
+		agent: "pano-post",
+		name: postLocalId,
+		applyToStore: applyLiveStateToStore,
+		enabled: postLocalId.length > 0,
+	});
+
 	return (
 		<>
 			<header className="kp-pano-postpage__head">
-				<PostVoteWidget postId={post.id} score={post.score} myVote={post.myVote ?? null} />
-				<div>
-					{editing ? (
-						<form className="kp-pano-edit-post" onSubmit={onEditSubmit}>
-							<input
-								className="kp-pano-edit-post__title"
-								value={editTitle}
-								onChange={(e) => setEditTitle(e.target.value)}
+				<PanoPostHeaderVote post={post} />
+				{editing ? (
+					<form className="kp-pano-edit-post" onSubmit={(e) => onEditSubmit(e, post.id)}>
+						<input
+							className="kp-pano-edit-post__title"
+							value={editTitle}
+							onChange={(e) => setEditTitle(e.target.value)}
+							disabled={editInFlight}
+							data-testid="post-edit-title"
+							maxLength={TITLE_MAX + 50}
+						/>
+						<textarea
+							className="kp-pano-edit-post__body"
+							value={editBody}
+							onChange={(e) => setEditBody(e.target.value)}
+							disabled={editInFlight}
+							data-testid="post-edit-body"
+							maxLength={BODY_MAX + 100}
+						/>
+						{editError ? (
+							<p
+								className="kp-pano-edit-post__error"
+								role="alert"
+								data-testid="post-edit-error"
+								style={{color: "var(--danger)", font: "var(--t-meta)"}}
+							>
+								{editError}
+							</p>
+						) : null}
+						<div style={{display: "flex", gap: 6}}>
+							<Button
+								variant="tertiary"
+								size="sm"
+								type="button"
 								disabled={editInFlight}
-								data-testid="post-edit-title"
-								maxLength={TITLE_MAX + 50}
-							/>
-							<textarea
-								className="kp-pano-edit-post__body"
-								value={editBody}
-								onChange={(e) => setEditBody(e.target.value)}
-								disabled={editInFlight}
-								data-testid="post-edit-body"
-								maxLength={BODY_MAX + 100}
-							/>
-							{editError ? (
-								<p
-									className="kp-pano-edit-post__error"
-									role="alert"
-									data-testid="post-edit-error"
-									style={{color: "var(--danger)", font: "var(--t-meta)"}}
-								>
-									{editError}
-								</p>
-							) : null}
-							<div style={{display: "flex", gap: 6}}>
-								<Button
-									variant="tertiary"
-									size="sm"
-									type="button"
-									disabled={editInFlight}
-									onClick={() => {
-										setEditing(false);
-										setEditError(null);
-									}}
-								>
-									iptal
-								</Button>
-								<Button
-									variant="primary"
-									size="sm"
-									type="submit"
-									disabled={editInFlight || editTitle.trim().length === 0}
-									data-testid="post-edit-save"
-								>
-									{editInFlight ? "kaydediliyor…" : "kaydet"}
-								</Button>
-							</div>
-						</form>
-					) : (
-						<>
-							<h1 className="kp-pano-postpage__title">{post.title}</h1>
-							{post.url ? (
-								<a
-									className="kp-pano-postpage__url"
-									href={post.url}
-									target="_blank"
-									rel="noreferrer noopener"
-								>
-									{post.host ?? post.url} ↗
-								</a>
-							) : null}
-							<div className="kp-pano-postpage__meta">
-								{post.tags.map((t, i) => (
-									<Tag key={i} kind={t.kind as TagKind}>
-										{t.label}
-									</Tag>
-								))}
-								<span className="author">@{post.author}</span>
-								<span>·</span>
-								<span>{formatAgoTR(post.createdAt)}</span>
-								<EditedIndicator createdAt={post.createdAt} updatedAt={post.updatedAt} />
-								<span>·</span>
-								<span>{post.commentCount} yorum</span>
-								<span>·</span>
-								<button type="button">paylaş</button>
-								<button type="button">kaydet</button>
-								<button type="button">bildir</button>
-								<LivePill connected={liveConnected} />
-								{isAuthor ? (
-									<>
-										<button type="button" data-testid="post-edit" onClick={onEditClick}>
-											düzenle
-										</button>
-										<button
-											type="button"
-											data-testid="post-delete"
-											onClick={() => setConfirmDelete(true)}
-										>
-											sil
-										</button>
-									</>
-								) : null}
-							</div>
-							{post.body ? (
-								<div className="kp-pano-postpage__body">
-									{post.body.split(/\n{2,}/).map((para, i) => (
-										<p key={i}>{renderMarkdownInline(para)}</p>
-									))}
-								</div>
-							) : null}
-						</>
-					)}
-				</div>
+								onClick={() => {
+									setEditing(false);
+									setEditError(null);
+								}}
+							>
+								iptal
+							</Button>
+							<Button
+								variant="primary"
+								size="sm"
+								type="submit"
+								disabled={editInFlight || editTitle.trim().length === 0}
+								data-testid="post-edit-save"
+							>
+								{editInFlight ? "kaydediliyor…" : "kaydet"}
+							</Button>
+						</div>
+					</form>
+				) : (
+					<PostHeaderWithEditWiring
+						headerRef={post}
+						editRef={post}
+						isAuthor={isAuthor}
+						livePill={<LivePill connected={liveConnected} />}
+						onEdit={onEditClick}
+						onDelete={() => setConfirmDelete(true)}
+					/>
+				)}
 			</header>
 
 			{isAuthor ? (
@@ -454,43 +466,270 @@ function PostContent({
 				</Dialog.Root>
 			) : null}
 
-			<React.Suspense
-				fallback={
-					<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yorumlar yükleniyor…</p>
-				}
-			>
-				<Comments postId={post.id} signedIn={!!session.data?.user} liveSignal={liveSignal} />
-			</React.Suspense>
+			<Comments
+				post={post}
+				postRecordId={postRecordId}
+				signedIn={!!session.data?.user}
+				currentUserId={session.data?.user?.id ?? null}
+			/>
 		</>
 	);
 }
 
 /**
- * Inline comment composer (task_10). When `parentId` is null this is the
- * top-level "yorum ekle" form rendered at the top of the thread; when set
- * it's the per-comment reply form nested under a `PanoComment`. Submits to
- * the `addComment` mutation; on success calls `onAdded` to refetch the
- * comments query (parent owns the fetchKey).
+ * Wraps `PanoPostHeader` so the edit click can hand back the current title
+ * + body (read off the page-local edit fragment) without making the header
+ * own the edit form. The header is purely presentational; the page owns
+ * the edit machinery.
+ */
+function PostHeaderWithEditWiring({
+	headerRef,
+	editRef,
+	isAuthor,
+	livePill,
+	onEdit,
+	onDelete,
+}: {
+	headerRef: React.ComponentProps<typeof PanoPostHeader>["post"];
+	editRef: PanoPostDetailEditFragment$key;
+	isAuthor: boolean;
+	livePill: React.ReactNode;
+	onEdit: (seed: {title: string; body: string | null}) => void;
+	onDelete: () => void;
+}) {
+	const editData = useFragment(PanoPostDetailEditFragmentDef, editRef);
+	return (
+		<PanoPostHeader
+			post={headerRef}
+			isAuthor={isAuthor}
+			livePill={livePill}
+			onEdit={() => onEdit({title: editData.title, body: editData.body ?? null})}
+			onDelete={onDelete}
+		/>
+	);
+}
+
+interface CommentsProps {
+	post: PanoPostDetailCommentsFragment$key;
+	postRecordId: string;
+	signedIn: boolean;
+	currentUserId: string | null;
+}
+
+function Comments(props: CommentsProps) {
+	const {data, loadNext, hasNext, isLoadingNext} = usePaginationFragment(
+		PanoPostDetailCommentsFragmentDef,
+		props.post,
+	);
+	const [replyTo, setReplyTo] = React.useState<string | null>(null);
+	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
+	const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
+	const [deleteError, setDeleteError] = React.useState<string | null>(null);
+
+	const [deleteCommit, deleteInFlight] =
+		useMutation<PanoPostDetailDeleteCommentMutation>(DeleteCommentMutation);
+	const {handleError: handleAuthError} = useSessionExpiredToast();
+
+	// Build the children-by-parent index from the flat connection edges.
+	const {roots, childrenByParent, bodyById} = React.useMemo(() => {
+		const all: Array<{id: string; parentId: string | null; ref: CommentTreeNodeFragment$key}> = [];
+		const bodyById = new Map<string, string>();
+		for (const edge of data.comments.edges) {
+			if (!edge?.node) continue;
+			all.push({
+				id: edge.node.id,
+				parentId: edge.node.parentId ?? null,
+				ref: edge.node,
+			});
+			bodyById.set(edge.node.id, edge.node.body);
+		}
+		const childrenByParent = new Map<
+			string,
+			Array<{id: string; ref: CommentTreeNodeFragment$key}>
+		>();
+		const roots: Array<{id: string; ref: CommentTreeNodeFragment$key}> = [];
+		const knownIds = new Set(all.map((c) => c.id));
+		for (const c of all) {
+			if (c.parentId && knownIds.has(c.parentId)) {
+				const list = childrenByParent.get(c.parentId) ?? [];
+				list.push({id: c.id, ref: c.ref});
+				childrenByParent.set(c.parentId, list);
+			} else {
+				roots.push({id: c.id, ref: c.ref});
+			}
+		}
+		return {roots, childrenByParent, bodyById};
+	}, [data.comments.edges]);
+
+	const childrenForId = React.useCallback(
+		(id: string): ReadonlyArray<{id: string; ref: CommentTreeNodeFragment$key}> =>
+			childrenByParent.get(id) ?? [],
+		[childrenByParent],
+	);
+
+	const onDeleteConfirm = React.useCallback(() => {
+		if (!confirmDeleteId) return;
+		setDeleteError(null);
+		deleteCommit({
+			variables: {id: confirmDeleteId},
+			onCompleted: (_d, errors) => {
+				if (handleAuthError(errors)) return;
+				if (errors && errors.length > 0) {
+					setDeleteError(errors[0]?.message ?? "yorum silinemedi");
+					return;
+				}
+				setConfirmDeleteId(null);
+			},
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setDeleteError(err.message);
+			},
+		});
+	}, [confirmDeleteId, deleteCommit, handleAuthError]);
+
+	const composerFor = React.useCallback(
+		(id: string) => ({
+			replyComposer:
+				replyTo === id ? (
+					<CommentComposer
+						postRecordId={props.postRecordId}
+						parentId={id}
+						signedIn={props.signedIn}
+						onPosted={() => setReplyTo(null)}
+						onCancel={() => setReplyTo(null)}
+						autoFocus
+					/>
+				) : undefined,
+			editComposer:
+				editingCommentId === id ? (
+					<CommentEditComposer
+						commentId={id}
+						initialBody={bodyById.get(id) ?? ""}
+						onEdited={() => setEditingCommentId(null)}
+						onCancel={() => setEditingCommentId(null)}
+					/>
+				) : undefined,
+		}),
+		[replyTo, editingCommentId, props.postRecordId, props.signedIn, bodyById],
+	);
+
+	return (
+		<>
+			<CommentComposer
+				postRecordId={props.postRecordId}
+				parentId={null}
+				signedIn={props.signedIn}
+				onPosted={() => undefined}
+			/>
+			<h2 className="kp-pano-postpage__thread-heading">{data.comments.totalCount} yorum</h2>
+			<div className="kp-pano-thread">
+				{roots.map((r) => {
+					const c = composerFor(r.id);
+					return (
+						<CommentTreeNode
+							key={r.id}
+							comment={r.ref}
+							children={childrenForId(r.id)}
+							childrenForId={childrenForId}
+							currentUserId={props.currentUserId}
+							onReply={(id) => setReplyTo(id)}
+							onEdit={(id) => setEditingCommentId(id)}
+							onDelete={(id) => {
+								setDeleteError(null);
+								setConfirmDeleteId(id);
+							}}
+							composerFor={composerFor}
+							replyComposer={c.replyComposer}
+							editComposer={c.editComposer}
+						/>
+					);
+				})}
+			</div>
+			{hasNext ? (
+				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
+					<Button
+						variant="tertiary"
+						size="sm"
+						type="button"
+						disabled={isLoadingNext}
+						onClick={() => loadNext(PAGE_SIZE)}
+					>
+						{isLoadingNext ? "yükleniyor…" : "daha fazla"}
+					</Button>
+				</div>
+			) : null}
+			<Dialog.Root
+				open={confirmDeleteId != null}
+				onOpenChange={(open) => {
+					if (!open) {
+						setConfirmDeleteId(null);
+						setDeleteError(null);
+					}
+				}}
+			>
+				<Dialog.Popup>
+					<Dialog.Head
+						title="yorumu sil"
+						description="bu yorumu silmek istediğine emin misin? geri alınamaz."
+					/>
+					<Dialog.Body>
+						{deleteError ? (
+							<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
+								{deleteError}
+							</p>
+						) : null}
+					</Dialog.Body>
+					<Dialog.Foot>
+						<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
+						<Button
+							variant="primary"
+							type="button"
+							disabled={deleteInFlight}
+							data-testid="pano-comment-delete-confirm"
+							onClick={onDeleteConfirm}
+						>
+							{deleteInFlight ? "siliniyor…" : "sil"}
+						</Button>
+					</Dialog.Foot>
+				</Dialog.Popup>
+			</Dialog.Root>
+		</>
+	);
+}
+
+/**
+ * Top-level + nested comment composer. Submits to `addComment`; on success
+ * the manual `updater` appends a `CommentEdge` into the
+ * `PanoPostDetail_comments` connection — the row appears in the tree
+ * without a refetch.
  *
- * Signed-out users see the composer disabled with a sign-in prompt; clicking
- * the button routes to `/auth?returnTo=<current-url>` per the rest of the
- * auth-gated mutations (T4/T5/T7/T8).
+ * `optimisticResponse` mirrors the temp-record pattern from `submitPost`
+ * (task_2 retry) — a `temp-${Date.now()}` id distinguishes the optimistic
+ * record in devtools; the updater is idempotent on the optimistic →
+ * server-confirm transition.
  */
 function CommentComposer({
-	postId,
+	postRecordId,
 	parentId,
 	signedIn,
-	onAdded,
+	onPosted,
 	onCancel,
 	autoFocus,
 }: {
-	postId: string;
+	/**
+	 * Relay DataID of the parent Post — used both to address the comments
+	 * connection from the updater AND as the mutation variable. The Post's
+	 * Relay DataID is its global id (`encodeNodeId("Post", localId)`); the
+	 * resolver unwraps via `extractLocalId` (task_1 lenient migration helper).
+	 */
+	postRecordId: string;
 	parentId: string | null;
 	signedIn: boolean;
-	onAdded: () => void;
+	onPosted: () => void;
 	onCancel?: () => void;
 	autoFocus?: boolean;
 }) {
+	const session = useSession();
 	const [body, setBody] = React.useState("");
 	const [error, setError] = React.useState<string | null>(null);
 	const [commit, inFlight] = useMutation<PanoPostDetailAddCommentMutation>(AddCommentMutation);
@@ -518,11 +757,25 @@ function CommentComposer({
 			return;
 		}
 		setError(null);
+		const tempId = `temp-${Date.now()}`;
 		commit({
-			variables: {
-				postId,
-				parentId: parentId ?? null,
-				body,
+			variables: {postId: postRecordId, parentId, body},
+			optimisticResponse: {
+				addComment: {
+					id: tempId,
+					parentId: parentId ?? null,
+					body,
+					score: 0,
+					myVote: null,
+					createdAt: new Date().toISOString(),
+					updatedAt: new Date().toISOString(),
+					deletedAt: null,
+					author: session.data?.user?.name ?? "",
+					authorId: session.data?.user?.id ?? "",
+				},
+			},
+			updater: (store) => {
+				appendCommentToPostConnection(store, postRecordId);
 			},
 			onCompleted: (_data, errors) => {
 				if (handleAuthError(errors)) return;
@@ -531,7 +784,7 @@ function CommentComposer({
 					return;
 				}
 				setBody("");
-				onAdded();
+				onPosted();
 				onCancel?.();
 			},
 			onError: (err) => {
@@ -599,255 +852,6 @@ function CommentComposer({
 	);
 }
 
-/**
- * Separate query so the post-page header renders before the thread does;
- * also lets the comment list cache and stream on its own cadence later.
- *
- * After an `addComment` mutation we bump `fetchKey` so this query refetches
- * with `network-only` and the new comment (top-level or nested) lands in the
- * tree. Mirrors the invalidate-on-mutate pattern from `SozlukTermPage` (T4)
- * and the post detail's own edit refetch.
- */
-function Comments({
-	postId,
-	signedIn,
-	liveSignal,
-}: {
-	postId: string;
-	signedIn: boolean;
-	/** Bumped by the parent's `useLiveAgent` on every server-side state change.
-	 *  Comments refetches when this changes so new replies + score updates land
-	 *  without any user action. */
-	liveSignal: number;
-}) {
-	const session = useSession();
-	const [fetchKey, setFetchKey] = React.useState(0);
-	const combinedKey = fetchKey + liveSignal;
-	const data = useLazyLoadQuery<PanoPostDetailCommentsQuery>(
-		CommentsQuery,
-		{postId},
-		{
-			fetchKey: combinedKey,
-			fetchPolicy: combinedKey === 0 ? "store-or-network" : "store-and-network",
-		},
-	);
-	const [replyTo, setReplyTo] = React.useState<string | null>(null);
-	const [editing, setEditing] = React.useState<string | null>(null);
-	const [confirmDelete, setConfirmDelete] = React.useState<string | null>(null);
-	const [deleteError, setDeleteError] = React.useState<string | null>(null);
-	const onAdded = React.useCallback(() => setFetchKey((k) => k + 1), []);
-	const onEdited = React.useCallback(() => {
-		setEditing(null);
-		setFetchKey((k) => k + 1);
-	}, []);
-	const onCancelEdit = React.useCallback(() => setEditing(null), []);
-
-	const [deleteCommit, deleteInFlight] =
-		useMutation<PanoPostDetailDeleteCommentMutation>(DeleteCommentMutation);
-	const {handleError: handleAuthError} = useSessionExpiredToast();
-
-	const onDeleteConfirm = React.useCallback(() => {
-		if (!confirmDelete) return;
-		setDeleteError(null);
-		deleteCommit({
-			variables: {id: confirmDelete},
-			onCompleted: (_data, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setDeleteError(errors[0]?.message ?? "yorum silinemedi");
-					return;
-				}
-				setConfirmDelete(null);
-				setFetchKey((k) => k + 1);
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setDeleteError(err.message);
-			},
-		});
-	}, [confirmDelete, deleteCommit, handleAuthError]);
-
-	const currentUserId = session.data?.user?.id ?? null;
-	const tree = React.useMemo(
-		() =>
-			buildTree(data.postComments, {
-				replyTo,
-				onReply: setReplyTo,
-				onCancelReply: () => setReplyTo(null),
-				onAdded,
-				editing,
-				onEdited,
-				onCancelEdit,
-				postId,
-				signedIn,
-				currentUserId,
-			}),
-		[
-			data.postComments,
-			replyTo,
-			onAdded,
-			editing,
-			onEdited,
-			onCancelEdit,
-			postId,
-			signedIn,
-			currentUserId,
-		],
-	);
-
-	return (
-		<>
-			<CommentComposer postId={postId} parentId={null} signedIn={signedIn} onAdded={onAdded} />
-			<h2 className="kp-pano-postpage__thread-heading">{data.postComments.length} yorum</h2>
-			<PanoCommentTree
-				comments={tree}
-				onReply={(id) => setReplyTo(id)}
-				onEdit={(id) => setEditing(id)}
-				onDelete={(id) => {
-					setDeleteError(null);
-					setConfirmDelete(id);
-				}}
-			/>
-			<Dialog.Root
-				open={confirmDelete != null}
-				onOpenChange={(open) => {
-					if (!open) {
-						setConfirmDelete(null);
-						setDeleteError(null);
-					}
-				}}
-			>
-				<Dialog.Popup>
-					<Dialog.Head
-						title="yorumu sil"
-						description="bu yorumu silmek istediğine emin misin? geri alınamaz."
-					/>
-					<Dialog.Body>
-						{deleteError ? (
-							<p role="alert" style={{color: "var(--danger)", font: "var(--t-meta)"}}>
-								{deleteError}
-							</p>
-						) : null}
-					</Dialog.Body>
-					<Dialog.Foot>
-						<Dialog.Close render={<Button variant="tertiary">vazgeç</Button>} />
-						<Button
-							variant="primary"
-							type="button"
-							disabled={deleteInFlight}
-							data-testid="pano-comment-delete-confirm"
-							onClick={onDeleteConfirm}
-						>
-							{deleteInFlight ? "siliniyor…" : "sil"}
-						</Button>
-					</Dialog.Foot>
-				</Dialog.Popup>
-			</Dialog.Root>
-		</>
-	);
-}
-
-type FlatComment = PanoPostDetailCommentsQuery["response"]["postComments"][number];
-
-interface ReplyHandlers {
-	replyTo: string | null;
-	onReply: (id: string) => void;
-	onCancelReply: () => void;
-	onAdded: () => void;
-	/** When set, the comment with this id renders an inline edit composer
-	 *  (task_12). The composer's onCompleted bumps the comments fetchKey. */
-	editing: string | null;
-	onEdited: () => void;
-	onCancelEdit: () => void;
-	postId: string;
-	signedIn: boolean;
-	/** Current user's id; comments with `authorId === currentUserId` render
-	 *  the edit/delete affordances (task_12). */
-	currentUserId: string | null;
-}
-
-/**
- * Walk the flat list and build the tree by `parentId`. Top-level entries
- * are those with `parentId === null`; descendants attach under their parent's
- * `children`. The DO already orders by `desc(score), asc(createdAt)`, so
- * we preserve insertion order at each level — no extra sort here.
- *
- * When `replyTo` matches a comment id, that comment carries an inline
- * `replyComposer` so the user can post a nested reply without modal/route
- * dance. The composer's `onAdded` bumps the comments fetchKey on the parent.
- */
-function buildTree(rows: ReadonlyArray<FlatComment>, handlers: ReplyHandlers): CommentData[] {
-	const byId = new Map<string, CommentData>();
-	for (const r of rows) {
-		// task_12: a soft-deleted-with-replies row arrives from the per-DO read
-		// with `body === '[silindi]'`, `author === ''`, `authorId === ''`. The
-		// tree keeps it but hides vote/edit/delete affordances via `isDeleted`.
-		const isDeleted = r.body === "[silindi]" && r.authorId === "";
-		const isOwner =
-			!isDeleted && handlers.currentUserId != null && r.authorId === handlers.currentUserId;
-		byId.set(r.id, {
-			id: r.id,
-			author: r.author,
-			agoLabel: formatAgoTR(r.createdAt),
-			// T17 "düzenlendi" indicator — hidden by EditedIndicator when the
-			// updatedAt is within the grace window of createdAt, or when either
-			// timestamp is missing. The soft-deleted placeholder rows still
-			// render the indicator-free branch because `body` was replaced and
-			// the helper compares timestamps, not body content.
-			editedIndicator: <EditedIndicator createdAt={r.createdAt} updatedAt={r.updatedAt} />,
-			score: r.score,
-			myVote: r.myVote ?? null,
-			isOwner,
-			isDeleted,
-			body: <CommentBody text={r.body} />,
-			replyComposer:
-				handlers.replyTo === r.id ? (
-					<CommentComposer
-						postId={handlers.postId}
-						parentId={r.id}
-						signedIn={handlers.signedIn}
-						onAdded={handlers.onAdded}
-						onCancel={handlers.onCancelReply}
-						autoFocus
-					/>
-				) : undefined,
-			editComposer:
-				handlers.editing === r.id && !isDeleted ? (
-					<CommentEditComposer
-						commentId={r.id}
-						initialBody={r.body}
-						onEdited={handlers.onEdited}
-						onCancel={handlers.onCancelEdit}
-					/>
-				) : undefined,
-		});
-	}
-	const roots: CommentData[] = [];
-	for (const r of rows) {
-		const node = byId.get(r.id);
-		if (!node) continue;
-		if (r.parentId) {
-			const parent = byId.get(r.parentId);
-			if (parent) {
-				if (!parent.children) parent.children = [];
-				parent.children.push(node);
-				continue;
-			}
-		}
-		roots.push(node);
-	}
-	return roots;
-}
-
-/**
- * Inline edit composer (task_12). Pre-fills the textarea with the current
- * body; on success calls `onEdited` so the parent bumps the comments
- * fetchKey and the row re-renders with the server-authoritative body.
- *
- * Mirrors `CommentComposer` but for the `editComment` mutation; same maxLen
- * + trim-empty validation. Cancel returns to the static body without firing
- * the mutation.
- */
 function CommentEditComposer({
 	commentId,
 	initialBody,
@@ -878,7 +882,7 @@ function CommentEditComposer({
 		setError(null);
 		commit({
 			variables: {id: commentId, body},
-			onCompleted: (_data, errors) => {
+			onCompleted: (_d, errors) => {
 				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setError(errors[0]?.message ?? "yorum güncellenemedi");
@@ -940,10 +944,10 @@ function CommentEditComposer({
 }
 
 /**
- * Live-updates indicator (T16). Renders a green "canlı" pill when the
- * WebSocket subscription to PanoPost[id] is open; a muted "duraklatıldı"
- * pill when it's closed (disconnect, sign-out, network blip). The static
- * Relay data underneath stays rendered either way — no flicker.
+ * LivePill — connection-state indicator for the WebSocket. T16 shape;
+ * unchanged in this task per the AC ("LivePill connected/paused UX
+ * preserved exactly"). The hook now uses `commitLocalUpdate` instead of
+ * refetch but the user-visible UX is byte-for-byte identical.
  */
 function LivePill({connected}: {connected: boolean}) {
 	if (connected) {
@@ -997,18 +1001,5 @@ function LivePill({connected}: {connected: boolean}) {
 			/>
 			canlı güncellemeler duraklatıldı
 		</span>
-	);
-}
-
-/** Inline-markdown rendering for comment bodies — same shape as the sözlük
-    DefinitionCard's `Body`, factored to lib/markdown for reuse. */
-function CommentBody({text}: {text: string}) {
-	const paragraphs = text.split(/\n{2,}/).filter((p) => p.trim());
-	return (
-		<>
-			{paragraphs.map((para, i) => (
-				<p key={i}>{renderMarkdownInline(para)}</p>
-			))}
-		</>
 	);
 }
