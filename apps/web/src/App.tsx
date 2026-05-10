@@ -11,6 +11,7 @@ import {LandingPage} from "./pages/LandingPage";
 import {PanoCreateDialog} from "./pages/PanoCreateDialog";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
+import {ProfilePage} from "./pages/ProfilePage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
 
@@ -99,6 +100,7 @@ export function App() {
 				<Route path="/sozluk" element={<SozlukHome recent={SOZLUK_RECENT} popular={SOZLUK_POPULAR} />} />
 				<Route path="/sozluk/:slug" element={<SozlukTermPage terms={SOZLUK_TERM_PAGES} />} />
 				<Route path="/auth" element={<AuthPage />} />
+				<Route path="/profile" element={<ProfilePage />} />
 			</Route>
 		</Routes>
 	);

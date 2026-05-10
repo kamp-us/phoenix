@@ -1,0 +1,178 @@
+/* ProfilePage — display name / e-posta / tema / oturum / tehlikeli alan.
+   Mirrors dense .profile__*. 640px-clamped column. */
+
+.kp-profile {
+	background: var(--surface);
+	padding: var(--s-6);
+}
+
+.kp-profile__inner {
+	max-width: 640px;
+	margin: 0 auto;
+	display: grid;
+	gap: var(--s-6);
+}
+
+.kp-profile__head {
+	display: flex;
+	align-items: center;
+	gap: var(--s-4);
+	padding-bottom: var(--s-4);
+	border-bottom: 1px solid var(--border);
+}
+.kp-profile__avatar {
+	width: 56px;
+	height: 56px;
+	border-radius: var(--r-sm);
+	background: var(--accent-soft);
+	color: var(--accent);
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	font: 600 22px var(--font-body);
+}
+.kp-profile__id {
+	display: grid;
+	gap: 4px;
+}
+.kp-profile__name {
+	font: 600 18px/1.1 var(--font-body);
+	color: var(--text-primary);
+	letter-spacing: -0.01em;
+}
+.kp-profile__handle {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+.kp-profile__stats-strip {
+	display: flex;
+	gap: var(--s-5);
+	margin-left: auto;
+}
+.kp-profile__stat {
+	text-align: right;
+}
+.kp-profile__stat .n {
+	font: 600 15px var(--font-body);
+	color: var(--text-primary);
+}
+.kp-profile__stat .l {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-profile__section {
+	display: grid;
+	gap: var(--s-2);
+	padding-bottom: var(--s-4);
+	border-bottom: 1px solid var(--border-faint);
+}
+.kp-profile__section--last {
+	border-bottom: 0;
+}
+.kp-profile__section h3 {
+	font: 600 13px var(--font-body);
+	color: var(--text-primary);
+	margin: 0 0 4px;
+	text-transform: lowercase;
+}
+.kp-profile__section h3.danger {
+	color: var(--accent);
+}
+.kp-profile__section > p {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+}
+
+.kp-profile__row {
+	display: grid;
+	grid-template-columns: 140px 1fr auto;
+	align-items: center;
+	gap: var(--s-3);
+	padding: 4px 0;
+}
+.kp-profile__row .label {
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+.kp-profile__row .value {
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+}
+.kp-profile__row .value input {
+	width: 100%;
+	max-width: 280px;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 6px 8px;
+	font: 13px var(--font-body);
+	color: var(--text-primary);
+	outline: none;
+}
+.kp-profile__row .value input:focus {
+	border-color: var(--accent);
+}
+.kp-profile__row.readonly .value {
+	color: var(--text-muted);
+}
+.kp-profile__row .edit-btn {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	background: transparent;
+	border: none;
+	cursor: pointer;
+	padding: 2px 4px;
+}
+.kp-profile__row .edit-btn:hover {
+	color: var(--accent);
+}
+
+.kp-profile__theme-toggle {
+	display: inline-flex;
+	gap: 0;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	overflow: hidden;
+}
+.kp-profile__theme-toggle button {
+	padding: 6px 12px;
+	font: var(--t-body-sm);
+	background: transparent;
+	border: none;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+.kp-profile__theme-toggle button[aria-pressed="true"] {
+	background: var(--accent-soft);
+	color: var(--accent);
+	font-weight: 600;
+}
+
+.kp-profile__danger {
+	display: flex;
+	gap: var(--s-2);
+	align-items: baseline;
+	flex-wrap: wrap;
+}
+.kp-profile__danger button {
+	background: var(--surface-raised);
+	border: none;
+	color: var(--text-secondary);
+	padding: 6px 12px;
+	font: var(--t-body-sm);
+	border-radius: var(--r-sm);
+	cursor: pointer;
+}
+.kp-profile__danger button:hover {
+	background: var(--accent-soft);
+	color: var(--accent);
+}
+.kp-profile__danger button.danger {
+	background: var(--accent);
+	color: var(--accent-fg);
+}
+.kp-profile__danger button.danger:hover {
+	filter: brightness(1.08);
+}

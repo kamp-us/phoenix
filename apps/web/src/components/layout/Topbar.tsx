@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Link, NavLink } from 'react-router';
+import { Link, NavLink, useNavigate } from 'react-router';
 import { Avatar } from '../ui/Avatar';
 import { Menu } from '../ui/Menu';
 import './Topbar.css';
@@ -25,6 +25,8 @@ export function Topbar({
   onToggleTheme?: () => void;
   onLogout?: () => void;
 }) {
+  const navigate = useNavigate();
+
   /* Split brand at the first "." so we can accent the dot. */
   const dotAt = brandName.indexOf('.');
   const before = dotAt >= 0 ? brandName.slice(0, dotAt) : brandName;
@@ -87,8 +89,8 @@ export function Topbar({
             <span>{user.name}</span>
           </Menu.Trigger>
           <Menu.Popup align="end">
-            <Menu.Item>Profil</Menu.Item>
-            <Menu.Item>Ayarlar</Menu.Item>
+            <Menu.Item onClick={() => navigate('/profile')}>Profil</Menu.Item>
+            <Menu.Item onClick={() => navigate('/profile')}>Ayarlar</Menu.Item>
             <Menu.Separator />
             <Menu.Item onClick={onLogout}>Çıkış</Menu.Item>
           </Menu.Popup>
