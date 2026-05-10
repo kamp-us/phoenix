@@ -22,6 +22,13 @@
       "when": 1778396288779,
       "tag": "0002_wandering_natasha_romanoff",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1778500000000,
+      "tag": "0003_lazy_thanos",
+      "breakpoints": true
     }
   ]
 }

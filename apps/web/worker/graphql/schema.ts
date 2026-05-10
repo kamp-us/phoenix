@@ -1,3 +1,4 @@
+import {id} from "@usirin/forge";
 import {Effect} from "effect";
 import {
 	GraphQLEnumType,
@@ -14,7 +15,13 @@ import {
 	printSchema,
 } from "graphql";
 import type {VoteValue} from "../features/pano/Pano";
-import type {CommentRow, PostPage, PostTagRow} from "../features/pano/PanoPost";
+import {
+	ALLOWED_POST_TAG_KINDS,
+	type CommentRow,
+	type PostPage,
+	type PostTagRow,
+	PostValidationError,
+} from "../features/pano/PanoPost";
 import {
 	listPostSummaries,
 	type PostSort,
@@ -334,6 +341,27 @@ interface VoteInput {
 }
 
 /**
+ * Input for the `submitPost` mutation. The `kind` is one of the fixed enum
+ * values (`göster` / `tartışma` / `soru` / `söylenme` / `meta`) — validated
+ * at the resolver and re-validated inside the Agent for defense-in-depth.
+ *
+ * `label` is an optional human-presentation override; if omitted the kind
+ * value is used (which is already Turkish in this enum).
+ */
+const TagInputType = new GraphQLInputObjectType({
+	name: "TagInput",
+	fields: {
+		kind: {type: new GraphQLNonNull(GraphQLString)},
+		label: {type: GraphQLString},
+	},
+});
+
+interface TagInput {
+	kind: string;
+	label?: string | null;
+}
+
+/**
  * Narrow `value: number` to {-1, 0, 1} or throw the user-facing GraphQL error.
  * Centralized so both vote resolvers report the same wording.
  */
@@ -367,6 +395,25 @@ function mapDefinitionMutationError(err: unknown): GraphQLError {
 	// Unknown — surface as a generic GraphQL error so the SPA can render it
 	// instead of seeing Yoga's "Unexpected error" mask.
 	return new GraphQLError(e?.message ?? "definition mutation failed", {
+		extensions: {code: "INTERNAL_SERVER_ERROR"},
+	});
+}
+
+/**
+ * Map an Agent-thrown post mutation error onto a GraphQL error. Agent errors
+ * cross the RPC boundary as plain `Error` (class identity is lost), so we
+ * match on `name` + `code` and bake a stable `code` extension into the
+ * GraphQL error so the SPA can localize without parsing free-text messages.
+ */
+function mapPostMutationError(err: unknown): GraphQLError {
+	const e = err as Error & {code?: string};
+	if (e?.name === "PostValidationError") {
+		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
+		return new GraphQLError(e.message ?? "post validation failed", {
+			extensions: {code},
+		});
+	}
+	return new GraphQLError(e?.message ?? "post mutation failed", {
 		extensions: {code: "INTERNAL_SERVER_ERROR"},
 	});
 }
@@ -605,6 +652,112 @@ const MutationType = new GraphQLObjectType({
 				// SDL is `deleteDefinition: String!` — return the id as a stable
 				// success token so the SPA can confirm + invalidate caches.
 				return result.value.definitionId;
+			}),
+		},
+		submitPost: {
+			type: new GraphQLNonNull(PostType),
+			args: {
+				title: {type: new GraphQLNonNull(GraphQLString)},
+				url: {type: GraphQLString},
+				body: {type: GraphQLString},
+				tags: {
+					type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(TagInputType))),
+				},
+			},
+			resolve: resolver(function* (
+				_source,
+				args: {
+					title: string;
+					url?: string | null;
+					body?: string | null;
+					tags: TagInput[];
+				},
+			) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+
+				// ----- resolver-side validation (mirrors Agent for fast-fail UX) -----
+				const title = (args.title ?? "").trim();
+				if (title.length === 0) {
+					throw new GraphQLError("başlık boş olamaz", {
+						extensions: {code: "TITLE_REQUIRED"},
+					});
+				}
+				if (title.length > 200) {
+					throw new GraphQLError("başlık en fazla 200 karakter olabilir", {
+						extensions: {code: "TITLE_TOO_LONG"},
+					});
+				}
+				if (args.body != null && args.body.length > 10_000) {
+					throw new GraphQLError("metin en fazla 10000 karakter olabilir", {
+						extensions: {code: "BODY_TOO_LONG"},
+					});
+				}
+				if (args.url != null && args.url.length > 0) {
+					try {
+						new URL(args.url);
+					} catch {
+						throw new GraphQLError("URL geçersiz", {
+							extensions: {code: "URL_INVALID"},
+						});
+					}
+				}
+				if (!args.tags || args.tags.length === 0) {
+					throw new GraphQLError("en az bir etiket seç", {
+						extensions: {code: "TAGS_REQUIRED"},
+					});
+				}
+				const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
+				for (const t of args.tags) {
+					if (!allowed.has(t.kind)) {
+						throw new GraphQLError(`geçersiz etiket: ${t.kind}`, {
+							extensions: {code: "TAG_INVALID"},
+						});
+					}
+				}
+
+				// ----- mint a fresh post id; route to the new DO ------------------
+				const postId = id("post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
+
+				const result = yield* Effect.promise(() =>
+					stub
+						.submitPost({
+							title: args.title,
+							...(args.url ? {url: args.url} : {}),
+							...(args.body ? {body: args.body} : {}),
+							tags: args.tags.map((t) => ({
+								kind: t.kind,
+								...(t.label ? {label: t.label} : {}),
+							})),
+							authorId: user.id,
+							authorName: user.name ?? user.email,
+						})
+						.then(
+							(value) => ({ok: true as const, value}),
+							(error: unknown) => ({ok: false as const, error}),
+						),
+				);
+				if (!result.ok) {
+					if (result.error instanceof PostValidationError) {
+						throw mapPostMutationError(result.error);
+					}
+					throw mapPostMutationError(result.error);
+				}
+				const r = result.value;
+				return {
+					id: r.postId,
+					slug: null,
+					title: r.title,
+					url: r.url,
+					host: r.host,
+					body: r.body,
+					author: r.authorName,
+					score: r.score,
+					commentCount: r.commentCount,
+					createdAt: r.createdAt,
+					tags: r.tags,
+				} satisfies PostPage;
 			}),
 		},
 		voteOnPost: {

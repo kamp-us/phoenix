@@ -89,6 +89,76 @@ export interface CommentRow {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Submit-post shapes                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Validation error thrown by `submitPost`. The GraphQL resolver catches this
+ * and surfaces a stable `code` extension so the SPA can localize without
+ * parsing free-text messages.
+ */
+export class PostValidationError extends Error {
+	constructor(
+		readonly code:
+			| "title_required"
+			| "title_too_long"
+			| "url_invalid"
+			| "body_too_long"
+			| "tags_required"
+			| "tag_invalid",
+		message: string,
+	) {
+		super(message);
+		this.name = "PostValidationError";
+	}
+}
+
+/** Title cap (per PRD: ≤ 200 chars). */
+export const POST_TITLE_MAX = 200;
+/** Body cap (per PRD: ≤ 10 000 chars on submitPost). */
+export const POST_BODY_MAX = 10_000;
+/**
+ * The fixed tag enum for Pano posts (per PRD). The producer-side check is
+ * defense-in-depth: the GraphQL resolver enforces the same set, but the Agent
+ * is the durability boundary, so it re-validates.
+ *
+ * Stored on `post_summary.tags` as comma-separated values; rendered in Turkish
+ * via `postSummaryReader`'s `TAG_LABELS`.
+ */
+export const ALLOWED_POST_TAG_KINDS = [
+	"göster",
+	"tartışma",
+	"soru",
+	"söylenme",
+	"meta",
+] as const;
+
+export type AllowedPostTagKind = (typeof ALLOWED_POST_TAG_KINDS)[number];
+
+export interface SubmitPostInput {
+	title: string;
+	url?: string | undefined;
+	body?: string | undefined;
+	tags: ReadonlyArray<{kind: string; label?: string | undefined}>;
+	authorId: string;
+	authorName: string;
+}
+
+export interface SubmitPostResult {
+	postId: string;
+	title: string;
+	url: string | null;
+	host: string | null;
+	body: string | null;
+	authorId: string;
+	authorName: string;
+	score: number;
+	commentCount: number;
+	tags: PostTagRow[];
+	createdAt: Date;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Admin / seed shapes                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -157,23 +227,48 @@ export class PanoPost extends Agent<Env, PostState> {
 	/* -------- Lifecycle -------------------------------------------------- */
 
 	/**
-	 * Periodic outbox reconciliation (5 min) per ADR 0007. The reconcile body
-	 * itself is implemented in T7 along with `flushOutbox`; this `onStart`
-	 * only sets the schedule so T7 doesn't need to retroactively touch
-	 * lifecycle.
+	 * Periodic outbox reconciliation (5 min) per ADR 0007. Plus a one-shot
+	 * reconcile on hydration so any rows left over from a worker that died
+	 * mid-flush get re-dispatched immediately. Mirrors `SozlukTerm.onStart`.
 	 */
 	override async onStart() {
 		if (!(await this.getScheduleById("reconcile-outbox"))) {
 			await this.scheduleEvery(300, "reconcileOutbox");
 		}
+		try {
+			await this.reconcileOutbox();
+		} catch (err) {
+			console.error("[PanoPost.onStart] reconcileOutbox failed", err);
+		}
 	}
 
 	/**
-	 * Stub for the periodic schedule. Real body lands in T7. Throwing here
-	 * would loop the schedule; we no-op so the schedule is safely live.
+	 * Drain the outbox: for every row, dispatch the payload to
+	 * `PHOENIX_PROJECTION.create`. On success delete the row; on failure
+	 * leave it so the next pass re-queues. Oldest-first
+	 * (`ORDER BY created_at ASC`) — forge ULID lex-ordering on `event_id`
+	 * means convergence is consistent regardless of dispatch order, but
+	 * older rows have spent the most time waiting, so flush them first.
 	 */
 	async reconcileOutbox(): Promise<void> {
-		// Implemented in T7+ (mutation surface).
+		const rows = this.sql<{event_id: string; payload: string}>`
+			SELECT event_id, payload FROM outbox ORDER BY created_at ASC
+		`;
+		if (rows.length === 0) return;
+
+		for (const row of rows) {
+			try {
+				const payload = JSON.parse(row.payload);
+				await this.env.PHOENIX_PROJECTION.create({
+					id: row.event_id,
+					params: payload,
+				});
+				this.sql`DELETE FROM outbox WHERE event_id = ${row.event_id}`;
+			} catch (err) {
+				console.error(`[PanoPost.reconcileOutbox] dispatch failed for ${row.event_id}`, err);
+				// Leave the row; next reconcile pass will retry it.
+			}
+		}
 	}
 
 	/* -------- Reads ------------------------------------------------------ */
@@ -228,6 +323,187 @@ export class PanoPost extends Agent<Env, PostState> {
 			score: c.score,
 			createdAt: c.createdAt ?? new Date(0),
 		}));
+	}
+
+	/* -------- Mutation surface ------------------------------------------ */
+
+	/**
+	 * Canonical write path for submitting a post (T7). The post id is the DO's
+	 * own name (`this.name`) — the resolver mints it via `forge('post')` and
+	 * routes through `idFromName(postId)`; this method assumes the DO is fresh
+	 * (no `post_meta` row yet) and rejects if it already holds a post (the
+	 * resolver creates a new ULID per call so re-entry is impossible in the
+	 * happy path; we still guard).
+	 *
+	 * Atomicity per ADR 0007: in one `transactionSync` block we insert
+	 * `post_meta`, the tag rows, and a single `PostChanged` outbox row carrying
+	 * the denormalized aggregates. After commit we `setState` so WebSocket
+	 * clients see the new state (T16) and `await flushOutbox` to ship the event
+	 * to `PHOENIX_PROJECTION` for the `post_summary` MV.
+	 *
+	 * Validation (defense-in-depth — resolver enforces too):
+	 * - `title` non-empty after trim, ≤ 200 chars
+	 * - `url` (if provided) parses as a `URL`
+	 * - `body` ≤ 10 000 chars
+	 * - `tags` non-empty; every kind ∈ ALLOWED_POST_TAG_KINDS
+	 *
+	 * Throws `PostValidationError` for user-facing failures.
+	 */
+	async submitPost(input: SubmitPostInput): Promise<SubmitPostResult> {
+		// ----- validation --------------------------------------------------
+		const title = (input.title ?? "").trim();
+		if (title.length === 0) {
+			throw new PostValidationError("title_required", "başlık boş olamaz");
+		}
+		if (title.length > POST_TITLE_MAX) {
+			throw new PostValidationError(
+				"title_too_long",
+				`başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
+			);
+		}
+
+		const rawBody = input.body ?? "";
+		if (rawBody.length > POST_BODY_MAX) {
+			throw new PostValidationError(
+				"body_too_long",
+				`metin en fazla ${POST_BODY_MAX} karakter olabilir`,
+			);
+		}
+		const body = rawBody.length === 0 ? null : rawBody;
+
+		let host: string | null = null;
+		let urlNormalized: string | null = null;
+		if (input.url != null && input.url.length > 0) {
+			let parsed: URL;
+			try {
+				parsed = new URL(input.url);
+			} catch {
+				throw new PostValidationError("url_invalid", "URL geçersiz");
+			}
+			urlNormalized = parsed.toString();
+			host = parsed.host;
+		}
+
+		if (!input.tags || input.tags.length === 0) {
+			throw new PostValidationError("tags_required", "en az bir etiket seç");
+		}
+		const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
+		const normalizedTags: PostTagRow[] = [];
+		const seenKinds = new Set<string>();
+		for (const t of input.tags) {
+			const kind = (t.kind ?? "").trim();
+			if (!allowed.has(kind)) {
+				throw new PostValidationError("tag_invalid", `geçersiz etiket: ${kind || "(boş)"}`);
+			}
+			if (seenKinds.has(kind)) continue;
+			seenKinds.add(kind);
+			normalizedTags.push({kind, label: t.label?.trim() || kind});
+		}
+
+		// ----- guard against re-entry on an already-occupied DO ------------
+		const existing = await this.db.query.postMeta.findFirst();
+		if (existing) {
+			// `submitPost` is supposed to be called exactly once per DO instance.
+			// The resolver mints a fresh ULID per request; landing on an existing
+			// post is a programmer error (e.g. someone called `submitPost` twice
+			// on the same id). Surface as a clean error.
+			throw new PostValidationError("title_required", "post zaten oluşturulmuş");
+		}
+
+		const now = Date.now();
+		const eventId = id("evt");
+		const postId = this.name;
+
+		const hotScore = computeHotScore(0, now, now);
+		const bodyExcerpt = body ? excerpt(body) : null;
+
+		const payload = JSON.stringify({
+			kind: "PostChanged",
+			eventId,
+			postId,
+			slug: null,
+			title,
+			url: urlNormalized,
+			host,
+			bodyExcerpt,
+			authorId: input.authorId,
+			authorName: input.authorName,
+			tags: normalizedTags.map((t) => t.kind),
+			score: 0,
+			commentCount: 0,
+			hotScore,
+			createdAt: now,
+			updatedAt: now,
+			lastActivityAt: now,
+		});
+
+		// ----- atomic write: post_meta + tags + outbox row ----------------
+		// transactionSync requires the synchronous storage API (this.sql).
+		// Pre-compute every value outside the closure so the only thing inside
+		// is the wire-up.
+		const createdAtSec = Math.floor(now / 1000);
+		const tagInserts = normalizedTags.map((t) => ({
+			id: id("tag"),
+			kind: t.kind,
+			label: t.label,
+		}));
+
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				INSERT INTO post_meta (
+					id, slug, title, url, host, body,
+					author_id, author_name, score, comment_count,
+					created_at, updated_at
+				) VALUES (
+					'1', NULL, ${title}, ${urlNormalized}, ${host}, ${body},
+					${input.authorId}, ${input.authorName}, 0, 0,
+					${createdAtSec}, ${createdAtSec}
+				)
+			`;
+			for (const t of tagInserts) {
+				this.sql`
+					INSERT INTO tag (id, kind, label) VALUES (${t.id}, ${t.kind}, ${t.label})
+				`;
+			}
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${eventId}, ${payload}, ${now})
+			`;
+		});
+
+		// ----- broadcast new aggregates via setState -----------------------
+		this.setState({
+			title,
+			host,
+			score: 0,
+			commentCount: 0,
+			hotScore,
+			lastActivityAt: now,
+			lastEventId: eventId,
+		});
+
+		// ----- ship the event ---------------------------------------------
+		// Best-effort inline flush (cache hit path). Failures are absorbed
+		// by the periodic `reconcileOutbox` schedule + on-start reconcile.
+		try {
+			await this.flushOutbox({eventId});
+		} catch (err) {
+			console.error("[PanoPost.submitPost] flushOutbox failed", err);
+		}
+
+		return {
+			postId,
+			title,
+			url: urlNormalized,
+			host,
+			body,
+			authorId: input.authorId,
+			authorName: input.authorName,
+			score: 0,
+			commentCount: 0,
+			tags: normalizedTags,
+			createdAt: new Date(now),
+		};
 	}
 
 	/* -------- Seed surface ---------------------------------------------- */

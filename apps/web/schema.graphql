@@ -29,6 +29,7 @@ type Mutation {
   editDefinition(body: String!, id: ID!): Definition!
   retractDefinitionVote(definitionId: ID!): Definition!
   setUsername(value: String!): User!
+  submitPost(body: String, tags: [TagInput!]!, title: String!, url: String): Post!
   voteDefinition(definitionId: ID!): Definition!
   voteOnComment(input: VoteInput!): VoteResult!
   voteOnPost(input: VoteInput!): VoteResult!
@@ -68,6 +69,11 @@ type Query {
 type Tag {
   kind: String!
   label: String!
+}
+
+input TagInput {
+  kind: String!
+  label: String
 }
 
 type Term {

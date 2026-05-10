@@ -1,183 +1,287 @@
-import * as React from 'react';
-import { Link } from 'react-router';
-import { Button } from '../components/ui/Button';
-import { type TagKind } from '../components/ui/atoms';
-import './PanoSubmitPage.css';
+import * as React from "react";
+import {graphql, useMutation} from "react-relay";
+import {Link, useNavigate} from "react-router";
+import type {PanoSubmitPageMutation} from "../__generated__/PanoSubmitPageMutation.graphql";
+import {useSession} from "../auth/client";
+import {Button} from "../components/ui/Button";
+import "./PanoSubmitPage.css";
 
-type Mode = 'link' | 'text';
+type Mode = "link" | "text";
 
-const TAGS: { kind: TagKind; label: string }[] = [
-  { kind: 'discuss', label: 'tartışma' },
-  { kind: 'ask',     label: 'soru' },
-  { kind: 'show',    label: 'göster' },
-  { kind: 'rant',    label: 'söylenme' },
-  { kind: 'news',    label: 'haber' },
-  { kind: 'meta',    label: 'react' },
-  { kind: 'meta',    label: 'js' },
-  { kind: 'meta',    label: 'ts' },
+/**
+ * Fixed tag enum — kind values match the producer-side `ALLOWED_POST_TAG_KINDS`
+ * in `PanoPost`. The Turkish kinds (`göster`, `tartışma`, …) are stored
+ * verbatim on `post_summary.tags`; the `cls` value is a CSS modifier picked
+ * to match the existing Tag styling without touching the kind enum on the
+ * server.
+ */
+const TAGS: {kind: string; label: string; cls: string}[] = [
+	{kind: "göster", label: "göster", cls: "show"},
+	{kind: "tartışma", label: "tartışma", cls: "discuss"},
+	{kind: "soru", label: "soru", cls: "ask"},
+	{kind: "söylenme", label: "söylenme", cls: "rant"},
+	{kind: "meta", label: "meta", cls: "meta"},
 ];
 
 const URL_RE = /^https?:\/\/[^/]+/i;
 
 function hostOf(url: string) {
-  const m = URL_RE.exec(url);
-  return m ? m[0].replace(/^https?:\/\//, '') : '';
+	const m = URL_RE.exec(url);
+	return m ? m[0].replace(/^https?:\/\//, "") : "";
 }
 
-export function PanoSubmitPage() {
-  const [mode, setMode] = React.useState<Mode>('link');
-  const [url, setUrl] = React.useState('');
-  const [title, setTitle] = React.useState('');
-  const [body, setBody] = React.useState('');
-  const [selectedTags, setSelectedTags] = React.useState<Set<string>>(new Set());
-
-  const host = hostOf(url);
-  const showPreview = mode === 'link' && host.length > 0;
-
-  function toggleTag(label: string) {
-    setSelectedTags((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label);
-      else if (next.size < 3) next.add(label);
-      return next;
-    });
+const SubmitPostMutation = graphql`
+  mutation PanoSubmitPageMutation(
+    $title: String!
+    $url: String
+    $body: String
+    $tags: [TagInput!]!
+  ) {
+    submitPost(title: $title, url: $url, body: $body, tags: $tags) {
+      id
+      slug
+      title
+      url
+      host
+      author
+      score
+      commentCount
+      createdAt
+      tags {
+        kind
+        label
+      }
+    }
   }
+`;
 
-  return (
-    <div className="kp-page">
-      <div className="kp-page__inner">
-        <div className="kp-pano-submit">
-          <Link to="/pano" className="kp-pano-submit__back">
-            ← akışa dön
-          </Link>
-          <h1 className="kp-pano-submit__title">Bir şey paylaş</h1>
-          <p className="kp-pano-submit__lede">
-            Bağlantı, yazı, soru. Self-promo da olur — bir kere açıkla niye paylaşıyorsun.
-          </p>
+const TITLE_MAX = 200;
+const BODY_MAX = 10_000;
+const TITLE_MIN = 5;
 
-          <div className="kp-pano-submit__toggle">
-            <button
-              type="button"
-              aria-pressed={mode === 'link'}
-              onClick={() => setMode('link')}
-            >
-              link
-            </button>
-            <button
-              type="button"
-              aria-pressed={mode === 'text'}
-              onClick={() => setMode('text')}
-            >
-              yazı
-            </button>
-          </div>
+export function PanoSubmitPage() {
+	const session = useSession();
+	const navigate = useNavigate();
+	const [mode, setMode] = React.useState<Mode>("link");
+	const [url, setUrl] = React.useState("");
+	const [title, setTitle] = React.useState("");
+	const [body, setBody] = React.useState("");
+	const [selectedTags, setSelectedTags] = React.useState<Set<string>>(new Set());
+	const [error, setError] = React.useState<string | null>(null);
 
-          <form
-            className="kp-pano-submit__form"
-            onSubmit={(e) => {
-              e.preventDefault();
-            }}
-          >
-            {mode === 'link' ? (
-              <>
-                <div className="kp-pano-submit__field">
-                  <label htmlFor="submit-url">URL</label>
-                  <input
-                    id="submit-url"
-                    type="url"
-                    placeholder="https://overreacted.io/..."
-                    value={url}
-                    onChange={(e) => setUrl(e.currentTarget.value)}
-                  />
-                </div>
-                {showPreview ? (
-                  <div className="kp-pano-submit__url-preview">
-                    <div className="fav">{host.charAt(0).toLowerCase()}</div>
-                    <div>
-                      <div className="host">{host}</div>
-                      <div className="ttl">{title || 'başlık otomatik tamamlanacak'}</div>
-                    </div>
-                  </div>
-                ) : null}
-              </>
-            ) : null}
+	const [commit, isInFlight] = useMutation<PanoSubmitPageMutation>(SubmitPostMutation);
 
-            <div className="kp-pano-submit__field">
-              <label htmlFor="submit-title">başlık</label>
-              <input
-                id="submit-title"
-                type="text"
-                minLength={5}
-                placeholder="en az 5 karakter"
-                value={title}
-                onChange={(e) => setTitle(e.currentTarget.value)}
-              />
-              <span className="kp-pano-submit__hint">
-                {title.length < 5 ? '5 karakterden az olamaz · ' : ''}
-                {title.length}/300
-              </span>
-            </div>
+	const host = hostOf(url);
+	const showPreview = mode === "link" && host.length > 0;
 
-            {mode === 'link' ? (
-              <div className="kp-pano-submit__field">
-                <label htmlFor="submit-context">bağlam (opsiyonel)</label>
-                <textarea
-                  id="submit-context"
-                  placeholder="bir kere açıkla niye paylaşıyorsun"
-                  value={body}
-                  onChange={(e) => setBody(e.currentTarget.value)}
-                />
-              </div>
-            ) : (
-              <div className="kp-pano-submit__field">
-                <label htmlFor="submit-body">
-                  içerik{' '}
-                  <span style={{color: 'var(--text-faint)', fontWeight: 400}}>(opsiyonel)</span>
-                </label>
-                <textarea
-                  id="submit-body"
-                  style={{minHeight: 220}}
-                  placeholder="markdown · ``` ``` kod bloğu"
-                  value={body}
-                  onChange={(e) => setBody(e.currentTarget.value)}
-                />
-                <span className="kp-pano-submit__hint">
-                  markdown · ``` ``` kod bloğu · {body.length}/40000
-                </span>
-              </div>
-            )}
+	function toggleTag(kind: string) {
+		setSelectedTags((prev) => {
+			const next = new Set(prev);
+			if (next.has(kind)) next.delete(kind);
+			else if (next.size < 3) next.add(kind);
+			return next;
+		});
+	}
 
-            <div className="kp-pano-submit__field">
-              <label>etiketler · en fazla 3</label>
-              <div className="kp-pano-submit__tagrow">
-                {TAGS.map((t) => {
-                  const on = selectedTags.has(t.label);
-                  return (
-                    <button
-                      key={t.label}
-                      type="button"
-                      className={`kp-tag kp-tag--${t.kind} ${on ? 'is-on' : ''}`}
-                      aria-pressed={on}
-                      onClick={() => toggleTag(t.label)}
-                    >
-                      {t.label}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
+	const trimmedTitle = title.trim();
+	const titleTooShort = trimmedTitle.length > 0 && trimmedTitle.length < TITLE_MIN;
+	const titleTooLong = trimmedTitle.length > TITLE_MAX;
+	const bodyTooLong = body.length > BODY_MAX;
+	const noTags = selectedTags.size === 0;
+	const linkModeUrlEmpty = mode === "link" && url.trim().length === 0;
 
-            <div className="kp-pano-submit__form-actions">
-              <Button type="button" variant="tertiary">
-                taslak
-              </Button>
-              <Button type="submit" variant="primary">
-                paylaş
-              </Button>
-            </div>
-          </form>
-        </div>
-      </div>
-    </div>
-  );
+	const submitDisabled =
+		isInFlight ||
+		trimmedTitle.length < TITLE_MIN ||
+		titleTooLong ||
+		bodyTooLong ||
+		noTags ||
+		linkModeUrlEmpty;
+
+	function onSubmit(e: React.FormEvent) {
+		e.preventDefault();
+		setError(null);
+
+		if (!session.data?.user) {
+			const returnTo = encodeURIComponent("/pano/yeni");
+			navigate(`/auth?returnTo=${returnTo}`);
+			return;
+		}
+		if (submitDisabled) return;
+
+		// Resolver-side validation surfaces typed errors back via `onError`/
+		// `onCompleted(errors)` (see below); we still pre-trim/normalize here so
+		// the server never sees unintended whitespace on the title.
+		const variables: PanoSubmitPageMutation["variables"] = {
+			title: trimmedTitle,
+			tags: Array.from(selectedTags).map((kind) => ({kind})),
+			...(mode === "link" && url.trim() ? {url: url.trim()} : {}),
+			...(body.trim() ? {body} : {}),
+		};
+
+		commit({
+			variables,
+			onCompleted: (data, errors) => {
+				if (errors && errors.length > 0) {
+					setError(errors[0]?.message ?? "gönderi paylaşılamadı");
+					return;
+				}
+				const newId = data.submitPost.id;
+				if (newId) {
+					navigate(`/pano/${newId}`);
+				}
+			},
+			onError: (err) => {
+				setError(err.message);
+			},
+		});
+	}
+
+	return (
+		<div className="kp-page">
+			<div className="kp-page__inner">
+				<div className="kp-pano-submit">
+					<Link to="/pano" className="kp-pano-submit__back">
+						← akışa dön
+					</Link>
+					<h1 className="kp-pano-submit__title">Bir şey paylaş</h1>
+					<p className="kp-pano-submit__lede">
+						Bağlantı, yazı, soru. Self-promo da olur — bir kere açıkla niye paylaşıyorsun.
+					</p>
+
+					<div className="kp-pano-submit__toggle">
+						<button type="button" aria-pressed={mode === "link"} onClick={() => setMode("link")}>
+							link
+						</button>
+						<button type="button" aria-pressed={mode === "text"} onClick={() => setMode("text")}>
+							yazı
+						</button>
+					</div>
+
+					<form className="kp-pano-submit__form" onSubmit={onSubmit}>
+						{mode === "link" ? (
+							<>
+								<div className="kp-pano-submit__field">
+									<label htmlFor="submit-url">URL</label>
+									<input
+										id="submit-url"
+										data-testid="pano-submit-url"
+										type="url"
+										placeholder="https://overreacted.io/..."
+										value={url}
+										onChange={(e) => setUrl(e.currentTarget.value)}
+									/>
+								</div>
+								{showPreview ? (
+									<div className="kp-pano-submit__url-preview">
+										<div className="fav">{host.charAt(0).toLowerCase()}</div>
+										<div>
+											<div className="host">{host}</div>
+											<div className="ttl">{title || "başlık otomatik tamamlanacak"}</div>
+										</div>
+									</div>
+								) : null}
+							</>
+						) : null}
+
+						<div className="kp-pano-submit__field">
+							<label htmlFor="submit-title">başlık</label>
+							<input
+								id="submit-title"
+								data-testid="pano-submit-title"
+								type="text"
+								minLength={TITLE_MIN}
+								maxLength={TITLE_MAX + 50}
+								placeholder="en az 5 karakter"
+								value={title}
+								onChange={(e) => setTitle(e.currentTarget.value)}
+							/>
+							<span className="kp-pano-submit__hint">
+								{titleTooShort ? "5 karakterden az olamaz · " : ""}
+								{titleTooLong ? `en fazla ${TITLE_MAX} karakter · ` : ""}
+								{title.length}/{TITLE_MAX}
+							</span>
+						</div>
+
+						{mode === "link" ? (
+							<div className="kp-pano-submit__field">
+								<label htmlFor="submit-context">bağlam (opsiyonel)</label>
+								<textarea
+									id="submit-context"
+									data-testid="pano-submit-body"
+									placeholder="bir kere açıkla niye paylaşıyorsun"
+									value={body}
+									onChange={(e) => setBody(e.currentTarget.value)}
+								/>
+							</div>
+						) : (
+							<div className="kp-pano-submit__field">
+								<label htmlFor="submit-body">
+									içerik{" "}
+									<span style={{color: "var(--text-faint)", fontWeight: 400}}>(opsiyonel)</span>
+								</label>
+								<textarea
+									id="submit-body"
+									data-testid="pano-submit-body"
+									style={{minHeight: 220}}
+									placeholder="markdown · ``` ``` kod bloğu"
+									value={body}
+									onChange={(e) => setBody(e.currentTarget.value)}
+								/>
+								<span className="kp-pano-submit__hint">
+									markdown · ``` ``` kod bloğu · {body.length}/{BODY_MAX}
+								</span>
+							</div>
+						)}
+
+						<div className="kp-pano-submit__field">
+							<label>etiketler · en fazla 3</label>
+							<div className="kp-pano-submit__tagrow">
+								{TAGS.map((t) => {
+									const on = selectedTags.has(t.kind);
+									return (
+										<button
+											key={t.kind}
+											type="button"
+											data-testid={`pano-submit-tag-${t.cls}`}
+											className={`kp-tag kp-tag--${t.cls} ${on ? "is-on" : ""}`}
+											aria-pressed={on}
+											onClick={() => toggleTag(t.kind)}
+										>
+											{t.label}
+										</button>
+									);
+								})}
+							</div>
+						</div>
+
+						{error ? (
+							<p
+								className="kp-pano-submit__hint"
+								role="alert"
+								data-testid="pano-submit-error"
+								style={{color: "var(--danger)"}}
+							>
+								{error}
+							</p>
+						) : null}
+
+						<div className="kp-pano-submit__form-actions">
+							<Button type="button" variant="tertiary">
+								taslak
+							</Button>
+							<Button
+								type="submit"
+								variant="primary"
+								disabled={submitDisabled}
+								data-testid="pano-submit-submit"
+							>
+								{isInFlight ? "gönderiliyor…" : "paylaş"}
+							</Button>
+						</div>
+					</form>
+				</div>
+			</div>
+		</div>
+	);
 }

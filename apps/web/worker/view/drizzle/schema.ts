@@ -12,6 +12,7 @@
  * post_meta, definition, comment, *_vote, outbox) live next to their
  * Agent classes, NOT here.
  */
+import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
@@ -148,7 +149,11 @@ export const postSummary = sqliteTable(
 		// Host filter.
 		index("post_summary_host").on(t.host),
 		// Profile contribution feed: WHERE author_id = ? ORDER BY created_at DESC.
-		index("post_summary_author_created").on(t.authorId, t.createdAt),
+		// `created_at DESC` so SQLite walks the index forward for the "newest
+		// contributions first" read on `/u/<username>`. Drizzle 0.45's index
+		// DSL doesn't expose per-column ordering on columns, so the second
+		// component is a `sql` fragment.
+		index("post_summary_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
 	],
 );
 
