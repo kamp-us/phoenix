@@ -13,6 +13,7 @@
 		"cf-typegen": "wrangler types"
 	},
 	"dependencies": {
+		"@base-ui/react": "catalog:",
 		"@better-auth/core": "catalog:",
 		"@usirin/forge": "catalog:",
 		"better-auth": "catalog:",
