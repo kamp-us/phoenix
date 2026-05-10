@@ -215,6 +215,11 @@ export interface DeleteDefinitionResult {
  * Result returned by both `voteDefinition` and `retractDefinitionVote`. Mirrors
  * the post-write state of the targeted definition so the GraphQL resolver can
  * reconstruct a `Definition` payload without a round-trip read.
+ *
+ * `myVote` is set authoritatively from the vote-table state so the resolver
+ * doesn't have to await the cross-product `user_vote` MV projection (which
+ * races with the GraphQL response under load). After a vote, `myVote = 1`;
+ * after a retract, `myVote = null`.
  */
 export interface VoteDefinitionResult {
 	definitionId: string;
@@ -224,6 +229,8 @@ export interface VoteDefinitionResult {
 	authorName: string;
 	createdAt: Date;
 	updatedAt: Date;
+	/** `1` if the voter has voted on this definition (post-write), `null` otherwise. */
+	myVote: number | null;
 	/** `true` if the vote row state changed; `false` on idempotent no-op. */
 	changed: boolean;
 }
@@ -819,6 +826,13 @@ export class SozlukTerm extends Agent<Env, TermState> {
 			? new Date(now)
 			: (definitionRow.updatedAt ?? definitionRow.createdAt ?? new Date(now));
 
+		// Authoritative myVote from the definition_vote table state. After a
+		// successful cast, the row exists → 1; after a retract, it's gone → null.
+		// Idempotent no-ops also reflect the post-write state correctly: a
+		// re-vote leaves the row in place (myVote stays 1); a re-retract leaves
+		// nothing (myVote stays null).
+		const myVote = isVote ? 1 : null;
+
 		const result: VoteDefinitionResult = {
 			definitionId: input.definitionId,
 			score: newScore,
@@ -827,6 +841,7 @@ export class SozlukTerm extends Agent<Env, TermState> {
 			authorName: definitionRow.authorName,
 			createdAt: definitionRow.createdAt ?? new Date(now),
 			updatedAt,
+			myVote,
 			changed,
 		};
 

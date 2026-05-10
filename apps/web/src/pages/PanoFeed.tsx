@@ -20,6 +20,7 @@ const FeedQuery = graphql`
       score
       commentCount
       createdAt
+      myVote
       tags {
         kind
         label
@@ -176,6 +177,7 @@ function toPostData(p: FeedPost, i: number): PanoPostData {
     agoLabel: formatAgoTR(p.createdAt),
     commentCount: p.commentCount,
     score: p.score,
+    myVote: p.myVote === 1 ? 1 : 0,
     tags: p.tags.map((t) => ({kind: t.kind as TagKind, label: t.label})),
   };
   if (p.url) data.url = p.url;

@@ -24,6 +24,7 @@ const PostQuery = graphql`
       score
       commentCount
       createdAt
+      myVote
       tags {
         kind
         label
@@ -87,7 +88,11 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
   return (
     <>
       <header className="kp-pano-postpage__head">
-        <PostVoteWidget postId={post.id} baseScore={post.score} />
+        <PostVoteWidget
+          postId={post.id}
+          score={post.score}
+          myVote={post.myVote ?? null}
+        />
         <div>
           <h1 className="kp-pano-postpage__title">{post.title}</h1>
           {post.url ? (

@@ -159,6 +159,57 @@ export interface SubmitPostResult {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Vote shapes                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Thrown by `voteOnPost` / `retractPostVote` when no `post_meta` row exists in
+ * this DO yet (the resolver routed by `idFromName(postId)` for an id no one
+ * ever wrote to). The resolver translates this to a GraphQL error with
+ * `code: 'POST_NOT_FOUND'`.
+ */
+export class PostNotFoundError extends Error {
+	readonly code = "post_not_found" as const;
+	constructor(postId: string) {
+		super(`post ${postId} not found`);
+		this.name = "PostNotFoundError";
+	}
+}
+
+export interface VoteOnPostInput {
+	voterId: string;
+}
+
+/**
+ * Result returned by both `voteOnPost` and `retractPostVote`. Mirrors the
+ * post-write state of the post so the GraphQL resolver can reconstruct a
+ * `Post` payload without a round-trip read.
+ *
+ * `myVote` is set authoritatively from the agent's vote-table state so the
+ * resolver doesn't have to await the cross-product `user_vote` MV projection
+ * (which races with the GraphQL response). After a vote, `myVote = 1`; after
+ * a retract, `myVote = null`. Idempotent no-ops preserve the existing state.
+ */
+export interface VoteOnPostResult {
+	postId: string;
+	title: string;
+	url: string | null;
+	host: string | null;
+	body: string | null;
+	authorId: string;
+	authorName: string;
+	score: number;
+	hotScore: number;
+	commentCount: number;
+	tags: PostTagRow[];
+	createdAt: Date;
+	/** `1` if the voter has voted on this post (post-write), `null` otherwise. */
+	myVote: number | null;
+	/** `true` if the vote row state changed; `false` on idempotent no-op. */
+	changed: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Admin / seed shapes                                                         */
 /* -------------------------------------------------------------------------- */
 
@@ -504,6 +555,210 @@ export class PanoPost extends Agent<Env, PostState> {
 			tags: normalizedTags,
 			createdAt: new Date(now),
 		};
+	}
+
+	/**
+	 * Cast an upvote on this post (T8). Idempotent: a second vote from the
+	 * same voter is a no-op (composite PK + count-then-insert) — score stays
+	 * at the current value, no events emitted.
+	 *
+	 * Atomicity per ADR 0007: a single `transactionSync` block writes the vote
+	 * row, recomputes the post's denormalized `score` from the vote table,
+	 * recomputes `hot_score` from the new score + age, and emits TWO outbox
+	 * rows (PostChanged for `post_summary` convergence + VoteRecorded for the
+	 * cross-product `user_vote` MV + karma side effect).
+	 *
+	 * Throws `PostNotFoundError` when no `post_meta` row exists in this DO
+	 * (clients hit the wrong DO via wrong post id).
+	 */
+	async voteOnPost(input: VoteOnPostInput): Promise<VoteOnPostResult> {
+		return this.applyVote(input, /* isVote */ true);
+	}
+
+	/**
+	 * Retract a previously cast upvote (T8). Idempotent: retracting when no
+	 * vote exists is a no-op — score unchanged, no events emitted.
+	 */
+	async retractPostVote(input: VoteOnPostInput): Promise<VoteOnPostResult> {
+		return this.applyVote(input, /* isVote */ false);
+	}
+
+	/**
+	 * Shared body for `voteOnPost` and `retractPostVote` — the only difference
+	 * is the vote-table mutation (INSERT vs DELETE) and the sign of the
+	 * `VoteRecorded` event's `value` field. Centralizing keeps the outbox +
+	 * setState contract identical. Mirrors `SozlukTerm.applyVote` (T5).
+	 */
+	private async applyVote(
+		input: VoteOnPostInput,
+		isVote: boolean,
+	): Promise<VoteOnPostResult> {
+		const meta = await this.db.query.postMeta.findFirst();
+		if (!meta || meta.deletedAt) {
+			throw new PostNotFoundError(this.name);
+		}
+
+		const tagRows = await this.db
+			.select({kind: schema.tag.kind, label: schema.tag.label})
+			.from(schema.tag);
+
+		const now = Date.now();
+		const postId = this.name;
+		const createdAtMs = meta.createdAt ? meta.createdAt.getTime() : now;
+
+		const postEventId = id("evt");
+		const voteEventId = id("evt");
+
+		// Closure-captured aggregates so post-commit setState can read final values.
+		let changed = false;
+		let newScore = meta.score;
+		let newHotScore = computeHotScore(meta.score, createdAtMs, now);
+
+		this.ctx.storage.transactionSync(() => {
+			if (isVote) {
+				// Count-then-insert with ON CONFLICT DO NOTHING fallback. Single-
+				// instance DOs serialize, so the count-first branch is the
+				// authoritative idempotency guard; the ON CONFLICT is belt-and-
+				// suspenders for any future namespace collision.
+				const before = this.sql<{n: number}>`
+					SELECT COUNT(*) as n FROM post_vote
+					WHERE post_id = ${postId} AND voter_id = ${input.voterId}
+				`;
+				const existed = (before[0]?.n ?? 0) > 0;
+				if (!existed) {
+					this.sql`
+						INSERT INTO post_vote (post_id, voter_id, created_at)
+						VALUES (${postId}, ${input.voterId}, ${Math.floor(now / 1000)})
+						ON CONFLICT(post_id, voter_id) DO NOTHING
+					`;
+					changed = true;
+				}
+			} else {
+				const before = this.sql<{n: number}>`
+					SELECT COUNT(*) as n FROM post_vote
+					WHERE post_id = ${postId} AND voter_id = ${input.voterId}
+				`;
+				const existed = (before[0]?.n ?? 0) > 0;
+				if (existed) {
+					this.sql`
+						DELETE FROM post_vote
+						WHERE post_id = ${postId} AND voter_id = ${input.voterId}
+					`;
+					changed = true;
+				}
+			}
+
+			if (!changed) {
+				newScore = meta.score;
+				newHotScore = computeHotScore(meta.score, createdAtMs, now);
+				return;
+			}
+
+			// Recompute denormalized score from the vote table (single source of
+			// truth). Equivalent to SUM(*) on a presence-only table.
+			const scoreRows = this.sql<{n: number}>`
+				SELECT COUNT(*) as n FROM post_vote WHERE post_id = ${postId}
+			`;
+			newScore = scoreRows[0]?.n ?? 0;
+			newHotScore = computeHotScore(newScore, createdAtMs, now);
+
+			// Persist the recomputed score + updated_at on the singleton meta row.
+			this.sql`
+				UPDATE post_meta
+				SET score = ${newScore}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = '1'
+			`;
+
+			// Outbox: PostChanged (post_summary convergence + hot_score refresh).
+			const postPayload = JSON.stringify({
+				kind: "PostChanged",
+				eventId: postEventId,
+				postId,
+				slug: meta.slug,
+				title: meta.title,
+				url: meta.url,
+				host: meta.host,
+				bodyExcerpt: meta.body ? excerpt(meta.body) : null,
+				authorId: meta.authorId,
+				authorName: meta.authorName,
+				tags: tagRows.map((t) => t.kind),
+				score: newScore,
+				commentCount: meta.commentCount,
+				hotScore: newHotScore,
+				createdAt: createdAtMs,
+				updatedAt: now,
+				lastActivityAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${postEventId}, ${postPayload}, ${now})
+			`;
+
+			// Outbox: VoteRecorded (user_vote MV + karma side effect).
+			const votePayload = JSON.stringify({
+				kind: "VoteRecorded",
+				eventId: voteEventId,
+				userId: input.voterId,
+				targetKind: "post",
+				targetId: postId,
+				targetAuthorId: meta.authorId,
+				value: isVote,
+				createdAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${voteEventId}, ${votePayload}, ${now})
+			`;
+		});
+
+		// Authoritative myVote from the post_vote table state. After a
+		// successful cast, the row exists → 1; after a retract, it's gone → null.
+		// Idempotent no-ops preserve whichever state was already there.
+		const myVote = isVote ? 1 : null;
+
+		const result: VoteOnPostResult = {
+			postId,
+			title: meta.title,
+			url: meta.url,
+			host: meta.host,
+			body: meta.body,
+			authorId: meta.authorId,
+			authorName: meta.authorName,
+			score: newScore,
+			hotScore: newHotScore,
+			commentCount: meta.commentCount,
+			tags: tagRows,
+			createdAt: meta.createdAt ?? new Date(now),
+			myVote,
+			changed,
+		};
+
+		if (!changed) return result;
+
+		// Update Agent state (drives WebSocket broadcast in T16).
+		this.setState({
+			title: meta.title,
+			host: meta.host,
+			score: newScore,
+			commentCount: meta.commentCount,
+			hotScore: newHotScore,
+			lastActivityAt: now,
+			lastEventId: voteEventId,
+		});
+
+		// Best-effort inline flush. Failures absorbed by reconcileOutbox.
+		try {
+			await this.flushOutbox({eventId: postEventId});
+		} catch (err) {
+			console.error("[PanoPost.applyVote] flushOutbox(post) failed", err);
+		}
+		try {
+			await this.flushOutbox({eventId: voteEventId});
+		} catch (err) {
+			console.error("[PanoPost.applyVote] flushOutbox(vote) failed", err);
+		}
+
+		return result;
 	}
 
 	/* -------- Seed surface ---------------------------------------------- */

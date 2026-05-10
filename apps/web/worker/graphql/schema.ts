@@ -18,6 +18,7 @@ import type {VoteValue} from "../features/pano/Pano";
 import {
 	ALLOWED_POST_TAG_KINDS,
 	type CommentRow,
+	PostNotFoundError,
 	type PostPage,
 	type PostTagRow,
 	PostValidationError,
@@ -88,10 +89,17 @@ const DefinitionType = new GraphQLObjectType<DefinitionRow>({
 		 *
 		 * The `parent.id` is the definition id; `targetKind = 'definition'` is
 		 * fixed. Signed-out short-circuits without touching D1.
+		 *
+		 * Vote mutation resolvers stamp `myVote` directly on the returned row
+		 * (authoritative from the per-term Agent's vote-table state) so the
+		 * field doesn't race against the cross-product projection landing. We
+		 * honor that stamped value when present; otherwise we look up the MV.
 		 */
 		myVote: {
 			type: GraphQLInt,
 			resolve: resolver(function* (parent: DefinitionRow) {
+				const stamped = (parent as {myVote?: number | null}).myVote;
+				if (stamped !== undefined) return stamped;
 				const auth = yield* Auth;
 				if (!auth.user) return null;
 				const env = yield* CloudflareEnv;
@@ -169,10 +177,10 @@ const TagType = new GraphQLObjectType<PostTagRow>({
 });
 
 /**
- * Single Post type backs both list (PostSummaryRow from D1) and detail
- * (PostPage from per-post DO) queries — same shape on both code paths today,
- * kept as separate type aliases so they can diverge without touching the
- * GraphQL layer.
+ * Single Post type backs list (PostSummaryRow from D1), detail (PostPage from
+ * per-post DO), and mutation results (VoteOnPostResult from per-post Agent).
+ * The shapes overlap on every required field; resolvers normalize at their
+ * boundary so the type only sees rows that satisfy this contract.
  */
 const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 	name: "Post",
@@ -193,6 +201,34 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 		tags: {
 			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(TagType))),
 			resolve: (p) => p.tags,
+		},
+		/**
+		 * `1` if the requesting user has upvoted this post; `null` if signed-out
+		 * or hasn't voted. Looked up in `PHOENIX_DB.user_vote` (cross-product MV
+		 * maintained by the `VoteRecorded` projection step). Symmetric with
+		 * `Definition.myVote` (T5). Signed-out short-circuits without touching D1.
+		 *
+		 * Vote mutation resolvers stamp `myVote` directly on the returned row
+		 * (authoritative from the per-post Agent's vote-table state) so the field
+		 * doesn't race against the cross-product projection landing. We honor that
+		 * stamped value when present; otherwise we look up the MV.
+		 */
+		myVote: {
+			type: GraphQLInt,
+			resolve: resolver(function* (parent: PostSummaryRow | PostPage) {
+				const stamped = (parent as {myVote?: number | null}).myVote;
+				if (stamped !== undefined) return stamped;
+				const auth = yield* Auth;
+				if (!auth.user) return null;
+				const env = yield* CloudflareEnv;
+				return yield* Effect.promise(() =>
+					readMyVote(env.PHOENIX_DB, {
+						userId: auth.user!.id,
+						targetKind: "post",
+						targetId: parent.id,
+					}),
+				);
+			}),
 		},
 	}),
 });
@@ -524,7 +560,10 @@ const MutationType = new GraphQLObjectType({
 						score: result.score,
 						createdAt: result.createdAt,
 						updatedAt: result.updatedAt,
-					} satisfies DefinitionRow;
+						// Stamp myVote authoritatively so the Definition.myVote
+						// resolver doesn't race against the user_vote projection.
+						myVote: result.myVote,
+					} as DefinitionRow & {myVote: number | null};
 				} catch (err) {
 					if (err instanceof DefinitionNotFoundError) {
 						throw new GraphQLError(err.message, {
@@ -562,7 +601,8 @@ const MutationType = new GraphQLObjectType({
 						score: result.score,
 						createdAt: result.createdAt,
 						updatedAt: result.updatedAt,
-					} satisfies DefinitionRow;
+						myVote: result.myVote,
+					} as DefinitionRow & {myVote: number | null};
 				} catch (err) {
 					if (err instanceof DefinitionNotFoundError) {
 						throw new GraphQLError(err.message, {
@@ -761,21 +801,75 @@ const MutationType = new GraphQLObjectType({
 			}),
 		},
 		voteOnPost: {
-			type: new GraphQLNonNull(VoteResultType),
-			args: {input: {type: new GraphQLNonNull(VoteInputType)}},
-			resolve: resolver(function* (_source, args: {input: VoteInput}) {
-				const auth = yield* Auth;
-				if (!auth.user) throw new GraphQLError("Sign in required");
-				const value = parseVoteValue(args.input.value);
+			type: new GraphQLNonNull(PostType),
+			args: {postId: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {postId: string}) {
+				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO.get(env.PANO.idFromName("kampus"));
-				return yield* Effect.promise(() =>
-					stub.voteOnPost({
-						userId: auth.user!.id,
-						postId: args.input.targetId,
-						value,
-					}),
-				);
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.voteOnPost({voterId: user.id}),
+					);
+					return {
+						id: result.postId,
+						slug: null,
+						title: result.title,
+						url: result.url,
+						host: result.host,
+						body: result.body,
+						author: result.authorName,
+						score: result.score,
+						commentCount: result.commentCount,
+						createdAt: result.createdAt,
+						tags: result.tags,
+						// Stamp myVote authoritatively so the Post.myVote resolver
+						// doesn't race against the user_vote projection landing.
+						myVote: result.myVote,
+					} as PostPage & {myVote: number | null};
+				} catch (err) {
+					if (err instanceof PostNotFoundError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: "POST_NOT_FOUND"},
+						});
+					}
+					throw err;
+				}
+			}),
+		},
+		retractPostVote: {
+			type: new GraphQLNonNull(PostType),
+			args: {postId: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {postId: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.retractPostVote({voterId: user.id}),
+					);
+					return {
+						id: result.postId,
+						slug: null,
+						title: result.title,
+						url: result.url,
+						host: result.host,
+						body: result.body,
+						author: result.authorName,
+						score: result.score,
+						commentCount: result.commentCount,
+						createdAt: result.createdAt,
+						tags: result.tags,
+						myVote: result.myVote,
+					} as PostPage & {myVote: number | null};
+				} catch (err) {
+					if (err instanceof PostNotFoundError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: "POST_NOT_FOUND"},
+						});
+					}
+					throw err;
+				}
 			}),
 		},
 		voteOnComment: {

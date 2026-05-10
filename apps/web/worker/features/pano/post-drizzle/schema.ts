@@ -103,20 +103,24 @@ export const comment = sqliteTable(
 );
 
 /**
- * Composite-PK vote table; one row per voter on this post (only ever one
- * post per DO). Voting is up-only for MVP — presence = upvoted, absence =
- * no vote.
+ * Composite-PK vote table: one row per (post, voter). Per-DO scoping makes
+ * `post_id` redundant for storage — every row in this DO belongs to the post
+ * named `this.name` — but the literal `(post_id, voter_id)` PK keeps the
+ * table shape symmetric with `definition_vote` and `comment_vote`, and lets
+ * future flatten/migrate paths read the table without DO context.
  *
- * Score on `post_meta.score` is denormalized: recomputed inside the same
+ * Voting is up-only for MVP — presence = upvoted, absence = no vote. Score on
+ * `post_meta.score` is denormalized: recomputed inside the same
  * `transactionSync` as the vote insert/delete (T8).
  */
 export const postVote = sqliteTable(
 	"post_vote",
 	{
+		postId: text("post_id").notNull(),
 		voterId: text("voter_id").notNull(),
 		createdAt: timestamp("created_at").$defaultFn(() => new Date()),
 	},
-	(t) => [primaryKey({columns: [t.voterId]})],
+	(t) => [primaryKey({columns: [t.postId, t.voterId]})],
 );
 
 /**

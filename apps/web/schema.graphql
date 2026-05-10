@@ -28,11 +28,12 @@ type Mutation {
   deleteDefinition(id: ID!): String!
   editDefinition(body: String!, id: ID!): Definition!
   retractDefinitionVote(definitionId: ID!): Definition!
+  retractPostVote(postId: ID!): Post!
   setUsername(value: String!): User!
   submitPost(body: String, tags: [TagInput!]!, title: String!, url: String): Post!
   voteDefinition(definitionId: ID!): Definition!
   voteOnComment(input: VoteInput!): VoteResult!
-  voteOnPost(input: VoteInput!): VoteResult!
+  voteOnPost(postId: ID!): Post!
 }
 
 type Post {
@@ -42,6 +43,7 @@ type Post {
   createdAt: String!
   host: String
   id: ID!
+  myVote: Int
   score: Int!
   slug: String
   tags: [Tag!]!
