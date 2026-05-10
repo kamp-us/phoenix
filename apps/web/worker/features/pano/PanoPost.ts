@@ -216,6 +216,54 @@ export interface VoteOnPostResult {
 }
 
 /* -------------------------------------------------------------------------- */
+/* Add-comment shapes                                                          */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Validation error thrown by `addComment`. The GraphQL resolver catches this
+ * and surfaces a stable `code` extension so the SPA can localize without
+ * parsing free-text messages.
+ *
+ * `parent_not_found` is the same-post invariant: a nested reply must reference
+ * an existing non-deleted comment in this DO. Because the comment table lives
+ * inside the per-post DO, the same-post check is trivially enforced by routing
+ * — we only need to confirm the row exists locally.
+ */
+export class CommentValidationError extends Error {
+	constructor(
+		readonly code: "body_required" | "body_too_long" | "parent_not_found",
+		message: string,
+	) {
+		super(message);
+		this.name = "CommentValidationError";
+	}
+}
+
+/** Comment body cap (per PRD: ≤ 5 000 chars). */
+export const COMMENT_BODY_MAX = 5_000;
+
+export interface AddCommentInput {
+	authorId: string;
+	authorName: string;
+	body: string;
+	/** Optional parent comment id for nested replies. Must reference an
+	 *  existing non-deleted comment in this DO. */
+	parentId?: string | null | undefined;
+}
+
+export interface AddCommentResult {
+	commentId: string;
+	postId: string;
+	parentId: string | null;
+	authorId: string;
+	authorName: string;
+	body: string;
+	score: number;
+	commentCount: number;
+	createdAt: Date;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Edit / Delete shapes                                                        */
 /* -------------------------------------------------------------------------- */
 
@@ -821,6 +869,167 @@ export class PanoPost extends Agent<Env, PostState> {
 		}
 
 		return result;
+	}
+
+	/**
+	 * Add a comment to this post — top-level or nested (T10).
+	 *
+	 * Atomicity per ADR 0007: one `transactionSync` writes the `comment` row,
+	 * bumps `post_meta.comment_count`, and emits TWO outbox events
+	 * (`CommentAdded` for `comment_view` + `PostChanged` for `post_summary`'s
+	 * commentCount convergence).
+	 *
+	 * Validation (defense-in-depth — resolver enforces too):
+	 * - `body` non-empty after `trim`, ≤ 5 000 chars.
+	 * - When `parentId` is provided it MUST reference an existing non-deleted
+	 *   comment in this DO. The same-post invariant is trivially satisfied —
+	 *   every comment in this DO belongs to this DO's post by construction.
+	 *
+	 * Throws:
+	 * - `PostNotFoundError` when the DO is empty (idFromName hit a fresh DO).
+	 * - `CommentValidationError` on validation failure.
+	 */
+	async addComment(input: AddCommentInput): Promise<AddCommentResult> {
+		// ----- validation --------------------------------------------------
+		const rawBody = input.body ?? "";
+		if (rawBody.trim().length === 0) {
+			throw new CommentValidationError("body_required", "yorum boş olamaz");
+		}
+		if (rawBody.length > COMMENT_BODY_MAX) {
+			throw new CommentValidationError(
+				"body_too_long",
+				`yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
+			);
+		}
+
+		const meta = await this.db.query.postMeta.findFirst();
+		if (!meta || meta.deletedAt) {
+			throw new PostNotFoundError(this.name);
+		}
+
+		const parentId = input.parentId ?? null;
+		if (parentId !== null) {
+			// The per-post Agent owns the comment table, so a SELECT 1 against
+			// the local DO is the canonical same-post + existence guard.
+			const parentRows = this.sql<{id: string}>`
+				SELECT id FROM comment WHERE id = ${parentId} AND deleted_at IS NULL
+			`;
+			if (parentRows.length === 0) {
+				throw new CommentValidationError(
+					"parent_not_found",
+					"yanıtlanan yorum bulunamadı",
+				);
+			}
+		}
+
+		const tagRows = await this.db
+			.select({kind: schema.tag.kind, label: schema.tag.label})
+			.from(schema.tag);
+
+		const now = Date.now();
+		const postId = this.name;
+		const createdAtMs = meta.createdAt ? meta.createdAt.getTime() : now;
+		const commentId = id("comm");
+		const commentEventId = id("evt");
+		const postEventId = id("evt");
+		const bodyExcerpt = excerpt(rawBody);
+		const newCommentCount = meta.commentCount + 1;
+		const hotScore = computeHotScore(meta.score, createdAtMs, now);
+
+		const commentAddedPayload = JSON.stringify({
+			kind: "CommentAdded",
+			eventId: commentEventId,
+			commentId,
+			authorId: input.authorId,
+			authorName: input.authorName,
+			postId,
+			postTitle: meta.title,
+			postSlug: meta.slug,
+			parentId,
+			bodyExcerpt,
+			score: 0,
+			createdAt: now,
+		});
+
+		const postChangedPayload = JSON.stringify({
+			kind: "PostChanged",
+			eventId: postEventId,
+			postId,
+			slug: meta.slug,
+			title: meta.title,
+			url: meta.url,
+			host: meta.host,
+			bodyExcerpt: meta.body ? excerpt(meta.body) : null,
+			authorId: meta.authorId,
+			authorName: meta.authorName,
+			tags: tagRows.map((t) => t.kind),
+			score: meta.score,
+			commentCount: newCommentCount,
+			hotScore,
+			createdAt: createdAtMs,
+			updatedAt: now,
+			lastActivityAt: now,
+		});
+
+		const createdAtSec = Math.floor(now / 1000);
+
+		this.ctx.storage.transactionSync(() => {
+			this.sql`
+				INSERT INTO comment (
+					id, parent_id, author_id, author_name, body, score,
+					created_at, updated_at
+				) VALUES (
+					${commentId}, ${parentId}, ${input.authorId}, ${input.authorName},
+					${rawBody}, 0, ${createdAtSec}, ${createdAtSec}
+				)
+			`;
+			this.sql`
+				UPDATE post_meta
+				SET comment_count = ${newCommentCount}, updated_at = ${createdAtSec}
+				WHERE id = '1'
+			`;
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${commentEventId}, ${commentAddedPayload}, ${now})
+			`;
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${postEventId}, ${postChangedPayload}, ${now})
+			`;
+		});
+
+		this.setState({
+			...this.state,
+			commentCount: newCommentCount,
+			hotScore,
+			lastActivityAt: now,
+			lastEventId: commentEventId,
+		});
+
+		// Best-effort inline flush (cache hit path). Failures absorbed by
+		// the periodic + on-start `reconcileOutbox` schedule.
+		try {
+			await this.flushOutbox({eventId: commentEventId});
+		} catch (err) {
+			console.error("[PanoPost.addComment] flushOutbox(comment) failed", err);
+		}
+		try {
+			await this.flushOutbox({eventId: postEventId});
+		} catch (err) {
+			console.error("[PanoPost.addComment] flushOutbox(post) failed", err);
+		}
+
+		return {
+			commentId,
+			postId,
+			parentId,
+			authorId: input.authorId,
+			authorName: input.authorName,
+			body: rawBody,
+			score: 0,
+			commentCount: newCommentCount,
+			createdAt: new Date(now),
+		};
 	}
 
 	/**

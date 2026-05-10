@@ -17,6 +17,7 @@ import {
 import type {VoteValue} from "../features/pano/Pano";
 import {
 	ALLOWED_POST_TAG_KINDS,
+	CommentValidationError,
 	type CommentRow,
 	PostNotFoundError,
 	type PostPage,
@@ -964,6 +965,67 @@ const MutationType = new GraphQLObjectType({
 				// SDL is `deletePost: String!` — return the deleted id so the SPA
 				// can confirm + invalidate caches. Mirrors `deleteDefinition` (T6).
 				return result.value.postId;
+			}),
+		},
+		addComment: {
+			type: new GraphQLNonNull(CommentType),
+			args: {
+				postId: {type: new GraphQLNonNull(GraphQLID)},
+				parentId: {type: GraphQLID},
+				body: {type: new GraphQLNonNull(GraphQLString)},
+			},
+			resolve: resolver(function* (
+				_source,
+				args: {postId: string; parentId?: string | null; body: string},
+			) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+
+				// Resolver-side validation for fast-fail UX; the Agent re-validates
+				// inside `transactionSync` (defense-in-depth / durability boundary).
+				const trimmed = (args.body ?? "").trim();
+				if (trimmed.length === 0) {
+					throw new GraphQLError("yorum boş olamaz", {
+						extensions: {code: "BODY_REQUIRED"},
+					});
+				}
+				if (args.body.length > 5_000) {
+					throw new GraphQLError("yorum en fazla 5000 karakter olabilir", {
+						extensions: {code: "BODY_TOO_LONG"},
+					});
+				}
+
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.addComment({
+							authorId: user.id,
+							authorName: user.name ?? user.email,
+							body: args.body,
+							...(args.parentId ? {parentId: args.parentId} : {}),
+						}),
+					);
+					return {
+						id: result.commentId,
+						parentId: result.parentId,
+						author: result.authorName,
+						body: result.body,
+						score: result.score,
+						createdAt: result.createdAt,
+					} satisfies CommentRow;
+				} catch (err) {
+					if (err instanceof CommentValidationError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: err.code.toUpperCase()},
+						});
+					}
+					if (err instanceof PostNotFoundError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: "POST_NOT_FOUND"},
+						});
+					}
+					throw err;
+				}
 			}),
 		},
 		voteOnComment: {

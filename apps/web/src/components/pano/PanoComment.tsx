@@ -16,6 +16,10 @@ export type CommentData = {
   isOwner?: boolean;
   isOp?: boolean;
   highlight?: boolean;  /* hash-targeted */
+  /** Optional inline reply composer rendered right after the comment body,
+   *  above any nested children. Owned by the page so it can wire to the
+   *  `addComment` mutation + refetch. */
+  replyComposer?: React.ReactNode;
   children?: CommentData[];
 };
 
@@ -105,7 +109,11 @@ export function PanoComment({
         <>
           <div className="kp-comment__body">{comment.body}</div>
           <footer className="kp-comment__foot">
-            <button type="button" onClick={() => onReply?.(comment.id)}>
+            <button
+              type="button"
+              onClick={() => onReply?.(comment.id)}
+              data-testid={`pano-comment-reply-trigger-${comment.id}`}
+            >
               yanıtla
             </button>
             <button type="button">paylaş</button>
@@ -126,6 +134,11 @@ export function PanoComment({
               </Menu.Root>
             ) : null}
           </footer>
+          {comment.replyComposer ? (
+            <div className="kp-comment__reply" data-testid={`pano-comment-reply-${comment.id}`}>
+              {comment.replyComposer}
+            </div>
+          ) : null}
           {comment.children?.length ? (
             <div>
               {comment.children.map((c) => (

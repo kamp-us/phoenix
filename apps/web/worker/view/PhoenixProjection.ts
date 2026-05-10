@@ -110,6 +110,18 @@ export interface CommentAddedEvent extends ProjectionEventBase {
 	authorName: string;
 	postId: string;
 	postTitle: string;
+	/**
+	 * Optional human-friendly post slug (null when the post doesn't have one).
+	 * Carried denormalized so the profile contribution feed (T14) can link to
+	 * the post without a per-row RPC.
+	 */
+	postSlug?: string | null;
+	/**
+	 * Parent comment id when this is a nested reply, `null` for top-level
+	 * comments. The `comment_view` MV doesn't carry parent info today —
+	 * the field is reserved for future tree views off the profile feed.
+	 */
+	parentId: string | null;
 	bodyExcerpt: string;
 	score: number;
 	createdAt: number;
@@ -524,6 +536,49 @@ async function projectDefinitionDeleted(env: Env, e: DefinitionDeletedEvent): Pr
 }
 
 /**
+ * `CommentAdded` writes a denormalized `comment_view` row used by the
+ * profile contribution feed (T14). The row carries the post id + title so
+ * the feed renders without RPCing back into `PanoPost`. Convergent overwrite
+ * guarded by `WHERE last_event_id < excluded.last_event_id` (forge ULID lex
+ * ordering — idempotent on retry, monotonic on out-of-order delivery).
+ *
+ * The `commentCount` bump on `post_summary` is owned by the sibling
+ * `PostChanged` event that the producer emits in the same `transactionSync`
+ * — keeping this step a dumb one-table upsert.
+ *
+ * Edits / deletes land in T12 via separate `CommentEdited` / `CommentDeleted`
+ * steps; this step only owns the initial insert.
+ */
+async function projectCommentAdded(env: Env, e: CommentAddedEvent): Promise<void> {
+	const createdAt = Math.floor(e.createdAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO comment_view (
+			id, author_id, author_name, post_id, post_title,
+			body_excerpt, score, created_at, updated_at, deleted_at, last_event_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			body_excerpt  = excluded.body_excerpt,
+			score         = excluded.score,
+			updated_at    = excluded.updated_at,
+			last_event_id = excluded.last_event_id
+		WHERE comment_view.last_event_id < excluded.last_event_id`,
+	)
+		.bind(
+			e.commentId,
+			e.authorId,
+			e.authorName,
+			e.postId,
+			e.postTitle,
+			e.bodyExcerpt,
+			e.score,
+			createdAt,
+			createdAt,
+			e.eventId,
+		)
+		.run();
+}
+
+/**
  * `VoteRecorded` updates the cross-product MV state for an upvote/retract:
  *
  * - `user_vote`: presence-only row keyed by (user_id, target_kind, target_id).
@@ -664,7 +719,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 				case "PostDeleted":
 					return projectPostDeleted(this.env, e);
 				case "CommentAdded":
-					return;
+					return projectCommentAdded(this.env, e);
 				case "CommentChanged":
 					return;
 				case "CommentEdited":

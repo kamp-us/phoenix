@@ -24,6 +24,7 @@ type Health {
 }
 
 type Mutation {
+  addComment(body: String!, parentId: ID, postId: ID!): Comment!
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
   deleteDefinition(id: ID!): String!
   deletePost(id: ID!): String!
