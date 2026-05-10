@@ -1,4 +1,5 @@
 import * as React from 'react';
+import { useGraphQL } from '../graphql/useGraphQL';
 import {
   SozlukAlphabet,
   SozlukPopular,
@@ -8,17 +9,39 @@ import {
 } from '../components/sozluk/index';
 import './SozlukHome.css';
 
-export function SozlukHome({
-  recent,
-  popular,
-  totals,
-}: {
-  recent: TermRow[];
-  popular: PopularTerm[];
-  totals?: { terms: number; definitions: number; newToday: number };
-}) {
+const RECENT_QUERY = `
+  query SozlukRecent {
+    terms(sort: recent, limit: 24) {
+      id
+      slug
+      title
+      count
+      excerpt
+      totalScore
+    }
+  }
+`;
+
+const POPULAR_QUERY = `
+  query SozlukPopular {
+    terms(sort: popular, limit: 10) {
+      id
+      slug
+      title
+      totalScore
+    }
+  }
+`;
+
+export function SozlukHome() {
   const [letter, setLetter] = React.useState<string | undefined>();
   const [query, setQuery] = React.useState('');
+
+  const recentR = useGraphQL<{terms: TermRow[]}>(RECENT_QUERY);
+  const popularR = useGraphQL<{terms: PopularTerm[]}>(POPULAR_QUERY);
+
+  const recent = recentR.kind === 'ok' ? recentR.data.terms : [];
+  const popular = popularR.kind === 'ok' ? popularR.data.terms : [];
 
   const filtered = recent.filter((t) => {
     if (letter && !t.title.toLowerCase().startsWith(letter)) return false;
@@ -26,11 +49,12 @@ export function SozlukHome({
     return true;
   });
 
-  const t = totals ?? {
-    terms: 1847,
-    definitions: 6213,
-    newToday: 23,
-  };
+  const totalsLine =
+    recentR.kind === 'ok'
+      ? `${recent.length} terim · son 24 sa: ${recent.length} yeni`
+      : recentR.kind === 'loading'
+      ? 'yükleniyor…'
+      : 'yüklenemedi';
 
   return (
     <div className="kp-page">
@@ -38,11 +62,7 @@ export function SozlukHome({
         <header className="kp-sozluk-home__masthead">
           <div>
             <h1 className="kp-sozluk-home__title">
-              sözlük{' '}
-              <small>
-                {t.terms.toLocaleString('tr-TR')} terim ·{' '}
-                {t.definitions.toLocaleString('tr-TR')} tanım · son 24 sa: {t.newToday} yeni
-              </small>
+              sözlük <small>{totalsLine}</small>
             </h1>
           </div>
           <label className="kp-sozluk-home__searchbar">
@@ -68,6 +88,12 @@ export function SozlukHome({
         </header>
 
         <SozlukAlphabet value={letter} onChange={setLetter} />
+
+        {recentR.kind === 'error' ? (
+          <p style={{font: 'var(--t-meta)', color: 'var(--danger)', padding: 'var(--s-3) 0'}}>
+            sözlük yüklenemedi: {recentR.message}
+          </p>
+        ) : null}
 
         <div className="kp-sozluk-home__columns">
           <section>

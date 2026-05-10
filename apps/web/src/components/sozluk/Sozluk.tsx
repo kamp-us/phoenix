@@ -36,7 +36,7 @@ export function SozlukTermList({ terms }: { terms: TermRow[] }) {
 export type PopularTerm = {
   slug: string;
   title: string;
-  score: number;
+  totalScore: number;
 };
 
 export function SozlukPopular({ terms }: { terms: PopularTerm[] }) {
@@ -48,7 +48,7 @@ export function SozlukPopular({ terms }: { terms: PopularTerm[] }) {
           <Link className="kp-sozluk-popular__title" to={`/sozluk/${t.slug}`}>
             {t.title}
           </Link>
-          <span className="kp-sozluk-popular__meta">{t.score} ↑</span>
+          <span className="kp-sozluk-popular__meta">{t.totalScore} ↑</span>
         </li>
       ))}
     </ol>
