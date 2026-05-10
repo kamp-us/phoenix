@@ -16,6 +16,7 @@ import {ProfilePage} from "./pages/ProfilePage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
 import {UsernameBootstrap} from "./pages/UsernameBootstrap";
+import {UserProfilePage} from "./pages/UserProfilePage";
 
 type Mode = "dark" | "light";
 
@@ -104,14 +105,6 @@ function PanoSiteFeedRoute() {
 	return <PanoFeed {...(host ? {host} : {})} />;
 }
 
-// Placeholder: T14 builds the dedicated `/u/<username>` profile page wired
-// to the GraphQL `profile(username)` query. For now, route to the existing
-// settings-style ProfilePage so the topbar @username link doesn't 404.
-function ProfileRoute() {
-	useParams<{username: string}>();
-	return <ProfilePage />;
-}
-
 export function App() {
 	return (
 		<Routes>
@@ -125,7 +118,7 @@ export function App() {
 				<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
 				<Route path="/auth" element={<AuthPage />} />
 				<Route path="/profile" element={<ProfilePage />} />
-				<Route path="/u/:username" element={<ProfileRoute />} />
+				<Route path="/u/:username" element={<UserProfilePage />} />
 			</Route>
 		</Routes>
 	);

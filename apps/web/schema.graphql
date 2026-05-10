@@ -1,113 +1,170 @@
 type Comment {
-  author: String!
-  authorId: ID!
-  body: String!
-  createdAt: String!
-  id: ID!
-  myVote: Int
-  parentId: ID
-  score: Int!
+	author: String!
+	authorId: ID!
+	body: String!
+	createdAt: String!
+	id: ID!
+	myVote: Int
+	parentId: ID
+	score: Int!
+}
+
+type CommentContribution {
+	bodyExcerpt: String!
+	createdAt: String!
+	id: ID!
+	kind: String!
+	postId: ID!
+	postTitle: String!
+	score: Int!
+}
+
+type ContributionConnection {
+	edges: [ContributionEdge!]!
+	pageInfo: PageInfo!
+}
+
+type ContributionEdge {
+	cursor: String!
+	node: ProfileContribution!
 }
 
 type Definition {
-  author: String!
-  authorId: ID!
-  body: String!
-  createdAt: String!
-  id: ID!
-  myVote: Int
-  score: Int!
-  updatedAt: String!
+	author: String!
+	authorId: ID!
+	body: String!
+	createdAt: String!
+	id: ID!
+	myVote: Int
+	score: Int!
+	updatedAt: String!
+}
+
+type DefinitionContribution {
+	bodyExcerpt: String!
+	createdAt: String!
+	id: ID!
+	kind: String!
+	score: Int!
+	termSlug: String!
+	termTitle: String!
 }
 
 type Health {
-  environment: String!
-  status: String!
+	environment: String!
+	status: String!
 }
 
 type Mutation {
-  addComment(body: String!, parentId: ID, postId: ID!): Comment!
-  addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
-  deleteComment(id: ID!): String!
-  deleteDefinition(id: ID!): String!
-  deletePost(id: ID!): String!
-  editComment(body: String!, id: ID!): Comment!
-  editDefinition(body: String!, id: ID!): Definition!
-  editPost(body: String, id: ID!, title: String): Post!
-  retractCommentVote(commentId: ID!): Comment!
-  retractDefinitionVote(definitionId: ID!): Definition!
-  retractPostVote(postId: ID!): Post!
-  setUsername(value: String!): User!
-  submitPost(body: String, tags: [TagInput!]!, title: String!, url: String): Post!
-  voteDefinition(definitionId: ID!): Definition!
-  voteOnComment(commentId: ID!): Comment!
-  voteOnPost(postId: ID!): Post!
+	addComment(body: String!, parentId: ID, postId: ID!): Comment!
+	addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
+	deleteComment(id: ID!): String!
+	deleteDefinition(id: ID!): String!
+	deletePost(id: ID!): String!
+	editComment(body: String!, id: ID!): Comment!
+	editDefinition(body: String!, id: ID!): Definition!
+	editPost(body: String, id: ID!, title: String): Post!
+	retractCommentVote(commentId: ID!): Comment!
+	retractDefinitionVote(definitionId: ID!): Definition!
+	retractPostVote(postId: ID!): Post!
+	setUsername(value: String!): User!
+	submitPost(body: String, tags: [TagInput!]!, title: String!, url: String): Post!
+	voteDefinition(definitionId: ID!): Definition!
+	voteOnComment(commentId: ID!): Comment!
+	voteOnPost(postId: ID!): Post!
+}
+
+type PageInfo {
+	endCursor: String
+	hasNextPage: Boolean!
 }
 
 type Post {
-  author: String!
-  authorId: ID!
-  body: String
-  commentCount: Int!
-  createdAt: String!
-  host: String
-  id: ID!
-  myVote: Int
-  score: Int!
-  slug: String
-  tags: [Tag!]!
-  title: String!
-  url: String
+	author: String!
+	authorId: ID!
+	body: String
+	commentCount: Int!
+	createdAt: String!
+	host: String
+	id: ID!
+	myVote: Int
+	score: Int!
+	slug: String
+	tags: [Tag!]!
+	title: String!
+	url: String
+}
+
+type PostContribution {
+	bodyExcerpt: String
+	createdAt: String!
+	id: ID!
+	kind: String!
+	score: Int!
+	slug: String
+	title: String!
 }
 
 enum PostSort {
-  discuss
-  hot
-  new
-  top
+	discuss
+	hot
+	new
+	top
 }
 
+type Profile {
+	commentCount: Int!
+	contributions(after: String, first: Int): ContributionConnection!
+	definitionCount: Int!
+	postCount: Int!
+	totalKarma: Int!
+	user: User!
+}
+
+union ProfileContribution = CommentContribution | DefinitionContribution | PostContribution
+
 type Query {
-  health: Health!
-  me: User
-  post(idOrSlug: String!): Post
-  postComments(postId: String!): [Comment!]!
-  posts(host: String, limit: Int, sort: PostSort): [Post!]!
-  term(slug: String!): Term
-  terms(limit: Int, sort: TermSort): [Term!]!
+	health: Health!
+	me: User
+	post(idOrSlug: String!): Post
+	postComments(postId: String!): [Comment!]!
+	posts(host: String, limit: Int, sort: PostSort): [Post!]!
+	profile(username: String!): Profile
+	term(slug: String!): Term
+	terms(limit: Int, sort: TermSort): [Term!]!
 }
 
 type Tag {
-  kind: String!
-  label: String!
+	kind: String!
+	label: String!
 }
 
 input TagInput {
-  kind: String!
-  label: String
+	kind: String!
+	label: String
 }
 
 type Term {
-  count: Int!
-  definitions: [Definition!]!
-  excerpt: String
-  firstAt: String
-  id: ID!
-  lastEdit: String
-  slug: String!
-  title: String!
-  totalScore: Int!
+	count: Int!
+	definitions: [Definition!]!
+	excerpt: String
+	firstAt: String
+	id: ID!
+	lastEdit: String
+	slug: String!
+	title: String!
+	totalScore: Int!
 }
 
 enum TermSort {
-  popular
-  recent
+	popular
+	recent
 }
 
 type User {
-  email: String!
-  id: ID!
-  image: String
-  name: String
-  username: String
+	email: String!
+	id: ID!
+	image: String
+	name: String
+	username: String
 }

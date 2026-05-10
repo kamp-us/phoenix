@@ -1,6 +1,7 @@
 import {id} from "@usirin/forge";
 import {Effect} from "effect";
 import {
+	GraphQLBoolean,
 	GraphQLEnumType,
 	GraphQLError,
 	GraphQLID,
@@ -11,6 +12,7 @@ import {
 	GraphQLObjectType,
 	GraphQLSchema,
 	GraphQLString,
+	GraphQLUnionType,
 	lexicographicSortSchema,
 	printSchema,
 } from "graphql";
@@ -31,6 +33,13 @@ import {
 	type PostSummaryRow,
 } from "../features/pano/postSummaryReader";
 import {UsernameValidationError} from "../features/pasaport/Pasaport";
+import {
+	type ContributionConnection,
+	type ContributionNode,
+	listContributions,
+	lookupProfile,
+	type ProfileRow,
+} from "../features/pasaport/userProfileReader";
 import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
 import {
 	DefinitionNotFoundError,
@@ -302,6 +311,183 @@ const PostSortEnum = new GraphQLEnumType({
 	},
 });
 
+/* -------------------------------------------------------------------------- */
+/* Profile contributions feed (T14)                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Tagged-union node carried by the `ContributionConnection`. Each variant
+ * narrows on `__typename`; resolveType inspects the runtime `kind` literal
+ * the reader stamps on each row.
+ */
+const DefinitionContributionType = new GraphQLObjectType<ContributionNode>({
+	name: "DefinitionContribution",
+	fields: {
+		kind: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: () => "definition",
+		},
+		id: {type: new GraphQLNonNull(GraphQLID)},
+		score: {type: new GraphQLNonNull(GraphQLInt)},
+		createdAt: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => n.createdAt.toISOString(),
+		},
+		bodyExcerpt: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => (n.kind === "definition" ? n.bodyExcerpt : ""),
+		},
+		termSlug: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => (n.kind === "definition" ? n.termSlug : ""),
+		},
+		termTitle: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => (n.kind === "definition" ? n.termTitle : ""),
+		},
+	},
+});
+
+const PostContributionType = new GraphQLObjectType<ContributionNode>({
+	name: "PostContribution",
+	fields: {
+		kind: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: () => "post",
+		},
+		id: {type: new GraphQLNonNull(GraphQLID)},
+		score: {type: new GraphQLNonNull(GraphQLInt)},
+		createdAt: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => n.createdAt.toISOString(),
+		},
+		title: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => (n.kind === "post" ? n.title : ""),
+		},
+		slug: {
+			type: GraphQLString,
+			resolve: (n) => (n.kind === "post" ? n.slug : null),
+		},
+		bodyExcerpt: {
+			type: GraphQLString,
+			resolve: (n) => (n.kind === "post" ? n.bodyExcerpt : null),
+		},
+	},
+});
+
+const CommentContributionType = new GraphQLObjectType<ContributionNode>({
+	name: "CommentContribution",
+	fields: {
+		kind: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: () => "comment",
+		},
+		id: {type: new GraphQLNonNull(GraphQLID)},
+		score: {type: new GraphQLNonNull(GraphQLInt)},
+		createdAt: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => n.createdAt.toISOString(),
+		},
+		bodyExcerpt: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => (n.kind === "comment" ? n.bodyExcerpt : ""),
+		},
+		postId: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (n) => (n.kind === "comment" ? n.postId : ""),
+		},
+		postTitle: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (n) => (n.kind === "comment" ? n.postTitle : ""),
+		},
+	},
+});
+
+const ProfileContributionType = new GraphQLUnionType({
+	name: "ProfileContribution",
+	types: [DefinitionContributionType, PostContributionType, CommentContributionType],
+	resolveType: (value: ContributionNode) => {
+		switch (value.kind) {
+			case "definition":
+				return "DefinitionContribution";
+			case "post":
+				return "PostContribution";
+			case "comment":
+				return "CommentContribution";
+		}
+	},
+});
+
+const ContributionEdgeType = new GraphQLObjectType<{cursor: string; node: ContributionNode}>({
+	name: "ContributionEdge",
+	fields: {
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(ProfileContributionType)},
+	},
+});
+
+const PageInfoType = new GraphQLObjectType<{hasNextPage: boolean; endCursor: string | null}>({
+	name: "PageInfo",
+	fields: {
+		hasNextPage: {type: new GraphQLNonNull(GraphQLBoolean)},
+		endCursor: {type: GraphQLString},
+	},
+});
+
+const ContributionConnectionType = new GraphQLObjectType<ContributionConnection>({
+	name: "ContributionConnection",
+	fields: {
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(ContributionEdgeType))),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (c) => ({hasNextPage: c.hasNextPage, endCursor: c.endCursor}),
+		},
+	},
+});
+
+const ProfileType = new GraphQLObjectType<ProfileRow>({
+	name: "Profile",
+	fields: {
+		user: {
+			type: new GraphQLNonNull(UserType),
+			resolve: (p) => ({
+				id: p.userId,
+				email: "",
+				name: p.displayName,
+				image: p.image,
+				username: p.username,
+			}),
+		},
+		totalKarma: {type: new GraphQLNonNull(GraphQLInt)},
+		definitionCount: {type: new GraphQLNonNull(GraphQLInt)},
+		postCount: {type: new GraphQLNonNull(GraphQLInt)},
+		commentCount: {type: new GraphQLNonNull(GraphQLInt)},
+		contributions: {
+			type: new GraphQLNonNull(ContributionConnectionType),
+			args: {
+				after: {type: GraphQLString},
+				first: {type: GraphQLInt},
+			},
+			resolve: resolver(function* (
+				parent: ProfileRow,
+				args: {after?: string | null; first?: number | null},
+			) {
+				const env = yield* CloudflareEnv;
+				return yield* Effect.promise(() =>
+					listContributions(env.PHOENIX_DB, {
+						authorId: parent.userId,
+						after: args.after ?? null,
+						first: args.first ?? 20,
+					}),
+				);
+			}),
+		},
+	},
+});
+
 const QueryType = new GraphQLObjectType({
 	name: "Query",
 	fields: {
@@ -394,6 +580,23 @@ const QueryType = new GraphQLObjectType({
 				const env = yield* CloudflareEnv;
 				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
 				return yield* Effect.promise(() => stub.listComments());
+			}),
+		},
+		/**
+		 * Public profile by username (T14). Returns `null` for an unknown
+		 * username — the SPA renders the 404 page in that case. Aggregates
+		 * (`totalKarma`, `*Count`) read from the `user_profile` MV (karma)
+		 * and the per-kind view tables (counts derived live, see
+		 * `userProfileReader.lookupProfile`). The `contributions` field
+		 * resolves the interleaved feed; pagination is keyset on
+		 * `(created_at DESC, id DESC)` via a composite ULID cursor.
+		 */
+		profile: {
+			type: ProfileType,
+			args: {username: {type: new GraphQLNonNull(GraphQLString)}},
+			resolve: resolver(function* (_source, args: {username: string}) {
+				const env = yield* CloudflareEnv;
+				return yield* Effect.promise(() => lookupProfile(env.PHOENIX_DB, args.username));
 			}),
 		},
 	},
