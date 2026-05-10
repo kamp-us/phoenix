@@ -22,6 +22,7 @@ import {
 } from "../features/pano/postSummaryReader";
 import {UsernameValidationError} from "../features/pasaport/Pasaport";
 import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
+import {DefinitionValidationError} from "../features/sozluk/SozlukTerm";
 import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
 import {Auth, CloudflareEnv} from "../services";
 import {resolver} from "./resolver";
@@ -330,6 +331,47 @@ const MutationType = new GraphQLObjectType({
 					};
 				} catch (err) {
 					if (err instanceof UsernameValidationError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: err.code.toUpperCase()},
+						});
+					}
+					throw err;
+				}
+			}),
+		},
+		addDefinition: {
+			type: new GraphQLNonNull(DefinitionType),
+			args: {
+				termSlug: {type: new GraphQLNonNull(GraphQLString)},
+				termTitle: {type: GraphQLString},
+				body: {type: new GraphQLNonNull(GraphQLString)},
+			},
+			resolve: resolver(function* (
+				_source,
+				args: {termSlug: string; termTitle?: string | null; body: string},
+			) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(args.termSlug));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.addDefinition({
+							authorId: user.id,
+							authorName: user.name ?? user.email,
+							body: args.body,
+							...(args.termTitle ? {termTitle: args.termTitle} : {}),
+						}),
+					);
+					return {
+						id: result.definitionId,
+						body: result.body,
+						author: result.authorName,
+						score: result.score,
+						createdAt: result.createdAt,
+						updatedAt: result.updatedAt,
+					} satisfies DefinitionRow;
+				} catch (err) {
+					if (err instanceof DefinitionValidationError) {
 						throw new GraphQLError(err.message, {
 							extensions: {code: err.code.toUpperCase()},
 						});

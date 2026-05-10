@@ -371,6 +371,45 @@ async function projectPostChanged(env: Env, e: PostChangedEvent): Promise<void> 
 }
 
 /**
+ * `DefinitionAdded` writes a denormalized `definition_view` row used by the
+ * profile contribution feed (T14). The row carries the term slug + title so
+ * the feed renders without RPCing back into `SozlukTerm`. Convergent overwrite
+ * guarded by `WHERE last_event_id < excluded.last_event_id` (idempotent on
+ * retry, monotonic on out-of-order delivery).
+ *
+ * Edits/deletes land in T6 via separate `DefinitionEdited` / `DefinitionDeleted`
+ * steps; this step only owns the initial insert.
+ */
+async function projectDefinitionAdded(env: Env, e: DefinitionAddedEvent): Promise<void> {
+	const createdAt = Math.floor(e.createdAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO definition_view (
+			id, author_id, author_name, term_slug, term_title,
+			body_excerpt, score, created_at, updated_at, deleted_at, last_event_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			body_excerpt  = excluded.body_excerpt,
+			score         = excluded.score,
+			updated_at    = excluded.updated_at,
+			last_event_id = excluded.last_event_id
+		WHERE definition_view.last_event_id < excluded.last_event_id`,
+	)
+		.bind(
+			e.definitionId,
+			e.authorId,
+			e.authorName,
+			e.termSlug,
+			e.termTitle,
+			e.bodyExcerpt,
+			e.score,
+			createdAt,
+			createdAt,
+			e.eventId,
+		)
+		.run();
+}
+
+/**
  * `UserProfileChanged` projects per-user identity into `user_profile`. The
  * username column is the public handle (immutable once set on Pasaport, this
  * step only ever sees a valid value); display_name + image stay refreshable.
@@ -427,7 +466,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 				case "TermChanged":
 					return projectTermChanged(this.env, e);
 				case "DefinitionAdded":
-					return;
+					return projectDefinitionAdded(this.env, e);
 				case "DefinitionEdited":
 					return;
 				case "DefinitionDeleted":

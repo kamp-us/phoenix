@@ -22,6 +22,7 @@ type Health {
 }
 
 type Mutation {
+  addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
   setUsername(value: String!): User!
   voteOnComment(input: VoteInput!): VoteResult!
   voteOnPost(input: VoteInput!): VoteResult!
