@@ -194,6 +194,7 @@ export interface ContributionConnection {
 	edges: ContributionEdge[];
 	hasNextPage: boolean;
 	endCursor: string | null;
+	totalCount: number;
 }
 
 /**
@@ -253,7 +254,7 @@ export async function listContributions(
 		return base;
 	}
 
-	const [defs, posts, comments] = await Promise.all([
+	const [defs, posts, comments, totalCount] = await Promise.all([
 		db
 			.select({
 				id: schema.definitionView.id,
@@ -293,6 +294,41 @@ export async function listContributions(
 			.where(keysetWhere(schema.commentView))
 			.orderBy(desc(schema.commentView.createdAt), desc(schema.commentView.id))
 			.limit(fetchSize),
+		// Total contribution count across all three view tables (filtered by
+		// author + not-deleted). Independent of cursor — this is the absolute
+		// total for the profile, displayed in the page header.
+		Promise.all([
+			db
+				.select({n: sql<number>`COUNT(*)`})
+				.from(schema.definitionView)
+				.where(
+					and(
+						eq(schema.definitionView.authorId, args.authorId),
+						isNull(schema.definitionView.deletedAt),
+					),
+				)
+				.then((r) => Number(r[0]?.n ?? 0)),
+			db
+				.select({n: sql<number>`COUNT(*)`})
+				.from(schema.postSummary)
+				.where(
+					and(
+						eq(schema.postSummary.authorId, args.authorId),
+						isNull(schema.postSummary.deletedAt),
+					),
+				)
+				.then((r) => Number(r[0]?.n ?? 0)),
+			db
+				.select({n: sql<number>`COUNT(*)`})
+				.from(schema.commentView)
+				.where(
+					and(
+						eq(schema.commentView.authorId, args.authorId),
+						isNull(schema.commentView.deletedAt),
+					),
+				)
+				.then((r) => Number(r[0]?.n ?? 0)),
+		]).then(([d, p, c]) => d + p + c),
 	]);
 
 	const merged: ContributionNode[] = [
@@ -349,5 +385,6 @@ export async function listContributions(
 		edges: sliced.map((node) => ({cursor: encodeCursor(node), node})),
 		hasNextPage: hasNextPage && sliced.length > 0,
 		endCursor,
+		totalCount,
 	};
 }

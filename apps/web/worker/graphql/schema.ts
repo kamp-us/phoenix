@@ -642,6 +642,10 @@ const ContributionConnectionType = new GraphQLObjectType<ContributionConnection>
 			type: new GraphQLNonNull(PageInfoType),
 			resolve: (c) => ({hasNextPage: c.hasNextPage, endCursor: c.endCursor}),
 		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (c) => c.totalCount,
+		},
 	},
 });
 
