@@ -25,6 +25,7 @@
 		"hono": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:",
+		"react-router": "catalog:",
 		"zod": "catalog:"
 	},
 	"devDependencies": {
