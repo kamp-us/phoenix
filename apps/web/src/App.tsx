@@ -1,100 +1,120 @@
 import {useEffect, useState} from "react";
 import {AuthPanel} from "./auth/AuthPanel";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
-import {gqlFetch} from "./graphql/client";
+import {AppShell, Main} from "./components/layout/AppShell";
+import {Footer} from "./components/layout/Footer";
+import {Topbar} from "./components/layout/Topbar";
+import {Controls, type ColorTheme, type Density, type Mode} from "./components/controls/Controls";
+import {Button} from "./components/ui/Button";
+import { Dialog } from "./components/ui/Dialog";
+import {Provider as TooltipProvider} from "./components/ui/Tooltip";
+import {COMMENTS, POSTS, TERMS} from "./fixtures";
+import {PanoCreateDialog} from "./pages/PanoCreateDialog";
+import {PanoFeed} from "./pages/PanoFeed";
+import {PanoPostDetail} from "./pages/PanoPostDetail";
+import {SozlukHome} from "./pages/SozlukHome";
 
-interface Health {
-	status: string;
-	environment: string;
-}
-
-interface Me {
-	id: string;
-	email: string;
-	name: string | null;
-}
-
-type Result<T> = {kind: "loading"} | {kind: "ok"; value: T} | {kind: "error"; message: string};
-
-const HEALTH_QUERY = "{ health { status environment } }";
-const ME_QUERY = "{ me { id email name } }";
-
-function useGraphQL<T>(query: string, run: boolean): Result<T> {
-	const [result, setResult] = useState<Result<T>>({kind: "loading"});
-	useEffect(() => {
-		if (!run) return;
-		let cancelled = false;
-		setResult({kind: "loading"});
-		gqlFetch<T>(query)
-			.then((value) => {
-				if (!cancelled) setResult({kind: "ok", value});
-			})
-			.catch((err: unknown) => {
-				if (cancelled) return;
-				const message = err instanceof Error ? err.message : String(err);
-				setResult({kind: "error", message});
-			});
-		return () => {
-			cancelled = true;
-		};
-	}, [query, run]);
-	return result;
-}
-
-function ResultView<T>({result}: {result: Result<T>}) {
-	if (result.kind === "loading") return <p>loading…</p>;
-	if (result.kind === "error") return <pre data-error>error: {result.message}</pre>;
-	return <pre>{JSON.stringify(result.value, null, 2)}</pre>;
-}
+type Route = "pano" | "pano-detail" | "sozluk";
 
 export function App() {
 	const session = useSession();
-	const health = useGraphQL<{health: Health}>(HEALTH_QUERY, true);
-	const me = useGraphQL<{me: Me | null}>(ME_QUERY, !!session.data);
+	const [route, setRoute] = useState<Route>("pano");
+	const [theme, setTheme] = useState<ColorTheme>("ember");
+	const [mode, setMode] = useState<Mode>("dark");
+	const [density, setDensity] = useState<Density>("compact");
+	const [createOpen, setCreateOpen] = useState(false);
+	const [authOpen, setAuthOpen] = useState(false);
+
+	useEffect(() => {
+		document.documentElement.dataset.colorTheme = theme;
+		document.documentElement.dataset.theme = mode;
+		document.documentElement.dataset.density = density;
+	}, [theme, mode, density]);
 
 	async function onSignOut() {
 		await authClient.signOut();
 		clearBearerToken();
 	}
 
+	const userProps = session.data?.user
+		? {user: {name: session.data.user.name ?? session.data.user.email.split("@")[0] ?? "user"}}
+		: {};
+	const isSignedIn = !!session.data;
+
 	return (
-		<main>
-			<header>
-				<h1>kamp.us</h1>
-				<p>phoenix — single worker rebirth</p>
-			</header>
-
-			<section>
-				<h2>health</h2>
-				<ResultView result={health} />
-			</section>
-
-			<section>
-				<h2>session</h2>
-				{session.isPending ? (
-					<p>checking session…</p>
-				) : session.data ? (
-					<div className="session">
-						<dl>
-							<dt>user</dt>
-							<dd>
-								{session.data.user.name ?? "—"} &lt;{session.data.user.email}&gt;
-							</dd>
-							<dt>id</dt>
-							<dd>
-								<code>{session.data.user.id}</code>
-							</dd>
-						</dl>
-						<button type="button" onClick={onSignOut}>
-							sign out
-						</button>
-						<h3>me (graphql)</h3>
-						<ResultView result={me} />
-					</div>
-				) : (
-					<AuthPanel />
-				)}
-			</section>
-		</main>
+		<TooltipProvider>
+			<AppShell>
+				<Topbar
+					brand="kampüs"
+					nav={[
+						{
+							href: "#pano",
+							label: "pano",
+							current: route === "pano" || route === "pano-detail",
+						},
+						{href: "#sozluk", label: "sözlük", current: route === "sozluk"},
+					]}
+					{...userProps}
+					onLogout={onSignOut}
+					actions={
+						<>
+							<Button variant="tertiary" onClick={() => setRoute("pano")}>
+								pano
+							</Button>
+							<Button variant="tertiary" onClick={() => setRoute("pano-detail")}>
+								başlık
+							</Button>
+							<Button variant="tertiary" onClick={() => setRoute("sozluk")}>
+								sözlük
+							</Button>
+							{isSignedIn ? (
+								<Button variant="primary" onClick={() => setCreateOpen(true)}>
+									+ ekle
+								</Button>
+							) : (
+								<Button variant="primary" onClick={() => setAuthOpen(true)}>
+									giriş
+								</Button>
+							)}
+						</>
+					}
+				/>
+				<div
+					style={{
+						display: "flex",
+						justifyContent: "flex-end",
+						gap: "var(--s-3)",
+						padding: "var(--s-2) var(--s-4)",
+						borderBottom: "1px solid var(--border-faint)",
+					}}
+				>
+					<Controls
+						theme={theme}
+						onThemeChange={setTheme}
+						mode={mode}
+						onModeChange={setMode}
+						density={density}
+						onDensityChange={setDensity}
+					/>
+				</div>
+				<Main>
+					{route === "pano" ? <PanoFeed posts={POSTS} /> : null}
+					{route === "pano-detail" && POSTS[0] ? (
+						<PanoPostDetail post={POSTS[0]} comments={COMMENTS} />
+					) : null}
+					{route === "sozluk" ? <SozlukHome terms={TERMS} /> : null}
+				</Main>
+				<Footer />
+				<PanoCreateDialog open={createOpen} onOpenChange={setCreateOpen} />
+				<Dialog.Root open={authOpen} onOpenChange={setAuthOpen}>
+					<Dialog.Popup>
+						<Dialog.Head title="giriş" description="kampüs hesabı" />
+						<Dialog.Body>
+							<AuthPanel />
+						</Dialog.Body>
+					</Dialog.Popup>
+				</Dialog.Root>
+			</AppShell>
+		</TooltipProvider>
 	);
 }
