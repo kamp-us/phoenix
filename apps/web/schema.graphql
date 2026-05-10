@@ -1,3 +1,12 @@
+type Comment {
+  author: String!
+  body: String!
+  createdAt: String!
+  id: ID!
+  parentId: ID
+  score: Int!
+}
+
 type Definition {
   author: String!
   body: String!
@@ -12,11 +21,39 @@ type Health {
   status: String!
 }
 
+type Post {
+  author: String!
+  body: String
+  commentCount: Int!
+  createdAt: String!
+  host: String
+  id: ID!
+  score: Int!
+  slug: String
+  tags: [Tag!]!
+  title: String!
+  url: String
+}
+
+enum PostSort {
+  hot
+  new
+  top
+}
+
 type Query {
   health: Health!
   me: User
+  post(idOrSlug: String!): Post
+  postComments(postId: String!): [Comment!]!
+  posts(host: String, limit: Int, sort: PostSort): [Post!]!
   term(slug: String!): Term
   terms(limit: Int, sort: TermSort): [Term!]!
+}
+
+type Tag {
+  kind: String!
+  label: String!
 }
 
 type Term {
