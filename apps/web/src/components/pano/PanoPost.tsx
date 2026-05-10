@@ -4,6 +4,8 @@ import { Link, useNavigate } from 'react-router';
 import type { PanoPostRetractVoteMutation } from '../../__generated__/PanoPostRetractVoteMutation.graphql';
 import type { PanoPostVoteMutation } from '../../__generated__/PanoPostVoteMutation.graphql';
 import { useSession } from '../../auth/client';
+import { authRedirectPath } from '../../lib/returnTo';
+import { useSessionExpiredToast } from '../../lib/useSessionExpiredToast';
 import { Tag, type TagKind } from '../ui/atoms';
 import './PanoPost.css';
 
@@ -84,6 +86,7 @@ export function PostVoteWidget({
 }) {
   const session = useSession();
   const navigate = useNavigate();
+  const { handleError: handleAuthError } = useSessionExpiredToast();
   const [voteCommit, voteInFlight] =
     useMutation<PanoPostVoteMutation>(PostVoteMutation);
   const [retractCommit, retractInFlight] =
@@ -94,8 +97,7 @@ export function PostVoteWidget({
 
   const onToggle = () => {
     if (!session.data?.user) {
-      const returnTo = encodeURIComponent(window.location.pathname);
-      navigate(`/auth?returnTo=${returnTo}`);
+      navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
       return;
     }
     if (inFlight) return;
@@ -110,6 +112,12 @@ export function PostVoteWidget({
             myVote: null,
           },
         },
+        onCompleted: (_data, errors) => {
+          handleAuthError(errors);
+        },
+        onError: (err) => {
+          handleAuthError(null, err);
+        },
       });
     } else {
       voteCommit({
@@ -120,6 +128,12 @@ export function PostVoteWidget({
             score: score + 1,
             myVote: 1,
           },
+        },
+        onCompleted: (_data, errors) => {
+          handleAuthError(errors);
+        },
+        onError: (err) => {
+          handleAuthError(null, err);
         },
       });
     }

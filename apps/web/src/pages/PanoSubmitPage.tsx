@@ -4,6 +4,8 @@ import {Link, useNavigate} from "react-router";
 import type {PanoSubmitPageMutation} from "../__generated__/PanoSubmitPageMutation.graphql";
 import {useSession} from "../auth/client";
 import {Button} from "../components/ui/Button";
+import {authRedirectPath} from "../lib/returnTo";
+import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
@@ -70,6 +72,7 @@ export function PanoSubmitPage() {
 	const [error, setError] = React.useState<string | null>(null);
 
 	const [commit, isInFlight] = useMutation<PanoSubmitPageMutation>(SubmitPostMutation);
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 
 	const host = hostOf(url);
 	const showPreview = mode === "link" && host.length > 0;
@@ -103,8 +106,7 @@ export function PanoSubmitPage() {
 		setError(null);
 
 		if (!session.data?.user) {
-			const returnTo = encodeURIComponent("/pano/yeni");
-			navigate(`/auth?returnTo=${returnTo}`);
+			navigate(authRedirectPath("/pano/yeni"));
 			return;
 		}
 		if (submitDisabled) return;
@@ -122,6 +124,7 @@ export function PanoSubmitPage() {
 		commit({
 			variables,
 			onCompleted: (data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setError(errors[0]?.message ?? "gönderi paylaşılamadı");
 					return;
@@ -132,6 +135,7 @@ export function PanoSubmitPage() {
 				}
 			},
 			onError: (err) => {
+				if (handleAuthError(null, err)) return;
 				setError(err.message);
 			},
 		});

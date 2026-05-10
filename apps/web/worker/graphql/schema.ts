@@ -216,6 +216,13 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 			type: new GraphQLNonNull(GraphQLString),
 			resolve: (p) => p.createdAt.toISOString(),
 		},
+		updatedAt: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (p) => {
+				const u = (p as {updatedAt?: Date}).updatedAt;
+				return (u ?? p.createdAt).toISOString();
+			},
+		},
 		tags: {
 			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(TagType))),
 			resolve: (p) => p.tags,
@@ -269,6 +276,13 @@ const CommentType = new GraphQLObjectType<CommentRow>({
 		createdAt: {
 			type: new GraphQLNonNull(GraphQLString),
 			resolve: (c) => c.createdAt.toISOString(),
+		},
+		updatedAt: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (c) => {
+				const u = (c as {updatedAt?: Date}).updatedAt;
+				return (u ?? c.createdAt).toISOString();
+			},
 		},
 		/**
 		 * `1` if the requesting user has upvoted this comment; `null` if the
@@ -1091,6 +1105,9 @@ const MutationType = new GraphQLObjectType({
 					score: r.score,
 					commentCount: r.commentCount,
 					createdAt: r.createdAt,
+					// SubmitPostResult is a fresh write; updatedAt === createdAt
+					// by definition. Mirrors the per-DO `getPost` shape (T17).
+					updatedAt: r.createdAt,
 					tags: r.tags,
 				} satisfies PostPage;
 			}),
@@ -1116,6 +1133,10 @@ const MutationType = new GraphQLObjectType({
 						score: result.score,
 						commentCount: result.commentCount,
 						createdAt: result.createdAt,
+						// Vote results don't reshape body/title; pin updatedAt
+						// to createdAt — the next `getPost` read will refresh
+						// the actual updatedAt and the "düzenlendi" indicator.
+						updatedAt: result.createdAt,
 						tags: result.tags,
 						// Stamp myVote authoritatively so the Post.myVote resolver
 						// doesn't race against the user_vote projection landing.
@@ -1217,6 +1238,10 @@ const MutationType = new GraphQLObjectType({
 					score: r.score,
 					commentCount: r.commentCount,
 					createdAt: r.createdAt,
+					// EditPostResult carries updatedAt; mirror it onto the
+					// `Post` shape so the "düzenlendi" indicator picks it up
+					// immediately after a successful edit (T17).
+					updatedAt: r.updatedAt,
 					tags: r.tags,
 				} satisfies PostPage;
 			}),
@@ -1288,6 +1313,9 @@ const MutationType = new GraphQLObjectType({
 						body: result.body,
 						score: result.score,
 						createdAt: result.createdAt,
+						// AddCommentResult is a fresh write; updatedAt === createdAt
+						// by definition. Mirrors the per-DO `listComments` shape (T17).
+						updatedAt: result.createdAt,
 					} satisfies CommentRow;
 				} catch (err) {
 					if (err instanceof CommentValidationError) {
@@ -1340,6 +1368,11 @@ const MutationType = new GraphQLObjectType({
 						body: result.body,
 						score: result.score,
 						createdAt: result.createdAt,
+						// Vote doesn't change body; the SPA's next read of the
+						// comment row will refresh the canonical updatedAt and
+						// the "düzenlendi" indicator. Mirrors the post vote
+						// resolver (T17).
+						updatedAt: result.createdAt,
 						// Stamp myVote authoritatively so the Comment.myVote
 						// resolver doesn't race against the user_vote projection
 						// landing. Same parent-stamping pattern as T5/T8.
@@ -1385,6 +1418,7 @@ const MutationType = new GraphQLObjectType({
 						body: result.body,
 						score: result.score,
 						createdAt: result.createdAt,
+						updatedAt: result.createdAt,
 						myVote: result.myVote,
 					} as CommentRow & {myVote: number | null};
 				} catch (err) {
@@ -1451,6 +1485,10 @@ const MutationType = new GraphQLObjectType({
 					body: r.body,
 					score: r.score,
 					createdAt: r.createdAt,
+					// EditCommentResult carries updatedAt; mirror it onto the
+					// `Comment` shape so the "düzenlendi" indicator picks it up
+					// immediately after a successful edit (T17).
+					updatedAt: r.updatedAt,
 				} satisfies CommentRow;
 			}),
 		},

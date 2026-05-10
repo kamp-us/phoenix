@@ -13,10 +13,14 @@ import {type CommentData, PanoCommentTree, PostVoteWidget} from "../components/p
 import {Tag, type TagKind} from "../components/ui/atoms";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
+import {EditedIndicator} from "../components/ui/EditedIndicator";
 import {formatAgoTR} from "../lib/datetime";
 import {renderMarkdownInline} from "../lib/markdown";
+import {authRedirectPath} from "../lib/returnTo";
 import {useLiveAgent} from "../lib/useLiveAgent";
+import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
 import {QueryBoundary} from "../relay/QueryBoundary";
+import {NotFoundPage} from "./NotFoundPage";
 import "./PanoPostDetail.css";
 
 const PostQuery = graphql`
@@ -33,6 +37,7 @@ const PostQuery = graphql`
       score
       commentCount
       createdAt
+      updatedAt
       myVote
       tags {
         kind
@@ -53,6 +58,7 @@ const CommentsQuery = graphql`
       score
       myVote
       createdAt
+      updatedAt
     }
   }
 `;
@@ -66,6 +72,7 @@ const EditCommentMutation = graphql`
     editComment(id: $id, body: $body) {
       id
       body
+      updatedAt
     }
   }
 `;
@@ -95,6 +102,7 @@ const EditPostMutation = graphql`
       id
       title
       body
+      updatedAt
     }
   }
 `;
@@ -208,6 +216,7 @@ function PostContent({
 	const post = data.post;
 	const session = useSession();
 	const navigate = useNavigate();
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -222,9 +231,10 @@ function PostContent({
 
 	if (!post) {
 		return (
-			<p style={{font: "var(--t-body)", color: "var(--text-muted)"}}>
-				"{idOrSlug}" başlığı bulunamadı. <Link to="/pano">akışa dön</Link>
-			</p>
+			<NotFoundPage
+				title="başlık bulunamadı"
+				message={`"${idOrSlug}" diye bir başlık bulamadık. başka bir şeye bakmak ister misin?`}
+			/>
 		);
 	}
 
@@ -264,6 +274,7 @@ function PostContent({
 				body: editBody,
 			},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setEditError(errors[0]?.message ?? "başlık güncellenemedi");
 					return;
@@ -271,7 +282,10 @@ function PostContent({
 				setEditing(false);
 				onMutated();
 			},
-			onError: (err) => setEditError(err.message),
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setEditError(err.message);
+			},
 		});
 	}
 
@@ -281,6 +295,7 @@ function PostContent({
 		deleteCommit({
 			variables: {id: post.id},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setDeleteError(errors[0]?.message ?? "başlık silinemedi");
 					return;
@@ -288,7 +303,10 @@ function PostContent({
 				setConfirmDelete(false);
 				navigate("/pano");
 			},
-			onError: (err) => setDeleteError(err.message),
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setDeleteError(err.message);
+			},
 		});
 	}
 
@@ -371,6 +389,7 @@ function PostContent({
 								<span className="author">@{post.author}</span>
 								<span>·</span>
 								<span>{formatAgoTR(post.createdAt)}</span>
+								<EditedIndicator createdAt={post.createdAt} updatedAt={post.updatedAt} />
 								<span>·</span>
 								<span>{post.commentCount} yorum</span>
 								<span>·</span>
@@ -476,6 +495,7 @@ function CommentComposer({
 	const [error, setError] = React.useState<string | null>(null);
 	const [commit, inFlight] = useMutation<PanoPostDetailAddCommentMutation>(AddCommentMutation);
 	const navigate = useNavigate();
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 	const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
 	React.useEffect(() => {
@@ -485,7 +505,7 @@ function CommentComposer({
 	function submit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!signedIn) {
-			navigate(`/auth?returnTo=${encodeURIComponent(window.location.pathname)}`);
+			navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
 			return;
 		}
 		const trimmed = body.trim();
@@ -505,6 +525,7 @@ function CommentComposer({
 				body,
 			},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setError(errors[0]?.message ?? "yorum eklenemedi");
 					return;
@@ -513,7 +534,10 @@ function CommentComposer({
 				onAdded();
 				onCancel?.();
 			},
-			onError: (err) => setError(err.message),
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setError(err.message);
+			},
 		});
 	}
 
@@ -620,6 +644,7 @@ function Comments({
 
 	const [deleteCommit, deleteInFlight] =
 		useMutation<PanoPostDetailDeleteCommentMutation>(DeleteCommentMutation);
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 
 	const onDeleteConfirm = React.useCallback(() => {
 		if (!confirmDelete) return;
@@ -627,6 +652,7 @@ function Comments({
 		deleteCommit({
 			variables: {id: confirmDelete},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setDeleteError(errors[0]?.message ?? "yorum silinemedi");
 					return;
@@ -634,9 +660,12 @@ function Comments({
 				setConfirmDelete(null);
 				setFetchKey((k) => k + 1);
 			},
-			onError: (err) => setDeleteError(err.message),
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setDeleteError(err.message);
+			},
 		});
-	}, [confirmDelete, deleteCommit]);
+	}, [confirmDelete, deleteCommit, handleAuthError]);
 
 	const currentUserId = session.data?.user?.id ?? null;
 	const tree = React.useMemo(
@@ -760,6 +789,12 @@ function buildTree(rows: ReadonlyArray<FlatComment>, handlers: ReplyHandlers): C
 			id: r.id,
 			author: r.author,
 			agoLabel: formatAgoTR(r.createdAt),
+			// T17 "düzenlendi" indicator — hidden by EditedIndicator when the
+			// updatedAt is within the grace window of createdAt, or when either
+			// timestamp is missing. The soft-deleted placeholder rows still
+			// render the indicator-free branch because `body` was replaced and
+			// the helper compares timestamps, not body content.
+			editedIndicator: <EditedIndicator createdAt={r.createdAt} updatedAt={r.updatedAt} />,
 			score: r.score,
 			myVote: r.myVote ?? null,
 			isOwner,
@@ -827,6 +862,7 @@ function CommentEditComposer({
 	const [body, setBody] = React.useState(initialBody);
 	const [error, setError] = React.useState<string | null>(null);
 	const [commit, inFlight] = useMutation<PanoPostDetailEditCommentMutation>(EditCommentMutation);
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 
 	function submit(e: React.FormEvent) {
 		e.preventDefault();
@@ -843,13 +879,17 @@ function CommentEditComposer({
 		commit({
 			variables: {id: commentId, body},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setError(errors[0]?.message ?? "yorum güncellenemedi");
 					return;
 				}
 				onEdited();
 			},
-			onError: (err) => setError(err.message),
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setError(err.message);
+			},
 		});
 	}
 

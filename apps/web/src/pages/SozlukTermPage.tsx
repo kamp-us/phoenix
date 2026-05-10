@@ -10,10 +10,14 @@ import type {SozlukTermPageVoteMutation} from "../__generated__/SozlukTermPageVo
 import {useSession} from "../auth/client";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
+import {EditedIndicator} from "../components/ui/EditedIndicator";
 import {formatAgoTR, formatDateTR} from "../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../lib/markdown";
+import {authRedirectPath} from "../lib/returnTo";
 import {useLiveAgent} from "../lib/useLiveAgent";
+import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
 import {QueryBoundary} from "../relay/QueryBoundary";
+import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
 
 const TermQuery = graphql`
@@ -106,8 +110,22 @@ function SozlukTermContent({
 		},
 	);
 	const term = data.term;
+	const session = useSession();
+	const signedIn = !!session.data?.user;
 
 	if (!term) {
+		// Signed-out viewers can't auto-create a term — render the shared 404
+		// so the absence is unambiguous. Signed-in viewers get the composer
+		// branch below so the first definition lands and auto-creates the term
+		// (T4's contract).
+		if (!signedIn) {
+			return (
+				<NotFoundPage
+					title="terim bulunamadı"
+					message={`"${slug}" diye bir terim henüz yok. giriş yapıp ilk tanımı sen yazabilirsin.`}
+				/>
+			);
+		}
 		/* Slug doesn't exist yet — show the composer so the first definition
        creates both the term and the entry. Same auto-create-term contract
        enforced server-side by SozlukTerm.addDefinition (task_4). */
@@ -233,6 +251,7 @@ function DefinitionCard({
 }) {
 	const session = useSession();
 	const navigate = useNavigate();
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 	const [voteCommit, voteInFlight] =
 		useMutation<SozlukTermPageVoteMutation>(VoteDefinitionMutation);
 	const [retractCommit, retractInFlight] = useMutation<SozlukTermPageRetractVoteMutation>(
@@ -258,8 +277,7 @@ function DefinitionCard({
 
 	function onVoteClick() {
 		if (!session.data?.user) {
-			const returnTo = encodeURIComponent(`/sozluk/${slug}`);
-			navigate(`/auth?returnTo=${returnTo}`);
+			navigate(authRedirectPath(`/sozluk/${slug}`));
 			return;
 		}
 		if (inFlight) return;
@@ -275,6 +293,12 @@ function DefinitionCard({
 						myVote: null,
 					},
 				},
+				onCompleted: (_data, errors) => {
+					handleAuthError(errors);
+				},
+				onError: (err) => {
+					handleAuthError(null, err);
+				},
 			});
 		} else {
 			voteCommit({
@@ -285,6 +309,12 @@ function DefinitionCard({
 						score: definition.score + 1,
 						myVote: 1,
 					},
+				},
+				onCompleted: (_data, errors) => {
+					handleAuthError(errors);
+				},
+				onError: (err) => {
+					handleAuthError(null, err);
 				},
 			});
 		}
@@ -305,13 +335,17 @@ function DefinitionCard({
 		editCommit({
 			variables: {id: definition.id, body: editBody},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setEditError(errors[0]?.message ?? "tanım güncellenemedi");
 					return;
 				}
 				setEditing(false);
 			},
-			onError: (err) => setEditError(err.message),
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setEditError(err.message);
+			},
 		});
 	}
 
@@ -320,6 +354,7 @@ function DefinitionCard({
 		deleteCommit({
 			variables: {id: definition.id},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setDeleteError(errors[0]?.message ?? "tanım silinemedi");
 					return;
@@ -327,7 +362,10 @@ function DefinitionCard({
 				setConfirmDelete(false);
 				onMutated();
 			},
-			onError: (err) => setDeleteError(err.message),
+			onError: (err) => {
+				if (handleAuthError(null, err)) return;
+				setDeleteError(err.message);
+			},
 		});
 	}
 
@@ -407,6 +445,10 @@ function DefinitionCard({
 					<span className="author">@{definition.author}</span>
 					<span className="dot">·</span>
 					<span>{formatAgoTR(definition.createdAt)}</span>
+					<EditedIndicator
+						createdAt={definition.createdAt}
+						updatedAt={definition.updatedAt}
+					/>
 					<span className="actions">
 						<button type="button">paylaş</button>
 						<button type="button">kalıcı bağlantı</button>
@@ -582,6 +624,7 @@ const BODY_MAX = 10_000;
 function Composer({slug, onAdded}: {slug: string; onAdded: () => void}) {
 	const session = useSession();
 	const navigate = useNavigate();
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 	const [body, setBody] = React.useState("");
 	const [error, setError] = React.useState<string | null>(null);
 	const [commit, isInFlight] =
@@ -594,8 +637,7 @@ function Composer({slug, onAdded}: {slug: string; onAdded: () => void}) {
 	function onSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!session.data?.user) {
-			const returnTo = encodeURIComponent(`/sozluk/${slug}`);
-			navigate(`/auth?returnTo=${returnTo}`);
+			navigate(authRedirectPath(`/sozluk/${slug}`));
 			return;
 		}
 		if (disabled) return;
@@ -607,6 +649,7 @@ function Composer({slug, onAdded}: {slug: string; onAdded: () => void}) {
 				body,
 			},
 			onCompleted: (_data, errors) => {
+				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setError(errors[0]?.message ?? "tanım eklenemedi");
 					return;
@@ -615,6 +658,7 @@ function Composer({slug, onAdded}: {slug: string; onAdded: () => void}) {
 				onAdded();
 			},
 			onError: (err) => {
+				if (handleAuthError(null, err)) return;
 				setError(err.message);
 			},
 		});

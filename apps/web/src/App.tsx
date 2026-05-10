@@ -5,10 +5,13 @@ import {useMe} from "./auth/useMe";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
+import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {LANDING_TERMS, POSTS} from "./fixtures";
+import {safeReturnTo} from "./lib/returnTo";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
+import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {PanoSubmitPage} from "./pages/PanoSubmitPage";
@@ -32,8 +35,15 @@ function Layout() {
 	}, [mode]);
 
 	useEffect(() => {
-		if (session.data && location.pathname === "/auth") navigate("/", {replace: true});
-	}, [session.data, location.pathname, navigate]);
+		if (!session.data) return;
+		if (location.pathname !== "/auth") return;
+		// AuthPage sets `?returnTo=<path>` when redirected from a signed-out
+		// write affordance (T17). Honor it (sanitized to same-origin) so the
+		// user lands back on the page that triggered the auth flow.
+		const params = new URLSearchParams(location.search);
+		const target = safeReturnTo(params.get("returnTo"));
+		navigate(target, {replace: true});
+	}, [session.data, location.pathname, location.search, navigate]);
 
 	async function onSignOut() {
 		await authClient.signOut();
@@ -61,6 +71,7 @@ function Layout() {
 
 	return (
 		<TooltipProvider>
+			<ToastProvider>
 			<AppShell>
 				<Topbar
 					brandName="kamp.us"
@@ -96,6 +107,7 @@ function Layout() {
 				</Main>
 				<Footer />
 			</AppShell>
+			</ToastProvider>
 		</TooltipProvider>
 	);
 }
@@ -119,6 +131,7 @@ export function App() {
 				<Route path="/auth" element={<AuthPage />} />
 				<Route path="/profile" element={<ProfilePage />} />
 				<Route path="/u/:username" element={<UserProfilePage />} />
+				<Route path="*" element={<NotFoundPage />} />
 			</Route>
 		</Routes>
 	);

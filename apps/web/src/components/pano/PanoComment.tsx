@@ -4,6 +4,8 @@ import {useNavigate} from "react-router";
 import type {PanoCommentRetractVoteMutation} from "../../__generated__/PanoCommentRetractVoteMutation.graphql";
 import type {PanoCommentVoteMutation} from "../../__generated__/PanoCommentVoteMutation.graphql";
 import {useSession} from "../../auth/client";
+import {authRedirectPath} from "../../lib/returnTo";
+import {useSessionExpiredToast} from "../../lib/useSessionExpiredToast";
 import {Menu} from "../ui/Menu";
 import "./PanoComment.css";
 
@@ -12,6 +14,12 @@ export type CommentData = {
 	hash?: string /* "c_2814" */;
 	author: string;
 	agoLabel: string;
+	/**
+	 * Optional "düzenlendi" indicator element (T17). The page builds this from
+	 * the underlying createdAt/updatedAt pair and hands it to the comment row;
+	 * the comment is otherwise oblivious to timestamps.
+	 */
+	editedIndicator?: React.ReactNode;
 	body: React.ReactNode;
 	score: number;
 	myVote?: number | null;
@@ -84,6 +92,7 @@ export function PanoComment({
 }) {
 	const session = useSession();
 	const navigate = useNavigate();
+	const {handleError: handleAuthError} = useSessionExpiredToast();
 	const [open, setOpen] = React.useState(true);
 	const [voteCommit, voteInFlight] = useMutation<PanoCommentVoteMutation>(CommentVoteMutation);
 	const [retractCommit, retractInFlight] = useMutation<PanoCommentRetractVoteMutation>(
@@ -105,7 +114,7 @@ export function PanoComment({
 
 	const onUpvote = () => {
 		if (!session.data?.user) {
-			navigate(`/auth?returnTo=${encodeURIComponent(window.location.pathname)}`);
+			navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
 			return;
 		}
 		if (inFlight) return;
@@ -120,7 +129,11 @@ export function PanoComment({
 						myVote: null,
 					},
 				},
+				onCompleted: (_data, errors) => {
+					handleAuthError(errors);
+				},
 				onError: (err) => {
+					if (handleAuthError(null, err)) return;
 					console.warn("[pano] retract comment vote failed", err);
 				},
 			});
@@ -135,7 +148,11 @@ export function PanoComment({
 						myVote: 1,
 					},
 				},
+				onCompleted: (_data, errors) => {
+					handleAuthError(errors);
+				},
 				onError: (err) => {
+					if (handleAuthError(null, err)) return;
 					console.warn("[pano] vote on comment failed", err);
 				},
 			});
@@ -157,6 +174,7 @@ export function PanoComment({
 				)}
 				{comment.isOp ? <span className="kp-comment__op">yazar</span> : null}
 				<span>{comment.agoLabel}</span>
+				{comment.editedIndicator}
 				{!isDeleted ? (
 					<button
 						type="button"

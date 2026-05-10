@@ -82,6 +82,12 @@ export interface PostPage {
 	score: number;
 	commentCount: number;
 	createdAt: Date;
+	/**
+	 * Last-mutation timestamp; matches `post_meta.updated_at`. Mirrors
+	 * `Definition.updatedAt` (T6). Used by the SPA's "düzenlendi" indicator
+	 * when `updatedAt > createdAt + 60s` (T17).
+	 */
+	updatedAt: Date;
 	tags: PostTagRow[];
 }
 
@@ -99,6 +105,11 @@ export interface CommentRow {
 	body: string;
 	score: number;
 	createdAt: Date;
+	/**
+	 * Last-mutation timestamp; matches `comment.updated_at`. Powers the SPA's
+	 * "düzenlendi" indicator when `updatedAt > createdAt + 60s` (T17).
+	 */
+	updatedAt: Date;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -568,6 +579,7 @@ export class PanoPost extends Agent<Env, PostState> {
 			score: meta.score,
 			commentCount: meta.commentCount,
 			createdAt: meta.createdAt ?? new Date(0),
+			updatedAt: meta.updatedAt ?? meta.createdAt ?? new Date(0),
 			tags: tagRows,
 		};
 	}
@@ -612,6 +624,7 @@ export class PanoPost extends Agent<Env, PostState> {
 					body: SILINDI_PLACEHOLDER,
 					score: c.score,
 					createdAt: c.createdAt ?? new Date(0),
+					updatedAt: c.updatedAt ?? c.createdAt ?? new Date(0),
 				});
 				continue;
 			}
@@ -623,6 +636,7 @@ export class PanoPost extends Agent<Env, PostState> {
 				body: c.body,
 				score: c.score,
 				createdAt: c.createdAt ?? new Date(0),
+				updatedAt: c.updatedAt ?? c.createdAt ?? new Date(0),
 			});
 		}
 		return out;
