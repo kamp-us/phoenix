@@ -15,6 +15,13 @@
       "when": 1778395340431,
       "tag": "0001_free_salo",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1778396288779,
+      "tag": "0002_wandering_natasha_romanoff",
+      "breakpoints": true
     }
   ]
 }

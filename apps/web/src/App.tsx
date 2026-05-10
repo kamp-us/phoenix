@@ -1,6 +1,7 @@
 import {useEffect, useState} from "react";
 import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
+import {useMe} from "./auth/useMe";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
@@ -14,11 +15,13 @@ import {PanoSubmitPage} from "./pages/PanoSubmitPage";
 import {ProfilePage} from "./pages/ProfilePage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
+import {UsernameBootstrap} from "./pages/UsernameBootstrap";
 
 type Mode = "dark" | "light";
 
 function Layout() {
 	const session = useSession();
+	const {me, refetch} = useMe();
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [mode, setMode] = useState<Mode>("dark");
@@ -36,10 +39,24 @@ function Layout() {
 		clearBearerToken();
 	}
 
-	const userProps = session.data?.user
-		? {user: {name: session.data.user.name ?? session.data.user.email.split("@")[0] ?? "user"}}
+	const sessionUser = session.data?.user;
+	const fallbackName = sessionUser
+		? (sessionUser.name ?? sessionUser.email.split("@")[0] ?? "user")
+		: "";
+	const userProps = sessionUser
+		? {
+				user: {
+					name: me?.name ?? fallbackName,
+					username: me?.username ?? null,
+				},
+			}
 		: {};
 	const isSignedIn = !!session.data;
+	// Bootstrap is required when the session is established but the canonical
+	// user row in Pasaport has no username yet. Block the page content until
+	// the form is submitted — set-once write so this only happens on first
+	// sign-in.
+	const needsBootstrap = isSignedIn && me !== null && !me.username && location.pathname !== "/auth";
 
 	return (
 		<TooltipProvider>
@@ -63,18 +80,18 @@ function Layout() {
 								+ gönderi
 							</button>
 						) : (
-							<button
-								type="button"
-								className="kp-topbar__btn"
-								onClick={() => navigate("/auth")}
-							>
+							<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
 								giriş yap
 							</button>
 						)
 					}
 				/>
 				<Main>
-					<Outlet />
+					{needsBootstrap && sessionUser ? (
+						<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
+					) : (
+						<Outlet />
+					)}
 				</Main>
 				<Footer />
 			</AppShell>
@@ -85,6 +102,14 @@ function Layout() {
 function PanoSiteFeedRoute() {
 	const {host} = useParams<{host: string}>();
 	return <PanoFeed {...(host ? {host} : {})} />;
+}
+
+// Placeholder: T14 builds the dedicated `/u/<username>` profile page wired
+// to the GraphQL `profile(username)` query. For now, route to the existing
+// settings-style ProfilePage so the topbar @username link doesn't 404.
+function ProfileRoute() {
+	useParams<{username: string}>();
+	return <ProfilePage />;
 }
 
 export function App() {
@@ -100,6 +125,7 @@ export function App() {
 				<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
 				<Route path="/auth" element={<AuthPage />} />
 				<Route path="/profile" element={<ProfilePage />} />
+				<Route path="/u/:username" element={<ProfileRoute />} />
 			</Route>
 		</Routes>
 	);

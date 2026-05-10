@@ -165,7 +165,10 @@ export interface PanoStatsChangedEvent extends ProjectionEventBase {
 export interface UserProfileChangedEvent extends ProjectionEventBase {
 	kind: "UserProfileChanged";
 	userId: string;
-	username: string;
+	// NULL when the user hasn't completed the bootstrap step yet; backfill
+	// events on migration emit NULL for existing users without usernames. Once
+	// set on Pasaport's user table the value is immutable.
+	username: string | null;
 	displayName: string | null;
 	image: string | null;
 	updatedAt: number;
@@ -367,6 +370,49 @@ async function projectPostChanged(env: Env, e: PostChangedEvent): Promise<void> 
 		.run();
 }
 
+/**
+ * `UserProfileChanged` projects per-user identity into `user_profile`. The
+ * username column is the public handle (immutable once set on Pasaport, this
+ * step only ever sees a valid value); display_name + image stay refreshable.
+ *
+ * Convergent overwrite guarded by `WHERE last_event_id < excluded.last_event_id`.
+ * Counters (`total_karma`, `definition_count`, `post_count`, `comment_count`)
+ * are owned by other projection steps (`VoteRecorded`, `DefinitionAdded`, …)
+ * and are NOT touched here; first-time inserts default them to 0 and downstream
+ * events apply deltas.
+ */
+async function projectUserProfileChanged(env: Env, e: UserProfileChangedEvent): Promise<void> {
+	const updatedAt = Math.floor(e.updatedAt / 1000);
+
+	// Username is immutable on Pasaport once set, so COALESCE preserves an
+	// existing value if a stale backfill event (NULL username) arrives after
+	// a bootstrap event (set username). Pair this with the last_event_id
+	// guard for convergent ordering on display_name/image refreshes.
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO user_profile (
+			user_id, username, display_name, image,
+			total_karma, definition_count, post_count, comment_count,
+			updated_at, last_event_id
+		) VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?, ?)
+		ON CONFLICT(user_id) DO UPDATE SET
+			username      = COALESCE(excluded.username, user_profile.username),
+			display_name  = excluded.display_name,
+			image         = excluded.image,
+			updated_at    = excluded.updated_at,
+			last_event_id = excluded.last_event_id
+		WHERE user_profile.last_event_id < excluded.last_event_id`,
+	)
+		.bind(
+			e.userId,
+			e.username ?? null,
+			e.displayName ?? null,
+			e.image ?? null,
+			updatedAt,
+			e.eventId,
+		)
+		.run();
+}
+
 /* -------------------------------------------------------------------------- */
 /* Workflow                                                                   */
 /* -------------------------------------------------------------------------- */
@@ -409,7 +455,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 				case "PanoStatsChanged":
 					return;
 				case "UserProfileChanged":
-					return;
+					return projectUserProfileChanged(this.env, e);
 
 				default: {
 					// Exhaustiveness guard: TS will error here if a new event

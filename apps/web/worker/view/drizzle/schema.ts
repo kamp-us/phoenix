@@ -231,8 +231,10 @@ export const userProfile = sqliteTable(
 	"user_profile",
 	{
 		userId: text("user_id").primaryKey(),
-		// Immutable once set; assigned during the bootstrap step on first sign-in.
-		username: text("username").notNull().unique(),
+		// Nullable until the user completes the bootstrap step; immutable once set.
+		// SQLite UNIQUE allows multiple NULLs, which is what we want for backfilled
+		// rows that haven't picked a username yet.
+		username: text("username").unique(),
 		displayName: text("display_name"),
 		image: text("image"),
 		totalKarma: integer("total_karma").notNull().default(0),
@@ -240,6 +242,9 @@ export const userProfile = sqliteTable(
 		postCount: integer("post_count").notNull().default(0),
 		commentCount: integer("comment_count").notNull().default(0),
 		updatedAt: timestamp("updated_at").notNull(),
+		// Forge ULID convergence guard. Identity events (UserProfileChanged) own
+		// this column; counter-touching steps (VoteRecorded, …) leave it alone.
+		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
 		// `/u/<username>` route lookup.

@@ -15,6 +15,18 @@ export const createAuth = (db: DrizzleSqliteDODatabase<typeof schema>) =>
 	betterAuth({
 		emailAndPassword: {enabled: true},
 		database: drizzleAdapter(db, {provider: "sqlite", schema}),
+		user: {
+			additionalFields: {
+				// Phoenix's public handle. NULL until the user completes the
+				// bootstrap step. Server-set only — `setUsername` GraphQL mutation
+				// is the sole write path.
+				username: {
+					type: "string",
+					required: false,
+					input: false,
+				},
+			},
+		},
 		plugins: [
 			bearer(),
 			magicLink({

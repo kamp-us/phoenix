@@ -20,6 +20,7 @@ import {
 	type PostSort,
 	type PostSummaryRow,
 } from "../features/pano/postSummaryReader";
+import {UsernameValidationError} from "../features/pasaport/Pasaport";
 import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
 import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
 import {Auth, CloudflareEnv} from "../services";
@@ -40,6 +41,9 @@ const UserType = new GraphQLObjectType({
 		email: {type: new GraphQLNonNull(GraphQLString)},
 		name: {type: GraphQLString},
 		image: {type: GraphQLString},
+		// Public handle. NULL until the user completes the bootstrap step on
+		// first sign-in — the SPA shows the username form when this is null.
+		username: {type: GraphQLString},
 	},
 });
 
@@ -191,12 +195,19 @@ const QueryType = new GraphQLObjectType({
 			resolve: resolver(function* () {
 				const auth = yield* Auth;
 				if (!auth.user) return null;
-				return {
-					id: auth.user.id,
-					email: auth.user.email,
-					name: auth.user.name,
-					image: auth.user.image,
-				};
+				const env = yield* CloudflareEnv;
+				const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
+				const fresh = yield* Effect.promise(() => stub.getUserById(auth.user!.id));
+				if (!fresh) {
+					return {
+						id: auth.user.id,
+						email: auth.user.email,
+						name: auth.user.name,
+						image: auth.user.image,
+						username: null,
+					};
+				}
+				return fresh;
 			}),
 		},
 		terms: {
@@ -299,6 +310,34 @@ function parseVoteValue(raw: number): VoteValue {
 const MutationType = new GraphQLObjectType({
 	name: "Mutation",
 	fields: {
+		setUsername: {
+			type: new GraphQLNonNull(UserType),
+			args: {value: {type: new GraphQLNonNull(GraphQLString)}},
+			resolve: resolver(function* (_source, args: {value: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.setUsername({userId: user.id, value: args.value}),
+					);
+					return {
+						id: result.userId,
+						email: user.email,
+						name: result.displayName,
+						image: result.image,
+						username: result.username,
+					};
+				} catch (err) {
+					if (err instanceof UsernameValidationError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: err.code.toUpperCase()},
+						});
+					}
+					throw err;
+				}
+			}),
+		},
 		voteOnPost: {
 			type: new GraphQLNonNull(VoteResultType),
 			args: {input: {type: new GraphQLNonNull(VoteInputType)}},

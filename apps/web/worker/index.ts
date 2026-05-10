@@ -136,6 +136,17 @@ app.post("/api/admin/pano/seed", async (c) => {
 	return c.json({inserted, postIds, cleared});
 });
 
+// Dev-only Pasaport admin endpoint: backfill `user_profile` rows in PHOENIX_DB
+// for every existing Pasaport user. Idempotent — projection's `last_event_id`
+// guard de-duplicates re-runs. Use after applying view migration 0002 the
+// first time, or after seeding accounts directly into Pasaport in dev.
+app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
+	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
+	const stub = c.env.PASAPORT.get(c.env.PASAPORT.idFromName("kampus"));
+	const result = await stub.backfillProfiles();
+	return c.json(result);
+});
+
 // Better Auth handler — forwarded to the Pasaport DO.
 // Single global Pasaport instance for now (one auth realm); shard later if needed.
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
