@@ -13,9 +13,15 @@ test.describe("PanoFeed (/pano)", () => {
 	});
 
 	test("filter chips toggle aria-pressed; URL stays /pano", async ({page}) => {
+		// QueryBoundary renders a chrome twice (loading + ok), so two subnav
+		// instances briefly exist after navigation. Once the lazy query
+		// resolves, only the .ok chrome stays mounted — but to dodge the
+		// race, we always pick the *last* chip with each label.
 		const chips = ["sıcak", "yeni", "en iyi", "tartışma"];
 		for (const label of chips) {
-			const chip = page.locator(".kp-subnav__filter", {hasText: label});
+			const chip = page
+				.getByRole("button", {name: new RegExp(`^${label}$`, "i")})
+				.last();
 			await chip.click();
 			await expect(chip).toHaveAttribute("aria-pressed", "true");
 			await expect(page).toHaveURL("/pano");
