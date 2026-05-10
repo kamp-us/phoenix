@@ -12,6 +12,7 @@ type Definition {
   body: String!
   createdAt: String!
   id: ID!
+  myVote: Int
   score: Int!
   updatedAt: String!
 }
@@ -23,7 +24,9 @@ type Health {
 
 type Mutation {
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
+  retractDefinitionVote(definitionId: ID!): Definition!
   setUsername(value: String!): User!
+  voteDefinition(definitionId: ID!): Definition!
   voteOnComment(input: VoteInput!): VoteResult!
   voteOnPost(input: VoteInput!): VoteResult!
 }

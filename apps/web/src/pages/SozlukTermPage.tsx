@@ -3,6 +3,8 @@ import {graphql, useLazyLoadQuery, useMutation} from "react-relay";
 import {Link, useNavigate, useParams} from "react-router";
 import type {SozlukTermPageAddDefinitionMutation} from "../__generated__/SozlukTermPageAddDefinitionMutation.graphql";
 import type {SozlukTermPageQuery} from "../__generated__/SozlukTermPageQuery.graphql";
+import type {SozlukTermPageRetractVoteMutation} from "../__generated__/SozlukTermPageRetractVoteMutation.graphql";
+import type {SozlukTermPageVoteMutation} from "../__generated__/SozlukTermPageVoteMutation.graphql";
 import {useSession} from "../auth/client";
 import {Button} from "../components/ui/Button";
 import {formatAgoTR, formatDateTR} from "../lib/datetime";
@@ -25,6 +27,7 @@ const TermQuery = graphql`
         body
         author
         score
+        myVote
         createdAt
         updatedAt
       }
@@ -122,7 +125,7 @@ function SozlukTermContent({
 			</header>
 
 			{term.definitions.map((d, i) => (
-				<DefinitionCard key={d.id} definition={d} rank={i + 1} top={i === 0} />
+				<DefinitionCard key={d.id} definition={d} rank={i + 1} top={i === 0} slug={slug} />
 			))}
 
 			<Composer slug={slug} onAdded={onMutated} />
@@ -130,17 +133,88 @@ function SozlukTermContent({
 	);
 }
 
+/**
+ * Single-definition vote mutation. Relay's optimistic updater flips
+ * `myVote` and `score` synchronously so the UI feels instantaneous; the
+ * server response either confirms (no visible change) or — on failure —
+ * Relay rolls back to the pre-mutation values automatically.
+ */
+const VoteDefinitionMutation = graphql`
+  mutation SozlukTermPageVoteMutation($definitionId: ID!) {
+    voteDefinition(definitionId: $definitionId) {
+      id
+      score
+      myVote
+    }
+  }
+`;
+
+const RetractDefinitionVoteMutation = graphql`
+  mutation SozlukTermPageRetractVoteMutation($definitionId: ID!) {
+    retractDefinitionVote(definitionId: $definitionId) {
+      id
+      score
+      myVote
+    }
+  }
+`;
+
 function DefinitionCard({
 	definition,
 	rank,
 	top,
+	slug,
 }: {
 	definition: DefinitionNode;
 	rank: number;
 	top: boolean;
+	slug: string;
 }) {
-	const [voted, setVoted] = React.useState(false);
+	const session = useSession();
+	const navigate = useNavigate();
+	const [voteCommit, voteInFlight] =
+		useMutation<SozlukTermPageVoteMutation>(VoteDefinitionMutation);
+	const [retractCommit, retractInFlight] = useMutation<SozlukTermPageRetractVoteMutation>(
+		RetractDefinitionVoteMutation,
+	);
+
+	const inFlight = voteInFlight || retractInFlight;
+	const voted = (definition.myVote ?? 0) === 1;
 	const cls = top ? "kp-sozluk-definition kp-sozluk-definition--top" : "kp-sozluk-definition";
+
+	function onVoteClick() {
+		if (!session.data?.user) {
+			const returnTo = encodeURIComponent(`/sozluk/${slug}`);
+			navigate(`/auth?returnTo=${returnTo}`);
+			return;
+		}
+		if (inFlight) return;
+		if (voted) {
+			retractCommit({
+				variables: {definitionId: definition.id},
+				/* Optimistic flip: vote off, score -1 right now. Relay rolls
+				   back automatically if the mutation rejects. */
+				optimisticResponse: {
+					retractDefinitionVote: {
+						id: definition.id,
+						score: Math.max(0, definition.score - 1),
+						myVote: null,
+					},
+				},
+			});
+		} else {
+			voteCommit({
+				variables: {definitionId: definition.id},
+				optimisticResponse: {
+					voteDefinition: {
+						id: definition.id,
+						score: definition.score + 1,
+						myVote: 1,
+					},
+				},
+			});
+		}
+	}
 
 	return (
 		<article className={cls}>
@@ -149,12 +223,19 @@ function DefinitionCard({
 					type="button"
 					className="kp-sozluk-definition__vote-btn"
 					aria-pressed={voted}
-					aria-label="Yukarı oy"
-					onClick={() => setVoted(!voted)}
+					aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
+					data-testid={`definition-vote-${definition.id}`}
+					disabled={inFlight}
+					onClick={onVoteClick}
 				>
 					<span className="triangle" />
 				</button>
-				<span className="kp-sozluk-definition__vote-count">{definition.score}</span>
+				<span
+					className="kp-sozluk-definition__vote-count"
+					data-testid={`definition-score-${definition.id}`}
+				>
+					{definition.score}
+				</span>
 				<span className="kp-sozluk-definition__rank">#{rank}</span>
 			</div>
 			<div>

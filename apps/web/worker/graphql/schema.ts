@@ -22,8 +22,9 @@ import {
 } from "../features/pano/postSummaryReader";
 import {UsernameValidationError} from "../features/pasaport/Pasaport";
 import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
-import {DefinitionValidationError} from "../features/sozluk/SozlukTerm";
+import {DefinitionNotFoundError, DefinitionValidationError} from "../features/sozluk/SozlukTerm";
 import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
+import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
 import {Auth, CloudflareEnv} from "../services";
 import {resolver} from "./resolver";
 
@@ -62,6 +63,29 @@ const DefinitionType = new GraphQLObjectType<DefinitionRow>({
 		updatedAt: {
 			type: new GraphQLNonNull(GraphQLString),
 			resolve: (d) => d.updatedAt.toISOString(),
+		},
+		/**
+		 * `1` if the requesting user has upvoted this definition; `null` if the
+		 * user is signed-out or hasn't voted. Looked up in `PHOENIX_DB.user_vote`
+		 * (cross-product MV maintained by the `VoteRecorded` projection step).
+		 *
+		 * The `parent.id` is the definition id; `targetKind = 'definition'` is
+		 * fixed. Signed-out short-circuits without touching D1.
+		 */
+		myVote: {
+			type: GraphQLInt,
+			resolve: resolver(function* (parent: DefinitionRow) {
+				const auth = yield* Auth;
+				if (!auth.user) return null;
+				const env = yield* CloudflareEnv;
+				return yield* Effect.promise(() =>
+					readMyVote(env.PHOENIX_DB, {
+						userId: auth.user!.id,
+						targetKind: "definition",
+						targetId: parent.id,
+					}),
+				);
+			}),
 		},
 	},
 });
@@ -374,6 +398,86 @@ const MutationType = new GraphQLObjectType({
 					if (err instanceof DefinitionValidationError) {
 						throw new GraphQLError(err.message, {
 							extensions: {code: err.code.toUpperCase()},
+						});
+					}
+					throw err;
+				}
+			}),
+		},
+		voteDefinition: {
+			type: new GraphQLNonNull(DefinitionType),
+			args: {definitionId: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {definitionId: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				// The definition's term is encoded by the DO instance the resolver
+				// targets. The frontend always knows the term slug from the page
+				// URL (vote button lives on a term page) — but the GraphQL surface
+				// only takes the definition id. The producer-side projection's
+				// `definition_view` row carries `term_slug` so we lean on it for
+				// the dispatch.
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, args.definitionId),
+				);
+				if (!slug) {
+					throw new GraphQLError("definition not found", {
+						extensions: {code: "DEFINITION_NOT_FOUND"},
+					});
+				}
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.voteDefinition({definitionId: args.definitionId, voterId: user.id}),
+					);
+					return {
+						id: result.definitionId,
+						body: result.body,
+						author: result.authorName,
+						score: result.score,
+						createdAt: result.createdAt,
+						updatedAt: result.updatedAt,
+					} satisfies DefinitionRow;
+				} catch (err) {
+					if (err instanceof DefinitionNotFoundError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: "DEFINITION_NOT_FOUND"},
+						});
+					}
+					throw err;
+				}
+			}),
+		},
+		retractDefinitionVote: {
+			type: new GraphQLNonNull(DefinitionType),
+			args: {definitionId: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {definitionId: string}) {
+				const {user} = yield* Auth.required;
+				const env = yield* CloudflareEnv;
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, args.definitionId),
+				);
+				if (!slug) {
+					throw new GraphQLError("definition not found", {
+						extensions: {code: "DEFINITION_NOT_FOUND"},
+					});
+				}
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
+				try {
+					const result = yield* Effect.promise(() =>
+						stub.retractDefinitionVote({definitionId: args.definitionId, voterId: user.id}),
+					);
+					return {
+						id: result.definitionId,
+						body: result.body,
+						author: result.authorName,
+						score: result.score,
+						createdAt: result.createdAt,
+						updatedAt: result.updatedAt,
+					} satisfies DefinitionRow;
+				} catch (err) {
+					if (err instanceof DefinitionNotFoundError) {
+						throw new GraphQLError(err.message, {
+							extensions: {code: "DEFINITION_NOT_FOUND"},
 						});
 					}
 					throw err;

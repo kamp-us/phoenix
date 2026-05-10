@@ -410,6 +410,78 @@ async function projectDefinitionAdded(env: Env, e: DefinitionAddedEvent): Promis
 }
 
 /**
+ * `VoteRecorded` updates the cross-product MV state for an upvote/retract:
+ *
+ * - `user_vote`: presence-only row keyed by (user_id, target_kind, target_id).
+ *   Inserted on `value: true`, deleted on `value: false`. There's no value
+ *   column (MVP is up-only voting).
+ * - `user_profile.total_karma`: bumped +1 on cast, -1 on retract for the
+ *   target's *author* (NOT the voter). The producer side is authoritative on
+ *   `targetAuthorId` so the projection doesn't have to RPC back into the
+ *   per-entity DO to figure out the author.
+ *
+ * Idempotency: the user_vote write uses INSERT OR IGNORE so retries don't
+ * double-count karma. The retract path's DELETE returns `meta.changes` so we
+ * only adjust karma when a row actually went away. This makes the step safe
+ * to retry (workflow runtime guarantee) without a per-event guard column —
+ * the (user, target) PK is the convergence guard for the user_vote row;
+ * `meta.changes` is the convergence guard for the karma side effect.
+ */
+async function projectVoteRecorded(env: Env, e: VoteRecordedEvent): Promise<void> {
+	const createdAt = Math.floor(e.createdAt / 1000);
+	const updatedAt = createdAt;
+
+	if (e.value) {
+		// Cast vote: INSERT row; only bump karma if the row was actually new.
+		const result = await env.PHOENIX_DB.prepare(
+			`INSERT OR IGNORE INTO user_vote (user_id, target_kind, target_id, created_at)
+			VALUES (?, ?, ?, ?)`,
+		)
+			.bind(e.userId, e.targetKind, e.targetId, createdAt)
+			.run();
+		if (result.meta.changes === 0) return;
+
+		// Bump karma on the target's author. If the user_profile row doesn't
+		// exist yet (author hasn't bootstrapped), seed a minimal row so the
+		// karma counter has something to live on; the bootstrap event will
+		// fill in the username/display_name later.
+		await env.PHOENIX_DB.prepare(
+			`INSERT INTO user_profile (
+				user_id, username, display_name, image,
+				total_karma, definition_count, post_count, comment_count,
+				updated_at, last_event_id
+			) VALUES (?, NULL, NULL, NULL, 1, 0, 0, 0, ?, '')
+			ON CONFLICT(user_id) DO UPDATE SET
+				total_karma = user_profile.total_karma + 1,
+				updated_at  = excluded.updated_at`,
+		)
+			.bind(e.targetAuthorId, updatedAt)
+			.run();
+	} else {
+		// Retract vote: DELETE row; only decrement karma if a row went away.
+		const result = await env.PHOENIX_DB.prepare(
+			`DELETE FROM user_vote WHERE user_id = ? AND target_kind = ? AND target_id = ?`,
+		)
+			.bind(e.userId, e.targetKind, e.targetId)
+			.run();
+		if (result.meta.changes === 0) return;
+
+		// Decrement karma on the target's author. Floor at 0 so retries can't
+		// underflow if the cast event was lost (defensive — convergence
+		// shouldn't drift, but a decrement on a missing row would return
+		// changes=0 and silently no-op anyway).
+		await env.PHOENIX_DB.prepare(
+			`UPDATE user_profile SET
+				total_karma = MAX(0, total_karma - 1),
+				updated_at  = ?
+			WHERE user_id = ?`,
+		)
+			.bind(updatedAt, e.targetAuthorId)
+			.run();
+	}
+}
+
+/**
  * `UserProfileChanged` projects per-user identity into `user_profile`. The
  * username column is the public handle (immutable once set on Pasaport, this
  * step only ever sees a valid value); display_name + image stay refreshable.
@@ -488,7 +560,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 
 				// Cross-product
 				case "VoteRecorded":
-					return;
+					return projectVoteRecorded(this.env, e);
 				case "SozlukStatsChanged":
 					return;
 				case "PanoStatsChanged":

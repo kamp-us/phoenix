@@ -141,6 +141,45 @@ export interface AddDefinitionInput {
 export const DEFINITION_BODY_MAX = 10_000;
 
 /* -------------------------------------------------------------------------- */
+/* Vote shapes                                                                 */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Thrown by `voteDefinition` / `retractDefinitionVote` when the target
+ * definition doesn't exist in this term DO. The resolver translates this to a
+ * GraphQL error with `code: 'DEFINITION_NOT_FOUND'`.
+ */
+export class DefinitionNotFoundError extends Error {
+	readonly code = "definition_not_found" as const;
+	constructor(definitionId: string) {
+		super(`definition ${definitionId} not found in this term`);
+		this.name = "DefinitionNotFoundError";
+	}
+}
+
+export interface VoteDefinitionInput {
+	definitionId: string;
+	voterId: string;
+}
+
+/**
+ * Result returned by both `voteDefinition` and `retractDefinitionVote`. Mirrors
+ * the post-write state of the targeted definition so the GraphQL resolver can
+ * reconstruct a `Definition` payload without a round-trip read.
+ */
+export interface VoteDefinitionResult {
+	definitionId: string;
+	score: number;
+	body: string;
+	authorId: string;
+	authorName: string;
+	createdAt: Date;
+	updatedAt: Date;
+	/** `true` if the vote row state changed; `false` on idempotent no-op. */
+	changed: boolean;
+}
+
+/* -------------------------------------------------------------------------- */
 /* Agent                                                                       */
 /* -------------------------------------------------------------------------- */
 
@@ -542,6 +581,229 @@ export class SozlukTerm extends Agent<Env, TermState> {
 			createdAt: nowDate,
 			updatedAt: nowDate,
 		};
+	}
+
+	/**
+	 * Cast an upvote on a definition (T5). Idempotent: a second vote from the
+	 * same voter is a no-op (composite PK + ON CONFLICT DO NOTHING) — the score
+	 * stays at 1, no events are emitted.
+	 *
+	 * Atomicity per ADR 0007: a single `transactionSync` block writes the vote
+	 * row, recomputes the definition's denormalized `score` from the vote
+	 * table, and emits TWO outbox rows (TermChanged for the recomputed
+	 * aggregate; VoteRecorded for the user_vote MV + karma side effect).
+	 *
+	 * Throws `DefinitionNotFoundError` when `definitionId` doesn't belong to
+	 * this term (clients hit the wrong DO via wrong slug).
+	 */
+	async voteDefinition(input: VoteDefinitionInput): Promise<VoteDefinitionResult> {
+		return this.applyVote(input, /* isVote */ true);
+	}
+
+	/**
+	 * Retract a previously cast upvote (T5). Idempotent: retracting when no
+	 * vote exists is a no-op (DELETE … RETURNING returns nothing) — score
+	 * unchanged, no events emitted.
+	 */
+	async retractDefinitionVote(input: VoteDefinitionInput): Promise<VoteDefinitionResult> {
+		return this.applyVote(input, /* isVote */ false);
+	}
+
+	/**
+	 * Shared body for `voteDefinition` and `retractDefinitionVote` — the only
+	 * difference is the vote-table mutation (INSERT vs DELETE) and the sign
+	 * of the `VoteRecorded` event's `value` field. Centralizing keeps the
+	 * outbox + setState contract identical.
+	 */
+	private async applyVote(
+		input: VoteDefinitionInput,
+		isVote: boolean,
+	): Promise<VoteDefinitionResult> {
+		const definitionRow = await this.db.query.definition.findFirst({
+			where: and(eq(schema.definition.id, input.definitionId), isNull(schema.definition.deletedAt)),
+		});
+		if (!definitionRow) {
+			throw new DefinitionNotFoundError(input.definitionId);
+		}
+
+		const now = Date.now();
+		const slug = this.name;
+
+		// Forge ULIDs for the two outbox events (TermChanged + VoteRecorded).
+		const termEventId = id("evt");
+		const voteEventId = id("evt");
+
+		// Capture state inside the closure so we can read the post-mutation
+		// score after transactionSync commits.
+		let changed = false;
+		let newScore = definitionRow.score;
+		let newDefinitionCount = 0;
+		let newTotalScore = 0;
+		let topDefinitionId: string | null = null;
+		let topExcerpt: string | null = null;
+		let firstAtMs: number | null = null;
+		let lastEditAtMs: number | null = null;
+		let bumpScore = false;
+
+		this.ctx.storage.transactionSync(() => {
+			if (isVote) {
+				// ON CONFLICT DO NOTHING — a re-vote from the same user is a
+				// no-op so the denormalized score stays at 1.
+				const before = this.sql<{n: number}>`
+					SELECT COUNT(*) as n FROM definition_vote
+					WHERE definition_id = ${input.definitionId} AND voter_id = ${input.voterId}
+				`;
+				const existed = (before[0]?.n ?? 0) > 0;
+				if (!existed) {
+					this.sql`
+						INSERT INTO definition_vote (definition_id, voter_id, created_at)
+						VALUES (${input.definitionId}, ${input.voterId}, ${Math.floor(now / 1000)})
+					`;
+					changed = true;
+				}
+			} else {
+				const before = this.sql<{n: number}>`
+					SELECT COUNT(*) as n FROM definition_vote
+					WHERE definition_id = ${input.definitionId} AND voter_id = ${input.voterId}
+				`;
+				const existed = (before[0]?.n ?? 0) > 0;
+				if (existed) {
+					this.sql`
+						DELETE FROM definition_vote
+						WHERE definition_id = ${input.definitionId} AND voter_id = ${input.voterId}
+					`;
+					changed = true;
+				}
+			}
+
+			if (!changed) {
+				// Idempotent path — no events, no score recompute.
+				newScore = definitionRow.score;
+				return;
+			}
+
+			// Recompute denormalized score from the vote table (single source).
+			const scoreRows = this.sql<{n: number}>`
+				SELECT COUNT(*) as n FROM definition_vote WHERE definition_id = ${input.definitionId}
+			`;
+			newScore = scoreRows[0]?.n ?? 0;
+
+			// Persist the new score on the definition row alongside an
+			// `updated_at` bump so list ordering and stale-cache windows
+			// converge in the same transaction.
+			this.sql`
+				UPDATE definition SET score = ${newScore}, updated_at = ${Math.floor(now / 1000)}
+				WHERE id = ${input.definitionId}
+			`;
+			bumpScore = true;
+
+			// Recompute term aggregates (definitionCount + totalScore + top
+			// definition) from sqlite truth. Reads inside transactionSync use
+			// the synchronous `this.sql` API to stay in the closure.
+			const aggRows = this.sql<{
+				id: string;
+				body: string;
+				score: number;
+				created_at: number | null;
+				updated_at: number | null;
+			}>`
+				SELECT id, body, score, created_at, updated_at
+				FROM definition
+				WHERE deleted_at IS NULL
+				ORDER BY score DESC, created_at ASC
+			`;
+			newDefinitionCount = aggRows.length;
+			newTotalScore = aggRows.reduce((s, r) => s + r.score, 0);
+			const top = aggRows[0];
+			topDefinitionId = top?.id ?? null;
+			topExcerpt = top ? excerpt(top.body) : null;
+			firstAtMs = aggRows.reduce<number | null>((acc, r) => {
+				if (r.created_at == null) return acc;
+				const ms = r.created_at * 1000;
+				return acc == null || ms < acc ? ms : acc;
+			}, null);
+			lastEditAtMs = aggRows.reduce<number | null>((acc, r) => {
+				const t = r.updated_at ?? r.created_at;
+				if (t == null) return acc;
+				const ms = t * 1000;
+				return acc == null || ms > acc ? ms : acc;
+			}, null);
+
+			// Outbox: TermChanged (term_summary convergence).
+			const termPayload = JSON.stringify({
+				kind: "TermChanged",
+				eventId: termEventId,
+				slug,
+				title: this.state.title,
+				definitionCount: newDefinitionCount,
+				totalScore: newTotalScore,
+				topDefinitionId,
+				excerpt: topExcerpt,
+				firstAt: firstAtMs ?? now,
+				lastActivityAt: now,
+				lastEditAt: lastEditAtMs ?? now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${termEventId}, ${termPayload}, ${now})
+			`;
+
+			// Outbox: VoteRecorded (user_vote MV + karma).
+			const votePayload = JSON.stringify({
+				kind: "VoteRecorded",
+				eventId: voteEventId,
+				userId: input.voterId,
+				targetKind: "definition",
+				targetId: input.definitionId,
+				targetAuthorId: definitionRow.authorId,
+				value: isVote,
+				createdAt: now,
+			});
+			this.sql`
+				INSERT INTO outbox (event_id, payload, created_at)
+				VALUES (${voteEventId}, ${votePayload}, ${now})
+			`;
+		});
+
+		const updatedAt = bumpScore
+			? new Date(now)
+			: (definitionRow.updatedAt ?? definitionRow.createdAt ?? new Date(now));
+
+		const result: VoteDefinitionResult = {
+			definitionId: input.definitionId,
+			score: newScore,
+			body: definitionRow.body,
+			authorId: definitionRow.authorId,
+			authorName: definitionRow.authorName,
+			createdAt: definitionRow.createdAt ?? new Date(now),
+			updatedAt,
+			changed,
+		};
+
+		if (!changed) return result;
+
+		// Update Agent state (drives WebSocket broadcast in T16).
+		this.setState({
+			title: this.state.title || slug.replace(/-/g, " "),
+			definitionCount: newDefinitionCount,
+			totalScore: newTotalScore,
+			lastActivityAt: now,
+			lastEventId: voteEventId,
+		});
+
+		// Best-effort inline flush. Failures absorbed by reconcileOutbox.
+		try {
+			await this.flushOutbox({eventId: termEventId});
+		} catch (err) {
+			console.error("[SozlukTerm.applyVote] flushOutbox(term) failed", err);
+		}
+		try {
+			await this.flushOutbox({eventId: voteEventId});
+		} catch (err) {
+			console.error("[SozlukTerm.applyVote] flushOutbox(vote) failed", err);
+		}
+
+		return result;
 	}
 
 	/* -------- Outbox dispatcher ----------------------------------------- */
