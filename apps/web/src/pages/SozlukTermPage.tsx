@@ -12,6 +12,7 @@ import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {formatAgoTR, formatDateTR} from "../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../lib/markdown";
+import {useLiveAgent} from "../lib/useLiveAgent";
 import {QueryBoundary} from "../relay/QueryBoundary";
 import "./SozlukTermPage.css";
 
@@ -80,10 +81,29 @@ function SozlukTermContent({
 	fetchKey: number;
 	onMutated: () => void;
 }) {
+	// Live subscription to SozlukTerm[slug] over WebSocket (T16). On every
+	// `setState` server-side (vote, edit, delete, add), `liveSignal` bumps
+	// and we tack it onto the Relay `fetchKey` so the term query refetches.
+	// `connected` drives the "canlı güncellemeler duraklatıldı" pill — flips
+	// off on disconnect / sign-out / network blip.
+	const {liveSignal, connected: liveConnected} = useLiveAgent({
+		agent: "sozluk-term",
+		name: slug,
+		enabled: slug.length > 0,
+	});
+
+	// Combined refetch key. `store-and-network` keeps the existing data
+	// rendered while a fresh fetch is in flight — Suspense won't re-suspend
+	// when the cached payload is present, so the live refresh feels smooth
+	// instead of flashing the page-level "yükleniyor…" boundary.
+	const combinedKey = fetchKey + liveSignal;
 	const data = useLazyLoadQuery<SozlukTermPageQuery>(
 		TermQuery,
 		{slug},
-		{fetchKey, fetchPolicy: fetchKey === 0 ? "store-or-network" : "network-only"},
+		{
+			fetchKey: combinedKey,
+			fetchPolicy: combinedKey === 0 ? "store-or-network" : "store-and-network",
+		},
 	);
 	const term = data.term;
 
@@ -101,6 +121,7 @@ function SozlukTermContent({
 					<h1 className="kp-sozluk-term__title">{slug.replace(/-/g, " ")}</h1>
 					<div className="kp-sozluk-term__meta">
 						<span>henüz tanım yok</span>
+						<LivePill connected={liveConnected} />
 					</div>
 				</header>
 				<p style={{font: "var(--t-body)", color: "var(--text-muted)"}}>
@@ -125,6 +146,7 @@ function SozlukTermContent({
 					<span>{term.totalScore} oy</span>
 					{term.firstAt ? <span>ilk: {formatDateTR(term.firstAt)}</span> : null}
 					{term.lastEdit ? <span>son düzenleme: {formatAgoTR(term.lastEdit)}</span> : null}
+					<LivePill connected={liveConnected} />
 				</div>
 			</header>
 
@@ -464,6 +486,70 @@ function Body({text}: {text: string}) {
 				return <p key={i}>{renderMarkdownInline(block.text)}</p>;
 			})}
 		</div>
+	);
+}
+
+/**
+ * Tiny pill showing the live-updates state (T16). Renders nothing when the
+ * WebSocket is connected (the live behavior is invisible by design); shows
+ * "canlı güncellemeler duraklatıldı" when disconnected so the user knows
+ * they're seeing the last-fetched data without the live overlay.
+ *
+ * `data-testid` lets E2E tests assert the indicator's visibility across
+ * sign-out / disconnect scenarios without scraping arbitrary text.
+ */
+function LivePill({connected}: {connected: boolean}) {
+	if (connected) {
+		return (
+			<span
+				data-testid="live-pill-connected"
+				style={{
+					font: "var(--t-meta)",
+					color: "var(--text-muted)",
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 4,
+				}}
+				aria-label="canlı güncellemeler açık"
+				title="canlı güncellemeler açık"
+			>
+				<span
+					style={{
+						width: 6,
+						height: 6,
+						borderRadius: "50%",
+						backgroundColor: "var(--success, #22c55e)",
+						display: "inline-block",
+					}}
+				/>
+				canlı
+			</span>
+		);
+	}
+	return (
+		<span
+			data-testid="live-pill-paused"
+			style={{
+				font: "var(--t-meta)",
+				color: "var(--text-muted)",
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 4,
+			}}
+			aria-label="canlı güncellemeler duraklatıldı"
+			title="canlı güncellemeler duraklatıldı"
+		>
+			<span
+				style={{
+					width: 6,
+					height: 6,
+					borderRadius: "50%",
+					backgroundColor: "var(--text-muted)",
+					display: "inline-block",
+				}}
+			/>
+			canlı güncellemeler duraklatıldı
+		</span>
 	);
 }
 

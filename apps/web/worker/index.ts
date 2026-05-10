@@ -1,4 +1,5 @@
 import {id} from "@usirin/forge";
+import {routeAgentRequest} from "agents";
 import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
@@ -152,6 +153,17 @@ app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
 	const stub = c.env.PASAPORT.get(c.env.PASAPORT.idFromName("kampus"));
 	return stub.fetch(c.req.raw);
+});
+
+// Agent WebSocket subscriptions (T16). The Agents SDK client (`useAgent`)
+// connects to `/agents/<class-kebab>/<name>` and expects a 101 WebSocket
+// upgrade. `routeAgentRequest` walks the env bindings and dispatches to the
+// matching DO class (SozlukTerm / PanoPost / Pasaport). Returns null if the
+// request isn't an agent request, in which case Hono falls through to the
+// next handler.
+app.all("/agents/*", async (c) => {
+	const res = await routeAgentRequest(c.req.raw, c.env);
+	return res ?? c.text("Not Found", 404);
 });
 
 // SDL for relay-compiler (`pnpm schema:fetch`).

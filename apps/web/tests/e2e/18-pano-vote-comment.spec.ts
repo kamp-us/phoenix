@@ -60,8 +60,13 @@ test.describe("Pano voteOnComment (task_11)", () => {
 		await page.locator('[data-testid="pano-comment-input"]').fill(commentBody);
 		await page.locator('[data-testid="pano-comment-submit"]').click();
 
-		// Wait for the comment to appear in the tree.
-		await expect(page.getByText("1 yorum")).toBeVisible({timeout: 10_000});
+		// Wait for the comment to appear in the tree. Use the thread heading
+		// (h2) directly — task_16's live updates refetch the post meta after
+		// the mutation lands, so both the meta `<span>N yorum</span>` and the
+		// thread `<h2>N yorum</h2>` end up rendering "1 yorum" simultaneously.
+		await expect(page.locator(".kp-pano-postpage__thread-heading")).toHaveText("1 yorum", {
+			timeout: 10_000,
+		});
 
 		// Reload once more so the comments query is stable when we click the
 		// vote button (avoids the same fetchKey-driven Suspense race the post

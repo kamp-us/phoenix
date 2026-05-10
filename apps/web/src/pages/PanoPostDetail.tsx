@@ -15,6 +15,7 @@ import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {formatAgoTR} from "../lib/datetime";
 import {renderMarkdownInline} from "../lib/markdown";
+import {useLiveAgent} from "../lib/useLiveAgent";
 import {QueryBoundary} from "../relay/QueryBoundary";
 import "./PanoPostDetail.css";
 
@@ -180,10 +181,29 @@ function PostContent({
 	fetchKey: number;
 	onMutated: () => void;
 }) {
+	// Live subscription to PanoPost[id] over WebSocket (T16). When the post
+	// score, body, or comment count changes server-side, `liveSignal` bumps
+	// and refetches `post(idOrSlug)`. The Comments subtree owns its own
+	// `liveSignal` consumer below (same agent, different fetchKey scope) so
+	// new comments appear without re-fetching the post head.
+	const {liveSignal, connected: liveConnected} = useLiveAgent({
+		agent: "pano-post",
+		name: idOrSlug,
+		enabled: idOrSlug.length > 0,
+	});
+
+	// `store-and-network` keeps the rendered post visible while a refetch is
+	// in flight (live signal or mutation refetch). Suspense only fires on the
+	// very first mount; subsequent refreshes flow into Relay's store without
+	// re-entering the QueryBoundary fallback.
+	const combinedKey = fetchKey + liveSignal;
 	const data = useLazyLoadQuery<PanoPostDetailPostQuery>(
 		PostQuery,
 		{idOrSlug},
-		{fetchKey, fetchPolicy: fetchKey === 0 ? "store-or-network" : "network-only"},
+		{
+			fetchKey: combinedKey,
+			fetchPolicy: combinedKey === 0 ? "store-or-network" : "store-and-network",
+		},
 	);
 	const post = data.post;
 	const session = useSession();
@@ -357,6 +377,7 @@ function PostContent({
 								<button type="button">paylaş</button>
 								<button type="button">kaydet</button>
 								<button type="button">bildir</button>
+								<LivePill connected={liveConnected} />
 								{isAuthor ? (
 									<>
 										<button type="button" data-testid="post-edit" onClick={onEditClick}>
@@ -419,7 +440,7 @@ function PostContent({
 					<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yorumlar yükleniyor…</p>
 				}
 			>
-				<Comments postId={post.id} signedIn={!!session.data?.user} />
+				<Comments postId={post.id} signedIn={!!session.data?.user} liveSignal={liveSignal} />
 			</React.Suspense>
 		</>
 	);
@@ -563,13 +584,28 @@ function CommentComposer({
  * tree. Mirrors the invalidate-on-mutate pattern from `SozlukTermPage` (T4)
  * and the post detail's own edit refetch.
  */
-function Comments({postId, signedIn}: {postId: string; signedIn: boolean}) {
+function Comments({
+	postId,
+	signedIn,
+	liveSignal,
+}: {
+	postId: string;
+	signedIn: boolean;
+	/** Bumped by the parent's `useLiveAgent` on every server-side state change.
+	 *  Comments refetches when this changes so new replies + score updates land
+	 *  without any user action. */
+	liveSignal: number;
+}) {
 	const session = useSession();
 	const [fetchKey, setFetchKey] = React.useState(0);
+	const combinedKey = fetchKey + liveSignal;
 	const data = useLazyLoadQuery<PanoPostDetailCommentsQuery>(
 		CommentsQuery,
 		{postId},
-		{fetchKey, fetchPolicy: fetchKey === 0 ? "store-or-network" : "network-only"},
+		{
+			fetchKey: combinedKey,
+			fetchPolicy: combinedKey === 0 ? "store-or-network" : "store-and-network",
+		},
 	);
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editing, setEditing] = React.useState<string | null>(null);
@@ -860,6 +896,67 @@ function CommentEditComposer({
 				</div>
 			</div>
 		</form>
+	);
+}
+
+/**
+ * Live-updates indicator (T16). Renders a green "canlı" pill when the
+ * WebSocket subscription to PanoPost[id] is open; a muted "duraklatıldı"
+ * pill when it's closed (disconnect, sign-out, network blip). The static
+ * Relay data underneath stays rendered either way — no flicker.
+ */
+function LivePill({connected}: {connected: boolean}) {
+	if (connected) {
+		return (
+			<span
+				data-testid="live-pill-connected"
+				style={{
+					font: "var(--t-meta)",
+					color: "var(--text-muted)",
+					display: "inline-flex",
+					alignItems: "center",
+					gap: 4,
+				}}
+				aria-label="canlı güncellemeler açık"
+				title="canlı güncellemeler açık"
+			>
+				<span
+					style={{
+						width: 6,
+						height: 6,
+						borderRadius: "50%",
+						backgroundColor: "var(--success, #22c55e)",
+						display: "inline-block",
+					}}
+				/>
+				canlı
+			</span>
+		);
+	}
+	return (
+		<span
+			data-testid="live-pill-paused"
+			style={{
+				font: "var(--t-meta)",
+				color: "var(--text-muted)",
+				display: "inline-flex",
+				alignItems: "center",
+				gap: 4,
+			}}
+			aria-label="canlı güncellemeler duraklatıldı"
+			title="canlı güncellemeler duraklatıldı"
+		>
+			<span
+				style={{
+					width: 6,
+					height: 6,
+					borderRadius: "50%",
+					backgroundColor: "var(--text-muted)",
+					display: "inline-block",
+				}}
+			/>
+			canlı güncellemeler duraklatıldı
+		</span>
 	);
 }
 
