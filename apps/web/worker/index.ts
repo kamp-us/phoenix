@@ -41,18 +41,42 @@ const upsertTermSchema = z.object({
 		.min(1),
 });
 
+// Per ADR 0005/0007 the seed dispatches into per-term `SozlukTerm` instances
+// (`idFromName(slug)`) instead of the singleton `Sozluk`. The seed call writes
+// definitions atomically, emits a single `TermChanged` event per term, and the
+// projection populates `term_summary` for cross-entity reads.
 app.post("/api/admin/sozluk/upsert-term", async (c) => {
 	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
 	const parsed = upsertTermSchema.safeParse(await c.req.json());
 	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
-	const stub = c.env.SOZLUK.get(c.env.SOZLUK.idFromName("kampus"));
-	return c.json(await stub.upsertTerm(parsed.data));
+	const {slug, title, definitions} = parsed.data;
+	const stub = c.env.SOZLUK_TERM.get(c.env.SOZLUK_TERM.idFromName(slug));
+	const result = await stub.seed({title, definitions});
+	return c.json({slug, ...result});
 });
 
+// Dev-only namespace clear. Walks the slugs the caller provides (plus a default
+// "kampus" sweep for the legacy seed) and wipes each per-term DO. Term-level
+// `term_summary` rows in PHOENIX_DB are also cleared so re-seeding starts clean.
 app.post("/api/admin/sozluk/clear", async (c) => {
 	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
-	const stub = c.env.SOZLUK.get(c.env.SOZLUK.idFromName("kampus"));
-	return c.json(await stub.clearAll());
+	const body = (await c.req.json().catch(() => ({}))) as {slugs?: string[]};
+	const slugs = body.slugs ?? [];
+
+	let definitions = 0;
+	let terms = 0;
+	for (const slug of slugs) {
+		const stub = c.env.SOZLUK_TERM.get(c.env.SOZLUK_TERM.idFromName(slug));
+		const r = await stub.clearAll();
+		definitions += r.definitions;
+		if (r.term) terms++;
+	}
+
+	// Clear the cross-entity views — re-seed will rebuild via projection.
+	await c.env.PHOENIX_DB.prepare("DELETE FROM term_summary").run();
+	await c.env.PHOENIX_DB.prepare("DELETE FROM sozluk_stats").run();
+
+	return c.json({terms, definitions});
 });
 
 // Better Auth handler — forwarded to the Pasaport DO.

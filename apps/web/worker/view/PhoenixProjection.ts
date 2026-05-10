@@ -21,6 +21,9 @@
  * - Errors throw so the workflow runtime retries the step with backoff.
  */
 import {WorkflowEntrypoint, type WorkflowEvent, type WorkflowStep} from "cloudflare:workers";
+import {sql} from "drizzle-orm";
+import {drizzle} from "drizzle-orm/d1";
+import * as schema from "./drizzle/schema";
 
 /* -------------------------------------------------------------------------- */
 /* Event payloads                                                             */
@@ -184,6 +187,94 @@ export type ProjectionEvent =
 	| UserProfileChangedEvent;
 
 /* -------------------------------------------------------------------------- */
+/* Projection step bodies                                                     */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * `TermChanged` projects per-term aggregates into `term_summary`. Convergent
+ * overwrite guarded by `WHERE last_event_id < excluded.last_event_id` (forge
+ * ULID lex ordering — out-of-order retries become no-ops).
+ *
+ * `sozluk_stats` totals are touched as part of the same step: we delta the
+ * `total_terms` row only on first-time inserts (existing slug → no-op on the
+ * delta). `total_definitions` is recomputed from the event payload's
+ * authoritative count for this term, so we apply the delta against the
+ * previous row's `definition_count`. `total_authors` waits for T4
+ * (`DefinitionAdded` knows authors); seed runs through here without bumping
+ * authors since the seed author (`kampus`) is denormalized everywhere.
+ */
+async function projectTermChanged(env: Env, e: TermChangedEvent): Promise<void> {
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const firstLetter = e.slug.charAt(0).toLowerCase();
+
+	const previous = await db
+		.select({
+			definitionCount: schema.termSummary.definitionCount,
+			lastEventId: schema.termSummary.lastEventId,
+		})
+		.from(schema.termSummary)
+		.where(sql`${schema.termSummary.slug} = ${e.slug}`)
+		.limit(1);
+	const previousRow = previous[0];
+
+	const result = await env.PHOENIX_DB.prepare(
+		`INSERT INTO term_summary (
+			slug, title, first_letter, definition_count, total_score,
+			excerpt, top_definition_id, first_at, last_activity_at,
+			last_edit_at, last_event_id
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(slug) DO UPDATE SET
+			title             = excluded.title,
+			definition_count  = excluded.definition_count,
+			total_score       = excluded.total_score,
+			excerpt           = excluded.excerpt,
+			top_definition_id = excluded.top_definition_id,
+			first_at          = excluded.first_at,
+			last_activity_at  = excluded.last_activity_at,
+			last_edit_at      = excluded.last_edit_at,
+			last_event_id     = excluded.last_event_id
+		WHERE term_summary.last_event_id < excluded.last_event_id`,
+	)
+		.bind(
+			e.slug,
+			e.title,
+			firstLetter,
+			e.definitionCount,
+			e.totalScore,
+			e.excerpt,
+			e.topDefinitionId,
+			e.firstAt > 0 ? Math.floor(e.firstAt / 1000) : null,
+			Math.floor(e.lastActivityAt / 1000),
+			e.lastEditAt > 0 ? Math.floor(e.lastEditAt / 1000) : null,
+			e.eventId,
+		)
+		.run();
+
+	// If the guard rejected the upsert (out-of-order retry), bail — no
+	// stats delta either.
+	if (result.meta.changes === 0) return;
+
+	const isNewTerm = !previousRow;
+	const previousDefinitionCount = previousRow?.definitionCount ?? 0;
+	const definitionDelta = e.definitionCount - previousDefinitionCount;
+	const termDelta = isNewTerm ? 1 : 0;
+
+	if (termDelta === 0 && definitionDelta === 0) return;
+
+	const updatedAt = Math.floor(e.lastActivityAt / 1000);
+	await env.PHOENIX_DB.prepare(
+		`INSERT INTO sozluk_stats (id, total_definitions, total_terms, total_authors, updated_at)
+		VALUES (1, ?, ?, 0, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			total_definitions = sozluk_stats.total_definitions + ?,
+			total_terms       = sozluk_stats.total_terms + ?,
+			updated_at        = ?`,
+	)
+		.bind(Math.max(0, definitionDelta), termDelta, updatedAt, definitionDelta, termDelta, updatedAt)
+		.run();
+}
+
+/* -------------------------------------------------------------------------- */
 /* Workflow                                                                   */
 /* -------------------------------------------------------------------------- */
 
@@ -195,7 +286,7 @@ export class PhoenixProjection extends WorkflowEntrypoint<Env, ProjectionEvent> 
 			switch (e.kind) {
 				// Sozluk
 				case "TermChanged":
-					return;
+					return projectTermChanged(this.env, e);
 				case "DefinitionAdded":
 					return;
 				case "DefinitionEdited":

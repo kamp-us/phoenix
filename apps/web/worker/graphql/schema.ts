@@ -21,12 +21,8 @@ import type {
 	PostTag,
 	VoteValue,
 } from "../features/pano/Pano";
-import type {
-	DefinitionRow,
-	ListSort,
-	TermPage,
-	TermSummary,
-} from "../features/sozluk/Sozluk";
+import type {DefinitionRow, ListSort, TermPage, TermSummary} from "../features/sozluk/Sozluk";
+import {listTermSummaries, type TermSummaryRow} from "../features/sozluk/termSummaryReader";
 import {Auth, CloudflareEnv} from "../services";
 import {resolver} from "./resolver";
 
@@ -72,7 +68,7 @@ const DefinitionType = new GraphQLObjectType<DefinitionRow>({
  * lastEdit) resolve to null / empty when the source doesn't carry them —
  * matches GraphQL execution: clients only request what they need.
  */
-const TermType: GraphQLObjectType = new GraphQLObjectType<TermSummary | TermPage>({
+const TermType: GraphQLObjectType = new GraphQLObjectType<TermSummary | TermPage | TermSummaryRow>({
 	name: "Term",
 	fields: () => ({
 		id: {type: new GraphQLNonNull(GraphQLID)},
@@ -92,11 +88,17 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermSummary | TermPage
 		},
 		firstAt: {
 			type: GraphQLString,
-			resolve: (s) => ("firstAt" in s ? s.firstAt.toISOString() : null),
+			resolve: (s) => {
+				if (!("firstAt" in s) || !s.firstAt) return null;
+				return s.firstAt.toISOString();
+			},
 		},
 		lastEdit: {
 			type: GraphQLString,
-			resolve: (s) => ("lastEdit" in s ? s.lastEdit.toISOString() : null),
+			resolve: (s) => {
+				if (!("lastEdit" in s) || !s.lastEdit) return null;
+				return s.lastEdit.toISOString();
+			},
 		},
 		definitions: {
 			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(DefinitionType))),
@@ -204,9 +206,8 @@ const QueryType = new GraphQLObjectType({
 			},
 			resolve: resolver(function* (_source, args: {sort?: ListSort; limit?: number}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK.get(env.SOZLUK.idFromName("kampus"));
 				return yield* Effect.promise(() =>
-					stub.listTerms({
+					listTermSummaries(env.PHOENIX_DB, {
 						...(args.sort ? {sort: args.sort} : {}),
 						...(args.limit != null ? {limit: args.limit} : {}),
 					}),
@@ -218,8 +219,8 @@ const QueryType = new GraphQLObjectType({
 			args: {slug: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {slug: string}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK.get(env.SOZLUK.idFromName("kampus"));
-				return yield* Effect.promise(() => stub.getTerm(args.slug));
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(args.slug));
+				return yield* Effect.promise(() => stub.getTerm());
 			}),
 		},
 		posts: {
