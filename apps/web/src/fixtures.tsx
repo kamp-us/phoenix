@@ -1,7 +1,5 @@
 import type { PanoPostData, CommentData } from './components/pano';
-import type { TermRow } from './components/sozluk';
 import { Code, Mark } from './components/ui/atoms';
-import type { TermPageData } from './pages/SozlukTermPage';
 
 export const POSTS: PanoPostData[] = [
   {
@@ -60,132 +58,8 @@ export const COMMENTS: CommentData[] = [
   },
 ];
 
-export const TERMS: TermRow[] = [
-  { slug: 'kampus',           title: 'kampüs',           count: 14 },
-  { slug: 'pano',             title: 'pano',             count: 8 },
-  { slug: 'sozluk',           title: 'sözlük',           count: 22 },
-  { slug: 'manifesto',        title: 'manifesto',        count: 3 },
-  { slug: 'caddy',            title: 'caddy',            count: 2 },
-  { slug: 'nginx',            title: 'nginx',            count: 5 },
-  { slug: 'rate-limiting',    title: 'rate limiting',    count: 4 },
-  { slug: 'static-site',      title: 'static site',      count: 6 },
-  { slug: 'turkce-yazisma',   title: 'türkçe yazışma',   count: 11 },
-  { slug: 'irc',              title: 'irc',              count: 7 },
-];
-
-/* Sozluk home — recent terms (with one-line excerpt). */
-export const SOZLUK_RECENT: TermRow[] = [
-  { slug: 'race-condition',      title: 'race condition',      count: 14,
-    excerpt: "İki goroutine'in aynı paylaşılan kaynağa kilitlenmeden vurması; gece 3'te seni uyandıran şey." },
-  { slug: 'backpressure',        title: 'backpressure',        count: 9,
-    excerpt: "Hızlı üreten, yavaş tüketen iki uç arasında trafiği yöneten karşı basınç mekanizması." },
-  { slug: 'monad',               title: 'monad',               count: 22,
-    excerpt: "Bir endofunctor kategorisindeki monoid. Sadece flatMap deyin, daha kısa." },
-  { slug: 'idempotent',          title: 'idempotent',          count: 11,
-    excerpt: "Aynı isteği iki kere göndersen de bir kere göndermişsin gibi davranan endpoint." },
-  { slug: 'eventual-consistency', title: 'eventual consistency', count: 7,
-    excerpt: "\"Eninde sonunda doğru olur\" — bazen sabaha, bazen production incident'ına kadar." },
-  { slug: 'cargo-cult',          title: 'cargo cult',          count: 5,
-    excerpt: "Niye yaptığını bilmeden, başkası yapıyor diye yapılan mühendislik kararları." },
-  { slug: 'heisenbug',           title: 'heisenbug',           count: 8,
-    excerpt: "Gözlemlemeye çalıştığın anda kaybolan bug. Debugger açınca ortadan yok olur." },
-  { slug: 'flaky-test',          title: 'flaky test',          count: 6,
-    excerpt: "Bazen geçen bazen düşen test. Genelde altta yatan bir race condition'dan beslenir." },
-];
-
-/* Sozluk home — most-upvoted terms (right column). */
-export const SOZLUK_POPULAR = [
-  { slug: 'callback-hell',          title: 'callback hell',          score: 312 },
-  { slug: 'yak-shaving',            title: 'yak shaving',            score: 287 },
-  { slug: 'technical-debt',         title: 'technical debt',         score: 274 },
-  { slug: 'bikeshedding',           title: 'bikeshedding',           score: 258 },
-  { slug: 'heisenbug',              title: 'heisenbug',              score: 241 },
-  { slug: 'kestirme-yol',           title: 'kestirme yol (hack)',    score: 219 },
-  { slug: 'premature-optimization', title: 'premature optimization', score: 203 },
-];
-
-/* Sozluk term page — full definitions data for /sozluk/:slug. */
-
-export const SOZLUK_TERM_PAGES: Record<string, TermPageData> = {
-  'race-condition': {
-    slug: 'race-condition',
-    title: 'race condition',
-    totalDefinitions: 14,
-    totalScore: 847,
-    firstAt: '2024-01-14',
-    lastEditAgo: '4 gün önce',
-    moreCount: 10,
-    definitions: [
-      {
-        id: 'd1', score: 312, author: 'merve.kaya', agoLabel: '14 oca 2024',
-        editsLabel: 'düzenlendi 3 kez',
-        body: (
-          <>
-            <p>
-              İki ya da daha fazla iş parçacığının (thread, goroutine, fiber, ne dersen)
-              paylaşılan bir kaynağa eşzamanlı erişip <strong>doğru sıralamayı yapamaması</strong>.
-              Sonuç: bazen çalışır, bazen çalışmaz, bazen sadece pazartesi sabahı patlar.
-            </p>
-            <p>Klasik örnek — bir sayaç:</p>
-            <pre>{`// hayır, böyle yapma
-let count = 0;
-async function increment() {
-  const v = await read();   // ← burada başkası araya girer
-  await write(v + 1);
-}`}</pre>
-            <p>
-              İki <Code>increment()</Code> paralel çalışırsa ikisi de aynı <Code>v</Code>'yi okur,
-              ikisi de <Code>v + 1</Code> yazar; bir artış kaybolur. Çözüm: kilit (mutex), atomik op,
-              ya da en iyisi paylaşılan değişkeni hiç tutmamak.
-            </p>
-          </>
-        ),
-      },
-      {
-        id: 'd2', score: 187, author: 'canyilmaz', agoLabel: '2 ay önce',
-        body: (
-          <>
-            <p>
-              Türkçesi: <strong>yarış durumu</strong>. "Koşulu" değil, "durumu" çevirisi yerleşmiş;
-              bir <Code>state</Code>'ten bahsediyoruz, <Code>condition</Code>'dan değil. Yine de
-              kimse "yarış durumu" demiyor toplantıda.
-            </p>
-            <p>
-              Pratikte iki türü ayır: <em>data race</em> (paylaşılan belleğe senkronsuz erişim — UB)
-              ve <em>logical race</em> (sıralama doğru olmadığı için sonuç yanlış). İkincisi kilitle
-              çözülmez; akışı yeniden düşünmek gerekir.
-            </p>
-          </>
-        ),
-      },
-      {
-        id: 'd3', score: 94, author: 'ali.tuncay', agoLabel: '4 ay önce',
-        body: (
-          <>
-            <p>
-              Junior'a anlatınca: "İki kişi aynı anda kapıdan geçmeye çalışıyor. Kapı bir kişilik.
-              Birisi ezilir." Senior'a anlatınca: "<Code>happens-before</Code>'u garanti eden bir
-              şey yoksa zaten compiler ne dilerse onu yapar."
-            </p>
-            <p>İkisi de aynı şeyi söylüyor.</p>
-          </>
-        ),
-      },
-      {
-        id: 'd4', score: 61, author: 'kaaneren', agoLabel: '5 ay önce',
-        body: (
-          <p>
-            Go takımının ilk söylediği şey: <Code>go run -race</Code>. Compile-time değil, runtime
-            detector. Production'da çalıştırmazsın çünkü 2-20x yavaşlatır; ama CI'da koşturmak ucuz
-            bir sigorta.
-          </p>
-        ),
-      },
-    ],
-  },
-};
-
-/* Landing-row variant — terms with gloss + author + ago for the activity column. */
+/* Landing-row variant — terms with gloss + author + ago for the activity column.
+   Will be replaced with a GraphQL query when the landing page wires through. */
 export const LANDING_TERMS = [
   { slug: 'race-condition',     title: 'race condition',      count: 17,
     gloss: 'yarış halinde erişimden doğan belirsizlik',
