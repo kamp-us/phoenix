@@ -1,60 +1,149 @@
-/* Pano comment — recursive thread node. */
+/* PanoComment — threaded with depth-1/depth-2 left rails. Mirrors dense .pano-comment. */
+
+.kp-pano-thread {
+	display: flex;
+	flex-direction: column;
+}
 
 .kp-comment {
-  position: relative;
-  padding: var(--comment-y) var(--s-3) var(--comment-y) calc(var(--s-3) + var(--depth, 0) * 14px);
-  background: var(--surface);
-  border-bottom: 1px solid var(--border-faint);
-}
-.kp-comment:last-child { border-bottom: 0; }
-.kp-comment[data-highlight] {
-  background: var(--accent-faint);
-  border-left: 2px solid var(--accent-9);
-  padding-left: calc(var(--s-3) + var(--depth, 0) * 14px - 2px);
+	padding: var(--comment-y) 0;
+	border-bottom: 1px solid var(--border-faint);
 }
 
 .kp-comment__head {
-  display: flex;
-  align-items: center;
-  gap: var(--s-2);
-  margin-bottom: var(--comment-head-y);
-  font: var(--t-meta);
-  color: var(--text-secondary);
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	flex-wrap: wrap;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin-bottom: var(--comment-head-y);
 }
-.kp-comment__head a { color: var(--text-secondary); }
-.kp-comment__author { font-weight: 500; color: var(--text-primary); }
-.kp-comment__hash {
-  margin-left: auto;
-  font-family: var(--font-mono);
-  color: var(--text-faint);
+
+.kp-comment__author {
+	color: var(--text-secondary);
+	font-weight: 600;
+	text-decoration: none;
+}
+.kp-comment__author:hover {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.kp-comment__op {
+	padding: 1px 4px;
+	font: var(--t-micro);
+	font-weight: 700;
+	background: var(--accent-faint);
+	color: var(--accent);
+	border-radius: 2px;
+	text-transform: uppercase;
+}
+
+.kp-comment__upvote {
+	display: inline-flex;
+	align-items: center;
+	gap: 3px;
+	color: var(--text-muted);
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	cursor: pointer;
+}
+.kp-comment__upvote:hover {
+	color: var(--accent);
+}
+.kp-comment__upvote--active {
+	color: var(--accent);
+}
+.kp-comment__upvote .triangle {
+	width: 0;
+	height: 0;
+	border-left: 4px solid transparent;
+	border-right: 4px solid transparent;
+	border-bottom: 6px solid currentColor;
+}
+
+.kp-comment__collapser {
+	margin-left: auto;
+	color: var(--text-faint);
+	padding: 0 4px;
+	font: var(--t-body-sm);
+	background: none;
+	border: 0;
+	cursor: pointer;
+}
+.kp-comment__collapser:hover {
+	color: var(--text-secondary);
 }
 
 .kp-comment__body {
-  font: var(--t-body);
-  color: var(--text-primary);
-  line-height: 1.55;
+	font: var(--t-body);
+	color: var(--text-primary);
 }
-.kp-comment__body p { margin: 0 0 var(--s-2); }
-.kp-comment__body p:last-child { margin-bottom: 0; }
+.kp-comment__body p {
+	margin: 0 0 6px;
+}
+.kp-comment__body p:last-child {
+	margin-bottom: 0;
+}
+.kp-comment__body code {
+	font: var(--t-mono);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	padding: 0 4px;
+	border-radius: 2px;
+}
 
 .kp-comment__foot {
-  display: flex;
-  gap: var(--s-3);
-  margin-top: var(--comment-foot-y);
-  font: var(--t-meta);
+	display: flex;
+	gap: 12px;
+	margin-top: var(--comment-foot-y);
+	font: var(--t-meta);
+	color: var(--text-muted);
 }
-.kp-comment__foot button,
-.kp-comment__foot a {
-  color: var(--text-faint);
-  font-weight: 500;
+.kp-comment__foot button {
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
 }
-.kp-comment__foot button:hover,
-.kp-comment__foot a:hover { color: var(--text-primary); }
+.kp-comment__foot button:hover {
+	color: var(--text-primary);
+}
 
-.kp-comment-list {
-  display: flex;
-  flex-direction: column;
-  background: var(--surface);
-  border: 1px solid var(--border-faint);
-  border-radius: var(--r-md);
+.kp-comment__menu-trigger {
+	background: none;
+	border: 0;
+	padding: 0;
+	color: var(--text-faint);
+	cursor: pointer;
+	letter-spacing: 0.1em;
+	font: 13px/1 var(--font-body);
+}
+.kp-comment__menu-trigger:hover,
+.kp-comment__menu-trigger[data-popup-open] {
+	color: var(--accent);
+}
+
+.kp-comment--depth-1 {
+	margin-left: 18px;
+	padding-left: 12px;
+	border-left: 2px solid var(--border);
+}
+.kp-comment--depth-2 {
+	margin-left: 36px;
+	padding-left: 12px;
+	border-left: 2px solid var(--border-faint);
+}
+
+.kp-comment--highlighted {
+	background: var(--accent-faint);
+	margin: 0 calc(-1 * var(--s-3));
+	padding-left: var(--s-3);
+	padding-right: var(--s-3);
+	border-left: 2px solid var(--accent);
 }

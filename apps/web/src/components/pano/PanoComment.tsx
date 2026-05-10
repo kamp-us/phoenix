@@ -1,7 +1,5 @@
 import * as React from 'react';
-import { Avatar } from '../ui/Avatar';
 import { Menu } from '../ui/Menu';
-import { Collapsible } from '../ui/Collapsible';
 import './PanoComment.css';
 
 export type CommentData = {
@@ -13,6 +11,7 @@ export type CommentData = {
   score: number;
   myVote?: -1 | 0 | 1;
   isOwner?: boolean;
+  isOp?: boolean;
   highlight?: boolean;  /* hash-targeted */
   children?: CommentData[];
 };
@@ -33,43 +32,66 @@ export function PanoComment({
   onReply?: (id: string) => void;
 }) {
   const [open, setOpen] = React.useState(true);
-  const style = { ['--depth' as any]: depth };
+  const [voted, setVoted] = React.useState((comment.myVote ?? 0) === 1);
+  const cls = [
+    'kp-comment',
+    depth === 1 ? 'kp-comment--depth-1' : '',
+    depth >= 2 ? 'kp-comment--depth-2' : '',
+    comment.highlight ? 'kp-comment--highlighted' : '',
+  ].filter(Boolean).join(' ');
+
+  const score = comment.score + (voted && (comment.myVote ?? 0) !== 1 ? 1 : 0);
 
   return (
-    <Collapsible.Root open={open} onOpenChange={setOpen}>
-      <article
-        className="kp-comment"
-        style={style}
-        data-highlight={comment.highlight ? '' : undefined}
-      >
-        <header className="kp-comment__head">
-          <Collapsible.Trigger open={open} />
-          <Avatar name={comment.author} />
-          <a href={`/u/${comment.author}`} className="kp-comment__author">
-            @{comment.author}
-          </a>
-          <span>·</span>
-          <span>{comment.agoLabel}</span>
-          <span>·</span>
-          <span>{comment.score} puan</span>
-          {comment.hash ? (
-            <a href={`#${comment.hash}`} className="kp-comment__hash">#{comment.hash}</a>
-          ) : null}
-        </header>
-        <Collapsible.Panel>
+    <article className={cls} id={comment.hash}>
+      <header className="kp-comment__head">
+        <a className="kp-comment__author" href={`/u/${comment.author}`}>
+          @{comment.author}
+        </a>
+        {comment.isOp ? <span className="kp-comment__op">yazar</span> : null}
+        <span>{comment.agoLabel}</span>
+        <button
+          type="button"
+          className={`kp-comment__upvote ${voted ? 'kp-comment__upvote--active' : ''}`}
+          aria-pressed={voted}
+          aria-label="Yukarı oy"
+          onClick={() => {
+            setVoted(!voted);
+            onVote?.(comment.id, 1);
+          }}
+        >
+          <span className="triangle" /> {score}
+        </button>
+        <button
+          type="button"
+          className="kp-comment__collapser"
+          onClick={() => setOpen(!open)}
+          aria-label={open ? 'Daralt' : 'Genişlet'}
+        >
+          [ {open ? '—' : '+'} ]
+        </button>
+      </header>
+      {open ? (
+        <>
           <div className="kp-comment__body">{comment.body}</div>
           <footer className="kp-comment__foot">
-            <button onClick={() => onReply?.(comment.id)}>yanıtla</button>
+            <button type="button" onClick={() => onReply?.(comment.id)}>
+              yanıtla
+            </button>
+            <button type="button">paylaş</button>
+            <button type="button">bildir</button>
             {comment.isOwner ? (
               <Menu.Root>
-                <Menu.Trigger className="kp-btn kp-btn--tertiary kp-btn--sm">
+                <Menu.Trigger className="kp-comment__menu-trigger" aria-label="Daha fazla">
                   ⋯
                 </Menu.Trigger>
                 <Menu.Popup align="start">
                   <Menu.Item onClick={() => onEdit?.(comment.id)}>düzenle</Menu.Item>
                   <Menu.Item>kalıcı bağlantı</Menu.Item>
                   <Menu.Separator />
-                  <Menu.Item danger onClick={() => onDelete?.(comment.id)}>sil</Menu.Item>
+                  <Menu.Item danger onClick={() => onDelete?.(comment.id)}>
+                    sil
+                  </Menu.Item>
                 </Menu.Popup>
               </Menu.Root>
             ) : null}
@@ -78,16 +100,20 @@ export function PanoComment({
             <div>
               {comment.children.map((c) => (
                 <PanoComment
-                  key={c.id} comment={c} depth={depth + 1}
-                  onVote={onVote} onEdit={onEdit}
-                  onDelete={onDelete} onReply={onReply}
+                  key={c.id}
+                  comment={c}
+                  depth={depth + 1}
+                  onVote={onVote}
+                  onEdit={onEdit}
+                  onDelete={onDelete}
+                  onReply={onReply}
                 />
               ))}
             </div>
           ) : null}
-        </Collapsible.Panel>
-      </article>
-    </Collapsible.Root>
+        </>
+      ) : null}
+    </article>
   );
 }
 
@@ -102,7 +128,7 @@ export function PanoCommentTree({
   onReply?: (id: string) => void;
 }) {
   return (
-    <div className="kp-comment-list">
+    <div className="kp-pano-thread">
       {comments.map((c) => (
         <PanoComment key={c.id} comment={c} {...handlers} />
       ))}

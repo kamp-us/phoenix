@@ -1,0 +1,119 @@
+/* PanoPostDetail — back link + head (vote + title + url + meta) + composer + thread.
+   Mirrors dense .pano-postpage__* and .pano-comment-composer. */
+
+.kp-pano-postpage__back {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font: var(--t-meta);
+	color: var(--text-muted);
+	padding: 6px 0;
+	text-decoration: none;
+}
+.kp-pano-postpage__back:hover {
+	color: var(--accent);
+	text-decoration: none;
+}
+
+.kp-pano-postpage__head {
+	display: grid;
+	grid-template-columns: 28px minmax(0, 1fr);
+	gap: 12px;
+	padding: 6px 0 10px;
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-pano-postpage__title {
+	font: var(--t-h-page);
+	font-weight: 600;
+	margin: 0 0 4px;
+	letter-spacing: -0.005em;
+	color: var(--text-primary);
+}
+
+.kp-pano-postpage__url {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	font: var(--t-meta);
+	color: var(--link);
+	margin-bottom: 4px;
+	text-decoration: none;
+}
+.kp-pano-postpage__url:hover {
+	text-decoration: underline;
+}
+
+.kp-pano-postpage__meta {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	flex-wrap: wrap;
+}
+.kp-pano-postpage__meta .author {
+	color: var(--text-secondary);
+	font-weight: 600;
+}
+.kp-pano-postpage__meta button {
+	background: none;
+	border: 0;
+	padding: 0;
+	font: inherit;
+	color: inherit;
+	cursor: pointer;
+}
+.kp-pano-postpage__meta button:hover {
+	color: var(--accent);
+}
+
+/* Composer above the thread */
+.kp-pano-comment-composer {
+	margin: var(--s-4) 0;
+	padding: var(--s-3);
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+}
+.kp-pano-comment-composer__textarea {
+	width: 100%;
+	min-height: 80px;
+	resize: vertical;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 6px 8px;
+	font: var(--t-mono);
+	color: var(--text-primary);
+	outline: none;
+	box-sizing: border-box;
+}
+.kp-pano-comment-composer__textarea:focus {
+	border-color: var(--accent);
+}
+.kp-pano-comment-composer__foot {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-top: var(--s-2);
+}
+.kp-pano-comment-composer__hint {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+.kp-pano-comment-composer__hint kbd {
+	padding: 0 4px;
+	border: 1px solid var(--border);
+	border-radius: 2px;
+	font: var(--t-micro);
+	background: var(--surface);
+}
+
+/* Thread heading "N yorum" between composer and thread */
+.kp-pano-postpage__thread-heading {
+	font: var(--t-body);
+	font-weight: 600;
+	color: var(--text-primary);
+	margin: var(--s-4) 0 var(--s-2);
+}
