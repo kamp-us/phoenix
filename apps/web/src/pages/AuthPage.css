@@ -1,0 +1,110 @@
+/* AuthPage — centered card. Mirrors dense reference's .auth / .auth__card. */
+
+.kp-auth {
+	min-height: 480px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: var(--surface);
+	padding: var(--s-7) var(--s-4);
+}
+
+.kp-auth__card {
+	width: 100%;
+	max-width: 360px;
+	display: grid;
+	gap: var(--s-4);
+}
+
+.kp-auth__brand {
+	text-align: center;
+	font: 600 16px/1 var(--font-body);
+	letter-spacing: -0.01em;
+	color: var(--text-secondary);
+}
+.kp-auth__brand .dot {
+	color: var(--accent);
+}
+
+.kp-auth__title {
+	font: 500 24px/1.2 var(--font-body);
+	margin: 0;
+	color: var(--text-primary);
+	text-align: center;
+	letter-spacing: -0.02em;
+}
+
+.kp-auth__sub {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: -10px 0 var(--s-2);
+	text-align: center;
+}
+
+.kp-auth__form {
+	display: grid;
+	gap: var(--s-3);
+}
+
+.kp-auth__field {
+	display: grid;
+	gap: 4px;
+	position: relative;
+}
+.kp-auth__field label {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+.kp-auth__field input {
+	background: var(--surface-sunken);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 10px 12px;
+	font: 14px var(--font-body);
+	color: var(--text-primary);
+	outline: none;
+}
+.kp-auth__field input:focus {
+	border-color: var(--accent);
+}
+
+.kp-auth__error {
+	font: var(--t-meta);
+	color: var(--danger);
+	margin: 0;
+}
+
+.kp-auth__submit {
+	background: var(--accent);
+	color: var(--accent-fg);
+	border: none;
+	border-radius: var(--r-sm);
+	padding: 10px 12px;
+	font: 600 14px var(--font-body);
+	cursor: pointer;
+	margin-top: var(--s-2);
+}
+.kp-auth__submit:hover:not(:disabled) {
+	filter: brightness(1.06);
+}
+.kp-auth__submit:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.kp-auth__alt {
+	text-align: center;
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+.kp-auth__alt button {
+	background: none;
+	border: none;
+	padding: 0;
+	font: inherit;
+	color: var(--accent);
+	cursor: pointer;
+}
+.kp-auth__alt button:hover {
+	text-decoration: underline;
+}
