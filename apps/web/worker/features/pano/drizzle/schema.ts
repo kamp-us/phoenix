@@ -1,5 +1,12 @@
 import {id} from "@usirin/forge";
-import {type AnySQLiteColumn, index, integer, sqliteTable, text} from "drizzle-orm/sqlite-core";
+import {
+	type AnySQLiteColumn,
+	index,
+	integer,
+	primaryKey,
+	sqliteTable,
+	text,
+} from "drizzle-orm/sqlite-core";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
 
@@ -85,4 +92,48 @@ export const comment = sqliteTable(
 		...timestamps,
 	},
 	(c) => [index("comment_post_id_idx").on(c.postId)],
+);
+
+/**
+ * One row per (user, post) — compound PK keeps the upsert path conflict-free.
+ * `value` is constrained at the application layer to {-1, 1}; a `value: 0`
+ * vote is represented by row deletion, not by storing a zero. The denormalized
+ * `post.score` is recomputed in the same DB transaction as the vote write so
+ * the two never drift.
+ */
+export const postVote = sqliteTable(
+	"post_vote",
+	{
+		userId: text("user_id").notNull(),
+		postId: text("post_id")
+			.notNull()
+			.references(() => post.id, {onDelete: "cascade"}),
+		value: integer("value").notNull(),
+		createdAt: timestamp("created_at").$defaultFn(() => new Date()),
+	},
+	(v) => [
+		primaryKey({columns: [v.userId, v.postId]}),
+		index("post_vote_post_id_idx").on(v.postId),
+	],
+);
+
+/**
+ * Mirrors `postVote` for comments. Separate table (rather than a polymorphic
+ * `target_kind` column) so the FK can cascade on comment delete and the
+ * sum-by-target query stays a single typed scan.
+ */
+export const commentVote = sqliteTable(
+	"comment_vote",
+	{
+		userId: text("user_id").notNull(),
+		commentId: text("comment_id")
+			.notNull()
+			.references(() => comment.id, {onDelete: "cascade"}),
+		value: integer("value").notNull(),
+		createdAt: timestamp("created_at").$defaultFn(() => new Date()),
+	},
+	(v) => [
+		primaryKey({columns: [v.userId, v.commentId]}),
+		index("comment_vote_comment_id_idx").on(v.commentId),
+	],
 );
