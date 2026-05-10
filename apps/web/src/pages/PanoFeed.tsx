@@ -1,12 +1,12 @@
 import * as React from 'react';
-import { PanoPostList, type PanoPostData } from '../components/pano/index';
 import { Subnav } from '../components/layout/Subnav';
-import { ToggleGroup } from '../components/ui/ToggleGroup';
+import { PanoPostList, type PanoPostData } from '../components/pano/index';
+
 const FILTERS = [
-  { id: 'sicak',     label: 'sıcak' },
-  { id: 'yeni',      label: 'yeni' },
-  { id: 'en-iyi',    label: 'en iyi' },
-  { id: 'tartisma',  label: 'tartışma' },
+  { id: 'sicak',    label: 'sıcak' },
+  { id: 'yeni',     label: 'yeni' },
+  { id: 'en-iyi',   label: 'en iyi' },
+  { id: 'tartisma', label: 'tartışma' },
 ];
 
 export function PanoFeed({ posts }: { posts: PanoPostData[] }) {
@@ -14,21 +14,16 @@ export function PanoFeed({ posts }: { posts: PanoPostData[] }) {
   return (
     <>
       <Subnav
-        title="pano"
-        count={`${posts.length} başlık`}
-        filters={
-          <ToggleGroup.Root
-            value={[filter]}
-            onValueChange={(v) => v[0] && setFilter(v[0])}
-            aria-label="Sıralama"
-          >
-            {FILTERS.map((f) => (
-              <ToggleGroup.Item key={f.id} value={f.id}>{f.label}</ToggleGroup.Item>
-            ))}
-          </ToggleGroup.Root>
-        }
+        filters={FILTERS}
+        activeFilter={filter}
+        onFilterChange={setFilter}
+        meta={`${posts.length} başlık`}
       />
-      <PanoPostList posts={posts} />
+      <div className="kp-page">
+        <div className="kp-page__inner">
+          <PanoPostList posts={posts} />
+        </div>
+      </div>
     </>
   );
 }

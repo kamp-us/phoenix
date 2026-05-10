@@ -1,10 +1,30 @@
-/* Footer */
+/* Footer — full-width chrome strip. Mirrors dense .kampus-footer. */
 
 .kp-footer {
-  border-top: 1px solid var(--border-faint);
-  padding: var(--s-4);
-  font: var(--t-meta);
-  color: var(--text-faint);
-  text-align: center;
+	margin-top: auto;
+	padding: var(--s-3) var(--s-4);
+	border-top: 1px solid var(--border);
+	background: var(--surface-sunken);
+	display: flex;
+	gap: var(--s-4);
+	flex-wrap: wrap;
+	font: var(--t-meta);
+	color: var(--text-muted);
 }
-.kp-footer a { color: var(--text-secondary); }
+.kp-footer .brand {
+	color: var(--text-secondary);
+	font-weight: 600;
+}
+.kp-footer .brand .dot {
+	color: var(--accent);
+}
+.kp-footer a {
+	color: var(--text-secondary);
+	text-decoration: none;
+}
+.kp-footer a:hover {
+	color: var(--accent);
+}
+.kp-footer .spacer {
+	flex: 1;
+}

@@ -1,6 +1,7 @@
 import * as React from 'react';
-import { SozlukAlphabet, SozlukTermList, type TermRow } from '../components/sozluk/index';
 import { Subnav } from '../components/layout/Subnav';
+import { SozlukAlphabet, SozlukTermList, type TermRow } from '../components/sozluk/index';
+
 export function SozlukHome({ terms }: { terms: TermRow[] }) {
   const [letter, setLetter] = React.useState<string | undefined>();
   const filtered = letter
@@ -8,9 +9,13 @@ export function SozlukHome({ terms }: { terms: TermRow[] }) {
     : terms;
   return (
     <>
-      <Subnav title="sözlük" count={`${filtered.length} terim`} />
-      <SozlukAlphabet value={letter} onChange={setLetter} />
-      <SozlukTermList terms={filtered} />
+      <Subnav title="sözlük" meta={`${filtered.length} terim`} />
+      <div className="kp-page">
+        <div className="kp-page__inner">
+          <SozlukAlphabet value={letter} onChange={setLetter} />
+          <SozlukTermList terms={filtered} />
+        </div>
+      </div>
     </>
   );
 }

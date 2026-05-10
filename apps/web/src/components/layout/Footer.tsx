@@ -6,10 +6,16 @@ export function Footer({ children }: { children?: React.ReactNode }) {
     <footer className="kp-footer">
       {children ?? (
         <>
-          kampüs · <a href="#">manifesto</a> · <a href="#">api</a> · <a href="#">github</a>
+          <span className="brand">
+            kamp<span className="dot">.</span>us
+          </span>
+          <span>· 2026</span>
+          <span className="spacer" />
+          <a href="#">tüzük</a>
+          <a href="#">github</a>
+          <a href="#">rss</a>
         </>
       )}
     </footer>
   );
 }
-

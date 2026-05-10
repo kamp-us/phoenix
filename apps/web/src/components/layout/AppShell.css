@@ -1,16 +1,26 @@
-/* AppShell — outermost wrapper.
-   Establishes content width + applies focus ring + handles theme/density data attrs. */
+/* AppShell — outermost wrapper. The shell is column-flex; topbar/subnav and
+   footer are full-width chrome, Main is just `flex: 1` and lets pages bring
+   their own padding + max-width via .kp-page__inner. Mirrors dense .kampus-shell. */
 
 .kp-shell {
-  min-height: 100vh;
-  display: flex;
-  flex-direction: column;
+	min-height: 100vh;
+	display: flex;
+	flex-direction: column;
+	background: var(--surface);
 }
 
 .kp-shell__main {
-  flex: 1;
-  width: 100%;
-  max-width: var(--content-w);
-  margin: 0 auto;
-  padding: var(--s-3) var(--s-4);
+	flex: 1;
+	width: 100%;
+	min-width: 0;
+}
+
+/* Page wrappers — pages opt into the constrained content column.
+   Use .kp-page on the route component, .kp-page__inner on the inner column. */
+.kp-page {
+	padding: var(--s-3) var(--s-4) var(--s-7);
+}
+.kp-page__inner {
+	max-width: var(--content-w);
+	margin: 0 auto;
 }
