@@ -1,12 +1,14 @@
 import * as React from 'react';
+import { graphql, useLazyLoadQuery } from 'react-relay';
 import { Link, useParams } from 'react-router';
+import type { SozlukTermPageQuery } from '../__generated__/SozlukTermPageQuery.graphql';
 import { Button } from '../components/ui/Button';
-import { useGraphQL } from '../graphql/useGraphQL';
 import { formatAgoTR, formatDateTR } from '../lib/datetime';
+import { QueryBoundary } from '../relay/QueryBoundary';
 import './SozlukTermPage.css';
 
-const TERM_QUERY = `
-  query SozlukTerm($slug: String!) {
+const TermQuery = graphql`
+  query SozlukTermPageQuery($slug: String!) {
     term(slug: $slug) {
       id
       slug
@@ -27,91 +29,69 @@ const TERM_QUERY = `
   }
 `;
 
-type Definition = {
-  id: string;
-  body: string;
-  author: string;
-  score: number;
-  createdAt: string;
-  updatedAt: string;
-};
-
-type TermFromAPI = {
-  id: string;
-  slug: string;
-  title: string;
-  count: number;
-  totalScore: number;
-  firstAt: string | null;
-  lastEdit: string | null;
-  definitions: Definition[];
-};
+type TermNode = NonNullable<SozlukTermPageQuery['response']['term']>;
+type DefinitionNode = TermNode['definitions'][number];
 
 export function SozlukTermPage() {
   const { slug } = useParams<{ slug: string }>();
-  const result = useGraphQL<{term: TermFromAPI | null}>(TERM_QUERY, {slug: slug ?? ''});
+  const safeSlug = slug ?? '';
 
-  if (result.kind === 'loading') {
-    return (
-      <div className="kp-page">
-        <div className="kp-page__inner">
-          <p style={{font: 'var(--t-meta)', color: 'var(--text-muted)'}}>yükleniyor…</p>
-        </div>
+  return (
+    <div className="kp-page">
+      <div className="kp-page__inner">
+        <QueryBoundary
+          loading={
+            <p style={{font: 'var(--t-meta)', color: 'var(--text-muted)'}}>yükleniyor…</p>
+          }
+          error={(err) => (
+            <p style={{font: 'var(--t-body)', color: 'var(--danger)'}}>
+              terim yüklenemedi: {err.message}
+            </p>
+          )}
+        >
+          <SozlukTermContent slug={safeSlug} />
+        </QueryBoundary>
       </div>
-    );
-  }
+    </div>
+  );
+}
 
-  if (result.kind === 'error') {
-    return (
-      <div className="kp-page">
-        <div className="kp-page__inner">
-          <p style={{font: 'var(--t-body)', color: 'var(--danger)'}}>
-            terim yüklenemedi: {result.message}
-          </p>
-        </div>
-      </div>
-    );
-  }
+function SozlukTermContent({slug}: {slug: string}) {
+  const data = useLazyLoadQuery<SozlukTermPageQuery>(TermQuery, {slug});
+  const term = data.term;
 
-  const term = result.data.term;
   if (!term) {
     return (
-      <div className="kp-page">
-        <div className="kp-page__inner">
-          <p style={{font: 'var(--t-body)', color: 'var(--text-muted)'}}>
-            "{slug}" terimi henüz yok. <Link to="/sozluk">sözlüğe dön</Link>
-          </p>
-        </div>
-      </div>
+      <p style={{font: 'var(--t-body)', color: 'var(--text-muted)'}}>
+        "{slug}" terimi henüz yok. <Link to="/sozluk">sözlüğe dön</Link>
+      </p>
     );
   }
 
   const firstLetter = term.title.charAt(0).toLowerCase();
 
   return (
-    <div className="kp-page">
-      <div className="kp-page__inner">
-        <header className="kp-sozluk-term__head">
-          <p className="kp-sozluk-term__crumbs">
-            <Link to="/sozluk">sözlük</Link> / <Link to="/sozluk">{firstLetter}</Link> /{' '}
-            {term.title}
-          </p>
-          <h1 className="kp-sozluk-term__title">{term.title}</h1>
-          <div className="kp-sozluk-term__meta">
-            <span>{term.count} tanım</span>
-            <span>{term.totalScore} oy</span>
-            {term.firstAt ? <span>ilk: {formatDateTR(term.firstAt)}</span> : null}
-            {term.lastEdit ? <span>son düzenleme: {formatAgoTR(term.lastEdit)}</span> : null}
-          </div>
-        </header>
+    <>
+      <header className="kp-sozluk-term__head">
+        <p className="kp-sozluk-term__crumbs">
+          <Link to="/sozluk">sözlük</Link> / <Link to="/sozluk">{firstLetter}</Link> /{' '}
+          {term.title}
+        </p>
+        <h1 className="kp-sozluk-term__title">{term.title}</h1>
+        <div className="kp-sozluk-term__meta">
+          <span>{term.count} tanım</span>
+          <span>{term.totalScore} oy</span>
+          {term.firstAt ? <span>ilk: {formatDateTR(term.firstAt)}</span> : null}
+          {term.lastEdit ? <span>son düzenleme: {formatAgoTR(term.lastEdit)}</span> : null}
+        </div>
+      </header>
 
-        {term.definitions.map((d, i) => (
-          <DefinitionCard key={d.id} definition={d} rank={i + 1} top={i === 0} />
-        ))}
+      {term.definitions.map((d, i) => (
+        <DefinitionCard key={d.id} definition={d} rank={i + 1} top={i === 0} />
+      ))}
 
-        <Composer />
-      </div>
-    </div>
+      <Composer />
+    </>
   );
 }
 
@@ -120,7 +100,7 @@ function DefinitionCard({
   rank,
   top,
 }: {
-  definition: Definition;
+  definition: DefinitionNode;
   rank: number;
   top: boolean;
 }) {
