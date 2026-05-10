@@ -1,0 +1,1 @@
+ALTER TABLE `post_summary` ADD `url` text;

@@ -9,7 +9,7 @@
 		"preview": "vite preview",
 		"deploy": "pnpm build && wrangler deploy",
 		"typecheck": "tsgo -b",
-		"test": "vitest run",
+		"test": "vitest run --config vitest.config.ts",
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:e2e:install": "playwright install chromium",
@@ -17,12 +17,14 @@
 		"relay": "mkdir -p src/__generated__ && relay-compiler",
 		"relay:watch": "mkdir -p src/__generated__ && relay-compiler --watch",
 		"schema:fetch": "curl -sf http://localhost:3000/graphql/schema -o schema.graphql",
-		"sozluk:import": "node --experimental-strip-types scripts/import-sozluk.ts"
+		"sozluk:import": "node --experimental-strip-types scripts/import-sozluk.ts",
+		"pano:import": "node --experimental-strip-types scripts/import-pano.ts"
 	},
 	"dependencies": {
 		"@base-ui/react": "catalog:",
 		"@better-auth/core": "catalog:",
 		"@usirin/forge": "catalog:",
+		"agents": "catalog:",
 		"better-auth": "catalog:",
 		"better-call": "catalog:",
 		"drizzle-orm": "catalog:",
@@ -39,9 +41,10 @@
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "catalog:",
-		"@playwright/test": "catalog:",
+		"@cloudflare/vitest-pool-workers": "catalog:",
 		"@cloudflare/workers-types": "catalog:",
 		"@effect/tsgo": "catalog:",
+		"@playwright/test": "catalog:",
 		"@swc/plugin-relay": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",

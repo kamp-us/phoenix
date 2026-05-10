@@ -14,6 +14,18 @@ __generated__
 worker-configuration.d.ts
 schema.graphql.generated
 
+# tsgo --force / accidental tsc emit pollution next to TS sources.
+# We never hand-author a .js next to a .ts/.tsx in app source dirs; Vite
+# breaks on stray JSX-bearing .js siblings. Relay artifacts under
+# __generated__ are already covered above.
+apps/web/src/**/*.js
+apps/web/src/**/*.js.map
+apps/web/tests/**/*.js
+apps/web/tests/**/*.js.map
+apps/web/worker/**/*.js
+apps/web/worker/**/*.js.map
+apps/web/scripts/**/*.js
+
 # Local env
 .env
 .env.*

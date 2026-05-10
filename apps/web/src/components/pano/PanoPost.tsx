@@ -1,8 +1,11 @@
 import * as React from 'react';
 import { graphql, useMutation } from 'react-relay';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
+import type { PanoPostRetractVoteMutation } from '../../__generated__/PanoPostRetractVoteMutation.graphql';
 import type { PanoPostVoteMutation } from '../../__generated__/PanoPostVoteMutation.graphql';
 import { useSession } from '../../auth/client';
+import { authRedirectPath } from '../../lib/returnTo';
+import { useSessionExpiredToast } from '../../lib/useSessionExpiredToast';
 import { Tag, type TagKind } from '../ui/atoms';
 import './PanoPost.css';
 
@@ -12,10 +15,12 @@ export function VoteControl({
   count,
   pressed = false,
   onToggle,
+  testIdSuffix,
 }: {
   count: number;
   pressed?: boolean;
   onToggle?: () => void;
+  testIdSuffix?: string;
 }) {
   return (
     <div className="kp-pano-post__vote" aria-label="Oy">
@@ -24,62 +29,123 @@ export function VoteControl({
         className="kp-pano-post__vote-btn"
         aria-pressed={pressed}
         aria-label="Yukarı oy"
+        data-testid={testIdSuffix ? `post-vote-${testIdSuffix}` : undefined}
         onClick={() => onToggle?.()}
       >
         <span className="triangle" />
       </button>
-      <span className="kp-pano-post__vote-count">{count}</span>
+      <span
+        className="kp-pano-post__vote-count"
+        data-testid={testIdSuffix ? `post-score-${testIdSuffix}` : undefined}
+      >
+        {count}
+      </span>
     </div>
   );
 }
 
 const PostVoteMutation = graphql`
-  mutation PanoPostVoteMutation($input: VoteInput!) {
-    voteOnPost(input: $input) {
+  mutation PanoPostVoteMutation($postId: ID!) {
+    voteOnPost(postId: $postId) {
+      id
       score
+      myVote
+    }
+  }
+`;
+
+const RetractPostVoteMutation = graphql`
+  mutation PanoPostRetractVoteMutation($postId: ID!) {
+    retractPostVote(postId: $postId) {
+      id
+      score
+      myVote
     }
   }
 `;
 
 /**
- * Local-only vote state. The lobsters-shape only has an upvote arm, so the
- * triangle toggles between 1 and 0. The displayed score comes from
- * `post.score` plus our last optimistic delta — the Relay mutation also
- * writes the authoritative score back into the store via the `voteOnPost`
- * field's response (which patches the standalone VoteResult node), but
- * `post.score` itself isn't updated server-side without a refetch. So we
- * track a local `delta` and rely on the optimisticUpdater to keep the UI
- * coherent until the page is reloaded.
+ * Triangle vote button for a single post. Uses Relay's `optimisticResponse`
+ * to flip both `myVote` and `score` synchronously on click — Relay merges the
+ * response into the store keyed by `id`, so every card referencing this post
+ * (feed list + detail page) re-renders instantly. On server error Relay rolls
+ * back automatically. Mirrors `DefinitionCard.onVoteClick` (T5).
+ *
+ * Signed-out clicks navigate to `/auth?returnTo=<current>` rather than firing
+ * the mutation — matches the pattern used across sözlük and the post submit
+ * form (T4 / T5 / T7).
  */
-export function PostVoteWidget({postId, baseScore}: {postId: string; baseScore: number}) {
+export function PostVoteWidget({
+  postId,
+  score,
+  myVote,
+}: {
+  postId: string;
+  score: number;
+  myVote: number | null;
+}) {
   const session = useSession();
-  const [commit, isInFlight] = useMutation<PanoPostVoteMutation>(PostVoteMutation);
-  const [pressed, setPressed] = React.useState(false);
-  const [delta, setDelta] = React.useState(0);
+  const navigate = useNavigate();
+  const { handleError: handleAuthError } = useSessionExpiredToast();
+  const [voteCommit, voteInFlight] =
+    useMutation<PanoPostVoteMutation>(PostVoteMutation);
+  const [retractCommit, retractInFlight] =
+    useMutation<PanoPostRetractVoteMutation>(RetractPostVoteMutation);
+
+  const inFlight = voteInFlight || retractInFlight;
+  const voted = myVote === 1;
 
   const onToggle = () => {
     if (!session.data?.user) {
-      console.warn('[pano] vote requires sign-in');
+      navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
       return;
     }
-    if (isInFlight) return;
-    const nextPressed = !pressed;
-    const nextValue: 0 | 1 = nextPressed ? 1 : 0;
-    const nextDelta = nextValue - (pressed ? 1 : 0);
-    setPressed(nextPressed);
-    setDelta((d) => d + nextDelta);
-    commit({
-      variables: {input: {targetId: postId, value: nextValue}},
-      onError: () => {
-        /* Roll back the optimistic delta + pressed state. */
-        setPressed(pressed);
-        setDelta((d) => d - nextDelta);
-      },
-    });
+    if (inFlight) return;
+
+    if (voted) {
+      retractCommit({
+        variables: { postId },
+        optimisticResponse: {
+          retractPostVote: {
+            id: postId,
+            score: Math.max(0, score - 1),
+            myVote: null,
+          },
+        },
+        onCompleted: (_data, errors) => {
+          handleAuthError(errors);
+        },
+        onError: (err) => {
+          handleAuthError(null, err);
+        },
+      });
+    } else {
+      voteCommit({
+        variables: { postId },
+        optimisticResponse: {
+          voteOnPost: {
+            id: postId,
+            score: score + 1,
+            myVote: 1,
+          },
+        },
+        onCompleted: (_data, errors) => {
+          handleAuthError(errors);
+        },
+        onError: (err) => {
+          handleAuthError(null, err);
+        },
+      });
+    }
   };
 
   return (
-    <VoteControl count={baseScore + delta} pressed={pressed} onToggle={onToggle} />
+    <VoteControl
+      count={score}
+      pressed={voted}
+      onToggle={onToggle}
+      testIdSuffix={postId}
+    />
   );
 }
 
@@ -115,7 +181,11 @@ export function PanoPost({
       <span className="kp-pano-post__rank">
         {post.rank != null ? String(post.rank).padStart(2, '0') : ''}
       </span>
-      <PostVoteWidget postId={post.id} baseScore={post.score} />
+      <PostVoteWidget
+        postId={post.id}
+        score={post.score}
+        myVote={post.myVote === 1 ? 1 : null}
+      />
       <div className="kp-pano-post__body">
         <div className="kp-pano-post__title-row">
           {post.tags?.length ? (

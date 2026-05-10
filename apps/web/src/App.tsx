@@ -1,24 +1,31 @@
 import {useEffect, useState} from "react";
 import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
+import {useMe} from "./auth/useMe";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
+import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {LANDING_TERMS, POSTS} from "./fixtures";
+import {safeReturnTo} from "./lib/returnTo";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
+import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {PanoSubmitPage} from "./pages/PanoSubmitPage";
 import {ProfilePage} from "./pages/ProfilePage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
+import {UsernameBootstrap} from "./pages/UsernameBootstrap";
+import {UserProfilePage} from "./pages/UserProfilePage";
 
 type Mode = "dark" | "light";
 
 function Layout() {
 	const session = useSession();
+	const {me, refetch} = useMe();
 	const navigate = useNavigate();
 	const location = useLocation();
 	const [mode, setMode] = useState<Mode>("dark");
@@ -28,21 +35,43 @@ function Layout() {
 	}, [mode]);
 
 	useEffect(() => {
-		if (session.data && location.pathname === "/auth") navigate("/", {replace: true});
-	}, [session.data, location.pathname, navigate]);
+		if (!session.data) return;
+		if (location.pathname !== "/auth") return;
+		// AuthPage sets `?returnTo=<path>` when redirected from a signed-out
+		// write affordance (T17). Honor it (sanitized to same-origin) so the
+		// user lands back on the page that triggered the auth flow.
+		const params = new URLSearchParams(location.search);
+		const target = safeReturnTo(params.get("returnTo"));
+		navigate(target, {replace: true});
+	}, [session.data, location.pathname, location.search, navigate]);
 
 	async function onSignOut() {
 		await authClient.signOut();
 		clearBearerToken();
 	}
 
-	const userProps = session.data?.user
-		? {user: {name: session.data.user.name ?? session.data.user.email.split("@")[0] ?? "user"}}
+	const sessionUser = session.data?.user;
+	const fallbackName = sessionUser
+		? (sessionUser.name ?? sessionUser.email.split("@")[0] ?? "user")
+		: "";
+	const userProps = sessionUser
+		? {
+				user: {
+					name: me?.name ?? fallbackName,
+					username: me?.username ?? null,
+				},
+			}
 		: {};
 	const isSignedIn = !!session.data;
+	// Bootstrap is required when the session is established but the canonical
+	// user row in Pasaport has no username yet. Block the page content until
+	// the form is submitted — set-once write so this only happens on first
+	// sign-in.
+	const needsBootstrap = isSignedIn && me !== null && !me.username && location.pathname !== "/auth";
 
 	return (
 		<TooltipProvider>
+			<ToastProvider>
 			<AppShell>
 				<Topbar
 					brandName="kamp.us"
@@ -63,21 +92,22 @@ function Layout() {
 								+ gönderi
 							</button>
 						) : (
-							<button
-								type="button"
-								className="kp-topbar__btn"
-								onClick={() => navigate("/auth")}
-							>
+							<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
 								giriş yap
 							</button>
 						)
 					}
 				/>
 				<Main>
-					<Outlet />
+					{needsBootstrap && sessionUser ? (
+						<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
+					) : (
+						<Outlet />
+					)}
 				</Main>
 				<Footer />
 			</AppShell>
+			</ToastProvider>
 		</TooltipProvider>
 	);
 }
@@ -100,6 +130,8 @@ export function App() {
 				<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
 				<Route path="/auth" element={<AuthPage />} />
 				<Route path="/profile" element={<ProfilePage />} />
+				<Route path="/u/:username" element={<UserProfilePage />} />
+				<Route path="*" element={<NotFoundPage />} />
 			</Route>
 		</Routes>
 	);

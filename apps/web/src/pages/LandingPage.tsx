@@ -1,6 +1,9 @@
+import {graphql, useLazyLoadQuery} from "react-relay";
 import {Link} from "react-router";
+import type {LandingPageStatsQuery} from "../__generated__/LandingPageStatsQuery.graphql";
 import type {PanoPostData} from "../components/pano";
 import type {TermRow} from "../components/sozluk";
+import {QueryBoundary} from "../relay/QueryBoundary";
 import "./LandingPage.css";
 
 export type LandingTerm = TermRow & {
@@ -9,23 +12,88 @@ export type LandingTerm = TermRow & {
 	agoLabel?: string;
 };
 
-export function LandingPage({
-	posts,
-	terms,
-	stats,
-}: {
-	posts: PanoPostData[];
-	terms: LandingTerm[];
-	stats?: {label: string; value: string}[];
-}) {
-	const defaultStats = stats ?? [
-		{value: "1.247", label: "tanım"},
-		{value: "8.392", label: "başlık"},
-		{value: "412", label: "yazar"},
-		{value: "6.201", label: "yorum"},
-		{value: "v0.3", label: "phoenix"},
-	];
+const StatsQuery = graphql`
+  query LandingPageStatsQuery {
+    landingStats {
+      totalDefinitions
+      totalPosts
+      totalAuthors
+      totalComments
+      version
+    }
+  }
+`;
 
+function formatStat(n: number): string {
+	if (n < 1000) return String(n);
+	// Turkish convention: thousands separator is `.` (e.g. 1.247).
+	return n.toLocaleString("tr-TR");
+}
+
+function LiveStats() {
+	const data = useLazyLoadQuery<LandingPageStatsQuery>(StatsQuery, {});
+	const s = data.landingStats;
+	const stats = [
+		{value: formatStat(s.totalDefinitions), label: "tanım"},
+		{value: formatStat(s.totalPosts), label: "başlık"},
+		{value: formatStat(s.totalAuthors), label: "yazar"},
+		{value: formatStat(s.totalComments), label: "yorum"},
+		{value: s.version, label: "phoenix"},
+	];
+	return (
+		<div className="kp-landing__stats" data-testid="kp-landing-stats">
+			{stats.map((stat) => (
+				<div key={stat.label} className="kp-landing__stat" data-testid={`stat-${stat.label}`}>
+					<div className="n">{stat.value}</div>
+					<div className="l">{stat.label}</div>
+				</div>
+			))}
+		</div>
+	);
+}
+
+function LandingStatsSection() {
+	return (
+		<QueryBoundary
+			loading={
+				<div className="kp-landing__stats" data-testid="kp-landing-stats-loading">
+					<div className="kp-landing__stat">
+						<div className="n">…</div>
+						<div className="l">tanım</div>
+					</div>
+					<div className="kp-landing__stat">
+						<div className="n">…</div>
+						<div className="l">başlık</div>
+					</div>
+					<div className="kp-landing__stat">
+						<div className="n">…</div>
+						<div className="l">yazar</div>
+					</div>
+					<div className="kp-landing__stat">
+						<div className="n">…</div>
+						<div className="l">yorum</div>
+					</div>
+					<div className="kp-landing__stat">
+						<div className="n">…</div>
+						<div className="l">phoenix</div>
+					</div>
+				</div>
+			}
+			error={() => (
+				<div className="kp-landing__stats" data-testid="kp-landing-stats-error">
+					<div className="kp-landing__stat">
+						<div className="n">—</div>
+						<div className="l">istatistikler şu an yok</div>
+					</div>
+				</div>
+			)}
+		>
+			<LiveStats />
+		</QueryBoundary>
+	);
+}
+
+export function LandingPage({posts, terms}: {posts: PanoPostData[]; terms: LandingTerm[]}) {
 	return (
 		<div className="kp-landing">
 			<div className="kp-landing__hero">
@@ -38,9 +106,9 @@ export function LandingPage({
 					</p>
 					<p className="kp-landing__manifesto">
 						<strong>panoda</strong> bağlantı ve yazı paylaşıyor, tartışıyoruz.{" "}
-						<strong>sözlükte</strong> terimleri kendi cümlelerimizle yazıyoruz. türkçe
-						öncelikli; reklam, takipçi sayısı, sansasyon yok — sadece okumaya değer
-						şeyler ve onları yazan birkaç yüz kişi.
+						<strong>sözlükte</strong> terimleri kendi cümlelerimizle yazıyoruz. türkçe öncelikli;
+						reklam, takipçi sayısı, sansasyon yok — sadece okumaya değer şeyler ve onları yazan
+						birkaç yüz kişi.
 					</p>
 				</div>
 				<div className="kp-landing__cta">
@@ -120,14 +188,7 @@ export function LandingPage({
 				</section>
 			</div>
 
-			<div className="kp-landing__stats">
-				{defaultStats.map((s) => (
-					<div key={s.label} className="kp-landing__stat">
-						<div className="n">{s.value}</div>
-						<div className="l">{s.label}</div>
-					</div>
-				))}
-			</div>
+			<LandingStatsSection />
 		</div>
 	);
 }

@@ -129,16 +129,20 @@ async function main(): Promise<void> {
 	console.log(`source:   ${args.termsDir}`);
 	console.log(`target:   ${args.baseUrl}`);
 
+	const terms = await loadTerms(args.termsDir);
+	console.log(`found:    ${terms.length} term(s) with non-empty bodies`);
+
 	if (args.clear) {
-		const result = (await postJson(`${args.baseUrl}/api/admin/sozluk/clear`, {})) as {
+		// Per-term DOs are addressed by slug; the clear endpoint walks the
+		// slugs we tell it about. Pass every slug the source provides plus
+		// the legacy "kampus" singleton for safety.
+		const slugs = terms.map((t) => t.slug);
+		const result = (await postJson(`${args.baseUrl}/api/admin/sozluk/clear`, {slugs})) as {
 			terms: number;
 			definitions: number;
 		};
 		console.log(`cleared:  ${result.terms} terms, ${result.definitions} definitions`);
 	}
-
-	const terms = await loadTerms(args.termsDir);
-	console.log(`found:    ${terms.length} term(s) with non-empty bodies`);
 
 	let inserted = 0;
 	let skipped = 0;

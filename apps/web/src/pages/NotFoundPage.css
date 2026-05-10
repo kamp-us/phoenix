@@ -1,0 +1,35 @@
+.kp-not-found {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	min-height: 50vh;
+	padding: 48px 16px;
+}
+
+.kp-not-found__inner {
+	max-width: 480px;
+	text-align: center;
+}
+
+.kp-not-found__inner h1 {
+	font: var(--t-h1);
+	margin: 0 0 12px;
+}
+
+.kp-not-found__inner p {
+	font: var(--t-body);
+	color: var(--text-muted);
+	margin: 0 0 24px;
+}
+
+.kp-not-found__links {
+	display: flex;
+	gap: 16px;
+	justify-content: center;
+	flex-wrap: wrap;
+}
+
+.kp-not-found__links a {
+	color: var(--accent, #60a5fa);
+	text-decoration: underline;
+}

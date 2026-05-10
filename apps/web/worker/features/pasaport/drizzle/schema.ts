@@ -19,6 +19,10 @@ export const user = sqliteTable("user", {
 		.notNull()
 		.default("human"),
 	emailVerified: integer("email_verified", {mode: "boolean"}),
+	// Phoenix-specific: kebab/alphanumeric public handle. NULL until the user
+	// completes the bootstrap step on first sign-in; immutable once set.
+	// Routed by /u/<username> on the SPA.
+	username: text("username").unique(),
 	...timestamps,
 });
 

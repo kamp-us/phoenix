@@ -10,7 +10,7 @@
 		"not_found_handling": "single-page-application",
 		// Worker handles /api/* and /graphql before the SPA shell intercepts
 		// navigation requests; everything else falls through to assets.
-		"run_worker_first": ["/api/*", "/graphql", "/graphql/*"]
+		"run_worker_first": ["/api/*", "/graphql", "/graphql/*", "/agents/*"]
 	},
 	"observability": {
 		"enabled": true
@@ -18,14 +18,47 @@
 	"durable_objects": {
 		"bindings": [
 			{ "name": "PASAPORT", "class_name": "Pasaport" },
-			{ "name": "SOZLUK", "class_name": "Sozluk" },
-			{ "name": "PANO", "class_name": "Pano" }
+			// Per-atom Agent DOs (ADR 0005 + 0006). The legacy singleton
+			// Sozluk / Pano DOs were dropped in T18 via the v4 migration's
+			// `delete_classes` clause; SOZLUK_TERM and PANO_POST own every
+			// read + write path now.
+			{ "name": "SOZLUK_TERM", "class_name": "SozlukTerm" },
+			{ "name": "PANO_POST", "class_name": "PanoPost" }
 		]
 	},
+	// One D1 binding holds every cross-entity view-model (term_summary,
+	// post_summary, *_view, *_stats, user_vote, user_profile) per ADR 0007.
+	// `database_id` is filled in per-environment via `wrangler d1 create`;
+	// the placeholder stays until the operator provisions the DB.
+	"d1_databases": [
+		{
+			"binding": "PHOENIX_DB",
+			"database_name": "phoenix-view",
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "worker/view/drizzle/migrations"
+		}
+	],
+	// Single projection workflow consumes outbox events and writes PHOENIX_DB.
+	// Class lives in worker/view/PhoenixProjection.ts.
+	"workflows": [
+		{
+			"name": "phoenix-projection",
+			"binding": "PHOENIX_PROJECTION",
+			"class_name": "PhoenixProjection"
+		}
+	],
 	"migrations": [
 		{ "tag": "v1", "new_sqlite_classes": ["Pasaport"] },
 		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] },
-		{ "tag": "v3", "new_sqlite_classes": ["Pano"] }
+		{ "tag": "v3", "new_sqlite_classes": ["Pano"] },
+		// v4: introduces the per-atom Agent classes alongside the singleton
+		// classes, and (in T18) drops the singleton classes now that the
+		// per-atom Agents own every read + write path.
+		{
+			"tag": "v4",
+			"new_sqlite_classes": ["SozlukTerm", "PanoPost"],
+			"deleted_classes": ["Sozluk", "Pano"]
+		}
 	],
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {

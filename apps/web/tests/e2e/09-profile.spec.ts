@@ -1,5 +1,19 @@
-import {expect, test} from "@playwright/test";
+import {expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
+
+/**
+ * Helper: complete the bootstrap form so the signed-in user is past the
+ * intercept and `/profile` actually renders. Without this the bootstrap form
+ * blocks the Outlet (T13 behaviour).
+ */
+async function bootstrapUsername(page: Page): Promise<void> {
+	const handle = `u-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	await page.locator("input#bootstrap-username").fill(handle);
+	await page.getByRole("button", {name: /devam et/i}).click();
+	await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
+		timeout: 10_000,
+	});
+}
 
 test.describe("ProfilePage (/profile)", () => {
 	test("unauthed → redirects to /auth", async ({page}) => {
@@ -9,6 +23,7 @@ test.describe("ProfilePage (/profile)", () => {
 
 	test("signed-in renders avatar + name + email + 3 stats + sections", async ({page}) => {
 		const creds = await signUp(page);
+		await bootstrapUsername(page);
 		await page.goto("/profile");
 		await expect(page.locator(".kp-profile__avatar")).toBeVisible();
 		await expect(page.locator(".kp-profile__name")).toContainText(creds.name);
@@ -28,6 +43,7 @@ test.describe("ProfilePage (/profile)", () => {
 
 	test("çıkış yap signs out and topbar reflects", async ({page}) => {
 		await signUp(page);
+		await bootstrapUsername(page);
 		await page.goto("/profile");
 		await page.getByRole("button", {name: /^çıkış yap$/i}).click();
 		// Wait for the topbar to drop the pill (re-renders on session change).

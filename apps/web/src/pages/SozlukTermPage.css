@@ -221,3 +221,9 @@
 	font: var(--t-micro);
 	background: var(--surface);
 }
+.kp-sozluk-composer__error {
+	margin-top: var(--s-2);
+	margin-bottom: 0;
+	font: var(--t-meta);
+	color: var(--danger);
+}
