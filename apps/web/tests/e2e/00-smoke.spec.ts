@@ -43,9 +43,12 @@ test("smoke: /sozluk/<slug> renders for a real seeded term", async ({page}) => {
 
 test("smoke: /pano/<id> renders for a real seeded post", async ({page}) => {
 	await page.goto("/pano");
-	const firstTitle = page.locator(".kp-pano-post__title").first();
-	await expect(firstTitle).toBeVisible({timeout: 10_000});
-	await firstTitle.click();
-	await expect(page).toHaveURL(/\/pano\/[^/]+$/, {timeout: 10_000});
-	await expect(page.locator(".kp-pano-postpage__title")).toBeVisible();
+	const firstPost = page.locator(".kp-pano-post").first();
+	await expect(firstPost).toBeVisible({timeout: 10_000});
+	// The title link uses `post.url ?? post.href` (so external links navigate
+	// out). The "N yorum" link is always the in-app pano permalink.
+	const commentsLink = firstPost.locator("a[href^='/pano/']", {hasText: /yorum$/}).first();
+	await commentsLink.click();
+	await expect(page).toHaveURL(/\/pano\/[^/]+/, {timeout: 10_000});
+	await expect(page.locator(".kp-pano-postpage__title")).toBeVisible({timeout: 10_000});
 });
