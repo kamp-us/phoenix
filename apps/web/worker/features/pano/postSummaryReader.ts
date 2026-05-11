@@ -5,8 +5,8 @@
  * maintained by `PhoenixProjection.PostChanged`), not from per-post DOs —
  * fanning out to every post DO would be O(n) RPCs per page render.
  *
- * Per-post reads (`post(idOrSlug)`, `postComments(postId)`) still RPC into
- * `PanoPost` for the full page (comments live there, not in the MV).
+ * Per-post reads (`post(idOrSlug)`, `Post.comments` connection) still RPC
+ * into `PanoPost` for the full page (comments live there, not in the MV).
  */
 import {and, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";

@@ -45,11 +45,16 @@ import {
 	lookupProfileById,
 	type ProfileRow,
 } from "../features/pasaport/userProfileReader";
-import type {DefinitionRow, TermPage} from "../features/sozluk/SozlukTerm";
+import type {
+	DefinitionConnectionPage,
+	DefinitionRow,
+	TermPage,
+} from "../features/sozluk/SozlukTerm";
 import {DefinitionNotFoundError, DefinitionValidationError} from "../features/sozluk/SozlukTerm";
 import {
 	type ListSort,
-	listTermSummaries,
+	listTermSummariesConnection,
+	type TermConnectionPage,
 	type TermSummaryRow,
 } from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
@@ -213,10 +218,128 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 				return s.lastEdit.toISOString();
 			},
 		},
-		definitions: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(DefinitionType))),
-			resolve: (s) => ("definitions" in s ? s.definitions : []),
+		/**
+		 * Sozluk home `TermRowFragment` projections (task_5, phoenix-relay-idiom).
+		 *
+		 * `firstLetter` powers the alphabet pivot ribbon — the row exposes
+		 * the column directly off `term_summary` so the SPA doesn't have to
+		 * re-derive the lower-cased first character (Turkish-locale safe;
+		 * the projection writes it). For a `TermPage` source (per-term DO
+		 * read; the summary fields aren't materialized there) we lower-case
+		 * the title client-side as a graceful fallback.
+		 *
+		 * `definitionCount` and `lastActivityAt` mirror the row fields
+		 * `count` / `lastEdit` but with names matching the home-row's
+		 * intent (count of live definitions / last activity timestamp).
+		 * Keeping them as separate field names follows the AC literally
+		 * and lets the row fragment read them under the names it asks
+		 * for; resolvers normalize across both source shapes.
+		 */
+		firstLetter: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (s) => {
+				if ("firstLetter" in s && s.firstLetter) return s.firstLetter;
+				return (s.title?.[0] ?? "").toLowerCase();
+			},
 		},
+		definitionCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (s) => ("definitionCount" in s ? s.definitionCount : s.totalDefinitions),
+		},
+		lastActivityAt: {
+			type: GraphQLString,
+			resolve: (s) => {
+				if ("lastActivityAt" in s) {
+					return s.lastActivityAt ? s.lastActivityAt.toISOString() : null;
+				}
+				if ("lastEdit" in s && s.lastEdit) return s.lastEdit.toISOString();
+				return null;
+			},
+		},
+		/**
+		 * Connection-shaped definition list (task_4, phoenix-relay-idiom).
+		 * The canonical read path for `SozlukTermPage`. Replaces the legacy
+		 * flat-array `definitions: [Definition!]!` field — bringing the
+		 * cleanup forward one task because Relay's `@connection` key
+		 * convention requires the field name to match the suffix of the
+		 * key (`<Component>_<fieldName>`), and the SPA's only consumer is
+		 * the term page which migrates in this same change.
+		 *
+		 * Cursor pagination is keyset on the definition id (forge ULID;
+		 * lex-sortable) over the per-term Agent's score-DESC materialized
+		 * order. `LoadMoreButton` reads `pageInfo.hasNextPage`; `totalCount`
+		 * reflects the materialized live-only count.
+		 */
+		definitions: {
+			type: new GraphQLNonNull(DefinitionConnectionType),
+			args: {
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
+			},
+			resolve: resolver(function* (
+				parent: TermPage | TermSummaryRow,
+				args: {first?: number | null; after?: string | null},
+			) {
+				const env = yield* CloudflareEnv;
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(parent.slug));
+				return yield* Effect.promise(() =>
+					stub.listDefinitionsConnection({
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
+					}),
+				);
+			}),
+		},
+	}),
+});
+
+/* -------------------------------------------------------------------------- */
+/* Definition connection (task_4, phoenix-relay-idiom)                         */
+/* -------------------------------------------------------------------------- */
+
+const DefinitionEdgeType = new GraphQLObjectType<{cursor: string; node: DefinitionRow}>({
+	name: "DefinitionEdge",
+	fields: () => ({
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(DefinitionType)},
+	}),
+});
+
+const DefinitionConnectionType = new GraphQLObjectType<DefinitionConnectionPage>({
+	name: "DefinitionConnection",
+	fields: () => ({
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(DefinitionEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.id, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
+	}),
+});
+
+/**
+ * `deleteDefinition` mutation payload (task_4, phoenix-relay-idiom). Returns
+ * the deleted definition's Relay global id so the SPA can `@deleteRecord`
+ * it out of the store; connection edges referencing the gone record auto-
+ * clear. Mirrors the `deletedPostId @deleteRecord` shape from `deletePost`
+ * (task_2). No two-shape payload here — a soft-deleted definition simply
+ * disappears (no reply-aware placeholder like comments).
+ */
+const DeleteDefinitionPayloadType = new GraphQLObjectType<{
+	deletedDefinitionId: string;
+}>({
+	name: "DeleteDefinitionPayload",
+	fields: () => ({
+		deletedDefinitionId: {type: new GraphQLNonNull(GraphQLID)},
 	}),
 });
 
@@ -226,6 +349,39 @@ const TermSortEnum = new GraphQLEnumType({
 		recent: {value: "recent"},
 		popular: {value: "popular"},
 	},
+});
+
+/* -------------------------------------------------------------------------- */
+/* Term connection (task_5, phoenix-relay-idiom)                               */
+/* -------------------------------------------------------------------------- */
+
+const TermEdgeType = new GraphQLObjectType<{cursor: string; node: TermSummaryRow}>({
+	name: "TermEdge",
+	fields: () => ({
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(TermType)},
+	}),
+});
+
+const TermConnectionType = new GraphQLObjectType<TermConnectionPage>({
+	name: "TermConnection",
+	fields: () => ({
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(TermEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.slug, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
+	}),
 });
 
 const TagType = new GraphQLObjectType<PostTagRow>({
@@ -308,11 +464,10 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 			}),
 		},
 		/**
-		 * Connection-shaped comment list (task_3, phoenix-relay-idiom). Replaces
-		 * the legacy top-level `postComments(postId)` flat-array field as the
-		 * canonical read path for the post-detail page (the legacy field stays
-		 * during the migration window so coexisting page mounts don't break;
-		 * cleanup task drops it).
+		 * Connection-shaped comment list (task_3, phoenix-relay-idiom).
+		 * Canonical read path for the post-detail page; replaced the legacy
+		 * top-level `postComments(postId)` flat-array field (dropped in the
+		 * task_7 cleanup).
 		 *
 		 * Cursor pagination is keyset on the comment id (forge ULID;
 		 * lex-sortable, matches chronological-asc). The `LoadMoreButton` reads
@@ -855,18 +1010,35 @@ const QueryType = new GraphQLObjectType({
 				return fresh;
 			}),
 		},
+		/**
+		 * Sozluk home terms connection (task_5, phoenix-relay-idiom). Replaces
+		 * the legacy flat-array `terms(sort, limit)` field — `SozlukHome.tsx`
+		 * is the only consumer and migrates in the same PR. The connection
+		 * shape unlocks Relay's `@connection`-keyed updaters and future
+		 * `usePaginationFragment` usage on the home (this task ships
+		 * first-page-only; the shape is future-proofed).
+		 *
+		 * Cursor is the term slug (primary key of `term_summary`,
+		 * lex-sortable). `sort` accepts `recent` and `popular` (the existing
+		 * vocabulary; `TermSort` enum unchanged).
+		 */
 		terms: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(TermType))),
+			type: new GraphQLNonNull(TermConnectionType),
 			args: {
 				sort: {type: TermSortEnum},
-				limit: {type: GraphQLInt},
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
 			},
-			resolve: resolver(function* (_source, args: {sort?: ListSort; limit?: number}) {
+			resolve: resolver(function* (
+				_source,
+				args: {sort?: ListSort; first?: number | null; after?: string | null},
+			) {
 				const env = yield* CloudflareEnv;
 				return yield* Effect.promise(() =>
-					listTermSummaries(env.PHOENIX_DB, {
+					listTermSummariesConnection(env.PHOENIX_DB, {
 						...(args.sort ? {sort: args.sort} : {}),
-						...(args.limit != null ? {limit: args.limit} : {}),
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
 					}),
 				);
 			}),
@@ -925,17 +1097,14 @@ const QueryType = new GraphQLObjectType({
 			args: {idOrSlug: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {idOrSlug: string}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.idOrSlug));
+				// Accept either a Relay global id (`Post:<localId>` base64),
+				// a raw local post id, or a slug. After task_2's connection
+				// migration, the SPA hands back `Post.id` (the global id) when
+				// it navigates to /pano/<id>; we extract the local id so the
+				// per-post DO lookup hits the right instance.
+				const key = extractLocalId(args.idOrSlug, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(key));
 				return yield* Effect.promise(() => stub.getPost());
-			}),
-		},
-		postComments: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(CommentType))),
-			args: {postId: {type: new GraphQLNonNull(GraphQLString)}},
-			resolve: resolver(function* (_source, args: {postId: string}) {
-				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
-				return yield* Effect.promise(() => stub.listComments());
 			}),
 		},
 		/**
@@ -1300,8 +1469,20 @@ const MutationType = new GraphQLObjectType({
 				}
 			}),
 		},
+		/**
+		 * Soft-delete a definition (task_4, phoenix-relay-idiom). Payload
+		 * shape changed from `String!` to `DeleteDefinitionPayload!` with a
+		 * `deletedDefinitionId: ID!` field so the SPA can target it with
+		 * `@deleteRecord` — Relay drops the record from the store and any
+		 * connection edge referencing it auto-clears. No `$connections`
+		 * variable, no manual updater needed.
+		 *
+		 * The returned id is the Relay global id (base64 of `Definition:<localId>`),
+		 * matching what every other resolver / fragment puts on `Definition.id`.
+		 * `@deleteRecord` keys off that exact value.
+		 */
 		deleteDefinition: {
-			type: new GraphQLNonNull(GraphQLString),
+			type: new GraphQLNonNull(DeleteDefinitionPayloadType),
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
@@ -1325,9 +1506,9 @@ const MutationType = new GraphQLObjectType({
 				if (!result.ok) {
 					throw mapDefinitionMutationError(result.error);
 				}
-				// SDL is `deleteDefinition: String!` — return the id as a stable
-				// success token so the SPA can confirm + invalidate caches.
-				return result.value.definitionId;
+				return {
+					deletedDefinitionId: encodeNodeId("Definition", result.value.definitionId),
+				};
 			}),
 		},
 		submitPost: {

@@ -7,7 +7,7 @@
  * each row is a fragment ref handed to `CommentTreeNode` (which declares
  * its own `CommentTreeNodeFragment on Comment`).
  *
- * Live updates flow through `useLiveAgentV2`: the WebSocket pushes typed
+ * Live updates flow through `useLiveAgent`: the WebSocket pushes typed
  * `PostState` snapshots, the `applyToStore` callback writes them straight
  * into the Relay store via `commitLocalUpdate`. The page tree never
  * unmounts on a live event — `LivePill` connection state remains the
@@ -51,12 +51,29 @@ import {PanoPostHeader, PanoPostHeaderVote} from "../components/pano/PanoPostHea
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {authRedirectPath} from "../lib/returnTo";
-import {useLiveAgentV2} from "../lib/useLiveAgent.v2";
+import {useLiveAgent} from "../lib/useLiveAgent";
 import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
+import {extractLocalId} from "../relay/encodeNodeId";
 import {appendCommentToPostConnection} from "../relay/panoPostDetailUpdater";
 import {QueryBoundary} from "../relay/QueryBoundary";
 import {NotFoundPage} from "./NotFoundPage";
 import "./PanoPostDetail.css";
+
+/**
+ * Count comments that survived the visibility pass (live + soft-deleted-with-
+ * live-children). Drives the "N yorum" thread heading. We compute this from
+ * the rendered tree rather than `connection.totalCount` because @deleteRecord
+ * removes the leaf locally without re-evaluating its parent's visibility, and
+ * the connection's totalCount drifts after every add/delete (PRD-accepted).
+ */
+function visibleCommentCount<T>(
+	roots: ReadonlyArray<{id: string}>,
+	childrenByParent: ReadonlyMap<string, ReadonlyArray<T>>,
+): number {
+	let n = roots.length;
+	for (const list of childrenByParent.values()) n += list.length;
+	return n;
+}
 
 const PostDetailQuery = graphql`
 	query PanoPostDetailQuery($idOrSlug: String!, $first: Int) {
@@ -106,6 +123,7 @@ const PanoPostDetailCommentsFragmentDef = graphql`
 					id
 					parentId
 					body
+					deletedAt
 					...CommentTreeNodeFragment
 				}
 			}
@@ -211,7 +229,7 @@ const PAGE_SIZE = 50;
 
 /**
  * Subset of the `PostState` Agent state shape the page subscribes to over
- * WebSocket — extends `LiveAgentStateShape` so `useLiveAgentV2`'s typed
+ * WebSocket — extends `LiveAgentStateShape` so `useLiveAgent`'s typed
  * generic accepts it. Keeping this client-side rather than importing from
  * the worker avoids dragging worker-only modules into the SPA bundle.
  */
@@ -361,7 +379,7 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 		[postRecordId],
 	);
 
-	const {connected: liveConnected} = useLiveAgentV2<LivePostState>({
+	const {connected: liveConnected} = useLiveAgent<LivePostState>({
 		agent: "pano-post",
 		name: postLocalId,
 		applyToStore: applyLiveStateToStore,
@@ -531,25 +549,56 @@ function Comments(props: CommentsProps) {
 	const {handleError: handleAuthError} = useSessionExpiredToast();
 
 	// Build the children-by-parent index from the flat connection edges.
+	// Mirrors the per-DO `listComments` projection: a soft-deleted comment
+	// with at least one live child stays in the tree as a `[silindi]`
+	// placeholder; a soft-deleted comment with no live children is omitted
+	// entirely so the tree shape matches the next refetch. The page does
+	// this client-side because @deleteRecord on a leaf removes it from the
+	// store but doesn't re-evaluate its (still soft-deleted) parent.
 	const {roots, childrenByParent, bodyById} = React.useMemo(() => {
-		const all: Array<{id: string; parentId: string | null; ref: CommentTreeNodeFragment$key}> = [];
+		const all: Array<{
+			id: string;
+			parentId: string | null;
+			deletedAt: string | null;
+			ref: CommentTreeNodeFragment$key;
+		}> = [];
 		const bodyById = new Map<string, string>();
 		for (const edge of data.comments.edges) {
 			if (!edge?.node) continue;
 			all.push({
 				id: edge.node.id,
 				parentId: edge.node.parentId ?? null,
+				deletedAt: edge.node.deletedAt ?? null,
 				ref: edge.node,
 			});
 			bodyById.set(edge.node.id, edge.node.body);
 		}
+		// Visibility pass: a comment is visible iff it's not soft-deleted, OR
+		// it has at least one visible descendant. We compute visibility from
+		// leaves upward by iterating until fixed-point (the tree is shallow).
+		const visible = new Set<string>();
+		for (const c of all) if (!c.deletedAt) visible.add(c.id);
+		let changed = true;
+		while (changed) {
+			changed = false;
+			for (const c of all) {
+				if (visible.has(c.id)) continue;
+				if (!c.deletedAt) continue;
+				if (all.some((other) => other.parentId === c.id && visible.has(other.id))) {
+					visible.add(c.id);
+					changed = true;
+				}
+			}
+		}
+
 		const childrenByParent = new Map<
 			string,
 			Array<{id: string; ref: CommentTreeNodeFragment$key}>
 		>();
 		const roots: Array<{id: string; ref: CommentTreeNodeFragment$key}> = [];
-		const knownIds = new Set(all.map((c) => c.id));
+		const knownIds = new Set(all.filter((c) => visible.has(c.id)).map((c) => c.id));
 		for (const c of all) {
+			if (!visible.has(c.id)) continue;
 			if (c.parentId && knownIds.has(c.parentId)) {
 				const list = childrenByParent.get(c.parentId) ?? [];
 				list.push({id: c.id, ref: c.ref});
@@ -621,7 +670,9 @@ function Comments(props: CommentsProps) {
 				signedIn={props.signedIn}
 				onPosted={() => undefined}
 			/>
-			<h2 className="kp-pano-postpage__thread-heading">{data.comments.totalCount} yorum</h2>
+			<h2 className="kp-pano-postpage__thread-heading">
+				{visibleCommentCount(roots, childrenByParent)} yorum
+			</h2>
 			<div className="kp-pano-thread">
 				{roots.map((r) => {
 					const c = composerFor(r.id);
@@ -794,7 +845,10 @@ function CommentComposer({
 		});
 	}
 
-	const testId = parentId ? `pano-comment-reply-${parentId}` : "pano-comment-composer";
+	// Test affordances key off the local parent comment id, not the Relay
+	// global id; keep testids stable + human-readable.
+	const parentLocalId = parentId ? extractLocalId(parentId, "Comment") : null;
+	const testId = parentLocalId ? `pano-comment-reply-${parentLocalId}` : "pano-comment-composer";
 
 	return (
 		<form className="kp-pano-comment-composer" onSubmit={submit} data-testid={testId}>
@@ -809,7 +863,9 @@ function CommentComposer({
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
 				disabled={inFlight || !signedIn}
-				data-testid={parentId ? `pano-comment-reply-input-${parentId}` : "pano-comment-input"}
+				data-testid={
+					parentLocalId ? `pano-comment-reply-input-${parentLocalId}` : "pano-comment-input"
+				}
 				maxLength={COMMENT_BODY_MAX + 100}
 			/>
 			{error ? (
@@ -842,7 +898,11 @@ function CommentComposer({
 						size="sm"
 						type="submit"
 						disabled={inFlight || body.trim().length === 0}
-						data-testid={parentId ? `pano-comment-reply-submit-${parentId}` : "pano-comment-submit"}
+						data-testid={
+							parentLocalId
+								? `pano-comment-reply-submit-${parentLocalId}`
+								: "pano-comment-submit"
+						}
 					>
 						{inFlight ? "gönderiliyor…" : parentId ? "yanıtla" : "yorum ekle"}
 					</Button>
@@ -867,6 +927,9 @@ function CommentEditComposer({
 	const [error, setError] = React.useState<string | null>(null);
 	const [commit, inFlight] = useMutation<PanoPostDetailEditCommentMutation>(EditCommentMutation);
 	const {handleError: handleAuthError} = useSessionExpiredToast();
+	// Test affordances key off the local comment id (`comm_<ulid>`), not
+	// the Relay global id, so testids stay human-readable + spec-stable.
+	const localId = extractLocalId(commentId, "Comment");
 
 	function submit(e: React.FormEvent) {
 		e.preventDefault();
@@ -901,20 +964,20 @@ function CommentEditComposer({
 		<form
 			className="kp-pano-comment-composer"
 			onSubmit={submit}
-			data-testid={`pano-comment-edit-form-${commentId}`}
+			data-testid={`pano-comment-edit-form-${localId}`}
 		>
 			<textarea
 				className="kp-pano-comment-composer__textarea"
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
 				disabled={inFlight}
-				data-testid={`pano-comment-edit-input-${commentId}`}
+				data-testid={`pano-comment-edit-input-${localId}`}
 				maxLength={COMMENT_BODY_MAX + 100}
 			/>
 			{error ? (
 				<p
 					role="alert"
-					data-testid={`pano-comment-edit-error-${commentId}`}
+					data-testid={`pano-comment-edit-error-${localId}`}
 					style={{color: "var(--danger)", font: "var(--t-meta)"}}
 				>
 					{error}
@@ -933,7 +996,7 @@ function CommentEditComposer({
 						size="sm"
 						type="submit"
 						disabled={inFlight || body.trim().length === 0}
-						data-testid={`pano-comment-edit-save-${commentId}`}
+						data-testid={`pano-comment-edit-save-${localId}`}
 					>
 						{inFlight ? "kaydediliyor…" : "kaydet"}
 					</Button>

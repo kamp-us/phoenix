@@ -1,91 +1,103 @@
 /**
- * Live-updates hook for per-entity Agent DOs (T16).
+ * Live-updates hook — `commitLocalUpdate` flavor (phoenix-relay-idiom).
  *
- * Wraps `useAgent` from `agents/react`. Subscribes to a typed Agent state
- * over WebSocket; emits a fresh `liveSignal` integer every time the
- * Agent's `lastEventId` changes after first-mount. Pages use the signal
- * to bump their Relay `fetchKey` so the GraphQL query re-fetches and the
- * UI lands the new state authoritatively from D1 + the per-entity DO.
+ * The historical v1 of this hook bumped a `liveSignal` integer that
+ * consumers wired into Relay's `fetchKey`, forcing a full page query
+ * refetch on every Agent state change. That refetch suspended the page
+ * tree, which made every downstream Playwright spec depend on
+ * `page.reload()` to escape the Suspense double-mount race. The
+ * `phoenix-relay-idiom` feature exists to undo that.
  *
- * Why a signal instead of mirroring `state` directly:
- * - The Agent state only carries aggregates (score, count, lastEventId)
- *   — not the full definitions / comments list. The list lives in the
- *   per-DO sqlite; the GraphQL `term(slug)` / `post(idOrSlug)` resolvers
- *   already know how to read it. Refetching is cheap and keeps Relay as
- *   the single source of truth for the rendered tree.
- * - `lastEventId` is a forge ULID minted on every state-changing
- *   mutation (T2/T3 invariant). Comparing the live id against the
- *   mount-time id gives us a strict "something happened after we
- *   loaded" trigger without storing state we don't render directly.
- *
- * Connection lifecycle:
- * - `connected` reflects the WebSocket's open/closed state. The hook
- *   listens on PartySocket's `open` / `close` / `error` events so the
- *   indicator flips immediately on disconnect (sign-out, network drop,
- *   server bounce).
- * - On disconnect, the existing Relay data stays rendered — no flicker —
- *   and the parent page shows a small "canlı güncellemeler duraklatıldı"
- *   pill so the user knows live updates are paused.
- *
- * Server routing: the worker exposes `/agents/<class-kebab>/<name>`
- * via `routeAgentRequest` (worker/index.ts). The DO class names map to
- * kebab-case (`SozlukTerm` → `sozluk-term`, `PanoPost` → `pano-post`).
+ * This version keeps the WebSocket subscription primitive (`useAgent`
+ * from `agents/react`) but removes the refetch entirely. Each consumer
+ * page provides an `applyToStore` callback that translates the Agent's
+ * typed state into Relay store writes via `commitLocalUpdate`. The page
+ * tree never unmounts. The `connected` boolean is the only thing the
+ * caller gets back — the `LivePill` indicator UX from MVP T16 stays
+ * exactly the same.
  */
-import * as React from "react";
+
 import {useAgent} from "agents/react";
+import * as React from "react";
+import {useRelayEnvironment} from "react-relay";
+import {commitLocalUpdate, type RecordSourceProxy} from "relay-runtime";
 
 /**
  * Minimum-viable shape of an Agent state with a `lastEventId` field. Both
  * `TermState` (worker/features/sozluk/SozlukTerm.ts) and `PostState`
- * (worker/features/pano/PanoPost.ts) satisfy this.
+ * (worker/features/pano/PanoPost.ts) satisfy this. Carried forward from
+ * v1 so consumers can keep the same state type imports.
  */
 export interface LiveAgentStateShape {
 	lastEventId: string;
 }
 
 export interface UseLiveAgentResult {
-	/** Increments every time the Agent's `lastEventId` changes after mount. */
-	liveSignal: number;
-	/** WebSocket open/closed state — drives the "live paused" indicator. */
+	/**
+	 * WebSocket open/closed state — drives the "live paused" indicator
+	 * (`LivePill` from MVP T16). Identical semantics to v1.
+	 */
 	connected: boolean;
 }
 
-export interface UseLiveAgentOptions {
+export interface UseLiveAgentOptions<State extends LiveAgentStateShape> {
 	/** Kebab-cased Agent class name (e.g. `sozluk-term`, `pano-post`). */
 	agent: string;
 	/** Per-instance name (e.g. slug for SozlukTerm, postId for PanoPost). */
 	name: string;
 	/**
-	 * Set to `false` to skip subscribing entirely (e.g. the entity hasn't
-	 * been created yet — visiting an unknown slug). When false the hook
-	 * returns `{liveSignal: 0, connected: false}` without opening a socket.
+	 * Apply the latest Agent state into the Relay store. Invoked inside a
+	 * `commitLocalUpdate` block — the `store` argument is a fresh
+	 * {@link RecordSourceProxy} scoped to that update.
+	 *
+	 * Implementations typically:
+	 *  - update denormalized aggregates on the parent record
+	 *    (`Term:${slug}`, `Post:${postId}`)
+	 *  - insert / update edges in known connection records via
+	 *    `ConnectionHandler` for new comments / definitions arriving
+	 *    over the WebSocket
+	 */
+	applyToStore: (state: State, store: RecordSourceProxy) => void;
+	/**
+	 * Set to `false` to skip subscribing entirely (e.g. visiting an
+	 * unknown slug). When false the hook returns
+	 * `{connected: false}` without opening a socket. The hook is still
+	 * called unconditionally so React's hook ordering stays stable.
 	 */
 	enabled?: boolean;
 }
 
 export function useLiveAgent<State extends LiveAgentStateShape = LiveAgentStateShape>(
-	opts: UseLiveAgentOptions,
+	opts: UseLiveAgentOptions<State>,
 ): UseLiveAgentResult {
-	const {agent, name, enabled = true} = opts;
+	const {agent, name, applyToStore, enabled = true} = opts;
 
-	const [liveSignal, setLiveSignal] = React.useState(0);
 	const [connected, setConnected] = React.useState(false);
-	// Track the lastEventId we've seen so we only bump the signal when the
-	// id actually changes (PartySocket can deliver duplicate state messages
-	// on reconnect when the server resends the current snapshot).
-	const lastIdRef = React.useRef<string | null>(null);
-	// Skip the very first state delivery — that's just the snapshot the
-	// server sends on connection establishment, equivalent to what the
-	// initial GraphQL query already loaded. We only want to react to
-	// state CHANGES that happen after mount.
-	const sawInitialRef = React.useRef(false);
+	const environment = useRelayEnvironment();
 
-	// Reset trackers whenever the subscription target changes. Routing from
-	// /sozluk/foo to /sozluk/bar opens a fresh WS to a different DO.
+	// Track the lastEventId we've seen so we only commit when the id
+	// actually changes. PartySocket can deliver duplicate state messages
+	// on reconnect when the server resends the current snapshot.
+	const lastIdRef = React.useRef<string | null>(null);
+	// Skip the very first state delivery — that's the snapshot the server
+	// sends on connection establishment, equivalent to what the initial
+	// GraphQL query already loaded into the store. We only commit on
+	// CHANGES that happen after mount.
+	const sawInitialRef = React.useRef(false);
+	// Stash the latest callback in a ref so the `useAgent` hook doesn't
+	// see a fresh callback every render — `applyToStore` is typically a
+	// closure over component state and would otherwise churn the
+	// underlying socket subscription.
+	const applyToStoreRef = React.useRef(applyToStore);
+	React.useEffect(() => {
+		applyToStoreRef.current = applyToStore;
+	}, [applyToStore]);
+
+	// Reset trackers whenever the subscription target changes. Routing
+	// from /sozluk/foo to /sozluk/bar opens a fresh WS to a different DO.
 	React.useEffect(() => {
 		lastIdRef.current = null;
 		sawInitialRef.current = false;
-		setLiveSignal(0);
 		setConnected(false);
 	}, [agent, name, enabled]);
 
@@ -93,8 +105,7 @@ export function useLiveAgent<State extends LiveAgentStateShape = LiveAgentStateS
 		agent,
 		name,
 		// `enabled: false` keeps the hook from opening the underlying socket.
-		// We still call the hook unconditionally so React's hook order stays
-		// stable across renders.
+		// Caller still invokes the hook; React's ordering stays stable.
 		enabled,
 		onStateUpdate: (state: State, source: "server" | "client") => {
 			if (source !== "server") return;
@@ -107,12 +118,18 @@ export function useLiveAgent<State extends LiveAgentStateShape = LiveAgentStateS
 			}
 			if (nextId === lastIdRef.current) return;
 			lastIdRef.current = nextId;
-			setLiveSignal((n) => n + 1);
+			// Translate the new Agent state into store writes. Wrapped in
+			// `commitLocalUpdate` so Relay's normal subscription mechanism
+			// notifies every component reading the changed records — no
+			// refetch, no Suspense, no page unmount.
+			commitLocalUpdate(environment, (store) => {
+				applyToStoreRef.current(state, store);
+			});
 		},
 		onOpen: () => setConnected(true),
 		onClose: () => setConnected(false),
 		onError: () => setConnected(false),
 	});
 
-	return {liveSignal, connected: enabled && connected};
+	return {connected: enabled && connected};
 }

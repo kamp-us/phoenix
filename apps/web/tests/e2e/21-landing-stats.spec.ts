@@ -53,6 +53,11 @@ test.describe("Landing stats (task_15)", () => {
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
 		// Reload landing — the stats card should now reflect the new post.
+		// The reload is intentional: `landingStats` is fed by the
+		// `PhoenixProjection` workflow, which lands asynchronously after
+		// `submitPost`. A bare `goto("/")` may serve a cached query before
+		// the projection commits; reloading forces a fresh fetch. The
+		// `toPass` retry loop below absorbs any remaining lag.
 		await page.goto("/");
 		await page.reload();
 		await expect(page.getByTestId("kp-landing-stats")).toBeVisible({timeout: 10_000});

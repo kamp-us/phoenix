@@ -2,7 +2,8 @@ import {expect, test} from "@playwright/test";
 import {signOut, signUp} from "./_helpers/auth";
 
 /**
- * Sözlük editDefinition / deleteDefinition end-to-end (task_6).
+ * Sözlük editDefinition / deleteDefinition end-to-end (task_6; touched by
+ * task_4 of phoenix-relay-idiom).
  *
  * Two flows:
  *   1. Author flow: sign up user A → add a definition → edit it (body
@@ -11,9 +12,17 @@ import {signOut, signUp} from "./_helpers/auth";
  *      sign up user B → user B doesn't see edit/delete buttons on user A's
  *      definition.
  *
- * Mirrors the page.reload() pattern from 12-sozluk-vote.spec.ts to escape the
- * Suspense double-mount race after the addDefinition refetch (cf. operator.md
- * lesson from task_5 retry 1, commit 17ed98a).
+ * Historical note: this spec previously contained a `page.reload()` between
+ * the addDefinition mutation and the edit interactions to escape the
+ * Suspense double-mount race triggered by the legacy
+ * `setFetchKey`-driven refetch. After task_4 of `phoenix-relay-idiom` the
+ * page tree no longer unmounts on a mutation (idiomatic Relay
+ * `@deleteRecord` for delete + manual `updater` for prepends + the new
+ * `addDefinition` selection set spreads `DefinitionCardFragment` so the
+ * row hydrates without a follow-up read), so the reload is gone. The
+ * very first `addDefinition` on a fresh slug still triggers an internal
+ * page reload from the app to materialize the Term record (a narrow
+ * fresh-slug-only path); subsequent edits / deletes don't.
  */
 test.describe("Sözlük editDefinition / deleteDefinition (task_6)", () => {
 	test("author can edit and delete their own definition", async ({page}) => {
@@ -36,9 +45,9 @@ test.describe("Sözlük editDefinition / deleteDefinition (task_6)", () => {
 		await composerBody.fill(originalBody);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 
-		// Wait for the new definition, then reload to escape Suspense double-mount.
+		// First-add on a fresh slug — the app self-reloads once to materialize
+		// the Term record. Subsequent edits / deletes stay in-place.
 		await expect(page.getByText(originalBody)).toBeVisible({timeout: 15_000});
-		await page.reload();
 		await expect(page.getByText(originalBody)).toBeVisible({timeout: 10_000});
 
 		// Edit affordance is visible to the author.

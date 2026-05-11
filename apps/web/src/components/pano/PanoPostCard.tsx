@@ -13,6 +13,7 @@ import {graphql, useFragment} from "react-relay";
 import {Link} from "react-router";
 import type {PanoPostCardFragment$key} from "../../__generated__/PanoPostCardFragment.graphql";
 import {formatAgoTR} from "../../lib/datetime";
+import {extractLocalId} from "../../relay/encodeNodeId";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
@@ -49,7 +50,10 @@ export function PanoPostCard({
 	onHide?: (id: string) => void;
 }) {
 	const data = useFragment(PanoPostCardFragmentDef, post);
-	const href = `/pano/${data.slug ?? data.id}`;
+	// `data.id` is the Relay global id (`Post:<localId>` base64). The
+	// /pano/:id route key is the local post id (or a slug); extract before
+	// linking so URLs stay clean.
+	const href = `/pano/${data.slug ?? extractLocalId(data.id, "Post")}`;
 	// Site label — host in parens for external links, "yazı" for self-posts.
 	const siteLabel = data.host ?? (data.url ? null : "yazı");
 	const agoLabel = formatAgoTR(data.createdAt);

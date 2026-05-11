@@ -57,12 +57,19 @@ export function appendCommentToPostConnection(
 	const newEdge = ConnectionHandler.createEdge(store, connection, newComment, "CommentEdge");
 	newEdge.setValue(newComment.getDataID(), "cursor");
 	ConnectionHandler.insertEdgeAfter(connection, newEdge);
+	// Bump `totalCount` on the connection record. The PRD accepts drift on
+	// the per-Term/Post header aggregate (`Post.commentCount`), but the
+	// connection-local `totalCount` drives the "N yorum" thread heading
+	// directly — leaving it stale shows the wrong count after the first
+	// add. Tested via 17-pano-add-comment.spec.ts:51.
+	const currentTotal = (connection.getValue("totalCount") as number | undefined) ?? 0;
+	connection.setValue(currentTotal + 1, "totalCount");
 }
 
 /**
  * Insert a `Comment` record into the `PanoPostDetail_comments` connection
  * over the live-update path (task_3, phoenix-relay-idiom). Used by the
- * `useLiveAgentV2` `applyToStore` callback when a peer client posts a new
+ * `useLiveAgent` `applyToStore` callback when a peer client posts a new
  * comment that arrives over the WebSocket subscription.
  *
  * Differs from {@link appendCommentToPostConnection} in two ways:
@@ -95,4 +102,6 @@ export function insertLiveCommentEdge(
 	const newEdge = ConnectionHandler.createEdge(store, connection, commentRecord, "CommentEdge");
 	newEdge.setValue(commentRecordId, "cursor");
 	ConnectionHandler.insertEdgeAfter(connection, newEdge);
+	const currentTotal = (connection.getValue("totalCount") as number | undefined) ?? 0;
+	connection.setValue(currentTotal + 1, "totalCount");
 }

@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Sözlük voteDefinition end-to-end (task_5).
+ * Sözlük voteDefinition end-to-end (task_5; touched by task_4 of phoenix-relay-idiom).
  *
  * Sign up a fresh user, complete the username bootstrap, navigate to a brand
  * new term URL, write a definition, then exercise the optimistic vote flip:
@@ -13,6 +13,15 @@ import {signUp} from "./_helpers/auth";
  * The DefinitionCard's optimistic updater flips `myVote` + `score`
  * synchronously; on success the projection lands in <1s and the page reads
  * the new state on subsequent renders.
+ *
+ * Historical note: this spec previously contained a `page.reload()` between
+ * the addDefinition mutation and the vote interactions to escape the
+ * Suspense double-mount race triggered by the legacy
+ * `setFetchKey`-driven refetch. After task_4 of `phoenix-relay-idiom` the
+ * page tree no longer unmounts on a mutation (idiomatic Relay
+ * `@deleteRecord` + manual `updater` for prepends + `commitLocalUpdate`
+ * for live updates), so the reload is gone. Its presence would now signal
+ * a regression.
  */
 test.describe("Sözlük voteDefinition (task_5)", () => {
 	test("vote → unvote → vote round-trip on a fresh definition", async ({page}) => {
@@ -37,13 +46,12 @@ test.describe("Sözlük voteDefinition (task_5)", () => {
 		await composerBody.fill(definitionBody);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 
-		// The addDefinition mutation bumps fetchKey, which triggers a Relay
-		// refetch under the "yükleniyor…" fallback. Wait for the new entry
-		// to land, then reload to escape the Suspense double-mount race
-		// (mirrors the pattern in commit 17ed98a — sidestep stale orphan
-		// trees from useLazyLoadQuery's fetchKey-driven refetch).
+		// New definition appears via the manual connection updater + the
+		// optimistic flip (task_4). Re-page-mount happens once for the very
+		// first definition on a fresh slug — the page transitions from the
+		// "no term yet" branch into the connection branch and reloads to
+		// pick up the just-created Term record (the only narrow case left).
 		await expect(page.getByText(definitionBody)).toBeVisible({timeout: 15_000});
-		await page.reload();
 
 		const composerBodyAgain = page.locator('[data-testid="sozluk-composer-body"]');
 		await expect(composerBodyAgain).toBeVisible({timeout: 10_000});

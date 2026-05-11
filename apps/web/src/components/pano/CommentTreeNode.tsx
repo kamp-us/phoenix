@@ -22,6 +22,7 @@ import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
 import {useSessionExpiredToast} from "../../lib/useSessionExpiredToast";
+import {extractLocalId} from "../../relay/encodeNodeId";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import "./PanoComment.css";
@@ -97,6 +98,9 @@ export interface CommentTreeNodeProps {
 
 export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const data = useFragment(CommentTreeNodeFragmentDef, props.comment);
+	// Test affordances key off the local comment id (e.g. `comm_<ulid>`),
+	// not the Relay global id; keep testids stable + human-readable.
+	const localId = extractLocalId(data.id, "Comment");
 	const session = useSession();
 	const navigate = useNavigate();
 	const {handleError: handleAuthError} = useSessionExpiredToast();
@@ -187,10 +191,10 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						aria-pressed={voted}
 						aria-label="Yukarı oy"
 						onClick={onUpvote}
-						data-testid={`comment-vote-${data.id}`}
+						data-testid={`comment-vote-${localId}`}
 					>
 						<span className="triangle" />{" "}
-						<span data-testid={`comment-score-${data.id}`}>{score}</span>
+						<span data-testid={`comment-score-${localId}`}>{score}</span>
 					</button>
 				) : null}
 				<button
@@ -205,7 +209,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 			{open ? (
 				<>
 					{editing ? (
-						<div className="kp-comment__edit" data-testid={`pano-comment-edit-${data.id}`}>
+						<div className="kp-comment__edit" data-testid={`pano-comment-edit-${localId}`}>
 							{props.editComposer}
 						</div>
 					) : (
@@ -220,7 +224,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 							<button
 								type="button"
 								onClick={() => props.onReply?.(data.id)}
-								data-testid={`pano-comment-reply-trigger-${data.id}`}
+								data-testid={`pano-comment-reply-trigger-${localId}`}
 							>
 								yanıtla
 							</button>
@@ -231,14 +235,14 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 									<Menu.Trigger
 										className="kp-comment__menu-trigger"
 										aria-label="Daha fazla"
-										data-testid={`pano-comment-menu-${data.id}`}
+										data-testid={`pano-comment-menu-${localId}`}
 									>
 										⋯
 									</Menu.Trigger>
 									<Menu.Popup align="start">
 										<Menu.Item
 											onClick={() => props.onEdit?.(data.id)}
-											data-testid={`pano-comment-edit-trigger-${data.id}`}
+											data-testid={`pano-comment-edit-trigger-${localId}`}
 										>
 											düzenle
 										</Menu.Item>
@@ -247,7 +251,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 										<Menu.Item
 											danger
 											onClick={() => props.onDelete?.(data.id)}
-											data-testid={`pano-comment-delete-trigger-${data.id}`}
+											data-testid={`pano-comment-delete-trigger-${localId}`}
 										>
 											sil
 										</Menu.Item>
@@ -257,7 +261,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						</footer>
 					) : null}
 					{props.replyComposer ? (
-						<div className="kp-comment__reply" data-testid={`pano-comment-reply-${data.id}`}>
+						<div className="kp-comment__reply" data-testid={`pano-comment-reply-${localId}`}>
 							{props.replyComposer}
 						</div>
 					) : null}

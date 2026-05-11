@@ -17,11 +17,6 @@ type CommentConnection {
   totalCount: Int!
 }
 
-type CommentEdge {
-  cursor: String!
-  node: Comment!
-}
-
 type CommentContribution {
   bodyExcerpt: String!
   createdAt: String!
@@ -30,6 +25,11 @@ type CommentContribution {
   postId: ID!
   postTitle: String!
   score: Int!
+}
+
+type CommentEdge {
+  cursor: String!
+  node: Comment!
 }
 
 type ContributionConnection {
@@ -54,6 +54,12 @@ type Definition implements Node {
   updatedAt: String!
 }
 
+type DefinitionConnection {
+  edges: [DefinitionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
 type DefinitionContribution {
   bodyExcerpt: String!
   createdAt: String!
@@ -62,6 +68,20 @@ type DefinitionContribution {
   score: Int!
   termSlug: String!
   termTitle: String!
+}
+
+type DefinitionEdge {
+  cursor: String!
+  node: Definition!
+}
+
+type DeleteCommentPayload {
+  comment: Comment
+  deletedCommentId: ID
+}
+
+type DeleteDefinitionPayload {
+  deletedDefinitionId: ID!
 }
 
 type Health {
@@ -77,16 +97,11 @@ type LandingStats {
   version: String!
 }
 
-type DeleteCommentPayload {
-  comment: Comment
-  deletedCommentId: ID
-}
-
 type Mutation {
   addComment(body: String!, parentId: ID, postId: ID!): Comment!
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
   deleteComment(id: ID!): DeleteCommentPayload!
-  deleteDefinition(id: ID!): String!
+  deleteDefinition(id: ID!): DeleteDefinitionPayload!
   deletePost(id: ID!): ID!
   editComment(body: String!, id: ID!): Comment!
   editDefinition(body: String!, id: ID!): Definition!
@@ -176,11 +191,10 @@ type Query {
   me: User
   node(id: ID!): Node
   post(idOrSlug: String!): Post
-  postComments(postId: String!): [Comment!]!
   posts(after: String, first: Int, host: String, sort: PostSort): PostConnection!
   profile(username: String!): Profile
   term(slug: String!): Term
-  terms(limit: Int, sort: TermSort): [Term!]!
+  terms(after: String, first: Int, sort: TermSort): TermConnection!
 }
 
 type Tag {
@@ -195,14 +209,28 @@ input TagInput {
 
 type Term implements Node {
   count: Int!
-  definitions: [Definition!]!
+  definitionCount: Int!
+  definitions(after: String, first: Int): DefinitionConnection!
   excerpt: String
   firstAt: String
+  firstLetter: String!
   id: ID!
+  lastActivityAt: String
   lastEdit: String
   slug: String!
   title: String!
   totalScore: Int!
+}
+
+type TermConnection {
+  edges: [TermEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type TermEdge {
+  cursor: String!
+  node: Term!
 }
 
 enum TermSort {

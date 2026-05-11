@@ -7,6 +7,7 @@ import {useSession} from "../auth/client";
 import {Button} from "../components/ui/Button";
 import {authRedirectPath} from "../lib/returnTo";
 import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
+import {extractLocalId} from "../relay/encodeNodeId";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
@@ -176,7 +177,11 @@ export function PanoSubmitPage() {
 					setError(errors[0]?.message ?? "gönderi paylaşılamadı");
 					return;
 				}
-				const newId = data.submitPost.id;
+				// `data.submitPost.id` is the Relay global id (`Post:<localId>`
+				// base64). The /pano/:id route key is the local post id (or a
+				// slug); extract before navigating so URLs stay clean and the
+				// post-detail resolver hits the right per-post DO.
+				const newId = data.submitPost.slug ?? extractLocalId(data.submitPost.id, "Post");
 				if (newId) {
 					navigate(`/pano/${newId}`);
 				}
