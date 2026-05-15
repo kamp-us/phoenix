@@ -1,62 +1,73 @@
-import * as React from "react";
-import {graphql, useLazyLoadQuery} from "react-relay";
-import {Link, useParams} from "react-router";
+/**
+ * Public user profile page (task_6, phoenix-relay-idiom).
+ *
+ * Idiomatic Relay shape: `useLazyLoadQuery` at the top spreads
+ * `UserProfileHeaderFragment` + `UserProfileContributionsFragment` into the
+ * `Profile` selection; `usePaginationFragment` reads the contributions
+ * connection. Each row is a fragment ref handed to `ContributionRow` (which
+ * does an inline `__typename` switch over `ProfileContribution`).
+ *
+ * The connection key is `UserProfile_contributions` (no filters today; if
+ * `kind` filtering lands later the connection shape can grow `filters: ["kind"]`
+ * without renaming the key — the connection-key naming convention only
+ * requires `<SomeName>__<fieldName>`).
+ */
+import {graphql, useLazyLoadQuery, usePaginationFragment} from "react-relay";
+import {useParams} from "react-router";
+import type {UserProfilePageContributionsFragment$key} from "../__generated__/UserProfilePageContributionsFragment.graphql";
 import type {UserProfilePageQuery} from "../__generated__/UserProfilePageQuery.graphql";
+import {ContributionRow} from "../components/profile/ContributionRow";
+import {UserProfileHeader} from "../components/profile/UserProfileHeader";
+import {Button} from "../components/ui/Button";
 import {QueryBoundary} from "../relay/QueryBoundary";
 import {NotFoundPage} from "./NotFoundPage";
 import "./UserProfilePage.css";
 
+const PAGE_SIZE = 20;
+
 const ProfileQuery = graphql`
-  query UserProfilePageQuery($username: String!, $first: Int!, $after: String) {
-    profile(username: $username) {
-      user {
-        id
-        username
-        name
-        image
-      }
-      totalKarma
-      definitionCount
-      postCount
-      commentCount
-      contributions(first: $first, after: $after) {
-        edges {
-          cursor
-          node {
-            __typename
-            ... on DefinitionContribution {
-              id
-              score
-              createdAt
-              bodyExcerpt
-              termSlug
-              termTitle
-            }
-            ... on PostContribution {
-              id
-              score
-              createdAt
-              title
-              slug
-              postBodyExcerpt: bodyExcerpt
-            }
-            ... on CommentContribution {
-              id
-              score
-              createdAt
-              bodyExcerpt
-              postId
-              postTitle
-            }
-          }
-        }
-        pageInfo {
-          hasNextPage
-          endCursor
-        }
-      }
-    }
-  }
+	query UserProfilePageQuery($username: String!, $first: Int) {
+		profile(username: $username) {
+			id
+			...UserProfileHeaderFragment
+			...UserProfilePageContributionsFragment @arguments(first: $first)
+		}
+	}
+`;
+
+/**
+ * Contributions connection on `Profile`. `@refetchable` lets
+ * `usePaginationFragment` load subsequent pages; `@connection` lets future
+ * mutation updaters address the connection by stable key + the parent's
+ * DataID. `__id` is auto-emitted by relay-compiler when this fragment is
+ * spread, so the parent `Profile` carries the connection-id template
+ * `client:${profile.__id}:__UserProfile_contributions_connection`.
+ *
+ * No `filters` arg today (no per-kind filter UI); when filtering lands the
+ * connection shape can grow `filters: ["kind"]` without renaming the key.
+ */
+const UserProfilePageContributionsFragmentDef = graphql`
+	fragment UserProfilePageContributionsFragment on Profile
+	@argumentDefinitions(
+		first: {type: "Int", defaultValue: 20}
+		after: {type: "String"}
+	)
+	@refetchable(queryName: "UserProfileContributionsPaginationQuery") {
+		contributions(first: $first, after: $after)
+			@connection(key: "UserProfile__contributions") {
+			edges {
+				cursor
+				node {
+					...ContributionRow_node
+				}
+			}
+			pageInfo {
+				hasNextPage
+				endCursor
+			}
+			totalCount
+		}
+	}
 `;
 
 export function UserProfilePage() {
@@ -83,30 +94,10 @@ export function UserProfilePage() {
 	);
 }
 
-function initialsOf(name: string) {
-	return name
-		.split(/\s+|_|-/)
-		.filter(Boolean)
-		.slice(0, 2)
-		.map((p) => p[0]?.toUpperCase() ?? "")
-		.join("");
-}
-
-function formatDate(iso: string): string {
-	try {
-		const d = new Date(iso);
-		return d.toLocaleDateString("tr-TR", {day: "2-digit", month: "short", year: "numeric"});
-	} catch {
-		return iso;
-	}
-}
-
 function UserProfileContent({username}: {username: string}) {
-	const [pageSize] = React.useState(20);
 	const data = useLazyLoadQuery<UserProfilePageQuery>(ProfileQuery, {
 		username,
-		first: pageSize,
-		after: null,
+		first: PAGE_SIZE,
 	});
 
 	if (!data.profile) {
@@ -118,125 +109,68 @@ function UserProfileContent({username}: {username: string}) {
 		);
 	}
 
-	const p = data.profile;
-	const displayName = p.user.name ?? p.user.username ?? "kullanıcı";
-	const handle = p.user.username ?? username;
-	const edges = p.contributions.edges;
-	const hasMore = p.contributions.pageInfo.hasNextPage;
-
 	return (
 		<div className="kp-user-profile" data-testid="user-profile-page">
 			<div className="kp-user-profile__inner">
-				<header className="kp-user-profile__head">
-					<div className="kp-user-profile__avatar" aria-hidden>
-						{p.user.image ? (
-							<img src={p.user.image} alt="" />
-						) : (
-							<span>{initialsOf(displayName)}</span>
-						)}
-					</div>
-					<div className="kp-user-profile__id">
-						<div className="kp-user-profile__name" data-testid="user-profile-display-name">
-							{displayName}
-						</div>
-						<div className="kp-user-profile__handle" data-testid="user-profile-handle">
-							@{handle}
-						</div>
-					</div>
-					<div className="kp-user-profile__stats" data-testid="user-profile-stats">
-						<div className="kp-user-profile__stat" data-testid="stat-definitions">
-							<div className="n">{p.definitionCount}</div>
-							<div className="l">tanım</div>
-						</div>
-						<div className="kp-user-profile__stat" data-testid="stat-posts">
-							<div className="n">{p.postCount}</div>
-							<div className="l">başlık</div>
-						</div>
-						<div className="kp-user-profile__stat" data-testid="stat-comments">
-							<div className="n">{p.commentCount}</div>
-							<div className="l">yorum</div>
-						</div>
-						<div className="kp-user-profile__stat" data-testid="stat-karma">
-							<div className="n">{p.totalKarma}</div>
-							<div className="l">karma</div>
-						</div>
-					</div>
-				</header>
-
-				<section className="kp-user-profile__feed" data-testid="user-profile-feed">
-					<h3>katkılar</h3>
-					{edges.length === 0 ? (
-						<p className="kp-user-profile__empty">henüz katkı yok.</p>
-					) : (
-						<ul className="kp-user-profile__list">
-							{edges.map((edge) => (
-								<ContributionRow key={edge.cursor} node={edge.node} />
-							))}
-						</ul>
-					)}
-					{hasMore ? (
-						<p className="kp-user-profile__more" data-testid="user-profile-has-more">
-							daha fazla katkı var
-						</p>
-					) : null}
-				</section>
+				<UserProfileHeader profile={data.profile} fallbackHandle={username} />
+				<ContributionsList profile={data.profile} />
 			</div>
 		</div>
 	);
 }
 
-type Edge = NonNullable<
-	UserProfilePageQuery["response"]["profile"]
->["contributions"]["edges"][number];
-type Node = Edge["node"];
+function ContributionsList({
+	profile,
+}: {
+	profile: UserProfilePageContributionsFragment$key;
+}) {
+	const {data, loadNext, hasNext, isLoadingNext} = usePaginationFragment(
+		UserProfilePageContributionsFragmentDef,
+		profile,
+	);
+	const edges = data.contributions.edges;
 
-function ContributionRow({node}: {node: Node}) {
-	if (node.__typename === "DefinitionContribution") {
-		return (
-			<li className="kp-user-profile__row" data-testid="contribution-definition">
-				<div className="kp-user-profile__row-head">
-					<span className="kp-user-profile__kind kp-user-profile__kind--definition">tanım</span>
-					<Link to={`/sozluk/${node.termSlug}`} className="kp-user-profile__row-title">
-						{node.termTitle}
-					</Link>
-					<span className="kp-user-profile__row-score">{node.score} puan</span>
-					<span className="kp-user-profile__row-date">{formatDate(node.createdAt)}</span>
+	return (
+		<section className="kp-user-profile__feed" data-testid="user-profile-feed">
+			<h3>
+				katkılar{" "}
+				<span
+					className="kp-user-profile__total"
+					data-testid="user-profile-contributions-total"
+				>
+					({data.contributions.totalCount})
+				</span>
+			</h3>
+			{edges.length === 0 ? (
+				<p className="kp-user-profile__empty">henüz katkı yok.</p>
+			) : (
+				<ul className="kp-user-profile__list">
+					{edges.map((edge) => (
+						<ContributionRow key={edge.cursor} node={edge.node} />
+					))}
+				</ul>
+			)}
+			{hasNext ? (
+				<div
+					style={{
+						marginTop: "var(--s-3)",
+						display: "flex",
+						justifyContent: "center",
+					}}
+					data-testid="user-profile-load-more-row"
+				>
+					<Button
+						variant="tertiary"
+						size="sm"
+						type="button"
+						disabled={isLoadingNext}
+						onClick={() => loadNext(PAGE_SIZE)}
+						data-testid="user-profile-load-more"
+					>
+						{isLoadingNext ? "yükleniyor…" : "daha fazla"}
+					</Button>
 				</div>
-				<p className="kp-user-profile__row-body">{node.bodyExcerpt}</p>
-			</li>
-		);
-	}
-	if (node.__typename === "PostContribution") {
-		return (
-			<li className="kp-user-profile__row" data-testid="contribution-post">
-				<div className="kp-user-profile__row-head">
-					<span className="kp-user-profile__kind kp-user-profile__kind--post">başlık</span>
-					<Link to={`/pano/${node.id}`} className="kp-user-profile__row-title">
-						{node.title}
-					</Link>
-					<span className="kp-user-profile__row-score">{node.score} puan</span>
-					<span className="kp-user-profile__row-date">{formatDate(node.createdAt)}</span>
-				</div>
-				{node.postBodyExcerpt ? (
-					<p className="kp-user-profile__row-body">{node.postBodyExcerpt}</p>
-				) : null}
-			</li>
-		);
-	}
-	if (node.__typename === "CommentContribution") {
-		return (
-			<li className="kp-user-profile__row" data-testid="contribution-comment">
-				<div className="kp-user-profile__row-head">
-					<span className="kp-user-profile__kind kp-user-profile__kind--comment">yorum</span>
-					<Link to={`/pano/${node.postId}`} className="kp-user-profile__row-title">
-						{node.postTitle}
-					</Link>
-					<span className="kp-user-profile__row-score">{node.score} puan</span>
-					<span className="kp-user-profile__row-date">{formatDate(node.createdAt)}</span>
-				</div>
-				<p className="kp-user-profile__row-body">{node.bodyExcerpt}</p>
-			</li>
-		);
-	}
-	return null;
+			) : null}
+		</section>
+	);
 }

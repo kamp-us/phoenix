@@ -36,8 +36,9 @@ test.describe("Profile page (task_14)", () => {
 		await page.locator('[data-testid="pano-submit-submit"]').click();
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
-		// Reload to escape the Suspense double-mount race.
-		await page.reload();
+		// Suspense double-mount reload (do-work artifact) removed in
+		// phoenix-relay-idiom task_6 — connection-shaped fragments mean the
+		// page tree no longer unmounts on mutation, so no reload is needed.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(postTitle, {
 			timeout: 10_000,
 		});

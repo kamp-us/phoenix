@@ -37,10 +37,10 @@ test.describe("Pano addComment (task_10)", () => {
 		// Land on /pano/<id>.
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
-		// Reload to escape the Suspense double-mount race after the submit
-		// navigation. The composer is rendered inside the same Suspense boundary
-		// as the comments query and occasionally remounts during the first paint.
-		await page.reload();
+		// phoenix-relay-idiom task_3: post-detail no longer remounts on a
+		// mutation — `usePaginationFragment` + connection updaters keep the
+		// page tree mounted, so the historical Suspense workaround reload is
+		// gone.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 
 		// Wait for the initial thread heading to render so we know the Comments

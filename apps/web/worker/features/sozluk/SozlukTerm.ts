@@ -79,6 +79,23 @@ export interface TermPage {
 	definitions: DefinitionRow[];
 }
 
+/**
+ * Page returned by the connection-shaped definition reader (task_4,
+ * phoenix-relay-idiom). Mirrors `CommentConnectionPage` from
+ * `PanoPost.ts`. `endCursor` is `null` on an empty page or when
+ * `hasNextPage` is `false`. Cursor encoding is opaque to the client; today
+ * it's the definition id (forge ULID, lex-sortable). Definitions are
+ * ranked by score DESC server-side (matches `getTerm()` ordering); the
+ * cursor pages by row index in that materialized order so a stable
+ * tie-break (id ASC) survives the keyset boundary.
+ */
+export interface DefinitionConnectionPage {
+	rows: DefinitionRow[];
+	hasNextPage: boolean;
+	endCursor: string | null;
+	totalCount: number;
+}
+
 /* -------------------------------------------------------------------------- */
 /* Admin / seed shapes                                                         */
 /* -------------------------------------------------------------------------- */
@@ -355,6 +372,46 @@ export class SozlukTerm extends Agent<Env, TermState> {
 				createdAt: d.createdAt ?? new Date(0),
 				updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
 			})),
+		};
+	}
+
+	/**
+	 * Connection-shaped read for `Term.definitions(first, after)` (task_4,
+	 * phoenix-relay-idiom). Builds on `getTerm()`'s materialized definition
+	 * list (already filters `deleted_at IS NULL` and orders by score DESC,
+	 * createdAt ASC) and slices a forward page in that ranked order.
+	 *
+	 * Cursor is the definition id (forge ULID; lex-sortable). `after`
+	 * advances past the cursor row; the index lookup tolerates a stale
+	 * cursor by collapsing to the head (same behavior as
+	 * `listCommentsConnection` and `listPostConnection`).
+	 *
+	 * Trade-off: full materialization in memory rather than a narrow SQL
+	 * slice. Acceptable for the MVP scale (per-term definition lists cap
+	 * in the low tens for the busiest terms); can lift to pure SQL keyset
+	 * pagination once a flame graph pins this hop.
+	 */
+	async listDefinitionsConnection(opts: {
+		first?: number;
+		after?: string | null;
+	}): Promise<DefinitionConnectionPage> {
+		const term = await this.getTerm();
+		if (!term) {
+			return {rows: [], hasNextPage: false, endCursor: null, totalCount: 0};
+		}
+		const sorted = term.definitions;
+		const first = Math.max(1, Math.min(opts.first ?? 50, 200));
+		const after = opts.after ?? null;
+		const startIndex = after ? sorted.findIndex((d) => d.id === after) + 1 : 0;
+		const safeStart = startIndex < 0 ? 0 : startIndex;
+		const page = sorted.slice(safeStart, safeStart + first);
+		const hasNextPage = safeStart + first < sorted.length;
+		const last = page.at(-1) ?? null;
+		return {
+			rows: page,
+			hasNextPage,
+			endCursor: last ? last.id : null,
+			totalCount: sorted.length,
 		};
 	}
 

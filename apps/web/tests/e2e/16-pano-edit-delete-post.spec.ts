@@ -11,9 +11,10 @@ import {signOut, signUp} from "./_helpers/auth";
  *   2. Cross-user flow: sign up user A → submit a post → sign out → sign up
  *      user B → user B doesn't see edit/delete affordances on user A's post.
  *
- * Mirrors the page.reload() pattern from 13-sozluk-edit-delete.spec.ts to
- * escape the Suspense double-mount race after the post-query refetch on edit
- * (cf. operator.md lesson from task_5 retry 1).
+ * After the phoenix-relay-idiom refactor (task_2) the post detail no longer
+ * refetches the page query on a mutation — `editPost` returns the updated
+ * scalar fields and Relay's automatic store update handles the rerender, so
+ * the historical `page.reload()` Suspense workaround is gone.
  */
 test.describe("Pano editPost / deletePost (task_9)", () => {
 	test("author can edit and delete their own post", async ({page}) => {
@@ -64,8 +65,8 @@ test.describe("Pano editPost / deletePost (task_9)", () => {
 		await editBody.fill(editedBody);
 		await page.locator('[data-testid="post-edit-save"]').click();
 
-		// Reload to escape Suspense double-mount race after the edit refetch.
-		await page.reload();
+		// Edit returns the updated title/body; Relay merges into the store
+		// keyed by id and the page rerenders without a refetch. No reload needed.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(editedTitle, {
 			timeout: 10_000,
 		});

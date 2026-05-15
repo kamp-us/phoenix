@@ -14,10 +14,13 @@ import {signUp} from "./_helpers/auth";
  * `myVote` + `score` synchronously; on success the projection lands in <1s
  * and the page reads the new state on subsequent renders.
  *
- * Mirrors `15-pano-vote-post.spec.ts` (post-vote round-trip). Uses
- * `page.reload()` before vote interactions to escape the Suspense
- * double-mount race that fires after `submitPost` + `addComment` re-fetches
- * via fetchKey — operator-blessed (cf. task_5/retry_1, task_8, task_10).
+ * Mirrors `15-pano-vote-post.spec.ts` (post-vote round-trip).
+ *
+ * phoenix-relay-idiom task_3: the historical `page.reload()` workarounds
+ * before vote interactions are gone — `usePaginationFragment` +
+ * `commitLocalUpdate` keep the post-detail tree mounted on every mutation
+ * and live event, so the Suspense double-mount race they were dodging no
+ * longer fires.
  */
 test.describe("Pano voteOnComment (task_11)", () => {
 	test("vote → unvote → vote round-trip on a fresh comment", async ({page}) => {
@@ -46,11 +49,6 @@ test.describe("Pano voteOnComment (task_11)", () => {
 
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
-		// Reload after the navigation to escape any Suspense double-mount race
-		// in the post detail's useLazyLoadQuery — same operator-blessed pattern
-		// as 15-pano-vote-post.spec.ts (cf. commit 17ed98a).
-		await page.reload();
-
 		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {
 			timeout: 10_000,
 		});
@@ -67,11 +65,6 @@ test.describe("Pano voteOnComment (task_11)", () => {
 		await expect(page.locator(".kp-pano-postpage__thread-heading")).toHaveText("1 yorum", {
 			timeout: 10_000,
 		});
-
-		// Reload once more so the comments query is stable when we click the
-		// vote button (avoids the same fetchKey-driven Suspense race the post
-		// page suffers from after submit).
-		await page.reload();
 
 		const voteBtn = page.locator('[data-testid^="comment-vote-"]').first();
 		const score = page.locator('[data-testid^="comment-score-"]').first();

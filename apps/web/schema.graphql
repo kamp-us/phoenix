@@ -1,13 +1,20 @@
-type Comment {
+type Comment implements Node {
   author: String!
   authorId: ID!
   body: String!
   createdAt: String!
+  deletedAt: String
   id: ID!
   myVote: Int
   parentId: ID
   score: Int!
   updatedAt: String!
+}
+
+type CommentConnection {
+  edges: [CommentEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
 }
 
 type CommentContribution {
@@ -20,9 +27,15 @@ type CommentContribution {
   score: Int!
 }
 
+type CommentEdge {
+  cursor: String!
+  node: Comment!
+}
+
 type ContributionConnection {
   edges: [ContributionEdge!]!
   pageInfo: PageInfo!
+  totalCount: Int!
 }
 
 type ContributionEdge {
@@ -30,7 +43,7 @@ type ContributionEdge {
   node: ProfileContribution!
 }
 
-type Definition {
+type Definition implements Node {
   author: String!
   authorId: ID!
   body: String!
@@ -41,6 +54,12 @@ type Definition {
   updatedAt: String!
 }
 
+type DefinitionConnection {
+  edges: [DefinitionEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
 type DefinitionContribution {
   bodyExcerpt: String!
   createdAt: String!
@@ -49,6 +68,20 @@ type DefinitionContribution {
   score: Int!
   termSlug: String!
   termTitle: String!
+}
+
+type DefinitionEdge {
+  cursor: String!
+  node: Definition!
+}
+
+type DeleteCommentPayload {
+  comment: Comment
+  deletedCommentId: ID
+}
+
+type DeleteDefinitionPayload {
+  deletedDefinitionId: ID!
 }
 
 type Health {
@@ -67,9 +100,9 @@ type LandingStats {
 type Mutation {
   addComment(body: String!, parentId: ID, postId: ID!): Comment!
   addDefinition(body: String!, termSlug: String!, termTitle: String): Definition!
-  deleteComment(id: ID!): String!
-  deleteDefinition(id: ID!): String!
-  deletePost(id: ID!): String!
+  deleteComment(id: ID!): DeleteCommentPayload!
+  deleteDefinition(id: ID!): DeleteDefinitionPayload!
+  deletePost(id: ID!): ID!
   editComment(body: String!, id: ID!): Comment!
   editDefinition(body: String!, id: ID!): Definition!
   editPost(body: String, id: ID!, title: String): Post!
@@ -83,16 +116,23 @@ type Mutation {
   voteOnPost(postId: ID!): Post!
 }
 
+interface Node {
+  id: ID!
+}
+
 type PageInfo {
   endCursor: String
   hasNextPage: Boolean!
+  hasPreviousPage: Boolean!
+  startCursor: String
 }
 
-type Post {
+type Post implements Node {
   author: String!
   authorId: ID!
   body: String
   commentCount: Int!
+  comments(after: String, first: Int): CommentConnection!
   createdAt: String!
   host: String
   id: ID!
@@ -105,6 +145,12 @@ type Post {
   url: String
 }
 
+type PostConnection {
+  edges: [PostEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
 type PostContribution {
   bodyExcerpt: String
   createdAt: String!
@@ -115,6 +161,11 @@ type PostContribution {
   title: String!
 }
 
+type PostEdge {
+  cursor: String!
+  node: Post!
+}
+
 enum PostSort {
   discuss
   hot
@@ -122,10 +173,11 @@ enum PostSort {
   top
 }
 
-type Profile {
+type Profile implements Node {
   commentCount: Int!
   contributions(after: String, first: Int): ContributionConnection!
   definitionCount: Int!
+  id: ID!
   postCount: Int!
   totalKarma: Int!
   user: User!
@@ -137,12 +189,12 @@ type Query {
   health: Health!
   landingStats: LandingStats!
   me: User
+  node(id: ID!): Node
   post(idOrSlug: String!): Post
-  postComments(postId: String!): [Comment!]!
-  posts(host: String, limit: Int, sort: PostSort): [Post!]!
+  posts(after: String, first: Int, host: String, sort: PostSort): PostConnection!
   profile(username: String!): Profile
   term(slug: String!): Term
-  terms(limit: Int, sort: TermSort): [Term!]!
+  terms(after: String, first: Int, sort: TermSort): TermConnection!
 }
 
 type Tag {
@@ -155,16 +207,30 @@ input TagInput {
   label: String
 }
 
-type Term {
+type Term implements Node {
   count: Int!
-  definitions: [Definition!]!
+  definitionCount: Int!
+  definitions(after: String, first: Int): DefinitionConnection!
   excerpt: String
   firstAt: String
+  firstLetter: String!
   id: ID!
+  lastActivityAt: String
   lastEdit: String
   slug: String!
   title: String!
   totalScore: Int!
+}
+
+type TermConnection {
+  edges: [TermEdge!]!
+  pageInfo: PageInfo!
+  totalCount: Int!
+}
+
+type TermEdge {
+  cursor: String!
+  node: Term!
 }
 
 enum TermSort {
@@ -172,7 +238,7 @@ enum TermSort {
   recent
 }
 
-type User {
+type User implements Node {
   email: String!
   id: ID!
   image: String

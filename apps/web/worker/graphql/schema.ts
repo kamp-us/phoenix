@@ -7,6 +7,7 @@ import {
 	GraphQLID,
 	GraphQLInputObjectType,
 	GraphQLInt,
+	GraphQLInterfaceType,
 	GraphQLList,
 	GraphQLNonNull,
 	GraphQLObjectType,
@@ -16,9 +17,11 @@ import {
 	lexicographicSortSchema,
 	printSchema,
 } from "graphql";
+import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encodeNodeId";
 import {lookupCommentPostId} from "../features/pano/commentViewReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
+	type CommentConnectionPage,
 	CommentNotFoundError,
 	type CommentRow,
 	CommentValidationError,
@@ -28,7 +31,8 @@ import {
 	PostValidationError,
 } from "../features/pano/PanoPost";
 import {
-	listPostSummaries,
+	listPostConnection,
+	type PostConnectionPage,
 	type PostSort,
 	type PostSummaryRow,
 } from "../features/pano/postSummaryReader";
@@ -38,17 +42,19 @@ import {
 	type ContributionNode,
 	listContributions,
 	lookupProfile,
+	lookupProfileById,
 	type ProfileRow,
 } from "../features/pasaport/userProfileReader";
-import type {DefinitionRow, TermPage} from "../features/sozluk/SozlukTerm";
-import {
-	DefinitionNotFoundError,
-	DefinitionValidationError,
-	UnauthorizedDefinitionMutationError,
+import type {
+	DefinitionConnectionPage,
+	DefinitionRow,
+	TermPage,
 } from "../features/sozluk/SozlukTerm";
+import {DefinitionNotFoundError, DefinitionValidationError} from "../features/sozluk/SozlukTerm";
 import {
-	listTermSummaries,
 	type ListSort,
+	listTermSummariesConnection,
+	type TermConnectionPage,
 	type TermSummaryRow,
 } from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
@@ -64,10 +70,44 @@ const HealthType = new GraphQLObjectType({
 	},
 });
 
-const UserType = new GraphQLObjectType({
-	name: "User",
+/**
+ * Relay `Node` interface (task_1, phoenix-relay-idiom). Every entity that a
+ * Relay client can refetch via `@refetchable` or load via the top-level
+ * `node(id)` query implements `Node` and exposes a globally-unique `id`.
+ *
+ * Concrete types stamp a `__typename` property on the rows they return from
+ * the {@link nodeResolver} dispatch path; everywhere else, `resolveType`
+ * inspects whichever per-entity discriminator is most natural (slug / kind).
+ */
+const NodeInterfaceType = new GraphQLInterfaceType({
+	name: "Node",
 	fields: {
 		id: {type: new GraphQLNonNull(GraphQLID)},
+	},
+	resolveType: (value: {__typename?: string}) => value.__typename,
+});
+
+/**
+ * Stamp a `__typename` on a row before returning it from the `node(id)`
+ * dispatch — the {@link NodeInterfaceType} `resolveType` reads it to pick
+ * the concrete GraphQL type. Plain reads from query fields like `term(slug)`
+ * already know their concrete type, so they don't need this.
+ */
+function asNode<T extends object>(typename: string, value: T): T & {__typename: string} {
+	return Object.assign({__typename: typename}, value);
+}
+
+const UserType = new GraphQLObjectType({
+	name: "User",
+	interfaces: () => [NodeInterfaceType],
+	fields: {
+		// Relay global id: base64 of `User:${userId}`. Local id is recoverable
+		// via `decodeNodeId` (or `extractLocalId`, lenient) at any mutation
+		// entry point that takes a `User` reference.
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (u: {id: string}) => encodeNodeId("User", u.id),
+		},
 		email: {type: new GraphQLNonNull(GraphQLString)},
 		name: {type: GraphQLString},
 		image: {type: GraphQLString},
@@ -79,8 +119,12 @@ const UserType = new GraphQLObjectType({
 
 const DefinitionType = new GraphQLObjectType<DefinitionRow>({
 	name: "Definition",
+	interfaces: () => [NodeInterfaceType],
 	fields: {
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (d) => encodeNodeId("Definition", d.id),
+		},
 		body: {type: new GraphQLNonNull(GraphQLString)},
 		author: {type: new GraphQLNonNull(GraphQLString)},
 		/**
@@ -140,8 +184,12 @@ const DefinitionType = new GraphQLObjectType<DefinitionRow>({
  */
 const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummaryRow>({
 	name: "Term",
+	interfaces: () => [NodeInterfaceType],
 	fields: () => ({
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (t) => encodeNodeId("Term", t.slug),
+		},
 		slug: {type: new GraphQLNonNull(GraphQLString)},
 		title: {type: new GraphQLNonNull(GraphQLString)},
 		count: {
@@ -170,10 +218,128 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 				return s.lastEdit.toISOString();
 			},
 		},
-		definitions: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(DefinitionType))),
-			resolve: (s) => ("definitions" in s ? s.definitions : []),
+		/**
+		 * Sozluk home `TermRowFragment` projections (task_5, phoenix-relay-idiom).
+		 *
+		 * `firstLetter` powers the alphabet pivot ribbon — the row exposes
+		 * the column directly off `term_summary` so the SPA doesn't have to
+		 * re-derive the lower-cased first character (Turkish-locale safe;
+		 * the projection writes it). For a `TermPage` source (per-term DO
+		 * read; the summary fields aren't materialized there) we lower-case
+		 * the title client-side as a graceful fallback.
+		 *
+		 * `definitionCount` and `lastActivityAt` mirror the row fields
+		 * `count` / `lastEdit` but with names matching the home-row's
+		 * intent (count of live definitions / last activity timestamp).
+		 * Keeping them as separate field names follows the AC literally
+		 * and lets the row fragment read them under the names it asks
+		 * for; resolvers normalize across both source shapes.
+		 */
+		firstLetter: {
+			type: new GraphQLNonNull(GraphQLString),
+			resolve: (s) => {
+				if ("firstLetter" in s && s.firstLetter) return s.firstLetter;
+				return (s.title?.[0] ?? "").toLowerCase();
+			},
 		},
+		definitionCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (s) => ("definitionCount" in s ? s.definitionCount : s.totalDefinitions),
+		},
+		lastActivityAt: {
+			type: GraphQLString,
+			resolve: (s) => {
+				if ("lastActivityAt" in s) {
+					return s.lastActivityAt ? s.lastActivityAt.toISOString() : null;
+				}
+				if ("lastEdit" in s && s.lastEdit) return s.lastEdit.toISOString();
+				return null;
+			},
+		},
+		/**
+		 * Connection-shaped definition list (task_4, phoenix-relay-idiom).
+		 * The canonical read path for `SozlukTermPage`. Replaces the legacy
+		 * flat-array `definitions: [Definition!]!` field — bringing the
+		 * cleanup forward one task because Relay's `@connection` key
+		 * convention requires the field name to match the suffix of the
+		 * key (`<Component>_<fieldName>`), and the SPA's only consumer is
+		 * the term page which migrates in this same change.
+		 *
+		 * Cursor pagination is keyset on the definition id (forge ULID;
+		 * lex-sortable) over the per-term Agent's score-DESC materialized
+		 * order. `LoadMoreButton` reads `pageInfo.hasNextPage`; `totalCount`
+		 * reflects the materialized live-only count.
+		 */
+		definitions: {
+			type: new GraphQLNonNull(DefinitionConnectionType),
+			args: {
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
+			},
+			resolve: resolver(function* (
+				parent: TermPage | TermSummaryRow,
+				args: {first?: number | null; after?: string | null},
+			) {
+				const env = yield* CloudflareEnv;
+				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(parent.slug));
+				return yield* Effect.promise(() =>
+					stub.listDefinitionsConnection({
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
+					}),
+				);
+			}),
+		},
+	}),
+});
+
+/* -------------------------------------------------------------------------- */
+/* Definition connection (task_4, phoenix-relay-idiom)                         */
+/* -------------------------------------------------------------------------- */
+
+const DefinitionEdgeType = new GraphQLObjectType<{cursor: string; node: DefinitionRow}>({
+	name: "DefinitionEdge",
+	fields: () => ({
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(DefinitionType)},
+	}),
+});
+
+const DefinitionConnectionType = new GraphQLObjectType<DefinitionConnectionPage>({
+	name: "DefinitionConnection",
+	fields: () => ({
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(DefinitionEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.id, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
+	}),
+});
+
+/**
+ * `deleteDefinition` mutation payload (task_4, phoenix-relay-idiom). Returns
+ * the deleted definition's Relay global id so the SPA can `@deleteRecord`
+ * it out of the store; connection edges referencing the gone record auto-
+ * clear. Mirrors the `deletedPostId @deleteRecord` shape from `deletePost`
+ * (task_2). No two-shape payload here — a soft-deleted definition simply
+ * disappears (no reply-aware placeholder like comments).
+ */
+const DeleteDefinitionPayloadType = new GraphQLObjectType<{
+	deletedDefinitionId: string;
+}>({
+	name: "DeleteDefinitionPayload",
+	fields: () => ({
+		deletedDefinitionId: {type: new GraphQLNonNull(GraphQLID)},
 	}),
 });
 
@@ -183,6 +349,39 @@ const TermSortEnum = new GraphQLEnumType({
 		recent: {value: "recent"},
 		popular: {value: "popular"},
 	},
+});
+
+/* -------------------------------------------------------------------------- */
+/* Term connection (task_5, phoenix-relay-idiom)                               */
+/* -------------------------------------------------------------------------- */
+
+const TermEdgeType = new GraphQLObjectType<{cursor: string; node: TermSummaryRow}>({
+	name: "TermEdge",
+	fields: () => ({
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(TermType)},
+	}),
+});
+
+const TermConnectionType = new GraphQLObjectType<TermConnectionPage>({
+	name: "TermConnection",
+	fields: () => ({
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(TermEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.slug, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
+	}),
 });
 
 const TagType = new GraphQLObjectType<PostTagRow>({
@@ -201,8 +400,12 @@ const TagType = new GraphQLObjectType<PostTagRow>({
  */
 const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 	name: "Post",
+	interfaces: () => [NodeInterfaceType],
 	fields: () => ({
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (p) => encodeNodeId("Post", p.id),
+		},
 		slug: {type: GraphQLString},
 		title: {type: new GraphQLNonNull(GraphQLString)},
 		url: {type: GraphQLString},
@@ -260,13 +463,105 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 				);
 			}),
 		},
+		/**
+		 * Connection-shaped comment list (task_3, phoenix-relay-idiom).
+		 * Canonical read path for the post-detail page; replaced the legacy
+		 * top-level `postComments(postId)` flat-array field (dropped in the
+		 * task_7 cleanup).
+		 *
+		 * Cursor pagination is keyset on the comment id (forge ULID;
+		 * lex-sortable, matches chronological-asc). The `LoadMoreButton` reads
+		 * `pageInfo.hasNextPage`; `totalCount` reflects the materialized
+		 * post-reply-aware list length.
+		 */
+		comments: {
+			type: new GraphQLNonNull(CommentConnectionType),
+			args: {
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
+			},
+			resolve: resolver(function* (
+				parent: PostSummaryRow | PostPage,
+				args: {first?: number | null; after?: string | null},
+			) {
+				const env = yield* CloudflareEnv;
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(parent.id));
+				return yield* Effect.promise(() =>
+					stub.listCommentsConnection({
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
+					}),
+				);
+			}),
+		},
+	}),
+});
+
+/* -------------------------------------------------------------------------- */
+/* Comment connection (task_3, phoenix-relay-idiom)                            */
+/* -------------------------------------------------------------------------- */
+
+const CommentEdgeType = new GraphQLObjectType<{cursor: string; node: CommentRow}>({
+	name: "CommentEdge",
+	fields: () => ({
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(CommentType)},
+	}),
+});
+
+const CommentConnectionType = new GraphQLObjectType<CommentConnectionPage>({
+	name: "CommentConnection",
+	fields: () => ({
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(CommentEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.id, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
+	}),
+});
+
+/**
+ * Two-shape mutation payload for `deleteComment` (task_3, phoenix-relay-idiom).
+ * Exactly one of `deletedCommentId` / `comment` is non-null per call:
+ *
+ *  - **Leaf path** — comment had no live children. `deletedCommentId` is the
+ *    Relay global id; the FE `@deleteRecord`s it out of the store, the
+ *    connection edge auto-clears.
+ *  - **Parent-with-replies path** — comment had at least one live child. The
+ *    server returns the same `Comment` with `body = '[silindi]'` and
+ *    `deletedAt` set; Relay's automatic store update merges the new scalars
+ *    into the existing `Comment:<global-id>` record. The row stays in the
+ *    connection so the thread shape is preserved.
+ */
+const DeleteCommentPayloadType = new GraphQLObjectType<{
+	deletedCommentId: string | null;
+	comment: CommentRow | null;
+}>({
+	name: "DeleteCommentPayload",
+	fields: () => ({
+		deletedCommentId: {type: GraphQLID},
+		comment: {type: CommentType},
 	}),
 });
 
 const CommentType = new GraphQLObjectType<CommentRow>({
 	name: "Comment",
+	interfaces: () => [NodeInterfaceType],
 	fields: {
-		id: {type: new GraphQLNonNull(GraphQLID)},
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (c) => encodeNodeId("Comment", c.id),
+		},
 		parentId: {type: GraphQLID},
 		author: {type: new GraphQLNonNull(GraphQLString)},
 		/**
@@ -287,6 +582,21 @@ const CommentType = new GraphQLObjectType<CommentRow>({
 			resolve: (c) => {
 				const u = (c as {updatedAt?: Date}).updatedAt;
 				return (u ?? c.createdAt).toISOString();
+			},
+		},
+		/**
+		 * Soft-delete timestamp (task_3, phoenix-relay-idiom). `null` for live
+		 * comments; ISO string when the comment was soft-deleted but still
+		 * appears in the tree as a `[silindi]` placeholder (parent-with-replies
+		 * path). The leaf-delete path removes the row entirely so it never
+		 * surfaces here. The SPA reads this typed flag instead of the fragile
+		 * body-string match against `[silindi]`.
+		 */
+		deletedAt: {
+			type: GraphQLString,
+			resolve: (c) => {
+				const d = (c as {deletedAt?: Date | null}).deletedAt;
+				return d ? d.toISOString() : null;
 			},
 		},
 		/**
@@ -447,10 +757,32 @@ const ContributionEdgeType = new GraphQLObjectType<{cursor: string; node: Contri
 	},
 });
 
-const PageInfoType = new GraphQLObjectType<{hasNextPage: boolean; endCursor: string | null}>({
+/**
+ * Relay-spec `PageInfo` (task_1, phoenix-relay-idiom). The fields are the
+ * full Relay set so future page-migration tasks can wire bidirectional
+ * pagination if they ever need it. Today's connection resolvers only
+ * populate `hasNextPage` / `endCursor`; the others default to safe values
+ * (`hasPreviousPage: false`, `startCursor: null`) so the SDL contract
+ * holds without forcing every reader to manufacture them.
+ */
+interface PageInfoLike {
+	hasNextPage: boolean;
+	endCursor: string | null;
+	hasPreviousPage?: boolean;
+	startCursor?: string | null;
+}
+const PageInfoType = new GraphQLObjectType<PageInfoLike>({
 	name: "PageInfo",
 	fields: {
 		hasNextPage: {type: new GraphQLNonNull(GraphQLBoolean)},
+		hasPreviousPage: {
+			type: new GraphQLNonNull(GraphQLBoolean),
+			resolve: (p) => p.hasPreviousPage ?? false,
+		},
+		startCursor: {
+			type: GraphQLString,
+			resolve: (p) => p.startCursor ?? null,
+		},
 		endCursor: {type: GraphQLString},
 	},
 });
@@ -465,12 +797,56 @@ const ContributionConnectionType = new GraphQLObjectType<ContributionConnection>
 			type: new GraphQLNonNull(PageInfoType),
 			resolve: (c) => ({hasNextPage: c.hasNextPage, endCursor: c.endCursor}),
 		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (c) => c.totalCount,
+		},
+	},
+});
+
+/* -------------------------------------------------------------------------- */
+/* Pano feed connection (task_2, phoenix-relay-idiom)                          */
+/* -------------------------------------------------------------------------- */
+
+const PostEdgeType = new GraphQLObjectType<{cursor: string; node: PostSummaryRow}>({
+	name: "PostEdge",
+	fields: {
+		cursor: {type: new GraphQLNonNull(GraphQLString)},
+		node: {type: new GraphQLNonNull(PostType)},
+	},
+});
+
+const PostConnectionType = new GraphQLObjectType<PostConnectionPage>({
+	name: "PostConnection",
+	fields: {
+		edges: {
+			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(PostEdgeType))),
+			resolve: (page) => page.rows.map((row) => ({cursor: row.id, node: row})),
+		},
+		pageInfo: {
+			type: new GraphQLNonNull(PageInfoType),
+			resolve: (page) => ({
+				hasNextPage: page.hasNextPage,
+				endCursor: page.endCursor,
+			}),
+		},
+		totalCount: {
+			type: new GraphQLNonNull(GraphQLInt),
+			resolve: (page) => page.totalCount,
+		},
 	},
 });
 
 const ProfileType = new GraphQLObjectType<ProfileRow>({
 	name: "Profile",
+	interfaces: () => [NodeInterfaceType],
 	fields: {
+		// Relay global id keyed off `userId` — that's the immutable
+		// per-user identifier; `username` may be NULL until bootstrap.
+		id: {
+			type: new GraphQLNonNull(GraphQLID),
+			resolve: (p) => encodeNodeId("Profile", p.userId),
+		},
 		user: {
 			type: new GraphQLNonNull(UserType),
 			resolve: (p) => ({
@@ -535,6 +911,78 @@ const PHOENIX_BUILD_VERSION = "v0.3";
 const QueryType = new GraphQLObjectType({
 	name: "Query",
 	fields: {
+		/**
+		 * Relay `node(id)` dispatch (task_1, phoenix-relay-idiom). Decodes a
+		 * global id into `(typename, localId)` and routes to the right
+		 * per-atom Agent or D1 reader. Returns `null` for any unresolved
+		 * id rather than throwing — matches Relay's expectation for a
+		 * `Node` lookup that can legitimately miss.
+		 *
+		 * Definition / Comment lookups walk through the parent atom (term
+		 * for Definition, post for Comment) because the per-atom Agent is
+		 * the source of truth for the full row shape; the cross-product
+		 * MV only carries excerpts. The walk is one D1 lookup + one DO
+		 * RPC — fine for the rare `node()` access pattern (refetches and
+		 * direct deeplinks); page reads still go through their dedicated
+		 * top-level fields.
+		 */
+		node: {
+			type: NodeInterfaceType,
+			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
+			resolve: resolver(function* (_source, args: {id: string}) {
+				const env = yield* CloudflareEnv;
+				let decoded: ReturnType<typeof decodeNodeId>;
+				try {
+					decoded = decodeNodeId(args.id);
+				} catch {
+					// Unresolvable id — surface as null rather than a 500.
+					return null;
+				}
+				switch (decoded.typename) {
+					case "Term": {
+						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(decoded.id));
+						const term = yield* Effect.promise(() => stub.getTerm());
+						return term ? asNode("Term", term) : null;
+					}
+					case "Post": {
+						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(decoded.id));
+						const post = yield* Effect.promise(() => stub.getPost());
+						return post ? asNode("Post", post) : null;
+					}
+					case "Definition": {
+						const slug = yield* Effect.promise(() =>
+							lookupDefinitionTermSlug(env.PHOENIX_DB, decoded.id),
+						);
+						if (!slug) return null;
+						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
+						const term = yield* Effect.promise(() => stub.getTerm());
+						const def = term?.definitions.find((d) => d.id === decoded.id) ?? null;
+						return def ? asNode("Definition", def) : null;
+					}
+					case "Comment": {
+						const postId = yield* Effect.promise(() =>
+							lookupCommentPostId(env.PHOENIX_DB, decoded.id),
+						);
+						if (!postId) return null;
+						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
+						const comments = yield* Effect.promise(() => stub.listComments());
+						const c = comments.find((row) => row.id === decoded.id) ?? null;
+						return c ? asNode("Comment", c) : null;
+					}
+					case "User": {
+						const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
+						const user = yield* Effect.promise(() => stub.getUserById(decoded.id));
+						return user ? asNode("User", user) : null;
+					}
+					case "Profile": {
+						const profile = yield* Effect.promise(() =>
+							lookupProfileById(env.PHOENIX_DB, decoded.id),
+						);
+						return profile ? asNode("Profile", profile) : null;
+					}
+				}
+			}),
+		},
 		health: {
 			type: new GraphQLNonNull(HealthType),
 			resolve: resolver(function* () {
@@ -562,18 +1010,35 @@ const QueryType = new GraphQLObjectType({
 				return fresh;
 			}),
 		},
+		/**
+		 * Sozluk home terms connection (task_5, phoenix-relay-idiom). Replaces
+		 * the legacy flat-array `terms(sort, limit)` field — `SozlukHome.tsx`
+		 * is the only consumer and migrates in the same PR. The connection
+		 * shape unlocks Relay's `@connection`-keyed updaters and future
+		 * `usePaginationFragment` usage on the home (this task ships
+		 * first-page-only; the shape is future-proofed).
+		 *
+		 * Cursor is the term slug (primary key of `term_summary`,
+		 * lex-sortable). `sort` accepts `recent` and `popular` (the existing
+		 * vocabulary; `TermSort` enum unchanged).
+		 */
 		terms: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(TermType))),
+			type: new GraphQLNonNull(TermConnectionType),
 			args: {
 				sort: {type: TermSortEnum},
-				limit: {type: GraphQLInt},
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
 			},
-			resolve: resolver(function* (_source, args: {sort?: ListSort; limit?: number}) {
+			resolve: resolver(function* (
+				_source,
+				args: {sort?: ListSort; first?: number | null; after?: string | null},
+			) {
 				const env = yield* CloudflareEnv;
 				return yield* Effect.promise(() =>
-					listTermSummaries(env.PHOENIX_DB, {
+					listTermSummariesConnection(env.PHOENIX_DB, {
 						...(args.sort ? {sort: args.sort} : {}),
-						...(args.limit != null ? {limit: args.limit} : {}),
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
 					}),
 				);
 			}),
@@ -587,22 +1052,41 @@ const QueryType = new GraphQLObjectType({
 				return yield* Effect.promise(() => stub.getTerm());
 			}),
 		},
+		/**
+		 * Pano feed connection (task_2, phoenix-relay-idiom). Replaces the
+		 * legacy flat-array `posts(sort, limit, host)` field — `PanoFeed.tsx`
+		 * is the only consumer and migrates in the same PR. The connection
+		 * shape unlocks Relay's idiomatic `usePaginationFragment` +
+		 * `@connection` mutation updaters.
+		 *
+		 * Cursor is the post id (forge ULID; lex-sortable). The reader resolves
+		 * the cursor row once per page to support keyset pagination across
+		 * non-monotonic sort keys (`hot_score`, `score`, `comment_count`); for
+		 * the `new` sort it shortcuts to a direct id comparison.
+		 */
 		posts: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(PostType))),
+			type: new GraphQLNonNull(PostConnectionType),
 			args: {
 				sort: {type: PostSortEnum},
-				limit: {type: GraphQLInt},
 				host: {type: GraphQLString},
+				first: {type: GraphQLInt},
+				after: {type: GraphQLString},
 			},
 			resolve: resolver(function* (
 				_source,
-				args: {sort?: PostSort; limit?: number; host?: string},
+				args: {
+					sort?: PostSort;
+					host?: string | null;
+					first?: number | null;
+					after?: string | null;
+				},
 			) {
 				const env = yield* CloudflareEnv;
 				return yield* Effect.promise(() =>
-					listPostSummaries(env.PHOENIX_DB, {
+					listPostConnection(env.PHOENIX_DB, {
 						...(args.sort ? {sort: args.sort} : {}),
-						...(args.limit != null ? {limit: args.limit} : {}),
+						...(args.first != null ? {first: args.first} : {}),
+						...(args.after ? {after: args.after} : {}),
 						...(args.host ? {host: args.host} : {}),
 					}),
 				);
@@ -613,17 +1097,14 @@ const QueryType = new GraphQLObjectType({
 			args: {idOrSlug: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {idOrSlug: string}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.idOrSlug));
+				// Accept either a Relay global id (`Post:<localId>` base64),
+				// a raw local post id, or a slug. After task_2's connection
+				// migration, the SPA hands back `Post.id` (the global id) when
+				// it navigates to /pano/<id>; we extract the local id so the
+				// per-post DO lookup hits the right instance.
+				const key = extractLocalId(args.idOrSlug, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(key));
 				return yield* Effect.promise(() => stub.getPost());
-			}),
-		},
-		postComments: {
-			type: new GraphQLNonNull(new GraphQLList(new GraphQLNonNull(CommentType))),
-			args: {postId: {type: new GraphQLNonNull(GraphQLString)}},
-			resolve: resolver(function* (_source, args: {postId: string}) {
-				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
-				return yield* Effect.promise(() => stub.listComments());
 			}),
 		},
 		/**
@@ -850,6 +1331,10 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {definitionId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
+				// Accept either a Relay global id (post-migration FE) or a raw
+				// local id (current MVP FE). `extractLocalId` is a no-op for raw
+				// ids — see encodeNodeId.ts for the migration rationale.
+				const definitionId = extractLocalId(args.definitionId, "Definition");
 				// The definition's term is encoded by the DO instance the resolver
 				// targets. The frontend always knows the term slug from the page
 				// URL (vote button lives on a term page) — but the GraphQL surface
@@ -857,7 +1342,7 @@ const MutationType = new GraphQLObjectType({
 				// `definition_view` row carries `term_slug` so we lean on it for
 				// the dispatch.
 				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, args.definitionId),
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
 				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
@@ -867,7 +1352,7 @@ const MutationType = new GraphQLObjectType({
 				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				try {
 					const result = yield* Effect.promise(() =>
-						stub.voteDefinition({definitionId: args.definitionId, voterId: user.id}),
+						stub.voteDefinition({definitionId, voterId: user.id}),
 					);
 					return {
 						id: result.definitionId,
@@ -897,8 +1382,9 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {definitionId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
+				const definitionId = extractLocalId(args.definitionId, "Definition");
 				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, args.definitionId),
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
 				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
@@ -908,7 +1394,7 @@ const MutationType = new GraphQLObjectType({
 				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				try {
 					const result = yield* Effect.promise(() =>
-						stub.retractDefinitionVote({definitionId: args.definitionId, voterId: user.id}),
+						stub.retractDefinitionVote({definitionId, voterId: user.id}),
 					);
 					return {
 						id: result.definitionId,
@@ -939,7 +1425,10 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string; body: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const slug = yield* Effect.promise(() => lookupDefinitionTermSlug(env.PHOENIX_DB, args.id));
+				const definitionId = extractLocalId(args.id, "Definition");
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
 						extensions: {code: "DEFINITION_NOT_FOUND"},
@@ -952,7 +1441,7 @@ const MutationType = new GraphQLObjectType({
 					const result = yield* Effect.promise(() =>
 						stub
 							.editDefinition({
-								definitionId: args.id,
+								definitionId,
 								actorId: user.id,
 								body: args.body,
 							})
@@ -980,13 +1469,28 @@ const MutationType = new GraphQLObjectType({
 				}
 			}),
 		},
+		/**
+		 * Soft-delete a definition (task_4, phoenix-relay-idiom). Payload
+		 * shape changed from `String!` to `DeleteDefinitionPayload!` with a
+		 * `deletedDefinitionId: ID!` field so the SPA can target it with
+		 * `@deleteRecord` — Relay drops the record from the store and any
+		 * connection edge referencing it auto-clears. No `$connections`
+		 * variable, no manual updater needed.
+		 *
+		 * The returned id is the Relay global id (base64 of `Definition:<localId>`),
+		 * matching what every other resolver / fragment puts on `Definition.id`.
+		 * `@deleteRecord` keys off that exact value.
+		 */
 		deleteDefinition: {
-			type: new GraphQLNonNull(GraphQLString),
+			type: new GraphQLNonNull(DeleteDefinitionPayloadType),
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const slug = yield* Effect.promise(() => lookupDefinitionTermSlug(env.PHOENIX_DB, args.id));
+				const definitionId = extractLocalId(args.id, "Definition");
+				const slug = yield* Effect.promise(() =>
+					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				);
 				if (!slug) {
 					throw new GraphQLError("definition not found", {
 						extensions: {code: "DEFINITION_NOT_FOUND"},
@@ -994,7 +1498,7 @@ const MutationType = new GraphQLObjectType({
 				}
 				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				const result = yield* Effect.promise(() =>
-					stub.deleteDefinition({definitionId: args.id, actorId: user.id}).then(
+					stub.deleteDefinition({definitionId, actorId: user.id}).then(
 						(value) => ({ok: true as const, value}),
 						(error: unknown) => ({ok: false as const, error}),
 					),
@@ -1002,9 +1506,9 @@ const MutationType = new GraphQLObjectType({
 				if (!result.ok) {
 					throw mapDefinitionMutationError(result.error);
 				}
-				// SDL is `deleteDefinition: String!` — return the id as a stable
-				// success token so the SPA can confirm + invalidate caches.
-				return result.value.definitionId;
+				return {
+					deletedDefinitionId: encodeNodeId("Definition", result.value.definitionId),
+				};
 			}),
 		},
 		submitPost: {
@@ -1123,7 +1627,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {postId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				const postId = extractLocalId(args.postId, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				try {
 					const result = yield* Effect.promise(() => stub.voteOnPost({voterId: user.id}));
 					return {
@@ -1163,7 +1668,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {postId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				const postId = extractLocalId(args.postId, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				try {
 					const result = yield* Effect.promise(() => stub.retractPostVote({voterId: user.id}));
 					return {
@@ -1214,7 +1720,8 @@ const MutationType = new GraphQLObjectType({
 					});
 				}
 
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.id));
+				const postId = extractLocalId(args.id, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
 					stub
 						.editPost({
@@ -1251,13 +1758,21 @@ const MutationType = new GraphQLObjectType({
 				} satisfies PostPage;
 			}),
 		},
+		/**
+		 * Delete a post (task_2, phoenix-relay-idiom). Returns the global id
+		 * of the deleted post; the FE attaches `@deleteRecord` to that field
+		 * so Relay removes the record from its store, which in turn auto-clears
+		 * every edge in every `PanoFeed_posts` connection variant that
+		 * references it. No `$connections` plumbing required.
+		 */
 		deletePost: {
-			type: new GraphQLNonNull(GraphQLString),
+			type: new GraphQLNonNull(GraphQLID),
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.id));
+				const postId = extractLocalId(args.id, "Post");
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
 					stub.deletePost({actorId: user.id}).then(
 						(value) => ({ok: true as const, value}),
@@ -1267,9 +1782,10 @@ const MutationType = new GraphQLObjectType({
 				if (!result.ok) {
 					throw mapPostMutationError(result.error);
 				}
-				// SDL is `deletePost: String!` — return the deleted id so the SPA
-				// can confirm + invalidate caches. Mirrors `deleteDefinition` (T6).
-				return result.value.postId;
+				// Return the Relay global id so `@deleteRecord` can find the
+				// store record under the same DataID Relay normalized the
+				// `Post` to (`encodeNodeId("Post", localId)`).
+				return encodeNodeId("Post", result.value.postId);
 			}),
 		},
 		addComment: {
@@ -1300,14 +1816,16 @@ const MutationType = new GraphQLObjectType({
 					});
 				}
 
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(args.postId));
+				const postId = extractLocalId(args.postId, "Post");
+				const parentId = args.parentId ? extractLocalId(args.parentId, "Comment") : null;
+				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				try {
 					const result = yield* Effect.promise(() =>
 						stub.addComment({
 							authorId: user.id,
 							authorName: user.name ?? user.email,
 							body: args.body,
-							...(args.parentId ? {parentId: args.parentId} : {}),
+							...(parentId ? {parentId} : {}),
 						}),
 					);
 					return {
@@ -1343,15 +1861,14 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {commentId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
+				const commentId = extractLocalId(args.commentId, "Comment");
 				// The comment lives inside its containing post's DO. The frontend
 				// always knows the post id from the page URL (vote button lives on
 				// a post page) but the GraphQL surface only takes the comment id,
 				// so we lean on the projection's denormalized `comment_view.post_id`
 				// to route the RPC. Mirrors the `lookupDefinitionTermSlug` pattern
 				// from T5's `voteDefinition`.
-				const postId = yield* Effect.promise(() =>
-					lookupCommentPostId(env.PHOENIX_DB, args.commentId),
-				);
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1361,7 +1878,7 @@ const MutationType = new GraphQLObjectType({
 				try {
 					const result = yield* Effect.promise(() =>
 						stub.voteOnComment({
-							commentId: args.commentId,
+							commentId,
 							voterId: user.id,
 						}),
 					);
@@ -1399,9 +1916,8 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {commentId: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const postId = yield* Effect.promise(() =>
-					lookupCommentPostId(env.PHOENIX_DB, args.commentId),
-				);
+				const commentId = extractLocalId(args.commentId, "Comment");
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1411,7 +1927,7 @@ const MutationType = new GraphQLObjectType({
 				try {
 					const result = yield* Effect.promise(() =>
 						stub.retractCommentVote({
-							commentId: args.commentId,
+							commentId,
 							voterId: user.id,
 						}),
 					);
@@ -1465,7 +1981,8 @@ const MutationType = new GraphQLObjectType({
 					});
 				}
 
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, args.id));
+				const commentId = extractLocalId(args.id, "Comment");
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1473,7 +1990,7 @@ const MutationType = new GraphQLObjectType({
 				}
 				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
-					stub.editComment({commentId: args.id, actorId: user.id, body: args.body}).then(
+					stub.editComment({commentId, actorId: user.id, body: args.body}).then(
 						(value) => ({ok: true as const, value}),
 						(error: unknown) => ({ok: false as const, error}),
 					),
@@ -1498,20 +2015,25 @@ const MutationType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Soft-delete a comment (T12). `Auth.required` + ownership inside the
-		 * Agent. Reply-aware: the per-DO read and the cross-product
-		 * `comment_view` projection both treat a deleted-with-children
-		 * comment as `[silindi]` (preserve thread shape) and a deleted-leaf
-		 * as fully removed. The SDL returns the deleted comment id (mirrors
-		 * `deletePost` / `deleteDefinition`).
+		 * Soft-delete a comment (T12 + task_3 phoenix-relay-idiom). Reply-aware:
+		 * the leaf path returns `deletedCommentId` so the FE can `@deleteRecord`
+		 * the row out of the Relay store; the parent-with-replies path returns
+		 * the same `Comment` with `body = '[silindi]'` and `deletedAt` set so
+		 * Relay's automatic store update handles the placeholder rerender.
+		 * Exactly one of the two payload fields is non-null per call.
+		 *
+		 * `Auth.required` + ownership inside the Agent. The per-DO read and the
+		 * cross-product `comment_view` projection both treat a deleted-with-
+		 * children comment as `[silindi]` and a deleted-leaf as fully removed.
 		 */
 		deleteComment: {
-			type: new GraphQLNonNull(GraphQLString),
+			type: new GraphQLNonNull(DeleteCommentPayloadType),
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, args.id));
+				const commentId = extractLocalId(args.id, "Comment");
+				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
 				if (!postId) {
 					throw new GraphQLError("comment not found", {
 						extensions: {code: "COMMENT_NOT_FOUND"},
@@ -1519,7 +2041,7 @@ const MutationType = new GraphQLObjectType({
 				}
 				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
 				const result = yield* Effect.promise(() =>
-					stub.deleteComment({commentId: args.id, actorId: user.id}).then(
+					stub.deleteComment({commentId, actorId: user.id}).then(
 						(value) => ({ok: true as const, value}),
 						(error: unknown) => ({ok: false as const, error}),
 					),
@@ -1527,7 +2049,22 @@ const MutationType = new GraphQLObjectType({
 				if (!result.ok) {
 					throw mapCommentMutationError(result.error);
 				}
-				return result.value.commentId;
+				const r = result.value;
+				if (r.hasReplies && r.placeholder) {
+					// Parent-with-replies path: return the placeholder Comment row
+					// with `body = '[silindi]'` + `deletedAt` set. Relay merges the
+					// new scalar values into the same DataID (`Comment:<global-id>`)
+					// the page already rendered, so the row stays in the connection
+					// edge and the SPA rerenders the placeholder in place.
+					return {deletedCommentId: null, comment: r.placeholder};
+				}
+				// Leaf path (or idempotent no-op): return the global id so the FE
+				// `@deleteRecord` directive removes the record from the store and
+				// the connection edge auto-clears.
+				return {
+					deletedCommentId: encodeNodeId("Comment", r.commentId),
+					comment: null,
+				};
 			}),
 		},
 	},

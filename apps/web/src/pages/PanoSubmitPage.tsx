@@ -2,10 +2,12 @@ import * as React from "react";
 import {graphql, useMutation} from "react-relay";
 import {Link, useNavigate} from "react-router";
 import type {PanoSubmitPageMutation} from "../__generated__/PanoSubmitPageMutation.graphql";
+import {prependPostToFeedConnections} from "../relay/panoFeedUpdater";
 import {useSession} from "../auth/client";
 import {Button} from "../components/ui/Button";
 import {authRedirectPath} from "../lib/returnTo";
 import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
+import {extractLocalId} from "../relay/encodeNodeId";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
@@ -32,6 +34,13 @@ function hostOf(url: string) {
 	return m ? m[0].replace(/^https?:\/\//, "") : "";
 }
 
+/**
+ * `submitPost` mutation (task_2, phoenix-relay-idiom). The payload spreads
+ * `PanoPostCardFragment` so the post lands in the Relay store with every
+ * field a feed card needs — the manual `updater` (see `panoFeedUpdater.ts`)
+ * then prepends a `PostEdge` referencing it into every active
+ * `PanoFeed_posts` connection.
+ */
 const SubmitPostMutation = graphql`
   mutation PanoSubmitPageMutation(
     $title: String!
@@ -46,13 +55,16 @@ const SubmitPostMutation = graphql`
       url
       host
       author
+      authorId
       score
+      myVote
       commentCount
       createdAt
       tags {
         kind
         label
       }
+      ...PanoPostCardFragment
     }
   }
 `;
@@ -121,15 +133,55 @@ export function PanoSubmitPage() {
 			...(body.trim() ? {body} : {}),
 		};
 
+		// Optimistic temp record: prepended into every active `PanoFeed_posts`
+		// connection during the in-flight window so a back-nav (or any other
+		// surface still rendering the feed) sees the new post immediately.
+		// The updater at `panoFeedUpdater.ts:68-69` short-circuits on a
+		// head-node-id match, so when the server response lands with the
+		// real Post.id, the temp edge is replaced cleanly (Relay rolls back
+		// the optimistic update first, then re-applies the server updater).
+		// Temp id uses a `temp-` prefix to be visually distinguishable in
+		// devtools; it never escapes the store.
+		const tempId = `temp-${Date.now()}`;
+		const trimmedUrl = url.trim();
 		commit({
 			variables,
+			optimisticResponse: {
+				submitPost: {
+					id: tempId,
+					slug: null,
+					title: trimmedTitle,
+					url: mode === "link" && trimmedUrl ? trimmedUrl : null,
+					host: mode === "link" && trimmedUrl ? hostOf(trimmedUrl) : null,
+					author: session.data?.user?.name ?? "",
+					authorId: session.data?.user?.id ?? "",
+					score: 1,
+					myVote: 1,
+					commentCount: 0,
+					createdAt: new Date().toISOString(),
+					tags: Array.from(selectedTags).map((kind) => ({kind, label: kind})),
+				},
+			},
+			// Hand-written updater: prepends a PostEdge into every active
+			// `PanoFeed_posts` connection in the store, so the new post appears
+			// at the top of the user's last-visited feed without a refetch
+			// when they navigate back. Mirrors kampus's createStory updater.
+			// Runs for both the optimistic pass (with `tempId`) and the real
+			// server response (which replaces the temp edge in-place).
+			updater: (store) => {
+				prependPostToFeedConnections(store);
+			},
 			onCompleted: (data, errors) => {
 				if (handleAuthError(errors)) return;
 				if (errors && errors.length > 0) {
 					setError(errors[0]?.message ?? "gönderi paylaşılamadı");
 					return;
 				}
-				const newId = data.submitPost.id;
+				// `data.submitPost.id` is the Relay global id (`Post:<localId>`
+				// base64). The /pano/:id route key is the local post id (or a
+				// slug); extract before navigating so URLs stay clean and the
+				// post-detail resolver hits the right per-post DO.
+				const newId = data.submitPost.slug ?? extractLocalId(data.submitPost.id, "Post");
 				if (newId) {
 					navigate(`/pano/${newId}`);
 				}

@@ -14,10 +14,9 @@ import {signUp} from "./_helpers/auth";
  * synchronously; on success the projection lands in <1s and the page reads
  * the new state on subsequent renders.
  *
- * Mirrors `12-sozluk-vote.spec.ts`. Uses `page.reload()` before vote
- * interactions to escape the Suspense double-mount race triggered by
- * useLazyLoadQuery's fetchKey-driven refetch after submitPost — operator
- * blessed (cf. task_5/retry_1 progress).
+ * Mirrors `12-sozluk-vote.spec.ts`. After the phoenix-relay-idiom refactor
+ * (task_2) the page tree no longer unmounts on submitPost / vote mutations,
+ * so the historical `page.reload()` Suspense workaround is gone.
  */
 test.describe("Pano voteOnPost (task_8)", () => {
 	test("vote → unvote → vote round-trip on a fresh post", async ({page}) => {
@@ -49,11 +48,6 @@ test.describe("Pano voteOnPost (task_8)", () => {
 		// Wait for the post id URL — exclude `/pano/yeni` (the submit page) by
 		// matching only post-id-shaped paths (`post_<ulid>`).
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
-
-		// Reload after the navigation to escape any Suspense double-mount race
-		// in the post detail's useLazyLoadQuery — same operator-blessed pattern
-		// as 12-sozluk-vote.spec.ts (cf. commit 17ed98a).
-		await page.reload();
 
 		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {
 			timeout: 10_000,
