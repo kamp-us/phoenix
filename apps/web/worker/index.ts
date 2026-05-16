@@ -15,9 +15,8 @@ export {PanoPost} from "./features/pano/PanoPost";
 // legacy singleton Sozluk / Pano DOs were deleted in T18 via the wrangler
 // `delete_classes` migration. Pasaport moved off the DO model entirely in
 // d1-direct/task_4; SozlukTerm followed in d1-direct/task_5 (resolvers + admin
-// endpoints now write D1-direct). The class itself is unreferenced and gets
-// deleted in d1-direct/task_6 along with the wrangler binding.
-export {SozlukTerm} from "./features/sozluk/SozlukTerm";
+// endpoints now write D1-direct) and the class itself was deleted in
+// d1-direct/task_6. Only PanoPost remains as a per-atom Agent DO.
 // View-layer projection workflow (binding: PHOENIX_PROJECTION). Skeleton
 // lives in worker/view/PhoenixProjection.ts; step bodies are no-ops in T1
 // and get filled in per event kind across T2..T15.
@@ -140,9 +139,8 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => handleAuth(c.env, c.req.raw)
 // Agent WebSocket subscriptions (T16). The Agents SDK client (`useAgent`)
 // connects to `/agents/<class-kebab>/<name>` and expects a 101 WebSocket
 // upgrade. `routeAgentRequest` walks the env bindings and dispatches to the
-// matching DO class (SozlukTerm / PanoPost). Returns null if the
-// request isn't an agent request, in which case Hono falls through to the
-// next handler.
+// matching DO class (PanoPost). Returns null if the request isn't an agent
+// request, in which case Hono falls through to the next handler.
 app.all("/agents/*", async (c) => {
 	const res = await routeAgentRequest(c.req.raw, c.env);
 	return res ?? c.text("Not Found", 404);

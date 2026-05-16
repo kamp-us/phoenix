@@ -18,6 +18,9 @@ import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_ir
 import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
 import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
 import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
+import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
+import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import {addDefinition, deleteDefinition} from "../../worker/features/sozluk/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -25,7 +28,14 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [
+		viewMigration0000,
+		viewMigration0001,
+		viewMigration0002,
+		viewMigration0003,
+		viewMigration0004,
+		viewMigration0005,
+	];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -98,16 +108,16 @@ describe("landing stats projection — task_15", () => {
 		const slugA = "stats-sozluk-alpha";
 		const slugB = "stats-sozluk-beta";
 
-		const stubA = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slugA));
-		const aDef = await stubA.addDefinition({
+		const aDef = await addDefinition(env, {
+			termSlug: slugA,
 			authorId: authorA,
 			authorName: "Author A",
 			body: "stats sozluk alpha by A",
 			termTitle: "Stats Sozluk Alpha",
 		});
 
-		const stubB = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slugB));
-		await stubB.addDefinition({
+		await addDefinition(env, {
+			termSlug: slugB,
 			authorId: authorB,
 			authorName: "Author B",
 			body: "stats sozluk beta by B",
@@ -116,7 +126,8 @@ describe("landing stats projection — task_15", () => {
 
 		// authorA writes a second definition on slugB to verify distinct-count
 		// (still 2 authors, not 3).
-		await stubB.addDefinition({
+		await addDefinition(env, {
+			termSlug: slugB,
 			authorId: authorA,
 			authorName: "Author A",
 			body: "stats sozluk beta by A also",
@@ -151,7 +162,7 @@ describe("landing stats projection — task_15", () => {
 		expect(after3!.totalDefinitions).toBe(distinctDefsRow!.n);
 
 		// Soft-delete A's first definition → total_definitions ticks down.
-		await stubA.deleteDefinition({definitionId: aDef.definitionId, actorId: authorA});
+		await deleteDefinition(env, {definitionId: aDef.definitionId, actorId: authorA});
 
 		const afterDelete = await waitFor(async () => {
 			const stats = await readSozlukStats();

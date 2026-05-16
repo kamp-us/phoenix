@@ -25,7 +25,7 @@ import {
 	DefinitionNotFoundError,
 	DefinitionValidationError,
 	UnauthorizedDefinitionMutationError,
-} from "../../worker/features/sozluk/SozlukTerm";
+} from "../../worker/features/sozluk/module";
 import {
 	decodeMutationErrorCode,
 	encodeMutationError,
