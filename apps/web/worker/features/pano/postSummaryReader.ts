@@ -10,7 +10,7 @@
  */
 import {and, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import * as schema from "../../view/drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
 export type PostSort = "hot" | "new" | "top" | "discuss";
 

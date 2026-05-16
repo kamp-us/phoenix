@@ -11,7 +11,7 @@
  */
 import {and, eq} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import * as schema from "../../view/drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
 export type VoteTargetKind = "definition" | "post" | "comment";
 

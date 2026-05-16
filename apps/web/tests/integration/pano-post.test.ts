@@ -10,8 +10,8 @@ import {env} from "cloudflare:test";
 import {id} from "@usirin/forge";
 import {beforeAll, describe, expect, it} from "vitest";
 import {listPostSummaries} from "../../worker/features/pano/postSummaryReader";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/view/drizzle/migrations/0001_free_salo.sql";
+import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
+import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers

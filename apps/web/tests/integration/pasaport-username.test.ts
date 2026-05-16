@@ -13,9 +13,9 @@
  */
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/view/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/view/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
+import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
+import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
+import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers

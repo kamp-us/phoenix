@@ -21,7 +21,7 @@ import {beforeAll, describe, expect, it} from "vitest";
 import {listTermSummaries} from "../../worker/features/sozluk/termSummaryReader";
 // SQL file imported via the wrangler `Text` rule — same mechanism the worker
 // uses for its drizzle migration loader.
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
+import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers

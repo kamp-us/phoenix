@@ -35,7 +35,7 @@
 			"binding": "PHOENIX_DB",
 			"database_name": "phoenix-view",
 			"database_id": "00000000-0000-0000-0000-000000000000",
-			"migrations_dir": "worker/view/drizzle/migrations"
+			"migrations_dir": "worker/db/drizzle/migrations"
 		}
 	],
 	// Single projection workflow consumes outbox events and writes PHOENIX_DB.

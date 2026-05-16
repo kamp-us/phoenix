@@ -16,7 +16,7 @@
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
 import {listTermSummariesConnection} from "../../worker/features/sozluk/termSummaryReader";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
+import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers

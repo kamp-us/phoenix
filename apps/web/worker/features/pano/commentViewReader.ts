@@ -10,7 +10,7 @@
  */
 import {eq} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import * as schema from "../../view/drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
 /**
  * Resolve a comment id back to its post id via the `comment_view` MV.
