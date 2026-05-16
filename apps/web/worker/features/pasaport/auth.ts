@@ -7,19 +7,28 @@ import {type Auth as BetterAuth, type BetterAuthOptions, betterAuth} from "bette
 import {drizzleAdapter} from "better-auth/adapters/drizzle";
 import {bearer, magicLink} from "better-auth/plugins";
 import type {} from "better-call";
-import type {DrizzleSqliteDODatabase} from "drizzle-orm/durable-sqlite";
+import {drizzle} from "drizzle-orm/d1";
 import type {} from "zod/v4/core";
-import * as schema from "./drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
-export const createAuth = (db: DrizzleSqliteDODatabase<typeof schema>) =>
-	betterAuth({
+/**
+ * Instantiate better-auth against the canonical D1 database (binding
+ * `PHOENIX_DB`). The drizzle adapter is shape-only — it doesn't care that
+ * we're handing it a D1 driver instead of a Durable Object SQLite driver,
+ * because both speak the SQLite dialect.
+ *
+ * Phoenix-specific `username` field on `user` is configured as an
+ * additional field with `input: false`, so the public API can't write it —
+ * only the server-side `setUsername` mutation (which goes through the
+ * Pasaport module) can.
+ */
+export const createAuth = (d1: D1Database) => {
+	const db = drizzle(d1, {schema});
+	return betterAuth({
 		emailAndPassword: {enabled: true},
 		database: drizzleAdapter(db, {provider: "sqlite", schema}),
 		user: {
 			additionalFields: {
-				// Phoenix's public handle. NULL until the user completes the
-				// bootstrap step. Server-set only — `setUsername` GraphQL mutation
-				// is the sole write path.
 				username: {
 					type: "string",
 					required: false,
@@ -38,6 +47,7 @@ export const createAuth = (db: DrizzleSqliteDODatabase<typeof schema>) =>
 			}),
 		],
 	} satisfies BetterAuthOptions);
+};
 
 export type Auth = BetterAuth;
 export type Session = NonNullable<Awaited<ReturnType<Auth["api"]["getSession"]>>>;

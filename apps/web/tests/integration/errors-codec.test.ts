@@ -20,7 +20,7 @@ import {
 	UnauthorizedCommentMutationError,
 	UnauthorizedPostMutationError,
 } from "../../worker/features/pano/PanoPost";
-import {UsernameValidationError} from "../../worker/features/pasaport/Pasaport";
+import {UsernameValidationError} from "../../worker/features/pasaport/module";
 import {
 	DefinitionNotFoundError,
 	DefinitionValidationError,

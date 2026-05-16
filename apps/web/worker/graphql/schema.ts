@@ -36,7 +36,7 @@ import {
 	type PostSort,
 	type PostSummaryRow,
 } from "../features/pano/postSummaryReader";
-import {UsernameValidationError} from "../features/pasaport/Pasaport";
+import {getUserById, setUsername} from "../features/pasaport/module";
 import {
 	type ContributionConnection,
 	type ContributionNode,
@@ -970,8 +970,7 @@ const QueryType = new GraphQLObjectType({
 						return c ? asNode("Comment", c) : null;
 					}
 					case "User": {
-						const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-						const user = yield* Effect.promise(() => stub.getUserById(decoded.id));
+						const user = yield* Effect.promise(() => getUserById(env, decoded.id));
 						return user ? asNode("User", user) : null;
 					}
 					case "Profile": {
@@ -996,8 +995,7 @@ const QueryType = new GraphQLObjectType({
 				const auth = yield* Auth;
 				if (!auth.user) return null;
 				const env = yield* CloudflareEnv;
-				const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-				const fresh = yield* Effect.promise(() => stub.getUserById(auth.user!.id));
+				const fresh = yield* Effect.promise(() => getUserById(env, auth.user!.id));
 				if (!fresh) {
 					return {
 						id: auth.user.id,
@@ -1178,26 +1176,16 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {value: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.setUsername({userId: user.id, value: args.value}),
-					);
-					return {
-						id: result.userId,
-						email: user.email,
-						name: result.displayName,
-						image: result.image,
-						username: result.username,
-					};
-				} catch (err) {
-					if (err instanceof UsernameValidationError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: err.code.toUpperCase()},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					setUsername(env, {userId: user.id, value: args.value}),
+				);
+				return {
+					id: result.userId,
+					email: user.email,
+					name: result.displayName,
+					image: result.image,
+					username: result.username,
+				};
 			}),
 		},
 		addDefinition: {

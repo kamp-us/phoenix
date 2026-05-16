@@ -1,21 +1,114 @@
 /**
- * Phoenix view-layer schema (D1 binding `PHOENIX_DB`).
+ * Phoenix D1 schema (binding `PHOENIX_DB`).
  *
- * This is the cross-entity read-model owned by `PhoenixProjection`. Tables
- * here are convergent overwrites of state already authoritatively held inside
- * per-entity Agent DOs (`SozlukTerm`, `PanoPost`). Joins live in resolvers,
- * not in projection, so each table can later peel off into its own service.
+ * Canonical store for every product domain. Resolvers read + write D1
+ * directly via drizzle. ADR 0009 (d1-direct) supersedes the prior
+ * "view-layer + projection" framing — there is no derivation step, the D1
+ * shape *is* the shape.
  *
- * Lineage: ADR 0007 (view layer — outbox + Workflows + single D1).
- *
- * NOTE: this is the D1 view schema. Per-DO sqlite schemas (term_meta,
- * post_meta, definition, comment, *_vote, outbox) live next to their
- * Agent classes, NOT here.
+ * The auth tables (`user`, `session`, `account`, `verification`, `apikey`)
+ * are owned by better-auth via its drizzle adapter; everything below is owned
+ * directly by the relevant feature module (sozluk, pano, vote, pasaport).
  */
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
+
+/* -------------------------------------------------------------------------- */
+/* Pasaport / better-auth tables                                               */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Canonical user identity row. Owned by better-auth at write time; resolvers
+ * read it directly to surface the `me` query and to look up the immutable
+ * Phoenix `username` handle.
+ *
+ * Username is NULL until the bootstrap step completes; immutable thereafter
+ * (the `setUsername` mutation enforces this).
+ */
+export const user = sqliteTable("user", {
+	id: text("id").primaryKey(),
+	name: text("name"),
+	email: text("email").notNull(),
+	image: text("image"),
+	type: text("type", {enum: ["human", "bot"]})
+		.notNull()
+		.default("human"),
+	emailVerified: integer("email_verified", {mode: "boolean"}),
+	// Phoenix-specific public handle: 3–30 chars, lowercase ASCII + digits + `-`,
+	// no leading/trailing `-`. Routed by /u/<username> on the SPA. UNIQUE allows
+	// multiple NULLs (SQLite semantics) so unbooted accounts coexist.
+	username: text("username").unique(),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+});
+
+export const session = sqliteTable("session", {
+	id: text("id").primaryKey(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, {onDelete: "cascade"}),
+	expiresAt: timestamp("expires_at").notNull(),
+	token: text("token").unique(),
+	ipAddress: text("ip_address"),
+	userAgent: text("user_agent"),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+});
+
+export const account = sqliteTable("account", {
+	id: text("id").primaryKey(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, {onDelete: "cascade"}),
+	accountId: text("account_id"),
+	providerId: text("provider_id").notNull(),
+	accessToken: text("access_token"),
+	refreshToken: text("refresh_token"),
+	accessTokenExpiresAt: timestamp("access_token_expires_at"),
+	refreshTokenExpiresAt: timestamp("refresh_token_expires_at"),
+	scope: text("scope"),
+	idToken: text("id_token"),
+	password: text("password"),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+});
+
+export const verification = sqliteTable("verification", {
+	id: text("id").primaryKey(),
+	identifier: text("identifier").notNull(),
+	value: text("value").notNull(),
+	expiresAt: timestamp("expires_at").notNull(),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+});
+
+export const apikey = sqliteTable("apiKey", {
+	id: text("id").primaryKey(),
+	name: text("name"),
+	start: text("start"),
+	prefix: text("prefix"),
+	key: text("key").notNull(),
+	userId: text("user_id")
+		.notNull()
+		.references(() => user.id, {onDelete: "cascade"}),
+	refillInterval: integer("refill_interval"),
+	refillAmount: integer("refill_amount"),
+	lastRefillAt: integer("last_refill_at", {mode: "timestamp"}),
+	enabled: integer("enabled", {mode: "boolean"}).notNull().default(true),
+	rateLimitEnabled: integer("rate_limit_enabled", {mode: "boolean"}).notNull().default(false),
+	rateLimitTimeWindow: integer("rate_limit_time_window"),
+	rateLimitMax: integer("rate_limit_max"),
+	requestCount: integer("request_count").notNull().default(0),
+	remaining: integer("remaining"),
+	lastRequest: integer("last_request", {mode: "timestamp"}),
+	expiresAt: integer("expires_at", {mode: "timestamp"}),
+	permissions: text("permissions"),
+	metadata: text("metadata"),
+	createdAt: timestamp("created_at"),
+	updatedAt: timestamp("updated_at"),
+});
 
 /* -------------------------------------------------------------------------- */
 /* Sozluk view tables                                                         */

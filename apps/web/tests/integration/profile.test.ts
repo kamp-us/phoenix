@@ -13,13 +13,17 @@
  *      - cursor pagination yields disjoint pages
  *      - non-existent username returns null
  */
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
+import {handleAuth, setUsername} from "../../worker/features/pasaport/module";
 import {listContributions, lookupProfile} from "../../worker/features/pasaport/userProfileReader";
 import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
 import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
 import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
 import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
+import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -27,7 +31,13 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [
+		viewMigration0000,
+		viewMigration0001,
+		viewMigration0002,
+		viewMigration0003,
+		viewMigration0004,
+	];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -61,13 +71,12 @@ async function waitFor<T>(check: () => Promise<T | null>, attempts = 30): Promis
 }
 
 async function signUpUser(email: string, password: string, name: string): Promise<string> {
-	const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
 	const req = new Request("https://example.com/api/auth/sign-up/email", {
 		method: "POST",
 		headers: {"content-type": "application/json"},
 		body: JSON.stringify({email, password, name}),
 	});
-	const response = await stub.fetch(req);
+	const response = await handleAuth(env, req);
 	if (!response.ok) {
 		throw new Error(`sign-up failed: ${response.status} ${await response.text()}`);
 	}
@@ -84,18 +93,14 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 	it("aggregates 1 definition + 1 post + 1 comment and returns the feed in created_at DESC order", async () => {
 		// 1) sign up + bootstrap username
 		const userId = await signUpUser("ada@kamp.us", "supersecret123", "Ada Lovelace");
-		const pasaport = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-		await pasaport.setUsername({userId, value: "ada"});
+		await setUsername(env, {userId, value: "ada"});
 
-		// Wait for user_profile MV row to land before reading the profile.
-		const profileSeed = await waitFor(async () => {
-			const row = await env.PHOENIX_DB.prepare(
-				"SELECT user_id FROM user_profile WHERE username = ?",
-			)
-				.bind("ada")
-				.first<{user_id: string}>();
-			return row;
-		});
+		// user_profile lands in the same D1 transaction as the username write.
+		const profileSeed = await env.PHOENIX_DB.prepare(
+			"SELECT user_id FROM user_profile WHERE username = ?",
+		)
+			.bind("ada")
+			.first<{user_id: string}>();
 		expect(profileSeed).not.toBeNull();
 
 		// 2) seed a definition
@@ -186,8 +191,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 
 	it("paginates with a forge ULID cursor (after returns disjoint pages)", async () => {
 		const userId = await signUpUser("grace@kamp.us", "supersecret123", "Grace");
-		const pasaport = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-		await pasaport.setUsername({userId, value: "grace"});
+		await setUsername(env, {userId, value: "grace"});
 
 		// Seed 5 definitions on different slugs so they get distinct ids.
 		for (let i = 0; i < 5; i++) {

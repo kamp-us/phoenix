@@ -4,6 +4,7 @@ import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
 import {SEED_POSTS} from "./features/pano/seed";
+import {backfillProfiles, handleAuth, validateSession} from "./features/pasaport/module";
 import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
@@ -136,22 +137,18 @@ app.post("/api/admin/pano/seed", async (c) => {
 });
 
 // Dev-only Pasaport admin endpoint: backfill `user_profile` rows in PHOENIX_DB
-// for every existing Pasaport user. Idempotent — projection's `last_event_id`
-// guard de-duplicates re-runs. Use after applying view migration 0002 the
-// first time, or after seeding accounts directly into Pasaport in dev.
+// for every existing user. Idempotent — re-runs overwrite the same identity
+// values per user, no side effects on counters.
 app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
 	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
-	const stub = c.env.PASAPORT.get(c.env.PASAPORT.idFromName("kampus"));
-	const result = await stub.backfillProfiles();
+	const result = await backfillProfiles(c.env);
 	return c.json(result);
 });
 
-// Better Auth handler — forwarded to the Pasaport DO.
-// Single global Pasaport instance for now (one auth realm); shard later if needed.
-app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-	const stub = c.env.PASAPORT.get(c.env.PASAPORT.idFromName("kampus"));
-	return stub.fetch(c.req.raw);
-});
+// Better Auth handler — wired straight into the Hono router (ADR 0009).
+// Single global auth realm; the `handleAuth` module function constructs a
+// better-auth instance per request against `env.PHOENIX_DB`.
+app.on(["GET", "POST"], "/api/auth/*", async (c) => handleAuth(c.env, c.req.raw));
 
 // Agent WebSocket subscriptions (T16). The Agents SDK client (`useAgent`)
 // connects to `/agents/<class-kebab>/<name>` and expects a 101 WebSocket
@@ -167,14 +164,13 @@ app.all("/agents/*", async (c) => {
 // SDL for relay-compiler (`pnpm schema:fetch`).
 app.get("/graphql/schema", (c) => c.text(printSchemaSDL()));
 
-// Per-request: validate session via Pasaport, build a ManagedRuntime that
-// provides services to resolvers (Auth, CloudflareEnv, RequestContext),
+// Per-request: validate session via the Pasaport module, build a ManagedRuntime
+// that provides services to resolvers (Auth, CloudflareEnv, RequestContext),
 // dispose after. Yoga's response carries its own Response class (from
 // @whatwg-node/server) which fails workerd's `instanceof Response` check;
 // rewrap with the runtime-native Response constructor.
 app.on(["GET", "POST"], "/graphql", async (c) => {
-	const pasaport = c.env.PASAPORT.get(c.env.PASAPORT.idFromName("kampus"));
-	const sessionData = await pasaport.validateSession(c.req.raw.headers);
+	const sessionData = await validateSession(c.env, c.req.raw.headers);
 
 	const runtime = GraphQLRuntime.make(c.env, c.req.raw, sessionData);
 	try {
