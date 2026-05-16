@@ -1,14 +1,13 @@
 /**
- * Pano — D1-direct module (task_7, d1-direct).
+ * Pano — D1-direct module (task_7 + task_8, d1-direct).
  *
  * Every function in this file reads/writes `env.PHOENIX_DB` via drizzle.
  * There is no Durable Object boundary, no workflow `create`, no outbox /
  * projection step. The legacy `PanoPost` Agent DO class still exists at
- * this stage but its POST-related methods are unreferenced — task_8
- * migrates comment surfaces, then task_9 deletes the class entirely.
+ * this stage but its post- AND comment-related methods are unreferenced —
+ * task_9 deletes the class entirely.
  *
- * Surface (resolver-callable, post-side; comments still on the DO until
- * task_8):
+ * Surface (resolver-callable):
  *   - `submitPost(env, input)` — insert `post_summary` row + bump
  *     `pano_stats`. Tag list serialized comma-separated on
  *     `post_summary.tags`.
@@ -24,17 +23,29 @@
  *     `post_vote`, recompute `post_summary.score` + `hot_score`, mirror
  *     onto `user_vote`, bump karma on `user_profile`. Idempotent:
  *     duplicate cast or retract is a no-op.
+ *   - `addComment(env, input)` — insert `comment_view` row (with full
+ *     body + denormalized post title), bump `post_summary.commentCount`,
+ *     recompute `pano_stats`. Supports nested replies via `parentId`.
+ *   - `editComment(env, input)` — ownership-checked body refresh on
+ *     `comment_view`.
+ *   - `deleteComment(env, input)` — ownership-checked; reply-aware
+ *     soft-delete (parent-with-replies → stay in tree as `[silindi]`;
+ *     leaf → fully removed). Decrements `post_summary.commentCount`.
+ *   - `voteOnComment(env, input)` / `retractCommentVote(env, input)` —
+ *     mutate `comment_vote`, recompute `comment_view.score`, mirror onto
+ *     `user_vote`, bump karma on the comment author's `user_profile`.
  *
- * Vote logic for posts is inlined here at task_7; consolidation into a
- * shared vote module happens in task_11. Mirrors `applyVote` from
- * `worker/features/sozluk/module.ts`.
+ * Vote logic for posts AND comments is inlined here at this stage;
+ * consolidation into a shared vote module happens in task_11. The
+ * comment vote helpers mirror the post vote helpers above — task_11's
+ * lift will fold both into one canonical surface.
  *
  * Errors thrown by this module flow through the GraphQL `resolver()`
  * wrapper (see `worker/graphql/resolver.ts`) which routes them through
  * `encodeMutationError` for the wire-format `extensions.code`.
  */
 import {id} from "@usirin/forge";
-import {and, eq, isNull, sql} from "drizzle-orm";
+import {and, asc, eq, isNull, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
 import * as schema from "../../db/drizzle/schema";
 
@@ -790,6 +801,773 @@ async function recomputePanoStats(env: Env, now: Date): Promise<void> {
 	)
 		.bind(totalPosts?.n ?? 0, totalComments?.n ?? 0, totalAuthors?.n ?? 0, nowSec)
 		.run();
+}
+
+/* -------------------------------------------------------------------------- */
+/* Comment domain — types + errors                                             */
+/* -------------------------------------------------------------------------- */
+
+/** Comment body cap (per PRD: ≤ 5 000 chars). */
+export const COMMENT_BODY_MAX = 5_000;
+
+/**
+ * Placeholder body rendered in place of a soft-deleted comment that still has
+ * non-deleted replies (parent-with-replies path). Used by both the per-post
+ * thread reader and the cross-product profile feed so the tree shape is
+ * identical across both surfaces. Mirrors the legacy DO/projection contract.
+ */
+export const SILINDI_PLACEHOLDER = "[silindi]";
+
+/**
+ * Validation error thrown by `addComment` / `editComment`. The GraphQL
+ * resolver routes this through `encodeMutationError` (task_2 codec) to a
+ * stable `extensions.code` so the SPA can localize without parsing free-text
+ * messages.
+ *
+ * `parent_not_found` is the same-post invariant: a nested reply must
+ * reference an existing non-deleted comment on the SAME post. Under
+ * D1-direct, "same post" is no longer enforced by the routing boundary
+ * (every comment lives in one `comment_view` table); the module enforces
+ * it explicitly via `WHERE id = ? AND post_id = ? AND deleted_at IS NULL`.
+ */
+export class CommentValidationError extends Error {
+	constructor(
+		readonly code: "body_required" | "body_too_long" | "parent_not_found",
+		message: string,
+	) {
+		super(message);
+		this.name = "CommentValidationError";
+	}
+}
+
+/**
+ * Raised by every comment mutation that targets a missing or already-
+ * removed comment. The resolver translates this to
+ * `extensions.code = COMMENT_NOT_FOUND`.
+ */
+export class CommentNotFoundError extends Error {
+	readonly code = "comment_not_found" as const;
+	constructor(commentId: string) {
+		super(`comment ${commentId} not found`);
+		this.name = "CommentNotFoundError";
+	}
+}
+
+/**
+ * Raised by `editComment` / `deleteComment` when the calling user is not
+ * the comment's author. The resolver translates this to a clean
+ * `UNAUTHORIZED` extension code (task_2 codec match on `name`).
+ */
+export class UnauthorizedCommentMutationError extends Error {
+	readonly code = "unauthorized" as const;
+	constructor(commentId: string) {
+		super(`not authorized to mutate comment ${commentId}`);
+		this.name = "UnauthorizedCommentMutationError";
+	}
+}
+
+/* -------------------------------------------------------------------------- */
+/* Comment read shapes                                                          */
+/* -------------------------------------------------------------------------- */
+
+export interface CommentRow {
+	id: string;
+	parentId: string | null;
+	author: string;
+	/**
+	 * Pasaport user id of the comment's author. Powers the frontend's
+	 * "is the current user the author?" check that gates edit / delete
+	 * affordances. Empty string for `[silindi]` placeholder rows.
+	 */
+	authorId: string;
+	body: string;
+	score: number;
+	createdAt: Date;
+	updatedAt: Date;
+	/**
+	 * Soft-delete timestamp surfaced for the reply-aware projection: a
+	 * parent-with-replies row appears with `body = '[silindi]'` AND
+	 * `deletedAt` set so the SPA can render the placeholder via a typed
+	 * `deletedAt != null` check rather than the fragile body-string match.
+	 */
+	deletedAt?: Date | null;
+}
+
+export interface CommentConnectionPage {
+	rows: CommentRow[];
+	hasNextPage: boolean;
+	endCursor: string | null;
+	totalCount: number;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Comment mutation shapes                                                      */
+/* -------------------------------------------------------------------------- */
+
+export interface AddCommentInput {
+	postId: string;
+	authorId: string;
+	authorName: string;
+	body: string;
+	/** Optional parent comment id for nested replies. Must reference an
+	 *  existing non-deleted comment on the same post. */
+	parentId?: string | null | undefined;
+}
+
+export interface AddCommentResult {
+	commentId: string;
+	postId: string;
+	parentId: string | null;
+	authorId: string;
+	authorName: string;
+	body: string;
+	score: number;
+	commentCount: number;
+	createdAt: Date;
+}
+
+export interface VoteOnCommentInput {
+	commentId: string;
+	voterId: string;
+}
+
+export interface VoteOnCommentResult {
+	commentId: string;
+	postId: string;
+	parentId: string | null;
+	authorId: string;
+	authorName: string;
+	body: string;
+	score: number;
+	createdAt: Date;
+	/** `1` if the voter has voted on this comment (post-write), `null` otherwise. */
+	myVote: number | null;
+	/** `true` if the vote row state changed; `false` on idempotent no-op. */
+	changed: boolean;
+}
+
+export interface EditCommentInput {
+	commentId: string;
+	actorId: string;
+	body: string;
+}
+
+export interface EditCommentResult {
+	commentId: string;
+	postId: string;
+	parentId: string | null;
+	authorId: string;
+	authorName: string;
+	body: string;
+	score: number;
+	createdAt: Date;
+	updatedAt: Date;
+}
+
+export interface DeleteCommentInput {
+	commentId: string;
+	actorId: string;
+}
+
+export interface DeleteCommentResult {
+	commentId: string;
+	/** `true` if the row was deleted (soft or hard); `false` on idempotent no-op. */
+	deleted: boolean;
+	/**
+	 * `true` when the comment had at least one non-deleted child at delete
+	 * time → tree-preserving `[silindi]` placeholder; `false` when the
+	 * comment was a leaf → fully removed from the tree.
+	 */
+	hasReplies: boolean;
+	/**
+	 * The post-delete `[silindi]` placeholder row surfaced when
+	 * `hasReplies === true`, so the GraphQL `deleteComment` resolver can
+	 * return it without a follow-up read. `null` for the leaf path.
+	 */
+	placeholder: CommentRow | null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Comment reads                                                                */
+/* -------------------------------------------------------------------------- */
+
+function rowToCommentRow(row: typeof schema.commentView.$inferSelect): CommentRow {
+	// Reply-aware placeholder: a row with `deletedAt` set is the parent-with-
+	// replies case (leaf-deleted rows are removed entirely from comment_view).
+	// Surface the placeholder body + empty author so the SPA can render the
+	// `[silindi]` row without a separate "is deleted?" branch.
+	if (row.deletedAt) {
+		return {
+			id: row.id,
+			parentId: row.parentId,
+			author: "",
+			authorId: "",
+			body: SILINDI_PLACEHOLDER,
+			score: row.score,
+			createdAt: row.createdAt ?? new Date(0),
+			updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+			deletedAt: row.deletedAt,
+		};
+	}
+	return {
+		id: row.id,
+		parentId: row.parentId,
+		author: row.authorName,
+		authorId: row.authorId,
+		body: row.body,
+		score: row.score,
+		createdAt: row.createdAt ?? new Date(0),
+		updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+		deletedAt: null,
+	};
+}
+
+/**
+ * Read every comment for a post in chronological-asc order, then run the
+ * reply-aware filter so a leaf-deleted row is NEVER returned (only the
+ * `comment_view` UPDATE branch — parent-with-replies — should ever be
+ * stored with `deleted_at` set; leaves are DELETEd in `deleteComment`).
+ *
+ * Returns rows already projected through `rowToCommentRow`, so callers
+ * see placeholder bodies + empty authors for soft-deleted parents.
+ */
+export async function listComments(env: Env, postId: string): Promise<CommentRow[]> {
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const rows = await db
+		.select()
+		.from(schema.commentView)
+		.where(eq(schema.commentView.postId, postId))
+		.orderBy(asc(schema.commentView.createdAt), asc(schema.commentView.id));
+	return rows.map(rowToCommentRow);
+}
+
+/**
+ * Connection-shaped read for `Post.comments(first, after)`. Builds on
+ * `listComments` (which already returns chronological-asc with the
+ * reply-aware placeholder pass) and slices a forward page.
+ *
+ * Cursor is the comment id (forge ULID; lex-sortable, matches chronological
+ * order). A stale `after` (no longer in the list) collapses to the head —
+ * the FE then reconciles against its store on the next request. Mirrors
+ * `PanoPost.listCommentsConnection`'s contract exactly so the integration
+ * test surface didn't have to change shape.
+ */
+export async function listCommentsConnection(
+	env: Env,
+	postId: string,
+	opts: {first?: number | undefined; after?: string | null | undefined},
+): Promise<CommentConnectionPage> {
+	const all = await listComments(env, postId);
+	const first = Math.max(1, Math.min(opts.first ?? 50, 200));
+	const after = opts.after ?? null;
+	const startIndex = after ? all.findIndex((c) => c.id === after) + 1 : 0;
+	const safeStart = startIndex < 0 ? 0 : startIndex;
+	const page = all.slice(safeStart, safeStart + first);
+	const hasNextPage = safeStart + first < all.length;
+	const last = page.at(-1) ?? null;
+	return {
+		rows: page,
+		hasNextPage,
+		endCursor: last ? last.id : null,
+		totalCount: all.length,
+	};
+}
+
+/**
+ * Resolve a comment id to its post id via `comment_view`. Used by the
+ * `voteOnComment` / `editComment` / `deleteComment` resolvers (the GraphQL
+ * surface takes a comment id; under D1-direct everything lives in one
+ * `comment_view`, but the read path mirrors the legacy reader's shape
+ * because some callers still need the lookup for hydration).
+ *
+ * Returns `null` for unknown ids OR for leaf-deleted rows that were fully
+ * removed from `comment_view`.
+ */
+export async function getCommentRow(
+	env: Env,
+	commentId: string,
+): Promise<typeof schema.commentView.$inferSelect | null> {
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const row = await db.query.commentView.findFirst({
+		where: eq(schema.commentView.id, commentId),
+	});
+	return row ?? null;
+}
+
+/* -------------------------------------------------------------------------- */
+/* Comment mutations                                                            */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Add a top-level comment or a nested reply to an existing post. Mints
+ * the comment id internally (forge ULID, `comm_` prefix).
+ *
+ * Validation (defense-in-depth — resolver enforces too):
+ *   - `body` non-empty after trim, ≤ 5 000 chars
+ *   - `parentId` (when provided) MUST reference an existing non-deleted
+ *     comment on the SAME post.
+ *
+ * Writes (in dependency order, no transaction — see decision note on
+ * `submitPost`):
+ *   1. Insert `comment_view` row (full body + excerpt + author + parent_id).
+ *   2. Bump `post_summary.commentCount` + refresh `lastActivityAt`,
+ *      recompute `hot_score` against `now`.
+ *   3. Recompute `pano_stats` totals.
+ *
+ * Returns the new comment id + the post's updated commentCount so the
+ * resolver can shape the `Comment` response without a follow-up read.
+ *
+ * Throws:
+ *   - `PostNotFoundError` for an unknown / deleted post.
+ *   - `CommentValidationError` on validation failure.
+ */
+export async function addComment(
+	env: Env,
+	input: AddCommentInput,
+): Promise<AddCommentResult> {
+	const rawBody = input.body ?? "";
+	if (rawBody.trim().length === 0) {
+		throw new CommentValidationError("body_required", "yorum boş olamaz");
+	}
+	if (rawBody.length > COMMENT_BODY_MAX) {
+		throw new CommentValidationError(
+			"body_too_long",
+			`yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
+		);
+	}
+
+	const db = drizzle(env.PHOENIX_DB, {schema});
+
+	const post = await db.query.postSummary.findFirst({
+		where: and(eq(schema.postSummary.id, input.postId), isNull(schema.postSummary.deletedAt)),
+	});
+	if (!post) {
+		throw new PostNotFoundError(input.postId);
+	}
+
+	const parentId = input.parentId ?? null;
+	if (parentId !== null) {
+		// Same-post + existence + not-soft-deleted invariant. Under D1-direct,
+		// every comment lives in one `comment_view`, so we must enforce
+		// `post_id = ?` explicitly (the legacy DO routing did this for us by
+		// addressing the per-post DO).
+		const parent = await db.query.commentView.findFirst({
+			where: and(
+				eq(schema.commentView.id, parentId),
+				eq(schema.commentView.postId, input.postId),
+				isNull(schema.commentView.deletedAt),
+			),
+		});
+		if (!parent) {
+			throw new CommentValidationError("parent_not_found", "yanıtlanan yorum bulunamadı");
+		}
+	}
+
+	const now = new Date();
+	const commentId = id("comm");
+	const bodyExcerpt = excerpt(rawBody);
+
+	await db.insert(schema.commentView).values({
+		id: commentId,
+		authorId: input.authorId,
+		authorName: input.authorName,
+		postId: input.postId,
+		postTitle: post.title,
+		parentId,
+		body: rawBody,
+		bodyExcerpt,
+		score: 0,
+		createdAt: now,
+		updatedAt: now,
+		deletedAt: null,
+		lastEventId: "",
+	});
+
+	const newCommentCount = post.commentCount + 1;
+	const hotScore = computeHotScore(
+		post.score,
+		(post.createdAt ?? now).getTime(),
+		now.getTime(),
+	);
+
+	await db
+		.update(schema.postSummary)
+		.set({
+			commentCount: newCommentCount,
+			hotScore,
+			updatedAt: now,
+			lastActivityAt: now,
+		})
+		.where(eq(schema.postSummary.id, input.postId));
+
+	await recomputePanoStats(env, now);
+
+	return {
+		commentId,
+		postId: input.postId,
+		parentId,
+		authorId: input.authorId,
+		authorName: input.authorName,
+		body: rawBody,
+		score: 0,
+		commentCount: newCommentCount,
+		createdAt: now,
+	};
+}
+
+/**
+ * Cast an up-vote on a comment. Idempotent: re-cast from the same voter is
+ * a no-op. When the cast lands, recompute `comment_view.score`, mirror onto
+ * `user_vote`, bump karma on the comment author's `user_profile`. Mirrors
+ * `voteOnPost` (task_7) and `voteDefinition` (task_5).
+ */
+export async function voteOnComment(
+	env: Env,
+	input: VoteOnCommentInput,
+): Promise<VoteOnCommentResult> {
+	return applyCommentVote(env, input, true);
+}
+
+/**
+ * Retract a previously-cast comment vote. Idempotent: retracting when no
+ * row exists is a no-op (DELETE returns changes=0).
+ */
+export async function retractCommentVote(
+	env: Env,
+	input: VoteOnCommentInput,
+): Promise<VoteOnCommentResult> {
+	return applyCommentVote(env, input, false);
+}
+
+async function applyCommentVote(
+	env: Env,
+	input: VoteOnCommentInput,
+	isVote: boolean,
+): Promise<VoteOnCommentResult> {
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const row = await db.query.commentView.findFirst({
+		where: and(eq(schema.commentView.id, input.commentId), isNull(schema.commentView.deletedAt)),
+	});
+	if (!row) {
+		throw new CommentNotFoundError(input.commentId);
+	}
+
+	const now = new Date();
+	const nowSec = Math.floor(now.getTime() / 1000);
+
+	let changed = false;
+	if (isVote) {
+		const result = await env.PHOENIX_DB.prepare(
+			`INSERT OR IGNORE INTO comment_vote (comment_id, voter_id, created_at)
+			 VALUES (?, ?, ?)`,
+		)
+			.bind(input.commentId, input.voterId, nowSec)
+			.run();
+		changed = (result.meta.changes ?? 0) > 0;
+	} else {
+		const result = await env.PHOENIX_DB.prepare(
+			`DELETE FROM comment_vote WHERE comment_id = ? AND voter_id = ?`,
+		)
+			.bind(input.commentId, input.voterId)
+			.run();
+		changed = (result.meta.changes ?? 0) > 0;
+	}
+
+	if (!changed) {
+		const myVote = await readCommentVotePresence(env, input.voterId, input.commentId);
+		return {
+			commentId: input.commentId,
+			postId: row.postId,
+			parentId: row.parentId,
+			authorId: row.authorId,
+			authorName: row.authorName,
+			body: row.body,
+			score: row.score,
+			createdAt: row.createdAt ?? now,
+			myVote,
+			changed: false,
+		};
+	}
+
+	// Recompute denormalized score from the truth table.
+	const scoreRow = await env.PHOENIX_DB.prepare(
+		`SELECT COUNT(*) as n FROM comment_vote WHERE comment_id = ?`,
+	)
+		.bind(input.commentId)
+		.first<{n: number}>();
+	const newScore = scoreRow?.n ?? 0;
+
+	await db
+		.update(schema.commentView)
+		.set({score: newScore, updatedAt: now})
+		.where(eq(schema.commentView.id, input.commentId));
+
+	// Mirror onto cross-product `user_vote` MV + karma counter on the
+	// comment author (NOT the post author — votes target the commenter).
+	if (isVote) {
+		await env.PHOENIX_DB.prepare(
+			`INSERT OR IGNORE INTO user_vote (user_id, target_kind, target_id, created_at)
+			 VALUES (?, 'comment', ?, ?)`,
+		)
+			.bind(input.voterId, input.commentId, nowSec)
+			.run();
+
+		await env.PHOENIX_DB.prepare(
+			`INSERT INTO user_profile (
+				user_id, username, display_name, image,
+				total_karma, definition_count, post_count, comment_count,
+				updated_at, last_event_id
+			) VALUES (?, NULL, NULL, NULL, 1, 0, 0, 0, ?, '')
+			ON CONFLICT(user_id) DO UPDATE SET
+				total_karma = user_profile.total_karma + 1,
+				updated_at  = excluded.updated_at`,
+		)
+			.bind(row.authorId, nowSec)
+			.run();
+	} else {
+		await env.PHOENIX_DB.prepare(
+			`DELETE FROM user_vote WHERE user_id = ? AND target_kind = 'comment' AND target_id = ?`,
+		)
+			.bind(input.voterId, input.commentId)
+			.run();
+
+		await env.PHOENIX_DB.prepare(
+			`UPDATE user_profile SET
+				total_karma = MAX(0, total_karma - 1),
+				updated_at  = ?
+			WHERE user_id = ?`,
+		)
+			.bind(nowSec, row.authorId)
+			.run();
+	}
+
+	return {
+		commentId: input.commentId,
+		postId: row.postId,
+		parentId: row.parentId,
+		authorId: row.authorId,
+		authorName: row.authorName,
+		body: row.body,
+		score: newScore,
+		createdAt: row.createdAt ?? now,
+		myVote: isVote ? 1 : null,
+		changed: true,
+	};
+}
+
+async function readCommentVotePresence(
+	env: Env,
+	voterId: string,
+	commentId: string,
+): Promise<number | null> {
+	const row = await env.PHOENIX_DB.prepare(
+		`SELECT comment_id FROM comment_vote
+		 WHERE comment_id = ? AND voter_id = ?
+		 LIMIT 1`,
+	)
+		.bind(commentId, voterId)
+		.first<{comment_id: string}>();
+	return row ? 1 : null;
+}
+
+/**
+ * Edit a comment's body. Ownership-checked. Refreshes `body`,
+ * `body_excerpt`, and `updatedAt`. Score/threading untouched.
+ *
+ * Throws:
+ *   - `CommentNotFoundError` when the comment doesn't exist or is
+ *     soft-deleted (a deleted comment cannot be edited).
+ *   - `UnauthorizedCommentMutationError` on author mismatch.
+ *   - `CommentValidationError` on body validation failure.
+ */
+export async function editComment(
+	env: Env,
+	input: EditCommentInput,
+): Promise<EditCommentResult> {
+	const rawBody = input.body ?? "";
+	if (rawBody.trim().length === 0) {
+		throw new CommentValidationError("body_required", "yorum boş olamaz");
+	}
+	if (rawBody.length > COMMENT_BODY_MAX) {
+		throw new CommentValidationError(
+			"body_too_long",
+			`yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
+		);
+	}
+
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const row = await db.query.commentView.findFirst({
+		where: and(eq(schema.commentView.id, input.commentId), isNull(schema.commentView.deletedAt)),
+	});
+	if (!row) {
+		throw new CommentNotFoundError(input.commentId);
+	}
+	if (row.authorId !== input.actorId) {
+		throw new UnauthorizedCommentMutationError(input.commentId);
+	}
+
+	const now = new Date();
+	const bodyExcerpt = excerpt(rawBody);
+
+	await db
+		.update(schema.commentView)
+		.set({body: rawBody, bodyExcerpt, updatedAt: now})
+		.where(eq(schema.commentView.id, input.commentId));
+
+	return {
+		commentId: input.commentId,
+		postId: row.postId,
+		parentId: row.parentId,
+		authorId: row.authorId,
+		authorName: row.authorName,
+		body: rawBody,
+		score: row.score,
+		createdAt: row.createdAt ?? now,
+		updatedAt: now,
+	};
+}
+
+/**
+ * Soft-delete a comment, with reply-aware behavior:
+ *
+ *   - **Leaf** (no non-deleted children): fully remove the `comment_view`
+ *     row + drop vote rows + decrement post.commentCount + karma. The
+ *     row disappears entirely from `Post.comments` reads.
+ *   - **Parent-with-replies**: stamp `deleted_at` + rewrite `body_excerpt`
+ *     to `[silindi]` + drop vote rows + decrement post.commentCount +
+ *     karma. The row stays in `Post.comments` reads but renders as the
+ *     placeholder (preserves thread shape).
+ *
+ * Ownership-checked. Idempotent: re-deleting a missing row returns
+ * `deleted: false` (matches the legacy DO contract). Re-deleting an
+ * already-soft-deleted row also returns `deleted: false`.
+ *
+ * Karma decrement: votes that no longer count toward the author's karma
+ * after the row disappears (parent-with-replies path keeps the placeholder
+ * but the votes drop, matching the legacy projection's behavior).
+ *
+ * Throws:
+ *   - `CommentNotFoundError` for an unknown comment id (no row at all).
+ *   - `UnauthorizedCommentMutationError` on author mismatch.
+ */
+export async function deleteComment(
+	env: Env,
+	input: DeleteCommentInput,
+): Promise<DeleteCommentResult> {
+	const db = drizzle(env.PHOENIX_DB, {schema});
+	const row = await db.query.commentView.findFirst({
+		where: eq(schema.commentView.id, input.commentId),
+	});
+	if (!row) {
+		throw new CommentNotFoundError(input.commentId);
+	}
+	if (row.authorId !== input.actorId) {
+		throw new UnauthorizedCommentMutationError(input.commentId);
+	}
+	if (row.deletedAt) {
+		// Already soft-deleted (parent-with-replies path). Idempotent no-op.
+		return {
+			commentId: input.commentId,
+			deleted: false,
+			hasReplies: true,
+			placeholder: rowToCommentRow(row),
+		};
+	}
+
+	// hasReplies: at least one non-deleted child of this comment exists.
+	const childCountRow = await env.PHOENIX_DB.prepare(
+		`SELECT COUNT(*) as n FROM comment_view
+		 WHERE parent_id = ? AND deleted_at IS NULL`,
+	)
+		.bind(input.commentId)
+		.first<{n: number}>();
+	const hasReplies = (childCountRow?.n ?? 0) > 0;
+
+	const now = new Date();
+	const nowSec = Math.floor(now.getTime() / 1000);
+	const priorScore = row.score;
+
+	// Karma decrement for the comment's author (votes drop with the row).
+	if (priorScore > 0) {
+		await env.PHOENIX_DB.prepare(
+			`UPDATE user_profile SET
+				total_karma = MAX(0, total_karma - ?),
+				updated_at  = ?
+			WHERE user_id = ?`,
+		)
+			.bind(priorScore, nowSec, row.authorId)
+			.run();
+	}
+
+	// Drop vote rows (truth table + cross-product mirror) for this comment.
+	await env.PHOENIX_DB.prepare(`DELETE FROM comment_vote WHERE comment_id = ?`)
+		.bind(input.commentId)
+		.run();
+	await env.PHOENIX_DB.prepare(
+		`DELETE FROM user_vote WHERE target_kind = 'comment' AND target_id = ?`,
+	)
+		.bind(input.commentId)
+		.run();
+
+	if (hasReplies) {
+		// Parent-with-replies: stamp deleted_at + rewrite body_excerpt.
+		// Drop the full body (the placeholder doesn't need it) so storage
+		// doesn't carry stale content.
+		await db
+			.update(schema.commentView)
+			.set({
+				body: "",
+				bodyExcerpt: SILINDI_PLACEHOLDER,
+				score: 0,
+				deletedAt: now,
+				updatedAt: now,
+			})
+			.where(eq(schema.commentView.id, input.commentId));
+	} else {
+		// Leaf: fully remove the row.
+		await db.delete(schema.commentView).where(eq(schema.commentView.id, input.commentId));
+	}
+
+	// Decrement post.commentCount (reads filter deleted_at OR rows that no
+	// longer exist).
+	const post = await db.query.postSummary.findFirst({
+		where: eq(schema.postSummary.id, row.postId),
+	});
+	if (post) {
+		const newCommentCount = Math.max(0, post.commentCount - 1);
+		const hotScore = computeHotScore(
+			post.score,
+			(post.createdAt ?? now).getTime(),
+			now.getTime(),
+		);
+		await db
+			.update(schema.postSummary)
+			.set({
+				commentCount: newCommentCount,
+				hotScore,
+				updatedAt: now,
+				lastActivityAt: now,
+			})
+			.where(eq(schema.postSummary.id, row.postId));
+	}
+
+	await recomputePanoStats(env, now);
+
+	const placeholder: CommentRow | null = hasReplies
+		? {
+				id: input.commentId,
+				parentId: row.parentId,
+				author: "",
+				authorId: "",
+				body: SILINDI_PLACEHOLDER,
+				score: 0,
+				createdAt: row.createdAt ?? new Date(0),
+				updatedAt: now,
+				deletedAt: now,
+			}
+		: null;
+
+	return {commentId: input.commentId, deleted: true, hasReplies, placeholder};
 }
 
 // Silence drizzle's "unused import" for `sql` — kept for parity with

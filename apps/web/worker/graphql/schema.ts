@@ -17,23 +17,24 @@ import {
 	printSchema,
 } from "graphql";
 import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encodeNodeId";
-import {lookupCommentPostId} from "../features/pano/commentViewReader";
 import {
-	type CommentConnectionPage,
-	CommentNotFoundError,
-	type CommentRow,
-	CommentValidationError,
-	PostNotFoundError,
-} from "../features/pano/PanoPost";
-import {
+	addComment as addCommentD1,
 	ALLOWED_POST_TAG_KINDS,
+	type CommentConnectionPage,
+	type CommentRow,
+	deleteComment as deleteCommentD1,
 	deletePost as deletePostD1,
+	editComment as editCommentD1,
 	editPost as editPostD1,
+	getCommentRow,
 	getPost as getPostD1,
+	listCommentsConnection as listCommentsConnectionD1,
 	type PostPage,
 	type PostTagRow,
+	retractCommentVote as retractCommentVoteD1,
 	retractPostVote as retractPostVoteD1,
 	submitPost as submitPostD1,
+	voteOnComment as voteOnCommentD1,
 	voteOnPost as voteOnPostD1,
 } from "../features/pano/module";
 import {
@@ -496,9 +497,8 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 				args: {first?: number | null; after?: string | null},
 			) {
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(parent.id));
 				return yield* Effect.promise(() =>
-					stub.listCommentsConnection({
+					listCommentsConnectionD1(env, parent.id, {
 						...(args.first != null ? {first: args.first} : {}),
 						...(args.after ? {after: args.after} : {}),
 					}),
@@ -968,14 +968,36 @@ const QueryType = new GraphQLObjectType({
 						return def ? asNode("Definition", def) : null;
 					}
 					case "Comment": {
-						const postId = yield* Effect.promise(() =>
-							lookupCommentPostId(env.PHOENIX_DB, decoded.id),
-						);
-						if (!postId) return null;
-						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-						const comments = yield* Effect.promise(() => stub.listComments());
-						const c = comments.find((row) => row.id === decoded.id) ?? null;
-						return c ? asNode("Comment", c) : null;
+						const row = yield* Effect.promise(() => getCommentRow(env, decoded.id));
+						if (!row) return null;
+						// Reply-aware projection: a row with `deletedAt` set is the
+						// parent-with-replies placeholder; the SPA renders it as
+						// `[silindi]`. Leaf-deleted rows are removed from
+						// `comment_view` entirely so they never resolve here.
+						const c = row.deletedAt
+							? {
+									id: row.id,
+									parentId: row.parentId,
+									author: "",
+									authorId: "",
+									body: "[silindi]",
+									score: row.score,
+									createdAt: row.createdAt ?? new Date(0),
+									updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+									deletedAt: row.deletedAt,
+								}
+							: {
+									id: row.id,
+									parentId: row.parentId,
+									author: row.authorName,
+									authorId: row.authorId,
+									body: row.body,
+									score: row.score,
+									createdAt: row.createdAt ?? new Date(0),
+									updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+									deletedAt: null,
+								};
+						return asNode("Comment", c);
 					}
 					case "User": {
 						const user = yield* Effect.promise(() => getUserById(env, decoded.id));
@@ -1575,57 +1597,28 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 
-				// Resolver-side validation for fast-fail UX; the Agent re-validates
-				// inside `transactionSync` (defense-in-depth / durability boundary).
-				const trimmed = (args.body ?? "").trim();
-				if (trimmed.length === 0) {
-					throw new GraphQLError("yorum boş olamaz", {
-						extensions: {code: "BODY_REQUIRED"},
-					});
-				}
-				if (args.body.length > 5_000) {
-					throw new GraphQLError("yorum en fazla 5000 karakter olabilir", {
-						extensions: {code: "BODY_TOO_LONG"},
-					});
-				}
-
 				const postId = extractLocalId(args.postId, "Post");
 				const parentId = args.parentId ? extractLocalId(args.parentId, "Comment") : null;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.addComment({
-							authorId: user.id,
-							authorName: user.name ?? user.email,
-							body: args.body,
-							...(parentId ? {parentId} : {}),
-						}),
-					);
-					return {
-						id: result.commentId,
-						parentId: result.parentId,
-						author: result.authorName,
-						authorId: result.authorId,
-						body: result.body,
-						score: result.score,
-						createdAt: result.createdAt,
-						// AddCommentResult is a fresh write; updatedAt === createdAt
-						// by definition. Mirrors the per-DO `listComments` shape (T17).
-						updatedAt: result.createdAt,
-					} satisfies CommentRow;
-				} catch (err) {
-					if (err instanceof CommentValidationError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: err.code.toUpperCase()},
-						});
-					}
-					if (err instanceof PostNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "POST_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					addCommentD1(env, {
+						postId,
+						authorId: user.id,
+						authorName: user.name ?? user.email,
+						body: args.body,
+						...(parentId ? {parentId} : {}),
+					}),
+				);
+				return {
+					id: result.commentId,
+					parentId: result.parentId,
+					author: result.authorName,
+					authorId: result.authorId,
+					body: result.body,
+					score: result.score,
+					createdAt: result.createdAt,
+					// Fresh write: updatedAt === createdAt by definition.
+					updatedAt: result.createdAt,
+				} satisfies CommentRow;
 			}),
 		},
 		voteOnComment: {
@@ -1635,52 +1628,22 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.commentId, "Comment");
-				// The comment lives inside its containing post's DO. The frontend
-				// always knows the post id from the page URL (vote button lives on
-				// a post page) but the GraphQL surface only takes the comment id,
-				// so we lean on the projection's denormalized `comment_view.post_id`
-				// to route the RPC. Mirrors the `lookupDefinitionTermSlug` pattern
-				// from T5's `voteDefinition`.
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.voteOnComment({
-							commentId,
-							voterId: user.id,
-						}),
-					);
-					return {
-						id: result.commentId,
-						parentId: result.parentId,
-						author: result.authorName,
-						authorId: result.authorId,
-						body: result.body,
-						score: result.score,
-						createdAt: result.createdAt,
-						// Vote doesn't change body; the SPA's next read of the
-						// comment row will refresh the canonical updatedAt and
-						// the "düzenlendi" indicator. Mirrors the post vote
-						// resolver (T17).
-						updatedAt: result.createdAt,
-						// Stamp myVote authoritatively so the Comment.myVote
-						// resolver doesn't race against the user_vote projection
-						// landing. Same parent-stamping pattern as T5/T8.
-						myVote: result.myVote,
-					} as CommentRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof CommentNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "COMMENT_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					voteOnCommentD1(env, {commentId, voterId: user.id}),
+				);
+				return {
+					id: result.commentId,
+					parentId: result.parentId,
+					author: result.authorName,
+					authorId: result.authorId,
+					body: result.body,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.createdAt,
+					// Stamp myVote authoritatively so the Comment.myVote
+					// resolver doesn't race against a stale read.
+					myVote: result.myVote,
+				} as CommentRow & {myVote: number | null};
 			}),
 		},
 		retractCommentVote: {
@@ -1690,47 +1653,26 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.commentId, "Comment");
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.retractCommentVote({
-							commentId,
-							voterId: user.id,
-						}),
-					);
-					return {
-						id: result.commentId,
-						parentId: result.parentId,
-						author: result.authorName,
-						authorId: result.authorId,
-						body: result.body,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.createdAt,
-						myVote: result.myVote,
-					} as CommentRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof CommentNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "COMMENT_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					retractCommentVoteD1(env, {commentId, voterId: user.id}),
+				);
+				return {
+					id: result.commentId,
+					parentId: result.parentId,
+					author: result.authorName,
+					authorId: result.authorId,
+					body: result.body,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.createdAt,
+					myVote: result.myVote,
+				} as CommentRow & {myVote: number | null};
 			}),
 		},
 		/**
-		 * Edit a comment's body (T12). `Auth.required` enforces sign-in;
-		 * ownership is enforced inside the per-post `PanoPost` Agent. The
-		 * frontend only knows the comment id, so we lean on `comment_view`'s
-		 * denormalized `post_id` to route the RPC into the correct DO
-		 * (mirrors `voteOnComment` from T11).
+		 * Edit a comment's body. `Auth.required` enforces sign-in; ownership
+		 * is enforced inside the D1-direct module. Errors flow through the
+		 * `resolver()` wrapper's encodeMutationError catch path.
 		 */
 		editComment: {
 			type: new GraphQLNonNull(CommentType),
@@ -1741,35 +1683,10 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string; body: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-
-				const trimmed = (args.body ?? "").trim();
-				if (trimmed.length === 0) {
-					throw new GraphQLError("yorum boş olamaz", {
-						extensions: {code: "BODY_REQUIRED"},
-					});
-				}
-				if (args.body.length > 5_000) {
-					throw new GraphQLError("yorum en fazla 5000 karakter olabilir", {
-						extensions: {code: "BODY_TOO_LONG"},
-					});
-				}
-
 				const commentId = extractLocalId(args.id, "Comment");
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub.editComment({commentId, actorId: user.id, body: args.body}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
+				const r = yield* Effect.promise(() =>
+					editCommentD1(env, {commentId, actorId: user.id, body: args.body}),
 				);
-				if (!result.ok) throw result.error;
-				const r = result.value;
 				return {
 					id: r.commentId,
 					parentId: r.parentId,
@@ -1778,24 +1695,19 @@ const MutationType = new GraphQLObjectType({
 					body: r.body,
 					score: r.score,
 					createdAt: r.createdAt,
-					// EditCommentResult carries updatedAt; mirror it onto the
-					// `Comment` shape so the "düzenlendi" indicator picks it up
-					// immediately after a successful edit (T17).
 					updatedAt: r.updatedAt,
 				} satisfies CommentRow;
 			}),
 		},
 		/**
-		 * Soft-delete a comment (T12 + task_3 phoenix-relay-idiom). Reply-aware:
-		 * the leaf path returns `deletedCommentId` so the FE can `@deleteRecord`
-		 * the row out of the Relay store; the parent-with-replies path returns
-		 * the same `Comment` with `body = '[silindi]'` and `deletedAt` set so
-		 * Relay's automatic store update handles the placeholder rerender.
-		 * Exactly one of the two payload fields is non-null per call.
+		 * Soft-delete a comment. Reply-aware: the leaf path returns
+		 * `deletedCommentId` so the FE can `@deleteRecord` the row out of
+		 * the Relay store; the parent-with-replies path returns the same
+		 * `Comment` with `body = '[silindi]'` and `deletedAt` set so Relay's
+		 * automatic store update handles the placeholder rerender. Exactly
+		 * one of the two payload fields is non-null per call.
 		 *
-		 * `Auth.required` + ownership inside the Agent. The per-DO read and the
-		 * cross-product `comment_view` projection both treat a deleted-with-
-		 * children comment as `[silindi]` and a deleted-leaf as fully removed.
+		 * `Auth.required` + ownership inside the D1-direct module.
 		 */
 		deleteComment: {
 			type: new GraphQLNonNull(DeleteCommentPayloadType),
@@ -1804,32 +1716,17 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.id, "Comment");
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub.deleteComment({commentId, actorId: user.id}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
+				const r = yield* Effect.promise(() =>
+					deleteCommentD1(env, {commentId, actorId: user.id}),
 				);
-				if (!result.ok) throw result.error;
-				const r = result.value;
 				if (r.hasReplies && r.placeholder) {
-					// Parent-with-replies path: return the placeholder Comment row
-					// with `body = '[silindi]'` + `deletedAt` set. Relay merges the
-					// new scalar values into the same DataID (`Comment:<global-id>`)
-					// the page already rendered, so the row stays in the connection
-					// edge and the SPA rerenders the placeholder in place.
+					// Parent-with-replies: surface the `[silindi]` placeholder row
+					// so Relay merges the new scalar values into the existing
+					// `Comment:<global-id>` DataID and rerenders in place.
 					return {deletedCommentId: null, comment: r.placeholder};
 				}
-				// Leaf path (or idempotent no-op): return the global id so the FE
-				// `@deleteRecord` directive removes the record from the store and
-				// the connection edge auto-clears.
+				// Leaf (or idempotent no-op): hand the FE the global id so
+				// `@deleteRecord` removes the record from the store.
 				return {
 					deletedCommentId: encodeNodeId("Comment", r.commentId),
 					comment: null,

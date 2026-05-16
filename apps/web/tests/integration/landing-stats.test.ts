@@ -20,6 +20,9 @@ import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering
 import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
 import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
 import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
+import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import {addComment, submitPost} from "../../worker/features/pano/module";
 import {addDefinition, deleteDefinition} from "../../worker/features/sozluk/module";
 
 declare module "cloudflare:test" {
@@ -35,6 +38,8 @@ async function applyViewMigrations() {
 		viewMigration0003,
 		viewMigration0004,
 		viewMigration0005,
+		viewMigration0006,
+		viewMigration0007,
 	];
 	for (const src of sources) {
 		const statements = src
@@ -193,9 +198,7 @@ describe("landing stats projection — task_15", () => {
 		const authorA = "user_stats_pano_a";
 		const authorB = "user_stats_pano_b";
 
-		const postId = "post_stats_pano_one";
-		const stubPost = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-		await stubPost.submitPost({
+		const post = await submitPost(env, {
 			title: "stats pano one",
 			url: "https://example.com/stats-pano-one",
 			body: "pano stats body",
@@ -203,16 +206,19 @@ describe("landing stats projection — task_15", () => {
 			authorId: authorA,
 			authorName: "Author A",
 		});
+		const postId = post.postId;
 
 		// authorB drops a comment on authorA's post.
-		await stubPost.addComment({
+		await addComment(env, {
+			postId,
 			authorId: authorB,
 			authorName: "Author B",
 			body: "stats pano comment from B",
 		});
 
 		// authorA also comments on their own post (already an author via post).
-		await stubPost.addComment({
+		await addComment(env, {
+			postId,
 			authorId: authorA,
 			authorName: "Author A",
 			body: "stats pano comment from A self",

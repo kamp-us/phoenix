@@ -23,6 +23,9 @@ import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering
 import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
 import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
 import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
+import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import {addComment, submitPost} from "../../worker/features/pano/module";
 import {handleAuth, setUsername} from "../../worker/features/pasaport/module";
 import {listContributions, lookupProfile} from "../../worker/features/pasaport/userProfileReader";
 import {addDefinition} from "../../worker/features/sozluk/module";
@@ -40,6 +43,8 @@ async function applyViewMigrations() {
 		viewMigration0003,
 		viewMigration0004,
 		viewMigration0005,
+		viewMigration0006,
+		viewMigration0007,
 	];
 	for (const src of sources) {
 		const statements = src
@@ -116,10 +121,8 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			termTitle: "Differential Engine",
 		});
 
-		// 3) seed a post — DO name == post id (matches resolver)
-		const postId = "post_t14_seed_one";
-		const postStub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-		await postStub.submitPost({
+		// 3) seed a post via the D1-direct module (d1-direct/task_7)
+		const postResult = await submitPost(env, {
 			title: "ada's first post",
 			url: "https://example.com/ada",
 			body: "an opening note",
@@ -128,8 +131,9 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			authorName: "Ada Lovelace",
 		});
 
-		// 4) seed a comment on the same post
-		await postStub.addComment({
+		// 4) seed a comment via the D1-direct module (d1-direct/task_8)
+		await addComment(env, {
+			postId: postResult.postId,
 			authorId: userId,
 			authorName: "Ada Lovelace",
 			body: "kendi gönderime kendim yorum yazıyorum",

@@ -50,6 +50,13 @@
       "when": 1779100000000,
       "tag": "0006_d1_direct_pano",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1779200000000,
+      "tag": "0007_d1_direct_pano_comments",
+      "breakpoints": true
     }
   ]
 }

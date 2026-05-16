@@ -310,10 +310,25 @@ export const postVote = sqliteTable(
 );
 
 /**
- * Per-author per-comment row, denormalized with post id + title for the
- * profile contribution feed. Maintained by `CommentAdded`, `CommentEdited`,
- * `CommentDeleted` projection steps. Deleted-with-replies surfaces as
- * `body_excerpt = '[silindi]'`; deleted-without-replies removes the row.
+ * Per-comment row, denormalized with post id + title for the profile
+ * contribution feed AND the per-post thread reader. Canonical store for
+ * pano comments after the d1-direct migration (ADR 0009 / task_8) — the
+ * per-post DO is no longer the source of truth.
+ *
+ * `body` holds the full text; `body_excerpt` is a denormalized truncation
+ * kept for the profile feed card (backwards-compat with the projection-era
+ * columns; new writes populate both). `parent_id` powers the thread shape
+ * (nullable; top-level comments have `parent_id IS NULL`).
+ *
+ * Deleted-with-replies surfaces as `body_excerpt = '[silindi]'` AND
+ * `deleted_at` set; deleted-without-replies fully removes the row. Same
+ * reply-aware behavior the legacy DO/projection exhibited.
+ *
+ * `last_event_id` is a vestigial column from the projection era: under
+ * d1-direct mutations write the table inline so the convergence guard is
+ * unused on new writes (left default `""`). The column survives this task
+ * to keep the existing read-side schema stable; phase 4 (task_12) drops it
+ * during the wrangler / view cleanup pass.
  */
 export const commentView = sqliteTable(
 	"comment_view",
@@ -323,6 +338,14 @@ export const commentView = sqliteTable(
 		authorName: text("author_name").notNull(),
 		postId: text("post_id").notNull(),
 		postTitle: text("post_title").notNull(),
+		// Optional parent comment id for nested replies (d1-direct/task_8).
+		// Top-level comments leave this NULL; nested replies point at an
+		// existing non-deleted comment in the same post.
+		parentId: text("parent_id"),
+		// Canonical full-text comment body (d1-direct/task_8).
+		body: text("body").notNull().default(""),
+		// Truncated body for the profile feed card; rewritten to "[silindi]"
+		// for the parent-with-replies soft-delete path.
 		bodyExcerpt: text("body_excerpt").notNull(),
 		score: integer("score").notNull().default(0),
 		createdAt: timestamp("created_at").notNull(),
@@ -333,6 +356,31 @@ export const commentView = sqliteTable(
 	(t) => [
 		// Profile contribution feed: WHERE author_id = ? ORDER BY created_at DESC.
 		index("comment_view_author_created").on(t.authorId, t.createdAt),
+		// Per-post thread read: WHERE post_id = ? ORDER BY created_at ASC.
+		index("comment_view_post").on(t.postId),
+		// Parent lookups for reply-aware soft-delete (children-of-parent check).
+		index("comment_view_parent").on(t.parentId),
+	],
+);
+
+/**
+ * Per-(comment, voter) up-vote presence row. The cross-product `user_vote`
+ * MV is denormalized off this for the `myVote` lookup; the per-target score
+ * column on `comment_view.score` is denormalized off COUNT(*) under
+ * `WHERE comment_id = ?`. Both are recomputed inline alongside the vote
+ * write (d1-direct/task_8). Mirrors `postVote` from task_7 and
+ * `definitionVote` from task_5.
+ */
+export const commentVote = sqliteTable(
+	"comment_vote",
+	{
+		commentId: text("comment_id").notNull(),
+		voterId: text("voter_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.commentId, t.voterId]}),
+		index("comment_vote_comment").on(t.commentId),
 	],
 );
 
