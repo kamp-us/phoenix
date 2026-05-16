@@ -1,29 +1,39 @@
 /**
- * PanoPost.voteOnPost / retractPostVote + VoteRecorded projection — task_8.
+ * Pano D1-direct `voteOnPost` / `retractPostVote` (task_7, d1-direct).
  *
- * Mirrors `sozluk-vote-definition.test.ts`. Exercises the producer pattern
- * (ADR 0007) for post vote events end-to-end inside workerd:
- *   1. Apply view migrations.
- *   2. Seed a post via `submitPost` (T7 path; lands the `post_summary` row).
- *   3. Cast a vote → score 0 → 1 → `user_vote` row exists →
+ * Exercises the module-functional path against `env.PHOENIX_DB`:
+ *   1. Apply view migrations (including 0006).
+ *   2. Seed a post via `submitPost` (D1-direct).
+ *   3. Cast a vote → `post_summary.score` 0 → 1 → `user_vote` row exists →
  *      `user_profile.total_karma` for the author goes 0 → 1.
- *   4. Idempotency: a second vote from the same user is a no-op (score stays
- *      at 1, no duplicate karma bump, exactly one vote row).
+ *   4. Idempotency: a second vote from the same user is a no-op (score
+ *      stays at 1, exactly one vote row, karma stays at 1).
  *   5. Retract the vote → score 0 → `user_vote` row gone → karma 0.
- *   6. Vote → unvote → vote round-trip restores score 1, karma 1, exactly
- *      one `user_vote` row.
- *   7. Outbox durability: a vote that fails workflow.create on the inline
- *      flush leaves the outbox row; `reconcileOutbox` re-queues and clears.
- *   8. PostNotFoundError for an empty DO.
- *   9. hot_score recomputes alongside score.
+ *   6. Vote → unvote → vote round-trip restores score 1, karma 1,
+ *      exactly one `user_vote` row.
+ *   7. PostNotFoundError for an unknown post id.
+ *   8. hot_score recomputes alongside score.
+ *
+ * No `runInDurableObject`, no outbox, no projection workflow — the writes
+ * are inline D1 (ADR 0009).
  */
-import {id} from "@usirin/forge";
-import {env, runInDurableObject} from "cloudflare:test";
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
+import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
 import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
 import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
 import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
 import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
+import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
+import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
+import {
+	PostNotFoundError,
+	retractPostVote,
+	submitPost,
+	voteOnPost,
+} from "../../worker/features/pano/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -31,7 +41,15 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [
+		viewMigration0000,
+		viewMigration0001,
+		viewMigration0002,
+		viewMigration0003,
+		viewMigration0004,
+		viewMigration0005,
+		viewMigration0006,
+	];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -55,169 +73,126 @@ async function applyViewMigrations() {
 	}
 }
 
-async function waitForRow<T>(sql: string, params: unknown[], attempts = 30): Promise<T | null> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row) return row as T;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function waitForCondition(
-	sql: string,
-	params: unknown[],
-	predicate: (row: unknown) => boolean,
-	attempts = 30,
-): Promise<unknown> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row && predicate(row)) return row;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function seedPost(authorId: string, authorName: string) {
-	const postId = id("post");
-	const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-	await stub.submitPost({
-		title: `seed post ${postId}`,
+async function seedPost(authorId: string, authorName = "umut") {
+	const result = await submitPost(env, {
+		title: `seed post ${Math.random().toString(36).slice(2)}`,
 		tags: [{kind: "tartışma"}],
 		authorId,
 		authorName,
 	});
-	// Wait for post_summary to land so cross-product reads see the row.
-	await waitForRow<{id: string}>("SELECT id FROM post_summary WHERE id = ?", [postId]);
-	return {stub, postId};
+	return {postId: result.postId};
 }
 
 beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("PanoPost.voteOnPost — task_8", () => {
+describe("pano.voteOnPost — task_7", () => {
 	it("casts a vote, recomputes score + hot_score, projects user_vote + karma", async () => {
 		const authorId = "author-vote-1";
 		const voterId = "voter-vote-1";
-		const {stub, postId} = await seedPost(authorId, "umut");
+		const {postId} = await seedPost(authorId);
 
-		const result = await stub.voteOnPost({voterId});
+		const result = await voteOnPost(env, {postId, voterId});
 		expect(result.score).toBe(1);
 		expect(result.changed).toBe(true);
 		expect(result.myVote).toBe(1);
 		// hot_score is HN-style; positive after a cast on a fresh post.
 		expect(result.hotScore).toBeGreaterThan(0);
 
-		const post = await stub.getPost();
-		expect(post!.score).toBe(1);
+		// post_summary score + hot_score reflect the vote.
+		const summary = (await env.PHOENIX_DB.prepare(
+			"SELECT score, hot_score FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first()) as {score: number; hot_score: number} | null;
+		expect(summary).not.toBeNull();
+		expect(summary!.score).toBe(1);
+		expect(summary!.hot_score).toBeGreaterThan(0);
 
 		// user_vote MV row landed.
-		const voteRow = await waitForRow<{user_id: string}>(
+		const voteRow = await env.PHOENIX_DB.prepare(
 			"SELECT user_id FROM user_vote WHERE user_id = ? AND target_kind = 'post' AND target_id = ?",
-			[voterId, postId],
-		);
+		)
+			.bind(voterId, postId)
+			.first();
 		expect(voteRow).not.toBeNull();
 
-		// post_summary score + hot_score reflect the vote.
-		const summary = await waitForCondition(
-			"SELECT score, hot_score FROM post_summary WHERE id = ?",
-			[postId],
-			(r) => (r as {score: number}).score === 1,
-		);
-		expect(summary).not.toBeNull();
-		expect((summary as {hot_score: number}).hot_score).toBeGreaterThan(0);
-
 		// karma 0 → 1 for the author.
-		const profile = await waitForCondition(
+		const profile = (await env.PHOENIX_DB.prepare(
 			"SELECT user_id, total_karma FROM user_profile WHERE user_id = ?",
-			[authorId],
-			(r) => (r as {total_karma: number}).total_karma === 1,
-		);
+		)
+			.bind(authorId)
+			.first()) as {user_id: string; total_karma: number} | null;
 		expect(profile).not.toBeNull();
+		expect(profile!.total_karma).toBe(1);
 	});
 
 	it("two consecutive votes from the same user are idempotent (score stays at 1)", async () => {
 		const authorId = "author-idem";
 		const voterId = "voter-idem";
-		const {stub, postId} = await seedPost(authorId, "umut");
+		const {postId} = await seedPost(authorId);
 
-		const first = await stub.voteOnPost({voterId});
+		const first = await voteOnPost(env, {postId, voterId});
 		expect(first.score).toBe(1);
 		expect(first.changed).toBe(true);
 
-		const second = await stub.voteOnPost({voterId});
+		const second = await voteOnPost(env, {postId, voterId});
 		expect(second.score).toBe(1);
 		expect(second.changed).toBe(false);
 
-		const post = await stub.getPost();
-		expect(post!.score).toBe(1);
-
 		// karma stays at 1 (not 2).
-		const profile = await waitForCondition(
-			"SELECT user_id, total_karma FROM user_profile WHERE user_id = ?",
-			[authorId],
-			(r) => (r as {total_karma: number}).total_karma === 1,
-		);
-		expect(profile).not.toBeNull();
+		const profile = (await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first()) as {total_karma: number} | null;
+		expect(profile!.total_karma).toBe(1);
 
-		// vote table has exactly one row for this (post, voter).
-		const voteCount = await runInDurableObject(stub, async (instance: any) => {
-			const rows = instance.sql<{n: number}>`
-				SELECT COUNT(*) as n FROM post_vote
-				WHERE post_id = ${postId} AND voter_id = ${voterId}
-			`;
-			return rows[0]?.n ?? 0;
-		});
-		expect(voteCount).toBe(1);
+		// post_vote table has exactly one row for this (post, voter).
+		const voteCount = (await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM post_vote WHERE post_id = ? AND voter_id = ?",
+		)
+			.bind(postId, voterId)
+			.first()) as {n: number} | null;
+		expect(voteCount!.n).toBe(1);
 	});
 
 	it("retractPostVote removes the row, recomputes score, projects deletion", async () => {
 		const authorId = "author-retract";
 		const voterId = "voter-retract";
-		const {stub, postId} = await seedPost(authorId, "umut");
+		const {postId} = await seedPost(authorId);
 
-		await stub.voteOnPost({voterId});
-		await waitForRow<{user_id: string}>(
-			"SELECT user_id FROM user_vote WHERE user_id = ? AND target_kind = 'post' AND target_id = ?",
-			[voterId, postId],
-		);
+		await voteOnPost(env, {postId, voterId});
 
-		const retract = await stub.retractPostVote({voterId});
+		const retract = await retractPostVote(env, {postId, voterId});
 		expect(retract.score).toBe(0);
 		expect(retract.changed).toBe(true);
 		expect(retract.myVote).toBeNull();
 
-		const post = await stub.getPost();
-		expect(post!.score).toBe(0);
-
 		// user_vote row removed.
-		const removed = await waitForCondition(
+		const voteCount = (await env.PHOENIX_DB.prepare(
 			"SELECT COUNT(*) as n FROM user_vote WHERE user_id = ? AND target_id = ?",
-			[voterId, postId],
-			(r) => (r as {n: number}).n === 0,
-		);
-		expect(removed).not.toBeNull();
+		)
+			.bind(voterId, postId)
+			.first()) as {n: number} | null;
+		expect(voteCount!.n).toBe(0);
 
 		// karma decremented.
-		const profile = await waitForCondition(
-			"SELECT user_id, total_karma FROM user_profile WHERE user_id = ?",
-			[authorId],
-			(r) => (r as {total_karma: number}).total_karma === 0,
-		);
-		expect(profile).not.toBeNull();
+		const profile = (await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first()) as {total_karma: number} | null;
+		expect(profile!.total_karma).toBe(0);
 	});
 
 	it("retracting a vote that doesn't exist is a no-op", async () => {
 		const authorId = "author-noop";
 		const voterId = "voter-noop";
-		const {stub} = await seedPost(authorId, "umut");
+		const {postId} = await seedPost(authorId);
 
-		const result = await stub.retractPostVote({voterId});
+		const result = await retractPostVote(env, {postId, voterId});
 		expect(result.score).toBe(0);
 		expect(result.changed).toBe(false);
 	});
@@ -225,75 +200,36 @@ describe("PanoPost.voteOnPost — task_8", () => {
 	it("vote → unvote → vote round-trip ends with score 1 and one user_vote row", async () => {
 		const authorId = "author-rt";
 		const voterId = "voter-rt";
-		const {stub, postId} = await seedPost(authorId, "umut");
+		const {postId} = await seedPost(authorId);
 
-		await stub.voteOnPost({voterId});
-		await stub.retractPostVote({voterId});
-		const final = await stub.voteOnPost({voterId});
+		await voteOnPost(env, {postId, voterId});
+		await retractPostVote(env, {postId, voterId});
+		const final = await voteOnPost(env, {postId, voterId});
 		expect(final.score).toBe(1);
 
 		// user_vote has exactly one row.
-		const voteRow = await waitForCondition(
+		const voteRow = (await env.PHOENIX_DB.prepare(
 			"SELECT COUNT(*) as n FROM user_vote WHERE user_id = ? AND target_id = ?",
-			[voterId, postId],
-			(r) => (r as {n: number}).n === 1,
-		);
-		expect(voteRow).not.toBeNull();
+		)
+			.bind(voterId, postId)
+			.first()) as {n: number} | null;
+		expect(voteRow!.n).toBe(1);
 
 		// karma at 1.
-		const profile = await waitForCondition(
-			"SELECT user_id, total_karma FROM user_profile WHERE user_id = ?",
-			[authorId],
-			(r) => (r as {total_karma: number}).total_karma === 1,
-		);
-		expect(profile).not.toBeNull();
+		const profile = (await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first()) as {total_karma: number} | null;
+		expect(profile!.total_karma).toBe(1);
 	});
 
-	it("workflow.create failure on vote leaves outbox rows; reconcileOutbox re-queues and clears", async () => {
-		const authorId = "author-reconcile";
-		const voterId = "voter-reconcile";
-		const {stub} = await seedPost(authorId, "umut");
-
-		const counts = await runInDurableObject(stub, async (instance: any) => {
-			const original = instance.env.PHOENIX_PROJECTION.create.bind(
-				instance.env.PHOENIX_PROJECTION,
-			);
-			let calls = 0;
-			instance.env.PHOENIX_PROJECTION = {
-				...instance.env.PHOENIX_PROJECTION,
-				create: async (params: unknown) => {
-					calls++;
-					// Fail the first two create calls (PostChanged + VoteRecorded
-					// for the cast). Subsequent reconcile retries hit the original.
-					if (calls <= 2) throw new Error("simulated workflow create failure");
-					return original(params);
-				},
-			};
-
-			try {
-				await instance.voteOnPost({voterId});
-			} catch {
-				/* swallow */
-			}
-
-			const before = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-
-			await instance.reconcileOutbox();
-
-			const after = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			return {beforeCount: before.length, afterCount: after.length};
-		});
-
-		expect(counts.beforeCount).toBe(2);
-		expect(counts.afterCount).toBe(0);
-	});
-
-	it("voteOnPost on an empty DO rejects with PostNotFoundError", async () => {
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
+	it("voteOnPost on an unknown post id rejects with PostNotFoundError", async () => {
 		try {
-			await stub.voteOnPost({voterId: "voter-x"});
+			await voteOnPost(env, {postId: "post_DOES_NOT_EXIST", voterId: "voter-x"});
 			throw new Error("expected rejection");
 		} catch (err) {
+			expect(err).toBeInstanceOf(PostNotFoundError);
 			expect((err as Error).message).toMatch(/not found/i);
 		}
 	});

@@ -173,6 +173,7 @@ export async function listPostConnection(
 		commentCount: number;
 		createdAt: Date | null;
 	} | null = null;
+	let cursorMissed = false;
 	if (after) {
 		cursorRow =
 			(await db
@@ -186,6 +187,25 @@ export async function listPostConnection(
 				.from(schema.postSummary)
 				.where(eq(schema.postSummary.id, after))
 				.get()) ?? null;
+		if (!cursorRow) {
+			// Stale cursor (the row was deleted between pages). Collapse to
+			// "no further rows" so the FE re-fetches from the head instead
+			// of accidentally re-rendering rows the user has already seen.
+			cursorMissed = true;
+		}
+	}
+	if (cursorMissed) {
+		const totalCountRow = await db
+			.select({n: sql<number>`count(*)`})
+			.from(schema.postSummary)
+			.where(and(...baseConditions))
+			.get();
+		return {
+			rows: [],
+			hasNextPage: false,
+			endCursor: null,
+			totalCount: totalCountRow?.n ?? 0,
+		};
 	}
 
 	const cursorPredicate = cursorRow

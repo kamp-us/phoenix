@@ -1,4 +1,3 @@
-import {id} from "@usirin/forge";
 import {Effect} from "effect";
 import {
 	GraphQLBoolean,
@@ -20,16 +19,23 @@ import {
 import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encodeNodeId";
 import {lookupCommentPostId} from "../features/pano/commentViewReader";
 import {
-	ALLOWED_POST_TAG_KINDS,
 	type CommentConnectionPage,
 	CommentNotFoundError,
 	type CommentRow,
 	CommentValidationError,
 	PostNotFoundError,
+} from "../features/pano/PanoPost";
+import {
+	ALLOWED_POST_TAG_KINDS,
+	deletePost as deletePostD1,
+	editPost as editPostD1,
+	getPost as getPostD1,
 	type PostPage,
 	type PostTagRow,
-	PostValidationError,
-} from "../features/pano/PanoPost";
+	retractPostVote as retractPostVoteD1,
+	submitPost as submitPostD1,
+	voteOnPost as voteOnPostD1,
+} from "../features/pano/module";
 import {
 	listPostConnection,
 	type PostConnectionPage,
@@ -949,8 +955,7 @@ const QueryType = new GraphQLObjectType({
 						return term ? asNode("Term", term) : null;
 					}
 					case "Post": {
-						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(decoded.id));
-						const post = yield* Effect.promise(() => stub.getPost());
+						const post = yield* Effect.promise(() => getPostD1(env, decoded.id));
 						return post ? asNode("Post", post) : null;
 					}
 					case "Definition": {
@@ -1101,10 +1106,10 @@ const QueryType = new GraphQLObjectType({
 				// a raw local post id, or a slug. After task_2's connection
 				// migration, the SPA hands back `Post.id` (the global id) when
 				// it navigates to /pano/<id>; we extract the local id so the
-				// per-post DO lookup hits the right instance.
+				// D1 lookup hits the right row. d1-direct/task_7: reads
+				// `post_summary` directly via the module.
 				const key = extractLocalId(args.idOrSlug, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(key));
-				return yield* Effect.promise(() => stub.getPost());
+				return yield* Effect.promise(() => getPostD1(env, key));
 			}),
 		},
 		/**
@@ -1381,30 +1386,22 @@ const MutationType = new GraphQLObjectType({
 					}
 				}
 
-				// ----- mint a fresh post id; route to the new DO ------------------
-				const postId = id("post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-
-				const result = yield* Effect.promise(() =>
-					stub
-						.submitPost({
-							title: args.title,
-							...(args.url ? {url: args.url} : {}),
-							...(args.body ? {body: args.body} : {}),
-							tags: args.tags.map((t) => ({
-								kind: t.kind,
-								...(t.label ? {label: t.label} : {}),
-							})),
-							authorId: user.id,
-							authorName: user.name ?? user.email,
-						})
-						.then(
-							(value) => ({ok: true as const, value}),
-							(error: unknown) => ({ok: false as const, error}),
-						),
+				// d1-direct/task_7: module function mints the post id internally
+				// and writes PHOENIX_DB inline. Thrown PostValidationError falls
+				// through to the resolver wrapper.
+				const r = yield* Effect.promise(() =>
+					submitPostD1(env, {
+						title: args.title,
+						...(args.url ? {url: args.url} : {}),
+						...(args.body ? {body: args.body} : {}),
+						tags: args.tags.map((t) => ({
+							kind: t.kind,
+							...(t.label ? {label: t.label} : {}),
+						})),
+						authorId: user.id,
+						authorName: user.name ?? user.email,
+					}),
 				);
-				if (!result.ok) throw result.error;
-				const r = result.value;
 				return {
 					id: r.postId,
 					slug: null,
@@ -1431,38 +1428,34 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.postId, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() => stub.voteOnPost({voterId: user.id}));
-					return {
-						id: result.postId,
-						slug: null,
-						title: result.title,
-						url: result.url,
-						host: result.host,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						commentCount: result.commentCount,
-						createdAt: result.createdAt,
-						// Vote results don't reshape body/title; pin updatedAt
-						// to createdAt — the next `getPost` read will refresh
-						// the actual updatedAt and the "düzenlendi" indicator.
-						updatedAt: result.createdAt,
-						tags: result.tags,
-						// Stamp myVote authoritatively so the Post.myVote resolver
-						// doesn't race against the user_vote projection landing.
-						myVote: result.myVote,
-					} as PostPage & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof PostNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "POST_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				// d1-direct/task_7: module function writes PHOENIX_DB inline.
+				// PostNotFoundError falls through to the resolver wrapper,
+				// which encodes the wire-format extensions.code via
+				// `encodeMutationError`.
+				const result = yield* Effect.promise(() =>
+					voteOnPostD1(env, {postId, voterId: user.id}),
+				);
+				return {
+					id: result.postId,
+					slug: null,
+					title: result.title,
+					url: result.url,
+					host: result.host,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					commentCount: result.commentCount,
+					createdAt: result.createdAt,
+					// Vote results don't reshape body/title; pin updatedAt
+					// to createdAt — the next read will refresh
+					// the actual updatedAt and the "düzenlendi" indicator.
+					updatedAt: result.createdAt,
+					tags: result.tags,
+					// Stamp myVote authoritatively so the Post.myVote resolver
+					// doesn't have to re-read user_vote.
+					myVote: result.myVote,
+				} as PostPage & {myVote: number | null};
 			}),
 		},
 		retractPostVote: {
@@ -1472,32 +1465,25 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.postId, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() => stub.retractPostVote({voterId: user.id}));
-					return {
-						id: result.postId,
-						slug: null,
-						title: result.title,
-						url: result.url,
-						host: result.host,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						commentCount: result.commentCount,
-						createdAt: result.createdAt,
-						tags: result.tags,
-						myVote: result.myVote,
-					} as PostPage & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof PostNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "POST_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					retractPostVoteD1(env, {postId, voterId: user.id}),
+				);
+				return {
+					id: result.postId,
+					slug: null,
+					title: result.title,
+					url: result.url,
+					host: result.host,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					commentCount: result.commentCount,
+					createdAt: result.createdAt,
+					updatedAt: result.createdAt,
+					tags: result.tags,
+					myVote: result.myVote,
+				} as PostPage & {myVote: number | null};
 			}),
 		},
 		editPost: {
@@ -1514,7 +1500,7 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 
-				// At least one of title/body must be provided. The Agent re-checks
+				// At least one of title/body must be provided. The module re-checks
 				// (defense-in-depth) but a resolver-side check yields a faster
 				// failure with a typed code.
 				if (args.title == null && args.body == null) {
@@ -1524,21 +1510,14 @@ const MutationType = new GraphQLObjectType({
 				}
 
 				const postId = extractLocalId(args.id, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub
-						.editPost({
-							actorId: user.id,
-							...(args.title != null ? {title: args.title} : {}),
-							...(args.body != null ? {body: args.body} : {}),
-						})
-						.then(
-							(value) => ({ok: true as const, value}),
-							(error: unknown) => ({ok: false as const, error}),
-						),
+				const r = yield* Effect.promise(() =>
+					editPostD1(env, {
+						postId,
+						actorId: user.id,
+						...(args.title != null ? {title: args.title} : {}),
+						...(args.body != null ? {body: args.body} : {}),
+					}),
 				);
-				if (!result.ok) throw result.error;
-				const r = result.value;
 				return {
 					id: r.postId,
 					slug: null,
@@ -1573,18 +1552,13 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.id, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub.deletePost({actorId: user.id}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
+				const r = yield* Effect.promise(() =>
+					deletePostD1(env, {postId, actorId: user.id}),
 				);
-				if (!result.ok) throw result.error;
 				// Return the Relay global id so `@deleteRecord` can find the
 				// store record under the same DataID Relay normalized the
 				// `Post` to (`encodeNodeId("Post", localId)`).
-				return encodeNodeId("Post", result.value.postId);
+				return encodeNodeId("Post", r.postId);
 			}),
 		},
 		addComment: {

@@ -248,6 +248,11 @@ export const postSummary = sqliteTable(
 		url: text("url"),
 		// Extracted via `new URL(url).host` on submit. Powers host filter.
 		host: text("host"),
+		// Canonical full-text post body (d1-direct/task_7). Was previously
+		// held inside the per-post DO's sqlite; under D1-direct `post_summary`
+		// IS the canonical store. `body_excerpt` stays for feed cards and is
+		// denormalized on write.
+		body: text("body").notNull().default(""),
 		bodyExcerpt: text("body_excerpt"),
 		authorId: text("author_id").notNull(),
 		authorName: text("author_name").notNull(),
@@ -281,6 +286,26 @@ export const postSummary = sqliteTable(
 		// DSL doesn't expose per-column ordering on columns, so the second
 		// component is a `sql` fragment.
 		index("post_summary_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
+	],
+);
+
+/**
+ * Per-(post, voter) up-vote presence row. The cross-product `user_vote`
+ * MV is denormalized off this for the `myVote` lookup; the per-target
+ * score column on `post_summary.score` is denormalized off COUNT(*) under
+ * `WHERE post_id = ?`. Both are recomputed inline alongside the vote
+ * write (d1-direct/task_7). Mirrors `definitionVote` from task_5.
+ */
+export const postVote = sqliteTable(
+	"post_vote",
+	{
+		postId: text("post_id").notNull(),
+		voterId: text("voter_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.postId, t.voterId]}),
+		index("post_vote_post").on(t.postId),
 	],
 );
 
