@@ -17,11 +17,12 @@
 	},
 	"durable_objects": {
 		"bindings": [
-			{ "name": "PASAPORT", "class_name": "Pasaport" },
 			// Per-atom Agent DOs (ADR 0005 + 0006). The legacy singleton
 			// Sozluk / Pano DOs were dropped in T18 via the v4 migration's
 			// `delete_classes` clause; SOZLUK_TERM and PANO_POST own every
-			// read + write path now.
+			// read + write path now. Pasaport moved off the DO entirely
+			// in d1-direct/task_4 and now runs as module functions against
+			// PHOENIX_DB.
 			{ "name": "SOZLUK_TERM", "class_name": "SozlukTerm" },
 			{ "name": "PANO_POST", "class_name": "PanoPost" }
 		]
@@ -48,7 +49,6 @@
 		}
 	],
 	"migrations": [
-		{ "tag": "v1", "new_sqlite_classes": ["Pasaport"] },
 		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] },
 		{ "tag": "v3", "new_sqlite_classes": ["Pano"] },
 		// v4: introduces the per-atom Agent classes alongside the singleton

@@ -10,10 +10,10 @@ import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
 
 export {PanoPost} from "./features/pano/PanoPost";
-export {Pasaport} from "./features/pasaport/Pasaport";
 // Per-atom Agent classes own all read + write paths (ADR 0005 / 0006). The
 // legacy singleton Sozluk / Pano DOs were deleted in T18 via the wrangler
-// `delete_classes` migration.
+// `delete_classes` migration. Pasaport moved off the DO model entirely in
+// d1-direct/task_4 and now runs as module functions against PHOENIX_DB.
 export {SozlukTerm} from "./features/sozluk/SozlukTerm";
 // View-layer projection workflow (binding: PHOENIX_PROJECTION). Skeleton
 // lives in worker/view/PhoenixProjection.ts; step bodies are no-ops in T1
@@ -153,7 +153,7 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => handleAuth(c.env, c.req.raw)
 // Agent WebSocket subscriptions (T16). The Agents SDK client (`useAgent`)
 // connects to `/agents/<class-kebab>/<name>` and expects a 101 WebSocket
 // upgrade. `routeAgentRequest` walks the env bindings and dispatches to the
-// matching DO class (SozlukTerm / PanoPost / Pasaport). Returns null if the
+// matching DO class (SozlukTerm / PanoPost). Returns null if the
 // request isn't an agent request, in which case Hono falls through to the
 // next handler.
 app.all("/agents/*", async (c) => {
