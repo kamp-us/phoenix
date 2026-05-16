@@ -1163,94 +1163,11 @@ interface TagInput {
 	label?: string | null;
 }
 
-/**
- * Map an Agent-thrown definition mutation error onto the SPA-facing GraphQL
- * error shape with a stable `code` extension. Errors come back across the
- * RPC boundary as plain Error objects (the class identity is lost in
- * marshaling) — name + message preserve.
- */
-function mapDefinitionMutationError(err: unknown): GraphQLError {
-	const e = err as Error & {code?: string};
-	if (e?.name === "UnauthorizedDefinitionMutationError") {
-		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
-	}
-	if (e?.name === "DefinitionNotFoundError") {
-		return new GraphQLError(e.message ?? "definition not found", {
-			extensions: {code: "DEFINITION_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "DefinitionValidationError") {
-		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
-		return new GraphQLError(e.message ?? "definition validation failed", {
-			extensions: {code},
-		});
-	}
-	// Unknown — surface as a generic GraphQL error so the SPA can render it
-	// instead of seeing Yoga's "Unexpected error" mask.
-	return new GraphQLError(e?.message ?? "definition mutation failed", {
-		extensions: {code: "INTERNAL_SERVER_ERROR"},
-	});
-}
-
-/**
- * Map an Agent-thrown post mutation error onto a GraphQL error. Agent errors
- * cross the RPC boundary as plain `Error` (class identity is lost), so we
- * match on `name` + `code` and bake a stable `code` extension into the
- * GraphQL error so the SPA can localize without parsing free-text messages.
- */
-function mapPostMutationError(err: unknown): GraphQLError {
-	const e = err as Error & {code?: string};
-	if (e?.name === "UnauthorizedPostMutationError") {
-		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
-	}
-	if (e?.name === "PostNotFoundError") {
-		return new GraphQLError(e.message ?? "post not found", {
-			extensions: {code: "POST_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "PostValidationError") {
-		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
-		return new GraphQLError(e.message ?? "post validation failed", {
-			extensions: {code},
-		});
-	}
-	return new GraphQLError(e?.message ?? "post mutation failed", {
-		extensions: {code: "INTERNAL_SERVER_ERROR"},
-	});
-}
-
-/**
- * Map an Agent-thrown comment mutation error onto a GraphQL error. Agent
- * errors cross the RPC boundary as plain `Error` (class identity is lost),
- * so we match on `name` + `code` and bake a stable `code` extension into the
- * GraphQL error so the SPA can localize without parsing free-text messages.
- * Mirrors `mapPostMutationError` (T9) and `mapDefinitionMutationError` (T6).
- */
-function mapCommentMutationError(err: unknown): GraphQLError {
-	const e = err as Error & {code?: string};
-	if (e?.name === "UnauthorizedCommentMutationError") {
-		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
-	}
-	if (e?.name === "CommentNotFoundError") {
-		return new GraphQLError(e.message ?? "comment not found", {
-			extensions: {code: "COMMENT_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "PostNotFoundError") {
-		return new GraphQLError(e.message ?? "post not found", {
-			extensions: {code: "POST_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "CommentValidationError") {
-		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
-		return new GraphQLError(e.message ?? "comment validation failed", {
-			extensions: {code},
-		});
-	}
-	return new GraphQLError(e?.message ?? "comment mutation failed", {
-		extensions: {code: "INTERNAL_SERVER_ERROR"},
-	});
-}
+// task_2 (d1-direct): the three `map{Definition,Post,Comment}MutationError`
+// helpers used to live here. The Effect `resolver()` wrapper now routes every
+// thrown agent error through `encodeMutationError` in `./errors`, so resolvers
+// can throw the raw error and the wire-format `extensions.code` is applied
+// in one place.
 
 const MutationType = new GraphQLObjectType({
 	name: "Mutation",
@@ -1435,38 +1352,32 @@ const MutationType = new GraphQLObjectType({
 					});
 				}
 				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-				// Run the RPC as a plain Promise we can `try/catch` against — keeps
-				// the agent-thrown error classes catchable on the Yoga request path.
-				try {
-					const result = yield* Effect.promise(() =>
-						stub
-							.editDefinition({
-								definitionId,
-								actorId: user.id,
-								body: args.body,
-							})
-							.then(
-								(value) => ({ok: true as const, value}),
-								(error: unknown) => ({ok: false as const, error}),
-							),
-					);
-					if (!result.ok) {
-						throw mapDefinitionMutationError(result.error);
-					}
-					const r = result.value;
-					return {
-						id: r.definitionId,
-						body: r.body,
-						author: r.authorName,
-						authorId: r.authorId,
-						score: r.score,
-						createdAt: r.createdAt,
-						updatedAt: r.updatedAt,
-					} satisfies DefinitionRow;
-				} catch (err) {
-					if (err instanceof GraphQLError) throw err;
-					throw err;
-				}
+				// task_2 (d1-direct): the agent-thrown error class falls through
+				// to the `resolver()` wrapper, which routes it via
+				// `encodeMutationError`. No inline mapper needed.
+				const result = yield* Effect.promise(() =>
+					stub
+						.editDefinition({
+							definitionId,
+							actorId: user.id,
+							body: args.body,
+						})
+						.then(
+							(value) => ({ok: true as const, value}),
+							(error: unknown) => ({ok: false as const, error}),
+						),
+				);
+				if (!result.ok) throw result.error;
+				const r = result.value;
+				return {
+					id: r.definitionId,
+					body: r.body,
+					author: r.authorName,
+					authorId: r.authorId,
+					score: r.score,
+					createdAt: r.createdAt,
+					updatedAt: r.updatedAt,
+				} satisfies DefinitionRow;
 			}),
 		},
 		/**
@@ -1503,9 +1414,7 @@ const MutationType = new GraphQLObjectType({
 						(error: unknown) => ({ok: false as const, error}),
 					),
 				);
-				if (!result.ok) {
-					throw mapDefinitionMutationError(result.error);
-				}
+				if (!result.ok) throw result.error;
 				return {
 					deletedDefinitionId: encodeNodeId("Definition", result.value.definitionId),
 				};
@@ -1595,12 +1504,7 @@ const MutationType = new GraphQLObjectType({
 							(error: unknown) => ({ok: false as const, error}),
 						),
 				);
-				if (!result.ok) {
-					if (result.error instanceof PostValidationError) {
-						throw mapPostMutationError(result.error);
-					}
-					throw mapPostMutationError(result.error);
-				}
+				if (!result.ok) throw result.error;
 				const r = result.value;
 				return {
 					id: r.postId,
@@ -1734,9 +1638,7 @@ const MutationType = new GraphQLObjectType({
 							(error: unknown) => ({ok: false as const, error}),
 						),
 				);
-				if (!result.ok) {
-					throw mapPostMutationError(result.error);
-				}
+				if (!result.ok) throw result.error;
 				const r = result.value;
 				return {
 					id: r.postId,
@@ -1779,9 +1681,7 @@ const MutationType = new GraphQLObjectType({
 						(error: unknown) => ({ok: false as const, error}),
 					),
 				);
-				if (!result.ok) {
-					throw mapPostMutationError(result.error);
-				}
+				if (!result.ok) throw result.error;
 				// Return the Relay global id so `@deleteRecord` can find the
 				// store record under the same DataID Relay normalized the
 				// `Post` to (`encodeNodeId("Post", localId)`).
@@ -1995,9 +1895,7 @@ const MutationType = new GraphQLObjectType({
 						(error: unknown) => ({ok: false as const, error}),
 					),
 				);
-				if (!result.ok) {
-					throw mapCommentMutationError(result.error);
-				}
+				if (!result.ok) throw result.error;
 				const r = result.value;
 				return {
 					id: r.commentId,
@@ -2046,9 +1944,7 @@ const MutationType = new GraphQLObjectType({
 						(error: unknown) => ({ok: false as const, error}),
 					),
 				);
-				if (!result.ok) {
-					throw mapCommentMutationError(result.error);
-				}
+				if (!result.ok) throw result.error;
 				const r = result.value;
 				if (r.hasReplies && r.placeholder) {
 					// Parent-with-replies path: return the placeholder Comment row
