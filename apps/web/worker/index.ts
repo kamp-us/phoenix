@@ -5,6 +5,7 @@ import {Hono} from "hono";
 import {z} from "zod";
 import {SEED_POSTS} from "./features/pano/seed";
 import {backfillProfiles, handleAuth, validateSession} from "./features/pasaport/module";
+import {clearAllTerms, seedTerm} from "./features/sozluk/module";
 import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
@@ -13,7 +14,9 @@ export {PanoPost} from "./features/pano/PanoPost";
 // Per-atom Agent classes own all read + write paths (ADR 0005 / 0006). The
 // legacy singleton Sozluk / Pano DOs were deleted in T18 via the wrangler
 // `delete_classes` migration. Pasaport moved off the DO model entirely in
-// d1-direct/task_4 and now runs as module functions against PHOENIX_DB.
+// d1-direct/task_4; SozlukTerm followed in d1-direct/task_5 (resolvers + admin
+// endpoints now write D1-direct). The class itself is unreferenced and gets
+// deleted in d1-direct/task_6 along with the wrangler binding.
 export {SozlukTerm} from "./features/sozluk/SozlukTerm";
 // View-layer projection workflow (binding: PHOENIX_PROJECTION). Skeleton
 // lives in worker/view/PhoenixProjection.ts; step bodies are no-ops in T1
@@ -43,42 +46,26 @@ const upsertTermSchema = z.object({
 		.min(1),
 });
 
-// Per ADR 0005/0007 the seed dispatches into per-term `SozlukTerm` instances
-// (`idFromName(slug)`) instead of the singleton `Sozluk`. The seed call writes
-// definitions atomically, emits a single `TermChanged` event per term, and the
-// projection populates `term_summary` for cross-entity reads.
+// d1-direct/task_5: writes go straight to `PHOENIX_DB` via the sozluk module.
+// Idempotent: re-running with the same `(authorId, body)` skips the existing
+// row. Gated on `ENVIRONMENT === "development"`.
 app.post("/api/admin/sozluk/upsert-term", async (c) => {
 	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
 	const parsed = upsertTermSchema.safeParse(await c.req.json());
 	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
 	const {slug, title, definitions} = parsed.data;
-	const stub = c.env.SOZLUK_TERM.get(c.env.SOZLUK_TERM.idFromName(slug));
-	const result = await stub.seed({title, definitions});
+	const result = await seedTerm(c.env, {slug, title, definitions});
 	return c.json({slug, ...result});
 });
 
-// Dev-only namespace clear. Walks the slugs the caller provides (plus a default
-// "kampus" sweep for the legacy seed) and wipes each per-term DO. Term-level
-// `term_summary` rows in PHOENIX_DB are also cleared so re-seeding starts clean.
+// d1-direct/task_5: drop the term_summary + definition_view + vote rows for the
+// given slugs in one D1 pass. `sozluk_stats` recomputes from what's left.
 app.post("/api/admin/sozluk/clear", async (c) => {
 	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
 	const body = (await c.req.json().catch(() => ({}))) as {slugs?: string[]};
 	const slugs = body.slugs ?? [];
-
-	let definitions = 0;
-	let terms = 0;
-	for (const slug of slugs) {
-		const stub = c.env.SOZLUK_TERM.get(c.env.SOZLUK_TERM.idFromName(slug));
-		const r = await stub.clearAll();
-		definitions += r.definitions;
-		if (r.term) terms++;
-	}
-
-	// Clear the cross-entity views — re-seed will rebuild via projection.
-	await c.env.PHOENIX_DB.prepare("DELETE FROM term_summary").run();
-	await c.env.PHOENIX_DB.prepare("DELETE FROM sozluk_stats").run();
-
-	return c.json({terms, definitions});
+	const result = await clearAllTerms(c.env, slugs);
+	return c.json(result);
 });
 
 // Dev-only pano admin endpoints. Mirrors the sozluk seed surface but for the

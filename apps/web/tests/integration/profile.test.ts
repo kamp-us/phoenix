@@ -17,13 +17,15 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import {handleAuth, setUsername} from "../../worker/features/pasaport/module";
-import {listContributions, lookupProfile} from "../../worker/features/pasaport/userProfileReader";
 import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
 import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
 import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
 import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
 import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
+import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import {handleAuth, setUsername} from "../../worker/features/pasaport/module";
+import {listContributions, lookupProfile} from "../../worker/features/pasaport/userProfileReader";
+import {addDefinition} from "../../worker/features/sozluk/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -37,6 +39,7 @@ async function applyViewMigrations() {
 		viewMigration0002,
 		viewMigration0003,
 		viewMigration0004,
+		viewMigration0005,
 	];
 	for (const src of sources) {
 		const statements = src
@@ -103,10 +106,10 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			.first<{user_id: string}>();
 		expect(profileSeed).not.toBeNull();
 
-		// 2) seed a definition
+		// 2) seed a definition (D1-direct after d1-direct/task_5)
 		const termSlug = "differential-engine";
-		const termStub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(termSlug));
-		await termStub.addDefinition({
+		await addDefinition(env, {
+			termSlug,
 			authorId: userId,
 			authorName: "Ada Lovelace",
 			body: "A mechanical general-purpose computer designed by Charles Babbage.",
@@ -196,8 +199,8 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 		// Seed 5 definitions on different slugs so they get distinct ids.
 		for (let i = 0; i < 5; i++) {
 			const slug = `cursor-test-${i}`;
-			const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-			await stub.addDefinition({
+			await addDefinition(env, {
+				termSlug: slug,
 				authorId: userId,
 				authorName: "Grace",
 				body: `definition number ${i}`,

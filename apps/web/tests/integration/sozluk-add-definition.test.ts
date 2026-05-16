@@ -1,23 +1,33 @@
 /**
- * SozlukTerm.addDefinition + outbox + DefinitionAdded projection — task_4.
+ * Sozluk D1-direct `addDefinition` (task_5, d1-direct).
  *
- * Exercises the producer pattern (ADR 0007) end-to-end inside workerd:
- *   1. Apply view migrations.
- *   2. Auto-create-term: addDefinition on a fresh slug creates `term_meta`
- *      AND inserts the definition AND emits TermChanged + DefinitionAdded.
- *   3. Atomic outbox: on the happy path, the outbox row is written inside
- *      transactionSync alongside the definition; flushOutbox clears it.
+ * Exercises the module-functional path against `env.PHOENIX_DB`:
+ *   1. Apply view migrations (including 0005 for d1-direct sozluk tables).
+ *   2. Auto-create-term: addDefinition on a fresh slug inserts the
+ *      definition_view row AND upserts term_summary AND refreshes
+ *      sozluk_stats.
+ *   3. Falls back to slug-with-spaces when no termTitle is supplied.
  *   4. Validation: empty body and >10 000 char bodies reject with the right
  *      error code.
- *   5. Reconciliation: simulate a workflow.create failure → outbox row
- *      remains → reconcileOutbox re-queues and clears it.
- *   6. The DefinitionAdded projection lands a `definition_view` row.
+ *
+ * No `runInDurableObject`, no outbox, no projection workflow — the writes
+ * are inline D1 (ADR 0009).
  */
-import {env, runInDurableObject} from "cloudflare:test";
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
+import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
 import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
 import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
 import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
+import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
+import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
+import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import {
+	addDefinition,
+	DefinitionValidationError,
+	getTerm,
+} from "../../worker/features/sozluk/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -25,7 +35,14 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002];
+	const sources = [
+		viewMigration0000,
+		viewMigration0001,
+		viewMigration0002,
+		viewMigration0003,
+		viewMigration0004,
+		viewMigration0005,
+	];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -39,7 +56,8 @@ async function applyViewMigrations() {
 				if (
 					!msg.includes("already exists") &&
 					!msg.includes("duplicate column") &&
-					!msg.includes("no such table")
+					!msg.includes("no such table") &&
+					!msg.includes("no such index")
 				) {
 					throw err;
 				}
@@ -48,36 +66,16 @@ async function applyViewMigrations() {
 	}
 }
 
-async function waitForRow(sql: string, params: unknown[], attempts = 30): Promise<unknown> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row) return row;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function expectRejection(promise: Promise<unknown>, match: RegExp): Promise<void> {
-	try {
-		await promise;
-		throw new Error("expected rejection");
-	} catch (err) {
-		expect((err as Error).message).toMatch(match);
-	}
-}
-
 beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("SozlukTerm.addDefinition — task_4", () => {
-	it("auto-creates the term + inserts the definition + writes definition_view via projection", async () => {
+describe("sozluk.addDefinition — task_5 (d1-direct)", () => {
+	it("auto-creates the term + inserts the definition_view + refreshes sozluk_stats", async () => {
 		const slug = "outbox-pattern";
-		const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 
-		const result = await stub.addDefinition({
+		const result = await addDefinition(env, {
+			termSlug: slug,
 			authorId: "u1",
 			authorName: "umut",
 			body: "Atomic durability primitive: write outbox row in same tx as the mutation; flush async.",
@@ -86,131 +84,113 @@ describe("SozlukTerm.addDefinition — task_4", () => {
 
 		expect(result.definitionId).toBeTruthy();
 		expect(result.termCreated).toBe(true);
+		expect(result.score).toBe(0);
 
-		const term = await stub.getTerm();
-		expect(term).not.toBeNull();
-		expect(term!.title).toBe("Outbox Pattern");
-		expect(term!.totalDefinitions).toBe(1);
-		expect(term!.definitions[0]!.author).toBe("umut");
-		expect(term!.definitions[0]!.body).toContain("Atomic durability");
+		// term_summary row landed inline.
+		const summary = await env.PHOENIX_DB.prepare(
+			"SELECT slug, title, definition_count, total_score FROM term_summary WHERE slug = ?",
+		)
+			.bind(slug)
+			.first<{slug: string; title: string; definition_count: number; total_score: number}>();
+		expect(summary).not.toBeNull();
+		expect(summary!.title).toBe("Outbox Pattern");
+		expect(summary!.definition_count).toBe(1);
 
-		// term_summary projection landed via TermChanged.
-		const termSummary = await waitForRow("SELECT slug FROM term_summary WHERE slug = ?", [slug]);
-		expect(termSummary).not.toBeNull();
-
-		// definition_view projection landed via DefinitionAdded.
-		const view = (await waitForRow(
-			"SELECT id, term_slug, term_title, author_id, author_name, body_excerpt FROM definition_view WHERE id = ?",
-			[result.definitionId],
-		)) as {
-			id: string;
-			term_slug: string;
-			term_title: string;
-			author_id: string;
-			author_name: string;
-			body_excerpt: string;
-		} | null;
+		// definition_view row landed inline.
+		const view = await env.PHOENIX_DB.prepare(
+			"SELECT id, term_slug, term_title, author_id, author_name, body, body_excerpt FROM definition_view WHERE id = ?",
+		)
+			.bind(result.definitionId)
+			.first<{
+				id: string;
+				term_slug: string;
+				term_title: string;
+				author_id: string;
+				author_name: string;
+				body: string;
+				body_excerpt: string;
+			}>();
 		expect(view).not.toBeNull();
 		expect(view!.term_slug).toBe(slug);
 		expect(view!.term_title).toBe("Outbox Pattern");
 		expect(view!.author_id).toBe("u1");
 		expect(view!.author_name).toBe("umut");
+		expect(view!.body).toContain("Atomic durability");
 		expect(view!.body_excerpt).toContain("Atomic durability");
+
+		// getTerm reads back the new shape.
+		const term = await getTerm(env, slug);
+		expect(term).not.toBeNull();
+		expect(term!.title).toBe("Outbox Pattern");
+		expect(term!.totalDefinitions).toBe(1);
+		expect(term!.definitions[0]!.body).toContain("Atomic durability");
+		expect(term!.definitions[0]!.author).toBe("umut");
 	});
 
 	it("derives the term title from the slug when termTitle is not supplied", async () => {
 		const slug = "pure-function";
-		const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-		await stub.addDefinition({
+		await addDefinition(env, {
+			termSlug: slug,
 			authorId: "u2",
 			authorName: "elif",
 			body: "A function whose output depends only on its inputs and produces no observable side effects.",
 		});
 
-		const term = await stub.getTerm();
+		const term = await getTerm(env, slug);
 		// "pure-function" → "pure function"
 		expect(term!.title).toBe("pure function");
 	});
 
 	it("rejects empty body", async () => {
-		const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName("empty-body"));
-		await expectRejection(
-			stub.addDefinition({authorId: "u1", authorName: "umut", body: ""}),
-			/boş olamaz|gerekli/i,
-		);
-		await expectRejection(
-			stub.addDefinition({authorId: "u1", authorName: "umut", body: "   "}),
-			/boş olamaz|gerekli/i,
-		);
+		await expect(
+			addDefinition(env, {
+				termSlug: "empty-body",
+				authorId: "u1",
+				authorName: "umut",
+				body: "",
+			}),
+		).rejects.toBeInstanceOf(DefinitionValidationError);
+		await expect(
+			addDefinition(env, {
+				termSlug: "empty-body",
+				authorId: "u1",
+				authorName: "umut",
+				body: "   ",
+			}),
+		).rejects.toBeInstanceOf(DefinitionValidationError);
 	});
 
 	it("rejects bodies over 10 000 chars", async () => {
-		const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName("too-long"));
 		const body = "x".repeat(10_001);
-		await expectRejection(
-			stub.addDefinition({authorId: "u1", authorName: "umut", body}),
-			/10\s?000|en fazla/i,
-		);
+		await expect(
+			addDefinition(env, {
+				termSlug: "too-long",
+				authorId: "u1",
+				authorName: "umut",
+				body,
+			}),
+		).rejects.toBeInstanceOf(DefinitionValidationError);
 	});
 
-	it("flushOutbox clears the outbox row on success", async () => {
-		const slug = "flush-clears";
-		const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-		await stub.addDefinition({
+	it("a second addDefinition on the same slug extends the term, not creates a new one", async () => {
+		const slug = "two-definitions";
+		const first = await addDefinition(env, {
+			termSlug: slug,
 			authorId: "u1",
 			authorName: "umut",
-			body: "writes happen in transactionSync; outbox row clears on flush.",
+			body: "first definition body",
 		});
+		expect(first.termCreated).toBe(true);
 
-		// After the call returns the outbox should be empty (flush ran inline
-		// on the happy path).
-		const remaining = await runInDurableObject(stub, async (instance: any) => {
-			return instance.sql<{n: number}>`SELECT COUNT(*) as n FROM outbox`;
+		const second = await addDefinition(env, {
+			termSlug: slug,
+			authorId: "u2",
+			authorName: "elif",
+			body: "second definition body",
 		});
-		expect(remaining[0]!.n).toBe(0);
-	});
+		expect(second.termCreated).toBe(false);
 
-	it("workflow.create failure leaves outbox row; reconcileOutbox re-queues and clears it", async () => {
-		const slug = "reconcile-test";
-		const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-
-		// Drive a transactionSync mutation but stub workflow.create to throw on
-		// the first attempt, then succeed on the reconcile pass.
-		const eventIds = await runInDurableObject(stub, async (instance: any) => {
-			const original = instance.env.PHOENIX_PROJECTION.create.bind(instance.env.PHOENIX_PROJECTION);
-			let calls = 0;
-			instance.env.PHOENIX_PROJECTION = {
-				...instance.env.PHOENIX_PROJECTION,
-				create: async (params: unknown) => {
-					calls++;
-					if (calls === 1) throw new Error("simulated workflow create failure");
-					return original(params);
-				},
-			};
-
-			// First call: addDefinition swallows the flushOutbox failure (it logs)
-			// and the outbox row stays.
-			try {
-				await instance.addDefinition({
-					authorId: "u9",
-					authorName: "test",
-					body: "verifies the reconcile re-queue path",
-				});
-			} catch {
-				/* swallow */
-			}
-
-			const before = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			expect(before.length).toBe(1);
-
-			// Reconcile retries — second create call succeeds → row deleted.
-			await instance.reconcileOutbox();
-
-			const after = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			return {beforeIds: before.map((r: any) => r.event_id), afterCount: after.length};
-		});
-
-		expect(eventIds.beforeIds.length).toBe(1);
-		expect(eventIds.afterCount).toBe(0);
+		const term = await getTerm(env, slug);
+		expect(term!.totalDefinitions).toBe(2);
 	});
 });

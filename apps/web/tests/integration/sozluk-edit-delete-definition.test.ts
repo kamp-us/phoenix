@@ -1,25 +1,36 @@
 /**
- * SozlukTerm.editDefinition / deleteDefinition + DefinitionEdited /
- * DefinitionDeleted projection — task_6.
+ * Sozluk D1-direct `editDefinition` / `deleteDefinition` (task_5, d1-direct).
  *
- * Exercises the producer pattern (ADR 0007) end-to-end inside workerd:
- *   1. Apply view migrations.
- *   2. Seed a definition via `addDefinition` (T4 path).
- *   3. Edit the body → updated_at + body_excerpt land on definition_view.
- *   4. Ownership: a non-author actor's edit / delete throws
- *      `UnauthorizedDefinitionMutationError`.
- *   5. Delete → soft-deletes (sets `deleted_at`); `getTerm` filters it out;
- *      term aggregates (`definitionCount`, `totalScore`) decrement; the
- *      `definition_view` row gets `deleted_at` stamped via the projection.
- *   6. Idempotent re-delete on an already-deleted row is a no-op.
- *   7. Outbox durability: an edit / delete that fails workflow.create
- *      leaves the outbox rows; `reconcileOutbox` re-queues and clears.
+ * Exercises the module-functional path against `env.PHOENIX_DB`:
+ *   1. Edit body → definition_view.body + body_excerpt + updated_at advance.
+ *   2. Validation: empty body / >10 000 chars reject.
+ *   3. Ownership: non-author edit / delete rejects with
+ *      UnauthorizedDefinitionMutationError.
+ *   4. Delete soft-stamps deleted_at; getTerm filters it out;
+ *      term_summary aggregates decrement.
+ *   5. Idempotent re-delete on an already-deleted row returns deleted=false.
+ *
+ * No `runInDurableObject`, no outbox, no projection workflow.
  */
-import {env, runInDurableObject} from "cloudflare:test";
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
+import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
 import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
 import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
 import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
+import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
+import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
+import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import {
+	addDefinition,
+	DefinitionValidationError,
+	deleteDefinition,
+	editDefinition,
+	getTerm,
+	UnauthorizedDefinitionMutationError,
+	voteDefinition,
+} from "../../worker/features/sozluk/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -27,7 +38,14 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002];
+	const sources = [
+		viewMigration0000,
+		viewMigration0001,
+		viewMigration0002,
+		viewMigration0003,
+		viewMigration0004,
+		viewMigration0005,
+	];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -41,7 +59,8 @@ async function applyViewMigrations() {
 				if (
 					!msg.includes("already exists") &&
 					!msg.includes("duplicate column") &&
-					!msg.includes("no such table")
+					!msg.includes("no such table") &&
+					!msg.includes("no such index")
 				) {
 					throw err;
 				}
@@ -50,194 +69,137 @@ async function applyViewMigrations() {
 	}
 }
 
-async function waitForRow<T>(sql: string, params: unknown[], attempts = 30): Promise<T | null> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row) return row as T;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function waitForCondition(
-	sql: string,
-	params: unknown[],
-	predicate: (row: unknown) => boolean,
-	attempts = 30,
-): Promise<unknown> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row && predicate(row)) return row;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function seedDefinition(slug: string, authorId: string, authorName: string, body: string) {
-	const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-	const result = await stub.addDefinition({authorId, authorName, body});
-	await waitForRow<{id: string}>("SELECT id FROM definition_view WHERE id = ?", [
-		result.definitionId,
-	]);
-	return {stub, definitionId: result.definitionId};
+async function seedDefinition(slug: string, authorId: string, body: string) {
+	const result = await addDefinition(env, {
+		termSlug: slug,
+		authorId,
+		authorName: "umut",
+		body,
+	});
+	return {definitionId: result.definitionId};
 }
 
 beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("SozlukTerm.editDefinition — task_6", () => {
-	it("updates body + updatedAt and projects DefinitionEdited onto definition_view", async () => {
+describe("sozluk.editDefinition — task_5 (d1-direct)", () => {
+	it("updates body + body_excerpt + updated_at on definition_view", async () => {
 		const slug = "edit-happy";
 		const authorId = "edit-author";
-		const {stub, definitionId} = await seedDefinition(slug, authorId, "umut", "original body");
+		const {definitionId} = await seedDefinition(slug, authorId, "original body");
 
-		const before = await waitForRow<{body_excerpt: string}>(
-			"SELECT body_excerpt FROM definition_view WHERE id = ?",
-			[definitionId],
-		);
-		expect(before!.body_excerpt).toContain("original body");
+		const before = await env.PHOENIX_DB.prepare(
+			"SELECT body, body_excerpt FROM definition_view WHERE id = ?",
+		)
+			.bind(definitionId)
+			.first<{body: string; body_excerpt: string}>();
+		expect(before!.body).toContain("original body");
 
-		const result = await stub.editDefinition({
+		const result = await editDefinition(env, {
 			definitionId,
 			actorId: authorId,
 			body: "edited body — significantly different content here.",
 		});
 		expect(result.body).toContain("edited body");
 
-		// getTerm reflects the new body.
-		const term = await stub.getTerm();
-		expect(term!.definitions[0]!.body).toContain("edited body");
+		const after = await env.PHOENIX_DB.prepare(
+			"SELECT body, body_excerpt FROM definition_view WHERE id = ?",
+		)
+			.bind(definitionId)
+			.first<{body: string; body_excerpt: string}>();
+		expect(after!.body).toContain("edited body");
+		expect(after!.body_excerpt).toContain("edited body");
 
-		// definition_view's body_excerpt refreshed via projection.
-		const after = await waitForCondition(
-			"SELECT body_excerpt FROM definition_view WHERE id = ?",
-			[definitionId],
-			(r) => (r as {body_excerpt: string}).body_excerpt.includes("edited body"),
-		);
-		expect(after).not.toBeNull();
+		const term = await getTerm(env, slug);
+		expect(term!.definitions[0]!.body).toContain("edited body");
 	});
 
 	it("rejects edits with empty body", async () => {
 		const slug = "edit-empty";
 		const authorId = "edit-empty-author";
-		const {stub, definitionId} = await seedDefinition(slug, authorId, "umut", "anchor body");
+		const {definitionId} = await seedDefinition(slug, authorId, "anchor body");
 
-		try {
-			await stub.editDefinition({definitionId, actorId: authorId, body: "   "});
-			throw new Error("expected rejection");
-		} catch (err) {
-			expect((err as Error).message).toMatch(/boş olamaz|gerekli/i);
-		}
+		await expect(
+			editDefinition(env, {definitionId, actorId: authorId, body: "   "}),
+		).rejects.toBeInstanceOf(DefinitionValidationError);
 	});
 
 	it("rejects edits over 10 000 chars", async () => {
 		const slug = "edit-too-long";
 		const authorId = "edit-too-long-author";
-		const {stub, definitionId} = await seedDefinition(slug, authorId, "umut", "anchor body");
+		const {definitionId} = await seedDefinition(slug, authorId, "anchor body");
 
-		try {
-			await stub.editDefinition({
-				definitionId,
-				actorId: authorId,
-				body: "x".repeat(10_001),
-			});
-			throw new Error("expected rejection");
-		} catch (err) {
-			expect((err as Error).message).toMatch(/10\s?000|en fazla/i);
-		}
+		await expect(
+			editDefinition(env, {definitionId, actorId: authorId, body: "x".repeat(10_001)}),
+		).rejects.toBeInstanceOf(DefinitionValidationError);
 	});
 
 	it("ownership: non-author edit is rejected with UnauthorizedDefinitionMutationError", async () => {
 		const slug = "edit-cross-user";
 		const authorId = "owner-user";
 		const otherId = "intruder-user";
-		const {stub, definitionId} = await seedDefinition(slug, authorId, "umut", "owner's body");
+		const {definitionId} = await seedDefinition(slug, authorId, "owner's body");
 
-		try {
-			await stub.editDefinition({
+		await expect(
+			editDefinition(env, {
 				definitionId,
 				actorId: otherId,
 				body: "i should not be able to write this",
-			});
-			throw new Error("expected rejection");
-		} catch (err) {
-			// Name preserved across the RPC boundary (the class identity is not —
-			// `instanceof` doesn't survive workerd's RPC marshaling). The
-			// resolver does the same `instanceof` check on the worker side, where
-			// the class IS in scope.
-			expect((err as Error).name).toBe("UnauthorizedDefinitionMutationError");
-			expect((err as Error).message).toMatch(/not authorized/i);
-		}
+			}),
+		).rejects.toBeInstanceOf(UnauthorizedDefinitionMutationError);
 
-		// The body did NOT change.
-		const term = await stub.getTerm();
+		const term = await getTerm(env, slug);
 		expect(term!.definitions[0]!.body).toContain("owner's body");
 	});
 });
 
-describe("SozlukTerm.deleteDefinition — task_6", () => {
-	it("soft-deletes the definition; getTerm filters it out; term aggregates decrement", async () => {
+describe("sozluk.deleteDefinition — task_5 (d1-direct)", () => {
+	it("soft-deletes the definition; getTerm filters it out; aggregates decrement", async () => {
 		const slug = "delete-happy";
 		const authorId = "delete-author";
-		const {stub, definitionId} = await seedDefinition(
-			slug,
-			authorId,
-			"umut",
-			"to be deleted body",
-		);
+		const {definitionId} = await seedDefinition(slug, authorId, "to be deleted body");
 
-		// Add a second definition so the term doesn't end up empty after delete.
-		const second = await stub.addDefinition({
+		// Add a second definition so the term doesn't end up empty.
+		const second = await addDefinition(env, {
+			termSlug: slug,
 			authorId,
 			authorName: "umut",
 			body: "second definition that survives",
 		});
 
-		const before = await stub.getTerm();
+		const before = await getTerm(env, slug);
 		expect(before!.totalDefinitions).toBe(2);
 
-		const result = await stub.deleteDefinition({definitionId, actorId: authorId});
+		const result = await deleteDefinition(env, {definitionId, actorId: authorId});
 		expect(result.deleted).toBe(true);
 
-		// getTerm filters the soft-deleted row out.
-		const after = await stub.getTerm();
+		const after = await getTerm(env, slug);
 		expect(after!.totalDefinitions).toBe(1);
 		expect(after!.definitions[0]!.id).toBe(second.definitionId);
 
-		// definition_view row gets `deleted_at` stamped via projection.
-		const view = await waitForCondition(
-			"SELECT deleted_at FROM definition_view WHERE id = ?",
-			[definitionId],
-			(r) => (r as {deleted_at: number | null}).deleted_at != null,
-		);
-		expect(view).not.toBeNull();
+		// definition_view row has deleted_at stamped.
+		const view = await env.PHOENIX_DB.prepare("SELECT deleted_at FROM definition_view WHERE id = ?")
+			.bind(definitionId)
+			.first<{deleted_at: number | null}>();
+		expect(view!.deleted_at).not.toBeNull();
 	});
 
 	it("decrements definitionCount and totalScore on delete", async () => {
 		const slug = "delete-aggregates";
 		const authorId = "delete-agg-author";
 		const voterId = "delete-agg-voter";
-		const {stub, definitionId} = await seedDefinition(
-			slug,
-			authorId,
-			"umut",
-			"will be voted then deleted",
-		);
+		const {definitionId} = await seedDefinition(slug, authorId, "will be voted then deleted");
 
-		// Vote on it so totalScore goes to 1.
-		await stub.voteDefinition({definitionId, voterId});
-		const beforeDelete = await stub.getTerm();
+		await voteDefinition(env, {definitionId, voterId});
+		const beforeDelete = await getTerm(env, slug);
 		expect(beforeDelete!.totalScore).toBe(1);
 		expect(beforeDelete!.totalDefinitions).toBe(1);
 
-		await stub.deleteDefinition({definitionId, actorId: authorId});
+		await deleteDefinition(env, {definitionId, actorId: authorId});
 
-		const afterDelete = await stub.getTerm();
+		const afterDelete = await getTerm(env, slug);
+		// totalDefinitions reflects live count, totalScore re-sums live rows.
 		expect(afterDelete!.totalDefinitions).toBe(0);
 		expect(afterDelete!.totalScore).toBe(0);
 	});
@@ -246,73 +208,29 @@ describe("SozlukTerm.deleteDefinition — task_6", () => {
 		const slug = "delete-cross-user";
 		const authorId = "owner-d";
 		const otherId = "intruder-d";
-		const {stub, definitionId} = await seedDefinition(
-			slug,
-			authorId,
-			"umut",
-			"owner's body to defend",
+		const {definitionId} = await seedDefinition(slug, authorId, "owner's body to defend");
+
+		await expect(deleteDefinition(env, {definitionId, actorId: otherId})).rejects.toBeInstanceOf(
+			UnauthorizedDefinitionMutationError,
 		);
 
-		try {
-			await stub.deleteDefinition({definitionId, actorId: otherId});
-			throw new Error("expected rejection");
-		} catch (err) {
-			expect((err as Error).name).toBe("UnauthorizedDefinitionMutationError");
-		}
-
-		const term = await stub.getTerm();
+		const term = await getTerm(env, slug);
 		expect(term!.totalDefinitions).toBe(1);
 	});
 
 	it("re-deleting an already-deleted definition is an idempotent no-op", async () => {
 		const slug = "delete-idempotent";
 		const authorId = "delete-idem-author";
-		const {stub, definitionId} = await seedDefinition(slug, authorId, "umut", "anchor body");
-		// Need a non-deleted definition to keep the term meaningful afterwards.
-		await stub.addDefinition({authorId, authorName: "umut", body: "second body"});
-
-		await stub.deleteDefinition({definitionId, actorId: authorId});
-		const second = await stub.deleteDefinition({definitionId, actorId: authorId});
-		expect(second.deleted).toBe(false);
-	});
-
-	it("outbox: workflow.create failure leaves edit outbox rows; reconcileOutbox re-queues and clears", async () => {
-		const slug = "edit-reconcile";
-		const authorId = "edit-reconcile-author";
-		const {stub, definitionId} = await seedDefinition(slug, authorId, "umut", "anchor body");
-
-		const counts = await runInDurableObject(stub, async (instance: any) => {
-			const original = instance.env.PHOENIX_PROJECTION.create.bind(
-				instance.env.PHOENIX_PROJECTION,
-			);
-			let calls = 0;
-			instance.env.PHOENIX_PROJECTION = {
-				...instance.env.PHOENIX_PROJECTION,
-				create: async (params: unknown) => {
-					calls++;
-					// Fail the first two calls (TermChanged + DefinitionEdited).
-					if (calls <= 2) throw new Error("simulated workflow create failure");
-					return original(params);
-				},
-			};
-
-			try {
-				await instance.editDefinition({
-					definitionId,
-					actorId: authorId,
-					body: "fresh edited body",
-				});
-			} catch {
-				/* swallow */
-			}
-
-			const before = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			await instance.reconcileOutbox();
-			const after = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			return {beforeCount: before.length, afterCount: after.length};
+		const {definitionId} = await seedDefinition(slug, authorId, "anchor body");
+		await addDefinition(env, {
+			termSlug: slug,
+			authorId,
+			authorName: "umut",
+			body: "second body",
 		});
 
-		expect(counts.beforeCount).toBe(2);
-		expect(counts.afterCount).toBe(0);
+		await deleteDefinition(env, {definitionId, actorId: authorId});
+		const second = await deleteDefinition(env, {definitionId, actorId: authorId});
+		expect(second.deleted).toBe(false);
 	});
 });

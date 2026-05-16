@@ -150,10 +150,20 @@ export const termSummary = sqliteTable(
 );
 
 /**
- * Per-author per-definition row, denormalized with term slug + title for the
- * profile contribution feed (so the feed renders without RPCing into each
- * term's DO). Maintained by `DefinitionAdded`, `DefinitionEdited`,
- * `DefinitionDeleted` projection steps.
+ * Per-definition row. Canonical store for sozluk definitions after the
+ * d1-direct migration (ADR 0009 / task_5) — the per-term DO is no longer the
+ * source of truth. Denormalized with term slug + title for the profile
+ * contribution feed (so the feed renders without joining `term_summary`).
+ *
+ * `body` holds the full text; `body_excerpt` is a denormalized truncation
+ * used by the profile feed card (kept for backwards-compat with the legacy
+ * projection-era columns; new writes populate both).
+ *
+ * `last_event_id` is a vestigial column from the projection era: under
+ * d1-direct mutations write the table inline so the convergence guard is
+ * unused on new writes (left default `""`). The column survives this task to
+ * keep the existing read-side schema stable; phase 4 (task_12) drops it
+ * during the wrangler / view cleanup pass.
  */
 export const definitionView = sqliteTable(
 	"definition_view",
@@ -163,7 +173,9 @@ export const definitionView = sqliteTable(
 		authorName: text("author_name").notNull(),
 		termSlug: text("term_slug").notNull(),
 		termTitle: text("term_title").notNull(),
-		// Truncated body for the feed card; full body lives in the per-term DO.
+		// Canonical full-text definition body (d1-direct/task_5).
+		body: text("body").notNull().default(""),
+		// Truncated body for the feed card.
 		bodyExcerpt: text("body_excerpt").notNull(),
 		score: integer("score").notNull().default(0),
 		createdAt: timestamp("created_at").notNull(),
@@ -175,6 +187,28 @@ export const definitionView = sqliteTable(
 	(t) => [
 		// Profile contribution feed: WHERE author_id = ? ORDER BY created_at DESC.
 		index("definition_view_author_created").on(t.authorId, t.createdAt),
+		// Term page read: WHERE term_slug = ? AND deleted_at IS NULL.
+		index("definition_view_term_score").on(t.termSlug, t.score),
+	],
+);
+
+/**
+ * Per-(definition, voter) up-vote presence row. The cross-product `user_vote`
+ * MV is denormalized off this for the `myVote` lookup; the per-target score
+ * column on `definition_view.score` is denormalized off COUNT(*) under
+ * `WHERE definition_id = ?`. Both are recomputed inline in the same D1 batch
+ * as the vote write.
+ */
+export const definitionVote = sqliteTable(
+	"definition_vote",
+	{
+		definitionId: text("definition_id").notNull(),
+		voterId: text("voter_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.definitionId, t.voterId]}),
+		index("definition_vote_definition").on(t.definitionId),
 	],
 );
 

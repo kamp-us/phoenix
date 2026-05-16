@@ -45,12 +45,18 @@ import {
 	lookupProfileById,
 	type ProfileRow,
 } from "../features/pasaport/userProfileReader";
-import type {
-	DefinitionConnectionPage,
-	DefinitionRow,
-	TermPage,
-} from "../features/sozluk/SozlukTerm";
-import {DefinitionNotFoundError, DefinitionValidationError} from "../features/sozluk/SozlukTerm";
+import {
+	addDefinition as addDefinitionD1,
+	type DefinitionConnectionPage,
+	type DefinitionRow,
+	deleteDefinition as deleteDefinitionD1,
+	editDefinition as editDefinitionD1,
+	getTerm as getTermD1,
+	listDefinitionsConnection as listDefinitionsConnectionD1,
+	retractDefinitionVote as retractDefinitionVoteD1,
+	type TermPage,
+	voteDefinition as voteDefinitionD1,
+} from "../features/sozluk/module";
 import {
 	type ListSort,
 	listTermSummariesConnection,
@@ -281,9 +287,8 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 				args: {first?: number | null; after?: string | null},
 			) {
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(parent.slug));
 				return yield* Effect.promise(() =>
-					stub.listDefinitionsConnection({
+					listDefinitionsConnectionD1(env, parent.slug, {
 						...(args.first != null ? {first: args.first} : {}),
 						...(args.after ? {after: args.after} : {}),
 					}),
@@ -940,8 +945,7 @@ const QueryType = new GraphQLObjectType({
 				}
 				switch (decoded.typename) {
 					case "Term": {
-						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(decoded.id));
-						const term = yield* Effect.promise(() => stub.getTerm());
+						const term = yield* Effect.promise(() => getTermD1(env, decoded.id));
 						return term ? asNode("Term", term) : null;
 					}
 					case "Post": {
@@ -954,8 +958,7 @@ const QueryType = new GraphQLObjectType({
 							lookupDefinitionTermSlug(env.PHOENIX_DB, decoded.id),
 						);
 						if (!slug) return null;
-						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-						const term = yield* Effect.promise(() => stub.getTerm());
+						const term = yield* Effect.promise(() => getTermD1(env, slug));
 						const def = term?.definitions.find((d) => d.id === decoded.id) ?? null;
 						return def ? asNode("Definition", def) : null;
 					}
@@ -1046,8 +1049,7 @@ const QueryType = new GraphQLObjectType({
 			args: {slug: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {slug: string}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(args.slug));
-				return yield* Effect.promise(() => stub.getTerm());
+				return yield* Effect.promise(() => getTermD1(env, args.slug));
 			}),
 		},
 		/**
@@ -1201,33 +1203,28 @@ const MutationType = new GraphQLObjectType({
 			) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(args.termSlug));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.addDefinition({
-							authorId: user.id,
-							authorName: user.name ?? user.email,
-							body: args.body,
-							...(args.termTitle ? {termTitle: args.termTitle} : {}),
-						}),
-					);
-					return {
-						id: result.definitionId,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.updatedAt,
-					} satisfies DefinitionRow;
-				} catch (err) {
-					if (err instanceof DefinitionValidationError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: err.code.toUpperCase()},
-						});
-					}
-					throw err;
-				}
+				// d1-direct/task_5: module function writes PHOENIX_DB inline. The
+				// thrown DefinitionValidationError falls through to the resolver
+				// wrapper, which encodes the wire-format extensions.code via
+				// `encodeMutationError`.
+				const result = yield* Effect.promise(() =>
+					addDefinitionD1(env, {
+						termSlug: args.termSlug,
+						authorId: user.id,
+						authorName: user.name ?? user.email,
+						body: args.body,
+						...(args.termTitle ? {termTitle: args.termTitle} : {}),
+					}),
+				);
+				return {
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
+				} satisfies DefinitionRow;
 			}),
 		},
 		voteDefinition: {
@@ -1237,48 +1234,23 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				// Accept either a Relay global id (post-migration FE) or a raw
-				// local id (current MVP FE). `extractLocalId` is a no-op for raw
-				// ids — see encodeNodeId.ts for the migration rationale.
+				// local id. `extractLocalId` is a no-op for raw ids.
 				const definitionId = extractLocalId(args.definitionId, "Definition");
-				// The definition's term is encoded by the DO instance the resolver
-				// targets. The frontend always knows the term slug from the page
-				// URL (vote button lives on a term page) — but the GraphQL surface
-				// only takes the definition id. The producer-side projection's
-				// `definition_view` row carries `term_slug` so we lean on it for
-				// the dispatch.
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				const result = yield* Effect.promise(() =>
+					voteDefinitionD1(env, {definitionId, voterId: user.id}),
 				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.voteDefinition({definitionId, voterId: user.id}),
-					);
-					return {
-						id: result.definitionId,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.updatedAt,
-						// Stamp myVote authoritatively so the Definition.myVote
-						// resolver doesn't race against the user_vote projection.
-						myVote: result.myVote,
-					} as DefinitionRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof DefinitionNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "DEFINITION_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				return {
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
+					// Stamp myVote authoritatively so the Definition.myVote
+					// resolver doesn't have to re-read user_vote.
+					myVote: result.myVote,
+				} as DefinitionRow & {myVote: number | null};
 			}),
 		},
 		retractDefinitionVote: {
@@ -1288,37 +1260,19 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const definitionId = extractLocalId(args.definitionId, "Definition");
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				const result = yield* Effect.promise(() =>
+					retractDefinitionVoteD1(env, {definitionId, voterId: user.id}),
 				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.retractDefinitionVote({definitionId, voterId: user.id}),
-					);
-					return {
-						id: result.definitionId,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.updatedAt,
-						myVote: result.myVote,
-					} as DefinitionRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof DefinitionNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "DEFINITION_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				return {
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
+					myVote: result.myVote,
+				} as DefinitionRow & {myVote: number | null};
 			}),
 		},
 		editDefinition: {
@@ -1331,54 +1285,24 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const definitionId = extractLocalId(args.id, "Definition");
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
-				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-				// task_2 (d1-direct): the agent-thrown error class falls through
-				// to the `resolver()` wrapper, which routes it via
-				// `encodeMutationError`. No inline mapper needed.
 				const result = yield* Effect.promise(() =>
-					stub
-						.editDefinition({
-							definitionId,
-							actorId: user.id,
-							body: args.body,
-						})
-						.then(
-							(value) => ({ok: true as const, value}),
-							(error: unknown) => ({ok: false as const, error}),
-						),
+					editDefinitionD1(env, {definitionId, actorId: user.id, body: args.body}),
 				);
-				if (!result.ok) throw result.error;
-				const r = result.value;
 				return {
-					id: r.definitionId,
-					body: r.body,
-					author: r.authorName,
-					authorId: r.authorId,
-					score: r.score,
-					createdAt: r.createdAt,
-					updatedAt: r.updatedAt,
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
 				} satisfies DefinitionRow;
 			}),
 		},
 		/**
 		 * Soft-delete a definition (task_4, phoenix-relay-idiom). Payload
-		 * shape changed from `String!` to `DeleteDefinitionPayload!` with a
-		 * `deletedDefinitionId: ID!` field so the SPA can target it with
-		 * `@deleteRecord` — Relay drops the record from the store and any
-		 * connection edge referencing it auto-clears. No `$connections`
-		 * variable, no manual updater needed.
-		 *
-		 * The returned id is the Relay global id (base64 of `Definition:<localId>`),
-		 * matching what every other resolver / fragment puts on `Definition.id`.
-		 * `@deleteRecord` keys off that exact value.
+		 * shape `DeleteDefinitionPayload!` with `deletedDefinitionId: ID!`
+		 * so the SPA can `@deleteRecord` it from the Relay store.
 		 */
 		deleteDefinition: {
 			type: new GraphQLNonNull(DeleteDefinitionPayloadType),
@@ -1387,24 +1311,11 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const definitionId = extractLocalId(args.id, "Definition");
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
-				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				const result = yield* Effect.promise(() =>
-					stub.deleteDefinition({definitionId, actorId: user.id}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
+					deleteDefinitionD1(env, {definitionId, actorId: user.id}),
 				);
-				if (!result.ok) throw result.error;
 				return {
-					deletedDefinitionId: encodeNodeId("Definition", result.value.definitionId),
+					deletedDefinitionId: encodeNodeId("Definition", result.definitionId),
 				};
 			}),
 		},
