@@ -981,10 +981,11 @@ export async function listComments(env: Env, postId: string): Promise<CommentRow
  * reply-aware placeholder pass) and slices a forward page.
  *
  * Cursor is the comment id (forge ULID; lex-sortable, matches chronological
- * order). A stale `after` (no longer in the list) collapses to the head —
- * the FE then reconciles against its store on the next request. Mirrors
- * `PanoPost.listCommentsConnection`'s contract exactly so the integration
- * test surface didn't have to change shape.
+ * order). A stale `after` (no longer in the materialized list — either
+ * never-existed or removed between pages) returns an empty page with
+ * `hasNextPage: false` and `endCursor: null` so the FE store doesn't
+ * accidentally re-render rows the user has already seen. Mirrors
+ * `listPostConnection`'s `cursorMissed` early-return.
  */
 export async function listCommentsConnection(
 	env: Env,
@@ -994,10 +995,20 @@ export async function listCommentsConnection(
 	const all = await listComments(env, postId);
 	const first = Math.max(1, Math.min(opts.first ?? 50, 200));
 	const after = opts.after ?? null;
+	if (after !== null && all.findIndex((c) => c.id === after) === -1) {
+		// Stale cursor (row was deleted between pages, or never existed).
+		// Collapse to "no further rows" so the FE re-fetches from the head
+		// instead of silently restarting and duplicating rendered rows.
+		return {
+			rows: [],
+			hasNextPage: false,
+			endCursor: null,
+			totalCount: all.length,
+		};
+	}
 	const startIndex = after ? all.findIndex((c) => c.id === after) + 1 : 0;
-	const safeStart = startIndex < 0 ? 0 : startIndex;
-	const page = all.slice(safeStart, safeStart + first);
-	const hasNextPage = safeStart + first < all.length;
+	const page = all.slice(startIndex, startIndex + first);
+	const hasNextPage = startIndex + first < all.length;
 	const last = page.at(-1) ?? null;
 	return {
 		rows: page,

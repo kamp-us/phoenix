@@ -10,8 +10,11 @@
  *     — a soft-deleted-with-replies parent stays in the count; a
  *     soft-deleted leaf does NOT (leaf rows are fully removed from
  *     `comment_view`).
- *   - A stale cursor (pointing at a never-existed comment) collapses to
- *     the head; the FE then reconciles against its store.
+ *   - A stale cursor (pointing at a never-existed comment OR a comment
+ *     that was removed between pages) returns an empty page with
+ *     `hasNextPage: false` and `endCursor: null` so the FE store doesn't
+ *     re-render rows it has already seen. Mirrors `listPostConnection`'s
+ *     `cursorMissed` early-return.
  *   - `deleteComment` placeholder shape (reply-aware): parent-with-replies
  *     returns the placeholder row; leaf-delete returns `null`.
  *
@@ -181,16 +184,43 @@ describe("pano/module listCommentsConnection — d1-direct/task_8", () => {
 		expect(live!.deletedAt).toBeNull();
 	});
 
-	it("collapses to the head on a stale cursor (never-existed comment id)", async () => {
-		const {postId, commentIds} = await seedPostWithComments({
+	it("returns an empty page on a stale cursor (never-existed comment id)", async () => {
+		const {postId} = await seedPostWithComments({
 			authorId: "p-author-3",
 			commentCount: 3,
 		});
 		const stale = id("comm");
 		const page = await listCommentsConnection(env, postId, {first: 2, after: stale});
-		expect(page.rows.map((r) => r.id)).toEqual(commentIds.slice(0, 2));
-		expect(page.hasNextPage).toBe(true);
+		expect(page.rows).toEqual([]);
+		expect(page.hasNextPage).toBe(false);
+		expect(page.endCursor).toBeNull();
 		expect(page.totalCount).toBe(3);
+	});
+
+	it("returns an empty page when the `after` row was removed between pages", async () => {
+		const {postId, commentIds} = await seedPostWithComments({
+			authorId: "p-author-6",
+			commentCount: 4,
+		});
+		// Page through the first two rows with a stable cursor.
+		const page1 = await listCommentsConnection(env, postId, {first: 2});
+		expect(page1.endCursor).toBe(commentIds[1]);
+		expect(page1.hasNextPage).toBe(true);
+
+		// Hard-delete the cursor row (leaf, no replies → removed from
+		// `comment_view` entirely). The next page request now carries a
+		// cursor that no longer exists in the materialized list.
+		await deleteComment(env, {commentId: commentIds[1]!, actorId: "c-author-1"});
+
+		const page2 = await listCommentsConnection(env, postId, {
+			first: 2,
+			after: page1.endCursor,
+		});
+		expect(page2.rows).toEqual([]);
+		expect(page2.hasNextPage).toBe(false);
+		expect(page2.endCursor).toBeNull();
+		// totalCount reflects the new list length after the delete (3 rows).
+		expect(page2.totalCount).toBe(3);
 	});
 });
 
