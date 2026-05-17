@@ -1,5 +1,5 @@
 /**
- * Hand-written `addDefinition` updater (task_4, phoenix-relay-idiom).
+ * Hand-written `addDefinition` updater (optimistic-only).
  *
  * Mirrors `panoPostDetailUpdater.appendCommentToPostConnection` but inverts
  * the insertion order: definitions render score-DESC on the term page, and
@@ -57,44 +57,5 @@ export function prependDefinitionToTermConnection(
 		"DefinitionEdge",
 	);
 	newEdge.setValue(newDefinition.getDataID(), "cursor");
-	ConnectionHandler.insertEdgeBefore(connection, newEdge);
-}
-
-/**
- * Insert a `Definition` record into the `SozlukTermPage_definitions`
- * connection over the live-update path (task_4, phoenix-relay-idiom). Used
- * by the `useLiveAgent` `applyToStore` callback when a peer client posts
- * a new definition that arrives over the WebSocket subscription.
- *
- * Differs from {@link prependDefinitionToTermConnection} in two ways:
- *  1. The new record isn't a mutation root field — caller passes in the
- *     {@link RecordProxy} they constructed via `store.create(...)`.
- *  2. Idempotency check is by id: peer-broadcasted state may include
- *     definitions the local mutation updater already inserted (own-write
- *     echo). Skip if any edge in the connection already references the id.
- */
-export function insertLiveDefinitionEdge(
-	store: RecordSourceSelectorProxy,
-	termRecordId: string,
-	definitionRecordId: string,
-): void {
-	const term = store.get(termRecordId);
-	if (!term) return;
-	const connection = ConnectionHandler.getConnection(term, DEFINITION_CONNECTION_KEY);
-	if (!connection) return;
-	const edges = connection.getLinkedRecords("edges") ?? [];
-	for (const e of edges) {
-		const nodeId = e.getLinkedRecord("node")?.getDataID();
-		if (nodeId === definitionRecordId) return;
-	}
-	const definitionRecord = store.get(definitionRecordId);
-	if (!definitionRecord) return;
-	const newEdge = ConnectionHandler.createEdge(
-		store,
-		connection,
-		definitionRecord,
-		"DefinitionEdge",
-	);
-	newEdge.setValue(definitionRecordId, "cursor");
 	ConnectionHandler.insertEdgeBefore(connection, newEdge);
 }

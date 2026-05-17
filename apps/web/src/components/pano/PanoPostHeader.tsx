@@ -10,7 +10,6 @@
  * from the session and passes in (the session lookup belongs to the page,
  * not the header).
  */
-import type * as React from "react";
 import {graphql, useFragment} from "react-relay";
 import type {PanoPostHeaderFragment$key} from "../../__generated__/PanoPostHeaderFragment.graphql";
 import {formatAgoTR} from "../../lib/datetime";
@@ -44,7 +43,6 @@ const PanoPostHeaderFragmentDef = graphql`
 export interface PanoPostHeaderProps {
 	post: PanoPostHeaderFragment$key;
 	isAuthor: boolean;
-	livePill?: React.ReactNode;
 	onEdit?: () => void;
 	onDelete?: () => void;
 }
@@ -80,7 +78,6 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				<button type="button">paylaş</button>
 				<button type="button">kaydet</button>
 				<button type="button">bildir</button>
-				{props.livePill}
 				{props.isAuthor ? (
 					<>
 						<button type="button" data-testid="post-edit" onClick={props.onEdit}>

@@ -7,13 +7,6 @@
  * connection; each row is a fragment ref handed to `DefinitionCard`
  * (which declares its own `DefinitionCardFragment on Definition`).
  *
- * Live updates flow through `useLiveAgent`: the WebSocket pushes typed
- * `TermState` snapshots, the `applyToStore` callback writes the
- * denormalized aggregates (count, totalScore, lastEdit) into the
- * `Term:<slug>` record via `commitLocalUpdate`. The page tree never
- * unmounts on a live event — `LivePill` connection state is the sole
- * user-visible signal of subscription health (parity with T16).
- *
  * Mutations:
  *  - `addDefinition` — manual `updater` prepends a `DefinitionEdge` into
  *    the `SozlukTermPage_definitions` connection (definitions are
@@ -29,7 +22,6 @@
 import * as React from "react";
 import {graphql, useLazyLoadQuery, useMutation, usePaginationFragment} from "react-relay";
 import {useNavigate, useParams} from "react-router";
-import type {RecordSourceProxy} from "relay-runtime";
 import type {SozlukTermPageAddDefinitionMutation} from "../__generated__/SozlukTermPageAddDefinitionMutation.graphql";
 import type {SozlukTermPageDefinitionsFragment$key} from "../__generated__/SozlukTermPageDefinitionsFragment.graphql";
 import type {SozlukTermPageQuery} from "../__generated__/SozlukTermPageQuery.graphql";
@@ -38,7 +30,6 @@ import {DefinitionCard} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader} from "../components/sozluk/SozlukTermHeader";
 import {Button} from "../components/ui/Button";
 import {authRedirectPath} from "../lib/returnTo";
-import {useLiveAgent} from "../lib/useLiveAgent";
 import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
 import {QueryBoundary} from "../relay/QueryBoundary";
 import {prependDefinitionToTermConnection} from "../relay/sozlukTermPageUpdater";
@@ -114,20 +105,6 @@ const AddDefinitionMutation = graphql`
 
 const BODY_MAX = 10_000;
 
-/**
- * Subset of the `TermState` Agent state shape the page subscribes to over
- * WebSocket — extends `LiveAgentStateShape` so `useLiveAgent`'s typed
- * generic accepts it. Keeping this client-side rather than importing from
- * the worker avoids dragging worker-only modules into the SPA bundle.
- */
-interface LiveTermState {
-	title: string;
-	definitionCount: number;
-	totalScore: number;
-	lastActivityAt: number;
-	lastEventId: string;
-}
-
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
 	const safeSlug = slug ?? "";
@@ -162,39 +139,6 @@ function SozlukTermContent({slug}: {slug: string}) {
 	const session = useSession();
 	const signedIn = !!session.data?.user;
 
-	// Live updates v2 — translates Agent state diffs into Relay store writes.
-	// The page tree never unmounts (no `setFetchKey`); LivePill renders the
-	// connection state. The applyToStore callback updates the Term node's
-	// denormalized aggregates from the typed TermState snapshot.
-	//
-	// `termRecordId` is captured from the loaded term (when present); we read
-	// it lazily inside the callback so the closure doesn't get stale across
-	// remounts. When the term doesn't exist yet (signed-in user about to
-	// auto-create it), `term?.id` is undefined and the callback no-ops.
-	const termRecordId = term?.id ?? null;
-	const applyLiveStateToStore = React.useCallback(
-		(state: LiveTermState, store: RecordSourceProxy) => {
-			if (!termRecordId) return;
-			const termRecord = store.get(termRecordId);
-			if (!termRecord) return;
-			termRecord.setValue(state.definitionCount, "count");
-			termRecord.setValue(state.totalScore, "totalScore");
-			// `lastActivityAt` arrives as epoch ms; the GraphQL `lastEdit` field
-			// is an ISO string. Convert so future fragment reads see a string.
-			if (state.lastActivityAt) {
-				termRecord.setValue(new Date(state.lastActivityAt).toISOString(), "lastEdit");
-			}
-		},
-		[termRecordId],
-	);
-
-	const {connected: liveConnected} = useLiveAgent<LiveTermState>({
-		agent: "sozluk-term",
-		name: slug,
-		applyToStore: applyLiveStateToStore,
-		enabled: slug.length > 0,
-	});
-
 	if (!term) {
 		// Signed-out viewers can't auto-create a term — render the shared 404
 		// so the absence is unambiguous. Signed-in viewers get the composer
@@ -208,12 +152,12 @@ function SozlukTermContent({slug}: {slug: string}) {
 				/>
 			);
 		}
-		return <NewTermComposer slug={slug} liveConnected={liveConnected} />;
+		return <NewTermComposer slug={slug} />;
 	}
 
 	return (
 		<>
-			<SozlukTermHeader term={term} livePill={<LivePill connected={liveConnected} />} />
+			<SozlukTermHeader term={term} />
 			<DefinitionsList term={term} slug={slug} />
 		</>
 	);
@@ -227,7 +171,7 @@ function SozlukTermContent({slug}: {slug: string}) {
  * trigger a refetch by toggling the local key — narrow scope, only used
  * for the very first definition on a fresh slug.
  */
-function NewTermComposer({slug, liveConnected}: {slug: string; liveConnected: boolean}) {
+function NewTermComposer({slug}: {slug: string}) {
 	return (
 		<>
 			<header className="kp-sozluk-term__head">
@@ -238,7 +182,6 @@ function NewTermComposer({slug, liveConnected}: {slug: string; liveConnected: bo
 				<h1 className="kp-sozluk-term__title">{slug.replace(/-/g, " ")}</h1>
 				<div className="kp-sozluk-term__meta">
 					<span>henüz tanım yok</span>
-					<LivePill connected={liveConnected} />
 				</div>
 			</header>
 			<p style={{font: "var(--t-body)", color: "var(--text-muted)"}}>
@@ -533,64 +476,4 @@ function Composer({slug, termRecordId}: {slug: string; termRecordId: string}) {
 	);
 }
 
-/**
- * Tiny pill showing the live-updates state (T16). Renders the connected
- * indicator in green; the paused indicator in muted gray. `data-testid`
- * lets E2E tests assert the indicator's visibility across sign-out /
- * disconnect scenarios without scraping arbitrary text.
- */
-function LivePill({connected}: {connected: boolean}) {
-	if (connected) {
-		return (
-			<span
-				data-testid="live-pill-connected"
-				style={{
-					font: "var(--t-meta)",
-					color: "var(--text-muted)",
-					display: "inline-flex",
-					alignItems: "center",
-					gap: 4,
-				}}
-				aria-label="canlı güncellemeler açık"
-				title="canlı güncellemeler açık"
-			>
-				<span
-					style={{
-						width: 6,
-						height: 6,
-						borderRadius: "50%",
-						backgroundColor: "var(--success, #22c55e)",
-						display: "inline-block",
-					}}
-				/>
-				canlı
-			</span>
-		);
-	}
-	return (
-		<span
-			data-testid="live-pill-paused"
-			style={{
-				font: "var(--t-meta)",
-				color: "var(--text-muted)",
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 4,
-			}}
-			aria-label="canlı güncellemeler duraklatıldı"
-			title="canlı güncellemeler duraklatıldı"
-		>
-			<span
-				style={{
-					width: 6,
-					height: 6,
-					borderRadius: "50%",
-					backgroundColor: "var(--text-muted)",
-					display: "inline-block",
-				}}
-			/>
-			canlı güncellemeler duraklatıldı
-		</span>
-	);
-}
 
