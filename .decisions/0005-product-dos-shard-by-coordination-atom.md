@@ -1,12 +1,16 @@
 ---
 id: 0005
 title: Product DOs shard by coordination atom from day one
-status: accepted
+status: superseded
+superseded_by: 0009
+superseded_date: 2026-05-16
 date: 2026-05-09
 tags: [architecture, durable-objects, sozluk, pano]
 ---
 
 # 0005 — Product DOs shard by coordination atom from day one
+
+> **Superseded (2026-05-16):** Product DOs are retired by [ADR 0009](0009-d1-direct-defer-dos-and-workflows.md). Resolvers write D1 directly; the per-coordination-atom sharding pattern is parked until per-row write contention shows up under real traffic. When that happens, re-adopt this ADR scoped to the specific entity.
 
 ## Context
 
