@@ -14,8 +14,8 @@
  *
  *  1. The feature-local vote table (`definition_vote`, `post_vote`,
  *     `comment_vote`) — composite PK on `(target_id, voter_id)`. This is the
- *     SCORE TRUTH source; the cached score on the target row tracks it
- *     deterministically (`prevScore + (isCast ? 1 : -1)`).
+ *     SCORE TRUTH source; the cached score on the target row is rebuilt from
+ *     `COUNT(*)` on this table after every state change (see Atomicity).
  *  2. The cross-product `user_vote` table — composite PK on
  *     `(user_id, target_kind, target_id)`. This powers the `myVote` GraphQL
  *     field via `readMyVote` and is the row whose existence the acceptance
@@ -33,17 +33,20 @@
  * `env.PHOENIX_DB.batch(...)` call:
  *
  *   - upsert / delete on the feature-local vote table (truth source).
+ *   - score-cache update on the target row — derived from a `COUNT(*)`
+ *     subquery against the vote table in the same statement, so the cache
+ *     re-syncs to truth atomically within the batch.
  *   - upsert / delete on `user_vote`.
- *   - score-cache update on the target row (`definition_view.score`,
- *     `post_summary.{score,hotScore}`, `comment_view.score`).
  *   - karma counter bump / decrement on the author's `user_profile`.
  *
- * No mutation precedes the batch — the only reads on the write path are the
- * pre-write existence probe and the cached-score lookup, both read-only.
- * Two concurrent identical casts that both pass the existence probe still
- * converge on a single row because the vote-table `INSERT OR IGNORE` ignores
- * the second; the score cache can transiently drift by one in that race, but
- * the next vote on the row reads the cache fresh and resumes converging.
+ * No mutation precedes the batch — the only read on the write path is the
+ * pre-write existence probe, which is read-only. Two concurrent identical
+ * casts that both pass the existence probe still converge on a single row
+ * because the vote-table `INSERT OR IGNORE` ignores the second, and the
+ * score-cache subquery re-counts truth either way; whichever batch commits
+ * last wins, with the same correct count. (Karma is a separate increment
+ * not derived from truth; same-voter concurrent dup casts can double-count
+ * karma — a residual race tracked outside this module.)
  *
  * # Surface
  *
@@ -134,10 +137,15 @@ interface TargetAdapter {
 	voteTable: string;
 	/** The id column name on `voteTable` (`definition_id` / `post_id` / `comment_id`). */
 	voteIdColumn: string;
-	/** Build the score-cache update statements for the target row.  */
+	/**
+	 * Build the score-cache update statements for the target row. The new
+	 * score is derived from a `COUNT(*)` subquery against the vote table
+	 * inside the same UPDATE, so the cache always reflects truth after the
+	 * batch — concurrent INSERT OR IGNORE collisions self-heal.
+	 */
 	scoreCacheStatements(
 		env: Env,
-		args: {targetId: string; newScore: number; now: Date; meta: TargetMeta},
+		args: {targetId: string; now: Date; meta: TargetMeta},
 	): D1PreparedStatement[];
 }
 
@@ -161,11 +169,15 @@ function definitionAdapter(): TargetAdapter {
 				createdAtMs: (row.createdAt ?? new Date()).getTime(),
 			};
 		},
-		scoreCacheStatements(env, {targetId, newScore, now}) {
+		scoreCacheStatements(env, {targetId, now}) {
+			const nowSec = Math.floor(now.getTime() / 1000);
 			return [
 				env.PHOENIX_DB.prepare(
-					`UPDATE definition_view SET score = ?, updated_at = ? WHERE id = ?`,
-				).bind(newScore, Math.floor(now.getTime() / 1000), targetId),
+					`UPDATE definition_view
+					 SET score = (SELECT COUNT(*) FROM definition_vote WHERE definition_id = ?),
+						 updated_at = ?
+					 WHERE id = ?`,
+				).bind(targetId, nowSec, targetId),
 			];
 		},
 	};
@@ -188,14 +200,26 @@ function postAdapter(): TargetAdapter {
 				createdAtMs: (row.createdAt ?? new Date()).getTime(),
 			};
 		},
-		scoreCacheStatements(env, {targetId, newScore, now, meta}) {
-			const newHotScore = computeHotScore(newScore, meta.createdAtMs, now.getTime());
+		scoreCacheStatements(env, {targetId, now, meta}) {
 			const nowSec = Math.floor(now.getTime() / 1000);
+			// Precompute the hot-score multiplier in JS so SQL only needs basic
+			// arithmetic (SQLite has no POW). `CAST(score * multiplier AS INTEGER)`
+			// matches `Math.floor(score * 1000 / (hours+2)^1.8)` for the same
+			// inputs — same hot-score formula pano/module.ts uses on submit.
+			const hoursOld = Math.max(0, (now.getTime() - meta.createdAtMs) / 3_600_000);
+			const hotMultiplier = 1000 / (hoursOld + 2) ** 1.8;
 			return [
 				env.PHOENIX_DB.prepare(
-					`UPDATE post_summary SET score = ?, hot_score = ?, updated_at = ?, last_activity_at = ?
+					`UPDATE post_summary
+					 SET score = (SELECT COUNT(*) FROM post_vote WHERE post_id = ?),
+						 hot_score = CAST(
+							 (SELECT COUNT(*) FROM post_vote WHERE post_id = ?) * ?
+							 AS INTEGER
+						 ),
+						 updated_at = ?,
+						 last_activity_at = ?
 					 WHERE id = ?`,
-				).bind(newScore, newHotScore, nowSec, nowSec, targetId),
+				).bind(targetId, targetId, hotMultiplier, nowSec, nowSec, targetId),
 			];
 		},
 	};
@@ -218,11 +242,15 @@ function commentAdapter(): TargetAdapter {
 				createdAtMs: (row.createdAt ?? new Date()).getTime(),
 			};
 		},
-		scoreCacheStatements(env, {targetId, newScore, now}) {
+		scoreCacheStatements(env, {targetId, now}) {
+			const nowSec = Math.floor(now.getTime() / 1000);
 			return [
 				env.PHOENIX_DB.prepare(
-					`UPDATE comment_view SET score = ?, updated_at = ? WHERE id = ?`,
-				).bind(newScore, Math.floor(now.getTime() / 1000), targetId),
+					`UPDATE comment_view
+					 SET score = (SELECT COUNT(*) FROM comment_vote WHERE comment_id = ?),
+						 updated_at = ?
+					 WHERE id = ?`,
+				).bind(targetId, nowSec, targetId),
 			];
 		},
 	};
@@ -237,19 +265,6 @@ function adapterFor(kind: VoteTargetKind): TargetAdapter {
 		case "comment":
 			return commentAdapter();
 	}
-}
-
-/**
- * HN-style hot-score: `score / (hours_old + 2)^1.8` × 1000, floored to int.
- * Mirrored verbatim from `worker/features/pano/module.ts` so the post adapter
- * doesn't have to cross-import. D1 indexes integers cheaper than floats; the
- * relative ordering across rows is what matters. Convergent under retries
- * because every term is a pure function of `(score, createdAtMs, nowMs)`.
- */
-function computeHotScore(score: number, createdAtMs: number, nowMs: number): number {
-	const hoursOld = Math.max(0, (nowMs - createdAtMs) / 3_600_000);
-	const denom = (hoursOld + 2) ** 1.8;
-	return Math.floor((score * 1000) / denom);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -284,27 +299,24 @@ export async function vote(env: Env, input: VoteInput): Promise<VoteResult> {
 		.first();
 	const alreadyCast = existing != null;
 
-	// Cached score on the target row pre-write. Cheap indexed point lookup
-	// used twice: (a) returned as-is on the idempotent path; (b) the basis
-	// for the deterministic post-write score on the mutation path
-	// (`prevScore + (isCast ? 1 : -1)`), which is why the legacy COUNT(*)
-	// re-sum is no longer needed.
-	const prevScore = await readCachedScore(env, input.targetKind, input.targetId);
-
 	if (isCast === alreadyCast) {
+		// Idempotent path: state matches intent, no write. Return the cached
+		// score as-is — a cheap indexed point lookup on the target row.
+		const score = await readCachedScore(env, input.targetKind, input.targetId);
 		return {
 			targetKind: input.targetKind,
 			targetId: input.targetId,
-			score: prevScore,
+			score,
 			myVote: alreadyCast ? 1 : null,
 			changed: false,
 		};
 	}
 
 	// State change. One batch carries every mutation: the vote-table row
-	// (truth source) leads, followed by the score-cache update, the
+	// (truth source) leads, followed by the score-cache update (which
+	// re-counts truth via a `COUNT(*)` subquery in the same statement, so
+	// drift from concurrent INSERT OR IGNORE collisions self-heals), the
 	// `user_vote` cross-product row, and the karma counter.
-	const newScore = prevScore + (isCast ? 1 : -1);
 	const stmts: D1PreparedStatement[] = [];
 
 	if (isCast) {
@@ -325,7 +337,6 @@ export async function vote(env: Env, input: VoteInput): Promise<VoteResult> {
 	stmts.push(
 		...adapter.scoreCacheStatements(env, {
 			targetId: input.targetId,
-			newScore,
 			now,
 			meta,
 		}),
@@ -367,6 +378,10 @@ export async function vote(env: Env, input: VoteInput): Promise<VoteResult> {
 	}
 
 	await env.PHOENIX_DB.batch(stmts);
+
+	// Read truth-derived score back from the cache the batch just refreshed.
+	// One cheap indexed point lookup; only on the state-change path.
+	const newScore = await readCachedScore(env, input.targetKind, input.targetId);
 
 	return {
 		targetKind: input.targetKind,

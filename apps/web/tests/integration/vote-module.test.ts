@@ -877,40 +877,34 @@ describe("vote module — atomic single-batch write (d1-direct-review-fixes task
 		expect(counts.runCalls).toBe(0);
 	});
 
-	it("newScore is derived deterministically — no SELECT COUNT(*) round-trip on the state-changing path", async () => {
-		const definitionId = await seedDefinition("vote-mod-no-count", "author-no-count");
+	it("score cache equals COUNT(*) on the truth table after a state change (truth-derived, self-healing under INSERT OR IGNORE races)", async () => {
+		const definitionId = await seedDefinition("vote-mod-truth", "author-truth");
 
-		const sqls: string[] = [];
-		const realDb = env.PHOENIX_DB;
-		const recordingDb = new Proxy(realDb, {
-			get(target, prop, receiver) {
-				const orig = Reflect.get(target, prop, receiver);
-				if (prop === "prepare" && typeof orig === "function") {
-					return (sql: string) => {
-						sqls.push(sql);
-						return (orig as (s: string) => D1PreparedStatement).call(target, sql);
-					};
-				}
-				return typeof orig === "function" ? orig.bind(target) : orig;
-			},
+		await vote(env, {
+			userId: "voter-truth-a",
+			targetKind: "definition",
+			targetId: definitionId,
+			value: 1,
 		});
-		const recordingEnv = new Proxy(env, {
-			get(target, prop, receiver) {
-				if (prop === "PHOENIX_DB") return recordingDb;
-				return Reflect.get(target, prop, receiver);
-			},
-		}) as Env;
-
-		await vote(recordingEnv, {
-			userId: "voter-no-count",
+		await vote(env, {
+			userId: "voter-truth-b",
 			targetKind: "definition",
 			targetId: definitionId,
 			value: 1,
 		});
 
-		const sawCount = sqls.some((sql) =>
-			/SELECT\s+COUNT\(\*\)\s+as\s+n\s+FROM\s+definition_vote/i.test(sql),
-		);
-		expect(sawCount).toBe(false);
+		const truth = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM definition_vote WHERE definition_id = ?",
+		)
+			.bind(definitionId)
+			.first<{n: number}>();
+		const cached = await env.PHOENIX_DB.prepare(
+			"SELECT score FROM definition_view WHERE id = ?",
+		)
+			.bind(definitionId)
+			.first<{score: number}>();
+
+		expect(cached?.score).toBe(truth?.n);
+		expect(cached?.score).toBe(2);
 	});
 });
