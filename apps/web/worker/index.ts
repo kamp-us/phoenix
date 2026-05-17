@@ -1,8 +1,8 @@
-import {id} from "@usirin/forge";
 import {routeAgentRequest} from "agents";
 import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
+import {addComment, submitPost} from "./features/pano/module";
 import {SEED_POSTS} from "./features/pano/seed";
 import {backfillProfiles, handleAuth, validateSession} from "./features/pasaport/module";
 import {clearAllTerms, seedTerm} from "./features/sozluk/module";
@@ -10,13 +10,10 @@ import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
 
-export {PanoPost} from "./features/pano/PanoPost";
-// Per-atom Agent classes own all read + write paths (ADR 0005 / 0006). The
-// legacy singleton Sozluk / Pano DOs were deleted in T18 via the wrangler
-// `delete_classes` migration. Pasaport moved off the DO model entirely in
-// d1-direct/task_4; SozlukTerm followed in d1-direct/task_5 (resolvers + admin
-// endpoints now write D1-direct) and the class itself was deleted in
-// d1-direct/task_6. Only PanoPost remains as a per-atom Agent DO.
+// Per-atom Agent classes used to own every pano/sozluk read + write path
+// (ADR 0005 / 0006). After d1-direct/task_4..task_9 every product surface
+// runs as module functions against PHOENIX_DB. No product DOs remain on the
+// worker; only the view-layer projection Workflow stays as a binding.
 // View-layer projection workflow (binding: PHOENIX_PROJECTION). Skeleton
 // lives in worker/view/PhoenixProjection.ts; step bodies are no-ops in T1
 // and get filled in per event kind across T2..T15.
@@ -67,12 +64,12 @@ app.post("/api/admin/sozluk/clear", async (c) => {
 	return c.json(result);
 });
 
-// Dev-only pano admin endpoints. Mirrors the sozluk seed surface but for the
-// per-post `PanoPost` Agents (`idFromName(postId)`). Each call seeds one post
-// via its DO; a single `PostChanged` event per post hydrates `post_summary`.
+// Dev-only pano admin endpoint. Backs `pnpm pano:import`. Post-d1-direct
+// (task_7..task_9) every write goes straight to `PHOENIX_DB` via the
+// `submitPost` / `addComment` module functions — no DO RPC. Gated on
+// `ENVIRONMENT === "development"`.
 const panoSeedSchema = z.object({
 	clear: z.boolean().optional(),
-	postIds: z.array(z.string().min(1)).optional(),
 });
 
 app.post("/api/admin/pano/seed", async (c) => {
@@ -81,42 +78,49 @@ app.post("/api/admin/pano/seed", async (c) => {
 	const parsed = panoSeedSchema.safeParse(body);
 	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
 
-	const cleared = {posts: 0, comments: 0, tags: 0};
-	if (parsed.data.clear && parsed.data.postIds?.length) {
-		for (const postId of parsed.data.postIds) {
-			const stub = c.env.PANO_POST.get(c.env.PANO_POST.idFromName(postId));
-			const r = await stub.clearAll();
-			if (r.post) cleared.posts++;
-			cleared.comments += r.comments;
-			cleared.tags += r.tags;
-		}
-		await c.env.PHOENIX_DB.prepare("DELETE FROM post_summary").run();
-		await c.env.PHOENIX_DB.prepare("DELETE FROM pano_stats").run();
+	const cleared = {posts: 0, comments: 0};
+	if (parsed.data.clear) {
+		const before = await c.env.PHOENIX_DB.prepare(
+			"SELECT (SELECT COUNT(*) FROM post_summary) AS posts, (SELECT COUNT(*) FROM comment_view) AS comments",
+		).first<{posts: number; comments: number}>();
+		cleared.posts = before?.posts ?? 0;
+		cleared.comments = before?.comments ?? 0;
+		await c.env.PHOENIX_DB.batch([
+			c.env.PHOENIX_DB.prepare("DELETE FROM comment_vote"),
+			c.env.PHOENIX_DB.prepare("DELETE FROM post_vote"),
+			c.env.PHOENIX_DB.prepare("DELETE FROM comment_view"),
+			c.env.PHOENIX_DB.prepare("DELETE FROM post_summary"),
+			c.env.PHOENIX_DB.prepare("DELETE FROM pano_stats"),
+		]);
 	}
 
 	const postIds: string[] = [];
 	let inserted = 0;
 	for (const seed of SEED_POSTS) {
-		const postId = id("post");
-		postIds.push(postId);
-		const stub = c.env.PANO_POST.get(c.env.PANO_POST.idFromName(postId));
-		const result = await stub.seed({
+		const post = await submitPost(c.env, {
 			title: seed.title,
 			...(seed.url ? {url: seed.url} : {}),
 			...(seed.body ? {body: seed.body} : {}),
 			authorId: seed.authorId,
 			authorName: seed.authorName,
-			score: seed.score,
 			tags: seed.tags,
-			comments: seed.comments.map((c) => ({
-				authorId: c.authorId,
-				authorName: c.authorName,
-				body: c.body,
-				score: c.score,
-				...(c.parentIdx != null ? {parentIdx: c.parentIdx} : {}),
-			})),
 		});
-		if (result.created) inserted++;
+		postIds.push(post.postId);
+		inserted++;
+
+		// Two-pass: top-level first so children can reference parents.
+		const insertedIds: string[] = [];
+		for (const cmt of seed.comments) {
+			const parentId = cmt.parentIdx != null ? (insertedIds[cmt.parentIdx] ?? null) : null;
+			const result = await addComment(c.env, {
+				postId: post.postId,
+				authorId: cmt.authorId,
+				authorName: cmt.authorName,
+				body: cmt.body,
+				...(parentId != null ? {parentId} : {}),
+			});
+			insertedIds.push(result.commentId);
+		}
 	}
 
 	return c.json({inserted, postIds, cleared});
@@ -136,11 +140,10 @@ app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
 // better-auth instance per request against `env.PHOENIX_DB`.
 app.on(["GET", "POST"], "/api/auth/*", async (c) => handleAuth(c.env, c.req.raw));
 
-// Agent WebSocket subscriptions (T16). The Agents SDK client (`useAgent`)
-// connects to `/agents/<class-kebab>/<name>` and expects a 101 WebSocket
-// upgrade. `routeAgentRequest` walks the env bindings and dispatches to the
-// matching DO class (PanoPost). Returns null if the request isn't an agent
-// request, in which case Hono falls through to the next handler.
+// Agent WebSocket subscriptions (T16). No product Agent DOs remain on the
+// worker post-d1-direct, so this handler currently has nothing to dispatch
+// to and always returns 404. Kept as a stub: future per-atom Agents (chat,
+// presence, künye, …) will plug in here without changing the router shape.
 app.all("/agents/*", async (c) => {
 	const res = await routeAgentRequest(c.req.raw, c.env);
 	return res ?? c.text("Not Found", 404);

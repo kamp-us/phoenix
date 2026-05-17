@@ -15,16 +15,11 @@
 	"observability": {
 		"enabled": true
 	},
+	// No product DO bindings remain post-d1-direct (tasks 4/6/9). Pasaport,
+	// SozlukTerm, and PanoPost all moved to D1-direct module functions
+	// against PHOENIX_DB. Future per-atom Agents will be added back here.
 	"durable_objects": {
-		"bindings": [
-			// Per-atom Agent DOs (ADR 0005 + 0006). The legacy singleton
-			// Sozluk / Pano DOs were dropped in T18 via the v4 migration's
-			// `delete_classes` clause. Pasaport moved off the DO entirely
-			// in d1-direct/task_4; SozlukTerm followed in d1-direct/task_6.
-			// Both now run as module functions against PHOENIX_DB. Only
-			// PanoPost remains as a per-atom Agent.
-			{ "name": "PANO_POST", "class_name": "PanoPost" }
-		]
+		"bindings": []
 	},
 	// One D1 binding holds every cross-entity view-model (term_summary,
 	// post_summary, *_view, *_stats, user_vote, user_profile) per ADR 0007.
@@ -50,15 +45,12 @@
 	"migrations": [
 		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] },
 		{ "tag": "v3", "new_sqlite_classes": ["Pano"] },
-		// v4: introduces the per-atom Agent classes alongside the singleton
-		// classes, and (in T18) drops the singleton classes now that the
-		// per-atom Agents own every read + write path. SozlukTerm was
-		// removed from this list in d1-direct/task_6 — nothing deployed,
-		// so the entry is rewritten rather than adding a delete_classes
-		// migration.
+		// v4: legacy singleton DOs deleted. SozlukTerm + PanoPost were
+		// removed from this list in d1-direct/task_6 + task_9 — nothing
+		// deployed remotely, so the entry is rewritten rather than adding
+		// a `delete_classes` migration. No `new_sqlite_classes` left.
 		{
 			"tag": "v4",
-			"new_sqlite_classes": ["PanoPost"],
 			"deleted_classes": ["Sozluk", "Pano"]
 		}
 	],

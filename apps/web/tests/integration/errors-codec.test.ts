@@ -19,7 +19,7 @@ import {
 	PostValidationError,
 	UnauthorizedCommentMutationError,
 	UnauthorizedPostMutationError,
-} from "../../worker/features/pano/PanoPost";
+} from "../../worker/features/pano/module";
 import {UsernameValidationError} from "../../worker/features/pasaport/module";
 import {
 	DefinitionNotFoundError,

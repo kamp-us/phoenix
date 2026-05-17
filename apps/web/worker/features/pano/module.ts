@@ -1,11 +1,9 @@
 /**
- * Pano — D1-direct module (task_7 + task_8, d1-direct).
+ * Pano — D1-direct module (task_7 + task_8 + task_9, d1-direct).
  *
  * Every function in this file reads/writes `env.PHOENIX_DB` via drizzle.
  * There is no Durable Object boundary, no workflow `create`, no outbox /
- * projection step. The legacy `PanoPost` Agent DO class still exists at
- * this stage but its post- AND comment-related methods are unreferenced —
- * task_9 deletes the class entirely.
+ * projection step. The legacy `PanoPost` Agent DO was deleted in task_9.
  *
  * Surface (resolver-callable):
  *   - `submitPost(env, input)` — insert `post_summary` row + bump
