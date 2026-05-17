@@ -1,5 +1,5 @@
 /**
- * Public user profile page (task_6, phoenix-relay-idiom).
+ * Public user profile page.
  *
  * Idiomatic Relay shape: `useLazyLoadQuery` at the top spreads
  * `UserProfileHeaderFragment` + `UserProfileContributionsFragment` into the

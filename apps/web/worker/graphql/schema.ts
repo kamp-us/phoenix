@@ -17,9 +17,10 @@ import {
 	printSchema,
 } from "graphql";
 import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encodeNodeId";
+import {type LandingStats, readLandingStats} from "../features/landingStatsReader";
 import {
-	addComment as addCommentD1,
 	ALLOWED_POST_TAG_KINDS,
+	addComment as addCommentD1,
 	type CommentConnectionPage,
 	type CommentRow,
 	deleteComment as deleteCommentD1,
@@ -72,7 +73,6 @@ import {
 } from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
 import {Auth, CloudflareEnv} from "../services";
-import {type LandingStats, readLandingStats} from "../features/landingStatsReader";
 import {resolver} from "./resolver";
 
 const HealthType = new GraphQLObjectType({
@@ -84,7 +84,7 @@ const HealthType = new GraphQLObjectType({
 });
 
 /**
- * Relay `Node` interface (task_1, phoenix-relay-idiom). Every entity that a
+ * Relay `Node` interface. Every entity that a
  * Relay client can refetch via `@refetchable` or load via the top-level
  * `node(id)` query implements `Node` and exposes a globally-unique `id`.
  *
@@ -232,7 +232,7 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 			},
 		},
 		/**
-		 * Sozluk home `TermRowFragment` projections (task_5, phoenix-relay-idiom).
+		 * Sozluk home `TermRowFragment` projections.
 		 *
 		 * `firstLetter` powers the alphabet pivot ribbon — the row exposes
 		 * the column directly off `term_summary` so the SPA doesn't have to
@@ -270,13 +270,12 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 			},
 		},
 		/**
-		 * Connection-shaped definition list (task_4, phoenix-relay-idiom).
+		 * Connection-shaped definition list.
 		 * The canonical read path for `SozlukTermPage`. Replaces the legacy
-		 * flat-array `definitions: [Definition!]!` field — bringing the
-		 * cleanup forward one task because Relay's `@connection` key
-		 * convention requires the field name to match the suffix of the
+		 * flat-array `definitions: [Definition!]!` field. Relay's `@connection`
+		 * key convention requires the field name to match the suffix of the
 		 * key (`<Component>_<fieldName>`), and the SPA's only consumer is
-		 * the term page which migrates in this same change.
+		 * the term page.
 		 *
 		 * Cursor pagination is keyset on the definition id (forge ULID;
 		 * lex-sortable) over the per-term Agent's score-DESC materialized
@@ -306,7 +305,7 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 });
 
 /* -------------------------------------------------------------------------- */
-/* Definition connection (task_4, phoenix-relay-idiom)                         */
+/* Definition connection                                                       */
 /* -------------------------------------------------------------------------- */
 
 const DefinitionEdgeType = new GraphQLObjectType<{cursor: string; node: DefinitionRow}>({
@@ -339,11 +338,11 @@ const DefinitionConnectionType = new GraphQLObjectType<DefinitionConnectionPage>
 });
 
 /**
- * `deleteDefinition` mutation payload (task_4, phoenix-relay-idiom). Returns
+ * `deleteDefinition` mutation payload. Returns
  * the deleted definition's Relay global id so the SPA can `@deleteRecord`
  * it out of the store; connection edges referencing the gone record auto-
- * clear. Mirrors the `deletedPostId @deleteRecord` shape from `deletePost`
- * (task_2). No two-shape payload here — a soft-deleted definition simply
+ * clear. Mirrors the `deletedPostId @deleteRecord` shape from `deletePost`.
+ * No two-shape payload here — a soft-deleted definition simply
  * disappears (no reply-aware placeholder like comments).
  */
 const DeleteDefinitionPayloadType = new GraphQLObjectType<{
@@ -364,7 +363,7 @@ const TermSortEnum = new GraphQLEnumType({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Term connection (task_5, phoenix-relay-idiom)                               */
+/* Term connection                                                             */
 /* -------------------------------------------------------------------------- */
 
 const TermEdgeType = new GraphQLObjectType<{cursor: string; node: TermSummaryRow}>({
@@ -476,10 +475,9 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 			}),
 		},
 		/**
-		 * Connection-shaped comment list (task_3, phoenix-relay-idiom).
+		 * Connection-shaped comment list.
 		 * Canonical read path for the post-detail page; replaced the legacy
-		 * top-level `postComments(postId)` flat-array field (dropped in the
-		 * task_7 cleanup).
+		 * top-level `postComments(postId)` flat-array field.
 		 *
 		 * Cursor pagination is keyset on the comment id (forge ULID;
 		 * lex-sortable, matches chronological-asc). The `LoadMoreButton` reads
@@ -509,7 +507,7 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Comment connection (task_3, phoenix-relay-idiom)                            */
+/* Comment connection                                                          */
 /* -------------------------------------------------------------------------- */
 
 const CommentEdgeType = new GraphQLObjectType<{cursor: string; node: CommentRow}>({
@@ -542,7 +540,7 @@ const CommentConnectionType = new GraphQLObjectType<CommentConnectionPage>({
 });
 
 /**
- * Two-shape mutation payload for `deleteComment` (task_3, phoenix-relay-idiom).
+ * Two-shape mutation payload for `deleteComment`.
  * Exactly one of `deletedCommentId` / `comment` is non-null per call:
  *
  *  - **Leaf path** — comment had no live children. `deletedCommentId` is the
@@ -596,7 +594,7 @@ const CommentType = new GraphQLObjectType<CommentRow>({
 			},
 		},
 		/**
-		 * Soft-delete timestamp (task_3, phoenix-relay-idiom). `null` for live
+		 * Soft-delete timestamp. `null` for live
 		 * comments; ISO string when the comment was soft-deleted but still
 		 * appears in the tree as a `[silindi]` placeholder (parent-with-replies
 		 * path). The leaf-delete path removes the row entirely so it never
@@ -769,9 +767,9 @@ const ContributionEdgeType = new GraphQLObjectType<{cursor: string; node: Contri
 });
 
 /**
- * Relay-spec `PageInfo` (task_1, phoenix-relay-idiom). The fields are the
- * full Relay set so future page-migration tasks can wire bidirectional
- * pagination if they ever need it. Today's connection resolvers only
+ * Relay-spec `PageInfo`. The fields are the
+ * full Relay set so future bidirectional pagination can be wired in
+ * without an SDL break. Today's connection resolvers only
  * populate `hasNextPage` / `endCursor`; the others default to safe values
  * (`hasPreviousPage: false`, `startCursor: null`) so the SDL contract
  * holds without forcing every reader to manufacture them.
@@ -816,7 +814,7 @@ const ContributionConnectionType = new GraphQLObjectType<ContributionConnection>
 });
 
 /* -------------------------------------------------------------------------- */
-/* Pano feed connection (task_2, phoenix-relay-idiom)                          */
+/* Pano feed connection                                                        */
 /* -------------------------------------------------------------------------- */
 
 const PostEdgeType = new GraphQLObjectType<{cursor: string; node: PostSummaryRow}>({
@@ -923,7 +921,7 @@ const QueryType = new GraphQLObjectType({
 	name: "Query",
 	fields: {
 		/**
-		 * Relay `node(id)` dispatch (task_1, phoenix-relay-idiom). Decodes a
+		 * Relay `node(id)` dispatch. Decodes a
 		 * global id into `(typename, localId)` and routes to the right
 		 * per-atom Agent or D1 reader. Returns `null` for any unresolved
 		 * id rather than throwing — matches Relay's expectation for a
@@ -1039,12 +1037,11 @@ const QueryType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Sozluk home terms connection (task_5, phoenix-relay-idiom). Replaces
-		 * the legacy flat-array `terms(sort, limit)` field — `SozlukHome.tsx`
-		 * is the only consumer and migrates in the same PR. The connection
+		 * Sozluk home terms connection. Replaces
+		 * the legacy flat-array `terms(sort, limit)` field. The connection
 		 * shape unlocks Relay's `@connection`-keyed updaters and future
-		 * `usePaginationFragment` usage on the home (this task ships
-		 * first-page-only; the shape is future-proofed).
+		 * `usePaginationFragment` usage on the home (currently first-page-only;
+		 * the shape is future-proofed).
 		 *
 		 * Cursor is the term slug (primary key of `term_summary`,
 		 * lex-sortable). `sort` accepts `recent` and `popular` (the existing
@@ -1080,9 +1077,8 @@ const QueryType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Pano feed connection (task_2, phoenix-relay-idiom). Replaces the
-		 * legacy flat-array `posts(sort, limit, host)` field — `PanoFeed.tsx`
-		 * is the only consumer and migrates in the same PR. The connection
+		 * Pano feed connection. Replaces the
+		 * legacy flat-array `posts(sort, limit, host)` field. The connection
 		 * shape unlocks Relay's idiomatic `usePaginationFragment` +
 		 * `@connection` mutation updaters.
 		 *
@@ -1125,11 +1121,11 @@ const QueryType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {idOrSlug: string}) {
 				const env = yield* CloudflareEnv;
 				// Accept either a Relay global id (`Post:<localId>` base64),
-				// a raw local post id, or a slug. After task_2's connection
+				// a raw local post id, or a slug. After the connection
 				// migration, the SPA hands back `Post.id` (the global id) when
 				// it navigates to /pano/<id>; we extract the local id so the
-				// D1 lookup hits the right row. d1-direct/task_7: reads
-				// `post_summary` directly via the module.
+				// D1 lookup hits the right row. Reads `post_summary` directly
+				// via the module.
 				const key = extractLocalId(args.idOrSlug, "Post");
 				return yield* Effect.promise(() => getPostD1(env, key));
 			}),
@@ -1190,11 +1186,10 @@ interface TagInput {
 	label?: string | null;
 }
 
-// task_2 (d1-direct): the three `map{Definition,Post,Comment}MutationError`
-// helpers used to live here. The Effect `resolver()` wrapper now routes every
-// thrown agent error through `encodeMutationError` in `./errors`, so resolvers
-// can throw the raw error and the wire-format `extensions.code` is applied
-// in one place.
+// The three `map{Definition,Post,Comment}MutationError` helpers used to live
+// here. The Effect `resolver()` wrapper now routes every thrown agent error
+// through `encodeMutationError` in `./errors`, so resolvers can throw the raw
+// error and the wire-format `extensions.code` is applied in one place.
 
 const MutationType = new GraphQLObjectType({
 	name: "Mutation",
@@ -1230,8 +1225,8 @@ const MutationType = new GraphQLObjectType({
 			) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				// d1-direct/task_5: module function writes PHOENIX_DB inline. The
-				// thrown DefinitionValidationError falls through to the resolver
+				// Module function writes PHOENIX_DB inline. The thrown
+				// DefinitionValidationError falls through to the resolver
 				// wrapper, which encodes the wire-format extensions.code via
 				// `encodeMutationError`.
 				const result = yield* Effect.promise(() =>
@@ -1327,7 +1322,7 @@ const MutationType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Soft-delete a definition (task_4, phoenix-relay-idiom). Payload
+		 * Soft-delete a definition. Payload
 		 * shape `DeleteDefinitionPayload!` with `deletedDefinitionId: ID!`
 		 * so the SPA can `@deleteRecord` it from the Relay store.
 		 */
@@ -1408,9 +1403,9 @@ const MutationType = new GraphQLObjectType({
 					}
 				}
 
-				// d1-direct/task_7: module function mints the post id internally
-				// and writes PHOENIX_DB inline. Thrown PostValidationError falls
-				// through to the resolver wrapper.
+				// Module function mints the post id internally and writes
+				// PHOENIX_DB inline. Thrown PostValidationError falls through
+				// to the resolver wrapper.
 				const r = yield* Effect.promise(() =>
 					submitPostD1(env, {
 						title: args.title,
@@ -1450,13 +1445,10 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.postId, "Post");
-				// d1-direct/task_7: module function writes PHOENIX_DB inline.
-				// PostNotFoundError falls through to the resolver wrapper,
-				// which encodes the wire-format extensions.code via
-				// `encodeMutationError`.
-				const result = yield* Effect.promise(() =>
-					voteOnPostD1(env, {postId, voterId: user.id}),
-				);
+				// Module function writes PHOENIX_DB inline. PostNotFoundError
+				// falls through to the resolver wrapper, which encodes the
+				// wire-format extensions.code via `encodeMutationError`.
+				const result = yield* Effect.promise(() => voteOnPostD1(env, {postId, voterId: user.id}));
 				return {
 					id: result.postId,
 					slug: null,
@@ -1561,7 +1553,7 @@ const MutationType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Delete a post (task_2, phoenix-relay-idiom). Returns the global id
+		 * Delete a post. Returns the global id
 		 * of the deleted post; the FE attaches `@deleteRecord` to that field
 		 * so Relay removes the record from its store, which in turn auto-clears
 		 * every edge in every `PanoFeed_posts` connection variant that
@@ -1574,9 +1566,7 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.id, "Post");
-				const r = yield* Effect.promise(() =>
-					deletePostD1(env, {postId, actorId: user.id}),
-				);
+				const r = yield* Effect.promise(() => deletePostD1(env, {postId, actorId: user.id}));
 				// Return the Relay global id so `@deleteRecord` can find the
 				// store record under the same DataID Relay normalized the
 				// `Post` to (`encodeNodeId("Post", localId)`).
@@ -1716,9 +1706,7 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.id, "Comment");
-				const r = yield* Effect.promise(() =>
-					deleteCommentD1(env, {commentId, actorId: user.id}),
-				);
+				const r = yield* Effect.promise(() => deleteCommentD1(env, {commentId, actorId: user.id}));
 				if (r.hasReplies && r.placeholder) {
 					// Parent-with-replies: surface the `[silindi]` placeholder row
 					// so Relay merges the new scalar values into the existing

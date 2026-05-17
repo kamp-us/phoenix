@@ -1,5 +1,5 @@
 /**
- * Fragment-shaped definition card (task_4, phoenix-relay-idiom).
+ * Fragment-shaped definition card.
  *
  * Reads its data via `useFragment(DefinitionCardFragment)` instead of taking
  * shaped props. The page (`SozlukTermPage`) spreads this fragment into the
@@ -73,7 +73,7 @@ const EditDefinitionMutation = graphql`
 `;
 
 /**
- * Soft-delete a definition (task_4, phoenix-relay-idiom). Payload returns
+ * Soft-delete a definition. Payload returns
  * `deletedDefinitionId @deleteRecord` so Relay drops the record from the
  * store and the connection edge auto-clears — no `$connections` variable,
  * no manual updater.

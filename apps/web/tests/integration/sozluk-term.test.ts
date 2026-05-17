@@ -1,5 +1,5 @@
 /**
- * Sozluk D1-direct read paths (task_5, d1-direct).
+ * Sozluk D1-direct read paths.
  *
  * Exercises end-to-end inside workerd:
  *   1. Apply D1 view migrations (including 0005 for d1-direct sozluk).
@@ -16,12 +16,7 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {clearAllTerms, getTerm, seedTerm} from "../../worker/features/sozluk/module";
 import {listTermSummaries} from "../../worker/features/sozluk/termSummaryReader";
 
@@ -31,14 +26,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -66,7 +54,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("sozluk read paths — task_5 (d1-direct)", () => {
+describe("sozluk read paths", () => {
 	it("seedTerm writes inline; getTerm + listTermSummaries reflect the row", async () => {
 		const slug = "agent";
 		const result = await seedTerm(env, {

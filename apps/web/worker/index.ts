@@ -37,7 +37,7 @@ const upsertTermSchema = z.object({
 		.min(1),
 });
 
-// d1-direct/task_5: writes go straight to `PHOENIX_DB` via the sozluk module.
+// Writes go straight to `PHOENIX_DB` via the sozluk module.
 // Idempotent: re-running with the same `(authorId, body)` skips the existing
 // row. Gated on `ENVIRONMENT === "development"`.
 app.post("/api/admin/sozluk/upsert-term", async (c) => {
@@ -49,7 +49,7 @@ app.post("/api/admin/sozluk/upsert-term", async (c) => {
 	return c.json({slug, ...result});
 });
 
-// d1-direct/task_5: drop the term_summary + definition_view + vote rows for the
+// Drop the term_summary + definition_view + vote rows for the
 // given slugs in one D1 pass. `sozluk_stats` recomputes from what's left.
 app.post("/api/admin/sozluk/clear", async (c) => {
 	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
@@ -59,8 +59,8 @@ app.post("/api/admin/sozluk/clear", async (c) => {
 	return c.json(result);
 });
 
-// Dev-only pano admin endpoint. Backs `pnpm pano:import`. Post-d1-direct
-// (task_7..task_9) every write goes straight to `PHOENIX_DB` via the
+// Dev-only pano admin endpoint. Backs `pnpm pano:import`. Post-d1-direct,
+// every write goes straight to `PHOENIX_DB` via the
 // `submitPost` / `addComment` module functions — no DO RPC. Gated on
 // `ENVIRONMENT === "development"`.
 const panoSeedSchema = z.object({

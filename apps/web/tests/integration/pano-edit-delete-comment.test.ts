@@ -1,9 +1,9 @@
 /**
- * `editComment` / `deleteComment` on D1-direct — d1-direct/task_8.
+ * `editComment` / `deleteComment` on D1-direct.
  *
  * Exercises the D1-direct comment lifecycle end-to-end inside workerd:
  *   1. Apply view migrations.
- *   2. Seed a post + comment (D1-direct task_7 + task_8 paths).
+ *   2. Seed a post + comment (D1-direct paths).
  *   3. Edit the body → `comment_view.body` + `body_excerpt` refresh inline.
  *   4. Ownership: a non-author actor's edit / delete throws
  *      `UnauthorizedCommentMutationError`.
@@ -19,13 +19,7 @@
  */
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
-import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {
 	addComment,
 	deleteComment,
@@ -41,15 +35,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0005,
-		viewMigration0006,
-		viewMigration0007,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -98,7 +84,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("pano/module editComment — d1-direct/task_8", () => {
+describe("pano/module editComment", () => {
 	it("updates body + body_excerpt + updatedAt", async () => {
 		const authorId = "edit-comment-author";
 		const {commentId} = await seedPostAndComment({
@@ -174,7 +160,7 @@ describe("pano/module editComment — d1-direct/task_8", () => {
 	});
 });
 
-describe("pano/module deleteComment — d1-direct/task_8", () => {
+describe("pano/module deleteComment", () => {
 	it("deleting a leaf comment fully removes the comment_view row + decrements commentCount", async () => {
 		const authorId = "del-leaf-author";
 		const {postId, commentId} = await seedPostAndComment({
@@ -323,7 +309,7 @@ describe("pano/module deleteComment — d1-direct/task_8", () => {
 });
 
 /**
- * Atomicity invariant (d1-direct-review-fixes task_3).
+ * Atomicity invariant.
  *
  * A successful `deleteComment(...)` must collapse every mutating statement —
  * the conditional karma decrement, `DELETE FROM comment_vote`, `DELETE FROM
@@ -341,7 +327,7 @@ describe("pano/module deleteComment — d1-direct/task_8", () => {
  *   - parent-with-replies, `priorScore > 0` → 4 statements (karma first;
  *     ends with UPDATE).
  */
-describe("pano.deleteComment — atomic single-batch write (d1-direct-review-fixes task_3)", () => {
+describe("pano.deleteComment — atomic single-batch write", () => {
 	/**
 	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
 	 * `.prepare(sql).bind(...).run()` chain without losing the real D1

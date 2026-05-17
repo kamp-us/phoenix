@@ -4,7 +4,7 @@
  * (~/code/github.com/kamp-us/monorepo/packages/sozluk-content/terms) into
  * the running Phoenix worker via /api/admin/sozluk/*.
  *
- * After d1-direct/task_5 the admin endpoints write `PHOENIX_DB` directly
+ * After the D1-direct refactor the admin endpoints write `PHOENIX_DB` directly
  * (sozluk module functions, gated on `ENVIRONMENT === "development"`); no
  * Durable Object hop, no workflow `create` step.
  *

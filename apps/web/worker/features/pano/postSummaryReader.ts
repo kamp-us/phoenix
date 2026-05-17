@@ -129,8 +129,8 @@ function parseTags(csv: string): Array<{kind: string; label: string}> {
 }
 
 /**
- * Connection-shaped reader for `posts(sort, host, first, after)` (task_2,
- * phoenix-relay-idiom). Cursor is opaque to the client — the post id (forge
+ * Connection-shaped reader for `posts(sort, host, first, after)`.
+ * Cursor is opaque to the client — the post id (forge
  * ULID, lex-sortable). `after` selects rows whose sort-key tuple comes strictly
  * after the cursor's row, with `id` as the deterministic tie-breaker.
  *

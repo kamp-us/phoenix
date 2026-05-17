@@ -1,5 +1,5 @@
 /**
- * Vote module — d1-direct/task_10.
+ * Vote module.
  *
  * One canonical write surface for the three vote targets in the system:
  * `definition`, `post`, `comment`. Every vote in the product flows through

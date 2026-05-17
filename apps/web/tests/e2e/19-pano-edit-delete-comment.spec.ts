@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signOut, signUp} from "./_helpers/auth";
 
 /**
- * Pano editComment / deleteComment end-to-end (task_12).
+ * Pano editComment / deleteComment end-to-end.
  *
  * Three flows:
  *   1. Author flow: sign up A → submit a post → add a comment → edit it → body
@@ -12,13 +12,13 @@ import {signOut, signUp} from "./_helpers/auth";
  *   2. Cross-user flow: sign up B → user B does NOT see the düzenle/sil
  *      affordances on user A's comments.
  *
- * phoenix-relay-idiom task_3: every historical `page.reload()` workaround
- * after a mutation has been removed. The post-detail page no longer
+ * Every historical `page.reload()` workaround after a mutation has been
+ * removed. The post-detail page no longer
  * unmounts on `addComment` / `editComment` / `deleteComment` — manual
  * `updater` + `@deleteRecord` keep the tree mounted, so the Suspense
  * double-mount race the reloads were dodging no longer fires.
  */
-test.describe("Pano editComment / deleteComment (task_12)", () => {
+test.describe("Pano editComment / deleteComment", () => {
 	test("author can edit a comment, delete a parent → [silindi], delete a leaf → removed", async ({
 		page,
 	}) => {

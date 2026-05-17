@@ -1,5 +1,5 @@
 /**
- * Vote module integration tests (task_10, d1-direct).
+ * Vote module integration tests.
  *
  * Exercises the canonical `vote()` entry point at
  * `worker/features/vote/module.ts`. The module discriminates writes by
@@ -16,21 +16,14 @@
  * nothing is set is a no-op; flipping (cast → retract → cast) round-trips
  * to a single row.
  *
- * Only `targetKind: 'definition'` is covered here — task_11 lifts pano's
- * post/comment vote paths onto this module and adds its own coverage.
+ * The first describe block covers `targetKind: 'definition'`; the post
+ * and comment kinds are exercised in their own describe blocks below.
  */
 /// <reference path="../../worker-configuration.d.ts" />
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
-import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
 import {addDefinition} from "../../worker/features/sozluk/module";
 import {vote, VoteTargetNotFoundError} from "../../worker/features/vote/module";
@@ -41,16 +34,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-		viewMigration0006,
-		viewMigration0007,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -109,7 +93,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("vote module — task_10 (d1-direct)", () => {
+describe("vote module — targetKind: 'definition'", () => {
 	it("casts a definition vote: score 0 → 1, user_vote row written, karma bumped", async () => {
 		const definitionId = await seedDefinition("vote-mod-cast", "author-cast");
 
@@ -290,7 +274,7 @@ describe("vote module — task_10 (d1-direct)", () => {
 	});
 });
 
-describe("vote module — targetKind: 'post' (task_11)", () => {
+describe("vote module — targetKind: 'post'", () => {
 	it("casts a post vote: score 0 → 1, post_summary + post_vote + user_vote written, karma bumped", async () => {
 		const authorId = "vm-post-author-cast";
 		const postId = await seedPost(authorId);
@@ -485,7 +469,7 @@ describe("vote module — targetKind: 'post' (task_11)", () => {
 	});
 });
 
-describe("vote module — targetKind: 'comment' (task_11)", () => {
+describe("vote module — targetKind: 'comment'", () => {
 	it("casts a comment vote: score 0 → 1, comment_view + comment_vote + user_vote written, karma bumped on COMMENT author", async () => {
 		const postAuthorId = "vm-comm-pauthor-cast";
 		const commentAuthorId = "vm-comm-cauthor-cast";
@@ -685,7 +669,7 @@ describe("vote module — targetKind: 'comment' (task_11)", () => {
 });
 
 /**
- * Atomicity invariant (d1-direct-review-fixes task_1).
+ * Atomicity invariant.
  *
  * A state-changing `vote()` call must collapse every mutation — the
  * feature-local vote table, the cross-product `user_vote` row, the
@@ -694,7 +678,7 @@ describe("vote module — targetKind: 'comment' (task_11)", () => {
  * may precede the batch on the mutation path. Idempotent re-casts /
  * re-retracts never call `batch`.
  */
-describe("vote module — atomic single-batch write (d1-direct-review-fixes task_1)", () => {
+describe("vote module — atomic single-batch write", () => {
 	/**
 	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
 	 * `.prepare(sql).bind(...).run()` chain without losing the real D1 binding's

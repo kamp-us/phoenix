@@ -17,14 +17,7 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
-import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
 import {handleAuth, setUsername} from "../../worker/features/pasaport/module";
 import {listContributions, lookupProfile} from "../../worker/features/pasaport/userProfileReader";
@@ -36,16 +29,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-		viewMigration0006,
-		viewMigration0007,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -111,7 +95,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			.first<{user_id: string}>();
 		expect(profileSeed).not.toBeNull();
 
-		// 2) seed a definition (D1-direct after d1-direct/task_5)
+		// 2) seed a definition via the D1-direct module
 		const termSlug = "differential-engine";
 		await addDefinition(env, {
 			termSlug,
@@ -121,7 +105,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			termTitle: "Differential Engine",
 		});
 
-		// 3) seed a post via the D1-direct module (d1-direct/task_7)
+		// 3) seed a post via the D1-direct module
 		const postResult = await submitPost(env, {
 			title: "ada's first post",
 			url: "https://example.com/ada",
@@ -131,7 +115,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			authorName: "Ada Lovelace",
 		});
 
-		// 4) seed a comment via the D1-direct module (d1-direct/task_8)
+		// 4) seed a comment via the D1-direct module
 		await addComment(env, {
 			postId: postResult.postId,
 			authorId: userId,

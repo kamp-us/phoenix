@@ -1,5 +1,5 @@
 /**
- * Pano D1-direct `submitPost` (task_7, d1-direct).
+ * Pano D1-direct `submitPost`.
  *
  * Exercises the module-functional path against `env.PHOENIX_DB`:
  *   1. Apply view migrations (including 0006 for d1-direct pano tables).
@@ -18,13 +18,7 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {PostValidationError, submitPost} from "../../worker/features/pano/module";
 
 declare module "cloudflare:test" {
@@ -33,15 +27,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-		viewMigration0006,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -78,7 +64,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("pano.submitPost — task_7", () => {
+describe("pano.submitPost", () => {
 	it("writes post_summary with denormalized author + tags + host", async () => {
 		const result = await submitPost(env, {
 			title: "phoenix neden tek worker'da koşuyor",

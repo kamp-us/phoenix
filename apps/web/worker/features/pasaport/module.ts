@@ -1,11 +1,10 @@
 /**
- * Pasaport — D1-direct module (task_3, d1-direct).
+ * Pasaport — D1-direct module.
  *
  * Every function in this file writes (or reads) `env.PHOENIX_DB` directly via
  * drizzle. There is no Durable Object boundary, no workflow `create`, and no
- * projection step. The legacy `Pasaport` DO class still exists for one
- * structural-deletion task more (task_4 deletes it), but is unreferenced by
- * every production code path.
+ * projection step. The legacy `Pasaport` DO class still exists but is
+ * unreferenced by every production code path.
  *
  * Surface:
  *   - `handleAuth(env, request)` — better-auth handler, mounted at `/api/auth/*`.

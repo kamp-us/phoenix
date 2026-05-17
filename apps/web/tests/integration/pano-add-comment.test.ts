@@ -1,10 +1,10 @@
 /**
- * `addComment` on D1-direct — d1-direct/task_8.
+ * `addComment` on D1-direct.
  *
  * Exercises the D1-direct `addComment` module surface end-to-end inside
  * workerd:
  *   1. Apply view migrations.
- *   2. Seed a post via `submitPost` (the D1-direct task_7 path).
+ *   2. Seed a post via `submitPost` (the D1-direct path).
  *   3. Top-level comment → row inserted into `comment_view` with
  *      denormalized columns + `post_summary.comment_count` bumped +
  *      `pano_stats` updated.
@@ -20,13 +20,7 @@
  */
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
-import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
 
 declare module "cloudflare:test" {
@@ -35,15 +29,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0005,
-		viewMigration0006,
-		viewMigration0007,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -86,7 +72,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("pano/module addComment — d1-direct/task_8", () => {
+describe("pano/module addComment", () => {
 	it("inserts a top-level comment + bumps post.commentCount + writes comment_view row", async () => {
 		const postId = await seedPost({authorId: "p-author-1"});
 

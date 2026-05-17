@@ -1,6 +1,6 @@
 /**
- * The wire contract for mutation-error `extensions.code` strings (task_2,
- * d1-direct). The worker `encodeMutationError` codec produces these; the SPA
+ * The wire contract for mutation-error `extensions.code` strings.
+ * The worker `encodeMutationError` codec produces these; the SPA
  * `decodeMutationErrorCode` decoder narrows incoming codes to this union so
  * UI code can `switch` on a typed value instead of stringly comparing against
  * `"UNAUTHORIZED"` etc.

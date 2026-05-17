@@ -8,7 +8,7 @@ import {authRedirectPath} from "./returnTo";
  * whether it represents a session-expired condition.
  *
  * The match keys off the typed {@link MutationErrorCode} `"UNAUTHORIZED"` rather
- * than a hardcoded string literal (task_2, d1-direct) — the wire contract
+ * than a hardcoded string literal — the wire contract
  * lives in `mutationErrorCodes.ts` and is encoded by the worker's
  * `encodeMutationError` codec when `Auth.required` fails or an Agent throws
  * an `UnauthorizedXxxMutationError`.

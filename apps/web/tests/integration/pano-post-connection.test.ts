@@ -1,8 +1,8 @@
 /**
- * Pano feed connection-shaped reader (task_2, phoenix-relay-idiom).
+ * Pano feed connection-shaped reader.
  *
  * Exercises `listPostConnection` in workerd with `post_summary` rows
- * seeded via the D1-direct `submitPost` module function (task_7).
+ * seeded via the D1-direct `submitPost` module function.
  *
  * No `runInDurableObject`, no projection workflow — writes are inline
  * D1 (ADR 0009).
@@ -11,13 +11,7 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {submitPost} from "../../worker/features/pano/module";
 import {listPostConnection} from "../../worker/features/pano/postSummaryReader";
 
@@ -27,15 +21,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-		viewMigration0006,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -63,7 +49,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("listPostConnection — task_2 (d1-direct seeded)", () => {
+describe("listPostConnection (d1-direct seeded)", () => {
 	it("paginates through every row exactly once when walking endCursor", async () => {
 		// Seed five posts under a unique host so we can isolate from any
 		// noise other tests left in `post_summary`.

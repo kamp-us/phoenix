@@ -1,6 +1,5 @@
 /**
- * Sozluk D1-direct `voteDefinition` / `retractDefinitionVote` (task_5,
- * d1-direct).
+ * Sozluk D1-direct `voteDefinition` / `retractDefinitionVote`.
  *
  * Exercises the module-functional path against `env.PHOENIX_DB`:
  *   1. Cast a vote → score 0 → 1; `definition_vote` row exists;
@@ -19,12 +18,7 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {
 	addDefinition,
 	DefinitionNotFoundError,
@@ -38,14 +32,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -83,7 +70,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("sozluk.voteDefinition — task_5 (d1-direct)", () => {
+describe("sozluk.voteDefinition", () => {
 	it("casts a vote, recomputes score, writes user_vote + karma inline", async () => {
 		const slug = "vote-cast";
 		const authorId = "author-1";

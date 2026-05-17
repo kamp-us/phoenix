@@ -1,5 +1,5 @@
 /**
- * Sozluk D1-direct `editDefinition` / `deleteDefinition` (task_5, d1-direct).
+ * Sozluk D1-direct `editDefinition` / `deleteDefinition`.
  *
  * Exercises the module-functional path against `env.PHOENIX_DB`:
  *   1. Edit body → definition_view.body + body_excerpt + updated_at advance.
@@ -16,12 +16,7 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {
 	addDefinition,
 	DefinitionValidationError,
@@ -38,14 +33,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -83,7 +71,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("sozluk.editDefinition — task_5 (d1-direct)", () => {
+describe("sozluk.editDefinition", () => {
 	it("updates body + body_excerpt + updated_at on definition_view", async () => {
 		const slug = "edit-happy";
 		const authorId = "edit-author";
@@ -154,7 +142,7 @@ describe("sozluk.editDefinition — task_5 (d1-direct)", () => {
 	});
 });
 
-describe("sozluk.deleteDefinition — task_5 (d1-direct)", () => {
+describe("sozluk.deleteDefinition", () => {
 	it("soft-deletes the definition; getTerm filters it out; aggregates decrement", async () => {
 		const slug = "delete-happy";
 		const authorId = "delete-author";

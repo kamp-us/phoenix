@@ -1,5 +1,5 @@
 /**
- * Fragment-shaped post-detail header (task_3, phoenix-relay-idiom).
+ * Fragment-shaped post-detail header.
  *
  * Reads its data via `useFragment(PanoPostHeaderFragment)` instead of taking
  * shaped props. The page (`PanoPostDetail`) spreads this fragment into the

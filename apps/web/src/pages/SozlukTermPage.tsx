@@ -1,5 +1,5 @@
 /**
- * Sözlük term page (task_4, phoenix-relay-idiom).
+ * Sözlük term page.
  *
  * Fully idiomatic Relay shape — `useLazyLoadQuery` at the top spreads
  * `SozlukTermHeaderFragment` + `SozlukTermPageDefinitionsFragment` into
@@ -359,7 +359,7 @@ function DefinitionsList(props: DefinitionsListProps) {
  * without a refetch.
  *
  * `optimisticResponse` mirrors the temp-record pattern from `submitPost`
- * (task_2) and `addComment` (task_3) — a `temp-${Date.now()}` id distinguishes
+ * and `addComment` — a `temp-${Date.now()}` id distinguishes
  * the optimistic record in devtools; the updater is idempotent on the
  * optimistic → server-confirm transition.
  */

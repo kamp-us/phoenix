@@ -8,7 +8,7 @@ import {signUp} from "./_helpers/auth";
  * serves as a deep-link smoke check: directly visiting the canonical product
  * URLs should each render without errors.
  */
-test.describe("Landing stats (task_15)", () => {
+test.describe("Landing stats", () => {
 	test("/ renders the live stats card with five values", async ({page}) => {
 		await page.goto("/");
 

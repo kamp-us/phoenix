@@ -1,5 +1,5 @@
 /**
- * Pano feed page (task_2, phoenix-relay-idiom).
+ * Pano feed page.
  *
  * Idiomatic Relay shape: a top-level `useLazyLoadQuery` spreads the
  * `PanoFeedPostsFragment` into the `Query`, then `usePaginationFragment` reads

@@ -1,7 +1,7 @@
 /**
  * Hand-written `addComment` updater (optimistic-only).
  *
- * Mirrors `panoFeedUpdater.prependPostToFeedConnections` from task_2 but for
+ * Mirrors `panoFeedUpdater.prependPostToFeedConnections` but for
  * the post-detail comment thread. The comment connection is keyed by the
  * post DataID — the page knows it via the `post.__id` reference Relay
  * auto-emits when a `@connection`-bearing fragment is spread into the

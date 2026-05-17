@@ -1,5 +1,5 @@
 /**
- * Fragment-shaped term page header (task_4, phoenix-relay-idiom).
+ * Fragment-shaped term page header.
  *
  * Reads its data via `useFragment(SozlukTermHeaderFragment)` instead of
  * taking shaped props. The page (`SozlukTermPage`) spreads this fragment

@@ -14,7 +14,7 @@ import {signUp} from "./_helpers/auth";
  *      contribution rows in the feed
  *   6. visit /u/<bogus-username> → 404 page renders
  */
-test.describe("Profile page (task_14)", () => {
+test.describe("Profile page", () => {
 	test("aggregates 1 definition + 1 post + 1 comment on /u/<username>", async ({page}) => {
 		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 		await signUp(page, {email: `pf${suffix}@kamp.us`});
@@ -36,9 +36,9 @@ test.describe("Profile page (task_14)", () => {
 		await page.locator('[data-testid="pano-submit-submit"]').click();
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
-		// Suspense double-mount reload (do-work artifact) removed in
-		// phoenix-relay-idiom task_6 — connection-shaped fragments mean the
-		// page tree no longer unmounts on mutation, so no reload is needed.
+		// Suspense double-mount reload (do-work artifact) removed —
+		// connection-shaped fragments mean the page tree no longer unmounts
+		// on mutation, so no reload is needed.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(postTitle, {
 			timeout: 10_000,
 		});

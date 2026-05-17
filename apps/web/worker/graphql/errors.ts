@@ -1,6 +1,6 @@
 /**
  * Round-trip codec between worker-side domain error classes and the
- * wire-format `extensions.code` strings the SPA matches on (task_2, d1-direct).
+ * wire-format `extensions.code` strings the SPA matches on.
  *
  * Encode side (worker): given any thrown error from a mutation resolver,
  * produce a `GraphQLError` with a stable `extensions.code`. The Effect
@@ -19,6 +19,7 @@
  * throws and RPC-marshalled throws encode identically.
  */
 import {GraphQLError} from "graphql";
+
 // The wire-side constant + decoder live in `src/lib/` so the SPA can import
 // them without crossing the worker boundary; re-exported here so worker
 // callers don't need to know where the contract is physically defined.

@@ -2,14 +2,14 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Sözlük addDefinition end-to-end (task_4).
+ * Sözlük addDefinition end-to-end.
  *
  * Sign up a fresh user, complete the username bootstrap, navigate to a brand
  * new term URL, write a definition, submit. The new term + definition appear
  * via re-fetched `term(slug)` (auto-create-term behaviour from
  * SozlukTerm.addDefinition).
  */
-test.describe("Sözlük addDefinition (task_4)", () => {
+test.describe("Sözlük addDefinition", () => {
 	test("adding a definition to a new slug auto-creates the term and renders the entry", async ({
 		page,
 	}) => {

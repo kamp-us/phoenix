@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signOut, signUp} from "./_helpers/auth";
 
 /**
- * Pano editPost / deletePost end-to-end (task_9).
+ * Pano editPost / deletePost end-to-end.
  *
  * Two flows:
  *   1. Author flow: sign up user A → submit a post → land on /pano/<id> →
@@ -11,12 +11,12 @@ import {signOut, signUp} from "./_helpers/auth";
  *   2. Cross-user flow: sign up user A → submit a post → sign out → sign up
  *      user B → user B doesn't see edit/delete affordances on user A's post.
  *
- * After the phoenix-relay-idiom refactor (task_2) the post detail no longer
+ * After the relay-idiom refactor the post detail no longer
  * refetches the page query on a mutation — `editPost` returns the updated
  * scalar fields and Relay's automatic store update handles the rerender, so
  * the historical `page.reload()` Suspense workaround is gone.
  */
-test.describe("Pano editPost / deletePost (task_9)", () => {
+test.describe("Pano editPost / deletePost", () => {
 	test("author can edit and delete their own post", async ({page}) => {
 		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 		await signUp(page, {email: `ep${suffix}@kamp.us`});

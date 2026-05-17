@@ -151,7 +151,7 @@ export const termSummary = sqliteTable(
 
 /**
  * Per-definition row. Canonical store for sozluk definitions after the
- * d1-direct migration (ADR 0009 / task_5) — the per-term DO is no longer the
+ * d1-direct migration (ADR 0009) — the per-term DO is no longer the
  * source of truth. Denormalized with term slug + title for the profile
  * contribution feed (so the feed renders without joining `term_summary`).
  *
@@ -161,9 +161,9 @@ export const termSummary = sqliteTable(
  *
  * `last_event_id` is a vestigial column from the projection era: under
  * d1-direct mutations write the table inline so the convergence guard is
- * unused on new writes (left default `""`). The column survives this task to
- * keep the existing read-side schema stable; phase 4 (task_12) drops it
- * during the wrangler / view cleanup pass.
+ * unused on new writes (left default `""`). The column survives to
+ * keep the existing read-side schema stable; a later cleanup pass drops it
+ * during the wrangler / view cleanup work.
  */
 export const definitionView = sqliteTable(
 	"definition_view",
@@ -173,7 +173,7 @@ export const definitionView = sqliteTable(
 		authorName: text("author_name").notNull(),
 		termSlug: text("term_slug").notNull(),
 		termTitle: text("term_title").notNull(),
-		// Canonical full-text definition body (d1-direct/task_5).
+		// Canonical full-text definition body.
 		body: text("body").notNull().default(""),
 		// Truncated body for the feed card.
 		bodyExcerpt: text("body_excerpt").notNull(),
@@ -248,7 +248,7 @@ export const postSummary = sqliteTable(
 		url: text("url"),
 		// Extracted via `new URL(url).host` on submit. Powers host filter.
 		host: text("host"),
-		// Canonical full-text post body (d1-direct/task_7). Was previously
+		// Canonical full-text post body. Was previously
 		// held inside the per-post DO's sqlite; under D1-direct `post_summary`
 		// IS the canonical store. `body_excerpt` stays for feed cards and is
 		// denormalized on write.
@@ -294,7 +294,7 @@ export const postSummary = sqliteTable(
  * MV is denormalized off this for the `myVote` lookup; the per-target
  * score column on `post_summary.score` is denormalized off COUNT(*) under
  * `WHERE post_id = ?`. Both are recomputed inline alongside the vote
- * write (d1-direct/task_7). Mirrors `definitionVote` from task_5.
+ * write. Mirrors `definitionVote`.
  */
 export const postVote = sqliteTable(
 	"post_vote",
@@ -312,7 +312,7 @@ export const postVote = sqliteTable(
 /**
  * Per-comment row, denormalized with post id + title for the profile
  * contribution feed AND the per-post thread reader. Canonical store for
- * pano comments after the d1-direct migration (ADR 0009 / task_8) — the
+ * pano comments after the d1-direct migration (ADR 0009) — the
  * per-post DO is no longer the source of truth.
  *
  * `body` holds the full text; `body_excerpt` is a denormalized truncation
@@ -326,9 +326,9 @@ export const postVote = sqliteTable(
  *
  * `last_event_id` is a vestigial column from the projection era: under
  * d1-direct mutations write the table inline so the convergence guard is
- * unused on new writes (left default `""`). The column survives this task
- * to keep the existing read-side schema stable; phase 4 (task_12) drops it
- * during the wrangler / view cleanup pass.
+ * unused on new writes (left default `""`). The column survives
+ * to keep the existing read-side schema stable; a later cleanup pass drops it
+ * during the wrangler / view cleanup work.
  */
 export const commentView = sqliteTable(
 	"comment_view",
@@ -338,11 +338,11 @@ export const commentView = sqliteTable(
 		authorName: text("author_name").notNull(),
 		postId: text("post_id").notNull(),
 		postTitle: text("post_title").notNull(),
-		// Optional parent comment id for nested replies (d1-direct/task_8).
+		// Optional parent comment id for nested replies.
 		// Top-level comments leave this NULL; nested replies point at an
 		// existing non-deleted comment in the same post.
 		parentId: text("parent_id"),
-		// Canonical full-text comment body (d1-direct/task_8).
+		// Canonical full-text comment body.
 		body: text("body").notNull().default(""),
 		// Truncated body for the profile feed card; rewritten to "[silindi]"
 		// for the parent-with-replies soft-delete path.
@@ -368,8 +368,7 @@ export const commentView = sqliteTable(
  * MV is denormalized off this for the `myVote` lookup; the per-target score
  * column on `comment_view.score` is denormalized off COUNT(*) under
  * `WHERE comment_id = ?`. Both are recomputed inline alongside the vote
- * write (d1-direct/task_8). Mirrors `postVote` from task_7 and
- * `definitionVote` from task_5.
+ * write. Mirrors `postVote` and `definitionVote`.
  */
 export const commentVote = sqliteTable(
 	"comment_vote",

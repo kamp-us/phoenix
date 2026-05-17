@@ -89,7 +89,7 @@ test.describe("T17 auth-redirect with returnTo", () => {
 	});
 
 	test("404 page renders for an unknown profile", async ({page}) => {
-		// Smoke check — task_14's NotFoundPage stays wired through task_17.
+		// Smoke check — the NotFoundPage stays wired through the auth-redirect flow.
 		await page.goto(`/u/nobody-${Date.now().toString(36)}`);
 		await expect(page.getByTestId("not-found-page")).toBeVisible({timeout: 5_000});
 		await expect(page.getByRole("heading", {name: /bulunamadı/i})).toBeVisible();

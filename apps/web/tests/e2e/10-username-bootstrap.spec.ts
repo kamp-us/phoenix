@@ -2,14 +2,14 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Username bootstrap + topbar profile link (task_13).
+ * Username bootstrap + topbar profile link.
  *
  * After signing up, a fresh Pasaport user has `username = NULL`. The Layout
  * intercepts the route and mounts <UsernameBootstrap> in place of <Outlet/>.
  * Once the user submits the form, the topbar swaps the @username link in and
  * routes /u/<username> to the profile page.
  */
-test.describe("Username bootstrap (task_13)", () => {
+test.describe("Username bootstrap", () => {
 	test("first sign-in shows the bootstrap form pre-filled with email local-part", async ({
 		page,
 	}) => {

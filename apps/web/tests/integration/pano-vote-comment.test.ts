@@ -1,10 +1,10 @@
 /**
- * `voteOnComment` / `retractCommentVote` on D1-direct — d1-direct/task_8.
+ * `voteOnComment` / `retractCommentVote` on D1-direct.
  *
  * Exercises the D1-direct comment vote module surface end-to-end inside
  * workerd:
  *   1. Apply view migrations.
- *   2. Seed a post + comment (D1-direct task_7 + task_8 paths).
+ *   2. Seed a post + comment (D1-direct paths).
  *   3. Cast a vote → score 0 → 1 → `comment_vote` row exists →
  *      `user_vote` MV row exists → `user_profile.total_karma` for the
  *      comment's author goes 0 → 1 → `comment_view.score` converges to 1.
@@ -20,13 +20,7 @@
  */
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
-import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {
 	addComment,
 	retractCommentVote,
@@ -40,15 +34,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0005,
-		viewMigration0006,
-		viewMigration0007,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -96,7 +82,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("pano/module voteOnComment — d1-direct/task_8", () => {
+describe("pano/module voteOnComment", () => {
 	it("casts a vote, recomputes comment.score, writes user_vote + karma + comment_view", async () => {
 		const postAuthorId = "p-author-cv-1";
 		const commentAuthorId = "c-author-cv-1";

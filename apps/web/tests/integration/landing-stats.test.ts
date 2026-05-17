@@ -1,5 +1,5 @@
 /**
- * Landing stats projection (task_15) — sozluk_stats + pano_stats kept current
+ * Landing stats projection — sozluk_stats + pano_stats kept current
  * by the same projection steps that touch the underlying view tables.
  *
  * Exercises end-to-end inside workerd:
@@ -14,14 +14,7 @@
  */
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
-import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
 import {addDefinition, deleteDefinition} from "../../worker/features/sozluk/module";
 
@@ -31,16 +24,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-		viewMigration0006,
-		viewMigration0007,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -104,7 +88,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("landing stats projection — task_15", () => {
+describe("landing stats projection", () => {
 	it("sozluk_stats reflects total_definitions + total_authors after adds and deletes", async () => {
 		// Two distinct authors writing on two distinct slugs.
 		const authorA = "user_stats_sozluk_a";

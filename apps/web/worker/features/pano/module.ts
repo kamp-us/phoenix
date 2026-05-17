@@ -1,9 +1,9 @@
 /**
- * Pano — D1-direct module (task_7 + task_8 + task_9, d1-direct).
+ * Pano — D1-direct module.
  *
  * Every function in this file reads/writes `env.PHOENIX_DB` via drizzle.
  * There is no Durable Object boundary, no workflow `create`, no outbox /
- * projection step. The legacy `PanoPost` Agent DO was deleted in task_9.
+ * projection step. The legacy `PanoPost` Agent DO has been removed.
  *
  * Surface (resolver-callable):
  *   - `submitPost(env, input)` — insert `post_summary` row + bump
@@ -34,7 +34,7 @@
  *     `user_vote`, bump karma on the comment author's `user_profile`.
  *
  * Vote logic for posts AND comments now delegates to the shared
- * `vote/module.ts` (task_11). The pano-side wrappers (`applyVote` for
+ * `vote/module.ts`. The pano-side wrappers (`applyVote` for
  * posts, `applyCommentVote` for comments) load the target row for the
  * resolver-facing shape, dispatch to `vote()` with the right
  * `targetKind`, then re-read the score cache for the response.
@@ -754,7 +754,7 @@ export const SILINDI_PLACEHOLDER = "[silindi]";
 
 /**
  * Validation error thrown by `addComment` / `editComment`. The GraphQL
- * resolver routes this through `encodeMutationError` (task_2 codec) to a
+ * resolver routes this through `encodeMutationError` to a
  * stable `extensions.code` so the SPA can localize without parsing free-text
  * messages.
  *
@@ -790,7 +790,7 @@ export class CommentNotFoundError extends Error {
 /**
  * Raised by `editComment` / `deleteComment` when the calling user is not
  * the comment's author. The resolver translates this to a clean
- * `UNAUTHORIZED` extension code (task_2 codec match on `name`).
+ * `UNAUTHORIZED` extension code (codec match on `name`).
  */
 export class UnauthorizedCommentMutationError extends Error {
 	readonly code = "unauthorized" as const;
@@ -1166,7 +1166,7 @@ export async function addComment(
  * Cast an up-vote on a comment. Idempotent: re-cast from the same voter is
  * a no-op. When the cast lands, recompute `comment_view.score`, mirror onto
  * `user_vote`, bump karma on the comment author's `user_profile`. Mirrors
- * `voteOnPost` (task_7) and `voteDefinition` (task_5).
+ * `voteOnPost` and `voteDefinition`.
  */
 export async function voteOnComment(
 	env: Env,

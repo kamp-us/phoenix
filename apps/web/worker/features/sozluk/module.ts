@@ -1,11 +1,10 @@
 /**
- * Sozluk — D1-direct module (task_5, d1-direct).
+ * Sozluk — D1-direct module.
  *
  * Every function in this file reads/writes `env.PHOENIX_DB` via drizzle. There
  * is no Durable Object boundary, no workflow `create`, no outbox / projection
- * step. The legacy `SozlukTerm` Agent DO class still exists for one structural
- * task more (task_6 deletes it) but is unreferenced by every production code
- * path that lives here.
+ * step. The legacy `SozlukTerm` Agent DO class still exists but is unreferenced
+ * by every production code path that lives here.
  *
  * Surface (resolver-callable):
  *   - `addDefinition(env, input)` — create term row (if missing) + insert
@@ -395,7 +394,7 @@ export async function addDefinition(
 
 /**
  * Cast an up-vote on a definition. Delegates to the shared vote module
- * (task_10) — idempotency, `user_vote` mirror writes, and the atomic
+ * — idempotency, `user_vote` mirror writes, and the atomic
  * batch live there. After the vote module returns, this wrapper recomputes
  * the `term_summary` aggregates so the term page's score/last-edit
  * denormalizations stay convergent.

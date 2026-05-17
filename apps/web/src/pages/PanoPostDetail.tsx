@@ -1,5 +1,5 @@
 /**
- * Post-detail page (task_3, phoenix-relay-idiom).
+ * Post-detail page.
  *
  * Fully idiomatic Relay shape — `useLazyLoadQuery` at the top spreads
  * `PanoPostHeaderFragment` + `PanoPostDetailCommentsFragment` into the
@@ -17,7 +17,7 @@
  *    set, which Relay merges back via the normal store update.
  *  - `editComment`, `editPost`, `voteOnComment` — auto store update on the
  *    returned scalars (no updater).
- *  - `deletePost` — `deletedPostId @deleteRecord` (matches the task_2
+ *  - `deletePost` — `deletedPostId @deleteRecord` (matches the submitPost
  *    pattern; navigates back to /pano on success).
  */
 import * as React from "react";
@@ -139,7 +139,7 @@ const EditCommentMutation = graphql`
 `;
 
 /**
- * Delete a comment (T12 + task_3 phoenix-relay-idiom).
+ * Delete a comment.
  *
  * The mutation returns a two-shape payload:
  *  - `deletedCommentId @deleteRecord` — leaf path; Relay removes the
@@ -187,8 +187,8 @@ const DeletePostMutation = graphql`
 `;
 
 /**
- * Add comment mutation (task_3 — switched from refetch-on-mutate to
- * connection updater + optimisticResponse). The selection set spreads
+ * Add comment mutation — switched from refetch-on-mutate to
+ * connection updater + optimisticResponse. The selection set spreads
  * `CommentTreeNodeFragment` so the new row arrives in the store with
  * every field the tree node needs to render without a follow-up read.
  */
@@ -702,8 +702,8 @@ function Comments(props: CommentsProps) {
  * `PanoPostDetail_comments` connection — the row appears in the tree
  * without a refetch.
  *
- * `optimisticResponse` mirrors the temp-record pattern from `submitPost`
- * (task_2 retry) — a `temp-${Date.now()}` id distinguishes the optimistic
+ * `optimisticResponse` mirrors the temp-record pattern from `submitPost` —
+ * a `temp-${Date.now()}` id distinguishes the optimistic
  * record in devtools; the updater is idempotent on the optimistic →
  * server-confirm transition.
  */
@@ -719,7 +719,7 @@ function CommentComposer({
 	 * Relay DataID of the parent Post — used both to address the comments
 	 * connection from the updater AND as the mutation variable. The Post's
 	 * Relay DataID is its global id (`encodeNodeId("Post", localId)`); the
-	 * resolver unwraps via `extractLocalId` (task_1 lenient migration helper).
+	 * resolver unwraps via `extractLocalId` (lenient migration helper).
 	 */
 	postRecordId: string;
 	parentId: string | null;

@@ -3,7 +3,7 @@
  *
  * Pre-d1-direct, the GraphQL `voteOnComment` / `retractCommentVote` resolvers
  * needed to map a `commentId` back to its `postId` to route the RPC into the
- * correct per-post DO. After d1-direct/task_8 every comment write hits
+ * correct per-post DO. After the D1-direct refactor every comment write hits
  * `PHOENIX_DB` directly and the resolvers no longer need this lookup; the
  * helper is kept for future cross-table jumps (e.g. notification fan-out).
  */

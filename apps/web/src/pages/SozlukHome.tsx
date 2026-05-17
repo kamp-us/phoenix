@@ -1,5 +1,5 @@
 /**
- * Sozluk home page (task_5, phoenix-relay-idiom).
+ * Sozluk home page.
  *
  * Idiomatic Relay shape: a single `useLazyLoadQuery` spreads two
  * `@connection`-keyed fragments on `Query` — one per column (`recent` and
@@ -44,7 +44,7 @@ const HomeQuery = graphql`
  * the same field with different argument values, and `@connection` enforces
  * `<key>__<fieldName>` for its store key invariant. AC text said
  * `SozlukHome_terms_recent`, but the alias-based shape is the only valid
- * Relay form here — see progress/task_5.md.
+ * Relay form here.
  */
 const SozlukHomeRecentFragmentDef = graphql`
 	fragment SozlukHomeRecentFragment on Query

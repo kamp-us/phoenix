@@ -1,5 +1,5 @@
 /**
- * Pano D1-direct `editPost` / `deletePost` (task_7, d1-direct).
+ * Pano D1-direct `editPost` / `deletePost`.
  *
  * Exercises the module-functional path against `env.PHOENIX_DB`:
  *   1. Apply view migrations (including 0006).
@@ -22,13 +22,7 @@
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/db/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/db/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
-import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
-import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
-import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {
 	deletePost,
 	editPost,
@@ -44,15 +38,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [
-		viewMigration0000,
-		viewMigration0001,
-		viewMigration0002,
-		viewMigration0003,
-		viewMigration0004,
-		viewMigration0005,
-		viewMigration0006,
-	];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -96,7 +82,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("pano.editPost — task_7", () => {
+describe("pano.editPost", () => {
 	it("updates title + body inline on post_summary (body + body_excerpt + updated_at)", async () => {
 		const authorId = "edit-post-author";
 		const {postId} = await seedPost({authorId});
@@ -228,7 +214,7 @@ describe("pano.editPost — task_7", () => {
 	});
 });
 
-describe("pano.deletePost — task_7", () => {
+describe("pano.deletePost", () => {
 	it("fully removes the row from post_summary (matches legacy PostDeleted semantics)", async () => {
 		const authorId = "delete-post-author";
 		const {postId} = await seedPost({authorId});
@@ -346,7 +332,7 @@ describe("pano.deletePost — task_7", () => {
 });
 
 /**
- * Atomicity invariant (d1-direct-review-fixes task_2).
+ * Atomicity invariant.
  *
  * A successful `deletePost(...)` must collapse every mutating statement —
  * the conditional karma decrement, `DELETE FROM post_vote`, `DELETE FROM
@@ -358,7 +344,7 @@ describe("pano.deletePost — task_7", () => {
  *   - `priorScore === 0` → batch has 3 statements (karma omitted).
  *   - `priorScore > 0`  → batch has 4 statements, karma decrement first.
  */
-describe("pano.deletePost — atomic single-batch write (d1-direct-review-fixes task_2)", () => {
+describe("pano.deletePost — atomic single-batch write", () => {
 	/**
 	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
 	 * `.prepare(sql).bind(...).run()` chain without losing the real D1

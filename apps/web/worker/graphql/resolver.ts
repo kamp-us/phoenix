@@ -15,7 +15,7 @@ export interface EffectContext<R> {
  * The generator runs through the request's ManagedRuntime, which provides
  * services like CloudflareEnv and RequestContext.
  *
- * Failure handling (task_2, d1-direct): every tagged failure and every plain
+ * Failure handling: every tagged failure and every plain
  * `Error` raised inside the generator passes through {@link encodeMutationError},
  * which maps known domain error classes onto stable wire-format
  * `extensions.code` strings. Mutation resolvers therefore no longer need
