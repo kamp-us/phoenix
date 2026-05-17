@@ -1,5 +1,3 @@
-/// <reference path="../../worker-configuration.d.ts" />
-/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 /**
  * Vote module integration tests (task_10, d1-direct).
  *
@@ -31,6 +29,9 @@ import viewMigration0002 from "../../worker/db/drizzle/migrations/0002_wandering
 import viewMigration0003 from "../../worker/db/drizzle/migrations/0003_lazy_thanos.sql";
 import viewMigration0004 from "../../worker/db/drizzle/migrations/0004_brown_squadron_supreme.sql";
 import viewMigration0005 from "../../worker/db/drizzle/migrations/0005_d1_direct_sozluk.sql";
+import viewMigration0006 from "../../worker/db/drizzle/migrations/0006_d1_direct_pano.sql";
+import viewMigration0007 from "../../worker/db/drizzle/migrations/0007_d1_direct_pano_comments.sql";
+import {addComment, submitPost} from "../../worker/features/pano/module";
 import {addDefinition} from "../../worker/features/sozluk/module";
 import {vote, VoteTargetNotFoundError} from "../../worker/features/vote/module";
 
@@ -47,6 +48,8 @@ async function applyViewMigrations() {
 		viewMigration0003,
 		viewMigration0004,
 		viewMigration0005,
+		viewMigration0006,
+		viewMigration0007,
 	];
 	for (const src of sources) {
 		const statements = src
@@ -79,6 +82,27 @@ async function seedDefinition(slug: string, authorId: string) {
 		body: `seed for ${slug}`,
 	});
 	return result.definitionId;
+}
+
+async function seedPost(authorId: string) {
+	const result = await submitPost(env, {
+		title: `vote-mod post ${Math.random().toString(36).slice(2)}`,
+		tags: [{kind: "tartışma"}],
+		authorId,
+		authorName: "umut",
+	});
+	return result.postId;
+}
+
+async function seedPostAndComment(postAuthorId: string, commentAuthorId: string) {
+	const postId = await seedPost(postAuthorId);
+	const comment = await addComment(env, {
+		postId,
+		authorId: commentAuthorId,
+		authorName: "comment author",
+		body: "seed comment",
+	});
+	return {postId, commentId: comment.commentId};
 }
 
 beforeAll(async () => {
@@ -260,6 +284,400 @@ describe("vote module — task_10 (d1-direct)", () => {
 				userId: "voter-x",
 				targetKind: "definition",
 				targetId: "def_NEVER_EXISTS",
+				value: 1,
+			}),
+		).rejects.toBeInstanceOf(VoteTargetNotFoundError);
+	});
+});
+
+describe("vote module — targetKind: 'post' (task_11)", () => {
+	it("casts a post vote: score 0 → 1, post_summary + post_vote + user_vote written, karma bumped", async () => {
+		const authorId = "vm-post-author-cast";
+		const postId = await seedPost(authorId);
+
+		const result = await vote(env, {
+			userId: "vm-post-voter-cast",
+			targetKind: "post",
+			targetId: postId,
+			value: 1,
+		});
+		expect(result.score).toBe(1);
+		expect(result.changed).toBe(true);
+		expect(result.myVote).toBe(1);
+
+		// post_summary.score updated.
+		const summary = await env.PHOENIX_DB.prepare(
+			"SELECT score, hot_score FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first<{score: number; hot_score: number}>();
+		expect(summary!.score).toBe(1);
+		expect(summary!.hot_score).toBeGreaterThan(0);
+
+		// post_vote row exists.
+		const pv = await env.PHOENIX_DB.prepare(
+			"SELECT 1 as ok FROM post_vote WHERE post_id = ? AND voter_id = ?",
+		)
+			.bind(postId, "vm-post-voter-cast")
+			.first();
+		expect(pv).not.toBeNull();
+
+		// user_vote PK row present.
+		const uv = await env.PHOENIX_DB.prepare(
+			"SELECT 1 as ok FROM user_vote WHERE user_id = ? AND target_kind = 'post' AND target_id = ?",
+		)
+			.bind("vm-post-voter-cast", postId)
+			.first();
+		expect(uv).not.toBeNull();
+
+		// karma 0 → 1 for the post author.
+		const profile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first<{total_karma: number}>();
+		expect(profile!.total_karma).toBe(1);
+	});
+
+	it("re-casting a post vote is an idempotent no-op", async () => {
+		const authorId = "vm-post-author-recast";
+		const postId = await seedPost(authorId);
+
+		const first = await vote(env, {
+			userId: "vm-post-voter-recast",
+			targetKind: "post",
+			targetId: postId,
+			value: 1,
+		});
+		expect(first.changed).toBe(true);
+
+		const second = await vote(env, {
+			userId: "vm-post-voter-recast",
+			targetKind: "post",
+			targetId: postId,
+			value: 1,
+		});
+		expect(second.changed).toBe(false);
+		expect(second.score).toBe(1);
+		expect(second.myVote).toBe(1);
+
+		const count = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM post_vote WHERE post_id = ? AND voter_id = ?",
+		)
+			.bind(postId, "vm-post-voter-recast")
+			.first<{n: number}>();
+		expect(count!.n).toBe(1);
+
+		const profile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first<{total_karma: number}>();
+		expect(profile!.total_karma).toBe(1);
+	});
+
+	it("flips cast → retract on a post: row deleted, score 0, karma decremented", async () => {
+		const authorId = "vm-post-author-flip";
+		const postId = await seedPost(authorId);
+
+		await vote(env, {
+			userId: "vm-post-voter-flip",
+			targetKind: "post",
+			targetId: postId,
+			value: 1,
+		});
+
+		const retracted = await vote(env, {
+			userId: "vm-post-voter-flip",
+			targetKind: "post",
+			targetId: postId,
+			value: null,
+		});
+		expect(retracted.changed).toBe(true);
+		expect(retracted.score).toBe(0);
+		expect(retracted.myVote).toBe(null);
+
+		const pvCount = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM post_vote WHERE post_id = ? AND voter_id = ?",
+		)
+			.bind(postId, "vm-post-voter-flip")
+			.first<{n: number}>();
+		expect(pvCount!.n).toBe(0);
+
+		const uvCount = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM user_vote WHERE user_id = ? AND target_kind = 'post' AND target_id = ?",
+		)
+			.bind("vm-post-voter-flip", postId)
+			.first<{n: number}>();
+		expect(uvCount!.n).toBe(0);
+
+		const profile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first<{total_karma: number}>();
+		expect(profile!.total_karma).toBe(0);
+	});
+
+	it("retracting a post vote when none exists is a no-op", async () => {
+		const postId = await seedPost("vm-post-author-rnoop");
+
+		const result = await vote(env, {
+			userId: "vm-post-voter-rnoop",
+			targetKind: "post",
+			targetId: postId,
+			value: null,
+		});
+		expect(result.changed).toBe(false);
+		expect(result.score).toBe(0);
+		expect(result.myVote).toBe(null);
+	});
+
+	it("post cast → retract → cast round-trip ends at score 1, one row, karma 1", async () => {
+		const authorId = "vm-post-author-rt";
+		const postId = await seedPost(authorId);
+
+		await vote(env, {
+			userId: "vm-post-voter-rt",
+			targetKind: "post",
+			targetId: postId,
+			value: 1,
+		});
+		await vote(env, {
+			userId: "vm-post-voter-rt",
+			targetKind: "post",
+			targetId: postId,
+			value: null,
+		});
+		const final = await vote(env, {
+			userId: "vm-post-voter-rt",
+			targetKind: "post",
+			targetId: postId,
+			value: 1,
+		});
+		expect(final.score).toBe(1);
+		expect(final.myVote).toBe(1);
+
+		const count = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM post_vote WHERE post_id = ?",
+		)
+			.bind(postId)
+			.first<{n: number}>();
+		expect(count!.n).toBe(1);
+
+		const profile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first<{total_karma: number}>();
+		expect(profile!.total_karma).toBe(1);
+	});
+
+	it("voting on an unknown post rejects with VoteTargetNotFoundError", async () => {
+		await expect(
+			vote(env, {
+				userId: "vm-post-voter-x",
+				targetKind: "post",
+				targetId: "post_NEVER_EXISTS",
+				value: 1,
+			}),
+		).rejects.toBeInstanceOf(VoteTargetNotFoundError);
+	});
+});
+
+describe("vote module — targetKind: 'comment' (task_11)", () => {
+	it("casts a comment vote: score 0 → 1, comment_view + comment_vote + user_vote written, karma bumped on COMMENT author", async () => {
+		const postAuthorId = "vm-comm-pauthor-cast";
+		const commentAuthorId = "vm-comm-cauthor-cast";
+		const {commentId} = await seedPostAndComment(postAuthorId, commentAuthorId);
+
+		const result = await vote(env, {
+			userId: "vm-comm-voter-cast",
+			targetKind: "comment",
+			targetId: commentId,
+			value: 1,
+		});
+		expect(result.score).toBe(1);
+		expect(result.changed).toBe(true);
+		expect(result.myVote).toBe(1);
+
+		const view = await env.PHOENIX_DB.prepare("SELECT score FROM comment_view WHERE id = ?")
+			.bind(commentId)
+			.first<{score: number}>();
+		expect(view!.score).toBe(1);
+
+		const cv = await env.PHOENIX_DB.prepare(
+			"SELECT 1 as ok FROM comment_vote WHERE comment_id = ? AND voter_id = ?",
+		)
+			.bind(commentId, "vm-comm-voter-cast")
+			.first();
+		expect(cv).not.toBeNull();
+
+		const uv = await env.PHOENIX_DB.prepare(
+			"SELECT 1 as ok FROM user_vote WHERE user_id = ? AND target_kind = 'comment' AND target_id = ?",
+		)
+			.bind("vm-comm-voter-cast", commentId)
+			.first();
+		expect(uv).not.toBeNull();
+
+		// karma 0 → 1 on the COMMENT author (not the post author).
+		const commentAuthorProfile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(commentAuthorId)
+			.first<{total_karma: number}>();
+		expect(commentAuthorProfile!.total_karma).toBe(1);
+	});
+
+	it("re-casting a comment vote is an idempotent no-op", async () => {
+		const commentAuthorId = "vm-comm-cauthor-recast";
+		const {commentId} = await seedPostAndComment(
+			"vm-comm-pauthor-recast",
+			commentAuthorId,
+		);
+
+		const first = await vote(env, {
+			userId: "vm-comm-voter-recast",
+			targetKind: "comment",
+			targetId: commentId,
+			value: 1,
+		});
+		expect(first.changed).toBe(true);
+
+		const second = await vote(env, {
+			userId: "vm-comm-voter-recast",
+			targetKind: "comment",
+			targetId: commentId,
+			value: 1,
+		});
+		expect(second.changed).toBe(false);
+		expect(second.score).toBe(1);
+		expect(second.myVote).toBe(1);
+
+		const count = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM comment_vote WHERE comment_id = ? AND voter_id = ?",
+		)
+			.bind(commentId, "vm-comm-voter-recast")
+			.first<{n: number}>();
+		expect(count!.n).toBe(1);
+
+		const profile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(commentAuthorId)
+			.first<{total_karma: number}>();
+		expect(profile!.total_karma).toBe(1);
+	});
+
+	it("flips cast → retract on a comment: row deleted, score 0, karma decremented", async () => {
+		const commentAuthorId = "vm-comm-cauthor-flip";
+		const {commentId} = await seedPostAndComment(
+			"vm-comm-pauthor-flip",
+			commentAuthorId,
+		);
+
+		await vote(env, {
+			userId: "vm-comm-voter-flip",
+			targetKind: "comment",
+			targetId: commentId,
+			value: 1,
+		});
+
+		const retracted = await vote(env, {
+			userId: "vm-comm-voter-flip",
+			targetKind: "comment",
+			targetId: commentId,
+			value: null,
+		});
+		expect(retracted.changed).toBe(true);
+		expect(retracted.score).toBe(0);
+		expect(retracted.myVote).toBe(null);
+
+		const cvCount = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM comment_vote WHERE comment_id = ? AND voter_id = ?",
+		)
+			.bind(commentId, "vm-comm-voter-flip")
+			.first<{n: number}>();
+		expect(cvCount!.n).toBe(0);
+
+		const uvCount = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM user_vote WHERE user_id = ? AND target_kind = 'comment' AND target_id = ?",
+		)
+			.bind("vm-comm-voter-flip", commentId)
+			.first<{n: number}>();
+		expect(uvCount!.n).toBe(0);
+
+		const profile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(commentAuthorId)
+			.first<{total_karma: number}>();
+		expect(profile!.total_karma).toBe(0);
+	});
+
+	it("retracting a comment vote when none exists is a no-op", async () => {
+		const {commentId} = await seedPostAndComment(
+			"vm-comm-pauthor-rnoop",
+			"vm-comm-cauthor-rnoop",
+		);
+
+		const result = await vote(env, {
+			userId: "vm-comm-voter-rnoop",
+			targetKind: "comment",
+			targetId: commentId,
+			value: null,
+		});
+		expect(result.changed).toBe(false);
+		expect(result.score).toBe(0);
+		expect(result.myVote).toBe(null);
+	});
+
+	it("comment cast → retract → cast round-trip ends at score 1, one row, karma 1", async () => {
+		const commentAuthorId = "vm-comm-cauthor-rt";
+		const {commentId} = await seedPostAndComment("vm-comm-pauthor-rt", commentAuthorId);
+
+		await vote(env, {
+			userId: "vm-comm-voter-rt",
+			targetKind: "comment",
+			targetId: commentId,
+			value: 1,
+		});
+		await vote(env, {
+			userId: "vm-comm-voter-rt",
+			targetKind: "comment",
+			targetId: commentId,
+			value: null,
+		});
+		const final = await vote(env, {
+			userId: "vm-comm-voter-rt",
+			targetKind: "comment",
+			targetId: commentId,
+			value: 1,
+		});
+		expect(final.score).toBe(1);
+		expect(final.myVote).toBe(1);
+
+		const count = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM comment_vote WHERE comment_id = ?",
+		)
+			.bind(commentId)
+			.first<{n: number}>();
+		expect(count!.n).toBe(1);
+
+		const profile = await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(commentAuthorId)
+			.first<{total_karma: number}>();
+		expect(profile!.total_karma).toBe(1);
+	});
+
+	it("voting on an unknown comment rejects with VoteTargetNotFoundError", async () => {
+		await expect(
+			vote(env, {
+				userId: "vm-comm-voter-x",
+				targetKind: "comment",
+				targetId: "comm_NEVER_EXISTS",
 				value: 1,
 			}),
 		).rejects.toBeInstanceOf(VoteTargetNotFoundError);

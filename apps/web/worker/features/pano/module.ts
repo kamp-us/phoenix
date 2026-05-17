@@ -33,10 +33,14 @@
  *     mutate `comment_vote`, recompute `comment_view.score`, mirror onto
  *     `user_vote`, bump karma on the comment author's `user_profile`.
  *
- * Vote logic for posts AND comments is inlined here at this stage;
- * consolidation into a shared vote module happens in task_11. The
- * comment vote helpers mirror the post vote helpers above — task_11's
- * lift will fold both into one canonical surface.
+ * Vote logic for posts AND comments now delegates to the shared
+ * `vote/module.ts` (task_11). The pano-side wrappers (`applyVote` for
+ * posts, `applyCommentVote` for comments) load the target row for the
+ * resolver-facing shape, dispatch to `vote()` with the right
+ * `targetKind`, then re-read the score cache for the response.
+ * `VoteTargetNotFoundError` is translated to `PostNotFoundError` /
+ * `CommentNotFoundError` so the existing resolver error codec keeps
+ * producing the same `extensions.code` values.
  *
  * Errors thrown by this module flow through the GraphQL `resolver()`
  * wrapper (see `worker/graphql/resolver.ts`) which routes them through
@@ -46,6 +50,7 @@ import {id} from "@usirin/forge";
 import {and, asc, eq, isNull, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
 import * as schema from "../../db/drizzle/schema";
+import {vote, VoteTargetNotFoundError} from "../vote/module";
 
 /* -------------------------------------------------------------------------- */
 /* Domain types + errors                                                       */
@@ -463,6 +468,9 @@ async function applyVote(
 	input: VoteOnPostInput,
 	isVote: boolean,
 ): Promise<VoteOnPostResult> {
+	// Load the post meta up-front so we can return the canonical resolver
+	// shape (title / url / host / body / tags / commentCount / ...) regardless
+	// of changed / no-op path.
 	const db = drizzle(env.PHOENIX_DB, {schema});
 	const meta = await db.query.postSummary.findFirst({
 		where: and(eq(schema.postSummary.id, input.postId), isNull(schema.postSummary.deletedAt)),
@@ -471,99 +479,33 @@ async function applyVote(
 		throw new PostNotFoundError(input.postId);
 	}
 
+	let voteResult;
+	try {
+		voteResult = await vote(env, {
+			userId: input.voterId,
+			targetKind: "post",
+			targetId: input.postId,
+			value: isVote ? 1 : null,
+		});
+	} catch (err) {
+		// Race: the post was soft-deleted between our read and the vote
+		// module's own existence check. Surface the pano-typed error so the
+		// resolver codec keeps producing `POST_NOT_FOUND`.
+		if (err instanceof VoteTargetNotFoundError) {
+			throw new PostNotFoundError(input.postId);
+		}
+		throw err;
+	}
+
+	// The vote module's post adapter wrote `post_summary.score + hot_score`
+	// inside its batch. Re-read so we surface the converged values without
+	// re-deriving the formula here.
 	const now = new Date();
-	const nowSec = Math.floor(now.getTime() / 1000);
-	const createdAtMs = meta.createdAt ? meta.createdAt.getTime() : now.getTime();
-
-	let changed = false;
-	if (isVote) {
-		const result = await env.PHOENIX_DB.prepare(
-			`INSERT OR IGNORE INTO post_vote (post_id, voter_id, created_at)
-			 VALUES (?, ?, ?)`,
-		)
-			.bind(input.postId, input.voterId, nowSec)
-			.run();
-		changed = (result.meta.changes ?? 0) > 0;
-	} else {
-		const result = await env.PHOENIX_DB.prepare(
-			`DELETE FROM post_vote WHERE post_id = ? AND voter_id = ?`,
-		)
-			.bind(input.postId, input.voterId)
-			.run();
-		changed = (result.meta.changes ?? 0) > 0;
-	}
-
-	if (!changed) {
-		const myVote = await readVotePresence(env, input.voterId, input.postId);
-		return {
-			postId: input.postId,
-			title: meta.title,
-			url: meta.url,
-			host: meta.host,
-			body: meta.body && meta.body.length > 0 ? meta.body : null,
-			authorId: meta.authorId,
-			authorName: meta.authorName,
-			score: meta.score,
-			hotScore: meta.hotScore,
-			commentCount: meta.commentCount,
-			tags: parseTags(meta.tags),
-			createdAt: meta.createdAt ?? now,
-			myVote,
-			changed: false,
-		};
-	}
-
-	// Recompute denormalized score from the truth table.
-	const scoreRow = await env.PHOENIX_DB.prepare(
-		`SELECT COUNT(*) as n FROM post_vote WHERE post_id = ?`,
-	)
-		.bind(input.postId)
-		.first<{n: number}>();
-	const newScore = scoreRow?.n ?? 0;
-	const newHotScore = computeHotScore(newScore, createdAtMs, now.getTime());
-
-	await db
-		.update(schema.postSummary)
-		.set({score: newScore, hotScore: newHotScore, updatedAt: now, lastActivityAt: now})
-		.where(eq(schema.postSummary.id, input.postId));
-
-	// Mirror onto cross-product `user_vote` MV + karma counter.
-	if (isVote) {
-		await env.PHOENIX_DB.prepare(
-			`INSERT OR IGNORE INTO user_vote (user_id, target_kind, target_id, created_at)
-			 VALUES (?, 'post', ?, ?)`,
-		)
-			.bind(input.voterId, input.postId, nowSec)
-			.run();
-
-		await env.PHOENIX_DB.prepare(
-			`INSERT INTO user_profile (
-				user_id, username, display_name, image,
-				total_karma, definition_count, post_count, comment_count,
-				updated_at, last_event_id
-			) VALUES (?, NULL, NULL, NULL, 1, 0, 0, 0, ?, '')
-			ON CONFLICT(user_id) DO UPDATE SET
-				total_karma = user_profile.total_karma + 1,
-				updated_at  = excluded.updated_at`,
-		)
-			.bind(meta.authorId, nowSec)
-			.run();
-	} else {
-		await env.PHOENIX_DB.prepare(
-			`DELETE FROM user_vote WHERE user_id = ? AND target_kind = 'post' AND target_id = ?`,
-		)
-			.bind(input.voterId, input.postId)
-			.run();
-
-		await env.PHOENIX_DB.prepare(
-			`UPDATE user_profile SET
-				total_karma = MAX(0, total_karma - 1),
-				updated_at  = ?
-			WHERE user_id = ?`,
-		)
-			.bind(nowSec, meta.authorId)
-			.run();
-	}
+	const refreshed = voteResult.changed
+		? await db.query.postSummary.findFirst({where: eq(schema.postSummary.id, input.postId)})
+		: meta;
+	const score = refreshed?.score ?? voteResult.score;
+	const hotScore = refreshed?.hotScore ?? meta.hotScore;
 
 	return {
 		postId: input.postId,
@@ -573,13 +515,13 @@ async function applyVote(
 		body: meta.body && meta.body.length > 0 ? meta.body : null,
 		authorId: meta.authorId,
 		authorName: meta.authorName,
-		score: newScore,
-		hotScore: newHotScore,
+		score,
+		hotScore,
 		commentCount: meta.commentCount,
 		tags: parseTags(meta.tags),
 		createdAt: meta.createdAt ?? now,
-		myVote: isVote ? 1 : null,
-		changed: true,
+		myVote: voteResult.myVote,
+		changed: voteResult.changed,
 	};
 }
 
@@ -751,21 +693,6 @@ export async function deletePost(
 /* -------------------------------------------------------------------------- */
 /* Internals                                                                   */
 /* -------------------------------------------------------------------------- */
-
-async function readVotePresence(
-	env: Env,
-	voterId: string,
-	postId: string,
-): Promise<number | null> {
-	const row = await env.PHOENIX_DB.prepare(
-		`SELECT post_id FROM post_vote
-		 WHERE post_id = ? AND voter_id = ?
-		 LIMIT 1`,
-	)
-		.bind(postId, voterId)
-		.first<{post_id: string}>();
-	return row ? 1 : null;
-}
 
 /**
  * Refresh `pano_stats` totals. Same shape as the legacy projection
@@ -1242,6 +1169,9 @@ async function applyCommentVote(
 	input: VoteOnCommentInput,
 	isVote: boolean,
 ): Promise<VoteOnCommentResult> {
+	// Load the comment row up-front for the canonical resolver shape
+	// (postId / parentId / authorId / authorName / body / createdAt). The
+	// vote module's comment adapter handles all writes.
 	const db = drizzle(env.PHOENIX_DB, {schema});
 	const row = await db.query.commentView.findFirst({
 		where: and(eq(schema.commentView.id, input.commentId), isNull(schema.commentView.deletedAt)),
@@ -1250,95 +1180,25 @@ async function applyCommentVote(
 		throw new CommentNotFoundError(input.commentId);
 	}
 
+	let voteResult;
+	try {
+		voteResult = await vote(env, {
+			userId: input.voterId,
+			targetKind: "comment",
+			targetId: input.commentId,
+			value: isVote ? 1 : null,
+		});
+	} catch (err) {
+		// Race: the comment was soft-deleted between our read and the vote
+		// module's own existence check. Translate so the resolver codec keeps
+		// producing `COMMENT_NOT_FOUND`.
+		if (err instanceof VoteTargetNotFoundError) {
+			throw new CommentNotFoundError(input.commentId);
+		}
+		throw err;
+	}
+
 	const now = new Date();
-	const nowSec = Math.floor(now.getTime() / 1000);
-
-	let changed = false;
-	if (isVote) {
-		const result = await env.PHOENIX_DB.prepare(
-			`INSERT OR IGNORE INTO comment_vote (comment_id, voter_id, created_at)
-			 VALUES (?, ?, ?)`,
-		)
-			.bind(input.commentId, input.voterId, nowSec)
-			.run();
-		changed = (result.meta.changes ?? 0) > 0;
-	} else {
-		const result = await env.PHOENIX_DB.prepare(
-			`DELETE FROM comment_vote WHERE comment_id = ? AND voter_id = ?`,
-		)
-			.bind(input.commentId, input.voterId)
-			.run();
-		changed = (result.meta.changes ?? 0) > 0;
-	}
-
-	if (!changed) {
-		const myVote = await readCommentVotePresence(env, input.voterId, input.commentId);
-		return {
-			commentId: input.commentId,
-			postId: row.postId,
-			parentId: row.parentId,
-			authorId: row.authorId,
-			authorName: row.authorName,
-			body: row.body,
-			score: row.score,
-			createdAt: row.createdAt ?? now,
-			myVote,
-			changed: false,
-		};
-	}
-
-	// Recompute denormalized score from the truth table.
-	const scoreRow = await env.PHOENIX_DB.prepare(
-		`SELECT COUNT(*) as n FROM comment_vote WHERE comment_id = ?`,
-	)
-		.bind(input.commentId)
-		.first<{n: number}>();
-	const newScore = scoreRow?.n ?? 0;
-
-	await db
-		.update(schema.commentView)
-		.set({score: newScore, updatedAt: now})
-		.where(eq(schema.commentView.id, input.commentId));
-
-	// Mirror onto cross-product `user_vote` MV + karma counter on the
-	// comment author (NOT the post author — votes target the commenter).
-	if (isVote) {
-		await env.PHOENIX_DB.prepare(
-			`INSERT OR IGNORE INTO user_vote (user_id, target_kind, target_id, created_at)
-			 VALUES (?, 'comment', ?, ?)`,
-		)
-			.bind(input.voterId, input.commentId, nowSec)
-			.run();
-
-		await env.PHOENIX_DB.prepare(
-			`INSERT INTO user_profile (
-				user_id, username, display_name, image,
-				total_karma, definition_count, post_count, comment_count,
-				updated_at, last_event_id
-			) VALUES (?, NULL, NULL, NULL, 1, 0, 0, 0, ?, '')
-			ON CONFLICT(user_id) DO UPDATE SET
-				total_karma = user_profile.total_karma + 1,
-				updated_at  = excluded.updated_at`,
-		)
-			.bind(row.authorId, nowSec)
-			.run();
-	} else {
-		await env.PHOENIX_DB.prepare(
-			`DELETE FROM user_vote WHERE user_id = ? AND target_kind = 'comment' AND target_id = ?`,
-		)
-			.bind(input.voterId, input.commentId)
-			.run();
-
-		await env.PHOENIX_DB.prepare(
-			`UPDATE user_profile SET
-				total_karma = MAX(0, total_karma - 1),
-				updated_at  = ?
-			WHERE user_id = ?`,
-		)
-			.bind(nowSec, row.authorId)
-			.run();
-	}
-
 	return {
 		commentId: input.commentId,
 		postId: row.postId,
@@ -1346,26 +1206,11 @@ async function applyCommentVote(
 		authorId: row.authorId,
 		authorName: row.authorName,
 		body: row.body,
-		score: newScore,
+		score: voteResult.score,
 		createdAt: row.createdAt ?? now,
-		myVote: isVote ? 1 : null,
-		changed: true,
+		myVote: voteResult.myVote,
+		changed: voteResult.changed,
 	};
-}
-
-async function readCommentVotePresence(
-	env: Env,
-	voterId: string,
-	commentId: string,
-): Promise<number | null> {
-	const row = await env.PHOENIX_DB.prepare(
-		`SELECT comment_id FROM comment_vote
-		 WHERE comment_id = ? AND voter_id = ?
-		 LIMIT 1`,
-	)
-		.bind(commentId, voterId)
-		.first<{comment_id: string}>();
-	return row ? 1 : null;
 }
 
 /**

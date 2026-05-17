@@ -238,16 +238,16 @@ function adapterFor(kind: VoteTargetKind): TargetAdapter {
 }
 
 /**
- * HN-style hot-score. Mirrored from `worker/features/pano/module.ts` so the
- * post adapter doesn't have to cross-import. Plain `Math.log` over a small
- * positive epoch delta — convergent under retries.
+ * HN-style hot-score: `score / (hours_old + 2)^1.8` × 1000, floored to int.
+ * Mirrored verbatim from `worker/features/pano/module.ts` so the post adapter
+ * doesn't have to cross-import. D1 indexes integers cheaper than floats; the
+ * relative ordering across rows is what matters. Convergent under retries
+ * because every term is a pure function of `(score, createdAtMs, nowMs)`.
  */
 function computeHotScore(score: number, createdAtMs: number, nowMs: number): number {
-	const ageHours = Math.max(0, (nowMs - createdAtMs) / (1000 * 60 * 60));
-	const order = Math.log10(Math.max(Math.abs(score), 1));
-	const sign = score > 0 ? 1 : score < 0 ? -1 : 0;
-	const seconds = (createdAtMs - 1_134_028_003_000) / 1000 + ageHours * 0; // anchor mirrors pano
-	return Math.round((sign * order + seconds / 45_000) * 1_000_000);
+	const hoursOld = Math.max(0, (nowMs - createdAtMs) / 3_600_000);
+	const denom = (hoursOld + 2) ** 1.8;
+	return Math.floor((score * 1000) / denom);
 }
 
 /* -------------------------------------------------------------------------- */
