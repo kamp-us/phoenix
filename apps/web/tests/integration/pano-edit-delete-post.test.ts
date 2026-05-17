@@ -135,9 +135,7 @@ describe("pano.editPost — task_7", () => {
 
 		await editPost(env, {postId, actorId: authorId, title: "title-only edit"});
 
-		const row = (await env.PHOENIX_DB.prepare(
-			"SELECT title, body FROM post_summary WHERE id = ?",
-		)
+		const row = (await env.PHOENIX_DB.prepare("SELECT title, body FROM post_summary WHERE id = ?")
 			.bind(postId)
 			.first()) as {title: string; body: string};
 		expect(row.title).toBe("title-only edit");
@@ -150,9 +148,7 @@ describe("pano.editPost — task_7", () => {
 
 		await editPost(env, {postId, actorId: authorId, body: "body-only edit"});
 
-		const row = (await env.PHOENIX_DB.prepare(
-			"SELECT title, body FROM post_summary WHERE id = ?",
-		)
+		const row = (await env.PHOENIX_DB.prepare("SELECT title, body FROM post_summary WHERE id = ?")
 			.bind(postId)
 			.first()) as {title: string; body: string};
 		expect(row.title).toBe("original title");
@@ -346,5 +342,157 @@ describe("pano.deletePost — task_7", () => {
 			.bind(authorId)
 			.first()) as {total_karma: number} | null;
 		expect(karmaAfter!.total_karma).toBe(0);
+	});
+});
+
+/**
+ * Atomicity invariant (d1-direct-review-fixes task_2).
+ *
+ * A successful `deletePost(...)` must collapse every mutating statement —
+ * the conditional karma decrement, `DELETE FROM post_vote`, `DELETE FROM
+ * user_vote`, and the `DELETE FROM post_summary` — into one
+ * `env.PHOENIX_DB.batch([...])` call. The downstream `recomputePanoStats`
+ * call stays out of the batch (recomputable cache; not atomicity-critical).
+ *
+ * Branches:
+ *   - `priorScore === 0` → batch has 3 statements (karma omitted).
+ *   - `priorScore > 0`  → batch has 4 statements, karma decrement first.
+ */
+describe("pano.deletePost — atomic single-batch write (d1-direct-review-fixes task_2)", () => {
+	/**
+	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
+	 * `.prepare(sql).bind(...).run()` chain without losing the real D1
+	 * binding's behaviour. `.prepare(sql)` still returns a real
+	 * `D1PreparedStatement` — we only intercept `.run()` and `.bind()` (to
+	 * keep the wrapper covering the bound copy); everything else
+	 * (`.first`, `.all`, `.raw`) passes through unchanged.
+	 *
+	 * Identical shape to the vote-module spy (vote-module.test.ts) so the
+	 * `.bind().run()` chain is covered if `deletePost` ever moves from
+	 * drizzle-builder to raw prepared statements.
+	 */
+	function spyEnv(real: Env) {
+		let batchCalls = 0;
+		const batchStatementCounts: number[] = [];
+		let runCalls = 0;
+		const realDb = real.PHOENIX_DB;
+		const wrappedStatement = (stmt: D1PreparedStatement): D1PreparedStatement => {
+			return new Proxy(stmt, {
+				get(target, prop, receiver) {
+					const orig = Reflect.get(target, prop, receiver);
+					if (prop === "run" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							runCalls += 1;
+							return (orig as (...a: unknown[]) => unknown).apply(target, args);
+						};
+					}
+					if (prop === "bind" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							const bound = (orig as (...a: unknown[]) => D1PreparedStatement).apply(target, args);
+							return wrappedStatement(bound);
+						};
+					}
+					return typeof orig === "function" ? orig.bind(target) : orig;
+				},
+			});
+		};
+		const wrappedDb = new Proxy(realDb, {
+			get(target, prop, receiver) {
+				const orig = Reflect.get(target, prop, receiver);
+				if (prop === "batch" && typeof orig === "function") {
+					return (stmts: D1PreparedStatement[]) => {
+						batchCalls += 1;
+						batchStatementCounts.push(stmts.length);
+						return (orig as (s: D1PreparedStatement[]) => unknown).call(target, stmts);
+					};
+				}
+				if (prop === "prepare" && typeof orig === "function") {
+					return (sql: string) => {
+						const stmt = (orig as (s: string) => D1PreparedStatement).call(target, sql);
+						return wrappedStatement(stmt);
+					};
+				}
+				return typeof orig === "function" ? orig.bind(target) : orig;
+			},
+		});
+		const wrappedEnv = new Proxy(real, {
+			get(target, prop, receiver) {
+				if (prop === "PHOENIX_DB") return wrappedDb;
+				return Reflect.get(target, prop, receiver);
+			},
+		}) as Env;
+		return {
+			env: wrappedEnv,
+			getCounts: () => ({
+				batchCalls,
+				batchStatementCounts: [...batchStatementCounts],
+				runCalls,
+			}),
+		};
+	}
+
+	it("priorScore === 0: one batch with 3 statements (post_vote + user_vote + post_summary), no karma", async () => {
+		const authorId = "atomic-del-zero-score";
+		const {postId} = await seedPost({authorId});
+
+		// Sanity: no votes were cast, so post_summary.score is still 0.
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(0);
+
+		const spy = spyEnv(env);
+		const result = await deletePost(spy.env, {postId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+
+		const counts = spy.getCounts();
+		// Exactly one batch (the delete-time mutations) — pano_stats refresh
+		// rides the same env afterward and is intentionally NOT atomic with
+		// the delete (recomputable cache).
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(3);
+	});
+
+	it("priorScore > 0: one batch with 4 statements (karma first, then post_vote + user_vote + post_summary)", async () => {
+		const authorId = "atomic-del-nonzero-author";
+		const voterId = "atomic-del-nonzero-voter";
+		const {postId} = await seedPost({authorId});
+
+		await voteOnPost(env, {postId, voterId});
+
+		// Sanity: post_summary.score is now 1.
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(1);
+
+		const spy = spyEnv(env);
+		const result = await deletePost(spy.env, {postId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("recomputePanoStats still runs after the batch resolves (post + comment counts re-summed)", async () => {
+		const authorId = "atomic-del-stats";
+		const {postId} = await seedPost({authorId});
+
+		const beforeStats = (await env.PHOENIX_DB.prepare(
+			"SELECT total_posts FROM pano_stats WHERE id = 1",
+		).first()) as {total_posts: number} | null;
+		const beforeCount = beforeStats?.total_posts ?? 0;
+		expect(beforeCount).toBeGreaterThanOrEqual(1);
+
+		// Use the spy so we also confirm only one batch was issued.
+		const spy = spyEnv(env);
+		await deletePost(spy.env, {postId, actorId: authorId});
+		expect(spy.getCounts().batchCalls).toBe(1);
+
+		const afterStats = (await env.PHOENIX_DB.prepare(
+			"SELECT total_posts FROM pano_stats WHERE id = 1",
+		).first()) as {total_posts: number} | null;
+		expect(afterStats!.total_posts).toBe(beforeCount - 1);
 	});
 });

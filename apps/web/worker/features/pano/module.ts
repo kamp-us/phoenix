@@ -658,32 +658,41 @@ export async function deletePost(
 	const nowSec = Math.floor(now.getTime() / 1000);
 	const priorScore = meta.score;
 
-	// Decrement karma for the author by the prior score (votes that no
-	// longer exist after the delete). Mirrors the legacy `PostDeleted`
-	// projection step which removed `user_vote` rows + decremented karma.
+	// One batch carries every delete-time mutation: optional karma
+	// decrement leads (only when there were votes to retract), then the
+	// vote-table wipe (`post_vote`), then the cross-product mirror wipe
+	// (`user_vote`), then the `post_summary` row removal itself. Matches
+	// the atomic-mutation contract enforced by the vote module
+	// (`vote/module.ts`) so a worker crash mid-delete can't leave karma
+	// debited against a surviving post or orphan vote rows.
+	//
+	// `recomputePanoStats` stays outside the batch — it's a recomputable
+	// cache refresh derived from current state, not part of the atomic
+	// mutation.
+	const stmts: D1PreparedStatement[] = [];
 	if (priorScore > 0) {
-		await env.PHOENIX_DB.prepare(
-			`UPDATE user_profile SET
-				total_karma = MAX(0, total_karma - ?),
-				updated_at  = ?
-			WHERE user_id = ?`,
-		)
-			.bind(priorScore, nowSec, meta.authorId)
-			.run();
+		stmts.push(
+			env.PHOENIX_DB.prepare(
+				`UPDATE user_profile SET
+					total_karma = MAX(0, total_karma - ?),
+					updated_at  = ?
+				WHERE user_id = ?`,
+			).bind(priorScore, nowSec, meta.authorId),
+		);
 	}
+	stmts.push(
+		env.PHOENIX_DB.prepare(`DELETE FROM post_vote WHERE post_id = ?`).bind(input.postId),
+	);
+	stmts.push(
+		env.PHOENIX_DB.prepare(
+			`DELETE FROM user_vote WHERE target_kind = 'post' AND target_id = ?`,
+		).bind(input.postId),
+	);
+	stmts.push(
+		env.PHOENIX_DB.prepare(`DELETE FROM post_summary WHERE id = ?`).bind(input.postId),
+	);
 
-	// Drop vote rows for this post (truth table + cross-product mirror).
-	await env.PHOENIX_DB.prepare(`DELETE FROM post_vote WHERE post_id = ?`)
-		.bind(input.postId)
-		.run();
-	await env.PHOENIX_DB.prepare(
-		`DELETE FROM user_vote WHERE target_kind = 'post' AND target_id = ?`,
-	)
-		.bind(input.postId)
-		.run();
-
-	// Fully remove the post_summary row.
-	await db.delete(schema.postSummary).where(eq(schema.postSummary.id, input.postId));
+	await env.PHOENIX_DB.batch(stmts);
 
 	await recomputePanoStats(env, now);
 
