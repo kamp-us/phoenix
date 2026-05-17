@@ -40,6 +40,7 @@ import {id} from "@usirin/forge";
 import {and, asc, desc, eq, isNull, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
 import * as schema from "../../db/drizzle/schema";
+import {vote, VoteTargetNotFoundError} from "../vote/module";
 
 /* -------------------------------------------------------------------------- */
 /* Domain types + errors                                                       */
@@ -393,10 +394,11 @@ export async function addDefinition(
 }
 
 /**
- * Cast an up-vote on a definition. Idempotent: a re-cast from the same voter
- * is a no-op (composite PK + ON CONFLICT DO NOTHING). When the cast changes
- * state, recompute `definition_view.score`, mirror onto `user_vote`, bump
- * karma on the author's `user_profile`, and re-sum `term_summary` totals.
+ * Cast an up-vote on a definition. Delegates to the shared vote module
+ * (task_10) — idempotency, `user_vote` mirror writes, and the atomic
+ * batch live there. After the vote module returns, this wrapper recomputes
+ * the `term_summary` aggregates so the term page's score/last-edit
+ * denormalizations stay convergent.
  */
 export async function voteDefinition(
 	env: Env,
@@ -406,8 +408,8 @@ export async function voteDefinition(
 }
 
 /**
- * Retract a previously-cast vote. Idempotent: retracting when no row exists
- * is a no-op (DELETE returns changes=0).
+ * Retract a previously-cast vote. Delegates to the shared vote module.
+ * Idempotent: retracting when no row exists is a no-op.
  */
 export async function retractDefinitionVote(
 	env: Env,
@@ -421,8 +423,9 @@ async function applyVote(
 	input: VoteDefinitionInput,
 	isVote: boolean,
 ): Promise<VoteDefinitionResult> {
+	// Load definition meta up-front so we can return the canonical resolver
+	// shape (body / author / timestamps) regardless of changed/no-op path.
 	const db = drizzle(env.PHOENIX_DB, {schema});
-
 	const definition = await db.query.definitionView.findFirst({
 		where: and(
 			eq(schema.definitionView.id, input.definitionId),
@@ -433,107 +436,42 @@ async function applyVote(
 		throw new DefinitionNotFoundError(input.definitionId);
 	}
 
+	let voteResult;
+	try {
+		voteResult = await vote(env, {
+			userId: input.voterId,
+			targetKind: "definition",
+			targetId: input.definitionId,
+			value: isVote ? 1 : null,
+		});
+	} catch (err) {
+		// Race: the definition was soft-deleted between our read and the
+		// vote module's own existence check. Surface the sozluk-typed error
+		// so the resolver codec keeps producing `DEFINITION_NOT_FOUND`.
+		if (err instanceof VoteTargetNotFoundError) {
+			throw new DefinitionNotFoundError(input.definitionId);
+		}
+		throw err;
+	}
+
 	const now = new Date();
-	const nowSec = Math.floor(now.getTime() / 1000);
-
-	let changed = false;
-	if (isVote) {
-		const result = await env.PHOENIX_DB.prepare(
-			`INSERT OR IGNORE INTO definition_vote (definition_id, voter_id, created_at)
-			 VALUES (?, ?, ?)`,
-		)
-			.bind(input.definitionId, input.voterId, nowSec)
-			.run();
-		changed = (result.meta.changes ?? 0) > 0;
-	} else {
-		const result = await env.PHOENIX_DB.prepare(
-			`DELETE FROM definition_vote WHERE definition_id = ? AND voter_id = ?`,
-		)
-			.bind(input.definitionId, input.voterId)
-			.run();
-		changed = (result.meta.changes ?? 0) > 0;
+	if (voteResult.changed) {
+		// Refresh term_summary aggregates against the new score slice. The
+		// vote module already wrote definition_view.score inside its batch;
+		// recomputeTermSummary re-reads that and the rest of the slice.
+		await recomputeTermSummary(env, definition.termSlug, definition.termTitle, now);
 	}
-
-	if (!changed) {
-		// No state change: return current score + post-write myVote shape.
-		const myVote = await readVotePresence(env, input.voterId, input.definitionId);
-		return {
-			definitionId: input.definitionId,
-			score: definition.score,
-			body: definition.body,
-			authorId: definition.authorId,
-			authorName: definition.authorName,
-			createdAt: definition.createdAt ?? now,
-			updatedAt: definition.updatedAt ?? now,
-			myVote,
-			changed: false,
-		};
-	}
-
-	// Recompute denormalized score from the truth table.
-	const scoreRow = await env.PHOENIX_DB.prepare(
-		`SELECT COUNT(*) as n FROM definition_vote WHERE definition_id = ?`,
-	)
-		.bind(input.definitionId)
-		.first<{n: number}>();
-	const newScore = scoreRow?.n ?? 0;
-
-	await db
-		.update(schema.definitionView)
-		.set({score: newScore, updatedAt: now})
-		.where(eq(schema.definitionView.id, input.definitionId));
-
-	// Mirror onto cross-product `user_vote` MV + karma counter.
-	if (isVote) {
-		await env.PHOENIX_DB.prepare(
-			`INSERT OR IGNORE INTO user_vote (user_id, target_kind, target_id, created_at)
-			 VALUES (?, 'definition', ?, ?)`,
-		)
-			.bind(input.voterId, input.definitionId, nowSec)
-			.run();
-
-		await env.PHOENIX_DB.prepare(
-			`INSERT INTO user_profile (
-				user_id, username, display_name, image,
-				total_karma, definition_count, post_count, comment_count,
-				updated_at, last_event_id
-			) VALUES (?, NULL, NULL, NULL, 1, 0, 0, 0, ?, '')
-			ON CONFLICT(user_id) DO UPDATE SET
-				total_karma = user_profile.total_karma + 1,
-				updated_at  = excluded.updated_at`,
-		)
-			.bind(definition.authorId, nowSec)
-			.run();
-	} else {
-		await env.PHOENIX_DB.prepare(
-			`DELETE FROM user_vote WHERE user_id = ? AND target_kind = 'definition' AND target_id = ?`,
-		)
-			.bind(input.voterId, input.definitionId)
-			.run();
-
-		await env.PHOENIX_DB.prepare(
-			`UPDATE user_profile SET
-				total_karma = MAX(0, total_karma - 1),
-				updated_at  = ?
-			WHERE user_id = ?`,
-		)
-			.bind(nowSec, definition.authorId)
-			.run();
-	}
-
-	// Recompute `term_summary` totals + last_activity_at.
-	await recomputeTermSummary(env, definition.termSlug, definition.termTitle, now);
 
 	return {
 		definitionId: input.definitionId,
-		score: newScore,
+		score: voteResult.score,
 		body: definition.body,
 		authorId: definition.authorId,
 		authorName: definition.authorName,
 		createdAt: definition.createdAt ?? now,
-		updatedAt: now,
-		myVote: isVote ? 1 : null,
-		changed: true,
+		updatedAt: voteResult.changed ? now : (definition.updatedAt ?? now),
+		myVote: voteResult.myVote,
+		changed: voteResult.changed,
 	};
 }
 
@@ -760,21 +698,6 @@ export async function clearAllTerms(env: Env, slugs: string[]): Promise<ClearAll
 /* -------------------------------------------------------------------------- */
 /* Internals                                                                   */
 /* -------------------------------------------------------------------------- */
-
-async function readVotePresence(
-	env: Env,
-	voterId: string,
-	definitionId: string,
-): Promise<number | null> {
-	const row = await env.PHOENIX_DB.prepare(
-		`SELECT definition_id FROM definition_vote
-		 WHERE definition_id = ? AND voter_id = ?
-		 LIMIT 1`,
-	)
-		.bind(definitionId, voterId)
-		.first<{definition_id: string}>();
-	return row ? 1 : null;
-}
 
 /**
  * Recompute `term_summary` row for one slug from the live `definition_view`
