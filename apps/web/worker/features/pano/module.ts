@@ -1339,46 +1339,61 @@ export async function deleteComment(
 	const nowSec = Math.floor(now.getTime() / 1000);
 	const priorScore = row.score;
 
-	// Karma decrement for the comment's author (votes drop with the row).
+	// One batch carries every delete-time mutation: optional karma
+	// decrement leads (only when there were votes to retract), then the
+	// vote-table wipe (`comment_vote`), then the cross-product mirror wipe
+	// (`user_vote`), then the branch-dependent terminal — `UPDATE
+	// comment_view` for parent-with-replies (soft-delete) or `DELETE FROM
+	// comment_view` for leaves (hard-delete). Matches the atomic-mutation
+	// contract enforced by the vote module (`vote/module.ts`) and by
+	// `deletePost` above, so a worker crash mid-delete can't leave karma
+	// debited against a surviving comment or orphan vote rows.
+	//
+	// The post `commentCount` decrement and `recomputePanoStats` stay
+	// outside the batch — both are recomputable cache refreshes derived
+	// from current state, not part of the atomic mutation.
+	const stmts: D1PreparedStatement[] = [];
 	if (priorScore > 0) {
-		await env.PHOENIX_DB.prepare(
-			`UPDATE user_profile SET
-				total_karma = MAX(0, total_karma - ?),
-				updated_at  = ?
-			WHERE user_id = ?`,
-		)
-			.bind(priorScore, nowSec, row.authorId)
-			.run();
+		stmts.push(
+			env.PHOENIX_DB.prepare(
+				`UPDATE user_profile SET
+					total_karma = MAX(0, total_karma - ?),
+					updated_at  = ?
+				WHERE user_id = ?`,
+			).bind(priorScore, nowSec, row.authorId),
+		);
 	}
-
-	// Drop vote rows (truth table + cross-product mirror) for this comment.
-	await env.PHOENIX_DB.prepare(`DELETE FROM comment_vote WHERE comment_id = ?`)
-		.bind(input.commentId)
-		.run();
-	await env.PHOENIX_DB.prepare(
-		`DELETE FROM user_vote WHERE target_kind = 'comment' AND target_id = ?`,
-	)
-		.bind(input.commentId)
-		.run();
-
+	stmts.push(
+		env.PHOENIX_DB.prepare(`DELETE FROM comment_vote WHERE comment_id = ?`).bind(input.commentId),
+	);
+	stmts.push(
+		env.PHOENIX_DB.prepare(
+			`DELETE FROM user_vote WHERE target_kind = 'comment' AND target_id = ?`,
+		).bind(input.commentId),
+	);
 	if (hasReplies) {
 		// Parent-with-replies: stamp deleted_at + rewrite body_excerpt.
 		// Drop the full body (the placeholder doesn't need it) so storage
 		// doesn't carry stale content.
-		await db
-			.update(schema.commentView)
-			.set({
-				body: "",
-				bodyExcerpt: SILINDI_PLACEHOLDER,
-				score: 0,
-				deletedAt: now,
-				updatedAt: now,
-			})
-			.where(eq(schema.commentView.id, input.commentId));
+		stmts.push(
+			env.PHOENIX_DB.prepare(
+				`UPDATE comment_view SET
+					body          = '',
+					body_excerpt  = ?,
+					score         = 0,
+					deleted_at    = ?,
+					updated_at    = ?
+				WHERE id = ?`,
+			).bind(SILINDI_PLACEHOLDER, nowSec, nowSec, input.commentId),
+		);
 	} else {
 		// Leaf: fully remove the row.
-		await db.delete(schema.commentView).where(eq(schema.commentView.id, input.commentId));
+		stmts.push(
+			env.PHOENIX_DB.prepare(`DELETE FROM comment_view WHERE id = ?`).bind(input.commentId),
+		);
 	}
+
+	await env.PHOENIX_DB.batch(stmts);
 
 	// Decrement post.commentCount (reads filter deleted_at OR rows that no
 	// longer exist).

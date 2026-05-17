@@ -32,6 +32,7 @@ import {
 	editComment,
 	listComments,
 	submitPost,
+	voteOnComment,
 } from "../../worker/features/pano/module";
 
 declare module "cloudflare:test" {
@@ -318,5 +319,228 @@ describe("pano/module deleteComment — d1-direct/task_8", () => {
 		} catch (err) {
 			expect((err as Error).name).toBe("CommentNotFoundError");
 		}
+	});
+});
+
+/**
+ * Atomicity invariant (d1-direct-review-fixes task_3).
+ *
+ * A successful `deleteComment(...)` must collapse every mutating statement —
+ * the conditional karma decrement, `DELETE FROM comment_vote`, `DELETE FROM
+ * user_vote`, and the branch-dependent terminal (`UPDATE comment_view` for
+ * parent-with-replies or `DELETE FROM comment_view` for leaves) — into one
+ * `env.PHOENIX_DB.batch([...])` call. The post `commentCount` decrement +
+ * `recomputePanoStats` stay out of the batch (recomputable; not
+ * atomicity-critical).
+ *
+ * Branches:
+ *   - leaf, `priorScore === 0` → 3 statements (no karma; ends with DELETE).
+ *   - leaf, `priorScore > 0`  → 4 statements (karma first; ends with DELETE).
+ *   - parent-with-replies, `priorScore === 0` → 3 statements (no karma; ends
+ *     with UPDATE).
+ *   - parent-with-replies, `priorScore > 0` → 4 statements (karma first;
+ *     ends with UPDATE).
+ */
+describe("pano.deleteComment — atomic single-batch write (d1-direct-review-fixes task_3)", () => {
+	/**
+	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
+	 * `.prepare(sql).bind(...).run()` chain without losing the real D1
+	 * binding's behaviour. Same shape as the deletePost spy in
+	 * `pano-edit-delete-post.test.ts` — duplicated rather than shared so
+	 * each test file stays self-contained.
+	 */
+	function spyEnv(real: Env) {
+		let batchCalls = 0;
+		const batchStatementCounts: number[] = [];
+		const realDb = real.PHOENIX_DB;
+		const wrappedStatement = (stmt: D1PreparedStatement): D1PreparedStatement => {
+			return new Proxy(stmt, {
+				get(target, prop, receiver) {
+					const orig = Reflect.get(target, prop, receiver);
+					if (prop === "bind" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							const bound = (orig as (...a: unknown[]) => D1PreparedStatement).apply(target, args);
+							return wrappedStatement(bound);
+						};
+					}
+					return typeof orig === "function" ? orig.bind(target) : orig;
+				},
+			});
+		};
+		const wrappedDb = new Proxy(realDb, {
+			get(target, prop, receiver) {
+				const orig = Reflect.get(target, prop, receiver);
+				if (prop === "batch" && typeof orig === "function") {
+					return (stmts: D1PreparedStatement[]) => {
+						batchCalls += 1;
+						batchStatementCounts.push(stmts.length);
+						return (orig as (s: D1PreparedStatement[]) => unknown).call(target, stmts);
+					};
+				}
+				if (prop === "prepare" && typeof orig === "function") {
+					return (sql: string) => {
+						const stmt = (orig as (s: string) => D1PreparedStatement).call(target, sql);
+						return wrappedStatement(stmt);
+					};
+				}
+				return typeof orig === "function" ? orig.bind(target) : orig;
+			},
+		});
+		const wrappedEnv = new Proxy(real, {
+			get(target, prop, receiver) {
+				if (prop === "PHOENIX_DB") return wrappedDb;
+				return Reflect.get(target, prop, receiver);
+			},
+		}) as Env;
+		return {
+			env: wrappedEnv,
+			getCounts: () => ({
+				batchCalls,
+				batchStatementCounts: [...batchStatementCounts],
+			}),
+		};
+	}
+
+	it("leaf, priorScore === 0: one batch with 3 statements (comment_vote + user_vote + DELETE comment_view)", async () => {
+		const authorId = "atomic-del-comment-leaf-zero";
+		const {commentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-leaf-zero-post",
+			commentAuthorId: authorId,
+		});
+
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(false);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(3);
+	});
+
+	it("leaf, priorScore > 0: one batch with 4 statements (karma first, ends with DELETE comment_view)", async () => {
+		const authorId = "atomic-del-comment-leaf-nonzero-author";
+		const voterId = "atomic-del-comment-leaf-nonzero-voter";
+		const {commentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-leaf-nonzero-post",
+			commentAuthorId: authorId,
+		});
+
+		await voteOnComment(env, {commentId, voterId});
+
+		// Sanity: comment_view.score is now 1.
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM comment_view WHERE id = ?")
+			.bind(commentId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(1);
+
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(false);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+
+		// Sanity: row really is gone (proves the terminal in the batch was
+		// the DELETE, not the soft-update).
+		const gone = await env.PHOENIX_DB.prepare("SELECT id FROM comment_view WHERE id = ?")
+			.bind(commentId)
+			.first();
+		expect(gone).toBeNull();
+	});
+
+	it("parent-with-replies, priorScore === 0: one batch with 3 statements (comment_vote + user_vote + UPDATE comment_view)", async () => {
+		const parentAuthorId = "atomic-del-comment-parent-zero-author";
+		const {postId, commentId: parentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-parent-zero-post",
+			commentAuthorId: parentAuthorId,
+		});
+		await addComment(env, {
+			postId,
+			authorId: "atomic-del-comment-parent-zero-child",
+			authorName: "child",
+			body: "keeps the parent in the tree",
+			parentId,
+		});
+
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId: parentId, actorId: parentAuthorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(3);
+
+		// Sanity: parent row still exists with body_excerpt = SILINDI (proves
+		// the terminal was the UPDATE, not the DELETE).
+		const view = await env.PHOENIX_DB.prepare(
+			"SELECT body_excerpt, deleted_at FROM comment_view WHERE id = ?",
+		)
+			.bind(parentId)
+			.first<{body_excerpt: string; deleted_at: number | null}>();
+		expect(view).not.toBeNull();
+		expect(view!.body_excerpt).toBe("[silindi]");
+		expect(view!.deleted_at).not.toBeNull();
+	});
+
+	it("parent-with-replies, priorScore > 0: one batch with 4 statements (karma first, ends with UPDATE comment_view)", async () => {
+		const parentAuthorId = "atomic-del-comment-parent-nonzero-author";
+		const voterId = "atomic-del-comment-parent-nonzero-voter";
+		const {postId, commentId: parentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-parent-nonzero-post",
+			commentAuthorId: parentAuthorId,
+		});
+		await addComment(env, {
+			postId,
+			authorId: "atomic-del-comment-parent-nonzero-child",
+			authorName: "child",
+			body: "keeps the parent in the tree",
+			parentId,
+		});
+
+		await voteOnComment(env, {commentId: parentId, voterId});
+
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM comment_view WHERE id = ?")
+			.bind(parentId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(1);
+
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId: parentId, actorId: parentAuthorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("post commentCount decrement still runs after the batch resolves", async () => {
+		const authorId = "atomic-del-comment-count-author";
+		const {postId, commentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-count-post",
+			commentAuthorId: authorId,
+		});
+
+		const beforeSummary = await env.PHOENIX_DB.prepare(
+			"SELECT comment_count FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first<{comment_count: number}>();
+		expect(beforeSummary!.comment_count).toBe(1);
+
+		const spy = spyEnv(env);
+		await deleteComment(spy.env, {commentId, actorId: authorId});
+		expect(spy.getCounts().batchCalls).toBe(1);
+
+		const afterSummary = await env.PHOENIX_DB.prepare(
+			"SELECT comment_count FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first<{comment_count: number}>();
+		expect(afterSummary!.comment_count).toBe(0);
 	});
 });
