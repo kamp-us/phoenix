@@ -5,57 +5,8 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1778392615901,
-      "tag": "0000_secret_iron_patriot",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "6",
-      "when": 1778395340431,
-      "tag": "0001_free_salo",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1778396288779,
-      "tag": "0002_wandering_natasha_romanoff",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1778500000000,
-      "tag": "0003_lazy_thanos",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "6",
-      "when": 1778967803698,
-      "tag": "0004_brown_squadron_supreme",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "6",
-      "when": 1779000000000,
-      "tag": "0005_d1_direct_sozluk",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "6",
-      "when": 1779100000000,
-      "tag": "0006_d1_direct_pano",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "6",
-      "when": 1779200000000,
-      "tag": "0007_d1_direct_pano_comments",
+      "when": 1779059966153,
+      "tag": "0000_d1_baseline",
       "breakpoints": true
     }
   ]
