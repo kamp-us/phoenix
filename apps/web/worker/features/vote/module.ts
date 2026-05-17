@@ -14,34 +14,36 @@
  *
  *  1. The feature-local vote table (`definition_vote`, `post_vote`,
  *     `comment_vote`) — composite PK on `(target_id, voter_id)`. This is the
- *     SCORE TRUTH source; the target row's denormalized `score` cache is
- *     recomputed off `COUNT(*)` here.
+ *     SCORE TRUTH source; the cached score on the target row tracks it
+ *     deterministically (`prevScore + (isCast ? 1 : -1)`).
  *  2. The cross-product `user_vote` table — composite PK on
  *     `(user_id, target_kind, target_id)`. This powers the `myVote` GraphQL
  *     field via `readMyVote` and is the row whose existence the acceptance
  *     criterion treats as the canonical "user has voted on target X" signal.
  *
  * `INSERT OR IGNORE` against each PK turns a second identical cast into a
- * no-op (`meta.changes === 0`). The module reports `changed: false` on
- * idempotent calls so resolvers can short-circuit notifications / writes.
+ * no-op. The module short-circuits before issuing any write when the
+ * pre-write probe shows the target is already in the desired terminal state
+ * (`isCast === alreadyCast`), so `changed: false` reflects "nothing in the
+ * world moved" rather than "the write happened to be a SQL no-op".
  *
  * # Atomicity
  *
- * All side-effects of a state-changing vote write happen inside one
+ * All side-effects of a state-changing vote write land in one
  * `env.PHOENIX_DB.batch(...)` call:
  *
- *   - upsert / delete on the feature-local vote table.
+ *   - upsert / delete on the feature-local vote table (truth source).
  *   - upsert / delete on `user_vote`.
  *   - score-cache update on the target row (`definition_view.score`,
  *     `post_summary.{score,hotScore}`, `comment_view.score`).
  *   - karma counter bump / decrement on the author's `user_profile`.
  *
- * The pre-write existence check (target row + current score) is read-only and
- * separate. Two concurrent identical casts that both pass the existence check
- * still converge on a single row because the vote-table `INSERT OR IGNORE`
- * ignores the second. The "re-sum from truth" pattern then recomputes the
- * cached score from the actual row count — eventually consistent against
- * any cache drift.
+ * No mutation precedes the batch — the only reads on the write path are the
+ * pre-write existence probe and the cached-score lookup, both read-only.
+ * Two concurrent identical casts that both pass the existence probe still
+ * converge on a single row because the vote-table `INSERT OR IGNORE` ignores
+ * the second; the score cache can transiently drift by one in that race, but
+ * the next vote on the row reads the cache fresh and resumes converging.
  *
  * # Surface
  *
@@ -282,48 +284,44 @@ export async function vote(env: Env, input: VoteInput): Promise<VoteResult> {
 		.first();
 	const alreadyCast = existing != null;
 
+	// Cached score on the target row pre-write. Cheap indexed point lookup
+	// used twice: (a) returned as-is on the idempotent path; (b) the basis
+	// for the deterministic post-write score on the mutation path
+	// (`prevScore + (isCast ? 1 : -1)`), which is why the legacy COUNT(*)
+	// re-sum is no longer needed.
+	const prevScore = await readCachedScore(env, input.targetKind, input.targetId);
+
 	if (isCast === alreadyCast) {
-		// Already in the desired terminal state. Read current cached score
-		// straight from the target row (cheap; one indexed point lookup).
-		const score = await readCachedScore(env, input.targetKind, input.targetId);
 		return {
 			targetKind: input.targetKind,
 			targetId: input.targetId,
-			score,
+			score: prevScore,
 			myVote: alreadyCast ? 1 : null,
 			changed: false,
 		};
 	}
 
-	// State change. Phase 1: mutate the vote-table row (truth source) so the
-	// re-sum sees the new count.
+	// State change. One batch carries every mutation: the vote-table row
+	// (truth source) leads, followed by the score-cache update, the
+	// `user_vote` cross-product row, and the karma counter.
+	const newScore = prevScore + (isCast ? 1 : -1);
+	const stmts: D1PreparedStatement[] = [];
+
 	if (isCast) {
-		await env.PHOENIX_DB.prepare(
-			`INSERT OR IGNORE INTO ${adapter.voteTable} (${adapter.voteIdColumn}, voter_id, created_at)
-			 VALUES (?, ?, ?)`,
-		)
-			.bind(input.targetId, input.userId, nowSec)
-			.run();
+		stmts.push(
+			env.PHOENIX_DB.prepare(
+				`INSERT OR IGNORE INTO ${adapter.voteTable} (${adapter.voteIdColumn}, voter_id, created_at)
+				 VALUES (?, ?, ?)`,
+			).bind(input.targetId, input.userId, nowSec),
+		);
 	} else {
-		await env.PHOENIX_DB.prepare(
-			`DELETE FROM ${adapter.voteTable} WHERE ${adapter.voteIdColumn} = ? AND voter_id = ?`,
-		)
-			.bind(input.targetId, input.userId)
-			.run();
+		stmts.push(
+			env.PHOENIX_DB.prepare(
+				`DELETE FROM ${adapter.voteTable} WHERE ${adapter.voteIdColumn} = ? AND voter_id = ?`,
+			).bind(input.targetId, input.userId),
+		);
 	}
 
-	// Re-sum the score from the truth source. Cheap COUNT(*) under the
-	// `(target, voter)` PK index.
-	const scoreRow = await env.PHOENIX_DB.prepare(
-		`SELECT COUNT(*) as n FROM ${adapter.voteTable} WHERE ${adapter.voteIdColumn} = ?`,
-	)
-		.bind(input.targetId)
-		.first<{n: number}>();
-	const newScore = scoreRow?.n ?? 0;
-
-	// Phase 2: atomic batch of every dependent write — score cache, the
-	// cross-product `user_vote` row, and the karma counter.
-	const stmts: D1PreparedStatement[] = [];
 	stmts.push(
 		...adapter.scoreCacheStatements(env, {
 			targetId: input.targetId,

@@ -683,3 +683,234 @@ describe("vote module — targetKind: 'comment' (task_11)", () => {
 		).rejects.toBeInstanceOf(VoteTargetNotFoundError);
 	});
 });
+
+/**
+ * Atomicity invariant (d1-direct-review-fixes task_1).
+ *
+ * A state-changing `vote()` call must collapse every mutation — the
+ * feature-local vote table, the cross-product `user_vote` row, the
+ * target-row score cache, and the karma counter — into one
+ * `env.PHOENIX_DB.batch([...])` call. No standalone `.prepare(...).run()`
+ * may precede the batch on the mutation path. Idempotent re-casts /
+ * re-retracts never call `batch`.
+ */
+describe("vote module — atomic single-batch write (d1-direct-review-fixes task_1)", () => {
+	/**
+	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
+	 * `.prepare(sql).bind(...).run()` chain without losing the real D1 binding's
+	 * behaviour. `.prepare(sql)` still returns a real `D1PreparedStatement` —
+	 * we only intercept `.run()` and `.bind()` (to keep the wrapper covering
+	 * the bound copy); everything else (`.first`, `.all`, `.raw`) goes straight
+	 * through.
+	 *
+	 * Returns `{env, getCounts}` so tests can introspect the counters
+	 * post-call without leaking implementation detail into the test body.
+	 */
+	function spyEnv(real: Env) {
+		let batchCalls = 0;
+		const batchStatementCounts: number[] = [];
+		let runCalls = 0;
+		const realDb = real.PHOENIX_DB;
+		const wrappedStatement = (stmt: D1PreparedStatement): D1PreparedStatement => {
+			return new Proxy(stmt, {
+				get(target, prop, receiver) {
+					const orig = Reflect.get(target, prop, receiver);
+					if (prop === "run" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							runCalls += 1;
+							return (orig as (...a: unknown[]) => unknown).apply(target, args);
+						};
+					}
+					if (prop === "bind" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							const bound = (orig as (...a: unknown[]) => D1PreparedStatement).apply(
+								target,
+								args,
+							);
+							return wrappedStatement(bound);
+						};
+					}
+					return typeof orig === "function" ? orig.bind(target) : orig;
+				},
+			});
+		};
+		const wrappedDb = new Proxy(realDb, {
+			get(target, prop, receiver) {
+				const orig = Reflect.get(target, prop, receiver);
+				if (prop === "batch" && typeof orig === "function") {
+					return (stmts: D1PreparedStatement[]) => {
+						batchCalls += 1;
+						batchStatementCounts.push(stmts.length);
+						return (orig as (s: D1PreparedStatement[]) => unknown).call(target, stmts);
+					};
+				}
+				if (prop === "prepare" && typeof orig === "function") {
+					return (sql: string) => {
+						const stmt = (orig as (s: string) => D1PreparedStatement).call(target, sql);
+						return wrappedStatement(stmt);
+					};
+				}
+				return typeof orig === "function" ? orig.bind(target) : orig;
+			},
+		});
+		const wrappedEnv = new Proxy(real, {
+			get(target, prop, receiver) {
+				if (prop === "PHOENIX_DB") return wrappedDb;
+				return Reflect.get(target, prop, receiver);
+			},
+		}) as Env;
+		return {
+			env: wrappedEnv,
+			getCounts: () => ({
+				batchCalls,
+				batchStatementCounts: [...batchStatementCounts],
+				runCalls,
+			}),
+		};
+	}
+
+	it("definition cast: one batch (vote-table + user_vote + score cache + karma), zero standalone .run()", async () => {
+		const definitionId = await seedDefinition("vote-mod-atomic-def", "author-atomic-def");
+		const spy = spyEnv(env);
+
+		const result = await vote(spy.env, {
+			userId: "voter-atomic-def",
+			targetKind: "definition",
+			targetId: definitionId,
+			value: 1,
+		});
+		expect(result.changed).toBe(true);
+		expect(result.score).toBe(1);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.runCalls).toBe(0);
+		// vote-table insert + score cache (1 stmt) + user_vote insert + karma upsert = 4.
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("post cast: one batch with 4 statements, zero standalone .run()", async () => {
+		const postId = await seedPost("vm-post-author-atomic");
+		const spy = spyEnv(env);
+
+		const result = await vote(spy.env, {
+			userId: "vm-post-voter-atomic",
+			targetKind: "post",
+			targetId: postId,
+			value: 1,
+		});
+		expect(result.changed).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.runCalls).toBe(0);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("comment cast: one batch with 4 statements, zero standalone .run()", async () => {
+		const {commentId} = await seedPostAndComment(
+			"vm-comm-pauthor-atomic",
+			"vm-comm-cauthor-atomic",
+		);
+		const spy = spyEnv(env);
+
+		const result = await vote(spy.env, {
+			userId: "vm-comm-voter-atomic",
+			targetKind: "comment",
+			targetId: commentId,
+			value: 1,
+		});
+		expect(result.changed).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.runCalls).toBe(0);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("retract: one batch (vote-table delete + user_vote delete + score cache + karma decrement)", async () => {
+		const definitionId = await seedDefinition("vote-mod-atomic-retract", "author-atomic-r");
+		// Seed a cast first (outside the spy so only the retract is measured).
+		await vote(env, {
+			userId: "voter-atomic-retract",
+			targetKind: "definition",
+			targetId: definitionId,
+			value: 1,
+		});
+
+		const spy = spyEnv(env);
+		const result = await vote(spy.env, {
+			userId: "voter-atomic-retract",
+			targetKind: "definition",
+			targetId: definitionId,
+			value: null,
+		});
+		expect(result.changed).toBe(true);
+		expect(result.score).toBe(0);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.runCalls).toBe(0);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("idempotent re-cast: no batch, no .run() (early-return path)", async () => {
+		const definitionId = await seedDefinition("vote-mod-atomic-noop", "author-atomic-noop");
+		await vote(env, {
+			userId: "voter-atomic-noop",
+			targetKind: "definition",
+			targetId: definitionId,
+			value: 1,
+		});
+
+		const spy = spyEnv(env);
+		const result = await vote(spy.env, {
+			userId: "voter-atomic-noop",
+			targetKind: "definition",
+			targetId: definitionId,
+			value: 1,
+		});
+		expect(result.changed).toBe(false);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(0);
+		expect(counts.runCalls).toBe(0);
+	});
+
+	it("newScore is derived deterministically — no SELECT COUNT(*) round-trip on the state-changing path", async () => {
+		const definitionId = await seedDefinition("vote-mod-no-count", "author-no-count");
+
+		const sqls: string[] = [];
+		const realDb = env.PHOENIX_DB;
+		const recordingDb = new Proxy(realDb, {
+			get(target, prop, receiver) {
+				const orig = Reflect.get(target, prop, receiver);
+				if (prop === "prepare" && typeof orig === "function") {
+					return (sql: string) => {
+						sqls.push(sql);
+						return (orig as (s: string) => D1PreparedStatement).call(target, sql);
+					};
+				}
+				return typeof orig === "function" ? orig.bind(target) : orig;
+			},
+		});
+		const recordingEnv = new Proxy(env, {
+			get(target, prop, receiver) {
+				if (prop === "PHOENIX_DB") return recordingDb;
+				return Reflect.get(target, prop, receiver);
+			},
+		}) as Env;
+
+		await vote(recordingEnv, {
+			userId: "voter-no-count",
+			targetKind: "definition",
+			targetId: definitionId,
+			value: 1,
+		});
+
+		const sawCount = sqls.some((sql) =>
+			/SELECT\s+COUNT\(\*\)\s+as\s+n\s+FROM\s+definition_vote/i.test(sql),
+		);
+		expect(sawCount).toBe(false);
+	});
+});
