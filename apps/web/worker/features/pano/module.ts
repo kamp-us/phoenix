@@ -997,8 +997,10 @@ export async function listCommentsConnection(
 	const after = opts.after ?? null;
 	if (after !== null && all.findIndex((c) => c.id === after) === -1) {
 		// Stale cursor (row was deleted between pages, or never existed).
-		// Collapse to "no further rows" so the FE re-fetches from the head
-		// instead of silently restarting and duplicating rendered rows.
+		// Terminate the stream: empty page + `hasNextPage: false` signals
+		// end-of-cursor to the client. The FE must reconcile against its
+		// store and, if it wants more rows, start a fresh pagination from
+		// the head explicitly — we do NOT silently restart here.
 		return {
 			rows: [],
 			hasNextPage: false,
