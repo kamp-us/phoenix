@@ -1,3 +1,5 @@
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 /**
  * Vote module integration tests (task_10, d1-direct).
  *
