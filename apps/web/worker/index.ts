@@ -75,11 +75,14 @@ app.post("/api/admin/pano/seed", async (c) => {
 
 	const cleared = {posts: 0, comments: 0};
 	if (parsed.data.clear) {
-		const before = await c.env.PHOENIX_DB.prepare(
-			"SELECT (SELECT COUNT(*) FROM post_summary) AS posts, (SELECT COUNT(*) FROM comment_view) AS comments",
-		).first<{posts: number; comments: number}>();
-		cleared.posts = before?.posts ?? 0;
-		cleared.comments = before?.comments ?? 0;
+		const postsBefore = await c.env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) AS count FROM post_summary",
+		).first<{count: number}>();
+		const commentsBefore = await c.env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) AS count FROM comment_view",
+		).first<{count: number}>();
+		cleared.posts = postsBefore?.count ?? 0;
+		cleared.comments = commentsBefore?.count ?? 0;
 		await c.env.PHOENIX_DB.batch([
 			c.env.PHOENIX_DB.prepare("DELETE FROM comment_vote"),
 			c.env.PHOENIX_DB.prepare("DELETE FROM post_vote"),
