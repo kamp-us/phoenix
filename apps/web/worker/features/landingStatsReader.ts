@@ -1,11 +1,12 @@
 /**
- * Landing-page stats reader (T15).
+ * Landing-page stats reader.
  *
- * Reads the single-row aggregates from `sozluk_stats` and `pano_stats` —
- * maintained by the `PhoenixProjection` workflow on every event that touches
- * the underlying view tables. `totalAuthors` is the union across both
- * products: distinct authors who have any non-deleted contribution in either
- * sozluk (definition_view) or pano (post_summary, comment_view).
+ * Reads the single-row aggregates from `sozluk_stats` and `pano_stats` in
+ * `PHOENIX_DB`. Both counters are maintained inline by the per-feature D1
+ * writer modules (sozluk/pano) — no projection layer. `totalAuthors` is the
+ * union across both products: distinct authors who have any non-deleted
+ * contribution in either sozluk (definition_view) or pano (post_summary,
+ * comment_view).
  *
  * Both single-row tables can be missing on a fresh DB — we surface zeros
  * rather than null so the SPA always has something to render.

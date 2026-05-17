@@ -72,7 +72,7 @@ import {
 } from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
 import {Auth, CloudflareEnv} from "../services";
-import {type LandingStats, readLandingStats} from "../view/landingStatsReader";
+import {type LandingStats, readLandingStats} from "../features/landingStatsReader";
 import {resolver} from "./resolver";
 
 const HealthType = new GraphQLObjectType({
@@ -896,15 +896,15 @@ const ProfileType = new GraphQLObjectType<ProfileRow>({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Landing stats (T15)                                                         */
+/* Landing stats                                                               */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Single object backing the landing-page stats card. Sourced from the
- * `sozluk_stats` + `pano_stats` MV rows (maintained by the `PhoenixProjection`
- * workflow) plus a cross-product distinct-author union. `version` is the build
- * tag the SPA renders alongside the counts — currently hardcoded; T18's
- * wrangler config / cf-typegen pass can swap it for a build-time env var.
+ * `sozluk_stats` + `pano_stats` single-row aggregates in `PHOENIX_DB`,
+ * maintained inline by the per-feature D1 writer modules (ADR 0009), plus a
+ * cross-product distinct-author union. `version` is the build tag the SPA
+ * renders alongside the counts — currently hardcoded.
  */
 const LandingStatsType = new GraphQLObjectType<LandingStats & {version: string}>({
 	name: "LandingStats",
@@ -1152,11 +1152,11 @@ const QueryType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Landing-page stats card (T15). Reads the single-row aggregates
-		 * maintained by the `PhoenixProjection` workflow plus a cross-product
-		 * distinct-author union. Always returns a non-null object even on a
-		 * cold DB — counts default to 0 so the SPA doesn't have to special-case
-		 * the empty state.
+		 * Landing-page stats card. Reads the single-row aggregates from
+		 * `PHOENIX_DB` (maintained inline by the sozluk/pano writer modules)
+		 * plus a cross-product distinct-author union. Always returns a non-null
+		 * object even on a cold DB — counts default to 0 so the SPA doesn't have
+		 * to special-case the empty state.
 		 */
 		landingStats: {
 			type: new GraphQLNonNull(LandingStatsType),

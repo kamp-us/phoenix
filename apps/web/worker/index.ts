@@ -10,14 +10,9 @@ import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
 
-// Per-atom Agent classes used to own every pano/sozluk read + write path
-// (ADR 0005 / 0006). After d1-direct/task_4..task_9 every product surface
-// runs as module functions against PHOENIX_DB. No product DOs remain on the
-// worker; only the view-layer projection Workflow stays as a binding.
-// View-layer projection workflow (binding: PHOENIX_PROJECTION). Skeleton
-// lives in worker/view/PhoenixProjection.ts; step bodies are no-ops in T1
-// and get filled in per event kind across T2..T15.
-export {PhoenixProjection} from "./view/PhoenixProjection";
+// Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
+// Every product surface (sozluk, pano, pasaport) runs as module functions
+// against `PHOENIX_DB`. Worker exports no DO or Workflow classes.
 
 const app = new Hono<{Bindings: Env}>();
 

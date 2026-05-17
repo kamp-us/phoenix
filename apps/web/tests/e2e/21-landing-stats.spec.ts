@@ -2,11 +2,11 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Landing stats (T15) — `landingStats` GraphQL query feeding the landing-page
- * stats card. Live counters maintained by the `PhoenixProjection` workflow
- * after every Definition / Post / Comment event. The page also serves as a
- * deep-link smoke check: directly visiting the canonical product URLs should
- * each render without errors.
+ * Landing stats — `landingStats` GraphQL query feeding the landing-page
+ * stats card. Counters maintained inline by the sozluk/pano writer modules
+ * (ADR 0009) on every Definition / Post / Comment write. The page also
+ * serves as a deep-link smoke check: directly visiting the canonical product
+ * URLs should each render without errors.
  */
 test.describe("Landing stats (task_15)", () => {
 	test("/ renders the live stats card with five values", async ({page}) => {
@@ -53,10 +53,8 @@ test.describe("Landing stats (task_15)", () => {
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
 		// Reload landing — the stats card should now reflect the new post.
-		// The reload is intentional: `landingStats` is fed by the
-		// `PhoenixProjection` workflow, which lands asynchronously after
-		// `submitPost`. A bare `goto("/")` may serve a cached query before
-		// the projection commits; reloading forces a fresh fetch. The
+		// The reload is intentional: a bare `goto("/")` may serve a cached
+		// landingStats query result; reloading forces a fresh fetch. The
 		// `toPass` retry loop below absorbs any remaining lag.
 		await page.goto("/");
 		await page.reload();

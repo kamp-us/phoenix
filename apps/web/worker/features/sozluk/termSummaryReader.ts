@@ -1,12 +1,8 @@
 /**
  * Read-side helper for the `terms(sort, limit)` resolver.
  *
- * The cross-entity term list reads from `PHOENIX_DB.term_summary` (the MV
- * maintained by `PhoenixProjection.TermChanged`), not from per-term DOs —
- * fanning out to every term DO would be O(n) RPCs per page render.
- *
- * Per-term reads (`term(slug)`) still RPC into `SozlukTerm` for the full
- * page (definitions live there, not in the MV).
+ * Reads from `PHOENIX_DB.term_summary` (maintained inline by the sozluk
+ * writer module per ADR 0009 — no projection layer, no per-term DOs).
  */
 import {and, desc, eq, gt, lt, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";

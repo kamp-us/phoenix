@@ -15,43 +15,16 @@
 	"observability": {
 		"enabled": true
 	},
-	// No product DO bindings remain post-d1-direct (tasks 4/6/9). Pasaport,
-	// SozlukTerm, and PanoPost all moved to D1-direct module functions
-	// against PHOENIX_DB. Future per-atom Agents will be added back here.
-	"durable_objects": {
-		"bindings": []
-	},
-	// One D1 binding holds every cross-entity view-model (term_summary,
-	// post_summary, *_view, *_stats, user_vote, user_profile) per ADR 0007.
+	// Single D1 binding holds every product table (sozluk, pano, pasaport).
+	// Per ADR 0009, D1 is the canonical store — not a "view" or "projection."
 	// `database_id` is filled in per-environment via `wrangler d1 create`;
 	// the placeholder stays until the operator provisions the DB.
 	"d1_databases": [
 		{
 			"binding": "PHOENIX_DB",
-			"database_name": "phoenix-view",
+			"database_name": "phoenix_db",
 			"database_id": "00000000-0000-0000-0000-000000000000",
 			"migrations_dir": "worker/db/drizzle/migrations"
-		}
-	],
-	// Single projection workflow consumes outbox events and writes PHOENIX_DB.
-	// Class lives in worker/view/PhoenixProjection.ts.
-	"workflows": [
-		{
-			"name": "phoenix-projection",
-			"binding": "PHOENIX_PROJECTION",
-			"class_name": "PhoenixProjection"
-		}
-	],
-	"migrations": [
-		{ "tag": "v2", "new_sqlite_classes": ["Sozluk"] },
-		{ "tag": "v3", "new_sqlite_classes": ["Pano"] },
-		// v4: legacy singleton DOs deleted. SozlukTerm + PanoPost were
-		// removed from this list in d1-direct/task_6 + task_9 — nothing
-		// deployed remotely, so the entry is rewritten rather than adding
-		// a `delete_classes` migration. No `new_sqlite_classes` left.
-		{
-			"tag": "v4",
-			"deleted_classes": ["Sozluk", "Pano"]
 		}
 	],
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
