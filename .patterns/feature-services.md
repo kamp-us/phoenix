@@ -300,23 +300,20 @@ The dep graph: `Pano → Vote → Drizzle`, `Sozluk → Vote → Drizzle`. Vote'
 
 ```ts
 // worker/graphql/runtime.ts
-const FeatureLayer = Layer.mergeAll(SozlukLive, PanoLive, VoteLive, PasaportLive);
-
-const Live = FeatureLayer.pipe(
-  Layer.provide(DrizzleLive),
-  Layer.provide(
-    Layer.mergeAll(
-      Layer.succeed(CloudflareEnv, env),
-      Layer.succeed(RequestContext, {/* ... */}),
-      Layer.succeed(Auth, {/* ... */}),
-    ),
-  ),
+const RequestValues = Layer.mergeAll(
+  Layer.succeed(CloudflareEnv, env),
+  Layer.succeed(RequestContext, {/* ... */}),
+  Layer.succeed(Auth, {/* ... */}),
 );
 
-const runtime = ManagedRuntime.make(Live);
+const DataPlane = Layer.mergeAll(SozlukLive, PanoLive, VoteLive, PasaportLive, DrizzleLive).pipe(
+  Layer.provide(RequestValues),
+);
+
+const runtime = ManagedRuntime.make(Layer.mergeAll(DataPlane, RequestValues));
 ```
 
-`Layer.provide` is the composition: `FeatureLayer` needs `Drizzle`, which needs `CloudflareEnv`. The result has no remaining `R`, so the runtime is runnable.
+`Layer.provide` is the composition: feature services + `Drizzle` get satisfied by `RequestValues` in one step; merging `RequestValues` back in at the top re-exposes `Auth` / `CloudflareEnv` / `RequestContext` so resolvers can `yield* Auth` directly. The result has no remaining `R`, so the runtime is runnable. See [effect-layer-composition.md](./effect-layer-composition.md#multiple-runtimes--graphql--admin) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 

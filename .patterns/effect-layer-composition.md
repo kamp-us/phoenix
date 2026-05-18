@@ -100,28 +100,33 @@ Shape:
 ```ts
 // worker/graphql/runtime.ts
 export const makeGraphQLRuntime = (env: Env, request: Request, session: SessionData) => {
-  const Live = Layer.mergeAll(SozlukLive, PanoLive, VoteLive, PasaportLive).pipe(
-    Layer.provide(DrizzleLive),
-    Layer.provide(
-      Layer.mergeAll(
-        Layer.succeed(CloudflareEnv, env),
-        Layer.succeed(RequestContext, {/* ... */}),
-        Layer.succeed(Auth, {user: session?.user, session: session?.session}),
-      ),
-    ),
+  const RequestValues = Layer.mergeAll(
+    Layer.succeed(CloudflareEnv, env),
+    Layer.succeed(RequestContext, {/* ... */}),
+    Layer.succeed(Auth, {user: session?.user, session: session?.session}),
   );
-  return ManagedRuntime.make(Live);
+
+  // Features depend on Drizzle which depends on CloudflareEnv. Build the data
+  // plane by providing RequestValues to (features + Drizzle), then re-merge
+  // RequestValues at the top so resolvers can `yield* Auth` directly.
+  const DataPlane = Layer.mergeAll(SozlukLive, PanoLive, VoteLive, PasaportLive, DrizzleLive).pipe(
+    Layer.provide(RequestValues),
+  );
+
+  return ManagedRuntime.make(Layer.mergeAll(DataPlane, RequestValues));
 };
 
 // worker/admin/runtime.ts
 export const makeAdminRuntime = (env: Env) => {
-  const Live = Layer.mergeAll(SozlukAdminLive, PanoAdminLive, PasaportAdminLive).pipe(
-    Layer.provide(Layer.mergeAll(DrizzleLive, AdminAuthLive)),
-    Layer.provide(Layer.succeed(CloudflareEnv, env)),
-  );
-  return ManagedRuntime.make(Live);
+  const RequestValues = Layer.succeed(CloudflareEnv, env);
+  const Capabilities = Layer.mergeAll(DrizzleLive, AdminAuthLive).pipe(Layer.provide(RequestValues));
+  const DataPlane = Layer.mergeAll(SozlukAdminLive, PanoAdminLive, PasaportAdminLive, Capabilities);
+
+  return ManagedRuntime.make(Layer.mergeAll(DataPlane, RequestValues));
 };
 ```
+
+Why the two-step instead of stacking `Layer.provide` calls: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with one explicit `Layer.provide`, then merge in the request values at the top — this satisfies the `@effect/language-service` `layerMergeAllWithDependencies` check.
 
 Hono routes call the appropriate `make*Runtime` and `runPromise` the Effect inside.
 

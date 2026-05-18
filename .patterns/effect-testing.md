@@ -120,7 +120,7 @@ describe("Drizzle.run", () => {
       if (Exit.isSuccess(exit)) {
         assert.fail("expected failure");
       }
-      const err = Cause.failureOption(exit.cause);
+      const err = Cause.findErrorOption(exit.cause);
       assert.strictEqual(Option.getOrThrow(err)._tag, "@phoenix/Drizzle/Error");
     }).pipe(Effect.provide(TestDrizzleLive)),
   );

@@ -172,4 +172,4 @@ const transform = Effect.fnUntraced(function*(row: Row) {
 - [effect-fn-tracing.md](./effect-fn-tracing.md) — when to use `Effect.fn` vs `Effect.fnUntraced`
 - [effect-testing.md](./effect-testing.md) — testing Effect-based code
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema` for trust-boundary validation
-- Existing examples: `worker/services/Auth.ts`, `worker/services/CloudflareEnv.ts`, `worker/services/RequestContext.ts`
+- Existing examples: `worker/services/Auth.ts`, `worker/services/AdminAuth.ts`, `worker/services/CloudflareEnv.ts`, `worker/services/Drizzle.ts`, `worker/services/RequestContext.ts`

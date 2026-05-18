@@ -1,13 +1,14 @@
 /**
- * Vitest config for worker integration tests.
+ * Vitest config — two projects: integration (workerd) + unit (node).
  *
- * Uses `@cloudflare/vitest-pool-workers` so tests execute inside the actual
- * workerd runtime: real Durable Objects, real D1, real Workflows binding.
- * Tests live under `tests/integration/` and import from the worker module.
+ * `integration` boots tests inside the real workerd runtime via
+ * `@cloudflare/vitest-pool-workers` — real Durable Objects, real D1, real
+ * Workflows binding. Tests under `tests/integration/` exercise the worker
+ * module end-to-end.
  *
- * Kept separate from the project's `vite.config.ts` (which is the SPA build
- * config) — vite-plugin-cloudflare and vitest-pool-workers can't share the
- * same vite config.
+ * `unit` runs in the default node pool for isolation tests that don't need
+ * workerd — Drizzle service contract tests, pure helpers, error encoder
+ * round-trips. Tests live under `tests/unit/`.
  */
 import {cloudflarePool, cloudflareTest} from "@cloudflare/vitest-pool-workers";
 import {defineConfig} from "vitest/config";
@@ -20,12 +21,25 @@ const poolOptions = {
 };
 
 export default defineConfig({
-	plugins: [cloudflareTest(poolOptions)],
 	test: {
-		include: ["tests/integration/**/*.test.ts"],
-		// `cloudflarePool` is the runtime that boots tests inside workerd.
-		pool: cloudflarePool(poolOptions),
 		// 5s default is tight for workerd cold starts on free CI runners.
 		testTimeout: 15_000,
+		projects: [
+			{
+				plugins: [cloudflareTest(poolOptions)],
+				test: {
+					name: "integration",
+					include: ["tests/integration/**/*.test.ts"],
+					pool: cloudflarePool(poolOptions),
+					testTimeout: 15_000,
+				},
+			},
+			{
+				test: {
+					name: "unit",
+					include: ["tests/unit/**/*.test.ts"],
+				},
+			},
+		],
 	},
 });
