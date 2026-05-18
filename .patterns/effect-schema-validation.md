@@ -1,69 +1,91 @@
-# Schema for input validation at boundaries
+# Schema for input validation at trust boundaries
 
-When and how to use `effect/Schema` for runtime validation in phoenix. Schema is reserved for **trust boundaries** — places where untyped data enters the system. Don't use it for everything.
+When and how to use `effect/Schema` for runtime validation in phoenix. Schema is reserved for **trust boundaries** — places where genuinely untyped data enters the worker.
 
-## When to reach for Schema
+## Where the trust boundary actually is
 
-Use Schema when data crosses a boundary where types are not enforced:
+GraphQL resolvers are **not** a trust boundary. Yoga validates GraphQL args against the SDL before they reach the resolver — by the time the resolver runs, args are typed and structurally valid. Adding Schema validation at the resolver layer would re-validate what's already validated.
 
-- **GraphQL inputs** that need richer validation than the GraphQL schema provides (e.g., string format constraints, numeric ranges, semantic invariants).
-- **Hono request bodies** for admin routes (untyped JSON in, typed object out).
-- **External API responses** when phoenix calls an outside service.
-- **Persisted JSON columns** if phoenix ever stores arbitrary JSON in D1.
+The real boundaries in phoenix:
 
-Don't use Schema when:
+- **Admin route bodies** — Hono's `c.req.json()` returns `unknown`. The admin route handler is the boundary; Schema parses the JSON into a typed value before calling the admin service method.
+- **External API responses** — when phoenix fetches from an outside service. The response is untyped.
+- **Persisted JSON columns** — if phoenix ever stores arbitrary JSON in D1.
 
-- The data is already typed by drizzle (rows coming out of `db.select()`).
-- The data is internal to a service (already validated upstream).
-- All you need is a TypeScript type, not runtime parsing — use a plain `interface` or `type`.
+For GraphQL: validation of *semantic* constraints (string length, format patterns, business invariants) lives **inside the service method**, not at the resolver. The service owns its own invariants — see [feature-services.md](./feature-services.md). Service methods do this validation in plain TS (if/else with tagged errors), or with `Schema.decodeUnknown` if the validation is genuinely complex.
 
 ## `Schema.Class` — the canonical shape
 
-Schema's most useful constructor for phoenix is `Schema.Class`. It produces a class that is both the runtime parser and the TypeScript type:
+`Schema.Class` produces a class that's both the runtime parser and the TypeScript type:
 
 ```ts
 import {Schema} from "effect";
 
-export class AddDefinitionInput extends Schema.Class<AddDefinitionInput>("AddDefinitionInput")({
-  termSlug: Schema.String.pipe(
+export class SeedTermBody extends Schema.Class<SeedTermBody>("SeedTermBody")({
+  slug: Schema.String.pipe(
     Schema.minLength(1),
     Schema.maxLength(200),
     Schema.pattern(/^[a-z0-9-]+$/),
   ),
-  authorId: Schema.String,
-  authorName: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(80)),
-  body: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(10_000)),
-  termTitle: Schema.optional(Schema.String),
+  title: Schema.String.pipe(Schema.minLength(1), Schema.maxLength(200)),
+  definitions: Schema.Array(Schema.Struct({
+    authorId: Schema.String,
+    authorName: Schema.String,
+    body: Schema.String.pipe(Schema.maxLength(10_000)),
+  })),
 }) {}
 ```
 
-`AddDefinitionInput` is now:
+`SeedTermBody` is:
 
-- A **TypeScript type**: `AddDefinitionInput` (used like any class).
-- A **runtime parser**: `Schema.decodeUnknown(AddDefinitionInput)(rawJson)` returns an `Effect<AddDefinitionInput, ParseError>`.
-- An **encoder**: `Schema.encode(AddDefinitionInput)(instance)` produces the JSON wire form.
+- A **TypeScript type** (used like any class).
+- A **runtime parser**: `Schema.decodeUnknown(SeedTermBody)(rawJson)` → `Effect<SeedTermBody, ParseError>`.
+- An **encoder**: `Schema.encode(SeedTermBody)(instance)` → the JSON wire form.
 
-## Parsing at the boundary
+## Parsing at an admin route boundary
 
 ```ts
-import {Effect, Schema} from "effect";
+// worker/index.ts (or admin routes file)
+app.post("/api/admin/sozluk/upsert-term", async (c) => {
+  return adminRuntime(c.env).runPromise(Effect.gen(function*() {
+    const auth = yield* AdminAuth;
+    yield* auth.required;
 
-// inside a GraphQL resolver
-resolve: resolver(function*(_source, args: unknown) {
-  const input = yield* Schema.decodeUnknown(AddDefinitionInput)(args);
-  // input is now typed AddDefinitionInput, runtime-validated
-  const sozluk = yield* Sozluk;
-  return yield* sozluk.addDefinition(input);
+    const raw = yield* Effect.tryPromise({
+      try: () => c.req.json(),
+      catch: (cause) => new BadRequest({cause}),
+    });
+    const body = yield* Schema.decodeUnknown(SeedTermBody)(raw);
+
+    const admin = yield* SozlukAdmin;
+    return yield* admin.seedTerm(body);
+  }));
+});
+```
+
+The route handler is the boundary. Past `Schema.decodeUnknown`, the admin service receives a typed `SeedTermBody` and never re-validates structure. The service can still enforce domain rules (e.g., uniqueness, ownership) — those are different from structural validation.
+
+## Service-method validation, not Schema
+
+For domain rules inside a service method (string non-empty, length caps, regex patterns, etc.), use plain TS with tagged errors:
+
+```ts
+// inside Sozluk.addDefinition's body
+const validateBody = (raw: string) => {
+  if (raw.trim().length === 0) return new BodyRequired();
+  if (raw.length > DEFINITION_BODY_MAX) return new BodyTooLong({max: DEFINITION_BODY_MAX});
+  return Effect.succeed(raw);
+};
+
+addDefinition: Effect.fn("Sozluk.addDefinition")(function*(input: AddDefinitionInput) {
+  const body = yield* validateBody(input.body);
+  // ...
 }),
 ```
 
-`decodeUnknown` returns `Effect<AddDefinitionInput, ParseError>`. If parsing fails, the resolver wrapper catches `ParseError` and maps it to a wire code (you'll add this case to `encodeMutationError`).
+The error tags appear in the method's `E` channel, the resolver maps them to wire codes. Same pattern, no Schema needed.
 
-## Don't use Schema where the type system already won
-
-If a service method takes `AddDefinitionInput` and the resolver constructs it from already-typed GraphQL args (yoga validates against the SDL), there's no untyped data to parse. Schema would just re-validate what's already validated.
-
-The boundary is "untyped JSON arrives." Past that point, plain TypeScript types are enough.
+Reach for `Schema.decodeUnknown` *inside* a service method only when the validation is genuinely complex enough to be tedious as if/else — nested shape validation, conditional fields, branded primitives. Even then, the schema lives inside the service's closure as an implementation detail, not at the method signature.
 
 ## Schema for tagged errors that cross boundaries
 
@@ -83,7 +105,7 @@ Phoenix doesn't have this need — all errors are encoded by the resolver wrappe
 
 ## Schema features worth knowing about
 
-These are documented in `effect-smol`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not exhaustive, just what phoenix would actually use:
+Documented in `effect-smol`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not exhaustive, just what phoenix would actually use:
 
 - **`Schema.String`, `Schema.Number`, `Schema.Boolean`, `Schema.Date`, `Schema.BigInt`** — primitives.
 - **`Schema.Array(itemSchema)`, `Schema.Record({key, value})`, `Schema.Tuple(...)`** — collections.
@@ -95,13 +117,14 @@ These are documented in `effect-smol`'s `Schema.ts` (`packages/effect/src/Schema
 
 ## Anti-patterns
 
-- **Schema everywhere.** Validating internal data is ceremony. Schema costs runtime parse time at every call — that adds up if you sprinkle it through hot paths.
+- **Schema at the GraphQL resolver layer.** GraphQL SDL is the boundary; Yoga has already validated. Schema here is redundant and leaks validation infrastructure into product code. Domain validation (length, format, etc.) belongs inside the service method as tagged-error checks.
+- **Schema everywhere.** Validating internal data is ceremony. Schema costs runtime parse time at every call.
 - **Defining a Schema for a type that already exists as a TypeScript interface.** Pick one — either Schema (and use `Schema.Schema.Type<typeof X>` to get the type) or interface. Maintaining both is a smell.
-- **`Schema.decodeUnknown` without handling `ParseError`.** The error needs to map to a wire code. Either add the `ParseError` case to `encodeMutationError` or convert via `Effect.mapError(err => new MyDomainError({cause: err}))`.
-- **Schema for drizzle rows.** Drizzle already gives you types from the schema. Re-parsing through Schema is redundant.
+- **Schema for drizzle rows.** Drizzle already gives you types from the schema. Re-parsing is redundant.
 
 ## See also
 
-- [effect-errors.md](./effect-errors.md) — when to use `Schema.TaggedErrorClass`
-- [effect-error-operators.md](./effect-error-operators.md) — handling `ParseError` at boundaries
-- effect-smol `Schema.ts` — full API reference at `~/code/github.com/usirin/effect-smol/packages/effect/src/Schema.ts`
+- [feature-services.md](./feature-services.md) — service methods own their input validation
+- [effect-errors.md](./effect-errors.md) — tagged errors for domain validation failures, `Schema.TaggedErrorClass` for wire-form errors
+- [effect-error-operators.md](./effect-error-operators.md) — handling `ParseError` when it does come up (admin boundaries)
+- effect-smol `Schema.ts` — full API reference at `packages/effect/src/Schema.ts`

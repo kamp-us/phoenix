@@ -16,3 +16,4 @@ One row per ADR. Read the file for the why.
 | [0010](0010-effect-context-service-backend.md) | Effect Context.Service architecture for resolver-down backend code | accepted | 2026-05-17 |
 | [0011](0011-drizzle-context-service.md) | Drizzle access via `Context.Service` with `run`/`batch` callbacks | accepted | 2026-05-17 |
 | [0012](0012-admin-parallel-services.md) | Admin operations as parallel `<Feature>Admin` services with a separate runtime | accepted | 2026-05-17 |
+| [0013](0013-validation-in-service-methods.md) | Input validation lives in service methods, not the resolver layer | accepted | 2026-05-17 |
