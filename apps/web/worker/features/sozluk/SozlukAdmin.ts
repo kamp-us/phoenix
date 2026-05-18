@@ -17,7 +17,7 @@ import {id} from "@usirin/forge";
 import {and, asc, desc, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
-import {Drizzle, DrizzleError} from "../../services/Drizzle";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 import {excerpt as excerptText} from "../../shared/text";
 
 /* -------------------------------------------------------------------------- */
@@ -75,13 +75,9 @@ export class SozlukAdmin extends Context.Service<
 
 export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 	Effect.gen(function* () {
-		const db = yield* Drizzle;
-
-		const tryDb = <A>(fn: () => Promise<A>) =>
-			Effect.tryPromise({
-				try: fn,
-				catch: (cause) => new DrizzleError({cause}),
-			});
+		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
+		// destructure its bound methods.
+		const {run} = yield* Drizzle;
 
 		/**
 		 * Recompute the `term_summary` row for one slug from the live
@@ -94,7 +90,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 			title: string,
 			now: Date,
 		) {
-			const defs = yield* tryDb(() =>
+			const defs = yield* run((db) =>
 				db
 					.select({
 						id: schema.definitionView.id,
@@ -132,7 +128,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 			const lastActivitySec = Math.floor(now.getTime() / 1000);
 			const lastEditSec = Math.floor(lastEditAt.getTime() / 1000);
 
-			yield* tryDb(() =>
+			yield* run((db) =>
 				db.run(sql`
 					INSERT INTO term_summary (
 						slug, title, first_letter, definition_count, total_score,
@@ -159,20 +155,20 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 		const recomputeSozlukStats = Effect.fn("SozlukAdmin.recomputeSozlukStats")(function* (
 			now: Date,
 		) {
-			const totalTerms = yield* tryDb(() =>
+			const totalTerms = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.termSummary)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			const totalDefs = yield* tryDb(() =>
+			const totalDefs = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.definitionView)
 					.where(isNull(schema.definitionView.deletedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			const totalAuthors = yield* tryDb(() =>
+			const totalAuthors = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(DISTINCT ${schema.definitionView.authorId})`})
 					.from(schema.definitionView)
@@ -181,7 +177,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 			);
 
 			const nowSec = Math.floor(now.getTime() / 1000);
-			yield* tryDb(() =>
+			yield* run((db) =>
 				db.run(sql`
 					INSERT INTO sozluk_stats (id, total_definitions, total_terms, total_authors, updated_at)
 					VALUES (1, ${totalDefs}, ${totalTerms}, ${totalAuthors}, ${nowSec})
@@ -200,7 +196,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 					return yield* Effect.die(new Error("seedTerm: at least one definition required"));
 				}
 
-				const existing = yield* tryDb(() =>
+				const existing = yield* run((db) =>
 					db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, input.slug)}),
 				);
 
@@ -211,7 +207,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 				for (const def of input.definitions) {
 					// Idempotency: skip when (term_slug, author_id, body)
 					// already present.
-					const dupe = yield* tryDb(() =>
+					const dupe = yield* run((db) =>
 						db
 							.select({id: schema.definitionView.id})
 							.from(schema.definitionView)
@@ -230,7 +226,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 						continue;
 					}
 
-					yield* tryDb(() =>
+					yield* run((db) =>
 						db.insert(schema.definitionView).values({
 							id: id("def"),
 							authorId: def.authorId,
@@ -266,14 +262,14 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 
 				// Count rows before deletion so the caller can show meaningful
 				// progress.
-				const termCount = yield* tryDb(() =>
+				const termCount = yield* run((db) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})
 						.from(schema.termSummary)
 						.where(sql`${schema.termSummary.slug} IN ${slugs}`)
 						.then((r) => Number(r[0]?.n ?? 0)),
 				);
-				const defCount = yield* tryDb(() =>
+				const defCount = yield* run((db) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})
 						.from(schema.definitionView)
@@ -284,7 +280,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 				// Drop vote rows for these definitions, then the definitions
 				// themselves, then the term meta rows. Order matters for the
 				// `definition_vote` composite-key cleanup.
-				yield* tryDb(() =>
+				yield* run((db) =>
 					db.run(sql`
 						DELETE FROM definition_vote
 						WHERE definition_id IN (
@@ -292,7 +288,7 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 						)
 					`),
 				);
-				yield* tryDb(() =>
+				yield* run((db) =>
 					db.run(sql`
 						DELETE FROM user_vote
 						WHERE target_kind = 'definition' AND target_id IN (
@@ -300,8 +296,8 @@ export const SozlukAdminLive = Layer.effect(SozlukAdmin)(
 						)
 					`),
 				);
-				yield* tryDb(() => db.run(sql`DELETE FROM definition_view WHERE term_slug IN ${slugs}`));
-				yield* tryDb(() => db.run(sql`DELETE FROM term_summary WHERE slug IN ${slugs}`));
+				yield* run((db) => db.run(sql`DELETE FROM definition_view WHERE term_slug IN ${slugs}`));
+				yield* run((db) => db.run(sql`DELETE FROM term_summary WHERE slug IN ${slugs}`));
 
 				yield* recomputeSozlukStats(new Date());
 

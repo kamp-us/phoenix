@@ -21,7 +21,7 @@ import {id} from "@usirin/forge";
 import {and, asc, desc, eq, gt, isNull, lt, or, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
-import {Drizzle, DrizzleError} from "../../services/Drizzle";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 import {excerpt as excerptText} from "../../shared/text";
 import type {VoteTargetNotFound} from "../vote/errors";
 import {Vote} from "../vote/Vote";
@@ -246,16 +246,12 @@ export class Sozluk extends Context.Service<
 
 export const SozlukLive = Layer.effect(Sozluk)(
 	Effect.gen(function* () {
-		// Capture per-request deps at layer build. Method closures use the
-		// captured `db` / `voteSvc` so each method's effect stays `R = never`.
-		const db = yield* Drizzle;
+		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
+		// destructure its bound methods. Method bodies call `run` directly so
+		// every method's `R` stays `never` (or `Vote` for the vote-delegating
+		// methods, since `voteSvc.cast` introduces `Vote` into `R`).
+		const {run} = yield* Drizzle;
 		const voteSvc = yield* Vote;
-
-		const tryDb = <A>(fn: () => Promise<A>) =>
-			Effect.tryPromise({
-				try: fn,
-				catch: (cause) => new DrizzleError({cause}),
-			});
 
 		/* ------------------------------------------------------------------ */
 		/* Closure-private helpers                                             */
@@ -292,7 +288,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			title: string,
 			now: Date,
 		) {
-			const defs = yield* tryDb(() =>
+			const defs = yield* run((db) =>
 				db
 					.select({
 						id: schema.definitionView.id,
@@ -330,7 +326,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const lastActivitySec = Math.floor(now.getTime() / 1000);
 			const lastEditSec = Math.floor(lastEditAt.getTime() / 1000);
 
-			yield* tryDb(() =>
+			yield* run((db) =>
 				db.run(sql`
 					INSERT INTO term_summary (
 						slug, title, first_letter, definition_count, total_score,
@@ -359,20 +355,20 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		 * upsert. Cheap; runs after every write that could affect totals.
 		 */
 		const recomputeSozlukStats = Effect.fn("Sozluk.recomputeSozlukStats")(function* (now: Date) {
-			const totalTermsRow = yield* tryDb(() =>
+			const totalTermsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.termSummary)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			const totalDefsRow = yield* tryDb(() =>
+			const totalDefsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.definitionView)
 					.where(isNull(schema.definitionView.deletedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			const totalAuthorsRow = yield* tryDb(() =>
+			const totalAuthorsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(DISTINCT ${schema.definitionView.authorId})`})
 					.from(schema.definitionView)
@@ -381,7 +377,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 
 			const nowSec = Math.floor(now.getTime() / 1000);
-			yield* tryDb(() =>
+			yield* run((db) =>
 				db.run(sql`
 					INSERT INTO sozluk_stats (id, total_definitions, total_terms, total_authors, updated_at)
 					VALUES (1, ${totalDefsRow}, ${totalTermsRow}, ${totalAuthorsRow}, ${nowSec})
@@ -399,12 +395,12 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		/* ------------------------------------------------------------------ */
 
 		const getTerm = Effect.fn("Sozluk.getTerm")(function* (slug: string) {
-			const meta = yield* tryDb(() =>
+			const meta = yield* run((db) =>
 				db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
 			);
 			if (!meta) return null;
 
-			const defs = yield* tryDb(() =>
+			const defs = yield* run((db) =>
 				db
 					.select()
 					.from(schema.definitionView)
@@ -486,7 +482,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const sort = opts.sort ?? "recent";
 			const limit = opts.limit ?? 50;
 
-			const rows = yield* tryDb(() =>
+			const rows = yield* run((db) =>
 				db
 					.select({
 						slug: schema.termSummary.slug,
@@ -540,7 +536,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} | null = null;
 			if (after) {
 				cursorRow =
-					(yield* tryDb(() =>
+					(yield* run((db) =>
 						db
 							.select({
 								slug: schema.termSummary.slug,
@@ -578,7 +574,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					? [desc(schema.termSummary.totalScore), schema.termSummary.slug]
 					: [desc(schema.termSummary.lastActivityAt), schema.termSummary.slug];
 
-			const fetched = yield* tryDb(() =>
+			const fetched = yield* run((db) =>
 				db
 					.select({
 						slug: schema.termSummary.slug,
@@ -614,7 +610,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				lastActivityAt: r.lastActivityAt,
 			}));
 
-			const totalCountRow = yield* tryDb(() =>
+			const totalCountRow = yield* run((db) =>
 				db.select({n: sql<number>`count(*)`}).from(schema.termSummary).get(),
 			);
 			const totalCount = totalCountRow?.n ?? 0;
@@ -633,7 +629,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			targetKind: "definition" | "post" | "comment";
 			targetId: string;
 		}) {
-			const rows = yield* tryDb(() =>
+			const rows = yield* run((db) =>
 				db
 					.select({userId: schema.userVote.userId})
 					.from(schema.userVote)
@@ -652,7 +648,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const lookupDefinitionTermSlug = Effect.fn("Sozluk.lookupDefinitionTermSlug")(function* (
 			definitionId: string,
 		) {
-			const rows = yield* tryDb(() =>
+			const rows = yield* run((db) =>
 				db
 					.select({termSlug: schema.definitionView.termSlug})
 					.from(schema.definitionView)
@@ -670,7 +666,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const rawBody = yield* validateBody(input.body);
 
 			const slug = input.termSlug;
-			const existing = yield* tryDb(() =>
+			const existing = yield* run((db) =>
 				db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
 			);
 			const termCreated = !existing;
@@ -680,7 +676,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const now = new Date();
 			const bodyExcerpt = excerpt(rawBody);
 
-			yield* tryDb(() =>
+			yield* run((db) =>
 				db.insert(schema.definitionView).values({
 					id: definitionId,
 					authorId: input.authorId,
@@ -717,7 +713,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		) {
 			const rawBody = yield* validateBody(input.body);
 
-			const definition = yield* tryDb(() =>
+			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
 					where: and(
 						eq(schema.definitionView.id, input.definitionId),
@@ -741,7 +737,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const now = new Date();
 			const bodyExcerpt = excerpt(rawBody);
 
-			yield* tryDb(() =>
+			yield* run((db) =>
 				db
 					.update(schema.definitionView)
 					.set({body: rawBody, bodyExcerpt, updatedAt: now})
@@ -764,7 +760,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const deleteDefinition = Effect.fn("Sozluk.deleteDefinition")(function* (
 			input: DeleteDefinitionInput,
 		) {
-			const definition = yield* tryDb(() =>
+			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
 					where: eq(schema.definitionView.id, input.definitionId),
 				}),
@@ -789,7 +785,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 
 			const now = new Date();
-			yield* tryDb(() =>
+			yield* run((db) =>
 				db
 					.update(schema.definitionView)
 					.set({deletedAt: now, updatedAt: now})
@@ -822,7 +818,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			// Load definition meta up-front so we can return the canonical
 			// resolver shape (body / author / timestamps) regardless of
 			// changed/no-op path.
-			const definition = yield* tryDb(() =>
+			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
 					where: and(
 						eq(schema.definitionView.id, input.definitionId),

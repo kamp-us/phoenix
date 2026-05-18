@@ -26,7 +26,7 @@
  *
  * # Atomicity
  *
- * Every state-changing call lands every mutation in one `Drizzle.batch(...)`:
+ * Every state-changing call lands every mutation in one `batch((db) => [...])`:
  *
  *   - upsert / delete on the feature-local vote table (truth source).
  *   - score-cache update on the target row, derived from a `COUNT(*)`
@@ -51,7 +51,7 @@
 import {and, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
-import {Drizzle, type DrizzleDb, DrizzleError} from "../../services/Drizzle";
+import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle";
 import {karmaBumpStatement} from "../pasaport/karma";
 import {type VoteTargetKind, VoteTargetNotFound} from "./errors";
 
@@ -115,19 +115,12 @@ interface TargetMeta {
 
 export const VoteLive = Layer.effect(Vote)(
 	Effect.gen(function* () {
-		// Capture per-request deps at layer build. Method closures use `db`
-		// directly, mirroring the Pasaport idiom — this keeps each method's
-		// `R = never` because `Drizzle` was resolved at this `yield*`.
-		const db = yield* Drizzle;
-
-		// Thin wrapper mirroring `Drizzle.run` semantics (object-notation
-		// `tryPromise` with a tagged `DrizzleError` catch) over the captured
-		// `db`. Returns `Effect<A, DrizzleError>` with no `Drizzle` in `R`.
-		const tryDb = <A>(fn: () => Promise<A>) =>
-			Effect.tryPromise({
-				try: fn,
-				catch: (cause) => new DrizzleError({cause}),
-			});
+		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
+		// destructure its bound methods. Method bodies call `run` / `batch`
+		// directly so every method's `R` stays `never`. No closure-captured
+		// `db` escapes — `db` only appears inside `run((db) => ...)` /
+		// `batch((db) => ...)` callbacks.
+		const {run, batch} = yield* Drizzle;
 
 		// ── Per-target metadata lookup ────────────────────────────────────
 		// Each target kind has its own view table holding `author_id` +
@@ -137,7 +130,7 @@ export const VoteLive = Layer.effect(Vote)(
 		const loadMeta = Effect.fn("Vote.loadMeta")(function* (kind: VoteTargetKind, targetId: string) {
 			switch (kind) {
 				case "definition": {
-					const row = yield* tryDb(() =>
+					const row = yield* run((db) =>
 						db.query.definitionView.findFirst({
 							where: and(
 								eq(schema.definitionView.id, targetId),
@@ -158,7 +151,7 @@ export const VoteLive = Layer.effect(Vote)(
 					} satisfies TargetMeta;
 				}
 				case "post": {
-					const row = yield* tryDb(() =>
+					const row = yield* run((db) =>
 						db.query.postSummary.findFirst({
 							where: and(eq(schema.postSummary.id, targetId), isNull(schema.postSummary.deletedAt)),
 						}),
@@ -176,7 +169,7 @@ export const VoteLive = Layer.effect(Vote)(
 					} satisfies TargetMeta;
 				}
 				case "comment": {
-					const row = yield* tryDb(() =>
+					const row = yield* run((db) =>
 						db.query.commentView.findFirst({
 							where: and(eq(schema.commentView.id, targetId), isNull(schema.commentView.deletedAt)),
 						}),
@@ -202,7 +195,7 @@ export const VoteLive = Layer.effect(Vote)(
 		// `isCast === alreadyCast` path keeps idempotent re-casts and
 		// re-retracts as cheap reads.
 		const probeExisting = (kind: VoteTargetKind, targetId: string, userId: string) =>
-			tryDb(async () => {
+			run(async (db) => {
 				switch (kind) {
 					case "definition": {
 						const row = await db.query.definitionVote.findFirst({
@@ -236,7 +229,7 @@ export const VoteLive = Layer.effect(Vote)(
 		// refreshed. One indexed point lookup; also serves the idempotent
 		// path's tail.
 		const readCachedScore = (kind: VoteTargetKind, targetId: string) =>
-			tryDb(async () => {
+			run(async (db) => {
 				switch (kind) {
 					case "definition": {
 						const row = await db.query.definitionView.findFirst({
@@ -290,12 +283,8 @@ export const VoteLive = Layer.effect(Vote)(
 				// the `user_vote` cross-product row, and the karma counter via
 				// `karmaBumpStatement`.
 				const karmaDelta = isCast ? 1 : -1;
-				const stmts = buildBatchStatements(db, input, meta, isCast, karmaDelta, now);
 
-				yield* Effect.tryPromise({
-					try: () => db.batch(stmts),
-					catch: (cause) => new DrizzleError({cause}),
-				});
+				yield* batch((db) => buildBatchStatements(db, input, meta, isCast, karmaDelta, now));
 
 				const newScore = yield* readCachedScore(input.targetKind, input.targetId);
 

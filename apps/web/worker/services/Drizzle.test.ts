@@ -8,13 +8,18 @@
  * because the wrapper never inspects the builder, it just forwards it to the
  * caller's callback.
  *
+ * Post-fbb57d8 reshape: `run` and `batch` are no longer Context-bound statics.
+ * They are bound methods on the Tag's value (`DrizzleAccess`). Tests
+ * destructure them at the top of each Effect.gen, mirroring the production
+ * service idiom (`const {run, batch} = yield* Drizzle`).
+ *
  * Integration coverage (real D1 via miniflare) lives in the per-feature
  * integration tests under `tests/integration/`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import type {BatchItem} from "drizzle-orm/batch";
 import {Cause, Effect, Exit, Layer, Option} from "effect";
-import {Drizzle, type DrizzleDb, DrizzleError} from "./Drizzle";
+import {Drizzle, type DrizzleAccess, type DrizzleDb, DrizzleError} from "./Drizzle";
 
 /**
  * A fake `DrizzleDb` instance — the wrapper passes it to the callback
@@ -24,12 +29,31 @@ import {Drizzle, type DrizzleDb, DrizzleError} from "./Drizzle";
 const FAKE_DB = {__phoenix_test_db__: true} as unknown as DrizzleDb;
 
 /**
+ * Build a `DrizzleAccess` value over a given fake `DrizzleDb`. Mirrors the
+ * production `DrizzleLive` body but lets each test supply its own `db` (so
+ * `batch` spy tests can intercept `db.batch(...)`).
+ */
+const makeAccess = (db: DrizzleDb): DrizzleAccess => ({
+	run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
+		Effect.tryPromise({
+			try: () => fn(db),
+			catch: (cause) => new DrizzleError({cause}),
+		}),
+	batch: ((fn: (db: DrizzleDb) => readonly BatchItem<"sqlite">[]) =>
+		Effect.tryPromise({
+			try: () =>
+				(db as unknown as {batch: (s: readonly unknown[]) => Promise<unknown>}).batch(fn(db)),
+			catch: (cause) => new DrizzleError({cause}),
+		})) as DrizzleAccess["batch"],
+});
+
+/**
  * Test layer that provides the fake builder as the `Drizzle` service. Real
  * `DrizzleLive` would call `drizzle(env.PHOENIX_DB, {...})` which requires
  * a workerd D1 binding; the contract under test is the `run` / `batch`
  * wrapping, not the builder construction.
  */
-const TestDrizzleLayer = Layer.succeed(Drizzle, FAKE_DB);
+const TestDrizzleLayer = Layer.succeed(Drizzle, makeAccess(FAKE_DB));
 
 /**
  * Stand-in `BatchItem<"sqlite">` value. The real `BatchItem` is a
@@ -44,22 +68,25 @@ const fakeStmt = (id: number) =>
 describe("Drizzle.run", () => {
 	it.effect("smoke: callback success → typed value flows through", () =>
 		Effect.gen(function* () {
-			const result = yield* Drizzle.run(() => Promise.resolve(42));
+			const {run} = yield* Drizzle;
+			const result = yield* run(() => Promise.resolve(42));
 			assert.strictEqual(result, 42);
 		}).pipe(Effect.provide(TestDrizzleLayer)),
 	);
 
 	it.effect("passes the live drizzle builder to the callback", () =>
 		Effect.gen(function* () {
-			const received = yield* Drizzle.run((db) => Promise.resolve(db));
+			const {run} = yield* Drizzle;
+			const received = yield* run((db) => Promise.resolve(db));
 			assert.strictEqual(received, FAKE_DB);
 		}).pipe(Effect.provide(TestDrizzleLayer)),
 	);
 
 	it.effect("semantics: rejection → DrizzleError with preserved cause", () =>
 		Effect.gen(function* () {
+			const {run} = yield* Drizzle;
 			const boom = new Error("d1 query failed");
-			const exit = yield* Effect.exit(Drizzle.run(() => Promise.reject(boom)));
+			const exit = yield* Effect.exit(run(() => Promise.reject(boom)));
 
 			assert.isTrue(Exit.isFailure(exit), "expected failure");
 			if (Exit.isSuccess(exit)) return;
@@ -73,24 +100,26 @@ describe("Drizzle.run", () => {
 		}).pipe(Effect.provide(TestDrizzleLayer)),
 	);
 
-	it.effect("composition: Effect.all over multiple Drizzle.run calls", () =>
+	it.effect("composition: Effect.all over multiple run calls", () =>
 		Effect.gen(function* () {
+			const {run} = yield* Drizzle;
 			const results = yield* Effect.all([
-				Drizzle.run(() => Promise.resolve("a")),
-				Drizzle.run(() => Promise.resolve("b")),
-				Drizzle.run(() => Promise.resolve("c")),
+				run(() => Promise.resolve("a")),
+				run(() => Promise.resolve("b")),
+				run(() => Promise.resolve("c")),
 			]);
 			assert.deepStrictEqual(results, ["a", "b", "c"]);
 		}).pipe(Effect.provide(TestDrizzleLayer)),
 	);
 
 	it.effect("type inference: callback's promised type is the Effect's success type", () =>
-		// Compile-time assertion via a typed binding. If `Drizzle.run` widened
-		// the return to `unknown`, the assignment to `number` would fail tsc.
+		// Compile-time assertion via a typed binding. If `run` widened the
+		// return to `unknown`, the assignment to `number` would fail tsc.
 		Effect.gen(function* () {
-			const n: number = yield* Drizzle.run(() => Promise.resolve(7));
-			const s: string = yield* Drizzle.run(() => Promise.resolve("hello"));
-			const obj: {id: string} = yield* Drizzle.run(() => Promise.resolve({id: "x"}));
+			const {run} = yield* Drizzle;
+			const n: number = yield* run(() => Promise.resolve(7));
+			const s: string = yield* run(() => Promise.resolve("hello"));
+			const obj: {id: string} = yield* run(() => Promise.resolve({id: "x"}));
 			assert.strictEqual(n + s.length + obj.id.length, 7 + 5 + 1);
 		}).pipe(Effect.provide(TestDrizzleLayer)),
 	);
@@ -98,9 +127,9 @@ describe("Drizzle.run", () => {
 
 describe("Drizzle.batch", () => {
 	/**
-	 * `Drizzle.batch` ultimately calls `db.batch(statements)` and trusts D1 /
-	 * drizzle to execute them atomically. With a fake builder we stub
-	 * `batch` to return a sentinel so the wrapping behavior is observable.
+	 * `batch` ultimately calls `db.batch(statements)` and trusts D1 / drizzle
+	 * to execute them atomically. With a fake builder we stub `batch` to
+	 * return a sentinel so the wrapping behavior is observable.
 	 */
 	function makeBatchSpy() {
 		const calls: Array<readonly unknown[]> = [];
@@ -110,15 +139,16 @@ describe("Drizzle.batch", () => {
 				return Promise.resolve(statements.map((_, i) => ({rowsAffected: i + 1})));
 			},
 		} as unknown as DrizzleDb;
-		const layer = Layer.succeed(Drizzle, db);
+		const layer = Layer.succeed(Drizzle, makeAccess(db));
 		return {db, calls, layer};
 	}
 
 	it.effect("smoke: forwards the tuple to db.batch and returns its result", () => {
 		const {calls, layer} = makeBatchSpy();
 		return Effect.gen(function* () {
+			const {batch} = yield* Drizzle;
 			const stmts = [fakeStmt(1), fakeStmt(2)] as const;
-			const result = yield* Drizzle.batch(() => stmts);
+			const result = yield* batch(() => stmts);
 
 			assert.strictEqual(calls.length, 1);
 			assert.deepStrictEqual(calls[0], stmts);
@@ -129,10 +159,11 @@ describe("Drizzle.batch", () => {
 	it.effect("batch tuple shape: callback returns the tuple, result mirrors length", () => {
 		const {layer} = makeBatchSpy();
 		return Effect.gen(function* () {
-			const single = yield* Drizzle.batch(() => [fakeStmt(1)] as const);
+			const {batch} = yield* Drizzle;
+			const single = yield* batch(() => [fakeStmt(1)] as const);
 			assert.strictEqual(single.length, 1);
 
-			const triple = yield* Drizzle.batch(() => [fakeStmt(1), fakeStmt(2), fakeStmt(3)] as const);
+			const triple = yield* batch(() => [fakeStmt(1), fakeStmt(2), fakeStmt(3)] as const);
 			assert.strictEqual(triple.length, 3);
 		}).pipe(Effect.provide(layer));
 	});
@@ -142,9 +173,10 @@ describe("Drizzle.batch", () => {
 		const db = {
 			batch: () => Promise.reject(boom),
 		} as unknown as DrizzleDb;
-		const layer = Layer.succeed(Drizzle, db);
+		const layer = Layer.succeed(Drizzle, makeAccess(db));
 		return Effect.gen(function* () {
-			const exit = yield* Effect.exit(Drizzle.batch(() => [fakeStmt(1)] as const));
+			const {batch} = yield* Drizzle;
+			const exit = yield* Effect.exit(batch(() => [fakeStmt(1)] as const));
 			assert.isTrue(Exit.isFailure(exit), "expected failure");
 			if (Exit.isSuccess(exit)) return;
 			const err = Option.getOrThrow(Cause.findErrorOption(exit.cause));

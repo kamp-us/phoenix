@@ -30,7 +30,7 @@ import {and, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
 import {CloudflareEnv} from "../../services/CloudflareEnv";
-import {Drizzle, DrizzleError} from "../../services/Drizzle";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 import {createAuth, type Session} from "./auth";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalid, UsernameTaken} from "./errors";
 
@@ -220,20 +220,11 @@ function decodeCursor(cursor: string): {createdAt: Date; id: string} | null {
 
 export const PasaportLive = Layer.effect(Pasaport)(
 	Effect.gen(function* () {
-		// Capture per-request deps at layer build. Methods close over them so
-		// the returned service shape has `R = never` on every method's effect —
-		// `Drizzle` is satisfied by this gen, not by the call site.
 		const env = yield* CloudflareEnv;
-		const db = yield* Drizzle;
-
-		// Drizzle was yielded above so methods can stay `R = never`. This thin
-		// wrapper mirrors `Drizzle.run` semantics (object-notation `tryPromise`
-		// with a tagged `DrizzleError` catch) over the captured `db`.
-		const tryDb = <A>(fn: () => Promise<A>) =>
-			Effect.tryPromise({
-				try: fn,
-				catch: (cause) => new DrizzleError({cause}),
-			});
+		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
+		// destructure its bound methods. Method bodies call `run` / `batch`
+		// directly so every method's `R` stays `never`.
+		const {run} = yield* Drizzle;
 
 		const upsertProfileIdentity = Effect.fn("Pasaport.upsertProfileIdentity")(function* (args: {
 			userId: string;
@@ -242,21 +233,22 @@ export const PasaportLive = Layer.effect(Pasaport)(
 			image: string | null;
 			updatedAtSec: number;
 		}) {
-			yield* tryDb(() =>
-				env.PHOENIX_DB.prepare(
-					`INSERT INTO user_profile (
+			yield* run((db) =>
+				db.run(sql`
+					INSERT INTO user_profile (
 						user_id, username, display_name, image,
 						total_karma, definition_count, post_count, comment_count,
 						updated_at
-					) VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?)
+					) VALUES (
+						${args.userId}, ${args.username}, ${args.displayName}, ${args.image},
+						0, 0, 0, 0, ${args.updatedAtSec}
+					)
 					ON CONFLICT(user_id) DO UPDATE SET
 						username      = COALESCE(excluded.username, user_profile.username),
 						display_name  = excluded.display_name,
 						image         = excluded.image,
-						updated_at    = excluded.updated_at`,
-				)
-					.bind(args.userId, args.username, args.displayName, args.image, args.updatedAtSec)
-					.run(),
+						updated_at    = excluded.updated_at
+				`),
 			);
 		});
 
@@ -268,7 +260,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 			totalKarma: number;
 		}) {
 			const authorId = row.userId;
-			const defCount = yield* tryDb(() =>
+			const defCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.definitionView)
@@ -280,7 +272,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 					)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			const postCount = yield* tryDb(() =>
+			const postCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.postSummary)
@@ -289,7 +281,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 					)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
-			const commentCount = yield* tryDb(() =>
+			const commentCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.commentView)
@@ -344,7 +336,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 			}),
 
 			getUserById: Effect.fn("Pasaport.getUserById")(function* (userId: string) {
-				const row = yield* tryDb(() =>
+				const row = yield* run((db) =>
 					db.query.user.findFirst({where: eq(schema.user.id, userId)}),
 				);
 				if (!row) return null;
@@ -358,7 +350,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 			}),
 
 			findUsername: Effect.fn("Pasaport.findUsername")(function* (username: string) {
-				const row = yield* tryDb(() =>
+				const row = yield* run((db) =>
 					db.query.user.findFirst({where: eq(schema.user.username, username)}),
 				);
 				if (!row?.username) return null;
@@ -366,7 +358,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 			}),
 
 			countUsersWithoutUsername: Effect.gen(function* () {
-				const rows = yield* tryDb(() =>
+				const rows = yield* run((db) =>
 					db.select({id: schema.user.id}).from(schema.user).where(isNull(schema.user.username)),
 				);
 				return rows.length;
@@ -380,7 +372,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				const normalized = input.value.trim().toLowerCase();
 				yield* assertUsername(normalized);
 
-				const existingUser = yield* tryDb(() =>
+				const existingUser = yield* run((db) =>
 					db.query.user.findFirst({where: eq(schema.user.id, userId)}),
 				);
 				if (!existingUser) {
@@ -392,7 +384,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 					});
 				}
 
-				const conflict = yield* tryDb(() =>
+				const conflict = yield* run((db) =>
 					db.query.user.findFirst({where: eq(schema.user.username, normalized)}),
 				);
 				if (conflict) {
@@ -401,7 +393,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 
 				const now = new Date();
 
-				yield* tryDb(() =>
+				yield* run((db) =>
 					db
 						.update(schema.user)
 						.set({username: normalized, updatedAt: now})
@@ -425,7 +417,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 			}),
 
 			lookupProfile: Effect.fn("Pasaport.lookupProfile")(function* (username: string) {
-				const rows = yield* tryDb(() =>
+				const rows = yield* run((db) =>
 					db
 						.select({
 							userId: schema.userProfile.userId,
@@ -444,7 +436,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 			}),
 
 			lookupProfileById: Effect.fn("Pasaport.lookupProfileById")(function* (userId: string) {
-				const rows = yield* tryDb(() =>
+				const rows = yield* run((db) =>
 					db
 						.select({
 							userId: schema.userProfile.userId,
@@ -487,7 +479,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 					return base;
 				}
 
-				const defs = yield* tryDb(() =>
+				const defs = yield* run((db) =>
 					db
 						.select({
 							id: schema.definitionView.id,
@@ -503,7 +495,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 						.limit(fetchSize),
 				);
 
-				const posts = yield* tryDb(() =>
+				const posts = yield* run((db) =>
 					db
 						.select({
 							id: schema.postSummary.id,
@@ -519,7 +511,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 						.limit(fetchSize),
 				);
 
-				const comments = yield* tryDb(() =>
+				const comments = yield* run((db) =>
 					db
 						.select({
 							id: schema.commentView.id,
@@ -535,7 +527,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 						.limit(fetchSize),
 				);
 
-				const defTotal = yield* tryDb(() =>
+				const defTotal = yield* run((db) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})
 						.from(schema.definitionView)
@@ -547,7 +539,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 						)
 						.then((r) => Number(r[0]?.n ?? 0)),
 				);
-				const postTotal = yield* tryDb(() =>
+				const postTotal = yield* run((db) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})
 						.from(schema.postSummary)
@@ -559,7 +551,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 						)
 						.then((r) => Number(r[0]?.n ?? 0)),
 				);
-				const commentTotal = yield* tryDb(() =>
+				const commentTotal = yield* run((db) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})
 						.from(schema.commentView)

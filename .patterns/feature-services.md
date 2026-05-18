@@ -29,6 +29,8 @@ Each layer depends only on the one below it. Resolvers never touch `Drizzle` dir
 
 ## The `Drizzle` service
 
+The Tag's value is a `DrizzleAccess` record carrying two bound methods — `run` (single-statement) and `batch` (atomic multi-statement). The `Drizzle` class itself is identity-only: no statics, no helpers. The only API surface is the destructured methods on the yielded service value.
+
 ```ts
 // worker/services/Drizzle.ts
 import {drizzle} from "drizzle-orm/d1";
@@ -43,48 +45,42 @@ export class DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{
   readonly cause: unknown;
 }> {}
 
-export class Drizzle extends Context.Service<Drizzle, DrizzleDb>()("@phoenix/Drizzle") {
-  /**
-   * Run a single drizzle query. The callback receives the drizzle builder and
-   * returns the query's Promise; the static yields the service internally and
-   * wraps the promise as `Effect<A, DrizzleError>`.
-   */
-  static readonly run = <A>(fn: (db: DrizzleDb) => Promise<A>) =>
-    Effect.gen(function*() {
-      const db = yield* Drizzle;
-      return yield* Effect.tryPromise({
-        try: () => fn(db),
-        catch: (cause) => new DrizzleError({cause}),
-      });
-    });
+export type Stmt = BatchItem<"sqlite">;
+export type BatchResult<T extends Readonly<[Stmt, ...Stmt[]]>> = BatchResponse<T>;
 
-  /**
-   * Atomic multi-statement write. Callback returns the tuple of drizzle
-   * statements to batch.
-   */
-  static readonly batch = <
-    U extends BatchItem<"sqlite">,
-    T extends Readonly<[U, ...U[]]>,
-  >(fn: (db: DrizzleDb) => T) =>
-    Effect.gen(function*() {
-      const db = yield* Drizzle;
-      const statements = fn(db);
-      return yield* Effect.tryPromise({
-        try: () => db.batch(statements),
-        catch: (cause) => new DrizzleError({cause}),
-      });
-    });
+export interface DrizzleAccess {
+  readonly run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.Effect<A, DrizzleError>;
+  readonly batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(
+    fn: (db: DrizzleDb) => T,
+  ) => Effect.Effect<BatchResult<T>, DrizzleError>;
 }
+
+export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@phoenix/Drizzle") {}
 
 export const DrizzleLive = Layer.effect(Drizzle)(
   Effect.gen(function*() {
     const env = yield* CloudflareEnv;
-    return drizzle(env.PHOENIX_DB, {schema});
+    const db = drizzle(env.PHOENIX_DB, {schema});
+    return {
+      run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
+        Effect.tryPromise({try: () => fn(db), catch: (cause) => new DrizzleError({cause})}),
+      batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(fn: (db: DrizzleDb) => T) =>
+        Effect.tryPromise({
+          try: () => db.batch(fn(db)) as Promise<BatchResult<T>>,
+          catch: (cause) => new DrizzleError({cause}),
+        }),
+    } satisfies DrizzleAccess;
   }),
 );
 ```
 
-Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `Drizzle.run` (single statement) or `Drizzle.batch` (atomic multi-statement). The D1 binding never leaves the `Drizzle` service.
+Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `run` (single statement) or `batch` (atomic multi-statement), destructured off the service value at layer build. The D1 binding never leaves the `Drizzle` service.
+
+### Why `run` / `batch` are NOT statics on the Tag class
+
+An earlier shape (pre-fbb57d8) put `run` / `batch` as `static readonly` effects on the Tag class — they yielded `Drizzle` internally and wrapped the promise. That looked clean but every method that yielded `Drizzle.run(...)` carried `Drizzle` in its inferred `R` channel, so every service method ended up as `Effect<A, E, Drizzle>` and the dep bled into resolvers and tests. To paper over that, services wrote closure-captured `tryDb` wrappers that re-yielded `Drizzle` once at layer build and then used a captured `db` directly — three parallel APIs (`Drizzle.run` static, `tryDb` closure, raw `Effect.tryPromise` inside batch) all doing the same job.
+
+The current shape (`run` / `batch` as bound methods on the Tag value, destructured at layer build) keeps method types as `R = never` with one canonical API and no wrapper closures. The destructure is the natural place to capture the dep — same code as the old `tryDb` would have produced, just lifted into the foundation.
 
 The service earns its keep by:
 
@@ -100,28 +96,36 @@ Object notation forces an explicit `catch` at every async boundary. The single-a
 ### Single-query reads/writes
 
 ```ts
-const term = yield* Drizzle.run((db) =>
+const {run} = yield* Drizzle;  // at layer build, once
+
+const term = yield* run((db) =>
   db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
 );
 
-const inserted = yield* Drizzle.run((db) =>
+const inserted = yield* run((db) =>
   db.insert(schema.definitionView).values({/* ... */}).returning(),
 );
 ```
 
-The callback receives the typed drizzle builder. The Effect's success type is inferred from the callback's return type. Errors flow as `DrizzleError`.
+The callback receives the typed drizzle builder. The Effect's success type is inferred from the callback's return type. Errors flow as `DrizzleError`. Method `R` channels stay `never` because `Drizzle` was already yielded at layer build.
 
 ### Atomic batch
 
 ```ts
-yield* Drizzle.batch((db) => [
+const {batch} = yield* Drizzle;
+
+yield* batch((db) => [
   db.insert(schema.definitionVote).values({/* ... */}),
   db.update(schema.definitionView).set({score: sql`score + 1`}).where(eq(schema.definitionView.id, id)),
   db.insert(schema.userVote).values({/* ... */}),
-]);
+] as const);
 ```
 
-The callback returns the tuple of unexecuted drizzle statements. Drizzle's `db.batch([...])` runs them atomically via D1's native batch API. The result is typed against the tuple — `Drizzle.batch` returns `BatchResponse<T>`.
+The callback returns the tuple of unexecuted drizzle statements. Drizzle's `db.batch([...])` runs them atomically via D1's native batch API. The result is typed against the tuple — `batch` returns `BatchResult<T>` (which is drizzle's `BatchResponse<T>`).
+
+### Raw SQL escape hatch
+
+When you need a SQL statement drizzle's builder doesn't model cleanly (e.g. multi-row `INSERT … ON CONFLICT DO UPDATE`, `DELETE FROM x WHERE id IN (subquery)`), route it through `run((db) => db.run(sql\`…\`))` rather than reaching for `env.PHOENIX_DB.prepare(...)`. Every db touch must flow through the Drizzle service — `apps/web/worker/services/Drizzle.ts` is the only file that legitimately reads `env.PHOENIX_DB` (to build the drizzle builder once).
 
 ## A feature service
 
@@ -198,6 +202,10 @@ export class Sozluk extends Context.Service<
 ```ts
 export const SozlukLive = Layer.effect(Sozluk)(
   Effect.gen(function*() {
+    // ----- Yield deps once at layer build -----
+    const {run, batch} = yield* Drizzle;   // bound methods, R = never in callers
+    const vote = yield* Vote;              // cross-service dep, see below
+
     // ----- Helpers: private closures, intermediate consts -----
 
     const validateBody = (raw: string) => {
@@ -208,7 +216,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
     const recomputeTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(
       function*(slug: string, title: string, now: Date) {
-        // ... aggregate recompute body
+        // ... aggregate recompute body — uses `run` / `batch` directly
       },
     );
 
@@ -216,7 +224,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
     return {
       getTerm: Effect.fn("Sozluk.getTerm")(function*(slug: string) {
-        const meta = yield* Drizzle.run((db) =>
+        const meta = yield* run((db) =>
           db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
         );
         if (!meta) return null;
@@ -228,7 +236,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
         const definitionId = id("def");
         const now = new Date();
 
-        yield* Drizzle.run((db) =>
+        yield* run((db) =>
           db.insert(schema.definitionView).values({id: definitionId, /* ... */}),
         );
         yield* recomputeTermSummary(input.termSlug, input.title ?? input.termSlug, now);
@@ -280,12 +288,13 @@ Vote logic is shared by `Sozluk.voteDefinition` and `Pano.voteOnPost`. `Vote` is
 ```ts
 export const SozlukLive = Layer.effect(Sozluk)(
   Effect.gen(function*() {
+    const {run} = yield* Drizzle;
     const vote = yield* Vote;
 
     return {
       voteDefinition: Effect.fn("Sozluk.voteDefinition")(function*(input) {
-        const result = yield* vote.cast({...});
-        // recompute term aggregates
+        const result = yield* vote.cast({...});  // method R picks up Vote here
+        // recompute term aggregates via run((db) => ...)
         return {/* ... */};
       }),
       // ...
@@ -295,6 +304,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 ```
 
 The dep graph: `Pano → Vote → Drizzle`, `Sozluk → Vote → Drizzle`. Vote's own deps (karma rules, rate limits, audit when those land) stay encapsulated — consumers don't see them.
+
+Vote-delegating methods are the one place a method's `R` widens beyond `never`: `voteDefinition` / `retractDefinitionVote` infer as `Effect<A, E, Vote>` because they call `yield* vote.cast(...)`. That's correct — the dep is real. The Drizzle dep is satisfied by the destructured `run` and stays out of `R`.
 
 ## Wiring at the worker entry
 

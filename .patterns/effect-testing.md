@@ -101,28 +101,36 @@ But this is the **exception**, not the default. The recommendation from [feature
 
 ## Testing the `Drizzle` service (infrastructure)
 
-`Drizzle.run` and `Drizzle.batch` are the trust boundary. Test them in isolation against a fake/in-memory drizzle setup. See the [feature-services.md](./feature-services.md#the-drizzle-service) testing-scope notes — scope B (smoke + semantics + composition + type inference + error propagation), ~10-15 tests.
+`run` and `batch` (the bound methods on the `Drizzle` service value) are the trust boundary. Test them in isolation against a fake/in-memory drizzle setup. See the [feature-services.md](./feature-services.md#the-drizzle-service) testing-scope notes — scope B (smoke + semantics + composition + type inference + error propagation), ~10-15 tests.
+
+Tests destructure the service inside `Effect.gen` and provide a `Layer.succeed(Drizzle, makeAccess(fakeDb))` where `makeAccess` mirrors the production `DrizzleLive` body over a test-supplied `db`:
 
 ```ts
+const makeAccess = (db: DrizzleDb): DrizzleAccess => ({
+  run: (fn) => Effect.tryPromise({try: () => fn(db), catch: (cause) => new DrizzleError({cause})}),
+  batch: (fn) => Effect.tryPromise({
+    try: () => db.batch(fn(db) as never),
+    catch: (cause) => new DrizzleError({cause}),
+  }),
+});
+
 describe("Drizzle.run", () => {
   it.effect("yields callback's promise result", () =>
     Effect.gen(function*() {
-      const result = yield* Drizzle.run((db) => Promise.resolve(42));
+      const {run} = yield* Drizzle;
+      const result = yield* run((db) => Promise.resolve(42));
       assert.strictEqual(result, 42);
-    }).pipe(Effect.provide(TestDrizzleLive)),
+    }).pipe(Effect.provide(Layer.succeed(Drizzle, makeAccess(FAKE_DB)))),
   );
 
   it.effect("wraps rejection as DrizzleError", () =>
     Effect.gen(function*() {
-      const exit = yield* Effect.exit(
-        Drizzle.run(() => Promise.reject(new Error("boom"))),
-      );
-      if (Exit.isSuccess(exit)) {
-        assert.fail("expected failure");
-      }
+      const {run} = yield* Drizzle;
+      const exit = yield* Effect.exit(run(() => Promise.reject(new Error("boom"))));
+      if (Exit.isSuccess(exit)) assert.fail("expected failure");
       const err = Cause.findErrorOption(exit.cause);
       assert.strictEqual(Option.getOrThrow(err)._tag, "@phoenix/Drizzle/Error");
-    }).pipe(Effect.provide(TestDrizzleLive)),
+    }).pipe(Effect.provide(Layer.succeed(Drizzle, makeAccess(FAKE_DB)))),
   );
 
   // ... composition, type inference, batch variant

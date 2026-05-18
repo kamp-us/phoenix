@@ -7,10 +7,10 @@
  * columns (`total_karma`, `*_count`) default to 0 on insert and are left
  * untouched on update.
  */
+import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
-import {CloudflareEnv} from "../../services/CloudflareEnv";
-import {Drizzle, DrizzleError} from "../../services/Drizzle";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 
 export interface BackfillProfilesResult {
 	emitted: number;
@@ -25,15 +25,7 @@ export class PasaportAdmin extends Context.Service<
 
 export const PasaportAdminLive = Layer.effect(PasaportAdmin)(
 	Effect.gen(function* () {
-		// Capture deps once at layer build so methods can stay `R = never`.
-		const env = yield* CloudflareEnv;
-		const db = yield* Drizzle;
-
-		const tryDb = <A>(fn: () => Promise<A>) =>
-			Effect.tryPromise({
-				try: fn,
-				catch: (cause) => new DrizzleError({cause}),
-			});
+		const {run} = yield* Drizzle;
 
 		const upsertProfileIdentity = Effect.fn("PasaportAdmin.upsertProfileIdentity")(
 			function* (args: {
@@ -43,28 +35,29 @@ export const PasaportAdminLive = Layer.effect(PasaportAdmin)(
 				image: string | null;
 				updatedAtSec: number;
 			}) {
-				yield* tryDb(() =>
-					env.PHOENIX_DB.prepare(
-						`INSERT INTO user_profile (
-						user_id, username, display_name, image,
-						total_karma, definition_count, post_count, comment_count,
-						updated_at
-					) VALUES (?, ?, ?, ?, 0, 0, 0, 0, ?)
-					ON CONFLICT(user_id) DO UPDATE SET
-						username      = COALESCE(excluded.username, user_profile.username),
-						display_name  = excluded.display_name,
-						image         = excluded.image,
-						updated_at    = excluded.updated_at`,
-					)
-						.bind(args.userId, args.username, args.displayName, args.image, args.updatedAtSec)
-						.run(),
+				yield* run((db) =>
+					db.run(sql`
+						INSERT INTO user_profile (
+							user_id, username, display_name, image,
+							total_karma, definition_count, post_count, comment_count,
+							updated_at
+						) VALUES (
+							${args.userId}, ${args.username}, ${args.displayName}, ${args.image},
+							0, 0, 0, 0, ${args.updatedAtSec}
+						)
+						ON CONFLICT(user_id) DO UPDATE SET
+							username      = COALESCE(excluded.username, user_profile.username),
+							display_name  = excluded.display_name,
+							image         = excluded.image,
+							updated_at    = excluded.updated_at
+					`),
 				);
 			},
 		);
 
 		return {
 			backfillProfiles: Effect.gen(function* () {
-				const users = yield* tryDb(() =>
+				const users = yield* run((db) =>
 					db
 						.select({
 							id: schema.user.id,
