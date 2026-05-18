@@ -28,7 +28,7 @@ import {Cause, Effect, Exit, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
-import {addDefinition} from "../../worker/features/sozluk/module";
+import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
 import {VoteTargetNotFound} from "../../worker/features/vote/errors";
 import {Vote, VoteLive} from "../../worker/features/vote/Vote";
 import {CloudflareEnv, DrizzleLive} from "../../worker/services";
@@ -38,7 +38,7 @@ declare module "cloudflare:test" {
 	interface ProvidedEnv extends Env {}
 }
 
-const TestLive = VoteLive.pipe(
+const TestLive = Layer.mergeAll(VoteLive, SozlukLive.pipe(Layer.provideMerge(VoteLive))).pipe(
 	Layer.provide(DrizzleLive),
 	Layer.provide(Layer.succeed(CloudflareEnv, env)),
 );
@@ -69,12 +69,17 @@ async function applyViewMigrations() {
 }
 
 async function seedDefinition(slug: string, authorId: string) {
-	const result = await addDefinition(env, {
-		termSlug: slug,
-		authorId,
-		authorName: "umut",
-		body: `seed for ${slug}`,
-	});
+	const result = await Effect.runPromise(
+		Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			return yield* sozluk.addDefinition({
+				termSlug: slug,
+				authorId,
+				authorName: "umut",
+				body: `seed for ${slug}`,
+			});
+		}).pipe(Effect.provide(TestLive)),
+	);
 	return result.definitionId;
 }
 

@@ -27,10 +27,11 @@ import {
 	UsernameTaken,
 } from "../../worker/features/pasaport/errors";
 import {
-	DefinitionNotFoundError,
-	DefinitionValidationError,
-	UnauthorizedDefinitionMutationError,
-} from "../../worker/features/sozluk/module";
+	BodyRequired,
+	BodyTooLong,
+	DefinitionNotFound,
+	UnauthorizedDefinitionMutation,
+} from "../../worker/features/sozluk/errors";
 import {
 	decodeMutationErrorCode,
 	encodeMutationError,
@@ -55,8 +56,23 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("UnauthorizedDefinitionMutationError → UNAUTHORIZED", () => {
-		const out = encodeMutationError(new UnauthorizedDefinitionMutationError("def_1"));
+	it("UnauthorizedDefinitionMutation (tagged) → UNAUTHORIZED", () => {
+		const out = encodeMutationError(
+			new UnauthorizedDefinitionMutation({
+				definitionId: "def_1",
+				message: "not authorized to mutate definition def_1",
+			}),
+		);
+		expect(codeOf(out)).toBe("UNAUTHORIZED");
+	});
+
+	it("UnauthorizedDefinitionMutationError (legacy name) → UNAUTHORIZED", () => {
+		// RPC-marshalled / legacy class-name path: still mapped through the
+		// `name`-based fallback so any plain-Error escape hatch keeps producing
+		// the same wire code.
+		const marshalled = new Error("not authorized");
+		marshalled.name = "UnauthorizedDefinitionMutationError";
+		const out = encodeMutationError(marshalled);
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
@@ -70,8 +86,11 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("DefinitionNotFoundError → DEFINITION_NOT_FOUND", () => {
-		const e = new DefinitionNotFoundError("def_1");
+	it("DefinitionNotFound (tagged) → DEFINITION_NOT_FOUND", () => {
+		const e = new DefinitionNotFound({
+			definitionId: "def_1",
+			message: "definition def_1 not found",
+		});
 		const out = encodeMutationError(e);
 		expect(codeOf(out)).toBe("DEFINITION_NOT_FOUND");
 		expect(out.message).toBe(e.message);
@@ -87,9 +106,14 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(codeOf(out)).toBe("COMMENT_NOT_FOUND");
 	});
 
-	it("DefinitionValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new DefinitionValidationError("body_required", "boş"));
+	it("BodyRequired (tagged) → BODY_REQUIRED", () => {
+		const out = encodeMutationError(new BodyRequired({message: "boş"}));
 		expect(codeOf(out)).toBe("BODY_REQUIRED");
+	});
+
+	it("BodyTooLong (tagged) → BODY_TOO_LONG", () => {
+		const out = encodeMutationError(new BodyTooLong({max: 10_000, message: "uzun"}));
+		expect(codeOf(out)).toBe("BODY_TOO_LONG");
 	});
 
 	it("PostValidationError uses its `code` upcased", () => {

@@ -9,7 +9,7 @@ import {SEED_POSTS} from "./features/pano/seed";
 import type {Session} from "./features/pasaport/auth";
 import {Pasaport} from "./features/pasaport/Pasaport";
 import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
-import {clearAllTerms, seedTerm} from "./features/sozluk/module";
+import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
 import type {EffectContext} from "./graphql/resolver";
 import {GraphQLRuntime, type SessionData} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
@@ -42,26 +42,57 @@ const upsertTermSchema = z.object({
 		.min(1),
 });
 
-// Writes go straight to `PHOENIX_DB` via the sozluk module.
+// Writes go straight to `PHOENIX_DB` via the SozlukAdmin service.
 // Idempotent: re-running with the same `(authorId, body)` skips the existing
-// row. Gated on `ENVIRONMENT === "development"`.
+// row. `AdminAuth.required` gates on `ENVIRONMENT === "development"`.
 app.post("/api/admin/sozluk/upsert-term", async (c) => {
-	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
 	const parsed = upsertTermSchema.safeParse(await c.req.json());
 	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
 	const {slug, title, definitions} = parsed.data;
-	const result = await seedTerm(c.env, {slug, title, definitions});
-	return c.json({slug, ...result});
+
+	const runtime = AdminRuntime.make(c.env);
+	try {
+		return await runtime.runPromise(
+			Effect.gen(function* () {
+				yield* AdminAuth.required;
+				const sozlukAdmin = yield* SozlukAdmin;
+				const result = yield* sozlukAdmin.seedTerm({slug, title, definitions});
+				return c.json({slug, ...result});
+			}).pipe(
+				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
+					Effect.succeed(c.text("Forbidden", 403)),
+				),
+			),
+		);
+	} finally {
+		await runtime.dispose();
+	}
 });
 
-// Drop the term_summary + definition_view + vote rows for the
-// given slugs in one D1 pass. `sozluk_stats` recomputes from what's left.
+// Drop the term_summary + definition_view + vote rows for the given slugs in
+// one D1 pass. `sozluk_stats` recomputes from what's left. `AdminAuth.required`
+// gates on `ENVIRONMENT === "development"`.
 app.post("/api/admin/sozluk/clear", async (c) => {
-	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
 	const body = (await c.req.json().catch(() => ({}))) as {slugs?: string[]};
 	const slugs = body.slugs ?? [];
-	const result = await clearAllTerms(c.env, slugs);
-	return c.json(result);
+
+	const runtime = AdminRuntime.make(c.env);
+	try {
+		return await runtime.runPromise(
+			Effect.gen(function* () {
+				yield* AdminAuth.required;
+				const sozlukAdmin = yield* SozlukAdmin;
+				const result = yield* sozlukAdmin.clearAllTerms(slugs);
+				return c.json(result);
+			}).pipe(
+				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
+					Effect.succeed(c.text("Forbidden", 403)),
+				),
+			),
+		);
+	} finally {
+		await runtime.dispose();
+	}
 });
 
 // Dev-only pano admin endpoint. Backs `pnpm pano:import`. Post-d1-direct,

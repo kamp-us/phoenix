@@ -22,11 +22,14 @@
 /// <reference path="../../worker-configuration.d.ts" />
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:workers";
+import {Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
-import {addDefinition} from "../../worker/features/sozluk/module";
-import {vote, VoteTargetNotFoundError} from "../../worker/features/vote/module";
+import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
+import {VoteTargetNotFoundError, vote} from "../../worker/features/vote/module";
+import {VoteLive} from "../../worker/features/vote/Vote";
+import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -58,13 +61,24 @@ async function applyViewMigrations() {
 	}
 }
 
+const SeedLive = SozlukLive.pipe(
+	Layer.provideMerge(VoteLive),
+	Layer.provide(DrizzleLive),
+	Layer.provide(Layer.succeed(CloudflareEnv, env)),
+);
+
 async function seedDefinition(slug: string, authorId: string) {
-	const result = await addDefinition(env, {
-		termSlug: slug,
-			authorId,
-		authorName: "umut",
-		body: `seed for ${slug}`,
-	});
+	const result = await Effect.runPromise(
+		Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			return yield* sozluk.addDefinition({
+				termSlug: slug,
+				authorId,
+				authorName: "umut",
+				body: `seed for ${slug}`,
+			});
+		}).pipe(Effect.provide(SeedLive)),
+	);
 	return result.definitionId;
 }
 
@@ -107,9 +121,7 @@ describe("vote module — targetKind: 'definition'", () => {
 		expect(result.changed).toBe(true);
 		expect(result.myVote).toBe(1);
 
-		const def = await env.PHOENIX_DB.prepare(
-			"SELECT score FROM definition_view WHERE id = ?",
-		)
+		const def = await env.PHOENIX_DB.prepare("SELECT score FROM definition_view WHERE id = ?")
 			.bind(definitionId)
 			.first<{score: number}>();
 		expect(def!.score).toBe(1);
@@ -515,10 +527,7 @@ describe("vote module — targetKind: 'comment'", () => {
 
 	it("re-casting a comment vote is an idempotent no-op", async () => {
 		const commentAuthorId = "vm-comm-cauthor-recast";
-		const {commentId} = await seedPostAndComment(
-			"vm-comm-pauthor-recast",
-			commentAuthorId,
-		);
+		const {commentId} = await seedPostAndComment("vm-comm-pauthor-recast", commentAuthorId);
 
 		const first = await vote(env, {
 			userId: "vm-comm-voter-recast",
@@ -555,10 +564,7 @@ describe("vote module — targetKind: 'comment'", () => {
 
 	it("flips cast → retract on a comment: row deleted, score 0, karma decremented", async () => {
 		const commentAuthorId = "vm-comm-cauthor-flip";
-		const {commentId} = await seedPostAndComment(
-			"vm-comm-pauthor-flip",
-			commentAuthorId,
-		);
+		const {commentId} = await seedPostAndComment("vm-comm-pauthor-flip", commentAuthorId);
 
 		await vote(env, {
 			userId: "vm-comm-voter-flip",
@@ -600,10 +606,7 @@ describe("vote module — targetKind: 'comment'", () => {
 	});
 
 	it("retracting a comment vote when none exists is a no-op", async () => {
-		const {commentId} = await seedPostAndComment(
-			"vm-comm-pauthor-rnoop",
-			"vm-comm-cauthor-rnoop",
-		);
+		const {commentId} = await seedPostAndComment("vm-comm-pauthor-rnoop", "vm-comm-cauthor-rnoop");
 
 		const result = await vote(env, {
 			userId: "vm-comm-voter-rnoop",
@@ -707,10 +710,7 @@ describe("vote module — atomic single-batch write", () => {
 					}
 					if (prop === "bind" && typeof orig === "function") {
 						return (...args: unknown[]) => {
-							const bound = (orig as (...a: unknown[]) => D1PreparedStatement).apply(
-								target,
-								args,
-							);
+							const bound = (orig as (...a: unknown[]) => D1PreparedStatement).apply(target, args);
 							return wrappedStatement(bound);
 						};
 					}
@@ -882,9 +882,7 @@ describe("vote module — atomic single-batch write", () => {
 		)
 			.bind(definitionId)
 			.first<{n: number}>();
-		const cached = await env.PHOENIX_DB.prepare(
-			"SELECT score FROM definition_view WHERE id = ?",
-		)
+		const cached = await env.PHOENIX_DB.prepare("SELECT score FROM definition_view WHERE id = ?")
 			.bind(definitionId)
 			.first<{score: number}>();
 

@@ -13,10 +13,43 @@
  *      remaining definitions keep them in the distinct count.
  */
 import {env} from "cloudflare:workers";
+import {Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
-import {addDefinition, deleteDefinition} from "../../worker/features/sozluk/module";
+import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
+import {VoteLive} from "../../worker/features/vote/Vote";
+import {CloudflareEnv, DrizzleLive} from "../../worker/services";
+
+const SozlukTestLive = SozlukLive.pipe(
+	Layer.provideMerge(VoteLive),
+	Layer.provide(DrizzleLive),
+	Layer.provide(Layer.succeed(CloudflareEnv, env)),
+);
+
+async function addDefinition(input: {
+	termSlug: string;
+	authorId: string;
+	authorName: string;
+	body: string;
+	termTitle?: string;
+}) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			return yield* sozluk.addDefinition(input);
+		}).pipe(Effect.provide(SozlukTestLive)),
+	);
+}
+
+async function deleteDefinition(input: {definitionId: string; actorId: string}) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			return yield* sozluk.deleteDefinition(input);
+		}).pipe(Effect.provide(SozlukTestLive)),
+	);
+}
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -97,7 +130,7 @@ describe("landing stats projection", () => {
 		const slugA = "stats-sozluk-alpha";
 		const slugB = "stats-sozluk-beta";
 
-		const aDef = await addDefinition(env, {
+		const aDef = await addDefinition({
 			termSlug: slugA,
 			authorId: authorA,
 			authorName: "Author A",
@@ -105,7 +138,7 @@ describe("landing stats projection", () => {
 			termTitle: "Stats Sozluk Alpha",
 		});
 
-		await addDefinition(env, {
+		await addDefinition({
 			termSlug: slugB,
 			authorId: authorB,
 			authorName: "Author B",
@@ -115,7 +148,7 @@ describe("landing stats projection", () => {
 
 		// authorA writes a second definition on slugB to verify distinct-count
 		// (still 2 authors, not 3).
-		await addDefinition(env, {
+		await addDefinition({
 			termSlug: slugB,
 			authorId: authorA,
 			authorName: "Author A",
@@ -151,7 +184,7 @@ describe("landing stats projection", () => {
 		expect(after3!.totalDefinitions).toBe(distinctDefsRow!.n);
 
 		// Soft-delete A's first definition → total_definitions ticks down.
-		await deleteDefinition(env, {definitionId: aDef.definitionId, actorId: authorA});
+		await deleteDefinition({definitionId: aDef.definitionId, actorId: authorA});
 
 		const afterDelete = await waitFor(async () => {
 			const stats = await readSozlukStats();

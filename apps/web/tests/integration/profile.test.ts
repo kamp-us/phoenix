@@ -25,7 +25,8 @@ import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
 import {Pasaport, PasaportLive} from "../../worker/features/pasaport/Pasaport";
-import {addDefinition} from "../../worker/features/sozluk/module";
+import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
+import {VoteLive} from "../../worker/features/vote/Vote";
 import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
 declare module "cloudflare:test" {
@@ -33,10 +34,24 @@ declare module "cloudflare:test" {
 	interface ProvidedEnv extends Env {}
 }
 
-const TestLive = PasaportLive.pipe(
+const TestLive = Layer.mergeAll(PasaportLive, SozlukLive.pipe(Layer.provideMerge(VoteLive))).pipe(
 	Layer.provide(DrizzleLive),
 	Layer.provide(Layer.succeed(CloudflareEnv, env)),
 );
+
+async function addDefinitionEff(input: {
+	termSlug: string;
+	authorId: string;
+	authorName: string;
+	body: string;
+}) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			return yield* sozluk.addDefinition(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
 
 async function applyViewMigrations() {
 	const sources = [baselineMigration];
@@ -137,10 +152,9 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			.first<{user_id: string}>();
 		expect(profileSeed).not.toBeNull();
 
-		// 2) seed a definition via the D1-direct sozluk module (still
-		// `module.ts` until task 4)
+		// 2) seed a definition via the Sozluk service.
 		const termSlug = "differential-engine";
-		await addDefinition(env, {
+		await addDefinitionEff({
 			termSlug,
 			authorId: userId,
 			authorName: "Ada Lovelace",
@@ -225,7 +239,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 		// Seed 5 definitions on different slugs so they get distinct ids.
 		for (let i = 0; i < 5; i++) {
 			const slug = `cursor-test-${i}`;
-			await addDefinition(env, {
+			await addDefinitionEff({
 				termSlug: slug,
 				authorId: userId,
 				authorName: "Grace",

@@ -1,6 +1,7 @@
 import {Layer, ManagedRuntime} from "effect";
 import type {Session} from "../features/pasaport/auth";
 import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
+import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk";
 import {type Vote, VoteLive} from "../features/vote/Vote";
 import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "../services";
 
@@ -31,14 +32,27 @@ export namespace GraphQLRuntime {
 	 * Services available inside a GraphQL resolver Effect. As feature services
 	 * land they get added to this union so resolvers can `yield*` them.
 	 */
-	export type Context = CloudflareEnv | RequestContext | Auth | Drizzle | Pasaport | Vote;
+	export type Context = CloudflareEnv | RequestContext | Auth | Drizzle | Pasaport | Vote | Sozluk;
 
 	/**
 	 * Merge of every per-feature service that resolvers `yield*`. Each `Live`
 	 * layer depends on `Drizzle + CloudflareEnv`, satisfied by the outer
 	 * composition via `Layer.provide(RequestValues)` below.
+	 *
+	 * `SozlukLive` depends on `Drizzle | Vote`. `Vote` is satisfied by the
+	 * `VoteLive` merged in alongside it; `Drizzle` is satisfied one step up.
+	 * The sequential `Layer.provide` chain below preserves the
+	 * "no parallel-merge of a layer with one that depends on it" rule that
+	 * `@effect/language-service`'s `layerMergeAllWithDependencies` check
+	 * enforces.
 	 */
-	const FeatureLayer = Layer.mergeAll(PasaportLive, VoteLive);
+	// `Vote` is merged in alongside `Sozluk` so its service tag stays available
+	// for any future resolver / sibling-service consumer. `SozlukLive` requires
+	// `Vote`, so it's chained through `provideMerge(VoteLive)` — the merge
+	// exposes both tags while keeping the dependency edge inside the chain
+	// (no parallel-merge of `SozlukLive` with `VoteLive` directly, which would
+	// trip the `layerMergeAllWithDependencies` check).
+	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukLive.pipe(Layer.provideMerge(VoteLive)));
 
 	export const layer = (
 		env: Env,

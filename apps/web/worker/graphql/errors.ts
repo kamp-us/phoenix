@@ -102,6 +102,22 @@ export function encodeMutationError(err: unknown): GraphQLError {
 			// the SPA distinguish.
 			case "vote/VoteTargetNotFound":
 				return gqlError(e?.message ?? "vote target not found", "VOTE_TARGET_NOT_FOUND");
+
+			// ── Sozluk ────────────────────────────────────────────────────
+			// Mirrors the legacy `DefinitionValidationError` (code-driven) and
+			// `DefinitionNotFoundError` / `UnauthorizedDefinitionMutationError`
+			// wire codes so the SPA's pattern matches keep working unchanged.
+			case "sozluk/BodyRequired":
+				return gqlError(e?.message ?? "tanım boş olamaz", "BODY_REQUIRED");
+
+			case "sozluk/BodyTooLong":
+				return gqlError(e?.message ?? "tanım çok uzun", "BODY_TOO_LONG");
+
+			case "sozluk/DefinitionNotFound":
+				return gqlError(e?.message ?? "definition not found", "DEFINITION_NOT_FOUND");
+
+			case "sozluk/UnauthorizedDefinitionMutation":
+				return gqlError("not authorized", "UNAUTHORIZED");
 		}
 	}
 
