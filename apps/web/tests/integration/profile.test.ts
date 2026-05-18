@@ -23,7 +23,12 @@ import {env} from "cloudflare:workers";
 import {Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
-import {addComment, submitPost} from "../../worker/features/pano/module";
+import {
+	type AddCommentInput,
+	Pano,
+	PanoLive,
+	type SubmitPostInput,
+} from "../../worker/features/pano/Pano";
 import {Pasaport, PasaportLive} from "../../worker/features/pasaport/Pasaport";
 import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
 import {VoteLive} from "../../worker/features/vote/Vote";
@@ -34,10 +39,28 @@ declare module "cloudflare:test" {
 	interface ProvidedEnv extends Env {}
 }
 
-const TestLive = Layer.mergeAll(PasaportLive, SozlukLive.pipe(Layer.provideMerge(VoteLive))).pipe(
-	Layer.provide(DrizzleLive),
-	Layer.provide(Layer.succeed(CloudflareEnv, env)),
-);
+const TestLive = Layer.mergeAll(
+	PasaportLive,
+	Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive)),
+).pipe(Layer.provide(DrizzleLive), Layer.provide(Layer.succeed(CloudflareEnv, env)));
+
+function submitPostEff(input: SubmitPostInput) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.submitPost(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+function addCommentEff(input: AddCommentInput) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.addComment(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
 
 async function addDefinitionEff(input: {
 	termSlug: string;
@@ -163,9 +186,8 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			termTitle: "Differential Engine",
 		});
 
-		// 3) seed a post via the D1-direct pano module (still `module.ts` until
-		// task 5)
-		const postResult = await submitPost(env, {
+		// 3) seed a post via the Pano service
+		const postResult = await submitPostEff({
 			title: "ada's first post",
 			url: "https://example.com/ada",
 			body: "an opening note",
@@ -174,8 +196,8 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			authorName: "Ada Lovelace",
 		});
 
-		// 4) seed a comment via the D1-direct pano module
-		await addComment(env, {
+		// 4) seed a comment via the Pano service
+		await addCommentEff({
 			postId: postResult.postId,
 			authorId: userId,
 			authorName: "Ada Lovelace",

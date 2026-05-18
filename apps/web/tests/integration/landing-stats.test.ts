@@ -16,16 +16,38 @@ import {env} from "cloudflare:workers";
 import {Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
-import {addComment, submitPost} from "../../worker/features/pano/module";
+import {
+	type AddCommentInput,
+	Pano,
+	PanoLive,
+	type SubmitPostInput,
+} from "../../worker/features/pano/Pano";
 import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
 import {VoteLive} from "../../worker/features/vote/Vote";
 import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
-const SozlukTestLive = SozlukLive.pipe(
-	Layer.provideMerge(VoteLive),
-	Layer.provide(DrizzleLive),
-	Layer.provide(Layer.succeed(CloudflareEnv, env)),
-);
+// Sozluk and Pano both depend on Vote — merge them and provide Vote once.
+const TestLive = Layer.mergeAll(SozlukLive, PanoLive)
+	.pipe(Layer.provideMerge(VoteLive))
+	.pipe(Layer.provide(DrizzleLive), Layer.provide(Layer.succeed(CloudflareEnv, env)));
+
+function submitPost(input: SubmitPostInput) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.submitPost(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+function addComment(input: AddCommentInput) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.addComment(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
 
 async function addDefinition(input: {
 	termSlug: string;
@@ -38,7 +60,7 @@ async function addDefinition(input: {
 		Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
 			return yield* sozluk.addDefinition(input);
-		}).pipe(Effect.provide(SozlukTestLive)),
+		}).pipe(Effect.provide(TestLive)),
 	);
 }
 
@@ -47,7 +69,7 @@ async function deleteDefinition(input: {definitionId: string; actorId: string}) 
 		Effect.gen(function* () {
 			const sozluk = yield* Sozluk;
 			return yield* sozluk.deleteDefinition(input);
-		}).pipe(Effect.provide(SozlukTestLive)),
+		}).pipe(Effect.provide(TestLive)),
 	);
 }
 
@@ -215,7 +237,7 @@ describe("landing stats projection", () => {
 		const authorA = "user_stats_pano_a";
 		const authorB = "user_stats_pano_b";
 
-		const post = await submitPost(env, {
+		const post = await submitPost({
 			title: "stats pano one",
 			url: "https://example.com/stats-pano-one",
 			body: "pano stats body",
@@ -226,7 +248,7 @@ describe("landing stats projection", () => {
 		const postId = post.postId;
 
 		// authorB drops a comment on authorA's post.
-		await addComment(env, {
+		await addComment({
 			postId,
 			authorId: authorB,
 			authorName: "Author B",
@@ -234,7 +256,7 @@ describe("landing stats projection", () => {
 		});
 
 		// authorA also comments on their own post (already an author via post).
-		await addComment(env, {
+		await addComment({
 			postId,
 			authorId: authorA,
 			authorName: "Author A",

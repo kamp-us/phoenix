@@ -1,4 +1,5 @@
 import {Layer, ManagedRuntime} from "effect";
+import {type Pano, PanoLive} from "../features/pano/Pano";
 import type {Session} from "../features/pasaport/auth";
 import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
 import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk";
@@ -13,11 +14,11 @@ import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "..
  *     ↑
  *   Drizzle                                    (single builder over PHOENIX_DB)
  *     ↑
- *   FeatureLayer (Sozluk, Pano, Vote, Pasaport) (filled by tasks 2–5)
+ *   FeatureLayer (Sozluk, Pano, Vote, Pasaport)
  *
- * Tasks 2–5 of the effect-migration each port a feature `module.ts` to a
- * `Context.Service` and merge its `Live` layer into `FeatureLayer`. Pasaport
- * landed in task 2 (`PasaportLive`); the rest are still pending.
+ * All four feature services have landed. `SozlukLive` and `PanoLive` both
+ * depend on `Vote`; we chain `provideMerge(VoteLive)` once and merge both
+ * into a single sub-layer so the parallel-merge check stays satisfied.
  *
  * See `.patterns/effect-layer-composition.md` and ADR 0010 for the design.
  */
@@ -29,30 +30,27 @@ export type SessionData = {
 
 export namespace GraphQLRuntime {
 	/**
-	 * Services available inside a GraphQL resolver Effect. As feature services
-	 * land they get added to this union so resolvers can `yield*` them.
+	 * Services available inside a GraphQL resolver Effect.
 	 */
-	export type Context = CloudflareEnv | RequestContext | Auth | Drizzle | Pasaport | Vote | Sozluk;
+	export type Context =
+		| CloudflareEnv
+		| RequestContext
+		| Auth
+		| Drizzle
+		| Pasaport
+		| Vote
+		| Sozluk
+		| Pano;
 
 	/**
-	 * Merge of every per-feature service that resolvers `yield*`. Each `Live`
-	 * layer depends on `Drizzle + CloudflareEnv`, satisfied by the outer
-	 * composition via `Layer.provide(RequestValues)` below.
-	 *
-	 * `SozlukLive` depends on `Drizzle | Vote`. `Vote` is satisfied by the
-	 * `VoteLive` merged in alongside it; `Drizzle` is satisfied one step up.
-	 * The sequential `Layer.provide` chain below preserves the
-	 * "no parallel-merge of a layer with one that depends on it" rule that
-	 * `@effect/language-service`'s `layerMergeAllWithDependencies` check
-	 * enforces.
+	 * Merge of every per-feature service that resolvers `yield*`. `SozlukLive`
+	 * and `PanoLive` both depend on `Vote`; we merge them first (parallel —
+	 * neither depends on the other) and `provideMerge(VoteLive)` once. The
+	 * resulting sub-layer exposes `Vote | Sozluk | Pano`; the outer
+	 * `Layer.mergeAll` adds `PasaportLive` (depends only on `Drizzle`).
 	 */
-	// `Vote` is merged in alongside `Sozluk` so its service tag stays available
-	// for any future resolver / sibling-service consumer. `SozlukLive` requires
-	// `Vote`, so it's chained through `provideMerge(VoteLive)` — the merge
-	// exposes both tags while keeping the dependency edge inside the chain
-	// (no parallel-merge of `SozlukLive` with `VoteLive` directly, which would
-	// trip the `layerMergeAllWithDependencies` check).
-	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukLive.pipe(Layer.provideMerge(VoteLive)));
+	const SozlukPanoLayer = Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive));
+	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukPanoLayer);
 
 	export const layer = (
 		env: Env,
@@ -72,13 +70,6 @@ export namespace GraphQLRuntime {
 			}),
 		);
 
-		// Bottom-up: RequestValues satisfies Drizzle's needs; DrizzleLive
-		// satisfies the feature services' Drizzle dep; RequestValues at the
-		// top re-exposes per-request values for resolvers to `yield*` directly.
-		// The sequential `Layer.provide` calls keep
-		// `@effect/language-service`'s `layerMergeAllWithDependencies` check
-		// happy by never merging a layer in parallel with one that depends on
-		// it.
 		const Features = FeatureLayer.pipe(Layer.provide(DrizzleLive));
 		const DataPlane = Layer.mergeAll(Features, DrizzleLive).pipe(Layer.provide(RequestValues));
 

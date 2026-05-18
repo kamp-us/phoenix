@@ -20,30 +20,15 @@ import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encode
 import {type LandingStats, readLandingStats} from "../features/landingStatsReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
-	addComment as addCommentD1,
 	type CommentConnectionPage,
 	type CommentRow,
-	deleteComment as deleteCommentD1,
-	deletePost as deletePostD1,
-	editComment as editCommentD1,
-	editPost as editPostD1,
-	getCommentRow,
-	getPost as getPostD1,
-	listCommentsConnection as listCommentsConnectionD1,
-	type PostPage,
-	type PostTagRow,
-	retractCommentVote as retractCommentVoteD1,
-	retractPostVote as retractPostVoteD1,
-	submitPost as submitPostD1,
-	voteOnComment as voteOnCommentD1,
-	voteOnPost as voteOnPostD1,
-} from "../features/pano/module";
-import {
-	listPostConnection,
+	Pano,
 	type PostConnectionPage,
+	type PostPage,
 	type PostSort,
 	type PostSummaryRow,
-} from "../features/pano/postSummaryReader";
+	type PostTagRow,
+} from "../features/pano/Pano";
 import {
 	type ContributionConnection,
 	type ContributionNode,
@@ -475,13 +460,11 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 				parent: PostSummaryRow | PostPage,
 				args: {first?: number | null; after?: string | null},
 			) {
-				const env = yield* CloudflareEnv;
-				return yield* Effect.promise(() =>
-					listCommentsConnectionD1(env, parent.id, {
-						...(args.first != null ? {first: args.first} : {}),
-						...(args.after ? {after: args.after} : {}),
-					}),
-				);
+				const pano = yield* Pano;
+				return yield* pano.listCommentsConnection(parent.id, {
+					...(args.first != null ? {first: args.first} : {}),
+					...(args.after ? {after: args.after} : {}),
+				});
 			}),
 		},
 	}),
@@ -916,7 +899,6 @@ const QueryType = new GraphQLObjectType({
 			type: NodeInterfaceType,
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
-				const env = yield* CloudflareEnv;
 				let decoded: ReturnType<typeof decodeNodeId>;
 				try {
 					decoded = decodeNodeId(args.id);
@@ -931,7 +913,8 @@ const QueryType = new GraphQLObjectType({
 						return term ? asNode("Term", term) : null;
 					}
 					case "Post": {
-						const post = yield* Effect.promise(() => getPostD1(env, decoded.id));
+						const pano = yield* Pano;
+						const post = yield* pano.getPost(decoded.id);
 						return post ? asNode("Post", post) : null;
 					}
 					case "Definition": {
@@ -943,7 +926,8 @@ const QueryType = new GraphQLObjectType({
 						return def ? asNode("Definition", def) : null;
 					}
 					case "Comment": {
-						const row = yield* Effect.promise(() => getCommentRow(env, decoded.id));
+						const pano = yield* Pano;
+						const row = yield* pano.getCommentRow(decoded.id);
 						if (!row) return null;
 						// Reply-aware projection: a row with `deletedAt` set is the
 						// parent-with-replies placeholder; the SPA renders it as
@@ -1079,30 +1063,27 @@ const QueryType = new GraphQLObjectType({
 					after?: string | null;
 				},
 			) {
-				const env = yield* CloudflareEnv;
-				return yield* Effect.promise(() =>
-					listPostConnection(env.PHOENIX_DB, {
-						...(args.sort ? {sort: args.sort} : {}),
-						...(args.first != null ? {first: args.first} : {}),
-						...(args.after ? {after: args.after} : {}),
-						...(args.host ? {host: args.host} : {}),
-					}),
-				);
+				const pano = yield* Pano;
+				return yield* pano.listPostsConnection({
+					...(args.sort ? {sort: args.sort} : {}),
+					...(args.first != null ? {first: args.first} : {}),
+					...(args.after ? {after: args.after} : {}),
+					...(args.host ? {host: args.host} : {}),
+				});
 			}),
 		},
 		post: {
 			type: PostType,
 			args: {idOrSlug: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {idOrSlug: string}) {
-				const env = yield* CloudflareEnv;
 				// Accept either a Relay global id (`Post:<localId>` base64),
 				// a raw local post id, or a slug. After the connection
 				// migration, the SPA hands back `Post.id` (the global id) when
 				// it navigates to /pano/<id>; we extract the local id so the
-				// D1 lookup hits the right row. Reads `post_summary` directly
-				// via the module.
+				// D1 lookup hits the right row.
 				const key = extractLocalId(args.idOrSlug, "Post");
-				return yield* Effect.promise(() => getPostD1(env, key));
+				const pano = yield* Pano;
+				return yield* pano.getPost(key);
 			}),
 		},
 		/**
@@ -1328,9 +1309,8 @@ const MutationType = new GraphQLObjectType({
 				},
 			) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 
-				// ----- resolver-side validation (mirrors Agent for fast-fail UX) -----
+				// ----- resolver-side validation (mirrors service for fast-fail UX) -----
 				const title = (args.title ?? "").trim();
 				if (title.length === 0) {
 					throw new GraphQLError("başlık boş olamaz", {
@@ -1370,22 +1350,20 @@ const MutationType = new GraphQLObjectType({
 					}
 				}
 
-				// Module function mints the post id internally and writes
-				// PHOENIX_DB inline. Thrown PostValidationError falls through
-				// to the resolver wrapper.
-				const r = yield* Effect.promise(() =>
-					submitPostD1(env, {
-						title: args.title,
-						...(args.url ? {url: args.url} : {}),
-						...(args.body ? {body: args.body} : {}),
-						tags: args.tags.map((t) => ({
-							kind: t.kind,
-							...(t.label ? {label: t.label} : {}),
-						})),
-						authorId: user.id,
-						authorName: user.name ?? user.email,
-					}),
-				);
+				// Service mints the post id internally and writes PHOENIX_DB
+				// inline. PostValidation falls through to the resolver wrapper.
+				const pano = yield* Pano;
+				const r = yield* pano.submitPost({
+					title: args.title,
+					...(args.url ? {url: args.url} : {}),
+					...(args.body ? {body: args.body} : {}),
+					tags: args.tags.map((t) => ({
+						kind: t.kind,
+						...(t.label ? {label: t.label} : {}),
+					})),
+					authorId: user.id,
+					authorName: user.name ?? user.email,
+				});
 				return {
 					id: r.postId,
 					slug: null,
@@ -1410,12 +1388,12 @@ const MutationType = new GraphQLObjectType({
 			args: {postId: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {postId: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.postId, "Post");
-				// Module function writes PHOENIX_DB inline. PostNotFoundError
+				// Service writes PHOENIX_DB via Drizzle.batch. PostNotFound
 				// falls through to the resolver wrapper, which encodes the
 				// wire-format extensions.code via `encodeMutationError`.
-				const result = yield* Effect.promise(() => voteOnPostD1(env, {postId, voterId: user.id}));
+				const pano = yield* Pano;
+				const result = yield* pano.voteOnPost({postId, voterId: user.id});
 				return {
 					id: result.postId,
 					slug: null,
@@ -1444,11 +1422,9 @@ const MutationType = new GraphQLObjectType({
 			args: {postId: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {postId: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.postId, "Post");
-				const result = yield* Effect.promise(() =>
-					retractPostVoteD1(env, {postId, voterId: user.id}),
-				);
+				const pano = yield* Pano;
+				const result = yield* pano.retractPostVote({postId, voterId: user.id});
 				return {
 					id: result.postId,
 					slug: null,
@@ -1479,11 +1455,10 @@ const MutationType = new GraphQLObjectType({
 				args: {id: string; title?: string | null; body?: string | null},
 			) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 
-				// At least one of title/body must be provided. The module re-checks
-				// (defense-in-depth) but a resolver-side check yields a faster
-				// failure with a typed code.
+				// At least one of title/body must be provided. The service
+				// re-checks (defense-in-depth) but a resolver-side check yields
+				// a faster failure with a typed code.
 				if (args.title == null && args.body == null) {
 					throw new GraphQLError("başlık veya metin gerekli", {
 						extensions: {code: "TITLE_REQUIRED"},
@@ -1491,14 +1466,13 @@ const MutationType = new GraphQLObjectType({
 				}
 
 				const postId = extractLocalId(args.id, "Post");
-				const r = yield* Effect.promise(() =>
-					editPostD1(env, {
-						postId,
-						actorId: user.id,
-						...(args.title != null ? {title: args.title} : {}),
-						...(args.body != null ? {body: args.body} : {}),
-					}),
-				);
+				const pano = yield* Pano;
+				const r = yield* pano.editPost({
+					postId,
+					actorId: user.id,
+					...(args.title != null ? {title: args.title} : {}),
+					...(args.body != null ? {body: args.body} : {}),
+				});
 				return {
 					id: r.postId,
 					slug: null,
@@ -1531,9 +1505,9 @@ const MutationType = new GraphQLObjectType({
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.id, "Post");
-				const r = yield* Effect.promise(() => deletePostD1(env, {postId, actorId: user.id}));
+				const pano = yield* Pano;
+				const r = yield* pano.deletePost({postId, actorId: user.id});
 				// Return the Relay global id so `@deleteRecord` can find the
 				// store record under the same DataID Relay normalized the
 				// `Post` to (`encodeNodeId("Post", localId)`).
@@ -1552,19 +1526,17 @@ const MutationType = new GraphQLObjectType({
 				args: {postId: string; parentId?: string | null; body: string},
 			) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 
 				const postId = extractLocalId(args.postId, "Post");
 				const parentId = args.parentId ? extractLocalId(args.parentId, "Comment") : null;
-				const result = yield* Effect.promise(() =>
-					addCommentD1(env, {
-						postId,
-						authorId: user.id,
-						authorName: user.name ?? user.email,
-						body: args.body,
-						...(parentId ? {parentId} : {}),
-					}),
-				);
+				const pano = yield* Pano;
+				const result = yield* pano.addComment({
+					postId,
+					authorId: user.id,
+					authorName: user.name ?? user.email,
+					body: args.body,
+					...(parentId ? {parentId} : {}),
+				});
 				return {
 					id: result.commentId,
 					parentId: result.parentId,
@@ -1583,11 +1555,9 @@ const MutationType = new GraphQLObjectType({
 			args: {commentId: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {commentId: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.commentId, "Comment");
-				const result = yield* Effect.promise(() =>
-					voteOnCommentD1(env, {commentId, voterId: user.id}),
-				);
+				const pano = yield* Pano;
+				const result = yield* pano.voteOnComment({commentId, voterId: user.id});
 				return {
 					id: result.commentId,
 					parentId: result.parentId,
@@ -1608,11 +1578,9 @@ const MutationType = new GraphQLObjectType({
 			args: {commentId: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {commentId: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.commentId, "Comment");
-				const result = yield* Effect.promise(() =>
-					retractCommentVoteD1(env, {commentId, voterId: user.id}),
-				);
+				const pano = yield* Pano;
+				const result = yield* pano.retractCommentVote({commentId, voterId: user.id});
 				return {
 					id: result.commentId,
 					parentId: result.parentId,
@@ -1639,11 +1607,9 @@ const MutationType = new GraphQLObjectType({
 			},
 			resolve: resolver(function* (_source, args: {id: string; body: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.id, "Comment");
-				const r = yield* Effect.promise(() =>
-					editCommentD1(env, {commentId, actorId: user.id, body: args.body}),
-				);
+				const pano = yield* Pano;
+				const r = yield* pano.editComment({commentId, actorId: user.id, body: args.body});
 				return {
 					id: r.commentId,
 					parentId: r.parentId,
@@ -1671,9 +1637,9 @@ const MutationType = new GraphQLObjectType({
 			args: {id: {type: new GraphQLNonNull(GraphQLID)}},
 			resolve: resolver(function* (_source, args: {id: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.id, "Comment");
-				const r = yield* Effect.promise(() => deleteCommentD1(env, {commentId, actorId: user.id}));
+				const pano = yield* Pano;
+				const r = yield* pano.deleteComment({commentId, actorId: user.id});
 				if (r.hasReplies && r.placeholder) {
 					// Parent-with-replies: surface the `[silindi]` placeholder row
 					// so Relay merges the new scalar values into the existing

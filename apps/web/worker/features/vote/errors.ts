@@ -6,10 +6,8 @@
  *
  *   vote/VoteTargetNotFound → VOTE_TARGET_NOT_FOUND
  *
- * Mirrors the legacy `VoteTargetNotFoundError` (in `vote/module.ts`) shape:
- * the resolver-facing wire code is unchanged so the SPA continues to
- * pattern-match the same string. The old class-form error stays on the legacy
- * `vote()` async function until Task 5 (Pano migration) deletes it.
+ * Replaces the pre-effect-migration `VoteTargetNotFoundError` class-form
+ * error; wire code preserved verbatim so SPA pattern-matching keeps working.
  */
 import {Data} from "effect";
 

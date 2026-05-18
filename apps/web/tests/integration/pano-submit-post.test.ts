@@ -1,30 +1,31 @@
 /**
- * Pano D1-direct `submitPost`.
+ * Pano `submitPost` — Effect service path (effect-migration task 5).
  *
- * Exercises the module-functional path against `env.PHOENIX_DB`:
- *   1. Apply view migrations (including 0006 for d1-direct pano tables).
- *   2. Happy path: submitPost mints a post id, inserts `post_summary` with
- *      denormalized author + tags + host, bumps `pano_stats`.
- *   3. Validation: empty title, > 200 chars title, invalid URL,
- *      > 10 000 char body, empty tags, off-enum tag.
- *   4. Author indexing: the `post_summary` row exposes author_id and
- *      created_at so the `(author_id, created_at DESC)` index can serve
- *      the profile feed.
- *
- * No `runInDurableObject`, no outbox, no projection workflow — the writes
- * are inline D1 (ADR 0009).
+ * Exercises `PanoLive` + `VoteLive` + `DrizzleLive` end-to-end against
+ * `env.PHOENIX_DB` inside workerd. Wire codes preserved verbatim; the only
+ * change versus the pre-effect-migration shape is the call form (Effect over
+ * Promise) and the typed `PostValidation` failure channel.
  */
 /// <reference path="../../worker-configuration.d.ts" />
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:workers";
+import {Cause, Effect, Exit, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
-import {PostValidationError, submitPost} from "../../worker/features/pano/module";
+import {Pano, PanoLive, type SubmitPostInput} from "../../worker/features/pano/Pano";
+import {VoteLive} from "../../worker/features/vote/Vote";
+import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
 	interface ProvidedEnv extends Env {}
 }
+
+const TestLive = PanoLive.pipe(
+	Layer.provideMerge(VoteLive),
+	Layer.provide(DrizzleLive),
+	Layer.provide(Layer.succeed(CloudflareEnv, env)),
+);
 
 async function applyViewMigrations() {
 	const sources = [baselineMigration];
@@ -51,13 +52,30 @@ async function applyViewMigrations() {
 	}
 }
 
-async function expectRejection(promise: Promise<unknown>, match: RegExp): Promise<void> {
-	try {
-		await promise;
-		throw new Error("expected rejection");
-	} catch (err) {
-		expect((err as Error).message).toMatch(match);
-	}
+function submitPost(input: SubmitPostInput) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.submitPost(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+async function expectValidation(program: Effect.Effect<unknown, unknown, never>, code: string) {
+	const exit = await Effect.runPromise(Effect.exit(program));
+	if (Exit.isSuccess(exit)) throw new Error("expected validation failure");
+	const found = Cause.findError(exit.cause);
+	if (found._tag !== "Success") throw new Error("expected typed failure");
+	const err = found.success as {_tag?: string; code?: string};
+	expect(err._tag).toBe("pano/PostValidation");
+	expect(err.code).toBe(code);
+}
+
+function submitProgram(input: SubmitPostInput) {
+	return Effect.gen(function* () {
+		const pano = yield* Pano;
+		return yield* pano.submitPost(input);
+	}).pipe(Effect.provide(TestLive));
 }
 
 beforeAll(async () => {
@@ -66,7 +84,7 @@ beforeAll(async () => {
 
 describe("pano.submitPost", () => {
 	it("writes post_summary with denormalized author + tags + host", async () => {
-		const result = await submitPost(env, {
+		const result = await submitPost({
 			title: "phoenix neden tek worker'da koşuyor",
 			url: "https://example.com/phoenix-arch",
 			body: "Tek deploy, tek bind, tek SPA — DO'lar incremental şekilde geliyor.",
@@ -109,7 +127,6 @@ describe("pano.submitPost", () => {
 		expect(summary!.url).toBe("https://example.com/phoenix-arch");
 		expect(summary!.author_id).toBe("u-author-1");
 		expect(summary!.author_name).toBe("umut");
-		// Tags are stored as comma-separated kind values (Turkish enum).
 		expect(summary!.tags).toBe("tartışma,meta");
 		expect(summary!.score).toBe(0);
 		expect(summary!.comment_count).toBe(0);
@@ -117,102 +134,84 @@ describe("pano.submitPost", () => {
 		expect(summary!.body_excerpt).toContain("Tek deploy");
 	});
 
-	it("rejects empty title", async () => {
-		await expectRejection(
-			submitPost(env, {
+	it("rejects empty title with title_required", async () => {
+		await expectValidation(
+			submitProgram({
 				title: "   ",
 				tags: [{kind: "tartışma"}],
 				authorId: "u1",
 				authorName: "umut",
 			}),
-			/boş olamaz|gerekli/i,
+			"title_required",
 		);
 	});
 
-	it("rejects titles over 200 chars", async () => {
-		await expectRejection(
-			submitPost(env, {
+	it("rejects titles over 200 chars with title_too_long", async () => {
+		await expectValidation(
+			submitProgram({
 				title: "x".repeat(201),
 				tags: [{kind: "tartışma"}],
 				authorId: "u1",
 				authorName: "umut",
 			}),
-			/200|en fazla/i,
+			"title_too_long",
 		);
 	});
 
-	it("rejects invalid URLs", async () => {
-		await expectRejection(
-			submitPost(env, {
+	it("rejects invalid URLs with url_invalid", async () => {
+		await expectValidation(
+			submitProgram({
 				title: "valid title",
 				url: "not a url",
 				tags: [{kind: "tartışma"}],
 				authorId: "u1",
 				authorName: "umut",
 			}),
-			/url|geçersiz/i,
+			"url_invalid",
 		);
 	});
 
-	it("rejects bodies over 10 000 chars", async () => {
-		await expectRejection(
-			submitPost(env, {
+	it("rejects bodies over 10 000 chars with body_too_long", async () => {
+		await expectValidation(
+			submitProgram({
 				title: "valid title",
 				body: "x".repeat(10_001),
 				tags: [{kind: "tartışma"}],
 				authorId: "u1",
 				authorName: "umut",
 			}),
-			/10\s?000|en fazla/i,
+			"body_too_long",
 		);
 	});
 
-	it("rejects empty tag list", async () => {
-		await expectRejection(
-			submitPost(env, {
+	it("rejects empty tag list with tags_required", async () => {
+		await expectValidation(
+			submitProgram({
 				title: "valid title",
 				tags: [],
 				authorId: "u1",
 				authorName: "umut",
 			}),
-			/etiket|en az/i,
+			"tags_required",
 		);
 	});
 
-	it("rejects tags outside the fixed enum", async () => {
-		await expectRejection(
-			submitPost(env, {
+	it("rejects tags outside the fixed enum with tag_invalid", async () => {
+		await expectValidation(
+			submitProgram({
 				title: "valid title",
 				tags: [{kind: "haber"}],
 				authorId: "u1",
 				authorName: "umut",
 			}),
-			/geçersiz|invalid/i,
+			"tag_invalid",
 		);
 	});
 
-	it("validation errors carry a typed code via PostValidationError", async () => {
-		try {
-			await submitPost(env, {
-				title: "",
-				tags: [{kind: "tartışma"}],
-				authorId: "u1",
-				authorName: "umut",
-			});
-			throw new Error("expected rejection");
-		} catch (err) {
-			expect(err).toBeInstanceOf(PostValidationError);
-			expect((err as PostValidationError).code).toBe("title_required");
-		}
-	});
-
 	it("post_summary carries author_id + created_at so the (author_id, created_at DESC) index can serve the profile feed", async () => {
-		// Author submits two posts in sequence; verify both rows land with the
-		// same author_id and that ordering by created_at DESC returns the
-		// newest first.
 		const authorId = `u-idx-${Date.now().toString(36)}`;
 
-		const first = await submitPost(env, {
+		const first = await submitPost({
 			title: "first post",
 			tags: [{kind: "meta"}],
 			authorId,
@@ -223,7 +222,7 @@ describe("pano.submitPost", () => {
 		// two rows onto the same timestamp.
 		await new Promise((r) => setTimeout(r, 1100));
 
-		const second = await submitPost(env, {
+		const second = await submitPost({
 			title: "second post",
 			tags: [{kind: "meta"}],
 			authorId,

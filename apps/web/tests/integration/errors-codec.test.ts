@@ -13,13 +13,13 @@
 import {GraphQLError} from "graphql";
 import {describe, expect, it} from "vitest";
 import {
-	CommentNotFoundError,
-	CommentValidationError,
-	PostNotFoundError,
-	PostValidationError,
-	UnauthorizedCommentMutationError,
-	UnauthorizedPostMutationError,
-} from "../../worker/features/pano/module";
+	CommentNotFound,
+	CommentValidation,
+	PostNotFound,
+	PostValidation,
+	UnauthorizedCommentMutation,
+	UnauthorizedPostMutation,
+} from "../../worker/features/pano/errors";
 import {
 	UserNotFound,
 	UsernameAlreadySet,
@@ -76,13 +76,17 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("UnauthorizedPostMutationError → UNAUTHORIZED", () => {
-		const out = encodeMutationError(new UnauthorizedPostMutationError("post_1"));
+	it("UnauthorizedPostMutation (tagged) → UNAUTHORIZED", () => {
+		const out = encodeMutationError(
+			new UnauthorizedPostMutation({postId: "post_1", message: "not authorized"}),
+		);
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("UnauthorizedCommentMutationError → UNAUTHORIZED", () => {
-		const out = encodeMutationError(new UnauthorizedCommentMutationError("c_1"));
+	it("UnauthorizedCommentMutation (tagged) → UNAUTHORIZED", () => {
+		const out = encodeMutationError(
+			new UnauthorizedCommentMutation({commentId: "c_1", message: "not authorized"}),
+		);
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
@@ -96,13 +100,17 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(out.message).toBe(e.message);
 	});
 
-	it("PostNotFoundError → POST_NOT_FOUND", () => {
-		const out = encodeMutationError(new PostNotFoundError("p_1"));
+	it("PostNotFound (tagged) → POST_NOT_FOUND", () => {
+		const out = encodeMutationError(
+			new PostNotFound({postId: "p_1", message: "post p_1 not found"}),
+		);
 		expect(codeOf(out)).toBe("POST_NOT_FOUND");
 	});
 
-	it("CommentNotFoundError → COMMENT_NOT_FOUND", () => {
-		const out = encodeMutationError(new CommentNotFoundError("c_1"));
+	it("CommentNotFound (tagged) → COMMENT_NOT_FOUND", () => {
+		const out = encodeMutationError(
+			new CommentNotFound({commentId: "c_1", message: "comment c_1 not found"}),
+		);
 		expect(codeOf(out)).toBe("COMMENT_NOT_FOUND");
 	});
 
@@ -116,13 +124,15 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(codeOf(out)).toBe("BODY_TOO_LONG");
 	});
 
-	it("PostValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new PostValidationError("title_too_long", "uzun"));
+	it("PostValidation (tagged) uses its `code` upcased", () => {
+		const out = encodeMutationError(new PostValidation({code: "title_too_long", message: "uzun"}));
 		expect(codeOf(out)).toBe("TITLE_TOO_LONG");
 	});
 
-	it("CommentValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new CommentValidationError("parent_not_found", "yok"));
+	it("CommentValidation (tagged) uses its `code` upcased", () => {
+		const out = encodeMutationError(
+			new CommentValidation({code: "parent_not_found", message: "yok"}),
+		);
 		expect(codeOf(out)).toBe("PARENT_NOT_FOUND");
 	});
 

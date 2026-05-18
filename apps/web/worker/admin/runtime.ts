@@ -1,4 +1,5 @@
 import {Layer, ManagedRuntime} from "effect";
+import {type PanoAdmin, PanoAdminLive} from "../features/pano/PanoAdmin";
 import {type PasaportAdmin, PasaportAdminLive} from "../features/pasaport/PasaportAdmin";
 import {type SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin";
 import {type AdminAuth, AdminAuthLive, CloudflareEnv, type Drizzle, DrizzleLive} from "../services";
@@ -27,13 +28,19 @@ export namespace AdminRuntime {
 	 * Services available inside an admin Effect. Expands as `SozlukAdmin`,
 	 * `PanoAdmin` land.
 	 */
-	export type Context = CloudflareEnv | Drizzle | AdminAuth | PasaportAdmin | SozlukAdmin;
+	export type Context =
+		| CloudflareEnv
+		| Drizzle
+		| AdminAuth
+		| PasaportAdmin
+		| SozlukAdmin
+		| PanoAdmin;
 
 	/**
 	 * Merge of every per-feature admin service. Each `Live` layer depends on
 	 * `Drizzle + CloudflareEnv`, satisfied by `Capabilities`.
 	 */
-	const AdminFeatureLayer = Layer.mergeAll(PasaportAdminLive, SozlukAdminLive);
+	const AdminFeatureLayer = Layer.mergeAll(PasaportAdminLive, SozlukAdminLive, PanoAdminLive);
 
 	export const layer = (env: Env): Layer.Layer<Context, never, never> => {
 		const RequestValues = Layer.succeed(CloudflareEnv, env);

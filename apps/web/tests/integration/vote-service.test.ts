@@ -16,10 +16,6 @@
  * Layer setup: `VoteLive` + `DrizzleLive` + `CloudflareEnv(miniflareEnv)`,
  * mirroring the Pasaport integration test idiom. No mocks — real D1 under
  * the layer pipeline.
- *
- * Note: the legacy `vote()` async function in `vote/module.ts` is exercised
- * in parallel by `vote-module.test.ts`; both surfaces coexist until Task 5
- * (Pano migration) deletes the legacy module.
  */
 /// <reference path="../../worker-configuration.d.ts" />
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
@@ -27,7 +23,7 @@ import {env} from "cloudflare:workers";
 import {Cause, Effect, Exit, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
-import {addComment, submitPost} from "../../worker/features/pano/module";
+import {Pano, PanoLive} from "../../worker/features/pano/Pano";
 import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
 import {VoteTargetNotFound} from "../../worker/features/vote/errors";
 import {Vote, VoteLive} from "../../worker/features/vote/Vote";
@@ -38,10 +34,37 @@ declare module "cloudflare:test" {
 	interface ProvidedEnv extends Env {}
 }
 
-const TestLive = Layer.mergeAll(VoteLive, SozlukLive.pipe(Layer.provideMerge(VoteLive))).pipe(
-	Layer.provide(DrizzleLive),
-	Layer.provide(Layer.succeed(CloudflareEnv, env)),
-);
+const TestLive = Layer.mergeAll(SozlukLive, PanoLive)
+	.pipe(Layer.provideMerge(VoteLive))
+	.pipe(Layer.provide(DrizzleLive), Layer.provide(Layer.succeed(CloudflareEnv, env)));
+
+async function submitPostEff(input: {
+	title: string;
+	tags: Array<{kind: string}>;
+	authorId: string;
+	authorName: string;
+}) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.submitPost(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+async function addCommentEff(input: {
+	postId: string;
+	authorId: string;
+	authorName: string;
+	body: string;
+}) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.addComment(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
 
 async function applyViewMigrations() {
 	const sources = [baselineMigration];
@@ -84,7 +107,7 @@ async function seedDefinition(slug: string, authorId: string) {
 }
 
 async function seedPost(authorId: string) {
-	const result = await submitPost(env, {
+	const result = await submitPostEff({
 		title: `vote-svc post ${Math.random().toString(36).slice(2)}`,
 		tags: [{kind: "tartışma"}],
 		authorId,
@@ -95,7 +118,7 @@ async function seedPost(authorId: string) {
 
 async function seedPostAndComment(postAuthorId: string, commentAuthorId: string) {
 	const postId = await seedPost(postAuthorId);
-	const comment = await addComment(env, {
+	const comment = await addCommentEff({
 		postId,
 		authorId: commentAuthorId,
 		authorName: "comment author",

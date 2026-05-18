@@ -118,6 +118,28 @@ export function encodeMutationError(err: unknown): GraphQLError {
 
 			case "sozluk/UnauthorizedDefinitionMutation":
 				return gqlError("not authorized", "UNAUTHORIZED");
+
+			// ── Pano ──────────────────────────────────────────────────────
+			// Mirrors the legacy `PostValidationError` / `PostNotFoundError` /
+			// `UnauthorizedPostMutationError` / `CommentValidationError` /
+			// `CommentNotFoundError` / `UnauthorizedCommentMutationError`
+			// wire codes verbatim so SPA pattern-matching keeps working.
+			case "pano/PostValidation":
+			case "pano/CommentValidation": {
+				const code = (e as {code?: string} | undefined)?.code;
+				const upper = code ? code.toUpperCase() : "BAD_REQUEST";
+				return gqlError(e?.message ?? "validation failed", upper);
+			}
+
+			case "pano/PostNotFound":
+				return gqlError(e?.message ?? "post not found", "POST_NOT_FOUND");
+
+			case "pano/CommentNotFound":
+				return gqlError(e?.message ?? "comment not found", "COMMENT_NOT_FOUND");
+
+			case "pano/UnauthorizedPostMutation":
+			case "pano/UnauthorizedCommentMutation":
+				return gqlError("not authorized", "UNAUTHORIZED");
 		}
 	}
 

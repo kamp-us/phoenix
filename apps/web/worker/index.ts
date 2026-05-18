@@ -4,8 +4,7 @@ import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
 import {AdminRuntime} from "./admin/runtime";
-import {addComment, submitPost} from "./features/pano/module";
-import {SEED_POSTS} from "./features/pano/seed";
+import {PanoAdmin} from "./features/pano/PanoAdmin";
 import type {Session} from "./features/pasaport/auth";
 import {Pasaport} from "./features/pasaport/Pasaport";
 import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
@@ -95,69 +94,37 @@ app.post("/api/admin/sozluk/clear", async (c) => {
 	}
 });
 
-// Dev-only pano admin endpoint. Backs `pnpm pano:import`. Post-d1-direct,
-// every write goes straight to `PHOENIX_DB` via the
-// `submitPost` / `addComment` module functions — no DO RPC. Gated on
-// `ENVIRONMENT === "development"`.
+// Dev-only pano admin endpoint. Backs `pnpm pano:import`. Routes through the
+// admin runtime + `AdminAuth.required` + `PanoAdmin.seedPosts` — same shape as
+// the sozluk admin endpoints. Gated on `ENVIRONMENT === "development"`.
 const panoSeedSchema = z.object({
 	clear: z.boolean().optional(),
 });
 
 app.post("/api/admin/pano/seed", async (c) => {
-	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
 	const body = (await c.req.json().catch(() => ({}))) as unknown;
 	const parsed = panoSeedSchema.safeParse(body);
 	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
 
-	const cleared = {posts: 0, comments: 0};
-	if (parsed.data.clear) {
-		const postsBefore = await c.env.PHOENIX_DB.prepare(
-			"SELECT COUNT(*) AS count FROM post_summary",
-		).first<{count: number}>();
-		const commentsBefore = await c.env.PHOENIX_DB.prepare(
-			"SELECT COUNT(*) AS count FROM comment_view",
-		).first<{count: number}>();
-		cleared.posts = postsBefore?.count ?? 0;
-		cleared.comments = commentsBefore?.count ?? 0;
-		await c.env.PHOENIX_DB.batch([
-			c.env.PHOENIX_DB.prepare("DELETE FROM comment_vote"),
-			c.env.PHOENIX_DB.prepare("DELETE FROM post_vote"),
-			c.env.PHOENIX_DB.prepare("DELETE FROM comment_view"),
-			c.env.PHOENIX_DB.prepare("DELETE FROM post_summary"),
-			c.env.PHOENIX_DB.prepare("DELETE FROM pano_stats"),
-		]);
+	const runtime = AdminRuntime.make(c.env);
+	try {
+		return await runtime.runPromise(
+			Effect.gen(function* () {
+				yield* AdminAuth.required;
+				const panoAdmin = yield* PanoAdmin;
+				const result = yield* panoAdmin.seedPosts({
+					...(parsed.data.clear !== undefined ? {clear: parsed.data.clear} : {}),
+				});
+				return c.json(result);
+			}).pipe(
+				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
+					Effect.succeed(c.text("Forbidden", 403)),
+				),
+			),
+		);
+	} finally {
+		await runtime.dispose();
 	}
-
-	const postIds: string[] = [];
-	let inserted = 0;
-	for (const seed of SEED_POSTS) {
-		const post = await submitPost(c.env, {
-			title: seed.title,
-			...(seed.url ? {url: seed.url} : {}),
-			...(seed.body ? {body: seed.body} : {}),
-			authorId: seed.authorId,
-			authorName: seed.authorName,
-			tags: seed.tags,
-		});
-		postIds.push(post.postId);
-		inserted++;
-
-		// Two-pass: top-level first so children can reference parents.
-		const insertedIds: string[] = [];
-		for (const cmt of seed.comments) {
-			const parentId = cmt.parentIdx != null ? (insertedIds[cmt.parentIdx] ?? null) : null;
-			const result = await addComment(c.env, {
-				postId: post.postId,
-				authorId: cmt.authorId,
-				authorName: cmt.authorName,
-				body: cmt.body,
-				...(parentId != null ? {parentId} : {}),
-			});
-			insertedIds.push(result.commentId);
-		}
-	}
-
-	return c.json({inserted, postIds, cleared});
 });
 
 // Dev-only Pasaport admin endpoint: backfill `user_profile` rows in PHOENIX_DB
