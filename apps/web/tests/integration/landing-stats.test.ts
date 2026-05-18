@@ -12,7 +12,7 @@
  *   3. Soft-delete a definition → total_definitions decrements; the author's
  *      remaining definitions keep them in the distinct count.
  */
-import {env} from "cloudflare:test";
+import {env} from "cloudflare:workers";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";

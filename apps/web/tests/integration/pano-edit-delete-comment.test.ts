@@ -17,7 +17,7 @@
  *
  * Zero `runInDurableObject` blocks — the module writes D1 directly.
  */
-import {env} from "cloudflare:test";
+import {env} from "cloudflare:workers";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {
