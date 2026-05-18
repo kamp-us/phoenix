@@ -12,7 +12,15 @@
  * `vote()` async function until Task 5 (Pano migration) deletes it.
  */
 import {Data} from "effect";
-import type {VoteTargetKind} from "./Vote";
+
+/**
+ * The three polymorphic vote targets in the system. Lives here (alongside the
+ * error that references it) rather than in `Vote.ts` to keep the
+ * `Vote.ts → errors.ts` import edge one-way — moving it the other direction
+ * creates a circular import that tsgo refuses to resolve even with
+ * `import type`.
+ */
+export type VoteTargetKind = "definition" | "post" | "comment";
 
 export class VoteTargetNotFound extends Data.TaggedError("vote/VoteTargetNotFound")<{
 	readonly targetKind: VoteTargetKind;

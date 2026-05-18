@@ -53,13 +53,15 @@ import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
 import {Drizzle, type DrizzleDb, DrizzleError} from "../../services/Drizzle";
 import {karmaBumpStatement} from "../pasaport/karma";
-import {VoteTargetNotFound} from "./errors";
+import {type VoteTargetKind, VoteTargetNotFound} from "./errors";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */
 /* -------------------------------------------------------------------------- */
 
-export type VoteTargetKind = "definition" | "post" | "comment";
+// Re-export the domain kind from `errors.ts` (its source-of-truth home) so
+// downstream callers can keep importing it from `./Vote` if they prefer.
+export type {VoteTargetKind};
 
 /**
  * `1` casts an up-vote; `null` retracts. The MVP is up-only.
