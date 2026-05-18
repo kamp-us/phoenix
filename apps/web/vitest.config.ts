@@ -8,7 +8,8 @@
  *
  * `unit` runs in the default node pool for isolation tests that don't need
  * workerd — Drizzle service contract tests, pure helpers, error encoder
- * round-trips. Tests live under `tests/unit/`.
+ * round-trips. Unit tests are colocated next to the module under test as
+ * `<module>.test.ts` under `worker/**` and `src/**`.
  */
 import {cloudflarePool, cloudflareTest} from "@cloudflare/vitest-pool-workers";
 import {defineConfig} from "vitest/config";
@@ -37,7 +38,8 @@ export default defineConfig({
 			{
 				test: {
 					name: "unit",
-					include: ["tests/unit/**/*.test.ts"],
+					include: ["worker/**/*.test.ts", "src/**/*.test.ts"],
+					exclude: ["tests/**", "node_modules/**", "dist/**"],
 				},
 			},
 		],

@@ -12,8 +12,9 @@
  * integration tests under `tests/integration/`.
  */
 import {assert, describe, it} from "@effect/vitest";
+import type {BatchItem} from "drizzle-orm/batch";
 import {Cause, Effect, Exit, Layer, Option} from "effect";
-import {Drizzle, type DrizzleDb, DrizzleError} from "../../worker/services/Drizzle";
+import {Drizzle, type DrizzleDb, DrizzleError} from "./Drizzle";
 
 /**
  * A fake `DrizzleDb` instance — the wrapper passes it to the callback
@@ -29,6 +30,16 @@ const FAKE_DB = {__phoenix_test_db__: true} as unknown as DrizzleDb;
  * wrapping, not the builder construction.
  */
 const TestDrizzleLayer = Layer.succeed(Drizzle, FAKE_DB);
+
+/**
+ * Stand-in `BatchItem<"sqlite">` value. The real `BatchItem` is a
+ * `RunnableQuery` — we can't construct one without a live drizzle builder, so
+ * we mint sentinels with `as unknown as BatchItem<"sqlite">`. This keeps the
+ * tuple shape concrete (so `T extends Readonly<[U, ...U[]]>` infers a real
+ * length-typed tuple instead of collapsing to `never`).
+ */
+const fakeStmt = (id: number) =>
+	({__stmt__: id, _: {result: {rowsAffected: id}}}) as unknown as BatchItem<"sqlite">;
 
 describe("Drizzle.run", () => {
 	it.effect("smoke: callback success → typed value flows through", () =>
@@ -106,8 +117,8 @@ describe("Drizzle.batch", () => {
 	it.effect("smoke: forwards the tuple to db.batch and returns its result", () => {
 		const {calls, layer} = makeBatchSpy();
 		return Effect.gen(function* () {
-			const stmts = [{__stmt__: 1}, {__stmt__: 2}] as const;
-			const result = yield* Drizzle.batch(() => stmts as never);
+			const stmts = [fakeStmt(1), fakeStmt(2)] as const;
+			const result = yield* Drizzle.batch(() => stmts);
 
 			assert.strictEqual(calls.length, 1);
 			assert.deepStrictEqual(calls[0], stmts);
@@ -118,12 +129,10 @@ describe("Drizzle.batch", () => {
 	it.effect("batch tuple shape: callback returns the tuple, result mirrors length", () => {
 		const {layer} = makeBatchSpy();
 		return Effect.gen(function* () {
-			const single = yield* Drizzle.batch(() => [{__stmt__: 1}] as never);
+			const single = yield* Drizzle.batch(() => [fakeStmt(1)] as const);
 			assert.strictEqual(single.length, 1);
 
-			const triple = yield* Drizzle.batch(
-				() => [{__stmt__: 1}, {__stmt__: 2}, {__stmt__: 3}] as never,
-			);
+			const triple = yield* Drizzle.batch(() => [fakeStmt(1), fakeStmt(2), fakeStmt(3)] as const);
 			assert.strictEqual(triple.length, 3);
 		}).pipe(Effect.provide(layer));
 	});
@@ -135,7 +144,7 @@ describe("Drizzle.batch", () => {
 		} as unknown as DrizzleDb;
 		const layer = Layer.succeed(Drizzle, db);
 		return Effect.gen(function* () {
-			const exit = yield* Effect.exit(Drizzle.batch(() => [{__stmt__: 1}] as never));
+			const exit = yield* Effect.exit(Drizzle.batch(() => [fakeStmt(1)] as const));
 			assert.isTrue(Exit.isFailure(exit), "expected failure");
 			if (Exit.isSuccess(exit)) return;
 			const err = Option.getOrThrow(Cause.findErrorOption(exit.cause));
