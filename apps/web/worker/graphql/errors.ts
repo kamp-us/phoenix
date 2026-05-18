@@ -1,22 +1,35 @@
 /**
- * Round-trip codec between worker-side domain error classes and the
- * wire-format `extensions.code` strings the SPA matches on.
+ * Round-trip codec between worker-side error values and the wire-format
+ * `extensions.code` strings the SPA matches on.
  *
- * Encode side (worker): given any thrown error from a mutation resolver,
- * produce a `GraphQLError` with a stable `extensions.code`. The Effect
- * `resolver()` wrapper invokes this in its catch path, so mutation resolvers
- * no longer carry inline `try { ... } catch (err) { throw mapXMutationError(err) }`
- * boilerplate.
+ * Encode side (worker): given any failure surfaced from a resolver, produce a
+ * `GraphQLError` with a stable `extensions.code`. The Effect `resolver()`
+ * wrapper invokes this in its catch path so mutation resolvers no longer carry
+ * inline `try { ... } catch { throw mapXMutationError(err) }` boilerplate.
  *
  * Decode side (SPA): given a wire-format code string, return the same string
- * narrowed to {@link MutationErrorCode} when it's a known member of the union,
- * or `null` otherwise. The SPA can then `switch` on the typed value instead
- * of stringly-comparing against `"UNAUTHORIZED"` etc.
+ * narrowed to {@link MutationErrorCode} when known, or `null` otherwise. The
+ * SPA can `switch` on the typed value instead of stringly-comparing against
+ * `"UNAUTHORIZED"` etc.
  *
- * Why match on `name` (not `instanceof`): agent errors cross the workerd RPC
- * boundary as plain `Error` instances — class identity is lost in marshaling,
- * but `name` + `code` survive. We support both shapes so direct in-worker
- * throws and RPC-marshalled throws encode identically.
+ * Matching strategy
+ * -----------------
+ * The encoder switches on **`_tag`** first — that's the contract for every
+ * `Data.TaggedError` raised by an Effect service (`Sozluk`, `Pano`, `Vote`,
+ * `Pasaport`, `Drizzle`, `Auth`). Tagged errors are the long-term shape.
+ *
+ * For the in-flight migration window (until tasks 2–5 of the effect-migration
+ * land), the legacy class-named errors raised by `worker/features/<feature>/module.ts`
+ * still flow through here. Those errors expose `name` + optional `code` but no
+ * `_tag`, so the encoder falls through to a `name`-based switch that produces
+ * the same wire codes the original `instanceof`-style encoder did. Both shapes
+ * survive the workerd RPC boundary identically (class identity is lost but
+ * `name` / `code` / `_tag` are preserved as plain fields).
+ *
+ * As each feature service migrates to `Data.TaggedError`, its tags get a case
+ * in the `_tag` switch and the corresponding `name` case in the legacy switch
+ * disappears. When the last `module.ts` is deleted, the legacy switch goes
+ * with it.
  */
 import {GraphQLError} from "graphql";
 
@@ -29,64 +42,136 @@ export {
 	type MutationErrorCode,
 } from "../../src/lib/mutationErrorCodes";
 
+function gqlError(message: string, code: string): GraphQLError {
+	return new GraphQLError(message, {extensions: {code}});
+}
+
 /**
- * Map a thrown value from inside a mutation resolver onto a `GraphQLError`
- * with a stable wire-format `extensions.code`. Idempotent on
- * already-encoded `GraphQLError` inputs.
- *
- * Matches by:
- * - `_tag === "Unauthorized"` for the Effect tagged failure raised by
- *   `Auth.required`.
- * - `name === "<DomainErrorClass>"` for everything else, since the workerd
- *   RPC boundary strips class identity but preserves `name` + `code`.
- *
- * Unknown shapes fall through to `INTERNAL_SERVER_ERROR` so the SPA can
- * render a generic toast instead of Yoga's masked-error placeholder.
+ * Map any thrown / failed value from inside a resolver onto a `GraphQLError`
+ * with a stable wire-format `extensions.code`. Idempotent on already-encoded
+ * `GraphQLError` inputs.
  */
 export function encodeMutationError(err: unknown): GraphQLError {
 	if (err instanceof GraphQLError) return err;
 
 	const e = err as (Error & {code?: string; _tag?: string}) | null | undefined;
 	const tag = e?._tag;
-	const name = e?.name;
 
-	if (tag === "Unauthorized") {
-		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
+	// ── Tagged-error path (the long-term shape) ────────────────────────────
+	// Every `Data.TaggedError` defined under `worker/services/*` and the
+	// per-feature `errors.ts` files routes through here. New tags land in this
+	// switch — keep them sorted by namespace for easy diffing.
+	if (typeof tag === "string") {
+		switch (tag) {
+			case "Unauthorized":
+				return gqlError("not authorized", "UNAUTHORIZED");
+
+			case "@phoenix/AdminAuth/Forbidden":
+				return gqlError("admin operations forbidden", "UNAUTHORIZED");
+
+			case "@phoenix/Drizzle/Error":
+				return gqlError("internal error", "INTERNAL_SERVER_ERROR");
+
+			// ── Pasaport ──────────────────────────────────────────────────
+			// `code` on `UsernameInvalid` is upcased to match the legacy
+			// `UsernameValidationError.code` wire contract (INVALID_FORMAT /
+			// TOO_SHORT / TOO_LONG).
+			case "pasaport/UsernameInvalid": {
+				const invalidCode = (e as {code?: string} | undefined)?.code;
+				const upper = invalidCode ? invalidCode.toUpperCase() : "BAD_REQUEST";
+				return gqlError(e?.message ?? "validation failed", upper);
+			}
+
+			case "pasaport/UsernameTaken":
+				return gqlError(e?.message ?? "bu kullanıcı adı kullanımda", "TAKEN");
+
+			case "pasaport/UsernameAlreadySet":
+				return gqlError(
+					e?.message ?? "kullanıcı adı zaten ayarlandı; değiştirilemez",
+					"ALREADY_SET",
+				);
+
+			case "pasaport/UserNotFound":
+				return gqlError(e?.message ?? "kullanıcı bulunamadı", "USER_NOT_FOUND");
+
+			// ── Vote ──────────────────────────────────────────────────────
+			// Mirrors the legacy `VoteTargetNotFoundError.code` upcased to
+			// `VOTE_TARGET_NOT_FOUND`. Sozluk and Pano translate this to their
+			// feature-specific not-found errors at the call site today; if a
+			// resolver ever yields `Vote.cast` directly this wire code lets
+			// the SPA distinguish.
+			case "vote/VoteTargetNotFound":
+				return gqlError(e?.message ?? "vote target not found", "VOTE_TARGET_NOT_FOUND");
+
+			// ── Sozluk ────────────────────────────────────────────────────
+			// Mirrors the legacy `DefinitionValidationError` (code-driven) and
+			// `DefinitionNotFoundError` / `UnauthorizedDefinitionMutationError`
+			// wire codes so the SPA's pattern matches keep working unchanged.
+			case "sozluk/BodyRequired":
+				return gqlError(e?.message ?? "tanım boş olamaz", "BODY_REQUIRED");
+
+			case "sozluk/BodyTooLong":
+				return gqlError(e?.message ?? "tanım çok uzun", "BODY_TOO_LONG");
+
+			case "sozluk/DefinitionNotFound":
+				return gqlError(e?.message ?? "definition not found", "DEFINITION_NOT_FOUND");
+
+			case "sozluk/UnauthorizedDefinitionMutation":
+				return gqlError("not authorized", "UNAUTHORIZED");
+
+			// ── Pano ──────────────────────────────────────────────────────
+			// Mirrors the legacy `PostValidationError` / `PostNotFoundError` /
+			// `UnauthorizedPostMutationError` / `CommentValidationError` /
+			// `CommentNotFoundError` / `UnauthorizedCommentMutationError`
+			// wire codes verbatim so SPA pattern-matching keeps working.
+			case "pano/PostValidation":
+			case "pano/CommentValidation": {
+				const code = (e as {code?: string} | undefined)?.code;
+				const upper = code ? code.toUpperCase() : "BAD_REQUEST";
+				return gqlError(e?.message ?? "validation failed", upper);
+			}
+
+			case "pano/PostNotFound":
+				return gqlError(e?.message ?? "post not found", "POST_NOT_FOUND");
+
+			case "pano/CommentNotFound":
+				return gqlError(e?.message ?? "comment not found", "COMMENT_NOT_FOUND");
+
+			case "pano/UnauthorizedPostMutation":
+			case "pano/UnauthorizedCommentMutation":
+				return gqlError("not authorized", "UNAUTHORIZED");
+		}
 	}
 
+	// ── Legacy class-name path (in-flight migration) ──────────────────────
+	// The `module.ts` files still raise plain `Error` subclasses with a `name`
+	// field. Until each feature ports to `Data.TaggedError` in tasks 2–5,
+	// match on `name` and produce identical wire codes to the pre-rewrite
+	// encoder.
+	const name = e?.name;
 	switch (name) {
 		case "UnauthorizedDefinitionMutationError":
 		case "UnauthorizedPostMutationError":
 		case "UnauthorizedCommentMutationError":
-			return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
+			return gqlError("not authorized", "UNAUTHORIZED");
 
 		case "DefinitionNotFoundError":
-			return new GraphQLError(e?.message ?? "definition not found", {
-				extensions: {code: "DEFINITION_NOT_FOUND"},
-			});
+			return gqlError(e?.message ?? "definition not found", "DEFINITION_NOT_FOUND");
 
 		case "PostNotFoundError":
-			return new GraphQLError(e?.message ?? "post not found", {
-				extensions: {code: "POST_NOT_FOUND"},
-			});
+			return gqlError(e?.message ?? "post not found", "POST_NOT_FOUND");
 
 		case "CommentNotFoundError":
-			return new GraphQLError(e?.message ?? "comment not found", {
-				extensions: {code: "COMMENT_NOT_FOUND"},
-			});
+			return gqlError(e?.message ?? "comment not found", "COMMENT_NOT_FOUND");
 
 		case "UsernameValidationError":
 		case "DefinitionValidationError":
 		case "PostValidationError":
 		case "CommentValidationError": {
 			const code = e?.code ? e.code.toUpperCase() : "BAD_REQUEST";
-			return new GraphQLError(e?.message ?? "validation failed", {
-				extensions: {code},
-			});
+			return gqlError(e?.message ?? "validation failed", code);
 		}
 	}
 
-	return new GraphQLError(e?.message ?? "mutation failed", {
-		extensions: {code: "INTERNAL_SERVER_ERROR"},
-	});
+	return gqlError(e?.message ?? "mutation failed", "INTERNAL_SERVER_ERROR");
 }

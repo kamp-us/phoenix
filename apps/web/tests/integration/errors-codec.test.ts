@@ -13,19 +13,25 @@
 import {GraphQLError} from "graphql";
 import {describe, expect, it} from "vitest";
 import {
-	CommentNotFoundError,
-	CommentValidationError,
-	PostNotFoundError,
-	PostValidationError,
-	UnauthorizedCommentMutationError,
-	UnauthorizedPostMutationError,
-} from "../../worker/features/pano/module";
-import {UsernameValidationError} from "../../worker/features/pasaport/module";
+	CommentNotFound,
+	CommentValidation,
+	PostNotFound,
+	PostValidation,
+	UnauthorizedCommentMutation,
+	UnauthorizedPostMutation,
+} from "../../worker/features/pano/errors";
 import {
-	DefinitionNotFoundError,
-	DefinitionValidationError,
-	UnauthorizedDefinitionMutationError,
-} from "../../worker/features/sozluk/module";
+	UserNotFound,
+	UsernameAlreadySet,
+	UsernameInvalid,
+	UsernameTaken,
+} from "../../worker/features/pasaport/errors";
+import {
+	BodyRequired,
+	BodyTooLong,
+	DefinitionNotFound,
+	UnauthorizedDefinitionMutation,
+} from "../../worker/features/sozluk/errors";
 import {
 	decodeMutationErrorCode,
 	encodeMutationError,
@@ -50,56 +56,111 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("UnauthorizedDefinitionMutationError → UNAUTHORIZED", () => {
-		const out = encodeMutationError(new UnauthorizedDefinitionMutationError("def_1"));
+	it("UnauthorizedDefinitionMutation (tagged) → UNAUTHORIZED", () => {
+		const out = encodeMutationError(
+			new UnauthorizedDefinitionMutation({
+				definitionId: "def_1",
+				message: "not authorized to mutate definition def_1",
+			}),
+		);
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("UnauthorizedPostMutationError → UNAUTHORIZED", () => {
-		const out = encodeMutationError(new UnauthorizedPostMutationError("post_1"));
+	it("UnauthorizedDefinitionMutationError (legacy name) → UNAUTHORIZED", () => {
+		// RPC-marshalled / legacy class-name path: still mapped through the
+		// `name`-based fallback so any plain-Error escape hatch keeps producing
+		// the same wire code.
+		const marshalled = new Error("not authorized");
+		marshalled.name = "UnauthorizedDefinitionMutationError";
+		const out = encodeMutationError(marshalled);
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("UnauthorizedCommentMutationError → UNAUTHORIZED", () => {
-		const out = encodeMutationError(new UnauthorizedCommentMutationError("c_1"));
+	it("UnauthorizedPostMutation (tagged) → UNAUTHORIZED", () => {
+		const out = encodeMutationError(
+			new UnauthorizedPostMutation({postId: "post_1", message: "not authorized"}),
+		);
 		expect(codeOf(out)).toBe("UNAUTHORIZED");
 	});
 
-	it("DefinitionNotFoundError → DEFINITION_NOT_FOUND", () => {
-		const e = new DefinitionNotFoundError("def_1");
+	it("UnauthorizedCommentMutation (tagged) → UNAUTHORIZED", () => {
+		const out = encodeMutationError(
+			new UnauthorizedCommentMutation({commentId: "c_1", message: "not authorized"}),
+		);
+		expect(codeOf(out)).toBe("UNAUTHORIZED");
+	});
+
+	it("DefinitionNotFound (tagged) → DEFINITION_NOT_FOUND", () => {
+		const e = new DefinitionNotFound({
+			definitionId: "def_1",
+			message: "definition def_1 not found",
+		});
 		const out = encodeMutationError(e);
 		expect(codeOf(out)).toBe("DEFINITION_NOT_FOUND");
 		expect(out.message).toBe(e.message);
 	});
 
-	it("PostNotFoundError → POST_NOT_FOUND", () => {
-		const out = encodeMutationError(new PostNotFoundError("p_1"));
+	it("PostNotFound (tagged) → POST_NOT_FOUND", () => {
+		const out = encodeMutationError(
+			new PostNotFound({postId: "p_1", message: "post p_1 not found"}),
+		);
 		expect(codeOf(out)).toBe("POST_NOT_FOUND");
 	});
 
-	it("CommentNotFoundError → COMMENT_NOT_FOUND", () => {
-		const out = encodeMutationError(new CommentNotFoundError("c_1"));
+	it("CommentNotFound (tagged) → COMMENT_NOT_FOUND", () => {
+		const out = encodeMutationError(
+			new CommentNotFound({commentId: "c_1", message: "comment c_1 not found"}),
+		);
 		expect(codeOf(out)).toBe("COMMENT_NOT_FOUND");
 	});
 
-	it("DefinitionValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new DefinitionValidationError("body_required", "boş"));
+	it("BodyRequired (tagged) → BODY_REQUIRED", () => {
+		const out = encodeMutationError(new BodyRequired({message: "boş"}));
 		expect(codeOf(out)).toBe("BODY_REQUIRED");
 	});
 
-	it("PostValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new PostValidationError("title_too_long", "uzun"));
+	it("BodyTooLong (tagged) → BODY_TOO_LONG", () => {
+		const out = encodeMutationError(new BodyTooLong({max: 10_000, message: "uzun"}));
+		expect(codeOf(out)).toBe("BODY_TOO_LONG");
+	});
+
+	it("PostValidation (tagged) uses its `code` upcased", () => {
+		const out = encodeMutationError(new PostValidation({code: "title_too_long", message: "uzun"}));
 		expect(codeOf(out)).toBe("TITLE_TOO_LONG");
 	});
 
-	it("CommentValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new CommentValidationError("parent_not_found", "yok"));
+	it("CommentValidation (tagged) uses its `code` upcased", () => {
+		const out = encodeMutationError(
+			new CommentValidation({code: "parent_not_found", message: "yok"}),
+		);
 		expect(codeOf(out)).toBe("PARENT_NOT_FOUND");
 	});
 
-	it("UsernameValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new UsernameValidationError("taken", "alınmış"));
+	it("UsernameInvalid uses its `code` upcased", () => {
+		const out = encodeMutationError(
+			new UsernameInvalid({code: "invalid_format", message: "kullanıcı adı geçersiz"}),
+		);
+		expect(codeOf(out)).toBe("INVALID_FORMAT");
+	});
+
+	it("UsernameInvalid too_short → TOO_SHORT", () => {
+		const out = encodeMutationError(new UsernameInvalid({code: "too_short", message: "kısa"}));
+		expect(codeOf(out)).toBe("TOO_SHORT");
+	});
+
+	it("UsernameTaken → TAKEN", () => {
+		const out = encodeMutationError(new UsernameTaken({message: "alınmış"}));
 		expect(codeOf(out)).toBe("TAKEN");
+	});
+
+	it("UsernameAlreadySet → ALREADY_SET", () => {
+		const out = encodeMutationError(new UsernameAlreadySet({message: "zaten"}));
+		expect(codeOf(out)).toBe("ALREADY_SET");
+	});
+
+	it("UserNotFound → USER_NOT_FOUND", () => {
+		const out = encodeMutationError(new UserNotFound({message: "bulunamadı"}));
+		expect(codeOf(out)).toBe("USER_NOT_FOUND");
 	});
 
 	it("passes a pre-built GraphQLError through unchanged", () => {

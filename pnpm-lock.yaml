@@ -30,6 +30,9 @@ catalogs:
     '@effect/tsgo':
       specifier: ^0.5.2
       version: 0.5.2
+    '@effect/vitest':
+      specifier: 4.0.0-beta.67
+      version: 4.0.0-beta.67
     '@playwright/test':
       specifier: ^1.59.1
       version: 1.59.1
@@ -213,6 +216,9 @@ importers:
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.0.0-beta.67(effect@4.0.0-beta.65)(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.8.4)))
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.59.1
@@ -666,6 +672,12 @@ packages:
   '@effect/tsgo@0.5.2':
     resolution: {integrity: sha512-LEKmx1rwP1j3l9mPW6Bx8VIdGKW+uEvvML89z4xiWnPC+h/uFm3y6FGHULop9Kl09Ybwn2TVuZzVPSZLj+ydmg==}
     hasBin: true
+
+  '@effect/vitest@4.0.0-beta.67':
+    resolution: {integrity: sha512-+VBKCcyKY7wfMP5TivONEWExdVF3aR/jhF2+at7hTN5qMBFDX3EsHSfKrRG6R55OBGPXWiYshHZ/raleR2PKjw==}
+    peerDependencies:
+      effect: ^4.0.0-beta.67
+      vitest: ^3.0.0 || ^4.0.0
 
   '@emnapi/core@1.10.0':
     resolution: {integrity: sha512-yq6OkJ4p82CAfPl0u9mQebQHKPJkY7WrIuk205cTYnYe+k2Z8YBh11FrbRG/H6ihirqcacOgl2BIO8oyMQLeXw==}
@@ -3518,6 +3530,11 @@ snapshots:
       '@effect/tsgo-linux-x64': 0.5.2
       '@effect/tsgo-win32-arm64': 0.5.2
       '@effect/tsgo-win32-x64': 0.5.2
+
+  '@effect/vitest@4.0.0-beta.67(effect@4.0.0-beta.65)(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.8.4)))':
+    dependencies:
+      effect: 4.0.0-beta.65
+      vitest: 4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.8.4))
 
   '@emnapi/core@1.10.0':
     dependencies:

@@ -12,11 +12,71 @@
  *   3. Soft-delete a definition → total_definitions decrements; the author's
  *      remaining definitions keep them in the distinct count.
  */
-import {env} from "cloudflare:test";
+import {env} from "cloudflare:workers";
+import {Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
-import {addComment, submitPost} from "../../worker/features/pano/module";
-import {addDefinition, deleteDefinition} from "../../worker/features/sozluk/module";
+import {
+	type AddCommentInput,
+	Pano,
+	PanoLive,
+	type SubmitPostInput,
+} from "../../worker/features/pano/Pano";
+import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
+import {Stats, StatsLive} from "../../worker/features/stats/Stats";
+import {VoteLive} from "../../worker/features/vote/Vote";
+import {CloudflareEnv, DrizzleLive} from "../../worker/services";
+
+// Sozluk and Pano both depend on Vote — merge them and provide Vote once.
+// StatsLive depends only on Drizzle, so it merges in flat alongside the
+// Sozluk/Pano sub-layer (which already absorbed Vote).
+const SozlukPanoLayer = Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive));
+const TestLive = Layer.mergeAll(SozlukPanoLayer, StatsLive).pipe(
+	Layer.provide(DrizzleLive),
+	Layer.provide(Layer.succeed(CloudflareEnv, env)),
+);
+
+function submitPost(input: SubmitPostInput) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.submitPost(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+function addComment(input: AddCommentInput) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pano = yield* Pano;
+			return yield* pano.addComment(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+async function addDefinition(input: {
+	termSlug: string;
+	authorId: string;
+	authorName: string;
+	body: string;
+	termTitle?: string;
+}) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			return yield* sozluk.addDefinition(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+async function deleteDefinition(input: {definitionId: string; actorId: string}) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const sozluk = yield* Sozluk;
+			return yield* sozluk.deleteDefinition(input);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -97,7 +157,7 @@ describe("landing stats projection", () => {
 		const slugA = "stats-sozluk-alpha";
 		const slugB = "stats-sozluk-beta";
 
-		const aDef = await addDefinition(env, {
+		const aDef = await addDefinition({
 			termSlug: slugA,
 			authorId: authorA,
 			authorName: "Author A",
@@ -105,7 +165,7 @@ describe("landing stats projection", () => {
 			termTitle: "Stats Sozluk Alpha",
 		});
 
-		await addDefinition(env, {
+		await addDefinition({
 			termSlug: slugB,
 			authorId: authorB,
 			authorName: "Author B",
@@ -115,7 +175,7 @@ describe("landing stats projection", () => {
 
 		// authorA writes a second definition on slugB to verify distinct-count
 		// (still 2 authors, not 3).
-		await addDefinition(env, {
+		await addDefinition({
 			termSlug: slugB,
 			authorId: authorA,
 			authorName: "Author A",
@@ -151,7 +211,7 @@ describe("landing stats projection", () => {
 		expect(after3!.totalDefinitions).toBe(distinctDefsRow!.n);
 
 		// Soft-delete A's first definition → total_definitions ticks down.
-		await deleteDefinition(env, {definitionId: aDef.definitionId, actorId: authorA});
+		await deleteDefinition({definitionId: aDef.definitionId, actorId: authorA});
 
 		const afterDelete = await waitFor(async () => {
 			const stats = await readSozlukStats();
@@ -182,7 +242,7 @@ describe("landing stats projection", () => {
 		const authorA = "user_stats_pano_a";
 		const authorB = "user_stats_pano_b";
 
-		const post = await submitPost(env, {
+		const post = await submitPost({
 			title: "stats pano one",
 			url: "https://example.com/stats-pano-one",
 			body: "pano stats body",
@@ -193,7 +253,7 @@ describe("landing stats projection", () => {
 		const postId = post.postId;
 
 		// authorB drops a comment on authorA's post.
-		await addComment(env, {
+		await addComment({
 			postId,
 			authorId: authorB,
 			authorName: "Author B",
@@ -201,7 +261,7 @@ describe("landing stats projection", () => {
 		});
 
 		// authorA also comments on their own post (already an author via post).
-		await addComment(env, {
+		await addComment({
 			postId,
 			authorId: authorA,
 			authorName: "Author A",
@@ -245,5 +305,46 @@ describe("landing stats projection", () => {
 			)`,
 		).first<{n: number}>();
 		expect(converged!.totalAuthors).toBe(distinctAuthorsRow!.n);
+	});
+
+	it("Stats.getLandingStats returns the cross-product aggregate", async () => {
+		// At this point earlier tests have driven definitions / posts / comments
+		// into the DB. The service should return values that line up with the
+		// live-derived counts. We don't pin exact values because the suite is
+		// not strictly isolated; we assert the shape and consistency.
+		const stats = await Effect.runPromise(
+			Effect.gen(function* () {
+				const s = yield* Stats;
+				return yield* s.getLandingStats();
+			}).pipe(Effect.provide(TestLive)),
+		);
+
+		const defRow = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM definition_view WHERE deleted_at IS NULL",
+		).first<{n: number}>();
+		const postRow = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM post_summary WHERE deleted_at IS NULL",
+		).first<{n: number}>();
+		const commentRow = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM comment_view WHERE deleted_at IS NULL",
+		).first<{n: number}>();
+		const authorRow = await env.PHOENIX_DB.prepare(
+			`SELECT COUNT(DISTINCT author_id) as n FROM (
+				SELECT author_id FROM definition_view WHERE deleted_at IS NULL
+				UNION
+				SELECT author_id FROM post_summary WHERE deleted_at IS NULL
+				UNION
+				SELECT author_id FROM comment_view WHERE deleted_at IS NULL
+			)`,
+		).first<{n: number}>();
+
+		// totalDefinitions / totalPosts / totalComments come from the inline
+		// per-feature stats rows (maintained by SozlukLive / PanoLive). They
+		// should match the live derived counts.
+		expect(stats.totalDefinitions).toBe(defRow?.n ?? 0);
+		expect(stats.totalPosts).toBe(postRow?.n ?? 0);
+		expect(stats.totalComments).toBe(commentRow?.n ?? 0);
+		// totalAuthors is the union across all three view tables.
+		expect(stats.totalAuthors).toBe(authorRow?.n ?? 0);
 	});
 });
