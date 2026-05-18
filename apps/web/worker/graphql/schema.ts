@@ -1,4 +1,3 @@
-import {Effect} from "effect";
 import {
 	GraphQLBoolean,
 	GraphQLEnumType,
@@ -17,7 +16,6 @@ import {
 	printSchema,
 } from "graphql";
 import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encodeNodeId";
-import {type LandingStats, readLandingStats} from "../features/landingStatsReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
 	type CommentConnectionPage,
@@ -44,6 +42,7 @@ import {
 	type TermPage,
 	type TermSummaryRow,
 } from "../features/sozluk/Sozluk";
+import {type LandingStats, Stats} from "../features/stats/Stats";
 import {Auth, CloudflareEnv} from "../services";
 import {resolver} from "./resolver";
 
@@ -1113,8 +1112,7 @@ const QueryType = new GraphQLObjectType({
 		landingStats: {
 			type: new GraphQLNonNull(LandingStatsType),
 			resolve: resolver(function* () {
-				const env = yield* CloudflareEnv;
-				const stats = yield* Effect.promise(() => readLandingStats(env.PHOENIX_DB));
+				const stats = yield* (yield* Stats).getLandingStats();
 				return {...stats, version: PHOENIX_BUILD_VERSION};
 			}),
 		},

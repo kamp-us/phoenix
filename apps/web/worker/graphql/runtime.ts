@@ -3,6 +3,7 @@ import {type Pano, PanoLive} from "../features/pano/Pano";
 import type {Session} from "../features/pasaport/auth";
 import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
 import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk";
+import {type Stats, StatsLive} from "../features/stats/Stats";
 import {type Vote, VoteLive} from "../features/vote/Vote";
 import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "../services";
 
@@ -14,11 +15,12 @@ import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "..
  *     ↑
  *   Drizzle                                    (single builder over PHOENIX_DB)
  *     ↑
- *   FeatureLayer (Sozluk, Pano, Vote, Pasaport)
+ *   FeatureLayer (Sozluk, Pano, Vote, Pasaport, Stats)
  *
- * All four feature services have landed. `SozlukLive` and `PanoLive` both
- * depend on `Vote`; we chain `provideMerge(VoteLive)` once and merge both
- * into a single sub-layer so the parallel-merge check stays satisfied.
+ * All feature services have landed. `SozlukLive` and `PanoLive` both depend on
+ * `Vote`; we chain `provideMerge(VoteLive)` once and merge both into a single
+ * sub-layer so the parallel-merge check stays satisfied. `PasaportLive` and
+ * `StatsLive` depend only on `Drizzle`, so they merge in directly.
  *
  * See `.patterns/effect-layer-composition.md` and ADR 0010 for the design.
  */
@@ -40,7 +42,8 @@ export namespace GraphQLRuntime {
 		| Pasaport
 		| Vote
 		| Sozluk
-		| Pano;
+		| Pano
+		| Stats;
 
 	/**
 	 * Merge of every per-feature service that resolvers `yield*`. `SozlukLive`
@@ -50,7 +53,7 @@ export namespace GraphQLRuntime {
 	 * `Layer.mergeAll` adds `PasaportLive` (depends only on `Drizzle`).
 	 */
 	const SozlukPanoLayer = Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive));
-	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukPanoLayer);
+	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukPanoLayer, StatsLive);
 
 	export const layer = (
 		env: Env,

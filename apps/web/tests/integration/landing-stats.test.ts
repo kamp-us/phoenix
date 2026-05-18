@@ -23,12 +23,15 @@ import {
 	type SubmitPostInput,
 } from "../../worker/features/pano/Pano";
 import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
+import {Stats, StatsLive} from "../../worker/features/stats/Stats";
 import {VoteLive} from "../../worker/features/vote/Vote";
 import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
 // Sozluk and Pano both depend on Vote — merge them and provide Vote once.
-const TestLive = Layer.mergeAll(SozlukLive, PanoLive).pipe(
-	Layer.provideMerge(VoteLive),
+// StatsLive depends only on Drizzle, so it merges in flat alongside the
+// Sozluk/Pano sub-layer (which already absorbed Vote).
+const SozlukPanoLayer = Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive));
+const TestLive = Layer.mergeAll(SozlukPanoLayer, StatsLive).pipe(
 	Layer.provide(DrizzleLive),
 	Layer.provide(Layer.succeed(CloudflareEnv, env)),
 );
@@ -302,5 +305,46 @@ describe("landing stats projection", () => {
 			)`,
 		).first<{n: number}>();
 		expect(converged!.totalAuthors).toBe(distinctAuthorsRow!.n);
+	});
+
+	it("Stats.getLandingStats returns the cross-product aggregate", async () => {
+		// At this point earlier tests have driven definitions / posts / comments
+		// into the DB. The service should return values that line up with the
+		// live-derived counts. We don't pin exact values because the suite is
+		// not strictly isolated; we assert the shape and consistency.
+		const stats = await Effect.runPromise(
+			Effect.gen(function* () {
+				const s = yield* Stats;
+				return yield* s.getLandingStats();
+			}).pipe(Effect.provide(TestLive)),
+		);
+
+		const defRow = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM definition_view WHERE deleted_at IS NULL",
+		).first<{n: number}>();
+		const postRow = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM post_summary WHERE deleted_at IS NULL",
+		).first<{n: number}>();
+		const commentRow = await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM comment_view WHERE deleted_at IS NULL",
+		).first<{n: number}>();
+		const authorRow = await env.PHOENIX_DB.prepare(
+			`SELECT COUNT(DISTINCT author_id) as n FROM (
+				SELECT author_id FROM definition_view WHERE deleted_at IS NULL
+				UNION
+				SELECT author_id FROM post_summary WHERE deleted_at IS NULL
+				UNION
+				SELECT author_id FROM comment_view WHERE deleted_at IS NULL
+			)`,
+		).first<{n: number}>();
+
+		// totalDefinitions / totalPosts / totalComments come from the inline
+		// per-feature stats rows (maintained by SozlukLive / PanoLive). They
+		// should match the live derived counts.
+		expect(stats.totalDefinitions).toBe(defRow?.n ?? 0);
+		expect(stats.totalPosts).toBe(postRow?.n ?? 0);
+		expect(stats.totalComments).toBe(commentRow?.n ?? 0);
+		// totalAuthors is the union across all three view tables.
+		expect(stats.totalAuthors).toBe(authorRow?.n ?? 0);
 	});
 });
