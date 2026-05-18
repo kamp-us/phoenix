@@ -44,6 +44,7 @@ async function addDefinitionEff(input: {
 	authorId: string;
 	authorName: string;
 	body: string;
+	termTitle?: string;
 }) {
 	return Effect.runPromise(
 		Effect.gen(function* () {
