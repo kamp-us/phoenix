@@ -1,5 +1,6 @@
 import {Layer, ManagedRuntime} from "effect";
 import type {Session} from "../features/pasaport/auth";
+import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
 import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "../services";
 
 /**
@@ -10,13 +11,11 @@ import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "..
  *     ↑
  *   Drizzle                                    (single builder over PHOENIX_DB)
  *     ↑
- *   FeatureLayer (Sozluk, Pano, Vote, …)       (filled by tasks 2–5)
+ *   FeatureLayer (Sozluk, Pano, Vote, Pasaport) (filled by tasks 2–5)
  *
  * Tasks 2–5 of the effect-migration each port a feature `module.ts` to a
- * `Context.Service` and merge its `Live` layer into `FeatureLayer`. Until they
- * do, `FeatureLayer` is `Layer.empty` so the composed runtime is `R = never`
- * and resolvers that haven't been flipped keep using the legacy async
- * `module.ts` functions off `env`.
+ * `Context.Service` and merge its `Live` layer into `FeatureLayer`. Pasaport
+ * landed in task 2 (`PasaportLive`); the rest are still pending.
  *
  * See `.patterns/effect-layer-composition.md` and ADR 0010 for the design.
  */
@@ -31,18 +30,14 @@ export namespace GraphQLRuntime {
 	 * Services available inside a GraphQL resolver Effect. As feature services
 	 * land they get added to this union so resolvers can `yield*` them.
 	 */
-	export type Context = CloudflareEnv | RequestContext | Auth | Drizzle;
+	export type Context = CloudflareEnv | RequestContext | Auth | Drizzle | Pasaport;
 
 	/**
-	 * Placeholder for the per-feature service merge — populated incrementally
-	 * by tasks 2–5. `Layer.empty` provides nothing and requires nothing, so
-	 * `Layer.mergeAll(FeatureLayer, ...)` is well-typed today.
-	 *
-	 * When a feature lands, replace the body with `Layer.mergeAll(SozlukLive, …)`
-	 * and widen the second type param if any of those layers carries deps the
-	 * outer composition doesn't already provide.
+	 * Merge of every per-feature service that resolvers `yield*`. Each `Live`
+	 * layer depends on `Drizzle + CloudflareEnv`, satisfied by the outer
+	 * composition via `Layer.provide(RequestValues)` below.
 	 */
-	const FeatureLayer: Layer.Layer<never> = Layer.empty;
+	const FeatureLayer = Layer.mergeAll(PasaportLive);
 
 	export const layer = (
 		env: Env,
@@ -62,11 +57,15 @@ export namespace GraphQLRuntime {
 			}),
 		);
 
-		// Bottom-up: RequestValues satisfies Drizzle's needs; the merged feature
-		// + drizzle layer is then provided with RequestValues. The outer merge
-		// re-exposes RequestValues so resolvers can `yield* Auth` / `yield*
-		// CloudflareEnv` directly.
-		const DataPlane = Layer.mergeAll(FeatureLayer, DrizzleLive).pipe(Layer.provide(RequestValues));
+		// Bottom-up: RequestValues satisfies Drizzle's needs; DrizzleLive
+		// satisfies the feature services' Drizzle dep; RequestValues at the
+		// top re-exposes per-request values for resolvers to `yield*` directly.
+		// The sequential `Layer.provide` calls keep
+		// `@effect/language-service`'s `layerMergeAllWithDependencies` check
+		// happy by never merging a layer in parallel with one that depends on
+		// it.
+		const Features = FeatureLayer.pipe(Layer.provide(DrizzleLive));
+		const DataPlane = Layer.mergeAll(Features, DrizzleLive).pipe(Layer.provide(RequestValues));
 
 		return Layer.mergeAll(DataPlane, RequestValues);
 	};

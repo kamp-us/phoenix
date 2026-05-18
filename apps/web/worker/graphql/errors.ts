@@ -71,6 +71,28 @@ export function encodeMutationError(err: unknown): GraphQLError {
 
 			case "@phoenix/Drizzle/Error":
 				return gqlError("internal error", "INTERNAL_SERVER_ERROR");
+
+			// ── Pasaport ──────────────────────────────────────────────────
+			// `code` on `UsernameInvalid` is upcased to match the legacy
+			// `UsernameValidationError.code` wire contract (INVALID_FORMAT /
+			// TOO_SHORT / TOO_LONG).
+			case "pasaport/UsernameInvalid": {
+				const invalidCode = (e as {code?: string} | undefined)?.code;
+				const upper = invalidCode ? invalidCode.toUpperCase() : "BAD_REQUEST";
+				return gqlError(e?.message ?? "validation failed", upper);
+			}
+
+			case "pasaport/UsernameTaken":
+				return gqlError(e?.message ?? "bu kullanıcı adı kullanımda", "TAKEN");
+
+			case "pasaport/UsernameAlreadySet":
+				return gqlError(
+					e?.message ?? "kullanıcı adı zaten ayarlandı; değiştirilemez",
+					"ALREADY_SET",
+				);
+
+			case "pasaport/UserNotFound":
+				return gqlError(e?.message ?? "kullanıcı bulunamadı", "USER_NOT_FOUND");
 		}
 	}
 

@@ -1,13 +1,17 @@
 /**
- * Profile query + interleaved contributions feed integration test (T14).
+ * Profile query + interleaved contributions feed integration test (T14) —
+ * rewired onto the `Pasaport` Context.Service in task 2 of the
+ * effect-migration.
  *
  * Exercises end-to-end inside workerd:
  *   1. Apply the D1 view migrations.
- *   2. Seed a Pasaport user, set a username, wait for `user_profile` to land.
- *   3. Drive `addDefinition`, `submitPost`, `addComment` so the per-DO outbox
- *      emits projection events and the MVs (`definition_view`, `post_summary`,
- *      `comment_view`) accumulate the author's contributions.
- *   4. Read `lookupProfile` + `listContributions` and assert:
+ *   2. Seed a Pasaport user, set a username via `Pasaport.setUsername`, wait
+ *      for `user_profile` to land.
+ *   3. Drive `addDefinition`, `submitPost`, `addComment` so the per-feature
+ *      D1 writes accumulate the author's contributions across
+ *      `definition_view` / `post_summary` / `comment_view`.
+ *   4. Read `Pasaport.lookupProfile` + `Pasaport.listContributions` and
+ *      assert:
  *      - profile aggregates match the seeded counts (1/1/1)
  *      - the feed interleaves all three kinds in `created_at DESC` order
  *      - cursor pagination yields disjoint pages
@@ -16,17 +20,23 @@
 /// <reference path="../../worker-configuration.d.ts" />
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
+import {Effect, Layer} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
 import {addComment, submitPost} from "../../worker/features/pano/module";
-import {handleAuth, setUsername} from "../../worker/features/pasaport/module";
-import {listContributions, lookupProfile} from "../../worker/features/pasaport/userProfileReader";
+import {Pasaport, PasaportLive} from "../../worker/features/pasaport/Pasaport";
 import {addDefinition} from "../../worker/features/sozluk/module";
+import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
 	interface ProvidedEnv extends Env {}
 }
+
+const TestLive = PasaportLive.pipe(
+	Layer.provide(DrizzleLive),
+	Layer.provide(Layer.succeed(CloudflareEnv, env)),
+);
 
 async function applyViewMigrations() {
 	const sources = [baselineMigration];
@@ -68,13 +78,45 @@ async function signUpUser(email: string, password: string, name: string): Promis
 		headers: {"content-type": "application/json"},
 		body: JSON.stringify({email, password, name}),
 	});
-	const response = await handleAuth(env, req);
+	const response = await Effect.runPromise(
+		Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			return yield* pasaport.handleAuth(req);
+		}).pipe(Effect.provide(TestLive)),
+	);
 	if (!response.ok) {
 		throw new Error(`sign-up failed: ${response.status} ${await response.text()}`);
 	}
 	const data = (await response.json()) as {user?: {id: string}};
 	if (!data.user?.id) throw new Error("sign-up returned no user id");
 	return data.user.id;
+}
+
+async function setUsername(userId: string, value: string) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			return yield* pasaport.setUsername({userId, value});
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+async function lookupProfile(username: string) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			return yield* pasaport.lookupProfile(username);
+		}).pipe(Effect.provide(TestLive)),
+	);
+}
+
+async function listContributions(authorId: string, after: string | null, first: number) {
+	return Effect.runPromise(
+		Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			return yield* pasaport.listContributions({authorId, after, first});
+		}).pipe(Effect.provide(TestLive)),
+	);
 }
 
 beforeAll(async () => {
@@ -85,7 +127,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 	it("aggregates 1 definition + 1 post + 1 comment and returns the feed in created_at DESC order", async () => {
 		// 1) sign up + bootstrap username
 		const userId = await signUpUser("ada@kamp.us", "supersecret123", "Ada Lovelace");
-		await setUsername(env, {userId, value: "ada"});
+		await setUsername(userId, "ada");
 
 		// user_profile lands in the same D1 transaction as the username write.
 		const profileSeed = await env.PHOENIX_DB.prepare(
@@ -95,7 +137,8 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			.first<{user_id: string}>();
 		expect(profileSeed).not.toBeNull();
 
-		// 2) seed a definition via the D1-direct module
+		// 2) seed a definition via the D1-direct sozluk module (still
+		// `module.ts` until task 4)
 		const termSlug = "differential-engine";
 		await addDefinition(env, {
 			termSlug,
@@ -105,7 +148,8 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			termTitle: "Differential Engine",
 		});
 
-		// 3) seed a post via the D1-direct module
+		// 3) seed a post via the D1-direct pano module (still `module.ts` until
+		// task 5)
 		const postResult = await submitPost(env, {
 			title: "ada's first post",
 			url: "https://example.com/ada",
@@ -115,7 +159,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			authorName: "Ada Lovelace",
 		});
 
-		// 4) seed a comment via the D1-direct module
+		// 4) seed a comment via the D1-direct pano module
 		await addComment(env, {
 			postId: postResult.postId,
 			authorId: userId,
@@ -146,7 +190,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 		expect(commentRow).not.toBeNull();
 
 		// 6) read the profile and assert aggregates
-		const profile = await lookupProfile(env.PHOENIX_DB, "ada");
+		const profile = await lookupProfile("ada");
 		expect(profile).not.toBeNull();
 		expect(profile!.username).toBe("ada");
 		expect(profile!.definitionCount).toBe(1);
@@ -154,20 +198,14 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 		expect(profile!.commentCount).toBe(1);
 
 		// 7) read the contributions feed
-		const feed = await listContributions(env.PHOENIX_DB, {
-			authorId: userId,
-			after: null,
-			first: 20,
-		});
+		const feed = await listContributions(userId, null, 20);
 		expect(feed.edges.length).toBe(3);
 
 		const kinds = feed.edges.map((e) => e.node.kind).sort();
 		expect(kinds).toEqual(["comment", "definition", "post"].sort());
 
-		// Ordering: created_at DESC. The comment was the latest write so it
-		// should be first; the post second (submitted before the comment); the
-		// definition first or last depending on ordering. Just assert the
-		// timestamps are non-increasing.
+		// Ordering: created_at DESC. Just assert the timestamps are
+		// non-increasing across edges.
 		for (let i = 1; i < feed.edges.length; i++) {
 			const prev = feed.edges[i - 1]!.node.createdAt.getTime();
 			const cur = feed.edges[i]!.node.createdAt.getTime();
@@ -182,7 +220,7 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 
 	it("paginates with a forge ULID cursor (after returns disjoint pages)", async () => {
 		const userId = await signUpUser("grace@kamp.us", "supersecret123", "Grace");
-		await setUsername(env, {userId, value: "grace"});
+		await setUsername(userId, "grace");
 
 		// Seed 5 definitions on different slugs so they get distinct ids.
 		for (let i = 0; i < 5; i++) {
@@ -206,20 +244,12 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 			return row && row.n === 5 ? row : null;
 		});
 
-		const page1 = await listContributions(env.PHOENIX_DB, {
-			authorId: userId,
-			after: null,
-			first: 2,
-		});
+		const page1 = await listContributions(userId, null, 2);
 		expect(page1.edges.length).toBe(2);
 		expect(page1.hasNextPage).toBe(true);
 		expect(page1.endCursor).not.toBeNull();
 
-		const page2 = await listContributions(env.PHOENIX_DB, {
-			authorId: userId,
-			after: page1.endCursor,
-			first: 2,
-		});
+		const page2 = await listContributions(userId, page1.endCursor, 2);
 		expect(page2.edges.length).toBe(2);
 
 		// Disjoint: no overlap between page1 and page2 ids.
@@ -229,17 +259,13 @@ describe("profile query + interleaved contributions feed (T14)", () => {
 		}
 
 		// Page 3 picks up the final row.
-		const page3 = await listContributions(env.PHOENIX_DB, {
-			authorId: userId,
-			after: page2.endCursor,
-			first: 2,
-		});
+		const page3 = await listContributions(userId, page2.endCursor, 2);
 		expect(page3.edges.length).toBe(1);
 		expect(page3.hasNextPage).toBe(false);
 	});
 
 	it("returns null for a non-existent username", async () => {
-		const result = await lookupProfile(env.PHOENIX_DB, "nobody-here-1234567890");
+		const result = await lookupProfile("nobody-here-1234567890");
 		expect(result).toBeNull();
 	});
 });

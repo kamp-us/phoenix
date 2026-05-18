@@ -1,4 +1,5 @@
 import {Layer, ManagedRuntime} from "effect";
+import {type PasaportAdmin, PasaportAdminLive} from "../features/pasaport/PasaportAdmin";
 import {type AdminAuth, AdminAuthLive, CloudflareEnv, type Drizzle, DrizzleLive} from "../services";
 
 /**
@@ -9,37 +10,37 @@ import {type AdminAuth, AdminAuthLive, CloudflareEnv, type Drizzle, DrizzleLive}
  *     ↑
  *   Drizzle + AdminAuth                        (env-derived capabilities)
  *     ↑
- *   AdminFeatureLayer (SozlukAdmin, …)         (filled by tasks 2–5)
+ *   AdminFeatureLayer (PasaportAdmin, …)       (filled by tasks 2–5)
  *
  * Separate from the GraphQL runtime per ADR 0012: admin operations need
  * `AdminAuth.required` (env-gated initially; future hardening lands inside the
  * layer with no call-site changes), don't need GraphQL `Auth`, and run a
  * disjoint set of services that shouldn't pollute the resolver context.
  *
- * Until each feature ports its `<Feature>Admin` service in tasks 2–5,
- * `AdminFeatureLayer` is `Layer.empty` — the Hono admin routes keep using
- * legacy module functions and the runtime composes to `R = never`.
+ * Pasaport's admin slice (`PasaportAdminLive`) landed in task 2. Sozluk + Pano
+ * admin services are still pending — `AdminFeatureLayer` grows as they arrive.
  */
 
 export namespace AdminRuntime {
 	/**
 	 * Services available inside an admin Effect. Expands as `SozlukAdmin`,
-	 * `PanoAdmin`, `PasaportAdmin` land.
+	 * `PanoAdmin` land.
 	 */
-	export type Context = CloudflareEnv | Drizzle | AdminAuth;
+	export type Context = CloudflareEnv | Drizzle | AdminAuth | PasaportAdmin;
 
 	/**
-	 * Placeholder for the per-feature admin-service merge. Filled by tasks
-	 * 2–5; `Layer.empty` keeps the composition well-typed in the meantime.
+	 * Merge of every per-feature admin service. Each `Live` layer depends on
+	 * `Drizzle + CloudflareEnv`, satisfied by `Capabilities`.
 	 */
-	const AdminFeatureLayer: Layer.Layer<never> = Layer.empty;
+	const AdminFeatureLayer = Layer.mergeAll(PasaportAdminLive);
 
 	export const layer = (env: Env): Layer.Layer<Context, never, never> => {
 		const RequestValues = Layer.succeed(CloudflareEnv, env);
+		const Features = AdminFeatureLayer.pipe(Layer.provide(DrizzleLive));
 		const Capabilities = Layer.mergeAll(DrizzleLive, AdminAuthLive).pipe(
 			Layer.provide(RequestValues),
 		);
-		const DataPlane = Layer.mergeAll(AdminFeatureLayer, Capabilities);
+		const DataPlane = Layer.mergeAll(Features, Capabilities).pipe(Layer.provide(RequestValues));
 
 		return Layer.mergeAll(DataPlane, RequestValues);
 	};

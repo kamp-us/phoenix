@@ -20,7 +20,12 @@ import {
 	UnauthorizedCommentMutationError,
 	UnauthorizedPostMutationError,
 } from "../../worker/features/pano/module";
-import {UsernameValidationError} from "../../worker/features/pasaport/module";
+import {
+	UserNotFound,
+	UsernameAlreadySet,
+	UsernameInvalid,
+	UsernameTaken,
+} from "../../worker/features/pasaport/errors";
 import {
 	DefinitionNotFoundError,
 	DefinitionValidationError,
@@ -97,9 +102,31 @@ describe("encodeMutationError — domain class → GraphQL code", () => {
 		expect(codeOf(out)).toBe("PARENT_NOT_FOUND");
 	});
 
-	it("UsernameValidationError uses its `code` upcased", () => {
-		const out = encodeMutationError(new UsernameValidationError("taken", "alınmış"));
+	it("UsernameInvalid uses its `code` upcased", () => {
+		const out = encodeMutationError(
+			new UsernameInvalid({code: "invalid_format", message: "kullanıcı adı geçersiz"}),
+		);
+		expect(codeOf(out)).toBe("INVALID_FORMAT");
+	});
+
+	it("UsernameInvalid too_short → TOO_SHORT", () => {
+		const out = encodeMutationError(new UsernameInvalid({code: "too_short", message: "kısa"}));
+		expect(codeOf(out)).toBe("TOO_SHORT");
+	});
+
+	it("UsernameTaken → TAKEN", () => {
+		const out = encodeMutationError(new UsernameTaken({message: "alınmış"}));
 		expect(codeOf(out)).toBe("TAKEN");
+	});
+
+	it("UsernameAlreadySet → ALREADY_SET", () => {
+		const out = encodeMutationError(new UsernameAlreadySet({message: "zaten"}));
+		expect(codeOf(out)).toBe("ALREADY_SET");
+	});
+
+	it("UserNotFound → USER_NOT_FOUND", () => {
+		const out = encodeMutationError(new UserNotFound({message: "bulunamadı"}));
+		expect(codeOf(out)).toBe("USER_NOT_FOUND");
 	});
 
 	it("passes a pre-built GraphQLError through unchanged", () => {

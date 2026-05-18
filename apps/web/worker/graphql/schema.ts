@@ -44,15 +44,12 @@ import {
 	type PostSort,
 	type PostSummaryRow,
 } from "../features/pano/postSummaryReader";
-import {getUserById, setUsername} from "../features/pasaport/module";
 import {
 	type ContributionConnection,
 	type ContributionNode,
-	listContributions,
-	lookupProfile,
-	lookupProfileById,
+	Pasaport,
 	type ProfileRow,
-} from "../features/pasaport/userProfileReader";
+} from "../features/pasaport/Pasaport";
 import {
 	addDefinition as addDefinitionD1,
 	type DefinitionConnectionPage,
@@ -880,14 +877,12 @@ const ProfileType = new GraphQLObjectType<ProfileRow>({
 				parent: ProfileRow,
 				args: {after?: string | null; first?: number | null},
 			) {
-				const env = yield* CloudflareEnv;
-				return yield* Effect.promise(() =>
-					listContributions(env.PHOENIX_DB, {
-						authorId: parent.userId,
-						after: args.after ?? null,
-						first: args.first ?? 20,
-					}),
-				);
+				const pasaport = yield* Pasaport;
+				return yield* pasaport.listContributions({
+					authorId: parent.userId,
+					after: args.after ?? null,
+					first: args.first ?? 20,
+				});
 			}),
 		},
 	},
@@ -998,13 +993,13 @@ const QueryType = new GraphQLObjectType({
 						return asNode("Comment", c);
 					}
 					case "User": {
-						const user = yield* Effect.promise(() => getUserById(env, decoded.id));
+						const pasaport = yield* Pasaport;
+						const user = yield* pasaport.getUserById(decoded.id);
 						return user ? asNode("User", user) : null;
 					}
 					case "Profile": {
-						const profile = yield* Effect.promise(() =>
-							lookupProfileById(env.PHOENIX_DB, decoded.id),
-						);
+						const pasaport = yield* Pasaport;
+						const profile = yield* pasaport.lookupProfileById(decoded.id);
 						return profile ? asNode("Profile", profile) : null;
 					}
 				}
@@ -1022,8 +1017,8 @@ const QueryType = new GraphQLObjectType({
 			resolve: resolver(function* () {
 				const auth = yield* Auth;
 				if (!auth.user) return null;
-				const env = yield* CloudflareEnv;
-				const fresh = yield* Effect.promise(() => getUserById(env, auth.user!.id));
+				const pasaport = yield* Pasaport;
+				const fresh = yield* pasaport.getUserById(auth.user.id);
 				if (!fresh) {
 					return {
 						id: auth.user.id,
@@ -1135,7 +1130,7 @@ const QueryType = new GraphQLObjectType({
 		 * username — the SPA renders the 404 page in that case. Aggregates
 		 * (`totalKarma`, `*Count`) read from the `user_profile` MV (karma)
 		 * and the per-kind view tables (counts derived live, see
-		 * `userProfileReader.lookupProfile`). The `contributions` field
+		 * `Pasaport.lookupProfile`). The `contributions` field
 		 * resolves the interleaved feed; pagination is keyset on
 		 * `(created_at DESC, id DESC)` via a composite ULID cursor.
 		 */
@@ -1143,8 +1138,8 @@ const QueryType = new GraphQLObjectType({
 			type: ProfileType,
 			args: {username: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {username: string}) {
-				const env = yield* CloudflareEnv;
-				return yield* Effect.promise(() => lookupProfile(env.PHOENIX_DB, args.username));
+				const pasaport = yield* Pasaport;
+				return yield* pasaport.lookupProfile(args.username);
 			}),
 		},
 		/**
@@ -1199,10 +1194,8 @@ const MutationType = new GraphQLObjectType({
 			args: {value: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {value: string}) {
 				const {user} = yield* Auth.required;
-				const env = yield* CloudflareEnv;
-				const result = yield* Effect.promise(() =>
-					setUsername(env, {userId: user.id, value: args.value}),
-				);
+				const pasaport = yield* Pasaport;
+				const result = yield* pasaport.setUsername({userId: user.id, value: args.value});
 				return {
 					id: result.userId,
 					email: user.email,

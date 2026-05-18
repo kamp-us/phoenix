@@ -1,14 +1,19 @@
 import {routeAgentRequest} from "agents";
+import {Effect} from "effect";
 import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
+import {AdminRuntime} from "./admin/runtime";
 import {addComment, submitPost} from "./features/pano/module";
 import {SEED_POSTS} from "./features/pano/seed";
-import {backfillProfiles, handleAuth, validateSession} from "./features/pasaport/module";
+import type {Session} from "./features/pasaport/auth";
+import {Pasaport} from "./features/pasaport/Pasaport";
+import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
 import {clearAllTerms, seedTerm} from "./features/sozluk/module";
 import type {EffectContext} from "./graphql/resolver";
-import {GraphQLRuntime} from "./graphql/runtime";
+import {GraphQLRuntime, type SessionData} from "./graphql/runtime";
 import {printSchemaSDL, schema} from "./graphql/schema";
+import {AdminAuth} from "./services";
 
 // Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
 // Every product surface (sozluk, pano, pasaport) runs as module functions
@@ -126,17 +131,45 @@ app.post("/api/admin/pano/seed", async (c) => {
 
 // Dev-only Pasaport admin endpoint: backfill `user_profile` rows in PHOENIX_DB
 // for every existing user. Idempotent — re-runs overwrite the same identity
-// values per user, no side effects on counters.
+// values per user, no side effects on counters. `AdminAuth.required` gates the
+// route on `ENVIRONMENT === "development"`; the admin runtime provides
+// `PasaportAdmin`.
 app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
-	if ((c.env.ENVIRONMENT as string) !== "development") return c.text("Forbidden", 403);
-	const result = await backfillProfiles(c.env);
-	return c.json(result);
+	const runtime = AdminRuntime.make(c.env);
+	try {
+		return await runtime.runPromise(
+			Effect.gen(function* () {
+				yield* AdminAuth.required;
+				const pasaportAdmin = yield* PasaportAdmin;
+				const result = yield* pasaportAdmin.backfillProfiles;
+				return c.json(result);
+			}).pipe(
+				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
+					Effect.succeed(c.text("Forbidden", 403)),
+				),
+			),
+		);
+	} finally {
+		await runtime.dispose();
+	}
 });
 
 // Better Auth handler — wired straight into the Hono router (ADR 0009).
-// Single global auth realm; the `handleAuth` module function constructs a
-// better-auth instance per request against `env.PHOENIX_DB`.
-app.on(["GET", "POST"], "/api/auth/*", async (c) => handleAuth(c.env, c.req.raw));
+// Single global auth realm; `Pasaport.handleAuth` constructs a better-auth
+// instance per request against `env.PHOENIX_DB`.
+app.on(["GET", "POST"], "/api/auth/*", async (c) => {
+	const runtime = GraphQLRuntime.make(c.env, c.req.raw, null);
+	try {
+		return await runtime.runPromise(
+			Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				return yield* pasaport.handleAuth(c.req.raw);
+			}),
+		);
+	} finally {
+		await runtime.dispose();
+	}
+});
 
 // Agent WebSocket subscriptions (T16). No product Agent DOs remain on the
 // worker post-d1-direct, so this handler currently has nothing to dispatch
@@ -150,13 +183,28 @@ app.all("/agents/*", async (c) => {
 // SDL for relay-compiler (`pnpm schema:fetch`).
 app.get("/graphql/schema", (c) => c.text(printSchemaSDL()));
 
-// Per-request: validate session via the Pasaport module, build a ManagedRuntime
-// that provides services to resolvers (Auth, CloudflareEnv, RequestContext),
-// dispose after. Yoga's response carries its own Response class (from
-// @whatwg-node/server) which fails workerd's `instanceof Response` check;
+// Per-request: validate session via the Pasaport service, build a ManagedRuntime
+// that provides services to resolvers (Auth, CloudflareEnv, RequestContext,
+// Pasaport, …), dispose after. Yoga's response carries its own Response class
+// (from @whatwg-node/server) which fails workerd's `instanceof Response` check;
 // rewrap with the runtime-native Response constructor.
 app.on(["GET", "POST"], "/graphql", async (c) => {
-	const sessionData = await validateSession(c.env, c.req.raw.headers);
+	// Validate the session through a short-lived runtime; resolvers run inside
+	// a separate runtime constructed with the resolved session attached to the
+	// `Auth` layer.
+	const sessionRuntime = GraphQLRuntime.make(c.env, c.req.raw, null);
+	let session: Session | null = null;
+	try {
+		session = await sessionRuntime.runPromise(
+			Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				return yield* pasaport.validateSession(c.req.raw.headers);
+			}),
+		);
+	} finally {
+		await sessionRuntime.dispose();
+	}
+	const sessionData: SessionData = session ? {user: session.user, session: session.session} : null;
 
 	const runtime = GraphQLRuntime.make(c.env, c.req.raw, sessionData);
 	try {
