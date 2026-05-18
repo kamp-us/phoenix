@@ -1,12 +1,16 @@
 ---
 id: 0006
 title: Product DOs extend Cloudflare's Agent base class
-status: accepted
+status: superseded
+superseded_by: 0009
+superseded_date: 2026-05-16
 date: 2026-05-09
 tags: [architecture, durable-objects, agents-sdk, sozluk, pano]
 ---
 
 # 0006 — Product DOs extend Cloudflare's Agent base class
+
+> **Superseded (2026-05-16):** Product DOs are retired by [ADR 0009](0009-d1-direct-defer-dos-and-workflows.md). No `Agent`-based product DOs survive in the codebase. When a single, scoped DO is reintroduced later (e.g. WebSocket fan-out), it can re-adopt the `Agent` base under a fresh ADR.
 
 ## Context
 

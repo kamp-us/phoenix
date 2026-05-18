@@ -35,7 +35,7 @@ function hostOf(url: string) {
 }
 
 /**
- * `submitPost` mutation (task_2, phoenix-relay-idiom). The payload spreads
+ * `submitPost` mutation. The payload spreads
  * `PanoPostCardFragment` so the post lands in the Relay store with every
  * field a feed card needs — the manual `updater` (see `panoFeedUpdater.ts`)
  * then prepends a `PostEdge` referencing it into every active

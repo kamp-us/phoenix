@@ -1,5 +1,5 @@
 /**
- * Landing stats projection (task_15) — sozluk_stats + pano_stats kept current
+ * Landing stats projection — sozluk_stats + pano_stats kept current
  * by the same projection steps that touch the underlying view tables.
  *
  * Exercises end-to-end inside workerd:
@@ -14,10 +14,9 @@
  */
 import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/view/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/view/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/view/drizzle/migrations/0003_lazy_thanos.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
+import {addComment, submitPost} from "../../worker/features/pano/module";
+import {addDefinition, deleteDefinition} from "../../worker/features/sozluk/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -25,7 +24,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -89,7 +88,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("landing stats projection — task_15", () => {
+describe("landing stats projection", () => {
 	it("sozluk_stats reflects total_definitions + total_authors after adds and deletes", async () => {
 		// Two distinct authors writing on two distinct slugs.
 		const authorA = "user_stats_sozluk_a";
@@ -98,16 +97,16 @@ describe("landing stats projection — task_15", () => {
 		const slugA = "stats-sozluk-alpha";
 		const slugB = "stats-sozluk-beta";
 
-		const stubA = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slugA));
-		const aDef = await stubA.addDefinition({
+		const aDef = await addDefinition(env, {
+			termSlug: slugA,
 			authorId: authorA,
 			authorName: "Author A",
 			body: "stats sozluk alpha by A",
 			termTitle: "Stats Sozluk Alpha",
 		});
 
-		const stubB = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slugB));
-		await stubB.addDefinition({
+		await addDefinition(env, {
+			termSlug: slugB,
 			authorId: authorB,
 			authorName: "Author B",
 			body: "stats sozluk beta by B",
@@ -116,7 +115,8 @@ describe("landing stats projection — task_15", () => {
 
 		// authorA writes a second definition on slugB to verify distinct-count
 		// (still 2 authors, not 3).
-		await stubB.addDefinition({
+		await addDefinition(env, {
+			termSlug: slugB,
 			authorId: authorA,
 			authorName: "Author A",
 			body: "stats sozluk beta by A also",
@@ -151,7 +151,7 @@ describe("landing stats projection — task_15", () => {
 		expect(after3!.totalDefinitions).toBe(distinctDefsRow!.n);
 
 		// Soft-delete A's first definition → total_definitions ticks down.
-		await stubA.deleteDefinition({definitionId: aDef.definitionId, actorId: authorA});
+		await deleteDefinition(env, {definitionId: aDef.definitionId, actorId: authorA});
 
 		const afterDelete = await waitFor(async () => {
 			const stats = await readSozlukStats();
@@ -182,9 +182,7 @@ describe("landing stats projection — task_15", () => {
 		const authorA = "user_stats_pano_a";
 		const authorB = "user_stats_pano_b";
 
-		const postId = "post_stats_pano_one";
-		const stubPost = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-		await stubPost.submitPost({
+		const post = await submitPost(env, {
 			title: "stats pano one",
 			url: "https://example.com/stats-pano-one",
 			body: "pano stats body",
@@ -192,16 +190,19 @@ describe("landing stats projection — task_15", () => {
 			authorId: authorA,
 			authorName: "Author A",
 		});
+		const postId = post.postId;
 
 		// authorB drops a comment on authorA's post.
-		await stubPost.addComment({
+		await addComment(env, {
+			postId,
 			authorId: authorB,
 			authorName: "Author B",
 			body: "stats pano comment from B",
 		});
 
 		// authorA also comments on their own post (already an author via post).
-		await stubPost.addComment({
+		await addComment(env, {
+			postId,
 			authorId: authorA,
 			authorName: "Author A",
 			body: "stats pano comment from A self",

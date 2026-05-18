@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Pano submitPost end-to-end (task_7).
+ * Pano submitPost end-to-end.
  *
  * Sign up a fresh user, complete the username bootstrap, navigate to the
  * `/pano/yeni` page, fill title + url + body + select a tag, submit. The
@@ -11,7 +11,7 @@ import {signUp} from "./_helpers/auth";
  *
  * Mirrors the helper pattern from tests/e2e/12-sozluk-vote.spec.ts.
  */
-test.describe("Pano submitPost (task_7)", () => {
+test.describe("Pano submitPost", () => {
 	test("submits a link post and lands on /pano/<id>", async ({page}) => {
 		const localPart = `pp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 		await signUp(page, {email: `${localPart}@kamp.us`});

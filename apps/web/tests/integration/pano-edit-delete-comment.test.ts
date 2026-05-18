@@ -1,34 +1,33 @@
 /**
- * PanoPost.editComment / deleteComment + CommentEdited / CommentDeleted
- * projection — task_12.
+ * `editComment` / `deleteComment` on D1-direct.
  *
- * Mirrors `pano-edit-delete-post.test.ts` (T9) and
- * `sozluk-edit-delete-definition.test.ts` (T6). Exercises the producer pattern
- * (ADR 0007) end-to-end inside workerd:
+ * Exercises the D1-direct comment lifecycle end-to-end inside workerd:
  *   1. Apply view migrations.
- *   2. Seed a post (T7) + add a comment (T10).
- *   3. Edit the body → `comment` row reflects new value; `comment_view`
- *      converges via `CommentEdited` projection step.
+ *   2. Seed a post + comment (D1-direct paths).
+ *   3. Edit the body → `comment_view.body` + `body_excerpt` refresh inline.
  *   4. Ownership: a non-author actor's edit / delete throws
  *      `UnauthorizedCommentMutationError`.
- *   5. Delete a *leaf* comment → soft-stamps `deleted_at` on `comment`,
- *      decrements `post_meta.commentCount`, projection REMOVES the row from
- *      `comment_view` entirely (vs. `[silindi]` rewrite for parents).
- *   6. Delete a *parent* with replies → soft-stamps `deleted_at`, projection
- *      UPDATES `comment_view` SET body_excerpt = '[silindi]' (preserve thread
- *      shape); per-DO `listComments` returns the parent with body =
- *      '[silindi]' so the live tree on PanoPostDetail keeps the structure.
+ *   5. Delete a *leaf* comment → row fully removed from `comment_view`;
+ *      `post_summary.comment_count` decremented.
+ *   6. Delete a *parent* with replies → soft-stamps `deleted_at`,
+ *      rewrites `body_excerpt = '[silindi]'`, drops votes; per-post
+ *      reader returns the placeholder so the SPA preserves the tree shape.
  *   7. Idempotent re-delete on an already-deleted comment is a no-op.
- *   8. CommentNotFoundError for an unknown comment id.
+ *   8. `CommentNotFoundError` for an unknown comment id.
+ *
+ * Zero `runInDurableObject` blocks — the module writes D1 directly.
  */
-
 import {env} from "cloudflare:test";
-import {id} from "@usirin/forge";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/view/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/view/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/view/drizzle/migrations/0003_lazy_thanos.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
+import {
+	addComment,
+	deleteComment,
+	editComment,
+	listComments,
+	submitPost,
+	voteOnComment,
+} from "../../worker/features/pano/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -36,7 +35,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -60,82 +59,41 @@ async function applyViewMigrations() {
 	}
 }
 
-async function waitForRow<T>(sqlStr: string, params: unknown[], attempts = 30): Promise<T | null> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sqlStr)
-			.bind(...params)
-			.first();
-		if (row) return row as T;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function waitForCondition(
-	sqlStr: string,
-	params: unknown[],
-	predicate: (row: unknown | null) => boolean,
-	attempts = 30,
-): Promise<unknown | null> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sqlStr)
-			.bind(...params)
-			.first();
-		if (predicate(row)) return row;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function waitForGone(sqlStr: string, params: unknown[], attempts = 30): Promise<boolean> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sqlStr)
-			.bind(...params)
-			.first();
-		if (!row) return true;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return false;
-}
-
 async function seedPostAndComment(opts: {
 	postAuthorId: string;
 	commentAuthorId: string;
 	commentBody?: string;
+	postTitle?: string;
 }) {
-	const postId = id("post");
-	const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-	await stub.submitPost({
-		title: `edit/delete comment seed ${postId}`,
+	const post = await submitPost(env, {
+		title: opts.postTitle ?? `edit/delete seed ${opts.postAuthorId}`,
 		tags: [{kind: "tartışma"}],
 		authorId: opts.postAuthorId,
 		authorName: "post author",
 	});
-	await waitForRow<{id: string}>("SELECT id FROM post_summary WHERE id = ?", [postId]);
-
-	const comment = await stub.addComment({
+	const comment = await addComment(env, {
+		postId: post.postId,
 		authorId: opts.commentAuthorId,
 		authorName: "comment author",
 		body: opts.commentBody ?? "original comment body",
 	});
-	await waitForRow<{id: string}>("SELECT id FROM comment_view WHERE id = ?", [comment.commentId]);
-	return {stub, postId, commentId: comment.commentId};
+	return {postId: post.postId, commentId: comment.commentId};
 }
 
 beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("PanoPost.editComment — task_12", () => {
-	it("updates body + projects CommentEdited onto comment_view.body_excerpt", async () => {
+describe("pano/module editComment", () => {
+	it("updates body + body_excerpt + updatedAt", async () => {
 		const authorId = "edit-comment-author";
-		const {stub, commentId} = await seedPostAndComment({
+		const {commentId} = await seedPostAndComment({
 			postAuthorId: "edit-comment-post-author",
 			commentAuthorId: authorId,
 			commentBody: "original body content",
 		});
 
-		const result = await stub.editComment({
+		const result = await editComment(env, {
 			commentId,
 			actorId: authorId,
 			body: "edited body — fresh content here.",
@@ -143,30 +101,22 @@ describe("PanoPost.editComment — task_12", () => {
 		expect(result.body).toBe("edited body — fresh content here.");
 		expect(result.commentId).toBe(commentId);
 
-		// In-DO: comment.body reflects the edit; not deleted; visible in tree.
-		const comments = await stub.listComments();
-		const target = comments.find((c) => c.id === commentId);
-		expect(target).toBeDefined();
-		expect(target!.body).toBe("edited body — fresh content here.");
-		expect(target!.authorId).toBe(authorId);
-
-		// comment_view.body_excerpt converged.
-		const view = await waitForCondition(
-			"SELECT body_excerpt FROM comment_view WHERE id = ?",
-			[commentId],
-			(r) =>
-				r != null && (r as {body_excerpt: string}).body_excerpt.startsWith("edited body — fresh"),
-		);
-		expect(view).not.toBeNull();
+		const view = await env.PHOENIX_DB.prepare(
+			"SELECT body, body_excerpt FROM comment_view WHERE id = ?",
+		)
+			.bind(commentId)
+			.first<{body: string; body_excerpt: string}>();
+		expect(view!.body).toBe("edited body — fresh content here.");
+		expect(view!.body_excerpt).toContain("edited body — fresh content");
 	});
 
 	it("non-author edit throws UnauthorizedCommentMutationError", async () => {
-		const {stub, commentId} = await seedPostAndComment({
+		const {commentId} = await seedPostAndComment({
 			postAuthorId: "ec-owner-post",
 			commentAuthorId: "ec-owner",
 		});
 		try {
-			await stub.editComment({
+			await editComment(env, {
 				commentId,
 				actorId: "different-user",
 				body: "evil edit",
@@ -178,12 +128,12 @@ describe("PanoPost.editComment — task_12", () => {
 	});
 
 	it("editComment on unknown comment id throws CommentNotFoundError", async () => {
-		const {stub} = await seedPostAndComment({
+		await seedPostAndComment({
 			postAuthorId: "ec-missing-post",
 			commentAuthorId: "ec-missing",
 		});
 		try {
-			await stub.editComment({
+			await editComment(env, {
 				commentId: "comm_DOES_NOT_EXIST",
 				actorId: "ec-missing",
 				body: "x",
@@ -196,12 +146,12 @@ describe("PanoPost.editComment — task_12", () => {
 
 	it("editComment with empty body rejects with body_required", async () => {
 		const authorId = "ec-empty";
-		const {stub, commentId} = await seedPostAndComment({
+		const {commentId} = await seedPostAndComment({
 			postAuthorId: "ec-empty-post",
 			commentAuthorId: authorId,
 		});
 		try {
-			await stub.editComment({commentId, actorId: authorId, body: "    "});
+			await editComment(env, {commentId, actorId: authorId, body: "    "});
 			throw new Error("expected rejection");
 		} catch (err) {
 			expect((err as Error).name).toBe("CommentValidationError");
@@ -210,148 +160,144 @@ describe("PanoPost.editComment — task_12", () => {
 	});
 });
 
-describe("PanoPost.deleteComment — task_12", () => {
-	it("deleting a leaf comment removes it entirely from listComments + comment_view", async () => {
+describe("pano/module deleteComment", () => {
+	it("deleting a leaf comment fully removes the comment_view row + decrements commentCount", async () => {
 		const authorId = "del-leaf-author";
-		const {stub, commentId} = await seedPostAndComment({
+		const {postId, commentId} = await seedPostAndComment({
 			postAuthorId: "del-leaf-post",
 			commentAuthorId: authorId,
 			commentBody: "leaf comment to be removed",
 		});
 
-		const result = await stub.deleteComment({commentId, actorId: authorId});
+		const result = await deleteComment(env, {commentId, actorId: authorId});
 		expect(result.deleted).toBe(true);
 		expect(result.hasReplies).toBe(false);
+		expect(result.placeholder).toBeNull();
 
-		// Per-DO read: the leaf row is gone from the tree entirely.
-		const comments = await stub.listComments();
+		const gone = await env.PHOENIX_DB.prepare("SELECT id FROM comment_view WHERE id = ?")
+			.bind(commentId)
+			.first();
+		expect(gone).toBeNull();
+
+		const summary = await env.PHOENIX_DB.prepare(
+			"SELECT comment_count FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first<{comment_count: number}>();
+		expect(summary!.comment_count).toBe(0);
+
+		// Per-post reader confirms the row is absent from the tree.
+		const comments = await listComments(env, postId);
 		expect(comments.find((c) => c.id === commentId)).toBeUndefined();
-
-		// post_meta.commentCount decremented (read via getPost which filters
-		// deleted comments).
-		const post = await stub.getPost();
-		expect(post!.commentCount).toBe(0);
-
-		// Projection: comment_view row REMOVED (DELETE branch on hasReplies=false).
-		const gone = await waitForGone("SELECT id FROM comment_view WHERE id = ?", [commentId]);
-		expect(gone).toBe(true);
-
-		// post_summary.commentCount converged via the sibling PostChanged event.
-		const summary = await waitForCondition(
-			"SELECT comment_count FROM post_summary WHERE id = ?",
-			[result.commentId === commentId ? (await stub.getPost())!.id : ""],
-			() => true,
-		);
-		// Re-read explicitly via known postId.
-		const postRow = await stub.getPost();
-		const finalSummary = await waitForCondition(
-			"SELECT comment_count FROM post_summary WHERE id = ?",
-			[postRow!.id],
-			(r) => r != null && (r as {comment_count: number}).comment_count === 0,
-		);
-		expect(finalSummary).not.toBeNull();
-		expect(summary).not.toBeNull();
 	});
 
 	it("deleting a parent comment with replies preserves tree structure with [silindi] placeholder", async () => {
 		const parentAuthorId = "del-parent-author";
 		const replyAuthorId = "del-parent-reply-author";
-		const {
-			stub,
-			postId,
-			commentId: parentId,
-		} = await seedPostAndComment({
+		const {postId, commentId: parentId} = await seedPostAndComment({
 			postAuthorId: "del-parent-post",
 			commentAuthorId: parentAuthorId,
 			commentBody: "parent comment with replies",
 		});
 
-		// Add a reply to that parent.
-		const reply = await stub.addComment({
+		const reply = await addComment(env, {
+			postId,
 			authorId: replyAuthorId,
 			authorName: "reply author",
 			body: "the reply that keeps the parent in the tree",
 			parentId,
 		});
-		await waitForRow<{id: string}>("SELECT id FROM comment_view WHERE id = ?", [reply.commentId]);
 
-		// Delete the parent.
-		const result = await stub.deleteComment({commentId: parentId, actorId: parentAuthorId});
+		const result = await deleteComment(env, {commentId: parentId, actorId: parentAuthorId});
 		expect(result.deleted).toBe(true);
 		expect(result.hasReplies).toBe(true);
+		expect(result.placeholder).not.toBeNull();
+		expect(result.placeholder!.body).toBe("[silindi]");
+		expect(result.placeholder!.authorId).toBe("");
+		expect(result.placeholder!.deletedAt).toBeInstanceOf(Date);
 
-		// Per-DO read: parent stays in the tree as `[silindi]`; reply still
-		// visible underneath.
-		const comments = await stub.listComments();
-		const parentRow = comments.find((c) => c.id === parentId);
-		expect(parentRow).toBeDefined();
-		expect(parentRow!.body).toBe("[silindi]");
-		expect(parentRow!.author).toBe("");
-		expect(parentRow!.authorId).toBe("");
-		const replyRow = comments.find((c) => c.id === reply.commentId);
-		expect(replyRow).toBeDefined();
-		expect(replyRow!.parentId).toBe(parentId);
-		expect(replyRow!.body).toBe("the reply that keeps the parent in the tree");
-
-		// Projection: comment_view UPDATE branch — body_excerpt becomes [silindi]
-		// and deleted_at is stamped, but the row stays.
-		const view = await waitForCondition(
+		// comment_view row stays with body_excerpt rewritten + deleted_at set.
+		const view = await env.PHOENIX_DB.prepare(
 			"SELECT body_excerpt, deleted_at FROM comment_view WHERE id = ?",
-			[parentId],
-			(r) => r != null && (r as {body_excerpt: string}).body_excerpt === "[silindi]",
-		);
+		)
+			.bind(parentId)
+			.first<{body_excerpt: string; deleted_at: number | null}>();
 		expect(view).not.toBeNull();
-		expect((view as {deleted_at: number}).deleted_at).toBeGreaterThan(0);
+		expect(view!.body_excerpt).toBe("[silindi]");
+		expect(view!.deleted_at).not.toBeNull();
 
 		// Reply's comment_view row untouched.
 		const replyView = await env.PHOENIX_DB.prepare(
-			"SELECT body_excerpt, deleted_at FROM comment_view WHERE id = ?",
+			"SELECT body, body_excerpt, deleted_at FROM comment_view WHERE id = ?",
 		)
 			.bind(reply.commentId)
-			.first<{body_excerpt: string; deleted_at: number | null}>();
+			.first<{body: string; body_excerpt: string; deleted_at: number | null}>();
 		expect(replyView).not.toBeNull();
-		expect(replyView!.body_excerpt).toBe("the reply that keeps the parent in the tree");
-		expect(replyView!.deleted_at).toBeFalsy();
+		expect(replyView!.body).toBe("the reply that keeps the parent in the tree");
+		expect(replyView!.deleted_at).toBeNull();
 
-		// post_meta.commentCount decremented by 1 (the parent); reply still counts.
-		const post = await stub.getPost();
-		expect(post!.commentCount).toBe(1);
-		expect(post!.id).toBe(postId);
+		// post_summary.comment_count decremented by 1 (the parent); reply still counts.
+		const summary = await env.PHOENIX_DB.prepare(
+			"SELECT comment_count FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first<{comment_count: number}>();
+		expect(summary!.comment_count).toBe(1);
+
+		// Per-post reader returns the placeholder for the parent + reply intact.
+		const comments = await listComments(env, postId);
+		const parentRow = comments.find((c) => c.id === parentId);
+		expect(parentRow).toBeDefined();
+		expect(parentRow!.body).toBe("[silindi]");
+		expect(parentRow!.authorId).toBe("");
+		const replyRow = comments.find((c) => c.id === reply.commentId);
+		expect(replyRow).toBeDefined();
+		expect(replyRow!.body).toBe("the reply that keeps the parent in the tree");
 	});
 
 	it("non-author delete throws UnauthorizedCommentMutationError", async () => {
-		const {stub, commentId} = await seedPostAndComment({
+		const {commentId} = await seedPostAndComment({
 			postAuthorId: "dc-owner-post",
 			commentAuthorId: "dc-owner",
 		});
 		try {
-			await stub.deleteComment({commentId, actorId: "different-user"});
+			await deleteComment(env, {commentId, actorId: "different-user"});
 			throw new Error("expected rejection");
 		} catch (err) {
 			expect((err as Error).name).toBe("UnauthorizedCommentMutationError");
 		}
 	});
 
-	it("deleteComment on already-deleted comment is an idempotent no-op", async () => {
-		const authorId = "dc-idempotent";
-		const {stub, commentId} = await seedPostAndComment({
+	it("deleteComment on already-deleted (parent-with-replies) comment is an idempotent no-op", async () => {
+		const parentAuthorId = "dc-idempotent-parent";
+		const {postId, commentId: parentId} = await seedPostAndComment({
 			postAuthorId: "dc-idempotent-post",
-			commentAuthorId: authorId,
+			commentAuthorId: parentAuthorId,
 		});
-		const first = await stub.deleteComment({commentId, actorId: authorId});
-		expect(first.deleted).toBe(true);
+		await addComment(env, {
+			postId,
+			authorId: "dc-idempotent-child",
+			authorName: "child",
+			body: "reply",
+			parentId,
+		});
 
-		const second = await stub.deleteComment({commentId, actorId: authorId});
+		const first = await deleteComment(env, {commentId: parentId, actorId: parentAuthorId});
+		expect(first.deleted).toBe(true);
+		expect(first.hasReplies).toBe(true);
+
+		const second = await deleteComment(env, {commentId: parentId, actorId: parentAuthorId});
 		expect(second.deleted).toBe(false);
+		expect(second.hasReplies).toBe(true);
 	});
 
 	it("deleteComment on unknown comment id throws CommentNotFoundError", async () => {
-		const {stub} = await seedPostAndComment({
+		await seedPostAndComment({
 			postAuthorId: "dc-missing-post",
 			commentAuthorId: "dc-missing",
 		});
 		try {
-			await stub.deleteComment({
+			await deleteComment(env, {
 				commentId: "comm_DOES_NOT_EXIST",
 				actorId: "dc-missing",
 			});
@@ -360,37 +306,227 @@ describe("PanoPost.deleteComment — task_12", () => {
 			expect((err as Error).name).toBe("CommentNotFoundError");
 		}
 	});
+});
 
-	it("deleting all replies of a [silindi] parent then converges the tree to no parent row in comment_view", async () => {
-		// This specifically exercises the documented behavior: when a parent
-		// has been turned into [silindi] because of a child, then the child is
-		// deleted (leaf-style), the per-DO read no longer keeps the parent
-		// since it has no live children. The comment_view side already ran the
-		// UPDATE branch so the parent's row carries deleted_at + [silindi];
-		// downstream cleanup is a future concern (T14 profile feed filters
-		// deleted), so we only assert the per-DO tree is correct.
-		const parentAuthorId = "cascade-parent";
-		const childAuthorId = "cascade-child";
-		const {stub, commentId: parentId} = await seedPostAndComment({
-			postAuthorId: "cascade-post",
+/**
+ * Atomicity invariant.
+ *
+ * A successful `deleteComment(...)` must collapse every mutating statement —
+ * the conditional karma decrement, `DELETE FROM comment_vote`, `DELETE FROM
+ * user_vote`, and the branch-dependent terminal (`UPDATE comment_view` for
+ * parent-with-replies or `DELETE FROM comment_view` for leaves) — into one
+ * `env.PHOENIX_DB.batch([...])` call. The post `commentCount` decrement +
+ * `recomputePanoStats` stay out of the batch (recomputable; not
+ * atomicity-critical).
+ *
+ * Branches:
+ *   - leaf, `priorScore === 0` → 3 statements (no karma; ends with DELETE).
+ *   - leaf, `priorScore > 0`  → 4 statements (karma first; ends with DELETE).
+ *   - parent-with-replies, `priorScore === 0` → 3 statements (no karma; ends
+ *     with UPDATE).
+ *   - parent-with-replies, `priorScore > 0` → 4 statements (karma first;
+ *     ends with UPDATE).
+ */
+describe("pano.deleteComment — atomic single-batch write", () => {
+	/**
+	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
+	 * `.prepare(sql).bind(...).run()` chain without losing the real D1
+	 * binding's behaviour. Same shape as the deletePost spy in
+	 * `pano-edit-delete-post.test.ts` — duplicated rather than shared so
+	 * each test file stays self-contained.
+	 */
+	function spyEnv(real: Env) {
+		let batchCalls = 0;
+		const batchStatementCounts: number[] = [];
+		const realDb = real.PHOENIX_DB;
+		const wrappedStatement = (stmt: D1PreparedStatement): D1PreparedStatement => {
+			return new Proxy(stmt, {
+				get(target, prop, receiver) {
+					const orig = Reflect.get(target, prop, receiver);
+					if (prop === "bind" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							const bound = (orig as (...a: unknown[]) => D1PreparedStatement).apply(target, args);
+							return wrappedStatement(bound);
+						};
+					}
+					return typeof orig === "function" ? orig.bind(target) : orig;
+				},
+			});
+		};
+		const wrappedDb = new Proxy(realDb, {
+			get(target, prop, receiver) {
+				const orig = Reflect.get(target, prop, receiver);
+				if (prop === "batch" && typeof orig === "function") {
+					return (stmts: D1PreparedStatement[]) => {
+						batchCalls += 1;
+						batchStatementCounts.push(stmts.length);
+						return (orig as (s: D1PreparedStatement[]) => unknown).call(target, stmts);
+					};
+				}
+				if (prop === "prepare" && typeof orig === "function") {
+					return (sql: string) => {
+						const stmt = (orig as (s: string) => D1PreparedStatement).call(target, sql);
+						return wrappedStatement(stmt);
+					};
+				}
+				return typeof orig === "function" ? orig.bind(target) : orig;
+			},
+		});
+		const wrappedEnv = new Proxy(real, {
+			get(target, prop, receiver) {
+				if (prop === "PHOENIX_DB") return wrappedDb;
+				return Reflect.get(target, prop, receiver);
+			},
+		}) as Env;
+		return {
+			env: wrappedEnv,
+			getCounts: () => ({
+				batchCalls,
+				batchStatementCounts: [...batchStatementCounts],
+			}),
+		};
+	}
+
+	it("leaf, priorScore === 0: one batch with 3 statements (comment_vote + user_vote + DELETE comment_view)", async () => {
+		const authorId = "atomic-del-comment-leaf-zero";
+		const {commentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-leaf-zero-post",
+			commentAuthorId: authorId,
+		});
+
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(false);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(3);
+	});
+
+	it("leaf, priorScore > 0: one batch with 4 statements (karma first, ends with DELETE comment_view)", async () => {
+		const authorId = "atomic-del-comment-leaf-nonzero-author";
+		const voterId = "atomic-del-comment-leaf-nonzero-voter";
+		const {commentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-leaf-nonzero-post",
+			commentAuthorId: authorId,
+		});
+
+		await voteOnComment(env, {commentId, voterId});
+
+		// Sanity: comment_view.score is now 1.
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM comment_view WHERE id = ?")
+			.bind(commentId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(1);
+
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(false);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+
+		// Sanity: row really is gone (proves the terminal in the batch was
+		// the DELETE, not the soft-update).
+		const gone = await env.PHOENIX_DB.prepare("SELECT id FROM comment_view WHERE id = ?")
+			.bind(commentId)
+			.first();
+		expect(gone).toBeNull();
+	});
+
+	it("parent-with-replies, priorScore === 0: one batch with 3 statements (comment_vote + user_vote + UPDATE comment_view)", async () => {
+		const parentAuthorId = "atomic-del-comment-parent-zero-author";
+		const {postId, commentId: parentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-parent-zero-post",
 			commentAuthorId: parentAuthorId,
 		});
-		const reply = await stub.addComment({
-			authorId: childAuthorId,
+		await addComment(env, {
+			postId,
+			authorId: "atomic-del-comment-parent-zero-child",
 			authorName: "child",
-			body: "child body",
+			body: "keeps the parent in the tree",
 			parentId,
 		});
-		// Delete parent → [silindi] (has replies).
-		await stub.deleteComment({commentId: parentId, actorId: parentAuthorId});
-		// Delete child → leaf, fully removed.
-		await stub.deleteComment({commentId: reply.commentId, actorId: childAuthorId});
 
-		const comments = await stub.listComments();
-		// Both rows now disappear from the per-DO tree: child is a leaf delete,
-		// and parent has no live children, so the [silindi] placeholder
-		// disappears too on the next read.
-		expect(comments.find((c) => c.id === parentId)).toBeUndefined();
-		expect(comments.find((c) => c.id === reply.commentId)).toBeUndefined();
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId: parentId, actorId: parentAuthorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(3);
+
+		// Sanity: parent row still exists with body_excerpt = SILINDI (proves
+		// the terminal was the UPDATE, not the DELETE).
+		const view = await env.PHOENIX_DB.prepare(
+			"SELECT body_excerpt, deleted_at FROM comment_view WHERE id = ?",
+		)
+			.bind(parentId)
+			.first<{body_excerpt: string; deleted_at: number | null}>();
+		expect(view).not.toBeNull();
+		expect(view!.body_excerpt).toBe("[silindi]");
+		expect(view!.deleted_at).not.toBeNull();
+	});
+
+	it("parent-with-replies, priorScore > 0: one batch with 4 statements (karma first, ends with UPDATE comment_view)", async () => {
+		const parentAuthorId = "atomic-del-comment-parent-nonzero-author";
+		const voterId = "atomic-del-comment-parent-nonzero-voter";
+		const {postId, commentId: parentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-parent-nonzero-post",
+			commentAuthorId: parentAuthorId,
+		});
+		await addComment(env, {
+			postId,
+			authorId: "atomic-del-comment-parent-nonzero-child",
+			authorName: "child",
+			body: "keeps the parent in the tree",
+			parentId,
+		});
+
+		await voteOnComment(env, {commentId: parentId, voterId});
+
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM comment_view WHERE id = ?")
+			.bind(parentId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(1);
+
+		const spy = spyEnv(env);
+		const result = await deleteComment(spy.env, {commentId: parentId, actorId: parentAuthorId});
+		expect(result.deleted).toBe(true);
+		expect(result.hasReplies).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("post commentCount decrement still runs after the batch resolves", async () => {
+		const authorId = "atomic-del-comment-count-author";
+		const {postId, commentId} = await seedPostAndComment({
+			postAuthorId: "atomic-del-comment-count-post",
+			commentAuthorId: authorId,
+		});
+
+		const beforeSummary = await env.PHOENIX_DB.prepare(
+			"SELECT comment_count FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first<{comment_count: number}>();
+		expect(beforeSummary!.comment_count).toBe(1);
+
+		const spy = spyEnv(env);
+		await deleteComment(spy.env, {commentId, actorId: authorId});
+		expect(spy.getCounts().batchCalls).toBe(1);
+
+		const afterSummary = await env.PHOENIX_DB.prepare(
+			"SELECT comment_count FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first<{comment_count: number}>();
+		expect(afterSummary!.comment_count).toBe(0);
 	});
 });

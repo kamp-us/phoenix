@@ -13,6 +13,7 @@
 	"include": [
 		"worker",
 		"worker-configuration.d.ts",
-		"src/relay/encodeNodeId.ts"
+		"src/relay/encodeNodeId.ts",
+		"src/lib/mutationErrorCodes.ts"
 	]
 }

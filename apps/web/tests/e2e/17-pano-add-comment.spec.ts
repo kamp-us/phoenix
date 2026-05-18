@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Pano addComment end-to-end (task_10).
+ * Pano addComment end-to-end.
  *
  * Single author flow:
  *   1. sign up → bootstrap username
@@ -12,9 +12,9 @@ import {signUp} from "./_helpers/auth";
  *   5. submit the reply → it appears nested under the parent comment
  *
  * Page reload after submitPost dodges the Suspense double-mount race that
- * landed in operator.md (cf. task_5 retry 1 — commit 17ed98a).
+ * surfaced earlier in development.
  */
-test.describe("Pano addComment (task_10)", () => {
+test.describe("Pano addComment", () => {
 	test("submits a top-level comment, then a nested reply", async ({page}) => {
 		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 		await signUp(page, {email: `cm${suffix}@kamp.us`});
@@ -37,10 +37,9 @@ test.describe("Pano addComment (task_10)", () => {
 		// Land on /pano/<id>.
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
-		// phoenix-relay-idiom task_3: post-detail no longer remounts on a
-		// mutation — `usePaginationFragment` + connection updaters keep the
-		// page tree mounted, so the historical Suspense workaround reload is
-		// gone.
+		// Post-detail no longer remounts on a mutation —
+		// `usePaginationFragment` + connection updaters keep the page tree
+		// mounted, so the historical Suspense workaround reload is gone.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 
 		// Wait for the initial thread heading to render so we know the Comments

@@ -1,5 +1,5 @@
 /**
- * Fragment-shaped profile header (task_6, phoenix-relay-idiom).
+ * Fragment-shaped profile header.
  *
  * Reads its data via `useFragment(UserProfileHeaderFragment)` instead of
  * taking shaped props. The page (`UserProfilePage`) spreads this fragment

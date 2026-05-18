@@ -1,6 +1,6 @@
 /**
- * Round-trip + edge cases for the Relay global-id helpers (task_1,
- * phoenix-relay-idiom). Pure-function test — runs inside workerd because
+ * Round-trip + edge cases for the Relay global-id helpers.
+ * Pure-function test — runs inside workerd because
  * that's the only vitest pool we wire, but it touches no bindings.
  */
 import {describe, expect, it} from "vitest";

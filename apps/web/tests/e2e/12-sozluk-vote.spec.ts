@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Sözlük voteDefinition end-to-end (task_5; touched by task_4 of phoenix-relay-idiom).
+ * Sözlük voteDefinition end-to-end.
  *
  * Sign up a fresh user, complete the username bootstrap, navigate to a brand
  * new term URL, write a definition, then exercise the optimistic vote flip:
@@ -17,13 +17,13 @@ import {signUp} from "./_helpers/auth";
  * Historical note: this spec previously contained a `page.reload()` between
  * the addDefinition mutation and the vote interactions to escape the
  * Suspense double-mount race triggered by the legacy
- * `setFetchKey`-driven refetch. After task_4 of `phoenix-relay-idiom` the
+ * `setFetchKey`-driven refetch. After the relay-idiom refactor the
  * page tree no longer unmounts on a mutation (idiomatic Relay
  * `@deleteRecord` + manual `updater` for prepends + `commitLocalUpdate`
  * for live updates), so the reload is gone. Its presence would now signal
  * a regression.
  */
-test.describe("Sözlük voteDefinition (task_5)", () => {
+test.describe("Sözlük voteDefinition", () => {
 	test("vote → unvote → vote round-trip on a fresh definition", async ({page}) => {
 		// Fresh sign-up + bootstrap so the user is fully authenticated.
 		const localPart = `vt${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -47,7 +47,7 @@ test.describe("Sözlük voteDefinition (task_5)", () => {
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 
 		// New definition appears via the manual connection updater + the
-		// optimistic flip (task_4). Re-page-mount happens once for the very
+		// optimistic flip. Re-page-mount happens once for the very
 		// first definition on a fresh slug — the page transitions from the
 		// "no term yet" branch into the connection branch and reloads to
 		// pick up the just-created Term record (the only narrow case left).

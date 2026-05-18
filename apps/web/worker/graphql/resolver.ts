@@ -1,6 +1,6 @@
 import {Cause, Effect, Exit, type ManagedRuntime} from "effect";
 import {GraphQLError} from "graphql";
-import {Unauthorized} from "../services/Auth";
+import {encodeMutationError} from "./errors";
 
 /**
  * GraphQL context that carries a per-request Effect runtime.
@@ -15,19 +15,22 @@ export interface EffectContext<R> {
  * The generator runs through the request's ManagedRuntime, which provides
  * services like CloudflareEnv and RequestContext.
  *
- * Failure handling:
- * - `Unauthorized` (tagged failure, raised by `Auth.required`) → re-thrown as
- *   a `GraphQLError` with `extensions.code === 'UNAUTHORIZED'` so Yoga's
- *   maskedErrors lets it through and the SPA's `useSessionExpiredToast` hook
- *   surfaces the session-expired toast (T17).
- * - Defects (uncaught `throw` inside the generator) and other tagged failures
- *   → re-thrown via `Cause.squash` so hand-rolled `GraphQLError` instances
- *   still reach Yoga's serializer.
+ * Failure handling: every tagged failure and every plain
+ * `Error` raised inside the generator passes through {@link encodeMutationError},
+ * which maps known domain error classes onto stable wire-format
+ * `extensions.code` strings. Mutation resolvers therefore no longer need
+ * inline `try/catch + map*MutationError` boilerplate — they can just throw the
+ * raw agent error (or let `Auth.required` fail with `Unauthorized`) and the
+ * wrapper takes care of the rest.
+ *
+ * Pre-built `GraphQLError`s pass through unchanged so resolver-side
+ * validation can still raise typed codes directly.
  *
  * @example
- *   resolve: resolver(function* (_source, args: {url: string}) {
- *     const env = yield* CloudflareEnv;
- *     return env.ENVIRONMENT;
+ *   resolve: resolver(function* (_source, args: {value: string}) {
+ *     const {user} = yield* Auth.required;     // Unauthorized → UNAUTHORIZED
+ *     const result = yield* Effect.promise(() => stub.setUsername(...));
+ *     return result;                            // UsernameValidationError → TAKEN, etc.
  *   })
  */
 export function resolver<TSource, TArgs, A>(
@@ -38,14 +41,16 @@ export function resolver<TSource, TArgs, A>(
 		if (Exit.isSuccess(exit)) return exit.value;
 		const errResult = Cause.findError(exit.cause);
 		if (errResult._tag === "Success") {
-			const e = errResult.success as unknown;
-			if (e instanceof Unauthorized || (e as {_tag?: string})?._tag === "Unauthorized") {
-				throw new GraphQLError("not authorized", {
-					extensions: {code: "UNAUTHORIZED"},
-				});
-			}
-			throw e;
+			const e = errResult.success;
+			// `GraphQLError` is the resolver-side "I already know the wire shape"
+			// escape hatch — pass it through verbatim so codes like
+			// `BODY_REQUIRED` raised by inline validation aren't double-encoded.
+			if (e instanceof GraphQLError) throw e;
+			throw encodeMutationError(e);
 		}
-		throw Cause.squash(exit.cause);
+		// Defects (uncaught `throw` that didn't surface as an Effect error)
+		// still need to reach Yoga's serializer; squash → encode applies the
+		// same wire contract to those too.
+		throw encodeMutationError(Cause.squash(exit.cause));
 	};
 }

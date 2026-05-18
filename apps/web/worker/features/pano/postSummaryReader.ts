@@ -1,16 +1,12 @@
 /**
  * Read-side helper for the `posts(sort, limit, host)` resolver.
  *
- * The cross-entity post list reads from `PHOENIX_DB.post_summary` (the MV
- * maintained by `PhoenixProjection.PostChanged`), not from per-post DOs —
- * fanning out to every post DO would be O(n) RPCs per page render.
- *
- * Per-post reads (`post(idOrSlug)`, `Post.comments` connection) still RPC
- * into `PanoPost` for the full page (comments live there, not in the MV).
+ * Reads from `PHOENIX_DB.post_summary` (maintained inline by the pano writer
+ * module per ADR 0009 — no projection layer, no per-post DOs).
  */
 import {and, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import * as schema from "../../view/drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
 export type PostSort = "hot" | "new" | "top" | "discuss";
 
@@ -133,8 +129,8 @@ function parseTags(csv: string): Array<{kind: string; label: string}> {
 }
 
 /**
- * Connection-shaped reader for `posts(sort, host, first, after)` (task_2,
- * phoenix-relay-idiom). Cursor is opaque to the client — the post id (forge
+ * Connection-shaped reader for `posts(sort, host, first, after)`.
+ * Cursor is opaque to the client — the post id (forge
  * ULID, lex-sortable). `after` selects rows whose sort-key tuple comes strictly
  * after the cursor's row, with `id` as the deterministic tie-breaker.
  *
@@ -173,6 +169,7 @@ export async function listPostConnection(
 		commentCount: number;
 		createdAt: Date | null;
 	} | null = null;
+	let cursorMissed = false;
 	if (after) {
 		cursorRow =
 			(await db
@@ -186,6 +183,25 @@ export async function listPostConnection(
 				.from(schema.postSummary)
 				.where(eq(schema.postSummary.id, after))
 				.get()) ?? null;
+		if (!cursorRow) {
+			// Stale cursor (the row was deleted between pages). Collapse to
+			// "no further rows" so the FE re-fetches from the head instead
+			// of accidentally re-rendering rows the user has already seen.
+			cursorMissed = true;
+		}
+	}
+	if (cursorMissed) {
+		const totalCountRow = await db
+			.select({n: sql<number>`count(*)`})
+			.from(schema.postSummary)
+			.where(and(...baseConditions))
+			.get();
+		return {
+			rows: [],
+			hasNextPage: false,
+			endCursor: null,
+			totalCount: totalCountRow?.n ?? 0,
+		};
 	}
 
 	const cursorPredicate = cursorRow

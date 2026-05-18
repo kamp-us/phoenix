@@ -1,16 +1,15 @@
 /**
  * Cross-product `comment_view` lookup helpers.
  *
- * Powers the GraphQL `voteOnComment` / `retractCommentVote` resolvers, which
- * need to map a `commentId` back to its `postId` to route the RPC into the
- * correct per-post `PanoPost` DO (addressed by `idFromName(postId)`).
- *
- * Mirrors `lookupDefinitionTermSlug` (T5) — the projection denormalizes the
- * containing post id onto `comment_view` for exactly this kind of lookup.
+ * Pre-d1-direct, the GraphQL `voteOnComment` / `retractCommentVote` resolvers
+ * needed to map a `commentId` back to its `postId` to route the RPC into the
+ * correct per-post DO. After the D1-direct refactor every comment write hits
+ * `PHOENIX_DB` directly and the resolvers no longer need this lookup; the
+ * helper is kept for future cross-table jumps (e.g. notification fan-out).
  */
 import {eq} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import * as schema from "../../view/drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
 /**
  * Resolve a comment id back to its post id via the `comment_view` MV.

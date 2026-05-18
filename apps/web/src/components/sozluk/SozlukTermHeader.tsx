@@ -1,11 +1,10 @@
 /**
- * Fragment-shaped term page header (task_4, phoenix-relay-idiom).
+ * Fragment-shaped term page header.
  *
  * Reads its data via `useFragment(SozlukTermHeaderFragment)` instead of
  * taking shaped props. The page (`SozlukTermPage`) spreads this fragment
  * into the top-level `Term` selection — the header declares what it needs.
  */
-import type * as React from "react";
 import {graphql, useFragment} from "react-relay";
 import {Link} from "react-router";
 import type {SozlukTermHeaderFragment$key} from "../../__generated__/SozlukTermHeaderFragment.graphql";
@@ -25,7 +24,6 @@ const SozlukTermHeaderFragmentDef = graphql`
 
 export interface SozlukTermHeaderProps {
 	term: SozlukTermHeaderFragment$key;
-	livePill?: React.ReactNode;
 }
 
 export function SozlukTermHeader(props: SozlukTermHeaderProps) {
@@ -43,7 +41,6 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 				<span>{term.totalScore} oy</span>
 				{term.firstAt ? <span>ilk: {formatDateTR(term.firstAt)}</span> : null}
 				{term.lastEdit ? <span>son düzenleme: {formatAgoTR(term.lastEdit)}</span> : null}
-				{props.livePill}
 			</div>
 		</header>
 	);

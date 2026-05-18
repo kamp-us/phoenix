@@ -1,5 +1,5 @@
 /**
- * Hand-written `submitPost` updater (task_2, phoenix-relay-idiom).
+ * Hand-written `submitPost` updater.
  *
  * Mirrors kampus's `Library.tsx` pattern (manual `updater` for prepends, no
  * `$connections` variable) but adapts for two phoenix-specific facts:

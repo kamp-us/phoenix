@@ -1,5 +1,5 @@
 /**
- * Sozluk home term row (task_5, phoenix-relay-idiom).
+ * Sozluk home term row.
  *
  * Reads via `useFragment` against `TermRowFragment on Term` — the home
  * page's two `@connection`-shaped fragments hand each edge's `node` ref

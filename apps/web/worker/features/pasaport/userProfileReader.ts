@@ -11,13 +11,13 @@
  *
  * We compute aggregates on-the-fly rather than reading them from
  * `user_profile.*_count` because T13's projection doesn't yet maintain those
- * counters (task_15 is on the hook for it). Deriving from the view tables
+ * counters. Deriving from the view tables
  * keeps the profile page correct today and will continue to be correct once
  * the counters land — they'll just be redundant.
  */
 import {and, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import * as schema from "../../view/drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
 /* -------------------------------------------------------------------------- */
 /* Identity + aggregates                                                       */

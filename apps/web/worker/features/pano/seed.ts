@@ -38,7 +38,7 @@ export const SEED_POSTS: SeedPost[] = [
 		title: "türkiye'de kendi web yığınını çalıştırmak: nginx + caddy notları",
 		url: "https://github.com/edak/notes",
 		score: 47,
-		tags: [{kind: "show", label: "göster"}],
+		tags: [{kind: "göster", label: "göster"}],
 		comments: [
 			{
 				...author("eda_k"),
@@ -70,8 +70,8 @@ export const SEED_POSTS: SeedPost[] = [
 		body: "kampus.dev'de oran sınırlamayı düşünüyorum. 5 sn'de 1 post yeterli mi? 10 sn'de 1? deneyimi olan var mı?",
 		score: 63,
 		tags: [
-			{kind: "discuss", label: "tartışma"},
-			{kind: "ask", label: "soru"},
+			{kind: "tartışma", label: "tartışma"},
+			{kind: "soru", label: "soru"},
 		],
 		comments: [
 			{
@@ -91,7 +91,7 @@ export const SEED_POSTS: SeedPost[] = [
 		title: "oyun motoru yazıyorum ama wgpu nasıl debug ediliyor cidden bilen var mı",
 		body: "renderdoc çalışıyor mu wgpu ile? naga shader'larını okurken kafam karışıyor.",
 		score: 21,
-		tags: [{kind: "rant", label: "söylenme"}],
+		tags: [{kind: "söylenme", label: "söylenme"}],
 		comments: [
 			{
 				...author("kaaneren"),
@@ -111,7 +111,7 @@ export const SEED_POSTS: SeedPost[] = [
 		title: "CSS'de container queries'ten sonra dünya değişti mi",
 		url: "https://css-tricks.com/say-hello-to-css-container-queries/",
 		score: 88,
-		tags: [{kind: "discuss", label: "tartışma"}],
+		tags: [{kind: "tartışma", label: "tartışma"}],
 		comments: [
 			{
 				...author("merve.kaya"),
@@ -162,8 +162,8 @@ export const SEED_POSTS: SeedPost[] = [
 		url: "https://canyilmaz.dev/posts/sqlite-do-postmortem",
 		score: 56,
 		tags: [
-			{kind: "show", label: "göster"},
-			{kind: "discuss", label: "tartışma"},
+			{kind: "göster", label: "göster"},
+			{kind: "tartışma", label: "tartışma"},
 		],
 		comments: [
 			{
@@ -184,7 +184,7 @@ export const SEED_POSTS: SeedPost[] = [
 		title: "frontend'te 'feature flag' nasıl yönetiyorsunuz",
 		body: "küçük takımız, vercel/launchdarkly overkill geliyor. env var + cookie yetiyor mu sizce?",
 		score: 29,
-		tags: [{kind: "ask", label: "soru"}],
+		tags: [{kind: "soru", label: "soru"}],
 		comments: [
 			{
 				...author("mert"),

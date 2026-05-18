@@ -1,5 +1,5 @@
 /**
- * Fragment-shaped contribution row (task_6, phoenix-relay-idiom).
+ * Fragment-shaped contribution row.
  *
  * `ProfileContribution` is a GraphQL union
  * (`DefinitionContribution | PostContribution | CommentContribution`).

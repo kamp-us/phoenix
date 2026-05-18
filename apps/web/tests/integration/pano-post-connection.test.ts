@@ -1,25 +1,19 @@
 /**
- * Pano feed connection-shaped reader (task_2, phoenix-relay-idiom).
+ * Pano feed connection-shaped reader.
  *
- * Exercises `listPostConnection` in workerd with a seeded `post_summary`:
- *   - First page returns up to `first` rows + `hasNextPage` + `endCursor`.
- *   - Walking `after = endCursor` advances through every row exactly once.
- *   - `host` filter narrows the result set; pagination still works.
- *   - `totalCount` matches the number of non-deleted summary rows under
- *     the active filter.
- *   - `sort` variants (`hot` / `new` / `top` / `discuss`) all paginate
- *     correctly with a deterministic id tie-breaker.
+ * Exercises `listPostConnection` in workerd with `post_summary` rows
+ * seeded via the D1-direct `submitPost` module function.
  *
- * Mirrors the seeding pattern from `pano-post.test.ts`.
+ * No `runInDurableObject`, no projection workflow — writes are inline
+ * D1 (ADR 0009).
  */
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
 import {env} from "cloudflare:test";
-import {id} from "@usirin/forge";
 import {beforeAll, describe, expect, it} from "vitest";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
+import {submitPost} from "../../worker/features/pano/module";
 import {listPostConnection} from "../../worker/features/pano/postSummaryReader";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/view/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/view/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/view/drizzle/migrations/0003_lazy_thanos.sql";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -27,7 +21,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -51,46 +45,29 @@ async function applyViewMigrations() {
 	}
 }
 
-async function waitForRow(sql: string, params: unknown[], attempts = 30): Promise<unknown> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row) return row;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
 beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("listPostConnection — task_2", () => {
+describe("listPostConnection (d1-direct seeded)", () => {
 	it("paginates through every row exactly once when walking endCursor", async () => {
 		// Seed five posts under a unique host so we can isolate from any
 		// noise other tests left in `post_summary`.
 		const host = `paginate-${Date.now().toString(36)}.example.com`;
 		const seededIds: string[] = [];
 		for (let i = 0; i < 5; i++) {
-			const postId = id("post");
-			seededIds.push(postId);
-			const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-			await stub.submitPost({
+			const result = await submitPost(env, {
 				title: `title ${i}`,
 				url: `https://${host}/p/${i}`,
 				tags: [{kind: "tartışma"}],
 				authorId: "author-1",
 				authorName: "umut",
 			});
+			seededIds.push(result.postId);
 			// Force a 1100ms gap so created_at sec-resolution doesn't collapse
-			// rows onto the same timestamp (same trick as pano-submit-post).
+			// rows onto the same timestamp.
 			if (i < 4) await new Promise((r) => setTimeout(r, 1100));
 		}
-		// Wait for the last seeded row to land in post_summary; the others
-		// must already be there (writes are sequential per-DO + projection
-		// drains FIFO per workflow instance).
-		await waitForRow(`SELECT id FROM post_summary WHERE id = ?`, [seededIds[4]!]);
 
 		// Page 1 — `first: 2`.
 		const page1 = await listPostConnection(env.PHOENIX_DB, {sort: "new", first: 2, host});
@@ -132,18 +109,15 @@ describe("listPostConnection — task_2", () => {
 		const host = `total-${Date.now().toString(36)}.example.com`;
 		const ids: string[] = [];
 		for (let i = 0; i < 3; i++) {
-			const postId = id("post");
-			ids.push(postId);
-			const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-			await stub.submitPost({
+			const result = await submitPost(env, {
 				title: `title ${i}`,
 				url: `https://${host}/p/${i}`,
 				tags: [{kind: "meta"}],
 				authorId: "author-2",
 				authorName: "indexer",
 			});
+			ids.push(result.postId);
 		}
-		await waitForRow(`SELECT id FROM post_summary WHERE id = ?`, [ids[2]!]);
 
 		const page = await listPostConnection(env.PHOENIX_DB, {first: 100, host});
 		expect(page.totalCount).toBe(3);
@@ -154,8 +128,7 @@ describe("listPostConnection — task_2", () => {
 
 	it("collapses to no further rows when the cursor points to a since-deleted post", async () => {
 		const host = `stale-${Date.now().toString(36)}.example.com`;
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
-		await stub.submitPost({
+		await submitPost(env, {
 			title: "the only one",
 			url: `https://${host}/x`,
 			tags: [{kind: "meta"}],

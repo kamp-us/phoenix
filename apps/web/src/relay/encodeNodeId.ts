@@ -1,5 +1,5 @@
 /**
- * Relay global-id encoding helpers (task_1, phoenix-relay-idiom).
+ * Relay global-id encoding helpers.
  *
  * Relay's `Node` interface requires every node to expose a globally-unique
  * `id: ID!`. Phoenix's underlying entities (Term, Post, Comment, Definition,

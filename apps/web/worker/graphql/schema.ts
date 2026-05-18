@@ -1,4 +1,3 @@
-import {id} from "@usirin/forge";
 import {Effect} from "effect";
 import {
 	GraphQLBoolean,
@@ -18,25 +17,34 @@ import {
 	printSchema,
 } from "graphql";
 import {decodeNodeId, encodeNodeId, extractLocalId} from "../../src/relay/encodeNodeId";
-import {lookupCommentPostId} from "../features/pano/commentViewReader";
+import {type LandingStats, readLandingStats} from "../features/landingStatsReader";
 import {
 	ALLOWED_POST_TAG_KINDS,
+	addComment as addCommentD1,
 	type CommentConnectionPage,
-	CommentNotFoundError,
 	type CommentRow,
-	CommentValidationError,
-	PostNotFoundError,
+	deleteComment as deleteCommentD1,
+	deletePost as deletePostD1,
+	editComment as editCommentD1,
+	editPost as editPostD1,
+	getCommentRow,
+	getPost as getPostD1,
+	listCommentsConnection as listCommentsConnectionD1,
 	type PostPage,
 	type PostTagRow,
-	PostValidationError,
-} from "../features/pano/PanoPost";
+	retractCommentVote as retractCommentVoteD1,
+	retractPostVote as retractPostVoteD1,
+	submitPost as submitPostD1,
+	voteOnComment as voteOnCommentD1,
+	voteOnPost as voteOnPostD1,
+} from "../features/pano/module";
 import {
 	listPostConnection,
 	type PostConnectionPage,
 	type PostSort,
 	type PostSummaryRow,
 } from "../features/pano/postSummaryReader";
-import {UsernameValidationError} from "../features/pasaport/Pasaport";
+import {getUserById, setUsername} from "../features/pasaport/module";
 import {
 	type ContributionConnection,
 	type ContributionNode,
@@ -45,12 +53,18 @@ import {
 	lookupProfileById,
 	type ProfileRow,
 } from "../features/pasaport/userProfileReader";
-import type {
-	DefinitionConnectionPage,
-	DefinitionRow,
-	TermPage,
-} from "../features/sozluk/SozlukTerm";
-import {DefinitionNotFoundError, DefinitionValidationError} from "../features/sozluk/SozlukTerm";
+import {
+	addDefinition as addDefinitionD1,
+	type DefinitionConnectionPage,
+	type DefinitionRow,
+	deleteDefinition as deleteDefinitionD1,
+	editDefinition as editDefinitionD1,
+	getTerm as getTermD1,
+	listDefinitionsConnection as listDefinitionsConnectionD1,
+	retractDefinitionVote as retractDefinitionVoteD1,
+	type TermPage,
+	voteDefinition as voteDefinitionD1,
+} from "../features/sozluk/module";
 import {
 	type ListSort,
 	listTermSummariesConnection,
@@ -59,7 +73,6 @@ import {
 } from "../features/sozluk/termSummaryReader";
 import {lookupDefinitionTermSlug, readMyVote} from "../features/sozluk/userVoteReader";
 import {Auth, CloudflareEnv} from "../services";
-import {type LandingStats, readLandingStats} from "../view/landingStatsReader";
 import {resolver} from "./resolver";
 
 const HealthType = new GraphQLObjectType({
@@ -71,7 +84,7 @@ const HealthType = new GraphQLObjectType({
 });
 
 /**
- * Relay `Node` interface (task_1, phoenix-relay-idiom). Every entity that a
+ * Relay `Node` interface. Every entity that a
  * Relay client can refetch via `@refetchable` or load via the top-level
  * `node(id)` query implements `Node` and exposes a globally-unique `id`.
  *
@@ -219,7 +232,7 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 			},
 		},
 		/**
-		 * Sozluk home `TermRowFragment` projections (task_5, phoenix-relay-idiom).
+		 * Sozluk home `TermRowFragment` projections.
 		 *
 		 * `firstLetter` powers the alphabet pivot ribbon — the row exposes
 		 * the column directly off `term_summary` so the SPA doesn't have to
@@ -257,13 +270,12 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 			},
 		},
 		/**
-		 * Connection-shaped definition list (task_4, phoenix-relay-idiom).
+		 * Connection-shaped definition list.
 		 * The canonical read path for `SozlukTermPage`. Replaces the legacy
-		 * flat-array `definitions: [Definition!]!` field — bringing the
-		 * cleanup forward one task because Relay's `@connection` key
-		 * convention requires the field name to match the suffix of the
+		 * flat-array `definitions: [Definition!]!` field. Relay's `@connection`
+		 * key convention requires the field name to match the suffix of the
 		 * key (`<Component>_<fieldName>`), and the SPA's only consumer is
-		 * the term page which migrates in this same change.
+		 * the term page.
 		 *
 		 * Cursor pagination is keyset on the definition id (forge ULID;
 		 * lex-sortable) over the per-term Agent's score-DESC materialized
@@ -281,9 +293,8 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 				args: {first?: number | null; after?: string | null},
 			) {
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(parent.slug));
 				return yield* Effect.promise(() =>
-					stub.listDefinitionsConnection({
+					listDefinitionsConnectionD1(env, parent.slug, {
 						...(args.first != null ? {first: args.first} : {}),
 						...(args.after ? {after: args.after} : {}),
 					}),
@@ -294,7 +305,7 @@ const TermType: GraphQLObjectType = new GraphQLObjectType<TermPage | TermSummary
 });
 
 /* -------------------------------------------------------------------------- */
-/* Definition connection (task_4, phoenix-relay-idiom)                         */
+/* Definition connection                                                       */
 /* -------------------------------------------------------------------------- */
 
 const DefinitionEdgeType = new GraphQLObjectType<{cursor: string; node: DefinitionRow}>({
@@ -327,11 +338,11 @@ const DefinitionConnectionType = new GraphQLObjectType<DefinitionConnectionPage>
 });
 
 /**
- * `deleteDefinition` mutation payload (task_4, phoenix-relay-idiom). Returns
+ * `deleteDefinition` mutation payload. Returns
  * the deleted definition's Relay global id so the SPA can `@deleteRecord`
  * it out of the store; connection edges referencing the gone record auto-
- * clear. Mirrors the `deletedPostId @deleteRecord` shape from `deletePost`
- * (task_2). No two-shape payload here — a soft-deleted definition simply
+ * clear. Mirrors the `deletedPostId @deleteRecord` shape from `deletePost`.
+ * No two-shape payload here — a soft-deleted definition simply
  * disappears (no reply-aware placeholder like comments).
  */
 const DeleteDefinitionPayloadType = new GraphQLObjectType<{
@@ -352,7 +363,7 @@ const TermSortEnum = new GraphQLEnumType({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Term connection (task_5, phoenix-relay-idiom)                               */
+/* Term connection                                                             */
 /* -------------------------------------------------------------------------- */
 
 const TermEdgeType = new GraphQLObjectType<{cursor: string; node: TermSummaryRow}>({
@@ -464,10 +475,9 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 			}),
 		},
 		/**
-		 * Connection-shaped comment list (task_3, phoenix-relay-idiom).
+		 * Connection-shaped comment list.
 		 * Canonical read path for the post-detail page; replaced the legacy
-		 * top-level `postComments(postId)` flat-array field (dropped in the
-		 * task_7 cleanup).
+		 * top-level `postComments(postId)` flat-array field.
 		 *
 		 * Cursor pagination is keyset on the comment id (forge ULID;
 		 * lex-sortable, matches chronological-asc). The `LoadMoreButton` reads
@@ -485,9 +495,8 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 				args: {first?: number | null; after?: string | null},
 			) {
 				const env = yield* CloudflareEnv;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(parent.id));
 				return yield* Effect.promise(() =>
-					stub.listCommentsConnection({
+					listCommentsConnectionD1(env, parent.id, {
 						...(args.first != null ? {first: args.first} : {}),
 						...(args.after ? {after: args.after} : {}),
 					}),
@@ -498,7 +507,7 @@ const PostType = new GraphQLObjectType<PostSummaryRow | PostPage>({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Comment connection (task_3, phoenix-relay-idiom)                            */
+/* Comment connection                                                          */
 /* -------------------------------------------------------------------------- */
 
 const CommentEdgeType = new GraphQLObjectType<{cursor: string; node: CommentRow}>({
@@ -531,7 +540,7 @@ const CommentConnectionType = new GraphQLObjectType<CommentConnectionPage>({
 });
 
 /**
- * Two-shape mutation payload for `deleteComment` (task_3, phoenix-relay-idiom).
+ * Two-shape mutation payload for `deleteComment`.
  * Exactly one of `deletedCommentId` / `comment` is non-null per call:
  *
  *  - **Leaf path** — comment had no live children. `deletedCommentId` is the
@@ -585,7 +594,7 @@ const CommentType = new GraphQLObjectType<CommentRow>({
 			},
 		},
 		/**
-		 * Soft-delete timestamp (task_3, phoenix-relay-idiom). `null` for live
+		 * Soft-delete timestamp. `null` for live
 		 * comments; ISO string when the comment was soft-deleted but still
 		 * appears in the tree as a `[silindi]` placeholder (parent-with-replies
 		 * path). The leaf-delete path removes the row entirely so it never
@@ -758,9 +767,9 @@ const ContributionEdgeType = new GraphQLObjectType<{cursor: string; node: Contri
 });
 
 /**
- * Relay-spec `PageInfo` (task_1, phoenix-relay-idiom). The fields are the
- * full Relay set so future page-migration tasks can wire bidirectional
- * pagination if they ever need it. Today's connection resolvers only
+ * Relay-spec `PageInfo`. The fields are the
+ * full Relay set so future bidirectional pagination can be wired in
+ * without an SDL break. Today's connection resolvers only
  * populate `hasNextPage` / `endCursor`; the others default to safe values
  * (`hasPreviousPage: false`, `startCursor: null`) so the SDL contract
  * holds without forcing every reader to manufacture them.
@@ -805,7 +814,7 @@ const ContributionConnectionType = new GraphQLObjectType<ContributionConnection>
 });
 
 /* -------------------------------------------------------------------------- */
-/* Pano feed connection (task_2, phoenix-relay-idiom)                          */
+/* Pano feed connection                                                        */
 /* -------------------------------------------------------------------------- */
 
 const PostEdgeType = new GraphQLObjectType<{cursor: string; node: PostSummaryRow}>({
@@ -885,15 +894,15 @@ const ProfileType = new GraphQLObjectType<ProfileRow>({
 });
 
 /* -------------------------------------------------------------------------- */
-/* Landing stats (T15)                                                         */
+/* Landing stats                                                               */
 /* -------------------------------------------------------------------------- */
 
 /**
  * Single object backing the landing-page stats card. Sourced from the
- * `sozluk_stats` + `pano_stats` MV rows (maintained by the `PhoenixProjection`
- * workflow) plus a cross-product distinct-author union. `version` is the build
- * tag the SPA renders alongside the counts — currently hardcoded; T18's
- * wrangler config / cf-typegen pass can swap it for a build-time env var.
+ * `sozluk_stats` + `pano_stats` single-row aggregates in `PHOENIX_DB`,
+ * maintained inline by the per-feature D1 writer modules (ADR 0009), plus a
+ * cross-product distinct-author union. `version` is the build tag the SPA
+ * renders alongside the counts — currently hardcoded.
  */
 const LandingStatsType = new GraphQLObjectType<LandingStats & {version: string}>({
 	name: "LandingStats",
@@ -912,7 +921,7 @@ const QueryType = new GraphQLObjectType({
 	name: "Query",
 	fields: {
 		/**
-		 * Relay `node(id)` dispatch (task_1, phoenix-relay-idiom). Decodes a
+		 * Relay `node(id)` dispatch. Decodes a
 		 * global id into `(typename, localId)` and routes to the right
 		 * per-atom Agent or D1 reader. Returns `null` for any unresolved
 		 * id rather than throwing — matches Relay's expectation for a
@@ -940,13 +949,11 @@ const QueryType = new GraphQLObjectType({
 				}
 				switch (decoded.typename) {
 					case "Term": {
-						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(decoded.id));
-						const term = yield* Effect.promise(() => stub.getTerm());
+						const term = yield* Effect.promise(() => getTermD1(env, decoded.id));
 						return term ? asNode("Term", term) : null;
 					}
 					case "Post": {
-						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(decoded.id));
-						const post = yield* Effect.promise(() => stub.getPost());
+						const post = yield* Effect.promise(() => getPostD1(env, decoded.id));
 						return post ? asNode("Post", post) : null;
 					}
 					case "Definition": {
@@ -954,24 +961,44 @@ const QueryType = new GraphQLObjectType({
 							lookupDefinitionTermSlug(env.PHOENIX_DB, decoded.id),
 						);
 						if (!slug) return null;
-						const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-						const term = yield* Effect.promise(() => stub.getTerm());
+						const term = yield* Effect.promise(() => getTermD1(env, slug));
 						const def = term?.definitions.find((d) => d.id === decoded.id) ?? null;
 						return def ? asNode("Definition", def) : null;
 					}
 					case "Comment": {
-						const postId = yield* Effect.promise(() =>
-							lookupCommentPostId(env.PHOENIX_DB, decoded.id),
-						);
-						if (!postId) return null;
-						const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-						const comments = yield* Effect.promise(() => stub.listComments());
-						const c = comments.find((row) => row.id === decoded.id) ?? null;
-						return c ? asNode("Comment", c) : null;
+						const row = yield* Effect.promise(() => getCommentRow(env, decoded.id));
+						if (!row) return null;
+						// Reply-aware projection: a row with `deletedAt` set is the
+						// parent-with-replies placeholder; the SPA renders it as
+						// `[silindi]`. Leaf-deleted rows are removed from
+						// `comment_view` entirely so they never resolve here.
+						const c = row.deletedAt
+							? {
+									id: row.id,
+									parentId: row.parentId,
+									author: "",
+									authorId: "",
+									body: "[silindi]",
+									score: row.score,
+									createdAt: row.createdAt ?? new Date(0),
+									updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+									deletedAt: row.deletedAt,
+								}
+							: {
+									id: row.id,
+									parentId: row.parentId,
+									author: row.authorName,
+									authorId: row.authorId,
+									body: row.body,
+									score: row.score,
+									createdAt: row.createdAt ?? new Date(0),
+									updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+									deletedAt: null,
+								};
+						return asNode("Comment", c);
 					}
 					case "User": {
-						const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-						const user = yield* Effect.promise(() => stub.getUserById(decoded.id));
+						const user = yield* Effect.promise(() => getUserById(env, decoded.id));
 						return user ? asNode("User", user) : null;
 					}
 					case "Profile": {
@@ -996,8 +1023,7 @@ const QueryType = new GraphQLObjectType({
 				const auth = yield* Auth;
 				if (!auth.user) return null;
 				const env = yield* CloudflareEnv;
-				const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-				const fresh = yield* Effect.promise(() => stub.getUserById(auth.user!.id));
+				const fresh = yield* Effect.promise(() => getUserById(env, auth.user!.id));
 				if (!fresh) {
 					return {
 						id: auth.user.id,
@@ -1011,12 +1037,11 @@ const QueryType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Sozluk home terms connection (task_5, phoenix-relay-idiom). Replaces
-		 * the legacy flat-array `terms(sort, limit)` field — `SozlukHome.tsx`
-		 * is the only consumer and migrates in the same PR. The connection
+		 * Sozluk home terms connection. Replaces
+		 * the legacy flat-array `terms(sort, limit)` field. The connection
 		 * shape unlocks Relay's `@connection`-keyed updaters and future
-		 * `usePaginationFragment` usage on the home (this task ships
-		 * first-page-only; the shape is future-proofed).
+		 * `usePaginationFragment` usage on the home (currently first-page-only;
+		 * the shape is future-proofed).
 		 *
 		 * Cursor is the term slug (primary key of `term_summary`,
 		 * lex-sortable). `sort` accepts `recent` and `popular` (the existing
@@ -1048,14 +1073,12 @@ const QueryType = new GraphQLObjectType({
 			args: {slug: {type: new GraphQLNonNull(GraphQLString)}},
 			resolve: resolver(function* (_source, args: {slug: string}) {
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(args.slug));
-				return yield* Effect.promise(() => stub.getTerm());
+				return yield* Effect.promise(() => getTermD1(env, args.slug));
 			}),
 		},
 		/**
-		 * Pano feed connection (task_2, phoenix-relay-idiom). Replaces the
-		 * legacy flat-array `posts(sort, limit, host)` field — `PanoFeed.tsx`
-		 * is the only consumer and migrates in the same PR. The connection
+		 * Pano feed connection. Replaces the
+		 * legacy flat-array `posts(sort, limit, host)` field. The connection
 		 * shape unlocks Relay's idiomatic `usePaginationFragment` +
 		 * `@connection` mutation updaters.
 		 *
@@ -1098,13 +1121,13 @@ const QueryType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {idOrSlug: string}) {
 				const env = yield* CloudflareEnv;
 				// Accept either a Relay global id (`Post:<localId>` base64),
-				// a raw local post id, or a slug. After task_2's connection
+				// a raw local post id, or a slug. After the connection
 				// migration, the SPA hands back `Post.id` (the global id) when
 				// it navigates to /pano/<id>; we extract the local id so the
-				// per-post DO lookup hits the right instance.
+				// D1 lookup hits the right row. Reads `post_summary` directly
+				// via the module.
 				const key = extractLocalId(args.idOrSlug, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(key));
-				return yield* Effect.promise(() => stub.getPost());
+				return yield* Effect.promise(() => getPostD1(env, key));
 			}),
 		},
 		/**
@@ -1125,11 +1148,11 @@ const QueryType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Landing-page stats card (T15). Reads the single-row aggregates
-		 * maintained by the `PhoenixProjection` workflow plus a cross-product
-		 * distinct-author union. Always returns a non-null object even on a
-		 * cold DB — counts default to 0 so the SPA doesn't have to special-case
-		 * the empty state.
+		 * Landing-page stats card. Reads the single-row aggregates from
+		 * `PHOENIX_DB` (maintained inline by the sozluk/pano writer modules)
+		 * plus a cross-product distinct-author union. Always returns a non-null
+		 * object even on a cold DB — counts default to 0 so the SPA doesn't have
+		 * to special-case the empty state.
 		 */
 		landingStats: {
 			type: new GraphQLNonNull(LandingStatsType),
@@ -1163,94 +1186,10 @@ interface TagInput {
 	label?: string | null;
 }
 
-/**
- * Map an Agent-thrown definition mutation error onto the SPA-facing GraphQL
- * error shape with a stable `code` extension. Errors come back across the
- * RPC boundary as plain Error objects (the class identity is lost in
- * marshaling) — name + message preserve.
- */
-function mapDefinitionMutationError(err: unknown): GraphQLError {
-	const e = err as Error & {code?: string};
-	if (e?.name === "UnauthorizedDefinitionMutationError") {
-		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
-	}
-	if (e?.name === "DefinitionNotFoundError") {
-		return new GraphQLError(e.message ?? "definition not found", {
-			extensions: {code: "DEFINITION_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "DefinitionValidationError") {
-		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
-		return new GraphQLError(e.message ?? "definition validation failed", {
-			extensions: {code},
-		});
-	}
-	// Unknown — surface as a generic GraphQL error so the SPA can render it
-	// instead of seeing Yoga's "Unexpected error" mask.
-	return new GraphQLError(e?.message ?? "definition mutation failed", {
-		extensions: {code: "INTERNAL_SERVER_ERROR"},
-	});
-}
-
-/**
- * Map an Agent-thrown post mutation error onto a GraphQL error. Agent errors
- * cross the RPC boundary as plain `Error` (class identity is lost), so we
- * match on `name` + `code` and bake a stable `code` extension into the
- * GraphQL error so the SPA can localize without parsing free-text messages.
- */
-function mapPostMutationError(err: unknown): GraphQLError {
-	const e = err as Error & {code?: string};
-	if (e?.name === "UnauthorizedPostMutationError") {
-		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
-	}
-	if (e?.name === "PostNotFoundError") {
-		return new GraphQLError(e.message ?? "post not found", {
-			extensions: {code: "POST_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "PostValidationError") {
-		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
-		return new GraphQLError(e.message ?? "post validation failed", {
-			extensions: {code},
-		});
-	}
-	return new GraphQLError(e?.message ?? "post mutation failed", {
-		extensions: {code: "INTERNAL_SERVER_ERROR"},
-	});
-}
-
-/**
- * Map an Agent-thrown comment mutation error onto a GraphQL error. Agent
- * errors cross the RPC boundary as plain `Error` (class identity is lost),
- * so we match on `name` + `code` and bake a stable `code` extension into the
- * GraphQL error so the SPA can localize without parsing free-text messages.
- * Mirrors `mapPostMutationError` (T9) and `mapDefinitionMutationError` (T6).
- */
-function mapCommentMutationError(err: unknown): GraphQLError {
-	const e = err as Error & {code?: string};
-	if (e?.name === "UnauthorizedCommentMutationError") {
-		return new GraphQLError("not authorized", {extensions: {code: "UNAUTHORIZED"}});
-	}
-	if (e?.name === "CommentNotFoundError") {
-		return new GraphQLError(e.message ?? "comment not found", {
-			extensions: {code: "COMMENT_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "PostNotFoundError") {
-		return new GraphQLError(e.message ?? "post not found", {
-			extensions: {code: "POST_NOT_FOUND"},
-		});
-	}
-	if (e?.name === "CommentValidationError") {
-		const code = e.code ? e.code.toUpperCase() : "BAD_REQUEST";
-		return new GraphQLError(e.message ?? "comment validation failed", {
-			extensions: {code},
-		});
-	}
-	return new GraphQLError(e?.message ?? "comment mutation failed", {
-		extensions: {code: "INTERNAL_SERVER_ERROR"},
-	});
-}
+// The three `map{Definition,Post,Comment}MutationError` helpers used to live
+// here. The Effect `resolver()` wrapper now routes every thrown agent error
+// through `encodeMutationError` in `./errors`, so resolvers can throw the raw
+// error and the wire-format `extensions.code` is applied in one place.
 
 const MutationType = new GraphQLObjectType({
 	name: "Mutation",
@@ -1261,26 +1200,16 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {value: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.PASAPORT.get(env.PASAPORT.idFromName("kampus"));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.setUsername({userId: user.id, value: args.value}),
-					);
-					return {
-						id: result.userId,
-						email: user.email,
-						name: result.displayName,
-						image: result.image,
-						username: result.username,
-					};
-				} catch (err) {
-					if (err instanceof UsernameValidationError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: err.code.toUpperCase()},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					setUsername(env, {userId: user.id, value: args.value}),
+				);
+				return {
+					id: result.userId,
+					email: user.email,
+					name: result.displayName,
+					image: result.image,
+					username: result.username,
+				};
 			}),
 		},
 		addDefinition: {
@@ -1296,33 +1225,28 @@ const MutationType = new GraphQLObjectType({
 			) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(args.termSlug));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.addDefinition({
-							authorId: user.id,
-							authorName: user.name ?? user.email,
-							body: args.body,
-							...(args.termTitle ? {termTitle: args.termTitle} : {}),
-						}),
-					);
-					return {
-						id: result.definitionId,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.updatedAt,
-					} satisfies DefinitionRow;
-				} catch (err) {
-					if (err instanceof DefinitionValidationError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: err.code.toUpperCase()},
-						});
-					}
-					throw err;
-				}
+				// Module function writes PHOENIX_DB inline. The thrown
+				// DefinitionValidationError falls through to the resolver
+				// wrapper, which encodes the wire-format extensions.code via
+				// `encodeMutationError`.
+				const result = yield* Effect.promise(() =>
+					addDefinitionD1(env, {
+						termSlug: args.termSlug,
+						authorId: user.id,
+						authorName: user.name ?? user.email,
+						body: args.body,
+						...(args.termTitle ? {termTitle: args.termTitle} : {}),
+					}),
+				);
+				return {
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
+				} satisfies DefinitionRow;
 			}),
 		},
 		voteDefinition: {
@@ -1332,48 +1256,23 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				// Accept either a Relay global id (post-migration FE) or a raw
-				// local id (current MVP FE). `extractLocalId` is a no-op for raw
-				// ids — see encodeNodeId.ts for the migration rationale.
+				// local id. `extractLocalId` is a no-op for raw ids.
 				const definitionId = extractLocalId(args.definitionId, "Definition");
-				// The definition's term is encoded by the DO instance the resolver
-				// targets. The frontend always knows the term slug from the page
-				// URL (vote button lives on a term page) — but the GraphQL surface
-				// only takes the definition id. The producer-side projection's
-				// `definition_view` row carries `term_slug` so we lean on it for
-				// the dispatch.
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				const result = yield* Effect.promise(() =>
+					voteDefinitionD1(env, {definitionId, voterId: user.id}),
 				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.voteDefinition({definitionId, voterId: user.id}),
-					);
-					return {
-						id: result.definitionId,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.updatedAt,
-						// Stamp myVote authoritatively so the Definition.myVote
-						// resolver doesn't race against the user_vote projection.
-						myVote: result.myVote,
-					} as DefinitionRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof DefinitionNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "DEFINITION_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				return {
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
+					// Stamp myVote authoritatively so the Definition.myVote
+					// resolver doesn't have to re-read user_vote.
+					myVote: result.myVote,
+				} as DefinitionRow & {myVote: number | null};
 			}),
 		},
 		retractDefinitionVote: {
@@ -1383,37 +1282,19 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const definitionId = extractLocalId(args.definitionId, "Definition");
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				const result = yield* Effect.promise(() =>
+					retractDefinitionVoteD1(env, {definitionId, voterId: user.id}),
 				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.retractDefinitionVote({definitionId, voterId: user.id}),
-					);
-					return {
-						id: result.definitionId,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.updatedAt,
-						myVote: result.myVote,
-					} as DefinitionRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof DefinitionNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "DEFINITION_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				return {
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
+					myVote: result.myVote,
+				} as DefinitionRow & {myVote: number | null};
 			}),
 		},
 		editDefinition: {
@@ -1426,60 +1307,24 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const definitionId = extractLocalId(args.id, "Definition");
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
+				const result = yield* Effect.promise(() =>
+					editDefinitionD1(env, {definitionId, actorId: user.id, body: args.body}),
 				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
-				// Run the RPC as a plain Promise we can `try/catch` against — keeps
-				// the agent-thrown error classes catchable on the Yoga request path.
-				try {
-					const result = yield* Effect.promise(() =>
-						stub
-							.editDefinition({
-								definitionId,
-								actorId: user.id,
-								body: args.body,
-							})
-							.then(
-								(value) => ({ok: true as const, value}),
-								(error: unknown) => ({ok: false as const, error}),
-							),
-					);
-					if (!result.ok) {
-						throw mapDefinitionMutationError(result.error);
-					}
-					const r = result.value;
-					return {
-						id: r.definitionId,
-						body: r.body,
-						author: r.authorName,
-						authorId: r.authorId,
-						score: r.score,
-						createdAt: r.createdAt,
-						updatedAt: r.updatedAt,
-					} satisfies DefinitionRow;
-				} catch (err) {
-					if (err instanceof GraphQLError) throw err;
-					throw err;
-				}
+				return {
+					id: result.definitionId,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.updatedAt,
+				} satisfies DefinitionRow;
 			}),
 		},
 		/**
-		 * Soft-delete a definition (task_4, phoenix-relay-idiom). Payload
-		 * shape changed from `String!` to `DeleteDefinitionPayload!` with a
-		 * `deletedDefinitionId: ID!` field so the SPA can target it with
-		 * `@deleteRecord` — Relay drops the record from the store and any
-		 * connection edge referencing it auto-clears. No `$connections`
-		 * variable, no manual updater needed.
-		 *
-		 * The returned id is the Relay global id (base64 of `Definition:<localId>`),
-		 * matching what every other resolver / fragment puts on `Definition.id`.
-		 * `@deleteRecord` keys off that exact value.
+		 * Soft-delete a definition. Payload
+		 * shape `DeleteDefinitionPayload!` with `deletedDefinitionId: ID!`
+		 * so the SPA can `@deleteRecord` it from the Relay store.
 		 */
 		deleteDefinition: {
 			type: new GraphQLNonNull(DeleteDefinitionPayloadType),
@@ -1488,26 +1333,11 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const definitionId = extractLocalId(args.id, "Definition");
-				const slug = yield* Effect.promise(() =>
-					lookupDefinitionTermSlug(env.PHOENIX_DB, definitionId),
-				);
-				if (!slug) {
-					throw new GraphQLError("definition not found", {
-						extensions: {code: "DEFINITION_NOT_FOUND"},
-					});
-				}
-				const stub = env.SOZLUK_TERM.get(env.SOZLUK_TERM.idFromName(slug));
 				const result = yield* Effect.promise(() =>
-					stub.deleteDefinition({definitionId, actorId: user.id}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
+					deleteDefinitionD1(env, {definitionId, actorId: user.id}),
 				);
-				if (!result.ok) {
-					throw mapDefinitionMutationError(result.error);
-				}
 				return {
-					deletedDefinitionId: encodeNodeId("Definition", result.value.definitionId),
+					deletedDefinitionId: encodeNodeId("Definition", result.definitionId),
 				};
 			}),
 		},
@@ -1573,35 +1403,22 @@ const MutationType = new GraphQLObjectType({
 					}
 				}
 
-				// ----- mint a fresh post id; route to the new DO ------------------
-				const postId = id("post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-
-				const result = yield* Effect.promise(() =>
-					stub
-						.submitPost({
-							title: args.title,
-							...(args.url ? {url: args.url} : {}),
-							...(args.body ? {body: args.body} : {}),
-							tags: args.tags.map((t) => ({
-								kind: t.kind,
-								...(t.label ? {label: t.label} : {}),
-							})),
-							authorId: user.id,
-							authorName: user.name ?? user.email,
-						})
-						.then(
-							(value) => ({ok: true as const, value}),
-							(error: unknown) => ({ok: false as const, error}),
-						),
+				// Module function mints the post id internally and writes
+				// PHOENIX_DB inline. Thrown PostValidationError falls through
+				// to the resolver wrapper.
+				const r = yield* Effect.promise(() =>
+					submitPostD1(env, {
+						title: args.title,
+						...(args.url ? {url: args.url} : {}),
+						...(args.body ? {body: args.body} : {}),
+						tags: args.tags.map((t) => ({
+							kind: t.kind,
+							...(t.label ? {label: t.label} : {}),
+						})),
+						authorId: user.id,
+						authorName: user.name ?? user.email,
+					}),
 				);
-				if (!result.ok) {
-					if (result.error instanceof PostValidationError) {
-						throw mapPostMutationError(result.error);
-					}
-					throw mapPostMutationError(result.error);
-				}
-				const r = result.value;
 				return {
 					id: r.postId,
 					slug: null,
@@ -1628,38 +1445,31 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.postId, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() => stub.voteOnPost({voterId: user.id}));
-					return {
-						id: result.postId,
-						slug: null,
-						title: result.title,
-						url: result.url,
-						host: result.host,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						commentCount: result.commentCount,
-						createdAt: result.createdAt,
-						// Vote results don't reshape body/title; pin updatedAt
-						// to createdAt — the next `getPost` read will refresh
-						// the actual updatedAt and the "düzenlendi" indicator.
-						updatedAt: result.createdAt,
-						tags: result.tags,
-						// Stamp myVote authoritatively so the Post.myVote resolver
-						// doesn't race against the user_vote projection landing.
-						myVote: result.myVote,
-					} as PostPage & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof PostNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "POST_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				// Module function writes PHOENIX_DB inline. PostNotFoundError
+				// falls through to the resolver wrapper, which encodes the
+				// wire-format extensions.code via `encodeMutationError`.
+				const result = yield* Effect.promise(() => voteOnPostD1(env, {postId, voterId: user.id}));
+				return {
+					id: result.postId,
+					slug: null,
+					title: result.title,
+					url: result.url,
+					host: result.host,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					commentCount: result.commentCount,
+					createdAt: result.createdAt,
+					// Vote results don't reshape body/title; pin updatedAt
+					// to createdAt — the next read will refresh
+					// the actual updatedAt and the "düzenlendi" indicator.
+					updatedAt: result.createdAt,
+					tags: result.tags,
+					// Stamp myVote authoritatively so the Post.myVote resolver
+					// doesn't have to re-read user_vote.
+					myVote: result.myVote,
+				} as PostPage & {myVote: number | null};
 			}),
 		},
 		retractPostVote: {
@@ -1669,32 +1479,25 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.postId, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() => stub.retractPostVote({voterId: user.id}));
-					return {
-						id: result.postId,
-						slug: null,
-						title: result.title,
-						url: result.url,
-						host: result.host,
-						body: result.body,
-						author: result.authorName,
-						authorId: result.authorId,
-						score: result.score,
-						commentCount: result.commentCount,
-						createdAt: result.createdAt,
-						tags: result.tags,
-						myVote: result.myVote,
-					} as PostPage & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof PostNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "POST_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					retractPostVoteD1(env, {postId, voterId: user.id}),
+				);
+				return {
+					id: result.postId,
+					slug: null,
+					title: result.title,
+					url: result.url,
+					host: result.host,
+					body: result.body,
+					author: result.authorName,
+					authorId: result.authorId,
+					score: result.score,
+					commentCount: result.commentCount,
+					createdAt: result.createdAt,
+					updatedAt: result.createdAt,
+					tags: result.tags,
+					myVote: result.myVote,
+				} as PostPage & {myVote: number | null};
 			}),
 		},
 		editPost: {
@@ -1711,7 +1514,7 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 
-				// At least one of title/body must be provided. The Agent re-checks
+				// At least one of title/body must be provided. The module re-checks
 				// (defense-in-depth) but a resolver-side check yields a faster
 				// failure with a typed code.
 				if (args.title == null && args.body == null) {
@@ -1721,23 +1524,14 @@ const MutationType = new GraphQLObjectType({
 				}
 
 				const postId = extractLocalId(args.id, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub
-						.editPost({
-							actorId: user.id,
-							...(args.title != null ? {title: args.title} : {}),
-							...(args.body != null ? {body: args.body} : {}),
-						})
-						.then(
-							(value) => ({ok: true as const, value}),
-							(error: unknown) => ({ok: false as const, error}),
-						),
+				const r = yield* Effect.promise(() =>
+					editPostD1(env, {
+						postId,
+						actorId: user.id,
+						...(args.title != null ? {title: args.title} : {}),
+						...(args.body != null ? {body: args.body} : {}),
+					}),
 				);
-				if (!result.ok) {
-					throw mapPostMutationError(result.error);
-				}
-				const r = result.value;
 				return {
 					id: r.postId,
 					slug: null,
@@ -1759,7 +1553,7 @@ const MutationType = new GraphQLObjectType({
 			}),
 		},
 		/**
-		 * Delete a post (task_2, phoenix-relay-idiom). Returns the global id
+		 * Delete a post. Returns the global id
 		 * of the deleted post; the FE attaches `@deleteRecord` to that field
 		 * so Relay removes the record from its store, which in turn auto-clears
 		 * every edge in every `PanoFeed_posts` connection variant that
@@ -1772,20 +1566,11 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const postId = extractLocalId(args.id, "Post");
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub.deletePost({actorId: user.id}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
-				);
-				if (!result.ok) {
-					throw mapPostMutationError(result.error);
-				}
+				const r = yield* Effect.promise(() => deletePostD1(env, {postId, actorId: user.id}));
 				// Return the Relay global id so `@deleteRecord` can find the
 				// store record under the same DataID Relay normalized the
 				// `Post` to (`encodeNodeId("Post", localId)`).
-				return encodeNodeId("Post", result.value.postId);
+				return encodeNodeId("Post", r.postId);
 			}),
 		},
 		addComment: {
@@ -1802,57 +1587,28 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 
-				// Resolver-side validation for fast-fail UX; the Agent re-validates
-				// inside `transactionSync` (defense-in-depth / durability boundary).
-				const trimmed = (args.body ?? "").trim();
-				if (trimmed.length === 0) {
-					throw new GraphQLError("yorum boş olamaz", {
-						extensions: {code: "BODY_REQUIRED"},
-					});
-				}
-				if (args.body.length > 5_000) {
-					throw new GraphQLError("yorum en fazla 5000 karakter olabilir", {
-						extensions: {code: "BODY_TOO_LONG"},
-					});
-				}
-
 				const postId = extractLocalId(args.postId, "Post");
 				const parentId = args.parentId ? extractLocalId(args.parentId, "Comment") : null;
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.addComment({
-							authorId: user.id,
-							authorName: user.name ?? user.email,
-							body: args.body,
-							...(parentId ? {parentId} : {}),
-						}),
-					);
-					return {
-						id: result.commentId,
-						parentId: result.parentId,
-						author: result.authorName,
-						authorId: result.authorId,
-						body: result.body,
-						score: result.score,
-						createdAt: result.createdAt,
-						// AddCommentResult is a fresh write; updatedAt === createdAt
-						// by definition. Mirrors the per-DO `listComments` shape (T17).
-						updatedAt: result.createdAt,
-					} satisfies CommentRow;
-				} catch (err) {
-					if (err instanceof CommentValidationError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: err.code.toUpperCase()},
-						});
-					}
-					if (err instanceof PostNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "POST_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					addCommentD1(env, {
+						postId,
+						authorId: user.id,
+						authorName: user.name ?? user.email,
+						body: args.body,
+						...(parentId ? {parentId} : {}),
+					}),
+				);
+				return {
+					id: result.commentId,
+					parentId: result.parentId,
+					author: result.authorName,
+					authorId: result.authorId,
+					body: result.body,
+					score: result.score,
+					createdAt: result.createdAt,
+					// Fresh write: updatedAt === createdAt by definition.
+					updatedAt: result.createdAt,
+				} satisfies CommentRow;
 			}),
 		},
 		voteOnComment: {
@@ -1862,52 +1618,22 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.commentId, "Comment");
-				// The comment lives inside its containing post's DO. The frontend
-				// always knows the post id from the page URL (vote button lives on
-				// a post page) but the GraphQL surface only takes the comment id,
-				// so we lean on the projection's denormalized `comment_view.post_id`
-				// to route the RPC. Mirrors the `lookupDefinitionTermSlug` pattern
-				// from T5's `voteDefinition`.
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.voteOnComment({
-							commentId,
-							voterId: user.id,
-						}),
-					);
-					return {
-						id: result.commentId,
-						parentId: result.parentId,
-						author: result.authorName,
-						authorId: result.authorId,
-						body: result.body,
-						score: result.score,
-						createdAt: result.createdAt,
-						// Vote doesn't change body; the SPA's next read of the
-						// comment row will refresh the canonical updatedAt and
-						// the "düzenlendi" indicator. Mirrors the post vote
-						// resolver (T17).
-						updatedAt: result.createdAt,
-						// Stamp myVote authoritatively so the Comment.myVote
-						// resolver doesn't race against the user_vote projection
-						// landing. Same parent-stamping pattern as T5/T8.
-						myVote: result.myVote,
-					} as CommentRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof CommentNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "COMMENT_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					voteOnCommentD1(env, {commentId, voterId: user.id}),
+				);
+				return {
+					id: result.commentId,
+					parentId: result.parentId,
+					author: result.authorName,
+					authorId: result.authorId,
+					body: result.body,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.createdAt,
+					// Stamp myVote authoritatively so the Comment.myVote
+					// resolver doesn't race against a stale read.
+					myVote: result.myVote,
+				} as CommentRow & {myVote: number | null};
 			}),
 		},
 		retractCommentVote: {
@@ -1917,47 +1643,26 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.commentId, "Comment");
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				try {
-					const result = yield* Effect.promise(() =>
-						stub.retractCommentVote({
-							commentId,
-							voterId: user.id,
-						}),
-					);
-					return {
-						id: result.commentId,
-						parentId: result.parentId,
-						author: result.authorName,
-						authorId: result.authorId,
-						body: result.body,
-						score: result.score,
-						createdAt: result.createdAt,
-						updatedAt: result.createdAt,
-						myVote: result.myVote,
-					} as CommentRow & {myVote: number | null};
-				} catch (err) {
-					if (err instanceof CommentNotFoundError) {
-						throw new GraphQLError(err.message, {
-							extensions: {code: "COMMENT_NOT_FOUND"},
-						});
-					}
-					throw err;
-				}
+				const result = yield* Effect.promise(() =>
+					retractCommentVoteD1(env, {commentId, voterId: user.id}),
+				);
+				return {
+					id: result.commentId,
+					parentId: result.parentId,
+					author: result.authorName,
+					authorId: result.authorId,
+					body: result.body,
+					score: result.score,
+					createdAt: result.createdAt,
+					updatedAt: result.createdAt,
+					myVote: result.myVote,
+				} as CommentRow & {myVote: number | null};
 			}),
 		},
 		/**
-		 * Edit a comment's body (T12). `Auth.required` enforces sign-in;
-		 * ownership is enforced inside the per-post `PanoPost` Agent. The
-		 * frontend only knows the comment id, so we lean on `comment_view`'s
-		 * denormalized `post_id` to route the RPC into the correct DO
-		 * (mirrors `voteOnComment` from T11).
+		 * Edit a comment's body. `Auth.required` enforces sign-in; ownership
+		 * is enforced inside the D1-direct module. Errors flow through the
+		 * `resolver()` wrapper's encodeMutationError catch path.
 		 */
 		editComment: {
 			type: new GraphQLNonNull(CommentType),
@@ -1968,37 +1673,10 @@ const MutationType = new GraphQLObjectType({
 			resolve: resolver(function* (_source, args: {id: string; body: string}) {
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
-
-				const trimmed = (args.body ?? "").trim();
-				if (trimmed.length === 0) {
-					throw new GraphQLError("yorum boş olamaz", {
-						extensions: {code: "BODY_REQUIRED"},
-					});
-				}
-				if (args.body.length > 5_000) {
-					throw new GraphQLError("yorum en fazla 5000 karakter olabilir", {
-						extensions: {code: "BODY_TOO_LONG"},
-					});
-				}
-
 				const commentId = extractLocalId(args.id, "Comment");
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub.editComment({commentId, actorId: user.id, body: args.body}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
+				const r = yield* Effect.promise(() =>
+					editCommentD1(env, {commentId, actorId: user.id, body: args.body}),
 				);
-				if (!result.ok) {
-					throw mapCommentMutationError(result.error);
-				}
-				const r = result.value;
 				return {
 					id: r.commentId,
 					parentId: r.parentId,
@@ -2007,24 +1685,19 @@ const MutationType = new GraphQLObjectType({
 					body: r.body,
 					score: r.score,
 					createdAt: r.createdAt,
-					// EditCommentResult carries updatedAt; mirror it onto the
-					// `Comment` shape so the "düzenlendi" indicator picks it up
-					// immediately after a successful edit (T17).
 					updatedAt: r.updatedAt,
 				} satisfies CommentRow;
 			}),
 		},
 		/**
-		 * Soft-delete a comment (T12 + task_3 phoenix-relay-idiom). Reply-aware:
-		 * the leaf path returns `deletedCommentId` so the FE can `@deleteRecord`
-		 * the row out of the Relay store; the parent-with-replies path returns
-		 * the same `Comment` with `body = '[silindi]'` and `deletedAt` set so
-		 * Relay's automatic store update handles the placeholder rerender.
-		 * Exactly one of the two payload fields is non-null per call.
+		 * Soft-delete a comment. Reply-aware: the leaf path returns
+		 * `deletedCommentId` so the FE can `@deleteRecord` the row out of
+		 * the Relay store; the parent-with-replies path returns the same
+		 * `Comment` with `body = '[silindi]'` and `deletedAt` set so Relay's
+		 * automatic store update handles the placeholder rerender. Exactly
+		 * one of the two payload fields is non-null per call.
 		 *
-		 * `Auth.required` + ownership inside the Agent. The per-DO read and the
-		 * cross-product `comment_view` projection both treat a deleted-with-
-		 * children comment as `[silindi]` and a deleted-leaf as fully removed.
+		 * `Auth.required` + ownership inside the D1-direct module.
 		 */
 		deleteComment: {
 			type: new GraphQLNonNull(DeleteCommentPayloadType),
@@ -2033,34 +1706,15 @@ const MutationType = new GraphQLObjectType({
 				const {user} = yield* Auth.required;
 				const env = yield* CloudflareEnv;
 				const commentId = extractLocalId(args.id, "Comment");
-				const postId = yield* Effect.promise(() => lookupCommentPostId(env.PHOENIX_DB, commentId));
-				if (!postId) {
-					throw new GraphQLError("comment not found", {
-						extensions: {code: "COMMENT_NOT_FOUND"},
-					});
-				}
-				const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-				const result = yield* Effect.promise(() =>
-					stub.deleteComment({commentId, actorId: user.id}).then(
-						(value) => ({ok: true as const, value}),
-						(error: unknown) => ({ok: false as const, error}),
-					),
-				);
-				if (!result.ok) {
-					throw mapCommentMutationError(result.error);
-				}
-				const r = result.value;
+				const r = yield* Effect.promise(() => deleteCommentD1(env, {commentId, actorId: user.id}));
 				if (r.hasReplies && r.placeholder) {
-					// Parent-with-replies path: return the placeholder Comment row
-					// with `body = '[silindi]'` + `deletedAt` set. Relay merges the
-					// new scalar values into the same DataID (`Comment:<global-id>`)
-					// the page already rendered, so the row stays in the connection
-					// edge and the SPA rerenders the placeholder in place.
+					// Parent-with-replies: surface the `[silindi]` placeholder row
+					// so Relay merges the new scalar values into the existing
+					// `Comment:<global-id>` DataID and rerenders in place.
 					return {deletedCommentId: null, comment: r.placeholder};
 				}
-				// Leaf path (or idempotent no-op): return the global id so the FE
-				// `@deleteRecord` directive removes the record from the store and
-				// the connection edge auto-clears.
+				// Leaf (or idempotent no-op): hand the FE the global id so
+				// `@deleteRecord` removes the record from the store.
 				return {
 					deletedCommentId: encodeNodeId("Comment", r.commentId),
 					comment: null,

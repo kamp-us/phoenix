@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Pano voteOnPost end-to-end (task_8).
+ * Pano voteOnPost end-to-end.
  *
  * Sign up a fresh user, complete the username bootstrap, submit a brand new
  * post, navigate to its detail page, then exercise the optimistic vote flip:
@@ -14,11 +14,11 @@ import {signUp} from "./_helpers/auth";
  * synchronously; on success the projection lands in <1s and the page reads
  * the new state on subsequent renders.
  *
- * Mirrors `12-sozluk-vote.spec.ts`. After the phoenix-relay-idiom refactor
- * (task_2) the page tree no longer unmounts on submitPost / vote mutations,
+ * Mirrors `12-sozluk-vote.spec.ts`. After the relay-idiom refactor
+ * the page tree no longer unmounts on submitPost / vote mutations,
  * so the historical `page.reload()` Suspense workaround is gone.
  */
-test.describe("Pano voteOnPost (task_8)", () => {
+test.describe("Pano voteOnPost", () => {
 	test("vote → unvote → vote round-trip on a fresh post", async ({page}) => {
 		// Fresh sign-up + bootstrap so the user is fully authenticated.
 		const localPart = `vp${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;

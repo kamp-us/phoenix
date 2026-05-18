@@ -1,30 +1,36 @@
 /**
- * PanoPost.editPost / deletePost + PostChanged / PostDeleted projection —
- * task_9.
+ * Pano D1-direct `editPost` / `deletePost`.
  *
- * Mirrors `sozluk-edit-delete-definition.test.ts` (T6). Exercises the producer
- * pattern (ADR 0007) end-to-end inside workerd:
- *   1. Apply view migrations.
- *   2. Seed a post via `submitPost` (T7 path); wait for the `post_summary`
- *      projection.
- *   3. Edit the title / body → `post_meta` reflects the new values; the
- *      `post_summary` row converges via the existing `PostChanged` step.
+ * Exercises the module-functional path against `env.PHOENIX_DB`:
+ *   1. Apply view migrations (including 0006).
+ *   2. Seed a post via `submitPost` (D1-direct).
+ *   3. Edit title / body → `post_summary` reflects the new values
+ *      (body + body_excerpt + updated_at).
  *   4. Ownership: a non-author actor's edit / delete throws
  *      `UnauthorizedPostMutationError`.
- *   5. Delete → stamps `deleted_at` on `post_meta` (so `getPost` returns null);
- *      the `PostDeleted` projection REMOVES the row from `post_summary`
- *      entirely (vs. soft-stamping for definitions).
- *   6. Idempotent re-delete on an already-deleted row is a no-op.
- *   7. Outbox durability: an edit / delete whose `workflow.create` fails
- *      leaves the outbox row; `reconcileOutbox` re-queues and clears it.
+ *   5. Delete → fully removes the `post_summary` row (matches the legacy
+ *      `PostDeleted` semantics: posts disappear from the feed entirely,
+ *      vs. soft-delete for definitions). Drops `post_vote` + `user_vote`
+ *      mirrors; decrements karma.
+ *   6. Idempotent re-delete on a missing row is a no-op.
+ *   7. Validation: at least one of title/body required; title cap; body cap.
+ *
+ * No `runInDurableObject`, no outbox, no projection workflow — the writes
+ * are inline D1 (ADR 0009).
  */
-import {id} from "@usirin/forge";
-import {env, runInDurableObject} from "cloudflare:test";
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
+import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/view/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/view/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/view/drizzle/migrations/0003_lazy_thanos.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
+import {
+	deletePost,
+	editPost,
+	PostValidationError,
+	submitPost,
+	UnauthorizedPostMutationError,
+	voteOnPost,
+} from "../../worker/features/pano/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -32,7 +38,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -56,127 +62,103 @@ async function applyViewMigrations() {
 	}
 }
 
-async function waitForRow<T>(sql: string, params: unknown[], attempts = 30): Promise<T | null> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row) return row as T;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function waitForCondition(
-	sqlStr: string,
-	params: unknown[],
-	predicate: (row: unknown | null) => boolean,
-	attempts = 30,
-): Promise<unknown | null> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sqlStr)
-			.bind(...params)
-			.first();
-		if (predicate(row)) return row;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
-async function seedPost(opts: {authorId: string; authorName?: string; title?: string; body?: string}) {
-	const postId = id("post");
-	const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-	await stub.submitPost({
+async function seedPost(opts: {
+	authorId: string;
+	authorName?: string;
+	title?: string;
+	body?: string;
+}) {
+	const result = await submitPost(env, {
 		title: opts.title ?? "original title",
 		body: opts.body ?? "original body",
 		tags: [{kind: "tartışma"}],
 		authorId: opts.authorId,
 		authorName: opts.authorName ?? "umut",
 	});
-	await waitForRow<{id: string}>("SELECT id FROM post_summary WHERE id = ?", [postId]);
-	return {stub, postId};
+	return {postId: result.postId};
 }
 
 beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("PanoPost.editPost — task_9", () => {
-	it("updates title + body and projects PostChanged onto post_summary", async () => {
+describe("pano.editPost", () => {
+	it("updates title + body inline on post_summary (body + body_excerpt + updated_at)", async () => {
 		const authorId = "edit-post-author";
-		const {stub, postId} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
-		const before = (await waitForRow<{title: string; body_excerpt: string}>(
-			"SELECT title, body_excerpt FROM post_summary WHERE id = ?",
-			[postId],
-		))!;
+		const before = (await env.PHOENIX_DB.prepare(
+			"SELECT title, body, body_excerpt FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first()) as {title: string; body: string; body_excerpt: string};
 		expect(before.title).toBe("original title");
+		expect(before.body).toBe("original body");
 
-		const result = await stub.editPost({
+		const result = await editPost(env, {
+			postId,
 			actorId: authorId,
 			title: "edited title — fresh",
 			body: "edited body — significantly different content here.",
 		});
 		expect(result.title).toBe("edited title — fresh");
 		expect(result.body).toContain("edited body");
+		expect(result.updatedAt.getTime()).toBeGreaterThanOrEqual(result.createdAt.getTime());
 
-		const post = await stub.getPost();
-		expect(post!.title).toBe("edited title — fresh");
-		expect(post!.body).toContain("edited body");
-
-		const after = (await waitForCondition(
-			"SELECT title, body_excerpt FROM post_summary WHERE id = ?",
-			[postId],
-			(r) => (r as {title: string} | null)?.title === "edited title — fresh",
-		)) as {title: string; body_excerpt: string};
-		expect(after).not.toBeNull();
+		const after = (await env.PHOENIX_DB.prepare(
+			"SELECT title, body, body_excerpt FROM post_summary WHERE id = ?",
+		)
+			.bind(postId)
+			.first()) as {title: string; body: string; body_excerpt: string};
+		expect(after.title).toBe("edited title — fresh");
+		expect(after.body).toContain("edited body");
 		expect(after.body_excerpt).toContain("edited body");
 	});
 
 	it("allows editing title alone", async () => {
 		const authorId = "edit-title-only";
-		const {stub, postId} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
-		await stub.editPost({actorId: authorId, title: "title-only edit"});
-		const post = await stub.getPost();
-		expect(post!.title).toBe("title-only edit");
-		expect(post!.body).toBe("original body");
+		await editPost(env, {postId, actorId: authorId, title: "title-only edit"});
 
-		await waitForCondition(
-			"SELECT title FROM post_summary WHERE id = ?",
-			[postId],
-			(r) => (r as {title: string} | null)?.title === "title-only edit",
-		);
+		const row = (await env.PHOENIX_DB.prepare("SELECT title, body FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first()) as {title: string; body: string};
+		expect(row.title).toBe("title-only edit");
+		expect(row.body).toBe("original body");
 	});
 
 	it("allows editing body alone", async () => {
 		const authorId = "edit-body-only";
-		const {stub} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
-		await stub.editPost({actorId: authorId, body: "body-only edit"});
-		const post = await stub.getPost();
-		expect(post!.title).toBe("original title");
-		expect(post!.body).toBe("body-only edit");
+		await editPost(env, {postId, actorId: authorId, body: "body-only edit"});
+
+		const row = (await env.PHOENIX_DB.prepare("SELECT title, body FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first()) as {title: string; body: string};
+		expect(row.title).toBe("original title");
+		expect(row.body).toBe("body-only edit");
 	});
 
 	it("rejects when neither title nor body provided", async () => {
 		const authorId = "edit-empty";
-		const {stub} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
 		try {
-			await stub.editPost({actorId: authorId});
+			await editPost(env, {postId, actorId: authorId});
 			throw new Error("expected rejection");
 		} catch (err) {
-			expect((err as Error).name).toBe("PostValidationError");
+			expect(err).toBeInstanceOf(PostValidationError);
 		}
 	});
 
 	it("rejects empty title (trim)", async () => {
 		const authorId = "edit-blank-title";
-		const {stub} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
 		try {
-			await stub.editPost({actorId: authorId, title: "   "});
+			await editPost(env, {postId, actorId: authorId, title: "   "});
 			throw new Error("expected rejection");
 		} catch (err) {
 			expect((err as Error).message).toMatch(/boş olamaz|gerekli/i);
@@ -185,10 +167,10 @@ describe("PanoPost.editPost — task_9", () => {
 
 	it("rejects titles over 200 chars", async () => {
 		const authorId = "edit-title-long";
-		const {stub} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
 		try {
-			await stub.editPost({actorId: authorId, title: "x".repeat(201)});
+			await editPost(env, {postId, actorId: authorId, title: "x".repeat(201)});
 			throw new Error("expected rejection");
 		} catch (err) {
 			expect((err as Error).message).toMatch(/200|en fazla/i);
@@ -197,10 +179,10 @@ describe("PanoPost.editPost — task_9", () => {
 
 	it("rejects bodies over 10 000 chars", async () => {
 		const authorId = "edit-body-long";
-		const {stub} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
 		try {
-			await stub.editPost({actorId: authorId, body: "x".repeat(10_001)});
+			await editPost(env, {postId, actorId: authorId, body: "x".repeat(10_001)});
 			throw new Error("expected rejection");
 		} catch (err) {
 			expect((err as Error).message).toMatch(/10\s?000|en fazla/i);
@@ -210,71 +192,62 @@ describe("PanoPost.editPost — task_9", () => {
 	it("ownership: non-author edit is rejected with UnauthorizedPostMutationError", async () => {
 		const authorId = "owner-post";
 		const otherId = "intruder-post";
-		const {stub} = await seedPost({authorId, title: "owner's title"});
+		const {postId} = await seedPost({authorId, title: "owner's title"});
 
 		try {
-			await stub.editPost({
+			await editPost(env, {
+				postId,
 				actorId: otherId,
 				title: "intruder's title rewrite",
 			});
 			throw new Error("expected rejection");
 		} catch (err) {
-			// Name preserved across the RPC boundary (the class identity is not —
-			// `instanceof` doesn't survive workerd's RPC marshaling).
-			expect((err as Error).name).toBe("UnauthorizedPostMutationError");
+			expect(err).toBeInstanceOf(UnauthorizedPostMutationError);
 			expect((err as Error).message).toMatch(/not authorized/i);
 		}
 
 		// The post did NOT change.
-		const post = await stub.getPost();
-		expect(post!.title).toBe("owner's title");
+		const row = (await env.PHOENIX_DB.prepare("SELECT title FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first()) as {title: string};
+		expect(row.title).toBe("owner's title");
 	});
 });
 
-describe("PanoPost.deletePost — task_9", () => {
-	it("stamps deleted_at; getPost returns null; PostDeleted projection REMOVES the row from post_summary", async () => {
+describe("pano.deletePost", () => {
+	it("fully removes the row from post_summary (matches legacy PostDeleted semantics)", async () => {
 		const authorId = "delete-post-author";
-		const {stub, postId} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
 		// Sanity: post_summary has the row pre-delete.
-		const before = await waitForRow<{id: string}>(
-			"SELECT id FROM post_summary WHERE id = ?",
-			[postId],
-		);
+		const before = await env.PHOENIX_DB.prepare("SELECT id FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first();
 		expect(before).not.toBeNull();
 
-		const result = await stub.deletePost({actorId: authorId});
+		const result = await deletePost(env, {postId, actorId: authorId});
 		expect(result.deleted).toBe(true);
 
-		// getPost returns null after delete.
-		const post = await stub.getPost();
-		expect(post).toBeNull();
-
-		// post_summary row is fully removed by the PostDeleted projection.
-		const after = await waitForCondition(
-			"SELECT id FROM post_summary WHERE id = ?",
-			[postId],
-			(r) => r === null,
-		);
+		// post_summary row is fully removed.
+		const after = await env.PHOENIX_DB.prepare("SELECT id FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first();
 		expect(after).toBeNull();
 	});
 
 	it("ownership: non-author delete is rejected with UnauthorizedPostMutationError", async () => {
 		const authorId = "owner-del";
 		const otherId = "intruder-del";
-		const {stub, postId} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
 		try {
-			await stub.deletePost({actorId: otherId});
+			await deletePost(env, {postId, actorId: otherId});
 			throw new Error("expected rejection");
 		} catch (err) {
-			expect((err as Error).name).toBe("UnauthorizedPostMutationError");
+			expect(err).toBeInstanceOf(UnauthorizedPostMutationError);
 		}
 
 		// The post is still there.
-		const post = await stub.getPost();
-		expect(post).not.toBeNull();
-		// post_summary row still present.
 		const row = await env.PHOENIX_DB.prepare("SELECT id FROM post_summary WHERE id = ?")
 			.bind(postId)
 			.first();
@@ -283,35 +256,32 @@ describe("PanoPost.deletePost — task_9", () => {
 
 	it("re-deleting an already-deleted post is an idempotent no-op", async () => {
 		const authorId = "delete-idem";
-		const {stub} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
-		await stub.deletePost({actorId: authorId});
-		const second = await stub.deletePost({actorId: authorId});
+		const first = await deletePost(env, {postId, actorId: authorId});
+		expect(first.deleted).toBe(true);
+
+		const second = await deletePost(env, {postId, actorId: authorId});
 		expect(second.deleted).toBe(false);
 	});
 
 	it("decrements pano_stats.total_posts on delete", async () => {
 		const authorId = "delete-stats";
-		const {stub, postId} = await seedPost({authorId});
+		const {postId} = await seedPost({authorId});
 
-		// Wait for stats to include this post.
-		const beforeStats = (await waitForCondition(
+		const beforeStats = (await env.PHOENIX_DB.prepare(
 			"SELECT total_posts FROM pano_stats WHERE id = 1",
-			[],
-			(r) => r != null && (r as {total_posts: number}).total_posts >= 1,
-		)) as {total_posts: number};
-		const beforeCount = beforeStats.total_posts;
+		).first()) as {total_posts: number} | null;
+		const beforeCount = beforeStats?.total_posts ?? 0;
+		expect(beforeCount).toBeGreaterThanOrEqual(1);
 
-		await stub.deletePost({actorId: authorId});
+		await deletePost(env, {postId, actorId: authorId});
 
-		// Wait for stats delta.
-		const afterStats = (await waitForCondition(
+		const afterStats = (await env.PHOENIX_DB.prepare(
 			"SELECT total_posts FROM pano_stats WHERE id = 1",
-			[],
-			(r) => r != null && (r as {total_posts: number}).total_posts === beforeCount - 1,
-		)) as {total_posts: number} | null;
-		expect(afterStats).not.toBeNull();
+		).first()) as {total_posts: number} | null;
 		expect(afterStats!.total_posts).toBe(beforeCount - 1);
+
 		// Sanity: post_summary row gone.
 		const row = await env.PHOENIX_DB.prepare("SELECT id FROM post_summary WHERE id = ?")
 			.bind(postId)
@@ -319,40 +289,196 @@ describe("PanoPost.deletePost — task_9", () => {
 		expect(row).toBeNull();
 	});
 
-	it("outbox: workflow.create failure leaves edit outbox row; reconcileOutbox re-queues and clears", async () => {
-		const authorId = "edit-reconcile-post";
-		const {stub} = await seedPost({authorId});
+	it("drops post_vote + user_vote mirror rows and decrements karma by the prior score", async () => {
+		const authorId = "delete-with-votes-author";
+		const voterId = "delete-with-votes-voter";
+		const {postId} = await seedPost({authorId});
 
-		const counts = await runInDurableObject(stub, async (instance: any) => {
-			const original = instance.env.PHOENIX_PROJECTION.create.bind(
-				instance.env.PHOENIX_PROJECTION,
-			);
-			let calls = 0;
-			instance.env.PHOENIX_PROJECTION = {
-				...instance.env.PHOENIX_PROJECTION,
-				create: async (params: unknown) => {
-					calls++;
-					if (calls === 1) throw new Error("simulated workflow create failure");
-					return original(params);
+		await voteOnPost(env, {postId, voterId});
+
+		const karmaBefore = (await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first()) as {total_karma: number} | null;
+		expect(karmaBefore!.total_karma).toBe(1);
+
+		await deletePost(env, {postId, actorId: authorId});
+
+		// post_vote rows for the post are gone.
+		const postVotes = (await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM post_vote WHERE post_id = ?",
+		)
+			.bind(postId)
+			.first()) as {n: number} | null;
+		expect(postVotes!.n).toBe(0);
+
+		// user_vote mirror rows for the post are gone.
+		const userVotes = (await env.PHOENIX_DB.prepare(
+			"SELECT COUNT(*) as n FROM user_vote WHERE target_kind = 'post' AND target_id = ?",
+		)
+			.bind(postId)
+			.first()) as {n: number} | null;
+		expect(userVotes!.n).toBe(0);
+
+		// karma decremented to 0.
+		const karmaAfter = (await env.PHOENIX_DB.prepare(
+			"SELECT total_karma FROM user_profile WHERE user_id = ?",
+		)
+			.bind(authorId)
+			.first()) as {total_karma: number} | null;
+		expect(karmaAfter!.total_karma).toBe(0);
+	});
+});
+
+/**
+ * Atomicity invariant.
+ *
+ * A successful `deletePost(...)` must collapse every mutating statement —
+ * the conditional karma decrement, `DELETE FROM post_vote`, `DELETE FROM
+ * user_vote`, and the `DELETE FROM post_summary` — into one
+ * `env.PHOENIX_DB.batch([...])` call. The downstream `recomputePanoStats`
+ * call stays out of the batch (recomputable cache; not atomicity-critical).
+ *
+ * Branches:
+ *   - `priorScore === 0` → batch has 3 statements (karma omitted).
+ *   - `priorScore > 0`  → batch has 4 statements, karma decrement first.
+ */
+describe("pano.deletePost — atomic single-batch write", () => {
+	/**
+	 * Wraps `env` so callers can spy on `PHOENIX_DB.batch` and the
+	 * `.prepare(sql).bind(...).run()` chain without losing the real D1
+	 * binding's behaviour. `.prepare(sql)` still returns a real
+	 * `D1PreparedStatement` — we only intercept `.run()` and `.bind()` (to
+	 * keep the wrapper covering the bound copy); everything else
+	 * (`.first`, `.all`, `.raw`) passes through unchanged.
+	 *
+	 * Identical shape to the vote-module spy (vote-module.test.ts) so the
+	 * `.bind().run()` chain is covered if `deletePost` ever moves from
+	 * drizzle-builder to raw prepared statements.
+	 */
+	function spyEnv(real: Env) {
+		let batchCalls = 0;
+		const batchStatementCounts: number[] = [];
+		let runCalls = 0;
+		const realDb = real.PHOENIX_DB;
+		const wrappedStatement = (stmt: D1PreparedStatement): D1PreparedStatement => {
+			return new Proxy(stmt, {
+				get(target, prop, receiver) {
+					const orig = Reflect.get(target, prop, receiver);
+					if (prop === "run" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							runCalls += 1;
+							return (orig as (...a: unknown[]) => unknown).apply(target, args);
+						};
+					}
+					if (prop === "bind" && typeof orig === "function") {
+						return (...args: unknown[]) => {
+							const bound = (orig as (...a: unknown[]) => D1PreparedStatement).apply(target, args);
+							return wrappedStatement(bound);
+						};
+					}
+					return typeof orig === "function" ? orig.bind(target) : orig;
 				},
-			};
-
-			try {
-				await instance.editPost({
-					actorId: authorId,
-					title: "edited under failure",
-				});
-			} catch {
-				/* swallow */
-			}
-
-			const before = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			await instance.reconcileOutbox();
-			const after = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			return {beforeCount: before.length, afterCount: after.length};
+			});
+		};
+		const wrappedDb = new Proxy(realDb, {
+			get(target, prop, receiver) {
+				const orig = Reflect.get(target, prop, receiver);
+				if (prop === "batch" && typeof orig === "function") {
+					return (stmts: D1PreparedStatement[]) => {
+						batchCalls += 1;
+						batchStatementCounts.push(stmts.length);
+						return (orig as (s: D1PreparedStatement[]) => unknown).call(target, stmts);
+					};
+				}
+				if (prop === "prepare" && typeof orig === "function") {
+					return (sql: string) => {
+						const stmt = (orig as (s: string) => D1PreparedStatement).call(target, sql);
+						return wrappedStatement(stmt);
+					};
+				}
+				return typeof orig === "function" ? orig.bind(target) : orig;
+			},
 		});
+		const wrappedEnv = new Proxy(real, {
+			get(target, prop, receiver) {
+				if (prop === "PHOENIX_DB") return wrappedDb;
+				return Reflect.get(target, prop, receiver);
+			},
+		}) as Env;
+		return {
+			env: wrappedEnv,
+			getCounts: () => ({
+				batchCalls,
+				batchStatementCounts: [...batchStatementCounts],
+				runCalls,
+			}),
+		};
+	}
 
-		expect(counts.beforeCount).toBe(1);
-		expect(counts.afterCount).toBe(0);
+	it("priorScore === 0: one batch with 3 statements (post_vote + user_vote + post_summary), no karma", async () => {
+		const authorId = "atomic-del-zero-score";
+		const {postId} = await seedPost({authorId});
+
+		// Sanity: no votes were cast, so post_summary.score is still 0.
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(0);
+
+		const spy = spyEnv(env);
+		const result = await deletePost(spy.env, {postId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+
+		const counts = spy.getCounts();
+		// Exactly one batch (the delete-time mutations) — pano_stats refresh
+		// rides the same env afterward and is intentionally NOT atomic with
+		// the delete (recomputable cache).
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(3);
+	});
+
+	it("priorScore > 0: one batch with 4 statements (karma first, then post_vote + user_vote + post_summary)", async () => {
+		const authorId = "atomic-del-nonzero-author";
+		const voterId = "atomic-del-nonzero-voter";
+		const {postId} = await seedPost({authorId});
+
+		await voteOnPost(env, {postId, voterId});
+
+		// Sanity: post_summary.score is now 1.
+		const meta = (await env.PHOENIX_DB.prepare("SELECT score FROM post_summary WHERE id = ?")
+			.bind(postId)
+			.first()) as {score: number} | null;
+		expect(meta!.score).toBe(1);
+
+		const spy = spyEnv(env);
+		const result = await deletePost(spy.env, {postId, actorId: authorId});
+		expect(result.deleted).toBe(true);
+
+		const counts = spy.getCounts();
+		expect(counts.batchCalls).toBe(1);
+		expect(counts.batchStatementCounts[0]).toBe(4);
+	});
+
+	it("recomputePanoStats still runs after the batch resolves (post + comment counts re-summed)", async () => {
+		const authorId = "atomic-del-stats";
+		const {postId} = await seedPost({authorId});
+
+		const beforeStats = (await env.PHOENIX_DB.prepare(
+			"SELECT total_posts FROM pano_stats WHERE id = 1",
+		).first()) as {total_posts: number} | null;
+		const beforeCount = beforeStats?.total_posts ?? 0;
+		expect(beforeCount).toBeGreaterThanOrEqual(1);
+
+		// Use the spy so we also confirm only one batch was issued.
+		const spy = spyEnv(env);
+		await deletePost(spy.env, {postId, actorId: authorId});
+		expect(spy.getCounts().batchCalls).toBe(1);
+
+		const afterStats = (await env.PHOENIX_DB.prepare(
+			"SELECT total_posts FROM pano_stats WHERE id = 1",
+		).first()) as {total_posts: number} | null;
+		expect(afterStats!.total_posts).toBe(beforeCount - 1);
 	});
 });

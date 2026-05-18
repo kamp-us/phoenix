@@ -1,6 +1,6 @@
 /**
- * Fragment-shaped tree node for the post-detail comment thread (task_3,
- * phoenix-relay-idiom). Replaces the prop-shaped `PanoComment` from the MVP.
+ * Fragment-shaped tree node for the post-detail comment thread.
+ * Replaces the prop-shaped `PanoComment` from the MVP.
  *
  * Each node declares `CommentTreeNodeFragment on Comment` and reads via
  * `useFragment` — pages spread `<CommentTreeNode comment={edge.node} />`
@@ -43,7 +43,7 @@ const CommentTreeNodeFragmentDef = graphql`
 `;
 
 /**
- * Cast an upvote on a comment (T11 + task_3 fragment-ification). Returns the
+ * Cast an upvote on a comment. Returns the
  * updated `score` + `myVote` so Relay's automatic store update merges the
  * scalar values into the existing `Comment:<id>` record — no refetch.
  */

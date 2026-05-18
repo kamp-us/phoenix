@@ -1,27 +1,25 @@
 /**
- * PanoPost.submitPost + outbox + PostChanged projection — task_7.
+ * Pano D1-direct `submitPost`.
  *
- * Mirrors `sozluk-add-definition.test.ts`. Exercises the producer pattern (ADR
- * 0007) end-to-end inside workerd:
- *   1. Apply view migrations.
- *   2. Happy path: submitPost on a fresh DO writes post_meta + tags + outbox
- *      atomically; flushOutbox dispatches; post_summary projection lands with
- *      the denormalized author + tags + host.
- *   3. Validation: empty title, > 200 chars title, invalid URL, > 10 000 char
- *      body, empty tags, off-enum tag.
- *   4. Reconciliation: workflow.create stubbed to throw on first attempt →
- *      outbox row remains → reconcileOutbox re-queues and clears it.
- *   5. Author indexing: the projected post_summary row exposes author_id and
- *      created_at so the `(author_id, created_at DESC)` index can serve the
- *      profile feed.
+ * Exercises the module-functional path against `env.PHOENIX_DB`:
+ *   1. Apply view migrations (including 0006 for d1-direct pano tables).
+ *   2. Happy path: submitPost mints a post id, inserts `post_summary` with
+ *      denormalized author + tags + host, bumps `pano_stats`.
+ *   3. Validation: empty title, > 200 chars title, invalid URL,
+ *      > 10 000 char body, empty tags, off-enum tag.
+ *   4. Author indexing: the `post_summary` row exposes author_id and
+ *      created_at so the `(author_id, created_at DESC)` index can serve
+ *      the profile feed.
+ *
+ * No `runInDurableObject`, no outbox, no projection workflow — the writes
+ * are inline D1 (ADR 0009).
  */
-import {env, runInDurableObject} from "cloudflare:test";
-import {id} from "@usirin/forge";
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
+import {env} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
-import viewMigration0000 from "../../worker/view/drizzle/migrations/0000_secret_iron_patriot.sql";
-import viewMigration0001 from "../../worker/view/drizzle/migrations/0001_free_salo.sql";
-import viewMigration0002 from "../../worker/view/drizzle/migrations/0002_wandering_natasha_romanoff.sql";
-import viewMigration0003 from "../../worker/view/drizzle/migrations/0003_lazy_thanos.sql";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
+import {PostValidationError, submitPost} from "../../worker/features/pano/module";
 
 declare module "cloudflare:test" {
 	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
@@ -29,7 +27,7 @@ declare module "cloudflare:test" {
 }
 
 async function applyViewMigrations() {
-	const sources = [viewMigration0000, viewMigration0001, viewMigration0002, viewMigration0003];
+	const sources = [baselineMigration];
 	for (const src of sources) {
 		const statements = src
 			.split("--> statement-breakpoint")
@@ -53,17 +51,6 @@ async function applyViewMigrations() {
 	}
 }
 
-async function waitForRow(sql: string, params: unknown[], attempts = 30): Promise<unknown> {
-	for (let i = 0; i < attempts; i++) {
-		const row = await env.PHOENIX_DB.prepare(sql)
-			.bind(...params)
-			.first();
-		if (row) return row;
-		await new Promise((r) => setTimeout(r, 100));
-	}
-	return null;
-}
-
 async function expectRejection(promise: Promise<unknown>, match: RegExp): Promise<void> {
 	try {
 		await promise;
@@ -77,12 +64,9 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("PanoPost.submitPost — task_7", () => {
-	it("writes post_meta + tags + outbox + post_summary projection with denormalized author + tags + host", async () => {
-		const postId = id("post");
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-
-		const result = await stub.submitPost({
+describe("pano.submitPost", () => {
+	it("writes post_summary with denormalized author + tags + host", async () => {
+		const result = await submitPost(env, {
 			title: "phoenix neden tek worker'da koşuyor",
 			url: "https://example.com/phoenix-arch",
 			body: "Tek deploy, tek bind, tek SPA — DO'lar incremental şekilde geliyor.",
@@ -94,27 +78,24 @@ describe("PanoPost.submitPost — task_7", () => {
 			authorName: "umut",
 		});
 
-		expect(result.postId).toBe(postId);
+		expect(result.postId).toMatch(/^post_/);
 		expect(result.host).toBe("example.com");
 		expect(result.url).toBe("https://example.com/phoenix-arch");
 		expect(result.tags.map((t) => t.kind)).toEqual(["tartışma", "meta"]);
+		expect(result.score).toBe(0);
+		expect(result.commentCount).toBe(0);
 
-		const post = await stub.getPost();
-		expect(post).not.toBeNull();
-		expect(post!.id).toBe(postId);
-		expect(post!.title).toContain("phoenix");
-		expect(post!.host).toBe("example.com");
-		expect(post!.author).toBe("umut");
-		expect(post!.tags).toHaveLength(2);
-
-		const summary = (await waitForRow(
-			"SELECT id, title, url, host, author_id, author_name, tags, score, comment_count FROM post_summary WHERE id = ?",
-			[postId],
-		)) as {
+		const summary = (await env.PHOENIX_DB.prepare(
+			"SELECT id, title, url, host, body, body_excerpt, author_id, author_name, tags, score, comment_count FROM post_summary WHERE id = ?",
+		)
+			.bind(result.postId)
+			.first()) as {
 			id: string;
 			title: string;
 			url: string;
 			host: string;
+			body: string;
+			body_excerpt: string;
 			author_id: string;
 			author_name: string;
 			tags: string;
@@ -132,12 +113,13 @@ describe("PanoPost.submitPost — task_7", () => {
 		expect(summary!.tags).toBe("tartışma,meta");
 		expect(summary!.score).toBe(0);
 		expect(summary!.comment_count).toBe(0);
+		expect(summary!.body).toContain("Tek deploy");
+		expect(summary!.body_excerpt).toContain("Tek deploy");
 	});
 
 	it("rejects empty title", async () => {
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
 		await expectRejection(
-			stub.submitPost({
+			submitPost(env, {
 				title: "   ",
 				tags: [{kind: "tartışma"}],
 				authorId: "u1",
@@ -148,9 +130,8 @@ describe("PanoPost.submitPost — task_7", () => {
 	});
 
 	it("rejects titles over 200 chars", async () => {
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
 		await expectRejection(
-			stub.submitPost({
+			submitPost(env, {
 				title: "x".repeat(201),
 				tags: [{kind: "tartışma"}],
 				authorId: "u1",
@@ -161,9 +142,8 @@ describe("PanoPost.submitPost — task_7", () => {
 	});
 
 	it("rejects invalid URLs", async () => {
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
 		await expectRejection(
-			stub.submitPost({
+			submitPost(env, {
 				title: "valid title",
 				url: "not a url",
 				tags: [{kind: "tartışma"}],
@@ -175,9 +155,8 @@ describe("PanoPost.submitPost — task_7", () => {
 	});
 
 	it("rejects bodies over 10 000 chars", async () => {
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
 		await expectRejection(
-			stub.submitPost({
+			submitPost(env, {
 				title: "valid title",
 				body: "x".repeat(10_001),
 				tags: [{kind: "tartışma"}],
@@ -189,9 +168,8 @@ describe("PanoPost.submitPost — task_7", () => {
 	});
 
 	it("rejects empty tag list", async () => {
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
 		await expectRejection(
-			stub.submitPost({
+			submitPost(env, {
 				title: "valid title",
 				tags: [],
 				authorId: "u1",
@@ -202,9 +180,8 @@ describe("PanoPost.submitPost — task_7", () => {
 	});
 
 	it("rejects tags outside the fixed enum", async () => {
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(id("post")));
 		await expectRejection(
-			stub.submitPost({
+			submitPost(env, {
 				title: "valid title",
 				tags: [{kind: "haber"}],
 				authorId: "u1",
@@ -214,94 +191,44 @@ describe("PanoPost.submitPost — task_7", () => {
 		);
 	});
 
-	it("flushOutbox clears the outbox row on success", async () => {
-		const postId = id("post");
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-		await stub.submitPost({
-			title: "outbox flush check",
-			tags: [{kind: "meta"}],
-			authorId: "u1",
-			authorName: "umut",
-		});
-
-		const remaining = await runInDurableObject(stub, async (instance: any) => {
-			return instance.sql<{n: number}>`SELECT COUNT(*) as n FROM outbox`;
-		});
-		expect(remaining[0]!.n).toBe(0);
-	});
-
-	it("workflow.create failure leaves outbox row; reconcileOutbox re-queues and clears it", async () => {
-		const postId = id("post");
-		const stub = env.PANO_POST.get(env.PANO_POST.idFromName(postId));
-
-		const result = await runInDurableObject(stub, async (instance: any) => {
-			const original = instance.env.PHOENIX_PROJECTION.create.bind(
-				instance.env.PHOENIX_PROJECTION,
-			);
-			let calls = 0;
-			instance.env.PHOENIX_PROJECTION = {
-				...instance.env.PHOENIX_PROJECTION,
-				create: async (params: unknown) => {
-					calls++;
-					if (calls === 1) throw new Error("simulated workflow create failure");
-					return original(params);
-				},
-			};
-
-			try {
-				await instance.submitPost({
-					title: "reconcile path",
-					tags: [{kind: "meta"}],
-					authorId: "u9",
-					authorName: "test",
-				});
-			} catch {
-				/* swallow */
-			}
-
-			const before = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			expect(before.length).toBe(1);
-
-			await instance.reconcileOutbox();
-
-			const after = instance.sql<{event_id: string}>`SELECT event_id FROM outbox`;
-			return {beforeCount: before.length, afterCount: after.length};
-		});
-
-		expect(result.beforeCount).toBe(1);
-		expect(result.afterCount).toBe(0);
+	it("validation errors carry a typed code via PostValidationError", async () => {
+		try {
+			await submitPost(env, {
+				title: "",
+				tags: [{kind: "tartışma"}],
+				authorId: "u1",
+				authorName: "umut",
+			});
+			throw new Error("expected rejection");
+		} catch (err) {
+			expect(err).toBeInstanceOf(PostValidationError);
+			expect((err as PostValidationError).code).toBe("title_required");
+		}
 	});
 
 	it("post_summary carries author_id + created_at so the (author_id, created_at DESC) index can serve the profile feed", async () => {
 		// Author submits two posts in sequence; verify both rows land with the
 		// same author_id and that ordering by created_at DESC returns the
 		// newest first.
-		const authorId = `u-${id("user")}`;
-		const firstId = id("post");
-		const secondId = id("post");
+		const authorId = `u-idx-${Date.now().toString(36)}`;
 
-		const first = env.PANO_POST.get(env.PANO_POST.idFromName(firstId));
-		await first.submitPost({
+		const first = await submitPost(env, {
 			title: "first post",
 			tags: [{kind: "meta"}],
 			authorId,
 			authorName: "indexer",
 		});
 
-		// Force a 1ms gap so created_at sec-resolution doesn't collapse the two
-		// rows onto the same timestamp (then sort by id falls back to PK).
+		// Force a 1100ms gap so created_at sec-resolution doesn't collapse the
+		// two rows onto the same timestamp.
 		await new Promise((r) => setTimeout(r, 1100));
 
-		const second = env.PANO_POST.get(env.PANO_POST.idFromName(secondId));
-		await second.submitPost({
+		const second = await submitPost(env, {
 			title: "second post",
 			tags: [{kind: "meta"}],
 			authorId,
 			authorName: "indexer",
 		});
-
-		await waitForRow("SELECT id FROM post_summary WHERE id = ?", [firstId]);
-		await waitForRow("SELECT id FROM post_summary WHERE id = ?", [secondId]);
 
 		const rows = await env.PHOENIX_DB.prepare(
 			"SELECT id, title FROM post_summary WHERE author_id = ? ORDER BY created_at DESC",
@@ -309,7 +236,7 @@ describe("PanoPost.submitPost — task_7", () => {
 			.bind(authorId)
 			.all();
 		expect(rows.results.length).toBe(2);
-		expect(rows.results[0]!.id).toBe(secondId);
-		expect(rows.results[1]!.id).toBe(firstId);
+		expect(rows.results[0]!.id).toBe(second.postId);
+		expect(rows.results[1]!.id).toBe(first.postId);
 	});
 });

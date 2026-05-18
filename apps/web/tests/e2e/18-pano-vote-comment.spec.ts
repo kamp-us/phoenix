@@ -2,7 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
- * Pano voteOnComment end-to-end (task_11).
+ * Pano voteOnComment end-to-end.
  *
  * Sign up a fresh user, complete the username bootstrap, submit a brand new
  * post, add a comment, then exercise the optimistic comment-vote flip:
@@ -16,13 +16,13 @@ import {signUp} from "./_helpers/auth";
  *
  * Mirrors `15-pano-vote-post.spec.ts` (post-vote round-trip).
  *
- * phoenix-relay-idiom task_3: the historical `page.reload()` workarounds
- * before vote interactions are gone — `usePaginationFragment` +
+ * The historical `page.reload()` workarounds before vote interactions are
+ * gone — `usePaginationFragment` +
  * `commitLocalUpdate` keep the post-detail tree mounted on every mutation
  * and live event, so the Suspense double-mount race they were dodging no
  * longer fires.
  */
-test.describe("Pano voteOnComment (task_11)", () => {
+test.describe("Pano voteOnComment", () => {
 	test("vote → unvote → vote round-trip on a fresh comment", async ({page}) => {
 		// Fresh sign-up + bootstrap.
 		const localPart = `vc${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -59,7 +59,7 @@ test.describe("Pano voteOnComment (task_11)", () => {
 		await page.locator('[data-testid="pano-comment-submit"]').click();
 
 		// Wait for the comment to appear in the tree. Use the thread heading
-		// (h2) directly — task_16's live updates refetch the post meta after
+		// (h2) directly — live updates refetch the post meta after
 		// the mutation lands, so both the meta `<span>N yorum</span>` and the
 		// thread `<h2>N yorum</h2>` end up rendering "1 yorum" simultaneously.
 		await expect(page.locator(".kp-pano-postpage__thread-heading")).toHaveText("1 yorum", {

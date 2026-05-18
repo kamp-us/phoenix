@@ -2,7 +2,11 @@
 /**
  * One-off importer that ingests sözlük MDX files from the legacy monorepo
  * (~/code/github.com/kamp-us/monorepo/packages/sozluk-content/terms) into
- * the running Sozluk DO via /api/admin/sozluk/*.
+ * the running Phoenix worker via /api/admin/sozluk/*.
+ *
+ * After the D1-direct refactor the admin endpoints write `PHOENIX_DB` directly
+ * (sozluk module functions, gated on `ENVIRONMENT === "development"`); no
+ * Durable Object hop, no workflow `create` step.
  *
  * Each MDX file is one term: filename → slug, frontmatter `title` → title,
  * markdown body → ONE definition. Files with empty bodies are skipped.
@@ -133,9 +137,8 @@ async function main(): Promise<void> {
 	console.log(`found:    ${terms.length} term(s) with non-empty bodies`);
 
 	if (args.clear) {
-		// Per-term DOs are addressed by slug; the clear endpoint walks the
-		// slugs we tell it about. Pass every slug the source provides plus
-		// the legacy "kampus" singleton for safety.
+		// Pass every slug the source provides; the admin endpoint wipes the
+		// matching `term_summary` + `definition_view` + vote rows in D1.
 		const slugs = terms.map((t) => t.slug);
 		const result = (await postJson(`${args.baseUrl}/api/admin/sozluk/clear`, {slugs})) as {
 			terms: number;
@@ -151,7 +154,12 @@ async function main(): Promise<void> {
 			slug: term.slug,
 			title: term.title,
 			definitions: [{...SYSTEM_AUTHOR, body: term.body, score: 0}],
-		})) as {termId: string; insertedDefinitions: number};
+		})) as {
+			slug: string;
+			created: boolean;
+			insertedDefinitions: number;
+			skippedDefinitions: number;
+		};
 
 		if (result.insertedDefinitions > 0) {
 			inserted++;

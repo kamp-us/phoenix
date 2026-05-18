@@ -1,12 +1,16 @@
 ---
 id: 0003
 title: Pasaport runs as a singleton Durable Object
-status: accepted
+status: superseded
+superseded_by: 0009
+superseded_date: 2026-05-16
 date: 2026-05-09
 tags: [auth, durable-objects, pasaport]
 ---
 
 # 0003 — Pasaport runs as a singleton Durable Object
+
+> **Superseded (2026-05-16):** Pasaport DO is retired by [ADR 0009](0009-d1-direct-defer-dos-and-workflows.md). Auth tables move to D1; the singleton-DO exception no longer applies because there is no Pasaport DO.
 
 ## Context
 

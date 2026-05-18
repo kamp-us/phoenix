@@ -1,16 +1,12 @@
 /**
  * Read-side helper for the `terms(sort, limit)` resolver.
  *
- * The cross-entity term list reads from `PHOENIX_DB.term_summary` (the MV
- * maintained by `PhoenixProjection.TermChanged`), not from per-term DOs —
- * fanning out to every term DO would be O(n) RPCs per page render.
- *
- * Per-term reads (`term(slug)`) still RPC into `SozlukTerm` for the full
- * page (definitions live there, not in the MV).
+ * Reads from `PHOENIX_DB.term_summary` (maintained inline by the sozluk
+ * writer module per ADR 0009 — no projection layer, no per-term DOs).
  */
 import {and, desc, eq, gt, lt, or, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import * as schema from "../../view/drizzle/schema";
+import * as schema from "../../db/drizzle/schema";
 
 export type ListSort = "recent" | "popular";
 
@@ -19,7 +15,7 @@ export type ListSort = "recent" | "popular";
  * `lastEdit` are pre-converted to JS Date in the resolver if present.
  *
  * `firstLetter`, `definitionCount`, and `lastActivityAt` are surfaced for
- * the Sozluk home `TermRowFragment` (task_5, phoenix-relay-idiom). They
+ * the Sozluk home `TermRowFragment`. They
  * mirror the term_summary columns 1:1 and are nullable on shapes that
  * don't carry them (`TermPage` from per-term DO reads).
  */
@@ -81,8 +77,8 @@ export async function listTermSummaries(
 }
 
 /**
- * Page returned by the connection-shaped term reader (task_5,
- * phoenix-relay-idiom). Mirrors `PostConnectionPage` from
+ * Page returned by the connection-shaped term reader.
+ * Mirrors `PostConnectionPage` from
  * `postSummaryReader.ts`. `endCursor` is `null` on an empty page or when
  * `hasNextPage` is `false`. Cursor encoding is opaque to the client; today
  * it's the term slug — slugs are stable lex-sortable strings and the
@@ -97,8 +93,8 @@ export interface TermConnectionPage {
 }
 
 /**
- * Connection-shaped reader for `terms(sort, first, after)` (task_5,
- * phoenix-relay-idiom). Cursor is the term slug — `term_summary.slug` is
+ * Connection-shaped reader for `terms(sort, first, after)`.
+ * Cursor is the term slug — `term_summary.slug` is
  * the primary key, so the cursor row resolves with a single point lookup.
  *
  * For both sorts the keyset predicate orders by the sort column DESC with

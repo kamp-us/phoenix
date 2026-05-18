@@ -1,5 +1,5 @@
 /**
- * Fragment-shaped card for the pano feed (task_2, phoenix-relay-idiom).
+ * Fragment-shaped card for the pano feed.
  *
  * Replaces the prop-shaped `PanoPost` from the MVP. The component declares
  * its own `PanoPostCardFragment on Post` and reads via `useFragment` — the

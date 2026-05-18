@@ -1,17 +1,11 @@
 /**
- * Post-detail page (task_3, phoenix-relay-idiom).
+ * Post-detail page.
  *
  * Fully idiomatic Relay shape — `useLazyLoadQuery` at the top spreads
  * `PanoPostHeaderFragment` + `PanoPostDetailCommentsFragment` into the
  * `Post` selection; `usePaginationFragment` reads the comment connection;
  * each row is a fragment ref handed to `CommentTreeNode` (which declares
  * its own `CommentTreeNodeFragment on Comment`).
- *
- * Live updates flow through `useLiveAgent`: the WebSocket pushes typed
- * `PostState` snapshots, the `applyToStore` callback writes them straight
- * into the Relay store via `commitLocalUpdate`. The page tree never
- * unmounts on a live event — `LivePill` connection state remains the
- * sole user-visible signal of subscription health (parity with T16).
  *
  * Mutations:
  *  - `addComment` — manual `updater` appends a `CommentEdge` into the
@@ -23,7 +17,7 @@
  *    set, which Relay merges back via the normal store update.
  *  - `editComment`, `editPost`, `voteOnComment` — auto store update on the
  *    returned scalars (no updater).
- *  - `deletePost` — `deletedPostId @deleteRecord` (matches the task_2
+ *  - `deletePost` — `deletedPostId @deleteRecord` (matches the submitPost
  *    pattern; navigates back to /pano on success).
  */
 import * as React from "react";
@@ -35,7 +29,6 @@ import {
 	usePaginationFragment,
 } from "react-relay";
 import {Link, useNavigate, useParams} from "react-router";
-import type {RecordSourceProxy} from "relay-runtime";
 import type {CommentTreeNodeFragment$key} from "../__generated__/CommentTreeNodeFragment.graphql";
 import type {PanoPostDetailAddCommentMutation} from "../__generated__/PanoPostDetailAddCommentMutation.graphql";
 import type {PanoPostDetailCommentsFragment$key} from "../__generated__/PanoPostDetailCommentsFragment.graphql";
@@ -51,7 +44,6 @@ import {PanoPostHeader, PanoPostHeaderVote} from "../components/pano/PanoPostHea
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {authRedirectPath} from "../lib/returnTo";
-import {useLiveAgent} from "../lib/useLiveAgent";
 import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
 import {extractLocalId} from "../relay/encodeNodeId";
 import {appendCommentToPostConnection} from "../relay/panoPostDetailUpdater";
@@ -147,7 +139,7 @@ const EditCommentMutation = graphql`
 `;
 
 /**
- * Delete a comment (T12 + task_3 phoenix-relay-idiom).
+ * Delete a comment.
  *
  * The mutation returns a two-shape payload:
  *  - `deletedCommentId @deleteRecord` — leaf path; Relay removes the
@@ -195,8 +187,8 @@ const DeletePostMutation = graphql`
 `;
 
 /**
- * Add comment mutation (task_3 — switched from refetch-on-mutate to
- * connection updater + optimisticResponse). The selection set spreads
+ * Add comment mutation — switched from refetch-on-mutate to
+ * connection updater + optimisticResponse. The selection set spreads
  * `CommentTreeNodeFragment` so the new row arrives in the store with
  * every field the tree node needs to render without a follow-up read.
  */
@@ -226,20 +218,6 @@ const COMMENT_BODY_MAX = 5_000;
 const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const PAGE_SIZE = 50;
-
-/**
- * Subset of the `PostState` Agent state shape the page subscribes to over
- * WebSocket — extends `LiveAgentStateShape` so `useLiveAgent`'s typed
- * generic accepts it. Keeping this client-side rather than importing from
- * the worker avoids dragging worker-only modules into the SPA bundle.
- */
-interface LivePostState {
-	score: number;
-	commentCount: number;
-	hotScore: number;
-	lastActivityAt: number;
-	lastEventId: string;
-}
 
 export function PanoPostDetail() {
 	const {id} = useParams<{id: string}>();
@@ -298,7 +276,6 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 
 	const isAuthor = !!session.data?.user && session.data.user.id === post.authorId;
 	const postRecordId = post.id;
-	const postLocalId = idOrSlug;
 
 	function onEditClick(seed: {title: string; body: string | null}) {
 		setEditTitle(seed.title);
@@ -361,31 +338,6 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 		});
 	}
 
-	// Live updates v2 — translates Agent state diffs into Relay store writes.
-	// The page tree never unmounts (no `setFetchKey`); LivePill renders the
-	// connection state. The applyToStore callback updates the Post node's
-	// denormalized aggregates from the typed PostState snapshot.
-	const applyLiveStateToStore = React.useCallback(
-		(state: LivePostState, store: RecordSourceProxy) => {
-			const postRecord = store.get(postRecordId);
-			if (!postRecord) return;
-			postRecord.setValue(state.score, "score");
-			postRecord.setValue(state.commentCount, "commentCount");
-			// `hotScore` and `lastActivityAt` aren't surfaced on the GraphQL Post
-			// today — write them anyway so future fragments that select them
-			// pick up the live values without a refetch. No-ops for stores that
-			// don't carry the field.
-		},
-		[postRecordId],
-	);
-
-	const {connected: liveConnected} = useLiveAgent<LivePostState>({
-		agent: "pano-post",
-		name: postLocalId,
-		applyToStore: applyLiveStateToStore,
-		enabled: postLocalId.length > 0,
-	});
-
 	return (
 		<>
 			<header className="kp-pano-postpage__head">
@@ -447,7 +399,6 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 						headerRef={post}
 						editRef={post}
 						isAuthor={isAuthor}
-						livePill={<LivePill connected={liveConnected} />}
 						onEdit={onEditClick}
 						onDelete={() => setConfirmDelete(true)}
 					/>
@@ -504,14 +455,12 @@ function PostHeaderWithEditWiring({
 	headerRef,
 	editRef,
 	isAuthor,
-	livePill,
 	onEdit,
 	onDelete,
 }: {
 	headerRef: React.ComponentProps<typeof PanoPostHeader>["post"];
 	editRef: PanoPostDetailEditFragment$key;
 	isAuthor: boolean;
-	livePill: React.ReactNode;
 	onEdit: (seed: {title: string; body: string | null}) => void;
 	onDelete: () => void;
 }) {
@@ -520,7 +469,6 @@ function PostHeaderWithEditWiring({
 		<PanoPostHeader
 			post={headerRef}
 			isAuthor={isAuthor}
-			livePill={livePill}
 			onEdit={() => onEdit({title: editData.title, body: editData.body ?? null})}
 			onDelete={onDelete}
 		/>
@@ -754,8 +702,8 @@ function Comments(props: CommentsProps) {
  * `PanoPostDetail_comments` connection — the row appears in the tree
  * without a refetch.
  *
- * `optimisticResponse` mirrors the temp-record pattern from `submitPost`
- * (task_2 retry) — a `temp-${Date.now()}` id distinguishes the optimistic
+ * `optimisticResponse` mirrors the temp-record pattern from `submitPost` —
+ * a `temp-${Date.now()}` id distinguishes the optimistic
  * record in devtools; the updater is idempotent on the optimistic →
  * server-confirm transition.
  */
@@ -771,7 +719,7 @@ function CommentComposer({
 	 * Relay DataID of the parent Post — used both to address the comments
 	 * connection from the updater AND as the mutation variable. The Post's
 	 * Relay DataID is its global id (`encodeNodeId("Post", localId)`); the
-	 * resolver unwraps via `extractLocalId` (task_1 lenient migration helper).
+	 * resolver unwraps via `extractLocalId` (lenient migration helper).
 	 */
 	postRecordId: string;
 	parentId: string | null;
@@ -1006,63 +954,3 @@ function CommentEditComposer({
 	);
 }
 
-/**
- * LivePill — connection-state indicator for the WebSocket. T16 shape;
- * unchanged in this task per the AC ("LivePill connected/paused UX
- * preserved exactly"). The hook now uses `commitLocalUpdate` instead of
- * refetch but the user-visible UX is byte-for-byte identical.
- */
-function LivePill({connected}: {connected: boolean}) {
-	if (connected) {
-		return (
-			<span
-				data-testid="live-pill-connected"
-				style={{
-					font: "var(--t-meta)",
-					color: "var(--text-muted)",
-					display: "inline-flex",
-					alignItems: "center",
-					gap: 4,
-				}}
-				aria-label="canlı güncellemeler açık"
-				title="canlı güncellemeler açık"
-			>
-				<span
-					style={{
-						width: 6,
-						height: 6,
-						borderRadius: "50%",
-						backgroundColor: "var(--success, #22c55e)",
-						display: "inline-block",
-					}}
-				/>
-				canlı
-			</span>
-		);
-	}
-	return (
-		<span
-			data-testid="live-pill-paused"
-			style={{
-				font: "var(--t-meta)",
-				color: "var(--text-muted)",
-				display: "inline-flex",
-				alignItems: "center",
-				gap: 4,
-			}}
-			aria-label="canlı güncellemeler duraklatıldı"
-			title="canlı güncellemeler duraklatıldı"
-		>
-			<span
-				style={{
-					width: 6,
-					height: 6,
-					borderRadius: "50%",
-					backgroundColor: "var(--text-muted)",
-					display: "inline-block",
-				}}
-			/>
-			canlı güncellemeler duraklatıldı
-		</span>
-	);
-}

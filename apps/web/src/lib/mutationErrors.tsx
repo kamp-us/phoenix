@@ -1,4 +1,5 @@
 import type {PayloadError} from "relay-runtime";
+import {decodeMutationErrorCode, type MutationErrorCode} from "./mutationErrorCodes";
 import {authRedirectPath} from "./returnTo";
 
 /**
@@ -6,10 +7,11 @@ import {authRedirectPath} from "./returnTo";
  * `onError` or a `PayloadError[]` from `onCompleted`'s second arg) and decide
  * whether it represents a session-expired condition.
  *
- * `UNAUTHORIZED` is the stable wire-level code the worker resolvers attach
- * to GraphQL errors when `Auth.required` fails or when an Agent throws an
- * `UnauthorizedXxxMutationError` (see `worker/graphql/schema.ts`'s
- * mapDefinition/Post/Comment error helpers).
+ * The match keys off the typed {@link MutationErrorCode} `"UNAUTHORIZED"` rather
+ * than a hardcoded string literal — the wire contract
+ * lives in `mutationErrorCodes.ts` and is encoded by the worker's
+ * `encodeMutationError` codec when `Auth.required` fails or an Agent throws
+ * an `UnauthorizedXxxMutationError`.
  */
 export function isSessionExpired(
 	errors: ReadonlyArray<PayloadError> | null | undefined,
@@ -20,7 +22,8 @@ export function isSessionExpired(
 			// `extensions` isn't part of Relay's `PayloadError` type but is
 			// always present on the wire (GraphQL spec). Read defensively.
 			const ext = (e as unknown as {extensions?: {code?: string}}).extensions;
-			if (ext?.code === "UNAUTHORIZED") return true;
+			const code: MutationErrorCode | null = decodeMutationErrorCode(ext?.code);
+			if (code === "UNAUTHORIZED") return true;
 		}
 	}
 	if (thrown && typeof thrown === "object" && thrown !== null) {

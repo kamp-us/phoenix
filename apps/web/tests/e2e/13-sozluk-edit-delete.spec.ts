@@ -2,8 +2,7 @@ import {expect, test} from "@playwright/test";
 import {signOut, signUp} from "./_helpers/auth";
 
 /**
- * Sözlük editDefinition / deleteDefinition end-to-end (task_6; touched by
- * task_4 of phoenix-relay-idiom).
+ * Sözlük editDefinition / deleteDefinition end-to-end.
  *
  * Two flows:
  *   1. Author flow: sign up user A → add a definition → edit it (body
@@ -15,7 +14,7 @@ import {signOut, signUp} from "./_helpers/auth";
  * Historical note: this spec previously contained a `page.reload()` between
  * the addDefinition mutation and the edit interactions to escape the
  * Suspense double-mount race triggered by the legacy
- * `setFetchKey`-driven refetch. After task_4 of `phoenix-relay-idiom` the
+ * `setFetchKey`-driven refetch. After the relay-idiom refactor the
  * page tree no longer unmounts on a mutation (idiomatic Relay
  * `@deleteRecord` for delete + manual `updater` for prepends + the new
  * `addDefinition` selection set spreads `DefinitionCardFragment` so the
@@ -24,7 +23,7 @@ import {signOut, signUp} from "./_helpers/auth";
  * page reload from the app to materialize the Term record (a narrow
  * fresh-slug-only path); subsequent edits / deletes don't.
  */
-test.describe("Sözlük editDefinition / deleteDefinition (task_6)", () => {
+test.describe("Sözlük editDefinition / deleteDefinition", () => {
 	test("author can edit and delete their own definition", async ({page}) => {
 		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 		await signUp(page, {email: `ed${suffix}@kamp.us`});
