@@ -10,11 +10,11 @@ tags: [backend, effect, architecture]
 
 ## Context
 
-Today's backend (`apps/web/worker/features/*/module.ts`) is ~3000 LOC of exported `async function`s that take `env`, call `drizzle(env.PHOENIX_DB, {schema})` inline, throw plain `Error` subclasses, and orchestrate multi-aggregate writes with bare `await`. The resolver wrapper at `worker/graphql/resolver.ts` is already Effect-aware via `ManagedRuntime`, but the layer below it (feature modules, readers, Hono admin routes) is fully promise-based.
+Before this decision, the backend (`apps/web/worker/features/*/module.ts`) was ~3000 LOC of exported `async function`s that took `env`, called `drizzle(env.PHOENIX_DB, {schema})` inline, threw plain `Error` subclasses, and orchestrated multi-aggregate writes with bare `await`. The resolver wrapper at `worker/graphql/resolver.ts` was already Effect-aware via `ManagedRuntime`, but the layer below it (feature modules, readers, Hono admin routes) was fully promise-based.
 
-The mismatch produces concrete pain: `env` is threaded through every call signature; errors are untyped exceptions resolvers handle ad-hoc; multi-aggregate writes have no atomicity story expressible in the type system; tracing is per-await rather than per-operation; tests reach for miniflare even for validation logic because there's no seam below the drizzle call.
+The mismatch produced concrete pain: `env` was threaded through every call signature; errors were untyped exceptions resolvers handled ad-hoc; multi-aggregate writes had no atomicity story expressible in the type system; tracing was per-await rather than per-operation; tests reached for miniflare even for validation logic because there was no seam below the drizzle call.
 
-The phoenix architecture goal (ADR 0009 d1-direct + collapsed-codebase rationale) was to enable Effect services as design boundaries. The current paradigm split blocks that goal.
+The phoenix architecture goal (ADR 0009 d1-direct + collapsed-codebase rationale) was to enable Effect services as design boundaries. The pre-decision paradigm split blocked that goal.
 
 ## Decision
 
@@ -23,7 +23,7 @@ All resolver-touchable backend code is rewritten in idiomatic Effect.
 - **Scope:** "Resolver-down" — every code path reachable from a GraphQL resolver or Hono admin route. Out of scope: `handleAuth` (`/api/auth/*`), `/agents/*`, `seed.ts`, importer scripts.
 - **Feature shape:** one `Context.Service` per feature folder (`Sozluk`, `Pano`, `Vote`, `Pasaport`). Methods return `Effect`; errors are `Data.TaggedError` instances in the `E` channel; the resolver wrapper switches on `_tag` to map to wire codes. Reads and writes coexist on the same service.
 - **Admin operations:** parallel `<Feature>Admin` services (`SozlukAdmin`, `PanoAdmin`, `PasaportAdmin`) with their own `ManagedRuntime` separate from the GraphQL runtime. Gated by an `AdminAuth` service.
-- **Migration is 1:1 in semantics.** Today's async function becomes tomorrow's `Effect.fn` method on a service. No new abstractions, no behavior changes. Wire codes (`extensions.code` strings) preserved identically.
+- **Migration is 1:1 in semantics.** Each async function becomes an `Effect.fn` method on a service. No new abstractions, no behavior changes. Wire codes (`extensions.code` strings) preserved identically.
 - **DDD aggregate boundaries are explicitly deferred.** "One service per feature" is a faithful port of the current shape, not a long-term commitment. Aggregate-shaped splits (`Term` / `Definition` / `Post` / `Comment` / `User` as separate services) are revisited once the effect-native baseline is stable. See vault grill `2026-05-17-effect-migration.md` for the deferred consideration.
 
 ## Consequences

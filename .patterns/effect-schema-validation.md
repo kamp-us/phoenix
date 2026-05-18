@@ -79,7 +79,7 @@ export class PersistedAuditError extends Schema.TaggedErrorClass<PersistedAuditE
 
 `Schema.encode(PersistedAuditError)(err)` produces a structurally-validated JSON form. `Schema.decode(PersistedAuditError)(json)` reconstructs the typed error.
 
-Phoenix doesn't have this need today — all errors are encoded by the resolver wrapper into `GraphQLError`s before leaving the worker. Reserve `Schema.TaggedErrorClass` for the moment you need wire-form errors.
+Phoenix doesn't have this need — all errors are encoded by the resolver wrapper into `GraphQLError`s before leaving the worker. Reserve `Schema.TaggedErrorClass` for the moment you need wire-form errors.
 
 ## Schema features worth knowing about
 

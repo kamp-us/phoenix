@@ -10,7 +10,7 @@ tags: [backend, effect, admin, architecture]
 
 ## Context
 
-Phoenix exposes admin routes under `/api/admin/*` (Hono handlers, currently `async (c) => ...`) — `sozluk/upsert-term`, `sozluk/clear`, `pano/seed`, `pasaport/backfill-profiles`. These call into feature `module.ts` functions like `seedTerm`, `clearAllTerms` — functions that bypass user-facing validation and operate idempotently or destructively. Authorization today is `env.ENVIRONMENT === "development"` checked inline in the Hono handler.
+Phoenix exposes admin routes under `/api/admin/*` (Hono handlers, originally `async (c) => ...`) — `sozluk/upsert-term`, `sozluk/clear`, `pano/seed`, `pasaport/backfill-profiles`. These called into feature `module.ts` functions like `seedTerm`, `clearAllTerms` — functions that bypass user-facing validation and operate idempotently or destructively. Authorization was `env.ENVIRONMENT === "development"` checked inline in the Hono handler.
 
 Under [0010](0010-effect-context-service-backend.md), feature `module.ts` files are deleted in favor of `Context.Service` classes. The admin routes need a home for their operations. Four candidates:
 
@@ -40,7 +40,7 @@ Admin routes run against a **separate `ManagedRuntime`** wired in `worker/admin/
 
 It does **not** provide: `Auth` (GraphQL user session), `RequestContext`, or any resolver-facing feature service. Resolver-facing services are unavailable to admin routes; admin services are unavailable to resolvers.
 
-**Auth seam:** `AdminAuth` is a `Context.Service<AdminAuth, {allowed: boolean}>` with a `static readonly required` that fails with `AdminForbidden` if `allowed === false`. `AdminAuthLive` derives `allowed` from `env.ENVIRONMENT === "development"` today. Future hardening (signed tokens, allow-lists, audit) lands inside `AdminAuthLive` without touching call sites. The pattern mirrors `Auth.required` from the GraphQL runtime.
+**Auth seam:** `AdminAuth` is a `Context.Service<AdminAuth, {allowed: boolean}>` with a `static readonly required` that fails with `AdminForbidden` if `allowed === false`. The initial `AdminAuthLive` derives `allowed` from `env.ENVIRONMENT === "development"`. Future hardening (signed tokens, allow-lists, audit) lands inside `AdminAuthLive` without touching call sites. The pattern mirrors `Auth.required` from the GraphQL runtime.
 
 Hono admin route shape:
 
@@ -72,6 +72,6 @@ app.post("/api/admin/sozluk/upsert-term", async (c) => {
 - Direct `env.ENVIRONMENT === "development"` checks in admin Hono handlers. The check lives in `AdminAuthLive` only.
 - A single shared runtime for both GraphQL and admin paths. Always two — the surface areas are intentionally distinct.
 
-**Future:** if admin operations across features grow shared concerns (audit logs, dry-run mode, transaction semantics), the per-feature admin services may consolidate into a single `Admin` service that holds all admin operations as methods. Revisit if/when the duplication shows up. Today the per-feature split is the YAGNI-correct shape — admin operations don't share much beyond `AdminAuth.required`.
+**Future:** if admin operations across features grow shared concerns (audit logs, dry-run mode, transaction semantics), the per-feature admin services may consolidate into a single `Admin` service that holds all admin operations as methods. Revisit if/when the duplication shows up. At this scale the per-feature split is the YAGNI-correct shape — admin operations don't share much beyond `AdminAuth.required`.
 
 **Patterns:** see `.patterns/feature-services.md` (admin services follow the same shape as feature services), `.patterns/effect-layer-composition.md` (the dual-runtime composition).

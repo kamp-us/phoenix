@@ -91,7 +91,7 @@ Phoenix has two runtimes:
 
 Separate runtimes because the surface area is genuinely different:
 
-- Admin routes need `AdminAuth.required` (env-gated today, signed tokens tomorrow). Resolvers don't.
+- Admin routes need `AdminAuth.required` (env-gated initially; future hardening lands inside the layer). Resolvers don't.
 - Admin routes don't need the GraphQL `Auth` service (user session info). They have no user context.
 - Admin services (`SozlukAdmin`) own different operations than resolver services (`Sozluk`). Bundling them would force every resolver to depend on admin code.
 
@@ -170,7 +170,7 @@ const result = await runtime.runPromiseExit(handler);
 // If SomeLayer fails to construct, the Exit is a failure with that layer's error.
 ```
 
-Phoenix's layers can't fail today — `DrizzleLive` just constructs the drizzle builder, no validation. If `AdminAuthLive` later validates a config, its construction could fail; that surfaces as a layer error before any resolver runs.
+Phoenix's layers have no construction failures — `DrizzleLive` just constructs the drizzle builder, no validation. If `AdminAuthLive` later validates a config, its construction could fail; that surfaces as a layer error before any resolver runs.
 
 ## See also
 
