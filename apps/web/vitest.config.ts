@@ -25,5 +25,7 @@ export default defineConfig({
 		include: ["tests/integration/**/*.test.ts"],
 		// `cloudflarePool` is the runtime that boots tests inside workerd.
 		pool: cloudflarePool(poolOptions),
+		// 5s default is tight for workerd cold starts on free CI runners.
+		testTimeout: 15_000,
 	},
 });
