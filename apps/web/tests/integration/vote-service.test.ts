@@ -34,9 +34,11 @@ declare module "cloudflare:test" {
 	interface ProvidedEnv extends Env {}
 }
 
-const TestLive = Layer.mergeAll(SozlukLive, PanoLive)
-	.pipe(Layer.provideMerge(VoteLive))
-	.pipe(Layer.provide(DrizzleLive), Layer.provide(Layer.succeed(CloudflareEnv, env)));
+const TestLive = Layer.mergeAll(SozlukLive, PanoLive).pipe(
+	Layer.provideMerge(VoteLive),
+	Layer.provide(DrizzleLive),
+	Layer.provide(Layer.succeed(CloudflareEnv, env)),
+);
 
 async function submitPostEff(input: {
 	title: string;

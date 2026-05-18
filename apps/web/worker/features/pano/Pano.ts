@@ -966,7 +966,6 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 
 			const now = new Date();
-			const nowSec = Math.floor(now.getTime() / 1000);
 			const priorScore = meta.score;
 
 			// One batch carries every delete-time mutation: optional karma

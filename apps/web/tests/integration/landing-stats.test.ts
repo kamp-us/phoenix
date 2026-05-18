@@ -27,9 +27,11 @@ import {VoteLive} from "../../worker/features/vote/Vote";
 import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
 // Sozluk and Pano both depend on Vote — merge them and provide Vote once.
-const TestLive = Layer.mergeAll(SozlukLive, PanoLive)
-	.pipe(Layer.provideMerge(VoteLive))
-	.pipe(Layer.provide(DrizzleLive), Layer.provide(Layer.succeed(CloudflareEnv, env)));
+const TestLive = Layer.mergeAll(SozlukLive, PanoLive).pipe(
+	Layer.provideMerge(VoteLive),
+	Layer.provide(DrizzleLive),
+	Layer.provide(Layer.succeed(CloudflareEnv, env)),
+);
 
 function submitPost(input: SubmitPostInput) {
 	return Effect.runPromise(
