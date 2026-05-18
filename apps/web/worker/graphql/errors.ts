@@ -93,6 +93,15 @@ export function encodeMutationError(err: unknown): GraphQLError {
 
 			case "pasaport/UserNotFound":
 				return gqlError(e?.message ?? "kullanıcı bulunamadı", "USER_NOT_FOUND");
+
+			// ── Vote ──────────────────────────────────────────────────────
+			// Mirrors the legacy `VoteTargetNotFoundError.code` upcased to
+			// `VOTE_TARGET_NOT_FOUND`. Sozluk and Pano translate this to their
+			// feature-specific not-found errors at the call site today; if a
+			// resolver ever yields `Vote.cast` directly this wire code lets
+			// the SPA distinguish.
+			case "vote/VoteTargetNotFound":
+				return gqlError(e?.message ?? "vote target not found", "VOTE_TARGET_NOT_FOUND");
 		}
 	}
 

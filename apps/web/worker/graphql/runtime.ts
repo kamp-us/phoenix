@@ -1,6 +1,7 @@
 import {Layer, ManagedRuntime} from "effect";
 import type {Session} from "../features/pasaport/auth";
 import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
+import {type Vote, VoteLive} from "../features/vote/Vote";
 import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "../services";
 
 /**
@@ -30,14 +31,14 @@ export namespace GraphQLRuntime {
 	 * Services available inside a GraphQL resolver Effect. As feature services
 	 * land they get added to this union so resolvers can `yield*` them.
 	 */
-	export type Context = CloudflareEnv | RequestContext | Auth | Drizzle | Pasaport;
+	export type Context = CloudflareEnv | RequestContext | Auth | Drizzle | Pasaport | Vote;
 
 	/**
 	 * Merge of every per-feature service that resolvers `yield*`. Each `Live`
 	 * layer depends on `Drizzle + CloudflareEnv`, satisfied by the outer
 	 * composition via `Layer.provide(RequestValues)` below.
 	 */
-	const FeatureLayer = Layer.mergeAll(PasaportLive);
+	const FeatureLayer = Layer.mergeAll(PasaportLive, VoteLive);
 
 	export const layer = (
 		env: Env,
