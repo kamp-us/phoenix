@@ -1,29 +1,26 @@
 /**
- * Fragment-shaped profile header.
+ * Profile header — fate.
  *
- * Reads its data via `useFragment(UserProfileHeaderFragment)` instead of
- * taking shaped props. The page (`UserProfilePage`) spreads this fragment
- * into the top-level `Profile` selection — the header declares what it
- * needs.
+ * Reads its slice via `useView(UserProfileHeaderView, ref)`. The page
+ * (`UserProfilePage`) **spreads** `UserProfileHeaderView` into the screen's
+ * `Profile` view (masking is by view identity — Relay-fragment style), so the
+ * header reads off the same ref. The GraphQL `Profile.user` nested object was
+ * flattened onto the `Profile` scalar fields on the fate backend (task 4), so
+ * the header reads `username`/`displayName`/`image` directly off the profile.
  */
-import {graphql, useFragment} from "react-relay";
-import type {UserProfileHeaderFragment$key} from "../../__generated__/UserProfileHeaderFragment.graphql";
+import {useView, type ViewRef, view} from "react-fate";
+import type {Profile} from "../../../worker/fate/views";
 
-const UserProfileHeaderFragmentDef = graphql`
-	fragment UserProfileHeaderFragment on Profile {
-		id
-		user {
-			id
-			username
-			name
-			image
-		}
-		totalKarma
-		definitionCount
-		postCount
-		commentCount
-	}
-`;
+export const UserProfileHeaderView = view<Profile>()({
+	userId: true,
+	username: true,
+	displayName: true,
+	image: true,
+	totalKarma: true,
+	definitionCount: true,
+	postCount: true,
+	commentCount: true,
+});
 
 function initialsOf(name: string) {
 	return name
@@ -35,20 +32,20 @@ function initialsOf(name: string) {
 }
 
 export interface UserProfileHeaderProps {
-	profile: UserProfileHeaderFragment$key;
+	profile: ViewRef<"Profile">;
 	fallbackHandle: string;
 }
 
 export function UserProfileHeader(props: UserProfileHeaderProps) {
-	const profile = useFragment(UserProfileHeaderFragmentDef, props.profile);
-	const displayName = profile.user.name ?? profile.user.username ?? "kullanıcı";
-	const handle = profile.user.username ?? props.fallbackHandle;
+	const profile = useView(UserProfileHeaderView, props.profile);
+	const displayName = profile.displayName ?? profile.username ?? "kullanıcı";
+	const handle = profile.username ?? props.fallbackHandle;
 
 	return (
 		<header className="kp-user-profile__head">
 			<div className="kp-user-profile__avatar" aria-hidden>
-				{profile.user.image ? (
-					<img src={profile.user.image} alt="" />
+				{profile.image ? (
+					<img src={profile.image} alt="" />
 				) : (
 					<span>{initialsOf(displayName)}</span>
 				)}

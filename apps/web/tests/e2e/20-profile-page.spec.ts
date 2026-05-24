@@ -59,6 +59,12 @@ test.describe("Profile page", () => {
 		await composerBody.fill(definitionBody);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 		await expect(page.getByText(definitionBody)).toBeVisible({timeout: 10_000});
+		// The sozluk composer reloads the page after a successful add (the
+		// nested-connection membership reload — fate 1.0.3, until live lands). The
+		// optimistic node can satisfy the assertion above *before* that reload
+		// fires, so a `goto` here would race the in-flight reload and abort
+		// (`net::ERR_ABORTED`). Wait for the reload to settle first.
+		await page.waitForLoadState("networkidle");
 
 		// 4) Visit the public profile page.
 		await page.goto(`/u/${handle}`);

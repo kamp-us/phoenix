@@ -10,7 +10,7 @@
 		"not_found_handling": "single-page-application",
 		// Worker handles /api/* and /graphql before the SPA shell intercepts
 		// navigation requests; everything else falls through to assets.
-		"run_worker_first": ["/api/*", "/graphql", "/graphql/*", "/agents/*"]
+		"run_worker_first": ["/api/*", "/graphql", "/graphql/*", "/agents/*", "/fate", "/fate/*"]
 	},
 	"observability": {
 		"enabled": true

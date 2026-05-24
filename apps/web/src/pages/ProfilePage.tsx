@@ -1,6 +1,7 @@
 import {useState} from "react";
 import {Navigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
+import {FateMeCard} from "../fate/FateMeCard";
 import "./ProfilePage.css";
 
 type ThemeChoice = "light" | "dark" | "auto";
@@ -80,6 +81,7 @@ export function ProfilePage() {
 							değiştir
 						</button>
 					</div>
+					<FateMeCard />
 				</section>
 
 				<section className="kp-profile__section">

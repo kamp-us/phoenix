@@ -21,7 +21,7 @@
  * public surface.
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
+import {and, asc, desc, eq, gt, inArray, isNull, lt, or, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
 import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle";
@@ -87,6 +87,14 @@ const TAG_LABELS: Record<string, string> = {
 	rant: "söylenme",
 };
 
+/**
+ * Resolve a tag `kind` to its display `label` via the static label map, falling
+ * back to the raw kind. Used by `parseTags` and the fate `Tag` source `byIds`.
+ */
+export function tagLabel(kind: string): string {
+	return TAG_LABELS[kind] ?? kind;
+}
+
 function parseTags(csv: string): Array<{kind: string; label: string}> {
 	if (!csv) return [];
 	return csv
@@ -135,7 +143,15 @@ export interface PostSummaryRow {
 	score: number;
 	commentCount: number;
 	createdAt: Date;
+	updatedAt?: Date;
 	tags: PostTagRow[];
+	/**
+	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
+	 * (`getPostsByIds`, `listPostsKeyset`-shaped pages) so the fate `Post.myVote`
+	 * is a stamped scalar; `undefined` for non-fate callers (GraphQL resolves
+	 * `Post.myVote` per-row, leaving this unset on `PostSummaryRow`).
+	 */
+	myVote?: number | null;
 }
 
 export interface PostConnectionPage {
@@ -155,6 +171,13 @@ export interface CommentRow {
 	createdAt: Date;
 	updatedAt: Date;
 	deletedAt?: Date | null;
+	/**
+	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
+	 * (`getCommentsByIds`, `listCommentsKeyset`) so fate's `Comment.myVote` is a
+	 * stamped scalar; `undefined` for non-fate callers (GraphQL resolves it
+	 * per-row, leaving this unset).
+	 */
+	myVote?: number | null;
 }
 
 export interface CommentConnectionPage {
@@ -339,6 +362,37 @@ export class Pano extends Context.Service<
 			commentId: string,
 		) => Effect.Effect<typeof schema.commentView.$inferSelect | null, DrizzleError>;
 
+		/**
+		 * DB-keyset page over a post's comments in chronological-asc order
+		 * `(created_at asc, id asc)`, cursor = comment id. The fate-path
+		 * replacement for `listCommentsConnection`'s in-memory id-index slice —
+		 * a bounded `WHERE … LIMIT first+1` with no skips/dupes. `viewerId` stamps
+		 * `myVote` for the whole page in one `user_vote` read.
+		 */
+		readonly listCommentsKeyset: (
+			postId: string,
+			opts?: {
+				first?: number | undefined;
+				after?: string | null | undefined;
+				viewerId?: string | null | undefined;
+			},
+		) => Effect.Effect<CommentConnectionPage, DrizzleError>;
+
+		/** Post source `byIds` — batched read avoiding the relation N+1. */
+		readonly getPostsByIds: (
+			ids: ReadonlyArray<string>,
+			opts?: {viewerId?: string | null | undefined},
+		) => Effect.Effect<ReadonlyArray<PostSummaryRow>, DrizzleError>;
+
+		/** Comment source `byIds` — batched read avoiding the relation N+1. */
+		readonly getCommentsByIds: (
+			ids: ReadonlyArray<string>,
+			opts?: {viewerId?: string | null | undefined},
+		) => Effect.Effect<ReadonlyArray<CommentRow>, DrizzleError>;
+
+		/** Resolve a comment's parent post id (for re-resolving on delete). */
+		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null, DrizzleError>;
+
 		readonly submitPost: (
 			input: SubmitPostInput,
 		) => Effect.Effect<SubmitPostResult, PostValidation | DrizzleError>;
@@ -467,6 +521,34 @@ export const PanoLive = Layer.effect(Pano)(
 				deletedAt: null,
 			};
 		};
+
+		/**
+		 * One `user_vote` read stamping `myVote` for a whole batch of post or
+		 * comment ids. Returns the set of target ids the viewer has upvoted; the
+		 * fate read paths map that to the `1 | null` flag (the GraphQL
+		 * `Post.myVote` / `Comment.myVote` resolvers do this per-row → N+1; the
+		 * fate path batches it). Signed-out viewers short-circuit without a read.
+		 */
+		const readMyVotesBatch = Effect.fn("Pano.readMyVotesBatch")(function* (
+			viewerId: string | null | undefined,
+			targetKind: "post" | "comment",
+			targetIds: ReadonlyArray<string>,
+		) {
+			if (!viewerId || targetIds.length === 0) return new Set<string>();
+			const rows = yield* run((db) =>
+				db
+					.select({targetId: schema.userVote.targetId})
+					.from(schema.userVote)
+					.where(
+						and(
+							eq(schema.userVote.userId, viewerId),
+							eq(schema.userVote.targetKind, targetKind),
+							inArray(schema.userVote.targetId, [...targetIds]),
+						),
+					),
+			);
+			return new Set(rows.map((r) => r.targetId));
+		});
 
 		/**
 		 * Refresh `pano_stats` totals. Three small COUNT queries plus one
@@ -779,6 +861,164 @@ export const PanoLive = Layer.effect(Pano)(
 				endCursor: last ? last.id : null,
 				totalCount: all.length,
 			} satisfies CommentConnectionPage;
+		});
+
+		/**
+		 * DB-keyset page over a post's comments — the fate-path replacement for
+		 * `listCommentsConnection`'s `listComments` + in-memory `slice`. Pages
+		 * forward in chronological-asc order `(created_at asc, id asc)`; cursor is
+		 * the comment id. The reply-aware placeholder pass (`rowToCommentRow`)
+		 * still applies, matching the GraphQL surface.
+		 */
+		const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
+			postId: string,
+			opts: {
+				first?: number | undefined;
+				after?: string | null | undefined;
+				viewerId?: string | null | undefined;
+			} = {},
+		) {
+			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
+			const after = opts.after ?? null;
+			const viewerId = opts.viewerId ?? null;
+
+			// Resolve the cursor row's (created_at, id) tuple so the predicate
+			// selects rows strictly after it in `(created_at asc, id asc)` order.
+			let cursorRow: {createdAt: Date | null} | null = null;
+			if (after) {
+				cursorRow =
+					(yield* run((db) =>
+						db
+							.select({createdAt: schema.commentView.createdAt})
+							.from(schema.commentView)
+							.where(eq(schema.commentView.id, after))
+							.get(),
+					)) ?? null;
+			}
+
+			const baseWhere = eq(schema.commentView.postId, postId);
+
+			// Keyset for (created_at asc, id asc): a row is "after" the cursor if
+			// its createdAt is later, or (same createdAt) its id sorts after.
+			const cursorPredicate = cursorRow?.createdAt
+				? or(
+						gt(schema.commentView.createdAt, cursorRow.createdAt),
+						and(
+							eq(schema.commentView.createdAt, cursorRow.createdAt),
+							gt(schema.commentView.id, after as string),
+						),
+					)
+				: undefined;
+
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.commentView)
+					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
+					.orderBy(asc(schema.commentView.createdAt), asc(schema.commentView.id))
+					.limit(first + 1),
+			);
+
+			const hasNextPage = fetched.length > first;
+			const sliced = hasNextPage ? fetched.slice(0, first) : fetched;
+
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				"comment",
+				sliced.map((c) => c.id),
+			);
+			const rows: CommentRow[] = sliced.map((c) => {
+				const base = rowToCommentRow(c);
+				return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
+			});
+
+			const totalCountRow = yield* run((db) =>
+				db.select({n: sql<number>`count(*)`}).from(schema.commentView).where(baseWhere).get(),
+			);
+			const totalCount = totalCountRow?.n ?? 0;
+
+			const last = rows.at(-1) ?? null;
+			return {
+				rows,
+				hasNextPage,
+				endCursor: last ? last.id : null,
+				totalCount,
+			} satisfies CommentConnectionPage;
+		});
+
+		const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
+			ids: ReadonlyArray<string>,
+			opts: {viewerId?: string | null | undefined} = {},
+		) {
+			if (ids.length === 0) return [];
+			const viewerId = opts.viewerId ?? null;
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.postSummary)
+					.where(
+						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.deletedAt)),
+					),
+			);
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				"post",
+				fetched.map((p) => p.id),
+			);
+			return fetched.map(
+				(row): PostSummaryRow => ({
+					id: row.id,
+					slug: row.slug,
+					title: row.title,
+					url: row.url,
+					host: row.host,
+					body: row.bodyExcerpt && row.bodyExcerpt.length > 0 ? row.bodyExcerpt : null,
+					author: row.authorName,
+					authorId: row.authorId,
+					score: row.score,
+					commentCount: row.commentCount,
+					createdAt: row.createdAt ?? new Date(0),
+					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+					tags: parseTags(row.tags),
+					myVote: viewerId ? (voted.has(row.id) ? 1 : null) : null,
+				}),
+			);
+		});
+
+		const getCommentsByIds = Effect.fn("Pano.getCommentsByIds")(function* (
+			ids: ReadonlyArray<string>,
+			opts: {viewerId?: string | null | undefined} = {},
+		) {
+			if (ids.length === 0) return [];
+			const viewerId = opts.viewerId ?? null;
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.commentView)
+					.where(inArray(schema.commentView.id, [...ids])),
+			);
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				"comment",
+				fetched.map((c) => c.id),
+			);
+			return fetched.map((c): CommentRow => {
+				const base = rowToCommentRow(c);
+				return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
+			});
+		});
+
+		const lookupCommentPostId = Effect.fn("Pano.lookupCommentPostId")(function* (
+			commentId: string,
+		) {
+			const rows = yield* run((db) =>
+				db
+					.select({postId: schema.commentView.postId})
+					.from(schema.commentView)
+					.where(eq(schema.commentView.id, commentId))
+					.limit(1),
+			);
+			return rows[0]?.postId ?? null;
 		});
 
 		/* ------------------------------------------------------------------ */
@@ -1458,6 +1698,10 @@ export const PanoLive = Layer.effect(Pano)(
 			getPost,
 			listPostsConnection,
 			listCommentsConnection,
+			listCommentsKeyset,
+			getPostsByIds,
+			getCommentsByIds,
+			lookupCommentPostId,
 			getCommentRow,
 			submitPost,
 			editPost,

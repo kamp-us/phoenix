@@ -1,32 +1,69 @@
-import {useState} from "react";
-import {GraphQLRequestError, gqlFetch} from "../graphql/client";
-import "./AuthPage.css";
-
 /**
- * Username bootstrap form. Mounted by the layout when the signed-in user has
- * `username === null`. Pre-fills the input with the email's local-part. On
- * submit, calls `setUsername(value)` and invokes the supplied refetch hook so
- * the layout can swap to the topbar profile link state.
+ * Username bootstrap form — now on **fate** (`user.setUsername`; the GraphQL
+ * `setUsername` mutation path is gone).
  *
- * Validation mirrors the worker-side validator (Pasaport.assertUsername):
- * 3-30 chars, lowercase a-z / 0-9 / `-`, no leading/trailing dash.
+ * Mounted by the layout when the signed-in user has `username === null`.
+ * Pre-fills the input with the email's local-part. On submit, calls
+ * `fate.mutations.user.setUsername(value)` and invokes the supplied refetch hook
+ * so the layout can swap to the topbar profile-link state.
+ *
+ * Client-side validation mirrors the worker-side validator
+ * (Pasaport.assertUsername): 3-30 chars, lowercase a-z / 0-9 / `-`, no
+ * leading/trailing dash. Server-side validation errors surface inline keyed on
+ * the wire **code** (`TOO_SHORT`/`TOO_LONG`/`INVALID_FORMAT`/`TAKEN`/
+ * `ALREADY_SET`/…) — not the message string.
+ *
+ * **Error routing (fate 1.0.3 drift, see `progress/task_6.md`/`task_7.md`).** The
+ * client classifies callSite-vs-boundary purely from the wire `code`, and its
+ * `switch` knows only the 6 protocol codes — phoenix codes resolve to
+ * `boundary`, so the mutation **throws** instead of returning `{error}`. We
+ * therefore handle BOTH the `{error}` return AND the thrown error: read `.code`
+ * off either and render the matching message inline.
  */
-const SET_USERNAME_MUTATION = `
-	mutation SetUsername($value: String!) {
-		setUsername(value: $value) {
-			id
-			email
-			name
-			image
-			username
-		}
-	}
-`;
+import {useState} from "react";
+import {useFateClient, view} from "react-fate";
+import type {User} from "../../worker/fate/views";
+import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
+import "./AuthPage.css";
 
 const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
-interface SetUsernameResponse {
-	setUsername: {username: string | null};
+/** The `User` write-back selection for the `setUsername` result. */
+const SetUsernameView = view<User>()({
+	id: true,
+	email: true,
+	name: true,
+	image: true,
+	username: true,
+});
+
+/** Read the `.code` off a thrown / returned fate error. */
+const codeOf = (error: unknown): MutationErrorCode | null => {
+	const code =
+		error && typeof error === "object" && "code" in error ? (error as {code: unknown}).code : null;
+	return decodeMutationErrorCode(code);
+};
+
+/** Map a server wire code to the inline message (parity with the GraphQL UI). */
+function messageForCode(code: MutationErrorCode | null): string {
+	switch (code) {
+		case "TOO_SHORT":
+			return "kullanıcı adı en az 3 karakter olmalı";
+		case "TOO_LONG":
+			return "kullanıcı adı en fazla 30 karakter olabilir";
+		case "INVALID_FORMAT":
+			return "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir";
+		case "TAKEN":
+			return "bu kullanıcı adı alınmış, başka bir tane dene";
+		case "ALREADY_SET":
+			return "kullanıcı adın zaten ayarlanmış";
+		default:
+			return "kullanıcı adı ayarlanamadı";
+	}
+}
+
+interface SetUsernameError {
+	readonly code?: unknown;
 }
 
 export function UsernameBootstrap({
@@ -36,6 +73,7 @@ export function UsernameBootstrap({
 	email: string;
 	onComplete: () => Promise<void> | void;
 }) {
+	const fate = useFateClient();
 	const localPart = (email.split("@")[0] ?? "")
 		.toLowerCase()
 		.replace(/[^a-z0-9-]/g, "-")
@@ -64,16 +102,19 @@ export function UsernameBootstrap({
 		setError(null);
 		setPending(true);
 		try {
-			await gqlFetch<SetUsernameResponse>(SET_USERNAME_MUTATION, {
-				value: value.trim().toLowerCase(),
+			const {error: callError} = await fate.mutations.user.setUsername({
+				input: {value: value.trim().toLowerCase()},
+				view: SetUsernameView,
 			});
-			await onComplete();
-		} catch (err) {
-			if (err instanceof GraphQLRequestError) {
-				setError(err.errors[0]?.message ?? "kullanıcı adı ayarlanamadı");
-			} else {
-				setError("kullanıcı adı ayarlanamadı");
+			if (callError) {
+				setError(messageForCode(codeOf(callError)));
+				return;
 			}
+			await onComplete();
+		} catch (caught) {
+			// phoenix codes classify as boundary → the mutation throws (drift). Read
+			// the code off the thrown error and render inline.
+			setError(messageForCode(codeOf(caught as SetUsernameError)));
 		} finally {
 			setPending(false);
 		}

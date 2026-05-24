@@ -1,34 +1,39 @@
 /**
- * Fragment-shaped term page header.
+ * fate-shaped term page header.
  *
- * Reads its data via `useFragment(SozlukTermHeaderFragment)` instead of
- * taking shaped props. The page (`SozlukTermPage`) spreads this fragment
- * into the top-level `Term` selection — the header declares what it needs.
+ * Reads its data via `useView(TermHeaderView, ref)` — the term page composes
+ * `TermHeaderView` into its `term` request item and hands the `Term` ref down.
+ * The header declares the fields it needs; fate masks the rest.
  */
-import {graphql, useFragment} from "react-relay";
+import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {SozlukTermHeaderFragment$key} from "../../__generated__/SozlukTermHeaderFragment.graphql";
+import type {Term} from "../../../worker/fate/views";
 import {formatAgoTR, formatDateTR} from "../../lib/datetime";
 
-const SozlukTermHeaderFragmentDef = graphql`
-	fragment SozlukTermHeaderFragment on Term {
-		id
-		slug
-		title
-		count
-		totalScore
-		firstAt
-		lastEdit
-	}
-`;
+/** The fields the term header reads. Co-located with the component. */
+export const TermHeaderView = view<Term>()({
+	id: true,
+	slug: true,
+	title: true,
+	count: true,
+	totalScore: true,
+	firstAt: true,
+	lastEdit: true,
+});
+
+/** Wire dates arrive as strings though the entity type says `Date`. */
+const toIso = (value: Date | string | null | undefined): string | null =>
+	value == null ? null : value instanceof Date ? value.toISOString() : String(value);
 
 export interface SozlukTermHeaderProps {
-	term: SozlukTermHeaderFragment$key;
+	term: ViewRef<"Term">;
 }
 
 export function SozlukTermHeader(props: SozlukTermHeaderProps) {
-	const term = useFragment(SozlukTermHeaderFragmentDef, props.term);
+	const term = useView(TermHeaderView, props.term);
 	const firstLetter = term.title.charAt(0).toLowerCase();
+	const firstAt = toIso(term.firstAt);
+	const lastEdit = toIso(term.lastEdit);
 	return (
 		<header className="kp-sozluk-term__head">
 			<p className="kp-sozluk-term__crumbs">
@@ -38,8 +43,8 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 			<div className="kp-sozluk-term__meta">
 				<span>{term.count} tanım</span>
 				<span>{term.totalScore} oy</span>
-				{term.firstAt ? <span>ilk: {formatDateTR(term.firstAt)}</span> : null}
-				{term.lastEdit ? <span>son düzenleme: {formatAgoTR(term.lastEdit)}</span> : null}
+				{firstAt ? <span>ilk: {formatDateTR(firstAt)}</span> : null}
+				{lastEdit ? <span>son düzenleme: {formatAgoTR(lastEdit)}</span> : null}
 			</div>
 		</header>
 	);

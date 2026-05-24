@@ -1,13 +1,11 @@
 import * as React from "react";
-import {graphql, useMutation} from "react-relay";
+import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
-import type {PanoSubmitPageMutation} from "../__generated__/PanoSubmitPageMutation.graphql";
 import {useSession} from "../auth/client";
+import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Button} from "../components/ui/Button";
+import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
-import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
-import {extractLocalId} from "../relay/encodeNodeId";
-import {prependPostToFeedConnections} from "../relay/panoFeedUpdater";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
@@ -34,44 +32,37 @@ function hostOf(url: string) {
 	return m ? m[0].replace(/^https?:\/\//, "") : "";
 }
 
-/**
- * `submitPost` mutation. The payload spreads
- * `PanoPostCardFragment` so the post lands in the Relay store with every
- * field a feed card needs — the manual `updater` (see `panoFeedUpdater.ts`)
- * then prepends a `PostEdge` referencing it into every active
- * `PanoFeed_posts` connection.
- */
-const SubmitPostMutation = graphql`
-  mutation PanoSubmitPageMutation(
-    $title: String!
-    $url: String
-    $body: String
-    $tags: [TagInput!]!
-  ) {
-    submitPost(title: $title, url: $url, body: $body, tags: $tags) {
-      id
-      slug
-      title
-      url
-      host
-      author
-      authorId
-      score
-      myVote
-      commentCount
-      createdAt
-      tags {
-        kind
-        label
-      }
-      ...PanoPostCardFragment
-    }
-  }
-`;
+/** Read the `.code` off a thrown / returned fate error. */
+const codeOf = (error: unknown): MutationErrorCode =>
+	error && typeof error === "object" && "code" in error
+		? (decodeMutationErrorCode((error as {code: unknown}).code) ?? "INTERNAL_SERVER_ERROR")
+		: "INTERNAL_SERVER_ERROR";
 
 const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const TITLE_MIN = 5;
+
+/** Turkish copy for the validation codes the submit form surfaces inline. */
+const messageForCode = (code: MutationErrorCode, fallback: string): string => {
+	switch (code) {
+		case "TITLE_REQUIRED":
+			return "başlık boş olamaz";
+		case "TITLE_TOO_LONG":
+			return `başlık en fazla ${TITLE_MAX} karakter olabilir`;
+		case "BODY_TOO_LONG":
+			return `metin en fazla ${BODY_MAX} karakter olabilir`;
+		case "TAGS_REQUIRED":
+			return "en az bir etiket seç";
+		case "TAG_INVALID":
+			return "geçersiz etiket";
+		case "URL_INVALID":
+			return "geçersiz bağlantı";
+		case "TOO_SHORT":
+			return `başlık en az ${TITLE_MIN} karakter olmalı`;
+		default:
+			return fallback;
+	}
+};
 
 export function PanoSubmitPage() {
 	const session = useSession();
@@ -83,8 +74,8 @@ export function PanoSubmitPage() {
 	const [selectedTags, setSelectedTags] = React.useState<Set<string>>(new Set());
 	const [error, setError] = React.useState<string | null>(null);
 
-	const [commit, isInFlight] = useMutation<PanoSubmitPageMutation>(SubmitPostMutation);
-	const {handleError: handleAuthError} = useSessionExpiredToast();
+	const fate = useFateClient();
+	const [isInFlight, setInFlight] = React.useState(false);
 
 	const host = hostOf(url);
 	const showPreview = mode === "link" && host.length > 0;
@@ -113,7 +104,7 @@ export function PanoSubmitPage() {
 		noTags ||
 		linkModeUrlEmpty;
 
-	function onSubmit(e: React.FormEvent) {
+	async function onSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		setError(null);
 
@@ -123,74 +114,61 @@ export function PanoSubmitPage() {
 		}
 		if (submitDisabled) return;
 
-		// Resolver-side validation surfaces typed errors back via `onError`/
-		// `onCompleted(errors)` (see below); we still pre-trim/normalize here so
-		// the server never sees unintended whitespace on the title.
-		const variables: PanoSubmitPageMutation["variables"] = {
-			title: trimmedTitle,
-			tags: Array.from(selectedTags).map((kind) => ({kind})),
-			...(mode === "link" && url.trim() ? {url: url.trim()} : {}),
-			...(body.trim() ? {body} : {}),
-		};
-
-		// Optimistic temp record: prepended into every active `PanoFeed_posts`
-		// connection during the in-flight window so a back-nav (or any other
-		// surface still rendering the feed) sees the new post immediately.
-		// The updater at `panoFeedUpdater.ts:68-69` short-circuits on a
-		// head-node-id match, so when the server response lands with the
-		// real Post.id, the temp edge is replaced cleanly (Relay rolls back
-		// the optimistic update first, then re-applies the server updater).
-		// Temp id uses a `temp-` prefix to be visually distinguishable in
-		// devtools; it never escapes the store.
-		const tempId = `temp-${Date.now()}`;
+		// Pre-trim/normalize so the server never sees unintended whitespace on the
+		// title; resolver-side validation surfaces typed `code`s back.
 		const trimmedUrl = url.trim();
-		commit({
-			variables,
-			optimisticResponse: {
-				submitPost: {
-					id: tempId,
+		const user = session.data.user;
+		const now = new Date();
+		setInFlight(true);
+		try {
+			// Declarative connection membership: `insert: "before"` prepends the new
+			// post into the registered no-filter feed root list — fate writes the
+			// returned `Post` (shaped by `PanoPostCardView`) into the normalized cache
+			// and joins it to the front of the `posts` connection. NO imperative
+			// connection-key updater (the old `panoFeedUpdater` enumeration is gone).
+			// The optimistic temp record (with a temp id fate reconciles to the server
+			// id) makes the prepend show instantly during the in-flight window.
+			const {result, error: callError} = await fate.mutations.post.submit({
+				input: {
+					title: trimmedTitle,
+					tags: Array.from(selectedTags).map((kind) => ({kind})),
+					...(mode === "link" && trimmedUrl ? {url: trimmedUrl} : {}),
+					...(body.trim() ? {body} : {}),
+				},
+				view: PanoPostCardView,
+				insert: "before",
+				optimistic: {
+					id: `optimistic:${Date.now()}`,
 					slug: null,
 					title: trimmedTitle,
 					url: mode === "link" && trimmedUrl ? trimmedUrl : null,
 					host: mode === "link" && trimmedUrl ? hostOf(trimmedUrl) : null,
-					author: session.data?.user?.name ?? "",
-					authorId: session.data?.user?.id ?? "",
+					author: user.name ?? user.email,
+					authorId: user.id,
 					score: 1,
 					myVote: 1,
 					commentCount: 0,
-					createdAt: new Date().toISOString(),
+					createdAt: now,
 					tags: Array.from(selectedTags).map((kind) => ({kind, label: kind})),
 				},
-			},
-			// Hand-written updater: prepends a PostEdge into every active
-			// `PanoFeed_posts` connection in the store, so the new post appears
-			// at the top of the user's last-visited feed without a refetch
-			// when they navigate back. Mirrors kampus's createStory updater.
-			// Runs for both the optimistic pass (with `tempId`) and the real
-			// server response (which replaces the temp edge in-place).
-			updater: (store) => {
-				prependPostToFeedConnections(store);
-			},
-			onCompleted: (data, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setError(errors[0]?.message ?? "gönderi paylaşılamadı");
-					return;
-				}
-				// `data.submitPost.id` is the Relay global id (`Post:<localId>`
-				// base64). The /pano/:id route key is the local post id (or a
-				// slug); extract before navigating so URLs stay clean and the
-				// post-detail resolver hits the right per-post DO.
-				const newId = data.submitPost.slug ?? extractLocalId(data.submitPost.id, "Post");
-				if (newId) {
-					navigate(`/pano/${newId}`);
-				}
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setError(err.message);
-			},
-		});
+			});
+			if (callError) {
+				setError(messageForCode(codeOf(callError), callError.message));
+				return;
+			}
+			// The /pano/:id route key is the raw post id (or slug). fate ids are raw.
+			const newId = result?.slug ?? result?.id;
+			if (newId) navigate(`/pano/${newId}`);
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath("/pano/yeni"));
+				return;
+			}
+			setError(messageForCode(code, "gönderi paylaşılamadı"));
+		} finally {
+			setInFlight(false);
+		}
 	}
 
 	return (

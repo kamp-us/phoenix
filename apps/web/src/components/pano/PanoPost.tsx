@@ -1,12 +1,22 @@
-import {graphql, useMutation} from "react-relay";
+import {useState} from "react";
+import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
-import type {PanoPostRetractVoteMutation} from "../../__generated__/PanoPostRetractVoteMutation.graphql";
-import type {PanoPostVoteMutation} from "../../__generated__/PanoPostVoteMutation.graphql";
 import {useSession} from "../../auth/client";
+import {decodeMutationErrorCode} from "../../lib/mutationErrorCodes";
 import {authRedirectPath} from "../../lib/returnTo";
-import {useSessionExpiredToast} from "../../lib/useSessionExpiredToast";
 import {Tag, type TagKind} from "../ui/atoms";
+import {PostVoteView} from "./PanoPostHeader";
 import "./PanoPost.css";
+
+/** Read the `.code` off a thrown / returned fate error (the boundary-class */
+/** throw already rolled back optimism — see `.patterns/fate-mutations-client.md`). */
+const codeOf = (error: unknown): string =>
+	error &&
+	typeof error === "object" &&
+	"code" in error &&
+	typeof (error as {code: unknown}).code === "string"
+		? (decodeMutationErrorCode((error as {code: string}).code) ?? "INTERNAL_SERVER_ERROR")
+		: "INTERNAL_SERVER_ERROR";
 
 /* Vote control — single triangle upvote with count below (lobsters-shape).
    Stays presentational; the parent owns the mutation + auth gate. */
@@ -43,36 +53,19 @@ export function VoteControl({
 	);
 }
 
-const PostVoteMutation = graphql`
-  mutation PanoPostVoteMutation($postId: ID!) {
-    voteOnPost(postId: $postId) {
-      id
-      score
-      myVote
-    }
-  }
-`;
-
-const RetractPostVoteMutation = graphql`
-  mutation PanoPostRetractVoteMutation($postId: ID!) {
-    retractPostVote(postId: $postId) {
-      id
-      score
-      myVote
-    }
-  }
-`;
-
 /**
- * Triangle vote button for a single post. Uses Relay's `optimisticResponse`
- * to flip both `myVote` and `score` synchronously on click — Relay merges the
- * response into the store keyed by `id`, so every card referencing this post
- * (feed list + detail page) re-renders instantly. On server error Relay rolls
- * back automatically. Mirrors `DefinitionCard.onVoteClick` (T5).
+ * Triangle vote button for a single post — fate.
+ *
+ * Dispatches `fate.mutations.post.{vote,retractVote}` with a declarative
+ * `optimistic` flip of `score` + `myVote`. The result is written back through
+ * `PostVoteView` keyed by `id`, so every card referencing this post (feed list +
+ * detail page) re-renders instantly; the optimistic write rolls back on error.
  *
  * Signed-out clicks navigate to `/auth?returnTo=<current>` rather than firing
- * the mutation — matches the pattern used across sözlük and the post submit
- * form (T4 / T5 / T7).
+ * the mutation. Error routing follows the 1.0.3 call-site-catch pattern (phoenix
+ * codes classify as boundary, so the mutation throws; the optimistic flip already
+ * rolled back). The vote button has no inline error slot, so we surface only
+ * `UNAUTHORIZED` (→ auth redirect) and stay silent otherwise.
  */
 export function PostVoteWidget({
 	postId,
@@ -83,57 +76,41 @@ export function PostVoteWidget({
 	score: number;
 	myVote: number | null;
 }) {
+	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
-	const {handleError: handleAuthError} = useSessionExpiredToast();
-	const [voteCommit, voteInFlight] = useMutation<PanoPostVoteMutation>(PostVoteMutation);
-	const [retractCommit, retractInFlight] =
-		useMutation<PanoPostRetractVoteMutation>(RetractPostVoteMutation);
+	const [inFlight, setInFlight] = useState(false);
 
-	const inFlight = voteInFlight || retractInFlight;
 	const voted = myVote === 1;
 
-	const onToggle = () => {
+	const redirectToAuth = () =>
+		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
+
+	const onToggle = async () => {
 		if (!session.data?.user) {
-			navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
+			redirectToAuth();
 			return;
 		}
 		if (inFlight) return;
-
-		if (voted) {
-			retractCommit({
-				variables: {postId},
-				optimisticResponse: {
-					retractPostVote: {
-						id: postId,
-						score: Math.max(0, score - 1),
-						myVote: null,
-					},
-				},
-				onCompleted: (_data, errors) => {
-					handleAuthError(errors);
-				},
-				onError: (err) => {
-					handleAuthError(null, err);
-				},
-			});
-		} else {
-			voteCommit({
-				variables: {postId},
-				optimisticResponse: {
-					voteOnPost: {
-						id: postId,
-						score: score + 1,
-						myVote: 1,
-					},
-				},
-				onCompleted: (_data, errors) => {
-					handleAuthError(errors);
-				},
-				onError: (err) => {
-					handleAuthError(null, err);
-				},
-			});
+		setInFlight(true);
+		try {
+			if (voted) {
+				await fate.mutations.post.retractVote({
+					input: {id: postId},
+					optimistic: {score: Math.max(0, score - 1), myVote: null},
+					view: PostVoteView,
+				});
+			} else {
+				await fate.mutations.post.vote({
+					input: {id: postId},
+					optimistic: {score: score + 1, myVote: 1},
+					view: PostVoteView,
+				});
+			}
+		} catch (error) {
+			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+		} finally {
+			setInFlight(false);
 		}
 	};
 

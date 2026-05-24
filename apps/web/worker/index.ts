@@ -4,6 +4,8 @@ import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
 import {AdminRuntime} from "./admin/runtime";
+import {FateRuntime, type SessionData as FateSessionData} from "./fate/runtime";
+import {fateServer} from "./fate/server";
 import {PanoAdmin} from "./features/pano/PanoAdmin";
 import type {Session} from "./features/pasaport/auth";
 import {Pasaport} from "./features/pasaport/Pasaport";
@@ -176,6 +178,38 @@ app.on(["GET", "POST"], "/api/auth/*", async (c) => {
 app.all("/agents/*", async (c) => {
 	const res = await routeAgentRequest(c.req.raw, c.env);
 	return res ?? c.text("Not Found", 404);
+});
+
+// fate native protocol (ADR 0015–0017). Mounted alongside the still-running
+// `/graphql` during the migration. The route owns the per-request runtime: it
+// validates the session, builds a `ManagedRuntime` with that session baked into
+// the `Auth` layer, hands it to fate via `adapterContext`, and disposes it in
+// `finally` via `executionCtx.waitUntil` so disposal doesn't block the response.
+app.post("/fate", async (c) => {
+	// Validate the session through a short-lived runtime; the request runtime is
+	// then built with the resolved session attached to the `Auth` layer.
+	const sessionRuntime = FateRuntime.make(c.env, c.req.raw, null);
+	let session: Session | null = null;
+	try {
+		session = await sessionRuntime.runPromise(
+			Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				return yield* pasaport.validateSession(c.req.raw.headers);
+			}),
+		);
+	} finally {
+		await sessionRuntime.dispose();
+	}
+	const sessionData: FateSessionData = session
+		? {user: session.user, session: session.session}
+		: null;
+
+	const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
+	try {
+		return await fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime});
+	} finally {
+		c.executionCtx.waitUntil(runtime.dispose());
+	}
 });
 
 // SDL for relay-compiler (`pnpm schema:fetch`).

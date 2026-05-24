@@ -1,223 +1,110 @@
 /**
- * Post-detail page.
+ * Post-detail page — fate.
  *
- * Fully idiomatic Relay shape — `useLazyLoadQuery` at the top spreads
- * `PanoPostHeaderFragment` + `PanoPostDetailCommentsFragment` into the
- * `Post` selection; `usePaginationFragment` reads the comment connection;
- * each row is a fragment ref handed to `CommentTreeNode` (which declares
- * its own `CommentTreeNodeFragment on Comment`).
+ * One batched `useRequest({post: {view: PostDetailView, args:{idOrSlug,
+ * comments:{first}}}})` resolves the header + first page of comments with no
+ * waterfall. `post` is the `queries.post` client root; the nested `comments`
+ * connection rides on the `Post` view, delivered inline by the resolver (see
+ * `.patterns/fate-connections.md`). `PostDetailView` spreads `PanoPostHeaderView`
+ * (the header's view) and adds the `comments` connection whose node is
+ * `CommentTreeNodeView`. Children mask their slice off the same refs.
  *
- * Mutations:
- *  - `addComment` — manual `updater` appends a `CommentEdge` into the
- *    `PanoPostDetail_comments` connection (chronological-asc), plus
- *    `optimisticResponse` for the immediate flip.
- *  - `deleteComment` — server returns a `DeleteCommentPayload`. Leaf path
- *    surfaces `deletedCommentId @deleteRecord`; parent-with-replies path
- *    surfaces the same `Comment` with `body = '[silindi]'` + `deletedAt`
- *    set, which Relay merges back via the normal store update.
- *  - `editComment`, `editPost`, `voteOnComment` — auto store update on the
- *    returned scalars (no updater).
- *  - `deletePost` — `deletedPostId @deleteRecord` (matches the submitPost
- *    pattern; navigates back to /pano on success).
+ * Mutations (`fate.mutations.{post,comment}.*`):
+ *  - post vote — on `PostVoteWidget` (optimistic, in `PanoPost.tsx`).
+ *  - post edit — `post.edit` writes the new title/body back through
+ *    `PanoPostHeaderView` (optimistic, re-renders in place).
+ *  - post delete — `post.delete` returns the deleted id; we navigate back to /pano.
+ *  - comment add — `comment.add`; the new node is normalized into the cache but
+ *    joins the *nested* `Post.comments` connection only on a re-read (declarative
+ *    `insert` reaches root lists only; nested membership needs live events, tasks
+ *    11/12). So we **reload after a successful add**. Same for replies.
+ *  - comment vote — on `CommentTreeNode` (optimistic).
+ *  - comment edit — `comment.edit` writes the body back through `CommentTreeNodeView`.
+ *  - comment delete — `comment.delete` is a **`Post`**-returning mutation (it
+ *    re-resolves the parent for fresh counts + the reply-aware soft-delete
+ *    placeholder), so fate's `delete: true` can't be used (it would
+ *    `deleteRecord("Comment", id)` — wrong, the leaf-vs-soft-delete decision is
+ *    the server's), and the comment lives in a nested connection. So we delete on
+ *    the server, then **reload** so the page re-reads the thread.
+ *
+ * Error routing is the 1.0.3 call-site catch (phoenix codes classify as boundary,
+ * so the mutation throws; the optimistic change rolls back; we read `.code` and
+ * surface it inline). See `.patterns/fate-mutations-client.md`.
  */
 import * as React from "react";
-import {
-	graphql,
-	useFragment,
-	useLazyLoadQuery,
-	useMutation,
-	usePaginationFragment,
-} from "react-relay";
+import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
-import type {CommentTreeNodeFragment$key} from "../__generated__/CommentTreeNodeFragment.graphql";
-import type {PanoPostDetailAddCommentMutation} from "../__generated__/PanoPostDetailAddCommentMutation.graphql";
-import type {PanoPostDetailCommentsFragment$key} from "../__generated__/PanoPostDetailCommentsFragment.graphql";
-import type {PanoPostDetailDeleteCommentMutation} from "../__generated__/PanoPostDetailDeleteCommentMutation.graphql";
-import type {PanoPostDetailDeletePostMutation} from "../__generated__/PanoPostDetailDeletePostMutation.graphql";
-import type {PanoPostDetailEditCommentMutation} from "../__generated__/PanoPostDetailEditCommentMutation.graphql";
-import type {PanoPostDetailEditFragment$key} from "../__generated__/PanoPostDetailEditFragment.graphql";
-import type {PanoPostDetailEditPostMutation} from "../__generated__/PanoPostDetailEditPostMutation.graphql";
-import type {PanoPostDetailQuery} from "../__generated__/PanoPostDetailQuery.graphql";
+import type {Post} from "../../worker/fate/views";
 import {useSession} from "../auth/client";
-import {CommentTreeNode} from "../components/pano/CommentTreeNode";
-import {PanoPostHeader, PanoPostHeaderVote} from "../components/pano/PanoPostHeader";
+import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
+import {
+	PanoPostHeader,
+	PanoPostHeaderView,
+	PanoPostHeaderVote,
+} from "../components/pano/PanoPostHeader";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
+import {Screen} from "../fate/Screen";
+import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
-import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
-import {extractLocalId} from "../relay/encodeNodeId";
-import {appendCommentToPostConnection} from "../relay/panoPostDetailUpdater";
-import {QueryBoundary} from "../relay/QueryBoundary";
 import {NotFoundPage} from "./NotFoundPage";
 import "./PanoPostDetail.css";
-
-/**
- * Count comments that survived the visibility pass (live + soft-deleted-with-
- * live-children). Drives the "N yorum" thread heading. We compute this from
- * the rendered tree rather than `connection.totalCount` because @deleteRecord
- * removes the leaf locally without re-evaluating its parent's visibility, and
- * the connection's totalCount drifts after every add/delete (PRD-accepted).
- */
-function visibleCommentCount<T>(
-	roots: ReadonlyArray<{id: string}>,
-	childrenByParent: ReadonlyMap<string, ReadonlyArray<T>>,
-): number {
-	let n = roots.length;
-	for (const list of childrenByParent.values()) n += list.length;
-	return n;
-}
-
-const PostDetailQuery = graphql`
-	query PanoPostDetailQuery($idOrSlug: String!, $first: Int) {
-		post(idOrSlug: $idOrSlug) {
-			id
-			authorId
-			...PanoPostHeaderFragment
-			...PanoPostDetailEditFragment
-			...PanoPostDetailCommentsFragment @arguments(first: $first)
-		}
-	}
-`;
-
-/**
- * Tiny page-local fragment that supplies the inline edit form's pre-fill
- * inputs (`title`, `body`). Kept separate from `PanoPostHeaderFragment` so
- * the header doesn't have to know about the edit affordance.
- */
-const PanoPostDetailEditFragmentDef = graphql`
-	fragment PanoPostDetailEditFragment on Post {
-		id
-		title
-		body
-	}
-`;
-
-/**
- * Comments connection on `Post`. `@refetchable` lets `usePaginationFragment`
- * load subsequent pages; `@connection` lets mutation updaters address the
- * connection by stable key + the parent's DataID.
- *
- * `first: Int` (nullable) per the relay-compiler rule that variables with
- * default values cannot be non-null. Page passes `PAGE_SIZE` as the
- * initial value.
- */
-const PanoPostDetailCommentsFragmentDef = graphql`
-	fragment PanoPostDetailCommentsFragment on Post
-	@argumentDefinitions(
-		first: {type: "Int", defaultValue: 50}
-		after: {type: "String"}
-	)
-	@refetchable(queryName: "PanoPostDetailCommentsPaginationQuery") {
-		comments(first: $first, after: $after)
-			@connection(key: "PanoPostDetail_comments") {
-			edges {
-				node {
-					id
-					parentId
-					body
-					deletedAt
-					...CommentTreeNodeFragment
-				}
-			}
-			pageInfo {
-				hasNextPage
-				endCursor
-			}
-			totalCount
-		}
-	}
-`;
-
-const EditCommentMutation = graphql`
-	mutation PanoPostDetailEditCommentMutation($id: ID!, $body: String!) {
-		editComment(id: $id, body: $body) {
-			id
-			body
-			updatedAt
-		}
-	}
-`;
-
-/**
- * Delete a comment.
- *
- * The mutation returns a two-shape payload:
- *  - `deletedCommentId @deleteRecord` — leaf path; Relay removes the
- *    record and connection edges referencing it auto-clear.
- *  - `comment` — parent-with-replies path; the same Comment row arrives
- *    with `body = '[silindi]'` and `deletedAt` set. Relay's automatic
- *    store update merges the new scalars into the existing
- *    `Comment:<global-id>` record so the placeholder rerenders in place.
- *
- * Exactly one of the two fields is non-null per call.
- */
-const DeleteCommentMutation = graphql`
-	mutation PanoPostDetailDeleteCommentMutation($id: ID!) {
-		deleteComment(id: $id) {
-			deletedCommentId @deleteRecord
-			comment {
-				id
-				body
-				deletedAt
-				updatedAt
-			}
-		}
-	}
-`;
-
-const EditPostMutation = graphql`
-	mutation PanoPostDetailEditPostMutation(
-		$id: ID!
-		$title: String
-		$body: String
-	) {
-		editPost(id: $id, title: $title, body: $body) {
-			id
-			title
-			body
-			updatedAt
-		}
-	}
-`;
-
-const DeletePostMutation = graphql`
-	mutation PanoPostDetailDeletePostMutation($id: ID!) {
-		deletedPostId: deletePost(id: $id) @deleteRecord
-	}
-`;
-
-/**
- * Add comment mutation — switched from refetch-on-mutate to
- * connection updater + optimisticResponse. The selection set spreads
- * `CommentTreeNodeFragment` so the new row arrives in the store with
- * every field the tree node needs to render without a follow-up read.
- */
-const AddCommentMutation = graphql`
-	mutation PanoPostDetailAddCommentMutation(
-		$postId: ID!
-		$parentId: ID
-		$body: String!
-	) {
-		addComment(postId: $postId, parentId: $parentId, body: $body) {
-			id
-			parentId
-			body
-			score
-			myVote
-			createdAt
-			updatedAt
-			deletedAt
-			author
-			authorId
-			...CommentTreeNodeFragment
-		}
-	}
-`;
 
 const COMMENT_BODY_MAX = 5_000;
 const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const PAGE_SIZE = 50;
+
+/** The connection selection for a post's comments — what `useListView` reads. */
+const CommentConnectionView = {items: {node: CommentTreeNodeView}} as const;
+
+/**
+ * The detail-page view. fate masks by view identity: the page spreads
+ * `PanoPostHeaderView` (so `PanoPostHeader`/`PanoPostHeaderVote` can mask their
+ * slice) and adds the nested `comments` connection whose node is
+ * `CommentTreeNodeView` (so the tree nodes mask theirs). `title`/`body` ride on
+ * `PanoPostHeaderView` already, which the edit form reads.
+ */
+const PostDetailView = view<Post>()({
+	...PanoPostHeaderView,
+	comments: CommentConnectionView,
+});
+
+/** Read the `.code` off a thrown / returned fate error. */
+const codeOf = (error: unknown): MutationErrorCode =>
+	error && typeof error === "object" && "code" in error
+		? (decodeMutationErrorCode((error as {code: unknown}).code) ?? "INTERNAL_SERVER_ERROR")
+		: "INTERNAL_SERVER_ERROR";
+
+const postErrorMessage = (code: MutationErrorCode, fallback: string): string => {
+	switch (code) {
+		case "TITLE_REQUIRED":
+			return "başlık boş olamaz";
+		case "TITLE_TOO_LONG":
+			return `başlık en fazla ${TITLE_MAX} karakter olabilir`;
+		case "BODY_TOO_LONG":
+			return `metin en fazla ${BODY_MAX} karakter olabilir`;
+		case "POST_NOT_FOUND":
+			return "başlık bulunamadı";
+		default:
+			return fallback;
+	}
+};
+
+const commentErrorMessage = (code: MutationErrorCode, fallback: string): string => {
+	switch (code) {
+		case "BODY_REQUIRED":
+			return "yorum boş olamaz";
+		case "BODY_TOO_LONG":
+			return `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`;
+		case "COMMENT_NOT_FOUND":
+			return "yorum bulunamadı";
+		case "PARENT_NOT_FOUND":
+			return "yanıtlanan yorum bulunamadı";
+		default:
+			return fallback;
+	}
+};
 
 export function PanoPostDetail() {
 	const {id} = useParams<{id: string}>();
@@ -228,42 +115,25 @@ export function PanoPostDetail() {
 				<Link to="/pano" className="kp-pano-postpage__back">
 					← akışa dön
 				</Link>
-				<QueryBoundary
-					loading={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
-					error={(err) => (
+				<Screen
+					fallback={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
+					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
-							başlık yüklenemedi: {err.message}
+							başlık yüklenemedi: {code.toLowerCase()}
 						</p>
 					)}
 				>
 					<PostContent idOrSlug={safeId} />
-				</QueryBoundary>
+				</Screen>
 			</div>
 		</div>
 	);
 }
 
 function PostContent({idOrSlug}: {idOrSlug: string}) {
-	const data = useLazyLoadQuery<PanoPostDetailQuery>(
-		PostDetailQuery,
-		{idOrSlug, first: PAGE_SIZE},
-		{fetchPolicy: "store-or-network"},
-	);
-	const post = data.post;
-	const session = useSession();
-	const navigate = useNavigate();
-	const {handleError: handleAuthError} = useSessionExpiredToast();
-
-	const [editing, setEditing] = React.useState(false);
-	const [editTitle, setEditTitle] = React.useState("");
-	const [editBody, setEditBody] = React.useState("");
-	const [editError, setEditError] = React.useState<string | null>(null);
-	const [confirmDelete, setConfirmDelete] = React.useState(false);
-	const [deleteError, setDeleteError] = React.useState<string | null>(null);
-
-	const [editCommit, editInFlight] = useMutation<PanoPostDetailEditPostMutation>(EditPostMutation);
-	const [deleteCommit, deleteInFlight] =
-		useMutation<PanoPostDetailDeletePostMutation>(DeletePostMutation);
+	const {post} = useRequest({
+		post: {view: PostDetailView, args: {idOrSlug, comments: {first: PAGE_SIZE}}},
+	});
 
 	if (!post) {
 		return (
@@ -274,17 +144,34 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 		);
 	}
 
-	const isAuthor = !!session.data?.user && session.data.user.id === post.authorId;
-	const postRecordId = post.id;
+	return <PostContentInner post={post} />;
+}
 
-	function onEditClick(seed: {title: string; body: string | null}) {
-		setEditTitle(seed.title);
-		setEditBody(seed.body ?? "");
+function PostContentInner({post}: {post: ViewRef<"Post">}) {
+	const data = useView(PanoPostHeaderView, post);
+	const fate = useFateClient();
+	const session = useSession();
+	const navigate = useNavigate();
+
+	const [editing, setEditing] = React.useState(false);
+	const [editTitle, setEditTitle] = React.useState("");
+	const [editBody, setEditBody] = React.useState("");
+	const [editError, setEditError] = React.useState<string | null>(null);
+	const [editInFlight, setEditInFlight] = React.useState(false);
+	const [confirmDelete, setConfirmDelete] = React.useState(false);
+	const [deleteError, setDeleteError] = React.useState<string | null>(null);
+	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
+
+	const isAuthor = !!session.data?.user && session.data.user.id === data.authorId;
+
+	function onEditClick() {
+		setEditTitle(data.title);
+		setEditBody(data.body ?? "");
 		setEditError(null);
 		setEditing(true);
 	}
 
-	function onEditSubmit(e: React.FormEvent, postGlobalId: string) {
+	async function onEditSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		const trimmedTitle = editTitle.trim();
 		if (trimmedTitle.length === 0) {
@@ -300,42 +187,55 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 			return;
 		}
 		setEditError(null);
-		editCommit({
-			variables: {id: postGlobalId, title: trimmedTitle, body: editBody},
-			onCompleted: (_data, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setEditError(errors[0]?.message ?? "başlık güncellenemedi");
-					return;
-				}
-				setEditing(false);
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setEditError(err.message);
-			},
-		});
+		setEditInFlight(true);
+		try {
+			// `post.edit` returns the updated `Post`; writing it back through
+			// `PanoPostHeaderView` re-renders the header in place (no reload).
+			const {error} = await fate.mutations.post.edit({
+				input: {id: data.id, title: trimmedTitle, body: editBody},
+				view: PanoPostHeaderView,
+			});
+			if (error) {
+				setEditError(postErrorMessage(codeOf(error), error.message));
+				return;
+			}
+			setEditing(false);
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath(`/pano/${data.slug ?? data.id}`));
+				return;
+			}
+			setEditError(postErrorMessage(code, "başlık güncellenemedi"));
+		} finally {
+			setEditInFlight(false);
+		}
 	}
 
-	const postGlobalId = post.id;
-	function onDeleteConfirm() {
+	async function onDeleteConfirm() {
 		setDeleteError(null);
-		deleteCommit({
-			variables: {id: postGlobalId},
-			onCompleted: (_data, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setDeleteError(errors[0]?.message ?? "başlık silinemedi");
-					return;
-				}
-				setConfirmDelete(false);
-				navigate("/pano");
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setDeleteError(err.message);
-			},
-		});
+		setDeleteInFlight(true);
+		try {
+			// A post has no parent; `delete: true` evicts it by id across all
+			// connections (incl. the feed root list) — declarative, no imperative
+			// updater. We navigate back to /pano on success.
+			const {error} = await fate.mutations.post.delete({input: {id: data.id}, delete: true});
+			if (error) {
+				setDeleteError(postErrorMessage(codeOf(error), error.message));
+				return;
+			}
+			setConfirmDelete(false);
+			navigate("/pano");
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath(`/pano/${data.slug ?? data.id}`));
+				return;
+			}
+			setDeleteError(postErrorMessage(code, "başlık silinemedi"));
+		} finally {
+			setDeleteInFlight(false);
+		}
 	}
 
 	return (
@@ -343,7 +243,7 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 			<header className="kp-pano-postpage__head">
 				<PanoPostHeaderVote post={post} />
 				{editing ? (
-					<form className="kp-pano-edit-post" onSubmit={(e) => onEditSubmit(e, post.id)}>
+					<form className="kp-pano-edit-post" onSubmit={onEditSubmit}>
 						<input
 							className="kp-pano-edit-post__title"
 							value={editTitle}
@@ -395,9 +295,8 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 						</div>
 					</form>
 				) : (
-					<PostHeaderWithEditWiring
-						headerRef={post}
-						editRef={post}
+					<PanoPostHeader
+						post={post}
 						isAuthor={isAuthor}
 						onEdit={onEditClick}
 						onDelete={() => setConfirmDelete(true)}
@@ -437,7 +336,7 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 
 			<Comments
 				post={post}
-				postRecordId={postRecordId}
+				postId={data.id}
 				signedIn={!!session.data?.user}
 				currentUserId={session.data?.user?.id ?? null}
 			/>
@@ -445,85 +344,80 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 	);
 }
 
-/**
- * Wraps `PanoPostHeader` so the edit click can hand back the current title
- * + body (read off the page-local edit fragment) without making the header
- * own the edit form. The header is purely presentational; the page owns
- * the edit machinery.
- */
-function PostHeaderWithEditWiring({
-	headerRef,
-	editRef,
-	isAuthor,
-	onEdit,
-	onDelete,
-}: {
-	headerRef: React.ComponentProps<typeof PanoPostHeader>["post"];
-	editRef: PanoPostDetailEditFragment$key;
-	isAuthor: boolean;
-	onEdit: (seed: {title: string; body: string | null}) => void;
-	onDelete: () => void;
-}) {
-	const editData = useFragment(PanoPostDetailEditFragmentDef, editRef);
-	return (
-		<PanoPostHeader
-			post={headerRef}
-			isAuthor={isAuthor}
-			onEdit={() => onEdit({title: editData.title, body: editData.body ?? null})}
-			onDelete={onDelete}
-		/>
-	);
-}
-
 interface CommentsProps {
-	post: PanoPostDetailCommentsFragment$key;
-	postRecordId: string;
+	post: ViewRef<"Post">;
+	postId: string;
 	signedIn: boolean;
 	currentUserId: string | null;
 }
 
+/** A node's structural fields, lifted up so the page can build the tree. */
+interface CommentMeta {
+	id: string;
+	parentId: string | null;
+	deletedAt: string | null;
+	body: string;
+	ref: ViewRef<"Comment">;
+}
+
 function Comments(props: CommentsProps) {
-	const {data, loadNext, hasNext, isLoadingNext} = usePaginationFragment(
-		PanoPostDetailCommentsFragmentDef,
-		props.post,
-	);
+	const post = useView(PostDetailView, props.post);
+	const [items, loadNext] = useListView(CommentConnectionView, post.comments);
+
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
 	const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
 	const [deleteError, setDeleteError] = React.useState<string | null>(null);
+	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
+	const fate = useFateClient();
+	const navigate = useNavigate();
 
-	const [deleteCommit, deleteInFlight] =
-		useMutation<PanoPostDetailDeleteCommentMutation>(DeleteCommentMutation);
-	const {handleError: handleAuthError} = useSessionExpiredToast();
-
-	// Build the children-by-parent index from the flat connection edges.
-	// Mirrors the per-DO `listComments` projection: a soft-deleted comment
-	// with at least one live child stays in the tree as a `[silindi]`
-	// placeholder; a soft-deleted comment with no live children is omitted
-	// entirely so the tree shape matches the next refetch. The page does
-	// this client-side because @deleteRecord on a leaf removes it from the
-	// store but doesn't re-evaluate its (still soft-deleted) parent.
-	const {roots, childrenByParent, bodyById} = React.useMemo(() => {
-		const all: Array<{
-			id: string;
-			parentId: string | null;
-			deletedAt: string | null;
-			ref: CommentTreeNodeFragment$key;
-		}> = [];
-		const bodyById = new Map<string, string>();
-		for (const edge of data.comments.edges) {
-			if (!edge?.node) continue;
-			all.push({
-				id: edge.node.id,
-				parentId: edge.node.parentId ?? null,
-				deletedAt: edge.node.deletedAt ?? null,
-				ref: edge.node,
-			});
-			bodyById.set(edge.node.id, edge.node.body);
+	// fate masks comment fields behind the node view, so the page can't read each
+	// node's `parentId`/`deletedAt`/`body` off the bare ref. Each node reports its
+	// structural fields up through a `CommentMetaReader` (one `useView` per node);
+	// the page assembles the tree from the collected metas. `metaVersion` (state)
+	// flips whenever a meta changes so the tree `useMemo` re-derives after the
+	// readers' effects fire.
+	const metasRef = React.useRef<Map<string, CommentMeta>>(new Map());
+	const [metaVersion, setMetaVersion] = React.useState(0);
+	const reportMeta = React.useCallback((meta: CommentMeta) => {
+		const prev = metasRef.current.get(meta.id);
+		if (
+			prev &&
+			prev.parentId === meta.parentId &&
+			prev.deletedAt === meta.deletedAt &&
+			prev.body === meta.body &&
+			prev.ref === meta.ref
+		) {
+			return;
 		}
-		// Visibility pass: a comment is visible iff it's not soft-deleted, OR
-		// it has at least one visible descendant. We compute visibility from
-		// leaves upward by iterating until fixed-point (the tree is shallow).
+		metasRef.current.set(meta.id, meta);
+		setMetaVersion((v) => v + 1);
+	}, []);
+
+	// Drop metas for nodes no longer in the connection.
+	const liveIds = React.useMemo(() => new Set(items.map(({node}) => String(node.id))), [items]);
+	React.useEffect(() => {
+		let changed = false;
+		for (const id of metasRef.current.keys()) {
+			if (!liveIds.has(id)) {
+				metasRef.current.delete(id);
+				changed = true;
+			}
+		}
+		if (changed) setMetaVersion((v) => v + 1);
+	}, [liveIds]);
+
+	const {roots, childrenByParent, bodyById} = React.useMemo(() => {
+		// In connection order, dropping nodes whose meta hasn't been reported yet.
+		const all = items
+			.map(({node}) => metasRef.current.get(String(node.id)))
+			.filter((m): m is CommentMeta => m != null);
+		const bodyById = new Map<string, string>();
+		for (const c of all) bodyById.set(c.id, c.body);
+
+		// Visibility pass: a comment is visible iff it's not soft-deleted, OR it has
+		// at least one visible descendant. Compute from leaves upward to fixed-point.
 		const visible = new Set<string>();
 		for (const c of all) if (!c.deletedAt) visible.add(c.id);
 		let changed = true;
@@ -539,11 +433,8 @@ function Comments(props: CommentsProps) {
 			}
 		}
 
-		const childrenByParent = new Map<
-			string,
-			Array<{id: string; ref: CommentTreeNodeFragment$key}>
-		>();
-		const roots: Array<{id: string; ref: CommentTreeNodeFragment$key}> = [];
+		const childrenByParent = new Map<string, Array<{id: string; ref: ViewRef<"Comment">}>>();
+		const roots: Array<{id: string; ref: ViewRef<"Comment">}> = [];
 		const knownIds = new Set(all.filter((c) => visible.has(c.id)).map((c) => c.id));
 		for (const c of all) {
 			if (!visible.has(c.id)) continue;
@@ -556,40 +447,56 @@ function Comments(props: CommentsProps) {
 			}
 		}
 		return {roots, childrenByParent, bodyById};
-	}, [data.comments.edges]);
+		// metasRef is read imperatively; `items` + `metaVersion` drive re-derive.
+	}, [items, metaVersion]);
+
+	const visibleCount = React.useMemo(() => {
+		let n = roots.length;
+		for (const list of childrenByParent.values()) n += list.length;
+		return n;
+	}, [roots, childrenByParent]);
 
 	const childrenForId = React.useCallback(
-		(id: string): ReadonlyArray<{id: string; ref: CommentTreeNodeFragment$key}> =>
+		(id: string): ReadonlyArray<{id: string; ref: ViewRef<"Comment">}> =>
 			childrenByParent.get(id) ?? [],
 		[childrenByParent],
 	);
 
-	const onDeleteConfirm = React.useCallback(() => {
+	async function onDeleteConfirm() {
 		if (!confirmDeleteId) return;
 		setDeleteError(null);
-		deleteCommit({
-			variables: {id: confirmDeleteId},
-			onCompleted: (_d, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setDeleteError(errors[0]?.message ?? "yorum silinemedi");
-					return;
-				}
-				setConfirmDeleteId(null);
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setDeleteError(err.message);
-			},
-		});
-	}, [confirmDeleteId, deleteCommit, handleAuthError]);
+		setDeleteInFlight(true);
+		try {
+			// `comment.delete` returns the re-resolved **parent `Post`** (reply-aware
+			// soft-delete vs hard-delete is the server's decision). It lives in the
+			// nested `Post.comments` connection, so we can't use `delete: true` (wrong
+			// entity) nor a declarative nested removal (needs live events, tasks
+			// 11/12). Delete on the server, then reload so the page re-reads the thread.
+			const {error} = await fate.mutations.comment.delete({input: {id: confirmDeleteId}});
+			if (error) {
+				setDeleteError(commentErrorMessage(codeOf(error), error.message));
+				return;
+			}
+			setConfirmDeleteId(null);
+			window.location.reload();
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath(`/pano/${props.postId}`));
+				return;
+			}
+			setDeleteError(commentErrorMessage(code, "yorum silinemedi"));
+		} finally {
+			setDeleteInFlight(false);
+		}
+	}
 
 	const composerFor = React.useCallback(
 		(id: string) => ({
 			replyComposer:
 				replyTo === id ? (
 					<CommentComposer
-						postRecordId={props.postRecordId}
+						postId={props.postId}
 						parentId={id}
 						signedIn={props.signedIn}
 						onPosted={() => setReplyTo(null)}
@@ -601,26 +508,29 @@ function Comments(props: CommentsProps) {
 				editingCommentId === id ? (
 					<CommentEditComposer
 						commentId={id}
+						commentRef={metasRef.current.get(id)?.ref ?? null}
 						initialBody={bodyById.get(id) ?? ""}
 						onEdited={() => setEditingCommentId(null)}
 						onCancel={() => setEditingCommentId(null)}
 					/>
 				) : undefined,
 		}),
-		[replyTo, editingCommentId, props.postRecordId, props.signedIn, bodyById],
+		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById],
 	);
 
 	return (
 		<>
+			{/* One reader per node lifts its structural fields up for the tree build. */}
+			{items.map(({node}) => (
+				<CommentMetaReader key={`meta-${node.id}`} node={node} report={reportMeta} />
+			))}
 			<CommentComposer
-				postRecordId={props.postRecordId}
+				postId={props.postId}
 				parentId={null}
 				signedIn={props.signedIn}
 				onPosted={() => undefined}
 			/>
-			<h2 className="kp-pano-postpage__thread-heading">
-				{visibleCommentCount(roots, childrenByParent)} yorum
-			</h2>
+			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
 			<div className="kp-pano-thread">
 				{roots.map((r) => {
 					const c = composerFor(r.id);
@@ -644,17 +554,9 @@ function Comments(props: CommentsProps) {
 					);
 				})}
 			</div>
-			{hasNext ? (
+			{loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
-					<Button
-						variant="tertiary"
-						size="sm"
-						type="button"
-						disabled={isLoadingNext}
-						onClick={() => loadNext(PAGE_SIZE)}
-					>
-						{isLoadingNext ? "yükleniyor…" : "daha fazla"}
-					</Button>
+					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
 			<Dialog.Root
@@ -696,51 +598,91 @@ function Comments(props: CommentsProps) {
 	);
 }
 
+/** Wire dates arrive as strings though the entity type says `Date`. */
+const toIsoOrNull = (value: Date | string | null | undefined): string | null =>
+	value == null ? null : value instanceof Date ? value.toISOString() : String(value);
+
 /**
- * Top-level + nested comment composer. Submits to `addComment`; on success
- * the manual `updater` appends a `CommentEdge` into the
- * `PanoPostDetail_comments` connection — the row appears in the tree
- * without a refetch.
- *
- * `optimisticResponse` mirrors the temp-record pattern from `submitPost` —
- * a `temp-${Date.now()}` id distinguishes the optimistic
- * record in devtools; the updater is idempotent on the optimistic →
- * server-confirm transition.
+ * A zero-DOM reader: masks a comment node off `CommentTreeNodeView` and reports
+ * its structural fields (`parentId`/`deletedAt`/`body`) up so the page can build
+ * the tree. One `useView` per node — the same view the tree node reads.
+ */
+function CommentMetaReader({
+	node,
+	report,
+}: {
+	node: ViewRef<"Comment">;
+	report: (meta: CommentMeta) => void;
+}) {
+	const data = useView(CommentTreeNodeView, node);
+	React.useEffect(() => {
+		report({
+			id: String(data.id),
+			parentId: data.parentId != null ? String(data.parentId) : null,
+			deletedAt: toIsoOrNull(data.deletedAt),
+			body: data.body,
+			ref: node,
+		});
+	}, [data.id, data.parentId, data.deletedAt, data.body, node, report]);
+	return null;
+}
+
+function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
+	const [loading, setLoading] = React.useState(false);
+	return (
+		<Button
+			variant="tertiary"
+			size="sm"
+			type="button"
+			disabled={loading}
+			onClick={async () => {
+				setLoading(true);
+				try {
+					await loadNext();
+				} finally {
+					setLoading(false);
+				}
+			}}
+		>
+			{loading ? "yükleniyor…" : "daha fazla"}
+		</Button>
+	);
+}
+
+/**
+ * Top-level + nested comment composer — fate. Submits `comment.add`; on success
+ * the new node is normalized into the cache but joins the *nested* connection only
+ * on a re-read (declarative `insert` reaches root lists only; nested membership
+ * needs live events, tasks 11/12). So we **reload** after a successful add so the
+ * thread re-reads and the row appears in place.
  */
 function CommentComposer({
-	postRecordId,
+	postId,
 	parentId,
 	signedIn,
 	onPosted,
 	onCancel,
 	autoFocus,
 }: {
-	/**
-	 * Relay DataID of the parent Post — used both to address the comments
-	 * connection from the updater AND as the mutation variable. The Post's
-	 * Relay DataID is its global id (`encodeNodeId("Post", localId)`); the
-	 * resolver unwraps via `extractLocalId` (lenient migration helper).
-	 */
-	postRecordId: string;
+	postId: string;
 	parentId: string | null;
 	signedIn: boolean;
 	onPosted: () => void;
 	onCancel?: () => void;
 	autoFocus?: boolean;
 }) {
-	const session = useSession();
+	const fate = useFateClient();
 	const [body, setBody] = React.useState("");
 	const [error, setError] = React.useState<string | null>(null);
-	const [commit, inFlight] = useMutation<PanoPostDetailAddCommentMutation>(AddCommentMutation);
+	const [inFlight, setInFlight] = React.useState(false);
 	const navigate = useNavigate();
-	const {handleError: handleAuthError} = useSessionExpiredToast();
 	const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
 	React.useEffect(() => {
 		if (autoFocus) textareaRef.current?.focus();
 	}, [autoFocus]);
 
-	function submit(e: React.FormEvent) {
+	async function submit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!signedIn) {
 			navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
@@ -756,47 +698,36 @@ function CommentComposer({
 			return;
 		}
 		setError(null);
-		const tempId = `temp-${Date.now()}`;
-		commit({
-			variables: {postId: postRecordId, parentId, body},
-			optimisticResponse: {
-				addComment: {
-					id: tempId,
-					parentId: parentId ?? null,
-					body,
-					score: 0,
-					myVote: null,
-					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString(),
-					deletedAt: null,
-					author: session.data?.user?.name ?? "",
-					authorId: session.data?.user?.id ?? "",
-				},
-			},
-			updater: (store) => {
-				appendCommentToPostConnection(store, postRecordId);
-			},
-			onCompleted: (_data, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setError(errors[0]?.message ?? "yorum eklenemedi");
-					return;
-				}
-				setBody("");
-				onPosted();
-				onCancel?.();
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setError(err.message);
-			},
-		});
+		setInFlight(true);
+		try {
+			const {error: callError} = await fate.mutations.comment.add({
+				input: {postId, body, ...(parentId ? {parentId} : {})},
+				view: CommentTreeNodeView,
+			});
+			if (callError) {
+				setError(commentErrorMessage(codeOf(callError), callError.message));
+				return;
+			}
+			setBody("");
+			onPosted();
+			onCancel?.();
+			// Nested-connection membership needs live events (tasks 11/12); until then,
+			// reload so the thread re-reads and the new row shows.
+			window.location.reload();
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
+				return;
+			}
+			setError(commentErrorMessage(code, "yorum eklenemedi"));
+		} finally {
+			setInFlight(false);
+		}
 	}
 
-	// Test affordances key off the local parent comment id, not the Relay
-	// global id; keep testids stable + human-readable.
-	const parentLocalId = parentId ? extractLocalId(parentId, "Comment") : null;
-	const testId = parentLocalId ? `pano-comment-reply-${parentLocalId}` : "pano-comment-composer";
+	// Test affordances key off the raw parent comment id (`comm_<ulid>`).
+	const testId = parentId ? `pano-comment-reply-${parentId}` : "pano-comment-composer";
 
 	return (
 		<form className="kp-pano-comment-composer" onSubmit={submit} data-testid={testId}>
@@ -811,9 +742,7 @@ function CommentComposer({
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
 				disabled={inFlight || !signedIn}
-				data-testid={
-					parentLocalId ? `pano-comment-reply-input-${parentLocalId}` : "pano-comment-input"
-				}
+				data-testid={parentId ? `pano-comment-reply-input-${parentId}` : "pano-comment-input"}
 				maxLength={COMMENT_BODY_MAX + 100}
 			/>
 			{error ? (
@@ -846,9 +775,7 @@ function CommentComposer({
 						size="sm"
 						type="submit"
 						disabled={inFlight || body.trim().length === 0}
-						data-testid={
-							parentLocalId ? `pano-comment-reply-submit-${parentLocalId}` : "pano-comment-submit"
-						}
+						data-testid={parentId ? `pano-comment-reply-submit-${parentId}` : "pano-comment-submit"}
 					>
 						{inFlight ? "gönderiliyor…" : parentId ? "yanıtla" : "yorum ekle"}
 					</Button>
@@ -858,6 +785,11 @@ function CommentComposer({
 	);
 }
 
+/**
+ * Inline comment edit composer — fate. `comment.edit` writes the new body back
+ * through `CommentTreeNodeView` (the same view the node reads), so the edited
+ * comment re-renders in place with no reload.
+ */
 function CommentEditComposer({
 	commentId,
 	initialBody,
@@ -865,19 +797,21 @@ function CommentEditComposer({
 	onCancel,
 }: {
 	commentId: string;
+	/** Carried for symmetry / future optimistic edit; the write-back is keyed by id. */
+	commentRef: ViewRef<"Comment"> | null;
 	initialBody: string;
 	onEdited: () => void;
 	onCancel: () => void;
 }) {
+	const fate = useFateClient();
 	const [body, setBody] = React.useState(initialBody);
 	const [error, setError] = React.useState<string | null>(null);
-	const [commit, inFlight] = useMutation<PanoPostDetailEditCommentMutation>(EditCommentMutation);
-	const {handleError: handleAuthError} = useSessionExpiredToast();
-	// Test affordances key off the local comment id (`comm_<ulid>`), not
-	// the Relay global id, so testids stay human-readable + spec-stable.
-	const localId = extractLocalId(commentId, "Comment");
+	const [inFlight, setInFlight] = React.useState(false);
+	const navigate = useNavigate();
+	// Test affordances key off the raw comment id (`comm_<ulid>`).
+	const localId = commentId;
 
-	function submit(e: React.FormEvent) {
+	async function submit(e: React.FormEvent) {
 		e.preventDefault();
 		const trimmed = body.trim();
 		if (trimmed.length === 0) {
@@ -889,21 +823,27 @@ function CommentEditComposer({
 			return;
 		}
 		setError(null);
-		commit({
-			variables: {id: commentId, body},
-			onCompleted: (_d, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setError(errors[0]?.message ?? "yorum güncellenemedi");
-					return;
-				}
-				onEdited();
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setError(err.message);
-			},
-		});
+		setInFlight(true);
+		try {
+			const {error: callError} = await fate.mutations.comment.edit({
+				input: {id: commentId, body},
+				view: CommentTreeNodeView,
+			});
+			if (callError) {
+				setError(commentErrorMessage(codeOf(callError), callError.message));
+				return;
+			}
+			onEdited();
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
+				return;
+			}
+			setError(commentErrorMessage(code, "yorum güncellenemedi"));
+		} finally {
+			setInFlight(false);
+		}
 	}
 
 	return (

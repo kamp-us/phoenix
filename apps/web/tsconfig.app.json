@@ -1,8 +1,6 @@
 {
 	"extends": "../../tsconfig.json",
 	"compilerOptions": {
-		"composite": true,
-		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
 		"target": "ES2022",
 		"useDefineForClassFields": true,
 		"lib": ["ES2023", "DOM", "DOM.Iterable"],
@@ -10,8 +8,9 @@
 		"moduleResolution": "Bundler",
 		"jsx": "react-jsx",
 		"noEmit": true,
-		"types": ["vite/client"],
+		"types": ["vite/client", "@cloudflare/workers-types"],
 		"exactOptionalPropertyTypes": false
 	},
-	"include": ["src"]
+	"include": ["src", ".fate/client.generated.ts", "worker", "worker-configuration.d.ts"],
+	"exclude": ["worker/index.ts", "worker/graphql", "worker/admin"]
 }

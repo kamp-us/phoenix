@@ -1,40 +1,35 @@
 /**
- * Sozluk home term row.
+ * Sözlük home term row, fate-shaped.
  *
- * Reads via `useFragment` against `TermRowFragment on Term` — the home
- * page's two `@connection`-shaped fragments hand each edge's `node` ref
- * to this component, which stays oblivious to which connection
- * (`SozlukHome__recentTerms` / `SozlukHome__popularTerms`) the row came
- * from. Two render variants, one fragment: `recent` shows title + count;
- * `popular` shows rank + title + total score. The fragment's field set is
- * the union of what both variants need (id, slug, title, definitionCount,
- * totalScore, lastActivityAt, firstLetter) so the row component never
- * masks a field a column wants.
+ * Reads via `useView(TermRowView, ref)` — the home's two connections
+ * (`recentTerms` / `popularTerms`) hand each node `ViewRef` to this component,
+ * which stays oblivious to which column it lives in. Two render variants, one
+ * view: `recent` shows title + count; `popular` shows rank + title + total
+ * score. The view's field set is the union both variants need.
  */
-import {graphql, useFragment} from "react-relay";
+import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {TermRowFragment$key} from "../../__generated__/TermRowFragment.graphql";
+import type {Term} from "../../../worker/fate/views";
 
-const TermRowFragmentDef = graphql`
-	fragment TermRowFragment on Term {
-		id
-		slug
-		title
-		definitionCount
-		totalScore
-		lastActivityAt
-		firstLetter
-	}
-`;
+/** The fields a term row reads (union of both column variants). */
+export const TermRowView = view<Term>()({
+	id: true,
+	slug: true,
+	title: true,
+	definitionCount: true,
+	totalScore: true,
+	lastActivityAt: true,
+	firstLetter: true,
+});
 
 export interface TermRowProps {
-	term: TermRowFragment$key;
+	term: ViewRef<"Term">;
 	variant?: "recent" | "popular";
 	rank?: number;
 }
 
 export function TermRow({term, variant = "recent", rank}: TermRowProps) {
-	const data = useFragment(TermRowFragmentDef, term);
+	const data = useView(TermRowView, term);
 
 	if (variant === "popular") {
 		return (

@@ -1,109 +1,75 @@
 /**
- * Sözlük term page.
+ * Sözlük term page — fate.
  *
- * Fully idiomatic Relay shape — `useLazyLoadQuery` at the top spreads
- * `SozlukTermHeaderFragment` + `SozlukTermPageDefinitionsFragment` into
- * the `Term` selection; `usePaginationFragment` reads the definitions
- * connection; each row is a fragment ref handed to `DefinitionCard`
- * (which declares its own `DefinitionCardFragment on Definition`).
+ * One batched `useRequest({term: {view: TermView, args: {slug, definitions:{first}}}})`
+ * resolves the whole screen (header + first page of definitions) with no
+ * waterfall. `term` is the `queries.term` client root; the nested `definitions`
+ * connection rides on the `Term` view (`TermView`), delivered inline by the
+ * resolver (see `.patterns/fate-connections.md`). Children read their slice:
+ * `SozlukTermHeader` via its own `TermHeaderView`, the definitions list via
+ * `useListView` (which merges "load more" pages), each row via
+ * `useView(DefinitionView, node)`.
  *
- * Mutations:
- *  - `addDefinition` — manual `updater` prepends a `DefinitionEdge` into
- *    the `SozlukTermPage_definitions` connection (definitions are
- *    score-DESC; new entries land at the top for visibility), plus
- *    `optimisticResponse` for the immediate flip.
- *  - `deleteDefinition` — payload exposes `deletedDefinitionId @deleteRecord`.
- *    Relay drops the record from the store; the connection edge auto-clears.
- *    No `$connections` variable, no manual updater.
- *  - `editDefinition`, `voteDefinition` / `retractDefinitionVote` — auto
- *    store update on the returned scalars (no updater). Lives on the
- *    `DefinitionCard` component.
+ * Mutations (`fate.mutations.definition.*`): add reloads after success to show
+ * the new row (nested-connection membership needs live events, tasks 11/12 — see
+ * the `Composer` note); vote/edit/delete live on `DefinitionCard`. Error routing
+ * is the call-site catch documented on `DefinitionCard` / `progress/task_6.md`
+ * (1.0.3 classifies phoenix codes as boundary, so the mutation throws; the
+ * optimistic change rolls back and we surface the code inline).
  */
 import * as React from "react";
-import {graphql, useLazyLoadQuery, useMutation, usePaginationFragment} from "react-relay";
+import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useNavigate, useParams} from "react-router";
-import type {SozlukTermPageAddDefinitionMutation} from "../__generated__/SozlukTermPageAddDefinitionMutation.graphql";
-import type {SozlukTermPageDefinitionsFragment$key} from "../__generated__/SozlukTermPageDefinitionsFragment.graphql";
-import type {SozlukTermPageQuery} from "../__generated__/SozlukTermPageQuery.graphql";
+import type {Term} from "../../worker/fate/views";
 import {useSession} from "../auth/client";
-import {DefinitionCard} from "../components/sozluk/DefinitionCard";
-import {SozlukTermHeader} from "../components/sozluk/SozlukTermHeader";
+import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
+import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Button} from "../components/ui/Button";
+import {Screen} from "../fate/Screen";
+import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
-import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
-import {QueryBoundary} from "../relay/QueryBoundary";
-import {prependDefinitionToTermConnection} from "../relay/sozlukTermPageUpdater";
 import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
 
 const PAGE_SIZE = 50;
-
-const TermQuery = graphql`
-	query SozlukTermPageQuery($slug: String!, $first: Int) {
-		term(slug: $slug) {
-			id
-			slug
-			title
-			...SozlukTermHeaderFragment
-			...SozlukTermPageDefinitionsFragment @arguments(first: $first)
-		}
-	}
-`;
+const BODY_MAX = 10_000;
 
 /**
- * Definitions connection on `Term`. `@refetchable` lets `usePaginationFragment`
- * load subsequent pages; `@connection` lets mutation updaters address the
- * connection by stable key + the parent's DataID.
- *
- * `first: Int` (nullable) per the relay-compiler rule that variables with
- * default values cannot be non-null. Page passes `PAGE_SIZE` as the
- * initial value.
+ * The connection selection for a term's definitions — `{items: {node: View}}`,
+ * the shape `useListView` reads off `term.definitions`.
  */
-const SozlukTermPageDefinitionsFragmentDef = graphql`
-	fragment SozlukTermPageDefinitionsFragment on Term
-	@argumentDefinitions(
-		first: {type: "Int", defaultValue: 50}
-		after: {type: "String"}
-	)
-	@refetchable(queryName: "SozlukTermPageDefinitionsPaginationQuery") {
-		definitions(first: $first, after: $after)
-			@connection(key: "SozlukTermPage_definitions") {
-			edges {
-				node {
-					id
-					...DefinitionCardFragment
-				}
-			}
-			pageInfo {
-				hasNextPage
-				endCursor
-			}
-			totalCount
-		}
-	}
-`;
+const DefinitionConnectionView = {items: {node: DefinitionView}} as const;
 
-const AddDefinitionMutation = graphql`
-	mutation SozlukTermPageAddDefinitionMutation(
-		$termSlug: String!
-		$termTitle: String
-		$body: String!
-	) {
-		addDefinition(termSlug: $termSlug, termTitle: $termTitle, body: $body) {
-			id
-			body
-			score
-			myVote
-			createdAt
-			updatedAt
-			author
-			authorId
-			...DefinitionCardFragment
-		}
-	}
-`;
+/**
+ * The term-page view. fate masks by **view identity** (Relay-fragment style):
+ * a child's `useView(ChildView, ref)` only works if `ChildView` was **spread**
+ * into the view the ref was built from — overlapping field names is not enough.
+ * So the page spreads `TermHeaderView` (the header's view) and adds the nested
+ * `definitions` connection whose node is `DefinitionView` (the card's view). The
+ * children then mask their slice off the same refs.
+ */
+const TermView = view<Term>()({
+	...TermHeaderView,
+	definitions: DefinitionConnectionView,
+});
 
-const BODY_MAX = 10_000;
+/** Read the `.code` off a thrown / returned fate error. */
+const codeOf = (error: unknown): MutationErrorCode => {
+	const code =
+		error && typeof error === "object" && "code" in error ? (error as {code: unknown}).code : null;
+	return decodeMutationErrorCode(code) ?? "INTERNAL_SERVER_ERROR";
+};
+
+const messageForCode = (code: MutationErrorCode, fallback: string): string => {
+	switch (code) {
+		case "BODY_REQUIRED":
+			return "tanım boş olamaz";
+		case "BODY_TOO_LONG":
+			return `tanım en fazla ${BODY_MAX} karakter olabilir`;
+		default:
+			return fallback;
+	}
+};
 
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
@@ -112,36 +78,32 @@ export function SozlukTermPage() {
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
-				<QueryBoundary
-					loading={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
-					error={(err) => (
+				<Screen
+					fallback={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
+					error={({code}) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
-							terim yüklenemedi: {err.message}
+							terim yüklenemedi: {code.toLowerCase()}
 						</p>
 					)}
 				>
 					<SozlukTermContent slug={safeSlug} />
-				</QueryBoundary>
+				</Screen>
 			</div>
 		</div>
 	);
 }
 
 function SozlukTermContent({slug}: {slug: string}) {
-	const data = useLazyLoadQuery<SozlukTermPageQuery>(
-		TermQuery,
-		{slug, first: PAGE_SIZE},
-		{fetchPolicy: "store-or-network"},
-	);
-	const term = data.term;
+	const {term} = useRequest({
+		term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}},
+	});
 	const session = useSession();
 	const signedIn = !!session.data?.user;
 
 	if (!term) {
-		// Signed-out viewers can't auto-create a term — render the shared 404
-		// so the absence is unambiguous. Signed-in viewers get the composer
-		// branch below so the first definition lands and auto-creates the term
-		// (T4's contract).
+		// Signed-out viewers can't auto-create a term — render the shared 404 so
+		// the absence is unambiguous. Signed-in viewers get the composer branch so
+		// the first definition lands and auto-creates the term (T4's contract).
 		if (!signedIn) {
 			return (
 				<NotFoundPage
@@ -162,12 +124,10 @@ function SozlukTermContent({slug}: {slug: string}) {
 }
 
 /**
- * Header + composer for the slug-doesn't-exist-yet branch. After the first
- * `addDefinition` succeeds, the prepend updater can't insert into a
- * connection that doesn't exist (the Term record itself is null in store
- * until the next read). The mutation completes via `onCompleted`; we then
- * trigger a refetch by toggling the local key — narrow scope, only used
- * for the very first definition on a fresh slug.
+ * Header + composer for the slug-doesn't-exist-yet branch. The first
+ * `addDefinition` on a fresh slug auto-creates the term; once it lands we reload
+ * so the page re-reads through `term(slug)` and flips to the connection branch.
+ * Subsequent definitions on the slug never hit this branch again.
  */
 function NewTermComposer({slug}: {slug: string}) {
 	return (
@@ -185,196 +145,91 @@ function NewTermComposer({slug}: {slug: string}) {
 			<p style={{font: "var(--t-body)", color: "var(--text-muted)"}}>
 				"{slug}" terimi henüz yok. ilk tanımı sen yazabilirsin.
 			</p>
-			<NewTermComposerForm slug={slug} />
+			<Composer slug={slug} />
 		</>
-	);
-}
-
-/**
- * Composer used on the slug-doesn't-exist branch. The first successful add
- * needs to create the `Term` record in the Relay store; we trigger a
- * lightweight refetch by reloading the page query. After the first add the
- * page renders the connection-shaped branch and subsequent adds use the
- * standard prepend updater path.
- */
-function NewTermComposerForm({slug}: {slug: string}) {
-	const session = useSession();
-	const navigate = useNavigate();
-	const {handleError: handleAuthError} = useSessionExpiredToast();
-	const [body, setBody] = React.useState("");
-	const [error, setError] = React.useState<string | null>(null);
-	const [commit, isInFlight] =
-		useMutation<SozlukTermPageAddDefinitionMutation>(AddDefinitionMutation);
-
-	const trimmed = body.trim();
-	const tooLong = body.length > BODY_MAX;
-	const disabled = isInFlight || trimmed.length === 0 || tooLong;
-
-	function onSubmit(e: React.FormEvent) {
-		e.preventDefault();
-		if (!session.data?.user) {
-			navigate(authRedirectPath(`/sozluk/${slug}`));
-			return;
-		}
-		if (disabled) return;
-		setError(null);
-		commit({
-			variables: {
-				termSlug: slug,
-				termTitle: slug.replace(/-/g, " "),
-				body,
-			},
-			// No connection updater on this branch — the Term doesn't exist in
-			// the store yet, so there's no `SozlukTermPage_definitions`
-			// connection to prepend into. After the mutation lands we navigate
-			// to the same URL via React Router; the next render reads the
-			// Term from network and the page flips to the connection branch.
-			onCompleted: (_data, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setError(errors[0]?.message ?? "tanım eklenemedi");
-					return;
-				}
-				setBody("");
-				// `navigate` to the same URL with `{replace: true}` would NOT
-				// remount; we want the page query to refetch so the `Term`
-				// record materializes. A full reload is the bluntest possible
-				// option but the cleanest — the user just made their first
-				// write to a brand-new slug. Subsequent definitions on this
-				// slug never hit this branch again.
-				window.location.reload();
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setError(err.message);
-			},
-		});
-	}
-
-	return (
-		<form className="kp-sozluk-composer" onSubmit={onSubmit}>
-			<header className="kp-sozluk-composer__head">
-				<span className="kp-sozluk-composer__title">sen nasıl tanımlardın?</span>
-			</header>
-			<textarea
-				className="kp-sozluk-composer__textarea"
-				placeholder="markdown destekli. ```js ... ``` kod bloğu için. kişisel deneyim, örnek, hatıra; kuru sözlük tanımı zaten Wikipedia'da var."
-				value={body}
-				onChange={(e) => setBody(e.target.value)}
-				disabled={isInFlight}
-				data-testid="sozluk-composer-body"
-				maxLength={BODY_MAX + 100}
-			/>
-			{error ? (
-				<p className="kp-sozluk-composer__error" role="alert" data-testid="sozluk-composer-error">
-					{error}
-				</p>
-			) : null}
-			{tooLong ? (
-				<p className="kp-sozluk-composer__error" role="alert">
-					tanım en fazla {BODY_MAX} karakter olabilir ({body.length})
-				</p>
-			) : null}
-			<footer className="kp-sozluk-composer__foot">
-				<span className="kp-sozluk-composer__hint">
-					markdown · <kbd>⌘</kbd>+<kbd>↵</kbd> gönder
-				</span>
-				<span style={{display: "flex", gap: 6}}>
-					<Button
-						variant="tertiary"
-						size="sm"
-						type="button"
-						onClick={() => {
-							setBody("");
-							setError(null);
-						}}
-					>
-						iptal
-					</Button>
-					<Button
-						variant="primary"
-						size="sm"
-						type="submit"
-						disabled={disabled}
-						data-testid="sozluk-composer-submit"
-					>
-						{isInFlight ? "gönderiliyor…" : "tanımı ekle"}
-					</Button>
-				</span>
-			</footer>
-		</form>
 	);
 }
 
 interface DefinitionsListProps {
-	term: SozlukTermPageDefinitionsFragment$key & {readonly id: string};
+	term: ViewRef<"Term">;
 	slug: string;
 }
 
 function DefinitionsList(props: DefinitionsListProps) {
-	const {data, loadNext, hasNext, isLoadingNext} = usePaginationFragment(
-		SozlukTermPageDefinitionsFragmentDef,
-		props.term,
-	);
-	const edges = data.definitions.edges;
+	const term = useView(TermView, props.term);
+	const [items, loadNext] = useListView(DefinitionConnectionView, term.definitions);
+
 	return (
 		<>
-			{edges.map((edge, i) => {
-				if (!edge?.node) return null;
-				return (
-					<DefinitionCard
-						key={edge.node.id}
-						definition={edge.node}
-						rank={i + 1}
-						top={i === 0}
-						slug={props.slug}
-					/>
-				);
-			})}
-			{hasNext ? (
+			{items.map(({node}, i) => (
+				<DefinitionCard
+					key={node.id}
+					definition={node}
+					rank={i + 1}
+					top={i === 0}
+					slug={props.slug}
+				/>
+			))}
+			{loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
-					<Button
-						variant="tertiary"
-						size="sm"
-						type="button"
-						disabled={isLoadingNext}
-						onClick={() => loadNext(PAGE_SIZE)}
-					>
-						{isLoadingNext ? "yükleniyor…" : "daha fazla"}
-					</Button>
+					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
-			<Composer slug={props.slug} termRecordId={props.term.id} />
+			<Composer slug={props.slug} />
 		</>
 	);
 }
 
+function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
+	const [loading, setLoading] = React.useState(false);
+	return (
+		<Button
+			variant="tertiary"
+			size="sm"
+			type="button"
+			disabled={loading}
+			onClick={async () => {
+				setLoading(true);
+				try {
+					await loadNext();
+				} finally {
+					setLoading(false);
+				}
+			}}
+		>
+			{loading ? "yükleniyor…" : "daha fazla"}
+		</Button>
+	);
+}
+
 /**
- * Definition composer wired to the `addDefinition` mutation. Auth-required:
- * signed-out users get redirected to /auth?returnTo=<current>. On success
- * the manual `updater` prepends a `DefinitionEdge` into the
- * `SozlukTermPage_definitions` connection — the new row appears at the top
- * without a refetch.
+ * Definition composer wired to `fate.mutations.definition.add`. Auth-required:
+ * signed-out users redirect to /auth?returnTo=<current>.
  *
- * `optimisticResponse` mirrors the temp-record pattern from `submitPost`
- * and `addComment` — a `temp-${Date.now()}` id distinguishes
- * the optimistic record in devtools; the updater is idempotent on the
- * optimistic → server-confirm transition.
+ * **Connection membership (1.0.3 drift).** A fresh definition is a new node in
+ * the *nested* `Term.definitions` connection. fate's declarative `insert` only
+ * targets **registered root lists** (a list op with no filter args); a nested
+ * connection's membership is driven by **server live events**
+ * (`live.connection(...).appendNode`) — not yet wired (tasks 11/12). So
+ * `insert`/an optimistic temp-node can't join this list in 1.0.3. We therefore
+ * **reload after a successful add** so the page re-reads `term(slug)` and the new
+ * row appears (the same reload the fresh-slug branch always needed). Vote / edit
+ * / delete are entity-field mutations and stay fully optimistic. When live lands
+ * (tasks 11/12), this reload is replaced by a server `appendNode` event.
  */
-function Composer({slug, termRecordId}: {slug: string; termRecordId: string}) {
+function Composer({slug}: {slug: string}) {
+	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
-	const {handleError: handleAuthError} = useSessionExpiredToast();
 	const [body, setBody] = React.useState("");
 	const [error, setError] = React.useState<string | null>(null);
-	const [commit, isInFlight] =
-		useMutation<SozlukTermPageAddDefinitionMutation>(AddDefinitionMutation);
+	const [isInFlight, setInFlight] = React.useState(false);
 
 	const trimmed = body.trim();
 	const tooLong = body.length > BODY_MAX;
 	const disabled = isInFlight || trimmed.length === 0 || tooLong;
 
-	function onSubmit(e: React.FormEvent) {
+	async function onSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		if (!session.data?.user) {
 			navigate(authRedirectPath(`/sozluk/${slug}`));
@@ -382,41 +237,46 @@ function Composer({slug, termRecordId}: {slug: string; termRecordId: string}) {
 		}
 		if (disabled) return;
 		setError(null);
-		const tempId = `temp-${Date.now()}`;
-		commit({
-			variables: {
-				termSlug: slug,
-				termTitle: slug.replace(/-/g, " "),
-				body,
-			},
-			optimisticResponse: {
-				addDefinition: {
-					id: tempId,
+		setInFlight(true);
+		const user = session.data.user;
+		const now = new Date();
+		try {
+			const {error: callError} = await fate.mutations.definition.add({
+				input: {termSlug: slug, termTitle: slug.replace(/-/g, " "), body},
+				view: DefinitionView,
+				// Temp id; fate reconciles it to the server id when the result lands.
+				// The new node is normalized into the cache; it only *joins the
+				// nested list* once we reload (no declarative nested-insert in 1.0.3
+				// — see the note above). The forced-error path rolls this back.
+				optimistic: {
+					id: `optimistic:${Date.now()}`,
 					body,
 					score: 0,
 					myVote: null,
-					createdAt: new Date().toISOString(),
-					updatedAt: new Date().toISOString(),
-					author: session.data?.user?.name ?? "",
-					authorId: session.data?.user?.id ?? "",
+					createdAt: now,
+					updatedAt: now,
+					author: user.name ?? user.email,
+					authorId: user.id,
 				},
-			},
-			updater: (store) => {
-				prependDefinitionToTermConnection(store, termRecordId);
-			},
-			onCompleted: (_data, errors) => {
-				if (handleAuthError(errors)) return;
-				if (errors && errors.length > 0) {
-					setError(errors[0]?.message ?? "tanım eklenemedi");
-					return;
-				}
-				setBody("");
-			},
-			onError: (err) => {
-				if (handleAuthError(null, err)) return;
-				setError(err.message);
-			},
-		});
+			});
+			if (callError) {
+				setError(messageForCode(codeOf(callError), callError.message));
+				return;
+			}
+			setBody("");
+			// Nested-connection membership needs live events (tasks 11/12); until
+			// then, reload so the page re-reads `term(slug)` and the new row shows.
+			window.location.reload();
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath(`/sozluk/${slug}`));
+				return;
+			}
+			setError(messageForCode(code, "tanım eklenemedi"));
+		} finally {
+			setInFlight(false);
+		}
 	}
 
 	return (

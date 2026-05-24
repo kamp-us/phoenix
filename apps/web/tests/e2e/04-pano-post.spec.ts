@@ -1,5 +1,5 @@
 import {expect, type Page, test} from "@playwright/test";
-import {signUp} from "./_helpers/auth";
+import {completeBootstrap, signUp} from "./_helpers/auth";
 
 /**
  * Walk from /pano to a real post detail page via the comments link
@@ -36,6 +36,8 @@ test.describe("PanoPostDetail", () => {
 
 	test("comment vote toggles aria-pressed (signed in)", async ({page}) => {
 		await signUp(page);
+		// Clear the username bootstrap gate so the feed/post pages mount.
+		await completeBootstrap(page);
 		await gotoFirstPostDetail(page);
 		const firstUpvote = page.locator(".kp-comment__upvote").first();
 		// Some seed posts have no comments; skip in that case rather than fail.

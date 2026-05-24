@@ -1,54 +1,65 @@
 /**
- * Fragment-shaped post-detail header.
+ * fate-shaped post-detail header.
  *
- * Reads its data via `useFragment(PanoPostHeaderFragment)` instead of taking
- * shaped props. The page (`PanoPostDetail`) spreads this fragment into the
- * top-level `PostQuery` and hands the post fragment ref down — the header
- * declares what it needs.
+ * Reads its data via `useView(PanoPostHeaderView, ref)` — the detail page spreads
+ * `PanoPostHeaderView` into its `post` request item (`PostDetailView`) and hands
+ * the `Post` ref down. The header declares what it needs; fate masks the rest.
  *
- * Edit / delete affordances are gated by `isAuthor`, which the page derives
- * from the session and passes in (the session lookup belongs to the page,
- * not the header).
+ * Edit / delete affordances are gated by `isAuthor`, which the page derives from
+ * the session and passes in.
  */
-import {graphql, useFragment} from "react-relay";
-import type {PanoPostHeaderFragment$key} from "../../__generated__/PanoPostHeaderFragment.graphql";
+import {useView, type ViewRef, view} from "react-fate";
+import type {Post} from "../../../worker/fate/views";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {Tag, type TagKind} from "../ui/atoms";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {PostVoteWidget} from "./PanoPost";
 
-const PanoPostHeaderFragmentDef = graphql`
-	fragment PanoPostHeaderFragment on Post {
-		id
-		slug
-		title
-		url
-		host
-		body
-		author
-		authorId
-		score
-		myVote
-		commentCount
-		createdAt
-		updatedAt
-		tags {
-			kind
-			label
-		}
-	}
-`;
+/**
+ * The minimal write-back view for a post vote — the shape
+ * `fate.mutations.post.{vote,retractVote}` returns and normalizes into the cache
+ * keyed by `id`. Co-located with `PostVoteWidget` (in `PanoPost.tsx`) but defined
+ * here to keep the vote widget's import free of a back-edge to the header.
+ */
+export const PostVoteView = view<Post>()({
+	id: true,
+	score: true,
+	myVote: true,
+});
+
+/** The fields the post-detail header reads. Co-located with the component. */
+export const PanoPostHeaderView = view<Post>()({
+	id: true,
+	slug: true,
+	title: true,
+	url: true,
+	host: true,
+	body: true,
+	author: true,
+	authorId: true,
+	score: true,
+	myVote: true,
+	commentCount: true,
+	createdAt: true,
+	updatedAt: true,
+	tags: true,
+});
+
+/** Wire dates arrive as strings though the entity type says `Date`. */
+const toIso = (value: Date | string | null | undefined): string =>
+	value == null ? "" : value instanceof Date ? value.toISOString() : String(value);
 
 export interface PanoPostHeaderProps {
-	post: PanoPostHeaderFragment$key;
+	post: ViewRef<"Post">;
 	isAuthor: boolean;
 	onEdit?: () => void;
 	onDelete?: () => void;
 }
 
 export function PanoPostHeader(props: PanoPostHeaderProps) {
-	const post = useFragment(PanoPostHeaderFragmentDef, props.post);
+	const post = useView(PanoPostHeaderView, props.post);
+	const tags = post.tags ?? [];
 	return (
 		<div>
 			<h1 className="kp-pano-postpage__title">{post.title}</h1>
@@ -63,15 +74,15 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				</a>
 			) : null}
 			<div className="kp-pano-postpage__meta">
-				{post.tags.map((t, i) => (
+				{tags.map((t, i) => (
 					<Tag key={i} kind={t.kind as TagKind}>
 						{t.label}
 					</Tag>
 				))}
 				<span className="author">@{post.author}</span>
 				<span>·</span>
-				<span>{formatAgoTR(post.createdAt)}</span>
-				<EditedIndicator createdAt={post.createdAt} updatedAt={post.updatedAt} />
+				<span>{formatAgoTR(toIso(post.createdAt))}</span>
+				<EditedIndicator createdAt={toIso(post.createdAt)} updatedAt={toIso(post.updatedAt)} />
 				<span>·</span>
 				<span>{post.commentCount} yorum</span>
 				<span>·</span>
@@ -100,8 +111,8 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 	);
 }
 
-/** Convenience accessor — pages need the score/myVote/id for the vote widget. */
-export function PanoPostHeaderVote({post}: {post: PanoPostHeaderFragment$key}) {
-	const data = useFragment(PanoPostHeaderFragmentDef, post);
+/** Convenience accessor — the detail page reads the score/myVote/id for the vote widget. */
+export function PanoPostHeaderVote({post}: {post: ViewRef<"Post">}) {
+	const data = useView(PanoPostHeaderView, post);
 	return <PostVoteWidget postId={data.id} score={data.score} myVote={data.myVote ?? null} />;
 }
