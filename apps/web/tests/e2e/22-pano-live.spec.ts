@@ -162,6 +162,112 @@ test.describe("Pano live (two clients)", () => {
 		}
 	});
 
+	/**
+	 * Nested-connection mutations update the on-screen list LIVE — no full reload
+	 * (task 9). `definition.add`/`definition.delete`/`comment.delete` used to call
+	 * `window.location.reload()` because nested-connection membership can't be
+	 * reached by fate's declarative `insert`/`delete`. The resolvers now publish
+	 * `appendNode`/`deleteEdge`/`live.update`, which the page's
+	 * `useLiveListView`/`useLiveView` consume in place.
+	 *
+	 * Single-client (the author's own view is driven by the same server event a
+	 * second client gets), so it sidesteps the two-client SSE flakiness above. The
+	 * no-reload proof is a window sentinel: a `window.location.reload()` wipes the
+	 * page's JS context, so the sentinel set before the mutation would be gone.
+	 */
+	test("definition add/delete + comment delete update in place without a reload", async ({
+		page,
+	}) => {
+		const suffix = `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+		await signUpAndBootstrap(page);
+
+		// --- definition.add: the new row appears live on the term page. ---
+		const slug = `live-def-${suffix}`;
+		await page.goto(`/sozluk/${slug}`);
+		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible({
+			timeout: 10_000,
+		});
+		// First add on a fresh slug auto-creates the term and flips to the list
+		// branch (a network-only remount, not a full reload).
+		const firstDef = `ilk tanım ${suffix}`;
+		await page.locator('[data-testid="sozluk-composer-body"]').fill(firstDef);
+		await page.locator('[data-testid="sozluk-composer-submit"]').click();
+		await expect(page.getByText(firstDef, {exact: false})).toBeVisible({timeout: 15_000});
+
+		// Drop a sentinel; a full reload would clear it. The term now exists, so a
+		// SECOND add must arrive via the live `appendNode` (no reload).
+		await page.evaluate(() => {
+			(window as unknown as {__noReload?: boolean}).__noReload = true;
+		});
+		const secondDef = `ikinci tanım ${suffix}`;
+		await page.locator('[data-testid="sozluk-composer-body"]').fill(secondDef);
+		await page.locator('[data-testid="sozluk-composer-submit"]').click();
+		await expect(page.getByText(secondDef, {exact: false})).toBeVisible({timeout: 15_000});
+		// The new row arrived live: the sentinel survived → no `window.location.reload()`.
+		expect(
+			await page.evaluate(() => (window as unknown as {__noReload?: boolean}).__noReload === true),
+		).toBe(true);
+
+		// --- definition.delete: the row drops live via `deleteEdge`. ---
+		// Delete the second definition (the author owns both). Resolve its card by
+		// the visible body, open its delete affordance, confirm.
+		const secondCard = page
+			.locator('[data-testid^="definition-card-"]')
+			.filter({hasText: secondDef});
+		await expect(secondCard).toBeVisible({timeout: 10_000});
+		const defId = (await secondCard.getAttribute("data-testid"))!.replace("definition-card-", "");
+		// The delete button lives inside the card; the confirm dialog portals to the
+		// document body, so resolve it off the page.
+		await page.locator(`[data-testid="definition-delete-${defId}"]`).click();
+		const defConfirm = page.locator(`[data-testid="definition-delete-confirm-${defId}"]`);
+		await expect(defConfirm).toBeVisible({timeout: 5_000});
+		await defConfirm.click();
+		await expect(page.getByText(secondDef, {exact: false})).toHaveCount(0, {timeout: 15_000});
+		// Still no reload — the row dropped via the live edge removal.
+		expect(
+			await page.evaluate(() => (window as unknown as {__noReload?: boolean}).__noReload === true),
+		).toBe(true);
+		// The other definition is untouched.
+		await expect(page.getByText(firstDef, {exact: false})).toBeVisible();
+
+		// --- comment.delete: a leaf comment drops live via `deleteEdge`. ---
+		const postPath = await submitPost(page, `live target ${suffix}`);
+		await expect(page.locator('[data-testid="pano-comment-input"]')).toBeVisible({
+			timeout: 10_000,
+		});
+		const commentBody = `silinecek yorum ${suffix}`;
+		await page.locator('[data-testid="pano-comment-input"]').fill(commentBody);
+		await page.locator('[data-testid="pano-comment-submit"]').click();
+		await expect(page.getByRole("heading", {name: /1 yorum/i})).toBeVisible({timeout: 15_000});
+		await expect(page.getByText(commentBody, {exact: false}).first()).toBeVisible({
+			timeout: 10_000,
+		});
+
+		// Sentinel again (this page navigated, so re-set it).
+		await page.evaluate(() => {
+			(window as unknown as {__noReload?: boolean}).__noReload = true;
+		});
+		const voteBtn = page.locator('[data-testid^="comment-vote-comm_"]').first();
+		await expect(voteBtn).toBeVisible({timeout: 10_000});
+		const commentId = (await voteBtn.getAttribute("data-testid"))!.replace("comment-vote-", "");
+		await page.locator(`[data-testid="pano-comment-menu-${commentId}"]`).click();
+		await page.locator(`[data-testid="pano-comment-delete-trigger-${commentId}"]`).click();
+		await expect(page.locator('[data-testid="pano-comment-delete-confirm"]')).toBeVisible({
+			timeout: 5_000,
+		});
+		await page.locator('[data-testid="pano-comment-delete-confirm"]').click();
+
+		// The leaf comment drops live (hard-delete → `deleteEdge`) and the count
+		// falls — no reload.
+		await expect(page.getByText(commentBody, {exact: false})).toHaveCount(0, {timeout: 15_000});
+		await expect(page.getByRole("heading", {name: /0 yorum/i})).toBeVisible({timeout: 15_000});
+		expect(
+			await page.evaluate(() => (window as unknown as {__noReload?: boolean}).__noReload === true),
+		).toBe(true);
+		// The URL never changed (no navigation, no reload).
+		expect(new URL(page.url()).pathname).toBe(postPath);
+	});
+
 	test("a new post appears in a second client's open feed without refetch", async ({browser}) => {
 		const ctxA: BrowserContext = await browser.newContext();
 		const ctxB: BrowserContext = await browser.newContext();

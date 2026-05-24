@@ -267,7 +267,7 @@ export const panoMutations = {
 			const pano = yield* Pano;
 			// Resolve the parent post id before the delete (the row still exists).
 			const postId = yield* pano.lookupCommentPostId(input.id);
-			yield* pano.deleteComment({commentId: input.id, actorId: user.id});
+			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
 			if (!postId) return null;
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
@@ -287,10 +287,24 @@ export const panoMutations = {
 				updatedAt: page.updatedAt,
 				myVote: stamped?.myVote ?? null,
 			});
-			// The comment is gone (hard) or tombstoned (soft, reply-aware) — either
-			// way its edge leaves the thread and the parent post's `commentCount`
-			// changes. Publish the comment-edge removal + the re-resolved parent.
-			liveBus.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id);
+			// Two delete shapes, driven by the service's reply-aware decision:
+			//  - hard delete (leaf): the row is gone, so drop its edge from the
+			//    `Post.comments` connection — `deleteEdge` removes it from every open
+			//    thread, the author's own included, without a reload.
+			//  - soft delete (has replies): the row stays as a `[silindi]` tombstone so
+			//    the live replies keep their parent. The edge must NOT leave the
+			//    connection (that would orphan the subtree); instead publish the
+			//    re-resolved tombstoned comment so each thread re-renders it in place.
+			if (result.placeholder) {
+				liveBus.update("Comment", input.id, {
+					changed: ["body", "score", "deletedAt", "updatedAt"],
+					data: toComment(result.placeholder),
+				});
+			} else {
+				liveBus.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id);
+			}
+			// Either way the parent post's `commentCount` changes — publish the
+			// re-resolved parent.
 			liveBus.update("Post", post.id, {changed: ["commentCount"], data: post});
 			return post;
 		}),

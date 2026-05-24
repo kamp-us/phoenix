@@ -257,6 +257,84 @@ describe("LiveDO cross-isolate delivery", () => {
 
 		await reader.cancel();
 	});
+
+	// Nested-connection live membership (task 9). `definition.add`/`comment.delete`
+	// publish `appendNode`/`deleteEdge` to an args-scoped nested connection
+	// (`Term.definitions` keyed by `{id: slug}`). A subscriber that registered WITH
+	// those args must still receive the frame, since the publish side strips the
+	// args (it reaches `liveConnectionTopic(procedure)` + the global wildcard) — the
+	// common ground is the global topic both sides share. This locks the path the
+	// three reloads were replaced with, independent of the flaky two-client e2e.
+	it("delivers appendNode + deleteEdge to an args-scoped nested-connection subscriber", async () => {
+		const connId = "x-conn-3";
+		const ownerId = "owner-3";
+		const subId = "op-nested";
+		const slug = "javascript";
+		const procedure = "Term.definitions";
+		const conn = connectionStub(connId);
+		const connectRes = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		const reader = connectRes.body!.getReader();
+		const decoder = new TextDecoder();
+		const buffer = {value: ""};
+		await readFrame(reader, decoder, buffer); // : connected
+
+		// Subscribe WITH the connection's filter args (`{id: slug}`), exactly how the
+		// client subscribes a nested connection (the parent's raw id rides as `id`).
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribeConnection", subId, procedure, args: {id: slug}},
+				ownerId,
+			}),
+		});
+
+		const {liveGlobalConnectionTopic} = await import("@nkzw/fate/server");
+
+		// `definition.add`: an `appendNode` published the way the resolver does.
+		const node = {__typename: "Definition", id: "def-7", body: "new def"};
+		await topicStub(liveGlobalConnectionTopic(procedure)).fetch("https://live/publish", {
+			method: "POST",
+			body: JSON.stringify({
+				kind: "connection",
+				match: {procedure},
+				frame: {type: "appendNode", nodeType: "Definition", edge: {node}},
+			}),
+		});
+
+		const appendFrame = await readFrame(reader, decoder, buffer);
+		expect(appendFrame).toContain("event: connection");
+		const appendPayload = JSON.parse(
+			appendFrame
+				.split("\n")
+				.find((l) => l.startsWith("data: "))!
+				.slice("data: ".length),
+		) as {kind: string; event: {type: string; nodeType: string; edge: {node: unknown}}};
+		expect(appendPayload.event.type).toBe("appendNode");
+		expect(appendPayload.event.edge.node).toEqual(node);
+
+		// `definition.delete` / hard `comment.delete`: a `deleteEdge` removes the row.
+		await topicStub(liveGlobalConnectionTopic(procedure)).fetch("https://live/publish", {
+			method: "POST",
+			body: JSON.stringify({
+				kind: "connection",
+				match: {procedure},
+				frame: {type: "deleteEdge", nodeType: "Definition", id: "def-7"},
+			}),
+		});
+
+		const deleteFrame = await readFrame(reader, decoder, buffer);
+		expect(deleteFrame).toContain("event: connection");
+		const deletePayload = JSON.parse(
+			deleteFrame
+				.split("\n")
+				.find((l) => l.startsWith("data: "))!
+				.slice("data: ".length),
+		) as {kind: string; event: {type: string; nodeType: string; id: string}};
+		expect(deletePayload.event.type).toBe("deleteEdge");
+		expect(deletePayload.event.id).toBe("def-7");
+
+		await reader.cancel();
+	});
 });
 
 describe("LiveDO cookie auth at connect", () => {

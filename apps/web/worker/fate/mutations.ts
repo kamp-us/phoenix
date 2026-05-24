@@ -80,7 +80,16 @@ export const mutations = {
 				...(input.termTitle ? {termTitle: input.termTitle} : {}),
 			});
 			// Fresh write: not yet voted by anyone.
-			return shapeDefinition({...result, myVote: null});
+			const definition = shapeDefinition({...result, myVote: null});
+			// New definition joins the term's list: append its node to the
+			// `Term.definitions` connection keyed by the term slug (the same key
+			// `definition.delete` removes from). This drives every open term page —
+			// including the author's own — without a reload. Inline node; the DO does
+			// no DB work and each client masks `data` to its own selection.
+			liveBus
+				.connection("Term.definitions", {id: input.termSlug})
+				.appendNode("Definition", definition.id, {node: definition});
+			return definition;
 		}),
 	},
 	"definition.vote": {

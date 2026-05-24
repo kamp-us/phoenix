@@ -25,8 +25,11 @@
  *    re-resolves the parent for fresh counts + the reply-aware soft-delete
  *    placeholder), so fate's `delete: true` can't be used (it would
  *    `deleteRecord("Comment", id)` — wrong, the leaf-vs-soft-delete decision is
- *    the server's), and the comment lives in a nested connection. So we delete on
- *    the server, then **reload** so the page re-reads the thread.
+ *    the server's), and the comment lives in a nested connection. The resolver
+ *    drives the thread live instead: a hard-deleted leaf publishes
+ *    `deleteEdge` (the row drops via `useLiveListView`); a soft-deleted parent
+ *    publishes `live.update` with the `[silindi]` tombstone (re-renders in place
+ *    via the node's `useLiveView`, keeping its live replies). No reload.
  *
  * Error routing is the call-site catch (phoenix codes classify as boundary,
  * so the mutation throws; the optimistic change rolls back; we read `.code` and
@@ -375,10 +378,12 @@ function Comments(props: CommentsProps) {
 	const fate = useFateClient();
 	// Live: a `comment.add` on another client publishes
 	// `live.connection("Post.comments", {id}).appendNode`, which `useLiveListView`
-	// merges into this thread without a refetch. (Comment *delete* still reloads —
-	// the server publishes `deleteEdge`, but a reply-aware soft-delete keeps the
-	// row as a `[silindi]` tombstone in the connection, so an edge removal would
-	// diverge from the tombstone-correct reload. See the delete handler below.)
+	// merges into this thread without a refetch. Comment *delete* is also live: a
+	// hard-deleted leaf publishes `deleteEdge` (consumed here, the row drops), a
+	// soft-deleted parent publishes `live.update` with the `[silindi]` tombstone
+	// (consumed by the node's own `useLiveView`, re-rendering in place so its live
+	// replies keep their parent — the row stays in the connection). See the delete
+	// handler below.
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
@@ -430,15 +435,17 @@ function Comments(props: CommentsProps) {
 			// `comment.delete` returns the re-resolved **parent `Post`** (reply-aware
 			// soft-delete vs hard-delete is the server's decision). It lives in the
 			// nested `Post.comments` connection, so we can't use `delete: true` (wrong
-			// entity). Delete on the server, then reload so the page re-reads
-			// the thread (tombstone-correct — see the `useLiveListView` note above).
+			// entity). The resolver drives the thread live: a hard-deleted leaf
+			// publishes `deleteEdge` (consumed by `useLiveListView` — the row drops),
+			// a soft-deleted parent publishes `live.update` with the `[silindi]`
+			// tombstone (consumed by the node's own `useLiveView` — it re-renders in
+			// place, keeping its live replies). No reload either way.
 			const {error} = await fate.mutations.comment.delete({input: {id: confirmDeleteId}});
 			if (error) {
 				setDeleteError(commentErrorMessage(codeOf(error), error.message));
 				return;
 			}
 			setConfirmDeleteId(null);
-			window.location.reload();
 		} catch (caught) {
 			const code = codeOf(caught);
 			if (code === "UNAUTHORIZED") {

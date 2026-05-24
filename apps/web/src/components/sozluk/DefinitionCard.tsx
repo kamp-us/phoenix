@@ -173,9 +173,10 @@ export function DefinitionCard(props: DefinitionCardProps) {
 			// parent so counts update), so fate's `delete: true` can't be used — it
 			// would `deleteRecord("Term", definitionId)`, the wrong entity. And the
 			// definition lives in the *nested* `Term.definitions` connection, whose
-			// membership `insert`/`delete` can't touch. So we delete on the
-			// server, then reload so the page re-reads `term(slug)` and the row
-			// drops.
+			// membership `insert`/`delete` can't touch. The resolver instead publishes
+			// `live.connection("Term.definitions", {id: slug}).deleteEdge`, which the
+			// list's `useLiveListView` consumes — the card drops out in place (this
+			// client's own view included), no reload.
 			const {error} = await fate.mutations.definition.delete({
 				input: {id: definition.id},
 			});
@@ -184,7 +185,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 				return;
 			}
 			setConfirmDelete(false);
-			window.location.reload();
 		} catch (error) {
 			const code = codeOf(error);
 			if (code === "UNAUTHORIZED") {
