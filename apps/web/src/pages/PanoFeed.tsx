@@ -21,8 +21,8 @@ import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate
 import {Subnav} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
-import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
+import {LoadMoreButton} from "../fate/wire";
 
 const PAGE_SIZE = 20;
 
@@ -178,28 +178,6 @@ function FilterablePostCard({
 	const data = useLiveView(PanoPostCardView, node);
 	if (tagKind && !(data.tags ?? []).some((t) => t.kind === tagKind)) return null;
 	return <PanoPostCard post={node} rank={rank} />;
-}
-
-function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
-	const [loading, setLoading] = React.useState(false);
-	return (
-		<Button
-			variant="tertiary"
-			size="sm"
-			type="button"
-			disabled={loading}
-			onClick={async () => {
-				setLoading(true);
-				try {
-					await loadNext();
-				} finally {
-					setLoading(false);
-				}
-			}}
-		>
-			{loading ? "yükleniyor…" : "daha fazla"}
-		</Button>
-	);
 }
 
 interface ChromeProps {

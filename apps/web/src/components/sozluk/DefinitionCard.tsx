@@ -26,9 +26,10 @@ import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
 import type {Definition} from "../../../worker/fate/views";
 import {useSession} from "../../auth/client";
+import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
-import {decodeMutationErrorCode, type MutationErrorCode} from "../../lib/mutationErrorCodes";
+import type {MutationErrorCode} from "../../lib/mutationErrorCodes";
 import {authRedirectPath} from "../../lib/returnTo";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
@@ -47,20 +48,6 @@ export const DefinitionView = view<Definition>()({
 });
 
 const BODY_MAX = 10_000;
-
-/** Wire dates arrive as strings though the entity type says `Date`. */
-const toIso = (value: Date | string | null | undefined): string =>
-	value == null ? "" : value instanceof Date ? value.toISOString() : String(value);
-
-/**
- * Read `.code` off a thrown fate error (it carries a string `code`); fall back
- * to a generic code. The boundary-class throw already rolled back optimism.
- */
-const codeOf = (error: unknown): MutationErrorCode => {
-	const code =
-		error && typeof error === "object" && "code" in error ? (error as {code: unknown}).code : null;
-	return decodeMutationErrorCode(code) ?? "INTERNAL_SERVER_ERROR";
-};
 
 /** Turkish copy for the validation / not-found codes a card surfaces inline. */
 const messageForCode = (code: MutationErrorCode, fallback: string): string => {

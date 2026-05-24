@@ -10,6 +10,7 @@
  */
 import {useLiveView, type ViewRef, view} from "react-fate";
 import type {Post} from "../../../worker/fate/views";
+import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {Tag, type TagKind} from "../ui/atoms";
@@ -45,10 +46,6 @@ export const PanoPostHeaderView = view<Post>()({
 	updatedAt: true,
 	tags: true,
 });
-
-/** Wire dates arrive as strings though the entity type says `Date`. */
-const toIso = (value: Date | string | null | undefined): string =>
-	value == null ? "" : value instanceof Date ? value.toISOString() : String(value);
 
 export interface PanoPostHeaderProps {
 	post: ViewRef<"Post">;

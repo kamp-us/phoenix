@@ -14,14 +14,13 @@
  * and paginates via `useListView` ("load more"). A null profile (unknown
  * username) renders the 404 page.
  */
-import {useState} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useParams} from "react-router";
 import type {Profile} from "../../worker/fate/views";
 import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
-import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
+import {LoadMoreButton} from "../fate/wire";
 import {NotFoundPage} from "./NotFoundPage";
 import "./UserProfilePage.css";
 
@@ -116,32 +115,9 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 					}}
 					data-testid="user-profile-load-more-row"
 				>
-					<LoadMoreButton loadNext={loadNext} />
+					<LoadMoreButton loadNext={loadNext} testId="user-profile-load-more" />
 				</div>
 			) : null}
 		</section>
-	);
-}
-
-function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
-	const [loading, setLoading] = useState(false);
-	return (
-		<Button
-			variant="tertiary"
-			size="sm"
-			type="button"
-			disabled={loading}
-			onClick={async () => {
-				setLoading(true);
-				try {
-					await loadNext();
-				} finally {
-					setLoading(false);
-				}
-			}}
-			data-testid="user-profile-load-more"
-		>
-			{loading ? "yükleniyor…" : "daha fazla"}
-		</Button>
 	);
 }

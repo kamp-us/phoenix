@@ -2,21 +2,11 @@ import {useState} from "react";
 import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
 import {useSession} from "../../auth/client";
-import {decodeMutationErrorCode} from "../../lib/mutationErrorCodes";
+import {codeOf} from "../../fate/wire";
 import {authRedirectPath} from "../../lib/returnTo";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostVoteView} from "./PanoPostHeader";
 import "./PanoPost.css";
-
-/** Read the `.code` off a thrown / returned fate error (the boundary-class */
-/** throw already rolled back optimism — see `.patterns/fate-mutations-client.md`). */
-const codeOf = (error: unknown): string =>
-	error &&
-	typeof error === "object" &&
-	"code" in error &&
-	typeof (error as {code: unknown}).code === "string"
-		? (decodeMutationErrorCode((error as {code: string}).code) ?? "INTERNAL_SERVER_ERROR")
-		: "INTERNAL_SERVER_ERROR";
 
 /* Vote control — single triangle upvote with count below (lobsters-shape).
    Stays presentational; the parent owns the mutation + auth gate. */

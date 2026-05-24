@@ -54,7 +54,8 @@ import {
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {Screen} from "../fate/Screen";
-import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
+import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
+import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {NotFoundPage} from "./NotFoundPage";
 import "./PanoPostDetail.css";
@@ -88,12 +89,6 @@ const PostDetailView = view<Post>()({
 	...PanoPostHeaderView,
 	comments: CommentConnectionView,
 });
-
-/** Read the `.code` off a thrown / returned fate error. */
-const codeOf = (error: unknown): MutationErrorCode =>
-	error && typeof error === "object" && "code" in error
-		? (decodeMutationErrorCode((error as {code: unknown}).code) ?? "INTERNAL_SERVER_ERROR")
-		: "INTERNAL_SERVER_ERROR";
 
 const postErrorMessage = (code: MutationErrorCode, fallback: string): string => {
 	switch (code) {
@@ -623,10 +618,6 @@ function Comments(props: CommentsProps) {
 	);
 }
 
-/** Wire dates arrive as strings though the entity type says `Date`. */
-const toIsoOrNull = (value: Date | string | null | undefined): string | null =>
-	value == null ? null : value instanceof Date ? value.toISOString() : String(value);
-
 /**
  * A zero-DOM reader: masks a comment node off `CommentTreeNodeView` and reports
  * its structural fields (`parentId`/`deletedAt`/`body`) up so the page can build
@@ -653,28 +644,6 @@ function CommentMetaReader({
 		});
 	}, [data.id, data.parentId, data.deletedAt, data.body, node, report]);
 	return null;
-}
-
-function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
-	const [loading, setLoading] = React.useState(false);
-	return (
-		<Button
-			variant="tertiary"
-			size="sm"
-			type="button"
-			disabled={loading}
-			onClick={async () => {
-				setLoading(true);
-				try {
-					await loadNext();
-				} finally {
-					setLoading(false);
-				}
-			}}
-		>
-			{loading ? "yükleniyor…" : "daha fazla"}
-		</Button>
-	);
 }
 
 /**

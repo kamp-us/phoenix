@@ -4,7 +4,8 @@ import {Link, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Button} from "../components/ui/Button";
-import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
+import {codeOf} from "../fate/wire";
+import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import "./PanoSubmitPage.css";
 
@@ -31,12 +32,6 @@ function hostOf(url: string) {
 	const m = URL_RE.exec(url);
 	return m ? m[0].replace(/^https?:\/\//, "") : "";
 }
-
-/** Read the `.code` off a thrown / returned fate error. */
-const codeOf = (error: unknown): MutationErrorCode =>
-	error && typeof error === "object" && "code" in error
-		? (decodeMutationErrorCode((error as {code: unknown}).code) ?? "INTERNAL_SERVER_ERROR")
-		: "INTERNAL_SERVER_ERROR";
 
 const TITLE_MAX = 200;
 const BODY_MAX = 10_000;

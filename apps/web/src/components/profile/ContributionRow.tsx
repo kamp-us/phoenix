@@ -14,6 +14,7 @@
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/fate/views";
+import {toIso} from "../../fate/wire";
 
 /** The full discriminant selection — every field any `kind` branch reads. */
 export const ContributionView = view<Contribution>()({
@@ -29,10 +30,6 @@ export const ContributionView = view<Contribution>()({
 	postId: true,
 	postTitle: true,
 });
-
-/** Wire dates arrive as strings though the entity type says `Date`. */
-const toIso = (value: Date | string | null | undefined): string =>
-	value == null ? "" : value instanceof Date ? value.toISOString() : String(value);
 
 function formatDate(value: Date | string | null | undefined): string {
 	const iso = toIso(value);

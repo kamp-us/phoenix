@@ -15,9 +15,9 @@ import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
 import type {Comment} from "../../../worker/fate/views";
 import {useSession} from "../../auth/client";
+import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
-import {decodeMutationErrorCode} from "../../lib/mutationErrorCodes";
 import {authRedirectPath} from "../../lib/returnTo";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
@@ -46,19 +46,6 @@ export const CommentTreeNodeView = view<Comment>()({
  * selects these fields, so we reuse it as the write-back view.)
  */
 const CommentVoteView = CommentTreeNodeView;
-
-/** Wire dates arrive as strings though the entity type says `Date`. */
-const toIso = (value: Date | string | null | undefined): string =>
-	value == null ? "" : value instanceof Date ? value.toISOString() : String(value);
-
-/** Read the `.code` off a thrown / returned fate error. */
-const codeOf = (error: unknown): string =>
-	error &&
-	typeof error === "object" &&
-	"code" in error &&
-	typeof (error as {code: unknown}).code === "string"
-		? (decodeMutationErrorCode((error as {code: string}).code) ?? "INTERNAL_SERVER_ERROR")
-		: "INTERNAL_SERVER_ERROR";
 
 export interface CommentTreeNodeProps {
 	/** View ref into a Comment node from the post's comments connection. */

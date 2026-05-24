@@ -8,6 +8,7 @@
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Term} from "../../../worker/fate/views";
+import {toIsoOrNull} from "../../fate/wire";
 import {formatAgoTR, formatDateTR} from "../../lib/datetime";
 
 /** The fields the term header reads. Co-located with the component. */
@@ -21,10 +22,6 @@ export const TermHeaderView = view<Term>()({
 	lastEdit: true,
 });
 
-/** Wire dates arrive as strings though the entity type says `Date`. */
-const toIso = (value: Date | string | null | undefined): string | null =>
-	value == null ? null : value instanceof Date ? value.toISOString() : String(value);
-
 export interface SozlukTermHeaderProps {
 	term: ViewRef<"Term">;
 }
@@ -32,8 +29,8 @@ export interface SozlukTermHeaderProps {
 export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 	const term = useView(TermHeaderView, props.term);
 	const firstLetter = term.title.charAt(0).toLowerCase();
-	const firstAt = toIso(term.firstAt);
-	const lastEdit = toIso(term.lastEdit);
+	const firstAt = toIsoOrNull(term.firstAt);
+	const lastEdit = toIsoOrNull(term.lastEdit);
 	return (
 		<header className="kp-sozluk-term__head">
 			<p className="kp-sozluk-term__crumbs">

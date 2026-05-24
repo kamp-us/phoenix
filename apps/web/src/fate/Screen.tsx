@@ -47,9 +47,6 @@ interface ErrorBoundaryState {
 	error: Error | null;
 }
 
-const codeOf = (error: Error): ScreenErrorCode =>
-	isFateError(error) ? error.code : "INTERNAL_SERVER_ERROR";
-
 class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 	override state: ErrorBoundaryState = {error: null};
 
@@ -63,7 +60,13 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 	override render(): ReactNode {
 		const {error} = this.state;
-		if (error) return this.props.fallback({code: codeOf(error), error});
+		if (error) {
+			// Forward the wire `code` verbatim — the screen vocabulary is wider
+			// than fate's closed union (e.g. `NOT_FOUND`), so this does NOT narrow
+			// through `decodeMutationErrorCode` the way `wire.codeOf` does.
+			const code: ScreenErrorCode = isFateError(error) ? error.code : "INTERNAL_SERVER_ERROR";
+			return this.props.fallback({code, error});
+		}
 		return this.props.children;
 	}
 }

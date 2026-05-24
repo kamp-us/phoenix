@@ -26,7 +26,8 @@ import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCar
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
-import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
+import {codeOf, LoadMoreButton} from "../fate/wire";
+import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
@@ -52,13 +53,6 @@ const TermView = view<Term>()({
 	...TermHeaderView,
 	definitions: DefinitionConnectionView,
 });
-
-/** Read the `.code` off a thrown / returned fate error. */
-const codeOf = (error: unknown): MutationErrorCode => {
-	const code =
-		error && typeof error === "object" && "code" in error ? (error as {code: unknown}).code : null;
-	return decodeMutationErrorCode(code) ?? "INTERNAL_SERVER_ERROR";
-};
 
 const messageForCode = (code: MutationErrorCode, fallback: string): string => {
 	switch (code) {
@@ -177,28 +171,6 @@ function DefinitionsList(props: DefinitionsListProps) {
 			) : null}
 			<Composer slug={props.slug} />
 		</>
-	);
-}
-
-function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
-	const [loading, setLoading] = React.useState(false);
-	return (
-		<Button
-			variant="tertiary"
-			size="sm"
-			type="button"
-			disabled={loading}
-			onClick={async () => {
-				setLoading(true);
-				try {
-					await loadNext();
-				} finally {
-					setLoading(false);
-				}
-			}}
-		>
-			{loading ? "yükleniyor…" : "daha fazla"}
-		</Button>
 	);
 }
 

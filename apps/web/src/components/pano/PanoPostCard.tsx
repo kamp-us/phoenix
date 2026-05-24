@@ -14,6 +14,7 @@
 import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Post} from "../../../worker/fate/views";
+import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostVoteWidget} from "./PanoPost";
@@ -34,10 +35,6 @@ export const PanoPostCardView = view<Post>()({
 	slug: true,
 	tags: true,
 });
-
-/** Wire dates arrive as strings though the entity type says `Date`. */
-const toIso = (value: Date | string | null | undefined): string =>
-	value == null ? "" : value instanceof Date ? value.toISOString() : String(value);
 
 export function PanoPostCard({
 	post,

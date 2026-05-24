@@ -22,7 +22,8 @@
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/fate/views";
-import {decodeMutationErrorCode, type MutationErrorCode} from "../lib/mutationErrorCodes";
+import {codeOf} from "../fate/wire";
+import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import "./AuthPage.css";
 
 const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
@@ -35,13 +36,6 @@ const SetUsernameView = view<User>()({
 	image: true,
 	username: true,
 });
-
-/** Read the `.code` off a thrown / returned fate error. */
-const codeOf = (error: unknown): MutationErrorCode | null => {
-	const code =
-		error && typeof error === "object" && "code" in error ? (error as {code: unknown}).code : null;
-	return decodeMutationErrorCode(code);
-};
 
 /** Map a server wire code to the inline message. */
 function messageForCode(code: MutationErrorCode | null): string {
