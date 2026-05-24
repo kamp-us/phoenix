@@ -5,10 +5,9 @@ import {z} from "zod";
 import {AdminRuntime} from "./admin/runtime";
 import {livePublishContext} from "./fate/live";
 import {handleLiveRequest} from "./fate/live-route";
-import {FateRuntime, type SessionData as FateSessionData} from "./fate/runtime";
+import {FateRuntime, toSessionData, validateSessionCookie} from "./fate/runtime";
 import {fateServer} from "./fate/server";
 import {PanoAdmin} from "./features/pano/PanoAdmin";
-import type {Session} from "./features/pasaport/auth";
 import {Pasaport} from "./features/pasaport/Pasaport";
 import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
 import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
@@ -195,23 +194,10 @@ app.all("/fate/live", (c) => handleLiveRequest(c));
 // fate via `adapterContext`, and disposes it in `finally` via
 // `executionCtx.waitUntil` so disposal doesn't block the response.
 app.post("/fate", async (c) => {
-	// Validate the session through a short-lived runtime; the request runtime is
-	// then built with the resolved session attached to the `Auth` layer.
-	const sessionRuntime = FateRuntime.make(c.env, c.req.raw, null);
-	let session: Session | null = null;
-	try {
-		session = await sessionRuntime.runPromise(
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.validateSession(c.req.raw.headers);
-			}),
-		);
-	} finally {
-		await sessionRuntime.dispose();
-	}
-	const sessionData: FateSessionData = session
-		? {user: session.user, session: session.session}
-		: null;
+	// Validate the session through a minimal Pasaport-only runtime; the request
+	// runtime is then built once with the resolved session attached to `Auth`.
+	const session = await validateSessionCookie(c.env, c.req.raw);
+	const sessionData = toSessionData(session);
 
 	const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
 	try {

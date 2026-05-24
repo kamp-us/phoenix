@@ -5,9 +5,9 @@
  * Object rather than from fate's in-Worker `handleLiveRequest` (which cannot fan
  * out across isolates). It builds **no** per-request `ManagedRuntime`: the DO
  * relays the inline-resolved `data`/`node` mutations publish, so there is no
- * Effect runtime in the live path. The only Effect here is the short-lived
- * session validation (the same cookie check the `/fate` route does) — and that
- * runs through a runtime disposed before handoff, not the request runtime.
+ * Effect runtime in the live path. The only Effect here is the session cookie
+ * check, shared with `/fate` via `validateSessionCookie` — a minimal
+ * Pasaport-only runtime disposed before handoff, not the request runtime.
  *
  *   - `GET  /fate/live?connectionId=…` → validate cookie, open the SSE stream on
  *     the connection DO. Rejected (401) without a valid session cookie.
@@ -18,26 +18,8 @@
  * `EventSource` with `withCredentials: true`, same-origin), so there is no token
  * in the URL and no header. See `.patterns/fate-live-views.md` (Auth), ADR 0023.
  */
-import {Effect} from "effect";
 import type {Context} from "hono";
-import type {Session} from "../features/pasaport/auth";
-import {Pasaport} from "../features/pasaport/Pasaport";
-import {FateRuntime} from "./runtime";
-
-/** Validate the better-auth session cookie via a short-lived runtime. */
-async function validateSession(env: Env, request: Request): Promise<Session | null> {
-	const sessionRuntime = FateRuntime.make(env, request, null);
-	try {
-		return await sessionRuntime.runPromise(
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.validateSession(request.headers);
-			}),
-		);
-	} finally {
-		await sessionRuntime.dispose();
-	}
-}
+import {validateSessionCookie} from "./runtime";
 
 /** A subscribe/unsubscribe control operation from a fate live control POST. */
 interface LiveControlOperation {
@@ -69,7 +51,7 @@ function connectionStub(env: Env, connectionId: string) {
  */
 export async function handleLiveRequest(c: Context<{Bindings: Env}>): Promise<Response> {
 	const request = c.req.raw;
-	const session = await validateSession(c.env, request);
+	const session = await validateSessionCookie(c.env, request);
 	if (!session) {
 		return Response.json(
 			{

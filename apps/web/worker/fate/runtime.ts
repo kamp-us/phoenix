@@ -1,7 +1,7 @@
-import {Layer, ManagedRuntime} from "effect";
+import {Effect, Layer, ManagedRuntime} from "effect";
 import {type Pano, PanoLive} from "../features/pano/Pano";
 import type {Session} from "../features/pasaport/auth";
-import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
+import {Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
 import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk";
 import {type Stats, StatsLive} from "../features/stats/Stats";
 import {type Vote, VoteLive} from "../features/vote/Vote";
@@ -95,3 +95,41 @@ export namespace FateRuntime {
 	): ManagedRuntime.ManagedRuntime<Context, never> =>
 		ManagedRuntime.make(layer(env, request, sessionData));
 }
+
+/**
+ * Validate the better-auth session cookie on a request.
+ *
+ * Both `/fate` and `/fate/live` need the session resolved *before* the data
+ * plane is wired: `/fate` bakes it into the request runtime's `Auth` layer,
+ * `/fate/live` uses it to authorize the SSE connection. The cookie check only
+ * touches `Pasaport.validateSession` (which reads `env.PHOENIX_DB` via
+ * better-auth), so this runs through a minimal Pasaport-only runtime —
+ * `PasaportLive` over `Drizzle` + `CloudflareEnv` — instead of a full
+ * `FateRuntime` (all five features + every layer). The short-lived runtime is
+ * disposed before the caller hands off to the data plane, so `/fate` builds
+ * exactly one full `FateRuntime` per request, not two.
+ */
+export const validateSessionCookie = async (
+	env: Env,
+	request: Request,
+): Promise<Session | null> => {
+	const layer = PasaportLive.pipe(
+		Layer.provide(DrizzleLive),
+		Layer.provide(Layer.succeed(CloudflareEnv, env)),
+	);
+	const runtime = ManagedRuntime.make(layer);
+	try {
+		return await runtime.runPromise(
+			Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				return yield* pasaport.validateSession(request.headers);
+			}),
+		);
+	} finally {
+		await runtime.dispose();
+	}
+};
+
+/** Build the `Auth`-layer `SessionData` from a resolved session (or null). */
+export const toSessionData = (session: Session | null): SessionData =>
+	session ? {user: session.user, session: session.session} : null;
