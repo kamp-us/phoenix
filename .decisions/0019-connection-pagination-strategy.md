@@ -1,12 +1,12 @@
 ---
 id: 0019
-title: Connection pagination — custom list resolvers for roots, source connection for nested
+title: Connection pagination — custom resolvers deliver every connection
 status: accepted
 date: 2026-05-23
 tags: [fate, pagination, connections]
 ---
 
-# 0019 — Connection pagination: custom list resolvers for roots, source connection for nested
+# 0019 — Connection pagination: custom resolvers deliver every connection
 
 ## Context
 
@@ -23,9 +23,13 @@ derived from the view's `orderBy`.
   map the service page onto a `ConnectionResult`. The service owns the cursor
   and the keyset SQL.
 - **Nested connections** (`Term.definitions`, `Post.comments`,
-  `Profile.contributions`) resolve via the source `connection` executor. The
-  view's `list(view, {orderBy})` must match the service's `ORDER BY` exactly,
-  with `id` as the final tiebreaker, so fate's keyset cursors round-trip.
+  `Profile.contributions`) resolve via the parent's custom `queries` resolver,
+  which builds the `ConnectionResult` from the service keyset method. The view's
+  `list(view, {orderBy})` must match the service's `ORDER BY` exactly, with `id`
+  as the final tiebreaker, so the keyset cursors round-trip. *(See the 1.0.3
+  amendment for why fate does not auto-invoke a source `connection` executor for
+  a hand-built source, and the 1.0.4 amendment for the removal of those dead
+  executors.)*
 
 ## Consequences
 
@@ -55,3 +59,25 @@ and the `id` tiebreaker all stand; only the *delivery mechanism* changed. Root
 lists are unaffected (custom `lists` resolvers, as decided). Source authoritative
 (CLAUDE.md): the pattern doc [fate-connections.md](../.patterns/fate-connections.md)
 carries the corrected mechanics.
+
+## 1.0.4 amendment — the source `connection` executors are removed
+
+The 1.0.3 amendment established that the source `connection` executors are
+unreachable for phoenix's hand-built sources, so the parent custom resolver is
+the *only* path that delivers a nested connection. That left the
+`Definition`/`Comment`/`Contribution` source `connection` executors (plus every
+source `orderBy` contract) as dead code held in hand-maintained lockstep with
+the service `ORDER BY` — a second copy of the keyset order that nothing
+invoked.
+
+**Those executors and the source `orderBy` declarations are now deleted**
+(`worker/fate/sources.ts`). Only the parent resolver delivers a nested
+connection; there is genuinely one keyset path (the service method). The
+`Contribution` source — which had *only* a `connection` executor and no
+relation `byId`/`byIds` — is removed entirely (the feed is delivered solely by
+`queries.profile`). The `byId`/`byIds` executors stay: they back by-id reads
+and live relation masking.
+
+The lockstep `orderBy`↔`ORDER BY` invariant now has one home — the view's
+`list(view, {orderBy})` mirroring the service `ORDER BY` — instead of being
+duplicated a third time in the source definition.

@@ -52,18 +52,13 @@ const definitionExecutor = fateSource<DefinitionRow>({
 });
 
 // A SourceDefinition is a plain object literal — no factory call. `id` is the PK
-// field name, `view` is the *base* data view, `orderBy` matches the service
-// ORDER BY for the root-list connection path (ADR 0019). For a hand-built
-// source, nested relation `connection` executors are not auto-invoked — nested
-// connections are delivered inline by the parent custom resolver; see
-// fate-connections.md. The `orderBy` here is the single home for the keyset
-// order the inline build delegates to.
+// field name, `view` is the *base* data view. No `orderBy`: a hand-built source's
+// `connection` executor is never auto-invoked, so phoenix carries none and the
+// keyset order lives only in the service `ORDER BY` (mirrored by the view's
+// `list(view, {orderBy})`). Connections are delivered by the parent custom
+// resolver / `lists` resolver; see fate-connections.md and ADR 0019.
 const termSource: SourceDefinition<TermSummaryRow> = {id: "id", view: termDataView};
-const definitionSource: SourceDefinition<DefinitionRow> = {
-  id: "id",
-  view: definitionDataView,
-  orderBy: [{field: "createdAt", direction: "desc"}], // = Sozluk's ORDER BY; id is the tiebreaker
-};
+const definitionSource: SourceDefinition<DefinitionRow> = {id: "id", view: definitionDataView};
 const userSource: SourceDefinition<UserRow> = {id: "id", view: userDataView};
 
 // The registry is a plain Map keyed by the SourceDefinition object (identity).
@@ -120,6 +115,6 @@ Mutation resolvers re-resolve the changed entity through the same source (`creat
 
 - [fate-effect-bridge.md](./fate-effect-bridge.md) — `fateSource`, the runtime, error mapping
 - [fate-data-views.md](./fate-data-views.md) — the views these sources back
-- [fate-connections.md](./fate-connections.md) — the `connection` executor and cursors
+- [fate-connections.md](./fate-connections.md) — how connections are delivered and cursors
 - [feature-services.md](./feature-services.md) — the services the executors call
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `example/void/src/fate/server.ts` (note: it uses the Drizzle adapter — phoenix deliberately does not)
