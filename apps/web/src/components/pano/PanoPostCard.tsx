@@ -11,7 +11,7 @@
  * Side affordances (rank, save/hide) are still controlled by the parent because
  * they're list-position state, not Post state.
  */
-import {useView, type ViewRef, view} from "react-fate";
+import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Post} from "../../../worker/fate/views";
 import {formatAgoTR} from "../../lib/datetime";
@@ -50,7 +50,10 @@ export function PanoPostCard({
 	onSave?: (id: string) => void;
 	onHide?: (id: string) => void;
 }) {
-	const data = useView(PanoPostCardView, post);
+	// Live: a `post.vote`/`retractVote` on another client publishes
+	// `live.update("Post", id, {changed:["score"]})` with the re-resolved node
+	// inline, so the feed card's score re-renders without a refetch.
+	const data = useLiveView(PanoPostCardView, post);
 	// Raw post id (or slug) — the /pano/:id route key.
 	const href = `/pano/${data.slug ?? data.id}`;
 	// Site label — host in parens for external links, "yazı" for self-posts.

@@ -12,7 +12,7 @@
  * each level renders its own subtree without re-walking the whole list.
  */
 import * as React from "react";
-import {useFateClient, useView, type ViewRef, view} from "react-fate";
+import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
 import type {Comment} from "../../../worker/fate/views";
 import {useSession} from "../../auth/client";
@@ -91,7 +91,10 @@ export interface CommentTreeNodeProps {
 }
 
 export function CommentTreeNode(props: CommentTreeNodeProps) {
-	const data = useView(CommentTreeNodeView, props.comment);
+	// Live: a comment vote/edit on another client publishes
+	// `live.update("Comment", id, …)` with the re-resolved node inline, so the
+	// score/body re-render here without a refetch.
+	const data = useLiveView(CommentTreeNodeView, props.comment);
 	const fate = useFateClient();
 	// Test affordances key off the raw comment id (`comm_<ulid>`) — on fate the
 	// id is already the raw per-type id (no Relay global-id unwrap needed).

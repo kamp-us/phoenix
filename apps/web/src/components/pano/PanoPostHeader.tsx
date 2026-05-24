@@ -8,7 +8,7 @@
  * Edit / delete affordances are gated by `isAuthor`, which the page derives from
  * the session and passes in.
  */
-import {useView, type ViewRef, view} from "react-fate";
+import {useLiveView, type ViewRef, view} from "react-fate";
 import type {Post} from "../../../worker/fate/views";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
@@ -58,7 +58,7 @@ export interface PanoPostHeaderProps {
 }
 
 export function PanoPostHeader(props: PanoPostHeaderProps) {
-	const post = useView(PanoPostHeaderView, props.post);
+	const post = useLiveView(PanoPostHeaderView, props.post);
 	const tags = post.tags ?? [];
 	return (
 		<div>
@@ -113,6 +113,6 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 
 /** Convenience accessor — the detail page reads the score/myVote/id for the vote widget. */
 export function PanoPostHeaderVote({post}: {post: ViewRef<"Post">}) {
-	const data = useView(PanoPostHeaderView, post);
+	const data = useLiveView(PanoPostHeaderView, post);
 	return <PostVoteWidget postId={data.id} score={data.score} myVote={data.myVote ?? null} />;
 }

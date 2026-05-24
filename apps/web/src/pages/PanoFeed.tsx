@@ -19,7 +19,7 @@
  * per node, the filter colocated (mirrors sözlük's `FilterableTermRow`).
  */
 import * as React from "react";
-import {useListView, useRequest, useView, type ViewRef} from "react-fate";
+import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
 import {Subnav} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
@@ -28,8 +28,20 @@ import {Screen} from "../fate/Screen";
 
 const PAGE_SIZE = 20;
 
-/** The connection selection for the feed — the shape `useListView` reads. */
-const PostConnectionView = {items: {node: PanoPostCardView}} as const;
+/**
+ * The connection selection for the feed — the shape `useListView` reads.
+ *
+ * `live: {prepend: "visible"}` makes a server-pushed `prependNode` (a new post
+ * from another client) appear **at the top of the visible feed immediately**.
+ * Without it, fate's default `"edge"` mode buffers the prepend in a hidden
+ * `liveBeforeIds` set when the first page window is full (the infinite-scroll
+ * default) and the row wouldn't render until a page load — see
+ * `.patterns/fate-live-views.md`.
+ */
+const PostConnectionView = {
+	items: {node: PanoPostCardView},
+	live: {prepend: "visible"},
+} as const;
 
 /**
  * UI sort labels (Turkish) → server `sort` string. The `tartışma` filter is a
@@ -122,7 +134,11 @@ function FeedRows({
 	setFilterId: (id: string) => void;
 	tagKind?: string;
 }) {
-	const [items, loadNext] = useListView(PostConnectionView, connection);
+	// Live: a `post.submit` on another client publishes
+	// `live.connection("posts").prependNode`, which `useLiveListView` merges into
+	// the open feed without a refetch (the global `posts` topic reaches every
+	// feed-sort variant). Post votes re-render via each card's `useLiveView`.
+	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
 	const meta = host ? `${items.length} başlık · ${host}` : `${items.length} başlık`;
 
@@ -161,7 +177,7 @@ function FilterablePostCard({
 	rank: number;
 	tagKind?: string;
 }) {
-	const data = useView(PanoPostCardView, node);
+	const data = useLiveView(PanoPostCardView, node);
 	if (tagKind && !(data.tags ?? []).some((t) => t.kind === tagKind)) return null;
 	return <PanoPostCard post={node} rank={rank} />;
 }

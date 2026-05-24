@@ -32,7 +32,15 @@
  * surface it inline). See `.patterns/fate-mutations-client.md`.
  */
 import * as React from "react";
-import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
+import {
+	useFateClient,
+	useLiveListView,
+	useLiveView,
+	useRequest,
+	useView,
+	type ViewRef,
+	view,
+} from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
 import type {Post} from "../../worker/fate/views";
 import {useSession} from "../auth/client";
@@ -55,8 +63,18 @@ const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const PAGE_SIZE = 50;
 
-/** The connection selection for a post's comments — what `useListView` reads. */
-const CommentConnectionView = {items: {node: CommentTreeNodeView}} as const;
+/**
+ * The connection selection for a post's comments — what `useLiveListView` reads.
+ *
+ * `live: {append: "visible"}` makes a server-pushed `appendNode` (a comment from
+ * another client) appear in the thread immediately, even when the first comments
+ * page window is full — without it fate's default `"edge"` mode would buffer the
+ * append in a hidden `liveAfterIds` set. See `.patterns/fate-live-views.md`.
+ */
+const CommentConnectionView = {
+	items: {node: CommentTreeNodeView},
+	live: {append: "visible"},
+} as const;
 
 /**
  * The detail-page view. fate masks by view identity: the page spreads
@@ -362,7 +380,13 @@ interface CommentMeta {
 
 function Comments(props: CommentsProps) {
 	const post = useView(PostDetailView, props.post);
-	const [items, loadNext] = useListView(CommentConnectionView, post.comments);
+	// Live: a `comment.add` on another client publishes
+	// `live.connection("Post.comments", {id}).appendNode`, which `useLiveListView`
+	// merges into this thread without a refetch. (Comment *delete* still reloads —
+	// the server publishes `deleteEdge`, but a reply-aware soft-delete keeps the
+	// row as a `[silindi]` tombstone in the connection, so an edge removal would
+	// diverge from the tombstone-correct reload. See the delete handler below.)
+	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
@@ -614,7 +638,10 @@ function CommentMetaReader({
 	node: ViewRef<"Comment">;
 	report: (meta: CommentMeta) => void;
 }) {
-	const data = useView(CommentTreeNodeView, node);
+	// Live: a comment edit (body) on another client publishes
+	// `live.update("Comment", id, {changed:["body"]})`; reading the meta through
+	// `useLiveView` keeps the lifted `body` (and the tree projection) current.
+	const data = useLiveView(CommentTreeNodeView, node);
 	React.useEffect(() => {
 		report({
 			id: String(data.id),
@@ -650,11 +677,12 @@ function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
 }
 
 /**
- * Top-level + nested comment composer — fate. Submits `comment.add`; on success
- * the new node is normalized into the cache but joins the *nested* connection only
- * on a re-read (declarative `insert` reaches root lists only; nested membership
- * needs live events, tasks 11/12). So we **reload** after a successful add so the
- * thread re-reads and the row appears in place.
+ * Top-level + nested comment composer — fate. Submits `comment.add`; the server
+ * publishes `live.connection("Post.comments", {id}).appendNode` with the inline
+ * node, so the thread's `useLiveListView` merges the new comment in place — no
+ * reload. (Declarative `insert` reaches root lists only; nested-connection
+ * membership is server-driven by the live event, which is why one publish updates
+ * both the author's own view and every other client viewing the post.)
  */
 function CommentComposer({
 	postId,
@@ -711,9 +739,10 @@ function CommentComposer({
 			setBody("");
 			onPosted();
 			onCancel?.();
-			// Nested-connection membership needs live events (tasks 11/12); until then,
-			// reload so the thread re-reads and the new row shows.
-			window.location.reload();
+			// Live: the server published `live.connection("Post.comments", {id})
+			// .appendNode` for the new comment, so `useLiveListView` merges it into
+			// the thread in place — no reload needed (this client's own
+			// subscription delivers it the same way a second client sees it).
 		} catch (caught) {
 			const code = codeOf(caught);
 			if (code === "UNAUTHORIZED") {

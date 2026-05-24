@@ -21,7 +21,10 @@ import {createClient} from "./client";
 export function FateProvider({children}: {children: React.ReactNode}) {
 	const session = useSession();
 	const userId = session.data?.user.id ?? null;
-	const client = useMemo(() => createClient(), [userId]);
+	// Live SSE only opens for an authenticated client — `/fate/live` 401s for an
+	// anonymous viewer, so an anon client gets no-op live methods (no retry loop).
+	// Keyed on `userId`, so signing in rebuilds the client with real live support.
+	const client = useMemo(() => createClient({authenticated: userId != null}), [userId]);
 
 	return (
 		<FateClient key={userId ?? "anon"} client={client}>

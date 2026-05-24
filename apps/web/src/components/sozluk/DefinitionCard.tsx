@@ -22,7 +22,7 @@
  * auth redirect). See `progress/task_6.md` + `.patterns/fate-mutations-client.md`.
  */
 import * as React from "react";
-import {useFateClient, useView, type ViewRef, view} from "react-fate";
+import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
 import type {Definition} from "../../../worker/fate/views";
 import {useSession} from "../../auth/client";
@@ -86,7 +86,10 @@ export interface DefinitionCardProps {
 }
 
 export function DefinitionCard(props: DefinitionCardProps) {
-	const definition = useView(DefinitionView, props.definition);
+	// Live: a definition vote/edit on another client publishes
+	// `live.update("Definition", id, …)` with the re-resolved node inline, so the
+	// score/body re-render here without a refetch.
+	const definition = useLiveView(DefinitionView, props.definition);
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
