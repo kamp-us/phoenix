@@ -6,8 +6,15 @@
  */
 
 import {FateRequestError} from "@nkzw/fate/server";
-import {describe, expect, it} from "vitest";
-import {encodeFateError} from "./errors";
+import {describe, expect, expectTypeOf, it} from "vitest";
+import {CommentNotFound} from "../features/pano/errors";
+import {UserNotFound} from "../features/pasaport/errors";
+import {DefinitionNotFound} from "../features/sozluk/errors";
+import {VoteTargetNotFound} from "../features/vote/errors";
+import {AdminForbidden} from "../services/AdminAuth";
+import {Unauthorized} from "../services/Auth";
+import {DrizzleError} from "../services/Drizzle";
+import {encodeFateError, type FateErrorTag, WIRE_CODE_BY_TAG} from "./errors";
 
 const code = (tag: string, extra: Record<string, unknown> = {}) =>
 	encodeFateError({_tag: tag, ...extra}).code;
@@ -62,5 +69,40 @@ describe("encodeFateError", () => {
 	it("always produces a FateRequestError", () => {
 		expect(encodeFateError({_tag: "Unauthorized"})).toBeInstanceOf(FateRequestError);
 		expect(encodeFateError(undefined)).toBeInstanceOf(FateRequestError);
+	});
+
+	describe("exhaustiveness", () => {
+		// The registry is keyed by the union of every feature error `_tag`. If a
+		// new `Data.TaggedError` is added without a registry entry, `FateErrorTag`
+		// widens and the `Record<FateErrorTag, ...>` literal fails to typecheck —
+		// the silent INTERNAL_SERVER_ERROR downgrade becomes a compile error.
+		it("has a registry entry for every known feature tag", () => {
+			expect(WIRE_CODE_BY_TAG).toHaveProperty("Unauthorized");
+			expect(WIRE_CODE_BY_TAG).toHaveProperty("@phoenix/AdminAuth/Forbidden");
+			expect(WIRE_CODE_BY_TAG).toHaveProperty("@phoenix/Drizzle/Error");
+			expect(WIRE_CODE_BY_TAG).toHaveProperty("pasaport/UserNotFound");
+			expect(WIRE_CODE_BY_TAG).toHaveProperty("sozluk/DefinitionNotFound");
+			expect(WIRE_CODE_BY_TAG).toHaveProperty("pano/CommentNotFound");
+			expect(WIRE_CODE_BY_TAG).toHaveProperty("vote/VoteTargetNotFound");
+		});
+
+		// The union is derived from the actual error classes, so every class's
+		// `_tag` is assignable to `FateErrorTag` — proving the link is not a
+		// hand-maintained string list that can drift from the classes.
+		it("derives the tag union from the real error classes", () => {
+			expectTypeOf(new Unauthorized({message: "x"})._tag).toExtend<FateErrorTag>();
+			expectTypeOf(new AdminForbidden({reason: "x"})._tag).toExtend<FateErrorTag>();
+			expectTypeOf(new DrizzleError({cause: null})._tag).toExtend<FateErrorTag>();
+			expectTypeOf(new UserNotFound({message: "x"})._tag).toExtend<FateErrorTag>();
+			expectTypeOf(
+				new DefinitionNotFound({definitionId: "x", message: "y"})._tag,
+			).toExtend<FateErrorTag>();
+			expectTypeOf(
+				new CommentNotFound({commentId: "x", message: "y"})._tag,
+			).toExtend<FateErrorTag>();
+			expectTypeOf(
+				new VoteTargetNotFound({targetKind: "post", targetId: "x", message: "y"})._tag,
+			).toExtend<FateErrorTag>();
+		});
 	});
 });
