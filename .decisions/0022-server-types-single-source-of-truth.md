@@ -18,10 +18,12 @@ The Relay toolchain has several moving parts kept in sync by hand: a committed
 ## Decision
 
 The server's exported `Entity<>` types plus the fate manifest are the single
-source of truth for types. fate's codegen (`fate generate` / its Vite plugin)
-reads them and emits the `react-fate/client` module; the client imports the
-server's `Entity<>` types **type-only**. There is no SDL artifact, no schema
-fetch step, and no `relay-compiler`/`@swc/plugin-relay` in the build.
+source of truth for types. The **fate Vite plugin** generates the
+`react-fate/client` module at build time — there is no hand-run `fate generate`
+step and no committed generated artifact. The client imports the server's
+`Entity<>` types **type-only**. There is no SDL artifact, no schema fetch step,
+and no `relay-compiler`/`@swc/plugin-relay` in the build (the fate plugin
+replaces the relay plugin in `vite.config.ts`).
 
 ## Consequences
 
@@ -29,4 +31,4 @@ fetch step, and no `relay-compiler`/`@swc/plugin-relay` in the build.
   file drifting from the code.
 - **Cost:** remove the Relay toolchain and committed `schema.graphql`; wire
   fate codegen into the client build.
-- See `.patterns/fate-server-wiring.md` and `fate-client-setup.md`.
+- See [fate-server-wiring.md](../.patterns/fate-server-wiring.md) and [fate-client-setup.md](../.patterns/fate-client-setup.md).

@@ -26,8 +26,9 @@ it via `createFateServer` mounted on a Hono route in the single worker
 adapter, no GraphQL adapter, no GraphQL Yoga. `/graphql` and `/graphql/schema`
 are removed.
 
-The detailed patterns this umbrella decision unfolds into live in
-`.patterns/fate-*.md`; ADRs 0016–0023 record the load-bearing choices.
+The detailed patterns this umbrella decision unfolds into live in the
+[fate patterns](../.patterns/index.md); ADRs 0016–0023 record the load-bearing
+choices.
 
 ## Consequences
 
@@ -37,5 +38,5 @@ The detailed patterns this umbrella decision unfolds into live in
   fate is alpha — expect to track upstream churn.
 - **Banned:** GraphQL schema/resolvers, GraphQL Yoga, Relay, and the fate
   tRPC/GraphQL adapters.
-- The Effect domain layer (`.patterns/effect-*.md`, the feature services) is
+- The Effect domain layer (the `effect-*` [patterns](../.patterns/index.md), the feature services) is
   protocol-neutral and survives unchanged.

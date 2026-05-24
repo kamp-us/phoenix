@@ -4,7 +4,7 @@ How the SPA talks to the backend. The short answer: a generated `react-fate/clie
 
 ## The generated client
 
-`fate generate` (wired into the Vite build) reads the server's exported types and manifest and emits the `react-fate/client` module: the typed `mutations`/`roots` tables, the normalization `types` array, and `createFateClient`. App code imports from `react-fate` (hooks, `view`) and `react-fate/client` (the configured client). The generated module imports `Entity<>` types **type-only** from `worker/fate/views.ts` — the server is the single source of truth for types, and there is no SDL or generated-artifact directory to keep in sync.
+The **fate Vite plugin** generates the `react-fate/client` module at build time from the server's exported types and manifest: the typed `mutations`/`roots` tables, the normalization `types` array, and `createFateClient`. There is no hand-run codegen step. App code imports from `react-fate` (hooks, `view`) and `react-fate/client` (the configured client). The generated module imports `Entity<>` types **type-only** from `worker/fate/views.ts` — the server is the single source of truth for types, and there is no SDL or committed generated-artifact directory to keep in sync.
 
 ## Creating the client
 

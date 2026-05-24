@@ -32,4 +32,4 @@ inline-resolved payloads and does no database work (see [0023](0023-live-views-s
   no leaked runtimes.
 - **Harder:** runtime construction lives in the route rather than the server
   config — slightly more wiring at the mount point.
-- See `.patterns/fate-server-wiring.md`.
+- See [fate-server-wiring.md](../.patterns/fate-server-wiring.md).

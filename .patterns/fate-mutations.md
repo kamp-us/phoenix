@@ -23,7 +23,7 @@ Operation names are **`entity.verb`** (`definition.add`, `post.submit`, `comment
 
 ## Validation lives in the service
 
-Per ADR 0013, input validation lives in the service method, not the protocol layer. The service raises the domain errors (`BodyRequired`, `BodyTooLong`, `TitleRequired`, …) that `encodeFateError` maps to wire codes ([fate-effect-bridge.md](./fate-effect-bridge.md)). fate's optional `input` schema (Standard Schema / zod) is only for **shape coercion at the trust boundary** — keep it thin or omit it. Don't restate domain rules in the resolver; the service is the single source of truth.
+Per [ADR 0013](../.decisions/0013-validation-in-service-methods.md), input validation lives in the service method, not the protocol layer. The service raises the domain errors (`BodyRequired`, `BodyTooLong`, `TitleRequired`, …) that `encodeFateError` maps to wire codes ([fate-effect-bridge.md](./fate-effect-bridge.md)). fate's optional `input` schema (Standard Schema / zod) is only for **shape coercion at the trust boundary** — keep it thin or omit it. Don't restate domain rules in the resolver; the service is the single source of truth.
 
 ## Re-resolving the entity
 
@@ -64,4 +64,4 @@ Publish the **already re-resolved** entity/node inline as `data`/`node` — the 
 - [fate-sources.md](./fate-sources.md) — re-resolving via the source
 - [effect-errors.md](./effect-errors.md) — the domain errors mutations raise
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.Class` at the input boundary
-- ADR 0013 — validation in service methods
+- [ADR 0013](../.decisions/0013-validation-in-service-methods.md) — validation in service methods

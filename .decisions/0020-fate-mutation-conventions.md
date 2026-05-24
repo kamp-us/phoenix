@@ -34,4 +34,4 @@ shape, error codes, and list membership, now that mutations are entries on
   wire; cache updates fall out of the returned entity.
 - **Harder:** every mutation re-resolves the entity; the `_tag`→code table
   must be maintained as the protocol contract.
-- See `.patterns/fate-mutations.md` and `.patterns/fate-effect-bridge.md`.
+- See [fate-mutations.md](../.patterns/fate-mutations.md) and [fate-effect-bridge.md](../.patterns/fate-effect-bridge.md).

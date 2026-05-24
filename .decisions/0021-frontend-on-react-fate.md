@@ -37,5 +37,5 @@ The SPA's data layer is `react-fate`:
 - **Cost:** rewrite every Relay component and the non-Relay `gqlFetch` callers
   (`useMe`, username bootstrap). fate is alpha.
 - **Banned:** Relay, imperative connection updaters, `gqlFetch`.
-- See `.patterns/fate-client-setup.md`, `fate-views-and-requests.md`,
-  `fate-mutations-client.md`.
+- See [fate-client-setup.md](../.patterns/fate-client-setup.md), [fate-views-and-requests.md](../.patterns/fate-views-and-requests.md),
+  [fate-mutations-client.md](../.patterns/fate-mutations-client.md).

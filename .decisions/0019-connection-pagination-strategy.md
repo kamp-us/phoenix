@@ -35,4 +35,4 @@ derived from the view's `orderBy`.
   (the `orderBy` field values), not their natural-key cursor; the view
   `orderBy` and the service `ORDER BY` must stay in lockstep or pages skip or
   duplicate. Decide multi-key sorts (`popular`/`hot`) carefully.
-- See `.patterns/fate-connections.md`.
+- See [fate-connections.md](../.patterns/fate-connections.md).

@@ -40,4 +40,4 @@ service method:
   methods where missing.
 - **Banned:** the fate Drizzle adapter, database access inside views, and raw
   runtime calls in feature/resolver code.
-- See `.patterns/fate-sources.md` and `.patterns/fate-effect-bridge.md`.
+- See [fate-sources.md](../.patterns/fate-sources.md) and [fate-effect-bridge.md](../.patterns/fate-effect-bridge.md).

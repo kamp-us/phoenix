@@ -35,4 +35,4 @@ are the shared contract. Modeling rules:
 - **Cost:** drop `encodeNodeId` from the wire (relocate it only if some store
   needs internal disambiguation); remodel the profile contributions feed with
   a discriminant instead of a union.
-- See `.patterns/fate-data-views.md`.
+- See [fate-data-views.md](../.patterns/fate-data-views.md).

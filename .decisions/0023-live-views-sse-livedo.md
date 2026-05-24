@@ -52,4 +52,4 @@ topology, not part of this decision.
   lossless reconnect depends on the per-topic event log.
 - Amends the DO-deferral stance of [0009](0009-d1-direct-defer-dos-and-workflows.md);
   the Cloudflare Workflows / outbox bans there are untouched.
-- See `.patterns/fate-live-views.md`.
+- See [fate-live-views.md](../.patterns/fate-live-views.md).

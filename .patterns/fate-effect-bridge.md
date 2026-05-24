@@ -153,7 +153,7 @@ export const encodeFateError = (e: unknown): FateRequestError => {
 ## What stays out of the bridge
 
 - **No `runtime.runPromise` in feature code or resolver bodies.** If you reach for it, you're missing a helper — add one.
-- **No domain logic in the bridge.** It runs effects and maps errors. Validation, pagination, karma all live in services ([feature-services.md](./feature-services.md), ADR 0013).
+- **No domain logic in the bridge.** It runs effects and maps errors. Validation, pagination, karma all live in services ([feature-services.md](./feature-services.md), [ADR 0013](../.decisions/0013-validation-in-service-methods.md)).
 
 ## See also
 

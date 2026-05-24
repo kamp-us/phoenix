@@ -70,11 +70,11 @@ No per-request `ManagedRuntime` is built here: the DO relays inline-resolved pay
 
 ## Codegen
 
-fate's codegen reads the server's exported types and manifest and emits the client wiring (the `react-fate/client` module). The server is the single source of truth for types — the client imports `Entity<>` types (type-only) from `worker/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. Wire `fate generate` (or its Vite plugin) into the client build.
+The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — there is no hand-run `fate generate` step and nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. Add the plugin to `vite.config.ts` (it replaces the `@swc/plugin-relay` block).
 
 ## The admin runtime stays separate
 
-The admin runtime (`worker/admin/runtime.ts`, ADR 0012) is independent: the dev-only `/api/admin/*` routes use `AdminRuntime.make(env)` directly. fate owns only the request runtime. See [effect-layer-composition.md](./effect-layer-composition.md).
+The admin runtime (`worker/admin/runtime.ts`, [ADR 0012](../.decisions/0012-admin-parallel-services.md)) is independent: the dev-only `/api/admin/*` routes use `AdminRuntime.make(env)` directly. fate owns only the request runtime. See [effect-layer-composition.md](./effect-layer-composition.md).
 
 ## See also
 
@@ -82,5 +82,5 @@ The admin runtime (`worker/admin/runtime.ts`, ADR 0012) is independent: the dev-
 - [fate-sources.md](./fate-sources.md) — the `sources` resolver
 - [fate-data-views.md](./fate-data-views.md) — the `roots`/`Root` map
 - [effect-layer-composition.md](./effect-layer-composition.md) — the runtime layer graph
-- ADR 0012 — the separate admin runtime
+- [ADR 0012](../.decisions/0012-admin-parallel-services.md) — the separate admin runtime
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `example/void/src/fate/server.ts`, docs `docs/guide/server-integration.md`
