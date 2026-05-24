@@ -10,8 +10,7 @@ export default defineConfig({
 		// `worker/fate/schema.ts` and generates the typed `react-fate/client`
 		// module from the exported `Entity<>` types. `transport: "native"` matches
 		// phoenix's native fate server on Hono (no tRPC/GraphQL adapter). The
-		// generated file lands in `.fate/` (gitignored). Runs alongside Relay
-		// (still serving every other screen) until teardown (task 10).
+		// generated file lands in `.fate/` (gitignored).
 		//
 		// The plugin imports the server schema graph in a plain Node runner; the
 		// one workerd-only specifier in that graph (`cloudflare:workers`, in the
@@ -24,19 +23,7 @@ export default defineConfig({
 			// project includes the generated file directly (see tsconfig.app.json).
 			tsconfigFile: false,
 		}),
-		react({
-			plugins: [
-				[
-					"@swc/plugin-relay",
-					{
-						rootDir: __dirname,
-						artifactDirectory: "./src/__generated__",
-						language: "typescript",
-						eagerEsModules: true,
-					},
-				],
-			],
-		}),
+		react(),
 		cloudflare(),
 	],
 	server: {

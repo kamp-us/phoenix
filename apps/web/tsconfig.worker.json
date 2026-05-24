@@ -10,10 +10,5 @@
 		"noEmit": true,
 		"types": ["@cloudflare/workers-types"]
 	},
-	"include": [
-		"worker",
-		"worker-configuration.d.ts",
-		"src/relay/encodeNodeId.ts",
-		"src/lib/mutationErrorCodes.ts"
-	]
+	"include": ["worker", "worker-configuration.d.ts", "src/lib/mutationErrorCodes.ts"]
 }

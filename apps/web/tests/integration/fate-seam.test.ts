@@ -12,9 +12,8 @@
  *   - `health` returns data produced by `Stats.getLandingStats` (a real
  *     service method reading D1), not a stub.
  *   - `me` resolved anonymously fails the `Auth.required` gate and serializes
- *     as `{ok: false, error: {code: "UNAUTHORIZED"}}` — the same wire code the
- *     GraphQL path produced.
- *   - the still-running `/graphql` endpoint is untouched.
+ *     as `{ok: false, error: {code: "UNAUTHORIZED"}}` — the wire code the SPA
+ *     keys off.
  */
 import {env, SELF} from "cloudflare:test";
 import {beforeAll, describe, expect, it} from "vitest";
@@ -105,16 +104,5 @@ describe("fate seam — /fate", () => {
 		if (!result.ok) {
 			expect(result.error.code).toBe("UNAUTHORIZED");
 		}
-	});
-
-	it("/graphql still works unchanged", async () => {
-		const res = await SELF.fetch("https://test.local/graphql", {
-			method: "POST",
-			headers: {"content-type": "application/json"},
-			body: JSON.stringify({query: "{ __typename }"}),
-		});
-		expect(res.status).toBe(200);
-		const body = (await res.json()) as {data?: {__typename: string}};
-		expect(body.data?.__typename).toBe("Query");
 	});
 });

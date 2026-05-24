@@ -1,6 +1,5 @@
 /**
- * Hook around the `me` query — now served through **fate** (was a direct
- * `gqlFetch`; the GraphQL path is gone).
+ * Hook around the `me` query — served through **fate**.
  *
  * Pasaport's session contains the user id/email/name/image but the `username`
  * additional field doesn't always round-trip through Better Auth's session

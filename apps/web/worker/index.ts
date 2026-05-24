@@ -1,6 +1,5 @@
 import {routeAgentRequest} from "agents";
 import {Effect} from "effect";
-import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
 import {AdminRuntime} from "./admin/runtime";
@@ -11,9 +10,6 @@ import type {Session} from "./features/pasaport/auth";
 import {Pasaport} from "./features/pasaport/Pasaport";
 import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
 import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
-import type {EffectContext} from "./graphql/resolver";
-import {GraphQLRuntime, type SessionData} from "./graphql/runtime";
-import {printSchemaSDL, schema} from "./graphql/schema";
 import {AdminAuth} from "./services";
 
 // Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
@@ -158,7 +154,7 @@ app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
 // Single global auth realm; `Pasaport.handleAuth` constructs a better-auth
 // instance per request against `env.PHOENIX_DB`.
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-	const runtime = GraphQLRuntime.make(c.env, c.req.raw, null);
+	const runtime = FateRuntime.make(c.env, c.req.raw, null);
 	try {
 		return await runtime.runPromise(
 			Effect.gen(function* () {
@@ -180,11 +176,11 @@ app.all("/agents/*", async (c) => {
 	return res ?? c.text("Not Found", 404);
 });
 
-// fate native protocol (ADR 0015–0017). Mounted alongside the still-running
-// `/graphql` during the migration. The route owns the per-request runtime: it
-// validates the session, builds a `ManagedRuntime` with that session baked into
-// the `Auth` layer, hands it to fate via `adapterContext`, and disposes it in
-// `finally` via `executionCtx.waitUntil` so disposal doesn't block the response.
+// fate native protocol (ADR 0015–0017). The single data plane for the SPA.
+// The route owns the per-request runtime: it validates the session, builds a
+// `ManagedRuntime` with that session baked into the `Auth` layer, hands it to
+// fate via `adapterContext`, and disposes it in `finally` via
+// `executionCtx.waitUntil` so disposal doesn't block the response.
 app.post("/fate", async (c) => {
 	// Validate the session through a short-lived runtime; the request runtime is
 	// then built with the resolved session attached to the `Auth` layer.
@@ -209,52 +205,6 @@ app.post("/fate", async (c) => {
 		return await fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime});
 	} finally {
 		c.executionCtx.waitUntil(runtime.dispose());
-	}
-});
-
-// SDL for relay-compiler (`pnpm schema:fetch`).
-app.get("/graphql/schema", (c) => c.text(printSchemaSDL()));
-
-// Per-request: validate session via the Pasaport service, build a ManagedRuntime
-// that provides services to resolvers (Auth, CloudflareEnv, RequestContext,
-// Pasaport, …), dispose after. Yoga's response carries its own Response class
-// (from @whatwg-node/server) which fails workerd's `instanceof Response` check;
-// rewrap with the runtime-native Response constructor.
-app.on(["GET", "POST"], "/graphql", async (c) => {
-	// Validate the session through a short-lived runtime; resolvers run inside
-	// a separate runtime constructed with the resolved session attached to the
-	// `Auth` layer.
-	const sessionRuntime = GraphQLRuntime.make(c.env, c.req.raw, null);
-	let session: Session | null = null;
-	try {
-		session = await sessionRuntime.runPromise(
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.validateSession(c.req.raw.headers);
-			}),
-		);
-	} finally {
-		await sessionRuntime.dispose();
-	}
-	const sessionData: SessionData = session ? {user: session.user, session: session.session} : null;
-
-	const runtime = GraphQLRuntime.make(c.env, c.req.raw, sessionData);
-	try {
-		const yoga = createYoga<EffectContext<GraphQLRuntime.Context>>({
-			graphqlEndpoint: "/graphql",
-			schema,
-			graphiql: true,
-			logging: true,
-			context: () => ({runtime}),
-		});
-		const r = await yoga.fetch(c.req.raw);
-		return new Response(r.body, {
-			status: r.status,
-			statusText: r.statusText,
-			headers: r.headers,
-		});
-	} finally {
-		await runtime.dispose();
 	}
 });
 

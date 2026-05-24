@@ -10,8 +10,7 @@ import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "..
 /**
  * Per-request fate runtime composition.
  *
- * This is the same layer graph the GraphQL handler built (`GraphQLRuntime`),
- * renamed for its new owner — fate. The Hono `/fate` route owns one
+ * The Hono `/fate` route owns one
  * `ManagedRuntime` per request: it validates the session, builds the runtime
  * with that session baked into the `Auth` layer, hands it to fate via
  * `adapterContext`, and disposes it in `finally` via `executionCtx.waitUntil`
