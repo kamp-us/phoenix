@@ -44,12 +44,13 @@ export class SeedTermBody extends Schema.Class<SeedTermBody>("SeedTermBody")({
 
 ## Parsing at an admin route boundary
 
+> **Aspirational — admin routes in phoenix don't yet decode bodies via Schema. The shape below is the target for new admin routes and the convention when we retrofit existing ones.**
+
 ```ts
 // worker/index.ts (or admin routes file)
 app.post("/api/admin/sozluk/upsert-term", async (c) => {
   return adminRuntime(c.env).runPromise(Effect.gen(function*() {
-    const auth = yield* AdminAuth;
-    yield* auth.required;
+    yield* AdminAuth.required;
 
     const raw = yield* Effect.tryPromise({
       try: () => c.req.json(),

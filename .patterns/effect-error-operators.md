@@ -164,7 +164,7 @@ If you find yourself writing similar boundary-handling code elsewhere (e.g., adm
 ## Anti-patterns
 
 - **`Effect.catchAll` to convert errors into a generic "operation failed" string.** You've thrown away the diagnostic value. Use `catchTags` to handle the cases you know, let the rest propagate.
-- **Catching `DrizzleError` inside a feature method.** Drizzle errors indicate infrastructure failure. Hiding them produces silent corruption. Let them propagate; the resolver maps to `INTERNAL_ERROR`.
+- **Catching `DrizzleError` inside a feature method.** Drizzle errors indicate infrastructure failure. Hiding them produces silent corruption. Let them propagate; the resolver maps to `INTERNAL_SERVER_ERROR`.
 - **Throwing inside an `Effect.gen` to "fail fast."** Use `return yield* new MyError({})` instead. Throws become defects, which TS can't reason about.
 - **Using `Effect.exit` everywhere just to be safe.** Most code should propagate failures naturally. Reach for `exit` only at boundaries (resolver wrapper, tests asserting on failures).
 

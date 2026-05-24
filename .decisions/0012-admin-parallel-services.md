@@ -47,8 +47,7 @@ Hono admin route shape:
 ```ts
 app.post("/api/admin/sozluk/upsert-term", async (c) => {
   return adminRuntime(c.env).runPromise(Effect.gen(function*() {
-    const auth = yield* AdminAuth;
-    yield* auth.required;
+    yield* AdminAuth.required;
     const admin = yield* SozlukAdmin;
     return yield* admin.seedTerm(await c.req.json());
   }));

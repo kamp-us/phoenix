@@ -1,12 +1,15 @@
 ---
 id: 0011
 title: Drizzle access via `Context.Service` with `run`/`batch` callbacks
-status: accepted
+status: superseded-in-part by 0014
+superseded-section-by: 0014
 date: 2026-05-17
 tags: [backend, effect, drizzle, persistence]
 ---
 
 # 0011 — Drizzle access via `Context.Service` with `run`/`batch` callbacks
+
+> **Note:** The "decision" recorded below was partially superseded by [0014](./0014-drizzle-run-batch-as-service-methods.md). Read 0014 before applying any code from this ADR.
 
 ## Context
 
@@ -27,7 +30,7 @@ Also considered and deferred: replacing drizzle entirely with `@effect/sql-d1`. 
 - **`Drizzle.run((db) => Promise<A>)`** — single statement. Returns `Effect<A, DrizzleError>`. The callback receives the drizzle builder; the static yields the service internally and wraps the promise with `Effect.tryPromise` (object notation).
 - **`Drizzle.batch((db) => [stmt1, stmt2, ...])`** — atomic multi-statement write via drizzle's native `db.batch([...])`. Callback returns an unexecuted tuple of drizzle statements; the static wraps `db.batch` in an Effect.
 
-Errors from both paths surface as `DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{cause: unknown}>`. The resolver wrapper maps `_tag: "@phoenix/Drizzle/Error"` to `INTERNAL_ERROR`.
+Errors from both paths surface as `DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{cause: unknown}>`. The resolver wrapper maps `_tag: "@phoenix/Drizzle/Error"` to `INTERNAL_SERVER_ERROR`.
 
 The D1 binding (`env.PHOENIX_DB`) is referenced exactly once — inside `services/Drizzle.ts`. Feature services never touch it directly.
 

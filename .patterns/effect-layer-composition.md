@@ -95,38 +95,17 @@ Separate runtimes because the surface area is genuinely different:
 - Admin routes don't need the GraphQL `Auth` service (user session info). They have no user context.
 - Admin services (`SozlukAdmin`) own different operations than resolver services (`Sozluk`). Bundling them would force every resolver to depend on admin code.
 
-Shape:
+Shape: see `apps/web/worker/graphql/runtime.ts` (the `GraphQLRuntime.make` namespace) and `apps/web/worker/admin/runtime.ts` (the `AdminRuntime.make` namespace) for the canonical wiring. Both follow the same three-layer cake:
 
-```ts
-// worker/graphql/runtime.ts
-export const makeGraphQLRuntime = (env: Env, request: Request, session: SessionData) => {
-  const RequestValues = Layer.mergeAll(
-    Layer.succeed(CloudflareEnv, env),
-    Layer.succeed(RequestContext, {/* ... */}),
-    Layer.succeed(Auth, {user: session?.user, session: session?.session}),
-  );
+1. **Per-request values** — `Layer.succeed` for `CloudflareEnv`, `RequestContext`, and the runtime-specific auth (`Auth` for GraphQL, none for admin since `AdminAuthLive` derives from env).
+2. **Drizzle** — built from `CloudflareEnv`.
+3. **Feature layer** — `Layer.mergeAll` of every feature `Live`, with `provideMerge(VoteLive)` once for the `Sozluk` + `Pano` slice (both depend on `Vote`; neither depends on the other, so they merge in parallel and share the single `Vote` instance).
 
-  // Features depend on Drizzle which depends on CloudflareEnv. Build the data
-  // plane by providing RequestValues to (features + Drizzle), then re-merge
-  // RequestValues at the top so resolvers can `yield* Auth` directly.
-  const DataPlane = Layer.mergeAll(SozlukLive, PanoLive, VoteLive, PasaportLive, DrizzleLive).pipe(
-    Layer.provide(RequestValues),
-  );
+The final composition is `Layer.mergeAll(DataPlane, RequestValues)` after providing `RequestValues` into the data plane. This shape satisfies the `@effect/language-service` `layerMergeAllWithDependencies` check.
 
-  return ManagedRuntime.make(Layer.mergeAll(DataPlane, RequestValues));
-};
+Why the two-step instead of stacking `Layer.provide` calls: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with one explicit `Layer.provide`, then merge in the request values at the top.
 
-// worker/admin/runtime.ts
-export const makeAdminRuntime = (env: Env) => {
-  const RequestValues = Layer.succeed(CloudflareEnv, env);
-  const Capabilities = Layer.mergeAll(DrizzleLive, AdminAuthLive).pipe(Layer.provide(RequestValues));
-  const DataPlane = Layer.mergeAll(SozlukAdminLive, PanoAdminLive, PasaportAdminLive, Capabilities);
-
-  return ManagedRuntime.make(Layer.mergeAll(DataPlane, RequestValues));
-};
-```
-
-Why the two-step instead of stacking `Layer.provide` calls: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with one explicit `Layer.provide`, then merge in the request values at the top — this satisfies the `@effect/language-service` `layerMergeAllWithDependencies` check.
+Why `provideMerge` for `Vote` specifically: `Sozluk` and `Pano` both yield `Vote`, but a plain `Layer.provide(VoteLive)` would erase `Vote` from the merged layer's output type. `Layer.provideMerge(VoteLive)` provides `Vote` to consumers *and* re-exposes it at the top — useful when other layers in the same merge (or a downstream resolver) also reach for `Vote`.
 
 Hono routes call the appropriate `make*Runtime` and `runPromise` the Effect inside.
 

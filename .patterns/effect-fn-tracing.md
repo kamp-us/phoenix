@@ -91,7 +91,7 @@ The span name shows up in OTLP traces. Good names:
 
 - `Sozluk.addDefinition` — service + method
 - `Sozluk.recomputeTermSummary` — service + helper (private to the layer but still useful in traces)
-- `addDefinition.insert` — sub-operation inside a method (used as the `operation` argument to `Database.run`, which uses it for the DB-level span)
+- `addDefinition.insert` — sub-operation inside a method (used as the `operation` argument to `Drizzle.run`, which uses it for the DB-level span)
 
 Avoid:
 
@@ -106,11 +106,11 @@ For one resolver call (`addDefinitionMutation`), you'll see a trace like:
 ```
 graphql.mutation                                  150ms
   Sozluk.addDefinition                            148ms
-    addDefinition.checkSlug (Database.run)          5ms
-    addDefinition.insert (Database.run)            42ms
+    addDefinition.checkSlug (Drizzle.run)          5ms
+    addDefinition.insert (Drizzle.run)            42ms
     Sozluk.recomputeTermSummary                    98ms
-      recomputeTermSummary.selectDefs (Database.run) 12ms
-      recomputeTermSummary.upsert (Database.run)   84ms
+      recomputeTermSummary.selectDefs (Drizzle.run) 12ms
+      recomputeTermSummary.upsert (Drizzle.run)   84ms
 ```
 
 Every span has a clear owner. When something is slow, the trace tells you whether it's the SQL, the orchestration, or the resolver wrapper.

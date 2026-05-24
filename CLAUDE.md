@@ -59,6 +59,8 @@ See [.decisions/index.md](./.decisions/index.md) — read the row, open the file
 
 See [.patterns/index.md](./.patterns/index.md) — evergreen patterns for writing phoenix backend code (services, errors, testing, layer wiring). Read before adding a new feature or service.
 
+When the docs and `apps/web/worker/` disagree, the source is authoritative — fix the doc.
+
 ## Sözlük seed
 
 Content lives in `~/code/github.com/kamp-us/monorepo/packages/sozluk-content/terms`, NOT in this repo. To seed the local Sozluk DO:

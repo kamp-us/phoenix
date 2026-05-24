@@ -50,19 +50,7 @@ class UserRepo extends Context.Service<
 
 ## Static helpers on the service class
 
-Effect-smol attaches reusable derivations as static fields. Phoenix already does this in `worker/services/Auth.ts`:
-
-```ts
-export class Auth extends Context.Service<Auth, {...}>()("@phoenix/worker/Auth") {
-  static readonly required = Effect.gen(function*() {
-    const auth = yield* Auth;
-    if (!auth.user) {
-      return yield* new Unauthorized({message: "Authentication required"});
-    }
-    return {user: auth.user, session: auth.session};
-  });
-}
-```
+Effect-smol attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/services/Auth.ts` — the smallest, cleanest example of `static readonly required`. `worker/services/AdminAuth.ts` mirrors the same shape for admin routes (yields `AdminForbidden` instead of `Unauthorized`).
 
 Call site: `const {user} = yield* Auth.required;`
 
@@ -76,7 +64,7 @@ Use this when the same gen-block recurs at five call sites. Don't pre-derive eve
 export const layer: Layer.Layer<Path> = Layer.succeed(Path)(posixImpl);
 ```
 
-Use when constructing the service has zero deps and zero effects — a plain object literal of functions.
+Use when constructing the service has zero deps and zero effects — a plain object literal of functions. `worker/services/CloudflareEnv.ts` and `worker/services/RequestContext.ts` are the per-request examples: the runtime builds them with `Layer.succeed(CloudflareEnv, env)` / `Layer.succeed(RequestContext, {...})` at the start of each request.
 
 ### `Layer.effect` — service built inside an Effect
 
@@ -92,7 +80,7 @@ export const layer = Layer.effect(UserRepo)(
 );
 ```
 
-Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided.
+Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided. `worker/services/Drizzle.ts`'s `DrizzleLive` is the canonical phoenix example — it yields `CloudflareEnv`, constructs the drizzle builder once, and returns a `DrizzleAccess` record.
 
 ### `Layer.effectContext` — providing multiple tags from one construction
 
@@ -172,4 +160,3 @@ const transform = Effect.fnUntraced(function*(row: Row) {
 - [effect-fn-tracing.md](./effect-fn-tracing.md) — when to use `Effect.fn` vs `Effect.fnUntraced`
 - [effect-testing.md](./effect-testing.md) — testing Effect-based code
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema` for trust-boundary validation
-- Existing examples: `worker/services/Auth.ts`, `worker/services/AdminAuth.ts`, `worker/services/CloudflareEnv.ts`, `worker/services/Drizzle.ts`, `worker/services/RequestContext.ts`

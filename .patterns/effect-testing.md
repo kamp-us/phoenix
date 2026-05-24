@@ -30,52 +30,66 @@ Rules:
 
 - **Use `it.effect`** for any test whose body returns an Effect. The runner runs it through Effect's internal interpreter.
 - **Don't use `Effect.runSync` / `Effect.runPromise`** inside `it`. That bypasses the test runner's tracing and timing.
-- **Use `assert`, not `expect`,** inside `it.effect`. `expect`'s async behavior interacts badly with Effect's runtime. `assert.strictEqual`, `assert.deepStrictEqual`, `assert.isTrue`, etc. work as expected.
+- **Use `assert`, not `expect`, inside `it.effect` blocks.** `expect`'s async behavior interacts badly with Effect's runtime. `assert.strictEqual`, `assert.deepStrictEqual`, `assert.isTrue`, etc. work as expected. Regular `it` blocks (the integration scaffold against `@cloudflare/vitest-pool-workers`) use vitest's `expect` as usual — that's the standard `import {expect} from "vitest"`.
 - **Use `it` (not `it.effect`)** for pure-function tests that don't return Effects. Both forms can coexist in the same file.
 
 ## Integration tests — the dominant case
 
 Phoenix's `tests/integration/*.test.ts` files are the bulk of the test suite. They hit miniflare's real D1 and exercise feature services through the GraphQL schema or admin runtime.
 
-Pattern:
+Pattern (see `apps/web/tests/integration/sozluk-add-definition.test.ts` for the canonical scaffold):
 
 ```ts
-import {assert, describe, it} from "@effect/vitest";
+/// <reference path="../../worker-configuration.d.ts" />
+/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
+import {env} from "cloudflare:workers";
 import {Effect, Layer} from "effect";
-import {SozlukLive} from "../../worker/features/sozluk/Sozluk";
+import {beforeAll, describe, expect, it} from "vitest";
+import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
+import {Sozluk, SozlukLive} from "../../worker/features/sozluk/Sozluk";
 import {VoteLive} from "../../worker/features/vote/Vote";
-import {DrizzleLive} from "../../worker/services/Drizzle";
-import {CloudflareEnv} from "../../worker/services/CloudflareEnv";
+import {CloudflareEnv, DrizzleLive} from "../../worker/services";
 
-const TestLive = Layer.mergeAll(SozlukLive, VoteLive).pipe(
+const TestLive = SozlukLive.pipe(
+  Layer.provideMerge(VoteLive),
   Layer.provide(DrizzleLive),
-  Layer.provide(Layer.succeed(CloudflareEnv, getMiniflareEnv())),
+  Layer.provide(Layer.succeed(CloudflareEnv, env)),
 );
 
+beforeAll(async () => {
+  // Apply baseline migration against the per-test miniflare D1 binding.
+  // Real scaffold splits on `--> statement-breakpoint` and tolerates
+  // "already exists" errors; see the canonical file.
+  await applyViewMigrations();
+});
+
 describe("Sozluk integration", () => {
-  it.effect("adds a definition and recomputes term aggregates", () =>
-    Effect.gen(function*() {
-      const sozluk = yield* Sozluk;
-      const result = yield* sozluk.addDefinition({
-        termSlug: "test",
-        authorId: "user-1",
-        authorName: "tester",
-        body: "first definition",
-      });
+  it("adds a definition and recomputes term aggregates", async () => {
+    const result = await Effect.runPromise(
+      Effect.gen(function*() {
+        const sozluk = yield* Sozluk;
+        return yield* sozluk.addDefinition({
+          termSlug: "test",
+          authorId: "user-1",
+          authorName: "tester",
+          body: "first definition",
+        });
+      }).pipe(Effect.provide(TestLive)),
+    );
 
-      assert.strictEqual(result.termCreated, true);
-
-      const page = yield* sozluk.getTerm("test");
-      assert.strictEqual(page?.totalDefinitions, 1);
-    }).pipe(Effect.provide(TestLive)),
-  );
+    expect(result.termCreated).toBe(true);
+  });
 });
 ```
 
 Notes:
 
-- **`Layer.provide` order matters.** Outermost in the pipe is what's actually provided. Reading inside-out: `SozlukLive + VoteLive` need `Drizzle`; `Drizzle` needs `CloudflareEnv`. Pipe each `Layer.provide` to satisfy the next dep down.
-- **Build the test layer once at module scope.** Don't reconstruct it per test. Per-test setup (seeding fixtures) goes inside the `it.effect` body via service method calls.
+- **`env` comes from `cloudflare:workers`.** No `getMiniflareEnv()` helper — the worker-pool fixture injects `env` at module scope.
+- **The triple-slash references** at the top wire up `Env` typing for the `cloudflare:test` `ProvidedEnv` interface. Copy them from the canonical scaffold.
+- **`beforeAll` applies migrations** against the per-test D1 binding. Real scaffold splits the baseline SQL on `--> statement-breakpoint` and tolerates "already exists" errors so reruns are idempotent.
+- **`Layer.provideMerge(VoteLive)` over `SozlukLive`.** `SozlukLive` depends on `Vote`; `provideMerge` provides it *and* re-exposes it at the top so the test can also reach for `Vote` if needed. Then `Layer.provide(DrizzleLive)` and `Layer.provide(Layer.succeed(CloudflareEnv, env))` satisfy the remaining deps.
+- **Use vitest's `it` + `expect`,** not `it.effect` + `assert`, in integration tests. The cloudflare worker-pool runner is the orchestrator; Effects run via `Effect.runPromise` inside the test body.
+- **Build the test layer once at module scope.** Don't reconstruct it per test. Per-test setup (seeding fixtures) goes inside the test body via service method calls.
 - **Don't mock the services.** Integration tests use the live layers. Mocking is for the rare unit tests below.
 
 ## Unit tests — when integration is genuinely overkill
@@ -103,39 +117,9 @@ But this is the **exception**, not the default. The recommendation from [feature
 
 `run` and `batch` (the bound methods on the `Drizzle` service value) are the trust boundary. Test them in isolation against a fake/in-memory drizzle setup. See the [feature-services.md](./feature-services.md#the-drizzle-service) testing-scope notes — scope B (smoke + semantics + composition + type inference + error propagation), ~10-15 tests.
 
-Tests destructure the service inside `Effect.gen` and provide a `Layer.succeed(Drizzle, makeAccess(fakeDb))` where `makeAccess` mirrors the production `DrizzleLive` body over a test-supplied `db`:
+Tests destructure the service inside `Effect.gen` and provide a `Layer.succeed(Drizzle, makeAccess(fakeDb))` where `makeAccess` mirrors the production `DrizzleLive` body over a test-supplied `db`.
 
-```ts
-const makeAccess = (db: DrizzleDb): DrizzleAccess => ({
-  run: (fn) => Effect.tryPromise({try: () => fn(db), catch: (cause) => new DrizzleError({cause})}),
-  batch: (fn) => Effect.tryPromise({
-    try: () => db.batch(fn(db) as never),
-    catch: (cause) => new DrizzleError({cause}),
-  }),
-});
-
-describe("Drizzle.run", () => {
-  it.effect("yields callback's promise result", () =>
-    Effect.gen(function*() {
-      const {run} = yield* Drizzle;
-      const result = yield* run((db) => Promise.resolve(42));
-      assert.strictEqual(result, 42);
-    }).pipe(Effect.provide(Layer.succeed(Drizzle, makeAccess(FAKE_DB)))),
-  );
-
-  it.effect("wraps rejection as DrizzleError", () =>
-    Effect.gen(function*() {
-      const {run} = yield* Drizzle;
-      const exit = yield* Effect.exit(run(() => Promise.reject(new Error("boom"))));
-      if (Exit.isSuccess(exit)) assert.fail("expected failure");
-      const err = Cause.findErrorOption(exit.cause);
-      assert.strictEqual(Option.getOrThrow(err)._tag, "@phoenix/Drizzle/Error");
-    }).pipe(Effect.provide(Layer.succeed(Drizzle, makeAccess(FAKE_DB)))),
-  );
-
-  // ... composition, type inference, batch variant
-});
-```
+Canonical implementation: `apps/web/worker/services/Drizzle.test.ts` (the `makeAccess` helper, `TestDrizzleLayer`, and the `Drizzle.run` / `Drizzle.batch` describe blocks covering smoke, semantics, composition, type inference, and batch tuple shape).
 
 ## Helpers in test files
 

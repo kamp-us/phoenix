@@ -87,7 +87,7 @@ export class DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{
 }> {}
 ```
 
-These map to 500s / `INTERNAL_ERROR`. Their `cause` is preserved for logging but not surfaced to the user.
+These map to 500s / `INTERNAL_SERVER_ERROR`. Their `cause` is preserved for logging but not surfaced to the user.
 
 The split matters because: domain errors are *expected* (they happen on the happy path of an invalid input), infrastructure errors are *unexpected* (they indicate a bug or outage). The wire encoding handles them differently — don't conflate them.
 
@@ -181,10 +181,10 @@ export function encodeMutationError(err: unknown): GraphQLError {
         return makeGraphQLError("Tanım bulunamadı", "DEFINITION_NOT_FOUND");
       // ...
       case "@phoenix/Drizzle/Error":
-        return makeGraphQLError("Internal error", "INTERNAL_ERROR");
+        return makeGraphQLError("Internal error", "INTERNAL_SERVER_ERROR");
     }
   }
-  return makeGraphQLError("Unknown error", "INTERNAL_ERROR");
+  return makeGraphQLError("Unknown error", "INTERNAL_SERVER_ERROR");
 }
 ```
 

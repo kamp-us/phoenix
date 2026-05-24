@@ -32,47 +32,17 @@ Each layer depends only on the one below it. Resolvers never touch `Drizzle` dir
 The Tag's value is a `DrizzleAccess` record carrying two bound methods — `run` (single-statement) and `batch` (atomic multi-statement). The `Drizzle` class itself is identity-only: no statics, no helpers. The only API surface is the destructured methods on the yielded service value.
 
 ```ts
-// worker/services/Drizzle.ts
-import {drizzle} from "drizzle-orm/d1";
-import type {BatchItem, BatchResponse} from "drizzle-orm/batch";
-import {Context, Data, Effect, Layer} from "effect";
-import * as schema from "../db/drizzle/schema";
-import {CloudflareEnv} from "./CloudflareEnv";
-
-export type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;
-
-export class DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{
-  readonly cause: unknown;
-}> {}
-
-export type Stmt = BatchItem<"sqlite">;
-export type BatchResult<T extends Readonly<[Stmt, ...Stmt[]]>> = BatchResponse<T>;
-
+// The contract — the Tag's value shape.
 export interface DrizzleAccess {
   readonly run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.Effect<A, DrizzleError>;
   readonly batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(
     fn: (db: DrizzleDb) => T,
   ) => Effect.Effect<BatchResult<T>, DrizzleError>;
 }
-
-export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@phoenix/Drizzle") {}
-
-export const DrizzleLive = Layer.effect(Drizzle)(
-  Effect.gen(function*() {
-    const env = yield* CloudflareEnv;
-    const db = drizzle(env.PHOENIX_DB, {schema});
-    return {
-      run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
-        Effect.tryPromise({try: () => fn(db), catch: (cause) => new DrizzleError({cause})}),
-      batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(fn: (db: DrizzleDb) => T) =>
-        Effect.tryPromise({
-          try: () => db.batch(fn(db)) as Promise<BatchResult<T>>,
-          catch: (cause) => new DrizzleError({cause}),
-        }),
-    } satisfies DrizzleAccess;
-  }),
-);
+// The `DrizzleError` catch lives in `DrizzleLive`'s body — exactly one place.
 ```
+
+Canonical implementation: `apps/web/worker/services/Drizzle.ts`. Read it once — the shape above is the contract, not the implementation.
 
 Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `run` (single statement) or `batch` (atomic multi-statement), destructured off the service value at layer build. The D1 binding never leaves the `Drizzle` service.
 
@@ -91,7 +61,7 @@ The service earns its keep by:
 
 ### House rule: `Effect.tryPromise` always uses object notation
 
-Object notation forces an explicit `catch` at every async boundary. The single-arg form (`Effect.tryPromise(() => p)`) falls back to a generic `UnknownError` — no useful tag, no per-site error semantics. Inside `Drizzle.run` and `Drizzle.batch`, the catch produces a tagged `DrizzleError` so the resolver layer can map it to `INTERNAL_ERROR` cleanly. Anywhere else in the codebase that wraps a promise: same rule, explicit `catch` with a tagged error.
+Object notation forces an explicit `catch` at every async boundary. The single-arg form (`Effect.tryPromise(() => p)`) falls back to a generic `UnknownError` — no useful tag, no per-site error semantics. Inside `Drizzle.run` and `Drizzle.batch`, the catch produces a tagged `DrizzleError` so the resolver layer can map it to `INTERNAL_SERVER_ERROR` cleanly. Anywhere else in the codebase that wraps a promise: same rule, explicit `catch` with a tagged error.
 
 ### Single-query reads/writes
 
@@ -309,22 +279,9 @@ Vote-delegating methods are the one place a method's `R` widens beyond `never`: 
 
 ## Wiring at the worker entry
 
-```ts
-// worker/graphql/runtime.ts
-const RequestValues = Layer.mergeAll(
-  Layer.succeed(CloudflareEnv, env),
-  Layer.succeed(RequestContext, {/* ... */}),
-  Layer.succeed(Auth, {/* ... */}),
-);
+See `apps/web/worker/graphql/runtime.ts` (the `GraphQLRuntime.make` namespace) for the canonical composition. The shape, summarized:
 
-const DataPlane = Layer.mergeAll(SozlukLive, PanoLive, VoteLive, PasaportLive, DrizzleLive).pipe(
-  Layer.provide(RequestValues),
-);
-
-const runtime = ManagedRuntime.make(Layer.mergeAll(DataPlane, RequestValues));
-```
-
-`Layer.provide` is the composition: feature services + `Drizzle` get satisfied by `RequestValues` in one step; merging `RequestValues` back in at the top re-exposes `Auth` / `CloudflareEnv` / `RequestContext` so resolvers can `yield* Auth` directly. The result has no remaining `R`, so the runtime is runnable. See [effect-layer-composition.md](./effect-layer-composition.md#multiple-runtimes--graphql--admin) for why this shape avoids the `Layer.mergeAll` dependency warning.
+`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied by `RequestValues` in one step; merging `RequestValues` back in at the top re-exposes `Auth` / `CloudflareEnv` / `RequestContext` so resolvers can `yield* Auth` directly. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so the runtime is runnable. See [effect-layer-composition.md](./effect-layer-composition.md#multiple-runtimes--graphql--admin) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 
