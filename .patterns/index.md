@@ -1,17 +1,16 @@
 # Phoenix patterns
 
-Reusable patterns for writing phoenix backend code. These are **evergreen** — they describe how the codebase is structured, not how to migrate to it. Treat them as the load-bearing references when adding features, fixing bugs, or onboarding a new agent.
+Reusable patterns for writing phoenix code — the backend and the frontend's data layer. These are **evergreen** — they describe how the codebase is structured, not how to migrate to it. Treat them as the load-bearing references when adding features, fixing bugs, or onboarding a new agent.
 
 Start with [effect-context-service.md](./effect-context-service.md) and [feature-services.md](./feature-services.md). The rest fill in.
 
-## Two layers
-
-phoenix backend code splits into two layers:
+## Three layers
 
 - **Effect domain layer** (the `effect-*` docs) — services, errors, layer composition, tracing, testing, validation. Transport-agnostic: domain logic lives here and knows nothing about how data reaches the client.
-- **fate protocol layer** (the `fate-*` docs) — how data reaches the client. Data views are the schema, an Effect bridge runs domain services through the request runtime, and hand-built sources back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol via `createFateServer` mounted on Hono (no tRPC/GraphQL adapter).
+- **fate protocol layer** (the server-side `fate-*` docs) — how the backend serves data. Data views are the schema, an Effect bridge runs domain services through the request runtime, and hand-built sources back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol via `createFateServer` mounted on Hono (no tRPC/GraphQL adapter).
+- **fate client layer** (the client-side `fate-*` docs) — how the SPA consumes data. Components declare views, one batched `useRequest` per screen, declarative mutations, and live views over SSE. Built on `react-fate`.
 
-The bridge ([fate-effect-bridge.md](./fate-effect-bridge.md)) is the seam between the two — read it first when working in the protocol layer.
+The protocol and client layers share one view/type model: the server's `Entity<>` types are the client's types, generated, with no schema artifact between them. The bridge ([fate-effect-bridge.md](./fate-effect-bridge.md)) is the seam between the domain and protocol layers — read it first when working server-side.
 
 ## Index — Effect domain layer
 
@@ -39,13 +38,25 @@ Read [fate-effect-bridge.md](./fate-effect-bridge.md) first — it's the seam ev
 | [fate-connections.md](./fate-connections.md) | `ConnectionResult`, custom `lists` resolvers vs source `connection`, cursor ownership | Writing a paginated list |
 | [fate-server-wiring.md](./fate-server-wiring.md) | `createFateServer` composition, per-request runtime owned by the Hono route, codegen | Assembling/mounting the server |
 
+## Index — fate client layer
+
+Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-requests.md](./fate-views-and-requests.md).
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [fate-client-setup.md](./fate-client-setup.md) | `createFateClient`, `<FateClient>` provider, auth, generated client, Suspense/error rails | Wiring the client / app shell |
+| [fate-views-and-requests.md](./fate-views-and-requests.md) | `view`/`useView`/`ViewRef`, masking, one batched `useRequest` per screen, `useListView` pagination | Reading data in a component |
+| [fate-mutations-client.md](./fate-mutations-client.md) | `fate.mutations`/`actions`, optimistic updates, `insert`/`delete` membership, error routing | Writing data from the UI |
+| [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the `LiveDO` Durable Object | Making a view live (spans client + server) |
+
 ## fate protocol conventions
 
 - **fate is pure transport; Effect services are the domain.** Reads and writes go through service methods — fate never queries the database, and `createDrizzleSourceAdapter` is never used.
 - **No `runtime.runPromise*` outside the bridge.** Resolvers and source executors are Effect generators wrapped by `fateQuery`/`fateList`/`fateMutation`/`fateSource`.
 - **Validation lives in services** (ADR 0013). fate's `input` schema is thin shape-coercion only.
 - **The server is the single source of truth for types.** The client imports `Entity<>` types; codegen emits the client wiring. No schema artifact.
-- **Live views are not enabled.** The built-in event bus is single-isolate in-memory; enabling SSE live views requires a Durable-Object-backed `LiveEventBus`.
+- **One batched request per screen.** A screen root declares its whole view tree in one `useRequest`; child `useView` calls read from cache — no waterfalls. Mutations are declarative (`optimistic`, `insert`/`delete`); no imperative cache updaters.
+- **Live views run over SSE through the `LiveDO` Durable Object.** The built-in in-memory bus can't fan out across Worker isolates, so a publish-only `LiveEventBus` forwards events to `LiveDO`, which owns the SSE connections and fans out. `LiveDO` is the one Durable Object in phoenix.
 
 ## Conventions across these docs
 

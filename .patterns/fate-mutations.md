@@ -49,7 +49,14 @@ A delete returns the affected **parent** entity, re-resolved, so the client's no
 
 ## Live events
 
-A mutation may publish live events (`live.connection(...).appendNode(...)`, `live.update(...)`) for views subscribed over SSE. phoenix does not enable live views — fate's built-in event bus is single-isolate in-memory, so enabling them requires a Durable-Object-backed `LiveEventBus`. Until then, mutations return the re-resolved entity and the client refetches as needed.
+After the write, a mutation publishes live events so subscribed views update in place:
+
+```ts
+live.update("Definition", id, {changed: ["score"], data: definition});  // entity field change
+live.connection("Term.definitions", {id: termId}).appendNode("Definition", id, {node: definition});
+```
+
+Publish the **already re-resolved** entity/node inline as `data`/`node` — the resolver resolved it for the response, so the live event carries resolved data and clients mask it to their own selection. The mutating client still gets the entity returned directly; live events update *other* clients (and other connections on the same client). See [fate-live-views.md](./fate-live-views.md).
 
 ## See also
 

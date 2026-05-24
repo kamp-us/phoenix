@@ -32,6 +32,7 @@ export const fateServer = createFateServer<FateContext>({
   lists,                 // {terms, posts} via fateList — see fate-connections.md
   mutations,             // {"definition.add", …} via fateMutation — see fate-mutations.md
   sources,               // hand-built Effect-backed SourceResolver — see fate-sources.md
+  live: liveBus,         // publish-only bus → LiveDO — see fate-live-views.md
 });
 ```
 
@@ -54,11 +55,18 @@ The fate routes sit in `worker/index.ts` alongside `/api/*`, `/api/auth/*`, `/ag
 
 ## Live route
 
+`/fate/live` does **not** go through `fateServer.handleLiveRequest` — the SSE stream and fan-out live in the `LiveDO` Durable Object so they cross isolates. The route authenticates, then hands off to the DO:
+
 ```ts
-app.all("/fate/live", (c) => fateServer.handleLiveRequest(c.req.raw, c));
+app.all("/fate/live", async (c) => {
+  const session = await validateSession(c.env, c.req.raw); // token from ?token= for SSE
+  if (!session) return c.text("unauthorized", 401);
+  const connectionId = new URL(c.req.raw.url).searchParams.get("connectionId")!;
+  return c.env.LIVE_DO.get(c.env.LIVE_DO.idFromName(`connection:${connectionId}`)).fetch(c.req.raw);
+});
 ```
 
-A live request is a long-lived SSE stream, so its runtime must outlive a single request — it is **not** disposed in a `finally`. phoenix does not enable live views (the built-in event bus is single-isolate in-memory); the route exists for when a Durable-Object-backed `LiveEventBus` is added. See [fate-mutations.md](./fate-mutations.md).
+No per-request `ManagedRuntime` is built here: the DO relays inline-resolved payloads published by mutations and does no database work. See [fate-live-views.md](./fate-live-views.md) for the DO design and `liveBus`.
 
 ## Codegen
 
