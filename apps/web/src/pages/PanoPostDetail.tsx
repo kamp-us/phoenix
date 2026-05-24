@@ -552,27 +552,22 @@ function Comments(props: CommentsProps) {
 			/>
 			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
 			<div className="kp-pano-thread">
-				{roots.map((r) => {
-					const c = composerFor(r.id);
-					return (
-						<CommentTreeNode
-							key={r.id}
-							comment={r.ref}
-							children={childrenForId(r.id)}
-							childrenForId={childrenForId}
-							currentUserId={props.currentUserId}
-							onReply={(id) => setReplyTo(id)}
-							onEdit={(id) => setEditingCommentId(id)}
-							onDelete={(id) => {
-								setDeleteError(null);
-								setConfirmDeleteId(id);
-							}}
-							composerFor={composerFor}
-							replyComposer={c.replyComposer}
-							editComposer={c.editComposer}
-						/>
-					);
-				})}
+				{roots.map((r) => (
+					<CommentTreeNode
+						key={r.id}
+						comment={r.ref}
+						children={childrenForId(r.id)}
+						childrenForId={childrenForId}
+						currentUserId={props.currentUserId}
+						onReply={(id) => setReplyTo(id)}
+						onEdit={(id) => setEditingCommentId(id)}
+						onDelete={(id) => {
+							setDeleteError(null);
+							setConfirmDeleteId(id);
+						}}
+						composerFor={composerFor}
+					/>
+				))}
 			</div>
 			{loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>

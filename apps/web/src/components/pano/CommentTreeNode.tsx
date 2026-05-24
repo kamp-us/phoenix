@@ -61,16 +61,16 @@ export interface CommentTreeNodeProps {
 	depth?: number;
 	hash?: string;
 	highlight?: boolean;
-	/** Optional inline reply composer rendered right after the body. */
-	replyComposer?: React.ReactNode;
-	/** Optional inline edit composer rendered IN PLACE OF the static body. */
-	editComposer?: React.ReactNode;
 	currentUserId: string | null;
 	onReply?: (id: string) => void;
 	onEdit?: (id: string) => void;
 	onDelete?: (id: string) => void;
-	/** Lookup helper — page maps comment id → its own composers. */
-	composerFor?: (id: string) => {
+	/**
+	 * Lookup helper — page maps comment id → its own composers. Every node
+	 * (root and child) resolves its own `replyComposer`/`editComposer` through
+	 * this, so the root is not a special case.
+	 */
+	composerFor: (id: string) => {
 		replyComposer?: React.ReactNode;
 		editComposer?: React.ReactNode;
 	};
@@ -82,6 +82,8 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	// score/body re-render here without a refetch.
 	const data = useLiveView(CommentTreeNodeView, props.comment);
 	const fate = useFateClient();
+	// Every node derives its own composers — the root is not special-cased.
+	const {replyComposer, editComposer} = props.composerFor(data.id);
 	// Test affordances key off the raw comment id (`comm_<ulid>`) — `id` is the
 	// raw per-type id.
 	const localId = data.id;
@@ -95,7 +97,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 		!isDeleted && props.currentUserId != null && data.authorId === props.currentUserId;
 	const voted = (data.myVote ?? 0) === 1;
 	const score = data.score;
-	const editing = props.editComposer != null;
+	const editing = editComposer != null;
 
 	const cls = [
 		"kp-comment",
@@ -178,7 +180,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 				<>
 					{editing ? (
 						<div className="kp-comment__edit" data-testid={`pano-comment-edit-${localId}`}>
-							{props.editComposer}
+							{editComposer}
 						</div>
 					) : (
 						<div className="kp-comment__body">
@@ -228,32 +230,27 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 							) : null}
 						</footer>
 					) : null}
-					{props.replyComposer ? (
+					{replyComposer ? (
 						<div className="kp-comment__reply" data-testid={`pano-comment-reply-${localId}`}>
-							{props.replyComposer}
+							{replyComposer}
 						</div>
 					) : null}
 					{props.children.length ? (
 						<div>
-							{props.children.map((child) => {
-								const c = props.composerFor?.(child.id);
-								return (
-									<CommentTreeNode
-										key={child.id}
-										comment={child.ref}
-										children={props.childrenForId(child.id)}
-										childrenForId={props.childrenForId}
-										depth={(props.depth ?? 0) + 1}
-										currentUserId={props.currentUserId}
-										onReply={props.onReply}
-										onEdit={props.onEdit}
-										onDelete={props.onDelete}
-										composerFor={props.composerFor}
-										replyComposer={c?.replyComposer}
-										editComposer={c?.editComposer}
-									/>
-								);
-							})}
+							{props.children.map((child) => (
+								<CommentTreeNode
+									key={child.id}
+									comment={child.ref}
+									children={props.childrenForId(child.id)}
+									childrenForId={props.childrenForId}
+									depth={(props.depth ?? 0) + 1}
+									currentUserId={props.currentUserId}
+									onReply={props.onReply}
+									onEdit={props.onEdit}
+									onDelete={props.onDelete}
+									composerFor={props.composerFor}
+								/>
+							))}
 						</div>
 					) : null}
 				</>
