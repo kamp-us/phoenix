@@ -8,7 +8,7 @@
 		"moduleResolution": "Bundler",
 		"jsx": "react-jsx",
 		"noEmit": true,
-		"types": ["vite/client", "@cloudflare/workers-types"],
+		"types": ["vite/client", "@cloudflare/workers-types", "node"],
 		"exactOptionalPropertyTypes": false
 	},
 	"include": ["src", ".fate/client.generated.ts", "worker", "worker-configuration.d.ts"],

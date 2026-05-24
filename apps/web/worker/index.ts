@@ -3,6 +3,8 @@ import {Effect} from "effect";
 import {Hono} from "hono";
 import {z} from "zod";
 import {AdminRuntime} from "./admin/runtime";
+import {livePublishContext} from "./fate/live";
+import {handleLiveRequest} from "./fate/live-route";
 import {FateRuntime, type SessionData as FateSessionData} from "./fate/runtime";
 import {fateServer} from "./fate/server";
 import {PanoAdmin} from "./features/pano/PanoAdmin";
@@ -11,6 +13,10 @@ import {Pasaport} from "./features/pasaport/Pasaport";
 import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
 import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
 import {AdminAuth} from "./services";
+
+// The one Durable Object in phoenix: cross-isolate live fan-out over SSE (ADR
+// 0023). Exported here so wrangler's `LIVE_DO` binding can resolve the class.
+export {LiveDO} from "./fate/live-do";
 
 // Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
 // Every product surface (sozluk, pano, pasaport) runs as module functions
@@ -176,6 +182,13 @@ app.all("/agents/*", async (c) => {
 	return res ?? c.text("Not Found", 404);
 });
 
+// The SSE live transport (ADR 0023). Served from the `LiveDO` Durable Object —
+// it builds NO per-request `ManagedRuntime` (the DO relays inline-published
+// data; no Effect runtime in the live path). Mounted before `/fate` so the more
+// specific path wins. Both GET (open stream) and POST (control) authenticate the
+// better-auth session cookie at connect.
+app.all("/fate/live", (c) => handleLiveRequest(c));
+
 // fate native protocol (ADR 0015–0017). The single data plane for the SPA.
 // The route owns the per-request runtime: it validates the session, builds a
 // `ManagedRuntime` with that session baked into the `Auth` layer, hands it to
@@ -202,7 +215,13 @@ app.post("/fate", async (c) => {
 
 	const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
 	try {
-		return await fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime});
+		// Run the operation inside the live publish context so a mutation's `live.*`
+		// publishes can resolve the `LIVE_DO` binding and `waitUntil` the fan-out
+		// (it doesn't block the response). The publish carries inline-resolved data.
+		return await livePublishContext.run(
+			{env: c.env, waitUntil: (p: Promise<unknown>) => c.executionCtx.waitUntil(p)},
+			() => fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime}),
+		);
 	} finally {
 		c.executionCtx.waitUntil(runtime.dispose());
 	}

@@ -23,6 +23,7 @@
 import {Sozluk} from "../features/sozluk/Sozluk";
 import {Auth} from "../services";
 import {fateMutation} from "./effect";
+import {liveBus} from "./live";
 import type {Definition, Term} from "./views";
 
 export interface AddDefinitionInput {
@@ -86,7 +87,12 @@ export const mutations = {
 				definitionId: input.id,
 				voterId: user.id,
 			});
-			return toDefinition(result);
+			const definition = toDefinition(result);
+			// Publish the re-resolved entity inline; the DO does no DB work and each
+			// client masks `data` to its own selection. `myVote` is viewer-specific,
+			// so it's omitted from `changed` (clients keep their own).
+			liveBus.update("Definition", definition.id, {changed: ["score"], data: definition});
+			return definition;
 		}),
 	},
 	"definition.retractVote": {
@@ -98,7 +104,9 @@ export const mutations = {
 				definitionId: input.id,
 				voterId: user.id,
 			});
-			return toDefinition(result);
+			const definition = toDefinition(result);
+			liveBus.update("Definition", definition.id, {changed: ["score"], data: definition});
+			return definition;
 		}),
 	},
 	"definition.edit": {
@@ -117,7 +125,10 @@ export const mutations = {
 			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {
 				viewerId: user.id,
 			});
-			return toDefinition({...result, myVote: fresh?.myVote ?? null});
+			const definition = toDefinition({...result, myVote: fresh?.myVote ?? null});
+			// `body` changed; `myVote` is viewer-specific so left out of `changed`.
+			liveBus.update("Definition", definition.id, {changed: ["body"], data: definition});
+			return definition;
 		}),
 	},
 	"definition.delete": {
@@ -131,6 +142,11 @@ export const mutations = {
 			// so we can re-resolve the parent `Term` afterward.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
+			// The entity is gone, and its edge leaves the parent term's connection.
+			liveBus.delete("Definition", input.id);
+			if (slug) {
+				liveBus.connection("Term.definitions", {id: slug}).deleteEdge("Definition", input.id);
+			}
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);
 			if (!page) return null;

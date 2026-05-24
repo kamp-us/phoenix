@@ -27,6 +27,13 @@
 			"migrations_dir": "worker/db/drizzle/migrations"
 		}
 	],
+	// LiveDO — the one Durable Object in phoenix (ADR 0023): cross-isolate live
+	// view fan-out over SSE. Connection-role instances own client SSE streams;
+	// topic-role instances hold durable subscriber registries in SQLite storage.
+	"durable_objects": {
+		"bindings": [{ "name": "LIVE_DO", "class_name": "LiveDO" }]
+	},
+	"migrations": [{ "tag": "v1", "new_sqlite_classes": ["LiveDO"] }],
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {
 		"ENVIRONMENT": "development"
