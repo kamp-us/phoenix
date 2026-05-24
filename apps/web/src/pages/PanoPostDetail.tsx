@@ -32,20 +32,14 @@
  * so the mutation throws; the optimistic change rolls back; we read `.code` and
  * surface it inline). See `.patterns/fate-mutations-client.md`.
  */
+import type {ViewData, ViewEntity, ViewSelection} from "@nkzw/fate";
 import * as React from "react";
-import {
-	useFateClient,
-	useLiveListView,
-	useLiveView,
-	useRequest,
-	useView,
-	type ViewRef,
-	view,
-} from "react-fate";
+import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
 import type {Post} from "../../worker/fate/views";
 import {useSession} from "../auth/client";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
+import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
 import {
 	PanoPostHeader,
 	PanoPostHeaderView,
@@ -77,6 +71,17 @@ const CommentConnectionView = {
 	items: {node: CommentTreeNodeView},
 	live: {append: "visible"},
 } as const;
+
+/**
+ * The masked data a `CommentTreeNodeView` ref resolves to — the same shape
+ * `useView(CommentTreeNodeView, ref)` returns. The page reads this off each
+ * connection node ref synchronously (via `client.readView`) to build the tree,
+ * so the type must match the hook's exactly.
+ */
+type CommentNodeData = ViewData<
+	ViewEntity<typeof CommentTreeNodeView> & {__typename: "Comment"},
+	ViewSelection<typeof CommentTreeNodeView>
+>;
 
 /**
  * The detail-page view. fate masks by view identity: the page spreads
@@ -365,17 +370,9 @@ interface CommentsProps {
 	currentUserId: string | null;
 }
 
-/** A node's structural fields, lifted up so the page can build the tree. */
-interface CommentMeta {
-	id: string;
-	parentId: string | null;
-	deletedAt: string | null;
-	body: string;
-	ref: ViewRef<"Comment">;
-}
-
 function Comments(props: CommentsProps) {
 	const post = useView(PostDetailView, props.post);
+	const fate = useFateClient();
 	// Live: a `comment.add` on another client publishes
 	// `live.connection("Post.comments", {id}).appendNode`, which `useLiveListView`
 	// merges into this thread without a refetch. (Comment *delete* still reloads —
@@ -389,92 +386,35 @@ function Comments(props: CommentsProps) {
 	const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
 	const [deleteError, setDeleteError] = React.useState<string | null>(null);
 	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
-	const fate = useFateClient();
 	const navigate = useNavigate();
 
-	// fate masks comment fields behind the node view, so the page can't read each
-	// node's `parentId`/`deletedAt`/`body` off the bare ref. Each node reports its
-	// structural fields up through a `CommentMetaReader` (one `useView` per node);
-	// the page assembles the tree from the collected metas. `metaVersion` (state)
-	// flips whenever a meta changes so the tree `useMemo` re-derives after the
-	// readers' effects fire.
-	const metasRef = React.useRef<Map<string, CommentMeta>>(new Map());
-	const [metaVersion, setMetaVersion] = React.useState(0);
-	const reportMeta = React.useCallback((meta: CommentMeta) => {
-		const prev = metasRef.current.get(meta.id);
-		if (
-			prev &&
-			prev.parentId === meta.parentId &&
-			prev.deletedAt === meta.deletedAt &&
-			prev.body === meta.body &&
-			prev.ref === meta.ref
-		) {
-			return;
+	// fate masks comment fields behind the node view, so the bare connection refs
+	// don't carry `parentId`/`deletedAt`/`body`. But the connection just resolved
+	// every node against `CommentTreeNodeView`, so each node's masked data is
+	// already in the store — read it synchronously here (no per-node hook, no
+	// effect round-trip) and build the tree in the same render the nodes arrive in.
+	// A node still missing from the cache (no fulfilled snapshot) is skipped this
+	// frame and picked up when the connection delivers it — it never lands in
+	// `items` without its data in practice, since membership and node data arrive
+	// together. The whole tree re-derives whenever `items` changes (membership is
+	// the only thing that changes the tree shape: `parentId` is immutable and a
+	// soft-delete reloads the page).
+	const {roots, childrenByParent, bodyById, refById, visibleCount} = React.useMemo(() => {
+		const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
+		for (const {node} of items) {
+			const snapshot = fate.readView(CommentTreeNodeView, node);
+			if (snapshot.status !== "fulfilled") continue;
+			const data = snapshot.value.data as CommentNodeData;
+			nodes.push({
+				id: String(data.id),
+				parentId: data.parentId != null ? String(data.parentId) : null,
+				deletedAt: toIsoOrNull(data.deletedAt),
+				body: data.body,
+				ref: node,
+			});
 		}
-		metasRef.current.set(meta.id, meta);
-		setMetaVersion((v) => v + 1);
-	}, []);
-
-	// Drop metas for nodes no longer in the connection.
-	const liveIds = React.useMemo(() => new Set(items.map(({node}) => String(node.id))), [items]);
-	React.useEffect(() => {
-		let changed = false;
-		for (const id of metasRef.current.keys()) {
-			if (!liveIds.has(id)) {
-				metasRef.current.delete(id);
-				changed = true;
-			}
-		}
-		if (changed) setMetaVersion((v) => v + 1);
-	}, [liveIds]);
-
-	const {roots, childrenByParent, bodyById} = React.useMemo(() => {
-		// In connection order, dropping nodes whose meta hasn't been reported yet.
-		const all = items
-			.map(({node}) => metasRef.current.get(String(node.id)))
-			.filter((m): m is CommentMeta => m != null);
-		const bodyById = new Map<string, string>();
-		for (const c of all) bodyById.set(c.id, c.body);
-
-		// Visibility pass: a comment is visible iff it's not soft-deleted, OR it has
-		// at least one visible descendant. Compute from leaves upward to fixed-point.
-		const visible = new Set<string>();
-		for (const c of all) if (!c.deletedAt) visible.add(c.id);
-		let changed = true;
-		while (changed) {
-			changed = false;
-			for (const c of all) {
-				if (visible.has(c.id)) continue;
-				if (!c.deletedAt) continue;
-				if (all.some((other) => other.parentId === c.id && visible.has(other.id))) {
-					visible.add(c.id);
-					changed = true;
-				}
-			}
-		}
-
-		const childrenByParent = new Map<string, Array<{id: string; ref: ViewRef<"Comment">}>>();
-		const roots: Array<{id: string; ref: ViewRef<"Comment">}> = [];
-		const knownIds = new Set(all.filter((c) => visible.has(c.id)).map((c) => c.id));
-		for (const c of all) {
-			if (!visible.has(c.id)) continue;
-			if (c.parentId && knownIds.has(c.parentId)) {
-				const list = childrenByParent.get(c.parentId) ?? [];
-				list.push({id: c.id, ref: c.ref});
-				childrenByParent.set(c.parentId, list);
-			} else {
-				roots.push({id: c.id, ref: c.ref});
-			}
-		}
-		return {roots, childrenByParent, bodyById};
-		// metasRef is read imperatively; `items` + `metaVersion` drive re-derive.
-	}, [items, metaVersion]);
-
-	const visibleCount = React.useMemo(() => {
-		let n = roots.length;
-		for (const list of childrenByParent.values()) n += list.length;
-		return n;
-	}, [roots, childrenByParent]);
+		return buildCommentTree(nodes);
+	}, [items, fate]);
 
 	const childrenForId = React.useCallback(
 		(id: string): ReadonlyArray<{id: string; ref: ViewRef<"Comment">}> =>
@@ -528,22 +468,18 @@ function Comments(props: CommentsProps) {
 				editingCommentId === id ? (
 					<CommentEditComposer
 						commentId={id}
-						commentRef={metasRef.current.get(id)?.ref ?? null}
+						commentRef={refById.get(id) ?? null}
 						initialBody={bodyById.get(id) ?? ""}
 						onEdited={() => setEditingCommentId(null)}
 						onCancel={() => setEditingCommentId(null)}
 					/>
 				) : undefined,
 		}),
-		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById],
+		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById, refById],
 	);
 
 	return (
 		<>
-			{/* One reader per node lifts its structural fields up for the tree build. */}
-			{items.map(({node}) => (
-				<CommentMetaReader key={`meta-${node.id}`} node={node} report={reportMeta} />
-			))}
 			<CommentComposer
 				postId={props.postId}
 				parentId={null}
@@ -611,34 +547,6 @@ function Comments(props: CommentsProps) {
 			</Dialog.Root>
 		</>
 	);
-}
-
-/**
- * A zero-DOM reader: masks a comment node off `CommentTreeNodeView` and reports
- * its structural fields (`parentId`/`deletedAt`/`body`) up so the page can build
- * the tree. One `useView` per node — the same view the tree node reads.
- */
-function CommentMetaReader({
-	node,
-	report,
-}: {
-	node: ViewRef<"Comment">;
-	report: (meta: CommentMeta) => void;
-}) {
-	// Live: a comment edit (body) on another client publishes
-	// `live.update("Comment", id, {changed:["body"]})`; reading the meta through
-	// `useLiveView` keeps the lifted `body` (and the tree projection) current.
-	const data = useLiveView(CommentTreeNodeView, node);
-	React.useEffect(() => {
-		report({
-			id: String(data.id),
-			parentId: data.parentId != null ? String(data.parentId) : null,
-			deletedAt: toIsoOrNull(data.deletedAt),
-			body: data.body,
-			ref: node,
-		});
-	}, [data.id, data.parentId, data.deletedAt, data.body, node, report]);
-	return null;
 }
 
 /**
