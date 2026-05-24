@@ -19,9 +19,7 @@ test.describe("PanoFeed (/pano)", () => {
 		// race, we always pick the *last* chip with each label.
 		const chips = ["sıcak", "yeni", "en iyi", "tartışma"];
 		for (const label of chips) {
-			const chip = page
-				.getByRole("button", {name: new RegExp(`^${label}$`, "i")})
-				.last();
+			const chip = page.getByRole("button", {name: new RegExp(`^${label}$`, "i")}).last();
 			await chip.click();
 			await expect(chip).toHaveAttribute("aria-pressed", "true");
 			await expect(page).toHaveURL("/pano");

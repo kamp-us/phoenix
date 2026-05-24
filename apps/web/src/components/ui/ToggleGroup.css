@@ -2,79 +2,95 @@
    Used by: filter chips, alphabet bar, theme picker, density toggle, tag picker. */
 
 .kp-toggle-group {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: var(--s-1);
+	display: inline-flex;
+	flex-wrap: wrap;
+	gap: var(--s-1);
+}
+
+/* Base toggle — must precede the variant overrides below so specificity ascends. */
+.kp-toggle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	padding: 3px 10px;
+	font: var(--t-meta);
+	font-weight: 500;
+	color: var(--text-secondary);
+	background: transparent;
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-pill);
+	cursor: pointer;
+	user-select: none;
+	white-space: nowrap;
+}
+.kp-toggle:hover {
+	color: var(--text-primary);
+	border-color: var(--border);
+}
+.kp-toggle[data-pressed] {
+	color: var(--accent-fg);
+	background: var(--accent-9);
+	border-color: var(--accent-9);
+	font-weight: 600;
+}
+.kp-toggle:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 2px;
+}
+.kp-toggle:disabled,
+.kp-toggle[data-disabled] {
+	opacity: 0.4;
+	cursor: not-allowed;
 }
 
 /* "Segmented" variant — buttons share a track (sıkı/normal/ferah, light/dark). */
 .kp-toggle-group--segmented {
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-faint);
-  border-radius: var(--r-md);
-  padding: 2px;
-  gap: 0;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	padding: 2px;
+	gap: 0;
 }
 .kp-toggle-group--segmented .kp-toggle {
-  border-radius: var(--r-sm);
-  padding: 3px var(--s-2);
-  font: var(--t-meta);
-  border: 0;
+	border-radius: var(--r-sm);
+	padding: 3px var(--s-2);
+	font: var(--t-meta);
+	border: 0;
 }
 .kp-toggle-group--segmented .kp-toggle[data-pressed] {
-  background: var(--surface-raised);
-  color: var(--text-primary);
+	background: var(--surface-raised);
+	color: var(--text-primary);
 }
-
-.kp-toggle {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  padding: 3px 10px;
-  font: var(--t-meta);
-  font-weight: 500;
-  color: var(--text-secondary);
-  background: transparent;
-  border: 1px solid var(--border-faint);
-  border-radius: var(--r-pill);
-  cursor: pointer;
-  user-select: none;
-  white-space: nowrap;
-}
-.kp-toggle:hover { color: var(--text-primary); border-color: var(--border); }
-.kp-toggle[data-pressed] {
-  color: var(--accent-fg);
-  background: var(--accent-9);
-  border-color: var(--accent-9);
-  font-weight: 600;
-}
-.kp-toggle:focus-visible { outline: var(--focus-ring); outline-offset: 2px; }
-.kp-toggle:disabled,
-.kp-toggle[data-disabled] { opacity: 0.4; cursor: not-allowed; }
 
 /* "Square" variant — alphabet bar */
-.kp-toggle-group--square { gap: 2px; }
+.kp-toggle-group--square {
+	gap: 2px;
+}
 .kp-toggle-group--square .kp-toggle {
-  width: var(--letter-size);
-  height: var(--letter-size);
-  padding: 0;
-  border-radius: var(--r-sm);
-  font-weight: 500;
+	width: var(--letter-size);
+	height: var(--letter-size);
+	padding: 0;
+	border-radius: var(--r-sm);
+	font-weight: 500;
 }
 
 /* "Swatch" variant — theme picker */
-.kp-toggle-group--swatch { gap: var(--s-1); }
-.kp-toggle-group--swatch .kp-toggle {
-  width: 22px;
-  height: 22px;
-  padding: 0;
-  border-radius: 50%;
-  background: var(--swatch-color, var(--accent-9));
-  border: 2px solid transparent;
+.kp-toggle-group--swatch {
+	gap: var(--s-1);
 }
-.kp-toggle-group--swatch .kp-toggle:hover { border-color: var(--border); }
+.kp-toggle-group--swatch .kp-toggle {
+	width: 22px;
+	height: 22px;
+	padding: 0;
+	border-radius: 50%;
+	background: var(--swatch-color, var(--accent-9));
+	border: 2px solid transparent;
+}
+.kp-toggle-group--swatch .kp-toggle:hover {
+	border-color: var(--border);
+}
 .kp-toggle-group--swatch .kp-toggle[data-pressed] {
-  border-color: var(--text-primary);
-  background: var(--swatch-color, var(--accent-9));
+	border-color: var(--text-primary);
+	background: var(--swatch-color, var(--accent-9));
 }

@@ -30,7 +30,7 @@ export interface DecodedNodeId {
  */
 export function encodeNodeId(typename: Typename, id: string): string {
 	if (!typename || !id) {
-		throw new Error(`encodeNodeId: typename and id are required (got ${typename!}, ${id!})`);
+		throw new Error(`encodeNodeId: typename and id are required (got ${typename}, ${id})`);
 	}
 	return base64Encode(`${typename}${SEPARATOR}${id}`);
 }

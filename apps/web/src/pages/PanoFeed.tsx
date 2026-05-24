@@ -16,8 +16,8 @@ import * as React from "react";
 import {graphql, useLazyLoadQuery, usePaginationFragment} from "react-relay";
 import type {PanoFeedPostsFragment$key} from "../__generated__/PanoFeedPostsFragment.graphql";
 import type {PanoFeedQuery, PostSort} from "../__generated__/PanoFeedQuery.graphql";
-import {PanoCrumb, PanoPostCard} from "../components/pano/index";
 import {Subnav} from "../components/layout/Subnav";
+import {PanoCrumb, PanoPostCard} from "../components/pano/index";
 import {Button} from "../components/ui/Button";
 import {QueryBoundary} from "../relay/QueryBoundary";
 
@@ -181,13 +181,7 @@ function FeedRows({
 	const meta = host ? `${rows.length} başlık · ${host}` : `${rows.length} başlık`;
 
 	return (
-		<FeedChrome
-			host={host}
-			filterId={filterId}
-			setFilterId={setFilterId}
-			status="ok"
-			meta={meta}
-		>
+		<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} status="ok" meta={meta}>
 			<div className="kp-pano-list">
 				{rows.map((node, i) => (
 					<PanoPostCard key={node.id} post={node} rank={i + 1} />
@@ -222,12 +216,7 @@ interface ChromeProps {
 function FeedChrome({host, filterId, setFilterId, meta, children}: ChromeProps) {
 	return (
 		<>
-			<Subnav
-				filters={FILTERS}
-				activeFilter={filterId}
-				onFilterChange={setFilterId}
-				meta={meta}
-			/>
+			<Subnav filters={FILTERS} activeFilter={filterId} onFilterChange={setFilterId} meta={meta} />
 			{host ? <PanoCrumb host={host} /> : null}
 			<div className="kp-page">
 				<div className="kp-page__inner">{children}</div>

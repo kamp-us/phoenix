@@ -174,7 +174,7 @@ export const SEED_POSTS: SeedPost[] = [
 			{
 				...author("canyilmaz"),
 				score: 11,
-				body: "tek user için sıkışmadı; çoklu-user arenada zaten DO sharding yapıyoruz. ama \"global state\" tipi DO'larda dikkatli olmak lazım.",
+				body: 'tek user için sıkışmadı; çoklu-user arenada zaten DO sharding yapıyoruz. ama "global state" tipi DO\'larda dikkatli olmak lazım.',
 				parentIdx: 0,
 			},
 		],

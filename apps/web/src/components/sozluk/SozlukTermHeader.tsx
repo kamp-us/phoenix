@@ -32,8 +32,7 @@ export function SozlukTermHeader(props: SozlukTermHeaderProps) {
 	return (
 		<header className="kp-sozluk-term__head">
 			<p className="kp-sozluk-term__crumbs">
-				<Link to="/sozluk">sözlük</Link> / <Link to="/sozluk">{firstLetter}</Link> /{" "}
-				{term.title}
+				<Link to="/sozluk">sözlük</Link> / <Link to="/sozluk">{firstLetter}</Link> / {term.title}
 			</p>
 			<h1 className="kp-sozluk-term__title">{term.title}</h1>
 			<div className="kp-sozluk-term__meta">

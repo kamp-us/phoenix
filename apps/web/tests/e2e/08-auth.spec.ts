@@ -19,9 +19,7 @@ test.describe("AuthPage (/auth)", () => {
 		await expect(page.getByLabel("görünen ad")).toBeVisible();
 	});
 
-	test("sign-up redirects to / and topbar shows user pill; sign-out flips back", async ({
-		page,
-	}) => {
+	test("sign-up redirects to / and topbar shows user pill; sign-out flips back", async ({page}) => {
 		const creds = await signUp(page);
 		await expect(page).toHaveURL("/");
 		const pill = page.locator(".kp-topbar__user");

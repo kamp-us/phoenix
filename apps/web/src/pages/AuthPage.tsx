@@ -88,13 +88,7 @@ export function AuthPage() {
 					</div>
 					{error ? <p className="kp-auth__error">{error}</p> : null}
 					<button type="submit" className="kp-auth__submit" disabled={pending}>
-						{pending
-							? isSignIn
-								? "giriliyor…"
-								: "açılıyor…"
-							: isSignIn
-								? "devam et"
-								: "hesap aç"}
+						{pending ? (isSignIn ? "giriliyor…" : "açılıyor…") : isSignIn ? "devam et" : "hesap aç"}
 					</button>
 				</form>
 				<div className="kp-auth__alt">

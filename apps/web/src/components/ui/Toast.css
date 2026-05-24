@@ -20,7 +20,7 @@
 	border-radius: 8px;
 	background: var(--surface-1, #1a1a1a);
 	color: var(--text, #ededed);
-	font: var(--t-body, 13px/1.4 system-ui);
+	font: var(--t-body, 13px / 1.4 system-ui);
 	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 

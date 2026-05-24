@@ -1,4 +1,4 @@
-import * as React from 'react';
+import type * as React from "react";
 
 /**
  * Bare-bones inline markdown — `code`, **strong**. Returns React children
@@ -11,16 +11,16 @@ import * as React from 'react';
 export function renderMarkdownInline(src: string): React.ReactNode[] {
 	const out: React.ReactNode[] = [];
 	let i = 0;
-	let buf = '';
+	let buf = "";
 	const flush = () => {
 		if (buf) {
 			out.push(buf);
-			buf = '';
+			buf = "";
 		}
 	};
 	while (i < src.length) {
-		if (src[i] === '`') {
-			const close = src.indexOf('`', i + 1);
+		if (src[i] === "`") {
+			const close = src.indexOf("`", i + 1);
 			if (close > i) {
 				flush();
 				out.push(<code key={out.length}>{src.slice(i + 1, close)}</code>);
@@ -28,8 +28,8 @@ export function renderMarkdownInline(src: string): React.ReactNode[] {
 				continue;
 			}
 		}
-		if (src[i] === '*' && src[i + 1] === '*') {
-			const close = src.indexOf('**', i + 2);
+		if (src[i] === "*" && src[i + 1] === "*") {
+			const close = src.indexOf("**", i + 2);
 			if (close > i + 1) {
 				flush();
 				out.push(<strong key={out.length}>{src.slice(i + 2, close)}</strong>);
@@ -44,7 +44,7 @@ export function renderMarkdownInline(src: string): React.ReactNode[] {
 	return out;
 }
 
-export type MarkdownBlock = {kind: 'text'; text: string} | {kind: 'code'; text: string};
+export type MarkdownBlock = {kind: "text"; text: string} | {kind: "code"; text: string};
 
 /**
  * Splits markdown into paragraphs and fenced code blocks. Used for definition
@@ -62,18 +62,18 @@ export function splitMarkdownBlocks(src: string): MarkdownBlock[] {
 			const text = src.slice(last, m.index).trim();
 			if (text) {
 				for (const para of text.split(/\n{2,}/)) {
-					if (para.trim()) blocks.push({kind: 'text', text: para.trim()});
+					if (para.trim()) blocks.push({kind: "text", text: para.trim()});
 				}
 			}
 		}
-		blocks.push({kind: 'code', text: (m[1] ?? '').replace(/^\n|\n$/g, '')});
+		blocks.push({kind: "code", text: (m[1] ?? "").replace(/^\n|\n$/g, "")});
 		last = m.index + m[0].length;
 	}
 	if (last < src.length) {
 		const text = src.slice(last).trim();
 		if (text) {
 			for (const para of text.split(/\n{2,}/)) {
-				if (para.trim()) blocks.push({kind: 'text', text: para.trim()});
+				if (para.trim()) blocks.push({kind: "text", text: para.trim()});
 			}
 		}
 	}

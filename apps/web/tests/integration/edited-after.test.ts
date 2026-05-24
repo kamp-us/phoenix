@@ -1,5 +1,5 @@
 import {describe, expect, it} from "vitest";
-import {editedAfter, EDITED_GRACE_MS, formatEditedTooltipTR} from "../../src/lib/datetime";
+import {EDITED_GRACE_MS, editedAfter, formatEditedTooltipTR} from "../../src/lib/datetime";
 
 /**
  * Code-level test for the `editedAfter` helper that backs the

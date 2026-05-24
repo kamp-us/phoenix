@@ -41,14 +41,10 @@ export function Topbar({
 				{after}
 			</Link>
 			<span className="kp-topbar__sep" />
+			{/* NavLink sets aria-current="page" on the active link by default */}
 			<nav className="kp-topbar__nav">
 				{nav.map((n) => (
-					<NavLink
-						key={n.to}
-						to={n.to}
-						aria-current={undefined}
-						/* NavLink sets aria-current="page" on match by default */
-					>
+					<NavLink key={n.to} to={n.to}>
 						{n.label}
 					</NavLink>
 				))}
@@ -69,7 +65,7 @@ export function Topbar({
 					fill="none"
 					stroke="currentColor"
 					strokeWidth="2.4"
-					aria-hidden
+					aria-hidden="true"
 				>
 					<circle cx="11" cy="11" r="7" />
 					<path d="m20 20-3.5-3.5" />

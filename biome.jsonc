@@ -1,7 +1,14 @@
 {
 	"$schema": "https://biomejs.dev/schemas/2.4.15/schema.json",
 	"files": {
-		"includes": ["**", "!**/worker-configuration.d.ts", "!**/__generated__", "!**/dist"]
+		"includes": [
+			"**",
+			"!**/worker-configuration.d.ts",
+			"!**/__generated__",
+			"!**/dist",
+			"!**/drizzle/migrations",
+			"!**/schema.graphql"
+		]
 	},
 	"assist": {
 		"actions": {
@@ -40,5 +47,17 @@
 			"enabled": true,
 			"indentStyle": "tab"
 		}
-	}
+	},
+	"overrides": [
+		{
+			"includes": ["**/tests/**", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noNonNullAssertion": "off"
+					}
+				}
+			}
+		}
+	]
 }

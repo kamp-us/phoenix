@@ -122,7 +122,7 @@
 	color: var(--text-faint);
 	cursor: pointer;
 	letter-spacing: 0.1em;
-	font: 13px/1 var(--font-body);
+	font: 13px / 1 var(--font-body);
 }
 .kp-comment__menu-trigger:hover,
 .kp-comment__menu-trigger[data-popup-open] {

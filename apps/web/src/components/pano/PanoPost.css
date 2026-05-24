@@ -101,8 +101,12 @@
 	font: var(--t-body-sm);
 	color: var(--text-muted);
 }
-.kp-pano-post__site::before { content: "("; }
-.kp-pano-post__site::after { content: ")"; }
+.kp-pano-post__site::before {
+	content: "(";
+}
+.kp-pano-post__site::after {
+	content: ")";
+}
 
 .kp-pano-post__tags {
 	display: inline-flex;

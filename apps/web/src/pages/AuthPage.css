@@ -18,7 +18,7 @@
 
 .kp-auth__brand {
 	text-align: center;
-	font: 600 16px/1 var(--font-body);
+	font: 600 16px / 1 var(--font-body);
 	letter-spacing: -0.01em;
 	color: var(--text-secondary);
 }
@@ -27,7 +27,7 @@
 }
 
 .kp-auth__title {
-	font: 500 24px/1.2 var(--font-body);
+	font: 500 24px / 1.2 var(--font-body);
 	margin: 0;
 	color: var(--text-primary);
 	text-align: center;

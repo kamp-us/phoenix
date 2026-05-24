@@ -1,19 +1,25 @@
 /* Tooltip — Base UI primitive wrapper. Used on post titles + abbreviations. */
 
 .kp-tooltip__popup {
-  background: var(--surface-raised);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--r-sm);
-  padding: 4px var(--s-2);
-  font: var(--t-micro);
-  box-shadow: var(--shadow-md);
-  max-width: 280px;
-  z-index: 80;
-  animation: kp-tooltip-pop 100ms ease-out;
+	background: var(--surface-raised);
+	color: var(--text-primary);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 4px var(--s-2);
+	font: var(--t-micro);
+	box-shadow: var(--shadow-md);
+	max-width: 280px;
+	z-index: 80;
+	animation: kp-tooltip-pop 100ms ease-out;
 }
 
 @keyframes kp-tooltip-pop {
-  from { opacity: 0; transform: translateY(2px); }
-  to   { opacity: 1; transform: translateY(0); }
+	from {
+		opacity: 0;
+		transform: translateY(2px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
 }

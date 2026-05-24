@@ -113,9 +113,7 @@ export function SozlukTermPage() {
 		<div className="kp-page">
 			<div className="kp-page__inner">
 				<QueryBoundary
-					loading={
-						<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>
-					}
+					loading={<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>yükleniyor…</p>}
 					error={(err) => (
 						<p style={{font: "var(--t-body)", color: "var(--danger)"}}>
 							terim yüklenemedi: {err.message}
@@ -176,8 +174,8 @@ function NewTermComposer({slug}: {slug: string}) {
 		<>
 			<header className="kp-sozluk-term__head">
 				<p className="kp-sozluk-term__crumbs">
-					<a href="/sozluk">sözlük</a> /{" "}
-					<a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> / {slug.replace(/-/g, " ")}
+					<a href="/sozluk">sözlük</a> / <a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> /{" "}
+					{slug.replace(/-/g, " ")}
 				</p>
 				<h1 className="kp-sozluk-term__title">{slug.replace(/-/g, " ")}</h1>
 				<div className="kp-sozluk-term__meta">
@@ -475,5 +473,3 @@ function Composer({slug, termRecordId}: {slug: string; termRecordId: string}) {
 		</form>
 	);
 }
-
-
