@@ -18,3 +18,12 @@ One row per ADR. Read the file for the why.
 | [0012](0012-admin-parallel-services.md) | Admin operations as parallel `<Feature>Admin` services with a separate runtime | accepted | 2026-05-17 |
 | [0013](0013-validation-in-service-methods.md) | Input validation lives in service methods, not the resolver layer | accepted | 2026-05-17 |
 | [0014](0014-drizzle-run-batch-as-service-methods.md) | Drizzle service exposes `run`/`batch` as bound methods on the service value | accepted | 2026-05-17 |
+| [0015](0015-adopt-fate-native-protocol.md) | Adopt fate's native protocol as the data layer | accepted | 2026-05-23 |
+| [0016](0016-fate-pure-transport-effect-services-domain.md) | fate is pure transport; Effect services stay the domain | accepted | 2026-05-23 |
+| [0017](0017-hono-route-owns-fate-runtime.md) | The Hono route owns and disposes the per-request fate runtime | accepted | 2026-05-23 |
+| [0018](0018-data-views-drop-global-ids.md) | Data views are the schema; drop global IDs and the Node interface | accepted | 2026-05-23 |
+| [0019](0019-connection-pagination-strategy.md) | Connection pagination — custom list resolvers for roots, source connection for nested | accepted | 2026-05-23 |
+| [0020](0020-fate-mutation-conventions.md) | fate mutation conventions | accepted | 2026-05-23 |
+| [0021](0021-frontend-on-react-fate.md) | Frontend on react-fate — batched per-screen requests, declarative mutations | accepted | 2026-05-23 |
+| [0022](0022-server-types-single-source-of-truth.md) | Server types are the single source of truth; fate codegen replaces relay-compiler | accepted | 2026-05-23 |
+| [0023](0023-live-views-sse-livedo.md) | Live views over SSE, fanned out by the LiveDO Durable Object | accepted | 2026-05-23 |
