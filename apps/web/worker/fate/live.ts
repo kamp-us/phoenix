@@ -27,6 +27,33 @@ import {AsyncLocalStorage} from "node:async_hooks";
 import type {LiveEventBus} from "@nkzw/fate/server";
 import type {ConnectionFrame, EntityFrame, PublishMessage} from "./live-protocol";
 import {topicsForPublish} from "./live-protocol";
+import type {LiveChangedField, LiveEntities} from "./views";
+
+/**
+ * Typed `update` for the publish-only bus: the entity name is constrained to the
+ * known live entities ({@link LiveEntities}) and `changed` is typed against that
+ * entity's own field keys ({@link LiveChangedField}) rather than a bare
+ * `string[]`. A typo (`["scor"]`) or a renamed field is a compile error at the
+ * mutation site instead of a silently-ignored no-op. `data` is the entity the
+ * mutation already resolved for its response.
+ */
+type TypedLiveUpdate = <Name extends keyof LiveEntities>(
+	type: Name,
+	id: string | number,
+	options?: {
+		changed?: ReadonlyArray<LiveChangedField<Name>>;
+		data?: LiveEntities[Name];
+		eventId?: string;
+	},
+) => void;
+
+/**
+ * phoenix's bus is fate's `LiveEventBus` with a stricter `update`: callers see
+ * the entity-keyed signature ({@link TypedLiveUpdate}), while `server.ts` still
+ * passes it where a `LiveEventBus` is expected (the narrower `update` is
+ * assignable to the looser `(type: string, …)` one).
+ */
+type PhoenixLiveEventBus = Omit<LiveEventBus, "update"> & {update: TypedLiveUpdate};
 
 /**
  * Per-request publish context. The `/fate` route runs the operation inside
@@ -93,7 +120,7 @@ function entityFrame(
  * resolves a topic and fetches the topic DO with the inline-resolved data the
  * mutation already produced; `subscribe`/`subscribeConnection` throw.
  */
-export const liveBus: LiveEventBus = {
+export const liveBus: PhoenixLiveEventBus = {
 	update: (type, id, options) => {
 		publish({
 			kind: "entity",
@@ -178,3 +205,13 @@ export const liveBus: LiveEventBus = {
 		throw new Error("live subscriptions are served by LiveDO, not the bus");
 	},
 };
+
+/**
+ * The bus widened back to fate's `LiveEventBus` for `createFateServer`'s `live`
+ * config. The typed `update` ({@link TypedLiveUpdate}) accepts a *narrower*
+ * `type` than `LiveEventBus.update`, so TS's parameter contravariance rejects
+ * the direct assignment — but the runtime impl genuinely accepts any string, so
+ * the widening is sound. `server.ts` consumes this; mutation files use the
+ * typed {@link liveBus}.
+ */
+export const liveBusConfig: LiveEventBus = liveBus as LiveEventBus;

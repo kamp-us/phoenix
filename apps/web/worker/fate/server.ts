@@ -21,7 +21,7 @@
 import {createFateServer} from "@nkzw/fate/server";
 import type {FateContext} from "./context";
 import {lists} from "./lists";
-import {liveBus} from "./live";
+import {liveBusConfig} from "./live";
 import {mutations} from "./mutations";
 import {panoMutations} from "./pano-mutations";
 import {pasaportMutations} from "./pasaport-mutations";
@@ -70,5 +70,5 @@ export const fateServer = createFateServer<
 	// fate detects a custom bus by `"subscribe" in live` (the property exists but
 	// throws — the SSE protocol is served by the `/fate/live` route + DO, not by
 	// fate's `handleLiveRequest`). See `worker/fate/live.ts`.
-	live: liveBus,
+	live: liveBusConfig,
 });

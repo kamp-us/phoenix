@@ -431,6 +431,40 @@ export type LandingStats = EntityOf<LandingStatsViewRow, typeof landingStatsFiel
  * non-portability the `*DataView` annotations dodge). The plugin only inspects
  * this value at runtime (`isDataView` checks), so the loose type is sufficient.
  */
+/* -------------------------------------------------------------------------- */
+/* Live registry — entity name → entity type                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The entities a mutation can publish a `live.update` for, keyed by their wire
+ * `__typename`. Single-sources the entity-name → entity-type relation so the
+ * live bus can type `update`'s `type` discriminant (instead of a bare `string`)
+ * and its `changed` field list against the entity's own field keys — a typo or
+ * renamed field becomes a compile error at the mutation site. Mirrors the typed
+ * `targetKind` discriminant the codebase prefers over magic strings.
+ *
+ * `Term` and `Profile` are intentionally omitted: their live updates flow
+ * through the nested-connection path (`liveBus.connection(...)`), not
+ * `update`. Add an entity here only when a resolver calls `liveBus.update` for
+ * it.
+ */
+export interface LiveEntities {
+	Definition: Definition;
+	Post: Post;
+	Comment: Comment;
+}
+
+/**
+ * The fields a `live.update("<Name>", …)` may name in `changed` — every field
+ * key of the entity except the `__typename` discriminant (which never
+ * "changes"). Keying `changed` against this makes a nonexistent or renamed
+ * field a compile error at the mutation site.
+ */
+export type LiveChangedField<Name extends keyof LiveEntities> = Exclude<
+	keyof LiveEntities[Name],
+	"__typename"
+>;
+
 export const Root: Record<string, unknown> = {
 	me: userDataView,
 	// Sözlük term detail page (`queries.term`). A view-based entry becomes a
