@@ -51,6 +51,14 @@ app.post("/fate", async (c) => {
 
 The fate routes sit in `worker/index.ts` alongside `/api/*`, `/api/auth/*`, `/agents/*`, and the dev-only `/api/admin/*` routes. `createFateServer`'s handlers operate on standard `Request`/`Response`, so they drop onto a Hono route directly.
 
+> **The route also needs a `run_worker_first` entry.** Mounting `app.post("/fate")` is not enough — `wrangler.jsonc` uses `assets.not_found_handling: "single-page-application"`, so any path *not* listed in `assets.run_worker_first` is handed to the **assets handler first**. The asset server answers `GET /fate` with the SPA shell (200) but rejects `POST /fate` with **405**, and the worker route is never reached. This ships to prod, not just dev. Add `/fate` (and `/fate/*` for the live route) to `run_worker_first`:
+>
+> ```jsonc
+> "run_worker_first": ["/api/*", "/graphql", "/graphql/*", "/agents/*", "/fate", "/fate/*"]
+> ```
+>
+> Integration tests using `SELF.fetch` invoke the worker entry directly and bypass the assets/route layer, so they pass without this entry — verify `POST /fate` in the running app, not only in tests.
+
 > **Why the route owns the runtime, not fate's `context`.** `context` has no symmetric teardown hook. Building the runtime in the route gives a `try/finally` to dispose it deterministically — one `ManagedRuntime` per request, disposed after the response, no leak.
 
 ## Live route

@@ -57,6 +57,12 @@ fate.mutations.comment.delete({input: {id}, delete: true});
 
 There is no hand-written updater enumerating connection keys. For connections that aren't root lists (a post's comments, a filtered feed variant), **membership is driven by server-emitted live events** — the mutation publishes `live.connection(...).appendNode/deleteEdge(...)` and every subscribed client updates. See [fate-live-views.md](./fate-live-views.md). This replaces per-call imperative cache surgery with one server-side source of truth.
 
+> **`insert`/`delete` only reach *root* lists; nested connections need live events — and live isn't wired yet (tasks 11/12). Verified, 1.0.3.** A root list is registered only when its connection has **no filter args** (`registerRootList` is gated on `!filterConnectionArgs(argsPayload)`). A *nested* connection (`Term.definitions` carried on the `term` query) is never a registered root list, so `insert`/`delete` can't touch it. Two consequences phoenix lives with until live (tasks 11/12) lands the `appendNode`/`deleteEdge` events:
+> - **add** to a nested connection: the new node is normalized into the cache, but joins the list only on a re-read. sözlük's composer **reloads after a successful add**.
+> - **delete** of a node in a nested connection: `delete: true` is also **wrong-entity** here — sözlük's `definition.delete` is a `Term`-returning mutation (it re-resolves the parent for fresh counts), so `delete:true` would `deleteRecord("Term", definitionId)`. So the card calls delete **without** `delete:true` and **reloads** after success.
+>
+> Entity-field mutations (vote, edit) are unaffected: they write back through the result `view` and re-render in place, fully optimistic.
+
 ## Errors {#errors}
 
 A failure is a `FateRequestError` with a `code` (`UNAUTHORIZED`, `VALIDATION_ERROR`, and the domain codes from `src/lib/mutationErrorCodes.ts`) and `message`. fate routes it by HTTP status:
@@ -65,6 +71,8 @@ A failure is a `FateRequestError` with a `code` (`UNAUTHORIZED`, `VALIDATION_ERR
 - **`boundary`** (401/403/5xx): re-thrown, caught by the screen's error boundary ([fate-client-setup.md](./fate-client-setup.md)).
 
 UI keys off `error.code`, never the message string — the codes are the shared contract with the server's `encodeFateError` ([fate-effect-bridge.md](./fate-effect-bridge.md)).
+
+> **1.0.3 classifies phoenix's wider codes as `boundary` (so a mutation *throws* instead of returning `{error}`) — verified.** The client derives callSite-vs-boundary purely from the wire `code` → `statusFromErrorCode(code)`, whose `switch` knows only the 6 protocol codes (`BAD_REQUEST`/`VALIDATION_ERROR`→400, `UNAUTHORIZED`→401, `FORBIDDEN`→403, `NOT_FOUND`→404, `INTERNAL_ERROR`→500) with **no `default`**; phoenix codes (`BODY_REQUIRED`, `BODY_TOO_LONG`, `DEFINITION_NOT_FOUND`, `TAKEN`, …) resolve to `status: undefined` → `categorizeHTTPErrorStatus` falls to `boundary`. The per-op wire error drops `status` (only `{code,message,issues}`) and the client rebuilds it from `code`, so a phoenix code can't carry a 4xx through the wire. **The optimistic rollback still fires** (fate clears the optimistic write + restores snapshots *before* the throw). So phoenix mutation call sites **`try { const {error} = await fate.mutations… } catch (e) {}`**: handle both the `callSite` `{error}` return AND the `boundary` throw, read `.code` off either, and render inline (an async throw never reaches a React error boundary anyway). `UNAUTHORIZED` routes to the auth redirect. sözlük's `DefinitionCard` + term-page composer do this. (If fate later adds a `default → 400` or status round-trips on the wire, the catch can be dropped for the `{error}` path.)
 
 ## See also
 

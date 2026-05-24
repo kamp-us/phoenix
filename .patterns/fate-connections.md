@@ -41,19 +41,27 @@ lists: {
 
 The cursor is whatever the service uses as its keyset (a slug, an id, an encoded score+id tuple) — the client treats it as opaque. This is the path for `terms` and `posts`.
 
-## Nested connections — source `connection` executor
+## Nested connections — delivered inline by the parent resolver (1.0.3)
 
-A connection field inside a view (`Term.definitions`, `Post.comments`, `Profile.contributions`) resolves through that relation's source `connection` handler. fate owns the cursor here: it encodes the view's `orderBy` field values and over-fetches `take + 1` to compute `hasNext`. Two rules make this round-trip correctly:
+A connection field inside a view (`Term.definitions`, `Post.comments`, `Profile.contributions`) carries a `ConnectionResult` on the parent row. The DB keyset still lives in the service; what differs from the original plan is **who invokes it**.
 
-1. **The view's `orderBy` matches the service's `ORDER BY` exactly.** `list(definitionDataView, {orderBy: {score: "desc", id: "asc"}})` ⇒ the service's definition page orders by `(score desc, id asc)`. A mismatch skips or duplicates rows across pages.
-2. **The service's connection method pages by that keyset.** The `connection` executor receives `{cursor, direction, take, skip}`; it passes the decoded keyset to the service, which returns up to `take` rows after it. fate slices and re-encodes the cursors.
+> **fate 1.0.3 drift — the native path does NOT auto-invoke a nested relation's `connection` executor (source authoritative; verified against `@nkzw/fate@1.0.3`).** `resolveSourceConnection` (the function that calls a source's `connection` handler) is reached from exactly two places in 1.0.3: the **root `list` operation** (`server.mjs`) and the **Drizzle adapter's** nested-relation resolver (`server/drizzle.mjs`). phoenix bans the Drizzle adapter (ADR 0016), so for a hand-built source resolver, fate's `resolveNode` only **re-shapes** whatever the parent row already carries on a `list()` field — an `Array` or a pre-built `ConnectionResult` — via `arrayToConnection`. It never fetches the nested relation through an executor, and the cursor it uses for a connection node is the node's **`id`** (the default `getCursor`), not the view's `orderBy` field values. So the originally-planned "fate owns the cursor, derived from the view `orderBy`" does not hold for nested fields in 1.0.3.
 
-Always include `id` as the final `orderBy` key — it's the stable tiebreaker that makes cursors deterministic. fate appends `id asc` if absent; make it explicit so the service's `ORDER BY` and the view agree.
+The phoenix shape that gives a true DB keyset and parity:
+
+1. **The parent is a custom resolver** (`term(slug)` is a `queries` entry, not a source-masked byId root). A custom resolver returns shaped output directly with no source masking, so it owns the whole `Term` shape — including the `definitions` connection.
+2. **The resolver builds `definitions` as a pre-built `ConnectionResult`** from a service keyset method (`Sozluk.listDefinitionsKeyset`), only when the selection includes `definitions` (`hasNestedSelection(select, "definitions")`). Nested connection args arrive scoped under the field path (`args.definitions.{first,after}`), matching fate's `getScopedArgs`.
+3. **The cursor is the node `id`** (matching fate's default and the legacy GraphQL `cursor: row.id`). The service resolves that id to its `(orderBy-fields…, id)` keyset tuple and fetches the rows that follow it, so a page is a bounded `WHERE … LIMIT` — no skips/dupes, no loading the whole list.
+4. **The view's `list(view, {orderBy})` still declares the order** — `(score desc, createdAt asc, id asc)` for `Term.definitions` — kept in lockstep with the service `ORDER BY`, with `id` as the explicit final tiebreaker. The `Definition` source's `orderBy` and a `connection` executor are still defined (they're the single keyset read the root-list path would use, and the inline resolver delegates to the same service method), so the order contract has one home.
+
+Always include `id` as the final `orderBy` key — it's the stable tiebreaker that makes the keyset deterministic.
+
+> If a future fate release auto-invokes nested `connection` executors for hand-built sources, the inline `ConnectionResult` build in the parent resolver can be dropped in favor of wiring the relation on the parent source; the service keyset method stays unchanged.
 
 ## See also
 
 - [fate-data-views.md](./fate-data-views.md) — `list(view, {orderBy})` in a view
-- [fate-sources.md](./fate-sources.md) — the `connection` source executor
+- [fate-sources.md](./fate-sources.md) — the `connection` source executor (root-list path)
 - [fate-effect-bridge.md](./fate-effect-bridge.md) — `fateList` returning `ConnectionResult`
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `example/void/src/fate/server.ts` (`commentSearch` custom list)
-- fate cursor internals (in the [fate](https://github.com/usirin/fate) repo): `packages/fate/src/server/source.ts` (`encodeCursor`/`createKeysetSteps`), `connection.ts` (`resolveConnection`)
+- fate internals (verified in `node_modules/@nkzw/fate@1.0.3`): `resolveConnection`/`arrayToConnection`/`resolveSourceConnection` in `sourceRouter-*.mjs`; root-list call site in `server.mjs`

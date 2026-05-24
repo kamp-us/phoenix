@@ -18,14 +18,22 @@ type SourceResolver<Context> = {
 A `SourceDefinition` is a plain object — `{id, view, orderBy?, relations?}` — where `id` is the row's primary-key field name. A `SourceExecutor` is `{byId?, byIds?, connection?}`: async handlers returning **raw domain rows**, which fate masks/shapes to the view+selection afterward. `SourceRegistry` is just `Map<SourceDefinition, SourceExecutor>` — fate looks an executor up by the **object identity** of the `SourceDefinition` that `getSource` returns.
 
 > **fate v1.0.3 exports the source *types*, not the builders.** The helpers `createSourceDefinition`, `getDataViewSourceConfig`, `createSourceRegistry`, and `getBaseDataView` exist inside fate but are **not re-exported** from `@nkzw/fate/server`; the only public way to auto-derive a source is `createDrizzleSourceAdapter`, which phoenix bans (ADR 0016). So phoenix builds the three pieces directly — the `SourceDefinition` as an object literal, the registry as a `new Map`, and `getSource` as a `typeName` lookup. This needs no fork or patch, and keeps ordering explicit in the service (ADR 0019).
+>
+> **The `DataView` type is also not re-exported** (only the lowercase `dataView` factory and `SourceDefinition`). Recover a nameable handle from `SourceDefinition<Item>["view"]` rather than importing `DataView`. Likewise, `dataView<Item>`'s return type carries an internal symbol key that TypeScript can't name across the module boundary — annotate exported views with `SourceDefinition<Item>["view"]` to keep the export portable, and (for now) state client-facing `Entity<>`-style types by hand; codegen owns the canonical derivation.
+>
+> **Row types need an index signature.** `dataView<Item>` constrains `Item extends Record<string, unknown>`, which a service row *interface* (e.g. `UserRow`) does not satisfy. A homomorphic mapped type does, while preserving each field's type: declare fate view rows as `type ViewRow<Row> = {[K in keyof Row]: Row[K]}` over the service row type.
 
 ## Building the resolver
 
 ```ts
 // worker/fate/sources.ts
-import type {DataView, SourceDefinition, SourceExecutor} from "@nkzw/fate/server";
+// NB: `DataView` and `SourceExecutor` are not re-exported in 1.0.3 (see drift
+// note above). Import `SourceDefinition`/`SourceRegistry`; recover the rest.
+import type {SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
 import {fateSource} from "./effect";              // the Effect bridge
 import {termDataView, definitionDataView, userDataView} from "./views";
+
+type AnyDataView = SourceDefinition<Record<string, unknown>>["view"];
 
 // One SourceExecutor per type, delegating to a service. fateSource wraps each
 // generator in the request runtime (see fate-effect-bridge.md).
@@ -45,7 +53,11 @@ const definitionExecutor = fateSource<DefinitionRow>({
 
 // A SourceDefinition is a plain object literal — no factory call. `id` is the PK
 // field name, `view` is the *base* data view, `orderBy` matches the service
-// ORDER BY for connections (ADR 0019), `relations` wires nested connections.
+// ORDER BY for the root-list connection path (ADR 0019). NB (1.0.3): for a
+// hand-built source, fate does NOT auto-invoke a nested relation's `connection`
+// executor — nested connections are delivered inline by the parent custom
+// resolver; see fate-connections.md. The `orderBy` here is still the single
+// home for the keyset order the inline build delegates to.
 const termSource: SourceDefinition<TermSummaryRow> = {id: "id", view: termDataView};
 const definitionSource: SourceDefinition<DefinitionRow> = {
   id: "id",
@@ -55,7 +67,9 @@ const definitionSource: SourceDefinition<DefinitionRow> = {
 const userSource: SourceDefinition<UserRow> = {id: "id", view: userDataView};
 
 // The registry is a plain Map keyed by the SourceDefinition object (identity).
-const registry = new Map<SourceDefinition<any>, SourceExecutor<FateContext, any>>([
+// Type it as `SourceRegistry<FateContext>` — that already encodes the executor
+// value type, so `SourceExecutor` never has to be named.
+const registry: SourceRegistry<FateContext> = new Map([
   [termSource, termExecutor],
   [definitionSource, definitionExecutor],
   [userSource, userExecutor],
@@ -70,7 +84,14 @@ const sourcesByType = new Map<string, SourceDefinition<any>>(
 );
 
 export const sources = {
-  getSource: (view: DataView<any>) => sourcesByType.get(view.typeName)!,
+  // getSource is generic `<Item>(view) => SourceDefinition<Item>`; resolve by
+  // the view's typeName (handle both base views and SourceDefinition inputs).
+  getSource: <Item extends Record<string, unknown>>(
+    view: AnyDataView | SourceDefinition<Item>,
+  ): SourceDefinition<Item> => {
+    const typeName = "view" in view ? view.view.typeName : view.typeName;
+    return sourcesByType.get(typeName)! as SourceDefinition<Item>;
+  },
   registry,
 };
 ```
