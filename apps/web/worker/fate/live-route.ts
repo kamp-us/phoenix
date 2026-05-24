@@ -18,25 +18,21 @@
  * `EventSource` with `withCredentials: true`, same-origin), so there is no token
  * in the URL and no header. See `.patterns/fate-live-views.md` (Auth), ADR 0023.
  */
+import {FateRequestError} from "@nkzw/fate/server";
 import type {Context} from "hono";
+import {assertLiveControlRequest, type SubscribeControl} from "./live-protocol";
 import {validateSessionCookie} from "./runtime";
 
-/** A subscribe/unsubscribe control operation from a fate live control POST. */
-interface LiveControlOperation {
-	id: string;
-	kind: "subscribe" | "subscribeConnection" | "unsubscribe";
-	type?: string;
-	entityId?: string | number;
-	procedure?: string;
-	args?: Record<string, unknown>;
-	[key: string]: unknown;
-}
-
-/** A fate live control request body. */
-interface LiveControlBody {
-	version: number;
-	connectionId: string;
-	operations: ReadonlyArray<LiveControlOperation>;
+/**
+ * Build the fate live error envelope (`{results: [{error}], version: 1}`). The
+ * SSE client parses this shape for both the GET (connect) and POST (control)
+ * paths, so it lives in exactly one place.
+ */
+function liveError(code: string, message: string, status: number): Response {
+	return Response.json(
+		{results: [{error: {code, message}, id: "live", ok: false}], version: 1},
+		{status, headers: {"content-type": "application/json; charset=utf-8"}},
+	);
 }
 
 /** Resolve the connection-role DO stub for a connection id. */
@@ -53,57 +49,28 @@ export async function handleLiveRequest(c: Context<{Bindings: Env}>): Promise<Re
 	const request = c.req.raw;
 	const session = await validateSessionCookie(c.env, request);
 	if (!session) {
-		return Response.json(
-			{
-				results: [
-					{
-						error: {code: "UNAUTHORIZED", message: "Live views require a session."},
-						id: "live",
-						ok: false,
-					},
-				],
-				version: 1,
-			},
-			{status: 401, headers: {"content-type": "application/json; charset=utf-8"}},
-		);
+		return liveError("UNAUTHORIZED", "Live views require a session.", 401);
 	}
 	const ownerId = session.user.id;
 
 	if (request.method === "GET") {
 		const connectionId = new URL(request.url).searchParams.get("connectionId");
 		if (!connectionId) {
-			return Response.json(
-				{
-					results: [
-						{error: {code: "BAD_REQUEST", message: "Missing connectionId."}, id: "live", ok: false},
-					],
-					version: 1,
-				},
-				{status: 400, headers: {"content-type": "application/json; charset=utf-8"}},
-			);
+			return liveError("BAD_REQUEST", "Missing connectionId.", 400);
 		}
 		const stub = connectionStub(c.env, connectionId);
 		return stub.fetch(`https://live/connect?ownerId=${encodeURIComponent(ownerId)}`);
 	}
 
 	if (request.method === "POST") {
-		let body: LiveControlBody;
+		let body: ReturnType<typeof assertLiveControlRequest>;
 		try {
-			body = (await request.json()) as LiveControlBody;
-		} catch {
-			return Response.json(
-				{
-					results: [
-						{
-							error: {code: "BAD_REQUEST", message: "Body must be valid JSON."},
-							id: "live",
-							ok: false,
-						},
-					],
-					version: 1,
-				},
-				{status: 400, headers: {"content-type": "application/json; charset=utf-8"}},
-			);
+			body = assertLiveControlRequest(await request.json());
+		} catch (error) {
+			if (error instanceof FateRequestError) {
+				return liveError(error.code, error.message, error.status);
+			}
+			return liveError("BAD_REQUEST", "Body must be valid JSON.", 400);
 		}
 		const stub = connectionStub(c.env, body.connectionId);
 		const results: Array<{id: string; ok: boolean; data: null; error?: unknown}> = [];
@@ -116,18 +83,18 @@ export async function handleLiveRequest(c: Context<{Bindings: Env}>): Promise<Re
 				results.push({id: operation.id, ok: true, data: null});
 				continue;
 			}
-			const control =
+			const control: SubscribeControl =
 				operation.kind === "subscribe"
 					? {
-							kind: "subscribe" as const,
+							kind: "subscribe",
 							subId: operation.id,
-							type: operation.type ?? "",
-							entityId: String(operation.entityId ?? ""),
+							type: operation.type,
+							entityId: String(operation.entityId),
 						}
 					: {
-							kind: "subscribeConnection" as const,
+							kind: "subscribeConnection",
 							subId: operation.id,
-							procedure: operation.procedure ?? "",
+							procedure: operation.procedure,
 							...(operation.args ? {args: operation.args} : {}),
 						};
 			const res = await stub.fetch("https://live/subscribe", {
@@ -142,13 +109,5 @@ export async function handleLiveRequest(c: Context<{Bindings: Env}>): Promise<Re
 		);
 	}
 
-	return Response.json(
-		{
-			results: [
-				{error: {code: "BAD_REQUEST", message: "Invalid live request."}, id: "live", ok: false},
-			],
-			version: 1,
-		},
-		{status: 400, headers: {"content-type": "application/json; charset=utf-8"}},
-	);
+	return liveError("BAD_REQUEST", "Invalid live request.", 400);
 }

@@ -13,7 +13,13 @@
  * unchanged — phoenix only swaps where the frames are produced (the DO, from
  * inline-published data), not their shape.
  */
-import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
+import {
+	FateRequestError,
+	isRecord,
+	liveConnectionTopic,
+	liveEntityTopic,
+	liveGlobalConnectionTopic,
+} from "@nkzw/fate/server";
 
 /** A fate live entity frame body (matches fate's native `livePayload`). */
 export type EntityFrame =
@@ -70,6 +76,105 @@ export type SubscribeControl =
 			readonly procedure: string;
 			readonly args?: Record<string, unknown>;
 	  };
+
+/** A single operation inside a fate live control request, post-validation. */
+export type LiveControlOperation =
+	| {
+			readonly id: string;
+			readonly kind: "subscribe";
+			readonly type: string;
+			readonly entityId: string | number;
+			readonly args?: Record<string, unknown>;
+			readonly lastEventId?: string;
+			readonly select: ReadonlyArray<string>;
+	  }
+	| {
+			readonly id: string;
+			readonly kind: "subscribeConnection";
+			readonly type: string;
+			readonly procedure: string;
+			readonly args?: Record<string, unknown>;
+			readonly selectionArgs?: Record<string, unknown>;
+			readonly lastEventId?: string;
+			readonly select: ReadonlyArray<string>;
+	  }
+	| {readonly id: string; readonly kind: "unsubscribe"};
+
+/** A validated fate live control request body (POST /fate/live). */
+export interface LiveControlRequest {
+	readonly version: 1;
+	readonly connectionId: string;
+	readonly operations: ReadonlyArray<LiveControlOperation>;
+}
+
+const isProtocolId = (value: unknown): value is string | number =>
+	typeof value === "string" || typeof value === "number";
+
+const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
+	Array.isArray(value) && value.every((entry) => typeof entry === "string");
+
+const isOptionalRecord = (value: unknown): boolean => value === undefined || isRecord(value);
+
+const isOptionalString = (value: unknown): boolean =>
+	value === undefined || typeof value === "string";
+
+/**
+ * Validate a fate live control request body, mirroring fate's native
+ * `assertLiveControlRequest` exactly (a malformed body throws a `BAD_REQUEST`
+ * `FateRequestError` rather than coercing — e.g. a missing/non-id `entityId`
+ * is rejected instead of becoming a dead empty-string subscription).
+ */
+export function assertLiveControlRequest(value: unknown): LiveControlRequest {
+	if (
+		!isRecord(value) ||
+		value.version !== 1 ||
+		typeof value.connectionId !== "string" ||
+		!Array.isArray(value.operations)
+	) {
+		throw new FateRequestError("BAD_REQUEST", "Invalid Fate live request.");
+	}
+	for (const operation of value.operations) {
+		if (
+			!isRecord(operation) ||
+			typeof operation.id !== "string" ||
+			typeof operation.kind !== "string"
+		) {
+			throw new FateRequestError("BAD_REQUEST", "Invalid Fate live operation.");
+		}
+		if (operation.kind === "subscribe") {
+			if (
+				typeof operation.type !== "string" ||
+				!isProtocolId(operation.entityId) ||
+				!isOptionalRecord(operation.args) ||
+				!isOptionalString(operation.lastEventId) ||
+				!isStringArray(operation.select)
+			) {
+				throw new FateRequestError("BAD_REQUEST", "Invalid Fate live subscribe operation.");
+			}
+			continue;
+		}
+		if (operation.kind === "subscribeConnection") {
+			if (
+				typeof operation.type !== "string" ||
+				typeof operation.procedure !== "string" ||
+				!isOptionalRecord(operation.args) ||
+				!isOptionalRecord(operation.selectionArgs) ||
+				!isOptionalString(operation.lastEventId) ||
+				!isStringArray(operation.select)
+			) {
+				throw new FateRequestError(
+					"BAD_REQUEST",
+					"Invalid Fate live connection subscribe operation.",
+				);
+			}
+			continue;
+		}
+		if (operation.kind !== "unsubscribe") {
+			throw new FateRequestError("BAD_REQUEST", "Invalid Fate live operation.");
+		}
+	}
+	return value as unknown as LiveControlRequest;
+}
 
 /**
  * The frame a connection DO writes to its held SSE stream. `kind` is the fate
