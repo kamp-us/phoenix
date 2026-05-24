@@ -22,9 +22,11 @@ fate never touches the database. Every read and write goes through an Effect
 service method:
 
 - We hand-build a `SourceResolver` whose `byId`/`byIds`/`connection`
-  executors delegate to service methods (built from `createSourceDefinition`,
-  `getDataViewSourceConfig`, `createSourceRegistry`). `createDrizzleSourceAdapter`
-  is never used.
+  executors delegate to service methods. Each `SourceDefinition` is a plain
+  object literal and the registry is a `Map` keyed by it — fate's
+  `createSourceDefinition`/`getDataViewSourceConfig`/`createSourceRegistry`
+  helpers are internal and unexported in 1.0.3, and `createDrizzleSourceAdapter`
+  (the only public source builder) is never used.
 - Resolvers and source executors are Effect generators wrapped by a bridge
   helper family — `fateQuery` / `fateList` / `fateMutation` / `fateSource` —
   that runs them through the per-request runtime and maps failures to wire

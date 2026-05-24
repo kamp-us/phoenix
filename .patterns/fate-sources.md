@@ -10,26 +10,20 @@ This is the rule that shapes the backend: **fate does not query the database.** 
 
 ```ts
 type SourceResolver<Context> = {
-  getSource: (view) => SourceDefinition;        // view → its source definition
-  registry: SourceRegistry<Context>;            // Map<SourceDefinition, SourceExecutor>
+  getSource: (view: DataView) => SourceDefinition;  // view → its source definition
+  registry: SourceRegistry<Context>;                // Map<SourceDefinition, SourceExecutor>
 };
 ```
 
-A `SourceExecutor` is `{byId?, byIds?, connection?}` — async handlers returning **raw domain rows**. fate masks/shapes them to the view+selection afterward. All three pieces are built from public exports.
+A `SourceDefinition` is a plain object — `{id, view, orderBy?, relations?}` — where `id` is the row's primary-key field name. A `SourceExecutor` is `{byId?, byIds?, connection?}`: async handlers returning **raw domain rows**, which fate masks/shapes to the view+selection afterward. `SourceRegistry` is just `Map<SourceDefinition, SourceExecutor>` — fate looks an executor up by the **object identity** of the `SourceDefinition` that `getSource` returns.
+
+> **fate v1.0.3 exports the source *types*, not the builders.** The helpers `createSourceDefinition`, `getDataViewSourceConfig`, `createSourceRegistry`, and `getBaseDataView` exist inside fate but are **not re-exported** from `@nkzw/fate/server`; the only public way to auto-derive a source is `createDrizzleSourceAdapter`, which phoenix bans (ADR 0016). So phoenix builds the three pieces directly — the `SourceDefinition` as an object literal, the registry as a `new Map`, and `getSource` as a `typeName` lookup. This needs no fork or patch, and keeps ordering explicit in the service (ADR 0019).
 
 ## Building the resolver
 
 ```ts
 // worker/fate/sources.ts
-import {
-  createSourceDefinition,
-  createSourceRegistry,
-  getBaseDataView,
-  getDataViewSourceConfig,
-  type DataView,
-  type SourceDefinition,
-  type SourceExecutor,
-} from "@nkzw/fate/server";
+import type {DataView, SourceDefinition, SourceExecutor} from "@nkzw/fate/server";
 import {fateSource} from "./effect";              // the Effect bridge
 import {termDataView, definitionDataView, userDataView} from "./views";
 
@@ -49,28 +43,39 @@ const definitionExecutor = fateSource<DefinitionRow>({
   },
 });
 
-// Register [view, executor] pairs. The base view (unwrapping list()) is the key.
-const entries: Array<[DataView<any>, SourceExecutor<FateContext, any>]> = [
-  [termDataView, termExecutor],
-  [definitionDataView, definitionExecutor],
-  [userDataView, userExecutor],
-  // …one per type fetched by id or appearing as a relation…
-];
+// A SourceDefinition is a plain object literal — no factory call. `id` is the PK
+// field name, `view` is the *base* data view, `orderBy` matches the service
+// ORDER BY for connections (ADR 0019), `relations` wires nested connections.
+const termSource: SourceDefinition<TermSummaryRow> = {id: "id", view: termDataView};
+const definitionSource: SourceDefinition<DefinitionRow> = {
+  id: "id",
+  view: definitionDataView,
+  orderBy: [{field: "createdAt", direction: "desc"}], // = Sozluk's ORDER BY; id is the tiebreaker
+};
+const userSource: SourceDefinition<UserRow> = {id: "id", view: userDataView};
 
-const definitions = new Map<DataView<any>, SourceDefinition>(
-  entries.map(([view]) => [getBaseDataView(view), createSourceDefinition(getDataViewSourceConfig(view))]),
+// The registry is a plain Map keyed by the SourceDefinition object (identity).
+const registry = new Map<SourceDefinition<any>, SourceExecutor<FateContext, any>>([
+  [termSource, termExecutor],
+  [definitionSource, definitionExecutor],
+  [userSource, userExecutor],
+  // …one entry per type fetched by id or appearing as a relation…
+]);
+
+// fate calls getSource with either a base view or a list()-wrapped root view;
+// both share `typeName` (list() spreads the base view), so resolve by typeName.
+// It must return the *same* SourceDefinition object used as the registry key.
+const sourcesByType = new Map<string, SourceDefinition<any>>(
+  [termSource, definitionSource, userSource].map((s) => [s.view.typeName, s]),
 );
 
 export const sources = {
-  getSource: (target: DataView<any> | SourceDefinition) =>
-    "view" in target && "id" in target ? target : definitions.get(getBaseDataView(target as DataView<any>))!,
-  registry: createSourceRegistry(
-    entries.map(([view, executor]) => [definitions.get(getBaseDataView(view))!, executor]),
-  ),
+  getSource: (view: DataView<any>) => sourcesByType.get(view.typeName)!,
+  registry,
 };
 ```
 
-`getDataViewSourceConfig(view)` derives `{view, orderBy}` from the view's `list()` options; `createSourceDefinition` turns that into the `SourceDefinition` fate keys executors by. Every type reachable as a relation needs an entry — a type with no executor throws `No executor registered` at query time.
+Every type reachable as a relation needs an entry — a type with no executor throws `No executor registered for source <Type>` at query time. Order doesn't matter in `byIds`; fate re-associates rows by `id`.
 
 ## byIds is the workhorse; batch it
 
