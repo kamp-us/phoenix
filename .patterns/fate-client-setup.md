@@ -11,22 +11,17 @@ The **fate Vite plugin** generates the `react-fate/client` module at build time 
 ```ts
 // src/fate/client.ts
 import {createFateClient} from "react-fate/client";
-import {getBearerToken} from "../auth/client";
 
 export const client = createFateClient({
   url: "/fate",
-  liveUrl: `/fate/live?token=${getBearerToken()}`,       // SSE; token rides the URL (see below)
-  // Data transport is fetch, so the bearer token rides on the Authorization header.
-  fetch: (input, init) =>
-    fetch(input, {
-      ...init,
-      headers: {...init?.headers, authorization: `Bearer ${getBearerToken()}`},
-    }),
+  liveUrl: "/fate/live",
+  // Cookie session auth: better-auth's session cookie rides every request (same-origin).
+  fetch: (input, init) => fetch(input, {...init, credentials: "include"}),
   onLiveError: (error) => console.error("live", error),  // live errors are out-of-band
 });
 ```
 
-The data transport is `fetch`, so auth is the same bearer-header injection used everywhere else. The live transport is fate's native **SSE** client (`EventSource`), which can't set headers — so its token rides `liveUrl`'s query string; see [fate-live-views.md](./fate-live-views.md#auth).
+Auth is the better-auth **session cookie**. `credentials: "include"` sends it on the data transport, and fate opens the live `EventSource` with `withCredentials: true`, so the same cookie authenticates the SSE stream — no token in the URL, no `Authorization` header. This works because the SPA and API are same-origin (one Worker). See [fate-live-views.md](./fate-live-views.md#auth).
 
 ## The provider
 

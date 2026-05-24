@@ -59,7 +59,7 @@ The fate routes sit in `worker/index.ts` alongside `/api/*`, `/api/auth/*`, `/ag
 
 ```ts
 app.all("/fate/live", async (c) => {
-  const session = await validateSession(c.env, c.req.raw); // token from ?token= for SSE
+  const session = await validateSession(c.env, c.req.raw); // session cookie (EventSource withCredentials)
   if (!session) return c.text("unauthorized", 401);
   const connectionId = new URL(c.req.raw.url).searchParams.get("connectionId")!;
   return c.env.LIVE_DO.get(c.env.LIVE_DO.idFromName(`connection:${connectionId}`)).fetch(c.req.raw);

@@ -66,7 +66,7 @@ mutation ──live.update──▶ LiveEventBus.publish(topic, event)
 
 **Durability.** Subscriber rows live in DO storage (topic DO), not memory, so they survive eviction. Each connection carries a `generation` (bumped on every `/connect`) and each subscription a `revision`; stale rows are detected on deliver and pruned by a 60s `alarm()`.
 
-**Replay.** For lossless reconnect, the topic DO keeps a bounded per-topic event log keyed by `eventId`; on `/register` with a `lastEventId` it replays the tail before going live. Without it, reconnects resume live-only — acceptable for most views.
+**Replay.** v1 resumes **live-only** on reconnect — the client resubscribes and goes live; events missed during the gap reconcile on the next cache read or navigation. Lossless replay (a bounded per-topic event log keyed by `eventId`, replayed on `lastEventId`) is a deferred follow-on, not built in v1.
 
 > **On hibernation.** An open SSE stream pins its connection DO in memory. At phoenix's scale that's fine. The escape hatch, if concurrent live connections grow large, is to switch the browser transport to a WebSocket and use the DO WebSocket Hibernation API — a transport swap behind the same bus + topology, not a redesign.
 
@@ -90,7 +90,7 @@ export const liveBus: LiveEventBus = {
 
 ## Auth {#auth}
 
-`EventSource` can't set an `Authorization` header, so the bearer token rides the stream URL (`liveUrl: "/fate/live?token=…"`). The Worker validates it with `Pasaport.validateSession` at `GET /fate/live`, before handing off to the connection DO, and rejects unauthenticated opens. The connection DO records the owner so a control POST can't subscribe on another user's behalf.
+The live stream authenticates with the **better-auth session cookie**, same as the data transport ([fate-client-setup.md](./fate-client-setup.md)). fate opens the `EventSource` with `withCredentials: true`, so the session cookie rides the SSE `GET` automatically — no token in the URL, no header. Same-origin (one Worker) makes this work. The Worker validates the cookie with `Pasaport.validateSession` at `GET /fate/live`, before handing off to the connection DO, and rejects unauthenticated opens. The connection DO records the owner so a control message can't subscribe on another user's behalf.
 
 ## wrangler config
 

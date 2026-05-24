@@ -33,12 +33,14 @@ custom connector and not WebSocket. Cross-isolate fan-out is handled by
   which deliver to connection DOs. Mutations publish **inline-resolved**
   `data`/`node` (already resolved for the response), so the DO does no
   database work and needs no Effect runtime.
-- The SSE token rides the `liveUrl` query string (`EventSource` can't set
-  headers), validated with `Pasaport.validateSession` at connect.
+- The SSE stream authenticates with the **better-auth session cookie**: fate
+  opens the `EventSource` with `withCredentials: true`, so the cookie rides the
+  `GET` (same-origin); the Worker validates it with `Pasaport.validateSession`
+  at connect. No token in the URL, no header.
 - Adds a `LIVE_DO` binding and a `new_sqlite_classes` migration to
   `wrangler.jsonc`. Subscriber rows live in DO storage; `generation`/`revision`
-  + a 60s alarm prune stale rows; a per-topic event log gives `lastEventId`
-  replay.
+  + a 60s alarm prune stale rows. v1 resumes **live-only** on reconnect; a
+  per-topic event log for `lastEventId` replay is a deferred follow-on.
 
 WebSocket + DO hibernation is the deferred scale escape hatch behind the same
 topology, not part of this decision.
@@ -49,7 +51,7 @@ topology, not part of this decision.
   connection membership is server-driven (one publish updates all clients).
 - **Cost:** operating a Durable Object — the **first in the repo**. No
   server-side `changed`-path re-resolution (clients mask the inline data);
-  lossless reconnect depends on the per-topic event log.
+  reconnect resumes live-only in v1 (lossless replay deferred).
 - Amends the DO-deferral stance of [0009](0009-d1-direct-defer-dos-and-workflows.md);
   the Cloudflare Workflows / outbox bans there are untouched.
 - See [fate-live-views.md](../.patterns/fate-live-views.md).
