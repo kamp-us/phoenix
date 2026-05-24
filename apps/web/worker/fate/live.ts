@@ -60,7 +60,15 @@ function publish(message: PublishMessage): void {
 					method: "POST",
 					body: JSON.stringify(message),
 				})
-				.then(() => undefined),
+				.then(
+					() => undefined,
+					// A failed topic-DO fetch must not become a silent unhandled
+					// rejection inside `waitUntil`; the publish is best-effort (the
+					// mutation response already succeeded), so swallow it loudly.
+					(error: unknown) => {
+						console.error(`live publish to topic:${topicKey} failed`, error);
+					},
+				),
 		);
 	}
 }

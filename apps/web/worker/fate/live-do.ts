@@ -9,8 +9,13 @@
  *     message cannot subscribe on another user's behalf.
  *   - **topic role** (instance named `topic:<topicKey>`) — owns the durable
  *     subscriber registry for one topic. Rows live in DO SQL storage (survive
- *     eviction); a `generation`/`revision` pair + a 60s `alarm()` prune stale
- *     rows.
+ *     eviction). Each row carries the connection's `generation` at register
+ *     time; a row is pruned only when a *reachable* connection DO reports a
+ *     different current generation (its stream lifetime is over) — never on a
+ *     transport/deserialize failure. A 60s `alarm()` probes for orphans the same
+ *     way. The connection's `generation` is persisted in its DO storage, so it
+ *     survives eviction and uniquely identifies one stream lifetime: a reconnect
+ *     after eviction always lands on a higher generation than any stale row.
  *
  * The DO does **no** database work and has **no** Effect runtime: publishes
  * carry the inline-resolved `data`/`node` the mutation already produced, and the
@@ -27,20 +32,23 @@ import {encodeFrame, SSE_HEADERS, topicsForSubscribe} from "./live-protocol";
 
 /**
  * A topic-DO subscriber row: which connection (and which operation on it) wants
- * events for a topic. `generation`/`revision` capture the connection +
- * subscription identity at register time; on deliver the connection DO reports
- * its current generation and a mismatched row is pruned.
+ * events for a topic. `generation` captures the connection's stream lifetime at
+ * register time; on deliver/probe the connection DO reports its current
+ * generation and a row that a *reachable* connection reports as mismatched is
+ * pruned. An unreachable connection (transport/parse error) leaves the row.
  */
 interface SubscriberRow {
 	connectionId: string;
 	subId: string;
 	generation: number;
-	revision: number;
 	updatedAt: number;
 	// `sql.exec<T>` requires `T extends Record<string, SqlStorageValue>`; the
 	// index signature satisfies that constraint over the named columns above.
 	[column: string]: string | number;
 }
+
+/** Storage key for the connection-role generation counter (survives eviction). */
+const GENERATION_KEY = "generation";
 
 export class LiveDO extends DurableObject<Env> {
 	// Connection-role in-memory state. The open SSE stream pins this DO in memory
@@ -50,7 +58,13 @@ export class LiveDO extends DurableObject<Env> {
 	private encoder = new TextEncoder();
 	private heartbeat: ReturnType<typeof setInterval> | undefined;
 	private ownerId: string | undefined;
-	private generation = 0;
+	/**
+	 * Connection-role current generation, cached in memory. `undefined` until
+	 * first read from storage. Persisted under {@link GENERATION_KEY} so it
+	 * survives DO eviction — an in-memory-only counter would reset to 0 on
+	 * eviction and let a reconnect collide with a stale subscriber row.
+	 */
+	private generation: number | undefined;
 	/** subId → topics this connection's subscription is registered under. */
 	private subscriptions = new Map<string, {topics: ReadonlyArray<string>}>();
 
@@ -61,7 +75,6 @@ export class LiveDO extends DurableObject<Env> {
 				connectionId TEXT NOT NULL,
 				subId TEXT NOT NULL,
 				generation INTEGER NOT NULL,
-				revision INTEGER NOT NULL,
 				updatedAt INTEGER NOT NULL,
 				PRIMARY KEY (connectionId, subId)
 			)`,
@@ -80,6 +93,8 @@ export class LiveDO extends DurableObject<Env> {
 				return this.unsubscribe(request);
 			case "/deliver":
 				return this.deliver(request);
+			case "/probe":
+				return this.probe();
 			// Topic role.
 			case "/register":
 				return this.register(request);
@@ -94,12 +109,27 @@ export class LiveDO extends DurableObject<Env> {
 
 	// ── Connection role ──────────────────────────────────────────────────────
 
+	/**
+	 * Read the persisted generation into the in-memory cache, defaulting to 0 the
+	 * first time. Persisted in DO storage so it survives eviction.
+	 */
+	private async loadGeneration(): Promise<number> {
+		if (this.generation === undefined) {
+			this.generation = (await this.ctx.storage.get<number>(GENERATION_KEY)) ?? 0;
+		}
+		return this.generation;
+	}
+
 	/** Open the SSE stream. `ownerId` is the validated session user, passed by the route. */
-	private openStream(request: Request): Response {
+	private async openStream(request: Request): Promise<Response> {
 		const ownerId = new URL(request.url).searchParams.get("ownerId") ?? undefined;
 		// A reconnect on the same connection name bumps the generation so the topic
-		// DOs' rows from the prior stream are detected stale on next deliver.
-		this.generation += 1;
+		// DOs' rows from the prior stream are detected stale on next deliver. The
+		// counter is persisted, so a reconnect after eviction still lands on a
+		// higher generation than any stale row (no collision/cross-talk).
+		const next = (await this.loadGeneration()) + 1;
+		this.generation = next;
+		await this.ctx.storage.put(GENERATION_KEY, next);
 		this.ownerId = ownerId;
 		this.subscriptions.clear();
 		this.closeStream();
@@ -152,7 +182,7 @@ export class LiveDO extends DurableObject<Env> {
 		const connectionId = this.ctx.id.toString();
 		const topics = topicsForSubscribe(control);
 		this.subscriptions.set(control.subId, {topics});
-		const revision = Date.now();
+		const generation = await this.loadGeneration();
 		await Promise.all(
 			topics.map((topic) =>
 				this.topicStub(topic).fetch("https://live/register", {
@@ -160,8 +190,7 @@ export class LiveDO extends DurableObject<Env> {
 					body: JSON.stringify({
 						connectionId,
 						subId: control.subId,
-						generation: this.generation,
-						revision,
+						generation,
 					}),
 				}),
 			),
@@ -195,23 +224,34 @@ export class LiveDO extends DurableObject<Env> {
 			frame: DeliverFrame;
 			generation: number;
 		};
+		const current = await this.loadGeneration();
 		// Stale: the row was registered by an earlier stream generation, or this
 		// connection has no open stream. Report the current generation so the topic
 		// DO can prune the row.
-		if (generation !== this.generation || !this.controller) {
-			return Response.json({delivered: false, generation: this.generation});
+		if (generation !== current || !this.controller) {
+			return Response.json({delivered: false, generation: current});
 		}
 		// Only deliver if the subscription is still active on this connection.
 		if (!this.subscriptions.has(frame.id)) {
-			return Response.json({delivered: false, generation: this.generation});
+			return Response.json({delivered: false, generation: current});
 		}
 		try {
 			this.controller.enqueue(this.encoder.encode(encodeFrame(frame)));
 		} catch {
 			this.closeStream();
-			return Response.json({delivered: false, generation: this.generation});
+			return Response.json({delivered: false, generation: current});
 		}
-		return Response.json({delivered: true, generation: this.generation});
+		return Response.json({delivered: true, generation: current});
+	}
+
+	/**
+	 * Report this connection's current generation without touching the stream.
+	 * Used by a topic DO's `alarm()` to detect orphaned subscriber rows (a row
+	 * whose connection has reconnected to a higher generation, or whose DO was
+	 * evicted) without enqueueing a probe frame onto the controller.
+	 */
+	private async probe(): Promise<Response> {
+		return Response.json({generation: await this.loadGeneration()});
 	}
 
 	// ── Topic role ───────────────────────────────────────────────────────────
@@ -220,16 +260,14 @@ export class LiveDO extends DurableObject<Env> {
 	private async register(request: Request): Promise<Response> {
 		const row = (await request.json()) as Omit<SubscriberRow, "updatedAt">;
 		this.ctx.storage.sql.exec(
-			`INSERT INTO subscribers (connectionId, subId, generation, revision, updatedAt)
-				VALUES (?, ?, ?, ?, ?)
+			`INSERT INTO subscribers (connectionId, subId, generation, updatedAt)
+				VALUES (?, ?, ?, ?)
 				ON CONFLICT(connectionId, subId) DO UPDATE SET
 					generation = excluded.generation,
-					revision = excluded.revision,
 					updatedAt = excluded.updatedAt`,
 			row.connectionId,
 			row.subId,
 			row.generation,
-			row.revision,
 			Date.now(),
 		);
 		// Keep one alarm running to prune rows whose connection DO has gone away
@@ -256,9 +294,7 @@ export class LiveDO extends DurableObject<Env> {
 	private async publish(request: Request): Promise<Response> {
 		const message = (await request.json()) as PublishMessage;
 		const rows = this.ctx.storage.sql
-			.exec<SubscriberRow>(
-				`SELECT connectionId, subId, generation, revision, updatedAt FROM subscribers`,
-			)
+			.exec<SubscriberRow>(`SELECT connectionId, subId, generation, updatedAt FROM subscribers`)
 			.toArray();
 		let delivered = 0;
 		await Promise.all(
@@ -270,20 +306,27 @@ export class LiveDO extends DurableObject<Env> {
 					...(message.eventId !== undefined ? {eventId: message.eventId} : {}),
 				};
 				const connStub = this.env.LIVE_DO.get(this.env.LIVE_DO.idFromString(row.connectionId));
-				let result: {delivered: boolean; generation: number};
+				// `undefined` = couldn't reach/parse the connection (leave the row);
+				// a number = the connection's reported current generation.
+				let reported: number | undefined;
+				let didDeliver = false;
 				try {
 					const res = await connStub.fetch("https://live/deliver", {
 						method: "POST",
 						body: JSON.stringify({frame, generation: row.generation}),
 					});
-					result = (await res.json()) as {delivered: boolean; generation: number};
+					const result = (await res.json()) as {delivered: boolean; generation: number};
+					didDeliver = result.delivered;
+					reported = result.generation;
 				} catch {
-					result = {delivered: false, generation: -1};
+					// Transport/deserialize failure — the connection is unreachable, not
+					// confirmed stale. Leave the row; the 60s alarm retries.
+					reported = undefined;
 				}
-				if (result.delivered) {
+				if (didDeliver) {
 					delivered += 1;
-				} else if (result.generation !== row.generation) {
-					// The connection's current generation no longer matches the row's:
+				} else if (reported !== undefined && reported !== row.generation) {
+					// A *reachable* connection reported a different current generation:
 					// the stream this row was registered for is gone. Prune it.
 					this.ctx.storage.sql.exec(
 						`DELETE FROM subscribers WHERE connectionId = ? AND subId = ?`,
@@ -305,34 +348,29 @@ export class LiveDO extends DurableObject<Env> {
 
 	/**
 	 * 60s prune: drop subscriber rows whose connection DO reports a different
-	 * current generation (its stream is gone). Reschedules while rows remain.
+	 * current generation (its stream is gone). A connection we can't reach/parse
+	 * is left in place (retried next alarm), so a transient transport failure
+	 * never deletes a live subscription. Reschedules while rows remain.
 	 */
 	override async alarm(): Promise<void> {
 		const rows = this.ctx.storage.sql
-			.exec<SubscriberRow>(
-				`SELECT connectionId, subId, generation, revision, updatedAt FROM subscribers`,
-			)
+			.exec<SubscriberRow>(`SELECT connectionId, subId, generation, updatedAt FROM subscribers`)
 			.toArray();
 		await Promise.all(
 			rows.map(async (row) => {
 				const connStub = this.env.LIVE_DO.get(this.env.LIVE_DO.idFromString(row.connectionId));
-				let generation = -1;
+				// `undefined` = couldn't reach/parse the connection (leave the row).
+				let reported: number | undefined;
 				try {
-					const res = await connStub.fetch("https://live/deliver", {
-						method: "POST",
-						// A probe frame the connection rejects (unknown subId / closed
-						// stream) — we only read back the reported generation.
-						body: JSON.stringify({
-							frame: {kind: "next", id: "__probe__", event: {data: null}},
-							generation: row.generation,
-						}),
-					});
+					// `/probe` reports the connection's current generation without
+					// enqueueing anything onto its stream.
+					const res = await connStub.fetch("https://live/probe", {method: "POST"});
 					const result = (await res.json()) as {generation: number};
-					generation = result.generation;
+					reported = result.generation;
 				} catch {
-					generation = -1;
+					reported = undefined;
 				}
-				if (generation !== row.generation) {
+				if (reported !== undefined && reported !== row.generation) {
 					this.ctx.storage.sql.exec(
 						`DELETE FROM subscribers WHERE connectionId = ? AND subId = ?`,
 						row.connectionId,

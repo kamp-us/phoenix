@@ -20,6 +20,10 @@
  *   3. **Stale-subscriber pruning** — a subscriber row whose connection has since
  *      reconnected (generation bumped) is pruned on the next publish, and the
  *      60s alarm prunes a row whose connection stream is gone.
+ *   4. **LiveDO isolation (the two hardening bugs)** — `generation` is persisted
+ *      so it survives DO eviction (a re-instantiated connection does not report
+ *      `0` and let a stale row pass as current), and a transport/deserialize
+ *      failure while reaching a connection does NOT prune the subscriber row.
  */
 /// <reference path="../../worker-configuration.d.ts" />
 /// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
@@ -359,5 +363,181 @@ describe("LiveDO stale-subscriber pruning", () => {
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(0);
+	});
+});
+
+describe("LiveDO generation survives eviction (BUG §4a)", () => {
+	it("a re-instantiated connection reports its persisted generation, not 0", async () => {
+		const connId = "evict-conn-1";
+		const ownerId = "owner-evict";
+		const conn = connectionStub(connId);
+
+		// Open the stream — generation bumps to 1 and is persisted to DO storage.
+		const res = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await res.body!.cancel();
+
+		// The persisted generation is in DO storage (survives eviction), not just
+		// in memory.
+		const persisted = await runInDurableObject(connectionStub(connId), (_i: LiveDO, s) =>
+			s.storage.get<number>("generation"),
+		);
+		expect(persisted).toBe(1);
+
+		// Simulate a DO eviction: clear the in-memory generation cache so the next
+		// access has to reload from storage. A bug where `generation` lives only in
+		// memory would reset to 0 here.
+		await runInDurableObject(connectionStub(connId), (instance: LiveDO) => {
+			(instance as unknown as {generation: number | undefined}).generation = undefined;
+		});
+
+		// Probe the re-instantiated connection: it reports the persisted value (1),
+		// NOT a reset 0. A stale row registered at generation 1 would therefore be
+		// (correctly) treated as still-current, and a *new* reconnect lands on 2 —
+		// so no collision with the stale row.
+		const probe = await conn.fetch("https://live/probe", {method: "POST"});
+		expect(((await probe.json()) as {generation: number}).generation).toBe(1);
+	});
+
+	it("a stale pre-eviction row is pruned because the reconnect lands on a higher generation", async () => {
+		const connId = "evict-conn-2";
+		const ownerId = "owner-evict-2";
+		const subId = "evict-op";
+		const conn = connectionStub(connId);
+
+		// Open + subscribe at generation 1.
+		const first = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribe", subId, type: "Post", entityId: "evict-post"},
+				ownerId,
+			}),
+		});
+		await first.body!.cancel();
+		const topicKey = liveEntityTopic("Post", "evict-post");
+
+		// Simulate eviction by clearing the in-memory cache, then reconnect. With a
+		// persisted counter the reconnect reads 1 from storage and bumps to 2; an
+		// in-memory-only counter would reset to 0 and bump back to 1 — colliding
+		// with the stale row.
+		await runInDurableObject(connectionStub(connId), (instance: LiveDO) => {
+			(instance as unknown as {generation: number | undefined}).generation = undefined;
+		});
+		const reconnect = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await reconnect.body!.cancel();
+
+		const probe = await conn.fetch("https://live/probe", {method: "POST"});
+		expect(((await probe.json()) as {generation: number}).generation).toBe(2);
+
+		// Publishing now finds the generation-1 row stale (connection at gen 2) and
+		// prunes it — no cross-talk onto the fresh stream.
+		const pub = await topicStub(topicKey).fetch("https://live/publish", {
+			method: "POST",
+			body: JSON.stringify({
+				kind: "entity",
+				match: {type: "Post", entityId: "evict-post"},
+				frame: {data: {__typename: "Post", id: "evict-post", score: 1}},
+			}),
+		});
+		expect(((await pub.json()) as {delivered: number}).delivered).toBe(0);
+
+		const after = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		);
+		expect(after).toBe(0);
+	});
+});
+
+describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
+	it("publish does not prune a subscriber row when the connection DO is unreachable", async () => {
+		const ownerId = "owner-unreachable";
+		const subId = "unreachable-op";
+		const topicKey = liveEntityTopic("Term", "unreachable-term");
+
+		// Register a row pointing at a connection id that is a well-formed DO id but
+		// whose `/deliver` will throw inside `publish` (forced below). We seed the
+		// row directly via a real connection so the id is a valid `idFromString`.
+		const conn = connectionStub("unreachable-conn");
+		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribe", subId, type: "Term", entityId: "unreachable-term"},
+				ownerId,
+			}),
+		});
+		await open.body!.cancel();
+
+		const before = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		);
+		expect(before).toBe(1);
+
+		// Make the connection DO throw on the next `/deliver` by stubbing its fetch
+		// to reject — simulating a transport/deserialize failure (network blip, DO
+		// crash mid-parse). The publish must treat this as "couldn't reach", not
+		// "confirmed stale", and leave the row.
+		await runInDurableObject(connectionStub("unreachable-conn"), (instance: LiveDO) => {
+			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
+				throw new Error("simulated transport failure");
+			};
+		});
+
+		const pub = await topicStub(topicKey).fetch("https://live/publish", {
+			method: "POST",
+			body: JSON.stringify({
+				kind: "entity",
+				match: {type: "Term", entityId: "unreachable-term"},
+				frame: {data: {__typename: "Term", id: "unreachable-term"}},
+			}),
+		});
+		expect(((await pub.json()) as {delivered: number}).delivered).toBe(0);
+
+		// The row survives: an unreachable connection is not confirmed stale.
+		const after = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		);
+		expect(after).toBe(1);
+	});
+
+	it("alarm does not prune a subscriber row when the connection DO probe fails", async () => {
+		const ownerId = "owner-alarm-fail";
+		const subId = "alarm-fail-op";
+		const topicKey = liveEntityTopic("Comment", "alarm-fail-c");
+
+		const conn = connectionStub("alarm-fail-conn");
+		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribe", subId, type: "Comment", entityId: "alarm-fail-c"},
+				ownerId,
+			}),
+		});
+		await open.body!.cancel();
+
+		// Force the connection's `/probe` to throw.
+		await runInDurableObject(connectionStub("alarm-fail-conn"), (instance: LiveDO) => {
+			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
+				throw new Error("simulated probe failure");
+			};
+		});
+
+		const ran = await runDurableObjectAlarm(topicStub(topicKey));
+		expect(ran).toBe(true);
+
+		// The alarm could not reach the connection — the row is left, not pruned.
+		const after = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		);
+		expect(after).toBe(1);
 	});
 });

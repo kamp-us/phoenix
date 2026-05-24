@@ -38,9 +38,15 @@ custom connector and not WebSocket. Cross-isolate fan-out is handled by
   `GET` (same-origin); the Worker validates it with `Pasaport.validateSession`
   at connect. No token in the URL, no header.
 - Adds a `LIVE_DO` binding and a `new_sqlite_classes` migration to
-  `wrangler.jsonc`. Subscriber rows live in DO storage; `generation`/`revision`
-  + a 60s alarm prune stale rows. v1 resumes **live-only** on reconnect; a
-  per-topic event log for `lastEventId` replay is a deferred follow-on.
+  `wrangler.jsonc`. Subscriber rows live in DO storage; each row carries the
+  connection's `generation`, and a row is pruned only when a *reachable*
+  connection DO reports a different current generation (a transport/parse
+  failure leaves the row). A 60s alarm probes for orphans the same way. The
+  connection `generation` is **persisted in its DO storage** (eviction-proof),
+  so it monotonically identifies one stream lifetime — a reconnect after
+  eviction always lands on a higher generation than any stale row. v1 resumes
+  **live-only** on reconnect; a per-topic event log for `lastEventId` replay is
+  a deferred follow-on.
 
 WebSocket + DO hibernation is the deferred scale escape hatch behind the same
 topology, not part of this decision.
