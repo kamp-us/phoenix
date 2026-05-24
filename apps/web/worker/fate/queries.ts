@@ -21,11 +21,20 @@
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Pano} from "../features/pano/Pano";
-import {Pasaport, toContributionRow} from "../features/pasaport/Pasaport";
+import {Pasaport} from "../features/pasaport/Pasaport";
 import {Sozluk} from "../features/sozluk/Sozluk";
 import {Stats} from "../features/stats/Stats";
 import {Auth} from "../services";
 import {fateQuery} from "./effect";
+import {
+	toComment,
+	toConnection,
+	toContributionRow,
+	toDefinition,
+	toPost,
+	toTerm,
+	toUser,
+} from "./shapers";
 import type {
 	Comment,
 	Contribution,
@@ -82,16 +91,15 @@ export const queries = {
 			const pasaport = yield* Pasaport;
 			const fresh = yield* pasaport.getUserById(user.id);
 			if (!fresh) {
-				return {
-					__typename: "User",
+				return toUser({
 					id: user.id,
 					email: user.email,
 					name: user.name ?? null,
 					image: user.image ?? null,
 					username: null,
-				};
+				});
 			}
-			return {__typename: "User", ...fresh};
+			return toUser(fresh);
 		}),
 	},
 	term: {
@@ -108,9 +116,7 @@ export const queries = {
 
 				// Build the `Term` row to the view's scalar shape: the detail `TermPage`
 				// maps onto the `TermSummaryRow`-shaped view here.
-				const base: Term = {
-					__typename: "Term",
-					id: page.slug,
+				const base = toTerm({
 					slug: page.slug,
 					title: page.title,
 					count: page.totalDefinitions,
@@ -121,7 +127,7 @@ export const queries = {
 					firstLetter: (page.title?.[0] ?? page.slug.charAt(0) ?? "").toLowerCase(),
 					definitionCount: page.totalDefinitions,
 					lastActivityAt: page.lastEdit,
-				};
+				});
 
 				// `definitions` resolves to a `ConnectionResult` only when selected,
 				// paged by the DB keyset. The native path doesn't auto-invoke a
@@ -141,27 +147,11 @@ export const queries = {
 					...(typeof defArgs?.after === "string" ? {after: defArgs.after} : {}),
 					viewerId,
 				});
-				const definitions: ConnectionResult<Definition> = {
-					items: connection.rows.map((row) => ({
-						cursor: row.id,
-						node: {
-							__typename: "Definition",
-							id: row.id,
-							body: row.body,
-							score: row.score,
-							author: row.author,
-							authorId: row.authorId,
-							createdAt: row.createdAt,
-							updatedAt: row.updatedAt,
-							myVote: row.myVote ?? null,
-						} satisfies Definition,
-					})),
-					pagination: {
-						hasNext: connection.hasNextPage,
-						hasPrevious: false,
-						...(connection.endCursor ? {nextCursor: connection.endCursor} : {}),
-					},
-				};
+				const definitions = toConnection<(typeof connection.rows)[number], Definition>(
+					connection,
+					(row) => row.id,
+					(row) => toDefinition(row),
+				);
 
 				return {...base, definitions} as Term & {definitions: ConnectionResult<Definition>};
 			},
@@ -188,8 +178,7 @@ export const queries = {
 			// read.
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId});
 
-			const base: Post = {
-				__typename: "Post",
+			const base = toPost({
 				id: page.id,
 				slug: page.slug,
 				title: page.title,
@@ -204,7 +193,7 @@ export const queries = {
 				updatedAt: page.updatedAt,
 				myVote: stamped?.myVote ?? null,
 				tags: page.tags,
-			};
+			});
 
 			// `comments` resolves to a `ConnectionResult` only when selected, paged
 			// by the DB keyset (`Pano.listCommentsKeyset`). The native path
@@ -222,29 +211,11 @@ export const queries = {
 				...(typeof cArgs?.after === "string" ? {after: cArgs.after} : {}),
 				viewerId,
 			});
-			const comments: ConnectionResult<Comment> = {
-				items: connection.rows.map((row) => ({
-					cursor: row.id,
-					node: {
-						__typename: "Comment",
-						id: row.id,
-						parentId: row.parentId,
-						author: row.author,
-						authorId: row.authorId,
-						body: row.body,
-						score: row.score,
-						createdAt: row.createdAt,
-						updatedAt: row.updatedAt,
-						deletedAt: row.deletedAt ?? null,
-						myVote: row.myVote ?? null,
-					} satisfies Comment,
-				})),
-				pagination: {
-					hasNext: connection.hasNextPage,
-					hasPrevious: false,
-					...(connection.endCursor ? {nextCursor: connection.endCursor} : {}),
-				},
-			};
+			const comments = toConnection<(typeof connection.rows)[number], Comment>(
+				connection,
+				(row) => row.id,
+				(row) => toComment(row),
+			);
 
 			return {...base, comments} as Post & {comments: ConnectionResult<Comment>};
 		}),
@@ -299,20 +270,15 @@ export const queries = {
 				first: typeof cArgs?.first === "number" ? cArgs.first : CONTRIBUTIONS_PAGE_SIZE,
 				after: typeof cArgs?.after === "string" ? cArgs.after : null,
 			});
-			const contributions: ConnectionResult<Contribution> = {
-				items: connection.edges.map((edge) => ({
-					cursor: edge.cursor,
-					node: {
-						__typename: "Contribution",
-						...toContributionRow(edge.node),
-					} satisfies Contribution,
-				})),
-				pagination: {
-					hasNext: connection.hasNextPage,
-					hasPrevious: false,
-					...(connection.endCursor ? {nextCursor: connection.endCursor} : {}),
+			const contributions = toConnection<(typeof connection.edges)[number], Contribution>(
+				{
+					rows: connection.edges,
+					hasNextPage: connection.hasNextPage,
+					endCursor: connection.endCursor,
 				},
-			};
+				(edge) => edge.cursor,
+				(edge) => ({__typename: "Contribution", ...toContributionRow(edge.node)}),
+			);
 
 			return {...base, contributions} as Profile & {
 				contributions: ConnectionResult<Contribution>;

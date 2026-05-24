@@ -13,10 +13,10 @@
  *   - the cursor is the term slug (the keyset key, opaque to the client).
  */
 
-import type {ConnectionResult} from "@nkzw/fate/server";
 import {Pano, type PostSort} from "../features/pano/Pano";
 import {type ListSort, Sozluk} from "../features/sozluk/Sozluk";
 import {fateList} from "./effect";
+import {type KeysetPage, toConnection, toPost, toTerm} from "./shapers";
 import type {Post, Term} from "./views";
 
 /** Coerce the `sort` arg to the service's `ListSort`; default `recent`. */
@@ -26,47 +26,23 @@ const toListSort = (value: unknown): ListSort => (value === "popular" ? "popular
 const toPostSort = (value: unknown): PostSort =>
 	value === "new" || value === "top" || value === "discuss" ? value : "hot";
 
+interface TermSummaryPageRow {
+	slug: string;
+	title: string;
+	count: number;
+	totalScore: number;
+	excerpt: string | null;
+	firstAt: Date | null;
+	lastEdit: Date | null;
+	firstLetter: string;
+	definitionCount: number;
+	lastActivityAt: Date | null;
+}
+
 /** Reshape a `Sozluk` term-summary page onto a `ConnectionResult<Term>`. */
-const toTermConnection = (page: {
-	rows: ReadonlyArray<{
-		slug: string;
-		title: string;
-		count: number;
-		totalScore: number;
-		excerpt: string | null;
-		firstAt: Date | null;
-		lastEdit: Date | null;
-		firstLetter: string;
-		definitionCount: number;
-		lastActivityAt: Date | null;
-	}>;
-	hasNextPage: boolean;
-	endCursor: string | null;
-}): ConnectionResult<Term> => ({
-	items: page.rows.map((row) => ({
-		cursor: row.slug,
-		node: {
-			__typename: "Term",
-			id: row.slug,
-			slug: row.slug,
-			title: row.title,
-			count: row.count,
-			totalScore: row.totalScore,
-			excerpt: row.excerpt,
-			firstAt: row.firstAt,
-			lastEdit: row.lastEdit,
-			firstLetter: row.firstLetter,
-			definitionCount: row.definitionCount,
-			lastActivityAt: row.lastActivityAt,
-		} satisfies Term,
-	})),
-	pagination: {
-		// Services page forward only; the slug cursor is the service keyset.
-		hasNext: page.hasNextPage,
-		hasPrevious: false,
-		...(page.endCursor ? {nextCursor: page.endCursor} : {}),
-	},
-});
+const toTermConnection = (page: KeysetPage<TermSummaryPageRow>) =>
+	// The slug cursor is the service keyset.
+	toConnection(page, (row) => row.slug, toTerm);
 
 export const lists = {
 	terms: {
@@ -141,36 +117,13 @@ export const lists = {
 					...(typeof args?.after === "string" ? {after: args.after} : {}),
 					...(typeof args?.host === "string" && args.host.length > 0 ? {host: args.host} : {}),
 				});
-				const result: ConnectionResult<Post> = {
-					items: page.rows.map((row) => ({
-						cursor: row.id,
-						node: {
-							__typename: "Post",
-							id: row.id,
-							slug: row.slug,
-							title: row.title,
-							url: row.url,
-							host: row.host,
-							body: row.body,
-							author: row.author,
-							authorId: row.authorId,
-							score: row.score,
-							commentCount: row.commentCount,
-							createdAt: row.createdAt,
-							// Summary rows carry no updatedAt; fall back to
-							// createdAt.
-							updatedAt: row.updatedAt ?? row.createdAt,
-							myVote: row.myVote ?? null,
-							tags: row.tags,
-						} satisfies Post,
-					})),
-					pagination: {
-						hasNext: page.hasNextPage,
-						hasPrevious: false,
-						...(page.endCursor ? {nextCursor: page.endCursor} : {}),
-					},
-				};
-				return result;
+				// Summary rows carry no `updatedAt`; `toPost` owns the
+				// `updatedAt ?? createdAt` fallback.
+				return toConnection<(typeof page.rows)[number], Post>(
+					page,
+					(row) => row.id,
+					(row) => toPost(row),
+				);
 			},
 		),
 	},

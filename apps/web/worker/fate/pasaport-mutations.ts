@@ -21,6 +21,7 @@
 import {Pasaport} from "../features/pasaport/Pasaport";
 import {Auth} from "../services";
 import {fateMutation} from "./effect";
+import {toUser} from "./shapers";
 import type {User} from "./views";
 
 export interface SetUsernameInput {
@@ -37,14 +38,13 @@ export const pasaportMutations = {
 			// Re-resolve the affected `User` entity
 			// (email comes from the session; the
 			// service result carries identity + the freshly-set username).
-			return {
-				__typename: "User",
+			return toUser({
 				id: result.userId,
 				email: user.email,
 				name: result.displayName,
 				image: result.image,
 				username: result.username,
-			};
+			});
 		}),
 	},
 };

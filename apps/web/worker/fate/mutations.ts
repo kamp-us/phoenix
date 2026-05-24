@@ -24,6 +24,7 @@ import {Sozluk} from "../features/sozluk/Sozluk";
 import {Auth} from "../services";
 import {fateMutation} from "./effect";
 import {liveBus} from "./live";
+import {toDefinition, toTerm} from "./shapers";
 import type {Definition, Term} from "./views";
 
 export interface AddDefinitionInput {
@@ -39,8 +40,12 @@ export interface DefinitionIdInput {
 	id: string;
 }
 
-/** Shape a service definition result into the `Definition` wire entity. */
-const toDefinition = (r: {
+/**
+ * The service definition results name the id `definitionId` and the author
+ * `authorName`; the `toDefinition` shaper takes the wire field names, so map
+ * those two keys here before shaping.
+ */
+const shapeDefinition = (r: {
 	definitionId: string;
 	body: string;
 	authorName: string;
@@ -49,17 +54,17 @@ const toDefinition = (r: {
 	createdAt: Date;
 	updatedAt: Date;
 	myVote?: number | null;
-}): Definition => ({
-	__typename: "Definition",
-	id: r.definitionId,
-	body: r.body,
-	score: r.score,
-	author: r.authorName,
-	authorId: r.authorId,
-	createdAt: r.createdAt,
-	updatedAt: r.updatedAt,
-	myVote: r.myVote ?? null,
-});
+}): Definition =>
+	toDefinition({
+		id: r.definitionId,
+		body: r.body,
+		score: r.score,
+		author: r.authorName,
+		authorId: r.authorId,
+		createdAt: r.createdAt,
+		updatedAt: r.updatedAt,
+		myVote: r.myVote ?? null,
+	});
 
 export const mutations = {
 	"definition.add": {
@@ -75,7 +80,7 @@ export const mutations = {
 				...(input.termTitle ? {termTitle: input.termTitle} : {}),
 			});
 			// Fresh write: not yet voted by anyone.
-			return toDefinition({...result, myVote: null});
+			return shapeDefinition({...result, myVote: null});
 		}),
 	},
 	"definition.vote": {
@@ -87,7 +92,7 @@ export const mutations = {
 				definitionId: input.id,
 				voterId: user.id,
 			});
-			const definition = toDefinition(result);
+			const definition = shapeDefinition(result);
 			// Publish the re-resolved entity inline; the DO does no DB work and each
 			// client masks `data` to its own selection. `myVote` is viewer-specific,
 			// so it's omitted from `changed` (clients keep their own).
@@ -104,7 +109,7 @@ export const mutations = {
 				definitionId: input.id,
 				voterId: user.id,
 			});
-			const definition = toDefinition(result);
+			const definition = shapeDefinition(result);
 			liveBus.update("Definition", definition.id, {changed: ["score"], data: definition});
 			return definition;
 		}),
@@ -125,7 +130,7 @@ export const mutations = {
 			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {
 				viewerId: user.id,
 			});
-			const definition = toDefinition({...result, myVote: fresh?.myVote ?? null});
+			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
 			// `body` changed; `myVote` is viewer-specific so left out of `changed`.
 			liveBus.update("Definition", definition.id, {changed: ["body"], data: definition});
 			return definition;
@@ -150,9 +155,7 @@ export const mutations = {
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);
 			if (!page) return null;
-			return {
-				__typename: "Term",
-				id: page.slug,
+			return toTerm({
 				slug: page.slug,
 				title: page.title,
 				count: page.totalDefinitions,
@@ -163,7 +166,7 @@ export const mutations = {
 				firstLetter: (page.title?.[0] ?? page.slug.charAt(0) ?? "").toLowerCase(),
 				definitionCount: page.totalDefinitions,
 				lastActivityAt: page.lastEdit,
-			} satisfies Term;
+			});
 		}),
 	},
 };

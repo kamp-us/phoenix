@@ -29,6 +29,7 @@ import {Pano} from "../features/pano/Pano";
 import {Auth} from "../services";
 import {fateMutation} from "./effect";
 import {liveBus} from "./live";
+import {toComment, toPost} from "./shapers";
 import type {Comment, Post} from "./views";
 
 export interface SubmitPostInput {
@@ -58,9 +59,15 @@ export interface EditCommentInput {
 	body: string;
 }
 
-/** Shape a `submitPost` / `editPost` / vote result into the `Post` wire entity. */
-const toPost = (r: {
+/**
+ * The `Pano` write results name the id `postId`/`commentId` and the author
+ * `authorName`; the shapers take the wire field names, so map those keys here
+ * before shaping. `slug` is `null` on a write result (the detail read carries
+ * it); `updatedAt` falls back to `createdAt` inside `toPost`/`toComment`.
+ */
+const shapePost = (r: {
 	postId: string;
+	slug?: string | null;
 	title: string;
 	url: string | null;
 	host: string | null;
@@ -73,27 +80,25 @@ const toPost = (r: {
 	createdAt: Date;
 	updatedAt?: Date;
 	myVote?: number | null;
-}): Post => ({
-	__typename: "Post",
-	id: r.postId,
-	slug: null,
-	title: r.title,
-	url: r.url,
-	host: r.host,
-	body: r.body,
-	author: r.authorName,
-	authorId: r.authorId,
-	score: r.score,
-	commentCount: r.commentCount,
-	createdAt: r.createdAt,
-	// Fresh writes/votes don't reshape updatedAt; mirror createdAt.
-	updatedAt: r.updatedAt ?? r.createdAt,
-	myVote: r.myVote ?? null,
-	tags: [...r.tags],
-});
+}): Post =>
+	toPost({
+		id: r.postId,
+		slug: r.slug ?? null,
+		title: r.title,
+		url: r.url,
+		host: r.host,
+		body: r.body,
+		author: r.authorName,
+		authorId: r.authorId,
+		score: r.score,
+		commentCount: r.commentCount,
+		createdAt: r.createdAt,
+		updatedAt: r.updatedAt ?? null,
+		myVote: r.myVote ?? null,
+		tags: r.tags,
+	});
 
-/** Shape an `addComment` / `editComment` / vote result into the `Comment` wire entity. */
-const toComment = (r: {
+const shapeComment = (r: {
 	commentId: string;
 	parentId: string | null;
 	authorId: string;
@@ -103,19 +108,18 @@ const toComment = (r: {
 	createdAt: Date;
 	updatedAt?: Date;
 	myVote?: number | null;
-}): Comment => ({
-	__typename: "Comment",
-	id: r.commentId,
-	parentId: r.parentId,
-	author: r.authorName,
-	authorId: r.authorId,
-	body: r.body,
-	score: r.score,
-	createdAt: r.createdAt,
-	updatedAt: r.updatedAt ?? r.createdAt,
-	deletedAt: null,
-	myVote: r.myVote ?? null,
-});
+}): Comment =>
+	toComment({
+		id: r.commentId,
+		parentId: r.parentId,
+		author: r.authorName,
+		authorId: r.authorId,
+		body: r.body,
+		score: r.score,
+		createdAt: r.createdAt,
+		updatedAt: r.updatedAt ?? null,
+		myVote: r.myVote ?? null,
+	});
 
 export const panoMutations = {
 	"post.submit": {
@@ -132,7 +136,7 @@ export const panoMutations = {
 				authorName: user.name ?? user.email,
 			});
 			// Fresh write: not yet voted by anyone.
-			const post = toPost({...r, myVote: null});
+			const post = shapePost({...r, myVote: null});
 			// New post leads the feed: prepend its node to the `posts` connection
 			// (every feed-sort variant, via the global topic). Inline node, no DB work.
 			liveBus.connection("posts").prependNode("Post", post.id, {node: post});
@@ -145,7 +149,7 @@ export const panoMutations = {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
-			const post = toPost(r);
+			const post = shapePost(r);
 			liveBus.update("Post", post.id, {changed: ["score"], data: post});
 			return post;
 		}),
@@ -156,7 +160,7 @@ export const panoMutations = {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
 			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
-			const post = toPost(r);
+			const post = shapePost(r);
 			liveBus.update("Post", post.id, {changed: ["score"], data: post});
 			return post;
 		}),
@@ -175,7 +179,7 @@ export const panoMutations = {
 			// Re-read the viewer's vote so the edited entity carries an accurate
 			// `myVote` (edit doesn't change vote state).
 			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
-			const post = toPost({...r, myVote: fresh?.myVote ?? null});
+			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
 			liveBus.update("Post", post.id, {changed: ["title", "body"], data: post});
 			return post;
 		}),
@@ -191,6 +195,9 @@ export const panoMutations = {
 			// Entity gone; drop its edge from the `posts` feed connection.
 			liveBus.delete("Post", r.postId);
 			liveBus.connection("posts").deleteEdge("Post", r.postId);
+			// Not an entity shape — the post is gone; this is an id-only eviction
+			// ref (`{__typename, id}`) the client uses to drop the record. There is
+			// no row left to run through `toPost`, so it stays a bare ref.
 			return {__typename: "Post", id: r.postId};
 		}),
 	},
@@ -206,7 +213,7 @@ export const panoMutations = {
 				body: input.body,
 				...(input.parentId ? {parentId: input.parentId} : {}),
 			});
-			const comment = toComment({...r, myVote: null});
+			const comment = shapeComment({...r, myVote: null});
 			// New comment joins the post's thread: append its node to the
 			// `Post.comments` connection keyed by the parent post id. Inline node.
 			liveBus.connection("Post.comments", {id: input.postId}).appendNode("Comment", comment.id, {
@@ -221,7 +228,7 @@ export const panoMutations = {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
 			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
-			const comment = toComment(r);
+			const comment = shapeComment(r);
 			liveBus.update("Comment", comment.id, {changed: ["score"], data: comment});
 			return comment;
 		}),
@@ -232,7 +239,7 @@ export const panoMutations = {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
 			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
-			const comment = toComment(r);
+			const comment = shapeComment(r);
 			liveBus.update("Comment", comment.id, {changed: ["score"], data: comment});
 			return comment;
 		}),
@@ -244,7 +251,7 @@ export const panoMutations = {
 			const pano = yield* Pano;
 			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
-			const comment = toComment({...r, myVote: fresh?.myVote ?? null});
+			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
 			liveBus.update("Comment", comment.id, {changed: ["body"], data: comment});
 			return comment;
 		}),
@@ -265,7 +272,7 @@ export const panoMutations = {
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
-			const post = toPost({
+			const post = shapePost({
 				postId: page.id,
 				title: page.title,
 				url: page.url,
