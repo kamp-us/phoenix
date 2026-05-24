@@ -1,9 +1,6 @@
 /**
- * Proof-of-wiring screen: the current user, read through fate.
- *
- * This is the first phoenix screen on the fate data layer (the rest of the app
- * is still on Relay until teardown, task 10). It exercises the whole client
- * foundation end-to-end:
+ * The current user, read through fate. Exercises the whole client foundation
+ * end-to-end:
  *   - a `view<User>()` selection over the generated `User` entity type,
  *   - one batched `useRequest({ me: ... })` against the generated `me` root
  *     (the `viewer` pattern — backed by the server `queries.me` resolver),

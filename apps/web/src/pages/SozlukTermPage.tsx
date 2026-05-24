@@ -11,11 +11,11 @@
  * `useView(DefinitionView, node)`.
  *
  * Mutations (`fate.mutations.definition.*`): add reloads after success to show
- * the new row (nested-connection membership needs live events, tasks 11/12 — see
- * the `Composer` note); vote/edit/delete live on `DefinitionCard`. Error routing
- * is the call-site catch documented on `DefinitionCard` / `progress/task_6.md`
- * (1.0.3 classifies phoenix codes as boundary, so the mutation throws; the
- * optimistic change rolls back and we surface the code inline).
+ * the new row (nested-connection membership; `definition.add` publishes no live
+ * append — see the `Composer` note); vote/edit/delete live on `DefinitionCard`.
+ * Error routing is the call-site catch documented on `DefinitionCard` (fate
+ * classifies phoenix codes as boundary, so the mutation throws; the optimistic
+ * change rolls back and we surface the code inline).
  */
 import * as React from "react";
 import {useFateClient, useListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -41,8 +41,8 @@ const BODY_MAX = 10_000;
 const DefinitionConnectionView = {items: {node: DefinitionView}} as const;
 
 /**
- * The term-page view. fate masks by **view identity** (Relay-fragment style):
- * a child's `useView(ChildView, ref)` only works if `ChildView` was **spread**
+ * The term-page view. fate masks by **view identity**: a child's
+ * `useView(ChildView, ref)` only works if `ChildView` was **spread**
  * into the view the ref was built from — overlapping field names is not enough.
  * So the page spreads `TermHeaderView` (the header's view) and adds the nested
  * `definitions` connection whose node is `DefinitionView` (the card's view). The
@@ -206,16 +206,15 @@ function LoadMoreButton({loadNext}: {loadNext: () => Promise<void>}) {
  * Definition composer wired to `fate.mutations.definition.add`. Auth-required:
  * signed-out users redirect to /auth?returnTo=<current>.
  *
- * **Connection membership (1.0.3 drift).** A fresh definition is a new node in
- * the *nested* `Term.definitions` connection. fate's declarative `insert` only
- * targets **registered root lists** (a list op with no filter args); a nested
+ * **Connection membership.** A fresh definition is a new node in the *nested*
+ * `Term.definitions` connection. fate's declarative `insert` only targets
+ * **registered root lists** (a list op with no filter args); a nested
  * connection's membership is driven by **server live events**
- * (`live.connection(...).appendNode`) — not yet wired (tasks 11/12). So
- * `insert`/an optimistic temp-node can't join this list in 1.0.3. We therefore
+ * (`live.connection(...).appendNode`), and `definition.add` publishes no such
+ * append. So `insert`/an optimistic temp-node can't join this list. We therefore
  * **reload after a successful add** so the page re-reads `term(slug)` and the new
- * row appears (the same reload the fresh-slug branch always needed). Vote / edit
- * / delete are entity-field mutations and stay fully optimistic. When live lands
- * (tasks 11/12), this reload is replaced by a server `appendNode` event.
+ * row appears (the same reload the fresh-slug branch needs). Vote / edit / delete
+ * are entity-field mutations and stay fully optimistic.
  */
 function Composer({slug}: {slug: string}) {
 	const fate = useFateClient();
@@ -246,8 +245,8 @@ function Composer({slug}: {slug: string}) {
 				view: DefinitionView,
 				// Temp id; fate reconciles it to the server id when the result lands.
 				// The new node is normalized into the cache; it only *joins the
-				// nested list* once we reload (no declarative nested-insert in 1.0.3
-				// — see the note above). The forced-error path rolls this back.
+				// nested list* once we reload (no declarative nested-insert — see the
+				// note above). The forced-error path rolls this back.
 				optimistic: {
 					id: `optimistic:${Date.now()}`,
 					body,
@@ -264,8 +263,8 @@ function Composer({slug}: {slug: string}) {
 				return;
 			}
 			setBody("");
-			// Nested-connection membership needs live events (tasks 11/12); until
-			// then, reload so the page re-reads `term(slug)` and the new row shows.
+			// `definition.add` publishes no live append, so reload to re-read
+			// `term(slug)` and surface the new row.
 			window.location.reload();
 		} catch (caught) {
 			const code = codeOf(caught);

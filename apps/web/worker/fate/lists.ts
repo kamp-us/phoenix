@@ -1,17 +1,16 @@
 /**
  * Root list resolvers — custom `lists` entries.
  *
- * Per ADR 0019, **root lists** (`terms`, later `posts`) resolve via custom
+ * Per ADR 0019, **root lists** (`terms`, `posts`) resolve via custom
  * `lists` resolvers that map a service keyset page onto a `ConnectionResult`.
  * The service owns the cursor and the keyset SQL; this layer only reshapes the
  * page. Wrapped by `fateList` so the generator runs through the request runtime
  * (see `.patterns/fate-effect-bridge.md`, `.patterns/fate-connections.md`).
  *
- * `terms` parity with the GraphQL `terms(sort, first, after)` field:
+ * `terms(sort, first, after)`:
  *   - `sort` is a plain validated string (`recent | popular`) — fate has no
  *     enum type (ADR 0018); an unknown value falls back to `recent`.
- *   - the cursor is the term slug (the keyset key, opaque to the client),
- *     matching the GraphQL `TermEdge.cursor` / `PageInfo.endCursor`.
+ *   - the cursor is the term slug (the keyset key, opaque to the client).
  */
 
 import type {ConnectionResult} from "@nkzw/fate/server";
@@ -62,8 +61,7 @@ const toTermConnection = (page: {
 		} satisfies Term,
 	})),
 	pagination: {
-		// Services page forward only (matches GraphQL `hasPreviousPage: false`);
-		// the slug cursor is the service keyset.
+		// Services page forward only; the slug cursor is the service keyset.
 		hasNext: page.hasNextPage,
 		hasPrevious: false,
 		...(page.endCursor ? {nextCursor: page.endCursor} : {}),
@@ -120,18 +118,17 @@ export const lists = {
 		}),
 	},
 	/**
-	 * `posts` parity with the GraphQL `posts(sort, host, first, after)` field:
+	 * `posts(sort, host, first, after)`:
 	 *   - `sort` is a plain validated string (`hot | new | top | discuss`,
 	 *     default `hot`) — fate has no enum type (ADR 0018).
 	 *   - `host` is an optional string filter.
-	 *   - the cursor is the post id (the service keyset key), matching the
-	 *     GraphQL `PostEdge.cursor` / `PageInfo.endCursor`.
+	 *   - the cursor is the post id (the service keyset key).
 	 *
-	 * The service (`listPostsConnection`) already pages by a DB keyset — resolving
-	 * the cursor row once and applying the sort-specific keyset predicate — so
-	 * this resolver only reshapes its page onto a `ConnectionResult`. `myVote` is
-	 * left unstamped on the list rows (the GraphQL feed didn't select it per-edge;
-	 * a viewer's votes surface on the post-detail `post` query).
+	 * The service (`listPostsConnection`) pages by a DB keyset — resolving the
+	 * cursor row once and applying the sort-specific keyset predicate — so this
+	 * resolver only reshapes its page onto a `ConnectionResult`. `myVote` is left
+	 * unstamped on the list rows; a viewer's votes surface on the post-detail
+	 * `post` query.
 	 */
 	posts: {
 		type: "Post",
@@ -160,8 +157,8 @@ export const lists = {
 							score: row.score,
 							commentCount: row.commentCount,
 							createdAt: row.createdAt,
-							// Summary rows carry no updatedAt; mirror the GraphQL
-							// `Post.updatedAt` fallback to createdAt.
+							// Summary rows carry no updatedAt; fall back to
+							// createdAt.
 							updatedAt: row.updatedAt ?? row.createdAt,
 							myVote: row.myVote ?? null,
 							tags: row.tags,

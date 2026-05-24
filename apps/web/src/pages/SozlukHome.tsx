@@ -10,7 +10,7 @@
  * with `useView(TermRowView, node)`.
  *
  * Letter + search filtering is client-side over the already-loaded first page
- * (the home ships first-page only, matching the prior Relay shape). The filter
+ * (the home ships first-page only). The filter
  * needs each row's title, so a thin `FilterableTermRow` reads the node and
  * decides whether to render — keeping one `useView` per node.
  */

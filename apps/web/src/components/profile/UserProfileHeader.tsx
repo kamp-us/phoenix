@@ -3,10 +3,9 @@
  *
  * Reads its slice via `useView(UserProfileHeaderView, ref)`. The page
  * (`UserProfilePage`) **spreads** `UserProfileHeaderView` into the screen's
- * `Profile` view (masking is by view identity — Relay-fragment style), so the
- * header reads off the same ref. The GraphQL `Profile.user` nested object was
- * flattened onto the `Profile` scalar fields on the fate backend (task 4), so
- * the header reads `username`/`displayName`/`image` directly off the profile.
+ * `Profile` view (masking is by view identity), so the header reads off the same
+ * ref. Identity fields are flat scalars on the `Profile`, so the header reads
+ * `username`/`displayName`/`image` directly off it.
  */
 import {useView, type ViewRef, view} from "react-fate";
 import type {Profile} from "../../../worker/fate/views";

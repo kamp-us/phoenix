@@ -78,7 +78,7 @@ No per-request `ManagedRuntime` is built here: the DO relays inline-resolved pay
 
 ## Codegen
 
-The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — there is no hand-run `fate generate` step and nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. Add the plugin to `vite.config.ts` (it replaces the `@swc/plugin-relay` block).
+The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — there is no hand-run `fate generate` step and nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. The plugin lives in `vite.config.ts`. See [ADR 0022](../.decisions/0022-server-types-single-source-of-truth.md).
 
 ## The admin runtime stays separate
 

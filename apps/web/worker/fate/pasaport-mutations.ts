@@ -10,7 +10,7 @@
  * the username constraints (length / format / uniqueness / immutability) and
  * raises the domain errors (`UsernameInvalid` with `code`, `UsernameTaken`,
  * `UsernameAlreadySet`, `UserNotFound`). Those surface through the bridge's
- * `encodeFateError` with the **same wire codes** as the GraphQL path
+ * `encodeFateError` as stable wire codes
  * (`INVALID_FORMAT` / `TOO_SHORT` / `TOO_LONG` from the upcased `code`,
  * `TAKEN`, `ALREADY_SET`, `USER_NOT_FOUND`). `Auth.required` gates the write
  * (anonymous → `UNAUTHORIZED`).
@@ -34,8 +34,8 @@ export const pasaportMutations = {
 			const {user} = yield* Auth.required;
 			const pasaport = yield* Pasaport;
 			const result = yield* pasaport.setUsername({userId: user.id, value: input.value});
-			// Re-resolve the affected `User` entity, matching the GraphQL
-			// `setUsername` response shape (email comes from the session — the
+			// Re-resolve the affected `User` entity
+			// (email comes from the session; the
 			// service result carries identity + the freshly-set username).
 			return {
 				__typename: "User",

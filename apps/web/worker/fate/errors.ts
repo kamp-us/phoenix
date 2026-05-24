@@ -6,12 +6,9 @@
  * source executor is mapped onto a {@link FateRequestError}, which fate
  * serializes to `{ok: false, error: {code, message, issues?}}` on the wire.
  *
- * The wire `code` is the **same `mutationErrorCode` string** the GraphQL
- * `encodeMutationError` codec produced as `extensions.code` — the SPA decodes
- * it with the identical `decodeMutationErrorCode` narrowing
- * ({@link ../../src/lib/mutationErrorCodes.ts}). Keeping the codes byte-for-byte
- * identical is the contract: the data layer changed (GraphQL → fate), the error
- * vocabulary did not.
+ * The wire `code` is a `mutationErrorCode` string the SPA decodes with the
+ * `decodeMutationErrorCode` narrowing ({@link ../../src/lib/mutationErrorCodes.ts}).
+ * The error codes are the shared contract between worker and SPA.
  *
  * Matching strategy
  * -----------------
@@ -21,7 +18,7 @@
  * `FateRequestError` already on the wire-shape passes through verbatim — that's
  * the escape hatch for resolver-side validation that already knows its code.
  *
- * fate type drift (1.0.3)
+ * Widening the error code
  * -----------------------
  * `FateRequestError`'s constructor types `code` as `FateProtocolErrorCode` — a
  * closed 6-member protocol union (`BAD_REQUEST | FORBIDDEN | INTERNAL_ERROR |
@@ -29,8 +26,8 @@
  * the wider `MutationErrorCode` set (`BODY_REQUIRED`, `TAKEN`, …). At runtime
  * the constructor stores whatever string it's given and fate forwards it on the
  * wire untouched, so we widen the constructor through {@link fateError} — a thin
- * typed wrapper that accepts any `MutationErrorCode`. This keeps the SPA
- * contract intact without a fork. Documented in `.patterns/fate-effect-bridge.md`.
+ * typed wrapper that accepts any `MutationErrorCode`. Documented in
+ * `.patterns/fate-effect-bridge.md`.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import type {MutationErrorCode} from "../../src/lib/mutationErrorCodes";
@@ -47,7 +44,7 @@ export {
 /**
  * Construct a `FateRequestError` carrying a phoenix `MutationErrorCode` as its
  * wire `code`. Widens fate's narrow `FateProtocolErrorCode` constructor — see
- * the fate-type-drift note above.
+ * the note above.
  */
 function fateError(code: MutationErrorCode, message: string): FateRequestError {
 	return new FateRequestError(code as never, message);
@@ -77,7 +74,7 @@ export function encodeFateError(err: unknown): FateRequestError {
 				return fateError("INTERNAL_SERVER_ERROR", "internal error");
 
 			// ── Pasaport ──────────────────────────────────────────────────
-			// `code` on `UsernameInvalid` is upcased to match the legacy
+			// `code` on `UsernameInvalid` is upcased to the
 			// wire contract (INVALID_FORMAT / TOO_SHORT / TOO_LONG).
 			case "pasaport/UsernameInvalid": {
 				const invalidCode = (e as {code?: string} | undefined)?.code;

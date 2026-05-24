@@ -11,7 +11,7 @@
  * schema beyond the thin coercion fate does at the boundary; domain failures
  * (`BodyRequired`, `BodyTooLong`, `DefinitionNotFound`,
  * `UnauthorizedDefinitionMutation`) surface through the bridge's
- * `encodeFateError` with the same wire codes as the GraphQL path.
+ * `encodeFateError` as stable wire codes.
  *
  * `Auth.required` gates every write (anonymous → `UNAUTHORIZED`). The vote
  * mutations stamp `myVote` authoritatively from the vote write so the field is

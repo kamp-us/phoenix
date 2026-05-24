@@ -125,7 +125,7 @@ export function PanoSubmitPage() {
 			// post into the registered no-filter feed root list — fate writes the
 			// returned `Post` (shaped by `PanoPostCardView`) into the normalized cache
 			// and joins it to the front of the `posts` connection. NO imperative
-			// connection-key updater (the old `panoFeedUpdater` enumeration is gone).
+			// connection-key updater.
 			// The optimistic temp record (with a temp id fate reconciles to the server
 			// id) makes the prepend show instantly during the in-flight window.
 			const {result, error: callError} = await fate.mutations.post.submit({

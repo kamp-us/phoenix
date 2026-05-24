@@ -7,12 +7,12 @@
  * root; the nested `contributions` discriminant feed rides on the `Profile`
  * view, delivered inline by the resolver (see `.patterns/fate-connections.md`).
  *
- * Masking is by view identity (Relay-fragment style): the screen view
- * **spreads** `UserProfileHeaderView` (the header reads its slice off the same
- * ref) and adds the `contributions` connection whose node is `ContributionView`
- * (the row's view). The contributions feed switches on the `kind` discriminant
- * (ADR 0018 — replacing the GraphQL union) and paginates via `useListView`
- * ("load more"). A null profile (unknown username) renders the 404 page.
+ * Masking is by view identity: the screen view **spreads**
+ * `UserProfileHeaderView` (the header reads its slice off the same ref) and adds
+ * the `contributions` connection whose node is `ContributionView` (the row's
+ * view). The contributions feed switches on the `kind` discriminant (ADR 0018)
+ * and paginates via `useListView` ("load more"). A null profile (unknown
+ * username) renders the 404 page.
  */
 import {useState} from "react";
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";

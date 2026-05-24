@@ -1,12 +1,11 @@
 /**
  * Contribution row — fate.
  *
- * The GraphQL `ProfileContribution` **union** became a single **discriminant**
- * data view (ADR 0018): `Contribution` carries a `kind`
- * (`"definition" | "post" | "comment"`) plus the union of all three variants'
- * fields (variant fields nullable, populated per `kind`). So the row reads one
- * `ContributionView` and switches on `kind` — the same switch the GraphQL
- * `__typename` drove, with no union/inline-fragment machinery.
+ * The contributions feed is a single **discriminant** data view (ADR 0018):
+ * `Contribution` carries a `kind` (`"definition" | "post" | "comment"`) plus the
+ * union of all three variants' fields (variant fields nullable, populated per
+ * `kind`). So the row reads one `ContributionView` and switches on `kind`, with
+ * no union type involved.
  *
  * The page (`UserProfilePage`) selects `ContributionView` as the node of the
  * `contributions` connection; each edge node is a `ViewRef<"Contribution">`

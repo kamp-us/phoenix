@@ -6,12 +6,10 @@
  * merges the next page). Each row is a `ViewRef<"Post">` handed to `PanoPostCard`
  * (which declares `PanoPostCardView`). Connection identity strips pagination args
  * (`first`/`after`) but keeps the filter args (`sort`/`host`), so each filter combo
- * is a distinct connection that paginates independently — the same per-filter store
- * behaviour the Relay `@connection(filters: [...])` gave, now declarative.
+ * is a distinct connection that paginates independently.
  *
  * Submitting a post inserts it into the no-filter feed via declarative `insert`
- * (on the submit page) — there is NO imperative connection-key updater. The old
- * hand-enumerated `panoFeedUpdater` is gone.
+ * (on the submit page) — there is NO imperative connection-key updater.
  *
  * The `tartışma` chip is a client-side tag filter (the server has no tag-filter
  * arg yet). It needs each row's tags, so a thin `FilterablePostCard` reads the
@@ -163,7 +161,7 @@ function FeedRows({
  * `tartışma` tag filter excludes it. fate masks by view *identity*, so the filter
  * must read through the **same** view the node ref carries (`PanoPostCardView`,
  * the connection's node view) — a separate tags-only view would throw "Invalid
- * view reference" (1.0.3 masking, see task 6 drift #1). `PanoPostCardView` already
+ * view reference". `PanoPostCardView` already
  * selects `tags`, so we read it here and `PanoPostCard` reads the same view again
  * (same identity, served from cache). When no tag filter is active it renders
  * unconditionally.

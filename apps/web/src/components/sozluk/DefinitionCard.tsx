@@ -11,15 +11,15 @@
  *  - vote / retractVote flip `score` + `myVote` instantly, roll back on error.
  *  - edit writes the new body back through `DefinitionView`.
  *  - delete is a `Term`-returning mutation (parent re-resolved); the row lives in
- *    the nested `Term.definitions` connection, so we reload after success (no
- *    declarative nested-connection delete in 1.0.3 — live events, tasks 11/12).
+ *    the nested `Term.definitions` connection, which `insert`/`delete` can't
+ *    touch, so we reload after success.
  *
- * Error routing: a fate 1.0.3 gap (the client derives callSite-vs-boundary from
- * the wire `code`, and phoenix's wider codes resolve to `status: undefined` →
- * boundary, so the mutation *throws* instead of returning `{error}`) means we
- * catch at the call site. The optimistic rollback already fired before the throw;
- * we read `.code` and surface it inline keyed on the code (`UNAUTHORIZED` →
- * auth redirect). See `progress/task_6.md` + `.patterns/fate-mutations-client.md`.
+ * Error routing: the client derives callSite-vs-boundary from the wire `code`,
+ * and phoenix's wider codes resolve to `status: undefined` → boundary, so the
+ * mutation *throws* instead of returning `{error}`; we catch at the call site.
+ * The optimistic rollback already fired before the throw; we read `.code` and
+ * surface it inline keyed on the code (`UNAUTHORIZED` → auth redirect). See
+ * `.patterns/fate-mutations-client.md`.
  */
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
@@ -134,7 +134,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 				});
 			}
 		} catch (error) {
-			// Boundary-class throw (1.0.3 classifies phoenix codes as boundary).
+			// Boundary-class throw (fate classifies phoenix codes as boundary).
 			// The optimistic flip already rolled back; surface UNAUTHORIZED as a
 			// redirect, otherwise stay silent on the vote button (no inline slot).
 			if (codeOf(error) === "UNAUTHORIZED") redirectIfSignedOut();
@@ -186,9 +186,9 @@ export function DefinitionCard(props: DefinitionCardProps) {
 			// parent so counts update), so fate's `delete: true` can't be used — it
 			// would `deleteRecord("Term", definitionId)`, the wrong entity. And the
 			// definition lives in the *nested* `Term.definitions` connection, whose
-			// membership isn't driven declaratively in 1.0.3 (needs live events,
-			// tasks 11/12). So we delete on the server, then reload so the page
-			// re-reads `term(slug)` and the row drops.
+			// membership `insert`/`delete` can't touch. So we delete on the
+			// server, then reload so the page re-reads `term(slug)` and the row
+			// drops.
 			const {error} = await fate.mutations.definition.delete({
 				input: {id: definition.id},
 			});

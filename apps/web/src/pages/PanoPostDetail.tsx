@@ -14,10 +14,11 @@
  *  - post edit — `post.edit` writes the new title/body back through
  *    `PanoPostHeaderView` (optimistic, re-renders in place).
  *  - post delete — `post.delete` returns the deleted id; we navigate back to /pano.
- *  - comment add — `comment.add`; the new node is normalized into the cache but
- *    joins the *nested* `Post.comments` connection only on a re-read (declarative
- *    `insert` reaches root lists only; nested membership needs live events, tasks
- *    11/12). So we **reload after a successful add**. Same for replies.
+ *  - comment add — `comment.add`; the server publishes
+ *    `live.connection("Post.comments", {id}).appendNode`, which the thread's
+ *    `useLiveListView` merges in place — no reload. (Declarative `insert` reaches
+ *    root lists only; nested membership is server-driven by the live event.) Same
+ *    for replies.
  *  - comment vote — on `CommentTreeNode` (optimistic).
  *  - comment edit — `comment.edit` writes the body back through `CommentTreeNodeView`.
  *  - comment delete — `comment.delete` is a **`Post`**-returning mutation (it
@@ -27,7 +28,7 @@
  *    the server's), and the comment lives in a nested connection. So we delete on
  *    the server, then **reload** so the page re-reads the thread.
  *
- * Error routing is the 1.0.3 call-site catch (phoenix codes classify as boundary,
+ * Error routing is the call-site catch (phoenix codes classify as boundary,
  * so the mutation throws; the optimistic change rolls back; we read `.code` and
  * surface it inline). See `.patterns/fate-mutations-client.md`.
  */
@@ -494,8 +495,8 @@ function Comments(props: CommentsProps) {
 			// `comment.delete` returns the re-resolved **parent `Post`** (reply-aware
 			// soft-delete vs hard-delete is the server's decision). It lives in the
 			// nested `Post.comments` connection, so we can't use `delete: true` (wrong
-			// entity) nor a declarative nested removal (needs live events, tasks
-			// 11/12). Delete on the server, then reload so the page re-reads the thread.
+			// entity). Delete on the server, then reload so the page re-reads
+			// the thread (tombstone-correct — see the `useLiveListView` note above).
 			const {error} = await fate.mutations.comment.delete({input: {id: confirmDeleteId}});
 			if (error) {
 				setDeleteError(commentErrorMessage(codeOf(error), error.message));

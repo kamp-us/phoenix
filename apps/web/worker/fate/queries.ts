@@ -8,12 +8,11 @@
  * selected (including nested connections).
  *
  * Roots:
- *   - `health` / `me` — the task-1 trivial roots (seam proof + auth path).
+ *   - `health` / `me` — the trivial roots (seam proof + auth path).
  *   - `term(slug)` — the sozluk detail page. Returns the `Term` entity; when the
  *     selection includes `definitions`, it carries a pre-built `ConnectionResult`
  *     paged by the DB keyset (`Sozluk.listDefinitionsKeyset`) in the canonical
- *     term-page order — replacing the legacy in-memory id-index slice. See the
- *     connection note in `.patterns/fate-connections.md`.
+ *     term-page order. See the connection note in `.patterns/fate-connections.md`.
  *
  * The terms *list* is a `lists` resolver (`lists.ts`); definition mutations are
  * in `mutations.ts`.
@@ -43,7 +42,7 @@ export interface Health {
 	readonly definitions: number;
 }
 
-/** Build tag the landing card renders (= GraphQL `PHOENIX_BUILD_VERSION`). */
+/** Build tag the landing card renders. */
 const PHOENIX_BUILD_VERSION = "v0.3";
 
 /**
@@ -53,13 +52,13 @@ const PHOENIX_BUILD_VERSION = "v0.3";
  */
 const LANDING_STATS_ID = "landing";
 
-/** Default page size for the nested `Term.definitions` connection (= GraphQL). */
+/** Default page size for the nested `Term.definitions` connection. */
 const DEFINITIONS_PAGE_SIZE = 50;
 
-/** Default page size for the nested `Post.comments` connection (= GraphQL). */
+/** Default page size for the nested `Post.comments` connection. */
 const COMMENTS_PAGE_SIZE = 50;
 
-/** Default page size for the nested `Profile.contributions` feed (= GraphQL). */
+/** Default page size for the nested `Profile.contributions` feed. */
 const CONTRIBUTIONS_PAGE_SIZE = 20;
 
 export const queries = {
@@ -73,7 +72,7 @@ export const queries = {
 	},
 	me: {
 		type: "User",
-		// Returns the full `User` row — same shape as the GraphQL `me` query
+		// Returns the full `User` row
 		// (`id, email, name, image, username`). Reads the canonical row through
 		// `Pasaport.getUserById` so a fresh `username` round-trips right after
 		// `setUsername` (better-auth's session inference lags); falls back to the
@@ -107,8 +106,7 @@ export const queries = {
 				const auth = yield* Auth;
 				const viewerId = auth.user?.id ?? null;
 
-				// Build the `Term` row to the view's scalar shape. The single GraphQL
-				// `Term` type normalized list/detail fields; the detail `TermPage`
+				// Build the `Term` row to the view's scalar shape: the detail `TermPage`
 				// maps onto the `TermSummaryRow`-shaped view here.
 				const base: Term = {
 					__typename: "Term",
@@ -126,11 +124,11 @@ export const queries = {
 				};
 
 				// `definitions` resolves to a `ConnectionResult` only when selected,
-				// paged by the DB keyset. fate's native path doesn't auto-invoke a
-				// nested relation's `connection` executor, so the resolver delivers
-				// the connection inline (see fate-connections.md drift note); the
-				// keyset, cursor, and node shape match the source `connection`
-				// executor exactly.
+				// paged by the DB keyset. The native path doesn't auto-invoke a
+				// nested relation's `connection` executor for a hand-built source, so
+				// the resolver delivers the connection inline (see
+				// fate-connections.md); the keyset, cursor, and node shape match the
+				// source `connection` executor exactly.
 				if (!hasNestedSelection(select, "definitions")) {
 					return base;
 				}
@@ -176,8 +174,7 @@ export const queries = {
 			Post | null
 		>(function* ({args, select}) {
 			// Raw per-type id (no global-id encoding — fate carries the type on the
-			// operation). The GraphQL `post(idOrSlug)` extracted a local id from a
-			// Relay global id; fate's `Post.id` is already the raw post id.
+			// operation). `Post.id` is the raw post id.
 			const key = args?.idOrSlug ?? "";
 			const pano = yield* Pano;
 			const page = yield* pano.getPost(key);
@@ -187,8 +184,8 @@ export const queries = {
 			const viewerId = auth.user?.id ?? null;
 
 			// Stamp the viewer's vote so `Post.myVote` is authoritative without a
-			// per-row resolver (the GraphQL `Post.myVote` reads `user_vote`; here we
-			// batch the single post through the same read).
+			// per-row resolver: batch the single post through the same `user_vote`
+			// read.
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId});
 
 			const base: Post = {
@@ -210,7 +207,7 @@ export const queries = {
 			};
 
 			// `comments` resolves to a `ConnectionResult` only when selected, paged
-			// by the DB keyset (`Pano.listCommentsKeyset`). fate's native path
+			// by the DB keyset (`Pano.listCommentsKeyset`). The native path
 			// doesn't auto-invoke a nested relation's `connection` executor for a
 			// hand-built source, so the resolver delivers it inline (see
 			// fate-connections.md); the keyset, cursor, and node shape match the
@@ -253,17 +250,16 @@ export const queries = {
 		}),
 	},
 	/**
-	 * Public profile by username (parity with the GraphQL `profile(username)`).
-	 * Returns `null` for an unknown username (the SPA renders its 404). Identity
-	 * + live-aggregated counters come from `Pasaport.lookupProfile`; the GraphQL
-	 * `Profile.user` nested object is flattened onto the scalar fields.
+	 * Public profile by username. Returns `null` for an unknown username (the SPA
+	 * renders its 404). Identity + live-aggregated counters come from
+	 * `Pasaport.lookupProfile`; identity fields are flat scalars on the profile.
 	 *
 	 * `contributions` resolves to a `ConnectionResult` only when selected, paged
 	 * by the DB keyset (`Pasaport.listContributions`, `(createdAt desc, id desc)`)
 	 * — the same discriminant feed the source `connection` executor delegates to,
-	 * delivered inline here because fate 1.0.3 doesn't auto-invoke a hand-built
-	 * source's nested `connection` (see fate-connections.md). The discriminant
-	 * `kind` is preserved on every node.
+	 * delivered inline here because the native path doesn't auto-invoke a
+	 * hand-built source's nested `connection` (see fate-connections.md). The
+	 * discriminant `kind` is preserved on every node.
 	 */
 	profile: {
 		type: "Profile",
@@ -324,7 +320,7 @@ export const queries = {
 		}),
 	},
 	/**
-	 * Landing-page stats card (parity with the GraphQL `landingStats`). Reads the
+	 * Landing-page stats card. Reads the
 	 * single-row aggregates + cross-product distinct-author union via
 	 * `Stats.getLandingStats`, plus the build `version` the SPA renders.
 	 *

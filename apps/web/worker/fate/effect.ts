@@ -52,8 +52,7 @@ const runEffect = <A>(
 	ctx: FateContext,
 	// The generator wrappers below build this via `Effect.gen` over a
 	// `Generator<any, A, any>`, so the environment channel erases to `unknown`
-	// at this boundary — exactly as the GraphQL `resolver()` wrapper does
-	// (`EffectContext<any>`). The resolver/executor bodies are checked at their
+	// at this boundary. The resolver/executor bodies are checked at their
 	// own definition site, where `yield* Service` carries the real types; the
 	// request runtime provides `FateRuntime.Context` at run time. We assert that
 	// shape into `runPromiseExit` rather than leaking `any` outward.
@@ -95,10 +94,9 @@ export interface MutationArgs<Input> {
  * `({ctx, input:{args}, select}) => Promise<Output>`. The generator returns the
  * shaped output directly — query resolvers are not masked through a source.
  *
- * The generator's yield type is `any` for the same reason the GraphQL
- * `resolver()` wrapper uses it: `Effect.gen` requires a `Yieldable` element and
- * resolver bodies `yield*` heterogeneous services. The runner constrains the
- * environment to `FateRuntime.Context`.
+ * The generator's yield type is `any`: `Effect.gen` requires a `Yieldable`
+ * element and resolver bodies `yield*` heterogeneous services. The runner
+ * constrains the environment to `FateRuntime.Context`.
  */
 export const fateQuery =
 	<Args, A>(body: (o: {args: Args | undefined; select: Selection}) => Generator<any, A, any>) =>
@@ -141,10 +139,10 @@ export const fateMutation =
 		);
 
 /**
- * fate's `SourceExecutor` is the value half of `SourceRegistry<Context>`. fate
- * 1.0.3 does not re-export the `SourceExecutor` type from `@nkzw/fate/server`,
- * so we recover it from the exported `SourceRegistry` Map's value type rather
- * than naming it directly.
+ * fate's `SourceExecutor` is the value half of `SourceRegistry<Context>`.
+ * `@nkzw/fate/server` does not re-export the `SourceExecutor` type, so we
+ * recover it from the exported `SourceRegistry` Map's value type rather than
+ * naming it directly.
  */
 type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, infer V> ? V : never;
 

@@ -12,7 +12,8 @@
  * `landingStats`/`user.setUsername`). `roots` stays empty: every read is a
  * custom resolver (full control over the nested `definitions` / `comments` /
  * `contributions` connections — see `.patterns/fate-connections.md`), not a
- * source-masked byId/list root. `live` lands with the live-views task.
+ * source-masked byId/list root. `live` is the publish-only `LiveEventBus`
+ * (ADR 0023) routing mutation events to the `LiveDO`.
  * `sources` is the hand-built Effect-backed resolver from `sources.ts`
  * (`User`/`Term`/`Definition`/`Post`/`Comment`/`Tag`/`Profile`/`Contribution`,
  * `byIds` on every relation-fetchable type).

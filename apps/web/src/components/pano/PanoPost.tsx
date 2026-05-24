@@ -62,7 +62,7 @@ export function VoteControl({
  * detail page) re-renders instantly; the optimistic write rolls back on error.
  *
  * Signed-out clicks navigate to `/auth?returnTo=<current>` rather than firing
- * the mutation. Error routing follows the 1.0.3 call-site-catch pattern (phoenix
+ * the mutation. Error routing follows the call-site-catch pattern (phoenix
  * codes classify as boundary, so the mutation throws; the optimistic flip already
  * rolled back). The vote button has no inline error slot, so we surface only
  * `UNAUTHORIZED` (→ auth redirect) and stay silent otherwise.

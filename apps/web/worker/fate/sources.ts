@@ -6,7 +6,7 @@
  * so all read logic stays in the domain layer. `createDrizzleSourceAdapter` is
  * banned.
  *
- * fate 1.0.3 does **not** export `createSourceDefinition` /
+ * `@nkzw/fate/server` does **not** re-export `createSourceDefinition` /
  * `getDataViewSourceConfig` / `createSourceRegistry` / `getBaseDataView` (only
  * the public `createDrizzleSourceAdapter`, which phoenix bans), so the three
  * pieces are built directly:
@@ -17,13 +17,12 @@
  *   - `getSource` resolves a view to its definition by `view.typeName`,
  *     returning the *same* object used as the registry key.
  *
- * Task 2 scope: the sozluk sources — `Term`, `Definition` — plus `User` from
- * task 1. `byIds` is implemented on every source (the relation workhorse that
- * avoids the N+1). The `Definition` source carries a `connection` executor that
- * pages by the canonical term-page keyset; see the connection note in
- * `.patterns/fate-connections.md` for why `Term.definitions` is delivered by
- * the custom `term` resolver (1.0.3's native path doesn't auto-invoke a nested
- * relation's `connection` executor) — the executor stays the single keyset
+ * `byIds` is implemented on every source (the relation workhorse that avoids
+ * the N+1). The `Definition` source carries a `connection` executor that pages
+ * by the canonical term-page keyset; see the connection note in
+ * `.patterns/fate-connections.md` for why `Term.definitions` is delivered by the
+ * custom `term` resolver (the native path doesn't auto-invoke a hand-built
+ * source's nested `connection` executor) — the executor stays the single keyset
  * read both paths share. See `.patterns/fate-sources.md`.
  */
 import type {SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
@@ -56,8 +55,8 @@ import {
 	userDataView,
 } from "./views";
 
-// fate 1.0.3 does not re-export the `DataView` type from `@nkzw/fate/server`
-// (only the lowercase `dataView` factory), so recover it from the shape of
+// `@nkzw/fate/server` does not re-export the `DataView` type (only the
+// lowercase `dataView` factory), so recover it from the shape of
 // `SourceDefinition['view']` rather than importing the unexported name.
 type AnySourceDefinition = SourceDefinition<Record<string, unknown>, unknown>;
 type AnyDataView = AnySourceDefinition["view"];

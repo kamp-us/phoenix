@@ -2,8 +2,7 @@
  * `encodeFateError` isolation tests — the `_tag` → wire-code mapping.
  *
  * The codes are the contract shared with the SPA (`mutationErrorCodes`), so
- * each arm is pinned. These mirror the GraphQL `encodeMutationError` tests:
- * same tags, same codes — the data layer changed, the error vocabulary did not.
+ * each arm is pinned: one `_tag`, one wire code.
  */
 
 import {FateRequestError} from "@nkzw/fate/server";

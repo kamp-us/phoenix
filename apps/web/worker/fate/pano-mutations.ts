@@ -6,22 +6,21 @@
  * **re-resolved affected entity** shaped exactly like a read. A `comment.delete`
  * returns the re-resolved **parent `Post`** so the client's normalized cache
  * updates the surrounding comment thread; a `post.delete` returns the deleted
- * post's `{id}` (a post has no parent — the client evicts it by id, matching the
- * GraphQL `@deleteRecord` semantics).
+ * post's `{id}` (a post has no parent — the client evicts it by id).
  *
  * Validation stays in the service (ADR 0013) — the resolvers carry no `input`
  * schema beyond fate's thin boundary coercion; domain failures
  * (`PostValidation`, `CommentValidation`, `PostNotFound`, `CommentNotFound`,
  * `UnauthorizedPostMutation`, `UnauthorizedCommentMutation`) surface through the
- * bridge's `encodeFateError` with the same wire codes as the GraphQL path.
+ * bridge's `encodeFateError` as stable wire codes.
  *
  * `Auth.required` gates every write (anonymous → `UNAUTHORIZED`). The vote
  * mutations stamp `myVote` authoritatively from the vote write so the field is
  * correct without a follow-up `user_vote` read.
  *
  * Kept in its own module (not merged into `mutations.ts`) so the inferred
- * `typeof panoMutations` stays nameable across the `fateServer` export (TS4023 —
- * the task_1/2 lesson); the exported input interfaces below are part of that.
+ * `typeof panoMutations` stays nameable across the `fateServer` export (TS4023);
+ * the exported input interfaces below are part of that.
  *
  * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
  */
@@ -87,7 +86,7 @@ const toPost = (r: {
 	score: r.score,
 	commentCount: r.commentCount,
 	createdAt: r.createdAt,
-	// Fresh writes/votes don't reshape updatedAt; mirror createdAt (= GraphQL).
+	// Fresh writes/votes don't reshape updatedAt; mirror createdAt.
 	updatedAt: r.updatedAt ?? r.createdAt,
 	myVote: r.myVote ?? null,
 	tags: [...r.tags],
@@ -183,7 +182,7 @@ export const panoMutations = {
 	},
 	"post.delete": {
 		// A post has no parent entity; return the deleted post's id so the client
-		// evicts it by id (matching the GraphQL `@deleteRecord` on the global id).
+		// evicts it by id.
 		type: "Post",
 		resolve: fateMutation<PostIdInput, {__typename: "Post"; id: string}>(function* ({input}) {
 			const {user} = yield* Auth.required;

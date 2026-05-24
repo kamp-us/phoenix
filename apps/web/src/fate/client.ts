@@ -13,7 +13,7 @@
  * `Authorization` header. The live SSE transport opens its `EventSource` with
  * `withCredentials`, so the same cookie authenticates the stream.
  *
- * ## Enabling live (the 1.0.3 `roots: {}` drift)
+ * ## Enabling live (the `roots: {}` constraint)
  *
  * `useLiveView`/`useLiveListView` require the client's transport to expose
  * `subscribeById`/`subscribeConnection`. fate's native HTTP transport only

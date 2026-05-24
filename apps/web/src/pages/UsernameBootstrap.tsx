@@ -1,6 +1,5 @@
 /**
- * Username bootstrap form — now on **fate** (`user.setUsername`; the GraphQL
- * `setUsername` mutation path is gone).
+ * Username bootstrap form — `fate.mutations.user.setUsername`.
  *
  * Mounted by the layout when the signed-in user has `username === null`.
  * Pre-fills the input with the email's local-part. On submit, calls
@@ -13,12 +12,12 @@
  * the wire **code** (`TOO_SHORT`/`TOO_LONG`/`INVALID_FORMAT`/`TAKEN`/
  * `ALREADY_SET`/…) — not the message string.
  *
- * **Error routing (fate 1.0.3 drift, see `progress/task_6.md`/`task_7.md`).** The
- * client classifies callSite-vs-boundary purely from the wire `code`, and its
- * `switch` knows only the 6 protocol codes — phoenix codes resolve to
- * `boundary`, so the mutation **throws** instead of returning `{error}`. We
- * therefore handle BOTH the `{error}` return AND the thrown error: read `.code`
- * off either and render the matching message inline.
+ * **Error routing.** The client classifies callSite-vs-boundary purely from the
+ * wire `code`, and its `switch` knows only the 6 protocol codes — phoenix codes
+ * resolve to `boundary`, so the mutation **throws** instead of returning
+ * `{error}`. We therefore handle BOTH the `{error}` return AND the thrown error:
+ * read `.code` off either and render the matching message inline. See
+ * `.patterns/fate-mutations-client.md`.
  */
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
@@ -44,7 +43,7 @@ const codeOf = (error: unknown): MutationErrorCode | null => {
 	return decodeMutationErrorCode(code);
 };
 
-/** Map a server wire code to the inline message (parity with the GraphQL UI). */
+/** Map a server wire code to the inline message. */
 function messageForCode(code: MutationErrorCode | null): string {
 	switch (code) {
 		case "TOO_SHORT":
@@ -112,7 +111,7 @@ export function UsernameBootstrap({
 			}
 			await onComplete();
 		} catch (caught) {
-			// phoenix codes classify as boundary → the mutation throws (drift). Read
+			// phoenix codes classify as boundary → the mutation throws. Read
 			// the code off the thrown error and render inline.
 			setError(messageForCode(codeOf(caught as SetUsernameError)));
 		} finally {

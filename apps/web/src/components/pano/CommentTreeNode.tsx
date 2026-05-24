@@ -1,11 +1,10 @@
 /**
- * Fragment-shaped tree node for the post-detail comment thread.
- * Replaces the prop-shaped `PanoComment` from the MVP.
+ * View-shaped tree node for the post-detail comment thread.
  *
- * Each node declares `CommentTreeNodeFragment on Comment` and reads via
- * `useFragment` — pages spread `<CommentTreeNode comment={edge.node} />`
- * (a fragment ref) instead of shaping the row into props. Replies recurse
- * by spreading the same fragment again.
+ * Each node declares `CommentTreeNodeView` and reads its slice via `useView` —
+ * pages pass `<CommentTreeNode comment={edge.node} />` (a `ViewRef<"Comment">`)
+ * instead of shaping the row into props. Replies recurse by passing the same
+ * ref shape again. `useLiveView` keeps the node current as votes/edits land.
  *
  * The flat connection edges land in the page; the page assembles the
  * `parentId` → children map and hands a node + its children array down so
@@ -96,8 +95,8 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	// score/body re-render here without a refetch.
 	const data = useLiveView(CommentTreeNodeView, props.comment);
 	const fate = useFateClient();
-	// Test affordances key off the raw comment id (`comm_<ulid>`) — on fate the
-	// id is already the raw per-type id (no Relay global-id unwrap needed).
+	// Test affordances key off the raw comment id (`comm_<ulid>`) — `id` is the
+	// raw per-type id.
 	const localId = data.id;
 	const session = useSession();
 	const navigate = useNavigate();
@@ -145,7 +144,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 				});
 			}
 		} catch (error) {
-			// Boundary-class throw (1.0.3 classifies phoenix codes as boundary); the
+			// Boundary-class throw (fate classifies phoenix codes as boundary); the
 			// optimistic flip already rolled back. Surface UNAUTHORIZED as a redirect;
 			// the vote button has no inline slot, so stay silent otherwise.
 			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();

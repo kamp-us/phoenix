@@ -96,7 +96,7 @@ queries: {
 
 Source executors (`byId` / `byIds` / `connection`) feed fate's read path. They return **raw domain rows**, not shaped output: fate masks each row to the requested view+selection afterward via the source plan (`plan.resolveMany`), so handlers never receive `select` — they just fetch. fate **does** pass each handler a `plan` argument; our wrapper ignores it (the masking happens after the handler returns).
 
-> **fate 1.0.3 drift — `SourceExecutor` is not exported.** `@nkzw/fate/server` re-exports `SourceRegistry` and `SourceDefinition` but **not** the `SourceExecutor` type. Recover the executor type from the registry's value half — `type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, infer V> ? V : never` — rather than importing the unexported name. Under `exactOptionalPropertyTypes`, build the executor as **one object literal with conditional spreads** (not conditional property assignment), or the optional fields widen to `… | undefined` and fail to match fate's shape.
+> **`SourceExecutor` is not exported.** `@nkzw/fate/server` re-exports `SourceRegistry` and `SourceDefinition` but **not** the `SourceExecutor` type. Recover the executor type from the registry's value half — `type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, infer V> ? V : never` — rather than importing the unexported name. Under `exactOptionalPropertyTypes`, build the executor as **one object literal with conditional spreads** (not conditional property assignment), or the optional fields widen to `… | undefined` and fail to match fate's shape.
 
 ```ts
 import type {SourceRegistry} from "@nkzw/fate/server";
@@ -125,15 +125,15 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 };
 ```
 
-`genEffect` is the single `Effect.gen(body) as Effect.Effect<A, unknown, FateRuntime.Context>` assertion the bridge makes: the generators yield heterogeneous services (`any` element type), so `Effect.gen` infers env `unknown`; we assert it back to the runtime's context, which it provides at run time. This mirrors the GraphQL `resolver()` wrapper's `EffectContext<any>` shape.
+`genEffect` is the single `Effect.gen(body) as Effect.Effect<A, unknown, FateRuntime.Context>` assertion the bridge makes: the generators yield heterogeneous services (`any` element type), so `Effect.gen` infers env `unknown`; we assert it back to the runtime's context, which it provides at run time.
 
 See [fate-sources.md](./fate-sources.md) for how these executors wire into the `SourceResolver` and which service backs each type.
 
 ## Mapping failures to fate error codes
 
-Domain failures surface as `FateRequestError(code, message)`, which serializes to `{ok: false, error: {code, message, issues?}}` on the wire. `encodeFateError` maps each `Data.TaggedError._tag` onto a stable wire code; the codes are shared with the SPA (`src/lib/mutationErrorCodes.ts`) so it decodes the same constants regardless of where they're raised — the same wire vocabulary the GraphQL `encodeMutationError` produced.
+Domain failures surface as `FateRequestError(code, message)`, which serializes to `{ok: false, error: {code, message, issues?}}` on the wire. `encodeFateError` maps each `Data.TaggedError._tag` onto a stable wire code; the codes are shared with the SPA (`src/lib/mutationErrorCodes.ts`) so it decodes the same constants regardless of where they're raised.
 
-> **fate 1.0.3 drift — `FateRequestError`'s `code` is typed narrow.** Its constructor types `code: FateProtocolErrorCode` — a closed 6-member protocol union (`BAD_REQUEST | FORBIDDEN | INTERNAL_ERROR | NOT_FOUND | UNAUTHORIZED | VALIDATION_ERROR`). phoenix's wire vocabulary is the wider `MutationErrorCode` set (`BODY_REQUIRED`, `TAKEN`, `DEFINITION_NOT_FOUND`, …). At run time the constructor stores whatever string it's given and fate forwards it verbatim on the wire, so we widen the constructor through a one-line `fateError(code, message)` helper that accepts any `MutationErrorCode` and casts. The SPA contract is unchanged: `error.code` is the same string the GraphQL `extensions.code` carried, decoded by the same `decodeMutationErrorCode`. `Unauthorized → "UNAUTHORIZED"` happens to be a real protocol code; the rest ride through the cast.
+> **`FateRequestError`'s `code` is typed narrow.** Its constructor types `code: FateProtocolErrorCode` — a closed 6-member protocol union (`BAD_REQUEST | FORBIDDEN | INTERNAL_ERROR | NOT_FOUND | UNAUTHORIZED | VALIDATION_ERROR`). phoenix's wire vocabulary is the wider `MutationErrorCode` set (`BODY_REQUIRED`, `TAKEN`, `DEFINITION_NOT_FOUND`, …). At run time the constructor stores whatever string it's given and fate forwards it verbatim on the wire, so widen the constructor through a one-line `fateError(code, message)` helper that accepts any `MutationErrorCode` and casts. `Unauthorized → "UNAUTHORIZED"` happens to be a real protocol code; the rest ride through the cast.
 
 ```ts
 // worker/fate/errors.ts
@@ -150,7 +150,7 @@ export const encodeFateError = (e: unknown): FateRequestError => {
   switch (tag) {
     case "sozluk/BodyRequired": return fateError("BODY_REQUIRED", "tanım boş olamaz");
     case "Unauthorized":        return fateError("UNAUTHORIZED", "not authorized");
-    // …one arm per Data.TaggedError, mirroring encodeMutationError's codes…
+    // …one arm per Data.TaggedError…
   }
   return fateError("INTERNAL_SERVER_ERROR", "Something went wrong.");
 };
