@@ -50,12 +50,7 @@ export function prependDefinitionToTermConnection(
 	const headNodeId = edges[0]?.getLinkedRecord("node")?.getDataID();
 	if (headNodeId === newDefinition.getDataID()) return;
 
-	const newEdge = ConnectionHandler.createEdge(
-		store,
-		connection,
-		newDefinition,
-		"DefinitionEdge",
-	);
+	const newEdge = ConnectionHandler.createEdge(store, connection, newDefinition, "DefinitionEdge");
 	newEdge.setValue(newDefinition.getDataID(), "cursor");
 	ConnectionHandler.insertEdgeBefore(connection, newEdge);
 }

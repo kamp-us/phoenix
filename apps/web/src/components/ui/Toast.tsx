@@ -42,20 +42,17 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
 		setToasts((current) => current.filter((t) => t.id !== id));
 	}, []);
 
-	const show = React.useCallback(
-		(input: Omit<ToastDescriptor, "id"> & {id?: string}) => {
-			const id = input.id ?? `toast-${++nextId}`;
-			setToasts((current) => {
-				// Stable id collapse — re-showing the same id replaces the row
-				// instead of stacking duplicates. The session-expired flow uses
-				// this to avoid N copies on N failed mutations in a row.
-				const filtered = current.filter((t) => t.id !== id);
-				return [...filtered, {id, ...input}];
-			});
-			return id;
-		},
-		[],
-	);
+	const show = React.useCallback((input: Omit<ToastDescriptor, "id"> & {id?: string}) => {
+		const id = input.id ?? `toast-${++nextId}`;
+		setToasts((current) => {
+			// Stable id collapse — re-showing the same id replaces the row
+			// instead of stacking duplicates. The session-expired flow uses
+			// this to avoid N copies on N failed mutations in a row.
+			const filtered = current.filter((t) => t.id !== id);
+			return [...filtered, {id, ...input}];
+		});
+		return id;
+	}, []);
 
 	// Auto-dismiss timers — one per toast with `durationMs > 0`.
 	React.useEffect(() => {
@@ -76,7 +73,7 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
 	return (
 		<ToastContext.Provider value={value}>
 			{children}
-			<div className="kp-toast-region" role="region" aria-label="Bildirimler">
+			<section className="kp-toast-region" aria-label="Bildirimler">
 				{toasts.map((t) => (
 					<div
 						key={t.id}
@@ -96,7 +93,7 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
 						</button>
 					</div>
 				))}
-			</div>
+			</section>
 		</ToastContext.Provider>
 	);
 }

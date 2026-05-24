@@ -1,4 +1,4 @@
-import {expect, test, type Page} from "@playwright/test";
+import {expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
 /**
@@ -44,9 +44,6 @@ test.describe("PanoPostDetail", () => {
 		}
 		const before = await firstUpvote.getAttribute("aria-pressed");
 		await firstUpvote.click();
-		await expect(firstUpvote).toHaveAttribute(
-			"aria-pressed",
-			before === "true" ? "false" : "true",
-		);
+		await expect(firstUpvote).toHaveAttribute("aria-pressed", before === "true" ? "false" : "true");
 	});
 });

@@ -1,13 +1,7 @@
-import { Link } from 'react-router';
-import './PanoCrumb.css';
+import {Link} from "react-router";
+import "./PanoCrumb.css";
 
-export function PanoCrumb({
-	host,
-	onClearTo = '/pano',
-}: {
-	host: string;
-	onClearTo?: string;
-}) {
+export function PanoCrumb({host, onClearTo = "/pano"}: {host: string; onClearTo?: string}) {
 	return (
 		<div className="kp-pano-crumb">
 			<Link to="/pano">pano</Link>

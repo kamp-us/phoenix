@@ -19,7 +19,7 @@
 }
 
 .kp-landing__brand {
-	font: 600 32px/1 var(--font-body);
+	font: 600 32px / 1 var(--font-body);
 	letter-spacing: -0.03em;
 	color: var(--text-primary);
 	margin: 0 0 var(--s-3);
@@ -29,7 +29,7 @@
 }
 
 .kp-landing__tagline {
-	font: 400 18px/1.4 var(--font-body);
+	font: 400 18px / 1.4 var(--font-body);
 	color: var(--text-secondary);
 	margin: 0 0 var(--s-3);
 	max-width: 38ch;
@@ -55,7 +55,7 @@
 	border: none;
 	background: var(--surface-raised);
 	padding: var(--s-3) var(--s-4);
-	font: 500 13px/1.2 var(--font-body);
+	font: 500 13px / 1.2 var(--font-body);
 	text-decoration: none;
 	color: var(--text-primary);
 	border-radius: var(--r-sm);
@@ -96,7 +96,7 @@
 	margin-bottom: var(--s-3);
 }
 .kp-landing__col-head h3 {
-	font: 600 13px/1 var(--font-body);
+	font: 600 13px / 1 var(--font-body);
 	margin: 0;
 	color: var(--text-primary);
 	text-transform: lowercase;
@@ -130,7 +130,7 @@
 	text-align: right;
 }
 .kp-landing-row__title {
-	font: 500 13px/1.4 var(--font-body);
+	font: 500 13px / 1.4 var(--font-body);
 	color: var(--text-primary);
 	text-decoration: none;
 	display: block;
@@ -164,7 +164,7 @@
 	padding-top: var(--s-4);
 }
 .kp-landing__stat .n {
-	font: 600 18px/1 var(--font-body);
+	font: 600 18px / 1 var(--font-body);
 	color: var(--text-primary);
 	letter-spacing: -0.01em;
 }

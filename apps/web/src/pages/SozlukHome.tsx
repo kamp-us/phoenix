@@ -17,8 +17,8 @@
  */
 import * as React from "react";
 import {graphql, useFragment, useLazyLoadQuery} from "react-relay";
-import type {SozlukHomeQuery} from "../__generated__/SozlukHomeQuery.graphql";
 import type {SozlukHomePopularFragment$key} from "../__generated__/SozlukHomePopularFragment.graphql";
+import type {SozlukHomeQuery} from "../__generated__/SozlukHomeQuery.graphql";
 import type {SozlukHomeRecentFragment$key} from "../__generated__/SozlukHomeRecentFragment.graphql";
 import {SozlukAlphabet} from "../components/sozluk/index";
 import {TermRow} from "../components/sozluk/TermRow";
@@ -178,8 +178,7 @@ function SozlukHomeChrome({
 	errorMessage,
 	children,
 }: ChromeProps) {
-	const totalsLine =
-		status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
+	const totalsLine = status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
 
 	return (
 		<>
@@ -197,7 +196,7 @@ function SozlukHomeChrome({
 						fill="none"
 						stroke="currentColor"
 						strokeWidth="2.4"
-						aria-hidden
+						aria-hidden="true"
 					>
 						<circle cx="11" cy="11" r="7" />
 						<path d="m20 20-3.5-3.5" />

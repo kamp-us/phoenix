@@ -72,41 +72,41 @@ function Layout() {
 	return (
 		<TooltipProvider>
 			<ToastProvider>
-			<AppShell>
-				<Topbar
-					brandName="kamp.us"
-					nav={[
-						{to: "/sozluk", label: "sözlük"},
-						{to: "/pano", label: "pano"},
-					]}
-					{...userProps}
-					onToggleTheme={() => setMode(mode === "dark" ? "light" : "dark")}
-					onLogout={onSignOut}
-					actions={
-						isSignedIn ? (
-							<button
-								type="button"
-								className="kp-topbar__btn"
-								onClick={() => navigate("/pano/yeni")}
-							>
-								+ gönderi
-							</button>
+				<AppShell>
+					<Topbar
+						brandName="kamp.us"
+						nav={[
+							{to: "/sozluk", label: "sözlük"},
+							{to: "/pano", label: "pano"},
+						]}
+						{...userProps}
+						onToggleTheme={() => setMode(mode === "dark" ? "light" : "dark")}
+						onLogout={onSignOut}
+						actions={
+							isSignedIn ? (
+								<button
+									type="button"
+									className="kp-topbar__btn"
+									onClick={() => navigate("/pano/yeni")}
+								>
+									+ gönderi
+								</button>
+							) : (
+								<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
+									giriş yap
+								</button>
+							)
+						}
+					/>
+					<Main>
+						{needsBootstrap && sessionUser ? (
+							<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
 						) : (
-							<button type="button" className="kp-topbar__btn" onClick={() => navigate("/auth")}>
-								giriş yap
-							</button>
-						)
-					}
-				/>
-				<Main>
-					{needsBootstrap && sessionUser ? (
-						<UsernameBootstrap email={sessionUser.email} onComplete={refetch} />
-					) : (
-						<Outlet />
-					)}
-				</Main>
-				<Footer />
-			</AppShell>
+							<Outlet />
+						)}
+					</Main>
+					<Footer />
+				</AppShell>
 			</ToastProvider>
 		</TooltipProvider>
 	);

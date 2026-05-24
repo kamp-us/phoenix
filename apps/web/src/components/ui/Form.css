@@ -2,72 +2,78 @@
    Provides label/control/error wiring + AA-correct aria-describedby out of the box. */
 
 .kp-form {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
 }
 
 .kp-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
 }
 
 .kp-field__label {
-  font: var(--t-meta);
-  font-weight: 500;
-  color: var(--text-secondary);
+	font: var(--t-meta);
+	font-weight: 500;
+	color: var(--text-secondary);
 }
 
 .kp-field__hint {
-  font: var(--t-micro);
-  color: var(--text-faint);
+	font: var(--t-micro);
+	color: var(--text-faint);
 }
 
 .kp-field__error {
-  font: var(--t-micro);
-  color: var(--danger);
+	font: var(--t-micro);
+	color: var(--danger);
 }
 
 .kp-input,
 .kp-textarea {
-  display: block;
-  width: 100%;
-  background: var(--surface-sunken);
-  color: var(--text-primary);
-  border: 1px solid var(--border-faint);
-  border-radius: var(--r-sm);
-  padding: 6px var(--s-2);
-  font: var(--t-body-sm);
-  outline: none;
-  transition: border-color 80ms, box-shadow 80ms;
+	display: block;
+	width: 100%;
+	background: var(--surface-sunken);
+	color: var(--text-primary);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-sm);
+	padding: 6px var(--s-2);
+	font: var(--t-body-sm);
+	outline: none;
+	transition:
+		border-color 80ms,
+		box-shadow 80ms;
 }
 .kp-input:hover,
-.kp-textarea:hover { border-color: var(--border); }
+.kp-textarea:hover {
+	border-color: var(--border);
+}
 .kp-input:focus,
 .kp-textarea:focus {
-  border-color: var(--accent-9);
-  box-shadow: 0 0 0 1px var(--accent-9);
+	border-color: var(--accent-9);
+	box-shadow: 0 0 0 1px var(--accent-9);
 }
 .kp-input[data-invalid],
 .kp-textarea[data-invalid] {
-  border-color: var(--danger);
+	border-color: var(--danger);
 }
 .kp-input[data-invalid]:focus,
 .kp-textarea[data-invalid]:focus {
-  box-shadow: 0 0 0 1px var(--danger);
+	box-shadow: 0 0 0 1px var(--danger);
 }
 .kp-input::placeholder,
-.kp-textarea::placeholder { color: var(--text-faint); }
+.kp-textarea::placeholder {
+	color: var(--text-faint);
+}
 
 .kp-textarea {
-  resize: vertical;
-  min-height: 80px;
-  font-family: var(--font-body);
-  line-height: 1.5;
+	resize: vertical;
+	min-height: 80px;
+	font-family: var(--font-body);
+	line-height: 1.5;
 }
 
 .kp-textarea--mono {
-  font-family: var(--font-mono);
-  font-size: 12px;
+	font-family: var(--font-mono);
+	font-size: 12px;
 }

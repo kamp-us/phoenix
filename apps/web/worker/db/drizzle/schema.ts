@@ -303,10 +303,7 @@ export const postVote = sqliteTable(
 		voterId: text("voter_id").notNull(),
 		createdAt: timestamp("created_at").notNull(),
 	},
-	(t) => [
-		primaryKey({columns: [t.postId, t.voterId]}),
-		index("post_vote_post").on(t.postId),
-	],
+	(t) => [primaryKey({columns: [t.postId, t.voterId]}), index("post_vote_post").on(t.postId)],
 );
 
 /**

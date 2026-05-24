@@ -2,52 +2,60 @@
    Used by: SubmitForm (link/yazı), CommentComposer (yaz/önizle), AuthPage (login/register). */
 
 .kp-tabs {
-  display: flex;
-  flex-direction: column;
-  gap: var(--s-3);
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
 }
 
 .kp-tabs__list {
-  display: flex;
-  gap: var(--s-1);
-  border-bottom: 1px solid var(--border-faint);
+	display: flex;
+	gap: var(--s-1);
+	border-bottom: 1px solid var(--border-faint);
 }
 
 .kp-tabs__tab {
-  padding: 6px var(--s-3);
-  font: var(--t-body-sm);
-  font-weight: 500;
-  color: var(--text-secondary);
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  cursor: pointer;
-  user-select: none;
+	padding: 6px var(--s-3);
+	font: var(--t-body-sm);
+	font-weight: 500;
+	color: var(--text-secondary);
+	border-bottom: 2px solid transparent;
+	margin-bottom: -1px;
+	cursor: pointer;
+	user-select: none;
 }
-.kp-tabs__tab:hover { color: var(--text-primary); }
+.kp-tabs__tab:hover {
+	color: var(--text-primary);
+}
 .kp-tabs__tab[data-selected] {
-  color: var(--text-primary);
-  border-bottom-color: var(--accent-9);
+	color: var(--text-primary);
+	border-bottom-color: var(--accent-9);
 }
-.kp-tabs__tab:focus-visible { outline: var(--focus-ring); outline-offset: 2px; border-radius: var(--r-sm); }
+.kp-tabs__tab:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 2px;
+	border-radius: var(--r-sm);
+}
 
-.kp-tabs__panel { outline: none; }
+.kp-tabs__panel {
+	outline: none;
+}
 
 /* "Pill" variant — used for write/preview style tabs (composer) */
 .kp-tabs--pill .kp-tabs__list {
-  display: inline-flex;
-  background: var(--surface-sunken);
-  border: 1px solid var(--border-faint);
-  border-radius: var(--r-md);
-  padding: 2px;
-  gap: 0;
+	display: inline-flex;
+	background: var(--surface-sunken);
+	border: 1px solid var(--border-faint);
+	border-radius: var(--r-md);
+	padding: 2px;
+	gap: 0;
 }
 .kp-tabs--pill .kp-tabs__tab {
-  border-bottom: 0;
-  margin-bottom: 0;
-  border-radius: var(--r-sm);
-  padding: 4px var(--s-3);
+	border-bottom: 0;
+	margin-bottom: 0;
+	border-radius: var(--r-sm);
+	padding: 4px var(--s-3);
 }
 .kp-tabs--pill .kp-tabs__tab[data-selected] {
-  background: var(--surface-raised);
-  color: var(--text-primary);
+	background: var(--surface-raised);
+	color: var(--text-primary);
 }

@@ -120,9 +120,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 
 	const inFlight = voteInFlight || retractInFlight;
 	const voted = (definition.myVote ?? 0) === 1;
-	const cls = props.top
-		? "kp-sozluk-definition kp-sozluk-definition--top"
-		: "kp-sozluk-definition";
+	const cls = props.top ? "kp-sozluk-definition kp-sozluk-definition--top" : "kp-sozluk-definition";
 	const isAuthor = !!session.data?.user && session.data.user.id === definition.authorId;
 
 	function onVoteClick() {
@@ -295,10 +293,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					<span className="author">@{definition.author}</span>
 					<span className="dot">·</span>
 					<span>{formatAgoTR(definition.createdAt)}</span>
-					<EditedIndicator
-						createdAt={definition.createdAt}
-						updatedAt={definition.updatedAt}
-					/>
+					<EditedIndicator createdAt={definition.createdAt} updatedAt={definition.updatedAt} />
 					<span className="actions">
 						<button type="button">paylaş</button>
 						<button type="button">kalıcı bağlantı</button>

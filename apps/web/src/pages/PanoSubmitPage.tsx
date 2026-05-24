@@ -2,12 +2,12 @@ import * as React from "react";
 import {graphql, useMutation} from "react-relay";
 import {Link, useNavigate} from "react-router";
 import type {PanoSubmitPageMutation} from "../__generated__/PanoSubmitPageMutation.graphql";
-import {prependPostToFeedConnections} from "../relay/panoFeedUpdater";
 import {useSession} from "../auth/client";
 import {Button} from "../components/ui/Button";
 import {authRedirectPath} from "../lib/returnTo";
 import {useSessionExpiredToast} from "../lib/useSessionExpiredToast";
 import {extractLocalId} from "../relay/encodeNodeId";
+import {prependPostToFeedConnections} from "../relay/panoFeedUpdater";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
@@ -290,8 +290,8 @@ export function PanoSubmitPage() {
 							</div>
 						)}
 
-						<div className="kp-pano-submit__field">
-							<label>etiketler · en fazla 3</label>
+						<fieldset className="kp-pano-submit__field kp-pano-submit__fieldset">
+							<legend className="kp-pano-submit__field-label">etiketler · en fazla 3</legend>
 							<div className="kp-pano-submit__tagrow">
 								{TAGS.map((t) => {
 									const on = selectedTags.has(t.kind);
@@ -309,7 +309,7 @@ export function PanoSubmitPage() {
 									);
 								})}
 							</div>
-						</div>
+						</fieldset>
 
 						{error ? (
 							<p

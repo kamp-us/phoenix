@@ -63,11 +63,7 @@ export function PanoPostCard({
 			<span className="kp-pano-post__rank">
 				{rank != null ? String(rank).padStart(2, "0") : ""}
 			</span>
-			<PostVoteWidget
-				postId={data.id}
-				score={data.score}
-				myVote={data.myVote === 1 ? 1 : null}
-			/>
+			<PostVoteWidget postId={data.id} score={data.score} myVote={data.myVote === 1 ? 1 : null} />
 			<div className="kp-pano-post__body">
 				<div className="kp-pano-post__title-row">
 					{data.tags.length ? (

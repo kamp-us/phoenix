@@ -847,9 +847,7 @@ function CommentComposer({
 						type="submit"
 						disabled={inFlight || body.trim().length === 0}
 						data-testid={
-							parentLocalId
-								? `pano-comment-reply-submit-${parentLocalId}`
-								: "pano-comment-submit"
+							parentLocalId ? `pano-comment-reply-submit-${parentLocalId}` : "pano-comment-submit"
 						}
 					>
 						{inFlight ? "gönderiliyor…" : parentId ? "yanıtla" : "yorum ekle"}
@@ -953,4 +951,3 @@ function CommentEditComposer({
 		</form>
 	);
 }
-

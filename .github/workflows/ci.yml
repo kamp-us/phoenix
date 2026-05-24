@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   check:
-    name: test / typecheck
+    name: lint / test / typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -26,6 +26,8 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
 
       - name: Generate Relay artifacts
         run: pnpm --filter @phoenix/web relay

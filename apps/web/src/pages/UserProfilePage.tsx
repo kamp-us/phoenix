@@ -119,11 +119,7 @@ function UserProfileContent({username}: {username: string}) {
 	);
 }
 
-function ContributionsList({
-	profile,
-}: {
-	profile: UserProfilePageContributionsFragment$key;
-}) {
+function ContributionsList({profile}: {profile: UserProfilePageContributionsFragment$key}) {
 	const {data, loadNext, hasNext, isLoadingNext} = usePaginationFragment(
 		UserProfilePageContributionsFragmentDef,
 		profile,
@@ -134,10 +130,7 @@ function ContributionsList({
 		<section className="kp-user-profile__feed" data-testid="user-profile-feed">
 			<h3>
 				katkılar{" "}
-				<span
-					className="kp-user-profile__total"
-					data-testid="user-profile-contributions-total"
-				>
+				<span className="kp-user-profile__total" data-testid="user-profile-contributions-total">
 					({data.contributions.totalCount})
 				</span>
 			</h3>

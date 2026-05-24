@@ -67,10 +67,18 @@
 	display: grid;
 	gap: 4px;
 }
-.kp-pano-submit__field label {
-	font: 500 12px/1.2 var(--font-body);
+.kp-pano-submit__fieldset {
+	margin: 0;
+	padding: 0;
+	border: 0;
+	min-inline-size: 0;
+}
+.kp-pano-submit__field label,
+.kp-pano-submit__field-label {
+	font: 500 12px / 1.2 var(--font-body);
 	color: var(--text-secondary);
 	letter-spacing: 0.01em;
+	padding: 0;
 }
 .kp-pano-submit__field input,
 .kp-pano-submit__field textarea {
@@ -80,7 +88,7 @@
 	border: 1px solid var(--border-faint);
 	border-radius: var(--r-sm);
 	padding: 7px 10px;
-	font: 13px/1.5 var(--font-body);
+	font: 13px / 1.5 var(--font-body);
 	color: var(--text-primary);
 	outline: none;
 	resize: vertical;

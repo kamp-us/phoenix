@@ -118,8 +118,8 @@ export function ProfilePage() {
 				<section className="kp-profile__section kp-profile__section--last">
 					<h3 className="danger">tehlikeli alan</h3>
 					<p>
-						hesabını kaldırırsan başlıkların ve tanımların 30 gün arşivde tutulur, sonra
-						silinir. yorumlar @[silinen]'e atanır.
+						hesabını kaldırırsan başlıkların ve tanımların 30 gün arşivde tutulur, sonra silinir.
+						yorumlar @[silinen]'e atanır.
 					</p>
 					<div className="kp-profile__danger">
 						<button type="button" className="danger">
