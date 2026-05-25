@@ -1,6 +1,6 @@
 # Phoenix patterns
 
-Reusable patterns for writing phoenix code — the backend and the frontend's data layer. These are **evergreen** — they describe how the codebase is structured, not how to migrate to it. Treat them as the load-bearing references when adding features, fixing bugs, or onboarding a new agent.
+Reusable patterns for writing phoenix code — the backend and the frontend's data layer. The `effect-*` and `fate-*` docs are **evergreen** — they describe how the codebase is structured, not how to migrate to it. Treat them as the load-bearing references when adding features, fixing bugs, or onboarding a new agent. The `alchemy-*` docs are the one exception: they describe the **target** infra architecture for the in-progress alchemy-effect rebuild (clearly marked below), since phoenix is greenfield enough — not yet in production — that the target is worth writing down before the source matches it.
 
 Start with [effect-context-service.md](./effect-context-service.md) and [feature-services.md](./feature-services.md). The rest fill in.
 
@@ -48,6 +48,21 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | [fate-views-and-requests.md](./fate-views-and-requests.md) | `view`/`useView`/`ViewRef`, masking, one batched `useRequest` per screen, `useListView` pagination | Reading data in a component |
 | [fate-mutations-client.md](./fate-mutations-client.md) | `fate.mutations`/`actions`, optimistic updates, `insert`/`delete` membership, error routing | Writing data from the UI |
 | [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the `LiveDO` Durable Object | Making a view live (spans client + server) |
+
+## Index — alchemy infra layer (target architecture)
+
+> **These describe the target shape, not current `apps/web/worker/`.** phoenix is being rebuilt on [alchemy-effect](https://github.com/usirin/alchemy-effect) — one Effect program for infra + runtime, replacing `wrangler.jsonc`, the Hono entry, manual binding access, and the hand-written DO classes. The `effect-*` and `fate-*` docs above describe what survives the rebuild unchanged. Read [alchemy-overview.md](./alchemy-overview.md) first; it maps what changes vs what stays. This is not an Effect migration — phoenix and alchemy are both on effect v4.
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [alchemy-overview.md](./alchemy-overview.md) | One program = infra + runtime; the two phases; what stays (domain/fate) vs changes; reading order | First — the mental model |
+| [alchemy-worker.md](./alchemy-worker.md) | `Cloudflare.Worker<T>()(...)`, init vs runtime phase, props, providing binding Live layers | Defining/editing the worker entry |
+| [alchemy-bindings.md](./alchemy-bindings.md) | `bind()` = deploy-policy + runtime-service; `yield*` DO vs `.bind` resource; the Live-layer convention | Reaching a Cloudflare resource |
+| [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No per-request `ManagedRuntime`; worker-level vs request-scoped layers; `Effect.services()` capture; the fate bridge delta | Touching the fate↔domain seam |
+| [alchemy-http-router.md](./alchemy-http-router.md) | `HttpApiBuilder` for typed JSON + imperative `HttpRouter` for raw-Request/SSE; `toHttpEffect`; assets/worker-first | Adding/moving an HTTP route |
+| [alchemy-durable-objects.md](./alchemy-durable-objects.md) | `DurableObjectNamespace<T>()`, per-instance Effect, typed RPC, `state.storage.sql`, alarms; ConnectionDO/TopicDO port | Working on the live DOs |
+| [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) | `D1Connection.bind` → `raw` → `drizzle(raw,{schema})`; `Drizzle` as a worker-level singleton; migrations via `Drizzle.Schema` | Wiring the DB or migrations |
+| [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) | `alchemy.run.ts` + `Alchemy.Stack`, resource declarations, `wrangler.jsonc`→alchemy map, dev/deploy, stages | Declaring resources or deploying |
 
 ## fate protocol conventions
 
