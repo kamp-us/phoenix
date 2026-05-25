@@ -77,22 +77,24 @@ alchemy has **two non-mixable worker runtime paths**. The Effect-native path (`C
 
 > **Don't try to "fix" this by adding a Vite plugin to the Effect-native worker.** The reason there's no single-process HMR isn't a missing config — it's the two-path split above. `@distilled.cloud/cloudflare-vite-plugin` only runs the `Cloudflare.Vite` (plain-handler) path. phoenix chose the Effect-native worker and takes the two-process dev loop as the price.
 
-So `alchemy dev` runs the one worker (live D1/DO bindings, backend watch-rebuild on a stable local URL), and Vite serves the SPA with HMR and proxies the API to it:
+So `alchemy dev` runs the one worker (live D1/DO bindings, backend watch-rebuild), and Vite serves the SPA with HMR and proxies the API to it. `alchemy dev` serves the worker **vhost-routed** at `http://<worker-name>.localhost:1337` — and since Node can't resolve `*.localhost`, the Vite proxy must target the IP and force the `Host` header (a `target: "http://<name>.localhost:1337"` fails with `ENOTFOUND`):
 
 ```ts
 // vite.config.ts — dev only; alchemy owns deploy
-server: {
-  proxy: {
-    "/api": {target: "http://localhost:8787", changeOrigin: true},
-    "/fate": {target: "http://localhost:8787", changeOrigin: true}, // /fate/live SSE proxies fine
-  },
-},
+const worker = {
+  target: "http://127.0.0.1:1337",        // alchemy dev's local proxy port
+  changeOrigin: false,
+  headers: {host: "phoenix.localhost"},   // route to the worker by its vhost name
+};
+server: {proxy: {"/api": worker, "/fate": worker}}; // /fate/live SSE streams through fine
 ```
 
 ```bash
-pnpm vite dev   # SPA on :3000 — full HMR + the fate() codegen plugin
-alchemy dev     # worker + DOs + D1 on :8787 — backend watch-rebuild, live bindings
+alchemy dev     # one worker + DOs + D1, vhost at http://phoenix.localhost:1337 (requires CF auth — alchemy login)
+pnpm vite dev   # SPA + HMR + the fate() codegen plugin; proxies /api, /fate → the worker
 ```
+
+> **Verified by a working spike** (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`). Confirmed end-to-end in a browser: `alchemy dev` runs an Effect-native `Cloudflare.Worker`; an SSE stream (`HttpServerResponse.stream`) flows through the Vite proxy live; and **editing a React component does not drop the SSE connection** (the stream ran unbroken across edits — good for live views). Three gotchas it surfaced, now baked in above: (1) `alchemy dev` **requires Cloudflare auth** (`alchemy login` or `CLOUDFLARE_API_TOKEN`) — it is *not* offline; (2) the `127.0.0.1` + `Host` proxy shape is mandatory (`*.localhost` is unresolvable in Node); (3) install peers are non-obvious — `effect@beta` (v4; npm `latest` is v3), `@effect/platform-node`, `@effect/platform-bun`. One unresolved-but-orthogonal item: on bleeding-edge Vite 8-beta + plugin-react 6 + React 19, the POC showed a Fast Refresh *render-apply* quirk (update fired, state preserved, JSX didn't swap until a manual reload) — a Vite/React-plugin detail independent of alchemy (Vite dev runs standalone); validate against the real app's plugin versions.
 
 It stays **one worker** — the second terminal is just the Vite dev server (not a worker); at deploy `vite build` produces `dist/client` and the single worker serves it. React HMR comes from `vite dev`, backend hot-reload from `alchemy dev`, so the full loop is live. A simpler one-terminal fallback is `alchemy dev` + `vite build --watch` (the static asset server picks up rebuilt `dist/client` on full reload, no HMR).
 
