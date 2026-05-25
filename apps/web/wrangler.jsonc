@@ -41,9 +41,28 @@
 	],
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {
-		"ENVIRONMENT": "production"
+		"ENVIRONMENT": "development"
 	},
 	"env": {
+		"production": {
+			"d1_databases": [
+				{
+					"binding": "PHOENIX_DB",
+					"database_name": "phoenix_db",
+					"database_id": "f14168ac-6b13-4961-a2fe-b8ae82736d14",
+					"migrations_dir": "worker/db/drizzle/migrations"
+				}
+			],
+			"durable_objects": {
+				"bindings": [
+					{ "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+					{ "name": "TOPIC_DO", "class_name": "TopicDO" }
+				]
+			},
+			"vars": {
+				"ENVIRONMENT": "production"
+			}
+		},
 		"staging": {
 			"d1_databases": [
 				{

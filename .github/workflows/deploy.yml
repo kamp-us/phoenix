@@ -31,7 +31,7 @@ jobs:
       - run: pnpm --filter @phoenix/web build
 
       - name: Deploy to production
-        run: pnpm --filter @phoenix/web exec wrangler deploy
+        run: pnpm --filter @phoenix/web exec wrangler deploy --env production
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

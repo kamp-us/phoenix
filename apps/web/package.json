@@ -7,7 +7,7 @@
 		"dev": "vite",
 		"build": "vite build",
 		"preview": "vite preview",
-		"cf:deploy": "pnpm build && wrangler deploy",
+		"cf:deploy": "pnpm build && wrangler deploy --env production",
 		"cf:deploy:staging": "pnpm build && wrangler deploy --env staging",
 		"cf:deploy:test": "pnpm build && wrangler deploy --env test",
 		"typecheck": "pnpm fate:generate && tsgo -b tsconfig.worker.json tsconfig.node.json && tsgo -p tsconfig.app.json --composite false",
