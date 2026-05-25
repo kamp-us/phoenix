@@ -53,21 +53,27 @@ vs. raw classes + path dispatch) changes.
 
 - **Easier:** typed cross-DO RPC; one Effect idiom across the whole backend; far
   less hand-rolled request routing and JSON in the DOs.
-- **Partially spike-verified** (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`)
-  under `alchemy dev`'s local runtime: the **topic→connection fan-out**,
+- **Spike-verified** (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`) under
+  `alchemy dev`'s local runtime: the **bidirectional cross-DO RPC** (both legs),
   **`state.storage.sql`**, and **held-stream delivery** (enqueueing into a stream
   held in one DO from another DO's RPC) all work — subscribe → publish → the frame
-  arrived on the held SSE stream.
-- **Risk — unverified, needs a spike:** the **bidirectional DO↔DO binding**
-  (connection↔topic — phoenix needs the reverse `ConnectionDO`→`TopicDO` leg for
-  subscribe→register, a circular binding with no precedent in the alchemy examples)
-  and **name-based addressing** (`getByName` only; `idFromName`/`idFromString`/`get`
-  are unavailable on the alchemy stub, so the `generation` stale-detection invariant
-  must be re-confirmed) were **not** spiked. Spike both in the modular `.make()` form
-  before treating the port as proven.
-- **Constraint:** the **modular `.make()` form is required** because the two DOs
-  reference each other — the class (identifier) must stay separate from `.make()`
-  (impl) so neither DO pulls the other's runtime into its bundle.
+  arrived on the held SSE stream — subject to the lazy-resolution constraint below.
+- **Bidirectional DO↔DO binding — spiked, works lazily.** A follow-up spike
+  confirmed the reverse `ConnectionDO`→`TopicDO` leg (subscribe→register) and thus
+  the full circular binding. The hard constraint: resolve the sibling DO **lazily,
+  inside the RPC method** (`const topics = yield* TopicDO` per call) — an eager
+  `yield* OtherDO` in *both* DOs' init blocks **OOMs the build** (deterministic).
+  Symmetric-lazy is the rule: never resolve the sibling in init.
+- **Constraint — use the inline form, not modular `.make()`.** alchemy's JSDoc
+  documents a modular `class + .make()` DO form, but it is **not implemented** in
+  `alchemy@2.0.0-beta.44` (only `Worker` has `.make`; `…Namespace()("Name")` with no
+  impl returns a plain object and can't be `extend`ed). Both DOs use the inline
+  `class X extends …Namespace<X>()("Name", Effect.gen(…))` form; the circular import
+  is harmless, the eager-init resolution is the thing to avoid (above).
+- **Addressing — `getByName` only.** `idFromName`/`idFromString`/`get` are
+  unavailable on the alchemy stub, so connections are addressed by name
+  (`getByName("connection:"+id)`); the `generation` stale-detection invariant must
+  be preserved under name addressing (it was in the spike's fan-out path).
 - **Cost:** the DOs move into the alchemy resource graph — they are no longer plain
   classes.
 - See [alchemy-durable-objects.md](../.patterns/alchemy-durable-objects.md) and the

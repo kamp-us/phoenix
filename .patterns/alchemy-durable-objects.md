@@ -1,12 +1,12 @@
 # Durable Objects
 
-How phoenix's live fan-out DOs are written on alchemy. The short answer: a class declares the namespace (`class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()("TopicDO") {}`) and `export default TopicDO.make(body)` supplies the impl, where `body` is a two-phase Effect — shared init, then a per-instance Effect that yields `Cloudflare.DurableObjectState` and returns handlers. Methods you return become **typed RPC** the worker (and other DOs) call through a stub; `fetch` handles request-shaped interactions like the SSE upgrade. SQLite, KV storage, alarms, and WebSocket hibernation are all Effect-wrapped.
+How phoenix's live fan-out DOs are written on alchemy. The short answer: `export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()("TopicDO", body) {}`, where `body` is a two-phase Effect — shared init, then a per-instance Effect that yields `Cloudflare.DurableObjectState` and returns handlers. Methods you return become **typed RPC** the worker (and other DOs) call through a stub; `fetch` handles request-shaped interactions like the SSE upgrade. SQLite, KV storage, alarms, and WebSocket hibernation are all Effect-wrapped.
 
 This replaces the plain `class extends DurableObject` form. phoenix has two DOs — `ConnectionDO` (holds one client's SSE stream) and `TopicDO` (the durable subscriber registry + fan-out), split per ADR 0023/0025.
 
-> **The modular `.make()` form is REQUIRED here.** The two DOs reference each other (the worker binds both), so the inline `…DurableObjectNamespace<T>()("Name", Effect.gen(…))` form is not usable: it pulls a DO's full runtime deps into any consumer's bundle, so each DO would drag in the other's runtime. The modular form keeps the **class** (a lightweight identifier) separate from **`.make()`** (the impl), and Rolldown tree-shakes the impl out of consumers that only need the identifier. A worker (or sibling DO) does `import TopicDO from "./topic-do"` then `const topics = yield* TopicDO`.
+> **Use the inline form — the modular `.make()` form is not implemented for DOs.** alchemy's `DurableObjectNamespace.ts` JSDoc documents a modular `class Foo extends …()("Foo") {}` + `export default Foo.make(impl)` form (for tree-shaking when DOs reference each other), but in `alchemy@2.0.0-beta.44` it **does not exist**: `()("Name")` with no impl returns a plain object (no `.make`), and `class X extends …()("Name") {}` throws *"superclass is not a constructor"*. Only `Worker` got `.make`; DOs didn't. So both DOs use the **inline** form — `export default class X extends …DurableObjectNamespace<X>()("Name", Effect.gen(…)) {}`. The mutual ES imports between the two DO files are fine; circular *imports* aren't the problem (see the next note for what is).
 
-> **Spike scope: one direction verified, the binding is not.** Under `alchemy dev` (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`) a POC verified the **topic→connection** fan-out only: `TopicDO` resolving `ConnectionDO` with `yield* ConnectionDO`, keeping subscribers in `state.storage.sql`, then `connections.getByName(id).deliver(frame)` enqueueing into an SSE stream held in `ConnectionDO`'s per-instance closure — subscribe → publish → the frame arrived (`{"delivered":1}`). Verified facts: **typed RPC**, **`state.storage.sql.exec`**, and **held-stream fan-out** (`controller.enqueue` into a stream held in one DO from another DO's RPC). phoenix *also* needs the **reverse** direction — `ConnectionDO`→`TopicDO` for subscribe→register — i.e. a **bidirectional/circular DO↔DO binding**. That was **not** spiked and has no precedent in the alchemy examples. The bidirectional binding is **unverified — needs a spike in the modular `.make()` form** before the ADR 0023/0025 port can be called proven.
+> **Bidirectional binding: SPIKED — works, but resolve the sibling DO lazily (in the method, never in init).** Under `alchemy dev` (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`) a POC confirmed `ConnectionDO`↔`TopicDO` cross-calls both directions. The hard constraint: a `yield* OtherDO` in the **init** block of *both* DOs (an eager circular binding) **deterministically OOMs the build** (heap climbs to ~4 GB, fatal). The working pattern is **symmetric-lazy**: resolve the sibling **inside the RPC method body**, per call — `publish: () => Effect.gen(function*(){ const connections = yield* ConnectionDO; … })`. With that, both legs work: subscribe→publish→the frame arrived on the held SSE stream. Verified facts: typed RPC, `state.storage.sql.exec`, held-stream fan-out (`controller.enqueue` into a stream held in one DO from another DO's RPC), and the bidirectional cross-resolution. So the ADR 0023/0025 port is viable — **never resolve the sibling DO in init**.
 
 ## The shape
 
@@ -16,34 +16,32 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import ConnectionDO from "./connection-do";
 
-// The class is the namespace identifier — a lightweight handle, no runtime deps.
-export class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()("TopicDO") {}
-
-// `.make()` supplies the impl; tree-shaken out of consumers that only import the class.
-export default TopicDO.make(
+export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()(
+  "TopicDO",
   Effect.gen(function* () {
     // ── SHARED INIT (once per namespace) ──
-    // Bind sibling resources the DO needs. Resolving ConnectionDO here wires the
-    // topic→connection fan-out direction. The reverse (ConnectionDO→TopicDO for
-    // register) makes this a circular DO↔DO binding — unverified, see the note above.
-    const connections = yield* ConnectionDO;
-
+    // Do NOT resolve the sibling DO here. `yield* ConnectionDO` in init — paired
+    // with `yield* TopicDO` in ConnectionDO's init — is an eager circular binding
+    // that OOMs the build (verified). Resolve the sibling lazily, in the method.
     return Effect.gen(function* () {
       // ── PER-INSTANCE (once per instance wake) ──
       const state = yield* Cloudflare.DurableObjectState;
       yield* state.storage.sql.exec(CREATE_SUBSCRIBERS_TABLE);
 
       return {
-        // typed RPC methods (below)
-        register: (sub: SubscribeControl) => /* … */,
+        register: (sub: SubscribeControl) => /* upsert subscriber row */,
         deregister: (sub: {connectionId: string; subId: string}) => /* … */,
-        publish: (msg: PublishMessage) => /* … */,
-        // alarm handler
+        publish: (msg: PublishMessage) =>
+          Effect.gen(function* () {
+            const connections = yield* ConnectionDO; // lazy — per call, never in init
+            // …read subscriber rows, then for each:
+            // yield* connections.getByName(`connection:${id}`).deliver(frame)
+          }),
         alarm: () => /* reap orphaned subscribers */,
       };
     });
   }),
-);
+) {}
 ```
 
 The outer `Effect.gen` runs once per namespace (bind siblings, shared setup). The inner `Effect.gen` runs per instance wake and closes over per-instance state — this closure is the alchemy equivalent of instance fields, and it persists for the instance's lifetime exactly like fields do on a plain DO class.
@@ -113,9 +111,8 @@ So `livePublishContext` and the `https://live/publish` string-URL `fetch` both g
 `ConnectionDO` keeps one client's open SSE stream. The controller, heartbeat, owner, and subscription map live in the per-instance closure (where instance fields lived before); `fetch` opens the stream and returns it via `HttpServerResponse.fromWeb`:
 
 ```ts
-export class ConnectionDO extends Cloudflare.DurableObjectNamespace<ConnectionDO>()("ConnectionDO") {}
-
-export default ConnectionDO.make(
+export default class ConnectionDO extends Cloudflare.DurableObjectNamespace<ConnectionDO>()(
+  "ConnectionDO",
   Effect.gen(function* () {
     return Effect.gen(function* () {
       const state = yield* Cloudflare.DurableObjectState;
@@ -151,13 +148,17 @@ export default ConnectionDO.make(
         // delivery is a typed RPC the topic DO calls
         deliver: (frame: DeliverFrame) =>
           Effect.sync(() => controller?.enqueue(encoder.encode(encodeFrame(frame)))),
-        subscribe: (control: SubscribeControl) => /* register with TopicDO stubs */,
-        unsubscribe: (subId: string) => /* deregister */,
+        subscribe: (control: SubscribeControl) =>
+          Effect.gen(function* () {
+            const topics = yield* TopicDO; // lazy — per call, never in init (else OOM)
+            // yield* topics.getByName(`topic:${key}`).register(...)
+          }),
+        unsubscribe: (subId: string) => /* deregister from TopicDO (lazy resolve) */,
         probe: () => state.storage.get<number>("generation"),
       };
     });
   }),
-);
+) {}
 ```
 
 `setInterval` works unchanged inside the handler — the stream pins the DO in memory (no hibernation), exactly as today. The delivery path stays a trivial `Effect.sync(controller.enqueue)`, so the latency-sensitive write costs nothing extra for being in Effect.
@@ -166,9 +167,9 @@ export default ConnectionDO.make(
 
 ## Cross-DO calls preserve direction
 
-The fan-out invariant (ADR 0025) survives the port and gets *stronger*: `TopicDO` resolves `ConnectionDO` in its init and calls `connection.deliver(frame)` / `connection.probe()` as typed RPC; `ConnectionDO` resolves `TopicDO` and calls `topic.register(...)`. Neither namespace can resolve its own kind, so topic→topic and connection→connection calls don't type-check. The binding *is* the direction.
+The fan-out invariant (ADR 0025) survives the port and gets *stronger*: `TopicDO` resolves `ConnectionDO` (lazily, inside `publish`/`probe`) and calls `connection.deliver(frame)` / `connection.probe()` as typed RPC; `ConnectionDO` resolves `TopicDO` (lazily, inside `subscribe`/`unsubscribe`) and calls `topic.register(...)`. Neither namespace can resolve its own kind, so topic→topic and connection→connection calls don't type-check. The binding *is* the direction.
 
-Note this means each DO resolves the *other* — a **circular DO↔DO binding**. Only the topic→connection leg was spiked; the connection→topic leg (and therefore the circular binding as a whole) is **unverified** — see the scope note at the top.
+This is a **circular DO↔DO binding** — each DO resolves the other. It works (spiked, both directions) **only because the resolution is lazy**: `yield* OtherDO` happens per call inside the method, never in the init block. An eager `yield* OtherDO` in both inits OOMs the build — see the binding note at the top.
 
 ## Alarms
 
