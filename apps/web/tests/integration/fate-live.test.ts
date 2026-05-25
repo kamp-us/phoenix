@@ -1,852 +1,140 @@
 /**
- * LiveDO + publish-only LiveEventBus — the real-time fan-out infrastructure
- * (task 11, ADR 0023).
+ * Live views over SSE — black-box against the deployed worker (ADR 0023/0028).
  *
- * Runs inside workerd against the real `LIVE_DO` Durable Object binding. Three
- * gates the operator requires:
+ * The pre-migration suite drove the Durable Objects directly (`runInDurableObject`,
+ * `runDurableObjectAlarm`, named DO stubs) inside `@cloudflare/vitest-pool-workers`.
+ * The alchemy worker can't load in that pool, and the DO internals aren't reachable
+ * over HTTP — so the cross-isolate fan-out, generation semantics, and the alarm reap
+ * are unit-tested in `worker/infra/live-instance.test.ts` (node pool, over a
+ * `node:sqlite`-backed DO-state fake). Here we verify the *observable* live contract
+ * end-to-end through the real `/fate/live` SSE transport + `/fate` publish path on a
+ * live workerd:
  *
- *   1. **Cross-isolate delivery** — a `live.*` published to a topic DO is
- *      delivered over SSE to a connection subscribed elsewhere. The connection
- *      DO (`connection:<id>`) and the topic DO (`topic:<key>`) are distinct DO
- *      instances reached by separate stubs, so a frame crossing from one to the
- *      other proves the fan-out works across the isolate boundary an in-memory
- *      bus can't cross. We read the SSE frame off the connection's held stream
- *      and assert it carries the inline-published `data` verbatim — the DO does
- *      no re-resolution. `runInDurableObject` inspects the topic DO's durable
- *      subscriber registry.
- *   2. **Cookie auth at connect** — `GET /fate/live` is rejected (401) without a
- *      better-auth session cookie and accepted (200, `text/event-stream`) with
- *      one. No token in the URL.
- *   3. **Stale-subscriber pruning** — a subscriber row whose connection has since
- *      reconnected (generation bumped) is pruned on the next publish, and the
- *      60s alarm prunes a row whose connection stream is gone.
- *   4. **LiveDO isolation (the two hardening bugs)** — `generation` is persisted
- *      so it survives DO eviction (a re-instantiated connection does not report
- *      `0` and let a stale row pass as current), and a transport/deserialize
- *      failure while reaching a connection does NOT prune the subscriber row.
+ *   1. Cookie auth at connect — `GET /fate/live` is 401 without a session, opens an
+ *      `text/event-stream` with one.
+ *   2. subscribe → publish → deliver — a `post.submit` mutation publishes a
+ *      `prependNode` connection frame that arrives on the held SSE stream.
+ *   3. Reconnect bumps generation — a second connect on the same `connectionId`
+ *      makes the first stream's subscriber stale, so a later publish reaches the
+ *      reconnected stream, not the original.
  */
-/// <reference path="../../worker-configuration.d.ts" />
-/// <reference path="../../node_modules/@cloudflare/vitest-pool-workers/types/cloudflare-test.d.ts" />
-import {env, runDurableObjectAlarm, runInDurableObject, SELF} from "cloudflare:test";
-import {liveEntityTopic} from "@nkzw/fate/server";
-import {Effect} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
-import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
-import type {ConnectionDO} from "../../worker/fate/connection-do";
-import {FateRuntime} from "../../worker/fate/runtime";
-import type {TopicDO} from "../../worker/fate/topic-do";
-import {Pasaport} from "../../worker/features/pasaport/Pasaport";
+import {frameData, harness, readEvent, readFrame} from "./_harness.ts";
 
-declare module "cloudflare:test" {
-	// biome-ignore lint/suspicious/noEmptyBlockStatements: required by pool-workers
-	interface ProvidedEnv extends Env {}
-}
+const h = harness();
 
-async function applyViewMigrations() {
-	const statements = baselineMigration
-		.split(/;\s*\n/)
-		.map((s) => s.trim())
-		.filter(Boolean);
-	for (const stmt of statements) {
-		try {
-			await env.PHOENIX_DB.prepare(stmt).run();
-		} catch (err) {
-			const msg = String((err as Error).message ?? err);
-			if (
-				!msg.includes("already exists") &&
-				!msg.includes("duplicate column") &&
-				!msg.includes("no such table") &&
-				!msg.includes("no such index")
-			) {
-				throw err;
-			}
-		}
-	}
-}
-
-/** Connection-role stub for a connection id (named, so addressable cross-isolate). */
-function connectionStub(id: string) {
-	return env.CONNECTION_DO.get(env.CONNECTION_DO.idFromName(`connection:${id}`));
-}
-
-/** Topic-role stub for a topic key. */
-function topicStub(key: string) {
-	return env.TOPIC_DO.get(env.TOPIC_DO.idFromName(`topic:${key}`));
-}
-
-/** Read one SSE event (delimited by a blank line) off a stream reader. */
-async function readFrame(
-	reader: ReadableStreamDefaultReader<Uint8Array>,
-	decoder: TextDecoder,
-	buffer: {value: string},
-): Promise<string> {
-	for (let i = 0; i < 50; i++) {
-		const idx = buffer.value.indexOf("\n\n");
-		if (idx !== -1) {
-			const frame = buffer.value.slice(0, idx);
-			buffer.value = buffer.value.slice(idx + 2);
-			return frame;
-		}
-		const {value, done} = await reader.read();
-		if (done) {
-			return buffer.value;
-		}
-		buffer.value += decoder.decode(value, {stream: true});
-	}
-	throw new Error("timed out waiting for SSE frame");
-}
-
-/** Sign up a user through the worker-mounted better-auth route; return its cookie. */
-async function signUpUser(
-	email: string,
-	password: string,
-	name: string,
-): Promise<{userId: string; cookie: string}> {
-	const req = new Request("https://test.local/api/auth/sign-up/email", {
-		method: "POST",
-		headers: {"content-type": "application/json"},
-		body: JSON.stringify({email, password, name}),
-	});
-	const runtime = FateRuntime.make(env, req, null);
-	let response: Response;
-	try {
-		response = await runtime.runPromise(
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.handleAuth(req);
-			}),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-	if (!response.ok) {
-		throw new Error(`sign-up failed: ${response.status} ${await response.text()}`);
-	}
-	const setCookie = response.headers.get("set-cookie");
-	if (!setCookie) {
-		throw new Error("sign-up returned no set-cookie");
-	}
-	// `set-cookie` may carry attributes (Path, HttpOnly, …); keep just `name=value`.
-	const cookie = setCookie
-		.split(",")
-		.map((part) => part.split(";")[0]!.trim())
-		.filter((kv) => kv.includes("="))
-		.join("; ");
-	const data = (await response.json()) as {user?: {id: string}};
-	if (!data.user?.id) {
-		throw new Error("sign-up returned no user id");
-	}
-	return {userId: data.user.id, cookie};
-}
+let user: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	await applyViewMigrations();
+	user = await h.signUp(`live-${Date.now()}@test.local`, "hunter2hunter2", "canlı");
 });
 
-describe("LiveDO cross-isolate delivery", () => {
-	it("delivers a live.update published to a topic DO to a connection subscribed elsewhere", async () => {
-		const connId = "x-conn-1";
-		const ownerId = "owner-1";
-		const subId = "op-1";
-		const conn = connectionStub(connId);
+describe("live views — /fate/live", () => {
+	it("rejects a connect with no session cookie (401)", async () => {
+		const res = await h.req("/fate/live?connectionId=no-cookie", {
+			headers: {accept: "text/event-stream"},
+		});
+		expect(res.status).toBe(401);
+		await res.body?.cancel();
+	});
 
-		// 1. Open the SSE stream on the connection DO.
-		const connectRes = await conn.fetch(
-			`https://live/connect?ownerId=${encodeURIComponent(ownerId)}`,
-		);
-		expect(connectRes.status).toBe(200);
-		expect(connectRes.headers.get("content-type")).toContain("text/event-stream");
-		const reader = connectRes.body!.getReader();
+	it("subscribe → post.submit → prependNode frame arrives on the held SSE stream", async () => {
+		const connectionId = `live-conn-${Date.now()}`;
+		const connect = await h.openSse(connectionId, user.cookie);
+		expect(connect.status).toBe(200);
+		expect(connect.headers.get("content-type")).toContain("text/event-stream");
+
+		const reader = connect.body!.getReader();
 		const decoder = new TextDecoder();
 		const buffer = {value: ""};
-		// First frame is the `: connected` comment.
 		const connected = await readFrame(reader, decoder, buffer);
 		expect(connected).toContain("connected");
 
-		// 2. Subscribe the connection to a `Post` entity — registers on the topic DO.
-		const subRes = await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Post", entityId: "post-42"},
-				ownerId,
-			}),
-		});
-		expect(subRes.status).toBe(200);
-
-		// The topic DO (a *different* instance) now holds one subscriber row.
-		const topicKey = liveEntityTopic("Post", "post-42");
-		const rowCount = await runInDurableObject(
-			topicStub(topicKey),
-			(_instance: TopicDO, state) =>
-				state.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		// Subscribe the connection to the global `posts` connection feed.
+		const sub = await h.liveControl(
+			connectionId,
+			[
+				{
+					kind: "subscribeConnection",
+					id: "sub-posts",
+					type: "Post",
+					procedure: "posts",
+					select: [],
+				},
+			],
+			user.cookie,
 		);
-		expect(rowCount).toBe(1);
+		expect(sub.status).toBe(200);
 
-		// 3. Publish an entity update to the topic DO with inline-resolved data.
-		const inlineData = {__typename: "Post", id: "post-42", score: 7};
-		const pubRes = await topicStub(topicKey).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "entity",
-				match: {type: "Post", entityId: "post-42"},
-				frame: {data: inlineData, select: ["score"]},
-				eventId: "evt-1",
-			}),
-		});
-		expect(((await pubRes.json()) as {delivered: number}).delivered).toBe(1);
+		// A new post publishes a prependNode frame to the `posts` connection topic.
+		const submitted = await h.fate(
+			{
+				kind: "mutation",
+				name: "post.submit",
+				input: {title: "live post", tags: [{kind: "tartışma"}]},
+				select: ["id", "title"],
+			},
+			{cookie: user.cookie},
+		);
+		expect(submitted.ok).toBe(true);
 
-		// 4. The frame crosses to the connection DO's held stream verbatim.
-		const frame = await readFrame(reader, decoder, buffer);
-		expect(frame).toContain("event: next");
-		expect(frame).toContain("id: evt-1");
-		const dataLine = frame.split("\n").find((l) => l.startsWith("data: "))!;
-		const payload = JSON.parse(dataLine.slice("data: ".length)) as {
-			kind: string;
-			id: string;
-			event: {data: {id: string; score: number}; select: string[]};
-		};
-		expect(payload.kind).toBe("next");
-		expect(payload.id).toBe(subId);
-		// The DO did no re-resolution — the inline data is relayed as published.
-		expect(payload.event.data).toEqual(inlineData);
-		expect(payload.event.select).toEqual(["score"]);
-
-		await reader.cancel();
-	});
-
-	it("delivers a connection appendNode frame across instances", async () => {
-		const connId = "x-conn-2";
-		const ownerId = "owner-2";
-		const subId = "op-conn";
-		const conn = connectionStub(connId);
-		const connectRes = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		const reader = connectRes.body!.getReader();
-		const decoder = new TextDecoder();
-		const buffer = {value: ""};
-		await readFrame(reader, decoder, buffer); // : connected
-
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribeConnection", subId, procedure: "posts"},
-				ownerId,
-			}),
-		});
-
-		const node = {__typename: "Post", id: "post-99", title: "new"};
-		// A connection publish reaches the global topic for `posts`.
-		const {liveGlobalConnectionTopic} = await import("@nkzw/fate/server");
-		await topicStub(liveGlobalConnectionTopic("posts")).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "connection",
-				match: {procedure: "posts"},
-				frame: {type: "prependNode", nodeType: "Post", edge: {node}},
-			}),
-		});
-
-		const frame = await readFrame(reader, decoder, buffer);
+		const frame = await readEvent(reader, decoder, buffer);
 		expect(frame).toContain("event: connection");
-		const dataLine = frame.split("\n").find((l) => l.startsWith("data: "))!;
-		const payload = JSON.parse(dataLine.slice("data: ".length)) as {
-			kind: string;
-			event: {type: string; nodeType: string; edge: {node: unknown}};
-		};
+		const payload = frameData<{kind: string; event: {type: string; edge: {node: {title: string}}}}>(
+			frame,
+		);
 		expect(payload.kind).toBe("connection");
 		expect(payload.event.type).toBe("prependNode");
-		expect(payload.event.edge.node).toEqual(node);
+		expect(payload.event.edge.node.title).toBe("live post");
 
 		await reader.cancel();
-	});
+	}, 30_000);
 
-	// Nested-connection live membership (task 9). `definition.add`/`comment.delete`
-	// publish `appendNode`/`deleteEdge` to an args-scoped nested connection
-	// (`Term.definitions` keyed by `{id: slug}`). A subscriber that registered WITH
-	// those args must still receive the frame, since the publish side strips the
-	// args (it reaches `liveConnectionTopic(procedure)` + the global wildcard) — the
-	// common ground is the global topic both sides share. This locks the path the
-	// three reloads were replaced with, independent of the flaky two-client e2e.
-	it("delivers appendNode + deleteEdge to an args-scoped nested-connection subscriber", async () => {
-		const connId = "x-conn-3";
-		const ownerId = "owner-3";
-		const subId = "op-nested";
-		const slug = "javascript";
-		const procedure = "Term.definitions";
-		const conn = connectionStub(connId);
-		const connectRes = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		const reader = connectRes.body!.getReader();
-		const decoder = new TextDecoder();
-		const buffer = {value: ""};
-		await readFrame(reader, decoder, buffer); // : connected
+	it("reconnect on the same connectionId bumps generation — frames go to the reconnected stream", async () => {
+		const connectionId = `live-regen-${Date.now()}`;
 
-		// Subscribe WITH the connection's filter args (`{id: slug}`), exactly how the
-		// client subscribes a nested connection (the parent's raw id rides as `id`).
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribeConnection", subId, procedure, args: {id: slug}},
-				ownerId,
-			}),
-		});
-
-		const {liveGlobalConnectionTopic} = await import("@nkzw/fate/server");
-
-		// `definition.add`: an `appendNode` published the way the resolver does.
-		const node = {__typename: "Definition", id: "def-7", body: "new def"};
-		await topicStub(liveGlobalConnectionTopic(procedure)).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "connection",
-				match: {procedure},
-				frame: {type: "appendNode", nodeType: "Definition", edge: {node}},
-			}),
-		});
-
-		const appendFrame = await readFrame(reader, decoder, buffer);
-		expect(appendFrame).toContain("event: connection");
-		const appendPayload = JSON.parse(
-			appendFrame
-				.split("\n")
-				.find((l) => l.startsWith("data: "))!
-				.slice("data: ".length),
-		) as {kind: string; event: {type: string; nodeType: string; edge: {node: unknown}}};
-		expect(appendPayload.event.type).toBe("appendNode");
-		expect(appendPayload.event.edge.node).toEqual(node);
-
-		// `definition.delete` / hard `comment.delete`: a `deleteEdge` removes the row.
-		await topicStub(liveGlobalConnectionTopic(procedure)).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "connection",
-				match: {procedure},
-				frame: {type: "deleteEdge", nodeType: "Definition", id: "def-7"},
-			}),
-		});
-
-		const deleteFrame = await readFrame(reader, decoder, buffer);
-		expect(deleteFrame).toContain("event: connection");
-		const deletePayload = JSON.parse(
-			deleteFrame
-				.split("\n")
-				.find((l) => l.startsWith("data: "))!
-				.slice("data: ".length),
-		) as {kind: string; event: {type: string; nodeType: string; id: string}};
-		expect(deletePayload.event.type).toBe("deleteEdge");
-		expect(deletePayload.event.id).toBe("def-7");
-
-		await reader.cancel();
-	});
-
-	// Task 14: a connection publish carrying its args must resolve the SAME
-	// args-scoped `liveConnectionTopic(procedure, args)` key the subscriber
-	// registered under via `topicsForSubscribe` — so the publish reaches the
-	// narrow topic directly, not only the procedure-wide global wildcard. This
-	// stops one term's new definition from fanning out to every `Term.definitions`
-	// subscriber across all slugs/tabs/sessions.
-	it("routes a connection publish to the args-scoped narrow topic", async () => {
-		const {topicsForPublish, topicsForSubscribe} = await import("../../worker/fate/live-protocol");
-		const procedure = "Term.definitions";
-		const args = {id: "javascript"};
-
-		const subscribeTopics = topicsForSubscribe({
-			kind: "subscribeConnection",
-			subId: "op",
-			procedure,
-			args,
-		});
-		const publishTopics = topicsForPublish({
-			kind: "connection",
-			match: {procedure, args},
-			frame: {type: "appendNode", nodeType: "Definition", edge: {node: {}}},
-		});
-
-		// The narrow args-scoped key both sides derive must be identical, and a
-		// publish for one slug must NOT target another slug's narrow topic.
-		const {liveConnectionTopic} = await import("@nkzw/fate/server");
-		const narrow = liveConnectionTopic(procedure, args);
-		expect(subscribeTopics).toContain(narrow);
-		expect(publishTopics).toContain(narrow);
-		expect(publishTopics).not.toContain(liveConnectionTopic(procedure, {id: "rust"}));
-	});
-
-	it("delivers an args-scoped publish via the narrow topic (not only the global)", async () => {
-		const connId = "x-conn-narrow";
-		const ownerId = "owner-narrow";
-		const subId = "op-narrow";
-		const slug = "javascript";
-		const procedure = "Term.definitions";
-		const conn = connectionStub(connId);
-		const connectRes = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		const reader = connectRes.body!.getReader();
-		const decoder = new TextDecoder();
-		const buffer = {value: ""};
-		await readFrame(reader, decoder, buffer); // : connected
-
-		// Subscribe WITH the connection's filter args, exactly how the client does.
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribeConnection", subId, procedure, args: {id: slug}},
-				ownerId,
-			}),
-		});
-
-		// Publish ONLY to the narrow args-scoped topic — NOT the global wildcard.
-		// If the publish path discarded the args, no subscriber would be registered
-		// here and the frame would never arrive.
-		const {liveConnectionTopic} = await import("@nkzw/fate/server");
-		const node = {__typename: "Definition", id: "def-narrow", body: "scoped"};
-		await topicStub(liveConnectionTopic(procedure, {id: slug})).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "connection",
-				match: {procedure, args: {id: slug}},
-				frame: {type: "appendNode", nodeType: "Definition", edge: {node}},
-			}),
-		});
-
-		const frame = await readFrame(reader, decoder, buffer);
-		expect(frame).toContain("event: connection");
-		const payload = JSON.parse(
-			frame
-				.split("\n")
-				.find((l) => l.startsWith("data: "))!
-				.slice("data: ".length),
-		) as {kind: string; event: {type: string; edge: {node: unknown}}};
-		expect(payload.event.type).toBe("appendNode");
-		expect(payload.event.edge.node).toEqual(node);
-
-		await reader.cancel();
-	});
-});
-
-describe("LiveDO cookie auth at connect", () => {
-	it("rejects GET /fate/live without a session cookie", async () => {
-		const res = await SELF.fetch("https://test.local/fate/live?connectionId=anon-conn");
-		expect(res.status).toBe(401);
-		const body = (await res.json()) as {results: Array<{error: {code: string}}>};
-		expect(body.results[0]!.error.code).toBe("UNAUTHORIZED");
-	});
-
-	it("accepts GET /fate/live with a valid session cookie", async () => {
-		const {cookie} = await signUpUser("live-auth@test.local", "supersecret123", "Live Auth");
-		const res = await SELF.fetch("https://test.local/fate/live?connectionId=auth-conn", {
-			headers: {cookie},
-		});
-		expect(res.status).toBe(200);
-		expect(res.headers.get("content-type")).toContain("text/event-stream");
-		await res.body?.cancel();
-	});
-});
-
-describe("LiveDO stale-subscriber pruning", () => {
-	it("prunes a row whose connection has reconnected (generation bump) on publish", async () => {
-		const connId = "stale-conn-1";
-		const ownerId = "owner-stale";
-		const subId = "stale-op";
-		const conn = connectionStub(connId);
-
-		// Open + subscribe (generation 1).
-		const first = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		// First stream + subscription.
+		const first = await h.openSse(connectionId, user.cookie);
 		const firstReader = first.body!.getReader();
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Comment", entityId: "c-1"},
-				ownerId,
-			}),
-		});
-		const topicKey = liveEntityTopic("Comment", "c-1");
-		const before = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		const decoder = new TextDecoder();
+		const firstBuf = {value: ""};
+		await readFrame(firstReader, decoder, firstBuf); // : connected
+		await h.liveControl(
+			connectionId,
+			[{kind: "subscribeConnection", id: "sub-a", type: "Post", procedure: "posts", select: []}],
+			user.cookie,
 		);
-		expect(before).toBe(1);
 
-		// Reconnect the same connection: generation bumps to 2, dropping the prior
-		// subscription. The topic DO still holds the generation-1 row.
-		await firstReader.cancel();
-		const second = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		// Reconnect: a second stream on the SAME connectionId bumps the generation,
+		// staling the first stream's subscriber rows.
+		const second = await h.openSse(connectionId, user.cookie);
 		const secondReader = second.body!.getReader();
-
-		// A publish now finds the generation-1 row stale (connection is at gen 2)
-		// and prunes it.
-		const pub = await topicStub(topicKey).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "entity",
-				match: {type: "Comment", entityId: "c-1"},
-				frame: {data: {__typename: "Comment", id: "c-1", score: 1}},
-			}),
-		});
-		expect(((await pub.json()) as {delivered: number}).delivered).toBe(0);
-
-		const after = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		const secondBuf = {value: ""};
+		await readFrame(secondReader, decoder, secondBuf); // : connected
+		await h.liveControl(
+			connectionId,
+			[{kind: "subscribeConnection", id: "sub-b", type: "Post", procedure: "posts", select: []}],
+			user.cookie,
 		);
-		expect(after).toBe(0);
 
+		// Publish — the reconnected (current-generation) stream must receive it.
+		const submitted = await h.fate(
+			{
+				kind: "mutation",
+				name: "post.submit",
+				input: {title: "regen post", tags: [{kind: "soru"}]},
+				select: ["id", "title"],
+			},
+			{cookie: user.cookie},
+		);
+		expect(submitted.ok).toBe(true);
+
+		const frame = await readEvent(secondReader, decoder, secondBuf);
+		expect(frame).toContain("event: connection");
+		const payload = frameData<{event: {edge: {node: {title: string}}}}>(frame);
+		expect(payload.event.edge.node.title).toBe("regen post");
+
+		await firstReader.cancel();
 		await secondReader.cancel();
-	});
-
-	it("prunes a row whose connection stream is gone via the 60s alarm", async () => {
-		const connId = "stale-conn-2";
-		const ownerId = "owner-alarm";
-		const subId = "alarm-op";
-		const conn = connectionStub(connId);
-
-		const res = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		const reader = res.body!.getReader();
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Term", entityId: "t-1"},
-				ownerId,
-			}),
-		});
-		const topicKey = liveEntityTopic("Term", "t-1");
-
-		// Reconnect to a fresh generation, then cancel — the prior subscription's
-		// row is now orphaned (its generation no longer matches the connection).
-		await reader.cancel();
-		const reconnect = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await reconnect.body!.cancel();
-
-		const ran = await runDurableObjectAlarm(topicStub(topicKey));
-		expect(ran).toBe(true);
-
-		const after = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(after).toBe(0);
-	});
-});
-
-describe("LiveDO generation survives eviction (BUG §4a)", () => {
-	it("a re-instantiated connection reports its persisted generation, not 0", async () => {
-		const connId = "evict-conn-1";
-		const ownerId = "owner-evict";
-		const conn = connectionStub(connId);
-
-		// Open the stream — generation bumps to 1 and is persisted to DO storage.
-		const res = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await res.body!.cancel();
-
-		// The persisted generation is in DO storage (survives eviction), not just
-		// in memory.
-		const persisted = await runInDurableObject(connectionStub(connId), (_i: ConnectionDO, s) =>
-			s.storage.get<number>("generation"),
-		);
-		expect(persisted).toBe(1);
-
-		// Simulate a DO eviction: clear the in-memory generation cache so the next
-		// access has to reload from storage. A bug where `generation` lives only in
-		// memory would reset to 0 here.
-		await runInDurableObject(connectionStub(connId), (instance: ConnectionDO) => {
-			(instance as unknown as {generation: number | undefined}).generation = undefined;
-		});
-
-		// Probe the re-instantiated connection: it reports the persisted value (1),
-		// NOT a reset 0. A stale row registered at generation 1 would therefore be
-		// (correctly) treated as still-current, and a *new* reconnect lands on 2 —
-		// so no collision with the stale row.
-		const probe = await conn.fetch("https://live/probe", {method: "POST"});
-		expect(((await probe.json()) as {generation: number}).generation).toBe(1);
-	});
-
-	it("a stale pre-eviction row is pruned because the reconnect lands on a higher generation", async () => {
-		const connId = "evict-conn-2";
-		const ownerId = "owner-evict-2";
-		const subId = "evict-op";
-		const conn = connectionStub(connId);
-
-		// Open + subscribe at generation 1.
-		const first = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Post", entityId: "evict-post"},
-				ownerId,
-			}),
-		});
-		await first.body!.cancel();
-		const topicKey = liveEntityTopic("Post", "evict-post");
-
-		// Simulate eviction by clearing the in-memory cache, then reconnect. With a
-		// persisted counter the reconnect reads 1 from storage and bumps to 2; an
-		// in-memory-only counter would reset to 0 and bump back to 1 — colliding
-		// with the stale row.
-		await runInDurableObject(connectionStub(connId), (instance: ConnectionDO) => {
-			(instance as unknown as {generation: number | undefined}).generation = undefined;
-		});
-		const reconnect = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await reconnect.body!.cancel();
-
-		const probe = await conn.fetch("https://live/probe", {method: "POST"});
-		expect(((await probe.json()) as {generation: number}).generation).toBe(2);
-
-		// Publishing now finds the generation-1 row stale (connection at gen 2) and
-		// prunes it — no cross-talk onto the fresh stream.
-		const pub = await topicStub(topicKey).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "entity",
-				match: {type: "Post", entityId: "evict-post"},
-				frame: {data: {__typename: "Post", id: "evict-post", score: 1}},
-			}),
-		});
-		expect(((await pub.json()) as {delivered: number}).delivered).toBe(0);
-
-		const after = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(after).toBe(0);
-	});
-});
-
-describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
-	it("publish does not prune a subscriber row when the connection DO is unreachable", async () => {
-		const ownerId = "owner-unreachable";
-		const subId = "unreachable-op";
-		const topicKey = liveEntityTopic("Term", "unreachable-term");
-
-		// Register a row pointing at a connection id that is a well-formed DO id but
-		// whose `/deliver` will throw inside `publish` (forced below). We seed the
-		// row directly via a real connection so the id is a valid `idFromString`.
-		const conn = connectionStub("unreachable-conn");
-		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Term", entityId: "unreachable-term"},
-				ownerId,
-			}),
-		});
-		await open.body!.cancel();
-
-		const before = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(before).toBe(1);
-
-		// Make the connection DO throw on the next `/deliver` by stubbing its fetch
-		// to reject — simulating a transport/deserialize failure (network blip, DO
-		// crash mid-parse). The publish must treat this as "couldn't reach", not
-		// "confirmed stale", and leave the row.
-		await runInDurableObject(connectionStub("unreachable-conn"), (instance: ConnectionDO) => {
-			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
-				throw new Error("simulated transport failure");
-			};
-		});
-
-		const pub = await topicStub(topicKey).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "entity",
-				match: {type: "Term", entityId: "unreachable-term"},
-				frame: {data: {__typename: "Term", id: "unreachable-term"}},
-			}),
-		});
-		expect(((await pub.json()) as {delivered: number}).delivered).toBe(0);
-
-		// The row survives: an unreachable connection is not confirmed stale.
-		const after = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(after).toBe(1);
-	});
-
-	it("alarm does not prune a subscriber row when the connection DO probe fails", async () => {
-		const ownerId = "owner-alarm-fail";
-		const subId = "alarm-fail-op";
-		const topicKey = liveEntityTopic("Comment", "alarm-fail-c");
-
-		const conn = connectionStub("alarm-fail-conn");
-		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Comment", entityId: "alarm-fail-c"},
-				ownerId,
-			}),
-		});
-		await open.body!.cancel();
-
-		// Force the connection's `/probe` to throw.
-		await runInDurableObject(connectionStub("alarm-fail-conn"), (instance: ConnectionDO) => {
-			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
-				throw new Error("simulated probe failure");
-			};
-		});
-
-		const ran = await runDurableObjectAlarm(topicStub(topicKey));
-		expect(ran).toBe(true);
-
-		// The alarm could not reach the connection — the row is left, not pruned.
-		const after = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(after).toBe(1);
-	});
-});
-
-describe("LiveDO bounds the fan-out (task 13)", () => {
-	it("a publish to a hung connection settles within the timeout budget", async () => {
-		const ownerId = "owner-hang";
-		const subId = "hang-op";
-		const topicKey = liveEntityTopic("Post", "hang-post");
-
-		const conn = connectionStub("hang-conn");
-		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Post", entityId: "hang-post"},
-				ownerId,
-			}),
-		});
-		await open.body!.cancel();
-
-		// Make the connection DO hang forever on `/deliver`. With no `AbortSignal` the
-		// publish would block on the runtime's multi-minute subrequest timeout (and
-		// stall the single-threaded DO). The bounded fetch aborts at FANOUT_TIMEOUT_MS,
-		// so the publish settles well inside this test's own timeout.
-		await runInDurableObject(connectionStub("hang-conn"), (instance: ConnectionDO) => {
-			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () =>
-				new Promise<Response>(() => {});
-		});
-
-		const started = Date.now();
-		const pub = await topicStub(topicKey).fetch("https://live/publish", {
-			method: "POST",
-			body: JSON.stringify({
-				kind: "entity",
-				match: {type: "Post", entityId: "hang-post"},
-				frame: {data: {__typename: "Post", id: "hang-post", score: 1}},
-			}),
-		});
-		const elapsed = Date.now() - started;
-		// Aborted deliver → not delivered, and the row is left (couldn't reach, not
-		// confirmed stale — Task 4's invariant).
-		expect(((await pub.json()) as {delivered: number}).delivered).toBe(0);
-		// Settled on the bound (~2s), nowhere near the runtime subrequest timeout.
-		expect(elapsed).toBeLessThan(10_000);
-
-		const after = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(after).toBe(1);
-	}, 15_000);
-});
-
-describe("LiveDO reaps genuinely-dead subscribers (task 13)", () => {
-	it("alarm evicts a connection that stays unreachable across the prune cycle", async () => {
-		const ownerId = "owner-reap";
-		const subId = "reap-op";
-		const topicKey = liveEntityTopic("Term", "reap-term");
-
-		const conn = connectionStub("reap-conn");
-		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Term", entityId: "reap-term"},
-				ownerId,
-			}),
-		});
-		await open.body!.cancel();
-
-		// The connection stays unreachable for every probe (a crashed/evicted DO that
-		// never deregistered). A single alarm leaves the row (Task 4's invariant); only
-		// after MAX_PROBE_MISSES *consecutive* unreachable probes is the dead row reaped.
-		await runInDurableObject(connectionStub("reap-conn"), (instance: ConnectionDO) => {
-			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
-				throw new Error("simulated permanent unreachability");
-			};
-		});
-
-		// One alarm: still unreachable, but below the eviction threshold — row stays.
-		await runDurableObjectAlarm(topicStub(topicKey));
-		const afterOne = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(afterOne).toBe(1);
-
-		// Keep firing alarms until the dead row is reaped. The alarm reschedules itself
-		// while rows remain, so re-arm it each cycle. Bounded so a never-reaping bug
-		// fails the test instead of looping forever.
-		let reaped = false;
-		for (let i = 0; i < 10 && !reaped; i++) {
-			await runInDurableObject(topicStub(topicKey), (_i: TopicDO, s) =>
-				s.storage.setAlarm(Date.now() - 1),
-			);
-			await runDurableObjectAlarm(topicStub(topicKey));
-			const count = await runInDurableObject(
-				topicStub(topicKey),
-				(_i: TopicDO, s) =>
-					s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-			);
-			reaped = count === 0;
-		}
-		expect(reaped).toBe(true);
-	});
-
-	it("resets the miss count when a probe reaches the connection again", async () => {
-		const ownerId = "owner-reset";
-		const subId = "reset-op";
-		const topicKey = liveEntityTopic("Comment", "reset-c");
-
-		// A reachable connection at generation 1.
-		const conn = connectionStub("reset-conn");
-		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
-		await conn.fetch("https://live/subscribe", {
-			method: "POST",
-			body: JSON.stringify({
-				control: {kind: "subscribe", subId, type: "Comment", entityId: "reset-c"},
-				ownerId,
-			}),
-		});
-		await open.body!.cancel();
-
-		// Seed an accrued miss from a prior transient blip directly on the row (the
-		// connection is reachable now). A reachable probe whose generation matches
-		// must clear it, so a transient blip never accumulates toward eviction across
-		// reachable intervals.
-		await runInDurableObject(topicStub(topicKey), (_i: TopicDO, s) =>
-			s.storage.sql.exec("UPDATE subscribers SET misses = 2 WHERE subId = ?", subId),
-		);
-
-		await runDurableObjectAlarm(topicStub(topicKey));
-
-		const misses = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT misses FROM subscribers WHERE subId = ?", subId).one()
-					.misses as number,
-		);
-		expect(misses).toBe(0);
-		const after = await runInDurableObject(
-			topicStub(topicKey),
-			(_i: TopicDO, s) =>
-				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
-		);
-		expect(after).toBe(1);
-	});
+	}, 30_000);
 });

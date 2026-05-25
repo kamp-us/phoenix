@@ -1,11 +1,10 @@
 import {describe, expect, it} from "vitest";
-import {EDITED_GRACE_MS, editedAfter, formatEditedTooltipTR} from "../../src/lib/datetime";
+import {EDITED_GRACE_MS, editedAfter, formatEditedTooltipTR} from "./datetime";
 
 /**
  * Code-level test for the `editedAfter` helper that backs the
  * "düzenlendi" indicator on definitions, posts, and comments (T17).
- * Runs alongside the worker integration tests because the helper is
- * pure-JS (uses `Intl`, available in workerd).
+ * Pure-JS (uses `Intl`), so it runs in the node `unit` project.
  */
 
 describe("editedAfter", () => {

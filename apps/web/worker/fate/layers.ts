@@ -1,7 +1,7 @@
 /**
  * Worker-level fate layers (ADR 0029, `.patterns/alchemy-runtime.md`).
  *
- * The departure from the old `worker/fate/runtime.ts`: there is **no
+ * The departure from phoenix's original per-request `FateRuntime`: there is **no
  * per-request `ManagedRuntime`**. `Drizzle` (built once from the bound D1) and
  * the feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`) are
  * **worker-level layers**, constructed once in the worker init and provided onto

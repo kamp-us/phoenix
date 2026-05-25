@@ -5,8 +5,8 @@
  *
  * This replaces the `d1_databases` / `migrations_dir` keys of `wrangler.jsonc`
  * (ADR 0026). The Durable Object namespaces are not declared here — they are the
- * `DurableObjectNamespace` classes themselves (`fate/connection-do.ts`,
- * `fate/topic-do.ts`); declaring + binding them in the worker is enough for
+ * `DurableObjectNamespace` classes themselves (`infra/connection-do.ts`,
+ * `infra/topic-do.ts`); declaring + binding them in the worker is enough for
  * alchemy to derive their migrations.
  */
 import * as Cloudflare from "alchemy/Cloudflare";

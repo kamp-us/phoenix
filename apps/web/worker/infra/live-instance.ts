@@ -11,12 +11,13 @@
  * for the sibling stub. This keeps the connection↔topic algorithm — held SSE
  * stream, generation-based stale detection, the durable subscriber registry in
  * `state.storage.sql`, and the alarm reap — in one place that a node-pool unit
- * test can drive without workerd (the workerd black-box harness is task 7).
+ * test (`live-instance.test.ts`) can drive without workerd. The observable SSE
+ * contract is also covered black-box over HTTP in `tests/integration/fate-live.test.ts`.
  *
  * The wire frame shapes and topic helpers are shared via `../fate/live-protocol.ts`,
- * so the bus, the DOs, and the route all speak one vocabulary; this is a port of
- * the legacy `cloudflare:workers` classes (`../fate/connection-do.ts`,
- * `../fate/topic-do.ts`) onto Effect + typed RPC — the algorithm is unchanged.
+ * so the bus, the DOs, and the route all speak one vocabulary. The algorithm is a
+ * verbatim port of phoenix's original `cloudflare:workers` live DOs onto the
+ * alchemy Effect DO model + typed RPC — the algorithm itself is unchanged.
  */
 import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
