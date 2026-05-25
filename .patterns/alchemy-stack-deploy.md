@@ -62,12 +62,14 @@ The worker `bind()`s `PhoenixDb` ([alchemy-bindings.md](./alchemy-bindings.md));
 ## Dev & deploy
 
 ```bash
-alchemy dev       # local worker (Vite for the SPA + the worker runtime), live bindings
-alchemy deploy    # build, bundle, push to the Cloudflare API
+pnpm build        # vite build → dist/client (the SPA assets the worker serves)
+alchemy deploy    # bundle the worker, upload dist/client, push to the Cloudflare API
 alchemy deploy --stage prod
 ```
 
-`alchemy dev` supersedes `wrangler dev`; the SPA build still runs through Vite. The fate codegen Vite plugin is unaffected — it reads the server's exported `Entity<>` types at build time regardless of how the worker is deployed (see [fate-server-wiring.md](./fate-server-wiring.md)).
+The SPA is built by Vite as a normal build step (`dist/client`), then uploaded via the worker's `assets` prop — `alchemy deploy` does not drive Vite for phoenix's single-worker shape ([alchemy-worker.md](./alchemy-worker.md) explains why it's `Cloudflare.Worker` + `assets`, not `Cloudflare.Vite`). Drop `@cloudflare/vite-plugin` from `vite.config.ts` (alchemy is incompatible with it); keep `react()` and the `fate()` codegen plugin, which reads the server's `Entity<>` types regardless of deploy path (see [fate-server-wiring.md](./fate-server-wiring.md)).
+
+> **Local dev is the soft spot.** `alchemy deploy` supersedes `wrangler deploy` cleanly, but alchemy's integrated `alchemy dev` + Vite-HMR story for a SPA-plus-worker layout is marked "coming soon" upstream. During the transition expect to run the SPA's `vite dev` alongside the worker; verify the dev ergonomics before committing the team to it.
 
 > **Stages give isolated environments per branch/PR.** `--stage <name>` deploys an independent copy of the stack (its own DOs, its own D1). This is how preview deploys work without a second config file — the stage name is threaded into resource names. `alchemy.run.ts` can branch on `stage` (e.g. reference a shared staging D1 for `pr-*` stages) the way the alchemy Neon examples do.
 

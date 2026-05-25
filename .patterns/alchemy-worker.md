@@ -51,6 +51,17 @@ The props object replaces the top of `wrangler.jsonc`:
 
 There is no `bindings`/`durable_objects`/`d1_databases`/`migrations` key here. Bindings are wired by `bind()` calls in the body (this doc) and by declaring the resources in the stack ([alchemy-stack-deploy.md](./alchemy-stack-deploy.md)); DO migrations are derived from the `DurableObjectNamespace` declarations.
 
+## Vite & the SPA — one worker, not `Cloudflare.Vite`
+
+phoenix is **one worker that serves both** the React SPA and the hand-written API/fate/DO backend on a single URL. That shape is `Cloudflare.Worker` with `assets` — *not* `Cloudflare.Vite`:
+
+- **`Cloudflare.Worker` + `assets`** (phoenix's shape) — your hand-written `main` is the backend; `assets: "./dist/client"` uploads the SPA Vite already built. `runWorkerFirst` routes `/api/*` and `/fate*` to the worker, everything else to the assets ([alchemy-http-router.md](./alchemy-http-router.md)). The Vite build of the client stays a normal build step — `vite build → dist/client`, then deploy — exactly as today's `pnpm build && wrangler deploy` becomes `pnpm build && alchemy deploy`.
+- **`Cloudflare.Vite`** — *wrong tool here.* It sets `main: undefined`: it's assets-only for SPAs, or the framework's entry for SSR. It can't host phoenix's backend on the same worker; using it forces a two-worker split (an assets-only `Web` worker + a bound `Backend` worker, two URLs), abandoning the single-surface model.
+
+> **Drop `@cloudflare/vite-plugin` from `vite.config.ts`.** alchemy ships its own Cloudflare integration and is **not compatible** with `@cloudflare/vite-plugin` — remove the `cloudflare()` plugin. Everything else in the config is preserved: `react()`, the **`fate()` codegen plugin**, aliases, tsconfig all keep working (the `fate()` plugin is orthogonal to Cloudflare — it reads the server's `Entity<>` types regardless of how the worker deploys).
+
+> **Local dev for this layout is still maturing.** alchemy's production build/deploy of a Vite SPA is solid, but its tutorial marks the integrated `alchemy dev` + Vite HMR story "coming soon." Expect to run the SPA's `vite dev` alongside the worker during the transition, and verify the dev ergonomics when you wire this up.
+
 ## Init phase — bind resources
 
 The outer `Effect.gen` body runs at deploy time (to record what to send the Cloudflare API) and once per isolate at runtime (to resolve typed clients). Everything you `yield*` here is in scope for the worker's whole lifetime:
