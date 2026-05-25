@@ -295,6 +295,11 @@ export const makeConnectionInstance = <SR = never>(
 			if (!subscriptions.has(input.frame.id)) {
 				return {delivered: false, generation: current};
 			}
+			// `controller.enqueue` is an imperative Web Streams call that throws
+			// synchronously if the held stream is already closed/errored; a plain
+			// try/catch around that single boundary call is clearer than wrapping it
+			// in Effect.try just to map it back to a return value.
+			// @effect-diagnostics-next-line effect/tryCatchInEffectGen:off
 			try {
 				controller.enqueue(encoder.encode(encodeFrame(input.frame)));
 			} catch {
@@ -418,6 +423,10 @@ export const makeTopicInstance = <SR = never>(
 							// swallows defects too, so one misbehaving sibling can't crash the
 							// whole fan-out.
 							Effect.timeout(FANOUT_TIMEOUT_MS),
+							// The typed `undefined` IS the value — downstream narrows on
+							// `result !== undefined` to mean "couldn't reach". `Effect.void`
+							// would type it `void`, breaking that union; not equivalent here.
+							// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
 							Effect.catchCause(() => Effect.succeed<DeliverResult | undefined>(undefined)),
 						);
 						// A *reachable* connection reporting a different current generation
@@ -455,6 +464,9 @@ export const makeTopicInstance = <SR = never>(
 							Effect.timeout(FANOUT_TIMEOUT_MS),
 							Effect.map((r): number | undefined => r.generation),
 							// ANY failure/defect/timeout → "couldn't reach" (mirrors legacy).
+							// Typed `undefined` is the value the `reported === undefined` check
+							// below reads; `Effect.void` would type it `void` — not equivalent.
+							// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
 							Effect.catchCause(() => Effect.succeed<number | undefined>(undefined)),
 						);
 						if (reported === undefined) {

@@ -80,6 +80,11 @@ export const handleLive = Effect.gen(function* () {
 
 	if (raw.method === "POST") {
 		let body: ReturnType<typeof assertLiveControlRequest>;
+		// `assertLiveControlRequest` is a synchronous validator that throws a
+		// `FateRequestError`; this request-boundary handler catches it to return an
+		// HTTP error Response (not an Effect failure), so a plain try/catch is the
+		// right shape here rather than threading it through Effect error channels.
+		// @effect-diagnostics-next-line effect/tryCatchInEffectGen:off
 		try {
 			body = assertLiveControlRequest(yield* Effect.promise(() => raw.json()));
 		} catch (error) {

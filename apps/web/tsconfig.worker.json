@@ -17,6 +17,13 @@
 		"worker",
 		"worker-configuration.d.ts",
 		"src/lib/mutationErrorCodes.ts",
-		"alchemy.run.ts"
+		"alchemy.run.ts",
+		// The black-box integration suite (Vitest node pool → HTTP against the
+		// deployed worker) belongs to the worker project: it needs the same `.ts`
+		// import specifiers + workers-runtime globals (`fetch`/`Response`/
+		// `ReadableStream`/`TextDecoder`) and imports the stack (`alchemy.run.ts`)
+		// in its global-setup. Without this, `pnpm typecheck` skipped these files
+		// entirely and the editor flagged the `.ts` imports (TS5097).
+		"tests/integration"
 	]
 }

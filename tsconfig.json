@@ -14,6 +14,12 @@
 		"skipLibCheck": true,
 		"resolveJsonModule": true,
 		"verbatimModuleSyntax": true,
-		"plugins": [{ "name": "@effect/language-service" }]
+		// `includeSuggestionsInTsc: false` keeps `tsgo`/`pnpm typecheck` output free of
+		// suggestion-severity Effect hints (they never affected the exit code anyway).
+		// The hints still surface in the editor LSP, where the per-line
+		// `@effect-diagnostics-next-line ...:off` directives silence the handful of
+		// intentional patterns (inline DO factory, typed catch fallbacks, etc.). So:
+		// tsc shows only real errors/warnings; the editor shows live suggestions.
+		"plugins": [{ "name": "@effect/language-service", "includeSuggestionsInTsc": false }]
 	}
 }

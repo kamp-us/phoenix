@@ -53,6 +53,11 @@ export const handleFate = Effect.gen(function* () {
 	// mutation response already succeeded.
 	const publisher = (topicKey: string, message: Parameters<typeof liveTopics.publish>[1]) => {
 		executionCtx.waitUntil(
+			// Deliberate Effect→Promise boundary: this fire-and-forget publish is
+			// handed to `waitUntil` (a Promise sink) outside the request fiber.
+			// `liveTopics.publish` is self-contained (R = never), so it needs no
+			// surrounding services — `runPromise` is correct, not `runPromiseWith`.
+			// @effect-diagnostics-next-line effect/runEffectInsideEffect:off
 			Effect.runPromise(liveTopics.publish(topicKey, message)).catch((error: unknown) => {
 				console.error(`live publish to topic:${topicKey} failed`, error);
 			}),

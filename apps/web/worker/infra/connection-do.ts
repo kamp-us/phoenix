@@ -52,6 +52,10 @@ export default class ConnectionDO extends Cloudflare.DurableObjectNamespace<Conn
 		// Do NOT resolve the TopicDO sibling here (eager circular `yield*` OOMs the
 		// build; ADR 0028). It's resolved lazily, per call, inside subscribe/
 		// unsubscribe (below).
+		// The shared-init gen RETURNS the per-instance Effect (run once per instance
+		// wake). `return yield*` would run per-instance setup during shared init and
+		// break the two-phase DO model — so the nested Effect is intentional here.
+		// @effect-diagnostics-next-line effect/returnEffectInGen:off
 		return Effect.gen(function* () {
 			// ── PER-INSTANCE (once per instance wake) ──
 			const state = yield* Cloudflare.DurableObjectState;

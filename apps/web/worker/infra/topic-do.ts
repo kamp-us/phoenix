@@ -46,6 +46,10 @@ export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>(
 		// in init — paired with `yield* TopicDO` in ConnectionDO's init — is a
 		// circular binding that OOMs the build (ADR 0028). Resolve it lazily, per
 		// call, inside publish/alarm (below).
+		// The shared-init gen RETURNS the per-instance Effect (run once per instance
+		// wake). `return yield*` would run per-instance setup during shared init and
+		// break the two-phase DO model — so the nested Effect is intentional here.
+		// @effect-diagnostics-next-line effect/returnEffectInGen:off
 		return Effect.gen(function* () {
 			// ── PER-INSTANCE (once per instance wake) ──
 			const state = yield* Cloudflare.DurableObjectState;
