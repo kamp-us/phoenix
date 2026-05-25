@@ -4,6 +4,8 @@ How phoenix's live fan-out DOs are written on alchemy. The short answer: `Cloudf
 
 This replaces the plain `class extends DurableObject` form. phoenix has two DOs — `ConnectionDO` (holds one client's SSE stream) and `TopicDO` (the durable subscriber registry + fan-out), split per ADR 0023/0025.
 
+> **Verified under `alchemy dev`** (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`). A POC of this exact split — `ConnectionDO` holding an SSE stream in its per-instance closure, `TopicDO` keeping subscribers in `state.storage.sql` and fanning out — ran end-to-end on the local runtime: subscribe → publish → the frame arrived on the held SSE stream (`{"delivered":1}`). The load-bearing pieces all work locally: **typed RPC**, **DO→DO binding** (`TopicDO` resolves `ConnectionDO` with `yield* ConnectionDO` in its init, then calls `connections.getByName(id).deliver(frame)`), `state.storage.sql.exec`, and `controller.enqueue` into a stream held in one DO from another DO's RPC. So the ADR 0023/0025 architecture ports to the Effect DO model intact.
+
 ## The shape
 
 ```ts
