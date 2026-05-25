@@ -403,7 +403,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 
 		return {
 			handleAuth: Effect.fn("Pasaport.handleAuth")(function* (request: Request) {
-				const auth = createAuth(env.PHOENIX_DB);
+				const auth = createAuth(env.PHOENIX_DB, env.BETTER_AUTH_SECRET);
 				return yield* Effect.promise(() => auth.handler(request));
 			}),
 
@@ -414,7 +414,7 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				// swallowed.
 				return yield* Effect.tryPromise({
 					try: async () => {
-						const auth = createAuth(env.PHOENIX_DB);
+						const auth = createAuth(env.PHOENIX_DB, env.BETTER_AUTH_SECRET);
 						const session = await auth.api.getSession({headers});
 						if (!session?.user) return null;
 						return session;
