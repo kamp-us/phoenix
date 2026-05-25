@@ -20,15 +20,29 @@ For endpoints with a real request/response schema — `GET /api/health`, the `/a
 
 ```ts
 // worker/http/admin-api.ts
-import {HttpApi, HttpApiEndpoint, HttpApiGroup} from "effect/unstable/httpapi";
-import {Schema} from "effect/schema";
+import * as Schema from "effect/Schema";
+import * as HttpApi from "effect/unstable/httpapi/HttpApi";
+import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
+import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
-export class AdminApi extends HttpApi.make("admin").add(
-  HttpApiGroup.make("sozluk")
-    .add(HttpApiEndpoint.post("upsertTerm", "/api/admin/sozluk/upsert-term").setPayload(UpsertTerm))
-    .add(HttpApiEndpoint.post("clear", "/api/admin/sozluk/clear")),
-) {}
+// payload / success / error are passed in the endpoint's options object —
+// there is no `.setPayload(...)` builder. Payloads are `Schema.Struct`,
+// responses are `Schema.Class`, errors are `Schema.TaggedErrorClass`.
+const UpsertTerm = Schema.Struct({slug: Schema.String, title: Schema.String /* … */});
+
+const upsertTerm = HttpApiEndpoint.post("upsertTerm", "/api/admin/sozluk/upsert-term", {
+  payload: UpsertTerm,
+});
+const clear = HttpApiEndpoint.post("clear", "/api/admin/sozluk/clear", {
+  success: HttpApiSchema.NoContent,
+});
+
+export class SozlukAdminGroup extends HttpApiGroup.make("sozluk").add(upsertTerm).add(clear) {}
+export class AdminApi extends HttpApi.make("admin").add(SozlukAdminGroup) {}
 ```
+
+`HttpApi.make(id)` and `HttpApiGroup.make(name)` return values with a variadic `.add(...)`; the `class … extends` form is the convention for naming them (it's what `HttpApiBuilder.group(AdminApi, "sozluk", …)` references by name).
 
 ```ts
 // worker/http/admin-handlers.ts
