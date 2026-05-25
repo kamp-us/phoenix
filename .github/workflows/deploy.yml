@@ -89,14 +89,11 @@ jobs:
             --config wrangler.jsonc \
             --env test \
             --name phoenix-pr-${{ github.event.pull_request.number }}
-          echo "$BETTER_AUTH_SECRET_TEST" | pnpm --filter @phoenix/web exec wrangler secret put BETTER_AUTH_SECRET \
-            --name phoenix-pr-${{ github.event.pull_request.number }}
           echo "url=https://phoenix-pr-${{ github.event.pull_request.number }}.${CF_SUBDOMAIN}.workers.dev" >> "$GITHUB_OUTPUT"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           CF_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
-          BETTER_AUTH_SECRET_TEST: ${{ secrets.BETTER_AUTH_SECRET_TEST }}
 
       - name: Comment preview URL
         uses: marocchino/sticky-pull-request-comment@v2
