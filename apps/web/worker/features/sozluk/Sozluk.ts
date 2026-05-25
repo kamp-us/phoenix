@@ -18,9 +18,10 @@
  * — they're load-bearing helpers but not part of the public surface.
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, gt, inArray, isNull, lt, or, sql} from "drizzle-orm";
+import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
+import {forwardPage, keysetAfter} from "../../db/keyset";
 import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 import {excerpt as excerptText} from "../../shared/text";
 import type {VoteTargetNotFound} from "../vote/errors";
@@ -576,9 +577,23 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const after = opts.after ?? null;
 			const viewerId = opts.viewerId ?? null;
 
+			const baseWhere = and(
+				eq(schema.definitionView.termSlug, slug),
+				isNull(schema.definitionView.deletedAt),
+			);
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.definitionView)
+					.where(baseWhere)
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
+
 			// Resolve the cursor row's keyset tuple (score, createdAt, id) so the
 			// predicate selects rows strictly after it in the canonical term-page
-			// order: (score desc, created_at asc, id asc).
+			// order: (score desc, created_at asc, id asc). An `after` that doesn't
+			// resolve is a cursor miss → empty page (the shared semantic).
 			let cursorRow: {score: number; createdAt: Date | null} | null = null;
 			if (after) {
 				cursorRow =
@@ -592,30 +607,23 @@ export const SozlukLive = Layer.effect(Sozluk)(
 							.where(eq(schema.definitionView.id, after))
 							.get(),
 					)) ?? null;
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies DefinitionConnectionPage;
+				}
 			}
 
-			const baseWhere = and(
-				eq(schema.definitionView.termSlug, slug),
-				isNull(schema.definitionView.deletedAt),
-			);
-
-			// Keyset for (score desc, created_at asc, id asc): a row comes "after"
-			// the cursor if its score is lower, or (same score) its createdAt is
-			// later, or (same score+createdAt) its id sorts after.
-			const cursorPredicate = cursorRow?.createdAt
-				? or(
-						lt(schema.definitionView.score, cursorRow.score),
-						and(
-							eq(schema.definitionView.score, cursorRow.score),
-							gt(schema.definitionView.createdAt, cursorRow.createdAt),
-						),
-						and(
-							eq(schema.definitionView.score, cursorRow.score),
-							eq(schema.definitionView.createdAt, cursorRow.createdAt),
-							gt(schema.definitionView.id, after as string),
-						),
-					)
-				: undefined;
+			// Mixed-direction keyset (score desc, created_at asc, id asc) declared
+			// per column — `keysetAfter` builds the lexicographic predicate.
+			const cursorPredicate = keysetAfter([
+				{column: schema.definitionView.score, dir: "desc", value: cursorRow?.score ?? null},
+				{column: schema.definitionView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
+				{column: schema.definitionView.id, dir: "asc", value: after},
+			]);
 
 			const fetched = yield* run((db) =>
 				db
@@ -630,27 +638,18 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(first + 1),
 			);
 
-			const hasNextPage = fetched.length > first;
-			const sliced = hasNextPage ? fetched.slice(0, first) : fetched;
-
 			const voted = yield* readMyVotesBatch(
 				viewerId,
-				sliced.map((d) => d.id),
+				fetched.slice(0, first).map((d) => d.id),
 			);
-			const rows = sliced.map((d) => mapDefinitionViewRow(d, voted, viewerId));
-
-			const totalCountRow = yield* run((db) =>
-				db.select({n: sql<number>`count(*)`}).from(schema.definitionView).where(baseWhere).get(),
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: DefinitionRow) => r.id,
+				(d) => mapDefinitionViewRow(d, voted, viewerId),
 			);
-			const totalCount = totalCountRow?.n ?? 0;
 
-			const last = rows.at(-1) ?? null;
-			return {
-				rows,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount,
-			} satisfies DefinitionConnectionPage;
+			return {...page, totalCount} satisfies DefinitionConnectionPage;
 		});
 
 		const getDefinitionsByIds = Effect.fn("Sozluk.getDefinitionsByIds")(function* (
@@ -768,6 +767,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
 			const after = opts.after ?? null;
 
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.termSummary)
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
+
 			let cursorRow: {
 				slug: string;
 				totalScore: number;
@@ -786,27 +793,36 @@ export const SozlukLive = Layer.effect(Sozluk)(
 							.where(eq(schema.termSummary.slug, after))
 							.get(),
 					)) ?? null;
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies TermConnectionPage;
+				}
 			}
 
-			const cursorPredicate = cursorRow
-				? sort === "popular"
-					? or(
-							lt(schema.termSummary.totalScore, cursorRow.totalScore),
-							and(
-								eq(schema.termSummary.totalScore, cursorRow.totalScore),
-								gt(schema.termSummary.slug, cursorRow.slug),
-							),
-						)
-					: cursorRow.lastActivityAt
-						? or(
-								lt(schema.termSummary.lastActivityAt, cursorRow.lastActivityAt),
-								and(
-									eq(schema.termSummary.lastActivityAt, cursorRow.lastActivityAt),
-									gt(schema.termSummary.slug, cursorRow.slug),
-								),
-							)
-						: gt(schema.termSummary.slug, cursorRow.slug)
-				: undefined;
+			// Lead column by sort (popular → totalScore desc, recent →
+			// lastActivityAt desc), then the `slug` asc tiebreaker. A null
+			// lastActivityAt cursor drops the lead column → slug-only keyset, the
+			// same fallback as before.
+			const lead =
+				sort === "popular"
+					? {
+							column: schema.termSummary.totalScore,
+							dir: "desc" as const,
+							value: cursorRow?.totalScore ?? null,
+						}
+					: {
+							column: schema.termSummary.lastActivityAt,
+							dir: "desc" as const,
+							value: cursorRow?.lastActivityAt ?? null,
+						};
+			const cursorPredicate = keysetAfter([
+				lead,
+				{column: schema.termSummary.slug, dir: "asc", value: cursorRow?.slug ?? null},
+			]);
 
 			const orderBy =
 				sort === "popular"
@@ -832,35 +848,26 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(first + 1),
 			);
 
-			const hasNextPage = fetched.length > first;
-			const sliced = hasNextPage ? fetched.slice(0, first) : fetched;
-
-			const rows: TermSummaryRow[] = sliced.map((r) => ({
-				id: r.slug,
-				slug: r.slug,
-				title: r.title,
-				count: r.definitionCount,
-				totalScore: r.totalScore,
-				excerpt: r.excerpt ?? null,
-				firstAt: r.firstAt,
-				lastEdit: r.lastEditAt,
-				firstLetter: r.firstLetter,
-				definitionCount: r.definitionCount,
-				lastActivityAt: r.lastActivityAt,
-			}));
-
-			const totalCountRow = yield* run((db) =>
-				db.select({n: sql<number>`count(*)`}).from(schema.termSummary).get(),
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: TermSummaryRow) => r.slug,
+				(r) => ({
+					id: r.slug,
+					slug: r.slug,
+					title: r.title,
+					count: r.definitionCount,
+					totalScore: r.totalScore,
+					excerpt: r.excerpt ?? null,
+					firstAt: r.firstAt,
+					lastEdit: r.lastEditAt,
+					firstLetter: r.firstLetter,
+					definitionCount: r.definitionCount,
+					lastActivityAt: r.lastActivityAt,
+				}),
 			);
-			const totalCount = totalCountRow?.n ?? 0;
 
-			const last = rows.at(-1) ?? null;
-			return {
-				rows,
-				hasNextPage,
-				endCursor: last ? last.slug : null,
-				totalCount,
-			} satisfies TermConnectionPage;
+			return {...page, totalCount} satisfies TermConnectionPage;
 		});
 
 		const readMyVote = Effect.fn("Sozluk.readMyVote")(function* (input: {

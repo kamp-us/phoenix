@@ -26,9 +26,10 @@
  *   - `UserNotFound`
  *   - `DrizzleError` (any infrastructure failure)
  */
-import {and, desc, eq, inArray, isNull, lt, or, sql} from "drizzle-orm";
+import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
+import {forwardPage, keysetAfter} from "../../db/keyset";
 import {CloudflareEnv} from "../../services/CloudflareEnv";
 import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 import {createAuth, type Session} from "./auth";
@@ -579,20 +580,23 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				const cursor = input.after ? decodeCursor(input.after) : null;
 				const fetchSize = first + 1;
 
+				// `after` present but undecodable is a cursor miss → empty page (the
+				// one cursor-miss semantic shared by all five keyset methods).
+				const cursorMissed = input.after !== null && cursor === null;
+
+				// Per-table keyset for the global `(created_at desc, id desc)` merge
+				// order. `keysetAfter` builds the lexicographic predicate; null
+				// cursor values (no `after`) collapse it to undefined so only the
+				// base author/deleted filter applies.
 				function keysetWhere<
 					TTable extends {createdAt: any; id: any; authorId: any; deletedAt: any},
 				>(table: TTable) {
 					const base = and(eq(table.authorId, input.authorId), isNull(table.deletedAt));
-					if (cursor) {
-						return and(
-							base,
-							or(
-								lt(table.createdAt, cursor.createdAt),
-								and(eq(table.createdAt, cursor.createdAt), lt(table.id, cursor.id)),
-							),
-						);
-					}
-					return base;
+					const predicate = keysetAfter([
+						{column: table.createdAt, dir: "desc", value: cursor?.createdAt ?? null},
+						{column: table.id, dir: "desc", value: cursor?.id ?? null},
+					]);
+					return predicate ? and(base, predicate) : base;
 				}
 
 				const defs = yield* run((db) =>
@@ -681,6 +685,15 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				);
 				const totalCount = defTotal + postTotal + commentTotal;
 
+				if (cursorMissed) {
+					return {
+						edges: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies ContributionConnection;
+				}
+
 				const merged: ContributionNode[] = [
 					...defs.map<ContributionNode>((d) => ({
 						kind: "definition",
@@ -721,19 +734,14 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				// Each of the three tables is read with the same keyset predicate and
 				// `LIMIT first+1`, so the merged set holds every candidate that could
 				// fall in the next `first` slots of the global `(createdAt desc, id
-				// desc)` order. If more than `first` survived the merge there is
-				// definitively a next page — an exact keyset boundary, not a
-				// per-table heuristic.
-				const sliced = merged.slice(0, first);
-				const hasNextPage = merged.length > first;
-
-				const last = sliced[sliced.length - 1];
-				const endCursor = last ? encodeCursor(last) : null;
+				// desc)` order — `forwardPage` slices the probe and assembles the
+				// shared `{rows, hasNextPage, endCursor}` envelope.
+				const page = forwardPage<ContributionNode>(merged, first, encodeCursor);
 
 				return {
-					edges: sliced.map((node) => ({cursor: encodeCursor(node), node})),
-					hasNextPage: hasNextPage && sliced.length > 0,
-					endCursor,
+					edges: page.rows.map((node) => ({cursor: encodeCursor(node), node})),
+					hasNextPage: page.hasNextPage,
+					endCursor: page.endCursor,
 					totalCount,
 				} satisfies ContributionConnection;
 			}),

@@ -21,9 +21,10 @@
  * public surface.
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, gt, inArray, isNull, lt, or, sql} from "drizzle-orm";
+import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
+import {forwardPage, keysetAfter} from "../../db/keyset";
 import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle";
 import {excerpt as excerptText} from "../../shared/text";
 import type {VoteTargetNotFound} from "../vote/errors";
@@ -680,6 +681,15 @@ export const PanoLive = Layer.effect(Pano)(
 			const baseConditions = [isNull(schema.postSummary.deletedAt)];
 			if (host) baseConditions.push(eq(schema.postSummary.host, host));
 
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.postSummary)
+					.where(and(...baseConditions))
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
+
 			let cursorRow: {
 				id: string;
 				score: number;
@@ -687,7 +697,6 @@ export const PanoLive = Layer.effect(Pano)(
 				commentCount: number;
 				createdAt: Date | null;
 			} | null = null;
-			let cursorMissed = false;
 			if (after) {
 				cursorRow =
 					(yield* run((db) =>
@@ -703,51 +712,34 @@ export const PanoLive = Layer.effect(Pano)(
 							.where(eq(schema.postSummary.id, after))
 							.get(),
 					)) ?? null;
-				if (!cursorRow) cursorMissed = true;
-			}
-			if (cursorMissed) {
-				const totalCountRow = yield* run((db) =>
-					db
-						.select({n: sql<number>`count(*)`})
-						.from(schema.postSummary)
-						.where(and(...baseConditions))
-						.get(),
-				);
-				return {
-					rows: [],
-					hasNextPage: false,
-					endCursor: null,
-					totalCount: totalCountRow?.n ?? 0,
-				} satisfies PostConnectionPage;
+				// Cursor miss → empty page (the one shared cursor-miss semantic).
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies PostConnectionPage;
+				}
 			}
 
-			const cursorPredicate = cursorRow
-				? sort === "new"
-					? lt(schema.postSummary.id, cursorRow.id)
-					: sort === "top"
-						? or(
-								lt(schema.postSummary.score, cursorRow.score),
-								and(
-									eq(schema.postSummary.score, cursorRow.score),
-									lt(schema.postSummary.id, cursorRow.id),
-								),
-							)
-						: sort === "discuss"
-							? or(
-									lt(schema.postSummary.commentCount, cursorRow.commentCount),
-									and(
-										eq(schema.postSummary.commentCount, cursorRow.commentCount),
-										lt(schema.postSummary.id, cursorRow.id),
-									),
-								)
-							: or(
-									lt(schema.postSummary.hotScore, cursorRow.hotScore),
-									and(
-										eq(schema.postSummary.hotScore, cursorRow.hotScore),
-										lt(schema.postSummary.id, cursorRow.id),
-									),
-								)
-				: null;
+			// The sort's lead column (all descending) followed by the `id` desc
+			// tiebreaker. `new` orders by id alone.
+			const leadColumn =
+				sort === "top"
+					? {column: schema.postSummary.score, value: cursorRow?.score}
+					: sort === "discuss"
+						? {column: schema.postSummary.commentCount, value: cursorRow?.commentCount}
+						: sort === "new"
+							? null
+							: {column: schema.postSummary.hotScore, value: cursorRow?.hotScore};
+
+			const cursorPredicate = keysetAfter([
+				...(leadColumn
+					? [{column: leadColumn.column, dir: "desc" as const, value: leadColumn.value ?? null}]
+					: []),
+				{column: schema.postSummary.id, dir: "desc", value: cursorRow?.id ?? null},
+			]);
 
 			const whereExpr = cursorPredicate
 				? and(...baseConditions, cursorPredicate)
@@ -784,40 +776,27 @@ export const PanoLive = Layer.effect(Pano)(
 					.limit(first + 1),
 			);
 
-			const hasNextPage = fetched.length > first;
-			const sliced = hasNextPage ? fetched.slice(0, first) : fetched;
-
-			const rows: PostSummaryRow[] = sliced.map((r) => ({
-				id: r.id,
-				slug: r.slug,
-				title: r.title,
-				url: r.url,
-				host: r.host,
-				body: r.bodyExcerpt,
-				author: r.authorName,
-				authorId: r.authorId,
-				score: r.score,
-				commentCount: r.commentCount,
-				createdAt: r.createdAt ?? new Date(0),
-				tags: parseTags(r.tags),
-			}));
-
-			const totalCountRow = yield* run((db) =>
-				db
-					.select({n: sql<number>`count(*)`})
-					.from(schema.postSummary)
-					.where(and(...baseConditions))
-					.get(),
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: PostSummaryRow) => r.id,
+				(r) => ({
+					id: r.id,
+					slug: r.slug,
+					title: r.title,
+					url: r.url,
+					host: r.host,
+					body: r.bodyExcerpt,
+					author: r.authorName,
+					authorId: r.authorId,
+					score: r.score,
+					commentCount: r.commentCount,
+					createdAt: r.createdAt ?? new Date(0),
+					tags: parseTags(r.tags),
+				}),
 			);
-			const totalCount = totalCountRow?.n ?? 0;
 
-			const last = rows.at(-1) ?? null;
-			return {
-				rows,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount,
-			} satisfies PostConnectionPage;
+			return {...page, totalCount} satisfies PostConnectionPage;
 		});
 
 		/**
@@ -882,8 +861,21 @@ export const PanoLive = Layer.effect(Pano)(
 			const after = opts.after ?? null;
 			const viewerId = opts.viewerId ?? null;
 
-			// Resolve the cursor row's (created_at, id) tuple so the predicate
-			// selects rows strictly after it in `(created_at asc, id asc)` order.
+			const baseWhere = eq(schema.commentView.postId, postId);
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.commentView)
+					.where(baseWhere)
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
+
+			// Resolve the cursor row's (created_at, id) tuple so the keyset
+			// predicate selects rows strictly after it in `(created_at asc, id
+			// asc)` order. An `after` that doesn't resolve is a cursor miss →
+			// empty page (the one cursor-miss semantic shared by all five keyset
+			// methods).
 			let cursorRow: {createdAt: Date | null} | null = null;
 			if (after) {
 				cursorRow =
@@ -894,21 +886,20 @@ export const PanoLive = Layer.effect(Pano)(
 							.where(eq(schema.commentView.id, after))
 							.get(),
 					)) ?? null;
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies CommentConnectionPage;
+				}
 			}
 
-			const baseWhere = eq(schema.commentView.postId, postId);
-
-			// Keyset for (created_at asc, id asc): a row is "after" the cursor if
-			// its createdAt is later, or (same createdAt) its id sorts after.
-			const cursorPredicate = cursorRow?.createdAt
-				? or(
-						gt(schema.commentView.createdAt, cursorRow.createdAt),
-						and(
-							eq(schema.commentView.createdAt, cursorRow.createdAt),
-							gt(schema.commentView.id, after as string),
-						),
-					)
-				: undefined;
+			const cursorPredicate = keysetAfter([
+				{column: schema.commentView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
+				{column: schema.commentView.id, dir: "asc", value: after},
+			]);
 
 			const fetched = yield* run((db) =>
 				db
@@ -919,31 +910,22 @@ export const PanoLive = Layer.effect(Pano)(
 					.limit(first + 1),
 			);
 
-			const hasNextPage = fetched.length > first;
-			const sliced = hasNextPage ? fetched.slice(0, first) : fetched;
-
 			const voted = yield* readMyVotesBatch(
 				viewerId,
 				"comment",
-				sliced.map((c) => c.id),
+				fetched.slice(0, first).map((c) => c.id),
 			);
-			const rows: CommentRow[] = sliced.map((c) => {
-				const base = rowToCommentRow(c);
-				return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
-			});
-
-			const totalCountRow = yield* run((db) =>
-				db.select({n: sql<number>`count(*)`}).from(schema.commentView).where(baseWhere).get(),
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: CommentRow) => r.id,
+				(c) => {
+					const base = rowToCommentRow(c);
+					return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
+				},
 			);
-			const totalCount = totalCountRow?.n ?? 0;
 
-			const last = rows.at(-1) ?? null;
-			return {
-				rows,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount,
-			} satisfies CommentConnectionPage;
+			return {...page, totalCount} satisfies CommentConnectionPage;
 		});
 
 		const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
