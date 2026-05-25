@@ -112,33 +112,46 @@ export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@phoenix
 export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema});
 
 /**
+ * Build a `DrizzleAccess` value over an already-constructed drizzle instance —
+ * the single home of the `run` / `batch` bodies. Both the worker-level
+ * {@link makeDrizzleLayer} and the per-request {@link DrizzleLive} wrap this, so
+ * the promise → Effect boundary and the tagged `DrizzleError` catch live in
+ * exactly one place; a fix to the catch reaches both layers.
+ *
+ * House rule (`.patterns/feature-services.md`): `Effect.tryPromise` always uses
+ * object notation with an explicit `catch` producing a tagged error — here
+ * `DrizzleError`, so resolvers can map it cleanly to `INTERNAL_SERVER_ERROR`.
+ */
+export const makeDrizzleAccess = (db: DrizzleDb): DrizzleAccess => ({
+	run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
+		Effect.tryPromise({
+			try: () => fn(db),
+			catch: (cause) => new DrizzleError({cause}),
+		}),
+	batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(fn: (db: DrizzleDb) => T) =>
+		Effect.tryPromise({
+			try: () => db.batch(fn(db)) as Promise<BatchResult<T>>,
+			catch: (cause) => new DrizzleError({cause}),
+		}),
+});
+
+/**
  * Build the `Drizzle` layer from an **already-constructed** drizzle instance.
  *
  * Per ADR 0029 / `.patterns/alchemy-runtime.md`: on alchemy the D1 binding is
  * stable for the isolate's life, so `drizzle()` is built ONCE in the worker init
  * (from the bound `D1Connection.raw`) and provided as a worker-level layer. The
- * `run` / `batch` callback surface and the single `DrizzleError` catch are
- * unchanged from {@link DrizzleLive}; only the construction moves — the `db`
- * arrives as an argument instead of being read off a per-request `CloudflareEnv`.
+ * `run` / `batch` surface comes from {@link makeDrizzleAccess}; only the
+ * construction differs from {@link DrizzleLive} — the `db` arrives as an
+ * argument instead of being read off a per-request `CloudflareEnv`.
  */
 export const makeDrizzleLayer = (db: DrizzleDb): Layer.Layer<Drizzle> =>
-	Layer.succeed(Drizzle, {
-		run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
-			Effect.tryPromise({
-				try: () => fn(db),
-				catch: (cause) => new DrizzleError({cause}),
-			}),
-		batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(fn: (db: DrizzleDb) => T) =>
-			Effect.tryPromise({
-				try: () => db.batch(fn(db)) as Promise<BatchResult<T>>,
-				catch: (cause) => new DrizzleError({cause}),
-			}),
-	} satisfies DrizzleAccess);
+	Layer.succeed(Drizzle, makeDrizzleAccess(db));
 
 /**
  * Live layer — constructs the drizzle builder from `env.PHOENIX_DB` and
- * returns a `DrizzleAccess` value whose `run` / `batch` close over it. The
- * `DrizzleError` catch lives here, in exactly one place.
+ * returns a `DrizzleAccess` value (via {@link makeDrizzleAccess}) whose
+ * `run` / `batch` close over it.
  *
  * Retained for the legacy integration harness + the admin runtime, which still
  * read a per-request `CloudflareEnv`. The worker `/fate` route uses
@@ -148,19 +161,6 @@ export const makeDrizzleLayer = (db: DrizzleDb): Layer.Layer<Drizzle> =>
 export const DrizzleLive = Layer.effect(Drizzle)(
 	Effect.gen(function* () {
 		const env = yield* CloudflareEnv;
-		const db = createDrizzle(env.PHOENIX_DB);
-
-		return {
-			run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
-				Effect.tryPromise({
-					try: () => fn(db),
-					catch: (cause) => new DrizzleError({cause}),
-				}),
-			batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(fn: (db: DrizzleDb) => T) =>
-				Effect.tryPromise({
-					try: () => db.batch(fn(db)) as Promise<BatchResult<T>>,
-					catch: (cause) => new DrizzleError({cause}),
-				}),
-		} satisfies DrizzleAccess;
+		return makeDrizzleAccess(createDrizzle(env.PHOENIX_DB));
 	}),
 );
