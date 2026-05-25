@@ -27,6 +27,17 @@ import Stack from "../../alchemy.run.ts";
 
 installLocalhostDns();
 
+// `Cloudflare.providers()` validates Cloudflare credentials from the environment
+// at CONSTRUCTION time — even though `dev: true` + `localState()` runs the worker
+// in a local workerd and never calls the Cloudflare API. On a developer machine a
+// real account is usually resolvable (env or a wrangler/alchemy profile), so this
+// is invisible; on a clean CI runner there is none and it throws
+// `AuthError: Missing required env: CLOUDFLARE_ACCOUNT_ID`. The dev deploy is fully
+// local, so any value satisfies the check — inject inert placeholders when absent
+// so the suite is self-contained (no `alchemy login`, no profile, no secrets).
+process.env.CLOUDFLARE_ACCOUNT_ID ??= "local-dev-account";
+process.env.CLOUDFLARE_API_TOKEN ??= "local-dev-token";
+
 const options = {
 	providers: Cloudflare.providers(),
 	state: Alchemy.localState(),
