@@ -33,6 +33,7 @@ import {
 	makeDrizzleLayer,
 	type RequestContext,
 } from "../services/index.ts";
+import type {WorkerEnv} from "../shared/worker-env.ts";
 
 /**
  * Every service available inside a fate resolver / source executor. This is the
@@ -62,7 +63,7 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
  * The result requires nothing (`R = never`); the per-request `Auth` +
  * `RequestContext` are layered on top in the `/fate` route, not here.
  */
-export const makeFateLayer = (db: DrizzleDb, env: Env): Layer.Layer<WorkerFateServices> => {
+export const makeFateLayer = (db: DrizzleDb, env: WorkerEnv): Layer.Layer<WorkerFateServices> => {
 	const DrizzleLayer = makeDrizzleLayer(db);
 	const EnvLayer = Layer.succeed(CloudflareEnv, env);
 

@@ -10,10 +10,12 @@
  * from being intercepted by the SPA shell.
  *
  * This replaces `wrangler.jsonc` (bindings/DOs/migrations/assets/vars) and the
- * Hono `export default {fetch}` entry. FOUNDATION SLICE (alchemy-migration task
- * 1): only `GET /api/health` is wired. The fate data plane, better-auth, the
- * admin seeders, and the live SSE route are ported onto this worker in tasks
- * 2–5 (the modules still live under `worker/fate/` and `worker/features/`).
+ * Hono `export default {fetch}` entry. The full HTTP surface is wired here via
+ * `makeAppLive` (`http/app.ts`): `GET /api/health`, the fate data plane
+ * (`POST /fate`), better-auth (`* /api/auth/*`), the dev-only admin seeders
+ * (`* /api/admin/*`, gated by `adminAllowed`), and the live SSE route
+ * (`* /fate/live` → ConnectionDO). The feature services live under
+ * `worker/features/` and the fate bridge under `worker/fate/`.
  *
  * Dev vs prod for the SPA (ADR 0030): the `assets` + `runWorkerFirst` config
  * below is the *production* single-worker precedence — at the Cloudflare edge,
@@ -34,6 +36,7 @@ import {PhoenixDb} from "./infra/resources.ts";
 import TopicDO from "./infra/topic-do.ts";
 import {createDrizzle} from "./services/Drizzle.ts";
 import {resolveDeployEnv} from "./shared/deploy-env.ts";
+import {adminAllowed, type WorkerEnv} from "./shared/worker-env.ts";
 
 // Resolved ONCE in the alchemy CLI process when this module is evaluated, so the
 // worker's `env` block below is the deploy-time policy (fail-closed). See
@@ -132,13 +135,21 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		// binding. `PasaportLive` builds better-auth's drizzle adapter from
 		// `env.PHOENIX_DB` (alchemy-drizzle-d1.md "better-auth on the same D1"), so
 		// surface the bound `raw` there — the same D1 the data plane runs on.
-		const env = {
+		// The alchemy runtime `WorkerEnvironment` is an untyped record; overlay the
+		// typed fields the worker actually injects/reads (`PHOENIX_DB` from the
+		// bound D1, `ENVIRONMENT` widened to `string`) to recover a typed
+		// `WorkerEnv` — no `as unknown as Env` laundering.
+		const env: WorkerEnv = {
 			...(yield* Cloudflare.WorkerEnvironment),
 			PHOENIX_DB: raw,
-		} as unknown as Env;
+			ENVIRONMENT: deployEnv.ENVIRONMENT,
+		};
 		const fateLayer = makeFateLayer(createDrizzle(raw), env);
 		const adminLayer = makeAdminLayer(createDrizzle(raw));
-		const adminAllowed = (env as unknown as Record<string, unknown>).ENVIRONMENT === "development";
+		// Typed read off `WorkerEnv` (`shared/worker-env.ts`), not a `Record` cast:
+		// the dev-only admin surfaces open only on `development`, fail-closed
+		// otherwise.
+		const allowAdmin = adminAllowed(env);
 
 		// The live path (ADR 0028/0029): both DO namespaces are resolved ONCE in
 		// init (`topics`/`connections`, above) and wrapped as worker-level services.
@@ -187,7 +198,7 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
 		// `HttpRouter.provideRequest(...)` and provides the admin services +
 		// platform stubs to the typed groups (`http/app.ts`).
-		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed, liveLayer});
+		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed: allowAdmin, liveLayer});
 
 		// ── RUNTIME PHASE (per request) ──
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};

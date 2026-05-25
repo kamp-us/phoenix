@@ -31,6 +31,7 @@ import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
 import {makeAdminLayer, makeFateLayer} from "../fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../fate/live-topics.ts";
 import {createDrizzle} from "../services/Drizzle.ts";
+import type {WorkerEnv} from "../shared/worker-env.ts";
 import {makeAppLive} from "./app.ts";
 
 /**
@@ -106,7 +107,7 @@ beforeAll(() => {
 	sqlite.applyMigration(baselineMigration);
 
 	const db = createDrizzle(sqlite.d1);
-	const env = {PHOENIX_DB: sqlite.d1, ...ENV} as unknown as Env;
+	const env = {PHOENIX_DB: sqlite.d1, ...ENV} as unknown as WorkerEnv;
 	const fateLayer = makeFateLayer(db, env);
 	const adminLayer = makeAdminLayer(db);
 

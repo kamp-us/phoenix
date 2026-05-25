@@ -9,6 +9,7 @@ import {
 	type Drizzle,
 	DrizzleLive,
 } from "../services/index.ts";
+import type {WorkerEnv} from "../shared/worker-env.ts";
 
 /**
  * Per-request admin runtime composition.
@@ -48,7 +49,7 @@ export namespace AdminRuntime {
 	 */
 	const AdminFeatureLayer = Layer.mergeAll(PasaportAdminLive, SozlukAdminLive, PanoAdminLive);
 
-	export const layer = (env: Env): Layer.Layer<Context, never, never> => {
+	export const layer = (env: WorkerEnv): Layer.Layer<Context, never, never> => {
 		const RequestValues = Layer.succeed(CloudflareEnv, env);
 		const Features = AdminFeatureLayer.pipe(Layer.provide(DrizzleLive));
 		const Capabilities = Layer.mergeAll(DrizzleLive, AdminAuthLive).pipe(
@@ -59,6 +60,6 @@ export namespace AdminRuntime {
 		return Layer.mergeAll(DataPlane, RequestValues);
 	};
 
-	export const make = (env: Env): ManagedRuntime.ManagedRuntime<Context, never> =>
+	export const make = (env: WorkerEnv): ManagedRuntime.ManagedRuntime<Context, never> =>
 		ManagedRuntime.make(layer(env));
 }

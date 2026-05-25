@@ -34,6 +34,7 @@ import {Pano} from "../features/pano/Pano";
 import {Pasaport} from "../features/pasaport/Pasaport";
 import {Auth, RequestContext} from "../services";
 import {createDrizzle} from "../services/Drizzle";
+import type {WorkerEnv} from "../shared/worker-env.ts";
 import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
@@ -91,7 +92,7 @@ beforeAll(async () => {
 	sqlite.applyMigration(baselineMigration);
 
 	const db = createDrizzle(sqlite.d1);
-	const env = {PHOENIX_DB: sqlite.d1} as unknown as Env;
+	const env = {PHOENIX_DB: sqlite.d1, ENVIRONMENT: "development"} as unknown as WorkerEnv;
 	WorkerLive = makeFateLayer(db, env);
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the

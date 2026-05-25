@@ -34,6 +34,7 @@ import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw
 import {SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin";
 import {Auth, RequestContext} from "../services";
 import {createDrizzle} from "../services/Drizzle";
+import type {WorkerEnv} from "../shared/worker-env.ts";
 import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
@@ -103,7 +104,7 @@ beforeAll(async () => {
 	// The test env carries only what the worker-level layer reads at build time
 	// (`PHOENIX_DB`, for Pasaport's better-auth); the bridge under test never
 	// invokes the auth methods.
-	const env = {PHOENIX_DB: sqlite.d1} as unknown as Env;
+	const env = {PHOENIX_DB: sqlite.d1, ENVIRONMENT: "development"} as unknown as WorkerEnv;
 	const fateLayer = makeFateLayer(db, env);
 	WorkerLive = Layer.mergeAll(fateLayer, SozlukAdminLive.pipe(Layer.provide(fateLayer)));
 
