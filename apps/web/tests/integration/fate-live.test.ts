@@ -335,6 +335,88 @@ describe("LiveDO cross-isolate delivery", () => {
 
 		await reader.cancel();
 	});
+
+	// Task 14: a connection publish carrying its args must resolve the SAME
+	// args-scoped `liveConnectionTopic(procedure, args)` key the subscriber
+	// registered under via `topicsForSubscribe` — so the publish reaches the
+	// narrow topic directly, not only the procedure-wide global wildcard. This
+	// stops one term's new definition from fanning out to every `Term.definitions`
+	// subscriber across all slugs/tabs/sessions.
+	it("routes a connection publish to the args-scoped narrow topic", async () => {
+		const {topicsForPublish, topicsForSubscribe} = await import("../../worker/fate/live-protocol");
+		const procedure = "Term.definitions";
+		const args = {id: "javascript"};
+
+		const subscribeTopics = topicsForSubscribe({
+			kind: "subscribeConnection",
+			subId: "op",
+			procedure,
+			args,
+		});
+		const publishTopics = topicsForPublish({
+			kind: "connection",
+			match: {procedure, args},
+			frame: {type: "appendNode", nodeType: "Definition", edge: {node: {}}},
+		});
+
+		// The narrow args-scoped key both sides derive must be identical, and a
+		// publish for one slug must NOT target another slug's narrow topic.
+		const {liveConnectionTopic} = await import("@nkzw/fate/server");
+		const narrow = liveConnectionTopic(procedure, args);
+		expect(subscribeTopics).toContain(narrow);
+		expect(publishTopics).toContain(narrow);
+		expect(publishTopics).not.toContain(liveConnectionTopic(procedure, {id: "rust"}));
+	});
+
+	it("delivers an args-scoped publish via the narrow topic (not only the global)", async () => {
+		const connId = "x-conn-narrow";
+		const ownerId = "owner-narrow";
+		const subId = "op-narrow";
+		const slug = "javascript";
+		const procedure = "Term.definitions";
+		const conn = connectionStub(connId);
+		const connectRes = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		const reader = connectRes.body!.getReader();
+		const decoder = new TextDecoder();
+		const buffer = {value: ""};
+		await readFrame(reader, decoder, buffer); // : connected
+
+		// Subscribe WITH the connection's filter args, exactly how the client does.
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribeConnection", subId, procedure, args: {id: slug}},
+				ownerId,
+			}),
+		});
+
+		// Publish ONLY to the narrow args-scoped topic — NOT the global wildcard.
+		// If the publish path discarded the args, no subscriber would be registered
+		// here and the frame would never arrive.
+		const {liveConnectionTopic} = await import("@nkzw/fate/server");
+		const node = {__typename: "Definition", id: "def-narrow", body: "scoped"};
+		await topicStub(liveConnectionTopic(procedure, {id: slug})).fetch("https://live/publish", {
+			method: "POST",
+			body: JSON.stringify({
+				kind: "connection",
+				match: {procedure, args: {id: slug}},
+				frame: {type: "appendNode", nodeType: "Definition", edge: {node}},
+			}),
+		});
+
+		const frame = await readFrame(reader, decoder, buffer);
+		expect(frame).toContain("event: connection");
+		const payload = JSON.parse(
+			frame
+				.split("\n")
+				.find((l) => l.startsWith("data: "))!
+				.slice("data: ".length),
+		) as {kind: string; event: {type: string; edge: {node: unknown}}};
+		expect(payload.event.type).toBe("appendNode");
+		expect(payload.event.edge.node).toEqual(node);
+
+		await reader.cancel();
+	});
 });
 
 describe("LiveDO cookie auth at connect", () => {

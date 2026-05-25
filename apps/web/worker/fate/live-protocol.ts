@@ -57,7 +57,7 @@ export type PublishMessage =
 	  }
 	| {
 			readonly kind: "connection";
-			readonly match: {readonly procedure: string};
+			readonly match: {readonly procedure: string; readonly args?: Record<string, unknown>};
 			readonly frame: ConnectionFrame;
 			readonly eventId?: string;
 	  };
@@ -213,9 +213,13 @@ export function topicsForPublish(message: PublishMessage): ReadonlyArray<string>
 	}
 	// A connection publish reaches both the args-scoped topic (filter args kept,
 	// pagination stripped by fate's `liveConnectionTopic`) and the global wildcard
-	// topic, so `live.connection("posts")` reaches every feed-sort variant.
+	// topic. Threading the publish args yields the SAME args-scoped key the
+	// subscriber registered under in `topicsForSubscribe`, so a publish hits the
+	// narrow topic directly instead of fanning out to every variant via the global
+	// wildcard — `live.connection("posts")` (no args) still reaches every feed-sort
+	// variant through the global topic.
 	return [
-		liveConnectionTopic(message.match.procedure),
+		liveConnectionTopic(message.match.procedure, message.match.args),
 		liveGlobalConnectionTopic(message.match.procedure),
 	];
 }

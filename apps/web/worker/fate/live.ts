@@ -137,8 +137,14 @@ export const liveBus: PhoenixLiveEventBus = {
 			...(options?.eventId !== undefined ? {eventId: options.eventId} : {}),
 		});
 	},
-	connection: (procedure, _args) => {
-		const match = {procedure} as const;
+	connection: (procedure, args) => {
+		// Carry the connection's filter args into the publish match so
+		// `topicsForPublish` resolves the SAME args-scoped `liveConnectionTopic`
+		// key the subscriber registered under — the publish hits the narrow topic
+		// directly instead of falling back to the procedure-wide global wildcard
+		// (which would fan one term's new definition out to every `Term.definitions`
+		// subscriber across all slugs/tabs/sessions).
+		const match = {procedure, ...(args !== undefined ? {args} : {})};
 		const emit = (frame: ConnectionFrame, eventId?: string) =>
 			publish({
 				kind: "connection",
