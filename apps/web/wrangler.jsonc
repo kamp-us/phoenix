@@ -15,9 +15,7 @@
 	"observability": {
 		"enabled": true
 	},
-	// Single D1 binding holds every product table (sozluk, pano, pasaport).
-	// Per ADR 0009, D1 is the canonical store — not a "view" or "projection."
-	// Per-environment DBs are in env.staging / env.test below.
+	// Per ADR 0009, D1 is the canonical store. Per-environment DBs below.
 	"d1_databases": [
 		{
 			"binding": "PHOENIX_DB",
@@ -26,10 +24,7 @@
 			"migrations_dir": "worker/db/drizzle/migrations"
 		}
 	],
-	// The two live-fan-out Durable Objects (ADR 0023, split per ADR 0025):
-	// `ConnectionDO` instances own client SSE streams + subscription lists +
-	// generation; `TopicDO` instances hold durable subscriber registries in
-	// SQLite storage and drive the publish fan-out + alarm reap.
+	// Live fan-out DOs (ADR 0023, split per ADR 0025).
 	"durable_objects": {
 		"bindings": [
 			{ "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
