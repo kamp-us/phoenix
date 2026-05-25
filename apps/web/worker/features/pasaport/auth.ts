@@ -22,6 +22,7 @@ import * as schema from "../../db/drizzle/schema";
  * Pasaport module) can.
  */
 export const createAuth = (d1: D1Database, secret: string) => {
+	if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
 	const db = drizzle(d1, {schema});
 	return betterAuth({
 		secret,
