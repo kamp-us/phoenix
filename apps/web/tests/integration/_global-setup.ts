@@ -18,6 +18,7 @@
 
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import type {CompiledStack} from "alchemy/Stack";
 import * as Core from "alchemy/Test/Core";
 import {installLocalhostDns} from "alchemy/Util/LocalhostDns";
 import * as Effect from "effect/Effect";
@@ -27,14 +28,14 @@ import Stack from "../../alchemy.run.ts";
 
 installLocalhostDns();
 
-// `Cloudflare.providers()` validates Cloudflare credentials from the environment
-// at CONSTRUCTION time — even though `dev: true` + `localState()` runs the worker
-// in a local workerd and never calls the Cloudflare API. On a developer machine a
-// real account is usually resolvable (env or a wrangler/alchemy profile), so this
-// is invisible; on a clean CI runner there is none and it throws
-// `AuthError: Missing required env: CLOUDFLARE_ACCOUNT_ID`. The dev deploy is fully
-// local, so any value satisfies the check — inject inert placeholders when absent
-// so the suite is self-contained (no `alchemy login`, no profile, no secrets).
+// `Cloudflare.providers()` validates `CLOUDFLARE_ACCOUNT_ID` (+ token) from the
+// environment at CONSTRUCTION time, even though the test deploy runs the worker in
+// a local workerd (`dev: true`) with file-based `localState()` and never calls the
+// Cloudflare API (the stack forces local state under Vitest — see alchemy.run.ts).
+// On a dev machine these resolve from a wrangler/alchemy profile; on a clean CI
+// runner there is none, so it throws `AuthError: Missing required env`. The values
+// are inert in dev — inject placeholders when absent so the suite is genuinely
+// self-contained (no `alchemy login`, no profile, no secrets, no network).
 process.env.CLOUDFLARE_ACCOUNT_ID ??= "local-dev-account";
 process.env.CLOUDFLARE_API_TOKEN ??= "local-dev-token";
 
@@ -42,7 +43,7 @@ const options = {
 	providers: Cloudflare.providers(),
 	state: Alchemy.localState(),
 	dev: true,
-};
+} satisfies Core.MakeOptions;
 
 // One scope holds the dev sidecar alive across the whole test run; `teardown`
 // closes it after `destroy`.
@@ -50,12 +51,25 @@ const scope = Scope.makeUnsafe("sequential");
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// The Stack's compiled output type (`{url: Output<string>}`) — what `Core.deploy`
+// resolves and `Core.run` awaits. `Core.deploy` infers this `A` from the Stack
+// effect and returns `Input.Resolve<A>` (the Output<string> resolved to a plain
+// string), which `Core.run` then awaits. Pinning `A` explicitly keeps the link to
+// the Stack's declared output: if the stack stops returning `{url}`, `deploy` no
+// longer accepts the Stack and this stops compiling rather than breaking at
+// runtime on `out.url`.
+type StackOutput =
+	typeof Stack extends Effect.Effect<CompiledStack<infer A>, infer _E, infer _R> ? A : never;
+
+// Thin typed wrapper over `Core.deploy` → `Core.run` that threads `StackOutput`
+// end-to-end. The base `StackEffect` requirements the stack carries are a subset
+// of what `deploy` accepts, so no cast is needed once `A` is pinned; `run` then
+// awaits `deploy`'s resolved output type.
+const deployStack = (): Promise<Alchemy.Input.Resolve<StackOutput>> =>
+	Core.run(Core.deploy<StackOutput>(options, Stack, {scope}), options, scope);
+
 export async function setup() {
-	const out = (await Core.run(
-		Core.deploy(options, Stack as never, {scope}) as never,
-		options,
-		scope,
-	)) as {url: string};
+	const out = await deployStack();
 
 	const url = out.url;
 	let healthy = false;
@@ -78,8 +92,6 @@ export async function setup() {
 }
 
 export async function teardown() {
-	await Core.run(Core.destroy(options, Stack as never, {scope}) as never, options, scope).catch(
-		() => {},
-	);
+	await Core.run(Core.destroy(options, Stack, {scope}), options, scope).catch(() => {});
 	await Effect.runPromise(Scope.close(scope, Exit.void)).catch(() => {});
 }
