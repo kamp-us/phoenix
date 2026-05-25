@@ -29,8 +29,8 @@ jobs:
 
       - run: pnpm lint
 
-      - name: Generate fate + worker types
-        run: pnpm --filter @phoenix/web fate:generate && pnpm --filter @phoenix/web cf-typegen
+      - name: Generate worker types
+        run: pnpm --filter @phoenix/web cf-typegen
 
       - run: pnpm test
 
