@@ -23,7 +23,7 @@
 		{
 			"binding": "PHOENIX_DB",
 			"database_name": "phoenix_db",
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "f14168ac-6b13-4961-a2fe-b8ae82736d14",
 			"migrations_dir": "worker/db/drizzle/migrations"
 		}
 	],
@@ -48,5 +48,45 @@
 	"rules": [{ "type": "Text", "globs": ["**/*.sql"], "fallthrough": true }],
 	"vars": {
 		"ENVIRONMENT": "development"
+	},
+	"env": {
+		"staging": {
+			"d1_databases": [
+				{
+					"binding": "PHOENIX_DB",
+					"database_name": "phoenix_db_staging",
+					"database_id": "479c1f3e-fb40-4967-867b-55110cf980b6",
+					"migrations_dir": "worker/db/drizzle/migrations"
+				}
+			],
+			"durable_objects": {
+				"bindings": [
+					{ "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+					{ "name": "TOPIC_DO", "class_name": "TopicDO" }
+				]
+			},
+			"vars": {
+				"ENVIRONMENT": "staging"
+			}
+		},
+		"test": {
+			"d1_databases": [
+				{
+					"binding": "PHOENIX_DB",
+					"database_name": "phoenix_db_test",
+					"database_id": "3a423e0e-f9d1-452a-9993-84673a3c257e",
+					"migrations_dir": "worker/db/drizzle/migrations"
+				}
+			],
+			"durable_objects": {
+				"bindings": [
+					{ "name": "CONNECTION_DO", "class_name": "ConnectionDO" },
+					{ "name": "TOPIC_DO", "class_name": "TopicDO" }
+				]
+			},
+			"vars": {
+				"ENVIRONMENT": "test"
+			}
+		}
 	}
 }
