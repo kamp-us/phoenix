@@ -1,13 +1,13 @@
 # Phoenix patterns
 
-Reusable patterns for writing phoenix code — the backend and the frontend's data layer. The `effect-*` and `fate-*` docs are **evergreen** — they describe how the codebase is structured, not how to migrate to it. Treat them as the load-bearing references when adding features, fixing bugs, or onboarding a new agent. The `alchemy-*` docs are the one exception: they describe the **target** infra architecture for the in-progress alchemy-effect rebuild (clearly marked below), since phoenix is greenfield enough — not yet in production — that the target is worth writing down before the source matches it.
+Reusable patterns for writing phoenix code — the backend and the frontend's data layer. The `effect-*`, `fate-*`, and `alchemy-*` docs are **evergreen** — they describe how the codebase is structured, not how to migrate to it. Treat them as the load-bearing references when adding features, fixing bugs, or onboarding a new agent. The `alchemy-*` docs describe the infra layer: phoenix runs on [alchemy-effect](https://github.com/usirin/alchemy-effect) — one Effect program for infra + runtime, replacing the old `wrangler.jsonc`, the Hono entry, manual binding access, and the hand-written DO classes.
 
 Start with [effect-context-service.md](./effect-context-service.md) and [feature-services.md](./feature-services.md). The rest fill in.
 
 ## Three layers
 
 - **Effect domain layer** (the `effect-*` docs) — services, errors, layer composition, tracing, testing, validation. Transport-agnostic: domain logic lives here and knows nothing about how data reaches the client.
-- **fate protocol layer** (the server-side `fate-*` docs) — how the backend serves data. Data views are the schema, an Effect bridge runs domain services through the request runtime, and hand-built sources back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol via `createFateServer` mounted on Hono (no tRPC/GraphQL adapter).
+- **fate protocol layer** (the server-side `fate-*` docs) — how the backend serves data. Data views are the schema, an Effect bridge runs domain services through the captured worker service map, and hand-built sources back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol via `createFateServer` mounted on an imperative `HttpRouter.add` route (no tRPC/GraphQL adapter; no Hono).
 - **fate client layer** (the client-side `fate-*` docs) — how the SPA consumes data. Components declare views, one batched `useRequest` per screen, declarative mutations, and live views over SSE. Built on `react-fate`.
 
 The protocol and client layers share one view/type model: the server's `Entity<>` types are the client's types, generated, with no schema artifact between them. The bridge ([fate-effect-bridge.md](./fate-effect-bridge.md)) is the seam between the domain and protocol layers — read it first when working server-side.
@@ -31,12 +31,12 @@ Read [fate-effect-bridge.md](./fate-effect-bridge.md) first — it's the seam ev
 
 | Doc | Topic | Read when |
 |---|---|---|
-| [fate-effect-bridge.md](./fate-effect-bridge.md) | `fateQuery`/`fateList`/`fateMutation`/`fateSource`, `FateContext` carrying the runtime, `encodeFateError` | The seam between fate and Effect — read first |
+| [fate-effect-bridge.md](./fate-effect-bridge.md) | `fateQuery`/`fateList`/`fateMutation`/`fateSource`, `FateContext` carrying the captured service map, `encodeFateError` | The seam between fate and Effect — read first |
 | [fate-data-views.md](./fate-data-views.md) | `dataView`/`Entity`/`computed`/`count`/`list`, selection masking, modeling conventions, raw IDs | Declaring an entity type |
 | [fate-sources.md](./fate-sources.md) | Hand-built `SourceResolver`, Effect-backed `byId`/`byIds`/`connection` executors, never the Drizzle adapter | Wiring a view's reads to a service |
 | [fate-mutations.md](./fate-mutations.md) | `mutations` map, validation in services, re-resolving the changed entity, delete returns the parent | Writing a mutation |
 | [fate-connections.md](./fate-connections.md) | `ConnectionResult`, custom `lists` resolvers vs source `connection`, cursor ownership | Writing a paginated list |
-| [fate-server-wiring.md](./fate-server-wiring.md) | `createFateServer` composition, per-request runtime owned by the Hono route, codegen | Assembling/mounting the server |
+| [fate-server-wiring.md](./fate-server-wiring.md) | `createFateServer` composition, the captured service map provided by the `/fate` route, codegen | Assembling/mounting the server |
 
 ## Index — fate client layer
 
@@ -47,20 +47,20 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | [fate-client-setup.md](./fate-client-setup.md) | `createFateClient`, `<FateClient>` provider, auth, generated client, Suspense/error rails | Wiring the client / app shell |
 | [fate-views-and-requests.md](./fate-views-and-requests.md) | `view`/`useView`/`ViewRef`, masking, one batched `useRequest` per screen, `useListView` pagination | Reading data in a component |
 | [fate-mutations-client.md](./fate-mutations-client.md) | `fate.mutations`/`actions`, optimistic updates, `insert`/`delete` membership, error routing | Writing data from the UI |
-| [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the `LiveDO` Durable Object | Making a view live (spans client + server) |
+| [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the `ConnectionDO`/`TopicDO` Durable Objects | Making a view live (spans client + server) |
 
-## Index — alchemy infra layer (target architecture)
+## Index — alchemy infra layer
 
-> **These describe the target shape, not current `apps/web/worker/`.** phoenix is being rebuilt on [alchemy-effect](https://github.com/usirin/alchemy-effect) — one Effect program for infra + runtime, replacing `wrangler.jsonc`, the Hono entry, manual binding access, and the hand-written DO classes. The `effect-*` and `fate-*` docs above describe what survives the rebuild unchanged. Read [alchemy-overview.md](./alchemy-overview.md) first; it maps what changes vs what stays. This is not an Effect migration — phoenix and alchemy are both on effect v4.
+The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-effect](https://github.com/usirin/alchemy-effect) — one Effect program for infra + runtime, in place of `wrangler.jsonc`, a Hono entry, manual binding access, and hand-written DO classes. Read [alchemy-overview.md](./alchemy-overview.md) first; it maps how this layer sits under the unchanged `effect-*`/`fate-*` layers. phoenix and alchemy are both on effect v4.
 
 | Doc | Topic | Read when |
 |---|---|---|
-| [alchemy-overview.md](./alchemy-overview.md) | One program = infra + runtime; the two phases; what stays (domain/fate) vs changes; reading order | First — the mental model |
+| [alchemy-overview.md](./alchemy-overview.md) | One program = infra + runtime; the two phases; how the layers stack (domain/fate over alchemy); reading order | First — the mental model |
 | [alchemy-worker.md](./alchemy-worker.md) | `Cloudflare.Worker<T>()(...)`, init vs runtime phase, props, providing binding Live layers | Defining/editing the worker entry |
 | [alchemy-bindings.md](./alchemy-bindings.md) | `bind()` = deploy-policy + runtime-service; `yield*` DO vs `.bind` resource; the Live-layer convention | Reaching a Cloudflare resource |
-| [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No per-request `ManagedRuntime`; worker-level vs request-scoped layers; `Effect.services()` capture; the fate bridge delta | Touching the fate↔domain seam |
+| [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No per-request `ManagedRuntime`; worker-level vs request-scoped layers; `Effect.context()` capture; how the fate bridge runs the captured map | Touching the fate↔domain seam |
 | [alchemy-http-router.md](./alchemy-http-router.md) | `HttpApiBuilder` for typed JSON + imperative `HttpRouter` for raw-Request/SSE; `toHttpEffect`; assets/worker-first | Adding/moving an HTTP route |
-| [alchemy-durable-objects.md](./alchemy-durable-objects.md) | `DurableObjectNamespace<T>()`, per-instance Effect, typed RPC, `state.storage.sql`, alarms; ConnectionDO/TopicDO port | Working on the live DOs |
+| [alchemy-durable-objects.md](./alchemy-durable-objects.md) | `DurableObjectNamespace<T>()`, per-instance Effect, typed RPC, `state.storage.sql`, alarms; the `ConnectionDO`/`TopicDO` live DOs | Working on the live DOs |
 | [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) | `D1Connection.bind` → `raw` → `drizzle(raw,{schema})`; `Drizzle` as a worker-level singleton; migrations via `Drizzle.Schema` | Wiring the DB or migrations |
 | [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) | `alchemy.run.ts` + `Alchemy.Stack`, resource declarations, `wrangler.jsonc`→alchemy map, dev/deploy, stages | Declaring resources or deploying |
 
@@ -71,7 +71,7 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 - **Validation lives in services** (ADR 0013). fate's `input` schema is thin shape-coercion only.
 - **The server is the single source of truth for types.** The client imports `Entity<>` types; codegen emits the client wiring. No schema artifact.
 - **One batched request per screen.** A screen root declares its whole view tree in one `useRequest`; child `useView` calls read from cache — no waterfalls. Mutations are declarative (`optimistic`, `insert`/`delete`); no imperative cache updaters.
-- **Live views run over SSE through the `LiveDO` Durable Object.** The built-in in-memory bus can't fan out across Worker isolates, so a publish-only `LiveEventBus` forwards events to `LiveDO`, which owns the SSE connections and fans out. `LiveDO` is the one Durable Object in phoenix.
+- **Live views run over SSE through the `ConnectionDO`/`TopicDO` Durable Objects.** The built-in in-memory bus can't fan out across Worker isolates, so a publish-only `LiveEventBus` forwards events to `TopicDO`, which owns the subscriber registry and fans out to `ConnectionDO`, which holds the SSE connections (split per ADR 0025). These are the two Durable Objects in phoenix.
 
 ## Conventions across these docs
 

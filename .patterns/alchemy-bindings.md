@@ -71,7 +71,7 @@ For D1 specifically, prepared-statement construction (`prepare`, `bind`) is sync
 
 ## Where this leaves `CloudflareEnv`
 
-Today phoenix threads a `CloudflareEnv` service so layers can read `env.PHOENIX_DB`. On alchemy that service largely recedes: bindings are resolved by `bind()` in init, and the resulting clients are passed into the services that need them. A capability service like `Drizzle` is built *from* the bound `db`, not from `env` — see [alchemy-runtime.md](./alchemy-runtime.md). Any genuinely env-shaped config (e.g. an `ENVIRONMENT` flag) becomes a plain resource var or a small `Layer.succeed`.
+The old `CloudflareEnv` service that threaded `env.PHOENIX_DB` into layers has largely receded: bindings are resolved by `bind()` in init, and the resulting clients are passed into the services that need them. A capability service like `Drizzle` is built *from* the bound `db`, not from `env` — see [alchemy-runtime.md](./alchemy-runtime.md). Any genuinely env-shaped config (e.g. an `ENVIRONMENT` flag) is a plain resource var or a small `Layer.succeed`.
 
 It doesn't vanish entirely, though. A few consumers still need the underlying raw `D1Database` — better-auth's Drizzle adapter most notably — and that now comes from the bound connection's `raw` rather than `env.PHOENIX_DB`. Note `raw` is itself an Effect (`Effect<D1Database, never, …>`), so you obtain it with `const raw = yield* conn.raw` in the same init phase, then thread it where it's needed.
 

@@ -2,16 +2,16 @@
 
 How phoenix's live fan-out DOs are written on alchemy. The short answer: `export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()("TopicDO", body) {}`, where `body` is a two-phase Effect — shared init, then a per-instance Effect that yields `Cloudflare.DurableObjectState` and returns handlers. Methods you return become **typed RPC** the worker (and other DOs) call through a stub; `fetch` handles request-shaped interactions like the SSE upgrade. SQLite, KV storage, alarms, and WebSocket hibernation are all Effect-wrapped.
 
-This replaces the plain `class extends DurableObject` form. phoenix has two DOs — `ConnectionDO` (holds one client's SSE stream) and `TopicDO` (the durable subscriber registry + fan-out), split per ADR 0023/0025.
+This is the form in place of a plain `class extends DurableObject`. phoenix has two DOs — `ConnectionDO` (holds one client's SSE stream) and `TopicDO` (the durable subscriber registry + fan-out), split per ADR 0023/0025. They live in `worker/infra/connection-do.ts` and `worker/infra/topic-do.ts`.
 
-> **Use the inline form — the modular `.make()` form is not implemented for DOs.** alchemy's `DurableObjectNamespace.ts` JSDoc documents a modular `class Foo extends …()("Foo") {}` + `export default Foo.make(impl)` form (for tree-shaking when DOs reference each other), but in `alchemy@2.0.0-beta.44` it **does not exist**: `()("Name")` with no impl returns a plain object (no `.make`), and `class X extends …()("Name") {}` throws *"superclass is not a constructor"*. Only `Worker` got `.make`; DOs didn't. So both DOs use the **inline** form — `export default class X extends …DurableObjectNamespace<X>()("Name", Effect.gen(…)) {}`. The mutual ES imports between the two DO files are fine; circular *imports* aren't the problem (see the next note for what is).
+> **Both DOs use the inline form — the modular `.make()` form is not implemented for DOs.** alchemy's `DurableObjectNamespace.ts` JSDoc documents a modular `class Foo extends …()("Foo") {}` + `export default Foo.make(impl)` form (for tree-shaking when DOs reference each other), but in `alchemy@2.0.0-beta.44` it **does not exist**: `()("Name")` with no impl returns a plain object (no `.make`), and `class X extends …()("Name") {}` throws *"superclass is not a constructor"*. Only `Worker` got `.make`; DOs didn't. So both DOs use the **inline** form — `export default class X extends …DurableObjectNamespace<X>()("Name", Effect.gen(…)) {}`. The mutual ES imports between the two DO files are fine; circular *imports* aren't the problem (see the next note for what is).
 
-> **Bidirectional binding: SPIKED — works, but resolve the sibling DO lazily (in the method, never in init).** Under `alchemy dev` (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`) a POC confirmed `ConnectionDO`↔`TopicDO` cross-calls both directions. The hard constraint: a `yield* OtherDO` in the **init** block of *both* DOs (an eager circular binding) **deterministically OOMs the build** (heap climbs to ~4 GB, fatal). The working pattern is **symmetric-lazy**: resolve the sibling **inside the RPC method body**, per call — `publish: () => Effect.gen(function*(){ const connections = yield* ConnectionDO; … })`. With that, both legs work: subscribe→publish→the frame arrived on the held SSE stream. Verified facts: typed RPC, `state.storage.sql.exec`, held-stream fan-out (`controller.enqueue` into a stream held in one DO from another DO's RPC), and the bidirectional cross-resolution. So the ADR 0023/0025 port is viable — **never resolve the sibling DO in init**.
+> **Bidirectional binding: resolve the sibling DO lazily (in the method, never in init).** `ConnectionDO`↔`TopicDO` cross-call in both directions. The hard constraint: a `yield* OtherDO` in the **init** block of *both* DOs (an eager circular binding) **deterministically OOMs the build** (heap climbs to ~4 GB, fatal). The working pattern is **symmetric-lazy**: resolve the sibling **inside the RPC method body**, per call — `publish: () => Effect.gen(function*(){ const connections = yield* ConnectionDO; … })`. With that, both legs work: subscribe→publish→the frame arrives on the held SSE stream. This carries typed RPC, `state.storage.sql.exec`, held-stream fan-out (`controller.enqueue` into a stream held in one DO from another DO's RPC), and the bidirectional cross-resolution — **never resolve the sibling DO in init**.
 
 ## The shape
 
 ```ts
-// worker/fate/topic-do.ts
+// worker/infra/topic-do.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import ConnectionDO from "./connection-do";
@@ -48,7 +48,7 @@ The outer `Effect.gen` runs once per namespace (bind siblings, shared setup). Th
 
 ## RPC methods instead of fetch-path dispatch
 
-Today the DOs dispatch on `url.pathname` inside `fetch` (`/subscribe`, `/publish`, `/probe`, …). On alchemy, return **named methods** instead — each becomes a typed RPC on the stub. This deletes the manual routing and the request/response (de)serialization:
+Rather than dispatching on `url.pathname` inside `fetch` (`/subscribe`, `/publish`, `/probe`, …), the DOs return **named methods** — each becomes a typed RPC on the stub. There is no manual routing or request/response (de)serialization:
 
 ```ts
 // caller (in the worker, or in another DO's init scope)
@@ -61,41 +61,41 @@ Reserve `fetch` for genuinely request-shaped interactions — the SSE upgrade on
 
 ## Addressing: `getByName` only
 
-The alchemy DO stub exposes **only `getByName(name)` and `fetch(HttpServerRequest)`**. `idFromName`, `idFromString`, `get`, `newUniqueId`, and `jurisdiction` are commented out / unavailable. phoenix today addresses DOs by id — `env.CONNECTION_DO.get(idFromName("connection:" + id))` in `live-route.ts`, `env.TOPIC_DO.get(idFromName("topic:" + key))` in `live.ts`, and even `idFromString(connectionId)` inside `TopicDO`. **None of those exist on the alchemy stub.** All addressing becomes name-based:
+The alchemy DO stub exposes **only `getByName(name)` and `fetch(HttpServerRequest)`**. `idFromName`, `idFromString`, `get`, `newUniqueId`, and `jurisdiction` are commented out / unavailable — none exist on the alchemy stub. (The old wrangler code addressed DOs by id — `env.CONNECTION_DO.get(idFromName("connection:" + id))`, `env.TOPIC_DO.get(idFromName("topic:" + key))`, and `idFromString(connectionId)` inside `TopicDO`.) All addressing is name-based:
 
 ```ts
 const connection = connections.getByName(`connection:${connectionId}`);
 const topic = topics.getByName(`topic:${topicKey}`);
 ```
 
-> **Re-confirm the `generation` invariant under name addressing.** `ConnectionDO`'s reconnect/stale-detection turns on a persisted `generation` counter, and `TopicDO` resolves a connection it learned about via `idFromString(connectionId)` — an *opaque* id. Under name addressing the only handle is the human-readable `connection:${id}` key, so the registry must store and re-derive that key, and the generation-based stale-detection invariant must be **re-confirmed** to still hold (no opaque-id path remains to lean on).
+> **The `generation` invariant holds under name addressing.** `ConnectionDO`'s reconnect/stale-detection turns on a persisted `generation` counter. The old code resolved a connection via `idFromString(connectionId)` — an *opaque* id; under name addressing the only handle is the human-readable `connection:${id}` key, so the registry stores and re-derives that key, and the generation-based stale-detection invariant holds across it (no opaque-id path remains to lean on).
 
 ## The live publish path
 
-This is a real redesign of `live.ts` / `live-route.ts`, not a mechanical port.
+The live publish path is a redesign of `live.ts` / `live-route.ts`, not a mechanical port of the old code.
 
-Today `liveBus` (in `live.ts`) reaches `TopicDO` outside any Effect/handler scope: a synchronous publish call resolves the binding off `env`, builds a request, and forwards through `waitUntil`. The plumbing is an `AsyncLocalStorage<{env, waitUntil}>` (`livePublishContext`) set up per request so the synchronous `live.*` methods can reach the runtime:
+The old `liveBus` reached `TopicDO` outside any Effect/handler scope: a synchronous publish call resolved the binding off `env`, built a request, and forwarded through `waitUntil`. The plumbing was an `AsyncLocalStorage<{env, waitUntil}>` (`livePublishContext`) set up per request so the synchronous `live.*` methods could reach the runtime:
 
 ```ts
-// today — live.ts
+// old wrangler code — live.ts
 const topic = env.TOPIC_DO.get(env.TOPIC_DO.idFromName(`topic:${topicKey}`));
 waitUntil(topic.fetch("https://live/publish", {method: "POST", body: JSON.stringify(msg)}));
 ```
 
-Two things break on alchemy: there is no `idFromName`, and `stub.fetch(urlString, init)` does not exist (the stub's `fetch` takes an `HttpServerRequest`). On alchemy the path becomes:
+Two things don't exist on alchemy: `idFromName`, and `stub.fetch(urlString, init)` (the stub's `fetch` takes an `HttpServerRequest`). So the path is:
 
 - The `TopicDO` namespace is **resolved in worker init** (`const topics = yield* TopicDO`), not pulled off `env` per call.
 - The publish is a **typed RPC**: `topics.getByName(`topic:${topicKey}`).publish(message)` — no URL, no `JSON.stringify`.
-- The fan-out is still fired-and-forgotten, but `waitUntil` comes from `yield* Cloudflare.WorkerExecutionContext` rather than an `AsyncLocalStorage`-carried closure.
+- The fan-out is fired-and-forgotten, with `waitUntil` from `yield* Cloudflare.WorkerExecutionContext` rather than an `AsyncLocalStorage`-carried closure.
 
-So `livePublishContext` and the `https://live/publish` string-URL `fetch` both go away; the binding and `waitUntil` are obtained from the alchemy runtime in scope.
+`livePublishContext` and the `https://live/publish` string-URL `fetch` are gone; the binding and `waitUntil` come from the alchemy runtime in scope.
 
 ## Per-instance state & storage
 
 `Cloudflare.DurableObjectState` exposes Effect-wrapped storage:
 
 - **`state.storage.get/put/delete`** — the transactional KV store. `ConnectionDO`'s persisted `generation` lives here: `yield* state.storage.put("generation", n)`.
-- **`state.storage.sql.exec<Row>(query, ...bindings)`** — the embedded SQLite. Returns a `SqlCursor<Row>` that is both a `Stream` and has `.toArray()`, `.one()`, `.next()`. `TopicDO`'s `subscribers` table ports directly:
+- **`state.storage.sql.exec<Row>(query, ...bindings)`** — the embedded SQLite. Returns a `SqlCursor<Row>` that is both a `Stream` and has `.toArray()`, `.one()`, `.next()`. `TopicDO`'s `subscribers` table lives here:
 
   ```ts
   const rows = yield* state.storage.sql
@@ -104,7 +104,7 @@ So `livePublishContext` and the `https://live/publish` string-URL `fetch` both g
   ```
 - **`state.storage.setAlarm/getAlarm/deleteAlarm`** — alarms. `TopicDO`'s 60s reap schedules with `yield* state.storage.setAlarm(Date.now() + 60_000)` and implements the `alarm: () => Effect` handler.
 
-> **`SqlStorageValue` constraint.** `sql.exec<T>` requires `T extends Record<string, SqlStorageValue>`. Keep the row interface's index signature (`[column: string]: string | number`) exactly as `TopicDO` has it today, or the generic won't satisfy.
+> **`SqlStorageValue` constraint.** `sql.exec<T>` requires `T extends Record<string, SqlStorageValue>`. The row interface keeps an index signature (`[column: string]: string | number`), as `TopicDO`'s does, or the generic won't satisfy.
 
 ## ConnectionDO: holding the SSE stream
 
@@ -161,15 +161,15 @@ export default class ConnectionDO extends Cloudflare.DurableObjectNamespace<Conn
 ) {}
 ```
 
-`setInterval` works unchanged inside the handler — the stream pins the DO in memory (no hibernation), exactly as today. The delivery path stays a trivial `Effect.sync(controller.enqueue)`, so the latency-sensitive write costs nothing extra for being in Effect.
+`setInterval` works unchanged inside the handler — the stream pins the DO in memory (no hibernation). The delivery path is a trivial `Effect.sync(controller.enqueue)`, so the latency-sensitive write costs nothing extra for being in Effect.
 
 > **No WebSocket hibernation here.** `ConnectionDO` holds an HTTP SSE stream, not a WebSocket, so the hibernation API doesn't apply. For DOs that *do* use WebSockets, alchemy provides `Cloudflare.upgrade()` (returns `[response, socket]`), `socket.serializeAttachment`/`deserializeAttachment`, `state.getWebSockets()`, and the `webSocketMessage`/`webSocketClose` handler slots — see the alchemy `Room` example. phoenix doesn't need them today.
 
 ## Cross-DO calls preserve direction
 
-The fan-out invariant (ADR 0025) survives the port and gets *stronger*: `TopicDO` resolves `ConnectionDO` (lazily, inside `publish`/`probe`) and calls `connection.deliver(frame)` / `connection.probe()` as typed RPC; `ConnectionDO` resolves `TopicDO` (lazily, inside `subscribe`/`unsubscribe`) and calls `topic.register(...)`. Neither namespace can resolve its own kind, so topic→topic and connection→connection calls don't type-check. The binding *is* the direction.
+The fan-out invariant (ADR 0025) is enforced by the type system: `TopicDO` resolves `ConnectionDO` (lazily, inside `publish`/`probe`) and calls `connection.deliver(frame)` / `connection.probe()` as typed RPC; `ConnectionDO` resolves `TopicDO` (lazily, inside `subscribe`/`unsubscribe`) and calls `topic.register(...)`. Neither namespace can resolve its own kind, so topic→topic and connection→connection calls don't type-check. The binding *is* the direction.
 
-This is a **circular DO↔DO binding** — each DO resolves the other. It works (spiked, both directions) **only because the resolution is lazy**: `yield* OtherDO` happens per call inside the method, never in the init block. An eager `yield* OtherDO` in both inits OOMs the build — see the binding note at the top.
+This is a **circular DO↔DO binding** — each DO resolves the other. It works in both directions **only because the resolution is lazy**: `yield* OtherDO` happens per call inside the method, never in the init block. An eager `yield* OtherDO` in both inits OOMs the build — see the binding note at the top.
 
 ## Alarms
 
@@ -192,7 +192,7 @@ return {
 };
 ```
 
-The miss-count / generation logic inside `probeAndReap` is the existing `TopicDO` algorithm verbatim — only the storage and fetch calls become `yield*`. Keep the per-probe timeout (`Effect.timeout`) so one unreachable connection can't stall the single-threaded DO.
+The miss-count / generation logic inside `probeAndReap` is the same algorithm `TopicDO` has always used — the storage and fetch calls are `yield*`. The per-probe timeout (`Effect.timeout`) keeps one unreachable connection from stalling the single-threaded DO.
 
 ## See also
 

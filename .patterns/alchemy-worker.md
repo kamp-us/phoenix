@@ -2,7 +2,7 @@
 
 How the single phoenix worker is defined. The short answer: `export default class Phoenix extends Cloudflare.Worker<Phoenix>()("phoenix", props, body)`. The `body` is an Effect that runs in two phases — bind resources in the init phase, return handlers in the runtime phase — and the binding Live layers it needs are provided onto the body with `Effect.provide`.
 
-This replaces both `wrangler.jsonc` and the Hono `export default {fetch}` entry in `worker/index.ts`.
+This is `worker/index.ts` — there is no `wrangler.jsonc` and no Hono `export default {fetch}` entry.
 
 ## The class-factory shape
 
@@ -55,10 +55,10 @@ There is no `bindings`/`durable_objects`/`d1_databases`/`migrations` key here. B
 
 phoenix is **one worker that serves both** the React SPA and the hand-written API/fate/DO backend on a single URL. That shape is `Cloudflare.Worker` with `assets` — *not* `Cloudflare.Vite`:
 
-- **`Cloudflare.Worker` + `assets`** (phoenix's shape) — your hand-written `main` is the backend; `assets: "./dist/client"` uploads the SPA Vite already built. `runWorkerFirst` routes `/api/*` and `/fate*` to the worker, everything else to the assets ([alchemy-http-router.md](./alchemy-http-router.md)). The Vite build of the client stays a normal build step — `vite build → dist/client`, then deploy — exactly as today's `pnpm build && wrangler deploy` becomes `pnpm build && alchemy deploy`.
+- **`Cloudflare.Worker` + `assets`** (phoenix's shape) — the hand-written `main` is the backend; `assets: "./dist/client"` uploads the SPA Vite built. `runWorkerFirst` routes `/api/*` and `/fate*` to the worker, everything else to the assets ([alchemy-http-router.md](./alchemy-http-router.md)). The Vite build of the client is a normal build step — `vite build → dist/client`, then `pnpm build && alchemy deploy`.
 - **`Cloudflare.Vite`** — *wrong tool here.* It sets `main: undefined`: it's assets-only for SPAs, or the framework's entry for SSR. It can't host phoenix's backend on the same worker; using it forces a two-worker split (an assets-only `Web` worker + a bound `Backend` worker, two URLs), abandoning the single-surface model.
 
-> **Drop `@cloudflare/vite-plugin` from `vite.config.ts`.** alchemy ships its own Cloudflare integration and is **not compatible** with `@cloudflare/vite-plugin` — remove the `cloudflare()` plugin. Everything else in the config is preserved: `react()`, the **`fate()` codegen plugin**, aliases, tsconfig all keep working (the `fate()` plugin is orthogonal to Cloudflare — it reads the server's `Entity<>` types regardless of how the worker deploys).
+> **No `@cloudflare/vite-plugin` in `vite.config.ts`.** alchemy ships its own Cloudflare integration and is **not compatible** with `@cloudflare/vite-plugin`, so the `cloudflare()` plugin is gone. Everything else in the config stays: `react()`, the **`fate()` codegen plugin**, aliases, tsconfig all work (the `fate()` plugin is orthogonal to Cloudflare — it reads the server's `Entity<>` types regardless of how the worker deploys).
 
 > **Local dev is two processes, by design — still one worker.** `alchemy dev` runs this worker against a local workerd runtime with live bindings and watch-rebuilds the backend, but with `Cloudflare.Worker` + `assets` it serves `dist/client` *statically* (no client HMR — that lives only on the `Cloudflare.Vite` path, which can't host an Effect-native worker). So client HMR comes from running the SPA's `vite dev` alongside `alchemy dev`, with Vite proxying `/api` and `/fate*` to the worker. The second terminal is the Vite dev server, **not** a second worker — it's gone at deploy, where one worker serves both. This is phoenix's chosen dev model; the constraint and proxy config are in [alchemy-stack-deploy.md](./alchemy-stack-deploy.md#local-dev--two-processes-the-decided-model).
 
@@ -77,7 +77,7 @@ Effect.gen(function* () {
 
 Two binding flavors show up here — `yield* SomeDO` for Durable Objects vs `yield* Cloudflare.X.bind(resource)` for D1/R2/KV. [alchemy-bindings.md](./alchemy-bindings.md) explains why they differ.
 
-> **Build worker-wide singletons in init, not per request.** The bound `db` is stable for the isolate's life, so the `Drizzle` capability service and the feature services (Sozluk, Pano, …) are constructed once here and provided as worker-level layers. Only request-scoped values (`Auth`, `RequestContext`) are provided per request. This is the central difference from today's "rebuild a `ManagedRuntime` every request" design — see [alchemy-runtime.md](./alchemy-runtime.md).
+> **Build worker-wide singletons in init, not per request.** The bound `db` is stable for the isolate's life, so the `Drizzle` capability service and the feature services (Sozluk, Pano, …) are constructed once here and provided as worker-level layers. Only request-scoped values (`Auth`, `RequestContext`) are provided per request. This is the central difference from the old "rebuild a `ManagedRuntime` every request" design — see [alchemy-runtime.md](./alchemy-runtime.md).
 
 ## Runtime phase — return handlers
 
@@ -117,6 +117,6 @@ A `bind()` call has a runtime dependency: the *binding service's* Live layer (e.
 ## See also
 
 - [alchemy-bindings.md](./alchemy-bindings.md) — `bind()` and the Live-layer convention
-- [alchemy-runtime.md](./alchemy-runtime.md) — worker-level vs request-scoped layers; the captured `ServiceMap`
+- [alchemy-runtime.md](./alchemy-runtime.md) — worker-level vs request-scoped layers; the captured service map
 - [alchemy-http-router.md](./alchemy-http-router.md) — building the router that becomes `fetch`
 - [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — declaring resources and deploying this worker

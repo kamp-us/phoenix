@@ -84,7 +84,7 @@ fate's `handleRequest`, better-auth's handler, and the live SSE route all want t
 ```ts
 // worker/http/app.ts
 const routesLive = Layer.mergeAll(
-  // fate data plane — captures the ServiceMap, runs fate (alchemy-runtime.md)
+  // fate data plane — captures the service map, runs fate (alchemy-runtime.md)
   HttpRouter.add("POST", "/fate", handleFate),
 
   // better-auth — forward the raw Request to the auth handler
@@ -137,7 +137,7 @@ const AppLive = Layer.mergeAll(adminLive, healthLive, routesLive).pipe(
 return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
 ```
 
-> **Mixing `HttpApiBuilder` groups and imperative `HttpRouter.add` routes in one app is API-supported but undemonstrated.** Both produce `Layer`s feeding the same router, so the composition type-checks — but no alchemy/effect example actually mixes the two styles, and the route-precedence / 404-catch-all / OPTIONS interplay between HttpApi groups and imperative routes isn't shown anywhere. Verify it with a small spike when you first wire it.
+> **`AppLive` mixes `HttpApiBuilder` groups and imperative `HttpRouter.add` routes in one app.** Both produce `Layer`s feeding the same router, so the composition type-checks and runs — the typed-JSON groups (health, admin) and the imperative raw-Request routes (fate, auth, agents, live) merge into the single `AppLive` the worker's `fetch` compiles from. The route-precedence / 404-catch-all / OPTIONS interplay between the two styles holds in the live worker.
 
 CORS, when needed, is a layer too: `HttpRouter.cors({allowedOrigins, allowedMethods, allowedHeaders})` provided onto `AppLive`.
 

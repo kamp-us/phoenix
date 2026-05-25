@@ -22,7 +22,7 @@ const db = drizzle(raw, {schema});           // one instance for the isolate
 
 ## The `Drizzle` service, built once
 
-`DrizzleLive` no longer reads a per-request `CloudflareEnv`. It's a layer built from the already-constructed `db`, provided at worker scope:
+`DrizzleLive` does not read a per-request `CloudflareEnv`. It's a layer built from the already-constructed `db`, provided at worker scope:
 
 ```ts
 // worker/services/Drizzle.ts
@@ -41,9 +41,9 @@ export const makeDrizzleLayer = (db: DrizzleDb) =>
   });
 ```
 
-Compare to today's `Layer.effect(Drizzle)(Effect.gen(… yield* CloudflareEnv …))`: same `{run, batch}` shape, same `Effect.tryPromise` object-notation house rule, but the `db` arrives as an argument instead of being built from `env` on every request. The feature layers provide over it exactly as in [effect-layer-composition.md](./effect-layer-composition.md) — and all of it sits at worker scope per [alchemy-runtime.md](./alchemy-runtime.md).
+Versus the old `Layer.effect(Drizzle)(Effect.gen(… yield* CloudflareEnv …))`: same `{run, batch}` shape, same `Effect.tryPromise` object-notation house rule, but the `db` arrives as an argument instead of being built from `env` on every request. The feature layers provide over it exactly as in [effect-layer-composition.md](./effect-layer-composition.md) — and all of it sits at worker scope per [alchemy-runtime.md](./alchemy-runtime.md).
 
-> **Why once-per-isolate is correct.** The D1 binding is stable for the isolate's life, and `drizzle()` is a thin wrapper with no per-request state. Rebuilding it per request bought nothing on alchemy and cost an allocation; building it in init is both simpler and faster. The same logic makes the feature services worker-level singletons.
+> **Why once-per-isolate is correct.** The D1 binding is stable for the isolate's life, and `drizzle()` is a thin wrapper with no per-request state. Rebuilding it per request buys nothing on alchemy and costs an allocation; building it in init is both simpler and faster. The same logic makes the feature services worker-level singletons.
 
 ## Hand-written SQL still uses the connection
 
@@ -89,7 +89,7 @@ const auth = betterAuth({
 
 The adapter is shape-only — it speaks the SQLite dialect, so it doesn't care that `raw` is a D1 driver. The better-auth tables (`user`, `session`, `account`, …) are part of the same `schema.ts` and migrate through the same pipeline.
 
-> **Hoist `createAuth` out of the request path.** Today `Pasaport` calls `createAuth(env.PHOENIX_DB)` per request inside `handleAuth`/`validateSession`. Under the worker-singleton model ([ADR 0029](../.decisions/0029-worker-runtime-servicemap.md), [alchemy-runtime.md](./alchemy-runtime.md)) it should be built **once per isolate** from the bound `raw` in the worker's init phase — the same instance reused across requests — consistent with how `Drizzle` and the feature services are worker-level singletons. The `betterAuth` instance has no per-request state; rebuilding it each call only costs allocations.
+> **`createAuth` is built out of the request path.** `Pasaport` builds its `betterAuth` instance **once** when its layer is constructed (init phase), not per request inside `handleAuth`/`validateSession`. This follows the worker-singleton model ([ADR 0029](../.decisions/0029-worker-runtime-servicemap.md), [alchemy-runtime.md](./alchemy-runtime.md)) — the same instance is reused across requests, consistent with how `Drizzle` and the feature services are worker-level singletons. The `betterAuth` instance has no per-request state; rebuilding it each call would only cost allocations.
 
 ## See also
 
