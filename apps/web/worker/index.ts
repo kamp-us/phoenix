@@ -26,9 +26,8 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {makeFateLayer} from "./fate/layers.ts";
-import {fateRoute} from "./fate/route.ts";
+import {makeAdminLayer, makeFateLayer} from "./fate/layers.ts";
+import {makeAppLive} from "./http/app.ts";
 import ConnectionDO from "./infra/connection-do.ts";
 import {PhoenixDb} from "./infra/resources.ts";
 import TopicDO from "./infra/topic-do.ts";
@@ -47,26 +46,25 @@ interface WorkerResources {
 	readonly topics: Effect.Success<typeof TopicDO>;
 }
 
-// `GET /api/health` — the liveness probe. Reads the worker's `ENVIRONMENT` var
-// off `WorkerEnvironment` (the alchemy equivalent of the old `c.env.ENVIRONMENT`)
-// and returns it as JSON. The single route wired in the foundation slice.
-const health = HttpRouter.add(
-	"GET",
-	"/api/health",
-	Effect.gen(function* () {
-		const env = yield* Cloudflare.WorkerEnvironment;
-		return yield* HttpServerResponse.json({
-			status: "ok",
-			environment: (env as Record<string, unknown>).ENVIRONMENT ?? null,
-		});
-	}),
-);
-
 export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 	"phoenix",
 	{
 		main: import.meta.filename,
-		env: {ENVIRONMENT: "development"},
+		env: {
+			ENVIRONMENT: "development",
+			// Dev runs behind the Vite proxy, so the worker sees `Host:
+			// 127.0.0.1:<port>` rather than the browser origin. better-auth needs
+			// the real browser origin to set/validate its cookie, so we hand it the
+			// origin explicitly (ADR 0031 / `auth.ts`) instead of inferring from the
+			// inbound Host. No `https://` here — that would flip the cookie `Secure`
+			// flag and break `http://localhost` storage.
+			BETTER_AUTH_URL: "http://localhost:3000",
+			BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
+			// better-auth refuses to start on its built-in default secret. This is a
+			// fixed *dev* value (not a real secret) so local sign-in/session works;
+			// the production secret is wired at deploy (task 8) and must override it.
+			BETTER_AUTH_SECRET: "phoenix-dev-secret-not-for-production",
+		},
 		assets: {
 			// The built SPA shell. `@cloudflare/vite-plugin` (still present until
 			// task 6 removes it) nests the client build under `dist/client/client`;
@@ -101,25 +99,37 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		const resources: WorkerResources = {db, connections, topics};
 		void resources;
 
-		// Build the worker-level fate layer ONCE from the bound D1 (ADR 0029):
+		// Build the worker-level service layers ONCE from the bound D1 (ADR 0029):
 		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
-		// `drizzle(raw, {schema})`; `Drizzle` + the feature services are
-		// constructed here and stay alive for the isolate. The `/fate` route
-		// provides only `Auth`/`RequestContext` per request — there is no
-		// per-request `ManagedRuntime`.
+		// `drizzle(raw, {schema})`; `Drizzle` + the feature services (`fateLayer`)
+		// and the admin services (`adminLayer`) are constructed here and stay alive
+		// for the isolate — the request/admin split (ADR 0012) as two layer sets
+		// over one worker, not two `ManagedRuntime`s. The `/fate` route provides
+		// only `Auth`/`RequestContext` per request; the admin seeders provide
+		// `AdminAuth` (the env gate) per route.
 		const raw = yield* db.raw;
-		const env = yield* Cloudflare.WorkerEnvironment;
-		const fateLayer = makeFateLayer(createDrizzle(raw), env as unknown as Env);
+		// `WorkerEnvironment` carries the worker's `env` vars, but the D1 client is
+		// resolved through the bound `D1Connection` (`db.raw`), not as an `env.*`
+		// binding. `PasaportLive` builds better-auth's drizzle adapter from
+		// `env.PHOENIX_DB` (alchemy-drizzle-d1.md "better-auth on the same D1"), so
+		// surface the bound `raw` there — the same D1 the data plane runs on.
+		const env = {
+			...(yield* Cloudflare.WorkerEnvironment),
+			PHOENIX_DB: raw,
+		} as unknown as Env;
+		const fateLayer = makeFateLayer(createDrizzle(raw), env);
+		const adminLayer = makeAdminLayer(createDrizzle(raw));
+		const adminAllowed = (env as unknown as Record<string, unknown>).ENVIRONMENT === "development";
 
-		// The HTTP surface wired so far: `GET /api/health` (JSON liveness) and
-		// `POST /fate` (the fate data plane). `fateRoute`'s handler requires the
-		// worker-level feature services (`FateEnv` minus the per-request
-		// `Auth`/`RequestContext` it provides itself); `HttpRouter.add` lifts those
-		// into route-requirement markers (`Request.From<"Requires", …>`), which
-		// `HttpRouter.provideRequest` — not plain `Layer.provide` — discharges from
-		// `fateLayer` before `toHttpEffect`. Tasks 3–5 add the rest (auth, admin
-		// seeders, live SSE).
-		const AppLive = Layer.mergeAll(health, fateRoute.pipe(HttpRouter.provideRequest(fateLayer)));
+		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027):
+		//   - typed JSON via `HttpApiBuilder` groups: `GET /api/health` + the
+		//     dev-only `/api/admin/*` seeders (schema-decoded payloads),
+		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
+		//     `* /api/auth/*` (better-auth), `* /agents/*` (stub).
+		// `makeAppLive` discharges the raw routes' worker-level requirements with
+		// `HttpRouter.provideRequest(fateLayer)` and provides the admin services +
+		// platform stubs to the typed groups (`http/app.ts`).
+		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed});
 
 		// ── RUNTIME PHASE (per request) ──
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};

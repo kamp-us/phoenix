@@ -324,6 +324,28 @@ export const PasaportLive = Layer.effect(Pasaport)(
 		// directly so every method's `R` stays `never`.
 		const {run} = yield* Drizzle;
 
+		// Build better-auth ONCE per isolate from the bound D1 (alchemy-drizzle-d1.md
+		// "hoist createAuth out of the request path") — the instance has no
+		// per-request state, so reusing it across `handleAuth`/`validateSession`
+		// only saves allocations. Dev runs behind the Vite proxy, so the worker
+		// sees `Host: 127.0.0.1:<port>`; set `baseURL`/`trustedOrigins` explicitly
+		// (ADR 0031) instead of inferring from the inbound Host. We never flip
+		// `Secure` — the dev cookie must stay host-only on `http://localhost`.
+		const envRecord = env as unknown as Record<string, string | undefined>;
+		const trusted = envRecord.BETTER_AUTH_TRUSTED_ORIGINS;
+		const auth = createAuth(env.PHOENIX_DB, {
+			...(envRecord.BETTER_AUTH_SECRET ? {secret: envRecord.BETTER_AUTH_SECRET} : {}),
+			...(envRecord.BETTER_AUTH_URL ? {baseURL: envRecord.BETTER_AUTH_URL} : {}),
+			...(trusted
+				? {
+						trustedOrigins: trusted
+							.split(",")
+							.map((o) => o.trim())
+							.filter(Boolean),
+					}
+				: {}),
+		});
+
 		const upsertProfileIdentity = Effect.fn("Pasaport.upsertProfileIdentity")(function* (args: {
 			userId: string;
 			username: string | null;
@@ -403,7 +425,6 @@ export const PasaportLive = Layer.effect(Pasaport)(
 
 		return {
 			handleAuth: Effect.fn("Pasaport.handleAuth")(function* (request: Request) {
-				const auth = createAuth(env.PHOENIX_DB, env.BETTER_AUTH_SECRET);
 				return yield* Effect.promise(() => auth.handler(request));
 			}),
 
@@ -414,7 +435,6 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				// swallowed.
 				return yield* Effect.tryPromise({
 					try: async () => {
-						const auth = createAuth(env.PHOENIX_DB, env.BETTER_AUTH_SECRET);
 						const session = await auth.api.getSession({headers});
 						if (!session?.user) return null;
 						return session;

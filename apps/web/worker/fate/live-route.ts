@@ -19,7 +19,6 @@
  * in the URL and no header. See `.patterns/fate-live-views.md` (Auth), ADR 0023.
  */
 import {FateRequestError} from "@nkzw/fate/server";
-import type {Context} from "hono";
 import {assertLiveControlRequest, type SubscribeControl} from "./live-protocol.ts";
 import {validateSessionCookie} from "./runtime.ts";
 
@@ -44,10 +43,16 @@ function connectionStub(env: Env, connectionId: string) {
  * Handle a `/fate/live` request. Validates the session cookie, then either opens
  * the SSE stream (GET) or forwards a control message (POST) to the connection DO.
  * Builds no request runtime.
+ *
+ * NOTE (task 5): this still uses the legacy `env.CONNECTION_DO` stub API
+ * (`idFromName`/`get`/`stub.fetch(urlString)`). The alchemy DO redesign — typed
+ * RPC + `getByName` + worker-init namespace resolution — and wiring this route
+ * into `AppLive` is task 5's work (ADR 0028, user stories 18–19). It now takes
+ * the raw `Request`/`Env` directly (no Hono `Context`) so the worker carries no
+ * Hono import.
  */
-export async function handleLiveRequest(c: Context<{Bindings: Env}>): Promise<Response> {
-	const request = c.req.raw;
-	const session = await validateSessionCookie(c.env, request);
+export async function handleLiveRequest(request: Request, env: Env): Promise<Response> {
+	const session = await validateSessionCookie(env, request);
 	if (!session) {
 		return liveError("UNAUTHORIZED", "Live views require a session.", 401);
 	}
@@ -58,7 +63,7 @@ export async function handleLiveRequest(c: Context<{Bindings: Env}>): Promise<Re
 		if (!connectionId) {
 			return liveError("BAD_REQUEST", "Missing connectionId.", 400);
 		}
-		const stub = connectionStub(c.env, connectionId);
+		const stub = connectionStub(env, connectionId);
 		return stub.fetch(`https://live/connect?ownerId=${encodeURIComponent(ownerId)}`);
 	}
 
@@ -72,7 +77,7 @@ export async function handleLiveRequest(c: Context<{Bindings: Env}>): Promise<Re
 			}
 			return liveError("BAD_REQUEST", "Body must be valid JSON.", 400);
 		}
-		const stub = connectionStub(c.env, body.connectionId);
+		const stub = connectionStub(env, body.connectionId);
 		const results: Array<{id: string; ok: boolean; data: null; error?: unknown}> = [];
 		for (const operation of body.operations) {
 			if (operation.kind === "unsubscribe") {

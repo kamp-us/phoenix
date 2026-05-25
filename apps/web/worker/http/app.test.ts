@@ -1,0 +1,213 @@
+/**
+ * HTTP surface on `HttpRouter` + `HttpApiBuilder`, Hono-free (task 4, ADR 0027).
+ *
+ * Drives the *compiled* application — `HttpRouter.toHttpEffect(makeAppLive(...))`,
+ * the exact effect the worker returns as `fetch` — over a `node:sqlite`-backed
+ * D1 (the same stand-in the fate bridge tests use). Each "request" provides the
+ * worker-level services (`Cloudflare.Request`, `WorkerEnvironment`,
+ * `WorkerExecutionContext`, `HttpServerRequest`, `Scope`) exactly as the alchemy
+ * worker runtime does, then asserts on the `Response`.
+ *
+ * Covers the task-4 acceptance criteria end-to-end through the real router:
+ *   - `GET /api/health` is an `HttpApiBuilder` group → 200 JSON.
+ *   - the `/api/admin/*` seeders are `HttpApiBuilder` groups with schema-decoded
+ *     payloads: gated 403 when not allowed; populate D1 + re-resolve over fate
+ *     when allowed (the seeder-import path).
+ *   - `/api/auth/*` (better-auth) signs a user up against the same D1 tables and
+ *     issues a session cookie; that cookie makes an authenticated fate `me`
+ *     request succeed end-to-end.
+ *
+ * Runs in the node pool (workerd harness is task 7).
+ */
+import * as Cloudflare from "alchemy/Cloudflare";
+import {Effect} from "effect";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
+import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
+import {makeAdminLayer, makeFateLayer} from "../fate/layers.ts";
+import {createDrizzle} from "../services/Drizzle.ts";
+import {makeAppLive} from "./app.ts";
+
+let sqlite: SqliteD1;
+/** `AppLive` built with the admin env gate open (`adminAllowed = true`). */
+let appLayerAllowed: ReturnType<typeof makeAppLive>;
+/** Same, but with the gate closed. */
+let appLayerDenied: ReturnType<typeof makeAppLive>;
+
+const ENV = {
+	ENVIRONMENT: "development",
+	BETTER_AUTH_URL: "http://localhost:3000",
+	BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
+	BETTER_AUTH_SECRET: "phoenix-test-secret",
+} as const;
+
+const EXEC_CTX = {waitUntil: () => {}, passThroughOnException: () => {}};
+
+/**
+ * Drive one request through the compiled app. Compiles `appLayer` with
+ * `toHttpEffect`, runs the inner app effect with the worker-level services the
+ * alchemy runtime would provide (`Cloudflare.Request`/`WorkerEnvironment`/
+ * `WorkerExecutionContext` + `HttpServerRequest`), and returns the web
+ * `Response`. Everything runs inside one `Scope` so the built layer stays alive
+ * for the inner effect.
+ */
+async function fetch(appLayer: typeof appLayerAllowed, request: Request): Promise<Response> {
+	const program = Effect.gen(function* () {
+		const app = yield* HttpRouter.toHttpEffect(appLayer);
+		const res = yield* app.pipe(
+			Effect.provideService(
+				HttpServerRequest.HttpServerRequest,
+				HttpServerRequest.fromWeb(request),
+			),
+		);
+		return HttpServerResponse.toWeb(res);
+	}).pipe(
+		Effect.provideService(Cloudflare.Request, request),
+		Effect.provideService(Cloudflare.WorkerEnvironment, ENV as never),
+		Effect.provideService(Cloudflare.WorkerExecutionContext, EXEC_CTX as never),
+		Effect.scoped,
+	);
+	return Effect.runPromise(program as Effect.Effect<Response>);
+}
+
+beforeAll(() => {
+	sqlite = makeSqliteD1();
+	sqlite.applyMigration(baselineMigration);
+
+	const db = createDrizzle(sqlite.d1);
+	const env = {PHOENIX_DB: sqlite.d1, ...ENV} as unknown as Env;
+	const fateLayer = makeFateLayer(db, env);
+	const adminLayer = makeAdminLayer(db);
+
+	appLayerAllowed = makeAppLive({fateLayer, adminLayer, adminAllowed: true});
+	appLayerDenied = makeAppLive({fateLayer, adminLayer, adminAllowed: false});
+});
+
+afterAll(() => {
+	sqlite?.close();
+});
+
+describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
+	it("GET /api/health → 200 JSON", async () => {
+		const res = await fetch(appLayerAllowed, new Request("https://test.local/api/health"));
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {status: string; environment: string | null};
+		expect(body.status).toBe("ok");
+		expect(body.environment).toBe("development");
+	});
+
+	it("POST /api/admin/sozluk/upsert-term is gated 403 when admin not allowed", async () => {
+		const res = await fetch(
+			appLayerDenied,
+			new Request("https://test.local/api/admin/sozluk/upsert-term", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					slug: "denied",
+					title: "Denied",
+					definitions: [{authorId: "k", authorName: "kampus", body: "x"}],
+				}),
+			}),
+		);
+		expect(res.status).toBe(403);
+	});
+
+	it("POST /api/admin/sozluk/upsert-term populates D1 and re-resolves over fate", async () => {
+		const seed = await fetch(
+			appLayerAllowed,
+			new Request("https://test.local/api/admin/sozluk/upsert-term", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					slug: "merhaba",
+					title: "Merhaba",
+					definitions: [{authorId: "kampus", authorName: "kampus", body: "selam", score: 0}],
+				}),
+			}),
+		);
+		expect(seed.status).toBe(200);
+		const seedBody = (await seed.json()) as {
+			slug: string;
+			created: boolean;
+			insertedDefinitions: number;
+		};
+		expect(seedBody.slug).toBe("merhaba");
+		expect(seedBody.created).toBe(true);
+		expect(seedBody.insertedDefinitions).toBe(1);
+
+		// Re-resolve the seeded term over the fate data plane (POST /fate).
+		const fateRes = await fetch(
+			appLayerAllowed,
+			new Request("https://test.local/fate", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					version: 1,
+					operations: [
+						{
+							id: "1",
+							kind: "query",
+							name: "term",
+							args: {slug: "merhaba"},
+							select: ["slug", "title", "count"],
+						},
+					],
+				}),
+			}),
+		);
+		expect(fateRes.status).toBe(200);
+		const fateBody = (await fateRes.json()) as {
+			results: Array<{ok: boolean; data: {slug: string; title: string; count: number} | null}>;
+		};
+		const result = fateBody.results[0]!;
+		expect(result.ok).toBe(true);
+		expect(result.data?.slug).toBe("merhaba");
+		expect(result.data?.title).toBe("Merhaba");
+		expect(result.data?.count).toBe(1);
+	});
+
+	it("/api/auth/* signs up a user and an authenticated fate request succeeds", async () => {
+		const signUp = await fetch(
+			appLayerAllowed,
+			new Request("https://test.local/api/auth/sign-up/email", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					email: "writer@example.com",
+					password: "hunter2hunter2",
+					name: "writer",
+				}),
+			}),
+		);
+		expect([200, 201]).toContain(signUp.status);
+
+		// Capture the session cookie better-auth set on sign-up.
+		const setCookie = signUp.headers.get("set-cookie");
+		expect(setCookie).toBeTruthy();
+		const cookie = setCookie!.split(";")[0]!;
+
+		// An authenticated fate `me` request carries the session cookie and
+		// resolves the signed-up user end-to-end.
+		const meRes = await fetch(
+			appLayerAllowed,
+			new Request("https://test.local/fate", {
+				method: "POST",
+				headers: {"content-type": "application/json", cookie},
+				body: JSON.stringify({
+					version: 1,
+					operations: [{id: "1", kind: "query", name: "me", select: ["id", "username"]}],
+				}),
+			}),
+		);
+		expect(meRes.status).toBe(200);
+		const meBody = (await meRes.json()) as {
+			results: Array<{ok: boolean; data: {id: string} | null; error?: {code: string}}>;
+		};
+		const me = meBody.results[0]!;
+		expect(me.ok).toBe(true);
+		expect(me.data).not.toBeNull();
+	});
+});

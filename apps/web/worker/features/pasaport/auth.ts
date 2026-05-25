@@ -21,13 +21,23 @@ import * as schema from "../../db/drizzle/schema.ts";
  * only the server-side `setUsername` mutation (which goes through the
  * Pasaport module) can.
  */
-export const createAuth = (d1: D1Database, secret: string | undefined) => {
-	if (!secret) throw new Error("BETTER_AUTH_SECRET is not set");
+export const createAuth = (d1: D1Database, options?: BetterAuthDeployOptions) => {
 	const db = drizzle(d1, {schema});
 	return betterAuth({
-		secret,
 		emailAndPassword: {enabled: true},
 		database: drizzleAdapter(db, {provider: "sqlite", schema}),
+		// better-auth refuses to run on its built-in default secret. The worker
+		// supplies one from `env` (a fixed dev value locally; the real secret is
+		// wired at deploy — task 8). Without it sign-in/session 500s.
+		...(options?.secret ? {secret: options.secret} : {}),
+		// In dev the worker is reached through the Vite proxy, so it sees
+		// `Host: 127.0.0.1:<port>` rather than the browser origin. Set `baseURL`
+		// and `trustedOrigins` explicitly instead of inferring from the inbound
+		// Host (PRD / ADR 0031 dev-cookie spike). We deliberately do NOT flip
+		// `Secure` (no `https://` baseURL, no `useSecureCookies`) — the dev cookie
+		// must stay host-only on `http://localhost` to survive the proxy.
+		...(options?.baseURL ? {baseURL: options.baseURL} : {}),
+		...(options?.trustedOrigins ? {trustedOrigins: [...options.trustedOrigins]} : {}),
 		user: {
 			additionalFields: {
 				username: {
@@ -57,6 +67,17 @@ export const createAuth = (d1: D1Database, secret: string | undefined) => {
 		],
 	} satisfies BetterAuthOptions);
 };
+
+/**
+ * Deploy-shaped knobs the worker hands `createAuth` — explicit `baseURL` /
+ * `trustedOrigins` for the dev proxy (Host is `127.0.0.1:<port>`, not the
+ * browser origin). Never carries `Secure`/Domain overrides.
+ */
+export interface BetterAuthDeployOptions {
+	readonly secret?: string;
+	readonly baseURL?: string;
+	readonly trustedOrigins?: ReadonlyArray<string>;
+}
 
 export type Auth = BetterAuth;
 export type Session = NonNullable<Awaited<ReturnType<Auth["api"]["getSession"]>>>;
