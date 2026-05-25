@@ -64,7 +64,7 @@ export const AdminAuthLive = Layer.effect(AdminAuth)(
 	Effect.gen(function* () {
 		const env = yield* CloudflareEnv;
 		return {
-			allowed: (env.ENVIRONMENT as string) === "development",
+			allowed: env.ENVIRONMENT === "development",
 		};
 	}),
 );

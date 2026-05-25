@@ -29,10 +29,7 @@ jobs:
 
       - run: pnpm lint
 
-      - name: Generate Relay artifacts
-        run: pnpm --filter @phoenix/web relay
-
-      - name: Generate Worker types
+      - name: Generate worker types
         run: pnpm --filter @phoenix/web cf-typegen
 
       - run: pnpm test
