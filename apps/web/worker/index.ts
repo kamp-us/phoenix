@@ -13,9 +13,12 @@ import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
 import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
 import {AdminAuth} from "./services";
 
-// The one Durable Object in phoenix: cross-isolate live fan-out over SSE (ADR
-// 0023). Exported here so wrangler's `LIVE_DO` binding can resolve the class.
-export {LiveDO} from "./fate/live-do";
+// The two live-fan-out Durable Objects (ADR 0023, split per ADR 0025):
+// `ConnectionDO` owns a client's SSE stream + subscription list + generation;
+// `TopicDO` owns the durable subscriber registry + publish fan-out + reap.
+// Exported here so wrangler's `CONNECTION_DO`/`TOPIC_DO` bindings resolve them.
+export {ConnectionDO} from "./fate/connection-do";
+export {TopicDO} from "./fate/topic-do";
 
 // Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
 // Every product surface (sozluk, pano, pasaport) runs as module functions
@@ -181,7 +184,7 @@ app.all("/agents/*", async (c) => {
 	return res ?? c.text("Not Found", 404);
 });
 
-// The SSE live transport (ADR 0023). Served from the `LiveDO` Durable Object —
+// The SSE live transport (ADR 0023). Served from the `ConnectionDO` —
 // it builds NO per-request `ManagedRuntime` (the DO relays inline-published
 // data; no Effect runtime in the live path). Mounted before `/fate` so the more
 // specific path wins. Both GET (open stream) and POST (control) authenticate the
@@ -202,7 +205,7 @@ app.post("/fate", async (c) => {
 	const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
 	try {
 		// Run the operation inside the live publish context so a mutation's `live.*`
-		// publishes can resolve the `LIVE_DO` binding and `waitUntil` the fan-out
+		// publishes can resolve the `TOPIC_DO` binding and `waitUntil` the fan-out
 		// (it doesn't block the response). The publish carries inline-resolved data.
 		return await livePublishContext.run(
 			{env: c.env, waitUntil: (p: Promise<unknown>) => c.executionCtx.waitUntil(p)},

@@ -20,7 +20,7 @@
  * builds those when constructed with `live: true` (it then opens an
  * `EventSource` against `liveUrl` with `withCredentials` and POSTs fate's native
  * `subscribe`/`subscribeConnection`/`unsubscribe` control protocol — exactly what
- * phoenix's `/fate/live` route + `LiveDO` serve).
+ * phoenix's `/fate/live` route + `ConnectionDO`/`TopicDO` serve).
  *
  * The fate Vite plugin only emits `live: true` in the generated client when the
  * server's `fateServer.manifest.live` is non-empty — and that manifest is

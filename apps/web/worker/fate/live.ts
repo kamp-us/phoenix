@@ -5,7 +5,8 @@
  * `live.update` reaches only subscribers in the **same** Worker isolate, so it
  * cannot fan out across the isolates a Worker spreads requests over. phoenix
  * keeps fate's SSE wire protocol but moves the connection-owning and fan-out
- * into the `LiveDO` Durable Object (`live-do.ts`).
+ * into the `ConnectionDO` + `TopicDO` Durable Objects (`connection-do.ts`,
+ * `topic-do.ts`).
  *
  * This module is the **publish** side: `update`/`delete`/`connection().*`
  * resolve a topic string and `fetch` the topic DO with the **inline-resolved**
@@ -20,7 +21,7 @@
  * Node codegen runner and in the Workers runtime under `nodejs_compat`; unlike
  * `cloudflare:workers`, which the codegen runner can't resolve), so the fate
  * codegen graph (`schema.ts → server.ts → live.ts`) loads it without the
- * Workers runtime. The `LIVE_DO` binding is reached at runtime through
+ * Workers runtime. The `TOPIC_DO` binding is reached at runtime through
  * {@link livePublishContext}.
  */
 import {AsyncLocalStorage} from "node:async_hooks";
@@ -58,7 +59,7 @@ type PhoenixLiveEventBus = Omit<LiveEventBus, "update"> & {update: TypedLiveUpda
 /**
  * Per-request publish context. The `/fate` route runs the operation inside
  * `livePublishContext.run({env, waitUntil}, …)` so the synchronous `live.*`
- * publish methods can resolve the `LIVE_DO` binding and `waitUntil` the fan-out
+ * publish methods can resolve the `TOPIC_DO` binding and `waitUntil` the fan-out
  * (so it doesn't block the mutation response). Outside a request (e.g. the bus
  * imported in isolation, or a query that publishes nothing), publishes no-op.
  */
@@ -69,7 +70,7 @@ export const livePublishContext = new AsyncLocalStorage<{
 
 /** Resolve a topic-role DO stub by topic key from the ambient publish context. */
 function topicStubFor(env: Env, topicKey: string) {
-	return env.LIVE_DO.get(env.LIVE_DO.idFromName(`topic:${topicKey}`));
+	return env.TOPIC_DO.get(env.TOPIC_DO.idFromName(`topic:${topicKey}`));
 }
 
 /** Forward a publish message to every topic DO it targets, via `waitUntil`. */
@@ -205,10 +206,10 @@ export const liveBus: PhoenixLiveEventBus = {
 		});
 	},
 	subscribe: () => {
-		throw new Error("live subscriptions are served by LiveDO, not the bus");
+		throw new Error("live subscriptions are served by ConnectionDO, not the bus");
 	},
 	subscribeConnection: () => {
-		throw new Error("live subscriptions are served by LiveDO, not the bus");
+		throw new Error("live subscriptions are served by ConnectionDO, not the bus");
 	},
 };
 

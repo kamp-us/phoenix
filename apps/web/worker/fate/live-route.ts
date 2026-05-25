@@ -1,8 +1,8 @@
 /**
  * The `/fate/live` route — the SSE transport endpoint.
  *
- * This route serves fate's native SSE live protocol from the `LiveDO` Durable
- * Object rather than from fate's in-Worker `handleLiveRequest` (which cannot fan
+ * This route serves fate's native SSE live protocol from the `ConnectionDO`
+ * rather than from fate's in-Worker `handleLiveRequest` (which cannot fan
  * out across isolates). It builds **no** per-request `ManagedRuntime`: the DO
  * relays the inline-resolved `data`/`node` mutations publish, so there is no
  * Effect runtime in the live path. The only Effect here is the session cookie
@@ -37,7 +37,7 @@ function liveError(code: string, message: string, status: number): Response {
 
 /** Resolve the connection-role DO stub for a connection id. */
 function connectionStub(env: Env, connectionId: string) {
-	return env.LIVE_DO.get(env.LIVE_DO.idFromName(`connection:${connectionId}`));
+	return env.CONNECTION_DO.get(env.CONNECTION_DO.idFromName(`connection:${connectionId}`));
 }
 
 /**

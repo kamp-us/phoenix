@@ -3,8 +3,9 @@
  *
  * This module is import-safe in a plain Node runner (no `cloudflare:workers`):
  * the publish-only `liveBus` (`live.ts`) and the fate codegen graph
- * (`schema.ts → server.ts → live.ts`) depend on it, while only the `LiveDO`
- * class (`live-do.ts`) and the worker entry pull in the Workers runtime. Keeping
+ * (`schema.ts → server.ts → live.ts`) depend on it, while only the `ConnectionDO`
+ * + `TopicDO` classes (`connection-do.ts`, `topic-do.ts`) and the worker entry
+ * pull in the Workers runtime. Keeping
  * the frame shapes + topic resolution here means the bus, the DO, and the route
  * all speak one vocabulary.
  *

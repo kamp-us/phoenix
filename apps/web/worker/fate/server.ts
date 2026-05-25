@@ -13,7 +13,7 @@
  * custom resolver (full control over the nested `definitions` / `comments` /
  * `contributions` connections — see `.patterns/fate-connections.md`), not a
  * source-masked byId/list root. `live` is the publish-only `LiveEventBus`
- * (ADR 0023) routing mutation events to the `LiveDO`.
+ * (ADR 0023) routing mutation events to the `TopicDO` fan-out.
  * `sources` is the hand-built Effect-backed resolver from `sources.ts`
  * (`User`/`Term`/`Definition`/`Post`/`Comment`/`Tag`/`Profile`/`Contribution`,
  * `byIds` on every relation-fetchable type).
@@ -66,7 +66,7 @@ export const fateServer = createFateServer<
 	mutations: allMutations,
 	sources,
 	// The publish-only `LiveEventBus` (ADR 0023): `live.*` in a mutation resolves
-	// a topic and fetches the `LiveDO` topic instance with inline-resolved data.
+	// a topic and fetches the `TopicDO` instance with inline-resolved data.
 	// fate detects a custom bus by `"subscribe" in live` (the property exists but
 	// throws — the SSE protocol is served by the `/fate/live` route + DO, not by
 	// fate's `handleLiveRequest`). See `worker/fate/live.ts`.
