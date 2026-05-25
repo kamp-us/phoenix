@@ -18,19 +18,35 @@
  * — they're load-bearing helpers but not part of the public surface.
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, gt, isNull, lt, or, sql} from "drizzle-orm";
+import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
+import {forwardPage, keysetAfter} from "../../db/keyset";
 import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 import {excerpt as excerptText} from "../../shared/text";
 import type {VoteTargetNotFound} from "../vote/errors";
 import {Vote} from "../vote/Vote";
+import {
+	type DefinitionConnectionPage,
+	type DefinitionRow,
+	type TermPage,
+	toDefinitionRow,
+} from "./definition-row";
 import {
 	BodyRequired,
 	BodyTooLong,
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
 } from "./errors";
+import {
+	type TermConnectionPage,
+	type TermSummaryRow,
+	termSummaryColumns,
+	toTermSummaryRow,
+} from "./term-summary";
+
+export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row";
+export type {TermConnectionPage, TermSummaryRow} from "./term-summary";
 
 /* -------------------------------------------------------------------------- */
 /* Domain constants                                                            */
@@ -51,57 +67,7 @@ const excerpt = (body: string): string => excerptText(body, DEFINITION_EXCERPT_L
 /* Read shapes                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export interface DefinitionRow {
-	id: string;
-	score: number;
-	body: string;
-	author: string;
-	/** Pasaport user id of the author — gates edit / delete affordances. */
-	authorId: string;
-	createdAt: Date;
-	updatedAt: Date;
-}
-
-export interface TermPage {
-	id: string;
-	slug: string;
-	title: string;
-	totalDefinitions: number;
-	totalScore: number;
-	firstAt: Date;
-	lastEdit: Date;
-	definitions: DefinitionRow[];
-}
-
-export interface DefinitionConnectionPage {
-	rows: DefinitionRow[];
-	hasNextPage: boolean;
-	endCursor: string | null;
-	totalCount: number;
-}
-
 export type ListSort = "recent" | "popular";
-
-export interface TermSummaryRow {
-	id: string;
-	slug: string;
-	title: string;
-	count: number;
-	totalScore: number;
-	excerpt: string | null;
-	firstAt: Date | null;
-	lastEdit: Date | null;
-	firstLetter: string;
-	definitionCount: number;
-	lastActivityAt: Date | null;
-}
-
-export interface TermConnectionPage {
-	rows: TermSummaryRow[];
-	hasNextPage: boolean;
-	endCursor: string | null;
-	totalCount: number;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Mutation shapes                                                             */
@@ -182,10 +148,42 @@ export class Sozluk extends Context.Service<
 	{
 		readonly getTerm: (slug: string) => Effect.Effect<TermPage | null, DrizzleError>;
 
-		readonly listDefinitionsConnection: (
+		/**
+		 * DB-keyset page of a term's live definitions, ordered by the canonical
+		 * `(score desc, created_at asc, id asc)` term-page order, for the
+		 * fate `Term.definitions` connection: the cursor is a definition id, and
+		 * the keyset predicate fetches the rows that follow it in that order, so a
+		 * page is a bounded `WHERE … LIMIT` rather than loading every definition.
+		 *
+		 * `viewerId` batches `myVote` for the whole page in one `user_vote` read.
+		 */
+		readonly listDefinitionsKeyset: (
 			slug: string,
-			opts?: {first?: number | undefined; after?: string | null | undefined},
+			opts?: {
+				first?: number | undefined;
+				after?: string | null | undefined;
+				viewerId?: string | null | undefined;
+			},
 		) => Effect.Effect<DefinitionConnectionPage, DrizzleError>;
+
+		/**
+		 * Batched read of definitions by id (the fate `Definition` source's
+		 * `byIds` workhorse — avoids the relation N+1). `viewerId` stamps `myVote`
+		 * for the whole batch in one `user_vote` query. Soft-deleted rows are
+		 * skipped; order is not guaranteed (fate re-associates by id).
+		 */
+		readonly getDefinitionsByIds: (
+			ids: ReadonlyArray<string>,
+			opts?: {viewerId?: string | null | undefined},
+		) => Effect.Effect<DefinitionRow[], DrizzleError>;
+
+		/**
+		 * Batched read of term summaries by slug (the fate `Term` source's `byIds`
+		 * workhorse). Order is not guaranteed (fate re-associates by id).
+		 */
+		readonly getTermSummariesByIds: (
+			slugs: ReadonlyArray<string>,
+		) => Effect.Effect<TermSummaryRow[], DrizzleError>;
 
 		readonly listTermSummaries: (opts?: {
 			sort?: ListSort;
@@ -447,33 +445,154 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} satisfies TermPage;
 		});
 
-		const listDefinitionsConnection = Effect.fn("Sozluk.listDefinitionsConnection")(function* (
-			slug: string,
-			opts: {first?: number | undefined; after?: string | null | undefined} = {},
+		/**
+		 * Batch `user_vote` presence for a viewer over a set of definition ids.
+		 * One `WHERE user_id = ? AND target_kind = 'definition' AND target_id IN
+		 * (...)` read; returns the set of voted ids so callers can stamp `myVote`
+		 * without an N+1. Empty when there's no viewer or no ids.
+		 */
+		const readMyVotesBatch = Effect.fn("Sozluk.readMyVotesBatch")(function* (
+			viewerId: string | null | undefined,
+			definitionIds: ReadonlyArray<string>,
 		) {
-			const page = yield* getTerm(slug);
-			if (!page) {
-				return {
-					rows: [],
-					hasNextPage: false,
-					endCursor: null,
-					totalCount: 0,
-				} satisfies DefinitionConnectionPage;
-			}
-			const sorted = page.definitions;
+			if (!viewerId || definitionIds.length === 0) return new Set<string>();
+			const rows = yield* run((db) =>
+				db
+					.select({targetId: schema.userVote.targetId})
+					.from(schema.userVote)
+					.where(
+						and(
+							eq(schema.userVote.userId, viewerId),
+							eq(schema.userVote.targetKind, "definition"),
+							inArray(schema.userVote.targetId, [...definitionIds]),
+						),
+					),
+			);
+			return new Set(rows.map((r) => r.targetId));
+		});
+
+		const listDefinitionsKeyset = Effect.fn("Sozluk.listDefinitionsKeyset")(function* (
+			slug: string,
+			opts: {
+				first?: number | undefined;
+				after?: string | null | undefined;
+				viewerId?: string | null | undefined;
+			} = {},
+		) {
 			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
 			const after = opts.after ?? null;
-			const startIndex = after ? sorted.findIndex((d) => d.id === after) + 1 : 0;
-			const safeStart = startIndex < 0 ? 0 : startIndex;
-			const sliced = sorted.slice(safeStart, safeStart + first);
-			const hasNextPage = safeStart + first < sorted.length;
-			const last = sliced.at(-1) ?? null;
-			return {
-				rows: sliced,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount: sorted.length,
-			} satisfies DefinitionConnectionPage;
+			const viewerId = opts.viewerId ?? null;
+
+			const baseWhere = and(
+				eq(schema.definitionView.termSlug, slug),
+				isNull(schema.definitionView.deletedAt),
+			);
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.definitionView)
+					.where(baseWhere)
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
+
+			// Resolve the cursor row's keyset tuple (score, createdAt, id) so the
+			// predicate selects rows strictly after it in the canonical term-page
+			// order: (score desc, created_at asc, id asc). An `after` that doesn't
+			// resolve is a cursor miss → empty page (the shared semantic).
+			let cursorRow: {score: number; createdAt: Date | null} | null = null;
+			if (after) {
+				cursorRow =
+					(yield* run((db) =>
+						db
+							.select({
+								score: schema.definitionView.score,
+								createdAt: schema.definitionView.createdAt,
+							})
+							.from(schema.definitionView)
+							.where(eq(schema.definitionView.id, after))
+							.get(),
+					)) ?? null;
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies DefinitionConnectionPage;
+				}
+			}
+
+			// Mixed-direction keyset (score desc, created_at asc, id asc) declared
+			// per column — `keysetAfter` builds the lexicographic predicate.
+			const cursorPredicate = keysetAfter([
+				{column: schema.definitionView.score, dir: "desc", value: cursorRow?.score ?? null},
+				{column: schema.definitionView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
+				{column: schema.definitionView.id, dir: "asc", value: after},
+			]);
+
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.definitionView)
+					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
+					.orderBy(
+						desc(schema.definitionView.score),
+						asc(schema.definitionView.createdAt),
+						asc(schema.definitionView.id),
+					)
+					.limit(first + 1),
+			);
+
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				fetched.slice(0, first).map((d) => d.id),
+			);
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: DefinitionRow) => r.id,
+				(d) => toDefinitionRow(d, voted, viewerId),
+			);
+
+			return {...page, totalCount} satisfies DefinitionConnectionPage;
+		});
+
+		const getDefinitionsByIds = Effect.fn("Sozluk.getDefinitionsByIds")(function* (
+			ids: ReadonlyArray<string>,
+			opts: {viewerId?: string | null | undefined} = {},
+		) {
+			if (ids.length === 0) return [];
+			const viewerId = opts.viewerId ?? null;
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.definitionView)
+					.where(
+						and(
+							inArray(schema.definitionView.id, [...ids]),
+							isNull(schema.definitionView.deletedAt),
+						),
+					),
+			);
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				fetched.map((d) => d.id),
+			);
+			return fetched.map((d) => toDefinitionRow(d, voted, viewerId));
+		});
+
+		const getTermSummariesByIds = Effect.fn("Sozluk.getTermSummariesByIds")(function* (
+			slugs: ReadonlyArray<string>,
+		) {
+			if (slugs.length === 0) return [];
+			const rows = yield* run((db) =>
+				db
+					.select(termSummaryColumns)
+					.from(schema.termSummary)
+					.where(inArray(schema.termSummary.slug, [...slugs])),
+			);
+			return rows.map(toTermSummaryRow);
 		});
 
 		const listTermSummaries = Effect.fn("Sozluk.listTermSummaries")(function* (
@@ -484,17 +603,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const rows = yield* run((db) =>
 				db
-					.select({
-						slug: schema.termSummary.slug,
-						title: schema.termSummary.title,
-						firstLetter: schema.termSummary.firstLetter,
-						definitionCount: schema.termSummary.definitionCount,
-						totalScore: schema.termSummary.totalScore,
-						excerpt: schema.termSummary.excerpt,
-						firstAt: schema.termSummary.firstAt,
-						lastActivityAt: schema.termSummary.lastActivityAt,
-						lastEditAt: schema.termSummary.lastEditAt,
-					})
+					.select(termSummaryColumns)
 					.from(schema.termSummary)
 					.orderBy(
 						sort === "popular"
@@ -504,22 +613,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(limit),
 			);
 
-			return rows.map(
-				(r) =>
-					({
-						id: r.slug,
-						slug: r.slug,
-						title: r.title,
-						count: r.definitionCount,
-						totalScore: r.totalScore,
-						excerpt: r.excerpt ?? null,
-						firstAt: r.firstAt,
-						lastEdit: r.lastEditAt,
-						firstLetter: r.firstLetter,
-						definitionCount: r.definitionCount,
-						lastActivityAt: r.lastActivityAt,
-					}) satisfies TermSummaryRow,
-			);
+			return rows.map(toTermSummaryRow);
 		});
 
 		const listTermSummariesConnection = Effect.fn("Sozluk.listTermSummariesConnection")(function* (
@@ -528,6 +622,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const sort = opts.sort ?? "recent";
 			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
 			const after = opts.after ?? null;
+
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.termSummary)
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
 
 			let cursorRow: {
 				slug: string;
@@ -547,27 +649,36 @@ export const SozlukLive = Layer.effect(Sozluk)(
 							.where(eq(schema.termSummary.slug, after))
 							.get(),
 					)) ?? null;
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies TermConnectionPage;
+				}
 			}
 
-			const cursorPredicate = cursorRow
-				? sort === "popular"
-					? or(
-							lt(schema.termSummary.totalScore, cursorRow.totalScore),
-							and(
-								eq(schema.termSummary.totalScore, cursorRow.totalScore),
-								gt(schema.termSummary.slug, cursorRow.slug),
-							),
-						)
-					: cursorRow.lastActivityAt
-						? or(
-								lt(schema.termSummary.lastActivityAt, cursorRow.lastActivityAt),
-								and(
-									eq(schema.termSummary.lastActivityAt, cursorRow.lastActivityAt),
-									gt(schema.termSummary.slug, cursorRow.slug),
-								),
-							)
-						: gt(schema.termSummary.slug, cursorRow.slug)
-				: undefined;
+			// Lead column by sort (popular → totalScore desc, recent →
+			// lastActivityAt desc), then the `slug` asc tiebreaker. A null
+			// lastActivityAt cursor drops the lead column → slug-only keyset, the
+			// same fallback as before.
+			const lead =
+				sort === "popular"
+					? {
+							column: schema.termSummary.totalScore,
+							dir: "desc" as const,
+							value: cursorRow?.totalScore ?? null,
+						}
+					: {
+							column: schema.termSummary.lastActivityAt,
+							dir: "desc" as const,
+							value: cursorRow?.lastActivityAt ?? null,
+						};
+			const cursorPredicate = keysetAfter([
+				lead,
+				{column: schema.termSummary.slug, dir: "asc", value: cursorRow?.slug ?? null},
+			]);
 
 			const orderBy =
 				sort === "popular"
@@ -576,52 +687,16 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const fetched = yield* run((db) =>
 				db
-					.select({
-						slug: schema.termSummary.slug,
-						title: schema.termSummary.title,
-						firstLetter: schema.termSummary.firstLetter,
-						definitionCount: schema.termSummary.definitionCount,
-						totalScore: schema.termSummary.totalScore,
-						excerpt: schema.termSummary.excerpt,
-						firstAt: schema.termSummary.firstAt,
-						lastActivityAt: schema.termSummary.lastActivityAt,
-						lastEditAt: schema.termSummary.lastEditAt,
-					})
+					.select(termSummaryColumns)
 					.from(schema.termSummary)
 					.where(cursorPredicate)
 					.orderBy(...orderBy)
 					.limit(first + 1),
 			);
 
-			const hasNextPage = fetched.length > first;
-			const sliced = hasNextPage ? fetched.slice(0, first) : fetched;
+			const page = forwardPage(fetched, first, (r) => r.slug, toTermSummaryRow);
 
-			const rows: TermSummaryRow[] = sliced.map((r) => ({
-				id: r.slug,
-				slug: r.slug,
-				title: r.title,
-				count: r.definitionCount,
-				totalScore: r.totalScore,
-				excerpt: r.excerpt ?? null,
-				firstAt: r.firstAt,
-				lastEdit: r.lastEditAt,
-				firstLetter: r.firstLetter,
-				definitionCount: r.definitionCount,
-				lastActivityAt: r.lastActivityAt,
-			}));
-
-			const totalCountRow = yield* run((db) =>
-				db.select({n: sql<number>`count(*)`}).from(schema.termSummary).get(),
-			);
-			const totalCount = totalCountRow?.n ?? 0;
-
-			const last = rows.at(-1) ?? null;
-			return {
-				rows,
-				hasNextPage,
-				endCursor: last ? last.slug : null,
-				totalCount,
-			} satisfies TermConnectionPage;
+			return {...page, totalCount} satisfies TermConnectionPage;
 		});
 
 		const readMyVote = Effect.fn("Sozluk.readMyVote")(function* (input: {
@@ -757,6 +832,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} satisfies EditDefinitionResult;
 		});
 
+		/**
+		 * SOFT delete: stamps `deletedAt`/`updatedAt` and recomputes the term
+		 * summary + sözlük stats, but leaves the vote tables intact and does NOT
+		 * reverse the author's karma. This diverges from `Pano.deletePost` (hard
+		 * delete, karma reversed) — a deliberate, known inconsistency pending
+		 * `.decisions/0024-delete-semantics-and-karma.md`. Read that ADR before
+		 * "fixing" one path to match the other.
+		 */
 		const deleteDefinition = Effect.fn("Sozluk.deleteDefinition")(function* (
 			input: DeleteDefinitionInput,
 		) {
@@ -889,7 +972,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 		return {
 			getTerm,
-			listDefinitionsConnection,
+			listDefinitionsKeyset,
+			getDefinitionsByIds,
+			getTermSummariesByIds,
 			listTermSummaries,
 			listTermSummariesConnection,
 			readMyVote,

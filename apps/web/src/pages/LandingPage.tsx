@@ -1,9 +1,9 @@
-import {graphql, useLazyLoadQuery} from "react-relay";
+import {useRequest, useView, view} from "react-fate";
 import {Link} from "react-router";
-import type {LandingPageStatsQuery} from "../__generated__/LandingPageStatsQuery.graphql";
+import type {LandingStats} from "../../worker/fate/views";
 import type {PanoPostData} from "../components/pano";
 import type {TermRow} from "../components/sozluk";
-import {QueryBoundary} from "../relay/QueryBoundary";
+import {Screen} from "../fate/Screen";
 import "./LandingPage.css";
 
 export type LandingTerm = TermRow & {
@@ -12,17 +12,19 @@ export type LandingTerm = TermRow & {
 	agoLabel?: string;
 };
 
-const StatsQuery = graphql`
-  query LandingPageStatsQuery {
-    landingStats {
-      totalDefinitions
-      totalPosts
-      totalAuthors
-      totalComments
-      version
-    }
-  }
-`;
+/**
+ * The landing-stats selection — the four counters + the build `version` the SPA
+ * renders. `LandingStats` is a singleton entity (constant `id`) served by the
+ * `queries.landingStats` client root.
+ */
+const LandingStatsView = view<LandingStats>()({
+	id: true,
+	totalDefinitions: true,
+	totalPosts: true,
+	totalComments: true,
+	totalAuthors: true,
+	version: true,
+});
 
 function formatStat(n: number): string {
 	if (n < 1000) return String(n);
@@ -31,8 +33,8 @@ function formatStat(n: number): string {
 }
 
 function LiveStats() {
-	const data = useLazyLoadQuery<LandingPageStatsQuery>(StatsQuery, {});
-	const s = data.landingStats;
+	const {landingStats} = useRequest({landingStats: {view: LandingStatsView}});
+	const s = useView(LandingStatsView, landingStats);
 	const stats = [
 		{value: formatStat(s.totalDefinitions), label: "tanım"},
 		{value: formatStat(s.totalPosts), label: "başlık"},
@@ -54,8 +56,8 @@ function LiveStats() {
 
 function LandingStatsSection() {
 	return (
-		<QueryBoundary
-			loading={
+		<Screen
+			fallback={
 				<div className="kp-landing__stats" data-testid="kp-landing-stats-loading">
 					<div className="kp-landing__stat">
 						<div className="n">…</div>
@@ -89,7 +91,7 @@ function LandingStatsSection() {
 			)}
 		>
 			<LiveStats />
-		</QueryBoundary>
+		</Screen>
 	);
 }
 

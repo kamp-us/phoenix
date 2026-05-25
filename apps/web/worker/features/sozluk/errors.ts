@@ -2,7 +2,7 @@
  * Tagged errors raised by the Sozluk service layer.
  *
  * Wire-code contract — every tag in this file maps to a specific
- * `extensions.code` string via `worker/graphql/errors.ts::encodeMutationError`:
+ * `code` string via `worker/fate/errors.ts::encodeFateError`:
  *
  *   sozluk/BodyRequired                   → BODY_REQUIRED
  *   sozluk/BodyTooLong                    → BODY_TOO_LONG

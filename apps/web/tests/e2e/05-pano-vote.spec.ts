@@ -1,5 +1,5 @@
 import {expect, test} from "@playwright/test";
-import {signUp} from "./_helpers/auth";
+import {completeBootstrap, signUp} from "./_helpers/auth";
 
 /**
  * Pano post-vote toggle. PostVoteWidget tracks a local optimistic delta on
@@ -10,6 +10,9 @@ import {signUp} from "./_helpers/auth";
  */
 test("upvote increments and toggles back (signed in)", async ({page}) => {
 	await signUp(page);
+	// Clear the username bootstrap gate (a fresh user has no username, so the
+	// Layout would otherwise show the bootstrap form in place of the feed).
+	await completeBootstrap(page);
 	await page.goto("/pano");
 	const firstPost = page.locator(".kp-pano-post").first();
 	await expect(firstPost).toBeVisible({timeout: 10_000});

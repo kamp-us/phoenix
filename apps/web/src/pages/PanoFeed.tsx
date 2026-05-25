@@ -1,77 +1,50 @@
 /**
- * Pano feed page.
+ * Pano feed page — fate.
  *
- * Idiomatic Relay shape: a top-level `useLazyLoadQuery` spreads the
- * `PanoFeedPostsFragment` into the `Query`, then `usePaginationFragment` reads
- * the connection. Each row is a fragment ref handed to `PanoPostCard` (which
- * declares its own `PanoPostCardFragment on Post`). A hand-written `updater`
- * on `submitPost` prepends the new edge into the active connection; deletes
- * use `@deleteRecord` and need no updater.
+ * One batched `useRequest({posts: {list, args:{sort, host, first}}})` resolves the
+ * feed; `useListView` over the `posts` connection ref paginates ("daha fazla"
+ * merges the next page). Each row is a `ViewRef<"Post">` handed to `PanoPostCard`
+ * (which declares `PanoPostCardView`). Connection identity strips pagination args
+ * (`first`/`after`) but keeps the filter args (`sort`/`host`), so each filter combo
+ * is a distinct connection that paginates independently.
  *
- * Mirrors kampus's `apps/kamp-us/src/pages/Library.tsx` — same connection-key
- * naming convention (`PanoFeed_posts`), same `client:${parent.__id}:__<key>_connection`
- * connection-id template.
+ * Submitting a post inserts it into the no-filter feed via declarative `insert`
+ * (on the submit page) — there is NO imperative connection-key updater.
+ *
+ * The `tartışma` chip is a client-side tag filter (the server has no tag-filter
+ * arg yet). It needs each row's tags, so a thin `FilterablePostCard` reads the
+ * node and drops out of the DOM when the active tag excludes it — one `useView`
+ * per node, the filter colocated (mirrors sözlük's `FilterableTermRow`).
  */
 import * as React from "react";
-import {graphql, useLazyLoadQuery, usePaginationFragment} from "react-relay";
-import type {PanoFeedPostsFragment$key} from "../__generated__/PanoFeedPostsFragment.graphql";
-import type {PanoFeedQuery, PostSort} from "../__generated__/PanoFeedQuery.graphql";
+import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
 import {Subnav} from "../components/layout/Subnav";
-import {PanoCrumb, PanoPostCard} from "../components/pano/index";
-import {Button} from "../components/ui/Button";
-import {QueryBoundary} from "../relay/QueryBoundary";
-
-const FeedQuery = graphql`
-	query PanoFeedQuery($sort: PostSort, $host: String, $first: Int) {
-		__id
-		...PanoFeedPostsFragment @arguments(sort: $sort, host: $host, first: $first)
-	}
-`;
-
-/**
- * `PanoFeed_posts` connection on `Query`, keyed by `(sort, host)` so each
- * filter combo lives in its own store entry — switching filters and back
- * reads from the existing edges instead of refetching.
- */
-const PanoFeedPostsFragmentDef = graphql`
-	fragment PanoFeedPostsFragment on Query
-	@argumentDefinitions(
-		sort: {type: "PostSort"}
-		host: {type: "String"}
-		first: {type: "Int", defaultValue: 20}
-		after: {type: "String"}
-	)
-	@refetchable(queryName: "PanoFeedPostsPaginationQuery") {
-		posts(sort: $sort, host: $host, first: $first, after: $after)
-			@connection(key: "PanoFeed_posts", filters: ["sort", "host"]) {
-			edges {
-				node {
-					id
-					# Tags duplicated at the parent level so the client-side
-					# tartışma tag filter can run without unmasking the fragment
-					# (the card declares its own copy via PanoPostCardFragment).
-					tags {
-						kind
-					}
-					...PanoPostCardFragment
-				}
-			}
-			pageInfo {
-				hasNextPage
-				endCursor
-			}
-			totalCount
-		}
-	}
-`;
+import {PanoCrumb} from "../components/pano/index";
+import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
+import {Screen} from "../fate/Screen";
+import {LoadMoreButton} from "../fate/wire";
 
 const PAGE_SIZE = 20;
 
 /**
- * UI sort labels (Turkish) → server `PostSort` enum. The `tartışma` filter
- * is a client-side tag filter today; once the server grows tag filtering it
- * can collapse onto the `posts` `sort: discuss` enum (already exists on the
- * server but reads as "most-commented" rather than "tag = discuss").
+ * The connection selection for the feed — the shape `useListView` reads.
+ *
+ * `live: {prepend: "visible"}` makes a server-pushed `prependNode` (a new post
+ * from another client) appear **at the top of the visible feed immediately**.
+ * Without it, fate's default `"edge"` mode buffers the prepend in a hidden
+ * `liveBeforeIds` set when the first page window is full (the infinite-scroll
+ * default) and the row wouldn't render until a page load — see
+ * `.patterns/fate-live-views.md`.
+ */
+const PostConnectionView = {
+	items: {node: PanoPostCardView},
+	live: {prepend: "visible"},
+} as const;
+
+/**
+ * UI sort labels (Turkish) → server `sort` string. The `tartışma` filter is a
+ * client-side tag filter today; it pages the `hot` feed and filters to the
+ * `discuss` tag client-side.
  */
 const FILTERS = [
 	{id: "sicak", label: "sıcak", sort: "hot" as const},
@@ -86,28 +59,16 @@ export function PanoFeed({host}: {host?: string}) {
 	if (!filter) return null;
 
 	return (
-		<QueryBoundary
-			loading={
-				<FeedChrome
-					host={host}
-					filterId={filterId}
-					setFilterId={setFilterId}
-					status="loading"
-					meta="yükleniyor…"
-				>
+		<Screen
+			fallback={
+				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="yükleniyor…">
 					{null}
 				</FeedChrome>
 			}
-			error={(err) => (
-				<FeedChrome
-					host={host}
-					filterId={filterId}
-					setFilterId={setFilterId}
-					status="error"
-					meta=""
-				>
+			error={({code}) => (
+				<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta="">
 					<p style={{font: "var(--t-meta)", color: "var(--danger)"}}>
-						başlıklar yüklenemedi: {err.message}
+						başlıklar yüklenemedi: {code.toLowerCase()}
 					</p>
 				</FeedChrome>
 			)}
@@ -119,7 +80,7 @@ export function PanoFeed({host}: {host?: string}) {
 				sort={filter.sort}
 				tagKind={filter.tagKind}
 			/>
-		</QueryBoundary>
+		</Screen>
 	);
 }
 
@@ -133,18 +94,19 @@ function FeedContent({
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
-	sort: PostSort;
+	sort: string;
 	tagKind?: string;
 }) {
-	const queryRef = useLazyLoadQuery<PanoFeedQuery>(FeedQuery, {
-		sort,
-		host: host ?? null,
-		first: PAGE_SIZE,
+	const {posts} = useRequest({
+		posts: {
+			list: PostConnectionView,
+			args: {sort, first: PAGE_SIZE, ...(host ? {host} : {})},
+		},
 	});
 
 	return (
 		<FeedRows
-			query={queryRef}
+			connection={posts}
 			host={host}
 			filterId={filterId}
 			setFilterId={setFilterId}
@@ -153,62 +115,75 @@ function FeedContent({
 	);
 }
 
+type PostConnection = ReturnType<
+	typeof useRequest<{posts: {list: typeof PostConnectionView}}>
+>["posts"];
+
 function FeedRows({
-	query,
+	connection,
 	host,
 	filterId,
 	setFilterId,
 	tagKind,
 }: {
-	query: PanoFeedPostsFragment$key & {readonly __id: string};
+	connection: PostConnection;
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
 	tagKind?: string;
 }) {
-	const {data, loadNext, hasNext, isLoadingNext} = usePaginationFragment(
-		PanoFeedPostsFragmentDef,
-		query,
-	);
+	// Live: a `post.submit` on another client publishes
+	// `live.connection("posts").prependNode`, which `useLiveListView` merges into
+	// the open feed without a refetch (the global `posts` topic reaches every
+	// feed-sort variant). Post votes re-render via each card's `useLiveView`.
+	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
-	// Client-side tag filter for the `tartışma` chip — the server doesn't
-	// support a tag filter argument yet (PRD open item). Filter is applied
-	// post-fetch on the materialized edges; pagination still walks the full
-	// server-side ranking.
-	const allRows = data.posts.edges.map((e) => e.node);
-	const rows = tagKind ? allRows.filter((n) => n.tags.some((t) => t.kind === tagKind)) : allRows;
-
-	const meta = host ? `${rows.length} başlık · ${host}` : `${rows.length} başlık`;
+	const meta = host ? `${items.length} başlık · ${host}` : `${items.length} başlık`;
 
 	return (
-		<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} status="ok" meta={meta}>
+		<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta={meta}>
 			<div className="kp-pano-list">
-				{rows.map((node, i) => (
-					<PanoPostCard key={node.id} post={node} rank={i + 1} />
+				{items.map(({node}, i) => (
+					<FilterablePostCard key={node.id} node={node} rank={i + 1} tagKind={tagKind} />
 				))}
 			</div>
-			{hasNext ? (
+			{loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
-					<Button
-						variant="tertiary"
-						size="sm"
-						type="button"
-						disabled={isLoadingNext}
-						onClick={() => loadNext(PAGE_SIZE)}
-					>
-						{isLoadingNext ? "yükleniyor…" : "daha fazla"}
-					</Button>
+					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
 		</FeedChrome>
 	);
 }
 
+/**
+ * A feed row that reads its own tags and drops out of the DOM when the active
+ * `tartışma` tag filter excludes it. fate masks by view *identity*, so the filter
+ * must read through the **same** view the node ref carries (`PanoPostCardView`,
+ * the connection's node view) — a separate tags-only view would throw "Invalid
+ * view reference". `PanoPostCardView` already
+ * selects `tags`, so we read it here and `PanoPostCard` reads the same view again
+ * (same identity, served from cache). When no tag filter is active it renders
+ * unconditionally.
+ */
+function FilterablePostCard({
+	node,
+	rank,
+	tagKind,
+}: {
+	node: ViewRef<"Post">;
+	rank: number;
+	tagKind?: string;
+}) {
+	const data = useLiveView(PanoPostCardView, node);
+	if (tagKind && !(data.tags ?? []).some((t) => t.kind === tagKind)) return null;
+	return <PanoPostCard post={node} rank={rank} />;
+}
+
 interface ChromeProps {
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
-	status: "loading" | "ok" | "error";
 	meta: React.ReactNode;
 	children: React.ReactNode;
 }

@@ -22,7 +22,8 @@ Drizzle           — holds the singleton drizzle(env.PHOENIX_DB, {schema}) buil
 Sozluk, Pano,     — domain services: feature-shaped methods
 Vote, Pasaport
   ↑
-Resolvers         — orchestrate domain services, return GraphQL shapes
+fate resolvers /  — orchestrate domain services, shape wire entities (worker/fate/)
+sources
 ```
 
 Each layer depends only on the one below it. Resolvers never touch `Drizzle` directly. Domain services never touch `CloudflareEnv` directly.
@@ -162,7 +163,7 @@ export class Sozluk extends Context.Service<
 ### Rules
 
 - **One service per feature folder.** Even if the feature has 20 methods. Splitting buys nothing if the methods share a layer dep and a domain.
-- **Reads and writes sit together.** Field-resolver reads (`listTermSummaries`) live alongside mutation methods (`addDefinition`). They share the same drizzle builder, schema, error type, and tests.
+- **Reads and writes sit together.** Read methods (`listTermSummaries`) live alongside mutation methods (`addDefinition`). They share the same drizzle builder, schema, error type, and tests.
 - **Method names are domain-shaped.** `addDefinition`, not `insertDefinitionRow`. The service is the domain layer.
 - **Errors in the `E` channel, tagged.** Per-method error unions are explicit in the type. The resolver pattern-matches on `_tag` to map to wire codes. See [effect-errors.md](./effect-errors.md).
 - **No `env` or `D1Database` in method signatures.** The `Drizzle` dep is captured at layer-build time.
@@ -229,27 +230,30 @@ Notes:
 
 ## Resolver call sites
 
-```ts
-// inside a GraphQL resolver
-import {Sozluk} from "../features/sozluk/Sozluk";
+Fate resolvers (`worker/fate/mutations.ts`, `queries.ts`) are thin orchestrations over a service, wrapped by a bridge helper (`fateMutation`/`fateQuery`/`fateList`/`fateSource`) that runs the Effect on the per-request runtime:
 
-resolve: resolver(function*(_source, args: {input: AddDefinitionInput}) {
+```ts
+// worker/fate/mutations.ts
+import {Sozluk} from "../features/sozluk/Sozluk";
+import {fateMutation} from "./effect";
+
+resolve: fateMutation<AddDefinitionInput, Definition>(function*({input}) {
   const {user} = yield* Auth.required;
   const sozluk = yield* Sozluk;
-  return yield* sozluk.addDefinition({...args.input, authorId: user.id});
+  return yield* sozluk.addDefinition({...input, authorId: user.id});
 }),
 ```
 
-Field-resolver reads look the same:
+Read resolvers look the same (`fateQuery`):
 
 ```ts
-resolve: resolver(function*(parent: {slug: string}) {
+resolve: fateQuery<{slug: string}, Term | null>(function*({input}) {
   const sozluk = yield* Sozluk;
-  return yield* sozluk.listDefinitionsConnection(parent.slug, {first: 50});
+  return yield* sozluk.getTerm(input.slug, {first: 50});
 }),
 ```
 
-The resolver wrapper (`worker/graphql/resolver.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeMutationError` to wire codes.
+The bridge runner (`worker/fate/effect.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeFateError` to wire codes.
 
 ## Cross-feature dependencies
 
@@ -279,7 +283,7 @@ Vote-delegating methods are the one place a method's `R` widens beyond `never`: 
 
 ## Wiring at the worker entry
 
-See `apps/web/worker/graphql/runtime.ts` (the `GraphQLRuntime.make` namespace) for the canonical composition. The shape, summarized:
+See `apps/web/worker/fate/runtime.ts` (the `FateRuntime.make` namespace) for the canonical composition. The shape, summarized:
 
 `Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied by `RequestValues` in one step; merging `RequestValues` back in at the top re-exposes `Auth` / `CloudflareEnv` / `RequestContext` so resolvers can `yield* Auth` directly. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so the runtime is runnable. See [effect-layer-composition.md](./effect-layer-composition.md#multiple-runtimes--graphql--admin) for why this shape avoids the `Layer.mergeAll` dependency warning.
 

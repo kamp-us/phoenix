@@ -1,99 +1,43 @@
 /**
- * Sozluk home page.
+ * Sözlük home page — fate.
  *
- * Idiomatic Relay shape: a single `useLazyLoadQuery` spreads two
- * `@connection`-keyed fragments on `Query` — one per column (`recent` and
- * `popular`). Each fragment selects the same `terms(...)` field with a
- * different `sort` arg; `@connection(filters: ["sort"])` keys them
- * separately in the store. No `@refetchable` — the home ships first-page
- * only; the connection shape is future-proofed.
+ * The home is two distinct term connections (recent + popular) rendered side by
+ * side. fate keys a `useRequest` by client-root name, and the two columns map to
+ * two `list` roots (`recentTerms` / `popularTerms`, fixed-sort wrappers over the
+ * `terms` keyset — see `worker/fate/lists.ts`). So the whole page resolves in
+ * **one** batched `useRequest({recentTerms, popularTerms})` (no waterfall); each
+ * column is a `useListView` over its connection ref, and each row reads its slice
+ * with `useView(TermRowView, node)`.
  *
- * Each column iterates `edges → TermRow` and hands the node fragment ref
- * to the row component (`TermRowFragment on Term`). The row component
- * stays oblivious to which column it lives in.
- *
- * No mutations from this page; no live updates (sozluk home isn't a live
- * surface).
+ * Letter + search filtering is client-side over the already-loaded first page
+ * (the home ships first-page only). The filter
+ * needs each row's title, so a thin `FilterableTermRow` reads the node and
+ * decides whether to render — keeping one `useView` per node.
  */
 import * as React from "react";
-import {graphql, useFragment, useLazyLoadQuery} from "react-relay";
-import type {SozlukHomePopularFragment$key} from "../__generated__/SozlukHomePopularFragment.graphql";
-import type {SozlukHomeQuery} from "../__generated__/SozlukHomeQuery.graphql";
-import type {SozlukHomeRecentFragment$key} from "../__generated__/SozlukHomeRecentFragment.graphql";
+import {useListView, useRequest, useView, type ViewRef} from "react-fate";
 import {SozlukAlphabet} from "../components/sozluk/index";
-import {TermRow} from "../components/sozluk/TermRow";
-import {QueryBoundary} from "../relay/QueryBoundary";
+import {TermRow, TermRowView} from "../components/sozluk/TermRow";
+import {Screen} from "../fate/Screen";
 import "./SozlukHome.css";
 
-const HomeQuery = graphql`
-	query SozlukHomeQuery {
-		__id
-		...SozlukHomeRecentFragment
-		...SozlukHomePopularFragment
-	}
-`;
-
 /**
- * `SozlukHome__recentTerms` connection on `Query`. Keyed by `sort` so it
- * shares no store entries with the popular column even though both read
- * `terms(...)`. No `@refetchable` — first-page only on the home; pagination
- * lands on a follow-up.
- *
- * Aliased as `recentTerms` (and key suffixed `__recentTerms`) because Relay
- * forbids two fragments composed onto the same parent (`Query`) selecting
- * the same field with different argument values, and `@connection` enforces
- * `<key>__<fieldName>` for its store key invariant. AC text said
- * `SozlukHome_terms_recent`, but the alias-based shape is the only valid
- * Relay form here.
+ * A connection of term rows — the shape both home columns resolve to. A
+ * connection "view" is a plain `{items: {node: View}}` selection (not a
+ * `view<T>()`); `useRequest`'s `{list}` item and `useListView` both read it.
  */
-const SozlukHomeRecentFragmentDef = graphql`
-	fragment SozlukHomeRecentFragment on Query
-	@argumentDefinitions(first: {type: "Int", defaultValue: 5}) {
-		recentTerms: terms(sort: recent, first: $first)
-			@connection(key: "SozlukHome__recentTerms", filters: ["sort"]) {
-			edges {
-				node {
-					id
-					# title duplicated at the parent so the alphabet and
-					# search client-side filter can read it without unmasking
-					# the row fragment (the row declares its own copy via
-					# TermRowFragment). Mirrors PanoFeed's tag pattern.
-					title
-					...TermRowFragment
-				}
-			}
-			pageInfo {
-				hasNextPage
-				endCursor
-			}
-			totalCount
-		}
-	}
-`;
+const TermConnectionView = {items: {node: TermRowView}} as const;
 
-/**
- * `SozlukHome__popularTerms` connection on `Query`. Same shape as the
- * recent fragment with a different sort arg + connection key.
- */
-const SozlukHomePopularFragmentDef = graphql`
-	fragment SozlukHomePopularFragment on Query
-	@argumentDefinitions(first: {type: "Int", defaultValue: 5}) {
-		popularTerms: terms(sort: popular, first: $first)
-			@connection(key: "SozlukHome__popularTerms", filters: ["sort"]) {
-			edges {
-				node {
-					id
-					...TermRowFragment
-				}
-			}
-			pageInfo {
-				hasNextPage
-				endCursor
-			}
-			totalCount
-		}
-	}
-`;
+const HOME_PAGE_SIZE = 5;
+
+/** The request both home columns batch into one `useRequest`. */
+const homeRequest = {
+	recentTerms: {list: TermConnectionView, args: {first: HOME_PAGE_SIZE}},
+	popularTerms: {list: TermConnectionView, args: {first: HOME_PAGE_SIZE}},
+} as const;
+
+/** The connection ref `useRequest` hands each `{list}` column. */
+type TermConnection = ReturnType<typeof useRequest<typeof homeRequest>>["recentTerms"];
 
 export function SozlukHome() {
 	const [letter, setLetter] = React.useState<string | undefined>();
@@ -102,8 +46,8 @@ export function SozlukHome() {
 	return (
 		<div className="kp-page">
 			<div className="kp-page__inner">
-				<QueryBoundary
-					loading={
+				<Screen
+					fallback={
 						<SozlukHomeChrome
 							letter={letter}
 							query={query}
@@ -114,14 +58,14 @@ export function SozlukHome() {
 							{null}
 						</SozlukHomeChrome>
 					}
-					error={(err) => (
+					error={({code}) => (
 						<SozlukHomeChrome
 							letter={letter}
 							query={query}
 							setLetter={setLetter}
 							setQuery={setQuery}
 							status="error"
-							errorMessage={err.message}
+							errorMessage={code.toLowerCase()}
 						>
 							{null}
 						</SozlukHomeChrome>
@@ -133,7 +77,7 @@ export function SozlukHome() {
 						setLetter={setLetter}
 						setQuery={setQuery}
 					/>
-				</QueryBoundary>
+				</Screen>
 			</div>
 		</div>
 	);
@@ -147,7 +91,8 @@ interface ContentProps {
 }
 
 function SozlukHomeContent({letter, query, setLetter, setQuery}: ContentProps) {
-	const data = useLazyLoadQuery<SozlukHomeQuery>(HomeQuery, {});
+	// One batched request for both columns — no waterfall.
+	const {recentTerms, popularTerms} = useRequest(homeRequest);
 
 	return (
 		<SozlukHomeChrome
@@ -157,8 +102,8 @@ function SozlukHomeContent({letter, query, setLetter, setQuery}: ContentProps) {
 			setQuery={setQuery}
 			status="ok"
 		>
-			<RecentColumn fragmentRef={data} letter={letter} query={query} />
-			<PopularColumn fragmentRef={data} />
+			<RecentColumn connection={recentTerms} letter={letter} query={query} />
+			<PopularColumn connection={popularTerms} />
 		</SozlukHomeChrome>
 	);
 }
@@ -224,20 +169,13 @@ function SozlukHomeChrome({
 }
 
 interface RecentColumnProps {
-	fragmentRef: SozlukHomeRecentFragment$key;
+	connection: TermConnection;
 	letter: string | undefined;
 	query: string;
 }
 
-function RecentColumn({fragmentRef, letter, query}: RecentColumnProps) {
-	const data = useFragment(SozlukHomeRecentFragmentDef, fragmentRef);
-	const edges = data.recentTerms.edges;
-	const filtered = edges.filter((edge) => {
-		const node = edge.node;
-		if (letter && !node.title.toLowerCase().startsWith(letter)) return false;
-		if (query && !node.title.toLowerCase().includes(query.toLowerCase())) return false;
-		return true;
-	});
+function RecentColumn({connection, letter, query}: RecentColumnProps) {
+	const [items] = useListView(TermConnectionView, connection);
 
 	return (
 		<section>
@@ -246,21 +184,41 @@ function RecentColumn({fragmentRef, letter, query}: RecentColumnProps) {
 				<span>24 sa</span>
 			</header>
 			<div className="kp-sozluk-list">
-				{filtered.map((edge) => (
-					<TermRow key={edge.node.id} term={edge.node} variant="recent" />
+				{items.map(({node}) => (
+					<FilterableTermRow key={node.id} node={node} letter={letter} query={query} />
 				))}
 			</div>
 		</section>
 	);
 }
 
-interface PopularColumnProps {
-	fragmentRef: SozlukHomePopularFragment$key;
+/**
+ * A recent-column row that reads its own title and drops out of the DOM when the
+ * active letter / search query excludes it. Keeps one `useView` per node (the
+ * row's), with the filter colocated.
+ */
+function FilterableTermRow({
+	node,
+	letter,
+	query,
+}: {
+	node: ViewRef<"Term">;
+	letter: string | undefined;
+	query: string;
+}) {
+	const data = useView(TermRowView, node);
+	const title = data.title.toLowerCase();
+	if (letter && !title.startsWith(letter)) return null;
+	if (query && !title.includes(query.toLowerCase())) return null;
+	return <TermRow term={node} variant="recent" />;
 }
 
-function PopularColumn({fragmentRef}: PopularColumnProps) {
-	const data = useFragment(SozlukHomePopularFragmentDef, fragmentRef);
-	const edges = data.popularTerms.edges;
+interface PopularColumnProps {
+	connection: TermConnection;
+}
+
+function PopularColumn({connection}: PopularColumnProps) {
+	const [items] = useListView(TermConnectionView, connection);
 
 	return (
 		<section>
@@ -269,8 +227,8 @@ function PopularColumn({fragmentRef}: PopularColumnProps) {
 				<span>tüm zamanlar</span>
 			</header>
 			<ol className="kp-sozluk-popular">
-				{edges.map((edge, i) => (
-					<TermRow key={edge.node.id} term={edge.node} variant="popular" rank={i + 1} />
+				{items.map(({node}, i) => (
+					<TermRow key={node.id} term={node} variant="popular" rank={i + 1} />
 				))}
 			</ol>
 		</section>

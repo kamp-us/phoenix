@@ -2,7 +2,7 @@ import type {PanoPostData} from "./components/pano";
 
 /* POSTS still backs the landing page's "panoda son 24 saat" column —
    the landing page hasn't been wired to the live `posts(...)` query yet.
-   The /pano feed itself reads from GraphQL via PanoFeed (see App.tsx). */
+   The /pano feed itself reads live over fate via PanoFeed (see App.tsx). */
 export const POSTS: PanoPostData[] = [
 	{
 		id: "p1",
@@ -70,7 +70,7 @@ export const POSTS: PanoPostData[] = [
 ];
 
 /* Landing-row variant — terms with gloss + author + ago for the activity column.
-   Will be replaced with a GraphQL query when the landing page wires through. */
+   Will be replaced with a live fate query when the landing page wires through. */
 export const LANDING_TERMS = [
 	{
 		slug: "race-condition",

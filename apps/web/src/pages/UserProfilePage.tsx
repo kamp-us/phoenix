@@ -1,106 +1,77 @@
 /**
- * Public user profile page.
+ * Public user profile page — fate.
  *
- * Idiomatic Relay shape: `useLazyLoadQuery` at the top spreads
- * `UserProfileHeaderFragment` + `UserProfileContributionsFragment` into the
- * `Profile` selection; `usePaginationFragment` reads the contributions
- * connection. Each row is a fragment ref handed to `ContributionRow` (which
- * does an inline `__typename` switch over `ProfileContribution`).
+ * One batched `useRequest({profile: {view: UserProfileView, args: {username,
+ * contributions: {first}}}})` resolves the whole screen (header + first page of
+ * contributions) with no waterfall. `profile` is the `queries.profile` client
+ * root; the nested `contributions` discriminant feed rides on the `Profile`
+ * view, delivered inline by the resolver (see `.patterns/fate-connections.md`).
  *
- * The connection key is `UserProfile_contributions` (no filters today; if
- * `kind` filtering lands later the connection shape can grow `filters: ["kind"]`
- * without renaming the key — the connection-key naming convention only
- * requires `<SomeName>__<fieldName>`).
+ * Masking is by view identity: the screen view **spreads**
+ * `UserProfileHeaderView` (the header reads its slice off the same ref) and adds
+ * the `contributions` connection whose node is `ContributionView` (the row's
+ * view). The contributions feed switches on the `kind` discriminant (ADR 0018)
+ * and paginates via `useListView` ("load more"). A null profile (unknown
+ * username) renders the 404 page.
  */
-import {graphql, useLazyLoadQuery, usePaginationFragment} from "react-relay";
+import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useParams} from "react-router";
-import type {UserProfilePageContributionsFragment$key} from "../__generated__/UserProfilePageContributionsFragment.graphql";
-import type {UserProfilePageQuery} from "../__generated__/UserProfilePageQuery.graphql";
-import {ContributionRow} from "../components/profile/ContributionRow";
-import {UserProfileHeader} from "../components/profile/UserProfileHeader";
-import {Button} from "../components/ui/Button";
-import {QueryBoundary} from "../relay/QueryBoundary";
+import type {Profile} from "../../worker/fate/views";
+import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
+import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
+import {Screen} from "../fate/Screen";
+import {LoadMoreButton} from "../fate/wire";
 import {NotFoundPage} from "./NotFoundPage";
 import "./UserProfilePage.css";
 
 const PAGE_SIZE = 20;
 
-const ProfileQuery = graphql`
-	query UserProfilePageQuery($username: String!, $first: Int) {
-		profile(username: $username) {
-			id
-			...UserProfileHeaderFragment
-			...UserProfilePageContributionsFragment @arguments(first: $first)
-		}
-	}
-`;
+/**
+ * The connection selection for a profile's contributions — `{items: {node:
+ * View}}`, the shape `useListView` reads off `profile.contributions`.
+ */
+const ContributionsConnectionView = {items: {node: ContributionView}} as const;
 
 /**
- * Contributions connection on `Profile`. `@refetchable` lets
- * `usePaginationFragment` load subsequent pages; `@connection` lets future
- * mutation updaters address the connection by stable key + the parent's
- * DataID. `__id` is auto-emitted by relay-compiler when this fragment is
- * spread, so the parent `Profile` carries the connection-id template
- * `client:${profile.__id}:__UserProfile_contributions_connection`.
- *
- * No `filters` arg today (no per-kind filter UI); when filtering lands the
- * connection shape can grow `filters: ["kind"]` without renaming the key.
+ * The profile-page view: spreads `UserProfileHeaderView` (so the header masks
+ * its slice off the same ref) and adds the nested `contributions` connection
+ * whose node is `ContributionView`.
  */
-const UserProfilePageContributionsFragmentDef = graphql`
-	fragment UserProfilePageContributionsFragment on Profile
-	@argumentDefinitions(
-		first: {type: "Int", defaultValue: 20}
-		after: {type: "String"}
-	)
-	@refetchable(queryName: "UserProfileContributionsPaginationQuery") {
-		contributions(first: $first, after: $after)
-			@connection(key: "UserProfile__contributions") {
-			edges {
-				cursor
-				node {
-					...ContributionRow_node
-				}
-			}
-			pageInfo {
-				hasNextPage
-				endCursor
-			}
-			totalCount
-		}
-	}
-`;
+const UserProfileView = view<Profile>()({
+	...UserProfileHeaderView,
+	contributions: ContributionsConnectionView,
+});
 
 export function UserProfilePage() {
 	const {username} = useParams<{username: string}>();
 	const safeUsername = username ?? "";
 
 	return (
-		<QueryBoundary
-			loading={
+		<Screen
+			fallback={
 				<div className="kp-user-profile" data-testid="user-profile-loading">
 					<div className="kp-user-profile__inner">yükleniyor…</div>
 				</div>
 			}
-			error={(err) => (
+			error={({code}) => (
 				<div className="kp-user-profile">
 					<div className="kp-user-profile__inner">
-						<p style={{color: "var(--danger)"}}>profil yüklenemedi: {err.message}</p>
+						<p style={{color: "var(--danger)"}}>profil yüklenemedi: {code.toLowerCase()}</p>
 					</div>
 				</div>
 			)}
 		>
 			<UserProfileContent username={safeUsername} />
-		</QueryBoundary>
+		</Screen>
 	);
 }
 
 function UserProfileContent({username}: {username: string}) {
-	const data = useLazyLoadQuery<UserProfilePageQuery>(ProfileQuery, {
-		username,
-		first: PAGE_SIZE,
+	const {profile} = useRequest({
+		profile: {view: UserProfileView, args: {username, contributions: {first: PAGE_SIZE}}},
 	});
 
-	if (!data.profile) {
+	if (!profile) {
 		return (
 			<NotFoundPage
 				title="kullanıcı bulunamadı"
@@ -112,38 +83,30 @@ function UserProfileContent({username}: {username: string}) {
 	return (
 		<div className="kp-user-profile" data-testid="user-profile-page">
 			<div className="kp-user-profile__inner">
-				<UserProfileHeader profile={data.profile} fallbackHandle={username} />
-				<ContributionsList profile={data.profile} />
+				<UserProfileHeader profile={profile} fallbackHandle={username} />
+				<ContributionsList profile={profile} />
 			</div>
 		</div>
 	);
 }
 
-function ContributionsList({profile}: {profile: UserProfilePageContributionsFragment$key}) {
-	const {data, loadNext, hasNext, isLoadingNext} = usePaginationFragment(
-		UserProfilePageContributionsFragmentDef,
-		profile,
-	);
-	const edges = data.contributions.edges;
+function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
+	const data = useView(UserProfileView, profile);
+	const [items, loadNext] = useListView(ContributionsConnectionView, data.contributions);
 
 	return (
 		<section className="kp-user-profile__feed" data-testid="user-profile-feed">
-			<h3>
-				katkılar{" "}
-				<span className="kp-user-profile__total" data-testid="user-profile-contributions-total">
-					({data.contributions.totalCount})
-				</span>
-			</h3>
-			{edges.length === 0 ? (
+			<h3>katkılar</h3>
+			{items.length === 0 ? (
 				<p className="kp-user-profile__empty">henüz katkı yok.</p>
 			) : (
 				<ul className="kp-user-profile__list">
-					{edges.map((edge) => (
-						<ContributionRow key={edge.cursor} node={edge.node} />
+					{items.map(({cursor, node}) => (
+						<ContributionRow key={cursor} node={node} />
 					))}
 				</ul>
 			)}
-			{hasNext ? (
+			{loadNext ? (
 				<div
 					style={{
 						marginTop: "var(--s-3)",
@@ -152,16 +115,7 @@ function ContributionsList({profile}: {profile: UserProfilePageContributionsFrag
 					}}
 					data-testid="user-profile-load-more-row"
 				>
-					<Button
-						variant="tertiary"
-						size="sm"
-						type="button"
-						disabled={isLoadingNext}
-						onClick={() => loadNext(PAGE_SIZE)}
-						data-testid="user-profile-load-more"
-					>
-						{isLoadingNext ? "yükleniyor…" : "daha fazla"}
-					</Button>
+					<LoadMoreButton loadNext={loadNext} testId="user-profile-load-more" />
 				</div>
 			) : null}
 		</section>

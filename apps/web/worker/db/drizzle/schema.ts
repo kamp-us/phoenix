@@ -396,7 +396,7 @@ export const panoStats = sqliteTable("pano_stats", {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Per-user-per-target vote presence table. Powers the `myVote` GraphQL field
+ * Per-user-per-target vote presence table. Powers the `myVote` view field
  * on Definition / Post / Comment. Voting is up-only in the MVP — presence of
  * a row means the user has voted; absence means they haven't. There is no
  * `value` column.

@@ -1,42 +1,40 @@
 /**
- * Fragment-shaped card for the pano feed.
+ * fate-shaped card for the pano feed.
  *
- * Replaces the prop-shaped `PanoPost` from the MVP. The component declares
- * its own `PanoPostCardFragment on Post` and reads via `useFragment` — the
- * page just spreads `<PanoPostCard post={edge.node} />` (a fragment ref) and
- * is no longer responsible for shaping leaf data into props.
+ * Reads its data via `useView(PanoPostCardView, ref)` — the feed composes
+ * `PanoPostCardView` into the `posts` connection and hands each node `ViewRef`
+ * down. The card declares the fields it needs; fate masks the rest.
  *
- * Side affordances (rank, save/hide) are still controlled by the parent
- * because they're list-position state, not Post state.
+ * IDs are raw per-type values on fate (`post_<ulid>`), so links and the vote
+ * widget's testid use `data.id` directly (no `extractLocalId` global-id unwrap).
+ *
+ * Side affordances (rank, save/hide) are still controlled by the parent because
+ * they're list-position state, not Post state.
  */
-import {graphql, useFragment} from "react-relay";
+import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {PanoPostCardFragment$key} from "../../__generated__/PanoPostCardFragment.graphql";
+import type {Post} from "../../../worker/fate/views";
+import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
-import {extractLocalId} from "../../relay/encodeNodeId";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
 
-const PanoPostCardFragmentDef = graphql`
-	fragment PanoPostCardFragment on Post {
-		id
-		title
-		url
-		host
-		score
-		myVote
-		commentCount
-		createdAt
-		author
-		authorId
-		slug
-		tags {
-			kind
-			label
-		}
-	}
-`;
+/** The fields a feed card reads. Co-located with the component. */
+export const PanoPostCardView = view<Post>()({
+	id: true,
+	title: true,
+	url: true,
+	host: true,
+	score: true,
+	myVote: true,
+	commentCount: true,
+	createdAt: true,
+	author: true,
+	authorId: true,
+	slug: true,
+	tags: true,
+});
 
 export function PanoPostCard({
 	post,
@@ -44,19 +42,21 @@ export function PanoPostCard({
 	onSave,
 	onHide,
 }: {
-	post: PanoPostCardFragment$key;
+	post: ViewRef<"Post">;
 	rank?: number;
 	onSave?: (id: string) => void;
 	onHide?: (id: string) => void;
 }) {
-	const data = useFragment(PanoPostCardFragmentDef, post);
-	// `data.id` is the Relay global id (`Post:<localId>` base64). The
-	// /pano/:id route key is the local post id (or a slug); extract before
-	// linking so URLs stay clean.
-	const href = `/pano/${data.slug ?? extractLocalId(data.id, "Post")}`;
+	// Live: a `post.vote`/`retractVote` on another client publishes
+	// `live.update("Post", id, {changed:["score"]})` with the re-resolved node
+	// inline, so the feed card's score re-renders without a refetch.
+	const data = useLiveView(PanoPostCardView, post);
+	// Raw post id (or slug) — the /pano/:id route key.
+	const href = `/pano/${data.slug ?? data.id}`;
 	// Site label — host in parens for external links, "yazı" for self-posts.
 	const siteLabel = data.host ?? (data.url ? null : "yazı");
-	const agoLabel = formatAgoTR(data.createdAt);
+	const agoLabel = formatAgoTR(toIso(data.createdAt));
+	const tags = data.tags ?? [];
 
 	return (
 		<article className="kp-pano-post">
@@ -66,9 +66,9 @@ export function PanoPostCard({
 			<PostVoteWidget postId={data.id} score={data.score} myVote={data.myVote === 1 ? 1 : null} />
 			<div className="kp-pano-post__body">
 				<div className="kp-pano-post__title-row">
-					{data.tags.length ? (
+					{tags.length ? (
 						<span className="kp-pano-post__tags">
-							{data.tags.map((t, i) => (
+							{tags.map((t, i) => (
 								<Tag key={i} kind={t.kind as TagKind}>
 									{t.label}
 								</Tag>

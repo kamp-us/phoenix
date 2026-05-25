@@ -1,13 +1,12 @@
 /**
- * The wire contract for mutation-error `extensions.code` strings.
- * The worker `encodeMutationError` codec produces these; the SPA
+ * The wire contract for mutation-error `code` strings.
+ * The worker fate error codec (`worker/fate/errors.ts`) produces these; the SPA
  * `decodeMutationErrorCode` decoder narrows incoming codes to this union so
  * UI code can `switch` on a typed value instead of stringly comparing against
  * `"UNAUTHORIZED"` etc.
  *
- * This module lives under `src/lib/` (and is cross-included by the worker
- * tsconfig like `src/relay/encodeNodeId.ts`) so both halves of the codec
- * agree on the same constant.
+ * This module lives under `src/lib/` and is cross-included by the worker
+ * tsconfig so both halves of the codec agree on the same constant.
  */
 export const MUTATION_ERROR_CODES = [
 	"UNAUTHORIZED",

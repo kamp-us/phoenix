@@ -1,18 +1,21 @@
 import {routeAgentRequest} from "agents";
 import {Effect} from "effect";
-import {createYoga} from "graphql-yoga";
 import {Hono} from "hono";
 import {z} from "zod";
 import {AdminRuntime} from "./admin/runtime";
+import {livePublishContext} from "./fate/live";
+import {handleLiveRequest} from "./fate/live-route";
+import {FateRuntime, toSessionData, validateSessionCookie} from "./fate/runtime";
+import {fateServer} from "./fate/server";
 import {PanoAdmin} from "./features/pano/PanoAdmin";
-import type {Session} from "./features/pasaport/auth";
 import {Pasaport} from "./features/pasaport/Pasaport";
 import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
 import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
-import type {EffectContext} from "./graphql/resolver";
-import {GraphQLRuntime, type SessionData} from "./graphql/runtime";
-import {printSchemaSDL, schema} from "./graphql/schema";
 import {AdminAuth} from "./services";
+
+// The one Durable Object in phoenix: cross-isolate live fan-out over SSE (ADR
+// 0023). Exported here so wrangler's `LIVE_DO` binding can resolve the class.
+export {LiveDO} from "./fate/live-do";
 
 // Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
 // Every product surface (sozluk, pano, pasaport) runs as module functions
@@ -156,7 +159,7 @@ app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
 // Single global auth realm; `Pasaport.handleAuth` constructs a better-auth
 // instance per request against `env.PHOENIX_DB`.
 app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-	const runtime = GraphQLRuntime.make(c.env, c.req.raw, null);
+	const runtime = FateRuntime.make(c.env, c.req.raw, null);
 	try {
 		return await runtime.runPromise(
 			Effect.gen(function* () {
@@ -178,49 +181,35 @@ app.all("/agents/*", async (c) => {
 	return res ?? c.text("Not Found", 404);
 });
 
-// SDL for relay-compiler (`pnpm schema:fetch`).
-app.get("/graphql/schema", (c) => c.text(printSchemaSDL()));
+// The SSE live transport (ADR 0023). Served from the `LiveDO` Durable Object —
+// it builds NO per-request `ManagedRuntime` (the DO relays inline-published
+// data; no Effect runtime in the live path). Mounted before `/fate` so the more
+// specific path wins. Both GET (open stream) and POST (control) authenticate the
+// better-auth session cookie at connect.
+app.all("/fate/live", (c) => handleLiveRequest(c));
 
-// Per-request: validate session via the Pasaport service, build a ManagedRuntime
-// that provides services to resolvers (Auth, CloudflareEnv, RequestContext,
-// Pasaport, …), dispose after. Yoga's response carries its own Response class
-// (from @whatwg-node/server) which fails workerd's `instanceof Response` check;
-// rewrap with the runtime-native Response constructor.
-app.on(["GET", "POST"], "/graphql", async (c) => {
-	// Validate the session through a short-lived runtime; resolvers run inside
-	// a separate runtime constructed with the resolved session attached to the
-	// `Auth` layer.
-	const sessionRuntime = GraphQLRuntime.make(c.env, c.req.raw, null);
-	let session: Session | null = null;
+// fate native protocol (ADR 0015–0017). The single data plane for the SPA.
+// The route owns the per-request runtime: it validates the session, builds a
+// `ManagedRuntime` with that session baked into the `Auth` layer, hands it to
+// fate via `adapterContext`, and disposes it in `finally` via
+// `executionCtx.waitUntil` so disposal doesn't block the response.
+app.post("/fate", async (c) => {
+	// Validate the session through a minimal Pasaport-only runtime; the request
+	// runtime is then built once with the resolved session attached to `Auth`.
+	const session = await validateSessionCookie(c.env, c.req.raw);
+	const sessionData = toSessionData(session);
+
+	const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
 	try {
-		session = await sessionRuntime.runPromise(
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.validateSession(c.req.raw.headers);
-			}),
+		// Run the operation inside the live publish context so a mutation's `live.*`
+		// publishes can resolve the `LIVE_DO` binding and `waitUntil` the fan-out
+		// (it doesn't block the response). The publish carries inline-resolved data.
+		return await livePublishContext.run(
+			{env: c.env, waitUntil: (p: Promise<unknown>) => c.executionCtx.waitUntil(p)},
+			() => fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime}),
 		);
 	} finally {
-		await sessionRuntime.dispose();
-	}
-	const sessionData: SessionData = session ? {user: session.user, session: session.session} : null;
-
-	const runtime = GraphQLRuntime.make(c.env, c.req.raw, sessionData);
-	try {
-		const yoga = createYoga<EffectContext<GraphQLRuntime.Context>>({
-			graphqlEndpoint: "/graphql",
-			schema,
-			graphiql: true,
-			logging: true,
-			context: () => ({runtime}),
-		});
-		const r = await yoga.fetch(c.req.raw);
-		return new Response(r.body, {
-			status: r.status,
-			statusText: r.statusText,
-			headers: r.headers,
-		});
-	} finally {
-		await runtime.dispose();
+		c.executionCtx.waitUntil(runtime.dispose());
 	}
 });
 

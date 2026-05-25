@@ -1,122 +1,103 @@
 /**
- * Fragment-shaped tree node for the post-detail comment thread.
- * Replaces the prop-shaped `PanoComment` from the MVP.
+ * View-shaped tree node for the post-detail comment thread.
  *
- * Each node declares `CommentTreeNodeFragment on Comment` and reads via
- * `useFragment` — pages spread `<CommentTreeNode comment={edge.node} />`
- * (a fragment ref) instead of shaping the row into props. Replies recurse
- * by spreading the same fragment again.
+ * Each node declares `CommentTreeNodeView` and reads its slice via `useView` —
+ * pages pass `<CommentTreeNode comment={edge.node} />` (a `ViewRef<"Comment">`)
+ * instead of shaping the row into props. Replies recurse by passing the same
+ * ref shape again. `useLiveView` keeps the node current as votes/edits land.
  *
  * The flat connection edges land in the page; the page assembles the
  * `parentId` → children map and hands a node + its children array down so
  * each level renders its own subtree without re-walking the whole list.
  */
 import * as React from "react";
-import {graphql, useFragment, useMutation} from "react-relay";
+import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
-import type {CommentTreeNodeFragment$key} from "../../__generated__/CommentTreeNodeFragment.graphql";
-import type {CommentTreeNodeRetractVoteMutation} from "../../__generated__/CommentTreeNodeRetractVoteMutation.graphql";
-import type {CommentTreeNodeVoteMutation} from "../../__generated__/CommentTreeNodeVoteMutation.graphql";
+import type {Comment} from "../../../worker/fate/views";
 import {useSession} from "../../auth/client";
+import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
-import {useSessionExpiredToast} from "../../lib/useSessionExpiredToast";
-import {extractLocalId} from "../../relay/encodeNodeId";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import "./PanoComment.css";
 
-const CommentTreeNodeFragmentDef = graphql`
-	fragment CommentTreeNodeFragment on Comment {
-		id
-		parentId
-		body
-		score
-		myVote
-		createdAt
-		updatedAt
-		deletedAt
-		author
-		authorId
-	}
-`;
+/** The fields a comment tree node reads. Co-located with the component. */
+export const CommentTreeNodeView = view<Comment>()({
+	id: true,
+	parentId: true,
+	body: true,
+	score: true,
+	myVote: true,
+	createdAt: true,
+	updatedAt: true,
+	deletedAt: true,
+	author: true,
+	authorId: true,
+});
 
 /**
- * Cast an upvote on a comment. Returns the
- * updated `score` + `myVote` so Relay's automatic store update merges the
- * scalar values into the existing `Comment:<id>` record — no refetch.
+ * The minimal write-back view for a comment vote — the shape
+ * `fate.mutations.comment.{vote,retractVote}` returns and normalizes keyed by
+ * `id`. Spread into `CommentTreeNodeView` so a vote write re-renders the node in
+ * place. (Vote is a same-`Comment` field mutation; masking is by view identity,
+ * so a view the node ref carries must be used — `CommentTreeNodeView` already
+ * selects these fields, so we reuse it as the write-back view.)
  */
-const CommentVoteMutation = graphql`
-	mutation CommentTreeNodeVoteMutation($commentId: ID!) {
-		voteOnComment(commentId: $commentId) {
-			id
-			score
-			myVote
-		}
-	}
-`;
-
-const CommentRetractVoteMutation = graphql`
-	mutation CommentTreeNodeRetractVoteMutation($commentId: ID!) {
-		retractCommentVote(commentId: $commentId) {
-			id
-			score
-			myVote
-		}
-	}
-`;
+const CommentVoteView = CommentTreeNodeView;
 
 export interface CommentTreeNodeProps {
-	/** Fragment ref into a Comment row. */
-	comment: CommentTreeNodeFragment$key;
+	/** View ref into a Comment node from the post's comments connection. */
+	comment: ViewRef<"Comment">;
 	/**
 	 * Direct children of this node — already filtered + ordered by the page.
 	 * Each child is itself an array entry in `childrenForId` so the recursion
 	 * can lookup grandchildren without re-walking.
 	 */
-	children: ReadonlyArray<{id: string; ref: CommentTreeNodeFragment$key}>;
+	children: ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
 	/** Lookup by comment id → its own children list (for grandchildren). */
-	childrenForId: (id: string) => ReadonlyArray<{id: string; ref: CommentTreeNodeFragment$key}>;
+	childrenForId: (id: string) => ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
 	depth?: number;
 	hash?: string;
 	highlight?: boolean;
-	/** Optional inline reply composer rendered right after the body. */
-	replyComposer?: React.ReactNode;
-	/** Optional inline edit composer rendered IN PLACE OF the static body. */
-	editComposer?: React.ReactNode;
 	currentUserId: string | null;
 	onReply?: (id: string) => void;
 	onEdit?: (id: string) => void;
 	onDelete?: (id: string) => void;
-	/** Lookup helper — page maps comment id → its own composers. */
-	composerFor?: (id: string) => {
+	/**
+	 * Lookup helper — page maps comment id → its own composers. Every node
+	 * (root and child) resolves its own `replyComposer`/`editComposer` through
+	 * this, so the root is not a special case.
+	 */
+	composerFor: (id: string) => {
 		replyComposer?: React.ReactNode;
 		editComposer?: React.ReactNode;
 	};
 }
 
 export function CommentTreeNode(props: CommentTreeNodeProps) {
-	const data = useFragment(CommentTreeNodeFragmentDef, props.comment);
-	// Test affordances key off the local comment id (e.g. `comm_<ulid>`),
-	// not the Relay global id; keep testids stable + human-readable.
-	const localId = extractLocalId(data.id, "Comment");
+	// Live: a comment vote/edit on another client publishes
+	// `live.update("Comment", id, …)` with the re-resolved node inline, so the
+	// score/body re-render here without a refetch.
+	const data = useLiveView(CommentTreeNodeView, props.comment);
+	const fate = useFateClient();
+	// Every node derives its own composers — the root is not special-cased.
+	const {replyComposer, editComposer} = props.composerFor(data.id);
+	// Test affordances key off the raw comment id (`comm_<ulid>`) — `id` is the
+	// raw per-type id.
+	const localId = data.id;
 	const session = useSession();
 	const navigate = useNavigate();
-	const {handleError: handleAuthError} = useSessionExpiredToast();
 	const [open, setOpen] = React.useState(true);
-	const [voteCommit, voteInFlight] = useMutation<CommentTreeNodeVoteMutation>(CommentVoteMutation);
-	const [retractCommit, retractInFlight] = useMutation<CommentTreeNodeRetractVoteMutation>(
-		CommentRetractVoteMutation,
-	);
+	const [inFlight, setInFlight] = React.useState(false);
 
 	const isDeleted = data.deletedAt != null;
 	const isOwner =
 		!isDeleted && props.currentUserId != null && data.authorId === props.currentUserId;
 	const voted = (data.myVote ?? 0) === 1;
 	const score = data.score;
-	const inFlight = voteInFlight || retractInFlight;
-	const editing = props.editComposer != null;
+	const editing = editComposer != null;
 
 	const cls = [
 		"kp-comment",
@@ -127,48 +108,37 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 		.filter(Boolean)
 		.join(" ");
 
-	const onUpvote = () => {
+	const redirectToAuth = () =>
+		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
+
+	const onUpvote = async () => {
 		if (!session.data?.user) {
-			navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
+			redirectToAuth();
 			return;
 		}
 		if (inFlight) return;
-		if (voted) {
-			retractCommit({
-				variables: {commentId: data.id},
-				optimisticResponse: {
-					retractCommentVote: {
-						id: data.id,
-						score: Math.max(0, score - 1),
-						myVote: null,
-					},
-				},
-				onCompleted: (_d, errors) => {
-					handleAuthError(errors);
-				},
-				onError: (err) => {
-					if (handleAuthError(null, err)) return;
-					console.warn("[pano] retract comment vote failed", err);
-				},
-			});
-		} else {
-			voteCommit({
-				variables: {commentId: data.id},
-				optimisticResponse: {
-					voteOnComment: {
-						id: data.id,
-						score: score + 1,
-						myVote: 1,
-					},
-				},
-				onCompleted: (_d, errors) => {
-					handleAuthError(errors);
-				},
-				onError: (err) => {
-					if (handleAuthError(null, err)) return;
-					console.warn("[pano] vote on comment failed", err);
-				},
-			});
+		setInFlight(true);
+		try {
+			if (voted) {
+				await fate.mutations.comment.retractVote({
+					input: {id: data.id},
+					optimistic: {score: Math.max(0, score - 1), myVote: null},
+					view: CommentVoteView,
+				});
+			} else {
+				await fate.mutations.comment.vote({
+					input: {id: data.id},
+					optimistic: {score: score + 1, myVote: 1},
+					view: CommentVoteView,
+				});
+			}
+		} catch (error) {
+			// Boundary-class throw (fate classifies phoenix codes as boundary); the
+			// optimistic flip already rolled back. Surface UNAUTHORIZED as a redirect;
+			// the vote button has no inline slot, so stay silent otherwise.
+			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+		} finally {
+			setInFlight(false);
 		}
 	};
 
@@ -182,8 +152,8 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						@{data.author}
 					</a>
 				)}
-				<span>{formatAgoTR(data.createdAt)}</span>
-				<EditedIndicator createdAt={data.createdAt} updatedAt={data.updatedAt} />
+				<span>{formatAgoTR(toIso(data.createdAt))}</span>
+				<EditedIndicator createdAt={toIso(data.createdAt)} updatedAt={toIso(data.updatedAt)} />
 				{!isDeleted ? (
 					<button
 						type="button"
@@ -210,7 +180,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 				<>
 					{editing ? (
 						<div className="kp-comment__edit" data-testid={`pano-comment-edit-${localId}`}>
-							{props.editComposer}
+							{editComposer}
 						</div>
 					) : (
 						<div className="kp-comment__body">
@@ -260,32 +230,27 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 							) : null}
 						</footer>
 					) : null}
-					{props.replyComposer ? (
+					{replyComposer ? (
 						<div className="kp-comment__reply" data-testid={`pano-comment-reply-${localId}`}>
-							{props.replyComposer}
+							{replyComposer}
 						</div>
 					) : null}
 					{props.children.length ? (
 						<div>
-							{props.children.map((child) => {
-								const c = props.composerFor?.(child.id);
-								return (
-									<CommentTreeNode
-										key={child.id}
-										comment={child.ref}
-										children={props.childrenForId(child.id)}
-										childrenForId={props.childrenForId}
-										depth={(props.depth ?? 0) + 1}
-										currentUserId={props.currentUserId}
-										onReply={props.onReply}
-										onEdit={props.onEdit}
-										onDelete={props.onDelete}
-										composerFor={props.composerFor}
-										replyComposer={c?.replyComposer}
-										editComposer={c?.editComposer}
-									/>
-								);
-							})}
+							{props.children.map((child) => (
+								<CommentTreeNode
+									key={child.id}
+									comment={child.ref}
+									children={props.childrenForId(child.id)}
+									childrenForId={props.childrenForId}
+									depth={(props.depth ?? 0) + 1}
+									currentUserId={props.currentUserId}
+									onReply={props.onReply}
+									onEdit={props.onEdit}
+									onDelete={props.onDelete}
+									composerFor={props.composerFor}
+								/>
+							))}
 						</div>
 					) : null}
 				</>

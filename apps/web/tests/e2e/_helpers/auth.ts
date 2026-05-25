@@ -41,6 +41,41 @@ export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<C
 }
 
 /**
+ * Complete the username bootstrap gate if it's up.
+ *
+ * A fresh Pasaport user has `username = NULL`, so the Layout's `needsBootstrap`
+ * gate replaces the page content with <UsernameBootstrap> until a username is
+ * set (via `setUsername` over fate). Specs that sign up and then assert page
+ * content (the feed, a post) must clear this gate first, or they see the form
+ * instead of the content. Submits the pre-filled value (the email local-part,
+ * unique per `signUp`). No-op if the gate isn't present (already bootstrapped).
+ *
+ * Specs that need a *specific* handle (e.g. to navigate to `/u/<handle>`) drive
+ * the gate themselves with their chosen value instead of calling this.
+ */
+export async function completeBootstrap(page: Page): Promise<void> {
+	const input = page.locator("input#bootstrap-username");
+	// The gate mounts only after `useMe` resolves (async over fate), so a
+	// point-in-time visibility check races the fetch. Wait for it to appear; if
+	// it never does within the window, assume the user is already bootstrapped.
+	try {
+		await expect(input).toBeVisible({timeout: 10_000});
+	} catch {
+		return;
+	}
+	const prefilled = await input.inputValue();
+	const handle =
+		prefilled && prefilled.length >= 3
+			? prefilled
+			: `e2e${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+	await input.fill(handle);
+	await page.getByRole("button", {name: /devam et/i}).click();
+	await expect(page.getByRole("heading", {name: /kullanıcı adını seç/i})).toHaveCount(0, {
+		timeout: 10_000,
+	});
+}
+
+/**
  * Click the topbar user pill, then "Çıkış" in the menu. The user pill is the
  * Menu.Trigger that wraps an Avatar + the user's display name. Best-effort —
  * if the menu is already gone, we just no-op.

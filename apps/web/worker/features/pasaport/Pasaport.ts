@@ -26,9 +26,10 @@
  *   - `UserNotFound`
  *   - `DrizzleError` (any infrastructure failure)
  */
-import {and, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
+import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
+import {forwardPage, keysetAfter} from "../../db/keyset";
 import {CloudflareEnv} from "../../services/CloudflareEnv";
 import {Drizzle, type DrizzleError} from "../../services/Drizzle";
 import {createAuth, type Session} from "./auth";
@@ -117,6 +118,77 @@ export interface ContributionConnection {
 	totalCount: number;
 }
 
+/**
+ * Flat **discriminant** row for the fate `Profile.contributions` view (ADR
+ * 0018 — fate has no union type, so heterogeneous contributions are modeled as
+ * one view with a `kind` discriminant the profile page switches on).
+ * The common fields (`kind`, `id`, `score`, `createdAt`) are always present;
+ * the variant fields are nullable and populated per `kind`. This is purely a
+ * reshape of {@link ContributionNode} — the same rows, the same keyset, the
+ * same cursor — flattened so a single data view can mask them.
+ */
+export interface ContributionRow {
+	kind: ContributionKind;
+	id: string;
+	score: number;
+	createdAt: Date;
+	// definition + comment carry a non-null excerpt; post's is nullable.
+	bodyExcerpt: string | null;
+	// definition only
+	termSlug: string | null;
+	termTitle: string | null;
+	// post only
+	title: string | null;
+	slug: string | null;
+	// comment only
+	postId: string | null;
+	postTitle: string | null;
+}
+
+/**
+ * Flatten a discriminated {@link ContributionNode} into the flat
+ * {@link ContributionRow} the fate view masks. The discriminant `kind` is
+ * carried straight through; non-applicable variant fields are `null`.
+ */
+export function toContributionRow(node: ContributionNode): ContributionRow {
+	const base = {kind: node.kind, id: node.id, score: node.score, createdAt: node.createdAt};
+	switch (node.kind) {
+		case "definition":
+			return {
+				...base,
+				bodyExcerpt: node.bodyExcerpt,
+				termSlug: node.termSlug,
+				termTitle: node.termTitle,
+				title: null,
+				slug: null,
+				postId: null,
+				postTitle: null,
+			};
+		case "post":
+			return {
+				...base,
+				bodyExcerpt: node.bodyExcerpt,
+				termSlug: null,
+				termTitle: null,
+				title: node.title,
+				slug: node.slug,
+				postId: null,
+				postTitle: null,
+			};
+		case "comment":
+			return {
+				...base,
+				bodyExcerpt: node.bodyExcerpt,
+				termSlug: null,
+				termTitle: null,
+				title: null,
+				slug: null,
+				postId: node.postId,
+				postTitle: node.postTitle,
+			};
+	}
+}
+
 /* -------------------------------------------------------------------------- */
 /* Service                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -129,6 +201,16 @@ export class Pasaport extends Context.Service<
 		readonly validateSession: (headers: Headers) => Effect.Effect<Session | null, never>;
 
 		readonly getUserById: (userId: string) => Effect.Effect<UserRow | null, DrizzleError>;
+
+		/**
+		 * Batched read of user rows by id — the fate `User` source's `byIds`
+		 * workhorse. `User` is the hottest relation (authors appear across every
+		 * feed), so this is a single `WHERE id IN (...)` over the user table.
+		 * Order is not guaranteed; fate re-associates rows by id.
+		 */
+		readonly getUsersByIds: (
+			userIds: ReadonlyArray<string>,
+		) => Effect.Effect<UserRow[], DrizzleError>;
 
 		readonly findUsername: (
 			username: string,
@@ -197,9 +279,25 @@ function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid
 }
 
 /* -------------------------------------------------------------------------- */
-/* Cursor codec (used by listContributions)                                    */
+/* Contributions cursor codec — the (created_at DESC, id DESC) keyset           */
 /* -------------------------------------------------------------------------- */
 
+/**
+ * The contributions feed is paginated by a DB keyset matching the fate
+ * `Profile.contributions` view `orderBy` — `(createdAt desc, id desc)` — with
+ * `id` (a globally-unique ULID across all three contribution tables) as the
+ * final tiebreaker. The cursor is the `(createdAt, id)` tuple of the last node
+ * on a page; `decodeCursor` resolves it back so the per-table keyset predicate
+ * `createdAt < c.createdAt OR (createdAt = c.createdAt AND id < c.id)` selects
+ * the rows that follow it. No skips or duplicates, and the discriminant `kind`
+ * is preserved across pages because the keyset key is the same global
+ * `(createdAt, id)` order every kind is merged on.
+ *
+ * D1 stores `created_at` as epoch **seconds** (the `timestamp` column is
+ * `integer({mode:"timestamp"})`), so encoding seconds is exact at the DB's own
+ * granularity — the keyset round-trips without precision loss. The wire cursor
+ * format is `<epochSeconds>:<id>`, so cursors stay stable across deploys.
+ */
 function encodeCursor(node: {createdAt: Date; id: string}): string {
 	return `${Math.floor(node.createdAt.getTime() / 1000)}:${node.id}`;
 }
@@ -349,6 +447,25 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				} satisfies UserRow;
 			}),
 
+			getUsersByIds: Effect.fn("Pasaport.getUsersByIds")(function* (
+				userIds: ReadonlyArray<string>,
+			) {
+				if (userIds.length === 0) return [];
+				const rows = yield* run((db) =>
+					db.query.user.findMany({where: inArray(schema.user.id, [...userIds])}),
+				);
+				return rows.map(
+					(row) =>
+						({
+							id: row.id,
+							email: row.email,
+							name: row.name ?? null,
+							image: row.image ?? null,
+							username: row.username ?? null,
+						}) satisfies UserRow,
+				);
+			}),
+
 			findUsername: Effect.fn("Pasaport.findUsername")(function* (username: string) {
 				const row = yield* run((db) =>
 					db.query.user.findFirst({where: eq(schema.user.username, username)}),
@@ -463,20 +580,23 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				const cursor = input.after ? decodeCursor(input.after) : null;
 				const fetchSize = first + 1;
 
+				// `after` present but undecodable is a cursor miss → empty page (the
+				// one cursor-miss semantic shared by all five keyset methods).
+				const cursorMissed = input.after !== null && cursor === null;
+
+				// Per-table keyset for the global `(created_at desc, id desc)` merge
+				// order. `keysetAfter` builds the lexicographic predicate; null
+				// cursor values (no `after`) collapse it to undefined so only the
+				// base author/deleted filter applies.
 				function keysetWhere<
 					TTable extends {createdAt: any; id: any; authorId: any; deletedAt: any},
 				>(table: TTable) {
 					const base = and(eq(table.authorId, input.authorId), isNull(table.deletedAt));
-					if (cursor) {
-						return and(
-							base,
-							or(
-								lt(table.createdAt, cursor.createdAt),
-								and(eq(table.createdAt, cursor.createdAt), lt(table.id, cursor.id)),
-							),
-						);
-					}
-					return base;
+					const predicate = keysetAfter([
+						{column: table.createdAt, dir: "desc", value: cursor?.createdAt ?? null},
+						{column: table.id, dir: "desc", value: cursor?.id ?? null},
+					]);
+					return predicate ? and(base, predicate) : base;
 				}
 
 				const defs = yield* run((db) =>
@@ -565,6 +685,15 @@ export const PasaportLive = Layer.effect(Pasaport)(
 				);
 				const totalCount = defTotal + postTotal + commentTotal;
 
+				if (cursorMissed) {
+					return {
+						edges: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies ContributionConnection;
+				}
+
 				const merged: ContributionNode[] = [
 					...defs.map<ContributionNode>((d) => ({
 						kind: "definition",
@@ -602,20 +731,17 @@ export const PasaportLive = Layer.effect(Pasaport)(
 					return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
 				});
 
-				const sliced = merged.slice(0, first);
-				const hasNextPage =
-					merged.length > first ||
-					defs.length === fetchSize ||
-					posts.length === fetchSize ||
-					comments.length === fetchSize;
-
-				const last = sliced[sliced.length - 1];
-				const endCursor = last ? encodeCursor(last) : null;
+				// Each of the three tables is read with the same keyset predicate and
+				// `LIMIT first+1`, so the merged set holds every candidate that could
+				// fall in the next `first` slots of the global `(createdAt desc, id
+				// desc)` order — `forwardPage` slices the probe and assembles the
+				// shared `{rows, hasNextPage, endCursor}` envelope.
+				const page = forwardPage<ContributionNode>(merged, first, encodeCursor);
 
 				return {
-					edges: sliced.map((node) => ({cursor: encodeCursor(node), node})),
-					hasNextPage: hasNextPage && sliced.length > 0,
-					endCursor,
+					edges: page.rows.map((node) => ({cursor: encodeCursor(node), node})),
+					hasNextPage: page.hasNextPage,
+					endCursor: page.endCursor,
 					totalCount,
 				} satisfies ContributionConnection;
 			}),

@@ -21,9 +21,10 @@
  * public surface.
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, isNull, lt, or, sql} from "drizzle-orm";
+import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import * as schema from "../../db/drizzle/schema";
+import {forwardPage, keysetAfter} from "../../db/keyset";
 import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle";
 import {excerpt as excerptText} from "../../shared/text";
 import type {VoteTargetNotFound} from "../vote/errors";
@@ -87,6 +88,14 @@ const TAG_LABELS: Record<string, string> = {
 	rant: "söylenme",
 };
 
+/**
+ * Resolve a tag `kind` to its display `label` via the static label map, falling
+ * back to the raw kind. Used by `parseTags` and the fate `Tag` source `byIds`.
+ */
+export function tagLabel(kind: string): string {
+	return TAG_LABELS[kind] ?? kind;
+}
+
 function parseTags(csv: string): Array<{kind: string; label: string}> {
 	if (!csv) return [];
 	return csv
@@ -135,7 +144,15 @@ export interface PostSummaryRow {
 	score: number;
 	commentCount: number;
 	createdAt: Date;
+	updatedAt?: Date;
 	tags: PostTagRow[];
+	/**
+	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
+	 * (`getPostsByIds`, `listPostsKeyset`-shaped pages) so the `Post.myVote` view
+	 * field is a stamped scalar; `undefined` for read paths that don't request it
+	 * (leaving this unset on `PostSummaryRow`).
+	 */
+	myVote?: number | null;
 }
 
 export interface PostConnectionPage {
@@ -155,6 +172,13 @@ export interface CommentRow {
 	createdAt: Date;
 	updatedAt: Date;
 	deletedAt?: Date | null;
+	/**
+	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
+	 * (`getCommentsByIds`, `listCommentsKeyset`) so the `Comment.myVote` view
+	 * field is a stamped scalar; `undefined` for read paths that don't request it
+	 * (leaving this unset).
+	 */
+	myVote?: number | null;
 }
 
 export interface CommentConnectionPage {
@@ -330,14 +354,39 @@ export class Pano extends Context.Service<
 			host?: string | null;
 		}) => Effect.Effect<PostConnectionPage, DrizzleError>;
 
-		readonly listCommentsConnection: (
-			postId: string,
-			opts?: {first?: number | undefined; after?: string | null | undefined},
-		) => Effect.Effect<CommentConnectionPage, DrizzleError>;
-
 		readonly getCommentRow: (
 			commentId: string,
 		) => Effect.Effect<typeof schema.commentView.$inferSelect | null, DrizzleError>;
+
+		/**
+		 * DB-keyset page over a post's comments in chronological-asc order
+		 * `(created_at asc, id asc)`, cursor = comment id. A bounded
+		 * `WHERE … LIMIT first+1` with no skips/dupes. `viewerId` stamps
+		 * `myVote` for the whole page in one `user_vote` read.
+		 */
+		readonly listCommentsKeyset: (
+			postId: string,
+			opts?: {
+				first?: number | undefined;
+				after?: string | null | undefined;
+				viewerId?: string | null | undefined;
+			},
+		) => Effect.Effect<CommentConnectionPage, DrizzleError>;
+
+		/** Post source `byIds` — batched read avoiding the relation N+1. */
+		readonly getPostsByIds: (
+			ids: ReadonlyArray<string>,
+			opts?: {viewerId?: string | null | undefined},
+		) => Effect.Effect<ReadonlyArray<PostSummaryRow>, DrizzleError>;
+
+		/** Comment source `byIds` — batched read avoiding the relation N+1. */
+		readonly getCommentsByIds: (
+			ids: ReadonlyArray<string>,
+			opts?: {viewerId?: string | null | undefined},
+		) => Effect.Effect<ReadonlyArray<CommentRow>, DrizzleError>;
+
+		/** Resolve a comment's parent post id (for re-resolving on delete). */
+		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null, DrizzleError>;
 
 		readonly submitPost: (
 			input: SubmitPostInput,
@@ -469,6 +518,34 @@ export const PanoLive = Layer.effect(Pano)(
 		};
 
 		/**
+		 * One `user_vote` read stamping `myVote` for a whole batch of post or
+		 * comment ids. Returns the set of target ids the viewer has upvoted; the
+		 * fate read paths map that to the `1 | null` flag for the
+		 * `Post.myVote` / `Comment.myVote` view fields — one batched read instead
+		 * of a per-row N+1. Signed-out viewers short-circuit without a read.
+		 */
+		const readMyVotesBatch = Effect.fn("Pano.readMyVotesBatch")(function* (
+			viewerId: string | null | undefined,
+			targetKind: "post" | "comment",
+			targetIds: ReadonlyArray<string>,
+		) {
+			if (!viewerId || targetIds.length === 0) return new Set<string>();
+			const rows = yield* run((db) =>
+				db
+					.select({targetId: schema.userVote.targetId})
+					.from(schema.userVote)
+					.where(
+						and(
+							eq(schema.userVote.userId, viewerId),
+							eq(schema.userVote.targetKind, targetKind),
+							inArray(schema.userVote.targetId, [...targetIds]),
+						),
+					),
+			);
+			return new Set(rows.map((r) => r.targetId));
+		});
+
+		/**
 		 * Refresh `pano_stats` totals. Three small COUNT queries plus one
 		 * upsert. Cheap; runs after every write that could affect totals.
 		 */
@@ -598,6 +675,15 @@ export const PanoLive = Layer.effect(Pano)(
 			const baseConditions = [isNull(schema.postSummary.deletedAt)];
 			if (host) baseConditions.push(eq(schema.postSummary.host, host));
 
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.postSummary)
+					.where(and(...baseConditions))
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
+
 			let cursorRow: {
 				id: string;
 				score: number;
@@ -605,7 +691,6 @@ export const PanoLive = Layer.effect(Pano)(
 				commentCount: number;
 				createdAt: Date | null;
 			} | null = null;
-			let cursorMissed = false;
 			if (after) {
 				cursorRow =
 					(yield* run((db) =>
@@ -621,51 +706,34 @@ export const PanoLive = Layer.effect(Pano)(
 							.where(eq(schema.postSummary.id, after))
 							.get(),
 					)) ?? null;
-				if (!cursorRow) cursorMissed = true;
-			}
-			if (cursorMissed) {
-				const totalCountRow = yield* run((db) =>
-					db
-						.select({n: sql<number>`count(*)`})
-						.from(schema.postSummary)
-						.where(and(...baseConditions))
-						.get(),
-				);
-				return {
-					rows: [],
-					hasNextPage: false,
-					endCursor: null,
-					totalCount: totalCountRow?.n ?? 0,
-				} satisfies PostConnectionPage;
+				// Cursor miss → empty page (the one shared cursor-miss semantic).
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies PostConnectionPage;
+				}
 			}
 
-			const cursorPredicate = cursorRow
-				? sort === "new"
-					? lt(schema.postSummary.id, cursorRow.id)
-					: sort === "top"
-						? or(
-								lt(schema.postSummary.score, cursorRow.score),
-								and(
-									eq(schema.postSummary.score, cursorRow.score),
-									lt(schema.postSummary.id, cursorRow.id),
-								),
-							)
-						: sort === "discuss"
-							? or(
-									lt(schema.postSummary.commentCount, cursorRow.commentCount),
-									and(
-										eq(schema.postSummary.commentCount, cursorRow.commentCount),
-										lt(schema.postSummary.id, cursorRow.id),
-									),
-								)
-							: or(
-									lt(schema.postSummary.hotScore, cursorRow.hotScore),
-									and(
-										eq(schema.postSummary.hotScore, cursorRow.hotScore),
-										lt(schema.postSummary.id, cursorRow.id),
-									),
-								)
-				: null;
+			// The sort's lead column (all descending) followed by the `id` desc
+			// tiebreaker. `new` orders by id alone.
+			const leadColumn =
+				sort === "top"
+					? {column: schema.postSummary.score, value: cursorRow?.score}
+					: sort === "discuss"
+						? {column: schema.postSummary.commentCount, value: cursorRow?.commentCount}
+						: sort === "new"
+							? null
+							: {column: schema.postSummary.hotScore, value: cursorRow?.hotScore};
+
+			const cursorPredicate = keysetAfter([
+				...(leadColumn
+					? [{column: leadColumn.column, dir: "desc" as const, value: leadColumn.value ?? null}]
+					: []),
+				{column: schema.postSummary.id, dir: "desc", value: cursorRow?.id ?? null},
+			]);
 
 			const whereExpr = cursorPredicate
 				? and(...baseConditions, cursorPredicate)
@@ -702,83 +770,188 @@ export const PanoLive = Layer.effect(Pano)(
 					.limit(first + 1),
 			);
 
-			const hasNextPage = fetched.length > first;
-			const sliced = hasNextPage ? fetched.slice(0, first) : fetched;
-
-			const rows: PostSummaryRow[] = sliced.map((r) => ({
-				id: r.id,
-				slug: r.slug,
-				title: r.title,
-				url: r.url,
-				host: r.host,
-				body: r.bodyExcerpt,
-				author: r.authorName,
-				authorId: r.authorId,
-				score: r.score,
-				commentCount: r.commentCount,
-				createdAt: r.createdAt ?? new Date(0),
-				tags: parseTags(r.tags),
-			}));
-
-			const totalCountRow = yield* run((db) =>
-				db
-					.select({n: sql<number>`count(*)`})
-					.from(schema.postSummary)
-					.where(and(...baseConditions))
-					.get(),
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: PostSummaryRow) => r.id,
+				(r) => ({
+					id: r.id,
+					slug: r.slug,
+					title: r.title,
+					url: r.url,
+					host: r.host,
+					body: r.bodyExcerpt,
+					author: r.authorName,
+					authorId: r.authorId,
+					score: r.score,
+					commentCount: r.commentCount,
+					createdAt: r.createdAt ?? new Date(0),
+					tags: parseTags(r.tags),
+				}),
 			);
-			const totalCount = totalCountRow?.n ?? 0;
 
-			const last = rows.at(-1) ?? null;
-			return {
-				rows,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount,
-			} satisfies PostConnectionPage;
+			return {...page, totalCount} satisfies PostConnectionPage;
 		});
 
 		/**
-		 * Read every comment for a post in chronological-asc order, with the
-		 * reply-aware placeholder pass applied. Used by
-		 * `listCommentsConnection` for pagination.
+		 * DB-keyset page over a post's comments. Pages forward in
+		 * chronological-asc order `(created_at asc, id asc)`; cursor is the
+		 * comment id, fetched as a bounded `WHERE … LIMIT first+1`. The
+		 * reply-aware placeholder pass (`rowToCommentRow`) still applies, so the
+		 * wire shape matches the other comment reads.
 		 */
-		const listComments = Effect.fn("Pano.listComments")(function* (postId: string) {
-			const rows = yield* run((db) =>
+		const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
+			postId: string,
+			opts: {
+				first?: number | undefined;
+				after?: string | null | undefined;
+				viewerId?: string | null | undefined;
+			} = {},
+		) {
+			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
+			const after = opts.after ?? null;
+			const viewerId = opts.viewerId ?? null;
+
+			const baseWhere = eq(schema.commentView.postId, postId);
+			const totalCount = yield* run((db) =>
+				db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.commentView)
+					.where(baseWhere)
+					.get()
+					.then((r) => r?.n ?? 0),
+			);
+
+			// Resolve the cursor row's (created_at, id) tuple so the keyset
+			// predicate selects rows strictly after it in `(created_at asc, id
+			// asc)` order. An `after` that doesn't resolve is a cursor miss →
+			// empty page (the one cursor-miss semantic shared by all five keyset
+			// methods).
+			let cursorRow: {createdAt: Date | null} | null = null;
+			if (after) {
+				cursorRow =
+					(yield* run((db) =>
+						db
+							.select({createdAt: schema.commentView.createdAt})
+							.from(schema.commentView)
+							.where(eq(schema.commentView.id, after))
+							.get(),
+					)) ?? null;
+				if (!cursorRow) {
+					return {
+						rows: [],
+						hasNextPage: false,
+						endCursor: null,
+						totalCount,
+					} satisfies CommentConnectionPage;
+				}
+			}
+
+			const cursorPredicate = keysetAfter([
+				{column: schema.commentView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
+				{column: schema.commentView.id, dir: "asc", value: after},
+			]);
+
+			const fetched = yield* run((db) =>
 				db
 					.select()
 					.from(schema.commentView)
-					.where(eq(schema.commentView.postId, postId))
-					.orderBy(asc(schema.commentView.createdAt), asc(schema.commentView.id)),
+					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
+					.orderBy(asc(schema.commentView.createdAt), asc(schema.commentView.id))
+					.limit(first + 1),
 			);
-			return rows.map(rowToCommentRow);
+
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				"comment",
+				fetched.slice(0, first).map((c) => c.id),
+			);
+			const page = forwardPage(
+				fetched,
+				first,
+				(r: CommentRow) => r.id,
+				(c) => {
+					const base = rowToCommentRow(c);
+					return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
+				},
+			);
+
+			return {...page, totalCount} satisfies CommentConnectionPage;
 		});
 
-		const listCommentsConnection = Effect.fn("Pano.listCommentsConnection")(function* (
-			postId: string,
-			opts: {first?: number | undefined; after?: string | null | undefined} = {},
+		const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
+			ids: ReadonlyArray<string>,
+			opts: {viewerId?: string | null | undefined} = {},
 		) {
-			const all = yield* listComments(postId);
-			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
-			const after = opts.after ?? null;
-			if (after !== null && all.findIndex((c) => c.id === after) === -1) {
-				return {
-					rows: [],
-					hasNextPage: false,
-					endCursor: null,
-					totalCount: all.length,
-				} satisfies CommentConnectionPage;
-			}
-			const startIndex = after ? all.findIndex((c) => c.id === after) + 1 : 0;
-			const page = all.slice(startIndex, startIndex + first);
-			const hasNextPage = startIndex + first < all.length;
-			const last = page.at(-1) ?? null;
-			return {
-				rows: page,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount: all.length,
-			} satisfies CommentConnectionPage;
+			if (ids.length === 0) return [];
+			const viewerId = opts.viewerId ?? null;
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.postSummary)
+					.where(
+						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.deletedAt)),
+					),
+			);
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				"post",
+				fetched.map((p) => p.id),
+			);
+			return fetched.map(
+				(row): PostSummaryRow => ({
+					id: row.id,
+					slug: row.slug,
+					title: row.title,
+					url: row.url,
+					host: row.host,
+					body: row.bodyExcerpt && row.bodyExcerpt.length > 0 ? row.bodyExcerpt : null,
+					author: row.authorName,
+					authorId: row.authorId,
+					score: row.score,
+					commentCount: row.commentCount,
+					createdAt: row.createdAt ?? new Date(0),
+					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
+					tags: parseTags(row.tags),
+					myVote: viewerId ? (voted.has(row.id) ? 1 : null) : null,
+				}),
+			);
+		});
+
+		const getCommentsByIds = Effect.fn("Pano.getCommentsByIds")(function* (
+			ids: ReadonlyArray<string>,
+			opts: {viewerId?: string | null | undefined} = {},
+		) {
+			if (ids.length === 0) return [];
+			const viewerId = opts.viewerId ?? null;
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.commentView)
+					.where(inArray(schema.commentView.id, [...ids])),
+			);
+			const voted = yield* readMyVotesBatch(
+				viewerId,
+				"comment",
+				fetched.map((c) => c.id),
+			);
+			return fetched.map((c): CommentRow => {
+				const base = rowToCommentRow(c);
+				return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
+			});
+		});
+
+		const lookupCommentPostId = Effect.fn("Pano.lookupCommentPostId")(function* (
+			commentId: string,
+		) {
+			const rows = yield* run((db) =>
+				db
+					.select({postId: schema.commentView.postId})
+					.from(schema.commentView)
+					.where(eq(schema.commentView.id, commentId))
+					.limit(1),
+			);
+			return rows[0]?.postId ?? null;
 		});
 
 		/* ------------------------------------------------------------------ */
@@ -948,6 +1121,13 @@ export const PanoLive = Layer.effect(Pano)(
 			} satisfies EditPostResult;
 		});
 
+		/**
+		 * HARD delete: removes the summary row, wipes the vote tables, and
+		 * reverses the author's karma. This diverges from `Sozluk.deleteDefinition`
+		 * (soft delete, karma kept) — a deliberate, known inconsistency pending
+		 * `.decisions/0024-delete-semantics-and-karma.md`. Read that ADR before
+		 * "fixing" one path to match the other.
+		 */
 		const deletePost = Effect.fn("Pano.deletePost")(function* (input: DeletePostInput) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({where: eq(schema.postSummary.id, input.postId)}),
@@ -1457,7 +1637,10 @@ export const PanoLive = Layer.effect(Pano)(
 		return {
 			getPost,
 			listPostsConnection,
-			listCommentsConnection,
+			listCommentsKeyset,
+			getPostsByIds,
+			getCommentsByIds,
+			lookupCommentPostId,
 			getCommentRow,
 			submitPost,
 			editPost,

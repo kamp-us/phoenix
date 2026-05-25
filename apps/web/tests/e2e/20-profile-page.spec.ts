@@ -59,6 +59,18 @@ test.describe("Profile page", () => {
 		await composerBody.fill(definitionBody);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 		await expect(page.getByText(definitionBody)).toBeVisible({timeout: 10_000});
+		// The sozluk composer reloads the page after a successful add (the
+		// nested-connection membership reload — fate 1.0.3). The optimistic node can
+		// satisfy the assertion above *before* that reload fires, so a `goto` here
+		// would race the in-flight reload and abort (`net::ERR_ABORTED`). Wait for
+		// the reload to land on the *persisted* definition card (a real `def_<ulid>`
+		// id — the optimistic node carries an `optimistic:` id and is gone after the
+		// reload re-reads `term(slug)`) before navigating. (We can't
+		// `waitForLoadState("networkidle")` — the term page holds a long-lived live
+		// SSE stream, so the page is never network-idle.)
+		await expect(page.locator('[data-testid^="definition-card-def_"]')).toBeVisible({
+			timeout: 10_000,
+		});
 
 		// 4) Visit the public profile page.
 		await page.goto(`/u/${handle}`);

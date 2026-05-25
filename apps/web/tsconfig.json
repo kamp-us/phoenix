@@ -1,4 +1,9 @@
 {
+	// Editor/solution config — `references` lets language servers route src to the
+	// app project (jsx) and worker/node to theirs. Type-check via `pnpm typecheck`,
+	// NOT a bare `tsgo -b`: the composite app emits the generated fate client whose
+	// types aren't nameable (TS2883), so the script builds the worker/node leaves
+	// and checks the app with `tsgo -p tsconfig.app.json --composite false`.
 	"files": [],
 	"references": [
 		{ "path": "./tsconfig.app.json" },

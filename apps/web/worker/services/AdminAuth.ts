@@ -1,6 +1,6 @@
 /**
  * AdminAuth service — gates admin Hono routes (`/api/admin/*`) the same way
- * `Auth` gates GraphQL resolvers.
+ * `Auth` gates the fate request runtime.
  *
  * Initial implementation derives `{allowed}` from `env.ENVIRONMENT === "development"`,
  * matching today's per-route `if (env.ENVIRONMENT !== "development") return 403`
@@ -34,8 +34,8 @@ export class AdminAuth extends Context.Service<
 >()("@phoenix/AdminAuth") {
 	/**
 	 * Require admin permission — fails with `AdminForbidden` otherwise. Mirrors
-	 * `Auth.required` in shape so admin handlers read the same way GraphQL
-	 * resolvers do.
+	 * `Auth.required` in shape so admin handlers read the same way fate request
+	 * handlers do.
 	 *
 	 * @example
 	 *   app.post("/api/admin/sozluk/clear", (c) =>

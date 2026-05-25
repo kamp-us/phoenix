@@ -159,6 +159,8 @@ no migration script.
 
 - **Real-time UX becomes a product requirement.** Re-introduce a single,
   scoped DO for WebSocket fan-out. Re-adopt the relevant parts of 0006.
+  *(Triggered: [0023](0023-live-views-sse-livedo.md) introduces `LiveDO` for
+  live-view fan-out. D1-direct otherwise stands.)*
 - **Per-entity hot-write contention shows up on a row** (a single post
   receives concurrent vote storms that contend at D1's row lock).
   Re-introduce per-atom sharding for that entity specifically.
