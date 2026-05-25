@@ -66,3 +66,8 @@ change.
 - Amends the one-class packaging of
   [0023](0023-live-views-sse-livedo.md); the rest of 0023 is untouched.
 - See [fate-live-views.md](../.patterns/fate-live-views.md).
+
+Amended in part by [0028](0028-effect-durable-object-model.md): both classes are
+authored on alchemy's Effect DO model (typed RPC methods replace fetch-path
+dispatch, `state.storage.sql` backs the registry, `TopicDO` resolves `ConnectionDO`
+via `yield*` for fan-out). The connection/topic split decided here is unchanged.

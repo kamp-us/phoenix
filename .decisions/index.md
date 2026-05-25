@@ -20,12 +20,18 @@ One row per ADR. Read the file for the why.
 | [0014](0014-drizzle-run-batch-as-service-methods.md) | Drizzle service exposes `run`/`batch` as bound methods on the service value | accepted | 2026-05-17 |
 | [0015](0015-adopt-fate-native-protocol.md) | Adopt fate's native protocol as the data layer | accepted | 2026-05-23 |
 | [0016](0016-fate-pure-transport-effect-services-domain.md) | fate is pure transport; Effect services stay the domain | accepted | 2026-05-23 |
-| [0017](0017-hono-route-owns-fate-runtime.md) | The Hono route owns and disposes the per-request fate runtime | accepted | 2026-05-23 |
+| [0017](0017-hono-route-owns-fate-runtime.md) | The Hono route owns and disposes the per-request fate runtime | superseded by [0029](0029-worker-runtime-servicemap.md) | 2026-05-23 |
 | [0018](0018-data-views-drop-global-ids.md) | Data views are the schema; drop global IDs and the Node interface | accepted | 2026-05-23 |
 | [0019](0019-connection-pagination-strategy.md) | Connection pagination — custom list resolvers for roots, source connection for nested | accepted | 2026-05-23 |
 | [0020](0020-fate-mutation-conventions.md) | fate mutation conventions | accepted | 2026-05-23 |
 | [0021](0021-frontend-on-react-fate.md) | Frontend on react-fate — batched per-screen requests, declarative mutations | accepted | 2026-05-23 |
 | [0022](0022-server-types-single-source-of-truth.md) | Server types are the single source of truth; fate codegen replaces relay-compiler | accepted | 2026-05-23 |
-| [0023](0023-live-views-sse-livedo.md) | Live views over SSE, fanned out by the LiveDO Durable Object | amended-in-part by [0025](0025-split-livedo-connection-topic.md) | 2026-05-23 |
+| [0023](0023-live-views-sse-livedo.md) | Live views over SSE, fanned out by the LiveDO Durable Object | amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md) | 2026-05-23 |
 | [0024](0024-delete-semantics-and-karma.md) | Entity-delete semantics and karma treatment | proposed | 2026-05-24 |
-| [0025](0025-split-livedo-connection-topic.md) | Split LiveDO into ConnectionDO and TopicDO | accepted | 2026-05-24 |
+| [0025](0025-split-livedo-connection-topic.md) | Split LiveDO into ConnectionDO and TopicDO | amended-in-part by [0028](0028-effect-durable-object-model.md) | 2026-05-24 |
+| [0026](0026-adopt-alchemy-effect-infra.md) | Adopt alchemy-effect as the infrastructure layer | accepted | 2026-05-25 |
+| [0027](0027-http-router-drop-hono.md) | Drop Hono; HTTP via Effect HttpRouter and HttpApiBuilder | accepted | 2026-05-25 |
+| [0028](0028-effect-durable-object-model.md) | Port Durable Objects to alchemy's Effect DO model | accepted | 2026-05-25 |
+| [0029](0029-worker-runtime-servicemap.md) | Dissolve the per-request runtime; worker-level layers and a captured ServiceMap | accepted | 2026-05-25 |
+| [0030](0030-single-worker-vite-dev.md) | Single worker via Worker+assets, with a two-process HMR dev loop | accepted | 2026-05-25 |
+| [0031](0031-local-first-dev-state.md) | Local-first state for dev; remote state for CI and deploy | accepted | 2026-05-25 |

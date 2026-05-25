@@ -66,3 +66,8 @@ Amended in part by [0025](0025-split-livedo-connection-topic.md): the one-class,
 two-role-by-path packaging of `LiveDO` is replaced by separate `ConnectionDO` and
 `TopicDO` classes. The SSE transport, DO fan-out, cookie auth, and `generation`
 semantics decided here are unchanged.
+
+Amended in part by [0028](0028-effect-durable-object-model.md): the DOs are
+authored on alchemy's Effect DO model (typed RPC, `state.storage.sql`, DO→DO
+binding) rather than raw `cloudflare:workers` classes. The SSE transport and
+fan-out decided here are unchanged.

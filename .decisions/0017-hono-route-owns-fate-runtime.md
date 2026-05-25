@@ -1,7 +1,7 @@
 ---
 id: 0017
 title: The Hono route owns and disposes the per-request fate runtime
-status: accepted
+status: superseded
 date: 2026-05-23
 tags: [fate, effect, runtime, worker]
 ---
@@ -33,3 +33,8 @@ inline-resolved payloads and does no database work (see [0023](0023-live-views-s
 - **Harder:** runtime construction lives in the route rather than the server
   config — slightly more wiring at the mount point.
 - See [fate-server-wiring.md](../.patterns/fate-server-wiring.md).
+
+Superseded by [0029](0029-worker-runtime-servicemap.md): on alchemy there is no
+per-request `ManagedRuntime` to own or dispose — the worker provides `Drizzle`
+and the feature services as worker-level layers, and the `/fate` route captures
+a `ServiceMap` (`Effect.services`) that the bridge runs with `Effect.provideServices`.
