@@ -60,7 +60,7 @@ phoenix is **one worker that serves both** the React SPA and the hand-written AP
 
 > **Drop `@cloudflare/vite-plugin` from `vite.config.ts`.** alchemy ships its own Cloudflare integration and is **not compatible** with `@cloudflare/vite-plugin` — remove the `cloudflare()` plugin. Everything else in the config is preserved: `react()`, the **`fate()` codegen plugin**, aliases, tsconfig all keep working (the `fate()` plugin is orthogonal to Cloudflare — it reads the server's `Entity<>` types regardless of how the worker deploys).
 
-> **Local dev for this layout is still maturing.** alchemy's production build/deploy of a Vite SPA is solid, but its tutorial marks the integrated `alchemy dev` + Vite HMR story "coming soon." Expect to run the SPA's `vite dev` alongside the worker during the transition, and verify the dev ergonomics when you wire this up.
+> **Local dev is two processes, by design.** `alchemy dev` runs this worker against a local workerd runtime with live bindings and watch-rebuilds the backend on change — but with `Cloudflare.Worker` + `assets` it serves `dist/client` *statically*, with **no client HMR** (HMR only exists on the `Cloudflare.Vite` path, which can't host this backend). So run the SPA's `vite dev` alongside `alchemy dev` and have Vite proxy `/api` and `/fate*` to the worker's local URL — the standard SPA+API setup, and where the `fate()` plugin + HMR live. This is a DX regression from the current single-process `@cloudflare/vite-plugin` (alchemy is incompatible with that plugin); see [alchemy-stack-deploy.md](./alchemy-stack-deploy.md#dev--deploy) for the proxy config.
 
 ## Init phase — bind resources
 

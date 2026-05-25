@@ -69,7 +69,28 @@ alchemy deploy --stage prod
 
 The SPA is built by Vite as a normal build step (`dist/client`), then uploaded via the worker's `assets` prop — `alchemy deploy` does not drive Vite for phoenix's single-worker shape ([alchemy-worker.md](./alchemy-worker.md) explains why it's `Cloudflare.Worker` + `assets`, not `Cloudflare.Vite`). Drop `@cloudflare/vite-plugin` from `vite.config.ts` (alchemy is incompatible with it); keep `react()` and the `fate()` codegen plugin, which reads the server's `Entity<>` types regardless of deploy path (see [fate-server-wiring.md](./fate-server-wiring.md)).
 
-> **Local dev is the soft spot.** `alchemy deploy` supersedes `wrangler deploy` cleanly, but alchemy's integrated `alchemy dev` + Vite-HMR story for a SPA-plus-worker layout is marked "coming soon" upstream. During the transition expect to run the SPA's `vite dev` alongside the worker; verify the dev ergonomics before committing the team to it.
+### Local dev — two processes
+
+`alchemy dev` forks the stack under `--watch` against a **local** workerd runtime (no Cloudflare auth needed) and gives the worker a stable local URL with live D1/DO bindings. For phoenix's `Cloudflare.Worker` + `assets` shape it watch-rebuilds the *backend* on change, but serves `dist/client` **statically — no client HMR** (HMR exists only on the `Cloudflare.Vite` path, which can't host phoenix's hand-written backend). So dev is two processes, with Vite proxying the worker:
+
+```ts
+// vite.config.ts — dev only; alchemy owns deploy
+server: {
+  proxy: {
+    "/api": {target: "http://localhost:8787", changeOrigin: true},
+    "/fate": {target: "http://localhost:8787", changeOrigin: true}, // /fate/live SSE proxies fine
+  },
+},
+```
+
+```bash
+pnpm vite dev   # SPA on :3000 — full HMR + the fate() codegen plugin
+alchemy dev     # worker + DOs + D1 on :8787 — backend watch-rebuild, live bindings
+```
+
+A simpler one-model fallback is `alchemy dev` + `vite build --watch` (the static asset server picks up rebuilt `dist/client` on full reload, no HMR).
+
+> **This is a DX regression from today.** phoenix's current `@cloudflare/vite-plugin` runs the worker *inside* Vite dev in one process with client HMR. alchemy is incompatible with that plugin, so the two-process proxy is the cost — standard and reliable, but two terminals instead of one command. Weigh it as a migration cost, not a blocker.
 
 > **Stages give isolated environments per branch/PR.** `--stage <name>` deploys an independent copy of the stack (its own DOs, its own D1). This is how preview deploys work without a second config file — the stage name is threaded into resource names. `alchemy.run.ts` can branch on `stage` (e.g. reference a shared staging D1 for `pr-*` stages) the way the alchemy Neon examples do.
 
