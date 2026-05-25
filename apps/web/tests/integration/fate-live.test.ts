@@ -619,3 +619,151 @@ describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
 		expect(after).toBe(1);
 	});
 });
+
+describe("LiveDO bounds the fan-out (task 13)", () => {
+	it("a publish to a hung connection settles within the timeout budget", async () => {
+		const ownerId = "owner-hang";
+		const subId = "hang-op";
+		const topicKey = liveEntityTopic("Post", "hang-post");
+
+		const conn = connectionStub("hang-conn");
+		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribe", subId, type: "Post", entityId: "hang-post"},
+				ownerId,
+			}),
+		});
+		await open.body!.cancel();
+
+		// Make the connection DO hang forever on `/deliver`. With no `AbortSignal` the
+		// publish would block on the runtime's multi-minute subrequest timeout (and
+		// stall the single-threaded DO). The bounded fetch aborts at FANOUT_TIMEOUT_MS,
+		// so the publish settles well inside this test's own timeout.
+		await runInDurableObject(connectionStub("hang-conn"), (instance: LiveDO) => {
+			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () =>
+				new Promise<Response>(() => {});
+		});
+
+		const started = Date.now();
+		const pub = await topicStub(topicKey).fetch("https://live/publish", {
+			method: "POST",
+			body: JSON.stringify({
+				kind: "entity",
+				match: {type: "Post", entityId: "hang-post"},
+				frame: {data: {__typename: "Post", id: "hang-post", score: 1}},
+			}),
+		});
+		const elapsed = Date.now() - started;
+		// Aborted deliver → not delivered, and the row is left (couldn't reach, not
+		// confirmed stale — Task 4's invariant).
+		expect(((await pub.json()) as {delivered: number}).delivered).toBe(0);
+		// Settled on the bound (~2s), nowhere near the runtime subrequest timeout.
+		expect(elapsed).toBeLessThan(10_000);
+
+		const after = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		);
+		expect(after).toBe(1);
+	}, 15_000);
+});
+
+describe("LiveDO reaps genuinely-dead subscribers (task 13)", () => {
+	it("alarm evicts a connection that stays unreachable across the prune cycle", async () => {
+		const ownerId = "owner-reap";
+		const subId = "reap-op";
+		const topicKey = liveEntityTopic("Term", "reap-term");
+
+		const conn = connectionStub("reap-conn");
+		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribe", subId, type: "Term", entityId: "reap-term"},
+				ownerId,
+			}),
+		});
+		await open.body!.cancel();
+
+		// The connection stays unreachable for every probe (a crashed/evicted DO that
+		// never deregistered). A single alarm leaves the row (Task 4's invariant); only
+		// after MAX_PROBE_MISSES *consecutive* unreachable probes is the dead row reaped.
+		await runInDurableObject(connectionStub("reap-conn"), (instance: LiveDO) => {
+			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
+				throw new Error("simulated permanent unreachability");
+			};
+		});
+
+		// One alarm: still unreachable, but below the eviction threshold — row stays.
+		await runDurableObjectAlarm(topicStub(topicKey));
+		const afterOne = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		);
+		expect(afterOne).toBe(1);
+
+		// Keep firing alarms until the dead row is reaped. The alarm reschedules itself
+		// while rows remain, so re-arm it each cycle. Bounded so a never-reaping bug
+		// fails the test instead of looping forever.
+		let reaped = false;
+		for (let i = 0; i < 10 && !reaped; i++) {
+			await runInDurableObject(topicStub(topicKey), (_i: LiveDO, s) =>
+				s.storage.setAlarm(Date.now() - 1),
+			);
+			await runDurableObjectAlarm(topicStub(topicKey));
+			const count = await runInDurableObject(
+				topicStub(topicKey),
+				(_i: LiveDO, s) =>
+					s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+			);
+			reaped = count === 0;
+		}
+		expect(reaped).toBe(true);
+	});
+
+	it("resets the miss count when a probe reaches the connection again", async () => {
+		const ownerId = "owner-reset";
+		const subId = "reset-op";
+		const topicKey = liveEntityTopic("Comment", "reset-c");
+
+		// A reachable connection at generation 1.
+		const conn = connectionStub("reset-conn");
+		const open = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
+		await conn.fetch("https://live/subscribe", {
+			method: "POST",
+			body: JSON.stringify({
+				control: {kind: "subscribe", subId, type: "Comment", entityId: "reset-c"},
+				ownerId,
+			}),
+		});
+		await open.body!.cancel();
+
+		// Seed an accrued miss from a prior transient blip directly on the row (the
+		// connection is reachable now). A reachable probe whose generation matches
+		// must clear it, so a transient blip never accumulates toward eviction across
+		// reachable intervals.
+		await runInDurableObject(topicStub(topicKey), (_i: LiveDO, s) =>
+			s.storage.sql.exec("UPDATE subscribers SET misses = 2 WHERE subId = ?", subId),
+		);
+
+		await runDurableObjectAlarm(topicStub(topicKey));
+
+		const misses = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT misses FROM subscribers WHERE subId = ?", subId).one()
+					.misses as number,
+		);
+		expect(misses).toBe(0);
+		const after = await runInDurableObject(
+			topicStub(topicKey),
+			(_i: LiveDO, s) =>
+				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
+		);
+		expect(after).toBe(1);
+	});
+});
