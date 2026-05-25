@@ -57,47 +57,37 @@ type TypedLiveUpdate = <Name extends keyof LiveEntities>(
 type PhoenixLiveEventBus = Omit<LiveEventBus, "update"> & {update: TypedLiveUpdate};
 
 /**
- * Per-request publish context. The `/fate` route runs the operation inside
- * `livePublishContext.run({env, waitUntil}, …)` so the synchronous `live.*`
- * publish methods can resolve the `TOPIC_DO` binding and `waitUntil` the fan-out
- * (so it doesn't block the mutation response). Outside a request (e.g. the bus
- * imported in isolation, or a query that publishes nothing), publishes no-op.
+ * A pre-bound per-request publisher: hand it one resolved topic key + the
+ * publish message and it fires the typed `TopicDO.publish` RPC, fired-and-
+ * forgotten via the request's `waitUntil`. The `/fate` route builds this from
+ * the worker-init-resolved `TopicDO` namespace (`getByName`, typed RPC) and
+ * `Cloudflare.WorkerExecutionContext.waitUntil` — so the bus reaches the DO
+ * with **no** `env`-based namespace lookup, **no** `idFromName`/`idFromString`,
+ * and **no** string-URL `stub.fetch` (ADR 0028/0029).
  */
-export const livePublishContext = new AsyncLocalStorage<{
-	env: Env;
-	waitUntil: (promise: Promise<unknown>) => void;
-}>();
+export type LivePublisher = (topicKey: string, message: PublishMessage) => void;
 
-/** Resolve a topic-role DO stub by topic key from the ambient publish context. */
-function topicStubFor(env: Env, topicKey: string) {
-	return env.TOPIC_DO.get(env.TOPIC_DO.idFromName(`topic:${topicKey}`));
-}
+/**
+ * Per-request publish context. fate calls the bus's `live.*` methods
+ * *synchronously* deep inside a resolver running on a detached fiber, so the
+ * route makes the request's {@link LivePublisher} ambient with
+ * `livePublishContext.run(publisher, …)`. This carries a typed-RPC closure, not
+ * `{env, waitUntil}` — the topic namespace and `waitUntil` are resolved in the
+ * route from the alchemy runtime, not pulled off `env` here. Outside a request
+ * (the bus imported in isolation, or a query that publishes nothing), publishes
+ * no-op.
+ */
+export const livePublishContext = new AsyncLocalStorage<LivePublisher>();
 
-/** Forward a publish message to every topic DO it targets, via `waitUntil`. */
+/** Fan a publish message out to every topic key it targets, via the ambient publisher. */
 function publish(message: PublishMessage): void {
-	const store = livePublishContext.getStore();
-	if (!store) {
+	const publisher = livePublishContext.getStore();
+	if (!publisher) {
 		// No ambient request (bus used outside the live path) — nothing to fan out.
 		return;
 	}
-	const {env, waitUntil} = store;
 	for (const topicKey of topicsForPublish(message)) {
-		waitUntil(
-			topicStubFor(env, topicKey)
-				.fetch("https://live/publish", {
-					method: "POST",
-					body: JSON.stringify(message),
-				})
-				.then(
-					() => undefined,
-					// A failed topic-DO fetch must not become a silent unhandled
-					// rejection inside `waitUntil`; the publish is best-effort (the
-					// mutation response already succeeded), so swallow it loudly.
-					(error: unknown) => {
-						console.error(`live publish to topic:${topicKey} failed`, error);
-					},
-				),
-		);
+		publisher(topicKey, message);
 	}
 }
 

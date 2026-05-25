@@ -23,6 +23,8 @@
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type {WorkerAdminServices, WorkerFateServices} from "../fate/layers.ts";
+import {liveRoute} from "../fate/live-route.ts";
+import type {LiveConnections, LiveTopics} from "../fate/live-topics.ts";
 import {fateRoute} from "../fate/route.ts";
 import {adminApiLayer, adminAuthLayer} from "./admin-handlers.ts";
 import {agentsRoute, authRoute} from "./auth-route.ts";
@@ -31,16 +33,21 @@ import {agentsRoute, authRoute} from "./auth-route.ts";
  * Build the application router layer.
  *
  * @param fateLayer    the worker-level fate services (Drizzle + features),
- *                     built once in init — discharges the fate and auth routes'
- *                     requirements via `HttpRouter.provideRequest`.
+ *                     built once in init — discharges the fate, auth, and live
+ *                     routes' service requirements via `HttpRouter.provideRequest`.
  * @param adminLayer   the worker-level admin services (`SozlukAdmin`,
  *                     `PanoAdmin`, `PasaportAdmin`) the seeder groups require.
  * @param adminAllowed the env gate for `AdminAuth` (env === "development").
+ * @param liveLayer    the worker-init-resolved DO namespace handles
+ *                     (`LiveTopics` for the `/fate` publish path, `LiveConnections`
+ *                     for the `/fate/live` SSE transport), built from the bound
+ *                     `TopicDO`/`ConnectionDO` namespaces in worker init.
  */
 export const makeAppLive = (options: {
 	readonly fateLayer: Layer.Layer<WorkerFateServices>;
 	readonly adminLayer: Layer.Layer<WorkerAdminServices>;
 	readonly adminAllowed: boolean;
+	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 }) => {
 	// Typed-JSON groups: health + admin seeders. The group handlers' domain
 	// requirements (`AdminAuth` + the admin services) surface as route markers
@@ -53,11 +60,13 @@ export const makeAppLive = (options: {
 		),
 	);
 
-	// Raw-`Request` routes. `provideRequest(fateLayer)` discharges the
-	// route-requirement markers `HttpRouter.add` lifts (fate's `FateEnv` subset,
-	// auth's `Pasaport`) — plain `Layer.provide` does not.
-	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, agentsRoute).pipe(
-		HttpRouter.provideRequest(options.fateLayer),
+	// Raw-`Request` routes. `provideRequest` discharges the route-requirement
+	// markers `HttpRouter.add` lifts (fate's `FateEnv` subset + `LiveTopics`;
+	// auth's `Pasaport`; live's `Pasaport` + `LiveConnections`) — plain
+	// `Layer.provide` does not. `fateLayer` carries `Pasaport`, so it discharges
+	// the auth/live session checks too; `liveLayer` adds the DO handles.
+	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, agentsRoute, liveRoute).pipe(
+		HttpRouter.provideRequest(Layer.mergeAll(options.fateLayer, options.liveLayer)),
 	);
 
 	return Layer.mergeAll(typedJson, rawRoutes);

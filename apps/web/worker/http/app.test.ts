@@ -21,6 +21,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import {Effect} from "effect";
+import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -28,8 +29,26 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
 import {makeAdminLayer, makeFateLayer} from "../fate/layers.ts";
+import {LiveConnections, LiveTopics} from "../fate/live-topics.ts";
 import {createDrizzle} from "../services/Drizzle.ts";
 import {makeAppLive} from "./app.ts";
+
+/**
+ * A no-op live layer for the HTTP-surface tests — these cases exercise health /
+ * admin / auth / fate, not the live SSE path (the live fan-out has its own
+ * `infra/live-instance.test.ts`). `publish` swallows; the connection RPCs are
+ * never hit by these cases.
+ */
+const liveLayer = Layer.mergeAll(
+	Layer.succeed(LiveTopics)(LiveTopics.of({publish: () => Effect.void})),
+	Layer.succeed(LiveConnections)(
+		LiveConnections.of({
+			open: () => Effect.die("live transport not exercised in app.test"),
+			subscribe: () => Effect.succeed({ok: true}),
+			unsubscribe: () => Effect.succeed({ok: true} as const),
+		}),
+	),
+);
 
 let sqlite: SqliteD1;
 /** `AppLive` built with the admin env gate open (`adminAllowed = true`). */
@@ -82,8 +101,8 @@ beforeAll(() => {
 	const fateLayer = makeFateLayer(db, env);
 	const adminLayer = makeAdminLayer(db);
 
-	appLayerAllowed = makeAppLive({fateLayer, adminLayer, adminAllowed: true});
-	appLayerDenied = makeAppLive({fateLayer, adminLayer, adminAllowed: false});
+	appLayerAllowed = makeAppLive({fateLayer, adminLayer, adminAllowed: true, liveLayer});
+	appLayerDenied = makeAppLive({fateLayer, adminLayer, adminAllowed: false, liveLayer});
 });
 
 afterAll(() => {
@@ -209,5 +228,56 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		const me = meBody.results[0]!;
 		expect(me.ok).toBe(true);
 		expect(me.data).not.toBeNull();
+	});
+
+	it("GET /fate/live is wired into AppLive and rejects 401 without a session", async () => {
+		// The live SSE transport route forwards to the ConnectionDO (ADR 0028); here
+		// we assert it is mounted in the compiled router and gated on a session
+		// cookie before any DO is reached (the cross-DO behavior is proven in
+		// `infra/live-instance.test.ts`). No cookie → 401 fate error envelope.
+		const res = await fetch(
+			appLayerAllowed,
+			new Request("https://test.local/fate/live?connectionId=anon"),
+		);
+		expect(res.status).toBe(401);
+		const body = (await res.json()) as {results: Array<{error: {code: string}}>};
+		expect(body.results[0]!.error.code).toBe("UNAUTHORIZED");
+	});
+
+	it("POST /fate/live with a session drives the connection subscribe RPC", async () => {
+		// Sign up to get a session cookie, then a control POST reaches the
+		// LiveConnections RPC seam (the no-op layer returns ok). Proves the route is
+		// mounted and session-gated for the control path too.
+		const signUp = await fetch(
+			appLayerAllowed,
+			new Request("https://test.local/api/auth/sign-up/email", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					email: "live@example.com",
+					password: "hunter2hunter2",
+					name: "live",
+				}),
+			}),
+		);
+		const cookie = signUp.headers.get("set-cookie")!.split(";")[0]!;
+		const res = await fetch(
+			appLayerAllowed,
+			new Request("https://test.local/fate/live", {
+				method: "POST",
+				headers: {"content-type": "application/json", cookie},
+				body: JSON.stringify({
+					version: 1,
+					connectionId: "c-1",
+					operations: [
+						{id: "op", kind: "subscribe", type: "Post", entityId: "p", select: ["score"]},
+					],
+				}),
+			}),
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {results: Array<{id: string; ok: boolean}>; version: number};
+		expect(body.version).toBe(1);
+		expect(body.results[0]).toMatchObject({id: "op", ok: true});
 	});
 });

@@ -1,90 +1,98 @@
 /**
- * The `/fate/live` route — the SSE transport endpoint.
+ * The `* /fate/live` route — the SSE transport endpoint (ADR 0023/0028,
+ * `.patterns/alchemy-http-router.md`).
  *
- * This route serves fate's native SSE live protocol from the `ConnectionDO`
- * rather than from fate's in-Worker `handleLiveRequest` (which cannot fan
- * out across isolates). It builds **no** per-request `ManagedRuntime`: the DO
- * relays the inline-resolved `data`/`node` mutations publish, so there is no
- * Effect runtime in the live path. The only Effect here is the session cookie
- * check, shared with `/fate` via `validateSessionCookie` — a minimal
- * Pasaport-only runtime disposed before handoff, not the request runtime.
+ * Serves fate's native SSE live protocol from the `ConnectionDO` rather than
+ * fate's in-Worker `handleLiveRequest` (which cannot fan out across isolates).
+ * It builds **no** per-request runtime: the session check rides the worker-level
+ * `Pasaport` (the same service `/fate` and `/api/auth/*` use), and the connection
+ * is reached through the worker-init-resolved `ConnectionDO` namespace (carried
+ * by `LiveConnections`) — addressed by name (`connection:${id}`) and driven by
+ * typed RPC + a forwarded `fetch`, never `idFromName`/`get`/`stub.fetch(string)`.
  *
- *   - `GET  /fate/live?connectionId=…` → validate cookie, open the SSE stream on
- *     the connection DO. Rejected (401) without a valid session cookie.
+ *   - `GET  /fate/live?connectionId=…` → validate cookie, forward the request to
+ *     the connection DO's `fetch` to open the SSE stream. Rejected (401) without
+ *     a valid session cookie.
  *   - `POST /fate/live` → a `subscribe`/`subscribeConnection`/`unsubscribe`
- *     control message; validate cookie, forward to the connection DO.
+ *     control message; validate cookie, drive the connection DO's typed RPC.
  *
  * The session cookie rides the request automatically (fate opens the
  * `EventSource` with `withCredentials: true`, same-origin), so there is no token
- * in the URL and no header. See `.patterns/fate-live-views.md` (Auth), ADR 0023.
+ * in the URL and no header. This is an imperative `HttpRouter.add` route reading
+ * `Cloudflare.Request`; its `Pasaport`/`LiveConnections` requirements are
+ * discharged with `HttpRouter.provideRequest` in `http/app.ts`.
  */
 import {FateRequestError} from "@nkzw/fate/server";
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as Effect from "effect/Effect";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {Pasaport} from "../features/pasaport/Pasaport.ts";
 import {assertLiveControlRequest, type SubscribeControl} from "./live-protocol.ts";
-import {validateSessionCookie} from "./runtime.ts";
+import {LiveConnections} from "./live-topics.ts";
 
 /**
- * Build the fate live error envelope (`{results: [{error}], version: 1}`). The
- * SSE client parses this shape for both the GET (connect) and POST (control)
- * paths, so it lives in exactly one place.
+ * The fate live error envelope (`{results: [{error}], version: 1}`). The SSE
+ * client parses this shape for both the GET (connect) and POST (control) paths,
+ * so it lives in exactly one place.
  */
-function liveError(code: string, message: string, status: number): Response {
-	return Response.json(
+function liveError(code: string, message: string, status: number) {
+	return HttpServerResponse.jsonUnsafe(
 		{results: [{error: {code, message}, id: "live", ok: false}], version: 1},
 		{status, headers: {"content-type": "application/json; charset=utf-8"}},
 	);
 }
 
-/** Resolve the connection-role DO stub for a connection id. */
-function connectionStub(env: Env, connectionId: string) {
-	return env.CONNECTION_DO.get(env.CONNECTION_DO.idFromName(`connection:${connectionId}`));
-}
-
 /**
- * Handle a `/fate/live` request. Validates the session cookie, then either opens
- * the SSE stream (GET) or forwards a control message (POST) to the connection DO.
- * Builds no request runtime.
- *
- * NOTE (task 5): this still uses the legacy `env.CONNECTION_DO` stub API
- * (`idFromName`/`get`/`stub.fetch(urlString)`). The alchemy DO redesign — typed
- * RPC + `getByName` + worker-init namespace resolution — and wiring this route
- * into `AppLive` is task 5's work (ADR 0028, user stories 18–19). It now takes
- * the raw `Request`/`Env` directly (no Hono `Context`) so the worker carries no
- * Hono import.
+ * `* /fate/live` — validate the session cookie, then either open the SSE stream
+ * (GET) or drive a control message (POST) on the connection DO. Builds no
+ * request runtime.
  */
-export async function handleLiveRequest(request: Request, env: Env): Promise<Response> {
-	const session = await validateSessionCookie(env, request);
+export const handleLive = Effect.gen(function* () {
+	const raw = yield* Cloudflare.Request;
+	const pasaport = yield* Pasaport;
+	const connections = yield* LiveConnections;
+
+	const session = yield* pasaport.validateSession(raw.headers);
 	if (!session) {
 		return liveError("UNAUTHORIZED", "Live views require a session.", 401);
 	}
 	const ownerId = session.user.id;
 
-	if (request.method === "GET") {
-		const connectionId = new URL(request.url).searchParams.get("connectionId");
+	if (raw.method === "GET") {
+		const connectionId = new URL(raw.url).searchParams.get("connectionId");
 		if (!connectionId) {
 			return liveError("BAD_REQUEST", "Missing connectionId.", 400);
 		}
-		const stub = connectionStub(env, connectionId);
-		return stub.fetch(`https://live/connect?ownerId=${encodeURIComponent(ownerId)}`);
+		// Forward the inbound request to the connection DO's `fetch`, which opens
+		// the held SSE stream and returns it verbatim (`fromWeb` carries the
+		// stream through). `ownerId` is threaded so the DO can reject a control
+		// message that subscribes on another user's behalf.
+		const forward = new Request(
+			`https://live/connect?connectionId=${encodeURIComponent(connectionId)}&ownerId=${encodeURIComponent(ownerId)}`,
+			{headers: raw.headers},
+		);
+		return yield* connections
+			.open(connectionId, HttpServerRequest.fromWeb(forward))
+			.pipe(Effect.orDie);
 	}
 
-	if (request.method === "POST") {
+	if (raw.method === "POST") {
 		let body: ReturnType<typeof assertLiveControlRequest>;
 		try {
-			body = assertLiveControlRequest(await request.json());
+			body = assertLiveControlRequest(yield* Effect.promise(() => raw.json()));
 		} catch (error) {
 			if (error instanceof FateRequestError) {
 				return liveError(error.code, error.message, error.status);
 			}
 			return liveError("BAD_REQUEST", "Body must be valid JSON.", 400);
 		}
-		const stub = connectionStub(env, body.connectionId);
-		const results: Array<{id: string; ok: boolean; data: null; error?: unknown}> = [];
+		const connectionId = body.connectionId;
+		const results: Array<{id: string; ok: boolean; data: null}> = [];
 		for (const operation of body.operations) {
 			if (operation.kind === "unsubscribe") {
-				await stub.fetch("https://live/unsubscribe", {
-					method: "POST",
-					body: JSON.stringify({subId: operation.id}),
-				});
+				yield* connections.unsubscribe(connectionId, operation.id);
 				results.push({id: operation.id, ok: true, data: null});
 				continue;
 			}
@@ -102,17 +110,17 @@ export async function handleLiveRequest(request: Request, env: Env): Promise<Res
 							procedure: operation.procedure,
 							...(operation.args ? {args: operation.args} : {}),
 						};
-			const res = await stub.fetch("https://live/subscribe", {
-				method: "POST",
-				body: JSON.stringify({control, ownerId}),
-			});
+			const res = yield* connections.subscribe(connectionId, {control, ownerId});
 			results.push({id: operation.id, ok: res.ok, data: null});
 		}
-		return Response.json(
+		return HttpServerResponse.jsonUnsafe(
 			{results, version: 1},
 			{headers: {"content-type": "application/json; charset=utf-8"}},
 		);
 	}
 
 	return liveError("BAD_REQUEST", "Invalid live request.", 400);
-}
+});
+
+/** The `* /fate/live` route as a router layer, ready to merge into `AppLive`. */
+export const liveRoute = HttpRouter.add("*", "/fate/live", handleLive);

@@ -28,6 +28,7 @@ import {Pasaport} from "../features/pasaport/Pasaport.ts";
 import {Auth, RequestContext} from "../services/index.ts";
 import type {FateEnv} from "./layers.ts";
 import {livePublishContext} from "./live.ts";
+import {LiveTopics} from "./live-topics.ts";
 import {fateServer} from "./server.ts";
 
 /**
@@ -37,11 +38,26 @@ import {fateServer} from "./server.ts";
  */
 export const handleFate = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
-	const env = yield* Cloudflare.WorkerEnvironment;
 	const executionCtx = yield* Cloudflare.WorkerExecutionContext;
 	const pasaport = yield* Pasaport;
+	const liveTopics = yield* LiveTopics;
 
 	const session = yield* pasaport.validateSession(raw.headers);
+
+	// The per-request live publisher (ADR 0028/0029): a mutation's synchronous
+	// `live.*` call resolves topic keys and fires the typed `TopicDO.publish` RPC
+	// here. The topic namespace is worker-init-resolved (carried by `LiveTopics`,
+	// no `env` lookup, no `idFromName`, no string-URL `stub.fetch`); `waitUntil`
+	// comes from `Cloudflare.WorkerExecutionContext` so the best-effort fan-out
+	// doesn't block the response. A failed publish is swallowed loudly — the
+	// mutation response already succeeded.
+	const publisher = (topicKey: string, message: Parameters<typeof liveTopics.publish>[1]) => {
+		executionCtx.waitUntil(
+			Effect.runPromise(liveTopics.publish(topicKey, message)).catch((error: unknown) => {
+				console.error(`live publish to topic:${topicKey} failed`, error);
+			}),
+		);
+	};
 
 	const res = yield* Effect.gen(function* () {
 		// Capture the live service map — at this point it holds the worker-level
@@ -50,17 +66,13 @@ export const handleFate = Effect.gen(function* () {
 		// provides it onto each resolver Effect.
 		const context = yield* Effect.context<FateEnv>();
 		return yield* Effect.promise(() =>
-			// `livePublishContext.run` keeps `{env, waitUntil}` ambient for the whole
+			// `livePublishContext.run` keeps the `publisher` ambient for the whole
 			// (async) `handleRequest`, so a mutation's synchronous `live.*` calls can
-			// fan out to the topic DO via `waitUntil`. AsyncLocalStorage preserves the
-			// store across the awaits inside `handleRequest`. A query publishes
-			// nothing, so the wrapper is harmless there.
-			livePublishContext.run(
-				{
-					env: env as unknown as Env,
-					waitUntil: (promise) => executionCtx.waitUntil(promise),
-				},
-				() => fateServer.handleRequest(raw, {request: raw, context}),
+			// fan out to the topic DO. AsyncLocalStorage preserves the store across
+			// the awaits inside `handleRequest`. A query publishes nothing, so the
+			// wrapper is harmless there.
+			livePublishContext.run(publisher, () =>
+				fateServer.handleRequest(raw, {request: raw, context}),
 			),
 		);
 	}).pipe(

@@ -34,9 +34,18 @@ export const handleAuth = Effect.gen(function* () {
 
 export const authRoute = HttpRouter.add("*", "/api/auth/*", handleAuth);
 
-/** `* /agents/*` — the inert agent transport stub: always 404. */
+/**
+ * `* /agents/*` — the inert agent transport stub: always 404. Drains the request
+ * body first so workerd doesn't warn "Can't read from request stream after
+ * response has been sent" when a POST carries a body (a `routeAgentRequest`
+ * upgrade does); the body is discarded, the response is still 404.
+ */
 export const agentsRoute = HttpRouter.add(
 	"*",
 	"/agents/*",
-	HttpServerResponse.text("Not Found", {status: 404}),
+	Effect.gen(function* () {
+		const raw = yield* Cloudflare.Request;
+		yield* Effect.promise(() => raw.text().catch(() => "")).pipe(Effect.ignore);
+		return HttpServerResponse.text("Not Found", {status: 404});
+	}),
 );

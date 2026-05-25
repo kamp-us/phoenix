@@ -27,6 +27,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {makeAdminLayer, makeFateLayer} from "./fate/layers.ts";
+import {LiveConnections, LiveTopics} from "./fate/live-topics.ts";
 import {makeAppLive} from "./http/app.ts";
 import ConnectionDO from "./infra/connection-do.ts";
 import {PhoenixDb} from "./infra/resources.ts";
@@ -121,15 +122,54 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		const adminLayer = makeAdminLayer(createDrizzle(raw));
 		const adminAllowed = (env as unknown as Record<string, unknown>).ENVIRONMENT === "development";
 
+		// The live path (ADR 0028/0029): both DO namespaces are resolved ONCE in
+		// init (`topics`/`connections`, above) and wrapped as worker-level services.
+		//   - `LiveTopics.publish` fans a mutation's `live.*` out via typed RPC
+		//     (`topics.getByName(\`topic:${key}\`).publish(msg)`) — no `env` lookup,
+		//     no `idFromName`, no string-URL `stub.fetch`.
+		//   - `LiveConnections` opens the SSE stream (forwarding the request to a
+		//     connection's `fetch`) and drives subscribe/unsubscribe RPC, addressing
+		//     connections by name (`connection:${id}`).
+		// The cross-DO fan-out itself (topic→connection deliver, connection→topic
+		// register) is resolved LAZILY inside the DO RPC methods (`infra/*-do.ts`).
+		//
+		// The DO's lazy sibling resolution surfaces the alchemy `Worker` service in
+		// each stub method's `R` (a typing artifact — alchemy captures and provides
+		// the DO's own services when it invokes the method, so the caller never
+		// supplies `Worker`). `rpc` discharges that artifact at the stub-call seam:
+		// the call runs on the DO side, not here.
+		const rpc = <A>(effect: Effect.Effect<A, never, Cloudflare.Worker>) =>
+			effect as Effect.Effect<A, never, never>;
+
+		const liveLayer = Layer.mergeAll(
+			Layer.succeed(LiveTopics)(
+				LiveTopics.of({
+					publish: (topicKey, message) =>
+						Effect.asVoid(rpc(topics.getByName(`topic:${topicKey}`).publish(message))),
+				}),
+			),
+			Layer.succeed(LiveConnections)(
+				LiveConnections.of({
+					open: (connectionId, request) =>
+						connections.getByName(`connection:${connectionId}`).fetch(request),
+					subscribe: (connectionId, input) =>
+						rpc(connections.getByName(`connection:${connectionId}`).subscribe(input)),
+					unsubscribe: (connectionId, subId) =>
+						rpc(connections.getByName(`connection:${connectionId}`).unsubscribe({subId})),
+				}),
+			),
+		);
+
 		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027):
 		//   - typed JSON via `HttpApiBuilder` groups: `GET /api/health` + the
 		//     dev-only `/api/admin/*` seeders (schema-decoded payloads),
 		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
-		//     `* /api/auth/*` (better-auth), `* /agents/*` (stub).
+		//     `* /fate/live` (SSE → ConnectionDO), `* /api/auth/*` (better-auth),
+		//     `* /agents/*` (stub).
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
-		// `HttpRouter.provideRequest(fateLayer)` and provides the admin services +
+		// `HttpRouter.provideRequest(...)` and provides the admin services +
 		// platform stubs to the typed groups (`http/app.ts`).
-		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed});
+		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed, liveLayer});
 
 		// ── RUNTIME PHASE (per request) ──
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
