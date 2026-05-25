@@ -50,11 +50,20 @@ const liveLayer = Layer.mergeAll(
 	),
 );
 
+/**
+ * The worker derives the admin gate from its env (`index.ts`): the dev-only
+ * surfaces open only when `ENVIRONMENT === "development"`. Mirror that derivation
+ * here so the regression below ties the closed gate to a non-dev environment.
+ */
+const adminGateFor = (environment: string): boolean => environment === "development";
+
 let sqlite: SqliteD1;
 /** `AppLive` built with the admin env gate open (`adminAllowed = true`). */
 let appLayerAllowed: ReturnType<typeof makeAppLive>;
 /** Same, but with the gate closed. */
 let appLayerDenied: ReturnType<typeof makeAppLive>;
+/** Built with the gate derived from a non-development `ENVIRONMENT` (prod). */
+let appLayerProd: ReturnType<typeof makeAppLive>;
 
 const ENV = {
 	ENVIRONMENT: "development",
@@ -103,6 +112,13 @@ beforeAll(() => {
 
 	appLayerAllowed = makeAppLive({fateLayer, adminLayer, adminAllowed: true, liveLayer});
 	appLayerDenied = makeAppLive({fateLayer, adminLayer, adminAllowed: false, liveLayer});
+	// Gate derived the way the worker derives it, from a non-dev `ENVIRONMENT`.
+	appLayerProd = makeAppLive({
+		fateLayer,
+		adminLayer,
+		adminAllowed: adminGateFor("production"),
+		liveLayer,
+	});
 });
 
 afterAll(() => {
@@ -127,6 +143,26 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 				body: JSON.stringify({
 					slug: "denied",
 					title: "Denied",
+					definitions: [{authorId: "k", authorName: "kampus", body: "x"}],
+				}),
+			}),
+		);
+		expect(res.status).toBe(403);
+	});
+
+	it("admin seeder is gated 403 when ENVIRONMENT is not development (prod fail-closed)", async () => {
+		// Regression for finding #1: the worker derives `adminAllowed` from
+		// `ENVIRONMENT === "development"`. A non-dev environment (e.g. a real
+		// `ENVIRONMENT=production` deploy) must close the gate.
+		expect(adminGateFor("production")).toBe(false);
+		const res = await fetch(
+			appLayerProd,
+			new Request("https://test.local/api/admin/sozluk/upsert-term", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					slug: "prod",
+					title: "Prod",
 					definitions: [{authorId: "k", authorName: "kampus", body: "x"}],
 				}),
 			}),

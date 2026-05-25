@@ -33,6 +33,15 @@ import ConnectionDO from "./infra/connection-do.ts";
 import {PhoenixDb} from "./infra/resources.ts";
 import TopicDO from "./infra/topic-do.ts";
 import {createDrizzle} from "./services/Drizzle.ts";
+import {resolveDeployEnv} from "./shared/deploy-env.ts";
+
+// Resolved ONCE in the alchemy CLI process when this module is evaluated, so the
+// worker's `env` block below is the deploy-time policy (fail-closed). See
+// `shared/deploy-env.ts`: `ENVIRONMENT` defaults to "development" only when unset
+// (a real deploy sets `ENVIRONMENT=production`, closing every dev gate), and a
+// missing `BETTER_AUTH_SECRET` throws here on a real deploy rather than silently
+// shipping the committed dev key.
+const deployEnv = resolveDeployEnv(process.env);
 
 /**
  * The worker's bound resource handles, captured once in the init phase. The
@@ -52,7 +61,10 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 	{
 		main: import.meta.filename,
 		env: {
-			ENVIRONMENT: "development",
+			// Resolves from `process.env.ENVIRONMENT`, defaulting to "development"
+			// only when unset (`shared/deploy-env.ts`). This is the single gate every
+			// dev-only surface reads — keep it deploy-time-resolved, never a literal.
+			ENVIRONMENT: deployEnv.ENVIRONMENT,
 			// Dev runs behind the Vite proxy, so the worker sees `Host:
 			// 127.0.0.1:<port>` rather than the browser origin. better-auth needs
 			// the real browser origin to set/validate its cookie, so we hand it the
@@ -61,13 +73,13 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 			// flag and break `http://localhost` storage.
 			BETTER_AUTH_URL: "http://localhost:3000",
 			BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
-			// better-auth refuses to start on its built-in default secret. The worker
-			// class body is evaluated in the alchemy CLI process, so `process.env` is
-			// the deploy-time environment: `alchemy deploy` reads a real
+			// better-auth refuses to start on its built-in default secret. Resolved at
+			// deploy time (`shared/deploy-env.ts`): `alchemy deploy` reads a real
 			// `BETTER_AUTH_SECRET` (CI secret or `--env-file`/`.env`); the offline dev
-			// loop falls back to a fixed non-secret value so local sign-in works with
-			// no configuration.
-			BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "phoenix-dev-secret-not-for-production",
+			// loop / Vitest harness falls back to a fixed non-secret so local sign-in
+			// works with no config. A real deploy with the secret unset throws above
+			// (fail closed) rather than booting on the committed dev key.
+			BETTER_AUTH_SECRET: deployEnv.BETTER_AUTH_SECRET,
 		},
 		assets: {
 			// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
