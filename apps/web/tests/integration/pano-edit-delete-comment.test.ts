@@ -86,7 +86,7 @@ async function listCommentRows(postId: string) {
 	const page = await Effect.runPromise(
 		Effect.gen(function* () {
 			const pano = yield* Pano;
-			return yield* pano.listCommentsConnection(postId, {first: 200});
+			return yield* pano.listCommentsKeyset(postId, {first: 200});
 		}).pipe(Effect.provide(TestLive)),
 	);
 	return page.rows;

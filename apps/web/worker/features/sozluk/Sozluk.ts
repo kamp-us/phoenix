@@ -192,15 +192,9 @@ export class Sozluk extends Context.Service<
 	{
 		readonly getTerm: (slug: string) => Effect.Effect<TermPage | null, DrizzleError>;
 
-		readonly listDefinitionsConnection: (
-			slug: string,
-			opts?: {first?: number | undefined; after?: string | null | undefined},
-		) => Effect.Effect<DefinitionConnectionPage, DrizzleError>;
-
 		/**
 		 * DB-keyset page of a term's live definitions, ordered by the canonical
-		 * `(score desc, created_at asc, id asc)` term-page order. Replaces the
-		 * in-memory id-index slice in {@link listDefinitionsConnection} for the
+		 * `(score desc, created_at asc, id asc)` term-page order, for the
 		 * fate `Term.definitions` connection: the cursor is a definition id, and
 		 * the keyset predicate fetches the rows that follow it in that order, so a
 		 * page is a bounded `WHERE … LIMIT` rather than loading every definition.
@@ -493,35 +487,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
 				})),
 			} satisfies TermPage;
-		});
-
-		const listDefinitionsConnection = Effect.fn("Sozluk.listDefinitionsConnection")(function* (
-			slug: string,
-			opts: {first?: number | undefined; after?: string | null | undefined} = {},
-		) {
-			const page = yield* getTerm(slug);
-			if (!page) {
-				return {
-					rows: [],
-					hasNextPage: false,
-					endCursor: null,
-					totalCount: 0,
-				} satisfies DefinitionConnectionPage;
-			}
-			const sorted = page.definitions;
-			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
-			const after = opts.after ?? null;
-			const startIndex = after ? sorted.findIndex((d) => d.id === after) + 1 : 0;
-			const safeStart = startIndex < 0 ? 0 : startIndex;
-			const sliced = sorted.slice(safeStart, safeStart + first);
-			const hasNextPage = safeStart + first < sorted.length;
-			const last = sliced.at(-1) ?? null;
-			return {
-				rows: sliced,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount: sorted.length,
-			} satisfies DefinitionConnectionPage;
 		});
 
 		/**
@@ -1143,7 +1108,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 		return {
 			getTerm,
-			listDefinitionsConnection,
 			listDefinitionsKeyset,
 			getDefinitionsByIds,
 			getTermSummariesByIds,

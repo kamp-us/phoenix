@@ -354,20 +354,14 @@ export class Pano extends Context.Service<
 			host?: string | null;
 		}) => Effect.Effect<PostConnectionPage, DrizzleError>;
 
-		readonly listCommentsConnection: (
-			postId: string,
-			opts?: {first?: number | undefined; after?: string | null | undefined},
-		) => Effect.Effect<CommentConnectionPage, DrizzleError>;
-
 		readonly getCommentRow: (
 			commentId: string,
 		) => Effect.Effect<typeof schema.commentView.$inferSelect | null, DrizzleError>;
 
 		/**
 		 * DB-keyset page over a post's comments in chronological-asc order
-		 * `(created_at asc, id asc)`, cursor = comment id. The fate-path
-		 * replacement for `listCommentsConnection`'s in-memory id-index slice —
-		 * a bounded `WHERE … LIMIT first+1` with no skips/dupes. `viewerId` stamps
+		 * `(created_at asc, id asc)`, cursor = comment id. A bounded
+		 * `WHERE … LIMIT first+1` with no skips/dupes. `viewerId` stamps
 		 * `myVote` for the whole page in one `user_vote` read.
 		 */
 		readonly listCommentsKeyset: (
@@ -800,54 +794,11 @@ export const PanoLive = Layer.effect(Pano)(
 		});
 
 		/**
-		 * Read every comment for a post in chronological-asc order, with the
-		 * reply-aware placeholder pass applied. Used by
-		 * `listCommentsConnection` for pagination.
-		 */
-		const listComments = Effect.fn("Pano.listComments")(function* (postId: string) {
-			const rows = yield* run((db) =>
-				db
-					.select()
-					.from(schema.commentView)
-					.where(eq(schema.commentView.postId, postId))
-					.orderBy(asc(schema.commentView.createdAt), asc(schema.commentView.id)),
-			);
-			return rows.map(rowToCommentRow);
-		});
-
-		const listCommentsConnection = Effect.fn("Pano.listCommentsConnection")(function* (
-			postId: string,
-			opts: {first?: number | undefined; after?: string | null | undefined} = {},
-		) {
-			const all = yield* listComments(postId);
-			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
-			const after = opts.after ?? null;
-			if (after !== null && all.findIndex((c) => c.id === after) === -1) {
-				return {
-					rows: [],
-					hasNextPage: false,
-					endCursor: null,
-					totalCount: all.length,
-				} satisfies CommentConnectionPage;
-			}
-			const startIndex = after ? all.findIndex((c) => c.id === after) + 1 : 0;
-			const page = all.slice(startIndex, startIndex + first);
-			const hasNextPage = startIndex + first < all.length;
-			const last = page.at(-1) ?? null;
-			return {
-				rows: page,
-				hasNextPage,
-				endCursor: last ? last.id : null,
-				totalCount: all.length,
-			} satisfies CommentConnectionPage;
-		});
-
-		/**
-		 * DB-keyset page over a post's comments — the fate-path replacement for
-		 * `listCommentsConnection`'s `listComments` + in-memory `slice`. Pages
-		 * forward in chronological-asc order `(created_at asc, id asc)`; cursor is
-		 * the comment id. The reply-aware placeholder pass (`rowToCommentRow`)
-		 * still applies, so the wire shape matches the non-keyset reads.
+		 * DB-keyset page over a post's comments. Pages forward in
+		 * chronological-asc order `(created_at asc, id asc)`; cursor is the
+		 * comment id, fetched as a bounded `WHERE … LIMIT first+1`. The
+		 * reply-aware placeholder pass (`rowToCommentRow`) still applies, so the
+		 * wire shape matches the other comment reads.
 		 */
 		const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
 			postId: string,
@@ -1686,7 +1637,6 @@ export const PanoLive = Layer.effect(Pano)(
 		return {
 			getPost,
 			listPostsConnection,
-			listCommentsConnection,
 			listCommentsKeyset,
 			getPostsByIds,
 			getCommentsByIds,

@@ -1,7 +1,7 @@
 /**
- * `Pano.listCommentsConnection` — Effect service surface (effect-migration
- * task 5). Reply-aware tree shape preserved; cursor encoding and totalCount
- * semantics unchanged.
+ * `Pano.listCommentsKeyset` — Effect service surface. Reply-aware tree shape
+ * preserved; cursor encoding and totalCount semantics unchanged. (Migrated off
+ * the removed `listCommentsConnection` onto the production keyset path.)
  */
 import {env} from "cloudflare:workers";
 import {id} from "@usirin/forge";
@@ -63,7 +63,7 @@ function listCommentsConnection(
 	return Effect.runPromise(
 		Effect.gen(function* () {
 			const pano = yield* Pano;
-			return yield* pano.listCommentsConnection(postId, opts);
+			return yield* pano.listCommentsKeyset(postId, opts);
 		}).pipe(Effect.provide(TestLive)),
 	);
 }
@@ -122,7 +122,7 @@ beforeAll(async () => {
 	await applyViewMigrations();
 });
 
-describe("Pano.listCommentsConnection", () => {
+describe("Pano.listCommentsKeyset", () => {
 	it("paginates chronologically through every comment with a stable cursor", async () => {
 		const {postId, commentIds} = await seedPostWithComments({
 			authorId: "p-author-1",
