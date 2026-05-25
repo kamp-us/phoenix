@@ -31,7 +31,6 @@ apps/web/scripts/**/*.js
 # Local env
 .env
 .env.*
-.dev.vars
 !.env.example
 
 # Playwright MCP scratch artifacts
