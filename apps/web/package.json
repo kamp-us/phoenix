@@ -8,7 +8,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"deploy": "pnpm build && wrangler deploy",
-		"typecheck": "pnpm fate:generate && tsgo -b && tsgo -p tsconfig.app.json",
+		"typecheck": "pnpm fate:generate && tsgo -b tsconfig.worker.json tsconfig.node.json && tsgo -p tsconfig.app.json --composite false",
 		"test": "vitest run --config vitest.config.ts",
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
