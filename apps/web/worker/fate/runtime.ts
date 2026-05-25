@@ -1,14 +1,20 @@
 import {Effect, Layer, ManagedRuntime} from "effect";
-import {type Pano, PanoLive} from "../features/pano/Pano";
-import type {Session} from "../features/pasaport/auth";
-import {Pasaport, PasaportLive} from "../features/pasaport/Pasaport";
-import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk";
-import {type Stats, StatsLive} from "../features/stats/Stats";
-import {type Vote, VoteLive} from "../features/vote/Vote";
-import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "../services";
+import {type Pano, PanoLive} from "../features/pano/Pano.ts";
+import type {Session} from "../features/pasaport/auth.ts";
+import {Pasaport, PasaportLive} from "../features/pasaport/Pasaport.ts";
+import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk.ts";
+import {type Stats, StatsLive} from "../features/stats/Stats.ts";
+import {type Vote, VoteLive} from "../features/vote/Vote.ts";
+import {Auth, CloudflareEnv, type Drizzle, DrizzleLive, RequestContext} from "../services/index.ts";
 
 /**
- * Per-request fate runtime composition.
+ * Per-request fate runtime composition. **SUPERSEDED by ADR 0029** — the worker
+ * no longer builds a per-request `ManagedRuntime`. `worker/index.ts` provides
+ * `Drizzle` + the feature services as worker-level layers (`fate/layers.ts`) and
+ * `fate/route.ts` captures a `Context`; the bridge runs resolvers via
+ * `Effect.provide(effect, ctx.context)`. This module is retained only for the
+ * legacy `@cloudflare/vitest-pool-workers` integration tests that still import
+ * `FateRuntime` — task 7 migrates them off the harness and deletes this file.
  *
  * The Hono `/fate` route owns one
  * `ManagedRuntime` per request: it validates the session, builds the runtime

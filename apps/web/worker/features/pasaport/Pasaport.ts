@@ -28,12 +28,12 @@
  */
 import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {forwardPage, keysetAfter} from "../../db/keyset";
-import {CloudflareEnv} from "../../services/CloudflareEnv";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle";
-import {createAuth, type Session} from "./auth";
-import {UserNotFound, UsernameAlreadySet, UsernameInvalid, UsernameTaken} from "./errors";
+import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {CloudflareEnv} from "../../services/CloudflareEnv.ts";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle.ts";
+import {createAuth, type Session} from "./auth.ts";
+import {UserNotFound, UsernameAlreadySet, UsernameInvalid, UsernameTaken} from "./errors.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */

@@ -20,8 +20,8 @@
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import type {Context} from "hono";
-import {assertLiveControlRequest, type SubscribeControl} from "./live-protocol";
-import {validateSessionCookie} from "./runtime";
+import {assertLiveControlRequest, type SubscribeControl} from "./live-protocol.ts";
+import {validateSessionCookie} from "./runtime.ts";
 
 /**
  * Build the fate live error envelope (`{results: [{error}], version: 1}`). The

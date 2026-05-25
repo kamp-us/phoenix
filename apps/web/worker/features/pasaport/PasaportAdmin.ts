@@ -9,8 +9,8 @@
  */
 import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle";
+import * as schema from "../../db/drizzle/schema.ts";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle.ts";
 
 export interface BackfillProfilesResult {
 	emitted: number;

@@ -10,14 +10,14 @@
  *   - `FateRequestError`      → passes through verbatim (not re-encoded).
  *   - defect (uncaught throw) → squashed → `encodeFateError` → `INTERNAL_*`.
  *
- * The bridge runs generators through a `ManagedRuntime`. A `FateContext` only
- * needs `{runtime, request}`; we build a runtime over a tiny `Layer` exposing
- * just the services each test body yields (`Auth`), so the tests stay focused
- * on the seam, not the full feature graph.
+ * Per ADR 0029 the bridge provides a captured `Context` and runs on the default
+ * runtime — no `ManagedRuntime`. A `FateContext` only needs `{context, request}`;
+ * we build a `Context` carrying just the services each test body yields (`Auth`),
+ * so the tests stay focused on the seam, not the full feature graph.
  */
 
 import {FateRequestError} from "@nkzw/fate/server";
-import {Data, Effect, Layer, ManagedRuntime} from "effect";
+import {Context, Data, Effect} from "effect";
 import {describe, expect, it} from "vitest";
 import {Auth, Unauthorized} from "../services/Auth";
 import type {FateContext} from "./context";
@@ -29,17 +29,16 @@ class BodyRequired extends Data.TaggedError("sozluk/BodyRequired")<{
 }> {}
 
 /**
- * Build a `FateContext` whose runtime exposes an `Auth` layer with the given
- * user (or anonymous). The bridge only reads `ctx.runtime`; the cast to the
- * full `FateRuntime.Context` is safe because the test bodies yield only `Auth`.
+ * Build a `FateContext` whose captured `Context` carries an `Auth` service with
+ * the given user (or anonymous). The bridge only reads `ctx.context`; the cast
+ * to the full `FateEnv` is safe because the test bodies yield only `Auth`.
  */
 const makeCtx = (user?: {id: string}): FateContext => {
-	const layer = Layer.succeed(Auth, {
+	const context = Context.make(Auth, {
 		user: user as never,
 		session: undefined,
-	});
-	const runtime = ManagedRuntime.make(layer) as unknown as FateContext["runtime"];
-	return {runtime, request: new Request("http://test/fate")};
+	}) as unknown as FateContext["context"];
+	return {context, request: new Request("http://test/fate")};
 };
 
 const invoke = <A>(

@@ -1,8 +1,14 @@
 import {Layer, ManagedRuntime} from "effect";
-import {type PanoAdmin, PanoAdminLive} from "../features/pano/PanoAdmin";
-import {type PasaportAdmin, PasaportAdminLive} from "../features/pasaport/PasaportAdmin";
-import {type SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin";
-import {type AdminAuth, AdminAuthLive, CloudflareEnv, type Drizzle, DrizzleLive} from "../services";
+import {type PanoAdmin, PanoAdminLive} from "../features/pano/PanoAdmin.ts";
+import {type PasaportAdmin, PasaportAdminLive} from "../features/pasaport/PasaportAdmin.ts";
+import {type SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin.ts";
+import {
+	type AdminAuth,
+	AdminAuthLive,
+	CloudflareEnv,
+	type Drizzle,
+	DrizzleLive,
+} from "../services/index.ts";
 
 /**
  * Per-request admin runtime composition.

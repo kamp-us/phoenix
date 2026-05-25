@@ -35,12 +35,12 @@ import {
 	type PostSummaryRow,
 	type PostTagRow,
 	tagLabel,
-} from "../features/pano/Pano";
-import {Pasaport, type ProfileRow, type UserRow} from "../features/pasaport/Pasaport";
-import {type DefinitionRow, Sozluk, type TermSummaryRow} from "../features/sozluk/Sozluk";
-import {Auth} from "../services/Auth";
-import type {FateContext} from "./context";
-import {fateSource} from "./effect";
+} from "../features/pano/Pano.ts";
+import {Pasaport, type ProfileRow, type UserRow} from "../features/pasaport/Pasaport.ts";
+import {type DefinitionRow, Sozluk, type TermSummaryRow} from "../features/sozluk/Sozluk.ts";
+import {Auth} from "../services/Auth.ts";
+import type {FateContext} from "./context.ts";
+import {fateSource} from "./effect.ts";
 import {
 	commentDataView,
 	definitionDataView,
@@ -49,7 +49,7 @@ import {
 	tagDataView,
 	termDataView,
 	userDataView,
-} from "./views";
+} from "./views.ts";
 
 // `@nkzw/fate/server` does not re-export the `DataView` type (only the
 // lowercase `dataView` factory), so recover it from the shape of

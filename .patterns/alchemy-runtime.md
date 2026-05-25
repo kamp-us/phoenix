@@ -60,14 +60,21 @@ const handleFate = Effect.gen(function* () {
 
 ## Capturing the service map for fate
 
-fate's `handleRequest` is async — it calls resolver callbacks that must bridge back into Effect. They need the live services. Capture them with `Effect.services<R>()` and pass the map through `adapterContext`:
+fate's `handleRequest` is async — it calls resolver callbacks that must bridge back into Effect. They need the live services. Capture them with `Effect.context<R>()` and pass the map through `adapterContext`:
+
+> **API names, verified against `effect@4.0.0-beta.70` (the version phoenix ships — `4.0.0` does not exist on npm).** The capture/provide/type names this doc originally used are from a later/renamed API. The names that exist in beta.70 are:
+> - capture the service map → **`Effect.context<R>()`** (not `Effect.services`)
+> - provide a captured map → **`Effect.provide(effect, ctx)`** (not `Effect.provideServices`)
+> - the service-map type → **`Context.Context<R>`** from `effect/Context` (not `ServiceMap.ServiceMap` from `effect/ServiceMap`)
+>
+> The implemented worker (`worker/fate/route.ts`, `context.ts`, `effect.ts`) uses these. The shape and semantics are exactly as described below — only the identifiers differ.
 
 ```ts
 const serveFate = (raw: Request) =>
   Effect.gen(function* () {
-    const services = yield* Effect.services<FateEnv>();  // ServiceMap of everything in scope
+    const context = yield* Effect.context<FateEnv>();  // Context of everything in scope
     const res = yield* Effect.promise(() =>
-      fateServer.handleRequest(raw, {request: raw, services}),
+      fateServer.handleRequest(raw, {request: raw, context}),
     );
     return HttpServerResponse.fromWeb(res);
   });

@@ -20,33 +20,33 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {forwardPage, keysetAfter} from "../../db/keyset";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle";
-import {excerpt as excerptText} from "../../shared/text";
-import type {VoteTargetNotFound} from "../vote/errors";
-import {Vote} from "../vote/Vote";
+import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle.ts";
+import {excerpt as excerptText} from "../../shared/text.ts";
+import type {VoteTargetNotFound} from "../vote/errors.ts";
+import {Vote} from "../vote/Vote.ts";
 import {
 	type DefinitionConnectionPage,
 	type DefinitionRow,
 	type TermPage,
 	toDefinitionRow,
-} from "./definition-row";
+} from "./definition-row.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
-} from "./errors";
+} from "./errors.ts";
 import {
 	type TermConnectionPage,
 	type TermSummaryRow,
 	termSummaryColumns,
 	toTermSummaryRow,
-} from "./term-summary";
+} from "./term-summary.ts";
 
-export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row";
-export type {TermConnectionPage, TermSummaryRow} from "./term-summary";
+export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row.ts";
+export type {TermConnectionPage, TermSummaryRow} from "./term-summary.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Domain constants                                                            */

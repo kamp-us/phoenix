@@ -20,12 +20,12 @@
 
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {hasNestedSelection} from "@nkzw/fate/server";
-import {Pano} from "../features/pano/Pano";
-import {Pasaport} from "../features/pasaport/Pasaport";
-import {Sozluk} from "../features/sozluk/Sozluk";
-import {Stats} from "../features/stats/Stats";
-import {Auth} from "../services";
-import {fateQuery} from "./effect";
+import {Pano} from "../features/pano/Pano.ts";
+import {Pasaport} from "../features/pasaport/Pasaport.ts";
+import {Sozluk} from "../features/sozluk/Sozluk.ts";
+import {Stats} from "../features/stats/Stats.ts";
+import {Auth} from "../services/index.ts";
+import {fateQuery} from "./effect.ts";
 import {
 	toComment,
 	toConnection,
@@ -34,7 +34,7 @@ import {
 	toPostFromPage,
 	toTermFromPage,
 	toUser,
-} from "./shapers";
+} from "./shapers.ts";
 import type {
 	Comment,
 	Contribution,
@@ -44,7 +44,7 @@ import type {
 	Profile,
 	Term,
 	User,
-} from "./views";
+} from "./views.ts";
 
 export interface Health {
 	readonly status: "ok";

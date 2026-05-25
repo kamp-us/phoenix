@@ -19,14 +19,14 @@
  * `byIds` on every relation-fetchable type).
  */
 import {createFateServer} from "@nkzw/fate/server";
-import type {FateContext} from "./context";
-import {lists} from "./lists";
-import {liveBusConfig} from "./live";
-import {mutations} from "./mutations";
-import {panoMutations} from "./pano-mutations";
-import {pasaportMutations} from "./pasaport-mutations";
-import {queries} from "./queries";
-import {sources} from "./sources";
+import type {FateContext} from "./context.ts";
+import {lists} from "./lists.ts";
+import {liveBusConfig} from "./live.ts";
+import {mutations} from "./mutations.ts";
+import {panoMutations} from "./pano-mutations.ts";
+import {pasaportMutations} from "./pasaport-mutations.ts";
+import {queries} from "./queries.ts";
+import {sources} from "./sources.ts";
 
 /**
  * The full mutation map = sozluk (`definition.*`) + pano (`post.*` / `comment.*`)

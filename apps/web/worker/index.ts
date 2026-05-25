@@ -27,9 +27,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import {makeFateLayer} from "./fate/layers.ts";
+import {fateRoute} from "./fate/route.ts";
 import ConnectionDO from "./infra/connection-do.ts";
 import {PhoenixDb} from "./infra/resources.ts";
 import TopicDO from "./infra/topic-do.ts";
+import {createDrizzle} from "./services/Drizzle.ts";
 
 /**
  * The worker's bound resource handles, captured once in the init phase. The
@@ -58,8 +61,6 @@ const health = HttpRouter.add(
 		});
 	}),
 );
-
-const AppLive = Layer.mergeAll(health);
 
 export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 	"phoenix",
@@ -99,6 +100,26 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		// error, never a runtime `undefined` (acceptance criterion).
 		const resources: WorkerResources = {db, connections, topics};
 		void resources;
+
+		// Build the worker-level fate layer ONCE from the bound D1 (ADR 0029):
+		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
+		// `drizzle(raw, {schema})`; `Drizzle` + the feature services are
+		// constructed here and stay alive for the isolate. The `/fate` route
+		// provides only `Auth`/`RequestContext` per request — there is no
+		// per-request `ManagedRuntime`.
+		const raw = yield* db.raw;
+		const env = yield* Cloudflare.WorkerEnvironment;
+		const fateLayer = makeFateLayer(createDrizzle(raw), env as unknown as Env);
+
+		// The HTTP surface wired so far: `GET /api/health` (JSON liveness) and
+		// `POST /fate` (the fate data plane). `fateRoute`'s handler requires the
+		// worker-level feature services (`FateEnv` minus the per-request
+		// `Auth`/`RequestContext` it provides itself); `HttpRouter.add` lifts those
+		// into route-requirement markers (`Request.From<"Requires", …>`), which
+		// `HttpRouter.provideRequest` — not plain `Layer.provide` — discharges from
+		// `fateLayer` before `toHttpEffect`. Tasks 3–5 add the rest (auth, admin
+		// seeders, live SSE).
+		const AppLive = Layer.mergeAll(health, fateRoute.pipe(HttpRouter.provideRequest(fateLayer)));
 
 		// ── RUNTIME PHASE (per request) ──
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};

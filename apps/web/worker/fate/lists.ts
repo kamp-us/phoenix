@@ -13,11 +13,11 @@
  *   - the cursor is the term slug (the keyset key, opaque to the client).
  */
 
-import {Pano, type PostSort} from "../features/pano/Pano";
-import {type ListSort, Sozluk} from "../features/sozluk/Sozluk";
-import {fateList} from "./effect";
-import {type KeysetPage, toConnection, toPost, toTerm} from "./shapers";
-import type {Post, Term} from "./views";
+import {Pano, type PostSort} from "../features/pano/Pano.ts";
+import {type ListSort, Sozluk} from "../features/sozluk/Sozluk.ts";
+import {fateList} from "./effect.ts";
+import {type KeysetPage, toConnection, toPost, toTerm} from "./shapers.ts";
+import type {Post, Term} from "./views.ts";
 
 /** Coerce the `sort` arg to the service's `ListSort`; default `recent`. */
 const toListSort = (value: unknown): ListSort => (value === "popular" ? "popular" : "recent");

@@ -17,5 +17,5 @@
  * worker entry imports `server.ts` directly.
  */
 
-export {fateServer} from "./server";
-export * from "./views";
+export {fateServer} from "./server.ts";
+export * from "./views.ts";

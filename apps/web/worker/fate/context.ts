@@ -1,18 +1,25 @@
-import type {ManagedRuntime} from "effect";
-import type {FateRuntime} from "./runtime";
+import type * as Context from "effect/Context";
+import type {FateEnv} from "./layers.ts";
 
 /**
  * The per-request context fate hands to every resolver and source executor as
- * `ctx`. In phoenix it carries the request's `ManagedRuntime` (built and
- * disposed by the `/fate` Hono route — ADR 0017) and the raw `Request`.
+ * `ctx`.
  *
- * Session is **not** a field here. It's baked into the runtime's `Auth` layer
- * when the route builds the runtime, so resolvers read the caller with
+ * Per ADR 0029 it carries a captured `Context` (effect v4's service map — the
+ * `ServiceMap` the patterns name), **not** a `ManagedRuntime`. The `/fate` route
+ * builds the worker-level services once in init, provides `Auth` +
+ * `RequestContext` per request, captures the live map with
+ * `Effect.context<FateEnv>()`, and hands it here. The bridge runs each resolver
+ * with `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` — nothing is
+ * built or disposed per request.
+ *
+ * Session is **not** a field here. It's provided into the captured context's
+ * `Auth` service when the route runs, so resolvers read the caller with
  * `yield* Auth.required` rather than off the context.
  *
- * See `.patterns/fate-effect-bridge.md`.
+ * See `.patterns/alchemy-runtime.md` and `.patterns/fate-effect-bridge.md`.
  */
 export interface FateContext {
-	readonly runtime: ManagedRuntime.ManagedRuntime<FateRuntime.Context, never>;
+	readonly context: Context.Context<FateEnv>;
 	readonly request: Request;
 }

@@ -23,12 +23,12 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {forwardPage, keysetAfter} from "../../db/keyset";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle";
-import {excerpt as excerptText} from "../../shared/text";
-import type {VoteTargetNotFound} from "../vote/errors";
-import {Vote} from "../vote/Vote";
+import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle.ts";
+import {excerpt as excerptText} from "../../shared/text.ts";
+import type {VoteTargetNotFound} from "../vote/errors.ts";
+import {Vote} from "../vote/Vote.ts";
 import {
 	CommentNotFound,
 	CommentValidation,
@@ -36,7 +36,7 @@ import {
 	PostValidation,
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
-} from "./errors";
+} from "./errors.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Domain constants                                                            */

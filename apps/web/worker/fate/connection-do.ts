@@ -25,9 +25,9 @@
  * shapes are shared via `live-protocol.ts`.
  */
 import {DurableObject} from "cloudflare:workers";
-import type {DeliverFrame, SubscribeControl} from "./live-protocol";
-import {encodeFrame, SSE_HEADERS, topicsForSubscribe} from "./live-protocol";
-import type {TopicDO} from "./topic-do";
+import type {DeliverFrame, SubscribeControl} from "./live-protocol.ts";
+import {encodeFrame, SSE_HEADERS, topicsForSubscribe} from "./live-protocol.ts";
+import type {TopicDO} from "./topic-do.ts";
 
 /** Storage key for the persisted generation counter (survives eviction). */
 const GENERATION_KEY = "generation";

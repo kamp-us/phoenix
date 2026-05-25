@@ -5,40 +5,40 @@
  * domain lives in Effect `Context.Service`s. This module is the single seam
  * between them: a small helper family — `fateQuery`, `fateList`,
  * `fateMutation`, `fateSource` — wraps an Effect generator into the async
- * function fate expects, running it through the per-request `ManagedRuntime`
- * carried on {@link FateContext}.
+ * function fate expects, running it against the captured `Context`
+ * ({@link FateContext.context}) — no per-request `ManagedRuntime` (ADR 0029).
  *
- * **No `runtime.runPromise*` appears anywhere outside this file.** Resolvers
+ * **No `Effect.runPromiseExit` appears anywhere outside this file.** Resolvers
  * and executors are generators; the runner here does the
- * `runtime → Exit → wire-error` dance once.
+ * `provide(context) → Exit → wire-error` dance once.
  *
- * See `.patterns/fate-effect-bridge.md` and ADR 0016.
+ * See `.patterns/fate-effect-bridge.md`, `.patterns/alchemy-runtime.md`, and
+ * ADR 0016 / 0029.
  */
 import type {ConnectionResult, SourceRegistry} from "@nkzw/fate/server";
 import {FateRequestError} from "@nkzw/fate/server";
 import {Cause, Effect, Exit} from "effect";
-import type {FateContext} from "./context";
-import {encodeFateError} from "./errors";
-import type {FateRuntime} from "./runtime";
+import type {FateContext} from "./context.ts";
+import {encodeFateError} from "./errors.ts";
+import type {FateEnv} from "./layers.ts";
 
 type Selection = ReadonlyArray<string>;
 
 /**
- * Build a request-runtime Effect from a resolver/executor generator. The
- * generator yields heterogeneous services (`yield* Stats`, `yield* Auth`, …),
- * so its element type is `any` and `Effect.gen` infers the environment as
- * `unknown`; we assert it back to `FateRuntime.Context`, which the request
- * runtime provides. This is the single assertion the bridge makes — see the
- * note on {@link runEffect}.
+ * Build an Effect from a resolver/executor generator. The generator yields
+ * heterogeneous services (`yield* Stats`, `yield* Auth`, …), so its element
+ * type is `any` and `Effect.gen` infers the environment as `unknown`; we assert
+ * it back to {@link FateEnv}, which the captured `Context` provides. This is the
+ * single assertion the bridge makes — see the note on {@link runEffect}.
  */
-const genEffect = <A>(
-	body: () => Generator<any, A, any>,
-): Effect.Effect<A, unknown, FateRuntime.Context> =>
-	Effect.gen(body) as Effect.Effect<A, unknown, FateRuntime.Context>;
+const genEffect = <A>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, FateEnv> =>
+	Effect.gen(body) as Effect.Effect<A, unknown, FateEnv>;
 
 /**
- * The one place `runPromiseExit` is called. Runs an Effect through the request
- * runtime and resolves the `Exit`:
+ * The one place `runPromiseExit` is called. Provides the captured worker +
+ * per-request `Context` ({@link FateContext.context}) onto the resolver Effect,
+ * runs it on the default runtime (ADR 0029 — no per-request `ManagedRuntime`,
+ * nothing to dispose), and resolves the `Exit`:
  *
  *   - `Exit.Success`            → the value.
  *   - tagged failure            → `encodeFateError` → throw (fate serializes it).
@@ -54,11 +54,11 @@ const runEffect = <A>(
 	// `Generator<any, A, any>`, so the environment channel erases to `unknown`
 	// at this boundary. The resolver/executor bodies are checked at their
 	// own definition site, where `yield* Service` carries the real types; the
-	// request runtime provides `FateRuntime.Context` at run time. We assert that
-	// shape into `runPromiseExit` rather than leaking `any` outward.
-	effect: Effect.Effect<A, unknown, FateRuntime.Context>,
+	// captured `Context` provides `FateEnv` at run time. We assert that shape
+	// into `Effect.provide` rather than leaking `any` outward.
+	effect: Effect.Effect<A, unknown, FateEnv>,
 ): Promise<A> =>
-	ctx.runtime.runPromiseExit(effect).then((exit) => {
+	Effect.runPromiseExit(Effect.provide(effect, ctx.context)).then((exit) => {
 		if (Exit.isSuccess(exit)) {
 			return exit.value;
 		}
@@ -96,7 +96,7 @@ export interface MutationArgs<Input> {
  *
  * The generator's yield type is `any`: `Effect.gen` requires a `Yieldable`
  * element and resolver bodies `yield*` heterogeneous services. The runner
- * constrains the environment to `FateRuntime.Context`.
+ * constrains the environment to {@link FateEnv}.
  */
 export const fateQuery =
 	<Args, A>(body: (o: {args: Args | undefined; select: Selection}) => Generator<any, A, any>) =>

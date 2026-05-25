@@ -8,7 +8,7 @@ import {bearer, magicLink} from "better-auth/plugins";
 import type {} from "better-call";
 import {drizzle} from "drizzle-orm/d1";
 import type {} from "zod/v4/core";
-import * as schema from "../../db/drizzle/schema";
+import * as schema from "../../db/drizzle/schema.ts";
 
 /**
  * Instantiate better-auth against the canonical D1 database (binding

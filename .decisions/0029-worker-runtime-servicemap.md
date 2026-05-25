@@ -93,5 +93,12 @@ build from the bound client. See [.patterns/alchemy-runtime.md](../.patterns/alc
 - Reading a per-request `env` to construct `Drizzle` or a feature service — they
   are built once, in init, from the bound client.
 
-Verified against effect v4 source: `Effect.services<R>()`,
-`Effect.provideServices`, and `Effect.runPromiseExit` exist as used.
+Verified against effect v4 source. **API-name correction (implementation, against
+`effect@4.0.0-beta.70`):** the capture/provide/type primitives exist under these
+names — capture is `Effect.context<R>()` (returns `Context.Context<R>` from
+`effect/Context`), provide is `Effect.provide(effect, ctx)`, run is
+`Effect.runPromiseExit`. `Effect.services` / `Effect.provideServices` /
+`ServiceMap.ServiceMap` (used in the prose above) are a later/renamed API and do
+not exist in beta.70; the shipped worker uses the beta.70 names. The decision —
+captured Context (services-only, no FiberRefs), worker-level layers, no
+per-request runtime — is unchanged.

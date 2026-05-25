@@ -14,10 +14,10 @@
 import {id} from "@usirin/forge";
 import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle";
-import {excerpt as excerptText} from "../../shared/text";
-import {SEED_POSTS, type SeedPost} from "./seed";
+import * as schema from "../../db/drizzle/schema.ts";
+import {Drizzle, type DrizzleError} from "../../services/Drizzle.ts";
+import {excerpt as excerptText} from "../../shared/text.ts";
+import {SEED_POSTS, type SeedPost} from "./seed.ts";
 
 const POST_EXCERPT_LEN = 280;
 

@@ -6,7 +6,7 @@
  * Kept out of `Sozluk.ts` so the projection + mapper live in exactly one place
  * and the three methods can't drift on column selection or field mapping.
  */
-import * as schema from "../../db/drizzle/schema";
+import * as schema from "../../db/drizzle/schema.ts";
 
 /** The list/keyset term-summary row — the shape every term-summary read returns. */
 export interface TermSummaryRow {

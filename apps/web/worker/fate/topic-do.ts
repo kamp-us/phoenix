@@ -30,8 +30,8 @@
  * `live-protocol.ts`.
  */
 import {DurableObject} from "cloudflare:workers";
-import type {ConnectionDO} from "./connection-do";
-import type {DeliverFrame, PublishMessage} from "./live-protocol";
+import type {ConnectionDO} from "./connection-do.ts";
+import type {DeliverFrame, PublishMessage} from "./live-protocol.ts";
 
 /**
  * A subscriber row: which connection (and which operation on it) wants events for

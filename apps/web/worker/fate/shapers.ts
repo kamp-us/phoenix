@@ -22,10 +22,10 @@
  */
 
 import type {ConnectionResult} from "@nkzw/fate/server";
-import type {PostPage} from "../features/pano/Pano";
-import {toContributionRow} from "../features/pasaport/Pasaport";
-import type {TermPage} from "../features/sozluk/Sozluk";
-import type {Comment, Definition, Post, Term, User} from "./views";
+import type {PostPage} from "../features/pano/Pano.ts";
+import {toContributionRow} from "../features/pasaport/Pasaport.ts";
+import type {TermPage} from "../features/sozluk/Sozluk.ts";
+import type {Comment, Definition, Post, Term, User} from "./views.ts";
 
 export {toContributionRow};
 

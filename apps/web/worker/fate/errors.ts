@@ -38,7 +38,7 @@
  * `.patterns/fate-effect-bridge.md`.
  */
 import {FateRequestError} from "@nkzw/fate/server";
-import type {MutationErrorCode} from "../../src/lib/mutationErrorCodes";
+import type {MutationErrorCode} from "../../src/lib/mutationErrorCodes.ts";
 import type {
 	CommentNotFound,
 	CommentValidation,
@@ -46,23 +46,23 @@ import type {
 	PostValidation,
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
-} from "../features/pano/errors";
+} from "../features/pano/errors.ts";
 import type {
 	UserNotFound,
 	UsernameAlreadySet,
 	UsernameInvalid,
 	UsernameTaken,
-} from "../features/pasaport/errors";
+} from "../features/pasaport/errors.ts";
 import type {
 	BodyRequired,
 	BodyTooLong,
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
-} from "../features/sozluk/errors";
-import type {VoteTargetNotFound} from "../features/vote/errors";
-import type {AdminForbidden} from "../services/AdminAuth";
-import type {Unauthorized} from "../services/Auth";
-import type {DrizzleError} from "../services/Drizzle";
+} from "../features/sozluk/errors.ts";
+import type {VoteTargetNotFound} from "../features/vote/errors.ts";
+import type {AdminForbidden} from "../services/AdminAuth.ts";
+import type {Unauthorized} from "../services/Auth.ts";
+import type {DrizzleError} from "../services/Drizzle.ts";
 
 // The wire-side constant + decoder live in `src/lib/` so the SPA can import
 // them without crossing the worker boundary; re-exported here so worker callers
@@ -71,7 +71,7 @@ export {
 	decodeMutationErrorCode,
 	MUTATION_ERROR_CODES,
 	type MutationErrorCode,
-} from "../../src/lib/mutationErrorCodes";
+} from "../../src/lib/mutationErrorCodes.ts";
 
 /**
  * Construct a `FateRequestError` carrying a phoenix `MutationErrorCode` as its

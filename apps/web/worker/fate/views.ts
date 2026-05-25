@@ -15,9 +15,9 @@
  */
 import type {SourceDefinition} from "@nkzw/fate/server";
 import {dataView, list} from "@nkzw/fate/server";
-import type {CommentRow, PostSummaryRow, PostTagRow} from "../features/pano/Pano";
-import type {ContributionRow, ProfileRow, UserRow} from "../features/pasaport/Pasaport";
-import type {DefinitionRow, TermSummaryRow} from "../features/sozluk/Sozluk";
+import type {CommentRow, PostSummaryRow, PostTagRow} from "../features/pano/Pano.ts";
+import type {ContributionRow, ProfileRow, UserRow} from "../features/pasaport/Pasaport.ts";
+import type {DefinitionRow, TermSummaryRow} from "../features/sozluk/Sozluk.ts";
 
 // Gives a service row interface the implicit string index signature `dataView`
 // requires. See `.patterns/fate-data-views.md` (type-derivation helpers).

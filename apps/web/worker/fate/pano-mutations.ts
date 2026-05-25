@@ -25,12 +25,12 @@
  * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
  */
 
-import {Pano} from "../features/pano/Pano";
-import {Auth} from "../services";
-import {fateMutation} from "./effect";
-import {liveBus} from "./live";
-import {toComment, toPost, toPostFromPage} from "./shapers";
-import type {Comment, Post} from "./views";
+import {Pano} from "../features/pano/Pano.ts";
+import {Auth} from "../services/index.ts";
+import {fateMutation} from "./effect.ts";
+import {liveBus} from "./live.ts";
+import {toComment, toPost, toPostFromPage} from "./shapers.ts";
+import type {Comment, Post} from "./views.ts";
 
 export interface SubmitPostInput {
 	title: string;

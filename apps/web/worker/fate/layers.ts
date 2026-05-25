@@ -1,0 +1,70 @@
+/**
+ * Worker-level fate layers (ADR 0029, `.patterns/alchemy-runtime.md`).
+ *
+ * The departure from the old `worker/fate/runtime.ts`: there is **no
+ * per-request `ManagedRuntime`**. `Drizzle` (built once from the bound D1) and
+ * the feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`) are
+ * **worker-level layers**, constructed once in the worker init and provided onto
+ * the worker body. Per request the `/fate` route provides only `Auth` +
+ * `RequestContext` (see `route.ts`) and captures the live service map with
+ * `Effect.context<FateEnv>()`.
+ *
+ * `FateEnv` is the union of every service a fate resolver or source executor may
+ * touch — the type parameter of the captured `Context` the bridge runs against.
+ *
+ * The layer graph (mergeAll / provide / provideMerge) is the one in
+ * `.patterns/effect-layer-composition.md`; only *where* it's provided moved,
+ * from a per-request runtime to here.
+ */
+import {Layer} from "effect";
+import {type Pano, PanoLive} from "../features/pano/Pano.ts";
+import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport.ts";
+import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk.ts";
+import {type Stats, StatsLive} from "../features/stats/Stats.ts";
+import {type Vote, VoteLive} from "../features/vote/Vote.ts";
+import {
+	type Auth,
+	CloudflareEnv,
+	type Drizzle,
+	type DrizzleDb,
+	makeDrizzleLayer,
+	type RequestContext,
+} from "../services/index.ts";
+
+/**
+ * Every service available inside a fate resolver / source executor. This is the
+ * type parameter of the `Context` the `/fate` route captures and the bridge
+ * provides — `Auth` + `RequestContext` are supplied per request, the rest are
+ * worker-level singletons.
+ */
+export type FateEnv = Drizzle | Pasaport | Vote | Sozluk | Pano | Stats | Auth | RequestContext;
+
+/**
+ * The worker-level services `makeFateLayer` provides — the `FateEnv` minus the
+ * two per-request services (`Auth`, `RequestContext`) the `/fate` route layers
+ * on itself.
+ */
+export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Stats;
+
+/**
+ * Build the worker-level data-plane layer from the bound D1.
+ *
+ * `Drizzle` is built once from `db` (via {@link makeDrizzleLayer}); the feature
+ * services provide over it. `SozlukLive` and `PanoLive` both depend on `Vote`,
+ * so they merge first and `provideMerge(VoteLive)` once; `PasaportLive` and
+ * `StatsLive` depend only on `Drizzle` (Pasaport also reads `CloudflareEnv` for
+ * better-auth construction — supplied from the bound `env` here until the
+ * `createAuth` hoist in a later task).
+ *
+ * The result requires nothing (`R = never`); the per-request `Auth` +
+ * `RequestContext` are layered on top in the `/fate` route, not here.
+ */
+export const makeFateLayer = (db: DrizzleDb, env: Env): Layer.Layer<WorkerFateServices> => {
+	const DrizzleLayer = makeDrizzleLayer(db);
+	const EnvLayer = Layer.succeed(CloudflareEnv, env);
+
+	const SozlukPanoLayer = Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive));
+	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukPanoLayer, StatsLive);
+
+	return FeatureLayer.pipe(Layer.provideMerge(DrizzleLayer), Layer.provide(EnvLayer));
+};

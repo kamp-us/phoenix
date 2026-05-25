@@ -12,7 +12,7 @@
  * for the wiring shape.
  */
 import {Context, Data, Effect, Layer} from "effect";
-import {CloudflareEnv} from "./CloudflareEnv";
+import {CloudflareEnv} from "./CloudflareEnv.ts";
 
 /**
  * Raised when an admin operation is attempted outside an allowed context.
