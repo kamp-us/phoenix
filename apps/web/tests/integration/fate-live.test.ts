@@ -32,8 +32,9 @@ import {liveEntityTopic} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import {beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../../worker/db/drizzle/migrations/0000_d1_baseline.sql";
-import type {LiveDO} from "../../worker/fate/live-do";
+import type {ConnectionDO} from "../../worker/fate/connection-do";
 import {FateRuntime} from "../../worker/fate/runtime";
+import type {TopicDO} from "../../worker/fate/topic-do";
 import {Pasaport} from "../../worker/features/pasaport/Pasaport";
 
 declare module "cloudflare:test" {
@@ -65,12 +66,12 @@ async function applyViewMigrations() {
 
 /** Connection-role stub for a connection id (named, so addressable cross-isolate). */
 function connectionStub(id: string) {
-	return env.LIVE_DO.get(env.LIVE_DO.idFromName(`connection:${id}`));
+	return env.CONNECTION_DO.get(env.CONNECTION_DO.idFromName(`connection:${id}`));
 }
 
 /** Topic-role stub for a topic key. */
 function topicStub(key: string) {
-	return env.LIVE_DO.get(env.LIVE_DO.idFromName(`topic:${key}`));
+	return env.TOPIC_DO.get(env.TOPIC_DO.idFromName(`topic:${key}`));
 }
 
 /** Read one SSE event (delimited by a blank line) off a stream reader. */
@@ -176,7 +177,7 @@ describe("LiveDO cross-isolate delivery", () => {
 		const topicKey = liveEntityTopic("Post", "post-42");
 		const rowCount = await runInDurableObject(
 			topicStub(topicKey),
-			(_instance: LiveDO, state) =>
+			(_instance: TopicDO, state) =>
 				state.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(rowCount).toBe(1);
@@ -458,7 +459,7 @@ describe("LiveDO stale-subscriber pruning", () => {
 		const topicKey = liveEntityTopic("Comment", "c-1");
 		const before = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(before).toBe(1);
@@ -483,7 +484,7 @@ describe("LiveDO stale-subscriber pruning", () => {
 
 		const after = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(0);
@@ -519,7 +520,7 @@ describe("LiveDO stale-subscriber pruning", () => {
 
 		const after = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(0);
@@ -538,7 +539,7 @@ describe("LiveDO generation survives eviction (BUG §4a)", () => {
 
 		// The persisted generation is in DO storage (survives eviction), not just
 		// in memory.
-		const persisted = await runInDurableObject(connectionStub(connId), (_i: LiveDO, s) =>
+		const persisted = await runInDurableObject(connectionStub(connId), (_i: ConnectionDO, s) =>
 			s.storage.get<number>("generation"),
 		);
 		expect(persisted).toBe(1);
@@ -546,7 +547,7 @@ describe("LiveDO generation survives eviction (BUG §4a)", () => {
 		// Simulate a DO eviction: clear the in-memory generation cache so the next
 		// access has to reload from storage. A bug where `generation` lives only in
 		// memory would reset to 0 here.
-		await runInDurableObject(connectionStub(connId), (instance: LiveDO) => {
+		await runInDurableObject(connectionStub(connId), (instance: ConnectionDO) => {
 			(instance as unknown as {generation: number | undefined}).generation = undefined;
 		});
 
@@ -580,7 +581,7 @@ describe("LiveDO generation survives eviction (BUG §4a)", () => {
 		// persisted counter the reconnect reads 1 from storage and bumps to 2; an
 		// in-memory-only counter would reset to 0 and bump back to 1 — colliding
 		// with the stale row.
-		await runInDurableObject(connectionStub(connId), (instance: LiveDO) => {
+		await runInDurableObject(connectionStub(connId), (instance: ConnectionDO) => {
 			(instance as unknown as {generation: number | undefined}).generation = undefined;
 		});
 		const reconnect = await conn.fetch(`https://live/connect?ownerId=${ownerId}`);
@@ -603,7 +604,7 @@ describe("LiveDO generation survives eviction (BUG §4a)", () => {
 
 		const after = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(0);
@@ -632,7 +633,7 @@ describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
 
 		const before = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(before).toBe(1);
@@ -641,7 +642,7 @@ describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
 		// to reject — simulating a transport/deserialize failure (network blip, DO
 		// crash mid-parse). The publish must treat this as "couldn't reach", not
 		// "confirmed stale", and leave the row.
-		await runInDurableObject(connectionStub("unreachable-conn"), (instance: LiveDO) => {
+		await runInDurableObject(connectionStub("unreachable-conn"), (instance: ConnectionDO) => {
 			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
 				throw new Error("simulated transport failure");
 			};
@@ -660,7 +661,7 @@ describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
 		// The row survives: an unreachable connection is not confirmed stale.
 		const after = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(1);
@@ -683,7 +684,7 @@ describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
 		await open.body!.cancel();
 
 		// Force the connection's `/probe` to throw.
-		await runInDurableObject(connectionStub("alarm-fail-conn"), (instance: LiveDO) => {
+		await runInDurableObject(connectionStub("alarm-fail-conn"), (instance: ConnectionDO) => {
 			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
 				throw new Error("simulated probe failure");
 			};
@@ -695,7 +696,7 @@ describe("LiveDO leaves rows on transport failure (BUG §4d)", () => {
 		// The alarm could not reach the connection — the row is left, not pruned.
 		const after = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(1);
@@ -723,7 +724,7 @@ describe("LiveDO bounds the fan-out (task 13)", () => {
 		// publish would block on the runtime's multi-minute subrequest timeout (and
 		// stall the single-threaded DO). The bounded fetch aborts at FANOUT_TIMEOUT_MS,
 		// so the publish settles well inside this test's own timeout.
-		await runInDurableObject(connectionStub("hang-conn"), (instance: LiveDO) => {
+		await runInDurableObject(connectionStub("hang-conn"), (instance: ConnectionDO) => {
 			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () =>
 				new Promise<Response>(() => {});
 		});
@@ -746,7 +747,7 @@ describe("LiveDO bounds the fan-out (task 13)", () => {
 
 		const after = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(1);
@@ -773,7 +774,7 @@ describe("LiveDO reaps genuinely-dead subscribers (task 13)", () => {
 		// The connection stays unreachable for every probe (a crashed/evicted DO that
 		// never deregistered). A single alarm leaves the row (Task 4's invariant); only
 		// after MAX_PROBE_MISSES *consecutive* unreachable probes is the dead row reaped.
-		await runInDurableObject(connectionStub("reap-conn"), (instance: LiveDO) => {
+		await runInDurableObject(connectionStub("reap-conn"), (instance: ConnectionDO) => {
 			(instance as unknown as {fetch: () => Promise<Response>}).fetch = () => {
 				throw new Error("simulated permanent unreachability");
 			};
@@ -783,7 +784,7 @@ describe("LiveDO reaps genuinely-dead subscribers (task 13)", () => {
 		await runDurableObjectAlarm(topicStub(topicKey));
 		const afterOne = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(afterOne).toBe(1);
@@ -793,13 +794,13 @@ describe("LiveDO reaps genuinely-dead subscribers (task 13)", () => {
 		// fails the test instead of looping forever.
 		let reaped = false;
 		for (let i = 0; i < 10 && !reaped; i++) {
-			await runInDurableObject(topicStub(topicKey), (_i: LiveDO, s) =>
+			await runInDurableObject(topicStub(topicKey), (_i: TopicDO, s) =>
 				s.storage.setAlarm(Date.now() - 1),
 			);
 			await runDurableObjectAlarm(topicStub(topicKey));
 			const count = await runInDurableObject(
 				topicStub(topicKey),
-				(_i: LiveDO, s) =>
+				(_i: TopicDO, s) =>
 					s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 			);
 			reaped = count === 0;
@@ -828,7 +829,7 @@ describe("LiveDO reaps genuinely-dead subscribers (task 13)", () => {
 		// connection is reachable now). A reachable probe whose generation matches
 		// must clear it, so a transient blip never accumulates toward eviction across
 		// reachable intervals.
-		await runInDurableObject(topicStub(topicKey), (_i: LiveDO, s) =>
+		await runInDurableObject(topicStub(topicKey), (_i: TopicDO, s) =>
 			s.storage.sql.exec("UPDATE subscribers SET misses = 2 WHERE subId = ?", subId),
 		);
 
@@ -836,14 +837,14 @@ describe("LiveDO reaps genuinely-dead subscribers (task 13)", () => {
 
 		const misses = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT misses FROM subscribers WHERE subId = ?", subId).one()
 					.misses as number,
 		);
 		expect(misses).toBe(0);
 		const after = await runInDurableObject(
 			topicStub(topicKey),
-			(_i: LiveDO, s) =>
+			(_i: TopicDO, s) =>
 				s.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers").one().n as number,
 		);
 		expect(after).toBe(1);

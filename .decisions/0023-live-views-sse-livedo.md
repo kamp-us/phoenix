@@ -61,3 +61,8 @@ topology, not part of this decision.
 - Amends the DO-deferral stance of [0009](0009-d1-direct-defer-dos-and-workflows.md);
   the Cloudflare Workflows / outbox bans there are untouched.
 - See [fate-live-views.md](../.patterns/fate-live-views.md).
+
+Amended in part by [0025](0025-split-livedo-connection-topic.md): the one-class,
+two-role-by-path packaging of `LiveDO` is replaced by separate `ConnectionDO` and
+`TopicDO` classes. The SSE transport, DO fan-out, cookie auth, and `generation`
+semantics decided here are unchanged.
