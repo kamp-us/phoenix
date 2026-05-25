@@ -128,6 +128,118 @@ const commentErrorMessage = (code: MutationErrorCode, fallback: string): string 
 	}
 };
 
+const currentLocationPath = () => `${window.location.pathname}${window.location.search}`;
+
+/**
+ * The "in-flight + error + UNAUTHORIZED-redirect" submit envelope shared by every
+ * form on this page. A form validates its own fields first (sourcing messages
+ * from the `*ErrorMessage` mappings), then hands the mutation to `run`: this hook
+ * flips `inFlight`, maps a returned wire error, and on an `UNAUTHORIZED` throw
+ * navigates to the auth redirect. Single-field composers layer `useDraft` on top;
+ * the two-field post-edit form uses this directly.
+ */
+function useDraftSubmit(options: {
+	/** Maps a `code` + fallback to the displayed message (the page's `*ErrorMessage`). */
+	errorMessage: (code: MutationErrorCode, fallback: string) => string;
+	/** Where to send the user on an `UNAUTHORIZED` throw. */
+	redirectPath: () => string;
+}) {
+	const [error, setError] = React.useState<string | null>(null);
+	const [inFlight, setInFlight] = React.useState(false);
+	const navigate = useNavigate();
+
+	const run = async (
+		mutate: () => Promise<{error?: {message: string} | null}>,
+		failureFallback: string,
+		onSuccess: () => void,
+	) => {
+		setError(null);
+		setInFlight(true);
+		try {
+			const {error: callError} = await mutate();
+			if (callError) {
+				setError(options.errorMessage(codeOf(callError), callError.message));
+				return;
+			}
+			onSuccess();
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath(options.redirectPath()));
+				return;
+			}
+			setError(options.errorMessage(code, failureFallback));
+		} finally {
+			setInFlight(false);
+		}
+	};
+
+	return {error, setError, inFlight, run};
+}
+
+/**
+ * Shared single-body "validated textarea + in-flight + error + UNAUTHORIZED-redirect"
+ * draft, used by the comment-add and comment-edit composers. Validation messages
+ * are NOT restated here — `validate` returns one of the page's `*ErrorMessage`
+ * strings (single source).
+ */
+function useDraft(options: {
+	initialBody: string;
+	/** Returns an error message (sourced from the `*ErrorMessage` mapping) or null when valid. */
+	validate: (trimmed: string, body: string) => string | null;
+	/** Where to send the user on an `UNAUTHORIZED` throw. */
+	redirectPath: () => string;
+	/** Runs the mutation. Returns a wire error (or null) so `useDraft` maps it. */
+	run: (body: string) => Promise<{error?: {message: string} | null}>;
+	/** Maps a `code` + fallback to the displayed message (the page's `*ErrorMessage`). */
+	errorMessage: (code: MutationErrorCode, fallback: string) => string;
+	/** Fallback message when the mutation/throw carries no mapped code. */
+	failureFallback: string;
+	/** Called after a successful submit (reset/close). */
+	onSuccess: () => void;
+}) {
+	const [body, setBody] = React.useState(options.initialBody);
+	const {error, setError, inFlight, run} = useDraftSubmit({
+		errorMessage: options.errorMessage,
+		redirectPath: options.redirectPath,
+	});
+
+	const submit = async (e: React.FormEvent) => {
+		e.preventDefault();
+		const trimmed = body.trim();
+		const validationError = options.validate(trimmed, body);
+		if (validationError != null) {
+			setError(validationError);
+			return;
+		}
+		await run(() => options.run(body), options.failureFallback, options.onSuccess);
+	};
+
+	return {body, setBody, error, setError, inFlight, submit};
+}
+
+/**
+ * Client-side body validation for comment composers. Messages are pulled from
+ * `commentErrorMessage` (the single source) rather than restated inline, so the
+ * client check and the server-code mapping can't drift.
+ */
+const validateCommentBody = (trimmed: string, body: string): string | null => {
+	if (trimmed.length === 0) return commentErrorMessage("BODY_REQUIRED", "");
+	if (body.length > COMMENT_BODY_MAX) return commentErrorMessage("BODY_TOO_LONG", "");
+	return null;
+};
+
+/**
+ * Client-side title/body validation for the post-edit form. Messages are pulled
+ * from `postErrorMessage` (the single source), not restated inline.
+ */
+const validatePostFields = (trimmedTitle: string, body: string): string | null => {
+	if (trimmedTitle.length === 0) return postErrorMessage("TITLE_REQUIRED", "");
+	if (trimmedTitle.length > TITLE_MAX) return postErrorMessage("TITLE_TOO_LONG", "");
+	if (body.length > BODY_MAX) return postErrorMessage("BODY_TOO_LONG", "");
+	return null;
+};
+
 export function PanoPostDetail() {
 	const {id} = useParams<{id: string}>();
 	const safeId = id ?? "";
@@ -178,11 +290,23 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
 	const [editBody, setEditBody] = React.useState("");
-	const [editError, setEditError] = React.useState<string | null>(null);
-	const [editInFlight, setEditInFlight] = React.useState(false);
 	const [confirmDelete, setConfirmDelete] = React.useState(false);
-	const [deleteError, setDeleteError] = React.useState<string | null>(null);
-	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
+
+	// The post-edit + post-delete flows share the comment composers' submit
+	// envelope (in-flight + error + UNAUTHORIZED→auth redirect). Both redirect to
+	// the post's own slug on an auth failure.
+	const postRedirectPath = () => `/pano/${data.slug ?? data.id}`;
+	const {
+		error: editError,
+		setError: setEditError,
+		inFlight: editInFlight,
+		run: runEdit,
+	} = useDraftSubmit({errorMessage: postErrorMessage, redirectPath: postRedirectPath});
+	const {
+		error: deleteError,
+		inFlight: deleteInFlight,
+		run: runDelete,
+	} = useDraftSubmit({errorMessage: postErrorMessage, redirectPath: postRedirectPath});
 
 	const isAuthor = !!session.data?.user && session.data.user.id === data.authorId;
 
@@ -196,68 +320,36 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 	async function onEditSubmit(e: React.FormEvent) {
 		e.preventDefault();
 		const trimmedTitle = editTitle.trim();
-		if (trimmedTitle.length === 0) {
-			setEditError("başlık boş olamaz");
+		const validationError = validatePostFields(trimmedTitle, editBody);
+		if (validationError != null) {
+			setEditError(validationError);
 			return;
 		}
-		if (trimmedTitle.length > TITLE_MAX) {
-			setEditError(`başlık en fazla ${TITLE_MAX} karakter olabilir`);
-			return;
-		}
-		if (editBody.length > BODY_MAX) {
-			setEditError(`metin en fazla ${BODY_MAX} karakter olabilir`);
-			return;
-		}
-		setEditError(null);
-		setEditInFlight(true);
-		try {
-			// `post.edit` returns the updated `Post`; writing it back through
-			// `PanoPostHeaderView` re-renders the header in place (no reload).
-			const {error} = await fate.mutations.post.edit({
-				input: {id: data.id, title: trimmedTitle, body: editBody},
-				view: PanoPostHeaderView,
-			});
-			if (error) {
-				setEditError(postErrorMessage(codeOf(error), error.message));
-				return;
-			}
-			setEditing(false);
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath(`/pano/${data.slug ?? data.id}`));
-				return;
-			}
-			setEditError(postErrorMessage(code, "başlık güncellenemedi"));
-		} finally {
-			setEditInFlight(false);
-		}
+		// `post.edit` returns the updated `Post`; writing it back through
+		// `PanoPostHeaderView` re-renders the header in place (no reload).
+		await runEdit(
+			() =>
+				fate.mutations.post.edit({
+					input: {id: data.id, title: trimmedTitle, body: editBody},
+					view: PanoPostHeaderView,
+				}),
+			"başlık güncellenemedi",
+			() => setEditing(false),
+		);
 	}
 
 	async function onDeleteConfirm() {
-		setDeleteError(null);
-		setDeleteInFlight(true);
-		try {
-			// A post has no parent; `delete: true` evicts it by id across all
-			// connections (incl. the feed root list) — declarative, no imperative
-			// updater. We navigate back to /pano on success.
-			const {error} = await fate.mutations.post.delete({input: {id: data.id}, delete: true});
-			if (error) {
-				setDeleteError(postErrorMessage(codeOf(error), error.message));
-				return;
-			}
-			setConfirmDelete(false);
-			navigate("/pano");
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath(`/pano/${data.slug ?? data.id}`));
-				return;
-			}
-			setDeleteError(postErrorMessage(code, "başlık silinemedi"));
-		} finally {
-			setDeleteInFlight(false);
-		}
+		// A post has no parent; `delete: true` evicts it by id across all
+		// connections (incl. the feed root list) — declarative, no imperative
+		// updater. We navigate back to /pano on success.
+		await runDelete(
+			() => fate.mutations.post.delete({input: {id: data.id}, delete: true}),
+			"başlık silinemedi",
+			() => {
+				setConfirmDelete(false);
+				navigate("/pano");
+			},
+		);
 	}
 
 	return (
@@ -389,9 +481,17 @@ function Comments(props: CommentsProps) {
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
 	const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
-	const [deleteError, setDeleteError] = React.useState<string | null>(null);
-	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
-	const navigate = useNavigate();
+	// Comment-delete shares the composers' submit envelope (in-flight + error +
+	// UNAUTHORIZED→auth redirect), sourcing its messages from `commentErrorMessage`.
+	const {
+		error: deleteError,
+		setError: setDeleteError,
+		inFlight: deleteInFlight,
+		run: runDelete,
+	} = useDraftSubmit({
+		errorMessage: commentErrorMessage,
+		redirectPath: () => `/pano/${props.postId}`,
+	});
 
 	// fate masks comment fields behind the node view, so the bare connection refs
 	// don't carry `parentId`/`deletedAt`/`body`. But the connection just resolved
@@ -429,33 +529,19 @@ function Comments(props: CommentsProps) {
 
 	async function onDeleteConfirm() {
 		if (!confirmDeleteId) return;
-		setDeleteError(null);
-		setDeleteInFlight(true);
-		try {
-			// `comment.delete` returns the re-resolved **parent `Post`** (reply-aware
-			// soft-delete vs hard-delete is the server's decision). It lives in the
-			// nested `Post.comments` connection, so we can't use `delete: true` (wrong
-			// entity). The resolver drives the thread live: a hard-deleted leaf
-			// publishes `deleteEdge` (consumed by `useLiveListView` — the row drops),
-			// a soft-deleted parent publishes `live.update` with the `[silindi]`
-			// tombstone (consumed by the node's own `useLiveView` — it re-renders in
-			// place, keeping its live replies). No reload either way.
-			const {error} = await fate.mutations.comment.delete({input: {id: confirmDeleteId}});
-			if (error) {
-				setDeleteError(commentErrorMessage(codeOf(error), error.message));
-				return;
-			}
-			setConfirmDeleteId(null);
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath(`/pano/${props.postId}`));
-				return;
-			}
-			setDeleteError(commentErrorMessage(code, "yorum silinemedi"));
-		} finally {
-			setDeleteInFlight(false);
-		}
+		// `comment.delete` returns the re-resolved **parent `Post`** (reply-aware
+		// soft-delete vs hard-delete is the server's decision). It lives in the
+		// nested `Post.comments` connection, so we can't use `delete: true` (wrong
+		// entity). The resolver drives the thread live: a hard-deleted leaf
+		// publishes `deleteEdge` (consumed by `useLiveListView` — the row drops),
+		// a soft-deleted parent publishes `live.update` with the `[silindi]`
+		// tombstone (consumed by the node's own `useLiveView` — it re-renders in
+		// place, keeping its live replies). No reload either way.
+		await runDelete(
+			() => fate.mutations.comment.delete({input: {id: confirmDeleteId}}),
+			"yorum silinemedi",
+			() => setConfirmDeleteId(null),
+		);
 	}
 
 	const composerFor = React.useCallback(
@@ -580,9 +666,6 @@ function CommentComposer({
 	autoFocus?: boolean;
 }) {
 	const fate = useFateClient();
-	const [body, setBody] = React.useState("");
-	const [error, setError] = React.useState<string | null>(null);
-	const [inFlight, setInFlight] = React.useState(false);
 	const navigate = useNavigate();
 	const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
 
@@ -590,56 +673,43 @@ function CommentComposer({
 		if (autoFocus) textareaRef.current?.focus();
 	}, [autoFocus]);
 
-	async function submit(e: React.FormEvent) {
-		e.preventDefault();
-		if (!signedIn) {
-			navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
-			return;
-		}
-		const trimmed = body.trim();
-		if (trimmed.length === 0) {
-			setError("yorum boş olamaz");
-			return;
-		}
-		if (body.length > COMMENT_BODY_MAX) {
-			setError(`yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`);
-			return;
-		}
-		setError(null);
-		setInFlight(true);
-		try {
-			const {error: callError} = await fate.mutations.comment.add({
-				input: {postId, body, ...(parentId ? {parentId} : {})},
+	const {body, setBody, error, inFlight, submit} = useDraft({
+		initialBody: "",
+		validate: validateCommentBody,
+		redirectPath: currentLocationPath,
+		// Live: the server publishes `live.connection("Post.comments", {id})
+		// .appendNode` for the new comment, so `useLiveListView` merges it into the
+		// thread in place — no reload (this client's own subscription delivers it
+		// the same way a second client sees it).
+		run: (value) =>
+			fate.mutations.comment.add({
+				input: {postId, body: value, ...(parentId ? {parentId} : {})},
 				view: CommentTreeNodeView,
-			});
-			if (callError) {
-				setError(commentErrorMessage(codeOf(callError), callError.message));
-				return;
-			}
+			}),
+		errorMessage: commentErrorMessage,
+		failureFallback: "yorum eklenemedi",
+		onSuccess: () => {
 			setBody("");
 			onPosted();
 			onCancel?.();
-			// Live: the server published `live.connection("Post.comments", {id})
-			// .appendNode` for the new comment, so `useLiveListView` merges it into
-			// the thread in place — no reload needed (this client's own
-			// subscription delivers it the same way a second client sees it).
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
-				return;
-			}
-			setError(commentErrorMessage(code, "yorum eklenemedi"));
-		} finally {
-			setInFlight(false);
+		},
+	});
+
+	// Signed-out users get the auth redirect before any draft state is touched.
+	function onSubmit(e: React.FormEvent) {
+		if (!signedIn) {
+			e.preventDefault();
+			navigate(authRedirectPath(currentLocationPath()));
+			return;
 		}
+		void submit(e);
 	}
 
 	// Test affordances key off the raw parent comment id (`comm_<ulid>`).
 	const testId = parentId ? `pano-comment-reply-${parentId}` : "pano-comment-composer";
 
 	return (
-		<form className="kp-pano-comment-composer" onSubmit={submit} data-testid={testId}>
+		<form className="kp-pano-comment-composer" onSubmit={onSubmit} data-testid={testId}>
 			<textarea
 				ref={textareaRef}
 				className="kp-pano-comment-composer__textarea"
@@ -713,47 +783,19 @@ function CommentEditComposer({
 	onCancel: () => void;
 }) {
 	const fate = useFateClient();
-	const [body, setBody] = React.useState(initialBody);
-	const [error, setError] = React.useState<string | null>(null);
-	const [inFlight, setInFlight] = React.useState(false);
-	const navigate = useNavigate();
 	// Test affordances key off the raw comment id (`comm_<ulid>`).
 	const localId = commentId;
 
-	async function submit(e: React.FormEvent) {
-		e.preventDefault();
-		const trimmed = body.trim();
-		if (trimmed.length === 0) {
-			setError("yorum boş olamaz");
-			return;
-		}
-		if (body.length > COMMENT_BODY_MAX) {
-			setError(`yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`);
-			return;
-		}
-		setError(null);
-		setInFlight(true);
-		try {
-			const {error: callError} = await fate.mutations.comment.edit({
-				input: {id: commentId, body},
-				view: CommentTreeNodeView,
-			});
-			if (callError) {
-				setError(commentErrorMessage(codeOf(callError), callError.message));
-				return;
-			}
-			onEdited();
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
-				return;
-			}
-			setError(commentErrorMessage(code, "yorum güncellenemedi"));
-		} finally {
-			setInFlight(false);
-		}
-	}
+	const {body, setBody, error, inFlight, submit} = useDraft({
+		initialBody,
+		validate: validateCommentBody,
+		redirectPath: currentLocationPath,
+		run: (value) =>
+			fate.mutations.comment.edit({input: {id: commentId, body: value}, view: CommentTreeNodeView}),
+		errorMessage: commentErrorMessage,
+		failureFallback: "yorum güncellenemedi",
+		onSuccess: onEdited,
+	});
 
 	return (
 		<form
