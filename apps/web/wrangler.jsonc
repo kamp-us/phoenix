@@ -102,7 +102,7 @@
 			},
 			"vars": {
 				"ENVIRONMENT": "test",
-				"BETTER_AUTH_SECRET": ""
+				"BETTER_AUTH_SECRET": "80914937ce1bcb41b5bc456c9b775695e3961f191da95813ea96f08ce4e61f09"
 			}
 		}
 	}
