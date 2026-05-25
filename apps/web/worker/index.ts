@@ -67,10 +67,13 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 			BETTER_AUTH_SECRET: "phoenix-dev-secret-not-for-production",
 		},
 		assets: {
-			// The built SPA shell. `@cloudflare/vite-plugin` (still present until
-			// task 6 removes it) nests the client build under `dist/client/client`;
-			// task 6 flattens this back to `./dist/client` when the plugin is dropped.
-			directory: "./dist/client/client",
+			// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
+			// ADR 0030) emits the client directly into `dist/client`; the path is
+			// relative to the alchemy CLI's working dir (`apps/web`). At the
+			// Cloudflare edge the worker serves this via `assets` + `runWorkerFirst`
+			// (below) with no proxy; the dev proxy in `vite.config.ts` exists only
+			// for the two-process dev loop.
+			directory: "./dist/client",
 			config: {
 				// The SPA shell answers any non-worker path; the worker-owned paths
 				// are listed in `runWorkerFirst` so the asset server doesn't shadow
