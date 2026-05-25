@@ -4,6 +4,9 @@ node_modules
 .cache
 .wrangler
 
+# alchemy local state store (Alchemy.localState() — offline dev, per-machine)
+.alchemy
+
 dist
 build
 *.tsbuildinfo

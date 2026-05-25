@@ -1,221 +1,110 @@
-import {routeAgentRequest} from "agents";
-import {Effect} from "effect";
-import {Hono} from "hono";
-import {z} from "zod";
-import {AdminRuntime} from "./admin/runtime";
-import {livePublishContext} from "./fate/live";
-import {handleLiveRequest} from "./fate/live-route";
-import {FateRuntime, toSessionData, validateSessionCookie} from "./fate/runtime";
-import {fateServer} from "./fate/server";
-import {PanoAdmin} from "./features/pano/PanoAdmin";
-import {Pasaport} from "./features/pasaport/Pasaport";
-import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
-import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
-import {AdminAuth} from "./services";
+/**
+ * The single phoenix worker, on alchemy-effect (ADR 0026–0031).
+ *
+ * `export default class Phoenix extends Cloudflare.Worker<Phoenix>()(id, props, body)`.
+ * The body runs in two phases: the init phase binds resources (D1 + the two
+ * live-fan-out Durable Object namespaces) once per isolate; the runtime phase
+ * returns the `fetch` handler — an `HttpRouter` compiled with
+ * `HttpRouter.toHttpEffect`. The SPA is served from the `assets` prop, with
+ * `runWorkerFirst` keeping the worker-owned paths (`/api/*`, `/fate`, `/fate/*`)
+ * from being intercepted by the SPA shell.
+ *
+ * This replaces `wrangler.jsonc` (bindings/DOs/migrations/assets/vars) and the
+ * Hono `export default {fetch}` entry. FOUNDATION SLICE (alchemy-migration task
+ * 1): only `GET /api/health` is wired. The fate data plane, better-auth, the
+ * admin seeders, and the live SSE route are ported onto this worker in tasks
+ * 2–5 (the modules still live under `worker/fate/` and `worker/features/`).
+ *
+ * Dev vs prod for the SPA (ADR 0030): the `assets` + `runWorkerFirst` config
+ * below is the *production* single-worker precedence — at the Cloudflare edge,
+ * non-worker paths are answered by the asset server and the worker only sees the
+ * `runWorkerFirst` globs. In the local dev loop `vite dev` serves the SPA (with
+ * HMR) and proxies `/api` + `/fate*` to this worker (task 6); under bare
+ * `alchemy dev` this worker is API-only, so a non-API path has no SPA to return.
+ */
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import ConnectionDO from "./infra/connection-do.ts";
+import {PhoenixDb} from "./infra/resources.ts";
+import TopicDO from "./infra/topic-do.ts";
 
-// The two live-fan-out Durable Objects (ADR 0023, split per ADR 0025):
-// `ConnectionDO` owns a client's SSE stream + subscription list + generation;
-// `TopicDO` owns the durable subscriber registry + publish fan-out + reap.
-// Exported here so wrangler's `CONNECTION_DO`/`TOPIC_DO` bindings resolve them.
-export {ConnectionDO} from "./fate/connection-do";
-export {TopicDO} from "./fate/topic-do";
+/**
+ * The worker's bound resource handles, captured once in the init phase. The
+ * D1 client (`db`) and the two DO namespaces are the typed clients `bind()` /
+ * `yield*` resolve. Holding them in one typed record makes each binding
+ * load-bearing — the field types are derived from the bind expressions, so
+ * dropping a bind is a compile error here.
+ */
+interface WorkerResources {
+	readonly db: Effect.Success<ReturnType<typeof Cloudflare.D1Connection.bind>>;
+	readonly connections: Effect.Success<typeof ConnectionDO>;
+	readonly topics: Effect.Success<typeof TopicDO>;
+}
 
-// Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
-// Every product surface (sozluk, pano, pasaport) runs as module functions
-// against `PHOENIX_DB`. Worker exports no DO or Workflow classes.
+// `GET /api/health` — the liveness probe. Reads the worker's `ENVIRONMENT` var
+// off `WorkerEnvironment` (the alchemy equivalent of the old `c.env.ENVIRONMENT`)
+// and returns it as JSON. The single route wired in the foundation slice.
+const health = HttpRouter.add(
+	"GET",
+	"/api/health",
+	Effect.gen(function* () {
+		const env = yield* Cloudflare.WorkerEnvironment;
+		return yield* HttpServerResponse.json({
+			status: "ok",
+			environment: (env as Record<string, unknown>).ENVIRONMENT ?? null,
+		});
+	}),
+);
 
-const app = new Hono<{Bindings: Env}>();
+const AppLive = Layer.mergeAll(health);
 
-app.get("/api/health", (c) => c.json({status: "ok", environment: c.env.ENVIRONMENT}));
+export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
+	"phoenix",
+	{
+		main: import.meta.filename,
+		env: {ENVIRONMENT: "development"},
+		assets: {
+			// The built SPA shell. `@cloudflare/vite-plugin` (still present until
+			// task 6 removes it) nests the client build under `dist/client/client`;
+			// task 6 flattens this back to `./dist/client` when the plugin is dropped.
+			directory: "./dist/client/client",
+			config: {
+				// The SPA shell answers any non-worker path; the worker-owned paths
+				// are listed in `runWorkerFirst` so the asset server doesn't shadow
+				// them (a missing entry returns the shell for GET and 405 for POST).
+				notFoundHandling: "single-page-application",
+				runWorkerFirst: ["/api/*", "/fate", "/fate/*"],
+			},
+		},
+		compatibility: {flags: ["nodejs_compat"]},
+		observability: {enabled: true},
+	},
+	Effect.gen(function* () {
+		// ── INIT PHASE (deploy time + once per isolate) ──
+		// Bind the resources. At deploy time each call records the binding's
+		// metadata for the Cloudflare API; at runtime it resolves the typed client.
+		// Everything bound here is in scope for the worker's whole lifetime — task 2
+		// builds the worker-level `Drizzle` + feature layers from `db`, and tasks 5
+		// wire the live publish path through the two DO namespaces.
+		const db = yield* Cloudflare.D1Connection.bind(PhoenixDb);
+		const connections = yield* ConnectionDO;
+		const topics = yield* TopicDO;
 
-// Dev-only sözlük admin endpoints. Backs the `pnpm sozluk:import` script that
-// pulls MDX content from the legacy monorepo into the Sozluk DO. Gated on
-// ENVIRONMENT === "development" — the binding is `vars.ENVIRONMENT` in
-// wrangler.jsonc and is overridden per-deploy.
-const upsertTermSchema = z.object({
-	slug: z.string().min(1),
-	title: z.string().min(1),
-	definitions: z
-		.array(
-			z.object({
-				authorId: z.string().min(1),
-				authorName: z.string().min(1),
-				body: z.string().min(1),
-				score: z.number().int().optional(),
-			}),
-		)
-		.min(1),
-});
+		// Hold the bound clients as the worker's typed resource handles. Capturing
+		// them here keeps each binding load-bearing: drop a `bind()`/`yield*` above
+		// and this record stops type-checking — an unwired binding is a compile
+		// error, never a runtime `undefined` (acceptance criterion).
+		const resources: WorkerResources = {db, connections, topics};
+		void resources;
 
-// Writes go straight to `PHOENIX_DB` via the SozlukAdmin service.
-// Idempotent: re-running with the same `(authorId, body)` skips the existing
-// row. `AdminAuth.required` gates on `ENVIRONMENT === "development"`.
-app.post("/api/admin/sozluk/upsert-term", async (c) => {
-	const parsed = upsertTermSchema.safeParse(await c.req.json());
-	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
-	const {slug, title, definitions} = parsed.data;
-
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const sozlukAdmin = yield* SozlukAdmin;
-				const result = yield* sozlukAdmin.seedTerm({slug, title, definitions});
-				return c.json({slug, ...result});
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
-			),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Drop the term_summary + definition_view + vote rows for the given slugs in
-// one D1 pass. `sozluk_stats` recomputes from what's left. `AdminAuth.required`
-// gates on `ENVIRONMENT === "development"`.
-app.post("/api/admin/sozluk/clear", async (c) => {
-	const body = (await c.req.json().catch(() => ({}))) as {slugs?: string[]};
-	const slugs = body.slugs ?? [];
-
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const sozlukAdmin = yield* SozlukAdmin;
-				const result = yield* sozlukAdmin.clearAllTerms(slugs);
-				return c.json(result);
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
-			),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Dev-only pano admin endpoint. Backs `pnpm pano:import`. Routes through the
-// admin runtime + `AdminAuth.required` + `PanoAdmin.seedPosts` — same shape as
-// the sozluk admin endpoints. Gated on `ENVIRONMENT === "development"`.
-const panoSeedSchema = z.object({
-	clear: z.boolean().optional(),
-});
-
-app.post("/api/admin/pano/seed", async (c) => {
-	const body = (await c.req.json().catch(() => ({}))) as unknown;
-	const parsed = panoSeedSchema.safeParse(body);
-	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
-
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const panoAdmin = yield* PanoAdmin;
-				const result = yield* panoAdmin.seedPosts({
-					...(parsed.data.clear !== undefined ? {clear: parsed.data.clear} : {}),
-				});
-				return c.json(result);
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
-			),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Dev-only Pasaport admin endpoint: backfill `user_profile` rows in PHOENIX_DB
-// for every existing user. Idempotent — re-runs overwrite the same identity
-// values per user, no side effects on counters. `AdminAuth.required` gates the
-// route on `ENVIRONMENT === "development"`; the admin runtime provides
-// `PasaportAdmin`.
-app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const pasaportAdmin = yield* PasaportAdmin;
-				const result = yield* pasaportAdmin.backfillProfiles;
-				return c.json(result);
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
-			),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Better Auth handler — wired straight into the Hono router (ADR 0009).
-// Single global auth realm; `Pasaport.handleAuth` constructs a better-auth
-// instance per request against `env.PHOENIX_DB`.
-app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-	const runtime = FateRuntime.make(c.env, c.req.raw, null);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.handleAuth(c.req.raw);
-			}),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Agent WebSocket subscriptions (T16). No product Agent DOs remain on the
-// worker post-d1-direct, so this handler currently has nothing to dispatch
-// to and always returns 404. Kept as a stub: future per-atom Agents (chat,
-// presence, künye, …) will plug in here without changing the router shape.
-app.all("/agents/*", async (c) => {
-	const res = await routeAgentRequest(c.req.raw, c.env);
-	return res ?? c.text("Not Found", 404);
-});
-
-// The SSE live transport (ADR 0023). Served from the `ConnectionDO` —
-// it builds NO per-request `ManagedRuntime` (the DO relays inline-published
-// data; no Effect runtime in the live path). Mounted before `/fate` so the more
-// specific path wins. Both GET (open stream) and POST (control) authenticate the
-// better-auth session cookie at connect.
-app.all("/fate/live", (c) => handleLiveRequest(c));
-
-// fate native protocol (ADR 0015–0017). The single data plane for the SPA.
-// The route owns the per-request runtime: it validates the session, builds a
-// `ManagedRuntime` with that session baked into the `Auth` layer, hands it to
-// fate via `adapterContext`, and disposes it in `finally` via
-// `executionCtx.waitUntil` so disposal doesn't block the response.
-app.post("/fate", async (c) => {
-	// Validate the session through a minimal Pasaport-only runtime; the request
-	// runtime is then built once with the resolved session attached to `Auth`.
-	const session = await validateSessionCookie(c.env, c.req.raw);
-	const sessionData = toSessionData(session);
-
-	const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
-	try {
-		// Run the operation inside the live publish context so a mutation's `live.*`
-		// publishes can resolve the `TOPIC_DO` binding and `waitUntil` the fan-out
-		// (it doesn't block the response). The publish carries inline-resolved data.
-		return await livePublishContext.run(
-			{env: c.env, waitUntil: (p: Promise<unknown>) => c.executionCtx.waitUntil(p)},
-			() => fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime}),
-		);
-	} finally {
-		c.executionCtx.waitUntil(runtime.dispose());
-	}
-});
-
-export default {
-	fetch: app.fetch,
-} satisfies ExportedHandler<Env>;
+		// ── RUNTIME PHASE (per request) ──
+		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
+	}).pipe(
+		// `D1Connection.bind` requires its binding service in the `R` channel;
+		// `D1ConnectionLive` satisfies it. Forgetting it is a type error.
+		Effect.provide(Layer.mergeAll(Cloudflare.D1ConnectionLive)),
+	),
+) {}

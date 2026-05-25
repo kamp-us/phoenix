@@ -5,6 +5,8 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
+		"alchemy:dev": "alchemy dev",
+		"alchemy:deploy": "pnpm build && alchemy deploy",
 		"build": "vite build",
 		"preview": "vite preview",
 		"cf:deploy": "pnpm build && wrangler deploy --config wrangler.jsonc --env production",
@@ -23,9 +25,13 @@
 	"dependencies": {
 		"@base-ui/react": "catalog:",
 		"@better-auth/core": "catalog:",
+		"@effect/platform-bun": "catalog:",
+		"@effect/platform-node": "catalog:",
+		"@effect/sql-pg": "catalog:",
 		"@nkzw/fate": "catalog:",
 		"@usirin/forge": "catalog:",
 		"agents": "catalog:",
+		"alchemy": "catalog:",
 		"better-auth": "catalog:",
 		"better-call": "catalog:",
 		"drizzle-orm": "catalog:",

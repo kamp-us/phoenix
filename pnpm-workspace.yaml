@@ -10,9 +10,13 @@ catalog:
   '@cloudflare/vitest-pool-workers': 0.16.3
   '@cloudflare/workers-types': ^4.20260509.1
   '@effect/language-service': ^0.85.1
+  '@effect/platform-bun': 4.0.0-beta.70
+  '@effect/platform-node': 4.0.0-beta.70
+  '@effect/sql-pg': 4.0.0-beta.70
   '@effect/tsgo': ^0.5.2
-  '@effect/vitest': 4.0.0-beta.67
+  '@effect/vitest': 4.0.0-beta.70
   '@nkzw/fate': 1.0.3
+  alchemy: 2.0.0-beta.44
   '@playwright/test': ^1.59.1
   '@types/node': ^25.6.2
   '@types/react': ^19.2.14
@@ -25,7 +29,7 @@ catalog:
   better-call: 1.3.5
   drizzle-kit: ^0.31.10
   drizzle-orm: ^0.45.2
-  effect: 4.0.0-beta.65
+  effect: 4.0.0-beta.70
   hono: ^4.12.18
   react: 19.2.6
   react-dom: 19.2.6
