@@ -47,7 +47,7 @@ export const createAuth = (d1: D1Database) => {
 					// call time, inside workerd — so codegen never touches it and the
 					// dev/runtime behavior is unchanged.
 					const {env} = await import("cloudflare:workers");
-					if (env.ENVIRONMENT === "development") {
+					if ((env.ENVIRONMENT as string) === "development") {
 						console.log("[pasaport] magic link", {email, token, url});
 					}
 				},
