@@ -27,11 +27,26 @@ import {excerpt as excerptText} from "../../shared/text";
 import type {VoteTargetNotFound} from "../vote/errors";
 import {Vote} from "../vote/Vote";
 import {
+	type DefinitionConnectionPage,
+	type DefinitionRow,
+	type TermPage,
+	toDefinitionRow,
+} from "./definition-row";
+import {
 	BodyRequired,
 	BodyTooLong,
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
 } from "./errors";
+import {
+	type TermConnectionPage,
+	type TermSummaryRow,
+	termSummaryColumns,
+	toTermSummaryRow,
+} from "./term-summary";
+
+export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row";
+export type {TermConnectionPage, TermSummaryRow} from "./term-summary";
 
 /* -------------------------------------------------------------------------- */
 /* Domain constants                                                            */
@@ -52,66 +67,7 @@ const excerpt = (body: string): string => excerptText(body, DEFINITION_EXCERPT_L
 /* Read shapes                                                                 */
 /* -------------------------------------------------------------------------- */
 
-export interface DefinitionRow {
-	id: string;
-	score: number;
-	body: string;
-	author: string;
-	/** Pasaport user id of the author — gates edit / delete affordances. */
-	authorId: string;
-	createdAt: Date;
-	updatedAt: Date;
-	/**
-	 * `1` if the viewer has upvoted this definition, `null` otherwise. Populated
-	 * by the fate batch reads (`getDefinitionsByIds`, `listDefinitionsKeyset`)
-	 * when a `viewerId` is supplied — so a definition list resolves the
-	 * `Definition.myVote` view field for the whole batch in one `user_vote` query
-	 * instead of a per-row N+1. `undefined` when not requested (anonymous viewer
-	 * / read paths that omit it).
-	 */
-	myVote?: number | null;
-}
-
-export interface TermPage {
-	id: string;
-	slug: string;
-	title: string;
-	totalDefinitions: number;
-	totalScore: number;
-	firstAt: Date;
-	lastEdit: Date;
-	definitions: DefinitionRow[];
-}
-
-export interface DefinitionConnectionPage {
-	rows: DefinitionRow[];
-	hasNextPage: boolean;
-	endCursor: string | null;
-	totalCount: number;
-}
-
 export type ListSort = "recent" | "popular";
-
-export interface TermSummaryRow {
-	id: string;
-	slug: string;
-	title: string;
-	count: number;
-	totalScore: number;
-	excerpt: string | null;
-	firstAt: Date | null;
-	lastEdit: Date | null;
-	firstLetter: string;
-	definitionCount: number;
-	lastActivityAt: Date | null;
-}
-
-export interface TermConnectionPage {
-	rows: TermSummaryRow[];
-	hasNextPage: boolean;
-	endCursor: string | null;
-	totalCount: number;
-}
 
 /* -------------------------------------------------------------------------- */
 /* Mutation shapes                                                             */
@@ -515,21 +471,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			return new Set(rows.map((r) => r.targetId));
 		});
 
-		const mapDefinitionViewRow = (
-			d: typeof schema.definitionView.$inferSelect,
-			voted: Set<string>,
-			viewerId: string | null | undefined,
-		): DefinitionRow => ({
-			id: d.id,
-			score: d.score,
-			body: d.body,
-			author: d.authorName,
-			authorId: d.authorId,
-			createdAt: d.createdAt ?? new Date(0),
-			updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
-			myVote: viewerId ? (voted.has(d.id) ? 1 : null) : null,
-		});
-
 		const listDefinitionsKeyset = Effect.fn("Sozluk.listDefinitionsKeyset")(function* (
 			slug: string,
 			opts: {
@@ -611,7 +552,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				fetched,
 				first,
 				(r: DefinitionRow) => r.id,
-				(d) => mapDefinitionViewRow(d, voted, viewerId),
+				(d) => toDefinitionRow(d, voted, viewerId),
 			);
 
 			return {...page, totalCount} satisfies DefinitionConnectionPage;
@@ -638,7 +579,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				viewerId,
 				fetched.map((d) => d.id),
 			);
-			return fetched.map((d) => mapDefinitionViewRow(d, voted, viewerId));
+			return fetched.map((d) => toDefinitionRow(d, voted, viewerId));
 		});
 
 		const getTermSummariesByIds = Effect.fn("Sozluk.getTermSummariesByIds")(function* (
@@ -647,36 +588,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			if (slugs.length === 0) return [];
 			const rows = yield* run((db) =>
 				db
-					.select({
-						slug: schema.termSummary.slug,
-						title: schema.termSummary.title,
-						firstLetter: schema.termSummary.firstLetter,
-						definitionCount: schema.termSummary.definitionCount,
-						totalScore: schema.termSummary.totalScore,
-						excerpt: schema.termSummary.excerpt,
-						firstAt: schema.termSummary.firstAt,
-						lastActivityAt: schema.termSummary.lastActivityAt,
-						lastEditAt: schema.termSummary.lastEditAt,
-					})
+					.select(termSummaryColumns)
 					.from(schema.termSummary)
 					.where(inArray(schema.termSummary.slug, [...slugs])),
 			);
-			return rows.map(
-				(r) =>
-					({
-						id: r.slug,
-						slug: r.slug,
-						title: r.title,
-						count: r.definitionCount,
-						totalScore: r.totalScore,
-						excerpt: r.excerpt ?? null,
-						firstAt: r.firstAt,
-						lastEdit: r.lastEditAt,
-						firstLetter: r.firstLetter,
-						definitionCount: r.definitionCount,
-						lastActivityAt: r.lastActivityAt,
-					}) satisfies TermSummaryRow,
-			);
+			return rows.map(toTermSummaryRow);
 		});
 
 		const listTermSummaries = Effect.fn("Sozluk.listTermSummaries")(function* (
@@ -687,17 +603,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const rows = yield* run((db) =>
 				db
-					.select({
-						slug: schema.termSummary.slug,
-						title: schema.termSummary.title,
-						firstLetter: schema.termSummary.firstLetter,
-						definitionCount: schema.termSummary.definitionCount,
-						totalScore: schema.termSummary.totalScore,
-						excerpt: schema.termSummary.excerpt,
-						firstAt: schema.termSummary.firstAt,
-						lastActivityAt: schema.termSummary.lastActivityAt,
-						lastEditAt: schema.termSummary.lastEditAt,
-					})
+					.select(termSummaryColumns)
 					.from(schema.termSummary)
 					.orderBy(
 						sort === "popular"
@@ -707,22 +613,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(limit),
 			);
 
-			return rows.map(
-				(r) =>
-					({
-						id: r.slug,
-						slug: r.slug,
-						title: r.title,
-						count: r.definitionCount,
-						totalScore: r.totalScore,
-						excerpt: r.excerpt ?? null,
-						firstAt: r.firstAt,
-						lastEdit: r.lastEditAt,
-						firstLetter: r.firstLetter,
-						definitionCount: r.definitionCount,
-						lastActivityAt: r.lastActivityAt,
-					}) satisfies TermSummaryRow,
-			);
+			return rows.map(toTermSummaryRow);
 		});
 
 		const listTermSummariesConnection = Effect.fn("Sozluk.listTermSummariesConnection")(function* (
@@ -796,41 +687,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const fetched = yield* run((db) =>
 				db
-					.select({
-						slug: schema.termSummary.slug,
-						title: schema.termSummary.title,
-						firstLetter: schema.termSummary.firstLetter,
-						definitionCount: schema.termSummary.definitionCount,
-						totalScore: schema.termSummary.totalScore,
-						excerpt: schema.termSummary.excerpt,
-						firstAt: schema.termSummary.firstAt,
-						lastActivityAt: schema.termSummary.lastActivityAt,
-						lastEditAt: schema.termSummary.lastEditAt,
-					})
+					.select(termSummaryColumns)
 					.from(schema.termSummary)
 					.where(cursorPredicate)
 					.orderBy(...orderBy)
 					.limit(first + 1),
 			);
 
-			const page = forwardPage(
-				fetched,
-				first,
-				(r: TermSummaryRow) => r.slug,
-				(r) => ({
-					id: r.slug,
-					slug: r.slug,
-					title: r.title,
-					count: r.definitionCount,
-					totalScore: r.totalScore,
-					excerpt: r.excerpt ?? null,
-					firstAt: r.firstAt,
-					lastEdit: r.lastEditAt,
-					firstLetter: r.firstLetter,
-					definitionCount: r.definitionCount,
-					lastActivityAt: r.lastActivityAt,
-				}),
-			);
+			const page = forwardPage(fetched, first, (r) => r.slug, toTermSummaryRow);
 
 			return {...page, totalCount} satisfies TermConnectionPage;
 		});

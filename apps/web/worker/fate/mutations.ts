@@ -24,7 +24,7 @@ import {Sozluk} from "../features/sozluk/Sozluk";
 import {Auth} from "../services";
 import {fateMutation} from "./effect";
 import {liveBus} from "./live";
-import {toDefinition, toTerm} from "./shapers";
+import {toDefinition, toTermFromPage} from "./shapers";
 import type {Definition, Term} from "./views";
 
 export interface AddDefinitionInput {
@@ -164,18 +164,7 @@ export const mutations = {
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);
 			if (!page) return null;
-			return toTerm({
-				slug: page.slug,
-				title: page.title,
-				count: page.totalDefinitions,
-				totalScore: page.totalScore,
-				excerpt: null,
-				firstAt: page.firstAt,
-				lastEdit: page.lastEdit,
-				firstLetter: (page.title?.[0] ?? page.slug.charAt(0) ?? "").toLowerCase(),
-				definitionCount: page.totalDefinitions,
-				lastActivityAt: page.lastEdit,
-			});
+			return toTermFromPage(page);
 		}),
 	},
 };

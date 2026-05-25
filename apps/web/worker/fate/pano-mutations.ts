@@ -29,7 +29,7 @@ import {Pano} from "../features/pano/Pano";
 import {Auth} from "../services";
 import {fateMutation} from "./effect";
 import {liveBus} from "./live";
-import {toComment, toPost} from "./shapers";
+import {toComment, toPost, toPostFromPage} from "./shapers";
 import type {Comment, Post} from "./views";
 
 export interface SubmitPostInput {
@@ -272,21 +272,7 @@ export const panoMutations = {
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
-			const post = shapePost({
-				postId: page.id,
-				title: page.title,
-				url: page.url,
-				host: page.host,
-				body: page.body,
-				authorId: page.authorId,
-				authorName: page.author,
-				score: page.score,
-				commentCount: page.commentCount,
-				tags: page.tags,
-				createdAt: page.createdAt,
-				updatedAt: page.updatedAt,
-				myVote: stamped?.myVote ?? null,
-			});
+			const post = toPostFromPage(page, stamped?.myVote ?? null);
 			// Two delete shapes, driven by the service's reply-aware decision:
 			//  - hard delete (leaf): the row is gone, so drop its edge from the
 			//    `Post.comments` connection — `deleteEdge` removes it from every open

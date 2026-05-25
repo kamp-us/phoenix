@@ -31,8 +31,8 @@ import {
 	toConnection,
 	toContributionRow,
 	toDefinition,
-	toPost,
-	toTerm,
+	toPostFromPage,
+	toTermFromPage,
 	toUser,
 } from "./shapers";
 import type {
@@ -116,18 +116,7 @@ export const queries = {
 
 				// Build the `Term` row to the view's scalar shape: the detail `TermPage`
 				// maps onto the `TermSummaryRow`-shaped view here.
-				const base = toTerm({
-					slug: page.slug,
-					title: page.title,
-					count: page.totalDefinitions,
-					totalScore: page.totalScore,
-					excerpt: null,
-					firstAt: page.firstAt,
-					lastEdit: page.lastEdit,
-					firstLetter: (page.title?.[0] ?? page.slug.charAt(0) ?? "").toLowerCase(),
-					definitionCount: page.totalDefinitions,
-					lastActivityAt: page.lastEdit,
-				});
+				const base = toTermFromPage(page);
 
 				// `definitions` resolves to a `ConnectionResult` only when selected,
 				// paged by the DB keyset. The native path doesn't auto-invoke a
@@ -178,22 +167,7 @@ export const queries = {
 			// read.
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId});
 
-			const base = toPost({
-				id: page.id,
-				slug: page.slug,
-				title: page.title,
-				url: page.url,
-				host: page.host,
-				body: page.body,
-				author: page.author,
-				authorId: page.authorId,
-				score: page.score,
-				commentCount: page.commentCount,
-				createdAt: page.createdAt,
-				updatedAt: page.updatedAt,
-				myVote: stamped?.myVote ?? null,
-				tags: page.tags,
-			});
+			const base = toPostFromPage(page, stamped?.myVote ?? null);
 
 			// `comments` resolves to a `ConnectionResult` only when selected, paged
 			// by the DB keyset (`Pano.listCommentsKeyset`). The native path

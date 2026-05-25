@@ -22,7 +22,9 @@
  */
 
 import type {ConnectionResult} from "@nkzw/fate/server";
+import type {PostPage} from "../features/pano/Pano";
 import {toContributionRow} from "../features/pasaport/Pasaport";
+import type {TermPage} from "../features/sozluk/Sozluk";
 import type {Comment, Definition, Post, Term, User} from "./views";
 
 export {toContributionRow};
@@ -76,6 +78,28 @@ export const toTerm = (r: TermFields): Term => ({
 	definitionCount: r.definitionCount,
 	lastActivityAt: r.lastActivityAt,
 });
+
+/**
+ * Shape a detail `TermPage` (from `Sozluk.getTerm`) onto the `Term` wire entity.
+ * The detail page carries no `excerpt` and derives `firstLetter` from the
+ * title/slug; `count`/`definitionCount` both come from `totalDefinitions` and
+ * `lastActivityAt` mirrors `lastEdit`. The single mapping shared by the read
+ * resolver (`queries.term`) and the delete-refresh (`mutations.definition.delete`)
+ * so they can't drift.
+ */
+export const toTermFromPage = (page: TermPage): Term =>
+	toTerm({
+		slug: page.slug,
+		title: page.title,
+		count: page.totalDefinitions,
+		totalScore: page.totalScore,
+		excerpt: null,
+		firstAt: page.firstAt,
+		lastEdit: page.lastEdit,
+		firstLetter: (page.title?.[0] ?? page.slug.charAt(0) ?? "").toLowerCase(),
+		definitionCount: page.totalDefinitions,
+		lastActivityAt: page.lastEdit,
+	});
 
 export interface DefinitionFields {
 	id: string;
@@ -142,6 +166,31 @@ export const toPost = (r: PostFields): Post => ({
 	myVote: r.myVote ?? null,
 	tags: [...r.tags],
 });
+
+/**
+ * Shape a detail `PostPage` (from `Pano.getPost`) plus the viewer's stamped
+ * `myVote` onto the `Post` wire entity. The `PostPage` field names already match
+ * the wire fields, so this is a direct map; the single mapping shared by the read
+ * resolver (`queries.post`) and the delete-refresh (`pano-mutations.comment.delete`)
+ * so they can't drift.
+ */
+export const toPostFromPage = (page: PostPage, myVote: number | null): Post =>
+	toPost({
+		id: page.id,
+		slug: page.slug,
+		title: page.title,
+		url: page.url,
+		host: page.host,
+		body: page.body,
+		author: page.author,
+		authorId: page.authorId,
+		score: page.score,
+		commentCount: page.commentCount,
+		createdAt: page.createdAt,
+		updatedAt: page.updatedAt,
+		myVote,
+		tags: page.tags,
+	});
 
 export interface CommentFields {
 	id: string;
