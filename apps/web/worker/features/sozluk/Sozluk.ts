@@ -63,10 +63,10 @@ export interface DefinitionRow {
 	/**
 	 * `1` if the viewer has upvoted this definition, `null` otherwise. Populated
 	 * by the fate batch reads (`getDefinitionsByIds`, `listDefinitionsKeyset`)
-	 * when a `viewerId` is supplied — so a definition list resolves `myVote` for
-	 * the whole batch in one `user_vote` query instead of the per-row N+1 the
-	 * GraphQL `Definition.myVote` resolver incurs. `undefined` when not requested
-	 * (anonymous viewer / non-fate callers).
+	 * when a `viewerId` is supplied — so a definition list resolves the
+	 * `Definition.myVote` view field for the whole batch in one `user_vote` query
+	 * instead of a per-row N+1. `undefined` when not requested (anonymous viewer
+	 * / read paths that omit it).
 	 */
 	myVote?: number | null;
 }
@@ -996,6 +996,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} satisfies EditDefinitionResult;
 		});
 
+		/**
+		 * SOFT delete: stamps `deletedAt`/`updatedAt` and recomputes the term
+		 * summary + sözlük stats, but leaves the vote tables intact and does NOT
+		 * reverse the author's karma. This diverges from `Pano.deletePost` (hard
+		 * delete, karma reversed) — a deliberate, known inconsistency pending
+		 * `.decisions/0024-delete-semantics-and-karma.md`. Read that ADR before
+		 * "fixing" one path to match the other.
+		 */
 		const deleteDefinition = Effect.fn("Sozluk.deleteDefinition")(function* (
 			input: DeleteDefinitionInput,
 		) {

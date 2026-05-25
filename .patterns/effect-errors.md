@@ -30,7 +30,7 @@ Notes:
 
 ### `Schema.TaggedErrorClass` — when the error crosses a serialization boundary
 
-Reserve for errors that round-trip through JSON (RPC, persistent message queues, error replay logs). All errors raised inside the worker are caught and re-encoded by the resolver wrapper before they leave, so `Data.TaggedError` is the right default for feature services. `Schema.TaggedErrorClass` is the right choice if and when a service starts publishing errors to a transport the recipient parses back into typed objects.
+Reserve for errors that round-trip through JSON (RPC, persistent message queues, error replay logs). All errors raised inside the worker are caught and re-encoded by `encodeFateError` at the fate boundary before they leave, so `Data.TaggedError` is the right default for feature services. `Schema.TaggedErrorClass` is the right choice if and when a service starts publishing errors to a transport the recipient parses back into typed objects.
 
 ```ts
 import {Schema} from "effect";
@@ -55,7 +55,7 @@ worker/features/sozluk/
 
 Why one file:
 
-- The resolver wrapper imports the full error set to map `_tag` → wire code in `encodeMutationError`. Easier when they're co-located.
+- `encodeFateError` imports the full error set to map `_tag` → wire code via its typed registry. Easier when they're co-located.
 - Cross-feature consumers (`Pano.voteOnPost` raising a vote error) can import from `vote/errors.ts` without pulling in the service.
 - Tests stub the failure cases by constructing the error class directly — no service layer needed.
 
@@ -157,44 +157,40 @@ const ensureTermExists = Effect.fn("Sozluk.ensureTermExists")(function*(slug) {
 });
 ```
 
-`Effect.catchTag(tag, handler)` removes that specific tag from the `E` channel and replaces it with whatever the handler returns. Use it sparingly — most errors should propagate to the resolver and become wire codes.
+`Effect.catchTag(tag, handler)` removes that specific tag from the `E` channel and replaces it with whatever the handler returns. Use it sparingly — most errors should propagate to the fate boundary and become wire codes.
 
 `Effect.catchTags({tag1: handler, tag2: handler})` handles multiple at once.
 
-## Mapping to wire codes (the resolver layer)
+## Mapping to wire codes (the fate boundary)
 
-The resolver wrapper (`worker/graphql/resolver.ts`) catches every error in the `E` channel and routes it through `encodeMutationError`, which switches on `_tag` to produce a `GraphQLError` with a stable `extensions.code`:
+The bridge runner (`worker/fate/effect.ts`) catches every error in the `E` channel and routes it through `encodeFateError` (`worker/fate/errors.ts`), which maps `_tag` → wire code via a typed registry to produce a `FateRequestError` with a stable `code`:
 
 ```ts
-export function encodeMutationError(err: unknown): GraphQLError {
-  if (err instanceof GraphQLError) return err;
-  if (typeof err === "object" && err !== null && "_tag" in err) {
-    switch ((err as {_tag: string})._tag) {
-      case "sozluk/BodyRequired":
-        return makeGraphQLError("Tanım boş olamaz", "BODY_REQUIRED");
-      case "sozluk/BodyTooLong":
-        return makeGraphQLError(
-          `Tanım en fazla ${(err as BodyTooLong).max} karakter olabilir`,
-          "BODY_TOO_LONG",
-        );
-      case "sozluk/DefinitionNotFound":
-        return makeGraphQLError("Tanım bulunamadı", "DEFINITION_NOT_FOUND");
-      // ...
-      case "@phoenix/Drizzle/Error":
-        return makeGraphQLError("Internal error", "INTERNAL_SERVER_ERROR");
-    }
-  }
-  return makeGraphQLError("Unknown error", "INTERNAL_SERVER_ERROR");
+// worker/fate/errors.ts — the registry is Record<FateErrorTag, WireCodeFor>,
+// so a tagged error with no entry is a compile error (no silent downgrade).
+export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
+  "sozluk/BodyRequired": fixed("BODY_REQUIRED", "Tanım boş olamaz"),
+  "sozluk/BodyTooLong": (e) =>
+    fateError("BODY_TOO_LONG", `Tanım en fazla ${e.max} karakter olabilir`),
+  "sozluk/DefinitionNotFound": fixed("DEFINITION_NOT_FOUND", "Tanım bulunamadı"),
+  // ...
+  "@phoenix/Drizzle/Error": fixed("INTERNAL_SERVER_ERROR", "internal error"),
+};
+
+export function encodeFateError(err: unknown): FateRequestError {
+  if (err instanceof FateRequestError) return err; // already on the wire
+  // look the _tag up in WIRE_CODE_BY_TAG; default unknown/non-tagged throws to
+  // INTERNAL_SERVER_ERROR.
 }
 ```
 
-Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contract — frontend clients depend on them. The `_tag` namespace (`feature/Name`) is the internal contract. Both can change independently of each other, but the `_tag` → code mapping in this switch is the single point where they meet.
+Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contract — frontend clients depend on them. The `_tag` namespace (`feature/Name`) is the internal contract. Both can change independently of each other, but the typed `WIRE_CODE_BY_TAG` registry is the single, exhaustiveness-checked point where they meet.
 
 ## Anti-patterns
 
 - **Throwing inside an `Effect.fn`.** The throw becomes a defect, not a typed error — it bypasses the `E` channel. Use `return yield* new MyError(...)`.
 - **One generic `FeatureError` class with a `code` discriminator field.** Collapses the `E` channel to a single type and forces resolvers to switch on a runtime `.code` field instead of `._tag`. Define one tagged error class per failure case.
-- **Catching infra errors in domain code.** `Effect.catchTag("@phoenix/Drizzle/Error", ...)` inside a feature service usually means you're hiding a real failure. Let it propagate to the resolver, which turns it into a 500. Recovery from infra errors belongs in retry middleware, not in domain logic.
+- **Catching infra errors in domain code.** `Effect.catchTag("@phoenix/Drizzle/Error", ...)` inside a feature service usually means you're hiding a real failure. Let it propagate to the fate boundary, which encodes it as `INTERNAL_SERVER_ERROR`. Recovery from infra errors belongs in retry middleware, not in domain logic.
 
 ## See also
 
@@ -203,4 +199,4 @@ Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contra
 - [effect-error-operators.md](./effect-error-operators.md) — catching, `Exit`, `Cause`, recovering from specific tags
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.TaggedErrorClass` for errors that cross serialization boundaries
 - `worker/services/Auth.ts` — `Unauthorized` is the canonical phoenix tagged error
-- `worker/graphql/errors.ts` — `encodeMutationError` wire-code mapping
+- `worker/fate/errors.ts` — `encodeFateError` + the typed `WIRE_CODE_BY_TAG` registry

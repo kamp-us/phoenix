@@ -2,13 +2,13 @@
 
 kamp.us, reborn.
 
-A single Cloudflare Worker. React 19 + Effect + Hono + GraphQL Yoga.
+A single Cloudflare Worker. React 19 + Effect + Hono + fate.
 Durable Objects (added incrementally) for code/request co-location.
 
 ## Architecture
 
 - **One worker** serves both the SPA (via `assets` binding) and the API.
-- Backend routes live under `/graphql`, `/api/*`, `/rpc/*`.
+- The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE (via `LiveDO`). Other backend routes live under `/api/*`, `/agents/*`.
 - Frontend is React 19 + Vite, built into `dist/client`.
 - DOs are bindings on the same worker (none yet — added per feature).
 

@@ -27,3 +27,4 @@ One row per ADR. Read the file for the why.
 | [0021](0021-frontend-on-react-fate.md) | Frontend on react-fate — batched per-screen requests, declarative mutations | accepted | 2026-05-23 |
 | [0022](0022-server-types-single-source-of-truth.md) | Server types are the single source of truth; fate codegen replaces relay-compiler | accepted | 2026-05-23 |
 | [0023](0023-live-views-sse-livedo.md) | Live views over SSE, fanned out by the LiveDO Durable Object | accepted | 2026-05-23 |
+| [0024](0024-delete-semantics-and-karma.md) | Entity-delete semantics and karma treatment | proposed | 2026-05-24 |

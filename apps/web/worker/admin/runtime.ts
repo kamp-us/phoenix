@@ -14,10 +14,10 @@ import {type AdminAuth, AdminAuthLive, CloudflareEnv, type Drizzle, DrizzleLive}
  *     ↑
  *   AdminFeatureLayer (PasaportAdmin, …)       (filled by tasks 2–5)
  *
- * Separate from the GraphQL runtime per ADR 0012: admin operations need
+ * Separate from the fate request runtime per ADR 0012: admin operations need
  * `AdminAuth.required` (env-gated initially; future hardening lands inside the
- * layer with no call-site changes), don't need GraphQL `Auth`, and run a
- * disjoint set of services that shouldn't pollute the resolver context.
+ * layer with no call-site changes), don't need the session-derived `Auth`, and
+ * run a disjoint set of services that shouldn't pollute the resolver context.
  *
  * Pasaport's admin slice (`PasaportAdminLive`) landed in task 2. Sozluk + Pano
  * admin services are still pending — `AdminFeatureLayer` grows as they arrive.

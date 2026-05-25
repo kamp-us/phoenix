@@ -19,47 +19,17 @@ import type {CommentRow, PostSummaryRow, PostTagRow} from "../features/pano/Pano
 import type {ContributionRow, ProfileRow, UserRow} from "../features/pasaport/Pasaport";
 import type {DefinitionRow, TermSummaryRow} from "../features/sozluk/Sozluk";
 
-/**
- * fate's `dataView<Item>` constrains `Item extends Record<string, unknown>`.
- * Service row *interfaces* (like `UserRow`) don't satisfy that — an interface
- * has no implicit string index signature — but a homomorphic mapped type over
- * the same keys does, while preserving each field's type. So fate view rows are
- * declared as `{[K in keyof Row]: Row[K]}` over the service's row type.
- */
+// Gives a service row interface the implicit string index signature `dataView`
+// requires. See `.patterns/fate-data-views.md` (type-derivation helpers).
 type ViewRow<Row> = {[K in keyof Row]: Row[K]};
 
-/**
- * A nameable handle for fate's `DataView` type. `@nkzw/fate/server` re-exports
- * `SourceDefinition` but not the `DataView` it wraps, and `dataView` returns a
- * type carrying an internal symbol key that TypeScript can't name across the
- * module boundary. Annotating the exported view with `SourceDefinition['view']`
- * keeps the export portable.
- */
+// Portable, nameable annotation for an exported `*DataView` const (dodges
+// TS2883). See `.patterns/fate-data-views.md`.
 type DataViewOf<Item extends Record<string, unknown>> = SourceDefinition<Item>["view"];
 
-/**
- * Canonical client-`Entity<>` derivation.
- *
- * fate boxes the two derivation paths against each other: `dataView()`'s
- * inferred return carries an internal `dataViewFieldsKey` symbol that TS can't
- * name across a module boundary (TS2883/TS4023), so an *exported* view must be
- * annotated; but the only portable annotation (`SourceDefinition['view']`)
- * erases the field map, so `Entity<typeof view, …>` then resolves to an empty
- * shape. Neither an annotated nor an un-annotated exported view yields a usable
- * `Entity<>`.
- *
- * The fate Vite plugin doesn't need `Entity<>` — it reads the *runtime* view
- * object (`view.typeName`/`view.fields`) for the schema and manifest, and
- * imports the entity *type names* (`User`, `Term`, …) verbatim from this module
- * as the client's view types. So the canonical derivation lives here: each
- * scalar field set is a standalone `const` (`*Fields`) passed to `dataView`
- * **and** read by `EntityOf<Row, Fields, Name>`, which keeps the row's field
- * types while staying nameable (no symbol). Relation fields (`list(...)`) are
- * declared on the entity type as arrays of the related entity — what the
- * client's `view<T>()` selection masks into `ViewRef`s. The selection const and
- * the `dataView(...)` call share one source of truth, so the client type tracks
- * the view automatically — no hand-restated fields.
- */
+// Derives the client entity type from the scalar `*Fields` selection — the one
+// source of truth shared with the `dataView(...)` call. See
+// `.patterns/fate-data-views.md` (why phoenix doesn't use `Entity<>` directly).
 type EntityOf<Row, Fields, Name extends string> = {
 	[K in keyof Fields as Fields[K] extends true ? K : never]: K extends keyof Row ? Row[K] : never;
 } & {__typename: Name};
@@ -134,28 +104,10 @@ export const termDataView: DataViewOf<TermViewRow> = dataView<TermViewRow>("Term
 	}),
 });
 
-/**
- * Client-facing entity types — derived from each view's scalar field selection
- * via `EntityOf` (see the helper's note). The scalar shape comes from the
- * `*Fields` const the `dataView(...)` call shares, so the client type tracks the
- * view without hand-restated fields.
- *
- * Relation fields (`list(...)`) are deliberately **not** on these scalar types:
- * the server attaches each nested connection conditionally (only when selected)
- * as a `ConnectionResult`, and the client masks relations into `ViewRef`s
- * through the view selection rather than reading them off the parent entity.
- */
+// Client-facing entity types — scalar shape from each `*Fields` set; relations
+// intersected on as optional. See `.patterns/fate-data-views.md`.
 export type User = EntityOf<UserViewRow, typeof userFields, "User">;
 export type Definition = EntityOf<DefinitionViewRow, typeof definitionFields, "Definition">;
-/**
- * `Term`'s scalar shape + its `definitions` relation. The relation is declared
- * on the client entity type (not the scalar `*Fields` set) so a client
- * `view<Term>()` can select the nested connection
- * (`{definitions: {items: {node: DefinitionView}}}`) and `useView`/`useListView`
- * type it — the server attaches the `ConnectionResult` conditionally (only when
- * selected) and the client masks it through the view. Optional because the
- * resolver omits it unless `definitions` is in the selection.
- */
 export type Term = EntityOf<TermViewRow, typeof termFields, "Term"> & {
 	definitions?: Definition[];
 };
@@ -251,14 +203,8 @@ export const postDataView: DataViewOf<PostViewRow> = dataView<PostViewRow>("Post
 
 export type Tag = EntityOf<TagViewRow, typeof tagFields, "Tag">;
 export type Comment = EntityOf<CommentViewRow, typeof commentFields, "Comment">;
-// `Post.tags` is an embedded scalar array carried on the post row (parsed from
-// the `tags` CSV), so it stays on the entity type as the row provides it
-// (`PostTagRow[]`); `comments` is a relation, declared on the client entity type
-// (not the scalar `*Fields` set) so a client `view<Post>()` can select the nested
-// connection (`{comments: {items: {node: CommentView}}}`) and
-// `useView`/`useListView` type it. The server attaches the `ConnectionResult`
-// conditionally (only when selected) and the client masks it through the view.
-// Optional because the `post` resolver omits it unless `comments` is selected.
+// `tags` is an embedded scalar array on the row; `comments` is an optional
+// relation intersected on. See `.patterns/fate-data-views.md`.
 export type Post = EntityOf<PostViewRow, typeof postFields, "Post"> &
 	Pick<PostViewRow, "tags"> & {
 		comments?: Comment[];
@@ -344,18 +290,9 @@ export const profileDataView: DataViewOf<ProfileViewRow> = dataView<ProfileViewR
 });
 
 export type Contribution = EntityOf<ContributionViewRow, typeof contributionFields, "Contribution">;
-/**
- * `Profile`'s scalar shape + its `contributions` relation. The relation is
- * declared on the client entity type (not the scalar `*Fields` set) so a client
- * `view<Profile>()` can select the nested contributions feed
- * (`{contributions: {items: {node: ContributionView}}}`) and
- * `useView`/`useListView` type it — the server attaches the `ConnectionResult`
- * conditionally (only when selected) and the client masks it through the view.
- * `Contribution` is keyed by `id` (a global ULID across the three contribution
- * tables), so the relation is a `list(view)` (it normalizes cleanly — unlike
- * the `Tag` case). Optional because the `profile` resolver omits it unless
- * `contributions` is in the selection.
- */
+// `contributions` is an optional relation intersected on; `Contribution` is
+// `id`-keyed (a global ULID), so it normalizes cleanly unlike `Tag`. See
+// `.patterns/fate-data-views.md`.
 export type Profile = EntityOf<ProfileViewRow, typeof profileFields, "Profile"> & {
 	contributions?: Contribution[];
 };

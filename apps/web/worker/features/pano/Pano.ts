@@ -147,9 +147,9 @@ export interface PostSummaryRow {
 	tags: PostTagRow[];
 	/**
 	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
-	 * (`getPostsByIds`, `listPostsKeyset`-shaped pages) so the fate `Post.myVote`
-	 * is a stamped scalar; `undefined` for non-fate callers (GraphQL resolves
-	 * `Post.myVote` per-row, leaving this unset on `PostSummaryRow`).
+	 * (`getPostsByIds`, `listPostsKeyset`-shaped pages) so the `Post.myVote` view
+	 * field is a stamped scalar; `undefined` for read paths that don't request it
+	 * (leaving this unset on `PostSummaryRow`).
 	 */
 	myVote?: number | null;
 }
@@ -173,9 +173,9 @@ export interface CommentRow {
 	deletedAt?: Date | null;
 	/**
 	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
-	 * (`getCommentsByIds`, `listCommentsKeyset`) so fate's `Comment.myVote` is a
-	 * stamped scalar; `undefined` for non-fate callers (GraphQL resolves it
-	 * per-row, leaving this unset).
+	 * (`getCommentsByIds`, `listCommentsKeyset`) so the `Comment.myVote` view
+	 * field is a stamped scalar; `undefined` for read paths that don't request it
+	 * (leaving this unset).
 	 */
 	myVote?: number | null;
 }
@@ -525,9 +525,9 @@ export const PanoLive = Layer.effect(Pano)(
 		/**
 		 * One `user_vote` read stamping `myVote` for a whole batch of post or
 		 * comment ids. Returns the set of target ids the viewer has upvoted; the
-		 * fate read paths map that to the `1 | null` flag (the GraphQL
-		 * `Post.myVote` / `Comment.myVote` resolvers do this per-row → N+1; the
-		 * fate path batches it). Signed-out viewers short-circuit without a read.
+		 * fate read paths map that to the `1 | null` flag for the
+		 * `Post.myVote` / `Comment.myVote` view fields — one batched read instead
+		 * of a per-row N+1. Signed-out viewers short-circuit without a read.
 		 */
 		const readMyVotesBatch = Effect.fn("Pano.readMyVotesBatch")(function* (
 			viewerId: string | null | undefined,
@@ -868,7 +868,7 @@ export const PanoLive = Layer.effect(Pano)(
 		 * `listCommentsConnection`'s `listComments` + in-memory `slice`. Pages
 		 * forward in chronological-asc order `(created_at asc, id asc)`; cursor is
 		 * the comment id. The reply-aware placeholder pass (`rowToCommentRow`)
-		 * still applies, matching the GraphQL surface.
+		 * still applies, so the wire shape matches the non-keyset reads.
 		 */
 		const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
 			postId: string,
@@ -1188,6 +1188,13 @@ export const PanoLive = Layer.effect(Pano)(
 			} satisfies EditPostResult;
 		});
 
+		/**
+		 * HARD delete: removes the summary row, wipes the vote tables, and
+		 * reverses the author's karma. This diverges from `Sozluk.deleteDefinition`
+		 * (soft delete, karma kept) — a deliberate, known inconsistency pending
+		 * `.decisions/0024-delete-semantics-and-karma.md`. Read that ADR before
+		 * "fixing" one path to match the other.
+		 */
 		const deletePost = Effect.fn("Pano.deletePost")(function* (input: DeletePostInput) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({where: eq(schema.postSummary.id, input.postId)}),

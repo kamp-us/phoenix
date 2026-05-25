@@ -17,7 +17,7 @@
  *      SCORE TRUTH source; the cached score on the target row is rebuilt from
  *      `COUNT(*)` on this table inside the same batch.
  *   2. The cross-product `user_vote` table — composite PK on
- *      `(user_id, target_kind, target_id)`. Powers the `myVote` GraphQL field.
+ *      `(user_id, target_kind, target_id)`. Powers the `myVote` view field.
  *
  * `INSERT … ON CONFLICT DO NOTHING` against each PK turns a second identical
  * cast into a no-op. A pre-write existence probe short-circuits before any

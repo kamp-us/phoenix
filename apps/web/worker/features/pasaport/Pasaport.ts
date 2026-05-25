@@ -119,8 +119,8 @@ export interface ContributionConnection {
 
 /**
  * Flat **discriminant** row for the fate `Profile.contributions` view (ADR
- * 0018 — fate has no union type, so the GraphQL `ProfileContribution` union is
- * modeled as one view with a `kind` discriminant the profile page switches on).
+ * 0018 — fate has no union type, so heterogeneous contributions are modeled as
+ * one view with a `kind` discriminant the profile page switches on).
  * The common fields (`kind`, `id`, `score`, `createdAt`) are always present;
  * the variant fields are nullable and populated per `kind`. This is purely a
  * reshape of {@link ContributionNode} — the same rows, the same keyset, the
@@ -295,8 +295,7 @@ function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid
  * D1 stores `created_at` as epoch **seconds** (the `timestamp` column is
  * `integer({mode:"timestamp"})`), so encoding seconds is exact at the DB's own
  * granularity — the keyset round-trips without precision loss. The wire cursor
- * is unchanged from the GraphQL path (`<epochSeconds>:<id>`), so existing
- * clients page identically.
+ * format is `<epochSeconds>:<id>`, so cursors stay stable across deploys.
  */
 function encodeCursor(node: {createdAt: Date; id: string}): string {
 	return `${Math.floor(node.createdAt.getTime() / 1000)}:${node.id}`;
