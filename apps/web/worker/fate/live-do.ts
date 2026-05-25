@@ -106,6 +106,20 @@ export class LiveDO extends DurableObject<Env> {
 				PRIMARY KEY (connectionId, subId)
 			)`,
 		);
+		// `CREATE TABLE IF NOT EXISTS` is a no-op against a `subscribers` table
+		// created before the `misses` column existed (any DO whose storage predates
+		// the fan-out reap), so its INSERT/SELECT of `misses` would throw
+		// SQLITE_ERROR. Add the column in place when an older table lacks it —
+		// idempotent, runs once per DO instantiation, preserves existing rows.
+		const hasMisses = state.storage.sql
+			.exec<{name: string}>(`PRAGMA table_info(subscribers)`)
+			.toArray()
+			.some((column) => column.name === "misses");
+		if (!hasMisses) {
+			state.storage.sql.exec(
+				`ALTER TABLE subscribers ADD COLUMN misses INTEGER NOT NULL DEFAULT 0`,
+			);
+		}
 	}
 
 	override async fetch(request: Request): Promise<Response> {
