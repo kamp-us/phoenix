@@ -32,14 +32,22 @@ interface PreparedStub {
 	// D1 also allows calling all()/run()/raw() with no bind (no-param queries);
 	// drizzle's batch path takes that route for param-less statements.
 	all: <T = Record<string, unknown>>() => Promise<{results: T[]}>;
-	run: () => Promise<{success: true; meta: Record<string, unknown>}>;
+	run: () => Promise<{
+		success: true;
+		meta: Record<string, unknown>;
+		results: Record<string, unknown>[];
+	}>;
 	raw: <T = unknown[]>() => Promise<T[]>;
 	first: <T = Record<string, unknown>>() => Promise<T | null>;
 }
 
 interface BoundStub {
 	all: <T = Record<string, unknown>>() => Promise<{results: T[]}>;
-	run: () => Promise<{success: true; meta: Record<string, unknown>}>;
+	run: () => Promise<{
+		success: true;
+		meta: Record<string, unknown>;
+		results: Record<string, unknown>[];
+	}>;
 	raw: <T = unknown[]>() => Promise<T[]>;
 	first: <T = Record<string, unknown>>() => Promise<T | null>;
 }
@@ -84,12 +92,19 @@ export function makeSqliteD1(): SqliteD1 {
 		return stmt.all(...bind(params)) as unknown as unknown[][];
 	};
 
+	// D1 `run()` returns `{success, meta, results}`. `results` carries rows when a
+	// `SELECT` is run through `.run()` (some service stats recomputes read
+	// `r.results[0]` off `db.run(sql\`SELECT ...\`)`); for DML we execute the write
+	// and return an empty `results`.
+	const runReturningSql = (sql: string, params: Params): Record<string, unknown>[] => {
+		if (/^\s*select/i.test(sql)) return allSql(sql, params);
+		runSql(sql, params);
+		return [];
+	};
+
 	const bound = (sql: string, params: Params): BoundStub => ({
 		all: async () => ({results: allSql(sql, params) as never[]}),
-		run: async () => {
-			runSql(sql, params);
-			return {success: true, meta: {}};
-		},
+		run: async () => ({success: true, meta: {}, results: runReturningSql(sql, params)}),
 		raw: async () => rawSql(sql, params) as never[],
 		first: async () => {
 			const rows = allSql(sql, params);
@@ -100,10 +115,7 @@ export function makeSqliteD1(): SqliteD1 {
 	const prepare = (sql: string): PreparedStub => ({
 		bind: (...params: Params) => bound(sql, params),
 		all: async () => ({results: allSql(sql, []) as never[]}),
-		run: async () => {
-			runSql(sql, []);
-			return {success: true, meta: {}};
-		},
+		run: async () => ({success: true, meta: {}, results: runReturningSql(sql, [])}),
 		raw: async () => rawSql(sql, []) as never[],
 		first: async () => {
 			const rows = allSql(sql, []);
