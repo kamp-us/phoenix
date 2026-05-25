@@ -61,8 +61,7 @@
 				]
 			},
 			"vars": {
-				"ENVIRONMENT": "production",
-				"BETTER_AUTH_SECRET": ""
+				"ENVIRONMENT": "production"
 			}
 		},
 		"staging": {
@@ -81,8 +80,7 @@
 				]
 			},
 			"vars": {
-				"ENVIRONMENT": "staging",
-				"BETTER_AUTH_SECRET": ""
+				"ENVIRONMENT": "staging"
 			}
 		},
 		"test": {
