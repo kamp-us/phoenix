@@ -77,13 +77,19 @@ const PhoenixDb = yield* Cloudflare.D1Database("phoenix_db", {
 
 ## better-auth on the same D1
 
-`Pasaport.handleAuth` keeps using better-auth's Cloudflare D1 adapter — pass it the same `raw`:
+`Pasaport` keeps using better-auth's Drizzle adapter — it wraps the same `raw` binding in a `drizzle` instance and hands that to `drizzleAdapter`:
 
 ```ts
-const auth = betterAuth({database: raw, secret /* … */});
+const raw = yield* conn.raw;                              // the Cloudflare D1Database binding
+const auth = betterAuth({
+  database: drizzleAdapter(drizzle(raw, {schema}), {provider: "sqlite", schema}),
+  // emailAndPassword, user, plugins, secret, …
+});
 ```
 
-The better-auth tables (`user`, `session`, `account`, …) are part of the same `schema.ts` and migrate through the same pipeline.
+The adapter is shape-only — it speaks the SQLite dialect, so it doesn't care that `raw` is a D1 driver. The better-auth tables (`user`, `session`, `account`, …) are part of the same `schema.ts` and migrate through the same pipeline.
+
+> **Hoist `createAuth` out of the request path.** Today `Pasaport` calls `createAuth(env.PHOENIX_DB)` per request inside `handleAuth`/`validateSession`. Under the worker-singleton model ([ADR 0029](../.decisions/0029-worker-runtime-servicemap.md), [alchemy-runtime.md](./alchemy-runtime.md)) it should be built **once per isolate** from the bound `raw` in the worker's init phase — the same instance reused across requests — consistent with how `Drizzle` and the feature services are worker-level singletons. The `betterAuth` instance has no per-request state; rebuilding it each call only costs allocations.
 
 ## See also
 

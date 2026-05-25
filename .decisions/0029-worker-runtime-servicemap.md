@@ -46,6 +46,16 @@ The bridge runs each resolver with
 `Effect.runPromiseExit(Effect.provideServices(effect, ctx.services))`. There is
 nothing to dispose.
 
+`Effect.services<R>()` captures the **ServiceMap (Context) only** — not FiberRefs
+(logger, tracer, current span, log level/annotations, `Scope`). The bridge then
+starts a fresh root fiber on the **default runtime**, so worker-level FiberRef
+config is not carried into resolver execution. This is not a regression: today's
+`ctx.runtime.runPromiseExit(effect)` also runs a fresh fiber per resolver. It does
+mean that if a Tracer/logger is ever installed at worker scope, the bridge must
+re-establish the span/logger — otherwise resolver spans would be detached roots.
+Nothing relies on this today: phoenix has `Effect.fn`-traced functions but no
+Tracer/exporter installed, so those spans are inert.
+
 The `Drizzle` `run`/`batch` service contract from
 [0014](0014-drizzle-run-batch-as-service-methods.md) is **unchanged** — only its
 construction moves, from a per-request `CloudflareEnv` read to a once-per-isolate
@@ -59,7 +69,12 @@ build from the bound client. See [.patterns/alchemy-runtime.md](../.patterns/alc
   layer graph is built once in init, not on every `/fate` request.
 - **Nothing to leak or tear down.** Providing a captured `ServiceMap` and running
   on the default runtime allocates nothing scoped — no `dispose`, no `finally`,
-  no `waitUntil` for teardown. Worker-level layers release with the isolate.
+  no `waitUntil` for *teardown*. Worker-level layers release with the isolate.
+  This is about runtime teardown only: the live fan-out still fires the topic-DO
+  update through `executionCtx.waitUntil(...)` so it doesn't block the response,
+  and on alchemy that handle comes from `yield* Cloudflare.WorkerExecutionContext`
+  (a service over the CF `ExecutionContext`), not from a disposed runtime — a
+  separate, still-required concern.
 - **The bridge changes exactly one line:** `ctx.runtime.runPromiseExit(effect)`
   → `Effect.runPromiseExit(Effect.provideServices(effect, ctx.services))`. The
   helper family (`fateQuery`/`fateList`/`fateMutation`/`fateSource`), the error

@@ -45,7 +45,14 @@ export const schema = Drizzle.Schema("phoenix-schema", {
 export const PhoenixDb = Cloudflare.D1Database("phoenix_db", {migrationsDir: schema.out});
 ```
 
-The worker `bind()`s `PhoenixDb` ([alchemy-bindings.md](./alchemy-bindings.md)); the stack ensures it (and the schema) exist before the worker deploys. The Durable Objects (`ConnectionDO`, `TopicDO`) are the `DurableObjectNamespace` classes themselves — declaring them and binding them in the worker is enough; alchemy derives the `new_sqlite_classes` migrations.
+> **`migrationsDir` ≠ adopting an existing DB.** `migrationsDir` only tells alchemy where the *schema* migrations live; it says nothing about which physical database the resource binds to. Phoenix already has a populated D1, so the `D1Database` declaration **must reference/adopt that existing database** (not provision a new empty one) or the data won't carry over — same cutover hazard flagged under [Dev & deploy](#dev--deploy).
+
+The worker `bind()`s `PhoenixDb` ([alchemy-bindings.md](./alchemy-bindings.md)); the stack ensures it (and the schema) exist before the worker deploys. The Durable Objects (`ConnectionDO`, `TopicDO`) are the `DurableObjectNamespace` classes themselves — declaring them and binding them in the worker is enough; alchemy derives the migrations. Under the hood alchemy tracks DO migrations via Cloudflare **worker tags** (`alchemy:do:{id}:{class}`, `alchemy:migration-tag:{version}`), **defaults new DO classes to `new_sqlite_classes`**, and computes `deletedClasses` by diffing the old-vs-new tag maps.
+
+> **MUST RESOLVE before the deploy cutover — the wrangler→alchemy handoff.** Today `wrangler.jsonc` owns the migration tags (v1 `LiveDO`, v2 `ConnectionDO`/`TopicDO` + `deleted_classes`) **and** there is a populated D1 database. Switching to alchemy-managed tags raises one decisive question: **does `alchemy deploy` target the existing `phoenix` script, or a fresh alchemy-named script?**
+> - **Reuses the existing script** → alchemy's expected migration-tag preconditions may mismatch wrangler's already-applied tags (alchemy expects to diff *its* tag map, not wrangler's), and the `D1Database` resource **must adopt the existing populated DB** rather than create a new empty one.
+> - **Deploys fresh** → the existing **D1 data is orphaned** unless the `Cloudflare.D1Database` resource explicitly **adopts** the existing database.
+> Pin down the script-targeting + D1-adoption story before cutting over — getting it wrong either fails the DO precondition check or silently strands production data.
 
 ## What `wrangler.jsonc` keys become
 
@@ -103,6 +110,8 @@ It stays **one worker** — the second terminal is just the Vite dev server (not
 > **Stages give isolated environments per branch/PR.** `--stage <name>` deploys an independent copy of the stack (its own DOs, its own D1). This is how preview deploys work without a second config file — the stage name is threaded into resource names. `alchemy.run.ts` can branch on `stage` (e.g. reference a shared staging D1 for `pr-*` stages) the way the alchemy Neon examples do.
 
 > **Tooling note.** alchemy's own examples run under `bun`; phoenix runs under `pnpm` + node. alchemy is plain TypeScript, so `pnpm alchemy deploy` / a node-run entry works — but confirm the CLI invocation and `package.json` scripts when wiring this up, and keep `wrangler` available until the alchemy deploy path is proven against the real account.
+
+> **Version pinning.** Target set: `alchemy 2.0.0-beta.44`, `effect 4.x` (the `alchemy@next` / `effect@beta` tags that [alchemy-bindings.md](./alchemy-bindings.md) and the PRD reference resolve to the `2.0.0-beta` / v4 lines). Mind the drift: the spike ran on `effect 4.0.0-beta.70`, but the currently-installed effect resolved to `4.0.0`. Pin one exact set in `package.json` rather than tracking the floating tags, and **re-verify the DO migration behavior on whatever exact versions get pinned** — the tag-diffing/`new_sqlite_classes` logic above was only confirmed at the spike's beta versions.
 
 ## See also
 

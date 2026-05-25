@@ -1,10 +1,12 @@
 # Durable Objects
 
-How phoenix's live fan-out DOs are written on alchemy. The short answer: `Cloudflare.DurableObjectNamespace<Self>()(name, body)`, where `body` is a two-phase Effect — shared init, then a per-instance Effect that yields `Cloudflare.DurableObjectState` and returns handlers. Methods you return become **typed RPC** the worker (and other DOs) call through a stub; `fetch` handles request-shaped interactions like the SSE upgrade. SQLite, KV storage, alarms, and WebSocket hibernation are all Effect-wrapped.
+How phoenix's live fan-out DOs are written on alchemy. The short answer: a class declares the namespace (`class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()("TopicDO") {}`) and `export default TopicDO.make(body)` supplies the impl, where `body` is a two-phase Effect — shared init, then a per-instance Effect that yields `Cloudflare.DurableObjectState` and returns handlers. Methods you return become **typed RPC** the worker (and other DOs) call through a stub; `fetch` handles request-shaped interactions like the SSE upgrade. SQLite, KV storage, alarms, and WebSocket hibernation are all Effect-wrapped.
 
 This replaces the plain `class extends DurableObject` form. phoenix has two DOs — `ConnectionDO` (holds one client's SSE stream) and `TopicDO` (the durable subscriber registry + fan-out), split per ADR 0023/0025.
 
-> **Verified under `alchemy dev`** (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`). A POC of this exact split — `ConnectionDO` holding an SSE stream in its per-instance closure, `TopicDO` keeping subscribers in `state.storage.sql` and fanning out — ran end-to-end on the local runtime: subscribe → publish → the frame arrived on the held SSE stream (`{"delivered":1}`). The load-bearing pieces all work locally: **typed RPC**, **DO→DO binding** (`TopicDO` resolves `ConnectionDO` with `yield* ConnectionDO` in its init, then calls `connections.getByName(id).deliver(frame)`), `state.storage.sql.exec`, and `controller.enqueue` into a stream held in one DO from another DO's RPC. So the ADR 0023/0025 architecture ports to the Effect DO model intact.
+> **The modular `.make()` form is REQUIRED here.** The two DOs reference each other (the worker binds both), so the inline `…DurableObjectNamespace<T>()("Name", Effect.gen(…))` form is not usable: it pulls a DO's full runtime deps into any consumer's bundle, so each DO would drag in the other's runtime. The modular form keeps the **class** (a lightweight identifier) separate from **`.make()`** (the impl), and Rolldown tree-shakes the impl out of consumers that only need the identifier. A worker (or sibling DO) does `import TopicDO from "./topic-do"` then `const topics = yield* TopicDO`.
+
+> **Spike scope: one direction verified, the binding is not.** Under `alchemy dev` (alchemy `2.0.0-beta.44`, effect `4.0.0-beta.70`) a POC verified the **topic→connection** fan-out only: `TopicDO` resolving `ConnectionDO` with `yield* ConnectionDO`, keeping subscribers in `state.storage.sql`, then `connections.getByName(id).deliver(frame)` enqueueing into an SSE stream held in `ConnectionDO`'s per-instance closure — subscribe → publish → the frame arrived (`{"delivered":1}`). Verified facts: **typed RPC**, **`state.storage.sql.exec`**, and **held-stream fan-out** (`controller.enqueue` into a stream held in one DO from another DO's RPC). phoenix *also* needs the **reverse** direction — `ConnectionDO`→`TopicDO` for subscribe→register — i.e. a **bidirectional/circular DO↔DO binding**. That was **not** spiked and has no precedent in the alchemy examples. The bidirectional binding is **unverified — needs a spike in the modular `.make()` form** before the ADR 0023/0025 port can be called proven.
 
 ## The shape
 
@@ -14,13 +16,16 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import ConnectionDO from "./connection-do";
 
-export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()(
-  "TopicDO",
+// The class is the namespace identifier — a lightweight handle, no runtime deps.
+export class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()("TopicDO") {}
+
+// `.make()` supplies the impl; tree-shaken out of consumers that only import the class.
+export default TopicDO.make(
   Effect.gen(function* () {
     // ── SHARED INIT (once per namespace) ──
-    // Bind sibling resources the DO needs. Resolving ConnectionDO here is how
-    // the topic→connection fan-out direction is wired — and the only direction
-    // available, so a topic→topic call stays unrepresentable (ADR 0025).
+    // Bind sibling resources the DO needs. Resolving ConnectionDO here wires the
+    // topic→connection fan-out direction. The reverse (ConnectionDO→TopicDO for
+    // register) makes this a circular DO↔DO binding — unverified, see the note above.
     const connections = yield* ConnectionDO;
 
     return Effect.gen(function* () {
@@ -38,7 +43,7 @@ export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>(
       };
     });
   }),
-) {}
+);
 ```
 
 The outer `Effect.gen` runs once per namespace (bind siblings, shared setup). The inner `Effect.gen` runs per instance wake and closes over per-instance state — this closure is the alchemy equivalent of instance fields, and it persists for the instance's lifetime exactly like fields do on a plain DO class.
@@ -55,6 +60,37 @@ yield* topic.publish(message);          // typed; no fetch, no JSON.parse
 ```
 
 Reserve `fetch` for genuinely request-shaped interactions — the SSE upgrade on `ConnectionDO`. Everything else (`register`, `deregister`, `publish`, `probe`) is a method.
+
+## Addressing: `getByName` only
+
+The alchemy DO stub exposes **only `getByName(name)` and `fetch(HttpServerRequest)`**. `idFromName`, `idFromString`, `get`, `newUniqueId`, and `jurisdiction` are commented out / unavailable. phoenix today addresses DOs by id — `env.CONNECTION_DO.get(idFromName("connection:" + id))` in `live-route.ts`, `env.TOPIC_DO.get(idFromName("topic:" + key))` in `live.ts`, and even `idFromString(connectionId)` inside `TopicDO`. **None of those exist on the alchemy stub.** All addressing becomes name-based:
+
+```ts
+const connection = connections.getByName(`connection:${connectionId}`);
+const topic = topics.getByName(`topic:${topicKey}`);
+```
+
+> **Re-confirm the `generation` invariant under name addressing.** `ConnectionDO`'s reconnect/stale-detection turns on a persisted `generation` counter, and `TopicDO` resolves a connection it learned about via `idFromString(connectionId)` — an *opaque* id. Under name addressing the only handle is the human-readable `connection:${id}` key, so the registry must store and re-derive that key, and the generation-based stale-detection invariant must be **re-confirmed** to still hold (no opaque-id path remains to lean on).
+
+## The live publish path
+
+This is a real redesign of `live.ts` / `live-route.ts`, not a mechanical port.
+
+Today `liveBus` (in `live.ts`) reaches `TopicDO` outside any Effect/handler scope: a synchronous publish call resolves the binding off `env`, builds a request, and forwards through `waitUntil`. The plumbing is an `AsyncLocalStorage<{env, waitUntil}>` (`livePublishContext`) set up per request so the synchronous `live.*` methods can reach the runtime:
+
+```ts
+// today — live.ts
+const topic = env.TOPIC_DO.get(env.TOPIC_DO.idFromName(`topic:${topicKey}`));
+waitUntil(topic.fetch("https://live/publish", {method: "POST", body: JSON.stringify(msg)}));
+```
+
+Two things break on alchemy: there is no `idFromName`, and `stub.fetch(urlString, init)` does not exist (the stub's `fetch` takes an `HttpServerRequest`). On alchemy the path becomes:
+
+- The `TopicDO` namespace is **resolved in worker init** (`const topics = yield* TopicDO`), not pulled off `env` per call.
+- The publish is a **typed RPC**: `topics.getByName(`topic:${topicKey}`).publish(message)` — no URL, no `JSON.stringify`.
+- The fan-out is still fired-and-forgotten, but `waitUntil` comes from `yield* Cloudflare.WorkerExecutionContext` rather than an `AsyncLocalStorage`-carried closure.
+
+So `livePublishContext` and the `https://live/publish` string-URL `fetch` both go away; the binding and `waitUntil` are obtained from the alchemy runtime in scope.
 
 ## Per-instance state & storage
 
@@ -77,8 +113,9 @@ Reserve `fetch` for genuinely request-shaped interactions — the SSE upgrade on
 `ConnectionDO` keeps one client's open SSE stream. The controller, heartbeat, owner, and subscription map live in the per-instance closure (where instance fields lived before); `fetch` opens the stream and returns it via `HttpServerResponse.fromWeb`:
 
 ```ts
-export default class ConnectionDO extends Cloudflare.DurableObjectNamespace<ConnectionDO>()(
-  "ConnectionDO",
+export class ConnectionDO extends Cloudflare.DurableObjectNamespace<ConnectionDO>()("ConnectionDO") {}
+
+export default ConnectionDO.make(
   Effect.gen(function* () {
     return Effect.gen(function* () {
       const state = yield* Cloudflare.DurableObjectState;
@@ -120,7 +157,7 @@ export default class ConnectionDO extends Cloudflare.DurableObjectNamespace<Conn
       };
     });
   }),
-) {}
+);
 ```
 
 `setInterval` works unchanged inside the handler — the stream pins the DO in memory (no hibernation), exactly as today. The delivery path stays a trivial `Effect.sync(controller.enqueue)`, so the latency-sensitive write costs nothing extra for being in Effect.
@@ -130,6 +167,8 @@ export default class ConnectionDO extends Cloudflare.DurableObjectNamespace<Conn
 ## Cross-DO calls preserve direction
 
 The fan-out invariant (ADR 0025) survives the port and gets *stronger*: `TopicDO` resolves `ConnectionDO` in its init and calls `connection.deliver(frame)` / `connection.probe()` as typed RPC; `ConnectionDO` resolves `TopicDO` and calls `topic.register(...)`. Neither namespace can resolve its own kind, so topic→topic and connection→connection calls don't type-check. The binding *is* the direction.
+
+Note this means each DO resolves the *other* — a **circular DO↔DO binding**. Only the topic→connection leg was spiked; the connection→topic leg (and therefore the circular binding as a whole) is **unverified** — see the scope note at the top.
 
 ## Alarms
 

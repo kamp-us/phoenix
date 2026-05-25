@@ -111,13 +111,19 @@ const handleLive = Effect.gen(function* () {
   const session = yield* Pasaport.validateSession(raw.headers);
   if (!session) return HttpServerResponse.text("unauthorized", {status: 401});
   const connectionId = new URL(raw.url).searchParams.get("connectionId")!;
+  // Address the DO by NAME — the alchemy stub exposes only `getByName(name)`;
+  // there is no `idFromName`/`idFromString`/`get` on the namespace.
   const stub = (yield* ConnectionDO).getByName(`connection:${connectionId}`);
-  const res = yield* stub.fetch(/* …connect request… */);   // DO returns the SSE stream
+  // `stub.fetch` takes an `HttpServerRequest`, not a URL string + init. Forward
+  // the incoming request (build one from `raw` if you need to rewrite it):
+  const res = yield* stub.fetch(HttpServerRequest.fromWeb(raw));   // DO returns the SSE stream
   return HttpServerResponse.fromWeb(res);
 });
 ```
 
 If you build a stream *in* the worker rather than a DO, `HttpServerResponse.stream(stream, {headers})` takes an Effect `Stream<Uint8Array>` directly. phoenix's live stream lives in the DO, so the worker just forwards — see [alchemy-durable-objects.md](./alchemy-durable-objects.md).
+
+> **This route is only the *inbound* half of live.** It opens the SSE connection; it says nothing about how mutations push updates back out. The publish path (mutation → topic DO → connection fan-out) is a typed `TopicDO.publish(msg)` RPC with the namespace resolved in worker init and the fan-out fired via `waitUntil` from `yield* Cloudflare.WorkerExecutionContext` — see [alchemy-durable-objects.md](./alchemy-durable-objects.md) "live publish path".
 
 ## Assembling `fetch`
 
@@ -130,6 +136,8 @@ const AppLive = Layer.mergeAll(adminLive, healthLive, routesLive).pipe(
 
 return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
 ```
+
+> **Mixing `HttpApiBuilder` groups and imperative `HttpRouter.add` routes in one app is API-supported but undemonstrated.** Both produce `Layer`s feeding the same router, so the composition type-checks — but no alchemy/effect example actually mixes the two styles, and the route-precedence / 404-catch-all / OPTIONS interplay between HttpApi groups and imperative routes isn't shown anywhere. Verify it with a small spike when you first wire it.
 
 CORS, when needed, is a layer too: `HttpRouter.cors({allowedOrigins, allowedMethods, allowedHeaders})` provided onto `AppLive`.
 
