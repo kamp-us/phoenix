@@ -15,19 +15,31 @@
  *
  * State selection follows ADR 0031 (local-first dev): `Alchemy.localState()` is
  * a file-based store needing only `FileSystem`/`Path` — no credentials, no
- * network — so `alchemy dev` boots fully offline. CI/deploy uses the
- * Cloudflare-hosted store for reproducible shared state.
+ * network — so `alchemy dev` boots fully offline. A real `alchemy deploy` uses
+ * the Cloudflare-hosted store for reproducible shared state.
+ *
+ * The store is selected from the **dev-vs-deploy** signal, not `CI` (see
+ * `resolveStateMode` in `worker/shared/deploy-env.ts`): `CI` is set for BOTH the
+ * deploy workflow and the integration-test job, so it can't tell a real deploy
+ * from a test run. Only `alchemy dev` and the Vitest harness resolve to
+ * `localState()` (offline); a real `alchemy deploy` always uses the shared store
+ * whether or not `CI` is set. The selector runs synchronously at module-eval, so
+ * it reads the dev signal off `process.env` (`ALCHEMY_EXEC_OPTIONS.dev` /
+ * `ALCHEMY_DEV` / `VITEST`) rather than the runtime `AlchemyContext.dev` /
+ * `ALCHEMY_PHASE`, which are not yet in scope here.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import Phoenix from "./worker/index.ts";
+import {resolveStateMode} from "./worker/shared/deploy-env.ts";
 
 export default Alchemy.Stack(
 	"phoenix",
 	{
 		providers: Cloudflare.providers(),
-		state: process.env.CI ? Cloudflare.state() : Alchemy.localState(),
+		state:
+			resolveStateMode(process.env) === "cloudflare" ? Cloudflare.state() : Alchemy.localState(),
 	},
 	Effect.gen(function* () {
 		const worker = yield* Phoenix;
