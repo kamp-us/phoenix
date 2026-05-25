@@ -61,10 +61,13 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 			// flag and break `http://localhost` storage.
 			BETTER_AUTH_URL: "http://localhost:3000",
 			BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
-			// better-auth refuses to start on its built-in default secret. This is a
-			// fixed *dev* value (not a real secret) so local sign-in/session works;
-			// the production secret is wired at deploy (task 8) and must override it.
-			BETTER_AUTH_SECRET: "phoenix-dev-secret-not-for-production",
+			// better-auth refuses to start on its built-in default secret. The worker
+			// class body is evaluated in the alchemy CLI process, so `process.env` is
+			// the deploy-time environment: `alchemy deploy` reads a real
+			// `BETTER_AUTH_SECRET` (CI secret or `--env-file`/`.env`); the offline dev
+			// loop falls back to a fixed non-secret value so local sign-in works with
+			// no configuration.
+			BETTER_AUTH_SECRET: process.env.BETTER_AUTH_SECRET ?? "phoenix-dev-secret-not-for-production",
 		},
 		assets: {
 			// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,

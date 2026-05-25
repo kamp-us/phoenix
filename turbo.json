@@ -7,6 +7,14 @@
 			"cache": false,
 			"persistent": true
 		},
+		"dev:worker": {
+			"cache": false,
+			"persistent": true
+		},
+		"deploy": {
+			"dependsOn": ["^build", "build"],
+			"cache": false
+		},
 		"build": {
 			"dependsOn": ["^build"],
 			"outputs": ["dist", "*.tsbuildinfo", "build"],

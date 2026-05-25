@@ -18,7 +18,7 @@ phoenix/
 │   └── web/                 # the single worker
 │       ├── worker/          # worker entry + backend code
 │       ├── src/             # React frontend
-│       └── wrangler.jsonc
+│       └── alchemy.run.ts   # the alchemy stack (replaces wrangler.jsonc)
 ├── packages/                # shared internal packages
 └── pnpm-workspace.yaml
 ```
@@ -27,12 +27,21 @@ phoenix/
 
 ```bash
 pnpm install
-pnpm dev          # turbo-driven; runs `wrangler dev` for the worker
+pnpm dev          # turbo-driven; two processes: `vite` (SPA/HMR) + `alchemy dev` (worker)
+pnpm dev:web      # just the Vite SPA dev server
+pnpm dev:worker   # just `alchemy dev` (the worker on a local workerd, offline)
 pnpm build
+pnpm deploy       # pnpm build && alchemy deploy (use --stage <name> for isolation)
 pnpm typecheck
 pnpm lint         # biome check
 pnpm format       # biome check --write
 ```
+
+Deploy is alchemy-managed (ADR 0026–0031): `alchemy.run.ts` is the stack, there is
+no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker + D1
++ DOs per stage; CI uses the Cloudflare-hosted state store, local dev uses
+`Alchemy.localState()` (offline). Re-seed a deployed stage with
+`node --experimental-strip-types apps/web/scripts/import-sozluk.ts --base-url=<url>`.
 
 ## pnpm over npm
 

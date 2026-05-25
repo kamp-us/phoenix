@@ -29,9 +29,6 @@ jobs:
 
       - run: pnpm lint
 
-      - name: Generate worker types
-        run: pnpm --filter @phoenix/web cf-typegen
-
       - run: pnpm test
 
       - run: pnpm typecheck

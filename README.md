@@ -23,7 +23,7 @@ Durable Objects added incrementally for code/request co-location.
 
 ```bash
 pnpm install
-pnpm dev          # turbo runs wrangler dev for the worker
+pnpm dev          # turbo runs `vite` (SPA/HMR) + `alchemy dev` (worker) — two processes
 pnpm typecheck    # effect-tsgo --noEmit -p ...
 pnpm lint         # biome check
 pnpm format       # biome check --write

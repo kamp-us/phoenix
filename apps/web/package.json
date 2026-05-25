@@ -5,19 +5,16 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"alchemy:dev": "alchemy dev",
-		"alchemy:deploy": "pnpm build && alchemy deploy",
+		"dev:worker": "alchemy dev",
 		"build": "vite build",
 		"preview": "vite preview",
-		"cf:deploy": "pnpm build && wrangler deploy --config wrangler.jsonc --env production",
-		"cf:deploy:staging": "pnpm build && wrangler deploy --config wrangler.jsonc --env staging",
-		"cf:deploy:test": "pnpm build && wrangler deploy --config wrangler.jsonc --env test",
+		"deploy": "pnpm build && alchemy deploy",
+		"destroy": "alchemy destroy",
 		"typecheck": "pnpm fate:generate && tsgo -b tsconfig.worker.json tsconfig.node.json && tsgo -p tsconfig.app.json --composite false",
 		"test": "vitest run --config vitest.config.ts",
 		"test:e2e": "playwright test",
 		"test:e2e:ui": "playwright test --ui",
 		"test:e2e:install": "playwright install chromium",
-		"cf-typegen": "wrangler types",
 		"fate:generate": "fate generate",
 		"sozluk:import": "node --experimental-strip-types scripts/import-sozluk.ts",
 		"pano:import": "node --experimental-strip-types scripts/import-pano.ts"
@@ -36,7 +33,6 @@
 		"better-call": "catalog:",
 		"drizzle-orm": "catalog:",
 		"effect": "catalog:",
-		"hono": "catalog:",
 		"react": "catalog:",
 		"react-dom": "catalog:",
 		"react-fate": "catalog:",
@@ -44,8 +40,6 @@
 		"zod": "catalog:"
 	},
 	"devDependencies": {
-		"@cloudflare/vite-plugin": "catalog:",
-		"@cloudflare/vitest-pool-workers": "catalog:",
 		"@cloudflare/workers-types": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
@@ -58,7 +52,6 @@
 		"drizzle-kit": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:",
-		"vitest": "catalog:",
-		"wrangler": "catalog:"
+		"vitest": "catalog:"
 	}
 }
