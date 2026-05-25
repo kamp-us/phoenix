@@ -21,9 +21,11 @@ import * as schema from "../../db/drizzle/schema";
  * only the server-side `setUsername` mutation (which goes through the
  * Pasaport module) can.
  */
-export const createAuth = (d1: D1Database) => {
+export const createAuth = (d1: D1Database, secret: string | undefined) => {
+	if (!secret) throw new Error("BETTER_AUTH_SECRET is not set — add it via `wrangler secret put` or .dev.vars");
 	const db = drizzle(d1, {schema});
 	return betterAuth({
+		secret,
 		emailAndPassword: {enabled: true},
 		database: drizzleAdapter(db, {provider: "sqlite", schema}),
 		user: {
