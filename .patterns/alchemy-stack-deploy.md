@@ -69,9 +69,15 @@ alchemy deploy --stage prod
 
 The SPA is built by Vite as a normal build step (`dist/client`), then uploaded via the worker's `assets` prop — `alchemy deploy` does not drive Vite for phoenix's single-worker shape ([alchemy-worker.md](./alchemy-worker.md) explains why it's `Cloudflare.Worker` + `assets`, not `Cloudflare.Vite`). Drop `@cloudflare/vite-plugin` from `vite.config.ts` (alchemy is incompatible with it); keep `react()` and the `fate()` codegen plugin, which reads the server's `Entity<>` types regardless of deploy path (see [fate-server-wiring.md](./fate-server-wiring.md)).
 
-### Local dev — two processes
+### Local dev — two processes (the decided model)
 
-`alchemy dev` forks the stack under `--watch` against a **local** workerd runtime (no Cloudflare auth needed) and gives the worker a stable local URL with live D1/DO bindings. For phoenix's `Cloudflare.Worker` + `assets` shape it watch-rebuilds the *backend* on change, but serves `dist/client` **statically — no client HMR** (HMR exists only on the `Cloudflare.Vite` path, which can't host phoenix's hand-written backend). So dev is two processes, with Vite proxying the worker:
+phoenix's dev loop is **`vite dev` for the SPA (HMR) + `alchemy dev` for the worker, with Vite proxying the API**. This is a deliberate choice, not a workaround — here's the constraint that forces it:
+
+alchemy has **two non-mixable worker runtime paths**. The Effect-native path (`Cloudflare.Worker` + `bind()` + the Effect DO model — what phoenix uses) runs under `alchemy dev`'s own local workerd runtime: it watch-rebuilds the *backend* on change but serves `dist/client` **statically, with no client HMR**. Integrated HMR exists only on the *other* path — `Cloudflare.Vite` driving `@distilled.cloud/cloudflare-vite-plugin` (alchemy's own fork) — but that path's worker entry is a plain `export default {fetch}`, so it **can't host phoenix's Effect-native worker**. You can't get `bind()`/Effect-DOs *and* integrated HMR on one worker.
+
+> **Don't try to "fix" this by adding a Vite plugin to the Effect-native worker.** The reason there's no single-process HMR isn't a missing config — it's the two-path split above. `@distilled.cloud/cloudflare-vite-plugin` only runs the `Cloudflare.Vite` (plain-handler) path. phoenix chose the Effect-native worker and takes the two-process dev loop as the price.
+
+So `alchemy dev` runs the one worker (live D1/DO bindings, backend watch-rebuild on a stable local URL), and Vite serves the SPA with HMR and proxies the API to it:
 
 ```ts
 // vite.config.ts — dev only; alchemy owns deploy
@@ -88,9 +94,9 @@ pnpm vite dev   # SPA on :3000 — full HMR + the fate() codegen plugin
 alchemy dev     # worker + DOs + D1 on :8787 — backend watch-rebuild, live bindings
 ```
 
-A simpler one-model fallback is `alchemy dev` + `vite build --watch` (the static asset server picks up rebuilt `dist/client` on full reload, no HMR).
+It stays **one worker** — the second terminal is just the Vite dev server (not a worker); at deploy `vite build` produces `dist/client` and the single worker serves it. React HMR comes from `vite dev`, backend hot-reload from `alchemy dev`, so the full loop is live. A simpler one-terminal fallback is `alchemy dev` + `vite build --watch` (the static asset server picks up rebuilt `dist/client` on full reload, no HMR).
 
-> **This is a DX regression from today.** phoenix's current `@cloudflare/vite-plugin` runs the worker *inside* Vite dev in one process with client HMR. alchemy is incompatible with that plugin, so the two-process proxy is the cost — standard and reliable, but two terminals instead of one command. Weigh it as a migration cost, not a blocker.
+> **Two honest costs vs today's `@cloudflare/vite-plugin`.** (1) Two terminals instead of one command. (2) In dev the SPA is served by `vite dev` and routes to the worker through the Vite proxy, so dev routing is proxy rules rather than the prod `runWorkerFirst`/`assets` precedence — a dev/prod fidelity gap to keep in mind when debugging routing. Both are accepted tradeoffs of the Effect-native single-worker choice, not blockers.
 
 > **Stages give isolated environments per branch/PR.** `--stage <name>` deploys an independent copy of the stack (its own DOs, its own D1). This is how preview deploys work without a second config file — the stage name is threaded into resource names. `alchemy.run.ts` can branch on `stage` (e.g. reference a shared staging D1 for `pr-*` stages) the way the alchemy Neon examples do.
 
