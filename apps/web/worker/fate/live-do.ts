@@ -326,22 +326,14 @@ export class LiveDO extends DurableObject<Env> {
 			connectionId: string;
 			subId: string;
 		};
-		this.ctx.storage.sql.exec(
-			`DELETE FROM subscribers WHERE connectionId = ? AND subId = ?`,
-			connectionId,
-			subId,
-		);
+		this.deleteRow(connectionId, subId);
 		return Response.json({ok: true});
 	}
 
 	/** Fan a frame out to every subscriber's connection DO; prune stale rows. */
 	private async publish(request: Request): Promise<Response> {
 		const message = (await request.json()) as PublishMessage;
-		const rows = this.ctx.storage.sql
-			.exec<SubscriberRow>(
-				`SELECT connectionId, subId, generation, updatedAt, misses FROM subscribers`,
-			)
-			.toArray();
+		const rows = this.loadSubscriberRows();
 		let delivered = 0;
 		await Promise.all(
 			rows.map(async (row) => {
@@ -351,7 +343,7 @@ export class LiveDO extends DurableObject<Env> {
 					event: message.frame,
 					...(message.eventId !== undefined ? {eventId: message.eventId} : {}),
 				};
-				const connStub = this.env.LIVE_DO.get(this.env.LIVE_DO.idFromString(row.connectionId));
+				const connStub = this.connStub(row.connectionId);
 				// `undefined` = couldn't reach/parse the connection (leave the row);
 				// a number = the connection's reported current generation.
 				let reported: number | undefined;
@@ -378,11 +370,7 @@ export class LiveDO extends DurableObject<Env> {
 				} else if (reported !== undefined && reported !== row.generation) {
 					// A *reachable* connection reported a different current generation:
 					// the stream this row was registered for is gone. Prune it.
-					this.ctx.storage.sql.exec(
-						`DELETE FROM subscribers WHERE connectionId = ? AND subId = ?`,
-						row.connectionId,
-						row.subId,
-					);
+					this.deleteRow(row.connectionId, row.subId);
 				}
 			}),
 		);
@@ -410,14 +398,10 @@ export class LiveDO extends DurableObject<Env> {
 	 * Reschedules while rows remain.
 	 */
 	override async alarm(): Promise<void> {
-		const rows = this.ctx.storage.sql
-			.exec<SubscriberRow>(
-				`SELECT connectionId, subId, generation, updatedAt, misses FROM subscribers`,
-			)
-			.toArray();
+		const rows = this.loadSubscriberRows();
 		await Promise.all(
 			rows.map(async (row) => {
-				const connStub = this.env.LIVE_DO.get(this.env.LIVE_DO.idFromString(row.connectionId));
+				const connStub = this.connStub(row.connectionId);
 				// `undefined` = couldn't reach/parse the connection.
 				let reported: number | undefined;
 				try {
@@ -437,11 +421,7 @@ export class LiveDO extends DurableObject<Env> {
 					// Unreachable: accrue a miss; reap only after enough consecutive ones.
 					const misses = row.misses + 1;
 					if (misses >= MAX_PROBE_MISSES) {
-						this.ctx.storage.sql.exec(
-							`DELETE FROM subscribers WHERE connectionId = ? AND subId = ?`,
-							row.connectionId,
-							row.subId,
-						);
+						this.deleteRow(row.connectionId, row.subId);
 					} else {
 						this.ctx.storage.sql.exec(
 							`UPDATE subscribers SET misses = ? WHERE connectionId = ? AND subId = ?`,
@@ -451,11 +431,7 @@ export class LiveDO extends DurableObject<Env> {
 						);
 					}
 				} else if (reported !== row.generation) {
-					this.ctx.storage.sql.exec(
-						`DELETE FROM subscribers WHERE connectionId = ? AND subId = ?`,
-						row.connectionId,
-						row.subId,
-					);
+					this.deleteRow(row.connectionId, row.subId);
 				} else if (row.misses !== 0) {
 					// Reachable and current: clear any accrued misses so a transient blip
 					// never accumulates toward eviction across reachable intervals.
@@ -477,5 +453,30 @@ export class LiveDO extends DurableObject<Env> {
 
 	private topicStub(topicKey: string): DurableObjectStub<LiveDO> {
 		return this.env.LIVE_DO.get(this.env.LIVE_DO.idFromName(`topic:${topicKey}`));
+	}
+
+	// ── Shared topic-role SQL / stub helpers ─────────────────────────────────
+
+	/** Load every subscriber row (all columns both `publish` and `alarm` read). */
+	private loadSubscriberRows(): SubscriberRow[] {
+		return this.ctx.storage.sql
+			.exec<SubscriberRow>(
+				`SELECT connectionId, subId, generation, updatedAt, misses FROM subscribers`,
+			)
+			.toArray();
+	}
+
+	/** Delete one subscriber row by its primary key. */
+	private deleteRow(connectionId: string, subId: string): void {
+		this.ctx.storage.sql.exec(
+			`DELETE FROM subscribers WHERE connectionId = ? AND subId = ?`,
+			connectionId,
+			subId,
+		);
+	}
+
+	/** The connection-role DO stub for a subscriber row's connection. */
+	private connStub(connectionId: string): DurableObjectStub<LiveDO> {
+		return this.env.LIVE_DO.get(this.env.LIVE_DO.idFromString(connectionId));
 	}
 }
