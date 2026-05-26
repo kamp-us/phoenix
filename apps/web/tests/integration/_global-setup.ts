@@ -92,6 +92,14 @@ export async function setup() {
 }
 
 export async function teardown() {
-	await Core.run(Core.destroy(options, Stack, {scope}), options, scope).catch(() => {});
-	await Effect.runPromise(Scope.close(scope, Exit.void)).catch(() => {});
+	// Log (don't swallow) teardown failures: a failed `destroy` or scope-close can
+	// leave a workerd sidecar running, which wedges a CI runner. We still resolve so
+	// teardown completes without throwing / raising an unhandled rejection, but the
+	// failure is now visible in the run output instead of vanishing.
+	await Core.run(Core.destroy(options, Stack, {scope}), options, scope).catch((err) => {
+		console.error("[integration] teardown: Core.destroy failed (workerd sidecar may leak)", err);
+	});
+	await Effect.runPromise(Scope.close(scope, Exit.void)).catch((err) => {
+		console.error("[integration] teardown: Scope.close failed (workerd sidecar may leak)", err);
+	});
 }
