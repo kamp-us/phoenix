@@ -46,19 +46,6 @@ import {adminAllowed, type WorkerEnv} from "./shared/worker-env.ts";
 // shipping the committed dev key.
 const deployEnv = resolveDeployEnv(process.env);
 
-/**
- * The worker's bound resource handles, captured once in the init phase. The
- * D1 client (`db`) and the two DO namespaces are the typed clients `bind()` /
- * `yield*` resolve. Holding them in one typed record makes each binding
- * load-bearing — the field types are derived from the bind expressions, so
- * dropping a bind is a compile error here.
- */
-interface WorkerResources {
-	readonly db: Effect.Success<ReturnType<typeof Cloudflare.D1Connection.bind>>;
-	readonly connections: Effect.Success<typeof ConnectionDO>;
-	readonly topics: Effect.Success<typeof TopicDO>;
-}
-
 export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 	"phoenix",
 	{
@@ -114,12 +101,11 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		const connections = yield* ConnectionDO;
 		const topics = yield* TopicDO;
 
-		// Hold the bound clients as the worker's typed resource handles. Capturing
-		// them here keeps each binding load-bearing: drop a `bind()`/`yield*` above
-		// and this record stops type-checking — an unwired binding is a compile
-		// error, never a runtime `undefined` (acceptance criterion).
-		const resources: WorkerResources = {db, connections, topics};
-		void resources;
+		// Each bound client stays load-bearing through its real use below: `db`
+		// via `db.raw`, and `topics`/`connections` via the `liveLayer` closures'
+		// `getByName(...)` calls — drop a `bind()`/`yield*` above and the type
+		// checker fails at that usage, so an unwired binding is a compile error,
+		// never a runtime `undefined`.
 
 		// Build the worker-level service layers ONCE from the bound D1 (ADR 0029):
 		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
