@@ -10,6 +10,42 @@
  * alchemy to derive their migrations.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
+import type * as Effect from "effect/Effect";
+
+/**
+ * A typed, lazily-read view of a sibling DO namespace — narrowed to just its
+ * `getByName(name)` typed-RPC accessor (the only surface a sibling DO calls
+ * across the circular boundary).
+ */
+export type SiblingNamespace<Rpc> = Effect.Effect<
+	{readonly getByName: (name: string) => Rpc},
+	never,
+	Cloudflare.Worker
+>;
+
+/**
+ * The forced namespace-cast seam shared by the two live-fan-out DOs
+ * (`infra/connection-do.ts` ↔ `infra/topic-do.ts`).
+ *
+ * Each DO must address its sibling namespace, but referencing the sibling's
+ * full `DurableObjectNamespace` class type would form a circular type cycle.
+ * This casts the namespace value to the narrowed {@link SiblingNamespace} RPC
+ * view, breaking the cycle. It is wrapped in a **function** (called per RPC,
+ * never at module top level) so the genuinely-circular runtime import is read
+ * at call time — well after both modules have loaded — sidestepping the
+ * temporal dead zone (ADR 0028).
+ *
+ * TODO(alchemy@2.0.0-beta.44): this `as never` cast is forced — the modular
+ * `.make()` form is unimplemented for DOs and an eager circular `yield*` in
+ * the init block OOMs the build, so the lazy cast is the only seam available.
+ * Revisit and drop this helper when alchemy ships DO `.make()` (a non-circular
+ * way to declare + reference sibling namespaces); the circular type/runtime
+ * cycle that forces the cast goes away with it.
+ */
+export const siblingNamespace =
+	<Rpc>(readNamespace: () => unknown): (() => SiblingNamespace<Rpc>) =>
+	() =>
+		readNamespace() as never;
 
 /**
  * The single D1 database — the canonical store for every product table

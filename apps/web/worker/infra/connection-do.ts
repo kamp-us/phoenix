@@ -27,23 +27,16 @@
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import {makeConnectionInstance, type TopicRpc} from "./live-instance.ts";
+import {type SiblingNamespace, siblingNamespace} from "./resources.ts";
 import TopicDO from "./topic-do.ts";
 
 /**
- * Opaque, lazily-read view of the `TopicDO` sibling namespace — only its
- * `getByName(...).register/deregister` typed RPC is needed here. It is read
- * through a **function** (not a module-top-level const) for two reasons:
- * (1) referencing the sibling's full class type would form a circular type cycle,
- * so the cast is the seam that breaks it; (2) the import is genuinely circular at
- * runtime, so a top-level `TopicDO` access would hit the temporal dead zone while
- * `topic-do.ts` is still evaluating — deferring the read to call time (well after
- * both modules have loaded) sidesteps that (ADR 0028).
+ * Lazily-read view of the `TopicDO` sibling namespace — only its
+ * `getByName(...).register/deregister` typed RPC is needed here. The forced
+ * `as never` namespace-cast seam (and the reason it must be deferred to call
+ * time) lives once in {@link siblingNamespace}, with its revisit TODO.
  */
-const topicNamespace = (): Effect.Effect<
-	{readonly getByName: (name: string) => TopicRpc},
-	never,
-	Cloudflare.Worker
-> => TopicDO as never;
+const topicNamespace: () => SiblingNamespace<TopicRpc> = siblingNamespace<TopicRpc>(() => TopicDO);
 
 export default class ConnectionDO extends Cloudflare.DurableObjectNamespace<ConnectionDO>()(
 	"ConnectionDO",
