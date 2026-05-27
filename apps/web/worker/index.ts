@@ -24,9 +24,11 @@
  * HMR) and proxies `/api` + `/fate*` to this worker (task 6); under bare
  * `alchemy dev` this worker is API-only, so a non-API path has no SPA to return.
  */
+import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {makeAdminLayer, makeFateLayer} from "./fate/layers.ts";
 import {LiveConnections, LiveTopics} from "./fate/live-topics.ts";
@@ -63,13 +65,12 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 			// flag and break `http://localhost` storage.
 			BETTER_AUTH_URL: "http://localhost:3000",
 			BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
-			// better-auth refuses to start on its built-in default secret. Resolved at
-			// deploy time (`shared/deploy-env.ts`): `alchemy deploy` reads a real
-			// `BETTER_AUTH_SECRET` (CI secret or `--env-file`/`.env`); the offline dev
-			// loop / Vitest harness falls back to a fixed non-secret so local sign-in
-			// works with no config. A real deploy with the secret unset throws above
-			// (fail closed) rather than booting on the committed dev key.
-			BETTER_AUTH_SECRET: deployEnv.BETTER_AUTH_SECRET,
+			// `BETTER_AUTH_SECRET` is NOT here — a plain `env` var deploys as a
+			// Cloudflare `plain_text` binding (readable in state, plan output, and the
+			// dashboard). The session-signing secret is bound below via
+			// `Alchemy.Secret` instead, which deploys it as encrypted `secret_text`
+			// (no plain-text copy in the bundle, plan, or logs) while still surfacing
+			// on `env.BETTER_AUTH_SECRET` at runtime for `Pasaport` to read.
 		},
 		assets: {
 			// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
@@ -100,6 +101,26 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		const db = yield* Cloudflare.D1Connection.bind(PhoenixDb);
 		const connections = yield* ConnectionDO;
 		const topics = yield* TopicDO;
+
+		// Bind the session-signing secret as encrypted `secret_text` rather than a
+		// `plain_text` env var (see the `env` block above). The value is already
+		// deploy-time-resolved and fail-closed by `resolveDeployEnv` (a real deploy
+		// with no `BETTER_AUTH_SECRET` threw at module-eval; the offline dev/Vitest
+		// loop falls back to the fixed non-secret), so we wrap that resolved string —
+		// `Alchemy.Secret` only changes how it is *stored*, not how it is resolved.
+		//
+		// `Alchemy.Secret` is the alchemy-effect `Output` form — it registers a worker
+		// `secret_text` binding (not a Cloudflare Secrets Store entry); at runtime its
+		// value surfaces on `env.BETTER_AUTH_SECRET` (via `WorkerEnvironment`, below)
+		// for `Pasaport` to read. The `yield*` (binding registration) is the
+		// load-bearing effect; only the *returned accessor* is unused (`_`-prefixed):
+		// resolving it here would re-read the binding at init time, which the offline
+		// dev loop can't satisfy — binding it to a variable also discharges the
+		// floating-effect diagnostic without that re-read.
+		const _betterAuthSecret = yield* Alchemy.Secret(
+			"BETTER_AUTH_SECRET",
+			Redacted.make(deployEnv.BETTER_AUTH_SECRET),
+		);
 
 		// Each bound client stays load-bearing through its real use below: `db`
 		// via `db.raw`, and `topics`/`connections` via the `liveLayer` closures'
@@ -184,7 +205,7 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
 		// `HttpRouter.provideRequest(...)` and provides the admin services +
 		// platform stubs to the typed groups (`http/app.ts`).
-		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed: allowAdmin, liveLayer});
+		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed: allowAdmin, env, liveLayer});
 
 		// ── RUNTIME PHASE (per request) ──
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};

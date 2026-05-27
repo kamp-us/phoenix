@@ -26,6 +26,8 @@ import type {WorkerAdminServices, WorkerFateServices} from "../fate/layers.ts";
 import {liveRoute} from "../fate/live-route.ts";
 import type {LiveConnections, LiveTopics} from "../fate/live-topics.ts";
 import {fateRoute} from "../fate/route.ts";
+import {CloudflareEnv} from "../services/index.ts";
+import type {WorkerEnv} from "../shared/worker-env.ts";
 import {adminApiLayer, adminAuthLayer} from "./admin-handlers.ts";
 import {agentsRoute, authRoute} from "./auth-route.ts";
 
@@ -38,6 +40,10 @@ import {agentsRoute, authRoute} from "./auth-route.ts";
  * @param adminLayer   the worker-level admin services (`SozlukAdmin`,
  *                     `PanoAdmin`, `PasaportAdmin`) the seeder groups require.
  * @param adminAllowed the env gate for `AdminAuth` (env === "development").
+ * @param env          the typed worker env (`WorkerEnv`), provided to the typed
+ *                     group as `CloudflareEnv` so the health probe reads the
+ *                     deploy environment off the canonical typed service instead
+ *                     of casting the untyped runtime `WorkerEnvironment`.
  * @param liveLayer    the worker-init-resolved DO namespace handles
  *                     (`LiveTopics` for the `/fate` publish path, `LiveConnections`
  *                     for the `/fate/live` SSE transport), built from the bound
@@ -47,16 +53,21 @@ export const makeAppLive = (options: {
 	readonly fateLayer: Layer.Layer<WorkerFateServices>;
 	readonly adminLayer: Layer.Layer<WorkerAdminServices>;
 	readonly adminAllowed: boolean;
+	readonly env: WorkerEnv;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 }) => {
 	// Typed-JSON groups: health + admin seeders. The group handlers' domain
-	// requirements (`AdminAuth` + the admin services) surface as route markers
-	// once registered, so they're discharged with `HttpRouter.provideRequest`
-	// here — `Layer.provide` does not discharge route markers. `WorkerEnvironment`
-	// (health) is worker-provided and stays in `R`.
+	// requirements (`AdminAuth` + the admin services for the seeders, `CloudflareEnv`
+	// for the health probe) surface as route markers once registered, so they're
+	// discharged with `HttpRouter.provideRequest` here — `Layer.provide` does not
+	// discharge route markers.
 	const typedJson = adminApiLayer.pipe(
 		HttpRouter.provideRequest(
-			Layer.mergeAll(options.adminLayer, adminAuthLayer(options.adminAllowed)),
+			Layer.mergeAll(
+				options.adminLayer,
+				adminAuthLayer(options.adminAllowed),
+				Layer.succeed(CloudflareEnv, options.env),
+			),
 		),
 	);
 

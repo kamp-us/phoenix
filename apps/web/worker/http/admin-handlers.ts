@@ -16,7 +16,6 @@
  * boundary with `HttpRouter.provideRequest` (`app.ts`); `WorkerEnvironment`
  * (health) is satisfied at worker scope.
  */
-import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -27,7 +26,7 @@ import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import {PanoAdmin} from "../features/pano/PanoAdmin.ts";
 import {PasaportAdmin} from "../features/pasaport/PasaportAdmin.ts";
 import {SozlukAdmin} from "../features/sozluk/SozlukAdmin.ts";
-import {AdminAuth} from "../services/index.ts";
+import {AdminAuth, CloudflareEnv} from "../services/index.ts";
 import {
 	AppApi,
 	BackfillProfilesResult,
@@ -60,12 +59,12 @@ const requireAdmin = AdminAuth.required.pipe(
 const healthGroup = HttpApiBuilder.group(AppApi, "health", (h) =>
 	h.handle("health", () =>
 		Effect.gen(function* () {
-			const env = yield* Cloudflare.WorkerEnvironment;
-			const environment = (env as Record<string, unknown>).ENVIRONMENT;
-			return new HealthStatus({
-				status: "ok",
-				environment: typeof environment === "string" ? environment : null,
-			});
+			// Read the deploy environment off the canonical typed `CloudflareEnv`
+			// (`ENVIRONMENT: string`, provided to this group in `app.ts`) rather than
+			// casting the untyped runtime `WorkerEnvironment` — the cast that
+			// `shared/worker-env.ts` exists to eliminate.
+			const env = yield* CloudflareEnv;
+			return new HealthStatus({status: "ok", environment: env.ENVIRONMENT});
 		}),
 	),
 );

@@ -111,13 +111,14 @@ beforeAll(() => {
 	const fateLayer = makeFateLayer(db, env);
 	const adminLayer = makeAdminLayer(db);
 
-	appLayerAllowed = makeAppLive({fateLayer, adminLayer, adminAllowed: true, liveLayer});
-	appLayerDenied = makeAppLive({fateLayer, adminLayer, adminAllowed: false, liveLayer});
+	appLayerAllowed = makeAppLive({fateLayer, adminLayer, adminAllowed: true, env, liveLayer});
+	appLayerDenied = makeAppLive({fateLayer, adminLayer, adminAllowed: false, env, liveLayer});
 	// Gate derived the way the worker derives it, from a non-dev `ENVIRONMENT`.
 	appLayerProd = makeAppLive({
 		fateLayer,
 		adminLayer,
 		adminAllowed: adminGateFor("production"),
+		env,
 		liveLayer,
 	});
 });
