@@ -14,7 +14,7 @@ catalog:
   '@effect/tsgo': ^0.5.2
   '@effect/vitest': 4.0.0-beta.70
   '@nkzw/fate': 1.0.3
-  alchemy: 2.0.0-beta.44
+  alchemy: "https://pkg.ing/alchemy/main"
   '@playwright/test': ^1.59.1
   '@types/node': ^25.6.2
   '@types/react': ^19.2.14

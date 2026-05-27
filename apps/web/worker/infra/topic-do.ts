@@ -1,46 +1,79 @@
 /**
  * `TopicDO` — the topic-role half of phoenix's live fan-out (ADR 0023, split per
- * ADR 0025), on alchemy's Effect Durable Object model (ADR 0028).
+ * ADR 0025), on alchemy's modular Effect Durable Object model (ADR 0028).
  *
  * One instance per topic, named `topic:<topicKey>`. It owns the **durable
  * subscriber registry** for that topic (in `state.storage.sql`), the **publish
  * fan-out**, and the **alarm reap** — nothing about any client's SSE stream.
  * The algorithm (generation-based stale detection, the consecutive-miss reap, the
  * bounded fan-out) is a verbatim port of the legacy `cloudflare:workers` class;
- * the behavior lives in `makeTopicInstance` (`live-instance.ts`), this file is
- * the inline-form `DurableObjectNamespace` declaration that wires it up.
+ * the behavior lives in `makeTopicInstance` (`live-instance.ts`).
  *
- * **Inline form is mandatory** — the modular `.make()` form is unimplemented for
- * DOs in alchemy@2.0.0-beta.44 (ADR 0028). The `ConnectionDO` sibling is resolved
- * **lazily inside `publish`/`alarm`** (`yield* ConnectionDO` per call) and
- * addressed by name (`getByName(\`connection:${id}\`)`) — never `yield*
- * ConnectionDO` in the init block (an eager circular `yield*` OOMs the build) and
- * never `idFromName`/`idFromString`/`get` (unavailable on the alchemy stub).
+ * **Modular `.make()` form** — the `TopicDO` class is a lightweight Tag (identity
+ * + the `TopicRpc` contract on its 2nd type param, NO inline body), and
+ * {@link TopicDOLive} is the implementation Layer. Splitting the two breaks the
+ * `ConnectionDO` ↔ `TopicDO` circular reference that forced the old `as never`
+ * sibling-cast seam: the sibling `ConnectionDO` namespace is obtained by
+ * `yield*`-ing its Tag (a context lookup alchemy excludes from the Layer's
+ * requirements via `DurableObjectServices`), so there is no circular Layer
+ * dependency and no cast. Siblings are addressed by name
+ * (`getByName(\`connection:${id}\`)`) — never `idFromName`/`idFromString`/`get`
+ * (unavailable on the alchemy stub).
+ *
+ * The `ConnectionDO` sibling is resolved **per fan-out call** (`yield*
+ * ConnectionDO` inside `publish`/`alarm`, never in init): resolving it in shared
+ * init would pin the sibling Tag onto this Layer's requirements and form a
+ * circular Layer dependency with `ConnectionDOLive`. Per-call, the Tag
+ * requirement lands on the RPC method's `R` instead (declared in
+ * {@link TopicRpcSurface}).
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import ConnectionDO from "./connection-do.ts";
-import {type ConnectionRpc, makeTopicInstance} from "./live-instance.ts";
-import {type SiblingNamespace, siblingNamespace} from "./resources.ts";
+import {type ConnectionRpc, makeTopicInstance, type TopicInstance} from "./live-instance.ts";
 
 /**
- * Lazily-read view of the `ConnectionDO` sibling namespace — only its
- * `getByName(...).deliver/probe` typed RPC is needed here. The forced
- * `as never` namespace-cast seam (and the reason it must be deferred to call
- * time) lives once in {@link siblingNamespace}, with its revisit TODO.
+ * The typed surface callers reach across the `TopicDO` stub: a sibling
+ * `ConnectionDO` calls `register`/`deregister`, and the worker's `LiveTopics`
+ * handle calls `publish`. `alarm` is invoked by the runtime, not via a stub, but
+ * is part of the DO shape so it stays declared. `register`/`deregister` resolve
+ * nothing → `R = never`; `publish`/`alarm` resolve the connection sibling per
+ * call → `R = ConnectionDO | Worker` (`yield* ConnectionDO` also needs the
+ * `Worker` binding service; alchemy provides both on the DO side, and the worker
+ * — which yields `ConnectionDO`/`Worker` in init and hosts the DO — satisfies
+ * them for its `LiveTopics.publish` call), so no cast is needed at either seam.
  */
-const connectionNamespace: () => SiblingNamespace<ConnectionRpc> = siblingNamespace<ConnectionRpc>(
-	() => ConnectionDO,
-);
+export type TopicRpcSurface = Pick<
+	TopicInstance<ConnectionDO | Cloudflare.Worker>,
+	"register" | "deregister" | "publish" | "alarm"
+>;
 
-export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()(
+/**
+ * `TopicDO` Tag — identity plus the {@link TopicRpcSurface} contract callers
+ * reach across the stub. No inline body: the runtime implementation is
+ * {@link TopicDOLive}, so importing this Tag pulls in no DO runtime code (the
+ * bundler tree-shakes `.make()` out of consumers).
+ */
+export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO, TopicRpcSurface>()(
 	"TopicDO",
+) {}
+
+/**
+ * The `TopicDO` implementation Layer. The `ConnectionDO` sibling namespace is
+ * resolved per fan-out call (`Effect.map(ConnectionDO, …)` inside the resolver
+ * thunk — never in shared init, which would pin the sibling Tag onto this
+ * Layer's requirements and form a circular Layer dependency with
+ * `ConnectionDOLive`), then each call addresses a specific connection by name.
+ */
+export const TopicDOLive = TopicDO.make(
 	Effect.gen(function* () {
 		// ── SHARED INIT (once per namespace) ──
-		// Do NOT resolve the ConnectionDO sibling here. An eager `yield* ConnectionDO`
-		// in init — paired with `yield* TopicDO` in ConnectionDO's init — is a
-		// circular binding that OOMs the build (ADR 0028). Resolve it lazily, per
-		// call, inside publish/alarm (below).
+		// Do NOT resolve the ConnectionDO sibling here: `yield* ConnectionDO` in init
+		// pins the sibling Tag onto this Layer's requirements, and paired with
+		// `yield* TopicDO` in ConnectionDOLive's init that is a circular Layer
+		// dependency `Layer.mergeAll` can't satisfy. Resolve it per fan-out call
+		// (inside `publish`/`alarm`) instead — the Tag requirement then lands on the
+		// RPC method's `R`, which alchemy provides from the DO's own services.
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
 		// wake). `return yield*` would run per-instance setup during shared init and
 		// break the two-phase DO model — so the nested Effect is intentional here.
@@ -48,14 +81,17 @@ export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>(
 		return Effect.gen(function* () {
 			// ── PER-INSTANCE (once per instance wake) ──
 			const state = yield* Cloudflare.DurableObjectState;
-			return makeTopicInstance(state, (connectionId) =>
-				// Lazy sibling resolution: `yield* ConnectionDO` happens here, per fan-out
-				// call, never in init. Addressed by the human-readable connection name.
-				Effect.gen(function* () {
-					const connections = yield* connectionNamespace();
-					return connections.getByName(`connection:${connectionId}`);
-				}),
+			return makeTopicInstance(
+				state,
+				(connectionId): Effect.Effect<ConnectionRpc, never, ConnectionDO | Cloudflare.Worker> =>
+					// Resolve the sibling ConnectionDO Tag per call (alchemy provides it —
+					// plus the `Worker` binding service `yield* ConnectionDO` needs — on the
+					// DO side), then address one connection by its human-readable name. The
+					// typed stub's RPC surface matches `ConnectionRpc` exactly — no cast.
+					Effect.map(ConnectionDO, (connections) =>
+						connections.getByName(`connection:${connectionId}`),
+					),
 			);
 		});
 	}),
-) {}
+);

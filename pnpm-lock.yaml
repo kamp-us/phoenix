@@ -64,7 +64,7 @@ catalogs:
       specifier: 0.12.3
       version: 0.12.3
     alchemy:
-      specifier: 2.0.0-beta.44
+      specifier: https://pkg.ing/alchemy/main
       version: 2.0.0-beta.44
     better-auth:
       specifier: ^1.6.10
@@ -160,7 +160,7 @@ importers:
         version: 0.12.3(@babel/core@7.29.0)(@babel/runtime@7.29.2)(@cloudflare/workers-types@4.20260509.1)(ai@6.0.177(zod@4.4.3))(react@19.2.6)(rolldown@1.0.1)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(zod@4.4.3)
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.44(@effect/platform-bun@4.0.0-beta.70(effect@4.0.0-beta.70))(@effect/platform-node@4.0.0-beta.70(effect@4.0.0-beta.70)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.70(effect@4.0.0-beta.70))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.70)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260507.1)(ws@8.21.0)
+        version: https://pkg.ing/alchemy/main(@effect/platform-bun@4.0.0-beta.70(effect@4.0.0-beta.70))(@effect/platform-node@4.0.0-beta.70(effect@4.0.0-beta.70)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.70(effect@4.0.0-beta.70))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.70)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260507.1)(ws@8.21.0)
       better-auth:
         specifier: 'catalog:'
         version: 1.6.10(@cloudflare/workers-types@4.20260509.1)(@opentelemetry/api@1.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))
@@ -2085,8 +2085,9 @@ packages:
   ajv@8.20.0:
     resolution: {integrity: sha512-Thbli+OlOj+iMPYFBVBfJ3OmCAnaSyNn4M1vz9T6Gka5Jt9ba/HIR56joy65tY6kx/FCF5VXNB819Y7/GUrBGA==}
 
-  alchemy@2.0.0-beta.44:
-    resolution: {integrity: sha512-KIp3fs4HbyIWetzzwpKLkRyALbPP5JFyfmy0Zq30uWfqpevNZk6gp9fDk1xE0zrrDwyyGN3EbsrQRUzOO023xw==}
+  alchemy@https://pkg.ing/alchemy/main:
+    resolution: {integrity: sha512-yhSwzOojf4E9mqTUq5N+/WDm98DA+AvxSHq/t7iCsgmGrv0Hh7ni9YRz9uCis8/hFOxw0lcA3XeniLrLSd3l4Q==, tarball: https://pkg.ing/alchemy/main}
+    version: 2.0.0-beta.44
     hasBin: true
     peerDependencies:
       '@effect/platform-bun': '>=4.0.0-beta.66 || >=4.0.0'
@@ -3658,18 +3659,6 @@ packages:
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
 
-  ws@8.18.0:
-    resolution: {integrity: sha512-8VbfWfHLbbwu3+N6OKsOMpBdT4kXPDDB9cJk2bJ6mh9ucxdlnNvH1e+roYkKmN9Nxw2yjz7VzeO9oOz2zJ04Pw==}
-    engines: {node: '>=10.0.0'}
-    peerDependencies:
-      bufferutil: ^4.0.1
-      utf-8-validate: '>=5.0.2'
-    peerDependenciesMeta:
-      bufferutil:
-        optional: true
-      utf-8-validate:
-        optional: true
-
   ws@8.21.0:
     resolution: {integrity: sha512-Vsp28b7DRcimFQvrqu2Wek3z1iYxDCWqHYB8Qsnk/S4RfaCQzPGPyBNuVjJV3cd6UiKtUtp6sNM77gWvzcCH+g==}
     engines: {node: '>=10.0.0'}
@@ -3704,11 +3693,6 @@ packages:
 
   yallist@3.1.1:
     resolution: {integrity: sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g==}
-
-  yaml@2.8.4:
-    resolution: {integrity: sha512-ml/JPOj9fOQK8RNnWojA67GbZ0ApXAUlN2UQclwv2eVgTgn7O9gg9o7paZWKMp4g0H3nTLtS9LVzhkpOFIKzog==}
-    engines: {node: '>= 14.6'}
-    hasBin: true
 
   yaml@2.9.0:
     resolution: {integrity: sha512-2AvhNX3mb8zd6Zy7INTtSpl1F15HW6Wnqj0srWlkKLcpYl/gMIMJiyuGq2KeI2YFxUPjdlB+3Lc10seMLtL4cA==}
@@ -4768,7 +4752,7 @@ snapshots:
   '@libsql/isomorphic-ws@0.1.5':
     dependencies:
       '@types/ws': 8.18.1
-      ws: 8.18.0
+      ws: 8.21.0
     transitivePeerDependencies:
       - bufferutil
       - utf-8-validate
@@ -5383,7 +5367,7 @@ snapshots:
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
-  alchemy@2.0.0-beta.44(@effect/platform-bun@4.0.0-beta.70(effect@4.0.0-beta.70))(@effect/platform-node@4.0.0-beta.70(effect@4.0.0-beta.70)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.70(effect@4.0.0-beta.70))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.70)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260507.1)(ws@8.21.0):
+  alchemy@https://pkg.ing/alchemy/main(@effect/platform-bun@4.0.0-beta.70(effect@4.0.0-beta.70))(@effect/platform-node@4.0.0-beta.70(effect@4.0.0-beta.70)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.70(effect@4.0.0-beta.70))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.70)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260507.1)(ws@8.21.0):
     dependencies:
       '@alchemy.run/node-utils': 0.0.4
       '@aws-sdk/credential-providers': 3.1053.0
@@ -5420,7 +5404,7 @@ snapshots:
       react: 19.2.6
       rolldown: 1.0.1
       undici: 7.24.8
-      yaml: 2.8.4
+      yaml: 2.9.0
     optionalDependencies:
       '@effect/platform-bun': 4.0.0-beta.70(effect@4.0.0-beta.70)
       '@effect/platform-node': 4.0.0-beta.70(effect@4.0.0-beta.70)(ioredis@5.10.1)
@@ -5998,7 +5982,7 @@ snapshots:
       type-fest: 5.6.0
       widest-line: 6.0.0
       wrap-ansi: 9.0.2
-      ws: 8.18.0
+      ws: 8.21.0
       yoga-layout: 3.2.1
     optionalDependencies:
       '@types/react': 19.2.14
@@ -6841,8 +6825,6 @@ snapshots:
 
   wrappy@1.0.2: {}
 
-  ws@8.18.0: {}
-
   ws@8.21.0: {}
 
   xdg-app-paths@8.3.0:
@@ -6864,8 +6846,6 @@ snapshots:
   y18n@5.0.8: {}
 
   yallist@3.1.1: {}
-
-  yaml@2.8.4: {}
 
   yaml@2.9.0: {}
 

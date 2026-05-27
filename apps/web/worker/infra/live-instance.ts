@@ -2,13 +2,16 @@
  * The per-instance logic for phoenix's live fan-out Durable Objects, on the
  * alchemy Effect DO model (ADR 0028, `.patterns/alchemy-durable-objects.md`).
  *
- * Both DOs are declared inline in `connection-do.ts` / `topic-do.ts` — those
- * files own the `DurableObjectNamespace<Self>()("Name", body)` shape and the
- * **lazy** sibling resolution (`yield* TopicDO` / `yield* ConnectionDO` inside
- * an RPC method, never in init — an eager circular `yield*` OOMs the build).
- * The behavior itself lives here, in two instance-factory builders that take the
- * already-resolved `Cloudflare.DurableObjectState` value plus a *lazy* resolver
- * for the sibling stub. This keeps the connection↔topic algorithm — held SSE
+ * Both DOs are declared in the modular `.make()` form in `connection-do.ts` /
+ * `topic-do.ts` — those files own the Tag (`DurableObjectNamespace<Self, Rpc>()
+ * ("Name")`) + the `.make(...)` implementation Layer, and resolve the sibling
+ * namespace per fan-out call (`Effect.map(TopicDO, …)` /
+ * `Effect.map(ConnectionDO, …)` inside the resolver thunk — never in shared
+ * init, which would form a circular Layer dependency between the two `.make()`
+ * Layers). The behavior itself lives here, in two instance-factory builders that
+ * take the already-resolved `Cloudflare.DurableObjectState` value plus a resolver
+ * for the sibling stub.
+ * This keeps the connection↔topic algorithm — held SSE
  * stream, generation-based stale detection, the durable subscriber registry in
  * `state.storage.sql`, and the alarm reap — in one place that a node-pool unit
  * test (`live-instance.test.ts`) can drive without workerd. The observable SSE
@@ -102,10 +105,12 @@ interface SubscriberRow {
 
 /**
  * The connection DO's public method surface (typed RPC + the SSE `openStream`).
- * `SR` is the requirement the **lazy** sibling resolver introduces — in the real
- * DO it is the alchemy `Worker` service (`yield* TopicDO` needs it); in the
- * node-pool test it is `never` (the test injects in-process stubs). It surfaces
- * only on `subscribe`/`unsubscribe`, the methods that resolve the topic sibling.
+ * `SR` is the requirement the sibling resolver introduces — in the real DO it is
+ * `TopicDO | Worker` (the topic sibling is resolved per call, `Effect.map(TopicDO,
+ * …)`, which alchemy provides from the DO's own captured services at invocation);
+ * in the node-pool test it is `never` (the test injects in-process stubs). It
+ * surfaces only on `subscribe`/`unsubscribe`, the methods that resolve the topic
+ * sibling.
  */
 export interface ConnectionInstance<SR = never> {
 	/**
@@ -130,8 +135,9 @@ export interface ConnectionInstance<SR = never> {
 
 /**
  * The topic DO's public method surface (typed RPC + the reap `alarm`). `SR` is
- * the lazy sibling resolver's requirement (alchemy `Worker` in the real DO,
- * `never` in the test); it surfaces on `publish`/`alarm`, which resolve the
+ * the sibling resolver's requirement (`ConnectionDO | Worker` in the real DO —
+ * the connection sibling is resolved per call, `Effect.map(ConnectionDO, …)` —
+ * and `never` in the test); it surfaces on `publish`/`alarm`, which resolve the
  * connection sibling.
  */
 export interface TopicInstance<SR = never> {
@@ -151,11 +157,13 @@ export interface TopicInstance<SR = never> {
  * Build the connection-role DO's per-instance methods.
  *
  * `state` is the resolved `Cloudflare.DurableObjectState` for this instance.
- * `resolveTopic` is the **lazy** sibling resolver — the inline DO passes a thunk
- * that does `yield* TopicDO` *inside* the call (never in init), so the cross-DO
- * binding stays circular-but-lazy (ADR 0028). The connection's own name is
- * `connection:${connectionId}`; the topic DO addresses it back by that key, so
- * `subscribe` registers under the client-supplied `connectionId`.
+ * `resolveTopic` is the sibling resolver — the modular DO passes a thunk that
+ * resolves the topic namespace per call (`Effect.map(TopicDO, …)`) and addresses
+ * a topic by key, so the cross-DO Tag lands on the RPC method's `R` rather than
+ * the Layer's init requirements (non-circular under `.make()`, ADR 0028). The
+ * connection's own name is `connection:${connectionId}`; the
+ * topic DO addresses it back by that key, so `subscribe` registers under the
+ * client-supplied `connectionId`.
  */
 export const makeConnectionInstance = <SR = never>(
 	state: DurableObjectStateValue,
@@ -332,10 +340,12 @@ const CREATE_SUBSCRIBERS_TABLE = `CREATE TABLE IF NOT EXISTS subscribers (
  * Build the topic-role DO's per-instance methods.
  *
  * `state` is the resolved `Cloudflare.DurableObjectState` for this instance.
- * `resolveConnection` is the **lazy** sibling resolver — the inline DO passes a
- * thunk that does `yield* ConnectionDO` *inside* `publish`/`alarm` (never in
- * init). The subscriber registry lives in `state.storage.sql`, addressed back to
- * a connection by `getByName(\`connection:${row.connectionId}\`)`.
+ * `resolveConnection` is the sibling resolver — the modular DO passes a thunk
+ * that resolves the connection namespace per call (`Effect.map(ConnectionDO, …)`)
+ * and addresses a connection by id, so the cross-DO Tag lands on the RPC method's
+ * `R` rather than the Layer's init requirements (non-circular under `.make()`).
+ * The subscriber registry lives in `state.storage.sql`, addressed back to a
+ * connection by `getByName(\`connection:${row.connectionId}\`)`.
  */
 export const makeTopicInstance = <SR = never>(
 	state: DurableObjectStateValue,

@@ -9,9 +9,12 @@
  * repo root. Paths in the worker's resource declarations (`migrationsDir`,
  * `assets`) are relative to this directory, the alchemy CLI's working dir.
  *
- * Yielding `Phoenix` deploys the worker; the worker's own init phase (its
- * `bind()` calls and `DurableObjectNamespace` declarations) tells alchemy which
- * bindings, DOs, and migrations to send — the stack does not re-declare them.
+ * Yielding the `Phoenix` worker Tag deploys the worker; the worker's own init
+ * phase (its `bind()` calls and DO Layers) tells alchemy which bindings, DOs, and
+ * migrations to send — the stack does not re-declare them. The implementation is
+ * the modular `.make()` Layer (the worker's `export default`, `PhoenixLive`),
+ * which the stack provides so the Tag resolves (ADR 0028): splitting the worker
+ * class from its `.make()` Layer lets it host the two circular live-fan-out DOs.
  *
  * State selection follows ADR 0031 (local-first dev): `Alchemy.localState()` is
  * a file-based store needing only `FileSystem`/`Path` — no credentials, no
@@ -31,7 +34,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import Phoenix from "./worker/index.ts";
+import PhoenixLive, {Phoenix} from "./worker/index.ts";
 import {resolveStateMode} from "./worker/shared/deploy-env.ts";
 
 export default Alchemy.Stack(
@@ -44,5 +47,5 @@ export default Alchemy.Stack(
 	Effect.gen(function* () {
 		const worker = yield* Phoenix;
 		return {url: worker.url};
-	}),
+	}).pipe(Effect.provide(PhoenixLive)),
 );
