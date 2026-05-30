@@ -7,7 +7,7 @@
  *   - **Typed JSON** (`GET /api/health`, the dev-only `/api/admin/*` seeders) —
  *     `HttpApiBuilder` groups with schema-decoded payloads/responses
  *     (`admin-api.ts` / `admin-handlers.ts`).
- *   - **Raw `Request`** (`POST /fate`, `* /api/auth/*`, `* /agents/*`) —
+ *   - **Raw `Request`** (`POST /fate`, `* /api/auth/*`) —
  *     imperative `HttpRouter.add` routes reading `Cloudflare.Request`
  *     (`../fate/route.ts`, `auth-route.ts`).
  *
@@ -18,8 +18,9 @@
  * markers that plain `Layer.provide` does NOT discharge — they must be
  * discharged with `HttpRouter.provideRequest` (see task-2 notes / ADR 0029).
  * The fate route's worker-level `FateEnv` subset comes from `fateLayer`; the
- * auth/agents routes' `Pasaport` comes from the same layer.
+ * auth route's `Pasaport` comes from the same layer.
  */
+import type * as BetterAuth from "@alchemy.run/better-auth";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type {WorkerAdminServices, WorkerFateServices} from "../fate/layers.ts";
@@ -29,7 +30,7 @@ import {fateRoute} from "../fate/route.ts";
 import {CloudflareEnv} from "../services/index.ts";
 import type {WorkerEnv} from "../shared/worker-env.ts";
 import {adminApiLayer, adminAuthLayer} from "./admin-handlers.ts";
-import {agentsRoute, authRoute} from "./auth-route.ts";
+import {authRoute} from "./auth-route.ts";
 
 /**
  * Build the application router layer.
@@ -55,6 +56,18 @@ export const makeAppLive = (options: {
 	readonly adminAllowed: boolean;
 	readonly env: WorkerEnv;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
+	/**
+	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker
+	 * this is `BetterAuthLive` (`worker/auth/better-auth-live.ts`), which builds
+	 * the auth instance via alchemy's `Random` + `D1Connection` — its external
+	 * `R` (`Providers`/`Provider<Random>`/`WorkerEnvironment`/`D1ConnectionPolicy`)
+	 * is supplied by alchemy's worker runtime context. Tests pass a hand-rolled
+	 * Layer over the same tag (`Layer.succeed(BetterAuth.BetterAuth)`); both
+	 * shapes thread through `provideRequest` the same way. `R` is left
+	 * unconstrained (`any`) so the worker's outer `Effect.provide` discharges
+	 * whatever the layer carries upward.
+	 */
+	readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth, never, any>;
 }) => {
 	// Typed-JSON groups: health + admin seeders. The group handlers' domain
 	// requirements (`AdminAuth` + the admin services for the seeders, `CloudflareEnv`
@@ -73,11 +86,23 @@ export const makeAppLive = (options: {
 
 	// Raw-`Request` routes. `provideRequest` discharges the route-requirement
 	// markers `HttpRouter.add` lifts (fate's `FateEnv` subset + `LiveTopics`;
-	// auth's `Pasaport`; live's `Pasaport` + `LiveConnections`) — plain
-	// `Layer.provide` does not. `fateLayer` carries `Pasaport`, so it discharges
-	// the auth/live session checks too; `liveLayer` adds the DO handles.
-	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, agentsRoute, liveRoute).pipe(
-		HttpRouter.provideRequest(Layer.mergeAll(options.fateLayer, options.liveLayer)),
+	// `BetterAuth` for `/api/auth/*`; live's `Pasaport` + `LiveConnections`) —
+	// plain `Layer.provide` does not. `fateLayer` carries `Pasaport`,
+	// `BetterAuthLive` (`worker/auth/better-auth-live.ts`) carries `BetterAuth`,
+	// `liveLayer` adds the DO handles.
+	// `provideMerge(betterAuthLayer)` instead of a flat 3-way `mergeAll`: with
+	// `any` in `betterAuthLayer`'s `R` the effect language service flags the
+	// mergeAll as "this layer needs services from another in the same call"
+	// (false positive — BetterAuthLive doesn't depend on Pasaport/LiveTopics).
+	// `provideMerge` makes the build order explicit: fateLayer + liveLayer
+	// first, then betterAuthLayer's outputs merged on top with its own
+	// requirements left to the outer worker `Effect.provide`.
+	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute).pipe(
+		HttpRouter.provideRequest(
+			Layer.mergeAll(options.fateLayer, options.liveLayer).pipe(
+				Layer.merge(options.betterAuthLayer),
+			),
+		),
 	);
 
 	return Layer.mergeAll(typedJson, rawRoutes);

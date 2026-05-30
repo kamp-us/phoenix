@@ -93,7 +93,12 @@ beforeAll(async () => {
 
 	const db = createDrizzle(sqlite.d1);
 	const env = {PHOENIX_DB: sqlite.d1, ENVIRONMENT: "development"} as unknown as WorkerEnv;
-	WorkerLive = makeFateLayer(db, env);
+	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;
+	// the bridge tests never hit that path, so a typed no-op stand-in is enough.
+	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
+		typeof makeFateLayer
+	>[2];
+	WorkerLive = makeFateLayer(db, env, fakeAuth);
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the
 	// node pool can't forge a session, so we insert the rows the services read).

@@ -19,7 +19,11 @@
 import {Layer} from "effect";
 import {type Pano, PanoLive} from "../features/pano/Pano.ts";
 import {type PanoAdmin, PanoAdminLive} from "../features/pano/PanoAdmin.ts";
-import {type Pasaport, PasaportLive} from "../features/pasaport/Pasaport.ts";
+import {
+	type Auth as BetterAuthInstance,
+	makePasaportLive,
+	type Pasaport,
+} from "../features/pasaport/Pasaport.ts";
 import {type PasaportAdmin, PasaportAdminLive} from "../features/pasaport/PasaportAdmin.ts";
 import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk.ts";
 import {type SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin.ts";
@@ -56,17 +60,23 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
  * `Drizzle` is built once from `db` (via {@link makeDrizzleLayer}); the feature
  * services provide over it. `SozlukLive` and `PanoLive` both depend on `Vote`,
  * so they merge first and `provideMerge(VoteLive)` once; `PasaportLive` and
- * `StatsLive` depend only on `Drizzle` (Pasaport also reads `CloudflareEnv` for
- * better-auth construction — supplied from the bound `env` here until the
- * `createAuth` hoist in a later task).
+ * `StatsLive` depend only on `Drizzle`. Pasaport's better-auth instance is
+ * resolved in worker init via the `BetterAuth` Context tag (`@alchemy.run/better-auth`,
+ * implemented by `worker/auth/better-auth-live.ts`) and threaded in through
+ * `makePasaportLive(auth)` — Pasaport no longer builds its own auth.
  *
  * The result requires nothing (`R = never`); the per-request `Auth` +
  * `RequestContext` are layered on top in the `/fate` route, not here.
  */
-export const makeFateLayer = (db: DrizzleDb, env: WorkerEnv): Layer.Layer<WorkerFateServices> => {
+export const makeFateLayer = (
+	db: DrizzleDb,
+	env: WorkerEnv,
+	auth: BetterAuthInstance,
+): Layer.Layer<WorkerFateServices> => {
 	const DrizzleLayer = makeDrizzleLayer(db);
 	const EnvLayer = Layer.succeed(CloudflareEnv, env);
 
+	const PasaportLive = makePasaportLive(auth);
 	const SozlukPanoLayer = Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive));
 	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukPanoLayer, StatsLive);
 

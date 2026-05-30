@@ -20,11 +20,13 @@
 		"pano:import": "node --experimental-strip-types scripts/import-pano.ts"
 	},
 	"dependencies": {
+		"@alchemy.run/better-auth": "catalog:",
 		"@base-ui/react": "catalog:",
 		"@better-auth/core": "catalog:",
 		"@effect/platform-bun": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@effect/sql-pg": "catalog:",
+		"@effect/sql-sqlite-do": "catalog:",
 		"@nkzw/fate": "catalog:",
 		"@usirin/forge": "catalog:",
 		"agents": "catalog:",

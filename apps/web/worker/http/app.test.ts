@@ -19,7 +19,12 @@
  *
  * Runs in the node pool (workerd harness is task 7).
  */
+import * as BetterAuth from "@alchemy.run/better-auth";
 import * as Cloudflare from "alchemy/Cloudflare";
+import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
+import {drizzleAdapter} from "better-auth/adapters/drizzle";
+import {bearer} from "better-auth/plugins";
+import {drizzle} from "drizzle-orm/d1";
 import {Effect} from "effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -27,6 +32,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
+import * as schema from "../db/drizzle/schema.ts";
 import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
 import {makeAdminLayer, makeFateLayer} from "../fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../fate/live-topics.ts";
@@ -108,11 +114,66 @@ beforeAll(() => {
 
 	const db = createDrizzle(sqlite.d1);
 	const env = {PHOENIX_DB: sqlite.d1, ...ENV} as unknown as WorkerEnv;
-	const fateLayer = makeFateLayer(db, env);
+
+	// Build a real better-auth instance over the same node:sqlite-backed D1 the
+	// rest of the test uses. The deployed worker assembles this via
+	// `BetterAuthLive` (`worker/auth/better-auth-live.ts`), but that Layer needs
+	// the full alchemy provider stack (`Random`, `D1Connection`) which doesn't
+	// exist in the node test runtime. Constructing the instance directly here and
+	// providing it through a hand-rolled Layer over the same `BetterAuth` Context
+	// tag is the test-mode equivalent.
+	const betterAuthDrizzle = drizzle(sqlite.d1, {schema});
+	const testAuthInstance = makeBetterAuth({
+		emailAndPassword: {enabled: true},
+		database: drizzleAdapter(betterAuthDrizzle, {provider: "sqlite", schema}),
+		secret: ENV.BETTER_AUTH_SECRET,
+		baseURL: ENV.BETTER_AUTH_URL,
+		trustedOrigins: [ENV.BETTER_AUTH_TRUSTED_ORIGINS],
+		user: {
+			additionalFields: {
+				username: {type: "string", required: false, input: false},
+			},
+		},
+		plugins: [bearer()],
+	} satisfies BetterAuthOptions);
+
+	const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)({
+		auth: Effect.succeed(testAuthInstance),
+		fetch: Effect.gen(function* () {
+			const request = yield* HttpServerRequest.HttpServerRequest;
+			const response = yield* Effect.promise(() =>
+				testAuthInstance.handler(request.source as Request),
+			);
+			return HttpServerResponse.fromWeb(response);
+		}),
+	});
+
+	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to
+	// `Parameters<typeof makeFateLayer>[2]` (the `Auth` type re-export, which
+	// the deployed worker also satisfies).
+	const fateLayer = makeFateLayer(
+		db,
+		env,
+		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[2],
+	);
 	const adminLayer = makeAdminLayer(db);
 
-	appLayerAllowed = makeAppLive({fateLayer, adminLayer, adminAllowed: true, env, liveLayer});
-	appLayerDenied = makeAppLive({fateLayer, adminLayer, adminAllowed: false, env, liveLayer});
+	appLayerAllowed = makeAppLive({
+		fateLayer,
+		adminLayer,
+		adminAllowed: true,
+		env,
+		liveLayer,
+		betterAuthLayer,
+	});
+	appLayerDenied = makeAppLive({
+		fateLayer,
+		adminLayer,
+		adminAllowed: false,
+		env,
+		liveLayer,
+		betterAuthLayer,
+	});
 	// Gate derived the way the worker derives it, from a non-dev `ENVIRONMENT`.
 	appLayerProd = makeAppLive({
 		fateLayer,
@@ -120,6 +181,7 @@ beforeAll(() => {
 		adminAllowed: adminGateFor("production"),
 		env,
 		liveLayer,
+		betterAuthLayer,
 	});
 });
 

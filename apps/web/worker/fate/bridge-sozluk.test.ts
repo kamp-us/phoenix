@@ -105,7 +105,12 @@ beforeAll(async () => {
 	// (`PHOENIX_DB`, for Pasaport's better-auth); the bridge under test never
 	// invokes the auth methods.
 	const env = {PHOENIX_DB: sqlite.d1, ENVIRONMENT: "development"} as unknown as WorkerEnv;
-	const fateLayer = makeFateLayer(db, env);
+	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;
+	// the bridge tests never hit that path, so a typed no-op stand-in is enough.
+	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
+		typeof makeFateLayer
+	>[2];
+	const fateLayer = makeFateLayer(db, env, fakeAuth);
 	WorkerLive = Layer.mergeAll(fateLayer, SozlukAdminLive.pipe(Layer.provide(fateLayer)));
 
 	// Seed five definitions with distinct scores so the keyset order is

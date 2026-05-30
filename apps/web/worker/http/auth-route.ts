@@ -2,50 +2,27 @@
  * The raw-`Request` HTTP routes (ADR 0027, `.patterns/alchemy-http-router.md`).
  *
  * These endpoints want the *raw* `Request`/`Response`, not a schema, so they're
- * imperative `HttpRouter.add` routes reading `Cloudflare.Request` and handing
- * the result back through `HttpServerResponse.fromWeb`:
+ * imperative `HttpRouter.add` routes:
  *
- *   - `* /api/auth/*` — better-auth. The handler is the same single global auth
- *     realm against the same D1 tables; `Pasaport.handleAuth` (a worker-level
- *     service) builds better-auth and runs its handler. No per-request runtime.
- *   - `* /agents/*` — the agent transport stub (ADR 0009). No product agent DOs
- *     remain on the worker, so this returns 404, exactly as the old Hono
- *     `routeAgentRequest(...) ?? 404` did once `routeAgentRequest` had nothing
- *     to dispatch to. Kept as a route so future per-atom agents plug in here
- *     without changing the router shape (out of scope for this migration).
+ *   - `* /api/auth/*` — better-auth. Delegated to the `BetterAuth` Context tag
+ *     (`@alchemy.run/better-auth`): the layer (`BetterAuthLive`,
+ *     `worker/auth/better-auth-live.ts`) constructs `makeBetterAuth(...)` once
+ *     and exposes `.fetch` — an `HttpEffect` that forwards the inbound request
+ *     to `auth.handler(...)` and returns the response. Same single global auth
+ *     realm against the same D1 tables as `Pasaport.validateSession`.
  */
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as BetterAuth from "@alchemy.run/better-auth";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {Pasaport} from "../features/pasaport/Pasaport.ts";
 
 /**
- * `* /api/auth/*` — forward the raw `Request` to better-auth's handler. The
- * worker-level `Pasaport` owns auth construction (same D1 tables); the route
- * just relays request → response.
+ * `* /api/auth/*` — forward to better-auth's handler via the `BetterAuth`
+ * Context tag. The layer constructs the auth instance once (per isolate) and
+ * exposes `.fetch` as an `HttpEffect`; the route just yields it.
  */
 export const handleAuth = Effect.gen(function* () {
-	const raw = yield* Cloudflare.Request;
-	const pasaport = yield* Pasaport;
-	const res = yield* pasaport.handleAuth(raw);
-	return HttpServerResponse.fromWeb(res);
+	const betterAuth = yield* BetterAuth.BetterAuth;
+	return yield* betterAuth.fetch;
 });
 
 export const authRoute = HttpRouter.add("*", "/api/auth/*", handleAuth);
-
-/**
- * `* /agents/*` — the inert agent transport stub: always 404. Drains the request
- * body first so workerd doesn't warn "Can't read from request stream after
- * response has been sent" when a POST carries a body (a `routeAgentRequest`
- * upgrade does); the body is discarded, the response is still 404.
- */
-export const agentsRoute = HttpRouter.add(
-	"*",
-	"/agents/*",
-	Effect.gen(function* () {
-		const raw = yield* Cloudflare.Request;
-		yield* Effect.promise(() => raw.text().catch(() => "")).pipe(Effect.ignore);
-		return HttpServerResponse.text("Not Found", {status: 404});
-	}),
-);

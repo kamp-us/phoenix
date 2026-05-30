@@ -29,12 +29,12 @@
  * HMR) and proxies `/api` + `/fate*` to this worker (task 6); under bare
  * `alchemy dev` this worker is API-only, so a non-API path has no SPA to return.
  */
-import * as Alchemy from "alchemy";
+import * as BetterAuth from "@alchemy.run/better-auth";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as Redacted from "effect/Redacted";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import {BetterAuthLive} from "./auth/better-auth-live.ts";
 import {makeAdminLayer, makeFateLayer} from "./fate/layers.ts";
 import {LiveConnections, LiveTopics} from "./fate/live-topics.ts";
 import {makeAppLive} from "./http/app.ts";
@@ -82,12 +82,11 @@ export class Phoenix extends Cloudflare.Worker<
 		// flag and break `http://localhost` storage.
 		BETTER_AUTH_URL: "http://localhost:3000",
 		BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
-		// `BETTER_AUTH_SECRET` is NOT here — a plain `env` var deploys as a
-		// Cloudflare `plain_text` binding (readable in state, plan output, and the
-		// dashboard). The session-signing secret is bound below via
-		// `Alchemy.Secret` instead, which deploys it as encrypted `secret_text`
-		// (no plain-text copy in the bundle, plan, or logs) while still surfacing
-		// on `env.BETTER_AUTH_SECRET` at runtime for `Pasaport` to read.
+		// `BETTER_AUTH_SECRET` is NOT bound here anymore — `BetterAuthLive`
+		// (`auth/better-auth-live.ts`) mints it via alchemy's `Random` resource,
+		// which persists the minted value in alchemy state so re-deploys keep the
+		// same secret unless the resource is replaced. The session-signing secret
+		// is therefore not a deploy-time env var and never appears on `env.*`.
 	},
 	assets: {
 		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
@@ -129,26 +128,6 @@ export default Phoenix.make(
 		const connections = yield* ConnectionDO;
 		const topics = yield* TopicDO;
 
-		// Bind the session-signing secret as encrypted `secret_text` rather than a
-		// `plain_text` env var (see the `env` block above). The value is already
-		// deploy-time-resolved and fail-closed by `resolveDeployEnv` (a real deploy
-		// with no `BETTER_AUTH_SECRET` threw at module-eval; the offline dev/Vitest
-		// loop falls back to the fixed non-secret), so we wrap that resolved string —
-		// `Alchemy.Secret` only changes how it is *stored*, not how it is resolved.
-		//
-		// `Alchemy.Secret` is the alchemy-effect `Output` form — it registers a worker
-		// `secret_text` binding (not a Cloudflare Secrets Store entry); at runtime its
-		// value surfaces on `env.BETTER_AUTH_SECRET` (via `WorkerEnvironment`, below)
-		// for `Pasaport` to read. The `yield*` (binding registration) is the
-		// load-bearing effect; only the *returned accessor* is unused (`_`-prefixed):
-		// resolving it here would re-read the binding at init time, which the offline
-		// dev loop can't satisfy — binding it to a variable also discharges the
-		// floating-effect diagnostic without that re-read.
-		const _betterAuthSecret = yield* Alchemy.Secret(
-			"BETTER_AUTH_SECRET",
-			Redacted.make(deployEnv.BETTER_AUTH_SECRET),
-		);
-
 		// Each bound client stays load-bearing through its real use below: `db`
 		// via `db.raw`, and `topics`/`connections` via the `liveLayer` closures'
 		// `getByName(...)` calls — drop a `bind()`/`yield*` above and the type
@@ -178,7 +157,16 @@ export default Phoenix.make(
 			PHOENIX_DB: raw,
 			ENVIRONMENT: deployEnv.ENVIRONMENT,
 		};
-		const fateLayer = makeFateLayer(createDrizzle(raw), env);
+		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
+		// init — the layer (`BetterAuthLive`, provided below) constructs the
+		// `makeBetterAuth(...)` instance once and caches it. Yielding `auth` here
+		// materializes the cached `Auth` reference, so `Pasaport.validateSession`
+		// (which runs `auth.api.getSession(...)` per request) and the `/api/auth/*`
+		// route (which runs `auth.handler(request)`) share one instance — sign +
+		// validate with the same secret.
+		const betterAuth = yield* BetterAuth.BetterAuth;
+		const authInstance = yield* betterAuth.auth;
+		const fateLayer = makeFateLayer(createDrizzle(raw), env, authInstance);
 		const adminLayer = makeAdminLayer(createDrizzle(raw));
 		// Typed read off `WorkerEnv` (`shared/worker-env.ts`), not a `Record` cast:
 		// the dev-only admin surfaces open only on `development`, fail-closed
@@ -242,7 +230,14 @@ export default Phoenix.make(
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
 		// `HttpRouter.provideRequest(...)` and provides the admin services +
 		// platform stubs to the typed groups (`http/app.ts`).
-		const AppLive = makeAppLive({fateLayer, adminLayer, adminAllowed: allowAdmin, env, liveLayer});
+		const AppLive = makeAppLive({
+			fateLayer,
+			adminLayer,
+			adminAllowed: allowAdmin,
+			env,
+			liveLayer,
+			betterAuthLayer: BetterAuthLive,
+		});
 
 		// ── RUNTIME PHASE (per request) ──
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
@@ -259,6 +254,17 @@ export default Phoenix.make(
 		//     Layer's init requirements — that keeps `ConnectionDOLive` ↔
 		//     `TopicDOLive` free of a circular Layer dependency, so merging both
 		//     satisfies each one's sibling Tag from the other (and from this host).
-		Effect.provide(Layer.mergeAll(Cloudflare.D1ConnectionLive, ConnectionDOLive, TopicDOLive)),
+		Effect.provide(
+			Layer.mergeAll(
+				Cloudflare.D1ConnectionLive,
+				ConnectionDOLive,
+				TopicDOLive,
+				// `BetterAuthLive` (`auth/better-auth-live.ts`) satisfies the
+				// `BetterAuth` Context tag yielded above + provides `betterAuth.fetch`
+				// to the `/api/auth/*` route. It self-provides `D1ConnectionLive`
+				// internally but merging that one twice is idempotent.
+				BetterAuthLive,
+			),
+		),
 	),
 );
