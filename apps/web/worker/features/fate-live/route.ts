@@ -29,7 +29,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {Pasaport} from "../pasaport/Pasaport.ts";
-import {assertLiveControlRequest, type SubscribeControl} from "./protocol.ts";
+import {parseLiveControlRequest, type SubscribeControl} from "./protocol.ts";
 import {LiveConnections} from "./topics.ts";
 
 /**
@@ -79,20 +79,20 @@ export const handleLive = Effect.gen(function* () {
 	}
 
 	if (raw.method === "POST") {
-		let body: ReturnType<typeof assertLiveControlRequest>;
-		// `assertLiveControlRequest` is a synchronous validator that throws a
-		// `FateRequestError`; this request-boundary handler catches it to return an
-		// HTTP error Response (not an Effect failure), so a plain try/catch is the
-		// right shape here rather than threading it through Effect error channels.
-		// @effect-diagnostics-next-line effect/tryCatchInEffectGen:off
-		try {
-			body = assertLiveControlRequest(yield* Effect.promise(() => raw.json()));
-		} catch (error) {
-			if (error instanceof FateRequestError) {
-				return liveError(error.code, error.message, error.status);
-			}
-			return liveError("BAD_REQUEST", "Body must be valid JSON.", 400);
+		// Parse the JSON body, then decode it against the control-request schema.
+		// A bad-JSON body and a schema `FateRequestError` both surface as an HTTP
+		// error Response (not an Effect failure) at this request boundary, so each
+		// is mapped into a `liveError` carried in the error channel and recovered
+		// with `Effect.either` — no error is threaded onward.
+		const decoded = yield* Effect.tryPromise({
+			try: () => raw.json(),
+			catch: () => new FateRequestError("BAD_REQUEST", "Body must be valid JSON."),
+		}).pipe(Effect.flatMap(parseLiveControlRequest), Effect.result);
+		if (decoded._tag === "Failure") {
+			const error = decoded.failure;
+			return liveError(error.code, error.message, error.status);
 		}
+		const body = decoded.success;
 		const connectionId = body.connectionId;
 		const results: Array<{id: string; ok: boolean; data: null}> = [];
 		for (const operation of body.operations) {

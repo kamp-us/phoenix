@@ -21,12 +21,12 @@
 
 import {
 	FateRequestError,
-	isRecord,
 	liveConnectionTopic,
 	liveEntityTopic,
 	liveGlobalConnectionTopic,
 } from "@nkzw/fate/server";
-import type * as Effect from "effect/Effect";
+import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 
 /** A fate live entity frame body (matches fate's native `livePayload`). */
 export type EntityFrame =
@@ -84,104 +84,82 @@ export type SubscribeControl =
 			readonly args?: Record<string, unknown>;
 	  };
 
-/** A single operation inside a fate live control request, post-validation. */
-export type LiveControlOperation =
-	| {
-			readonly id: string;
-			readonly kind: "subscribe";
-			readonly type: string;
-			readonly entityId: string | number;
-			readonly args?: Record<string, unknown>;
-			readonly lastEventId?: string;
-			readonly select: ReadonlyArray<string>;
-	  }
-	| {
-			readonly id: string;
-			readonly kind: "subscribeConnection";
-			readonly type: string;
-			readonly procedure: string;
-			readonly args?: Record<string, unknown>;
-			readonly selectionArgs?: Record<string, unknown>;
-			readonly lastEventId?: string;
-			readonly select: ReadonlyArray<string>;
-	  }
-	| {readonly id: string; readonly kind: "unsubscribe"};
+/**
+ * An optional args bag on a control operation — a JSON object (non-null, not an
+ * array), mirroring fate's `isRecord`. `Schema.optional` accepts a missing key
+ * or an explicit `undefined`, matching the old `isOptionalRecord` guard.
+ */
+const OptionalArgs = Schema.optional(Schema.Record(Schema.String, Schema.Unknown));
 
-/** A validated fate live control request body (POST /fate/live). */
-export interface LiveControlRequest {
-	readonly version: 1;
-	readonly connectionId: string;
-	readonly operations: ReadonlyArray<LiveControlOperation>;
-}
+/** A `subscribe` (entity) control operation. */
+const SubscribeOp = Schema.Struct({
+	id: Schema.String,
+	kind: Schema.Literal("subscribe"),
+	type: Schema.String,
+	// fate's `isProtocolId`: a string or number entity id.
+	entityId: Schema.Union([Schema.String, Schema.Number]),
+	args: OptionalArgs,
+	lastEventId: Schema.optional(Schema.String),
+	select: Schema.Array(Schema.String),
+});
 
-const isProtocolId = (value: unknown): value is string | number =>
-	typeof value === "string" || typeof value === "number";
+/** A `subscribeConnection` (connection) control operation. */
+const SubscribeConnectionOp = Schema.Struct({
+	id: Schema.String,
+	kind: Schema.Literal("subscribeConnection"),
+	type: Schema.String,
+	procedure: Schema.String,
+	args: OptionalArgs,
+	selectionArgs: OptionalArgs,
+	lastEventId: Schema.optional(Schema.String),
+	select: Schema.Array(Schema.String),
+});
 
-const isStringArray = (value: unknown): value is ReadonlyArray<string> =>
-	Array.isArray(value) && value.every((entry) => typeof entry === "string");
-
-const isOptionalRecord = (value: unknown): boolean => value === undefined || isRecord(value);
-
-const isOptionalString = (value: unknown): boolean =>
-	value === undefined || typeof value === "string";
+/** An `unsubscribe` control operation — just `id` + `kind`. */
+const UnsubscribeOp = Schema.Struct({
+	id: Schema.String,
+	kind: Schema.Literal("unsubscribe"),
+});
 
 /**
- * Validate a fate live control request body, mirroring fate's native
- * `assertLiveControlRequest` exactly (a malformed body throws a `BAD_REQUEST`
- * `FateRequestError` rather than coercing — e.g. a missing/non-id `entityId`
- * is rejected instead of becoming a dead empty-string subscription).
+ * A single operation inside a fate live control request — the discriminated
+ * union of the three `kind`s. This schema is the single source of truth; the
+ * `LiveControlOperation` type is derived from it so validation and type can't
+ * drift.
  */
-export function assertLiveControlRequest(value: unknown): LiveControlRequest {
-	if (
-		!isRecord(value) ||
-		value.version !== 1 ||
-		typeof value.connectionId !== "string" ||
-		!Array.isArray(value.operations)
-	) {
-		throw new FateRequestError("BAD_REQUEST", "Invalid Fate live request.");
-	}
-	for (const operation of value.operations) {
-		if (
-			!isRecord(operation) ||
-			typeof operation.id !== "string" ||
-			typeof operation.kind !== "string"
-		) {
-			throw new FateRequestError("BAD_REQUEST", "Invalid Fate live operation.");
-		}
-		if (operation.kind === "subscribe") {
-			if (
-				typeof operation.type !== "string" ||
-				!isProtocolId(operation.entityId) ||
-				!isOptionalRecord(operation.args) ||
-				!isOptionalString(operation.lastEventId) ||
-				!isStringArray(operation.select)
-			) {
-				throw new FateRequestError("BAD_REQUEST", "Invalid Fate live subscribe operation.");
-			}
-			continue;
-		}
-		if (operation.kind === "subscribeConnection") {
-			if (
-				typeof operation.type !== "string" ||
-				typeof operation.procedure !== "string" ||
-				!isOptionalRecord(operation.args) ||
-				!isOptionalRecord(operation.selectionArgs) ||
-				!isOptionalString(operation.lastEventId) ||
-				!isStringArray(operation.select)
-			) {
-				throw new FateRequestError(
-					"BAD_REQUEST",
-					"Invalid Fate live connection subscribe operation.",
-				);
-			}
-			continue;
-		}
-		if (operation.kind !== "unsubscribe") {
-			throw new FateRequestError("BAD_REQUEST", "Invalid Fate live operation.");
-		}
-	}
-	return value as unknown as LiveControlRequest;
-}
+const LiveControlOperationSchema = Schema.Union([
+	SubscribeOp,
+	SubscribeConnectionOp,
+	UnsubscribeOp,
+]);
+
+/** The fate live control request body envelope (POST /fate/live). */
+const LiveControlRequestSchema = Schema.Struct({
+	version: Schema.Literal(1),
+	connectionId: Schema.String,
+	operations: Schema.Array(LiveControlOperationSchema),
+});
+
+/** A single operation inside a fate live control request, post-validation. */
+export type LiveControlOperation = Schema.Schema.Type<typeof LiveControlOperationSchema>;
+
+/** A validated fate live control request body (POST /fate/live). */
+export type LiveControlRequest = Schema.Schema.Type<typeof LiveControlRequestSchema>;
+
+/**
+ * Decode an untrusted fate live control request body, mirroring fate's native
+ * `assertLiveControlRequest` exactly (a malformed body fails with a
+ * `BAD_REQUEST` `FateRequestError` rather than coercing — e.g. a missing/non-id
+ * `entityId` is rejected instead of becoming a dead empty-string subscription).
+ * Any `ParseError` collapses to the same `FateRequestError` the route already
+ * maps to a `liveError(...)`, so the /fate/live HTTP contract is unchanged.
+ */
+export const parseLiveControlRequest = (
+	value: unknown,
+): Effect.Effect<LiveControlRequest, FateRequestError> =>
+	Schema.decodeUnknownEffect(LiveControlRequestSchema)(value).pipe(
+		Effect.mapError(() => new FateRequestError("BAD_REQUEST", "Invalid Fate live request.")),
+	);
 
 /**
  * The frame a connection DO writes to its held SSE stream. `kind` is the fate
