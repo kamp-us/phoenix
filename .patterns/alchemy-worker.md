@@ -77,7 +77,7 @@ Effect.gen(function* () {
 
 Two binding flavors show up here — `yield* SomeDO` for Durable Objects vs `yield* Cloudflare.X.bind(resource)` for D1/R2/KV. [alchemy-bindings.md](./alchemy-bindings.md) explains why they differ.
 
-> **Build worker-wide singletons in init, not per request.** The bound `db` is stable for the isolate's life, so the `Drizzle` capability service and the feature services (Sozluk, Pano, …) are constructed once here and provided as worker-level layers. Only request-scoped values (`Auth`, `RequestContext`) are provided per request. This is the central difference from the old "rebuild a `ManagedRuntime` every request" design — see [alchemy-runtime.md](./alchemy-runtime.md).
+> **Build worker-wide singletons in init, not per request.** The bound `db` is stable for the isolate's life, so the `Drizzle` capability service and the feature services (Sozluk, Pano, …) are constructed once here and provided as worker-level layers. Only request-scoped values (`Auth`) are provided per request; `HttpServerRequest` comes from the upstream `effect/unstable/http/HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides. This is the central difference from the old "rebuild a `ManagedRuntime` every request" design — see [alchemy-runtime.md](./alchemy-runtime.md).
 
 ## Runtime phase — return handlers
 

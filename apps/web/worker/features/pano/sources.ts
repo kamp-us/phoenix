@@ -9,14 +9,15 @@
  *
  * See `.patterns/fate-sources.md`.
  */
-import type {SourceDefinition} from "@nkzw/fate/server";
-import {fateSource, type SourceExecutor} from "../fate/effect.ts";
+import {
+	type AnyDataView,
+	type AnySourceDefinition,
+	fateSource,
+	type SourceExecutor,
+} from "../fate/effect.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import {type CommentRow, Pano, type PostSummaryRow, type PostTagRow, tagLabel} from "./Pano.ts";
 import {commentDataView, postDataView, tagDataView} from "./views.ts";
-
-type AnySourceDefinition = SourceDefinition<Record<string, unknown>, unknown>;
-type AnyDataView = AnySourceDefinition["view"];
 
 type PostViewRow = {[K in keyof PostSummaryRow]: PostSummaryRow[K]};
 type CommentViewRow = {[K in keyof CommentRow]: CommentRow[K]};

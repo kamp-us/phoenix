@@ -12,8 +12,7 @@
  * and `.patterns/effect-layer-composition.md#multiple-runtimes--graphql--admin`
  * for the wiring shape.
  */
-import * as Cloudflare from "alchemy/Cloudflare";
-import {Context, Data, Effect, Layer} from "effect";
+import {Context, Data, Effect} from "effect";
 
 /**
  * Does this env open the dev-only surfaces (the `/api/admin/*` seeder + clear
@@ -67,20 +66,3 @@ export class AdminAuth extends Context.Service<
 		},
 	);
 }
-
-/**
- * Live layer — derives `allowed` from the alchemy `WorkerEnvironment`. Reads
- * the deploy-resolved `ENVIRONMENT` string off the runtime env record (widened
- * from the generated `Env`'s `"development"` literal to a real string at the
- * boundary), then runs it through {@link adminAllowed}. In production the
- * admin routes are inert. Future versions can yield richer signals (Pasaport
- * karma, signed tokens) without changing the call sites.
- */
-export const AdminAuthLive = Layer.effect(AdminAuth)(
-	Effect.gen(function* () {
-		const env = yield* Cloudflare.WorkerEnvironment;
-		return {
-			allowed: adminAllowed({ENVIRONMENT: (env as {ENVIRONMENT?: string}).ENVIRONMENT ?? ""}),
-		};
-	}),
-);

@@ -5,11 +5,13 @@ import type {FateEnv} from "./layers.ts";
  * The per-request context fate hands to every resolver and source executor as
  * `ctx`.
  *
- * Per ADR 0029 it carries a captured `Context` (effect v4's service map — the
- * `ServiceMap` the patterns name), **not** a `ManagedRuntime`. The `/fate` route
- * builds the worker-level services once in init, provides `Auth` +
- * `RequestContext` per request, captures the live map with
- * `Effect.context<FateEnv>()`, and hands it here. The bridge runs each resolver
+ * Per ADR 0029 it carries a captured `Context.Context<FateEnv>` (effect v4's
+ * service map — the `ServiceMap` the patterns name), **not** a `ManagedRuntime`.
+ * Worker init builds the worker-level services once (`Drizzle` + features); the
+ * `/fate` route provides `Auth` per request and picks up the upstream
+ * `HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides
+ * (replacing the hand-rolled `RequestContext`), then captures the live map with
+ * `Effect.context<FateEnv>()` and hands it here. The bridge runs each resolver
  * with `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` — nothing is
  * built or disposed per request.
  *

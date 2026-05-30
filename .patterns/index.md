@@ -18,12 +18,12 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 |---|---|---|
 | [effect-context-service.md](./effect-context-service.md) | Class-form services, layer shapes, `return yield*`, service-method shape | Defining a new service or layer |
 | [feature-services.md](./feature-services.md) | One service per feature folder, `Drizzle` capability service, `Drizzle.run`/`Drizzle.batch` callbacks | Adding a feature service, writing service methods |
-| [effect-layer-composition.md](./effect-layer-composition.md) | `Layer.mergeAll` / `Layer.provide` / `ManagedRuntime`, the request + admin two-runtime story | Wiring services into a runtime, adding a new runtime |
+| [effect-layer-composition.md](./effect-layer-composition.md) | `Layer.mergeAll` / `Layer.provide` / `provideMerge`, parameterized Layer factories, the request + admin two-layer-set story (ADR 0029) | Wiring services into the worker, adding a new feature Layer |
 | [effect-errors.md](./effect-errors.md) | `Data.TaggedError` modeling, domain vs infra split, `_tag` → wire-code mapping | Designing a new error or feature's error set |
 | [effect-error-operators.md](./effect-error-operators.md) | `Effect.catchTag`/`Tags`/`All`, `Effect.exit`, `Cause`/`Exit` inspection | Catching, recovering, or inspecting failures at a boundary |
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | `Effect.fn` for service methods, span naming conventions | Writing or naming a service method |
 | [effect-testing.md](./effect-testing.md) | `@effect/vitest`, `it.effect`, integration tests via miniflare, when to use unit tests | Writing tests for features or infrastructure |
-| [effect-schema-validation.md](./effect-schema-validation.md) | `Schema.Class` for trust-boundary input validation | Validating untyped input (resolver inputs, Hono bodies, external APIs) |
+| [effect-schema-validation.md](./effect-schema-validation.md) | `Schema.Class` for trust-boundary input validation | Validating untyped input (admin `HttpApi` payloads, external API responses, persisted JSON) |
 | [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | `Stream.fromQueue` + `Stream.merge(heartbeats)` + `HttpServerResponse.stream`; the deliver path offers onto the queue | Building an SSE response written to from another component (e.g. a sibling DO's RPC) |
 
 ## Index — fate protocol layer
@@ -88,7 +88,7 @@ Background research and considered-options docs that don't define current code b
 ## Conventions across these docs
 
 - **All patterns are effect v4** (`effect@4.0.0-beta.*`). Earlier `@effect/sql-drizzle`-style examples don't apply directly.
-- **Drizzle is the query builder.** Wrapped behind `Drizzle.run` / `Drizzle.batch` callbacks — feature code never writes `Effect.tryPromise` directly.
+- **Drizzle is the query builder.** Exposed as `DrizzleAccess` methods you destructure (`const {run, batch} = yield* Drizzle`) — feature code never writes `Effect.tryPromise` directly.
 - **House rule: `Effect.tryPromise` always uses object notation** with an explicit `catch` producing a tagged error. The single-arg form is treated like `Effect.promise`.
 - **Service methods always use `Effect.fn("Service.method")(function*(args) {...})`** — automatic spans, automatic stack frames. Reserve `Effect.fnUntraced` for genuinely hot internal helpers.
 - **One service per feature folder.** Reads + writes coexist. Admin operations get a parallel `<Feature>Admin` service.

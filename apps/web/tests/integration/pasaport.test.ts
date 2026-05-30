@@ -26,10 +26,9 @@
  * (`pasa-${STAMP}-…`); usernames stay within the 3–30 lowercase `[a-z0-9-]` rule.
  *
  * not portable black-box: `pasaport-username.test.ts` `user_profile` row
- * read-backs, `findUsername` / `countUsersWithoutUsername` service-method
- * assertions (no fate op — covered via `profile` / backfill), and the Turkish
- * validation message regexes (`/en az 3/`, `/küçük harf/`, `/kullanımda/`,
- * `/zaten/`) — re-expressed as the stable wire codes.
+ * read-backs and the Turkish validation message regexes (`/en az 3/`,
+ * `/küçük harf/`, `/kullanımda/`, `/zaten/`) — re-expressed as the stable
+ * wire codes.
  * not portable black-box: `profile.test.ts` direct `user_profile` seed +
  * `definition_view` / `post_summary` / `comment_view` row-landing `waitFor`s
  * (writes are synchronous over `/fate`; just re-resolve) and the `createdAt`

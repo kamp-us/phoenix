@@ -2,10 +2,13 @@
  * The fate server.
  *
  * `createFateServer` produces plain `Request → Response` handlers
- * (`handleRequest` / `handleLiveRequest`) that drop onto a Hono route. The
- * Hono `/fate` route owns the per-request `ManagedRuntime` and supplies it via
- * `adapterContext`; fate's `context` factory just reads what the route built
- * (ADR 0017). See `.patterns/fate-server-wiring.md`.
+ * (`handleRequest` / `handleLiveRequest`) that the `HttpRouter.add` for the
+ * `POST /fate` route invokes directly — no Hono in between. The route resolves
+ * `Effect.context<FateEnv>()` once per request and hands the resulting `Context`
+ * down through `adapterContext`; fate's `context` factory passes it through to
+ * each resolver as `FateContext`. The bridge runner (`features/fate/effect.ts`)
+ * then runs each resolver Effect via `Effect.provide(effect, ctx.context)` —
+ * no `ManagedRuntime` (ADR 0029). See `.patterns/fate-server-wiring.md`.
  *
  * Wired surface: sozluk (`term`/`terms`/`definition.*`) + pano
  * (`post`/`posts`/`post.*`/`comment.*`) + pasaport (`me`/`profile`/
@@ -20,27 +23,18 @@
  */
 import {createFateServer} from "@nkzw/fate/server";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
-import {mutations as panoMutations} from "../pano/mutations.ts";
-import {mutations as pasaportMutations} from "../pasaport/mutations.ts";
-import {mutations as sozlukMutations} from "../sozluk/mutations.ts";
 import type {FateContext} from "./context.ts";
 import {lists} from "./lists.ts";
+import {mutations} from "./mutations.ts";
 import {queries} from "./queries.ts";
 import {sources} from "./sources.ts";
-
-/**
- * The full mutation map = sozluk (`definition.*`) + pano (`post.*` / `comment.*`)
- * + pasaport (`user.setUsername`). Kept as a named const so the `fateServer`
- * export type is nameable (TS4023).
- */
-const allMutations = {...sozlukMutations, ...panoMutations, ...pasaportMutations};
 
 export const fateServer = createFateServer<
 	FateContext,
 	Record<never, never>,
 	typeof queries,
 	typeof lists,
-	typeof allMutations,
+	typeof mutations,
 	FateContext
 >({
 	// The `/fate` route always supplies {runtime, request} as adapterContext
@@ -63,7 +57,7 @@ export const fateServer = createFateServer<
 	roots: {},
 	queries,
 	lists,
-	mutations: allMutations,
+	mutations,
 	sources,
 	// The publish-only `LiveEventBus` (ADR 0023): `live.*` in a mutation resolves
 	// a topic and fetches the `TopicDO` instance with inline-resolved data.

@@ -21,8 +21,11 @@ request was the only place to hang it.
 On alchemy that premise is gone. `Cloudflare.D1Connection.bind(PhoenixDb)`
 resolves **once per isolate** in the worker's init phase, and the things built on
 the bound client are stable for the isolate's life. Only `Auth` (the validated
-session) and `RequestContext` genuinely vary per request. fate's async resolver
-bridge still needs a handle to run Effects — but a handle, not a lifecycle.
+session) and `HttpServerRequest` (the upstream Tag from
+`effect/unstable/http/HttpServerRequest` carrying headers/url/method) genuinely
+vary per request — and `HttpServerRequest` is already provided by the
+alchemy/HttpRouter runtime for raw-Request routes. fate's async resolver bridge
+still needs a handle to run Effects — but a handle, not a lifecycle.
 
 ## Decision
 
@@ -30,8 +33,9 @@ No per-request `ManagedRuntime`. The worker provides `Drizzle` (built once in
 init from the bound D1 connection) and the feature services (`Sozluk`, `Pano`,
 `Vote`, `Pasaport`, `Stats`) as **worker-level layers**.
 
-Per request the `/fate` handler provides only `Auth` + `RequestContext` via
-`Effect.provideService`, captures the live service map with
+Per request the `/fate` handler provides only `Auth` via
+`Effect.provideService` (the upstream `HttpServerRequest` Tag is already
+provided by the alchemy/HttpRouter runtime), captures the live service map with
 `Effect.services<FateEnv>()`, and hands it to fate through `adapterContext`.
 `FateContext` carries a `ServiceMap`, not a `ManagedRuntime`:
 

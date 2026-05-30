@@ -9,14 +9,15 @@
  *
  * See `.patterns/fate-sources.md`.
  */
-import type {SourceDefinition} from "@nkzw/fate/server";
-import {fateSource, type SourceExecutor} from "../fate/effect.ts";
+import {
+	type AnyDataView,
+	type AnySourceDefinition,
+	fateSource,
+	type SourceExecutor,
+} from "../fate/effect.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import {type DefinitionRow, Sozluk, type TermSummaryRow} from "./Sozluk.ts";
 import {definitionDataView, termDataView} from "./views.ts";
-
-type AnySourceDefinition = SourceDefinition<Record<string, unknown>, unknown>;
-type AnyDataView = AnySourceDefinition["view"];
 
 type DefinitionViewRow = {[K in keyof DefinitionRow]: DefinitionRow[K]};
 type TermViewRow = {[K in keyof TermSummaryRow]: TermSummaryRow[K]};

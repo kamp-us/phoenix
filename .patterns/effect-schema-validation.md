@@ -4,15 +4,15 @@ When and how to use `effect/Schema` for runtime validation in phoenix. Schema is
 
 ## Where the trust boundary actually is
 
-GraphQL resolvers are **not** a trust boundary. Yoga validates GraphQL args against the SDL before they reach the resolver — by the time the resolver runs, args are typed and structurally valid. Adding Schema validation at the resolver layer would re-validate what's already validated.
+fate resolvers are **not** a trust boundary. fate's mutation `input` schemas coerce the wire payload to the declared shape before the resolver runs — by the time the resolver body executes, `input` is typed and structurally valid. Adding Schema validation at the resolver layer would re-validate what's already validated.
 
 The real boundaries in phoenix:
 
-- **Admin route bodies** — Hono's `c.req.json()` returns `unknown`. The admin route handler is the boundary; Schema parses the JSON into a typed value before calling the admin service method.
+- **Admin API payloads** — the dev-only `/api/admin/*` typed-JSON groups (`http/admin-handlers.ts`) accept payloads typed at the `HttpApi` layer (`http/admin-api.ts`); `HttpApiBuilder` decodes the request body against the declared `payload` Schema before the handler runs and surfaces a typed `ParseError` if it doesn't fit. The boundary is the `HttpApi` declaration, not the handler body.
 - **External API responses** — when phoenix fetches from an outside service. The response is untyped.
 - **Persisted JSON columns** — if phoenix ever stores arbitrary JSON in D1.
 
-For GraphQL: validation of *semantic* constraints (string length, format patterns, business invariants) lives **inside the service method**, not at the resolver. The service owns its own invariants — see [feature-services.md](./feature-services.md). Service methods do this validation in plain TS (if/else with tagged errors), or with `Schema.decodeUnknown` if the validation is genuinely complex.
+For fate: validation of *semantic* constraints (string length, format patterns, business invariants) lives **inside the service method**, not at the resolver (ADR 0013). The service owns its own invariants — see [feature-services.md](./feature-services.md). Service methods do this validation in plain TS (if/else with tagged errors), or with `Schema.decodeUnknown` if the validation is genuinely complex.
 
 ## `Schema.Class` — the canonical shape
 
@@ -44,27 +44,28 @@ export class SeedTermBody extends Schema.Class<SeedTermBody>("SeedTermBody")({
 
 ## Parsing at an admin route boundary
 
-> **Aspirational — admin routes in phoenix don't yet decode bodies via Schema. The shape below is the target for new admin routes and the convention when we retrofit existing ones.**
+The admin API declares each endpoint's `payload` Schema at the `HttpApi` level (`http/admin-api.ts`); `HttpApiBuilder` decodes the request body against that Schema before the handler runs, so the handler only sees a typed value:
 
 ```ts
-// worker/index.ts (or admin routes file)
-app.post("/api/admin/sozluk/upsert-term", async (c) => {
-  return adminRuntime(c.env).runPromise(Effect.gen(function*() {
-    yield* AdminAuth.required;
+// worker/http/admin-api.ts — schema lives on the endpoint declaration
+const upsertTerm = HttpApiEndpoint.post("upsertTerm", "/api/admin/sozluk/upsert-term")
+  .setPayload(SeedTermBody)
+  .addSuccess(UpsertTermResult)
+  .addError(Forbidden);
 
-    const raw = yield* Effect.tryPromise({
-      try: () => c.req.json(),
-      catch: (cause) => new BadRequest({cause}),
-    });
-    const body = yield* Schema.decodeUnknown(SeedTermBody)(raw);
-
-    const admin = yield* SozlukAdmin;
-    return yield* admin.seedTerm(body);
-  }));
-});
+// worker/http/admin-handlers.ts — handler body receives the decoded payload
+HttpApiBuilder.group(AppApi, "sozluk", (h) =>
+  h.handle("upsertTerm", ({payload}) =>
+    Effect.gen(function* () {
+      yield* requireAdmin;
+      const admin = yield* SozlukAdmin;
+      return yield* admin.seedTerm(payload);
+    }),
+  ),
+);
 ```
 
-The route handler is the boundary. Past `Schema.decodeUnknown`, the admin service receives a typed `SeedTermBody` and never re-validates structure. The service can still enforce domain rules (e.g., uniqueness, ownership) — those are different from structural validation.
+`HttpApiBuilder` is the boundary. Past it, the admin service receives a typed `SeedTermBody` and never re-validates structure. The service can still enforce domain rules (e.g., uniqueness, ownership) — those are different from structural validation. Schema's `ParseError` surfaces as a typed `BadRequest`-shaped failure at the HTTP edge.
 
 ## Service-method validation, not Schema
 
@@ -102,7 +103,7 @@ export class PersistedAuditError extends Schema.TaggedErrorClass<PersistedAuditE
 
 `Schema.encode(PersistedAuditError)(err)` produces a structurally-validated JSON form. `Schema.decode(PersistedAuditError)(json)` reconstructs the typed error.
 
-Phoenix doesn't have this need — all errors are encoded by the resolver wrapper into `GraphQLError`s before leaving the worker. Reserve `Schema.TaggedErrorClass` for the moment you need wire-form errors.
+Phoenix doesn't have this need — all errors are encoded by the fate bridge into `FateRequestError`s (`worker/features/fate/errors.ts`) before leaving the worker, and the typed-JSON admin groups carry their failures on the `HttpApiEndpoint`'s declared error channel. Reserve `Schema.TaggedErrorClass` for the moment you need wire-form errors over a non-fate transport.
 
 ## Schema features worth knowing about
 
@@ -118,7 +119,7 @@ Documented in `effect-smol`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not
 
 ## Anti-patterns
 
-- **Schema at the GraphQL resolver layer.** GraphQL SDL is the boundary; Yoga has already validated. Schema here is redundant and leaks validation infrastructure into product code. Domain validation (length, format, etc.) belongs inside the service method as tagged-error checks.
+- **Schema at the fate resolver layer.** fate's mutation `input` schema is the boundary; the wire payload is already coerced by the time the resolver body runs. Schema here is redundant and leaks validation infrastructure into product code. Domain validation (length, format, etc.) belongs inside the service method as tagged-error checks.
 - **Schema everywhere.** Validating internal data is ceremony. Schema costs runtime parse time at every call.
 - **Defining a Schema for a type that already exists as a TypeScript interface.** Pick one — either Schema (and use `Schema.Schema.Type<typeof X>` to get the type) or interface. Maintaining both is a smell.
 - **Schema for drizzle rows.** Drizzle already gives you types from the schema. Re-parsing is redundant.

@@ -12,13 +12,14 @@
  *
  * See `.patterns/fate-sources.md`.
  */
-import type {SourceDefinition} from "@nkzw/fate/server";
-import {fateSource, type SourceExecutor} from "../fate/effect.ts";
+import {
+	type AnyDataView,
+	type AnySourceDefinition,
+	fateSource,
+	type SourceExecutor,
+} from "../fate/effect.ts";
 import {Pasaport, type ProfileRow, type UserRow} from "./Pasaport.ts";
 import {profileDataView, userDataView} from "./views.ts";
-
-type AnySourceDefinition = SourceDefinition<Record<string, unknown>, unknown>;
-type AnyDataView = AnySourceDefinition["view"];
 
 type UserViewRow = {[K in keyof UserRow]: UserRow[K]};
 // The `Profile` view row adds the client normalization key `id` (=== `userId`)

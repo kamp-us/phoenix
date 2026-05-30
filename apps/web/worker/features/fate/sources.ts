@@ -36,9 +36,7 @@ import {
 import {profileExecutor, profileSource, userExecutor, userSource} from "../pasaport/sources.ts";
 import {definitionExecutor, definitionSource, termExecutor, termSource} from "../sozluk/sources.ts";
 import type {FateContext} from "./context.ts";
-
-type AnySourceDefinition = SourceDefinition<Record<string, unknown>, unknown>;
-type AnyDataView = AnySourceDefinition["view"];
+import type {AnyDataView, AnySourceDefinition} from "./effect.ts";
 
 // The registry is a plain Map keyed by the SourceDefinition object (identity).
 const registry: SourceRegistry<FateContext> = new Map([

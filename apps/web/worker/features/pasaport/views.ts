@@ -53,7 +53,7 @@ export type User = EntityOf<UserViewRow, typeof userFields, "User">;
  *   - comment    → `bodyExcerpt`, `postId`, `postTitle`
  *
  * The three variants' fields are flattened onto one row
- * (`Pasaport.toContributionRow`); the profile page reads `kind` and renders the
+ * (`shapers.toContributionRow`); the profile page reads `kind` and renders the
  * matching row.
  */
 const contributionFields = {

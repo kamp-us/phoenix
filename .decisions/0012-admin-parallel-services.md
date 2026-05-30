@@ -38,7 +38,9 @@ Admin routes run against a **separate `ManagedRuntime`** wired in `worker/admin/
 - All `<Feature>Admin` services
 - `CloudflareEnv`
 
-It does **not** provide: `Auth` (GraphQL user session), `RequestContext`, or any resolver-facing feature service. Resolver-facing services are unavailable to admin routes; admin services are unavailable to resolvers.
+It does **not** provide: `Auth` (the fate user session), `HttpServerRequest`, or any resolver-facing feature service. Resolver-facing services are unavailable to admin routes; admin services are unavailable to resolvers.
+
+> Note (post-ADR-0029): the admin layer set runs over the same worker as the request layer set, not as a second `ManagedRuntime`; the `/api/admin/*` typed-JSON groups discharge `AdminAuth` (and the admin services) via `HttpRouter.provideRequest` at the app boundary (`http/app.ts`). The split between the two service surfaces — `Sozluk`/`Pano`/`Pasaport` vs `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` — and `AdminAuth.required` as the gate are unchanged.
 
 **Auth seam:** `AdminAuth` is a `Context.Service<AdminAuth, {allowed: boolean}>` with a `static readonly required` that fails with `AdminForbidden` if `allowed === false`. The initial `AdminAuthLive` derives `allowed` from `env.ENVIRONMENT === "development"`. Future hardening (signed tokens, allow-lists, audit) lands inside `AdminAuthLive` without touching call sites. The pattern mirrors `Auth.required` from the GraphQL runtime.
 

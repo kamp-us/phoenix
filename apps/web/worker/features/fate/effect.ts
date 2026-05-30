@@ -15,7 +15,7 @@
  * See `.patterns/fate-effect-bridge.md`, `.patterns/alchemy-runtime.md`, and
  * ADR 0016 / 0029.
  */
-import type {ConnectionResult, SourceRegistry} from "@nkzw/fate/server";
+import type {ConnectionResult, SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
 import {FateRequestError} from "@nkzw/fate/server";
 import {Cause, Effect, Exit} from "effect";
 import type {FateContext} from "./context.ts";
@@ -23,6 +23,20 @@ import {encodeFateError} from "./errors.ts";
 import type {FateEnv} from "./layers.ts";
 
 type Selection = ReadonlyArray<string>;
+
+/**
+ * The shape every per-feature `sources.ts` files reaches for: a fully-erased
+ * `SourceDefinition` (`Record<string, unknown>` row, `unknown` cursor). The
+ * registry keys these objects by identity, so the *static* shape doesn't need
+ * to be precise — only the runtime object identity matters.
+ */
+export type AnySourceDefinition = SourceDefinition<Record<string, unknown>, unknown>;
+
+/**
+ * The companion: `AnySourceDefinition["view"]`. Per-feature `sources.ts` files
+ * import this to type the `view:` slot of each source literal.
+ */
+export type AnyDataView = AnySourceDefinition["view"];
 
 /**
  * Build an Effect from a resolver/executor generator. The generator yields

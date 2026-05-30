@@ -354,10 +354,6 @@ export class Pano extends Context.Service<
 			host?: string | null;
 		}) => Effect.Effect<PostConnectionPage, DrizzleError>;
 
-		readonly getCommentRow: (
-			commentId: string,
-		) => Effect.Effect<typeof schema.commentView.$inferSelect | null, DrizzleError>;
-
 		/**
 		 * DB-keyset page over a post's comments in chronological-asc order
 		 * `(created_at asc, id asc)`, cursor = comment id. A bounded
@@ -655,13 +651,6 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 			if (!meta) return null;
 			return rowToPostPage(meta);
-		});
-
-		const getCommentRow = Effect.fn("Pano.getCommentRow")(function* (commentId: string) {
-			const row = yield* run((db) =>
-				db.query.commentView.findFirst({where: eq(schema.commentView.id, commentId)}),
-			);
-			return row ?? null;
 		});
 
 		const listPostsConnection = Effect.fn("Pano.listPostsConnection")(function* (
@@ -1641,7 +1630,6 @@ export const PanoLive = Layer.effect(Pano)(
 			getPostsByIds,
 			getCommentsByIds,
 			lookupCommentPostId,
-			getCommentRow,
 			submitPost,
 			editPost,
 			deletePost,

@@ -8,8 +8,6 @@
  *     The `/api/auth/*` route reads `BetterAuth.fetch` directly from the same
  *     Context tag — `Pasaport` no longer mounts the handler itself.
  *   - `getUserById(userId)`       — canonical user row by id.
- *   - `findUsername(username)`    — reverse lookup, used by tests + admin tools.
- *   - `countUsersWithoutUsername` — admin/backfill helper.
  *   - `setUsername({userId, value})` — bootstrap-step username write +
  *     `user_profile` upsert in one D1 batch.
  *   - `lookupProfile(username)` / `lookupProfileById(userId)` — profile-page
@@ -158,50 +156,6 @@ export interface ContributionRow {
 	postTitle: string | null;
 }
 
-/**
- * Flatten a discriminated {@link ContributionNode} into the flat
- * {@link ContributionRow} the fate view masks. The discriminant `kind` is
- * carried straight through; non-applicable variant fields are `null`.
- */
-export function toContributionRow(node: ContributionNode): ContributionRow {
-	const base = {kind: node.kind, id: node.id, score: node.score, createdAt: node.createdAt};
-	switch (node.kind) {
-		case "definition":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: node.termSlug,
-				termTitle: node.termTitle,
-				title: null,
-				slug: null,
-				postId: null,
-				postTitle: null,
-			};
-		case "post":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: null,
-				termTitle: null,
-				title: node.title,
-				slug: node.slug,
-				postId: null,
-				postTitle: null,
-			};
-		case "comment":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: null,
-				termTitle: null,
-				title: null,
-				slug: null,
-				postId: node.postId,
-				postTitle: node.postTitle,
-			};
-	}
-}
-
 /* -------------------------------------------------------------------------- */
 /* Service                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -222,12 +176,6 @@ export class Pasaport extends Context.Service<
 		readonly getUsersByIds: (
 			userIds: ReadonlyArray<string>,
 		) => Effect.Effect<UserRow[], DrizzleError>;
-
-		readonly findUsername: (
-			username: string,
-		) => Effect.Effect<{userId: string; username: string} | null, DrizzleError>;
-
-		readonly countUsersWithoutUsername: Effect.Effect<number, DrizzleError>;
 
 		readonly setUsername: (input: {
 			userId: string;
@@ -477,21 +425,6 @@ export const makePasaportLive = (auth: Auth) =>
 								username: row.username ?? null,
 							}) satisfies UserRow,
 					);
-				}),
-
-				findUsername: Effect.fn("Pasaport.findUsername")(function* (username: string) {
-					const row = yield* run((db) =>
-						db.query.user.findFirst({where: eq(schema.user.username, username)}),
-					);
-					if (!row?.username) return null;
-					return {userId: row.id, username: row.username};
-				}),
-
-				countUsersWithoutUsername: Effect.gen(function* () {
-					const rows = yield* run((db) =>
-						db.select({id: schema.user.id}).from(schema.user).where(isNull(schema.user.username)),
-					);
-					return rows.length;
 				}),
 
 				setUsername: Effect.fn("Pasaport.setUsername")(function* (input: {
