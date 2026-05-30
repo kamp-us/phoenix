@@ -9,7 +9,7 @@
  *     (`admin-api.ts` / `admin-handlers.ts`).
  *   - **Raw `Request`** (`POST /fate`, `* /api/auth/*`) —
  *     imperative `HttpRouter.add` routes reading `Cloudflare.Request`
- *     (`../fate/route.ts`, `auth-route.ts`).
+ *     (`../features/fate/route.ts`, `auth-route.ts`).
  *
  * Everything is a `Layer`, so they merge into one `AppLive`. The worker compiles
  * it with `HttpRouter.toHttpEffect(AppLive)` for its `fetch`.
@@ -23,8 +23,8 @@
 import type * as BetterAuth from "@alchemy.run/better-auth";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import type {WorkerAdminServices, WorkerFateServices} from "../fate/layers.ts";
-import {fateRoute} from "../fate/route.ts";
+import type {WorkerAdminServices, WorkerFateServices} from "../features/fate/layers.ts";
+import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {authRoute} from "../features/pasaport/route.ts";

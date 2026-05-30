@@ -1,6 +1,6 @@
 /**
  * The wire contract for mutation-error `code` strings.
- * The worker fate error codec (`worker/fate/errors.ts`) produces these; the SPA
+ * The worker fate error codec (`worker/features/fate/errors.ts`) produces these; the SPA
  * `decodeMutationErrorCode` decoder narrows incoming codes to this union so
  * UI code can `switch` on a typed value instead of stringly comparing against
  * `"UNAUTHORIZED"` etc.

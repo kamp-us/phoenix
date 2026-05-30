@@ -20,7 +20,7 @@
  * (`POST /fate`), better-auth (`* /api/auth/*`), the dev-only admin seeders
  * (`* /api/admin/*`, gated by `adminAllowed`), and the live SSE route
  * (`* /fate/live` → ConnectionDO). The feature services live under
- * `worker/features/` and the fate bridge under `worker/fate/`.
+ * `worker/features/` (including the fate bridge under `worker/features/fate/`).
  *
  * Dev vs prod for the SPA (ADR 0030): the `assets` + `runWorkerFirst` config
  * below is the *production* single-worker precedence — at the Cloudflare edge,
@@ -37,7 +37,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
 import {resolveDeployEnv} from "./env.ts";
-import {makeAdminLayer, makeFateLayer} from "./fate/layers.ts";
+import {makeAdminLayer, makeFateLayer} from "./features/fate/layers.ts";
 import ConnectionDO, {ConnectionDOLive} from "./features/fate-live/connection-do.ts";
 import TopicDO, {TopicDOLive} from "./features/fate-live/topic-do.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";

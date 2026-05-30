@@ -22,7 +22,7 @@ Drizzle           — holds the singleton drizzle(env.PHOENIX_DB, {schema}) buil
 Sozluk, Pano,     — domain services: feature-shaped methods
 Vote, Pasaport
   ↑
-fate resolvers /  — orchestrate domain services, shape wire entities (worker/fate/)
+fate resolvers /  — orchestrate domain services, shape wire entities (worker/features/fate/)
 sources
 ```
 
@@ -230,12 +230,12 @@ Notes:
 
 ## Resolver call sites
 
-Fate resolvers (`worker/fate/mutations.ts`, `queries.ts`) are thin orchestrations over a service, wrapped by a bridge helper (`fateMutation`/`fateQuery`/`fateList`/`fateSource`) that runs the Effect on the per-request runtime:
+Fate resolvers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, wrapped by a bridge helper (`fateMutation`/`fateQuery`/`fateList`/`fateSource`) that runs the Effect on the per-request runtime. The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
 
 ```ts
-// worker/fate/mutations.ts
-import {Sozluk} from "../features/sozluk/Sozluk";
-import {fateMutation} from "./effect";
+// worker/features/sozluk/mutations.ts
+import {Sozluk} from "./Sozluk";
+import {fateMutation} from "../fate/effect";
 
 resolve: fateMutation<AddDefinitionInput, Definition>(function*({input}) {
   const {user} = yield* Auth.required;
@@ -253,7 +253,7 @@ resolve: fateQuery<{slug: string}, Term | null>(function*({input}) {
 }),
 ```
 
-The bridge runner (`worker/fate/effect.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeFateError` to wire codes.
+The bridge runner (`worker/features/fate/effect.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeFateError` to wire codes.
 
 ## Cross-feature dependencies
 
@@ -283,7 +283,7 @@ Vote-delegating methods are the one place a method's `R` widens beyond `never`: 
 
 ## Wiring at the worker entry
 
-See `apps/web/worker/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
+See `apps/web/worker/features/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
 
 `Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request `Auth` and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) are layered on top in the `/fate` route. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#multiple-runtimes--graphql--admin) for why this shape avoids the `Layer.mergeAll` dependency warning.
 

@@ -30,11 +30,11 @@
 import {Effect, type Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {createDrizzle} from "../db/Drizzle";
-import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
-import {Pano} from "../features/pano/Pano";
-import {Auth} from "../features/pasaport/Auth";
-import {Pasaport} from "../features/pasaport/Pasaport";
+import {createDrizzle} from "../../db/Drizzle";
+import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
+import {Pano} from "../pano/Pano";
+import {Auth} from "../pasaport/Auth";
+import {Pasaport} from "../pasaport/Pasaport";
 import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";

@@ -1,6 +1,6 @@
 import {useRequest, useView, view} from "react-fate";
 import {Link} from "react-router";
-import type {LandingStats} from "../../worker/fate/views";
+import type {LandingStats} from "../../worker/features/fate/views";
 import type {PanoPostData} from "../components/pano";
 import type {TermRow} from "../components/sozluk";
 import {Screen} from "../fate/Screen";

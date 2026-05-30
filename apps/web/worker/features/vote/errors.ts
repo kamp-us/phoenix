@@ -2,7 +2,7 @@
  * Tagged errors raised by the Vote service layer.
  *
  * Wire-code contract — every tag in this file maps to a specific
- * `code` string via `worker/fate/errors.ts::encodeFateError`:
+ * `code` string via `worker/features/fate/errors.ts::encodeFateError`:
  *
  *   vote/VoteTargetNotFound → VOTE_TARGET_NOT_FOUND
  *

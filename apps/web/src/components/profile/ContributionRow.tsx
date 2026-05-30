@@ -13,7 +13,7 @@
  */
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {Contribution} from "../../../worker/fate/views";
+import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 
 /** The full discriminant selection — every field any `kind` branch reads. */

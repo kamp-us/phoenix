@@ -7,7 +7,7 @@
  */
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {Term} from "../../../worker/fate/views";
+import type {Term} from "../../../worker/features/fate/views";
 import {toIsoOrNull} from "../../fate/wire";
 import {formatAgoTR, formatDateTR} from "../../lib/datetime";
 

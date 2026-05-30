@@ -20,12 +20,12 @@
  * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
  */
 
-import {liveBus} from "../features/fate-live/event-bus.ts";
-import {Auth} from "../features/pasaport/Auth.ts";
-import {Sozluk} from "../features/sozluk/Sozluk.ts";
-import {fateMutation} from "./effect.ts";
-import {toDefinition, toTermFromPage} from "./shapers.ts";
-import type {Definition, Term} from "./views.ts";
+import {fateMutation} from "../fate/effect.ts";
+import {toDefinition, toTermFromPage} from "../fate/shapers.ts";
+import type {Definition, Term} from "../fate/views.ts";
+import {liveBus} from "../fate-live/event-bus.ts";
+import {Auth} from "../pasaport/Auth.ts";
+import {Sozluk} from "./Sozluk.ts";
 
 export interface AddDefinitionInput {
 	termSlug: string;

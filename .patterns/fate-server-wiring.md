@@ -4,10 +4,10 @@ How the backend is assembled and mounted. The short answer: `createFateServer({c
 
 ## The per-request runtime
 
-The runtime composes the feature layers over `Drizzle` over per-request values — the layer graph in [effect-layer-composition.md](./effect-layer-composition.md). It lives at `worker/fate/runtime.ts`:
+The runtime composes the feature layers over `Drizzle` over per-request values — the layer graph in [effect-layer-composition.md](./effect-layer-composition.md). It lives at `worker/features/fate/runtime.ts`:
 
 ```ts
-// worker/fate/runtime.ts
+// worker/features/fate/runtime.ts
 export namespace FateRuntime {
   export type Context =
     | CloudflareEnv | RequestContext | Auth
@@ -24,7 +24,7 @@ export namespace FateRuntime {
 The route builds the runtime, passes it through `adapterContext`, and disposes it in `finally` via the Worker `ExecutionContext` so disposal doesn't block the response. fate's `context` factory just reads what the route built:
 
 ```ts
-// worker/fate/server.ts
+// worker/features/fate/server.ts
 export const fateServer = createFateServer<FateContext>({
   context: ({adapterContext}) => adapterContext,   // route supplies {runtime, request}
   roots: Root,           // list/byId roots (from views.ts)
@@ -78,7 +78,7 @@ No per-request `ManagedRuntime` is built here: the DO relays inline-resolved pay
 
 ## Codegen
 
-The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — there is no hand-run `fate generate` step and nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. The plugin lives in `vite.config.ts`. See [ADR 0022](../.decisions/0022-server-types-single-source-of-truth.md).
+The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — there is no hand-run `fate generate` step and nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/features/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. The plugin lives in `vite.config.ts`. See [ADR 0022](../.decisions/0022-server-types-single-source-of-truth.md).
 
 ## The admin runtime stays separate
 

@@ -9,7 +9,7 @@ This is the **load-bearing seam** of the backend. The Effect domain services (So
 `createFateServer({context})` produces a per-request context object that every resolver and source handler receives as `ctx`. In phoenix that object carries the request's `ManagedRuntime`:
 
 ```ts
-// worker/fate/context.ts
+// worker/features/fate/context.ts
 import type {ManagedRuntime} from "effect";
 import type {FateRuntime} from "./runtime";
 
@@ -26,7 +26,7 @@ Session is **not** a field on `FateContext`. It is baked into the runtime's `Aut
 One function does the `runtime → Exit → wire-error` dance. Everything else funnels through it:
 
 ```ts
-// worker/fate/effect.ts
+// worker/features/fate/effect.ts
 import {Cause, Effect, Exit} from "effect";
 import {FateRequestError} from "@nkzw/fate/server";
 import {encodeFateError} from "./errors";
@@ -136,7 +136,7 @@ Domain failures surface as `FateRequestError(code, message)`, which serializes t
 > **`FateRequestError`'s `code` is typed narrow.** Its constructor types `code: FateProtocolErrorCode` — a closed 6-member protocol union (`BAD_REQUEST | FORBIDDEN | INTERNAL_ERROR | NOT_FOUND | UNAUTHORIZED | VALIDATION_ERROR`). phoenix's wire vocabulary is the wider `MutationErrorCode` set (`BODY_REQUIRED`, `TAKEN`, `DEFINITION_NOT_FOUND`, …). At run time the constructor stores whatever string it's given and fate forwards it verbatim on the wire, so widen the constructor through a one-line `fateError(code, message)` helper that accepts any `MutationErrorCode` and casts. `Unauthorized → "UNAUTHORIZED"` happens to be a real protocol code; the rest ride through the cast.
 
 ```ts
-// worker/fate/errors.ts
+// worker/features/fate/errors.ts
 import {FateRequestError} from "@nkzw/fate/server";
 import type {MutationErrorCode} from "../../src/lib/mutationErrorCodes"; // shared wire contract
 

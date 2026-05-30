@@ -16,7 +16,7 @@
  */
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useParams} from "react-router";
-import type {Profile} from "../../worker/fate/views";
+import type {Profile} from "../../worker/features/fate/views";
 import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
 import {Screen} from "../fate/Screen";

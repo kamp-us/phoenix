@@ -19,12 +19,12 @@
  * `byIds` on every relation-fetchable type).
  */
 import {createFateServer} from "@nkzw/fate/server";
-import {liveBusConfig} from "../features/fate-live/event-bus.ts";
+import {liveBusConfig} from "../fate-live/event-bus.ts";
+import {mutations as panoMutations} from "../pano/mutations.ts";
+import {mutations as pasaportMutations} from "../pasaport/mutations.ts";
+import {mutations as sozlukMutations} from "../sozluk/mutations.ts";
 import type {FateContext} from "./context.ts";
 import {lists} from "./lists.ts";
-import {mutations} from "./mutations.ts";
-import {panoMutations} from "./pano-mutations.ts";
-import {pasaportMutations} from "./pasaport-mutations.ts";
 import {queries} from "./queries.ts";
 import {sources} from "./sources.ts";
 
@@ -33,7 +33,7 @@ import {sources} from "./sources.ts";
  * + pasaport (`user.setUsername`). Kept as a named const so the `fateServer`
  * export type is nameable (TS4023).
  */
-const allMutations = {...mutations, ...panoMutations, ...pasaportMutations};
+const allMutations = {...sozlukMutations, ...panoMutations, ...pasaportMutations};
 
 export const fateServer = createFateServer<
 	FateContext,
@@ -59,7 +59,7 @@ export const fateServer = createFateServer<
 	// keeping `roots` empty keeps `fateServer`'s exported type nameable (a
 	// non-empty `Roots` generic would surface fate's internal `DataView` symbol,
 	// TS2883). byId/list roots come from `sources`/`lists`. See
-	// `worker/fate/views.ts`.
+	// `worker/features/fate/views.ts`.
 	roots: {},
 	queries,
 	lists,

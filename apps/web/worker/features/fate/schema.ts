@@ -1,6 +1,6 @@
 /**
  * The fate codegen entry module — the single module the fate Vite plugin reads
- * (`fate({module: ".../worker/fate/schema.ts", transport: "native"})`).
+ * (`fate({module: ".../worker/features/fate/schema.ts", transport: "native"})`).
  *
  * The plugin imports this module at build time (`runnerImport`) and needs three
  * things from one place:

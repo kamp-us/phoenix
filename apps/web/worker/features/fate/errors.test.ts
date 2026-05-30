@@ -7,13 +7,13 @@
 
 import {FateRequestError} from "@nkzw/fate/server";
 import {describe, expect, expectTypeOf, it} from "vitest";
-import {DrizzleError} from "../db/Drizzle";
-import {CommentNotFound} from "../features/pano/errors";
-import {Unauthorized} from "../features/pasaport/Auth";
-import {UserNotFound} from "../features/pasaport/errors";
-import {DefinitionNotFound} from "../features/sozluk/errors";
-import {VoteTargetNotFound} from "../features/vote/errors";
-import {AdminForbidden} from "../http/admin-auth";
+import {DrizzleError} from "../../db/Drizzle";
+import {AdminForbidden} from "../../http/admin-auth";
+import {CommentNotFound} from "../pano/errors";
+import {Unauthorized} from "../pasaport/Auth";
+import {UserNotFound} from "../pasaport/errors";
+import {DefinitionNotFound} from "../sozluk/errors";
+import {VoteTargetNotFound} from "../vote/errors";
 import {encodeFateError, type FateErrorTag, WIRE_CODE_BY_TAG} from "./errors";
 
 const code = (tag: string, extra: Record<string, unknown> = {}) =>

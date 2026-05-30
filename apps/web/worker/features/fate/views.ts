@@ -1,0 +1,138 @@
+/**
+ * fate data views — barrel + cross-feature `Root` composition.
+ *
+ * Per-feature data views and their derived entity types live in their owning
+ * feature (`features/<feature>/views.ts`); this barrel re-exports them so the
+ * SPA (and other call sites) keep importing from `worker/features/fate/views`. The
+ * client-exposed `Root` and the live-entity type registry compose across all
+ * features and stay here — they are intrinsically the cross-feature surface.
+ *
+ * See `.patterns/fate-data-views.md`.
+ */
+
+import {list} from "@nkzw/fate/server";
+import type {Comment, Post} from "../pano/views.ts";
+import {postDataView} from "../pano/views.ts";
+import {profileDataView, userDataView} from "../pasaport/views.ts";
+import type {Definition} from "../sozluk/views.ts";
+import {termDataView} from "../sozluk/views.ts";
+import {landingStatsDataView} from "../stats/views.ts";
+
+export type {Comment, Post, Tag} from "../pano/views.ts";
+export {commentDataView, postDataView, tagDataView} from "../pano/views.ts";
+export type {Contribution, Profile, User} from "../pasaport/views.ts";
+export {
+	contributionDataView,
+	profileDataView,
+	userDataView,
+} from "../pasaport/views.ts";
+export type {Definition, Term} from "../sozluk/views.ts";
+export {definitionDataView, termDataView} from "../sozluk/views.ts";
+export type {LandingStats} from "../stats/views.ts";
+export {landingStatsDataView} from "../stats/views.ts";
+
+/* -------------------------------------------------------------------------- */
+/* Live registry — entity name → entity type                                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The entities a mutation can publish a `live.update` for, keyed by their wire
+ * `__typename`. Single-sources the entity-name → entity-type relation so the
+ * live bus can type `update`'s `type` discriminant (instead of a bare `string`)
+ * and its `changed` field list against the entity's own field keys — a typo or
+ * renamed field becomes a compile error at the mutation site. Mirrors the typed
+ * `targetKind` discriminant the codebase prefers over magic strings.
+ *
+ * `Term` and `Profile` are intentionally omitted: their live updates flow
+ * through the nested-connection path (`liveBus.connection(...)`), not
+ * `update`. Add an entity here only when a resolver calls `liveBus.update` for
+ * it.
+ */
+export interface LiveEntities {
+	Definition: Definition;
+	Post: Post;
+	Comment: Comment;
+}
+
+/**
+ * The fields a `live.update("<Name>", …)` may name in `changed` — every field
+ * key of the entity except the `__typename` discriminant (which never
+ * "changes"). Keying `changed` against this makes a nonexistent or renamed
+ * field a compile error at the mutation site.
+ */
+export type LiveChangedField<Name extends keyof LiveEntities> = Exclude<
+	keyof LiveEntities[Name],
+	"__typename"
+>;
+
+/* -------------------------------------------------------------------------- */
+/* Root — client-exposed root queries                                         */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * Root-level query/list operations the fate Vite plugin turns into typed client
+ * roots (read with `useRequest`). A view-based entry is a `query` root; an entry
+ * wrapped in `list(...)` is a `list` root. The plugin reads this **value** at
+ * build time (`createSchema(views, Root)`) to emit the client roots; at runtime
+ * each query root is a `query` operation resolved by its matching
+ * `queries.<name>` resolver (so `Root` is not passed to `createFateServer` —
+ * see `server.ts` for why `roots` stays empty there).
+ *
+ * `me` is the "current user" root (fate's documented `viewer` pattern): the
+ * `userDataView` declares the shape, and `queries.me` (Auth-gated, reads the
+ * canonical Pasaport row) backs it. The byId roots for the other entities are
+ * generated from the source registry and don't need a `Root` entry; only
+ * custom-resolver roots are declared here.
+ *
+ * Every screen's roots are declared here: sözlük
+ * (`term`/`recentTerms`/`popularTerms`), pano (`post`/`posts`), and pasaport
+ * (`profile`/`landingStats`). Each `Root` entry MUST be a `dataView` — the plugin
+ * calls `ensureType(view)` on every root — so `landingStats` is backed by a
+ * dedicated `landingStatsDataView` entity (a singleton with a constant `id`),
+ * not the raw scalar shape. `health` stays off `Root` (no screen reads it).
+ *
+ * Annotated `Record<string, unknown>` so the export stays nameable: a precise
+ * type would surface fate's internal `DataView` symbol (TS2883/TS4023, the same
+ * non-portability the `*DataView` annotations dodge). The plugin only inspects
+ * this value at runtime (`isDataView` checks), so the loose type is sufficient.
+ */
+export const Root: Record<string, unknown> = {
+	me: userDataView,
+	// Sözlük term detail page (`queries.term`). A view-based entry becomes a
+	// typed `query` client root; at runtime the native transport dispatches it by
+	// the request key (= root name = `term`) to `queries.term`. The `term(slug)`
+	// args ride on the `useRequest` item. The nested `definitions` connection is
+	// carried inline by the resolver (see `.patterns/fate-connections.md`).
+	term: termDataView,
+	// Sözlük home's two columns. Each is a `list(...)`-wrapped root → a `list`
+	// client root the plugin emits as `FateAPI['lists'][name]`; the generated
+	// root NAME must equal the server `lists` resolver name (`recentTerms` /
+	// `popularTerms`), so the home reads both in one `useRequest` without aliasing
+	// a single `terms` resolver (which the request-key→root-name mapping forbids).
+	recentTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
+	popularTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
+	// Pano post detail page (`queries.post`). A view-based entry becomes a typed
+	// `query` client root; the native transport dispatches it by the request key
+	// (= root name = `post`) to `queries.post`. The `post(idOrSlug)` args ride on
+	// the `useRequest` item. The nested `comments` connection is carried inline by
+	// the resolver (see `.patterns/fate-connections.md`).
+	post: postDataView,
+	// Pano feed (`lists.posts`). A `list(...)`-wrapped root → a `list` client root
+	// the plugin emits as `FateAPI['lists'][name]`; the generated root NAME must
+	// equal the server `lists` resolver name (`posts`). Filter args (`sort`/`host`)
+	// keep each filtered feed a distinct connection that paginates independently;
+	// the feed with no filter args is the registered root list a `post.submit`
+	// `insert` reaches (see `.patterns/fate-mutations-client.md`).
+	posts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
+	// Public profile page (`queries.profile`). A view-based entry → a typed
+	// `query` client root; the native transport dispatches it by the request key
+	// (= root name = `profile`) to `queries.profile`. The `profile(username)` args
+	// ride on the `useRequest` item. The nested `contributions` discriminant feed
+	// is carried inline by the resolver (see `.patterns/fate-connections.md`).
+	profile: profileDataView,
+	// Landing-page stats card (`queries.landingStats`). A view-based entry → a
+	// typed `query` client root; dispatched by the request key (= `landingStats`)
+	// to `queries.landingStats`. Returns the single `LandingStats` entity (stamped
+	// with a constant `id`) the SPA reads directly.
+	landingStats: landingStatsDataView,
+};

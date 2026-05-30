@@ -18,21 +18,21 @@
  */
 import {Layer} from "effect";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import type {Drizzle, DrizzleDb} from "../db/Drizzle.ts";
-import {makeDrizzleLayer} from "../db/Drizzle.ts";
-import {type Pano, PanoLive} from "../features/pano/Pano.ts";
-import {type PanoAdmin, PanoAdminLive} from "../features/pano/PanoAdmin.ts";
-import type {Auth} from "../features/pasaport/Auth.ts";
+import type {Drizzle, DrizzleDb} from "../../db/Drizzle.ts";
+import {makeDrizzleLayer} from "../../db/Drizzle.ts";
+import {type Pano, PanoLive} from "../pano/Pano.ts";
+import {type PanoAdmin, PanoAdminLive} from "../pano/PanoAdmin.ts";
+import type {Auth} from "../pasaport/Auth.ts";
 import {
 	type Auth as BetterAuthInstance,
 	makePasaportLive,
 	type Pasaport,
-} from "../features/pasaport/Pasaport.ts";
-import {type PasaportAdmin, PasaportAdminLive} from "../features/pasaport/PasaportAdmin.ts";
-import {type Sozluk, SozlukLive} from "../features/sozluk/Sozluk.ts";
-import {type SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin.ts";
-import {type Stats, StatsLive} from "../features/stats/Stats.ts";
-import {type Vote, VoteLive} from "../features/vote/Vote.ts";
+} from "../pasaport/Pasaport.ts";
+import {type PasaportAdmin, PasaportAdminLive} from "../pasaport/PasaportAdmin.ts";
+import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
+import {type SozlukAdmin, SozlukAdminLive} from "../sozluk/SozlukAdmin.ts";
+import {type Stats, StatsLive} from "../stats/Stats.ts";
+import {type Vote, VoteLive} from "../vote/Vote.ts";
 
 /**
  * Every service available inside a fate resolver / source executor. This is the

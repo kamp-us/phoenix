@@ -21,7 +21,7 @@
  */
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
-import type {User} from "../../worker/fate/views";
+import type {User} from "../../worker/features/fate/views";
 import {codeOf} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import "./AuthPage.css";

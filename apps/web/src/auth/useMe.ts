@@ -16,7 +16,7 @@
  */
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, view} from "react-fate";
-import type {User} from "../../worker/fate/views";
+import type {User} from "../../worker/features/fate/views";
 import {useSession} from "./client";
 
 export interface MeUser {

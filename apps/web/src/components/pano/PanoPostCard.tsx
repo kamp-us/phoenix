@@ -13,7 +13,7 @@
  */
 import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {Post} from "../../../worker/fate/views";
+import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {Tag, type TagKind} from "../ui/atoms";

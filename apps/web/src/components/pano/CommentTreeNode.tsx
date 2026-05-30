@@ -13,7 +13,7 @@
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
-import type {Comment} from "../../../worker/fate/views";
+import type {Comment} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";

@@ -5,7 +5,7 @@ How writes work. The short answer: a `mutations` map on `createFateServer`, each
 ## The shape
 
 ```ts
-// worker/fate/server.ts
+// worker/features/fate/server.ts
 mutations: {
   "definition.add": {
     type: "Definition",                       // entity type returned (for client cache)

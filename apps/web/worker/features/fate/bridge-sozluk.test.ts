@@ -29,12 +29,12 @@
 import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {createDrizzle} from "../db/Drizzle";
+import {createDrizzle} from "../../db/Drizzle";
 // `?raw` so the node/unit pool imports the SQL as a string (the pool-workers
 // project transforms `.sql` to a string by default; the node pool does not).
-import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
-import {Auth} from "../features/pasaport/Auth";
-import {SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin";
+import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
+import {Auth} from "../pasaport/Auth";
+import {SozlukAdmin, SozlukAdminLive} from "../sozluk/SozlukAdmin";
 import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";

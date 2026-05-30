@@ -18,19 +18,21 @@
  * mutations stamp `myVote` authoritatively from the vote write so the field is
  * correct without a follow-up `user_vote` read.
  *
- * Kept in its own module (not merged into `mutations.ts`) so the inferred
- * `typeof panoMutations` stays nameable across the `fateServer` export (TS4023);
- * the exported input interfaces below are part of that.
+ * Lives in `features/pano/mutations.ts` (per-feature colocation); the `fate`
+ * barrel (`features/fate/server.ts`) composes it into the single mutation map
+ * fate expects, alongside the sozluk and pasaport mutations. The exported
+ * input interfaces below ride the `typeof mutations` type across the
+ * `fateServer` export (TS4023).
  *
  * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
  */
 
-import {liveBus} from "../features/fate-live/event-bus.ts";
-import {Pano} from "../features/pano/Pano.ts";
-import {Auth} from "../features/pasaport/Auth.ts";
-import {fateMutation} from "./effect.ts";
-import {toComment, toPost, toPostFromPage} from "./shapers.ts";
-import type {Comment, Post} from "./views.ts";
+import {fateMutation} from "../fate/effect.ts";
+import {toComment, toPost, toPostFromPage} from "../fate/shapers.ts";
+import type {Comment, Post} from "../fate/views.ts";
+import {liveBus} from "../fate-live/event-bus.ts";
+import {Auth} from "../pasaport/Auth.ts";
+import {Pano} from "./Pano.ts";
 
 export interface SubmitPostInput {
 	title: string;
@@ -121,7 +123,7 @@ const shapeComment = (r: {
 		myVote: r.myVote ?? null,
 	});
 
-export const panoMutations = {
+export const mutations = {
 	"post.submit": {
 		type: "Post",
 		resolve: fateMutation<SubmitPostInput, Post>(function* ({input}) {

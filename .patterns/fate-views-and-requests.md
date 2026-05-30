@@ -9,7 +9,7 @@ This is the client mirror of the server's data views ([fate-data-views.md](./fat
 ```tsx
 // src/components/sozluk/DefinitionCard.tsx
 import {view, useView, type ViewRef} from "react-fate";
-import type {Definition} from "../../../worker/fate/views";  // server Entity<> type
+import type {Definition} from "../../../worker/features/fate/views";  // server Entity<> type
 
 export const DefinitionView = view<Definition>()({
   id: true,
@@ -66,7 +66,7 @@ export const SozlukTermPage = ({slug}: {slug: string}) => {
 > - **A screen that needs two filtered lists of the same type needs two list roots** (one resolver each). The sözlük home's recent + popular columns are two server `lists` resolvers (`recentTerms`/`popularTerms`, fixed-sort wrappers over the `terms` keyset) + two `Root` entries, read in one `useRequest({recentTerms, popularTerms})`.
 > - **A detail page's nested connection is NOT a separate request key.** `Term.definitions` rides on the `term` query item (`args: {slug, definitions:{first}}`) and is read with `useListView(DefinitionConnectionView, term.definitions)` — there is no top-level `definitions` root.
 
-Custom-resolver roots (`term`, `recentTerms`, …) are declared by the `Root` value in `worker/fate/views.ts` (the plugin emits them as typed client roots — see [fate-client-setup.md](./fate-client-setup.md)).
+Custom-resolver roots (`term`, `recentTerms`, …) are declared by the `Root` value in `worker/features/fate/views.ts` (the plugin emits them as typed client roots — see [fate-client-setup.md](./fate-client-setup.md)).
 
 Request item shapes:
 

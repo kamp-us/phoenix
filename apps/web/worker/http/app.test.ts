@@ -34,8 +34,8 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../db/Drizzle.ts";
 import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../db/drizzle/schema.ts";
-import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
-import {makeAdminLayer, makeFateLayer} from "../fate/layers.ts";
+import {makeSqliteD1, type SqliteD1} from "../features/fate/__support__/sqlite-d1.ts";
+import {makeAdminLayer, makeFateLayer} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {makeAppLive} from "./app.ts";
 

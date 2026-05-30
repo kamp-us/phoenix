@@ -71,7 +71,7 @@ the service `ORDER BY` — a second copy of the keyset order that nothing
 invoked.
 
 **Those executors and the source `orderBy` declarations are now deleted**
-(`worker/fate/sources.ts`). Only the parent resolver delivers a nested
+(`worker/features/fate/sources.ts`). Only the parent resolver delivers a nested
 connection; there is genuinely one keyset path (the service method). The
 `Contribution` source — which had *only* a `connection` executor and no
 relation `byId`/`byIds` — is removed entirely (the feed is delivered solely by

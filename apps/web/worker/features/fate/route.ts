@@ -25,10 +25,10 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {livePublishContext} from "../features/fate-live/event-bus.ts";
-import {LiveTopics} from "../features/fate-live/topics.ts";
-import {Auth} from "../features/pasaport/Auth.ts";
-import {Pasaport} from "../features/pasaport/Pasaport.ts";
+import {livePublishContext} from "../fate-live/event-bus.ts";
+import {LiveTopics} from "../fate-live/topics.ts";
+import {Auth} from "../pasaport/Auth.ts";
+import {Pasaport} from "../pasaport/Pasaport.ts";
 import type {FateEnv} from "./layers.ts";
 import {fateServer} from "./server.ts";
 

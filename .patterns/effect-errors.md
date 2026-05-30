@@ -163,10 +163,10 @@ const ensureTermExists = Effect.fn("Sozluk.ensureTermExists")(function*(slug) {
 
 ## Mapping to wire codes (the fate boundary)
 
-The bridge runner (`worker/fate/effect.ts`) catches every error in the `E` channel and routes it through `encodeFateError` (`worker/fate/errors.ts`), which maps `_tag` → wire code via a typed registry to produce a `FateRequestError` with a stable `code`:
+The bridge runner (`worker/features/fate/effect.ts`) catches every error in the `E` channel and routes it through `encodeFateError` (`worker/features/fate/errors.ts`), which maps `_tag` → wire code via a typed registry to produce a `FateRequestError` with a stable `code`:
 
 ```ts
-// worker/fate/errors.ts — the registry is Record<FateErrorTag, WireCodeFor>,
+// worker/features/fate/errors.ts — the registry is Record<FateErrorTag, WireCodeFor>,
 // so a tagged error with no entry is a compile error (no silent downgrade).
 export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
   "sozluk/BodyRequired": fixed("BODY_REQUIRED", "Tanım boş olamaz"),
@@ -199,4 +199,4 @@ Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contra
 - [effect-error-operators.md](./effect-error-operators.md) — catching, `Exit`, `Cause`, recovering from specific tags
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.TaggedErrorClass` for errors that cross serialization boundaries
 - `worker/features/pasaport/Auth.ts` — `Unauthorized` is the canonical phoenix tagged error
-- `worker/fate/errors.ts` — `encodeFateError` + the typed `WIRE_CODE_BY_TAG` registry
+- `worker/features/fate/errors.ts` — `encodeFateError` + the typed `WIRE_CODE_BY_TAG` registry

@@ -144,7 +144,7 @@ export const fateMutation =
  * recover it from the exported `SourceRegistry` Map's value type rather than
  * naming it directly.
  */
-type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, infer V> ? V : never;
+export type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, infer V> ? V : never;
 
 /**
  * Wrap a set of Effect-generator source handlers as a fate `SourceExecutor`.

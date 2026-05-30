@@ -6,7 +6,7 @@ This is the doc to read before touching the seam between fate and the domain. It
 
 ## Why there is no per-request runtime
 
-The old `worker/fate/runtime.ts` built a fresh `ManagedRuntime` on every `/fate` request and disposed it in `finally`. That was necessary because every binding came from a per-request `env`, so *everything* — `Drizzle`, the features — was request-scoped.
+The old `worker/features/fate/runtime.ts` built a fresh `ManagedRuntime` on every `/fate` request and disposed it in `finally`. That was necessary because every binding came from a per-request `env`, so *everything* — `Drizzle`, the features — was request-scoped.
 
 On alchemy that premise is gone. `Cloudflare.D1Connection.bind(PhoenixDb)` resolves **once per isolate** in the worker's init phase, and the bound `db` is stable for the isolate's life. So the things built on it are stable too:
 
@@ -44,7 +44,7 @@ The layer graph itself (mergeAll / provide / provideMerge) is exactly the one in
 `Auth` and `HttpServerRequest` are provided inside the `/fate` handler, around the work that needs them:
 
 ```ts
-// worker/fate/route.ts (mounted by the router — alchemy-http-router.md)
+// worker/features/fate/route.ts (mounted by the router — alchemy-http-router.md)
 const handleFate = Effect.gen(function* () {
   const raw = yield* Cloudflare.Request;                 // the raw cf.Request
   const session = yield* Pasaport.validateSession(raw.headers);  // worker-level service
@@ -68,7 +68,7 @@ fate's `handleRequest` is async — it calls resolver callbacks that must bridge
 > - provide a captured map → **`Effect.provide(effect, ctx)`**
 > - the service-map type → **`Context.Context<R>`** from `effect/Context`
 >
-> (An earlier effect line named these `Effect.services` / `Effect.provideServices` / `ServiceMap.ServiceMap` from `effect/ServiceMap`; the implemented worker — `worker/fate/route.ts`, `context.ts`, `effect.ts` — uses the v4 names above.)
+> (An earlier effect line named these `Effect.services` / `Effect.provideServices` / `ServiceMap.ServiceMap` from `effect/ServiceMap`; the implemented worker — `worker/features/fate/route.ts`, `context.ts`, `effect.ts` — uses the v4 names above.)
 
 ```ts
 const serveFate = (raw: Request) =>
@@ -94,7 +94,7 @@ type FateEnv = Drizzle | Sozluk | Pano | Vote | Pasaport | Stats | Auth | HttpSe
 `FateContext` carries a captured `Context` (effect v4's service map), not a `ManagedRuntime`. The low-level runner provides the map and runs on the default runtime:
 
 ```ts
-// worker/fate/context.ts
+// worker/features/fate/context.ts
 import type * as Context from "effect/Context";
 export interface FateContext {
   readonly context: Context.Context<FateEnv>;
@@ -103,7 +103,7 @@ export interface FateContext {
 ```
 
 ```ts
-// worker/fate/effect.ts
+// worker/features/fate/effect.ts
 import {Cause, Effect, Exit} from "effect";
 import {FateRequestError} from "@nkzw/fate/server";
 import {encodeFateError} from "./errors";

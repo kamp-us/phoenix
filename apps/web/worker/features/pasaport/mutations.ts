@@ -18,17 +18,17 @@
  * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
  */
 
-import {Auth} from "../features/pasaport/Auth.ts";
-import {Pasaport} from "../features/pasaport/Pasaport.ts";
-import {fateMutation} from "./effect.ts";
-import {toUser} from "./shapers.ts";
-import type {User} from "./views.ts";
+import {fateMutation} from "../fate/effect.ts";
+import {toUser} from "../fate/shapers.ts";
+import type {User} from "../fate/views.ts";
+import {Auth} from "./Auth.ts";
+import {Pasaport} from "./Pasaport.ts";
 
 export interface SetUsernameInput {
 	value: string;
 }
 
-export const pasaportMutations = {
+export const mutations = {
 	"user.setUsername": {
 		type: "User",
 		resolve: fateMutation<SetUsernameInput, User>(function* ({input}) {

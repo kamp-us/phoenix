@@ -26,7 +26,7 @@
  */
 import {AsyncLocalStorage} from "node:async_hooks";
 import type {LiveEventBus} from "@nkzw/fate/server";
-import type {LiveChangedField, LiveEntities} from "../../fate/views.ts";
+import type {LiveChangedField, LiveEntities} from "../fate/views.ts";
 import type {ConnectionFrame, EntityFrame, PublishMessage} from "./protocol.ts";
 import {topicsForPublish} from "./protocol.ts";
 

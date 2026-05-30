@@ -27,7 +27,7 @@
  * populated by *walking `roots`* (fate registers a source type only when it's
  * reached from a root). phoenix deliberately keeps `roots: {}` (every read is a
  * custom `queries`/`lists` resolver, which keeps the `fateServer` export type
- * nameable — TS2883, see `worker/fate/server.ts`), so `manifest.live` is empty
+ * nameable — TS2883, see `worker/features/fate/server.ts`), so `manifest.live` is empty
  * and the generated transport is built with `live: false`.
  *
  * Rather than add roots purely to flip a codegen flag (and re-break the export
