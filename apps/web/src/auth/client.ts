@@ -1,6 +1,6 @@
 // Re-anchor transitive type specifiers away from `.pnpm/<hash>/...` paths
 // so tsgo can portably name plugin types under composite project refs.
-// Mirrors worker/features/pasaport/auth.ts.
+// Mirrors worker/auth/better-auth-live.ts.
 import type {} from "@better-auth/core";
 import type {} from "better-auth/client";
 import type {} from "better-auth/react";

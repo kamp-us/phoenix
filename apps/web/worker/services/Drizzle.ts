@@ -25,7 +25,6 @@ import type {BatchItem, BatchResponse} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {Context, Data, Effect, Layer} from "effect";
 import * as schema from "../db/drizzle/schema.ts";
-import {CloudflareEnv} from "./CloudflareEnv.ts";
 
 /**
  * The fully-typed drizzle builder phoenix uses everywhere. Constructed once
@@ -113,10 +112,9 @@ export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema}
 
 /**
  * Build a `DrizzleAccess` value over an already-constructed drizzle instance —
- * the single home of the `run` / `batch` bodies. Both the worker-level
- * {@link makeDrizzleLayer} and the per-request {@link DrizzleLive} wrap this, so
- * the promise → Effect boundary and the tagged `DrizzleError` catch live in
- * exactly one place; a fix to the catch reaches both layers.
+ * the single home of the `run` / `batch` bodies. {@link makeDrizzleLayer} wraps
+ * this, so the promise → Effect boundary and the tagged `DrizzleError` catch
+ * live in exactly one place.
  *
  * House rule (`.patterns/feature-services.md`): `Effect.tryPromise` always uses
  * object notation with an explicit `catch` producing a tagged error — here
@@ -141,26 +139,9 @@ export const makeDrizzleAccess = (db: DrizzleDb): DrizzleAccess => ({
  * Per ADR 0029 / `.patterns/alchemy-runtime.md`: on alchemy the D1 binding is
  * stable for the isolate's life, so `drizzle()` is built ONCE in the worker init
  * (from the bound `D1Connection.raw`) and provided as a worker-level layer. The
- * `run` / `batch` surface comes from {@link makeDrizzleAccess}; only the
- * construction differs from {@link DrizzleLive} — the `db` arrives as an
- * argument instead of being read off a per-request `CloudflareEnv`.
+ * `run` / `batch` surface comes from {@link makeDrizzleAccess}; the `db` arrives
+ * as an argument so neither this layer nor its consumers read a per-request
+ * `CloudflareEnv`.
  */
 export const makeDrizzleLayer = (db: DrizzleDb): Layer.Layer<Drizzle> =>
 	Layer.succeed(Drizzle, makeDrizzleAccess(db));
-
-/**
- * Live layer — constructs the drizzle builder from `env.PHOENIX_DB` and
- * returns a `DrizzleAccess` value (via {@link makeDrizzleAccess}) whose
- * `run` / `batch` close over it.
- *
- * Retained for the legacy integration harness + the admin runtime, which still
- * read a per-request `CloudflareEnv`. The worker `/fate` route uses
- * {@link makeDrizzleLayer} (built once in init) instead. Tasks 3–7 migrate the
- * remaining `DrizzleLive` callers off the per-request env read.
- */
-export const DrizzleLive = Layer.effect(Drizzle)(
-	Effect.gen(function* () {
-		const env = yield* CloudflareEnv;
-		return makeDrizzleAccess(createDrizzle(env.PHOENIX_DB));
-	}),
-);

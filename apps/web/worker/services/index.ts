@@ -6,7 +6,6 @@ export {
 	Drizzle,
 	type DrizzleDb,
 	DrizzleError,
-	DrizzleLive,
 	makeDrizzleLayer,
 } from "./Drizzle.ts";
 export {RequestContext} from "./RequestContext.ts";

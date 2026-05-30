@@ -43,10 +43,10 @@ const FAKE_DB = {__phoenix_test_db__: true} as unknown as DrizzleDb;
 const makeAccess = (db: DrizzleDb): DrizzleAccess => makeDrizzleAccess(db);
 
 /**
- * Test layer that provides the fake builder as the `Drizzle` service. Real
- * `DrizzleLive` would call `drizzle(env.PHOENIX_DB, {...})` which requires
- * a workerd D1 binding; the contract under test is the `run` / `batch`
- * wrapping, not the builder construction.
+ * Test layer that provides the fake builder as the `Drizzle` service. The real
+ * worker-level layer (`makeDrizzleLayer`) wraps a `drizzle(env.PHOENIX_DB,
+ * {...})` instance which requires a workerd D1 binding; the contract under test
+ * is the `run` / `batch` wrapping, not the builder construction.
  */
 const TestDrizzleLayer = Layer.succeed(Drizzle, makeAccess(FAKE_DB));
 
