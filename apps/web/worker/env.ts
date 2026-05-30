@@ -1,7 +1,8 @@
 /**
- * The worker's env — both the deploy-time resolver and the runtime type alias.
+ * The worker's env — the deploy-time resolver, the worker's `env` literal, and
+ * the derived runtime type alias.
  *
- * Two roles for one file:
+ * Three roles for one file:
  *
  *   1. **Deploy-time env resolution.** `worker/index.ts` declares the worker's
  *      `env` block, which is evaluated in the alchemy CLI process at deploy
@@ -14,26 +15,26 @@
  *      defaulting to `"development"` only when unset. A real deploy sets
  *      `ENVIRONMENT=production` and every gate closes.
  *
- *   2. **Runtime `WorkerEnv` type.** {@link WorkerEnv} is the worker's
- *      assembled env type — `Cloudflare.InferEnv<typeof Phoenix>` from
- *      `index.ts`. A type-only import (`import type`) avoids a runtime cycle
- *      with `index.ts` (TS/Vite strip type-only imports at build time).
+ *   2. **The `env` literal.** {@link phoenixEnvBindings} is the literal
+ *      record handed to the worker's `env` prop in `index.ts`. Lifting it
+ *      out of the class declaration site is what makes its type
+ *      extractable without traversing `typeof Phoenix` (see role 3).
+ *
+ *   3. **Runtime `WorkerEnv` type.** {@link WorkerEnv} is the resolved
+ *      env type — derived via `Cloudflare.InferEnv<typeof
+ *      phoenixEnvBindings>`. `InferEnv` only follows the
+ *      `Worker<any>`-branch when handed a `Worker` itself; pointed at a
+ *      plain env record it falls through to its mapped-type tail
+ *      (`{[k]: GetBindingType<...[k]>}`). That sidesteps the TS2589
+ *      ("Type instantiation is excessively deep") that
+ *      `InferEnv<typeof Phoenix>` triggers — the self-referential
+ *      `Worker<Phoenix, ...>` (the DO-host pattern, ADR 0028) makes the
+ *      `Worker<any>` branch recurse through `Phoenix["Props"]`, and TS
+ *      gives up. Worth filing upstream so `InferEnv` handles the
+ *      `Worker<Self, ...>` shape directly, but phoenix doesn't need to
+ *      wait on that.
  */
-/**
- * The worker's assembled env type — hand-rolled rather than
- * `Cloudflare.InferEnv<typeof Phoenix>`. `Phoenix` self-references through
- * its `Worker<Phoenix, ...>` type param (DO-host pattern, ADR 0028), which
- * makes `InferEnv` recurse and trip TS2589 ("Type instantiation is
- * excessively deep"). The overlay is the pragmatic workaround until this
- * lands upstream — worth filing against alchemy's `InferEnv` so the
- * self-referential `Worker<Self, ...>` shape is supported.
- */
-export interface WorkerEnv {
-	readonly PHOENIX_DB: D1Database;
-	readonly ENVIRONMENT: string;
-	readonly BETTER_AUTH_URL?: string;
-	readonly BETTER_AUTH_TRUSTED_ORIGINS?: string;
-}
+import type * as Cloudflare from "alchemy/Cloudflare";
 
 /** The subset of the deploy-time process env this resolver reads. */
 export interface DeployEnvInput {
@@ -74,6 +75,51 @@ export interface ResolvedDeployEnv {
 export const resolveDeployEnv = (env: DeployEnvInput): ResolvedDeployEnv => ({
 	ENVIRONMENT: env.ENVIRONMENT ?? "development",
 });
+
+// Resolved ONCE in the alchemy CLI process when this module is evaluated, so
+// the `env` literal below is the deploy-time policy (fail-closed): `ENVIRONMENT`
+// defaults to "development" only when unset (a real deploy sets
+// `ENVIRONMENT=production`, closing every dev gate).
+const deployEnv = resolveDeployEnv(process.env);
+
+/**
+ * The literal `env` record bound on the worker (`index.ts`). Kept here — not
+ * inlined at the class declaration site — so its type is extractable without
+ * going through `typeof Phoenix` (which would hit TS2589, see role 3 in the
+ * file header).
+ *
+ * `satisfies Record<string, string>` pins each field to `string` (no
+ * widening drift, and no narrowing to the literal value either — the deployed
+ * `BETTER_AUTH_URL` is a `string` at runtime, not the source literal). The
+ * keys are preserved verbatim for the `InferEnv`-derived {@link WorkerEnv}
+ * below.
+ *
+ * Dev runs behind the Vite proxy, so the worker sees `Host: 127.0.0.1:<port>`
+ * rather than the browser origin. better-auth needs the real browser origin to
+ * set/validate its cookie, so we hand it the origin explicitly (ADR 0031 /
+ * `auth.ts`) instead of inferring from the inbound Host. No `https://` here —
+ * that would flip the cookie `Secure` flag and break `http://localhost`
+ * storage.
+ *
+ * `BETTER_AUTH_SECRET` is NOT bound here — `BetterAuthLive`
+ * (`features/pasaport/better-auth-live.ts`) mints it via alchemy's `Random`
+ * resource, which persists the minted value in alchemy state so re-deploys
+ * keep the same secret unless the resource is replaced.
+ */
+export const phoenixEnvBindings = {
+	ENVIRONMENT: deployEnv.ENVIRONMENT,
+	BETTER_AUTH_URL: "http://localhost:3000",
+	BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
+} satisfies Record<string, string>;
+
+/**
+ * The worker's assembled env type — derived from {@link phoenixEnvBindings}
+ * via `Cloudflare.InferEnv`. Handing `InferEnv` the literal env record (not
+ * `typeof Phoenix`) skips the `Worker<any>` recursion branch that would
+ * otherwise trip TS2589 against the self-referential `Worker<Phoenix, ...>`
+ * shape.
+ */
+export type WorkerEnv = Cloudflare.InferEnv<typeof phoenixEnvBindings>;
 
 /** Which alchemy state store the stack should use. */
 export type StateMode = "local" | "cloudflare";

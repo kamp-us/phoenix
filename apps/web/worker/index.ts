@@ -36,7 +36,7 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
-import {resolveDeployEnv} from "./env.ts";
+import {phoenixEnvBindings, resolveDeployEnv} from "./env.ts";
 import {makeAdminLayer, makeFateLayer} from "./features/fate/layers.ts";
 import ConnectionDO, {ConnectionDOLive} from "./features/fate-live/connection-do.ts";
 import TopicDO, {TopicDOLive} from "./features/fate-live/topic-do.ts";
@@ -69,25 +69,13 @@ export class Phoenix extends Cloudflare.Worker<
 	ConnectionDO | TopicDO
 >()("phoenix", {
 	main: import.meta.filename,
-	env: {
-		// Resolves from `process.env.ENVIRONMENT`, defaulting to "development"
-		// only when unset (`worker/env.ts`). This is the single gate every
-		// dev-only surface reads — keep it deploy-time-resolved, never a literal.
-		ENVIRONMENT: deployEnv.ENVIRONMENT,
-		// Dev runs behind the Vite proxy, so the worker sees `Host:
-		// 127.0.0.1:<port>` rather than the browser origin. better-auth needs
-		// the real browser origin to set/validate its cookie, so we hand it the
-		// origin explicitly (ADR 0031 / `auth.ts`) instead of inferring from the
-		// inbound Host. No `https://` here — that would flip the cookie `Secure`
-		// flag and break `http://localhost` storage.
-		BETTER_AUTH_URL: "http://localhost:3000",
-		BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
-		// `BETTER_AUTH_SECRET` is NOT bound here anymore — `BetterAuthLive`
-		// (`features/pasaport/better-auth-live.ts`) mints it via alchemy's `Random` resource,
-		// which persists the minted value in alchemy state so re-deploys keep the
-		// same secret unless the resource is replaced. The session-signing secret
-		// is therefore not a deploy-time env var and never appears on `env.*`.
-	},
+	// The `env` literal lives in `worker/env.ts` (`phoenixEnvBindings`). Lifting
+	// it out of the class declaration is what makes the {@link WorkerEnv} type
+	// derivable via `Cloudflare.InferEnv<typeof phoenixEnvBindings>` — handing
+	// `InferEnv` the literal record sidesteps the TS2589 that
+	// `InferEnv<typeof Phoenix>` triggers against the self-referential
+	// `Worker<Phoenix, ...>` shape (see `env.ts` for the full reasoning).
+	env: phoenixEnvBindings,
 	assets: {
 		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
 		// ADR 0030) emits the client directly into `dist/client`; the path is
