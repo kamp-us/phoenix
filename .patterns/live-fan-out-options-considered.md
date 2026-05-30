@@ -5,13 +5,13 @@ Future revisits don't re-do the research; they read this, check which triggers
 have moved (see [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md)),
 and only re-survey the box that changed.
 
-The chosen path is **build on alchemy's modular `Cloudflare.DurableObjectNamespace<Self, Shape>().make(body)` + fate's native SSE wire protocol**, with patterns harvested from the Cloudflare Agents SDK as a reference but the package not adopted. The reasoning below is what got us there.
+The chosen path is **build on alchemy's modular `Cloudflare.DurableObjectNamespace<Self, Shape>().make(body)` + fate's native SSE wire protocol**, with patterns harvested from the Cloudflare Agents SDK as a reference but the package not adopted. The reasoning below is what got us there. (The fan-out runs on a single void-aligned `LiveDO` playing both roles — [ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md); the build-vs-buy reasoning here is unchanged by that reunification.)
 
 ## Read first
 
-- [fate-live-views.md](./fate-live-views.md) — the protocol and DOs phoenix actually runs.
+- [fate-live-views.md](./fate-live-views.md) — the protocol and DO phoenix actually runs.
 - [ADR 0023](../.decisions/0023-live-views-sse-livedo.md) — the SSE + LiveDO decision.
-- [ADR 0025](../.decisions/0025-split-livedo-connection-topic.md) — the split into `ConnectionDO` + `TopicDO`.
+- [ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md) — the single void-aligned `LiveDO` (supersedes the 0025 connection/topic split).
 - [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md) — why we stay on the native protocol.
 
 ## The candidates
@@ -25,8 +25,8 @@ in, a `Connection` class, helpers for `broadcast`, `getConnections(tag)`, and
 per-room state.
 
 **Why it's interesting.** WebSocket hibernation + room-style fan-out is
-exactly what `ConnectionDO`/`TopicDO` would look like if phoenix moved off
-SSE.
+exactly what `LiveDO`'s connection + topic roles would look like if phoenix
+moved off SSE.
 
 **Why rejected (for now).** It is **WebSocket** infrastructure. Phoenix's
 client transport is fate's `EventSource` (SSE), per [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md);
@@ -41,8 +41,8 @@ matching and multi-topic subscriptions per connection.
 
 **Why it's interesting.** This is the **closest model fit** to fate's needs
 of any candidate surveyed. `subscribe(topic, …)` / `publish(topic, msg)` /
-multi-topic-per-connection is essentially what `TopicDO` + `ConnectionDO`
-implement by hand.
+multi-topic-per-connection is essentially what `LiveDO`'s topic + connection
+roles implement by hand.
 
 **Why rejected (for now).** The maintainers label it "not yet recommended for
 production". No durability story; no QoS story; no documented behavior under
@@ -72,7 +72,7 @@ and multi alarms, and event scheduling.
 covers some of the same overhead.
 
 **Why rejected.** No built-in pub/sub or fan-out primitives — it doesn't
-replace the `TopicDO`/`ConnectionDO` algorithm, it would sit alongside it.
+replace the `LiveDO` fan-out algorithm, it would sit alongside it.
 The alchemy Effect DO model already gives phoenix typed RPC and Effect-wrapped
 storage; `@cloudflare/actors` would add a layer for no fan-out gain.
 
@@ -130,8 +130,8 @@ Move the data plane off Cloudflare entirely. Use a managed pub/sub provider
 for the live channel.
 
 **Why rejected.** Inverts phoenix's "everything on Cloudflare" locality bet.
-The whole point of `ConnectionDO`/`TopicDO` is that they sit in the same edge
-isolate as the worker that publishes to them; routing the live channel
+The whole point of `LiveDO` is that it sits in the same edge
+isolate as the worker that publishes to it; routing the live channel
 through a SaaS provider re-introduces the round-trip phoenix's architecture
 exists to avoid. Also reintroduces a vendor account, billing, and
 auth-bridging surface.
@@ -158,7 +158,7 @@ The state of this survey is anchored to the conditions recorded in
 [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md):
 
 - **partysub goes stable** with documented durability + QoS → re-evaluate as
-  a replacement for the hand-written `TopicDO`/`ConnectionDO` algorithm.
+  a replacement for the hand-written `LiveDO` fan-out algorithm.
 - **A latency-sensitive feature lands** where the SSE subscribe-race graceful
   degradation is no longer acceptable → re-evaluate WebSocket transports and
   reconsider partyserver/Agents SDK as authoring frameworks under the same

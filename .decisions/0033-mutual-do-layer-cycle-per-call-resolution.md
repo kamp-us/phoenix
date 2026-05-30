@@ -1,12 +1,24 @@
 ---
 id: 0033
 title: Co-hosted mutual DOs cannot Init-bind each other — use per-call sibling resolution
-status: accepted
+status: retired
 date: 2026-05-29
 tags: [durable-objects, alchemy, effect, layer, live]
 ---
 
 # 0033 — Co-hosted mutual DOs cannot Init-bind each other — use per-call sibling resolution
+
+> **Retired by [0037](0037-unified-void-aligned-live-do.md):** the mutual-DO
+> problem this ADR solves no longer exists in phoenix. The split
+> `ConnectionDO`/`TopicDO` pair — two co-hosted classes that referenced each
+> other — was replaced by a single unified `LiveDO` that plays both roles. A
+> single class can't have a sibling cycle: it resolves its OWN namespace once in
+> init via `LiveDO.from("phoenix")` (by host script name → `Effect<…, never,
+> Worker>`), so every RPC method's `R` is `never` and there is no second DO Tag
+> to push onto a method's `R` channel. The file is **kept as reference** — the
+> Layer-type reasoning below (why `Layer<A, _, B>` + `Layer<B, _, A>` doesn't
+> compose, why `precreate` doesn't fix it) stays correct and is the record of
+> why per-call resolution was needed for *any* future co-hosted mutual-DO pair.
 
 ## Context
 

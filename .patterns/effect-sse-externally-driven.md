@@ -167,28 +167,27 @@ t=25s, matching the legacy `setInterval` cadence.
 
 ## The deliver call site
 
-The deliver path is called from a sibling component — in phoenix's case,
-`TopicDO.publish` resolves the `ConnectionDO` sibling per call and invokes
-`connection.deliver({frame, epoch})`. The deliver handler offers the
-encoded frame onto the queue; the response body's stream wakes up; the
-client reads the frame off the SSE connection. The deliver Effect's `R`
-is `never` — no Layer wiring, no runtime; just a queue offer.
+The deliver path is called from another component — in phoenix's case, the
+unified `LiveDO`'s topic role invokes the connection role's `deliver({frame,
+row, limits})` across its OWN namespace (`live.getByName(\`connection:${id}\`)`,
+resolved once in init). The deliver handler offers the encoded frame onto the
+queue; the response body's stream wakes up; the client reads the frame off the
+SSE connection. The deliver Effect's `R` is `never` — no Layer wiring, no
+runtime; just a queue offer.
 
 ## Citations
 
-- `apps/web/worker/features/fate-live/connection-do.ts and topic-do.ts` — `openStream`, `deliver`,
-  `closeStream` (the production pattern, after the refactor from the raw
-  `ReadableStream` controller form).
-- `apps/web/worker/features/fate-live/connection-do.ts` — the DO that owns the
-  `openStream` per instance; the `fetch` handler routes the SSE upgrade
-  to `instance.openStream`.
+- `apps/web/worker/features/fate-live/live-do.ts` — `openStream`, `deliver`,
+  `closeStream` on the unified `LiveDO` (the production pattern, after the
+  refactor from the raw `ReadableStream` controller form). The connection role
+  owns `openStream` per instance; the `fetch` handler routes the SSE upgrade to
+  `instance.openStream`.
 
 ## See also
 
-- [alchemy-modular-do-with-sibling-resolution.md](./alchemy-modular-do-with-sibling-resolution.md)
-  — the sibling-DO seam that drives the deliver path.
-- [alchemy-durable-objects.md](./alchemy-durable-objects.md) — DO surface
-  (RPC + `fetch`, `state.storage`).
+- [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the unified
+  `LiveDO` (RPC + `fetch`, KV `state.storage`, the topic role's `deliver` →
+  connection role seam that drives this deliver path).
 - [fate-live-views.md](./fate-live-views.md) — the live protocol the SSE
   stream carries.
 - [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md) — why

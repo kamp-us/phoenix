@@ -99,7 +99,7 @@ This ships to prod; integration tests using `SELF.fetch` bypass the asset layer,
 
 ## Live route
 
-`/fate/live` does **not** go through `fateServer.handleLiveRequest`. The SSE stream and fan-out live in the `ConnectionDO` Durable Object so they cross isolates. The route (`features/fate-live/route.ts`) authenticates through `Pasaport` and hands the request off to a `ConnectionDO` instance via `LiveConnections.open(connectionId, request)` — the DO's `fetch` opens the SSE stream and registers with the matching `TopicDO`s. No per-request runtime work happens in the route. See [fate-live-views.md](./fate-live-views.md) for the DO design and [alchemy-modular-do-with-sibling-resolution.md](./alchemy-modular-do-with-sibling-resolution.md) for the modular DO pattern the two live DOs use ([ADR 0033](../.decisions/0033-mutual-do-layer-cycle-per-call-resolution.md)).
+`/fate/live` does **not** go through `fateServer.handleLiveRequest`. The SSE stream and fan-out live in the unified `LiveDO` Durable Object so they cross isolates. The route (`features/fate-live/route.ts`) authenticates through `Pasaport` and hands the request off to a connection-role `LiveDO` instance via `LiveConnections.open(connectionId, request)` — the DO's `fetch` opens the SSE stream, and a subscribe control message registers it with the matching `topic:` instances. No per-request runtime work happens in the route. See [fate-live-views.md](./fate-live-views.md) for the protocol and [alchemy-durable-objects.md](./alchemy-durable-objects.md) for the unified DO pattern ([ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md)).
 
 ## Codegen
 

@@ -24,7 +24,7 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | `Effect.fn` for service methods, span naming conventions | Writing or naming a service method |
 | [effect-testing.md](./effect-testing.md) | `@effect/vitest`, `it.effect`, unit-test guidance (Drizzle contract, fate-bridge, DO instance factories); integration redirects to `alchemy-test-harness.md` | Writing a unit test that drives Effect; first stop before writing any test |
 | [effect-schema-validation.md](./effect-schema-validation.md) | `Schema.Class` for trust-boundary input validation | Validating untyped input (admin `HttpApi` payloads, external API responses, persisted JSON) |
-| [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | `Stream.fromQueue` + `Stream.merge(heartbeats)` + `HttpServerResponse.stream`; the deliver path offers onto the queue | Building an SSE response written to from another component (e.g. a sibling DO's RPC) |
+| [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | `Stream.fromQueue` + `Stream.merge(keep-alive)` + `HttpServerResponse.stream`; the deliver path offers onto the queue | Building an SSE response written to from another component (e.g. the `LiveDO` topic role's `deliver` RPC) |
 
 ## Index — fate protocol layer
 
@@ -49,7 +49,7 @@ Read [fate-client-setup.md](./fate-client-setup.md) first, then [fate-views-and-
 | [fate-client-setup.md](./fate-client-setup.md) | `createFateClient`, `<FateClient>` provider, auth, generated client, Suspense/error rails | Wiring the client / app shell |
 | [fate-views-and-requests.md](./fate-views-and-requests.md) | `view`/`useView`/`ViewRef`, masking, one batched `useRequest` per screen, `useListView` pagination | Reading data in a component |
 | [fate-mutations-client.md](./fate-mutations-client.md) | `fate.mutations`/`actions`, optimistic updates, `insert`/`delete` membership, error routing | Writing data from the UI |
-| [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the `ConnectionDO`/`TopicDO` Durable Objects | Making a view live (spans client + server) |
+| [fate-live-views.md](./fate-live-views.md) | `useLiveView`/`useLiveListView`, server `live.*` publishing, the SSE wire, the unified `LiveDO` Durable Object | Making a view live (spans client + server) |
 
 ## Index — alchemy infra layer
 
@@ -62,9 +62,9 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | [alchemy-bindings.md](./alchemy-bindings.md) | `bind()` = deploy-policy + runtime-service; `yield*` DO vs `.bind` resource; the Live-layer convention | Reaching a Cloudflare resource |
 | [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No per-request `ManagedRuntime`; worker-level vs request-scoped layers; `Effect.context()` capture; how the fate bridge runs the captured map | Touching the fate↔domain seam |
 | [alchemy-http-router.md](./alchemy-http-router.md) | `HttpApiBuilder` for typed JSON + imperative `HttpRouter` for raw-Request/SSE; `toHttpEffect`; assets/worker-first | Adding/moving an HTTP route |
-| [worker-http-transport-layout.md](./worker-http-transport-layout.md) | `worker/http/` as a transport surface (not a feature); `app.ts` composition; per-feature `*Admin` services delegated to by group handlers; `AdminAuth` env gate | Adding an admin endpoint, moving an HTTP route, sanity-checking the http/ vs features/ split ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
-| [alchemy-durable-objects.md](./alchemy-durable-objects.md) | `DurableObjectNamespace<T>()`, per-instance Effect, typed RPC, `state.storage.sql`, alarms; the `ConnectionDO`/`TopicDO` live DOs | Working on the live DOs |
-| [alchemy-modular-do-with-sibling-resolution.md](./alchemy-modular-do-with-sibling-resolution.md) | Modular `class Tag` + `.make()` Layer; per-call sibling resolution pushes the Tag onto method `R` (not Layer requirements) | Authoring two co-hosted DOs that reference each other ([ADR 0033](../.decisions/0033-mutual-do-layer-cycle-per-call-resolution.md)) |
+| [worker-http-transport-layout.md](./worker-http-transport-layout.md) | `worker/http/` as a transport surface (not a feature); `app.ts` composition (`makeAppLive`); the lone `health.ts` typed-JSON group; per-feature route modules merged in | Moving/adding an HTTP route, sanity-checking the http/ vs features/ split ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
+| [worker-environment-pattern.md](./worker-environment-pattern.md) | Reading worker env at runtime via `Cloudflare.WorkerEnvironment` + one cast; why `Config`/`AppConfig` are wrong for plain policy vars; deploy-time `env:` literal vs runtime read | Reading `ENVIRONMENT` (or any plain binding) in worker code ([ADR 0031](../.decisions/0031-local-first-dev-state.md)) |
+| [alchemy-durable-objects.md](./alchemy-durable-objects.md) | The unified `LiveDO` — `.make()`, role dispatch via `resolveRole(state.id.name)`, `LiveDO.from("phoenix")` self-namespace, KV storage, per-subscriber frame.id, the reap alarm | Working on the live DO ([ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md)) |
 | [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) | `D1Connection.bind` → `raw` → `drizzle(raw,{schema})`; `Drizzle` as a worker-level singleton; migrations generated by `drizzle-kit` out-of-band, applied by alchemy via `D1Database({migrationsDir})` | Wiring the DB or migrations |
 | [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) | `alchemy.run.ts` + `Alchemy.Stack`, resource declarations, `wrangler.jsonc`→alchemy map, dev/deploy, stages | Declaring resources or deploying |
 | [alchemy-test-harness.md](./alchemy-test-harness.md) | `alchemy/Test/Core` deploy in `globalSetup` (main-process workaround for the pool-worker LoopbackServer race) + a black-box HTTP harness in the pool | Writing integration tests against the deployed worker |
@@ -85,7 +85,7 @@ Background research and considered-options docs that don't define current code b
 - **Validation lives in services** (ADR 0013). fate's `input` schema is thin shape-coercion only.
 - **The server is the single source of truth for types.** The client imports `Entity<>` types; codegen emits the client wiring. No schema artifact.
 - **One batched request per screen.** A screen root declares its whole view tree in one `useRequest`; child `useView` calls read from cache — no waterfalls. Mutations are declarative (`optimistic`, `insert`/`delete`); no imperative cache updaters.
-- **Live views run over SSE through the `ConnectionDO`/`TopicDO` Durable Objects.** The built-in in-memory bus can't fan out across Worker isolates, so a publish-only `LiveEventBus` forwards events to `TopicDO`, which owns the subscriber registry and fans out to `ConnectionDO`, which holds the SSE connections (split per ADR 0025). These are the two Durable Objects in phoenix.
+- **Live views run over SSE through the unified `LiveDO` Durable Object.** The built-in in-memory bus can't fan out across Worker isolates, so a publish-only `LiveEventBus` fires the topic-role `publish` RPC; a `topic:` instance owns the subscriber registry and fans out to `connection:` instances, which hold the SSE streams. One class plays both roles, keyed by instance name (ADR 0037, reunifying the 0025 split). This is the one Durable Object in phoenix.
 
 ## Conventions across these docs
 

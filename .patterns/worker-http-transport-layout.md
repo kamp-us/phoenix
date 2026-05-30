@@ -1,164 +1,127 @@
 # Worker HTTP transport layout
 
-> **Doc note (pending docs pass):** the `/api/admin/*` seeder surface this doc
-> describes — `admin-api.ts`, `admin-handlers.ts`, `admin-auth.ts`, the
-> `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` services, the `adminAllowed`
-> (`ENVIRONMENT === "development"`) gate — was deleted (fail-open security hole;
-> throwaway seeders). `worker/http/` now holds `app.ts` + `health.ts` (the lone
-> `HttpApiBuilder` group, `GET /api/health`). The layout/composition pattern below
-> still holds; the admin files it lists are gone. Repoint to `health.ts`.
-
-`worker/http/` is the transport surface — app composition, typed-JSON admin
-API spec, admin handlers, admin auth gate. It is **not** a feature: features
-are app-level groupings (ADR 0036); transport is the substrate features are
-mounted on. The handlers route to per-feature `*Admin` services that live
-**with their feature**, so the http folder stays a thin composition layer
-over the domain.
+`worker/http/` is the transport surface — app composition + the one typed-JSON
+route phoenix exposes. It is **not** a feature: features are app-level groupings
+(ADR 0036); transport is the substrate features are mounted on. The folder stays
+a thin composition layer that pulls each feature's route into one router.
 
 Read this with
 [alchemy-http-router.md](./alchemy-http-router.md) (the `HttpRouter` /
-`HttpApiBuilder` mechanics this layout uses) and
-[feature-services.md](./feature-services.md) (where the `*Admin` services
-live).
+`HttpApiBuilder` mechanics this layout uses).
 
 ## The shape
 
 ```
 worker/http/
-├── app.ts             # `makeAppLive(options)` — composes the AppLive layer
-├── app.test.ts        # end-to-end tests against the composed router
-├── admin-api.ts       # typed HttpApi spec for `/api/admin/*` + `/api/health`
-├── admin-handlers.ts  # HttpApiBuilder group handlers delegating to *Admin
-├── admin-auth.ts      # `AdminAuth` Tag + `adminAllowed` predicate
-└── admin-auth.test.ts # the predicate's truth table
+├── app.ts        # `makeAppLive(options)` — composes the AppLive layer
+├── app.test.ts   # end-to-end tests against the composed router
+└── health.ts     # the lone HttpApiBuilder group: GET /api/health
 ```
 
+That is the whole folder. The old `/api/admin/*` seeder surface
+(`admin-api.ts`, `admin-handlers.ts`, `admin-auth.ts`, the
+`SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` services, the `adminAllowed`
+(`ENVIRONMENT === "development"`) gate) was deleted (ADR 0012 superseded):
+gating destructive ops behind a single mutable `ENVIRONMENT` string is
+fail-open, and the seeders were throwaway data-population. The only
+`HttpApiBuilder` group that remains is the liveness probe.
+
 `worker/index.ts` is the only consumer: it calls `makeAppLive({...})` with the
-worker-init-resolved layers (`fateLayer`, `adminLayer`, `liveLayer`,
-`betterAuthLayer`) and compiles the result with
-`HttpRouter.toHttpEffect(AppLive)` for `fetch`.
+worker-init-resolved layers (`fateLayer`, `liveLayer`, `betterAuthLayer`) and
+compiles the result with `HttpRouter.toHttpEffect(AppLive)` for `fetch`.
+
+## Two kinds of route
+
+`makeAppLive` splits its inputs into the two route shapes the worker serves
+([alchemy-http-router.md](./alchemy-http-router.md)):
+
+- **Typed JSON** — `healthApiLayer` (`health.ts`), an `HttpApiBuilder` group
+  with a schema-encoded response (`GET /api/health` → `{status, environment}`).
+  Its `WorkerEnvironment` requirement is satisfied at worker scope (alchemy
+  provides it), so the layer carries no per-request markers to discharge here.
+- **Raw `Request`** — the `fateRoute` / `authRoute` / `liveRoute` layers
+  (`POST /fate`, `* /api/auth/*`, `* /fate/live`), imperative `HttpRouter.add`
+  routes reading `Cloudflare.Request`. Merged, then piped through
+  `HttpRouter.provideRequest` over `fateLayer` + `liveLayer` +
+  `betterAuthLayer`.
+
+The two groups merge into `AppLive`:
+
+```ts
+// worker/http/app.ts (abridged)
+export const makeAppLive = (options: {
+  readonly fateLayer: Layer.Layer<WorkerFateServices>;
+  readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
+  readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth, never, any>;
+}) => {
+  const typedJson = healthApiLayer;
+  const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute).pipe(
+    HttpRouter.provideRequest(
+      Layer.mergeAll(options.fateLayer, options.liveLayer).pipe(
+        Layer.merge(options.betterAuthLayer),
+      ),
+    ),
+  );
+  return Layer.mergeAll(typedJson, rawRoutes);
+};
+```
+
+The reason `provideRequest` is used instead of `Layer.provide` is that
+`HttpRouter.add` lifts handler `R`s onto route-requirement markers that plain
+`Layer.provide` doesn't discharge — see the comments in `app.ts` and
+[alchemy-http-router.md](./alchemy-http-router.md). `betterAuthLayer` is merged
+with `Layer.merge` (not folded into the flat `mergeAll`) because its `R` is left
+unconstrained (`any`) for the outer worker `Effect.provide` to discharge.
 
 ## Why it's distinct from `features/`
 
-Admin transport is **not a feature**. It routes to features that own `*Admin`
-services. The folder name reflects the layer (transport) it occupies, not a
-domain it owns.
+`http/` is **not a feature**. It's app composition — the router root that mounts
+the per-feature routes. Each feature owns its own route module
+(`features/fate/route.ts`, `features/fate-live/route.ts`,
+`features/pasaport/route.ts`); `http/app.ts` only merges them and discharges
+their requirements. The folder name reflects the layer (transport) it occupies,
+not a domain it owns.
 
-The split is:
+`http/` and `features/` are siblings of the same `worker/` root for the same
+reason `db/` is: they're substrate, not product (ADR 0036). Moving `http/` under
+`features/http/` would be a category error — it's the shell every feature route
+runs inside, not a slice of product/framework code.
 
-- **`worker/http/` — transport surface.** Owns the `HttpApi` spec, the group
-  handlers that decode payloads + delegate, and the env-gated `AdminAuth`.
-  Knows about every admin-bearing feature; depends on each of their `*Admin`
-  services.
-- **`worker/features/<feature>/<Feature>Admin.ts` — feature-owned admin
-  domain.** Each `*Admin` service is its own
-  `Context.Service<...>()("@phoenix/<feature>/<Feature>Admin")` — same shape
-  as the feature's main service, gated by `AdminAuth.required` at the
-  transport edge. ADR 0012 (admin parallel services) is the rationale.
+## The health probe reads env at worker scope
 
-The handler delegates one call deep:
+`health.ts`'s handler reads the deploy environment off
+`Cloudflare.WorkerEnvironment` (alchemy provides it at worker scope), casting the
+untyped record at the read site — the [worker-environment-pattern.md](./worker-environment-pattern.md)
+shape. `WorkerEnvironment` surfaces as a route marker discharged at the app
+boundary with `provideRequest`, satisfied at worker scope. `healthApiLayer` also
+provides the platform stubs `HttpApiBuilder.layer` needs (`HttpPlatform`,
+`FileSystem`, `Path`, `Etag`) — Workers serve no files, so the file-serving paths
+die if ever hit; the typed-JSON endpoint never produces a file response, so the
+stubs are safe.
 
-```ts
-// worker/http/admin-handlers.ts (abridged)
-const sozlukGroup = HttpApiBuilder.group(AppApi, "sozluk", (h) =>
-  h.handle("upsertTerm", ({payload}) =>
-    Effect.gen(function* () {
-      yield* requireAdmin;                    // env gate (admin-auth.ts)
-      const admin = yield* SozlukAdmin;       // service from features/sozluk/
-      const result = yield* admin.seedTerm({...payload});
-      return new UpsertTermResult({...result});
-    }).pipe(Effect.catchTag("@phoenix/Drizzle/Error", Effect.die)),
-  ),
-);
-```
+## Adding an HTTP route
 
-The handler does the transport job (decode payload, gate, encode response,
-map infra failure → 500). The `*Admin` service does the domain job (write the
-rows, refresh aggregates). Reversing the split — putting `seedTerm`'s SQL in
-the handler, or putting the `HttpApi` spec under `features/sozluk/` — collapses
-two distinct layers into one and breaks ADR 0036's "features = app-level
-named groupings" rule.
-
-## What goes where
-
-A new admin endpoint touches both layers:
-
-1. **In the feature** (`features/<feature>/<Feature>Admin.ts`): add the
-   method. Same shape as `Sozluk`/`Pano` — one `Context.Service`, methods
-   are `Effect.fn("<Feature>Admin.method")(function*(...))` over the
-   destructured `Drizzle`.
-2. **In `worker/http/admin-api.ts`**: add the endpoint to the feature's
-   `HttpApiGroup` — `payload` schema, `success` schema, `error: ForbiddenError`.
-3. **In `worker/http/admin-handlers.ts`**: add the `h.handle(...)` body —
-   `yield* requireAdmin`, then `yield* (yield* <Feature>Admin).method(...)`,
-   then return the success class.
-4. **In `worker/features/fate/layers.ts`** (if it's a new `*Admin` service
-   altogether): add it to `WorkerAdminServices` and `makeAdminLayer`.
-
-Nothing else touches the SPA, the fate layer, or the route table — admin is
-self-contained behind `AdminAuth.required` + the env predicate.
-
-## The env gate
-
-`admin-auth.ts` exposes two pieces:
-
-- **`adminAllowed(env)` — pure predicate.** `env.ENVIRONMENT === "development"`
-  is the only truth. Pure over `{readonly ENVIRONMENT: string}` so the rule
-  is testable without booting alchemy.
-- **`AdminAuth` — Tag carrying `{allowed: boolean}`.** `AdminAuth.required`
-  is a static `Effect` that fails with `AdminForbidden` when `allowed`
-  is `false`. The handler `requireAdmin` const maps `AdminForbidden` to the
-  wire `Forbidden` (403) so the typed API surfaces the gate as a real
-  status.
-
-`worker/index.ts` builds the value layer once per request with
-`adminAuthLayer(adminAllowed(env))`, and `app.ts` provides it via
-`HttpRouter.provideRequest` alongside the admin services. Future hardening
-(karma threshold, signed admin tokens) lands inside `admin-auth.ts` with no
-call-site changes — handlers keep saying `yield* AdminAuth.required`.
-
-## Why this folder, not `features/admin/`
-
-The bar for "feature" is ADR 0036's: a coherent app-level grouping with a
-name. `admin` is not an app-level grouping — every admin operation belongs
-to a product domain (seed sozluk, seed pano, backfill pasaport profiles).
-Putting all of them under `features/admin/` would either (a) duplicate
-domain logic away from its feature, or (b) make `features/admin/` a barrel
-over the per-feature `*Admin` services — which is exactly the transport-layer
-job `http/admin-handlers.ts` already does.
-
-The right cut is the one in place: per-feature domain (`*Admin` lives with its
-feature) + per-transport composition (`http/` composes them through a typed
-API). `http/` and `features/` are siblings of the same `worker/` root for the
-same reason `db/` is: they're substrate, not product (ADR 0036).
-
-## The `app.ts` composition
-
-`makeAppLive` is one function that returns one `Layer.Layer` — the input is
-the worker-init-resolved layers, the output is what `HttpRouter.toHttpEffect`
-turns into a `fetch`. It splits its inputs into two groups:
-
-- **Typed JSON** — `adminApiLayer` (health + admin seeders) piped through
-  `HttpRouter.provideRequest(Layer.mergeAll(adminLayer, adminAuthLayer(...)))`.
-- **Raw `Request`** — the `fateRoute` / `authRoute` / `liveRoute` layers
-  merged, then piped through `provideRequest` over `fateLayer + liveLayer +
-  betterAuthLayer`.
-
-The two groups merge into `AppLive`. The reason `provideRequest` is used
-instead of `Layer.provide` is that `HttpRouter.add` lifts handler `R`s onto
-route-requirement markers that plain `Layer.provide` doesn't discharge — see
-the comments in `app.ts` and [alchemy-http-router.md](./alchemy-http-router.md).
+- **A new feature route** (raw `Request` / SSE) lives **with its feature**
+  (`features/<feature>/route.ts`), exposed as an `HttpRouter.add` layer. Add it
+  to the `Layer.mergeAll(fateRoute, authRoute, liveRoute)` list in `app.ts` and,
+  if it has worker-level requirements, make sure they're in the
+  `provideRequest` layer set.
+- **A new typed-JSON endpoint** extends an `HttpApiBuilder` group — `health.ts`
+  is the live example of the group shape (declare the endpoint on an
+  `HttpApiGroup`, implement it with `HttpApiBuilder.group`, wire it through
+  `HttpApiBuilder.layer` with the platform stubs). For a payload-bearing
+  endpoint, declare the `payload` Schema on the `HttpApiEndpoint` so
+  `HttpApiBuilder` decodes the body before the handler runs (see
+  [effect-schema-validation.md](./effect-schema-validation.md)).
 
 ## See also
 
 - [alchemy-http-router.md](./alchemy-http-router.md) — the `HttpRouter` /
   `HttpApiBuilder` primitives this folder uses; route markers vs Layer
   requirements; `provideRequest` semantics.
-- [feature-services.md](./feature-services.md) — the `*Admin` service shape
-  the handlers delegate into.
-- [ADR 0012](../.decisions/0012-admin-parallel-services.md) — admin parallel
-  services + two-layer-set rationale.
+- [worker-environment-pattern.md](./worker-environment-pattern.md) — how the
+  health probe reads `ENVIRONMENT`.
 - [ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md) — why
-  this lives under `http/` and not `features/admin/`.
+  this lives under `http/` and not `features/http/`.
 - [ADR 0027](../.decisions/0027-http-router-drop-hono.md) — the
   HttpRouter+HttpApi adoption this layout assumes.

@@ -17,6 +17,19 @@ tags: [alchemy, dev, state, ci]
 > `apps/web/worker/env.ts` (because `CI` is set for both deploy and
 > integration-test jobs and can't distinguish them).
 
+> **Amendment ([0037](0037-unified-void-aligned-live-do.md)-era env rework):**
+> `BETTER_AUTH_URL` / `BETTER_AUTH_TRUSTED_ORIGINS` are **no longer worker
+> bindings**. The dev-vs-prod cookie-origin handling this ADR established stands,
+> but the values are now **derived in `BetterAuthLive`**
+> (`features/pasaport/better-auth-live.ts`) from `ENVIRONMENT` — read at layer
+> build via `yield* Cloudflare.WorkerEnvironment`. In **development** the dev
+> origins are set explicitly (the worker sits behind the Vite proxy and sees
+> `Host: 127.0.0.1:<port>` rather than the browser origin, so `baseURL` /
+> `trustedOrigins` must be handed in); in **production** better-auth infers the
+> origin from the inbound `Host`. The worker `env:` block is now just
+> `{ ENVIRONMENT }` — no `BETTER_AUTH_*` URL bindings, no `phoenixEnvBindings`
+> indirection. See [worker-environment-pattern.md](../.patterns/worker-environment-pattern.md).
+
 ## Context
 
 An `Alchemy.Stack`'s `state` option chooses where alchemy stores the

@@ -1,12 +1,25 @@
 ---
 id: 0025
 title: Split LiveDO into ConnectionDO and TopicDO
-status: accepted
+status: superseded by [0037](0037-unified-void-aligned-live-do.md)
 date: 2026-05-24
 tags: [live, durable-objects, sse]
 ---
 
 # 0025 — Split LiveDO into ConnectionDO and TopicDO
+
+> **Superseded by [0037](0037-unified-void-aligned-live-do.md):** the
+> connection/topic split this ADR decided is reversed. Live fan-out is again
+> **one** `LiveDO` class playing both roles, keyed by instance-name prefix
+> (`connection:`/`topic:`) — but a void-aligned rewrite (KV storage, a
+> `generation`+`revision` stale model, a first-failed-probe reap, and a
+> `LiveDO.from("phoenix")` self-namespace), not a return to the pre-split
+> one-class form. The split's two motivations no longer hold: the mutual-DO
+> Layer cycle [0033](0033-mutual-do-layer-cycle-per-call-resolution.md) worked
+> around is gone (one class can't have a sibling cycle), and the SQLite registry
+> is replaced by KV. The "invalid cross-role calls are unrepresentable" guarantee
+> below is the one thing 0037 gives back — a misroute now no-ops at runtime
+> (role-guarded) instead of failing to compile.
 
 ## Context
 
