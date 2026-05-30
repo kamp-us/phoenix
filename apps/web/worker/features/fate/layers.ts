@@ -21,16 +21,13 @@ import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest"
 import type {Drizzle, DrizzleDb} from "../../db/Drizzle.ts";
 import {makeDrizzleLayer} from "../../db/Drizzle.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
-import {type PanoAdmin, PanoAdminLive} from "../pano/PanoAdmin.ts";
 import type {Auth} from "../pasaport/Auth.ts";
 import {
 	type Auth as BetterAuthInstance,
 	makePasaportLive,
 	type Pasaport,
 } from "../pasaport/Pasaport.ts";
-import {type PasaportAdmin, PasaportAdminLive} from "../pasaport/PasaportAdmin.ts";
 import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
-import {type SozlukAdmin, SozlukAdminLive} from "../sozluk/SozlukAdmin.ts";
 import {type Stats, StatsLive} from "../stats/Stats.ts";
 import {type Vote, VoteLive} from "../vote/Vote.ts";
 
@@ -86,22 +83,3 @@ export const makeFateLayer = (
 
 	return FeatureLayer.pipe(Layer.provideMerge(DrizzleLayer));
 };
-
-/**
- * The worker-level admin services — the "admin layer set" of the request/admin
- * split (ADR 0012). `SozlukAdmin`, `PanoAdmin`, and `PasaportAdmin` each depend
- * only on `Drizzle`, built once over the same bound D1 as {@link makeFateLayer}.
- * `AdminAuth` is provided per route in the HTTP layer (env gate), not here.
- */
-export type WorkerAdminServices = SozlukAdmin | PanoAdmin | PasaportAdmin;
-
-/**
- * Build the worker-level admin-services layer from the bound D1. Same `Drizzle`
- * construction as {@link makeFateLayer}; the result requires nothing
- * (`R = never`). The seeder HTTP groups (`http/admin-handlers.ts`) provide over
- * it.
- */
-export const makeAdminLayer = (db: DrizzleDb): Layer.Layer<WorkerAdminServices> =>
-	Layer.mergeAll(SozlukAdminLive, PanoAdminLive, PasaportAdminLive).pipe(
-		Layer.provide(makeDrizzleLayer(db)),
-	);

@@ -101,10 +101,6 @@ This ships to prod; integration tests using `SELF.fetch` bypass the asset layer,
 
 `/fate/live` does **not** go through `fateServer.handleLiveRequest`. The SSE stream and fan-out live in the `ConnectionDO` Durable Object so they cross isolates. The route (`features/fate-live/route.ts`) authenticates through `Pasaport` and hands the request off to a `ConnectionDO` instance via `LiveConnections.open(connectionId, request)` — the DO's `fetch` opens the SSE stream and registers with the matching `TopicDO`s. No per-request runtime work happens in the route. See [fate-live-views.md](./fate-live-views.md) for the DO design and [alchemy-modular-do-with-sibling-resolution.md](./alchemy-modular-do-with-sibling-resolution.md) for the modular DO pattern the two live DOs use ([ADR 0033](../.decisions/0033-mutual-do-layer-cycle-per-call-resolution.md)).
 
-## The admin layer set stays separate
-
-The admin services (`SozlukAdmin`, `PanoAdmin`, `PasaportAdmin`) are built by `makeAdminLayer(db)` (`features/fate/layers.ts`) and drive the dev-only `/api/admin/*` seeders. Same `Drizzle` as the fate data plane, different surface (ADR 0012). On alchemy this is **two layer sets over one worker**, not two `ManagedRuntime`s (ADR 0029). The admin routes provide `AdminAuth` (the env gate) per route, the way `/fate` provides `Auth`. See [alchemy-http-router.md](./alchemy-http-router.md).
-
 ## Codegen
 
 The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — no hand-run `fate generate`, nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/features/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. The plugin lives in `vite.config.ts`. See [ADR 0022](../.decisions/0022-server-types-single-source-of-truth.md).
@@ -113,9 +109,8 @@ The **fate Vite plugin** generates the client wiring (the `react-fate/client` mo
 
 - [fate-effect-bridge.md](./fate-effect-bridge.md) — `FateContext`, the bridge helpers, error mapping
 - [alchemy-runtime.md](./alchemy-runtime.md) — the worker-level / per-request layer split this doc is built on
-- [alchemy-http-router.md](./alchemy-http-router.md) — where `Auth` / `AdminAuth` are provided per route
+- [alchemy-http-router.md](./alchemy-http-router.md) — where `Auth` is provided per route
 - [effect-layer-composition.md](./effect-layer-composition.md) — the layer graph, provided at worker scope
 - [fate-sources.md](./fate-sources.md) — the `sources` resolver
 - [fate-data-views.md](./fate-data-views.md) — the `roots`/`Root` map (declared in `views.ts`)
 - [ADR 0029](../.decisions/0029-worker-runtime-servicemap.md) — supersedes ADR 0017 (the old "Hono route owns the runtime" shape this doc used to describe)
-- [ADR 0012](../.decisions/0012-admin-parallel-services.md) — the request/admin split

@@ -41,8 +41,7 @@ pnpm format       # biome check --write
 Deploy is alchemy-managed (ADR 0026–0031): `alchemy.run.ts` is the stack, there is
 no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker + D1
 + DOs per stage; CI uses the Cloudflare-hosted state store, local dev uses
-`Alchemy.localState()` (offline). Re-seed a deployed stage with
-`node --experimental-strip-types apps/web/scripts/import-sozluk.ts --base-url=<url>`.
+`Alchemy.localState()` (offline).
 
 ## pnpm over npm
 
@@ -73,9 +72,4 @@ When the docs and `apps/web/worker/` disagree, the source is authoritative — f
 
 ## Sözlük seed
 
-Content lives in `~/code/github.com/kamp-us/monorepo/packages/sozluk-content/terms`, NOT in this repo. To seed the local Sozluk DO:
-
-1. `pnpm dev` — worker must be running on localhost:3000
-2. `pnpm --filter @phoenix/web sozluk:import` (append `-- --clear` to wipe first, `-- --base-url=...` to target a different worker)
-
-The DO endpoints `POST /api/admin/sozluk/upsert-term` and `POST /api/admin/sozluk/clear` are dev-only — guarded by `ENVIRONMENT === "development"`. The importer is idempotent: re-runs skip terms and definitions that already exist.
+There is no seeding mechanism in the worker. The `ENVIRONMENT`-gated `/api/admin/*` seeder routes + the `import-sozluk`/`import-pano` scripts were deleted (a fail-open security hole; throwaway data-population). sözlük/pano persist via Drizzle+D1, so any future re-seed is a direct-D1 script against the bound database, not a runtime route on the public worker.

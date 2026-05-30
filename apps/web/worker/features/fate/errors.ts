@@ -14,8 +14,8 @@
  * -----------------
  * The encoder dispatches on **`_tag`** through {@link WIRE_CODE_BY_TAG} — a
  * registry keyed by the union of every `Data.TaggedError` `_tag` raised by an
- * Effect service (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Drizzle`, `Auth`,
- * `AdminAuth`). The key type {@link FateErrorTag} is *derived from the error
+ * Effect service (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Drizzle`, `Auth`).
+ * The key type {@link FateErrorTag} is *derived from the error
  * classes themselves*, so the registry is `Record<FateErrorTag, …>`: add a new
  * tagged error and forget its entry, and the literal stops typechecking. The
  * compiler — not convention — enforces the `_tag` → wire-code link, killing the
@@ -40,7 +40,6 @@
 import {FateRequestError} from "@nkzw/fate/server";
 import type {MutationErrorCode} from "../../../src/lib/mutationErrorCodes.ts";
 import type {DrizzleError} from "../../db/Drizzle.ts";
-import type {AdminForbidden} from "../../http/admin-auth.ts";
 import type {
 	CommentNotFound,
 	CommentValidation,
@@ -93,7 +92,6 @@ function fateError(code: MutationErrorCode, message: string): FateRequestError {
 export type FateErrorTag =
 	// Auth / infra
 	| Unauthorized["_tag"]
-	| AdminForbidden["_tag"]
 	| DrizzleError["_tag"]
 	// Pasaport
 	| UsernameInvalid["_tag"]
@@ -152,7 +150,6 @@ const upcased =
 export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
 	// ── Auth / infra ──────────────────────────────────────────────────────
 	Unauthorized: fixed("UNAUTHORIZED", "not authorized"),
-	"@phoenix/AdminAuth/Forbidden": fixed("UNAUTHORIZED", "admin operations forbidden"),
 	"@phoenix/Drizzle/Error": fixed("INTERNAL_SERVER_ERROR", "internal error"),
 
 	// ── Pasaport ────────────────────────────────────────────────────────────

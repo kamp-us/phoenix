@@ -8,7 +8,6 @@
 import {FateRequestError} from "@nkzw/fate/server";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {DrizzleError} from "../../db/Drizzle";
-import {AdminForbidden} from "../../http/admin-auth";
 import {CommentNotFound} from "../pano/errors";
 import {Unauthorized} from "../pasaport/Auth";
 import {UserNotFound} from "../pasaport/errors";
@@ -27,7 +26,6 @@ describe("encodeFateError", () => {
 
 	it("maps Auth/infra tags", () => {
 		expect(code("Unauthorized")).toBe("UNAUTHORIZED");
-		expect(code("@phoenix/AdminAuth/Forbidden")).toBe("UNAUTHORIZED");
 		expect(code("@phoenix/Drizzle/Error")).toBe("INTERNAL_SERVER_ERROR");
 	});
 
@@ -78,7 +76,6 @@ describe("encodeFateError", () => {
 		// the silent INTERNAL_SERVER_ERROR downgrade becomes a compile error.
 		it("has a registry entry for every known feature tag", () => {
 			expect(WIRE_CODE_BY_TAG).toHaveProperty("Unauthorized");
-			expect(WIRE_CODE_BY_TAG).toHaveProperty("@phoenix/AdminAuth/Forbidden");
 			expect(WIRE_CODE_BY_TAG).toHaveProperty("@phoenix/Drizzle/Error");
 			expect(WIRE_CODE_BY_TAG).toHaveProperty("pasaport/UserNotFound");
 			expect(WIRE_CODE_BY_TAG).toHaveProperty("sozluk/DefinitionNotFound");
@@ -91,7 +88,6 @@ describe("encodeFateError", () => {
 		// hand-maintained string list that can drift from the classes.
 		it("derives the tag union from the real error classes", () => {
 			expectTypeOf(new Unauthorized({message: "x"})._tag).toExtend<FateErrorTag>();
-			expectTypeOf(new AdminForbidden({reason: "x"})._tag).toExtend<FateErrorTag>();
 			expectTypeOf(new DrizzleError({cause: null})._tag).toExtend<FateErrorTag>();
 			expectTypeOf(new UserNotFound({message: "x"})._tag).toExtend<FateErrorTag>();
 			expectTypeOf(

@@ -1,5 +1,13 @@
 # Worker HTTP transport layout
 
+> **Doc note (pending docs pass):** the `/api/admin/*` seeder surface this doc
+> describes — `admin-api.ts`, `admin-handlers.ts`, `admin-auth.ts`, the
+> `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` services, the `adminAllowed`
+> (`ENVIRONMENT === "development"`) gate — was deleted (fail-open security hole;
+> throwaway seeders). `worker/http/` now holds `app.ts` + `health.ts` (the lone
+> `HttpApiBuilder` group, `GET /api/health`). The layout/composition pattern below
+> still holds; the admin files it lists are gone. Repoint to `health.ts`.
+
 `worker/http/` is the transport surface — app composition, typed-JSON admin
 API spec, admin handlers, admin auth gate. It is **not** a feature: features
 are app-level groupings (ADR 0036); transport is the substrate features are

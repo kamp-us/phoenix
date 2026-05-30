@@ -16,8 +16,7 @@
  * This replaces `wrangler.jsonc` (bindings/DOs/migrations/assets/vars) and the
  * Hono `export default {fetch}` entry. The full HTTP surface is wired here via
  * `makeAppLive` (`http/app.ts`): `GET /api/health`, the fate data plane
- * (`POST /fate`), better-auth (`* /api/auth/*`), the dev-only admin seeders
- * (`* /api/admin/*`, gated by `adminAllowed`), and the live SSE route
+ * (`POST /fate`), better-auth (`* /api/auth/*`), and the live SSE route
  * (`* /fate/live` → LiveDO). The feature services live under
  * `worker/features/` (including the fate bridge under `worker/features/fate/`).
  *
@@ -35,22 +34,13 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
-import {phoenixEnvBindings, resolveDeployEnv} from "./env.ts";
-import {makeAdminLayer, makeFateLayer} from "./features/fate/layers.ts";
+import {phoenixEnvBindings} from "./env.ts";
+import {makeFateLayer} from "./features/fate/layers.ts";
 import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
-import {adminAllowed} from "./http/admin-auth.ts";
 import {makeAppLive} from "./http/app.ts";
-
-// Resolved ONCE in the alchemy CLI process when this module is evaluated, so the
-// worker's `env` block below is the deploy-time policy (fail-closed). See
-// `worker/env.ts`: `ENVIRONMENT` defaults to "production" when unset (CI deploys
-// set it explicitly, local `alchemy dev` sets it to "development" via the
-// `dev:worker` script — a missing var lands in production mode, closing every
-// dev gate).
-const deployEnv = resolveDeployEnv(process.env);
 
 /**
  * Lift a publish-side {@link PublishMessage} to the {@link DeliverFrame} the
@@ -138,11 +128,9 @@ export default Phoenix.make(
 		// Build the worker-level service layers ONCE from the bound D1 (ADR 0029):
 		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
 		// `drizzle(raw, {schema})`; `Drizzle` + the feature services (`fateLayer`)
-		// and the admin services (`adminLayer`) are constructed here and stay alive
-		// for the isolate — the request/admin split (ADR 0012) as two layer sets
-		// over one worker, not two `ManagedRuntime`s. The `/fate` route provides
-		// only `Auth`/`RequestContext` per request; the admin seeders provide
-		// `AdminAuth` (the env gate) per route.
+		// are constructed here and stay alive for the isolate — one worker, not a
+		// per-request `ManagedRuntime`. The `/fate` route provides only
+		// `Auth`/`RequestContext` per request.
 		const raw = yield* db.raw;
 		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
 		// init — the layer (`BetterAuthLive`, provided below) constructs the
@@ -154,13 +142,6 @@ export default Phoenix.make(
 		const betterAuth = yield* BetterAuth.BetterAuth;
 		const authInstance = yield* betterAuth.auth;
 		const fateLayer = makeFateLayer(createDrizzle(raw), authInstance);
-		const adminLayer = makeAdminLayer(createDrizzle(raw));
-		// The dev-only admin surfaces open only on `development`, fail-closed
-		// otherwise. `adminAllowed` lives in `http/admin-auth.ts` next to the
-		// `AdminAuth` service it powers. The deploy-resolved `ENVIRONMENT` lives
-		// on the worker init's `deployEnv` (the same value the worker `env` block
-		// above wires) — no read off `Cloudflare.WorkerEnvironment` needed.
-		const allowAdmin = adminAllowed({ENVIRONMENT: deployEnv.ENVIRONMENT});
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One
@@ -204,17 +185,14 @@ export default Phoenix.make(
 		);
 
 		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027):
-		//   - typed JSON via `HttpApiBuilder` groups: `GET /api/health` + the
-		//     dev-only `/api/admin/*` seeders (schema-decoded payloads),
+		//   - typed JSON via an `HttpApiBuilder` group: `GET /api/health`,
 		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
 		//     `* /fate/live` (SSE → LiveDO), `* /api/auth/*` (better-auth).
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
-		// `HttpRouter.provideRequest(...)` and provides the admin services +
-		// platform stubs to the typed groups (`http/app.ts`).
+		// `HttpRouter.provideRequest(...)` and wires the health group's platform
+		// stubs (`http/app.ts`).
 		const AppLive = makeAppLive({
 			fateLayer,
-			adminLayer,
-			adminAllowed: allowAdmin,
 			liveLayer,
 			betterAuthLayer: BetterAuthLive,
 		});

@@ -50,7 +50,7 @@ class UserRepo extends Context.Service<
 
 ## Static helpers on the service class
 
-Effect-smol attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/features/pasaport/Auth.ts` — the smallest, cleanest example of `static readonly required`. `worker/http/admin-auth.ts` mirrors the same shape for admin routes (yields `AdminForbidden` instead of `Unauthorized`).
+Effect-smol attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/features/pasaport/Auth.ts` — the smallest, cleanest example of `static readonly required`.
 
 Call site: `const {user} = yield* Auth.required;`
 

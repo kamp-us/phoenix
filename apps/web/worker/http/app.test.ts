@@ -8,11 +8,8 @@
  * `WorkerExecutionContext`, `HttpServerRequest`, `Scope`) exactly as the alchemy
  * worker runtime does, then asserts on the `Response`.
  *
- * Covers the task-4 acceptance criteria end-to-end through the real router:
+ * Covers the acceptance criteria end-to-end through the real router:
  *   - `GET /api/health` is an `HttpApiBuilder` group → 200 JSON.
- *   - the `/api/admin/*` seeders are `HttpApiBuilder` groups with schema-decoded
- *     payloads: gated 403 when not allowed; populate D1 + re-resolve over fate
- *     when allowed (the seeder-import path).
  *   - `/api/auth/*` (better-auth) signs a user up against the same D1 tables and
  *     issues a session cookie; that cookie makes an authenticated fate `me`
  *     request succeed end-to-end.
@@ -35,13 +32,13 @@ import {createDrizzle} from "../db/Drizzle.ts";
 import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../db/drizzle/schema.ts";
 import {makeSqliteD1, type SqliteD1} from "../features/fate/__support__/sqlite-d1.ts";
-import {makeAdminLayer, makeFateLayer} from "../features/fate/layers.ts";
+import {makeFateLayer} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {makeAppLive} from "./app.ts";
 
 /**
  * A no-op live layer for the HTTP-surface tests — these cases exercise health /
- * admin / auth / fate, not the live SSE path (the live fan-out has its own
+ * auth / fate, not the live SSE path (the live fan-out has its own
  * `features/fate-live/do.test.ts`). `publish` swallows; the connection RPCs are
  * never hit by these cases.
  */
@@ -56,20 +53,9 @@ const liveLayer = Layer.mergeAll(
 	),
 );
 
-/**
- * The worker derives the admin gate from its env (`index.ts`): the dev-only
- * surfaces open only when `ENVIRONMENT === "development"`. Mirror that derivation
- * here so the regression below ties the closed gate to a non-dev environment.
- */
-const adminGateFor = (environment: string): boolean => environment === "development";
-
 let sqlite: SqliteD1;
-/** `AppLive` built with the admin env gate open (`adminAllowed = true`). */
-let appLayerAllowed: ReturnType<typeof makeAppLive>;
-/** Same, but with the gate closed. */
-let appLayerDenied: ReturnType<typeof makeAppLive>;
-/** Built with the gate derived from a non-development `ENVIRONMENT` (prod). */
-let appLayerProd: ReturnType<typeof makeAppLive>;
+/** The compiled `AppLive` driven by every case. */
+let appLayer: ReturnType<typeof makeAppLive>;
 
 const ENV = {
 	ENVIRONMENT: "development",
@@ -88,7 +74,10 @@ const EXEC_CTX = {waitUntil: () => {}, passThroughOnException: () => {}};
  * `Response`. Everything runs inside one `Scope` so the built layer stays alive
  * for the inner effect.
  */
-async function fetch(appLayer: typeof appLayerAllowed, request: Request): Promise<Response> {
+async function fetch(
+	appLayer: ReturnType<typeof makeAppLive>,
+	request: Request,
+): Promise<Response> {
 	const program = Effect.gen(function* () {
 		const app = yield* HttpRouter.toHttpEffect(appLayer);
 		const res = yield* app.pipe(
@@ -153,27 +142,9 @@ beforeAll(() => {
 		db,
 		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[1],
 	);
-	const adminLayer = makeAdminLayer(db);
 
-	appLayerAllowed = makeAppLive({
+	appLayer = makeAppLive({
 		fateLayer,
-		adminLayer,
-		adminAllowed: true,
-		liveLayer,
-		betterAuthLayer,
-	});
-	appLayerDenied = makeAppLive({
-		fateLayer,
-		adminLayer,
-		adminAllowed: false,
-		liveLayer,
-		betterAuthLayer,
-	});
-	// Gate derived the way the worker derives it, from a non-dev `ENVIRONMENT`.
-	appLayerProd = makeAppLive({
-		fateLayer,
-		adminLayer,
-		adminAllowed: adminGateFor("production"),
 		liveLayer,
 		betterAuthLayer,
 	});
@@ -185,106 +156,16 @@ afterAll(() => {
 
 describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 	it("GET /api/health → 200 JSON", async () => {
-		const res = await fetch(appLayerAllowed, new Request("https://test.local/api/health"));
+		const res = await fetch(appLayer, new Request("https://test.local/api/health"));
 		expect(res.status).toBe(200);
 		const body = (await res.json()) as {status: string; environment: string | null};
 		expect(body.status).toBe("ok");
 		expect(body.environment).toBe("development");
 	});
 
-	it("POST /api/admin/sozluk/upsert-term is gated 403 when admin not allowed", async () => {
-		const res = await fetch(
-			appLayerDenied,
-			new Request("https://test.local/api/admin/sozluk/upsert-term", {
-				method: "POST",
-				headers: {"content-type": "application/json"},
-				body: JSON.stringify({
-					slug: "denied",
-					title: "Denied",
-					definitions: [{authorId: "k", authorName: "kampus", body: "x"}],
-				}),
-			}),
-		);
-		expect(res.status).toBe(403);
-	});
-
-	it("admin seeder is gated 403 when ENVIRONMENT is not development (prod fail-closed)", async () => {
-		// Regression for finding #1: the worker derives `adminAllowed` from
-		// `ENVIRONMENT === "development"`. A non-dev environment (e.g. a real
-		// `ENVIRONMENT=production` deploy) must close the gate.
-		expect(adminGateFor("production")).toBe(false);
-		const res = await fetch(
-			appLayerProd,
-			new Request("https://test.local/api/admin/sozluk/upsert-term", {
-				method: "POST",
-				headers: {"content-type": "application/json"},
-				body: JSON.stringify({
-					slug: "prod",
-					title: "Prod",
-					definitions: [{authorId: "k", authorName: "kampus", body: "x"}],
-				}),
-			}),
-		);
-		expect(res.status).toBe(403);
-	});
-
-	it("POST /api/admin/sozluk/upsert-term populates D1 and re-resolves over fate", async () => {
-		const seed = await fetch(
-			appLayerAllowed,
-			new Request("https://test.local/api/admin/sozluk/upsert-term", {
-				method: "POST",
-				headers: {"content-type": "application/json"},
-				body: JSON.stringify({
-					slug: "merhaba",
-					title: "Merhaba",
-					definitions: [{authorId: "kampus", authorName: "kampus", body: "selam", score: 0}],
-				}),
-			}),
-		);
-		expect(seed.status).toBe(200);
-		const seedBody = (await seed.json()) as {
-			slug: string;
-			created: boolean;
-			insertedDefinitions: number;
-		};
-		expect(seedBody.slug).toBe("merhaba");
-		expect(seedBody.created).toBe(true);
-		expect(seedBody.insertedDefinitions).toBe(1);
-
-		// Re-resolve the seeded term over the fate data plane (POST /fate).
-		const fateRes = await fetch(
-			appLayerAllowed,
-			new Request("https://test.local/fate", {
-				method: "POST",
-				headers: {"content-type": "application/json"},
-				body: JSON.stringify({
-					version: 1,
-					operations: [
-						{
-							id: "1",
-							kind: "query",
-							name: "term",
-							args: {slug: "merhaba"},
-							select: ["slug", "title", "count"],
-						},
-					],
-				}),
-			}),
-		);
-		expect(fateRes.status).toBe(200);
-		const fateBody = (await fateRes.json()) as {
-			results: Array<{ok: boolean; data: {slug: string; title: string; count: number} | null}>;
-		};
-		const result = fateBody.results[0]!;
-		expect(result.ok).toBe(true);
-		expect(result.data?.slug).toBe("merhaba");
-		expect(result.data?.title).toBe("Merhaba");
-		expect(result.data?.count).toBe(1);
-	});
-
 	it("/api/auth/* signs up a user and an authenticated fate request succeeds", async () => {
 		const signUp = await fetch(
-			appLayerAllowed,
+			appLayer,
 			new Request("https://test.local/api/auth/sign-up/email", {
 				method: "POST",
 				headers: {"content-type": "application/json"},
@@ -305,7 +186,7 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		// An authenticated fate `me` request carries the session cookie and
 		// resolves the signed-up user end-to-end.
 		const meRes = await fetch(
-			appLayerAllowed,
+			appLayer,
 			new Request("https://test.local/fate", {
 				method: "POST",
 				headers: {"content-type": "application/json", cookie},
@@ -330,7 +211,7 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		// cookie before any DO is reached (the cross-DO behavior is proven in
 		// `features/fate-live/do.test.ts`). No cookie → 401 fate error envelope.
 		const res = await fetch(
-			appLayerAllowed,
+			appLayer,
 			new Request("https://test.local/fate/live?connectionId=anon"),
 		);
 		expect(res.status).toBe(401);
@@ -343,7 +224,7 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		// LiveConnections RPC seam (the no-op layer returns ok). Proves the route is
 		// mounted and session-gated for the control path too.
 		const signUp = await fetch(
-			appLayerAllowed,
+			appLayer,
 			new Request("https://test.local/api/auth/sign-up/email", {
 				method: "POST",
 				headers: {"content-type": "application/json"},
@@ -356,7 +237,7 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		);
 		const cookie = signUp.headers.get("set-cookie")!.split(";")[0]!;
 		const res = await fetch(
-			appLayerAllowed,
+			appLayer,
 			new Request("https://test.local/fate/live", {
 				method: "POST",
 				headers: {"content-type": "application/json", cookie},

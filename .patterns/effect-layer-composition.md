@@ -97,12 +97,16 @@ Both follow the same idiom: pay the discharge cost once, at a known seam, and do
 
 Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request. That's gone (ADR 0029). The worker's init phase builds `Drizzle` + the feature services once and provides them as worker-level Layers; the `/fate` route provides `Auth` per request and picks up the upstream `HttpServerRequest` Tag from `alchemy/HttpRouter`. fate's bridge runs each resolver with `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` over the captured `Context<FateEnv>` — no per-request runtime, nothing to dispose. See [alchemy-runtime.md](./alchemy-runtime.md) for the full picture.
 
-## Two layer sets — request + admin
+## The worker layer set
 
-Phoenix keeps the request/admin split (ADR 0012), but as **two Layer sets over the same worker**, not two `ManagedRuntime`s:
+> **Update:** the admin layer set (`makeAdminLayer`, `SozlukAdmin`/`PanoAdmin`/
+> `PasaportAdmin`, `AdminAuth`, the `/api/admin/*` groups) described here was
+> deleted (fail-open `ENVIRONMENT` gate; throwaway seeders). Only the request layer
+> set below remains; there is no longer a request/admin split.
+
+The worker builds one Layer set, not a per-request `ManagedRuntime`:
 
 - **Request layer set** — `Drizzle` + feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`). Built by `makeFateLayer(db, auth)` in `worker/features/fate/layers.ts`. The `/fate` route provides `Auth` per request; `HttpServerRequest` comes from the upstream `effect/unstable/http/HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides.
-- **Admin layer set** — `Drizzle` + `SozlukAdmin` + `PanoAdmin` + `PasaportAdmin`. Built by `makeAdminLayer(db)` in the same file. The dev-only `/api/admin/*` typed-JSON groups get `AdminAuth` from a per-route value Layer (`adminAuthLayer(allowed)` in `http/admin-handlers.ts`), discharged via `HttpRouter.provideRequest` at the app boundary (`http/app.ts`).
 
 Why the parallel-but-separate shape:
 

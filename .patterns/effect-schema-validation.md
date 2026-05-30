@@ -8,7 +8,6 @@ fate resolvers are **not** a trust boundary. fate's mutation `input` schemas coe
 
 The real boundaries in phoenix:
 
-- **Admin API payloads** — the dev-only `/api/admin/*` typed-JSON groups (`http/admin-handlers.ts`) accept payloads typed at the `HttpApi` layer (`http/admin-api.ts`); `HttpApiBuilder` decodes the request body against the declared `payload` Schema before the handler runs and surfaces a typed `ParseError` if it doesn't fit. The boundary is the `HttpApi` declaration, not the handler body.
 - **External API responses** — when phoenix fetches from an outside service. The response is untyped.
 - **Persisted JSON columns** — if phoenix ever stores arbitrary JSON in D1.
 
@@ -42,12 +41,17 @@ export class SeedTermBody extends Schema.Class<SeedTermBody>("SeedTermBody")({
 - A **runtime parser**: `Schema.decodeUnknown(SeedTermBody)(rawJson)` → `Effect<SeedTermBody, ParseError>`.
 - An **encoder**: `Schema.encode(SeedTermBody)(instance)` → the JSON wire form.
 
-## Parsing at an admin route boundary
+## Parsing at a typed-JSON route boundary
 
-The admin API declares each endpoint's `payload` Schema at the `HttpApi` level (`http/admin-api.ts`); `HttpApiBuilder` decodes the request body against that Schema before the handler runs, so the handler only sees a typed value:
+> **Note:** the `/api/admin/*` endpoints used as the example below were deleted (the
+> `ENVIRONMENT`-gated admin surface). The only `HttpApi` group left is `GET
+> /api/health` (`http/health.ts`), which has no payload — so this is the pattern for
+> a payload-bearing `HttpApiEndpoint`, kept for when one returns, not a live example.
+
+A payload-bearing `HttpApiEndpoint` declares its `payload` Schema at the `HttpApi` level; `HttpApiBuilder` decodes the request body against that Schema before the handler runs, so the handler only sees a typed value:
 
 ```ts
-// worker/http/admin-api.ts — schema lives on the endpoint declaration
+// schema lives on the endpoint declaration
 const upsertTerm = HttpApiEndpoint.post("upsertTerm", "/api/admin/sozluk/upsert-term")
   .setPayload(SeedTermBody)
   .addSuccess(UpsertTermResult)

@@ -8,6 +8,12 @@ tags: [http, effect, worker, fate]
 
 # 0027 — Drop Hono; HTTP via Effect HttpRouter and HttpApiBuilder
 
+> **Update:** the `/api/admin/*` seeder routes referenced throughout this ADR were
+> later deleted (they gated destructive ops behind a mutable `ENVIRONMENT` string —
+> fail-open). The only `HttpApiBuilder` group that remains is `GET /api/health`
+> (`http/health.ts`). The `HttpRouter`/`HttpApiBuilder` decision below stands; only
+> the admin example endpoints are gone.
+
 ## Context
 
 phoenix routes everything through Hono: `/api/health`, `/api/admin/*`,

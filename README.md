@@ -48,7 +48,7 @@ apps/web/
     ├── index.ts           # worker entry — DO host, bindings, env block
     ├── env.ts             # deploy-time env resolver + runtime env type
     ├── db/                # D1 binding, Drizzle schema, migrations, keyset cursors
-    ├── http/              # router composition, admin transport, admin-auth
+    ├── http/              # router composition (app.ts) + the health route
     └── features/          # everything else, each in its own named folder
         ├── fate/          # data-layer plumbing — bridge, layers, barrels
         ├── fate-live/     # live SSE plane — ConnectionDO + TopicDO
@@ -113,9 +113,4 @@ When the docs and `apps/web/worker/` disagree, the source is authoritative — f
 
 ## Sözlük seed
 
-The sozluk content lives in a sibling repo, not in phoenix. To seed the local Sozluk DO:
-
-1. `pnpm dev` — worker must be running on `localhost:3000`.
-2. `pnpm --filter @phoenix/web sozluk:import` (append `-- --clear` to wipe first, `-- --base-url=...` to target another worker).
-
-The admin endpoints (`POST /api/admin/sozluk/upsert-term`, `POST /api/admin/sozluk/clear`) are dev-only — guarded by `ENVIRONMENT === "development"` via `adminAllowed` (`http/admin-auth.ts`). The importer is idempotent: re-runs skip terms and definitions that already exist.
+There is no seeding mechanism in the worker. The `ENVIRONMENT`-gated `/api/admin/*` seeder routes and the `import-sozluk`/`import-pano` scripts were deleted — gating destructive ops (`/clear` wipes all terms) behind a mutable `ENVIRONMENT` string was fail-open, and the importers were throwaway data-population. sözlük/pano persist via Drizzle+D1, so any future re-seed is a direct-D1 script against the bound database, not a runtime route on the public worker.

@@ -8,9 +8,9 @@
  *      time — so `process.env` here is the *deploy-time* environment
  *      (`alchemy deploy` on CI / from an `--env-file`, or the offline
  *      `alchemy dev` / Vitest loop), not the worker runtime. `ENVIRONMENT`
- *      gates every dev-only surface — the `/api/admin/*` seeder + clear
- *      routes (`adminAllowed`), the `AdminAuth` capability, the magic-link
- *      token `console.log`. It resolves from `process.env.ENVIRONMENT`,
+ *      gates the auth-layer dev flag — the magic-link token `console.log`
+ *      and the better-auth dev-URL fallback (`better-auth-live.ts`).
+ *      It resolves from `process.env.ENVIRONMENT`,
  *      defaulting to `"production"` (fail-closed) when unset. CI deploys set
  *      `ENVIRONMENT=production` explicitly; local `alchemy dev` sets
  *      `ENVIRONMENT=development` via the `dev:worker` package script.

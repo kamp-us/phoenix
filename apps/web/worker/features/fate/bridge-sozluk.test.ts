@@ -26,22 +26,22 @@
  *   - a sozluk mutation (`definition.add`) round-trips and the changed entity
  *     re-resolves over the same bridge.
  */
-import {Effect, Layer} from "effect";
+import {Effect, type Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
 // `?raw` so the node/unit pool imports the SQL as a string (the pool-workers
 // project transforms `.sql` to a string by default; the node pool does not).
 import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
+import * as schema from "../../db/drizzle/schema";
 import {Auth} from "../pasaport/Auth";
-import {SozlukAdmin, SozlukAdminLive} from "../sozluk/SozlukAdmin";
 import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
 
 let sqlite: SqliteD1;
 /** The worker-level layer (Drizzle + features), built once over the bound D1. */
-let WorkerLive: Layer.Layer<WorkerFateServices | SozlukAdmin>;
+let WorkerLive: Layer.Layer<WorkerFateServices>;
 
 const SESSION_USER: {id: string; name: string; email: string} = {
 	id: "u-writer",
@@ -103,25 +103,47 @@ beforeAll(async () => {
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
 	>[1];
-	const fateLayer = makeFateLayer(db, fakeAuth);
-	WorkerLive = Layer.mergeAll(fateLayer, SozlukAdminLive.pipe(Layer.provide(fateLayer)));
+	WorkerLive = makeFateLayer(db, fakeAuth);
 
-	// Seed five definitions with distinct scores so the keyset order is
-	// deterministic: (score desc, created_at asc, id asc).
-	await Effect.runPromise(
-		Effect.gen(function* () {
-			const admin = yield* SozlukAdmin;
-			yield* admin.seedTerm({
-				slug: SLUG,
-				title: "Bridge Read",
-				definitions: [
-					{authorId: "u1", authorName: "umut", body: "alpha definition", score: 50},
-					{authorId: "u2", authorName: "elif", body: "beta definition", score: 40},
-					{authorId: "u3", authorName: "ada", body: "gamma definition", score: 30},
-				],
-			});
-		}).pipe(Effect.provide(WorkerLive)),
+	// Seed three definitions with distinct scores so the keyset order is
+	// deterministic: (score desc, created_at asc, id asc). Written straight to the
+	// canonical D1 tables — `term_summary` carries the count/total_score the
+	// `terms` list reads; the `term` page recomputes them off `definition_view`.
+	const now = new Date();
+	const definitions = [
+		{id: "def-alpha", authorId: "u1", authorName: "umut", body: "alpha definition", score: 50},
+		{id: "def-beta", authorId: "u2", authorName: "elif", body: "beta definition", score: 40},
+		{id: "def-gamma", authorId: "u3", authorName: "ada", body: "gamma definition", score: 30},
+	];
+	await db.insert(schema.definitionView).values(
+		definitions.map((d) => ({
+			id: d.id,
+			authorId: d.authorId,
+			authorName: d.authorName,
+			termSlug: SLUG,
+			termTitle: "Bridge Read",
+			body: d.body,
+			bodyExcerpt: d.body,
+			score: d.score,
+			createdAt: now,
+			updatedAt: now,
+			deletedAt: null,
+			lastEventId: "",
+		})),
 	);
+	await db.insert(schema.termSummary).values({
+		slug: SLUG,
+		title: "Bridge Read",
+		firstLetter: SLUG.charAt(0),
+		definitionCount: definitions.length,
+		totalScore: definitions.reduce((s, d) => s + d.score, 0),
+		excerpt: definitions[0]!.body,
+		topDefinitionId: definitions[0]!.id,
+		firstAt: now,
+		lastActivityAt: now,
+		lastEditAt: now,
+		lastEventId: "",
+	});
 });
 
 afterAll(() => {

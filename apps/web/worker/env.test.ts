@@ -3,9 +3,9 @@
  * resolution that runs in the alchemy CLI process when `worker/index.ts` is
  * evaluated.
  *
- * `ENVIRONMENT` gates every dev-only surface (admin seeders, `AdminAuth`, the
- * magic-link token `console.log`). A hardcoded `"development"` opens them in
- * production.
+ * `ENVIRONMENT` gates the auth-layer dev flag (the magic-link token
+ * `console.log` and the better-auth dev-URL fallback). A hardcoded
+ * `"development"` opens it in production.
  *
  * Both resolvers are pure over an injected `env` snapshot so the behavior is
  * testable without touching the real `process.env`.

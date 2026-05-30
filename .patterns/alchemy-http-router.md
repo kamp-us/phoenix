@@ -1,6 +1,14 @@
 # HTTP routing
 
-How requests are routed without Hono. The short answer: the worker's `fetch` is an `HttpRouter` compiled with `HttpRouter.toHttpEffect`. Typed JSON endpoints (health, `/api/admin/*`) are `HttpApiBuilder` groups; raw-`Request` and SSE endpoints (`/fate`, `/api/auth/*`, `/fate/live`) are imperative `HttpRouter.add` routes that reach the raw request via `Cloudflare.Request` and return `HttpServerResponse.fromWeb`.
+> **Doc note (pending docs pass):** the `/api/admin/*` seeder routes (`admin-api.ts`,
+> `admin-handlers.ts`, `admin-auth.ts`, the `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin`
+> services) were deleted — they gated destructive ops behind a mutable `ENVIRONMENT`
+> string (fail-open). The only `HttpApiBuilder` group left is `GET /api/health`
+> (`http/health.ts`). The code samples below still reference the deleted admin group
+> as an illustration of the group pattern; the pattern is unchanged, only the example
+> is gone. Repoint the examples to `health.ts` in the docs pass.
+
+How requests are routed without Hono. The short answer: the worker's `fetch` is an `HttpRouter` compiled with `HttpRouter.toHttpEffect`. The typed JSON endpoint (`GET /api/health`) is an `HttpApiBuilder` group; raw-`Request` and SSE endpoints (`/fate`, `/api/auth/*`, `/fate/live`) are imperative `HttpRouter.add` routes that reach the raw request via `Cloudflare.Request` and return `HttpServerResponse.fromWeb`.
 
 Everything here is `@effect/platform` (`effect/unstable/http`), the model alchemy's worker already speaks — so routes drop straight into `fetch` with no adapter.
 

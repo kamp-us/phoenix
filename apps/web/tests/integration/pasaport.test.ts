@@ -1,6 +1,6 @@
 /**
  * pasaport identity + profile — black-box against the deployed worker `/fate`
- * route and the admin backfill route (ADR 0026–0031).
+ * route (ADR 0026–0031).
  *
  * Ports the observable surface of four pre-alchemy suites that drove the
  * resolvers / `Pasaport` service directly inside workerd:
@@ -11,7 +11,7 @@
  *     null for unknown, the mixed discriminant contributions feed, keyset
  *     pagination.
  *   - `pasaport-username.test.ts` — username validation / uniqueness / immutability
- *     (re-expressed as the wire codes) and the `backfillProfiles` admin op.
+ *     (re-expressed as the wire codes).
  *   - `profile.test.ts` — profile aggregates (1/1/1) + the interleaved
  *     contributions feed + disjoint cursor pages.
  *
@@ -365,17 +365,5 @@ describe("pasaport — profile reads", () => {
 		expect(new Set(allNodes.map((n) => n.kind))).toEqual(
 			new Set(["comment", "definition", "post"]),
 		);
-	});
-});
-
-describe("pasaport — backfillProfiles admin route", () => {
-	it("emits a profile for a user signed up without a username", async () => {
-		// Sign up a user and never set a username → backfill has work to do.
-		await h.signUp(`pasa-${STAMP}-backfill@test.local`, "hunter2hunter2", "No Name");
-
-		const res = await h.json("/api/admin/pasaport/backfill-profiles", {});
-		expect(res.status).toBe(200);
-		const data = (await res.json()) as {emitted: number};
-		expect(data.emitted).toBeGreaterThanOrEqual(1);
 	});
 });
