@@ -256,3 +256,44 @@ export interface TopicRpc {
 		readonly subId: string;
 	}) => Effect.Effect<{readonly ok: true}, never, never>;
 }
+
+// ---------------------------------------------------------------------------
+// Unified LiveDO wire types (KV-backed, void-aligned)
+// ---------------------------------------------------------------------------
+
+/**
+ * Per-request fan-out budgets, threaded onto the LiveDO's RPC inputs rather than
+ * hardcoded in the DO (decision 2B). Mirrors void's `LiveLimits`: a connection
+ * caps its own subscriptions and its queued-but-unflushed event backlog, a topic
+ * caps how many subscribers it registers, and every fan-out event has a maximum
+ * encoded size and a per-attempt delivery timeout. The worker/route supplies
+ * these on each call (wired in a later step); the DO never invents its own.
+ */
+export interface LiveLimits {
+	readonly maxSubscriptionsPerConnection: number;
+	readonly maxSubscriptionsPerTopic: number;
+	readonly maxQueuedEventsPerConnection: number;
+	readonly maxEncodedEventSize: number;
+	readonly deliveryAttemptTimeoutMs: number;
+}
+
+/**
+ * A persisted topic-role subscriber row (the value stored under a `sub:` KV key,
+ * void's flat-key model). `connectionId` is the human-readable connection name
+ * the topic re-derives `connection:${connectionId}` from; `subId` is the
+ * client's subscription id. The void-faithful stale model rides two counters:
+ * `generation` captures the connection's stream lifetime at register time (a
+ * (re)connect bumps the connection's persisted generation), and `revision`
+ * captures the subscription's lifetime (a re-subscribe under the same id bumps
+ * it). On deliver/check a *reachable* connection compares both against its live
+ * state; a mismatch (or a gone/inactive subscription) means the row is stale and
+ * the topic prunes it.
+ */
+export interface SubscriberRow {
+	readonly topicKey: string;
+	readonly connectionId: string;
+	readonly subId: string;
+	readonly generation: number;
+	readonly revision: number;
+	readonly updatedAt: number;
+}
