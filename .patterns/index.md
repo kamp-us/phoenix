@@ -38,6 +38,7 @@ Read [fate-effect-bridge.md](./fate-effect-bridge.md) first — it's the seam ev
 | [fate-mutations.md](./fate-mutations.md) | `mutations` map, validation in services, re-resolving the changed entity, delete returns the parent | Writing a mutation |
 | [fate-connections.md](./fate-connections.md) | `ConnectionResult`, custom `lists` resolvers vs source `connection`, cursor ownership | Writing a paginated list |
 | [fate-server-wiring.md](./fate-server-wiring.md) | `createFateServer` composition, the captured service map provided by the `/fate` route, codegen | Assembling/mounting the server |
+| [per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md) | Per-feature `queries.ts`/`lists.ts`/`views.ts`/`shapers.ts`/`sources.ts`/`mutations.ts`; `features/fate/*` as barrels; SPA import surface preserved | Adding/moving a fate fragment, scaffolding a new feature ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
 
 ## Index — fate client layer
 
@@ -61,6 +62,7 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | [alchemy-bindings.md](./alchemy-bindings.md) | `bind()` = deploy-policy + runtime-service; `yield*` DO vs `.bind` resource; the Live-layer convention | Reaching a Cloudflare resource |
 | [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No per-request `ManagedRuntime`; worker-level vs request-scoped layers; `Effect.context()` capture; how the fate bridge runs the captured map | Touching the fate↔domain seam |
 | [alchemy-http-router.md](./alchemy-http-router.md) | `HttpApiBuilder` for typed JSON + imperative `HttpRouter` for raw-Request/SSE; `toHttpEffect`; assets/worker-first | Adding/moving an HTTP route |
+| [worker-http-transport-layout.md](./worker-http-transport-layout.md) | `worker/http/` as a transport surface (not a feature); `app.ts` composition; per-feature `*Admin` services delegated to by group handlers; `AdminAuth` env gate | Adding an admin endpoint, moving an HTTP route, sanity-checking the http/ vs features/ split ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
 | [alchemy-durable-objects.md](./alchemy-durable-objects.md) | `DurableObjectNamespace<T>()`, per-instance Effect, typed RPC, `state.storage.sql`, alarms; the `ConnectionDO`/`TopicDO` live DOs | Working on the live DOs |
 | [alchemy-modular-do-with-sibling-resolution.md](./alchemy-modular-do-with-sibling-resolution.md) | Modular `class Tag` + `.make()` Layer; per-call sibling resolution pushes the Tag onto method `R` (not Layer requirements) | Authoring two co-hosted DOs that reference each other ([ADR 0033](../.decisions/0033-mutual-do-layer-cycle-per-call-resolution.md)) |
 | [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) | `D1Connection.bind` → `raw` → `drizzle(raw,{schema})`; `Drizzle` as a worker-level singleton; migrations via `Drizzle.Schema` | Wiring the DB or migrations |
