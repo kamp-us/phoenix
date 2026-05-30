@@ -3,7 +3,7 @@
  *
  * Surface (resolver-facing):
  *   - `validateSession(headers)` — per-request session lookup via better-auth.
- *     The auth instance is supplied by `BetterAuthLive` (`worker/auth/better-auth-live.ts`,
+ *     The auth instance is supplied by `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`,
  *     phoenix's fork of `@alchemy.run/better-auth`'s `CloudflareD1` reference Layer).
  *     The `/api/auth/*` route reads `BetterAuth.fetch` directly from the same
  *     Context tag — `Pasaport` no longer mounts the handler itself.
@@ -32,14 +32,14 @@
 import type {Auth as BetterAuth} from "better-auth";
 import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
+import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle.ts";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalid, UsernameTaken} from "./errors.ts";
 
 /**
  * The better-auth instance phoenix uses everywhere. Constructed by
- * `BetterAuthLive` (`worker/auth/better-auth-live.ts`) — phoenix's fork of
+ * `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`) — phoenix's fork of
  * `@alchemy.run/better-auth`'s `CloudflareD1` reference Layer. Mirrors the shape
  * of the `BetterAuth` Context tag's `auth` field (`Effect.Effect<Auth<any>,
  * never, RuntimeContext>`, see `@alchemy.run/better-auth/BetterAuth.ts`) —

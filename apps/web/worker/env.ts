@@ -1,17 +1,39 @@
 /**
- * Deploy-time worker env resolution.
+ * The worker's env — both the deploy-time resolver and the runtime type alias.
  *
- * `worker/index.ts` declares the worker's `env` block, which is evaluated in the
- * alchemy CLI process at deploy time — so `process.env` here is the *deploy-time*
- * environment (`alchemy deploy` on CI / from an `--env-file`, or the offline
- * `alchemy dev` / Vitest loop), not the worker runtime.
+ * Two roles for one file:
  *
- * `ENVIRONMENT` gates every dev-only surface — the `/api/admin/*` seeder +
- * clear routes (`adminAllowed`), the `AdminAuth` capability, the magic-link
- * token `console.log`. It must resolve from `process.env.ENVIRONMENT`,
- * defaulting to `"development"` only when unset. A real deploy sets
- * `ENVIRONMENT=production` and every gate closes.
+ *   1. **Deploy-time env resolution.** `worker/index.ts` declares the worker's
+ *      `env` block, which is evaluated in the alchemy CLI process at deploy
+ *      time — so `process.env` here is the *deploy-time* environment
+ *      (`alchemy deploy` on CI / from an `--env-file`, or the offline
+ *      `alchemy dev` / Vitest loop), not the worker runtime. `ENVIRONMENT`
+ *      gates every dev-only surface — the `/api/admin/*` seeder + clear
+ *      routes (`adminAllowed`), the `AdminAuth` capability, the magic-link
+ *      token `console.log`. It must resolve from `process.env.ENVIRONMENT`,
+ *      defaulting to `"development"` only when unset. A real deploy sets
+ *      `ENVIRONMENT=production` and every gate closes.
+ *
+ *   2. **Runtime `WorkerEnv` type.** {@link WorkerEnv} is the worker's
+ *      assembled env type — `Cloudflare.InferEnv<typeof Phoenix>` from
+ *      `index.ts`. A type-only import (`import type`) avoids a runtime cycle
+ *      with `index.ts` (TS/Vite strip type-only imports at build time).
  */
+/**
+ * The worker's assembled env type — the runtime view of the worker's `env`
+ * block in `index.ts` plus the bound `PHOENIX_DB` D1 client. Kept as a small
+ * hand-rolled shape rather than `Cloudflare.InferEnv<typeof Phoenix>` because
+ * the `Phoenix` class self-references through its `Worker<Phoenix, ...>` type
+ * param (the DO-host pattern, ADR 0028), which makes `InferEnv` recurse and
+ * trip TS2589 ("Type instantiation is excessively deep"). One sentence of
+ * duplication is cheaper than that.
+ */
+export interface WorkerEnv {
+	readonly PHOENIX_DB: D1Database;
+	readonly ENVIRONMENT: string;
+	readonly BETTER_AUTH_URL?: string;
+	readonly BETTER_AUTH_TRUSTED_ORIGINS?: string;
+}
 
 /** The subset of the deploy-time process env this resolver reads. */
 export interface DeployEnvInput {

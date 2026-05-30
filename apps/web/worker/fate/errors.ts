@@ -39,6 +39,7 @@
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import type {MutationErrorCode} from "../../src/lib/mutationErrorCodes.ts";
+import type {DrizzleError} from "../db/Drizzle.ts";
 import type {
 	CommentNotFound,
 	CommentValidation,
@@ -47,6 +48,7 @@ import type {
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
 } from "../features/pano/errors.ts";
+import type {Unauthorized} from "../features/pasaport/Auth.ts";
 import type {
 	UserNotFound,
 	UsernameAlreadySet,
@@ -60,9 +62,7 @@ import type {
 	UnauthorizedDefinitionMutation,
 } from "../features/sozluk/errors.ts";
 import type {VoteTargetNotFound} from "../features/vote/errors.ts";
-import type {AdminForbidden} from "../services/AdminAuth.ts";
-import type {Unauthorized} from "../services/Auth.ts";
-import type {DrizzleError} from "../services/Drizzle.ts";
+import type {AdminForbidden} from "../http/admin-auth.ts";
 
 // The wire-side constant + decoder live in `src/lib/` so the SPA can import
 // them without crossing the worker boundary; re-exported here so worker callers

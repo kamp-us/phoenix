@@ -9,7 +9,7 @@
  *   pasaport/UsernameAlreadySet    → ALREADY_SET
  *   pasaport/UserNotFound          → USER_NOT_FOUND
  *
- * `Unauthorized` is reused from `worker/services/Auth.ts` and is not
+ * `Unauthorized` is reused from `worker/features/pasaport/Auth.ts` and is not
  * redeclared here — `Auth.required` is the single source of truth for the
  * unauthorized wire code.
  */

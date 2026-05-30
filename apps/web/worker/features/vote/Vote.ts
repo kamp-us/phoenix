@@ -50,8 +50,8 @@
  */
 import {and, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
+import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {type VoteTargetKind, VoteTargetNotFound} from "./errors.ts";
 

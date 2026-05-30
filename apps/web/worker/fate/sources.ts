@@ -36,9 +36,9 @@ import {
 	type PostTagRow,
 	tagLabel,
 } from "../features/pano/Pano.ts";
+import {Auth} from "../features/pasaport/Auth.ts";
 import {Pasaport, type ProfileRow, type UserRow} from "../features/pasaport/Pasaport.ts";
 import {type DefinitionRow, Sozluk, type TermSummaryRow} from "../features/sozluk/Sozluk.ts";
-import {Auth} from "../services/Auth.ts";
 import type {FateContext} from "./context.ts";
 import {fateSource} from "./effect.ts";
 import {

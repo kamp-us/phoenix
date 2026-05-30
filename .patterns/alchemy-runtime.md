@@ -1,6 +1,6 @@
 # The runtime
 
-How domain services get from the worker into a fate resolver. The short answer: there is **no per-request `ManagedRuntime`**. The worker provides `Drizzle` and the feature services as **worker-level layers** (built once, in init). Per request the route provides only `Auth` and `RequestContext`, then captures the live service map with `Effect.context<R>()` and hands it to fate. The bridge runs each resolver with `Effect.runPromiseExit(Effect.provide(effect, ctx.context))`. Nothing is disposed.
+How domain services get from the worker into a fate resolver. The short answer: there is **no per-request `ManagedRuntime`**. The worker provides `Drizzle` and the feature services as **worker-level layers** (built once, in init). Per request the route provides only `Auth` and `HttpServerRequest`, then captures the live service map with `Effect.context<R>()` and hands it to fate. The bridge runs each resolver with `Effect.runPromiseExit(Effect.provide(effect, ctx.context))`. Nothing is disposed.
 
 This is the doc to read before touching the seam between fate and the domain. It is the biggest departure from the old per-request-runtime design.
 
@@ -11,7 +11,7 @@ The old `worker/fate/runtime.ts` built a fresh `ManagedRuntime` on every `/fate`
 On alchemy that premise is gone. `Cloudflare.D1Connection.bind(PhoenixDb)` resolves **once per isolate** in the worker's init phase, and the bound `db` is stable for the isolate's life. So the things built on it are stable too:
 
 - **Worker-level (built once, in init):** `Drizzle`, and every feature service that depends only on `Drizzle` — `Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`.
-- **Request-level (provided per request):** `Auth` (the validated session) and `RequestContext` (headers/url/method). These genuinely vary per call.
+- **Request-level (provided per request):** `Auth` (the validated session) and `HttpServerRequest` (headers/url/method). These genuinely vary per call.
 
 ## Worker-level layers, built in init
 
@@ -41,7 +41,7 @@ The layer graph itself (mergeAll / provide / provideMerge) is exactly the one in
 
 ## Request-level values, provided in the route
 
-`Auth` and `RequestContext` are provided inside the `/fate` handler, around the work that needs them:
+`Auth` and `HttpServerRequest` are provided inside the `/fate` handler, around the work that needs them:
 
 ```ts
 // worker/fate/route.ts (mounted by the router — alchemy-http-router.md)
@@ -51,7 +51,8 @@ const handleFate = Effect.gen(function* () {
 
   return yield* serveFate(raw).pipe(
     Effect.provideService(Auth, {user: session?.user, session: session?.session}),
-    Effect.provideService(RequestContext, requestContextOf(raw)),
+    // HttpServerRequest is the upstream Tag from effect/unstable/http/HttpServerRequest;
+    // alchemy/HttpRouter provides it for raw-Request routes, so no manual provide here.
   );
 });
 ```
@@ -80,12 +81,12 @@ const serveFate = (raw: Request) =>
   });
 ```
 
-At the point of capture, the context holds the worker-level services (`Drizzle`, features) *and* the request-level services (`Auth`, `RequestContext`) provided just above — so `context` carries the full `FateEnv`.
+At the point of capture, the context holds the worker-level services (`Drizzle`, features) *and* the request-level services (`Auth`, `HttpServerRequest`) provided just above — so `context` carries the full `FateEnv`.
 
 `FateEnv` is the union of every service a resolver may touch:
 
 ```ts
-type FateEnv = Drizzle | Sozluk | Pano | Vote | Pasaport | Stats | Auth | RequestContext;
+type FateEnv = Drizzle | Sozluk | Pano | Vote | Pasaport | Stats | Auth | HttpServerRequest;
 ```
 
 ## The bridge runs with the captured map
@@ -133,7 +134,7 @@ This is the **only** change to the bridge from [fate-effect-bridge.md](./fate-ef
 
 phoenix keeps the request/admin split (ADR 0012), but it's no longer two `ManagedRuntime`s — it's two layer sets over the same worker:
 
-- **request** — `Auth` + `RequestContext` + the feature services. Drives `/fate`.
+- **request** — `Auth` + `HttpServerRequest` + the feature services. Drives `/fate`.
 - **admin** — `AdminAuth` + the `…Admin` services, env-gated, no session. Drives the dev-only `/api/admin/*` routes.
 
 Both sit on the same worker-level `Drizzle`. The admin routes provide `AdminAuth` the same way `/fate` provides `Auth`: `Effect.provideService` in the handler. See [alchemy-http-router.md](./alchemy-http-router.md) for where each is provided.
@@ -143,5 +144,5 @@ Both sit on the same worker-level `Drizzle`. The admin routes provide `AdminAuth
 - [fate-effect-bridge.md](./fate-effect-bridge.md) — the bridge this doc describes (a captured service map for the old `ManagedRuntime`)
 - [effect-layer-composition.md](./effect-layer-composition.md) — the layer graph, now provided at worker scope
 - [alchemy-worker.md](./alchemy-worker.md) — where worker-level layers are provided
-- [alchemy-http-router.md](./alchemy-http-router.md) — where `Auth`/`RequestContext`/`AdminAuth` are provided per request
+- [alchemy-http-router.md](./alchemy-http-router.md) — where `Auth`/`HttpServerRequest`/`AdminAuth` are provided per request
 - [ADR 0012](../.decisions/0012-admin-parallel-services.md) — the request/admin split

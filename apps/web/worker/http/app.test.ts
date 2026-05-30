@@ -31,13 +31,12 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {createDrizzle} from "../db/Drizzle.ts";
 import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../db/drizzle/schema.ts";
 import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
 import {makeAdminLayer, makeFateLayer} from "../fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
-import {createDrizzle} from "../services/Drizzle.ts";
-import type {WorkerEnv} from "../shared/worker-env.ts";
 import {makeAppLive} from "./app.ts";
 
 /**
@@ -113,11 +112,10 @@ beforeAll(() => {
 	sqlite.applyMigration(baselineMigration);
 
 	const db = createDrizzle(sqlite.d1);
-	const env = {PHOENIX_DB: sqlite.d1, ...ENV} as unknown as WorkerEnv;
 
 	// Build a real better-auth instance over the same node:sqlite-backed D1 the
 	// rest of the test uses. The deployed worker assembles this via
-	// `BetterAuthLive` (`worker/auth/better-auth-live.ts`), but that Layer needs
+	// `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`), but that Layer needs
 	// the full alchemy provider stack (`Random`, `D1Connection`) which doesn't
 	// exist in the node test runtime. Constructing the instance directly here and
 	// providing it through a hand-rolled Layer over the same `BetterAuth` Context
@@ -149,12 +147,11 @@ beforeAll(() => {
 	});
 
 	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to
-	// `Parameters<typeof makeFateLayer>[2]` (the `Auth` type re-export, which
+	// `Parameters<typeof makeFateLayer>[1]` (the `Auth` type re-export, which
 	// the deployed worker also satisfies).
 	const fateLayer = makeFateLayer(
 		db,
-		env,
-		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[2],
+		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[1],
 	);
 	const adminLayer = makeAdminLayer(db);
 
@@ -162,7 +159,6 @@ beforeAll(() => {
 		fateLayer,
 		adminLayer,
 		adminAllowed: true,
-		env,
 		liveLayer,
 		betterAuthLayer,
 	});
@@ -170,7 +166,6 @@ beforeAll(() => {
 		fateLayer,
 		adminLayer,
 		adminAllowed: false,
-		env,
 		liveLayer,
 		betterAuthLayer,
 	});
@@ -179,7 +174,6 @@ beforeAll(() => {
 		fateLayer,
 		adminLayer,
 		adminAllowed: adminGateFor("production"),
-		env,
 		liveLayer,
 		betterAuthLayer,
 	});

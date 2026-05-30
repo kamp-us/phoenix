@@ -18,8 +18,8 @@
  * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
  */
 
+import {Auth} from "../features/pasaport/Auth.ts";
 import {Pasaport} from "../features/pasaport/Pasaport.ts";
-import {Auth} from "../services/index.ts";
 import {fateMutation} from "./effect.ts";
 import {toUser} from "./shapers.ts";
 import type {User} from "./views.ts";

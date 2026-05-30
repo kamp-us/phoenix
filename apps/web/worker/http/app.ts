@@ -27,10 +27,8 @@ import type {WorkerAdminServices, WorkerFateServices} from "../fate/layers.ts";
 import {fateRoute} from "../fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
-import {CloudflareEnv} from "../services/index.ts";
-import type {WorkerEnv} from "../shared/worker-env.ts";
+import {authRoute} from "../features/pasaport/route.ts";
 import {adminApiLayer, adminAuthLayer} from "./admin-handlers.ts";
-import {authRoute} from "./auth-route.ts";
 
 /**
  * Build the application router layer.
@@ -41,24 +39,23 @@ import {authRoute} from "./auth-route.ts";
  * @param adminLayer   the worker-level admin services (`SozlukAdmin`,
  *                     `PanoAdmin`, `PasaportAdmin`) the seeder groups require.
  * @param adminAllowed the env gate for `AdminAuth` (env === "development").
- * @param env          the typed worker env (`WorkerEnv`), provided to the typed
- *                     group as `CloudflareEnv` so the health probe reads the
- *                     deploy environment off the canonical typed service instead
- *                     of casting the untyped runtime `WorkerEnvironment`.
  * @param liveLayer    the worker-init-resolved DO namespace handles
  *                     (`LiveTopics` for the `/fate` publish path, `LiveConnections`
  *                     for the `/fate/live` SSE transport), built from the bound
  *                     `TopicDO`/`ConnectionDO` namespaces in worker init.
+ *
+ * The health probe reads `Cloudflare.WorkerEnvironment` directly (alchemy
+ * provides it at worker scope), so this layer no longer needs the worker env
+ * passed in.
  */
 export const makeAppLive = (options: {
 	readonly fateLayer: Layer.Layer<WorkerFateServices>;
 	readonly adminLayer: Layer.Layer<WorkerAdminServices>;
 	readonly adminAllowed: boolean;
-	readonly env: WorkerEnv;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**
 	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker
-	 * this is `BetterAuthLive` (`worker/auth/better-auth-live.ts`), which builds
+	 * this is `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`), which builds
 	 * the auth instance via alchemy's `Random` + `D1Connection` — its external
 	 * `R` (`Providers`/`Provider<Random>`/`WorkerEnvironment`/`D1ConnectionPolicy`)
 	 * is supplied by alchemy's worker runtime context. Tests pass a hand-rolled
@@ -70,17 +67,14 @@ export const makeAppLive = (options: {
 	readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth, never, any>;
 }) => {
 	// Typed-JSON groups: health + admin seeders. The group handlers' domain
-	// requirements (`AdminAuth` + the admin services for the seeders, `CloudflareEnv`
-	// for the health probe) surface as route markers once registered, so they're
-	// discharged with `HttpRouter.provideRequest` here — `Layer.provide` does not
-	// discharge route markers.
+	// requirements (`AdminAuth` + the admin services for the seeders) surface as
+	// route markers once registered, so they're discharged with
+	// `HttpRouter.provideRequest` here — `Layer.provide` does not discharge route
+	// markers. The health probe's `WorkerEnvironment` requirement is satisfied
+	// at worker scope (alchemy provides it), so it doesn't appear here.
 	const typedJson = adminApiLayer.pipe(
 		HttpRouter.provideRequest(
-			Layer.mergeAll(
-				options.adminLayer,
-				adminAuthLayer(options.adminAllowed),
-				Layer.succeed(CloudflareEnv, options.env),
-			),
+			Layer.mergeAll(options.adminLayer, adminAuthLayer(options.adminAllowed)),
 		),
 	);
 
@@ -88,7 +82,7 @@ export const makeAppLive = (options: {
 	// markers `HttpRouter.add` lifts (fate's `FateEnv` subset + `LiveTopics`;
 	// `BetterAuth` for `/api/auth/*`; live's `Pasaport` + `LiveConnections`) —
 	// plain `Layer.provide` does not. `fateLayer` carries `Pasaport`,
-	// `BetterAuthLive` (`worker/auth/better-auth-live.ts`) carries `BetterAuth`,
+	// `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`) carries `BetterAuth`,
 	// `liveLayer` adds the DO handles.
 	// `provideMerge(betterAuthLayer)` instead of a flat 3-way `mergeAll`: with
 	// `any` in `betterAuthLayer`'s `R` the effect language service flags the

@@ -6,7 +6,7 @@
  *
  *   - `* /api/auth/*` — better-auth. Delegated to the `BetterAuth` Context tag
  *     (`@alchemy.run/better-auth`): the layer (`BetterAuthLive`,
- *     `worker/auth/better-auth-live.ts`) constructs `makeBetterAuth(...)` once
+ *     `worker/features/pasaport/better-auth-live.ts`) constructs `makeBetterAuth(...)` once
  *     and exposes `.fetch` — an `HttpEffect` that forwards the inbound request
  *     to `auth.handler(...)` and returns the response. Same single global auth
  *     realm against the same D1 tables as `Pasaport.validateSession`.

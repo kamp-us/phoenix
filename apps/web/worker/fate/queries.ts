@@ -21,10 +21,10 @@
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Pano} from "../features/pano/Pano.ts";
+import {Auth} from "../features/pasaport/Auth.ts";
 import {Pasaport} from "../features/pasaport/Pasaport.ts";
 import {Sozluk} from "../features/sozluk/Sozluk.ts";
 import {Stats} from "../features/stats/Stats.ts";
-import {Auth} from "../services/index.ts";
 import {fateQuery} from "./effect.ts";
 import {
 	toComment,

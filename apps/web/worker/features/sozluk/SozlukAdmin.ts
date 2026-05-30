@@ -16,9 +16,9 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
+import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle.ts";
-import {excerpt as excerptText} from "../../shared/text.ts";
+import {excerpt as excerptText} from "../text/index.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Constants                                                                   */

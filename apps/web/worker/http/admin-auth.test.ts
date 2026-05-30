@@ -1,14 +1,14 @@
 /**
- * Unit cover for the typed worker-env accessors (`shared/worker-env.ts`).
+ * Unit cover for the `adminAllowed` predicate (`http/admin-auth.ts`).
  *
- * These are pure, alchemy-free helpers so the admin gate derivation is testable
- * without evaluating the alchemy `Worker` class (which `index.ts` does at module
- * load). `index.ts` builds a typed `WorkerEnv` and derives `adminAllowed` through
- * {@link adminAllowed}; this asserts the gate opens only on `development` and is
- * closed for every other (real-deploy) environment.
+ * Pure, alchemy-free helper so the admin gate derivation is testable without
+ * evaluating the alchemy `Worker` class (which `index.ts` does at module load).
+ * `index.ts` reads `Cloudflare.WorkerEnvironment` and derives the admin gate
+ * through {@link adminAllowed}; this asserts the gate opens only on
+ * `development` and is closed for every other (real-deploy) environment.
  */
 import {describe, expect, it} from "vitest";
-import {adminAllowed} from "./worker-env.ts";
+import {adminAllowed} from "./admin-auth.ts";
 
 /** A minimal `WorkerEnv` with only the field the gate reads. */
 const envWith = (environment: string) => ({ENVIRONMENT: environment}) as never;

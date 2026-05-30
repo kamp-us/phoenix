@@ -19,7 +19,7 @@
 import {FateRequestError} from "@nkzw/fate/server";
 import {Context, Data, Effect} from "effect";
 import {describe, expect, it} from "vitest";
-import {Auth, Unauthorized} from "../services/Auth";
+import {Auth, Unauthorized} from "../features/pasaport/Auth";
 import type {FateContext} from "./context";
 import {fateMutation, fateQuery, fateSource} from "./effect";
 

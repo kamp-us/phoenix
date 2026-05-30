@@ -1,5 +1,5 @@
 import {Context, Data, Effect} from "effect";
-import type {Session} from "../features/pasaport/Pasaport.ts";
+import type {Session} from "./Pasaport.ts";
 
 /**
  * Thrown when an authenticated user is required but not present.

@@ -119,7 +119,7 @@ But this is the **exception**, not the default. The recommendation from [feature
 
 Tests destructure the service inside `Effect.gen` and provide a `Layer.succeed(Drizzle, makeAccess(fakeDb))` where `makeAccess` mirrors the production `DrizzleLive` body over a test-supplied `db`.
 
-Canonical implementation: `apps/web/worker/services/Drizzle.test.ts` (the `makeAccess` helper, `TestDrizzleLayer`, and the `Drizzle.run` / `Drizzle.batch` describe blocks covering smoke, semantics, composition, type inference, and batch tuple shape).
+Canonical implementation: `apps/web/worker/db/Drizzle.test.ts` (the `makeAccess` helper, `TestDrizzleLayer`, and the `Drizzle.run` / `Drizzle.batch` describe blocks covering smoke, semantics, composition, type inference, and batch tuple shape).
 
 ## Helpers in test files
 

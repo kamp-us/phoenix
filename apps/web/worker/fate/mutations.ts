@@ -21,8 +21,8 @@
  */
 
 import {liveBus} from "../features/fate-live/event-bus.ts";
+import {Auth} from "../features/pasaport/Auth.ts";
 import {Sozluk} from "../features/sozluk/Sozluk.ts";
-import {Auth} from "../services/index.ts";
 import {fateMutation} from "./effect.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition, Term} from "./views.ts";

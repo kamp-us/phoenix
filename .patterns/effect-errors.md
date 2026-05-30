@@ -81,7 +81,7 @@ These map to specific wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, `UNAU
 **Infrastructure errors** — things that went wrong below the domain:
 
 ```ts
-// From services/Drizzle.ts
+// From db/Drizzle.ts
 export class DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{
   readonly cause: unknown;
 }> {}
@@ -198,5 +198,5 @@ Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contra
 - [feature-services.md](./feature-services.md) — where errors plug into the service shape
 - [effect-error-operators.md](./effect-error-operators.md) — catching, `Exit`, `Cause`, recovering from specific tags
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.TaggedErrorClass` for errors that cross serialization boundaries
-- `worker/services/Auth.ts` — `Unauthorized` is the canonical phoenix tagged error
+- `worker/features/pasaport/Auth.ts` — `Unauthorized` is the canonical phoenix tagged error
 - `worker/fate/errors.ts` — `encodeFateError` + the typed `WIRE_CODE_BY_TAG` registry

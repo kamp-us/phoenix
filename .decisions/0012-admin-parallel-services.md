@@ -58,7 +58,7 @@ app.post("/api/admin/sozluk/upsert-term", async (c) => {
 
 **Easier:**
 - Resolver services stay narrow — `Sozluk` doesn't include `seedTerm`. Resolver typings can't accidentally yield admin-only operations.
-- Admin auth is a single chokepoint. Future tightening (real auth, audit logging, rate limits) lands in one file (`services/AdminAuth.ts`).
+- Admin auth is a single chokepoint. Future tightening (real auth, audit logging, rate limits) lands in one file (`http/admin-auth.ts`).
 - Admin services can grow operations that don't fit the user-facing model (bulk imports, schema migrations, data quality jobs) without polluting the resolver surface.
 
 **Harder / costlier:**

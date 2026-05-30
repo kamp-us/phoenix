@@ -39,8 +39,8 @@ import * as Redacted from "effect/Redacted";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
-import * as schema from "../db/drizzle/schema.ts";
-import {PhoenixDb} from "../db/resources.ts";
+import * as schema from "../../db/drizzle/schema.ts";
+import {PhoenixDb} from "../../db/resources.ts";
 
 /**
  * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
@@ -64,7 +64,7 @@ export const BetterAuthLive = Layer.effect(
 		// deterministic-in-state resource: the value is generated once on create
 		// and persisted thereafter, so re-deploys keep the same secret unless the
 		// resource is replaced. The fixed dev fallback `DEV_BETTER_AUTH_SECRET`
-		// (`shared/deploy-env.ts`) is no longer in the wire — alchemy state is
+		// (`worker/env.ts`) is no longer in the wire — alchemy state is
 		// the source of truth now.
 		const SECRET = yield* Random("BETTER_AUTH_SECRET");
 		const secret = yield* SECRET.text;

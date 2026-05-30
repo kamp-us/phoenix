@@ -50,7 +50,7 @@ class UserRepo extends Context.Service<
 
 ## Static helpers on the service class
 
-Effect-smol attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/services/Auth.ts` — the smallest, cleanest example of `static readonly required`. `worker/services/AdminAuth.ts` mirrors the same shape for admin routes (yields `AdminForbidden` instead of `Unauthorized`).
+Effect-smol attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/features/pasaport/Auth.ts` — the smallest, cleanest example of `static readonly required`. `worker/http/admin-auth.ts` mirrors the same shape for admin routes (yields `AdminForbidden` instead of `Unauthorized`).
 
 Call site: `const {user} = yield* Auth.required;`
 
@@ -64,7 +64,7 @@ Use this when the same gen-block recurs at five call sites. Don't pre-derive eve
 export const layer: Layer.Layer<Path> = Layer.succeed(Path)(posixImpl);
 ```
 
-Use when constructing the service has zero deps and zero effects — a plain object literal of functions. `worker/services/CloudflareEnv.ts` and `worker/services/RequestContext.ts` are the per-request examples: the runtime builds them with `Layer.succeed(CloudflareEnv, env)` / `Layer.succeed(RequestContext, {...})` at the start of each request.
+Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `Auth` (`worker/features/pasaport/Auth.ts`) is the canonical example: the `/fate` route provides it with `Effect.provideService(Auth, {user, session})` after validating the session, and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) carries the raw `Request` for free — no hand-rolled `CloudflareEnv`/`RequestContext` Tags. Use `Cloudflare.WorkerEnvironment` (alchemy ships this Tag at worker scope) for env access.
 
 ### `Layer.effect` — service built inside an Effect
 
@@ -80,7 +80,7 @@ export const layer = Layer.effect(UserRepo)(
 );
 ```
 
-Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided. `worker/services/Drizzle.ts`'s `DrizzleLive` is the canonical phoenix example — it yields `CloudflareEnv`, constructs the drizzle builder once, and returns a `DrizzleAccess` record.
+Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided. `worker/db/Drizzle.ts`'s `makeDrizzleLayer` is the canonical phoenix example — the worker init builds the drizzle builder once from the bound D1 (via `Cloudflare.D1Connection.bind(PhoenixDb).raw`) and hands it to `makeDrizzleLayer(db)`, which returns a `DrizzleAccess` record.
 
 ### `Layer.effectContext` — providing multiple tags from one construction
 

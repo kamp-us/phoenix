@@ -23,10 +23,10 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
+import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle.ts";
-import {excerpt as excerptText} from "../../shared/text.ts";
+import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {

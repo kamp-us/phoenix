@@ -73,11 +73,11 @@ The architectural decision from 0011 — wrap drizzle behind `Context.Service` r
 
 **Now banned:**
 
-- `Drizzle.run(...)` or `Drizzle.batch(...)` as static method calls (the static no longer exists; the grep returns zero hits in `apps/web/worker/features/` and `apps/web/worker/services/Drizzle.test.ts`).
+- `Drizzle.run(...)` or `Drizzle.batch(...)` as static method calls (the static no longer exists; the grep returns zero hits in `apps/web/worker/features/` and `apps/web/worker/db/Drizzle.test.ts`).
 - Per-feature `tryDb` / `runDb` / `batchDb` closure wrappers — the foundation now exposes the same shape.
 - Constructing `DrizzleError` outside `DrizzleLive` — the catch lives in exactly one place.
 
-**Testing:** the test layer for `Drizzle` builds a `DrizzleAccess` record over a fake `DrizzleDb` and provides it via `Layer.succeed(Drizzle, makeAccess(fakeDb))`. Tests destructure `{run, batch}` inside `Effect.gen` and exercise the wrap. See `apps/web/worker/services/Drizzle.test.ts` for the canonical shape and [.patterns/effect-testing.md](../.patterns/effect-testing.md) for the rationale.
+**Testing:** the test layer for `Drizzle` builds a `DrizzleAccess` record over a fake `DrizzleDb` and provides it via `Layer.succeed(Drizzle, makeAccess(fakeDb))`. Tests destructure `{run, batch}` inside `Effect.gen` and exercise the wrap. See `apps/web/worker/db/Drizzle.test.ts` for the canonical shape and [.patterns/effect-testing.md](../.patterns/effect-testing.md) for the rationale.
 
 **Consistency check with [0013](0013-validation-in-service-methods.md):** unchanged. Input validation still lives inside service method bodies as `Effect.fn` helpers / closure validators; this decision only relocates the db-access wrap. Validation predates the db touch in any method that does both — the call order is `validate → run → batch`.
 

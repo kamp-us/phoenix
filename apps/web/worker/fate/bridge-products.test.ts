@@ -28,13 +28,13 @@
  * Runs in the node pool (no workerd) — same constraint as `bridge-sozluk.test.ts`.
  */
 import {Effect, type Layer} from "effect";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {createDrizzle} from "../db/Drizzle";
 import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import {Pano} from "../features/pano/Pano";
+import {Auth} from "../features/pasaport/Auth";
 import {Pasaport} from "../features/pasaport/Pasaport";
-import {Auth, RequestContext} from "../services";
-import {createDrizzle} from "../services/Drizzle";
-import type {WorkerEnv} from "../shared/worker-env.ts";
 import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
@@ -53,8 +53,9 @@ type FateResult =
 
 /**
  * Drive one fate operation through the bridge the way the `/fate` route does:
- * provide per-request `Auth` + `RequestContext`, capture the `Context`, and run
- * `fateServer.handleRequest`. `auth` chooses the session (anonymous by default).
+ * provide per-request `Auth` + `HttpServerRequest`, capture the `Context`, and
+ * run `fateServer.handleRequest`. `auth` chooses the session (anonymous by
+ * default).
  */
 async function fateOp(
 	operation: Record<string, unknown>,
@@ -71,11 +72,7 @@ async function fateOp(
 		return yield* Effect.promise(() => fateServer.handleRequest(request, {request, context}));
 	}).pipe(
 		Effect.provideService(Auth, {user: opts.auth as never, session: undefined}),
-		Effect.provideService(RequestContext, {
-			headers: request.headers,
-			url: request.url,
-			method: request.method,
-		}),
+		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
 		Effect.provide(WorkerLive),
 	);
 
@@ -92,13 +89,12 @@ beforeAll(async () => {
 	sqlite.applyMigration(baselineMigration);
 
 	const db = createDrizzle(sqlite.d1);
-	const env = {PHOENIX_DB: sqlite.d1, ENVIRONMENT: "development"} as unknown as WorkerEnv;
 	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;
 	// the bridge tests never hit that path, so a typed no-op stand-in is enough.
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
-	>[2];
-	WorkerLive = makeFateLayer(db, env, fakeAuth);
+	>[1];
+	WorkerLive = makeFateLayer(db, fakeAuth);
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the
 	// node pool can't forge a session, so we insert the rows the services read).

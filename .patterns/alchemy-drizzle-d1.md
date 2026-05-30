@@ -25,7 +25,7 @@ const db = drizzle(raw, {schema});           // one instance for the isolate
 `DrizzleLive` does not read a per-request `CloudflareEnv`. It's a layer built from the already-constructed `db`, provided at worker scope:
 
 ```ts
-// worker/services/Drizzle.ts
+// worker/db/Drizzle.ts
 export interface DrizzleAccess {
   readonly run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.Effect<A, DrizzleError>;
   readonly batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(

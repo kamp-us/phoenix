@@ -34,20 +34,20 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import {BetterAuthLive} from "./auth/better-auth-live.ts";
+import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
+import {resolveDeployEnv} from "./env.ts";
 import {makeAdminLayer, makeFateLayer} from "./fate/layers.ts";
 import ConnectionDO, {ConnectionDOLive} from "./features/fate-live/connection-do.ts";
 import TopicDO, {TopicDOLive} from "./features/fate-live/topic-do.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
+import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
+import {adminAllowed} from "./http/admin-auth.ts";
 import {makeAppLive} from "./http/app.ts";
-import {createDrizzle} from "./services/Drizzle.ts";
-import {resolveDeployEnv} from "./shared/deploy-env.ts";
-import {adminAllowed, type WorkerEnv} from "./shared/worker-env.ts";
 
 // Resolved ONCE in the alchemy CLI process when this module is evaluated, so the
 // worker's `env` block below is the deploy-time policy (fail-closed). See
-// `shared/deploy-env.ts`: `ENVIRONMENT` defaults to "development" only when unset
+// `worker/env.ts`: `ENVIRONMENT` defaults to "development" only when unset
 // (a real deploy sets `ENVIRONMENT=production`, closing every dev gate), and a
 // missing `BETTER_AUTH_SECRET` throws here on a real deploy rather than silently
 // shipping the committed dev key.
@@ -71,7 +71,7 @@ export class Phoenix extends Cloudflare.Worker<
 	main: import.meta.filename,
 	env: {
 		// Resolves from `process.env.ENVIRONMENT`, defaulting to "development"
-		// only when unset (`shared/deploy-env.ts`). This is the single gate every
+		// only when unset (`worker/env.ts`). This is the single gate every
 		// dev-only surface reads — keep it deploy-time-resolved, never a literal.
 		ENVIRONMENT: deployEnv.ENVIRONMENT,
 		// Dev runs behind the Vite proxy, so the worker sees `Host:
@@ -83,7 +83,7 @@ export class Phoenix extends Cloudflare.Worker<
 		BETTER_AUTH_URL: "http://localhost:3000",
 		BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000,http://localhost:5173",
 		// `BETTER_AUTH_SECRET` is NOT bound here anymore — `BetterAuthLive`
-		// (`auth/better-auth-live.ts`) mints it via alchemy's `Random` resource,
+		// (`features/pasaport/better-auth-live.ts`) mints it via alchemy's `Random` resource,
 		// which persists the minted value in alchemy state so re-deploys keep the
 		// same secret unless the resource is replaced. The session-signing secret
 		// is therefore not a deploy-time env var and never appears on `env.*`.
@@ -143,20 +143,6 @@ export default Phoenix.make(
 		// only `Auth`/`RequestContext` per request; the admin seeders provide
 		// `AdminAuth` (the env gate) per route.
 		const raw = yield* db.raw;
-		// `WorkerEnvironment` carries the worker's `env` vars, but the D1 client is
-		// resolved through the bound `D1Connection` (`db.raw`), not as an `env.*`
-		// binding. `PasaportLive` builds better-auth's drizzle adapter from
-		// `env.PHOENIX_DB` (alchemy-drizzle-d1.md "better-auth on the same D1"), so
-		// surface the bound `raw` there — the same D1 the data plane runs on.
-		// The alchemy runtime `WorkerEnvironment` is an untyped record; overlay the
-		// typed fields the worker actually injects/reads (`PHOENIX_DB` from the
-		// bound D1, `ENVIRONMENT` widened to `string`) to recover a typed
-		// `WorkerEnv` — no `as unknown as Env` laundering.
-		const env: WorkerEnv = {
-			...(yield* Cloudflare.WorkerEnvironment),
-			PHOENIX_DB: raw,
-			ENVIRONMENT: deployEnv.ENVIRONMENT,
-		};
 		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
 		// init — the layer (`BetterAuthLive`, provided below) constructs the
 		// `makeBetterAuth(...)` instance once and caches it. Yielding `auth` here
@@ -166,12 +152,14 @@ export default Phoenix.make(
 		// validate with the same secret.
 		const betterAuth = yield* BetterAuth.BetterAuth;
 		const authInstance = yield* betterAuth.auth;
-		const fateLayer = makeFateLayer(createDrizzle(raw), env, authInstance);
+		const fateLayer = makeFateLayer(createDrizzle(raw), authInstance);
 		const adminLayer = makeAdminLayer(createDrizzle(raw));
-		// Typed read off `WorkerEnv` (`shared/worker-env.ts`), not a `Record` cast:
-		// the dev-only admin surfaces open only on `development`, fail-closed
-		// otherwise.
-		const allowAdmin = adminAllowed(env);
+		// The dev-only admin surfaces open only on `development`, fail-closed
+		// otherwise. `adminAllowed` lives in `http/admin-auth.ts` next to the
+		// `AdminAuth` service it powers. The deploy-resolved `ENVIRONMENT` lives
+		// on the worker init's `deployEnv` (the same value the worker `env` block
+		// above wires) — no read off `Cloudflare.WorkerEnvironment` needed.
+		const allowAdmin = adminAllowed({ENVIRONMENT: deployEnv.ENVIRONMENT});
 
 		// The live path (ADR 0028/0029): both DO namespaces are resolved ONCE in
 		// init (`topics`/`connections`, above) and wrapped as worker-level services.
@@ -234,7 +222,6 @@ export default Phoenix.make(
 			fateLayer,
 			adminLayer,
 			adminAllowed: allowAdmin,
-			env,
 			liveLayer,
 			betterAuthLayer: BetterAuthLive,
 		});
@@ -259,7 +246,7 @@ export default Phoenix.make(
 				Cloudflare.D1ConnectionLive,
 				ConnectionDOLive,
 				TopicDOLive,
-				// `BetterAuthLive` (`auth/better-auth-live.ts`) satisfies the
+				// `BetterAuthLive` (`features/pasaport/better-auth-live.ts`) satisfies the
 				// `BetterAuth` Context tag yielded above + provides `betterAuth.fetch`
 				// to the `/api/auth/*` route. It self-provides `D1ConnectionLive`
 				// internally but merging that one twice is idempotent.

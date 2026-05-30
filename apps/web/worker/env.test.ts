@@ -11,7 +11,7 @@
  * testable without touching the real `process.env`.
  */
 import {describe, expect, it} from "vitest";
-import {resolveDeployEnv, resolveStateMode} from "./deploy-env.ts";
+import {resolveDeployEnv, resolveStateMode} from "./env.ts";
 
 describe("resolveDeployEnv", () => {
 	describe("ENVIRONMENT", () => {

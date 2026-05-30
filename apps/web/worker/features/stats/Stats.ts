@@ -19,7 +19,7 @@
  */
 import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle.ts";
+import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */

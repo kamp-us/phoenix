@@ -72,7 +72,7 @@ makes that explicit.
 
 The state-store selector stays as recorded in 0031, but the selection signal
 moves from `process.env.CI` to a dedicated `resolveStateMode` helper in
-`apps/web/worker/shared/deploy-env.ts` — `CI` is set for both the deploy
+`apps/web/worker/env.ts` — `CI` is set for both the deploy
 workflow and the integration-test job, so it cannot distinguish a real deploy
 from a test run.
 

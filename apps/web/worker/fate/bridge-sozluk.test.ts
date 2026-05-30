@@ -27,14 +27,14 @@
  *     re-resolves over the same bridge.
  */
 import {Effect, Layer} from "effect";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {createDrizzle} from "../db/Drizzle";
 // `?raw` so the node/unit pool imports the SQL as a string (the pool-workers
 // project transforms `.sql` to a string by default; the node pool does not).
 import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
+import {Auth} from "../features/pasaport/Auth";
 import {SozlukAdmin, SozlukAdminLive} from "../features/sozluk/SozlukAdmin";
-import {Auth, RequestContext} from "../services";
-import {createDrizzle} from "../services/Drizzle";
-import type {WorkerEnv} from "../shared/worker-env.ts";
 import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
@@ -51,8 +51,9 @@ const SESSION_USER: {id: string; name: string; email: string} = {
 
 /**
  * Drive one fate operation through the bridge the way the `/fate` route does:
- * provide per-request `Auth` + `RequestContext`, capture the `Context`, and run
- * `fateServer.handleRequest`. `auth` chooses the session (anonymous by default).
+ * provide per-request `Auth` + `HttpServerRequest`, capture the `Context`, and
+ * run `fateServer.handleRequest`. `auth` chooses the session (anonymous by
+ * default).
  */
 async function fateOp(
 	operation: Record<string, unknown>,
@@ -66,7 +67,7 @@ async function fateOp(
 
 	const captureAndServe = Effect.gen(function* () {
 		// The captured map carries the worker-level services PLUS the per-request
-		// Auth/RequestContext provided just below — the full FateEnv.
+		// Auth/HttpServerRequest provided just below — the full FateEnv.
 		const context = yield* Effect.context<FateEnv>();
 		const res = yield* Effect.promise(() => fateServer.handleRequest(request, {request, context}));
 		return res;
@@ -75,11 +76,7 @@ async function fateOp(
 			user: opts.auth as never,
 			session: undefined,
 		}),
-		Effect.provideService(RequestContext, {
-			headers: request.headers,
-			url: request.url,
-			method: request.method,
-		}),
+		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
 		Effect.provide(WorkerLive),
 	);
 
@@ -101,16 +98,12 @@ beforeAll(async () => {
 	sqlite.applyMigration(baselineMigration);
 
 	const db = createDrizzle(sqlite.d1);
-	// The test env carries only what the worker-level layer reads at build time
-	// (`PHOENIX_DB`, for Pasaport's better-auth); the bridge under test never
-	// invokes the auth methods.
-	const env = {PHOENIX_DB: sqlite.d1, ENVIRONMENT: "development"} as unknown as WorkerEnv;
 	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;
 	// the bridge tests never hit that path, so a typed no-op stand-in is enough.
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
-	>[2];
-	const fateLayer = makeFateLayer(db, env, fakeAuth);
+	>[1];
+	const fateLayer = makeFateLayer(db, fakeAuth);
 	WorkerLive = Layer.mergeAll(fateLayer, SozlukAdminLive.pipe(Layer.provide(fateLayer)));
 
 	// Seed five definitions with distinct scores so the keyset order is

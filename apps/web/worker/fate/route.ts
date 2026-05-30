@@ -8,10 +8,11 @@
  *      context.
  *   2. Validate the session through the worker-level `Pasaport` — no throwaway
  *      runtime (this replaces the old `validateSessionCookie`).
- *   3. Provide the two genuinely per-request services — `Auth` (the validated
- *      session) and `RequestContext` — then capture the live service map with
- *      `Effect.context<FateEnv>()` and hand it to fate through `adapterContext`
- *      as `{context, request}`.
+ *   3. Provide the one genuinely per-request service — `Auth` (the validated
+ *      session) — and pick up the upstream `HttpServerRequest` Tag the
+ *      alchemy/HttpRouter runtime already provides; then capture the live
+ *      service map with `Effect.context<FateEnv>()` and hand it to fate through
+ *      `adapterContext` as `{context, request}`.
  *   4. The publish-only live bus needs `{env, waitUntil}` in scope during the
  *      operation so a mutation's `live.*` fan-out reaches the topic DO without
  *      blocking the response — `waitUntil` comes from
@@ -26,8 +27,8 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {livePublishContext} from "../features/fate-live/event-bus.ts";
 import {LiveTopics} from "../features/fate-live/topics.ts";
+import {Auth} from "../features/pasaport/Auth.ts";
 import {Pasaport} from "../features/pasaport/Pasaport.ts";
-import {Auth, RequestContext} from "../services/index.ts";
 import type {FateEnv} from "./layers.ts";
 import {fateServer} from "./server.ts";
 
@@ -66,9 +67,10 @@ export const handleFate = Effect.gen(function* () {
 
 	const res = yield* Effect.gen(function* () {
 		// Capture the live service map — at this point it holds the worker-level
-		// services (Drizzle, features) plus the per-request Auth/RequestContext
-		// provided just below, so it carries the full `FateEnv`. The bridge
-		// provides it onto each resolver Effect.
+		// services (Drizzle, features), the per-request `Auth` provided just below,
+		// and the `HttpServerRequest` Tag the alchemy/HttpRouter runtime already
+		// provides — so it carries the full `FateEnv`. The bridge provides it onto
+		// each resolver Effect.
 		const context = yield* Effect.context<FateEnv>();
 		return yield* Effect.promise(() =>
 			// `livePublishContext.run` keeps the `publisher` ambient for the whole
@@ -84,11 +86,6 @@ export const handleFate = Effect.gen(function* () {
 		Effect.provideService(Auth, {
 			user: session?.user,
 			session: session?.session,
-		}),
-		Effect.provideService(RequestContext, {
-			headers: raw.headers,
-			url: raw.url,
-			method: raw.method,
 		}),
 	);
 

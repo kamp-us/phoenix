@@ -11,8 +11,8 @@
  * without taking a `Pasaport` dependency just for karma.
  */
 import {eq, sql} from "drizzle-orm";
+import type {DrizzleDb} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import type {DrizzleDb} from "../../services/Drizzle.ts";
 
 /**
  * Build the unexecuted `UPDATE user_profile SET total_karma = total_karma + ?`

@@ -27,7 +27,7 @@
 
 import {liveBus} from "../features/fate-live/event-bus.ts";
 import {Pano} from "../features/pano/Pano.ts";
-import {Auth} from "../services/index.ts";
+import {Auth} from "../features/pasaport/Auth.ts";
 import {fateMutation} from "./effect.ts";
 import {toComment, toPost, toPostFromPage} from "./shapers.ts";
 import type {Comment, Post} from "./views.ts";

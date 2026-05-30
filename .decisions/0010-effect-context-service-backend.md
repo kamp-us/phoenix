@@ -43,7 +43,7 @@ All resolver-touchable backend code is rewritten in idiomatic Effect.
 - Throwing inside `Effect.gen` to fail (becomes a defect, bypasses the `E` channel — use `return yield* new MyError({})`).
 - `async function` exports in resolver-reachable code.
 - `Effect.tryPromise` single-arg form. Object notation `{try, catch}` always, with an explicit tagged-error catch.
-- `env.PHOENIX_DB` references outside `services/Drizzle.ts`. The D1 binding never leaves that service.
+- `env.PHOENIX_DB` references outside `db/Drizzle.ts`. The D1 binding never leaves that service.
 
 **Migration cost:** ~3000 LOC of feature code rewritten; ~27 integration tests rewired to provide layers. Single PR, granular commits per feature (errors → service def → live layer → resolver flip → tests → delete old module). Order: Drizzle infra → Pasaport → Vote → Sozluk → Pano.
 

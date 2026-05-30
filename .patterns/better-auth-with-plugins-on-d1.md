@@ -11,14 +11,14 @@ path to keep plugins (magic-link, bearer), the existing D1, and the dev
 Vite-proxy cookie config.
 
 This doc captures the pattern. The implementation is
-`apps/web/worker/auth/better-auth-live.ts`; the call site is
+`apps/web/worker/features/pasaport/better-auth-live.ts`; the call site is
 `apps/web/worker/index.ts`; the consumer that needs an `Auth` instance
 without leaking `RuntimeContext` is `apps/web/worker/features/pasaport/Pasaport.ts`.
 
 ## The shape
 
 ```ts
-// auth/better-auth-live.ts (shape, simplified)
+// features/pasaport/better-auth-live.ts (shape, simplified)
 import * as BetterAuth from "@alchemy.run/better-auth";
 import {Random} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -226,7 +226,7 @@ unchanged.
 
 ## Citations
 
-- `apps/web/worker/auth/better-auth-live.ts` — the forked Layer.
+- `apps/web/worker/features/pasaport/better-auth-live.ts` — the forked Layer.
 - `apps/web/worker/features/pasaport/Pasaport.ts` — `makePasaportLive(auth)`
   factory that takes the resolved instance.
 - `apps/web/worker/index.ts` — the worker init that yields `betterAuth.auth`
