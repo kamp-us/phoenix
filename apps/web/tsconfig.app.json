@@ -17,6 +17,6 @@
 		"types": ["vite/client", "@cloudflare/workers-types", "node"],
 		"exactOptionalPropertyTypes": false
 	},
-	"include": ["src", ".fate/client.generated.ts", "worker", "worker-configuration.d.ts"],
+	"include": ["src", ".fate/client.generated.ts", "worker"],
 	"exclude": ["worker/index.ts", "worker/graphql", "worker/admin"]
 }

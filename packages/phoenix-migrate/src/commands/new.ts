@@ -95,7 +95,7 @@ export const newCommand = Command.make(
 			const ids = entries
 				.map((entry) => MIGRATION_FILE_PATTERN.exec(entry))
 				.filter((match): match is RegExpExecArray => match !== null)
-				.map((match) => Number.parseInt(match[1]!, 10))
+				.map((match) => Number.parseInt(match[1] ?? "", 10))
 				.filter((n) => Number.isFinite(n));
 
 			const nextId = (ids.length === 0 ? 1 : Math.max(...ids) + 1).toString().padStart(4, "0");

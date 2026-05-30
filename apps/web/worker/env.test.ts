@@ -15,14 +15,14 @@ import {resolveDeployEnv, resolveStateMode} from "./env.ts";
 
 describe("resolveDeployEnv", () => {
 	describe("ENVIRONMENT", () => {
-		it("defaults to development when unset", () => {
+		it("defaults to production when unset (fail-closed)", () => {
 			const {ENVIRONMENT} = resolveDeployEnv({});
-			expect(ENVIRONMENT).toBe("development");
+			expect(ENVIRONMENT).toBe("production");
 		});
 
 		it("resolves from process.env.ENVIRONMENT when set", () => {
-			const {ENVIRONMENT} = resolveDeployEnv({ENVIRONMENT: "production"});
-			expect(ENVIRONMENT).toBe("production");
+			const {ENVIRONMENT} = resolveDeployEnv({ENVIRONMENT: "development"});
+			expect(ENVIRONMENT).toBe("development");
 		});
 	});
 });

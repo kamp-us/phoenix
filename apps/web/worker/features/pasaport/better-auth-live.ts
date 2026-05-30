@@ -41,6 +41,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
 import * as schema from "../../db/drizzle/schema.ts";
 import {PhoenixDb} from "../../db/resources.ts";
+import {phoenixEnvBindings} from "../../env.ts";
 
 /**
  * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
@@ -113,16 +114,13 @@ export const BetterAuthLive = Layer.effect(
 					bearer(),
 					magicLink({
 						sendMagicLink: async ({email, token, url}) => {
-							// Lazy `cloudflare:workers` import (not a top-level static
-							// import): the fate codegen Vite plugin imports this module
-							// graph in a plain Node runner where the workerd built-in
-							// `cloudflare:workers` can't resolve. A static import resolves at
-							// module load (breaking codegen); a dynamic import inside this
-							// already-async callback resolves only at call time, inside
-							// workerd — so codegen never touches it and the dev/runtime
-							// behavior is unchanged.
-							const {env: wenv} = await import("cloudflare:workers");
-							if (wenv.ENVIRONMENT === "development") {
+							// Read `ENVIRONMENT` off the deploy-time `phoenixEnvBindings`
+							// literal (`env.ts`) — same value the worker's `env` block
+							// ships, resolved once at module-eval in the alchemy CLI. This
+							// sidesteps the `cloudflare:workers` runtime entirely (no
+							// dynamic import, no ambient-`Env` cast, no codegen-vs-workerd
+							// resolution mismatch to worry about).
+							if (phoenixEnvBindings.ENVIRONMENT === "development") {
 								console.log("[pasaport] magic link", {email, token, url});
 							}
 						},

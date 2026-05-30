@@ -47,10 +47,10 @@ import {makeAppLive} from "./http/app.ts";
 
 // Resolved ONCE in the alchemy CLI process when this module is evaluated, so the
 // worker's `env` block below is the deploy-time policy (fail-closed). See
-// `worker/env.ts`: `ENVIRONMENT` defaults to "development" only when unset
-// (a real deploy sets `ENVIRONMENT=production`, closing every dev gate), and a
-// missing `BETTER_AUTH_SECRET` throws here on a real deploy rather than silently
-// shipping the committed dev key.
+// `worker/env.ts`: `ENVIRONMENT` defaults to "production" when unset (CI deploys
+// set it explicitly, local `alchemy dev` sets it to "development" via the
+// `dev:worker` script — a missing var lands in production mode, closing every
+// dev gate).
 const deployEnv = resolveDeployEnv(process.env);
 
 export class Phoenix extends Cloudflare.Worker<
@@ -72,9 +72,10 @@ export class Phoenix extends Cloudflare.Worker<
 	// The `env` literal lives in `worker/env.ts` (`phoenixEnvBindings`). Lifting
 	// it out of the class declaration is what makes the {@link WorkerEnv} type
 	// derivable via `Cloudflare.InferEnv<typeof phoenixEnvBindings>` — handing
-	// `InferEnv` the literal record sidesteps the TS2589 that
-	// `InferEnv<typeof Phoenix>` triggers against the self-referential
-	// `Worker<Phoenix, ...>` shape (see `env.ts` for the full reasoning).
+	// `InferEnv` the literal record sidesteps both the upstream TS2589 (fixed
+	// by `patches/alchemy@2.0.0-beta.45.patch`) and the modular-`.make()`
+	// Bindings-erasure that would otherwise widen `WorkerEnv` to
+	// `{[x: string]: any}` (see `env.ts` for the full reasoning).
 	env: phoenixEnvBindings,
 	assets: {
 		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
@@ -201,8 +202,7 @@ export default Phoenix.make(
 		//   - typed JSON via `HttpApiBuilder` groups: `GET /api/health` + the
 		//     dev-only `/api/admin/*` seeders (schema-decoded payloads),
 		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
-		//     `* /fate/live` (SSE → ConnectionDO), `* /api/auth/*` (better-auth),
-		//     `* /agents/*` (stub).
+		//     `* /fate/live` (SSE → ConnectionDO), `* /api/auth/*` (better-auth).
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
 		// `HttpRouter.provideRequest(...)` and provides the admin services +
 		// platform stubs to the typed groups (`http/app.ts`).

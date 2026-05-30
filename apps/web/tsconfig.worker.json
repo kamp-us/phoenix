@@ -19,7 +19,6 @@
 	},
 	"include": [
 		"worker",
-		"worker-configuration.d.ts",
 		"src/lib/mutationErrorCodes.ts",
 		"alchemy.run.ts",
 		// The black-box integration suite (Vitest node pool → HTTP against the

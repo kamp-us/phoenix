@@ -14,7 +14,6 @@ build
 
 # Generated
 __generated__
-worker-configuration.d.ts
 schema.graphql.generated
 # fate Vite plugin codegen output (build-time; never committed)
 .fate

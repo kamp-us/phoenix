@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"dev:worker": "alchemy dev",
+		"dev:worker": "ENVIRONMENT=development alchemy dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"deploy": "pnpm build && alchemy deploy",
@@ -29,7 +29,6 @@
 		"@effect/sql-sqlite-do": "catalog:",
 		"@nkzw/fate": "catalog:",
 		"@usirin/forge": "catalog:",
-		"agents": "catalog:",
 		"alchemy": "catalog:",
 		"better-auth": "catalog:",
 		"better-call": "catalog:",

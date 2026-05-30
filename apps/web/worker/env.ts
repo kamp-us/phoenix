@@ -11,9 +11,10 @@
  *      `alchemy dev` / Vitest loop), not the worker runtime. `ENVIRONMENT`
  *      gates every dev-only surface — the `/api/admin/*` seeder + clear
  *      routes (`adminAllowed`), the `AdminAuth` capability, the magic-link
- *      token `console.log`. It must resolve from `process.env.ENVIRONMENT`,
- *      defaulting to `"development"` only when unset. A real deploy sets
- *      `ENVIRONMENT=production` and every gate closes.
+ *      token `console.log`. It resolves from `process.env.ENVIRONMENT`,
+ *      defaulting to `"production"` (fail-closed) when unset. CI deploys set
+ *      `ENVIRONMENT=production` explicitly; local `alchemy dev` sets
+ *      `ENVIRONMENT=development` via the `dev:worker` package script.
  *
  *   2. **The `env` literal.** {@link phoenixEnvBindings} is the literal
  *      record handed to the worker's `env` prop in `index.ts`. Lifting it
@@ -25,14 +26,20 @@
  *      phoenixEnvBindings>`. `InferEnv` only follows the
  *      `Worker<any>`-branch when handed a `Worker` itself; pointed at a
  *      plain env record it falls through to its mapped-type tail
- *      (`{[k]: GetBindingType<...[k]>}`). That sidesteps the TS2589
- *      ("Type instantiation is excessively deep") that
- *      `InferEnv<typeof Phoenix>` triggers — the self-referential
- *      `Worker<Phoenix, ...>` (the DO-host pattern, ADR 0028) makes the
- *      `Worker<any>` branch recurse through `Phoenix["Props"]`, and TS
- *      gives up. Worth filing upstream so `InferEnv` handles the
- *      `Worker<Self, ...>` shape directly, but phoenix doesn't need to
- *      wait on that.
+ *      (`{[k]: GetBindingType<...[k]>}`) and preserves the literal keys.
+ *
+ *      The natural `InferEnv<typeof Phoenix>` form is unworkable for two
+ *      reasons. (a) Upstream `InferEnv` TS2589s on a self-referential
+ *      `Worker<Self, ...>` class constructor — fixed locally by
+ *      `patches/alchemy@2.0.0-beta.45.patch`, which adds a class-
+ *      constructor unwrap branch + inlines the mapped type. (b) Even
+ *      with the patch, the modular `.make()` form's 3-arg Platform
+ *      overload doesn't carry the specific `Bindings` through —
+ *      `Phoenix["Props"]["env"]` resolves to `any` (just the
+ *      platform-level `Worker<any>` Resource), so the inlined map yields
+ *      a useless `{ [x: string]: any }`. Pointing `InferEnv` at the
+ *      `phoenixEnvBindings` literal directly is the only way to keep
+ *      the precise binding keys today.
  */
 import type * as Cloudflare from "alchemy/Cloudflare";
 
@@ -73,20 +80,22 @@ export interface ResolvedDeployEnv {
  * mutating the real `process.env`.
  */
 export const resolveDeployEnv = (env: DeployEnvInput): ResolvedDeployEnv => ({
-	ENVIRONMENT: env.ENVIRONMENT ?? "development",
+	ENVIRONMENT: env.ENVIRONMENT ?? "production",
 });
 
 // Resolved ONCE in the alchemy CLI process when this module is evaluated, so
 // the `env` literal below is the deploy-time policy (fail-closed): `ENVIRONMENT`
-// defaults to "development" only when unset (a real deploy sets
-// `ENVIRONMENT=production`, closing every dev gate).
+// defaults to "production" when unset (CI deploys set it explicitly, and local
+// `alchemy dev` sets `ENVIRONMENT=development` via the `dev:worker` package
+// script — a missing var lands in production mode, closing every dev gate).
 const deployEnv = resolveDeployEnv(process.env);
 
 /**
  * The literal `env` record bound on the worker (`index.ts`). Kept here — not
  * inlined at the class declaration site — so its type is extractable without
- * going through `typeof Phoenix` (which would hit TS2589, see role 3 in the
- * file header).
+ * going through `typeof Phoenix` (which would otherwise widen to
+ * `{[x: string]: any}` because the modular `.make()` 3-arg overload erases
+ * Bindings; see role 3 in the file header).
  *
  * `satisfies Record<string, string>` pins each field to `string` (no
  * widening drift, and no narrowing to the literal value either — the deployed
@@ -114,10 +123,10 @@ export const phoenixEnvBindings = {
 
 /**
  * The worker's assembled env type — derived from {@link phoenixEnvBindings}
- * via `Cloudflare.InferEnv`. Handing `InferEnv` the literal env record (not
- * `typeof Phoenix`) skips the `Worker<any>` recursion branch that would
- * otherwise trip TS2589 against the self-referential `Worker<Phoenix, ...>`
- * shape.
+ * via `Cloudflare.InferEnv`. Pointing `InferEnv` at the literal record (not
+ * `typeof Phoenix`) preserves the binding keys. See role 3 in the file header
+ * for the two reasons we can't use the natural `InferEnv<typeof Phoenix>` form
+ * today.
  */
 export type WorkerEnv = Cloudflare.InferEnv<typeof phoenixEnvBindings>;
 
