@@ -34,6 +34,7 @@ class BodyRequired extends Data.TaggedError("sozluk/BodyRequired")<{
  * to the full `FateEnv` is safe because the test bodies yield only `Auth`.
  */
 const makeCtx = (user?: {id: string}): FateContext => {
+	// biome-ignore lint/plugin: a `Context<Auth>` can't be statically widened to the full `Context<FateEnv>` that `FateContext` carries; the bridge under test reads only `Auth` (see the doc comment above).
 	const context = Context.make(Auth, {
 		user: user as never,
 		session: undefined,

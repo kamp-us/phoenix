@@ -63,7 +63,12 @@ export interface Harness {
 		slug: string;
 		title: string;
 		definitions: Array<{authorId: string; authorName: string; body: string; score?: number}>;
-	}): Promise<{slug: string; created: boolean}>;
+	}): Promise<{
+		slug: string;
+		created: boolean;
+		insertedDefinitions: number;
+		skippedDefinitions: number;
+	}>;
 	/** Open a live SSE stream on a connection id (cookie required). */
 	openSse(connectionId: string, cookie: string): Promise<Response>;
 	/** Drive a `/fate/live` control message (subscribe / unsubscribe). */
@@ -198,7 +203,7 @@ export function harness(): Harness {
 	const seedTerm: Harness["seedTerm"] = async (input) => {
 		const res = await json("/api/admin/sozluk/upsert-term", input);
 		if (!res.ok) throw new Error(`seedTerm failed: ${res.status} ${await res.text()}`);
-		return (await res.json()) as {slug: string; created: boolean};
+		return (await res.json()) as Awaited<ReturnType<Harness["seedTerm"]>>;
 	};
 
 	const openSse: Harness["openSse"] = (connectionId, cookie) =>

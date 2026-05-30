@@ -209,14 +209,9 @@ describe("sozluk reads — /fate", () => {
 				},
 			],
 		});
-		const seedBody = seed as unknown as {
-			created: boolean;
-			insertedDefinitions: number;
-			skippedDefinitions: number;
-		};
-		expect(seedBody.created).toBe(true);
-		expect(seedBody.insertedDefinitions).toBe(2);
-		expect(seedBody.skippedDefinitions).toBe(0);
+		expect(seed.created).toBe(true);
+		expect(seed.insertedDefinitions).toBe(2);
+		expect(seed.skippedDefinitions).toBe(0);
 
 		const term = await h.fate({
 			kind: "query",

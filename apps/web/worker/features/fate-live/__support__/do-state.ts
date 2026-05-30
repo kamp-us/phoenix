@@ -21,14 +21,12 @@
  * NOT a production artifact — it lives under `__support__/` and is never imported
  * by the worker graph.
  */
-import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-
-type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
+import type {LiveDoState} from "../live-do.ts";
 
 export interface FakeDurableObjectState {
-	/** The `DurableObjectState`-shaped service value to hand the instance builder. */
-	readonly state: DurableObjectStateValue;
+	/** The `DurableObjectState`-slice value to hand the instance builder. */
+	readonly state: LiveDoState;
 	/** Whether an alarm is currently scheduled (tests assert on this). */
 	readonly hasAlarm: () => boolean;
 }
@@ -46,44 +44,48 @@ export function makeFakeDurableObjectState(options?: {
 	const kv = options?.kv ?? new Map<string, unknown>();
 	let alarm: number | null = null;
 
-	const state = {
-		id: {toString: () => options?.id ?? "fake-do", name: options?.id} as never,
-		storage: {
-			get: (<T>(key: string) => Effect.sync(() => kv.get(key) as T | undefined)) as never,
-			put: (<T>(key: string, value: T) =>
-				Effect.sync(() => {
-					kv.set(key, value);
-				})) as never,
-			// MUST accept both a single key and an array (publish bulk-deletes rows).
-			delete: ((keyOrKeys: string | ReadonlyArray<string>) =>
-				Effect.sync(() => {
-					if (Array.isArray(keyOrKeys)) {
-						for (const key of keyOrKeys) {
-							kv.delete(key);
-						}
-					} else {
-						kv.delete(keyOrKeys as string);
+	// `id` and `storage` are typed off the `LiveDoState` slice, so each fake
+	// method is checked against the real DO-state signature (no cast). The slice
+	// is exactly what {@link makeLiveInstance} touches.
+	type Storage = LiveDoState["storage"];
+
+	const storage: Storage = {
+		get: (<T>(key: string) => Effect.sync(() => kv.get(key) as T | undefined)) as Storage["get"],
+		put: (<T>(key: string, value: T) =>
+			Effect.sync(() => {
+				kv.set(key, value);
+			})) as Storage["put"],
+		// MUST accept both a single key and an array (publish bulk-deletes rows).
+		delete: ((keyOrKeys: string | ReadonlyArray<string>) =>
+			Effect.sync(() => {
+				const keys = typeof keyOrKeys === "string" ? [keyOrKeys] : keyOrKeys;
+				for (const key of keys) {
+					kv.delete(key);
+				}
+			})) as Storage["delete"],
+		// Returns `Effect<Map<string, T>>` — a prefix-filtered copy of the backing
+		// Map (not the live Map, so callers can't mutate the store through it).
+		list: (<T>({prefix}: {readonly prefix: string}) =>
+			Effect.sync(() => {
+				const out = new Map<string, T>();
+				for (const [key, value] of kv) {
+					if (key.startsWith(prefix)) {
+						out.set(key, value as T);
 					}
-				})) as never,
-			// Returns `Effect<Map<string, T>>` — a prefix-filtered copy of the backing
-			// Map (not the live Map, so callers can't mutate the store through it).
-			list: (<T>({prefix}: {readonly prefix: string}) =>
-				Effect.sync(() => {
-					const out = new Map<string, T>();
-					for (const [key, value] of kv) {
-						if (key.startsWith(prefix)) {
-							out.set(key, value as T);
-						}
-					}
-					return out;
-				})) as never,
-			getAlarm: () => Effect.sync(() => alarm),
-			setAlarm: ((scheduledTime: number) =>
-				Effect.sync(() => {
-					alarm = scheduledTime;
-				})) as never,
-		} as never,
-	} as unknown as DurableObjectStateValue;
+				}
+				return out;
+			})) as Storage["list"],
+		getAlarm: (() => Effect.sync(() => alarm)) as Storage["getAlarm"],
+		setAlarm: ((scheduledTime: number) =>
+			Effect.sync(() => {
+				alarm = scheduledTime;
+			})) as Storage["setAlarm"],
+	} as Storage;
+
+	const state: LiveDoState = {
+		id: {toString: () => options?.id ?? "fake-do", name: options?.id} as LiveDoState["id"],
+		storage,
+	};
 
 	return {
 		state,

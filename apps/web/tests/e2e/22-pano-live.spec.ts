@@ -1,6 +1,13 @@
 import {type BrowserContext, expect, type Page, test} from "@playwright/test";
 import {signUp} from "./_helpers/auth";
 
+declare global {
+	interface Window {
+		/** Sentinel set in-page to detect a full reload (a reload would clear it). */
+		__noReload?: boolean;
+	}
+}
+
 /**
  * Two-client live propagation over SSE (task 12).
  *
@@ -197,16 +204,14 @@ test.describe("Pano live (two clients)", () => {
 		// Drop a sentinel; a full reload would clear it. The term now exists, so a
 		// SECOND add must arrive via the live `appendNode` (no reload).
 		await page.evaluate(() => {
-			(window as unknown as {__noReload?: boolean}).__noReload = true;
+			window.__noReload = true;
 		});
 		const secondDef = `ikinci tanım ${suffix}`;
 		await page.locator('[data-testid="sozluk-composer-body"]').fill(secondDef);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 		await expect(page.getByText(secondDef, {exact: false})).toBeVisible({timeout: 15_000});
 		// The new row arrived live: the sentinel survived → no `window.location.reload()`.
-		expect(
-			await page.evaluate(() => (window as unknown as {__noReload?: boolean}).__noReload === true),
-		).toBe(true);
+		expect(await page.evaluate(() => window.__noReload === true)).toBe(true);
 
 		// --- definition.delete: the row drops live via `deleteEdge`. ---
 		// Delete the second definition (the author owns both). Resolve its card by
@@ -224,9 +229,7 @@ test.describe("Pano live (two clients)", () => {
 		await defConfirm.click();
 		await expect(page.getByText(secondDef, {exact: false})).toHaveCount(0, {timeout: 15_000});
 		// Still no reload — the row dropped via the live edge removal.
-		expect(
-			await page.evaluate(() => (window as unknown as {__noReload?: boolean}).__noReload === true),
-		).toBe(true);
+		expect(await page.evaluate(() => window.__noReload === true)).toBe(true);
 		// The other definition is untouched.
 		await expect(page.getByText(firstDef, {exact: false})).toBeVisible();
 
@@ -245,7 +248,7 @@ test.describe("Pano live (two clients)", () => {
 
 		// Sentinel again (this page navigated, so re-set it).
 		await page.evaluate(() => {
-			(window as unknown as {__noReload?: boolean}).__noReload = true;
+			window.__noReload = true;
 		});
 		const voteBtn = page.locator('[data-testid^="comment-vote-comm_"]').first();
 		await expect(voteBtn).toBeVisible({timeout: 10_000});
@@ -261,9 +264,7 @@ test.describe("Pano live (two clients)", () => {
 		// falls — no reload.
 		await expect(page.getByText(commentBody, {exact: false})).toHaveCount(0, {timeout: 15_000});
 		await expect(page.getByRole("heading", {name: /0 yorum/i})).toBeVisible({timeout: 15_000});
-		expect(
-			await page.evaluate(() => (window as unknown as {__noReload?: boolean}).__noReload === true),
-		).toBe(true);
+		expect(await page.evaluate(() => window.__noReload === true)).toBe(true);
 		// The URL never changed (no navigation, no reload).
 		expect(new URL(page.url()).pathname).toBe(postPath);
 	});

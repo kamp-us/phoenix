@@ -100,6 +100,7 @@ beforeAll(async () => {
 	const db = createDrizzle(sqlite.d1);
 	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;
 	// the bridge tests never hit that path, so a typed no-op stand-in is enough.
+	// biome-ignore lint/plugin: better-auth's `Auth` instance type can't be partial-constructed; the bridge tests never reach the session path, so a `getSession` no-op stand-in suffices.
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
 	>[1];

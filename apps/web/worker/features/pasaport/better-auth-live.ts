@@ -36,6 +36,7 @@ import {drizzle} from "drizzle-orm/d1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
+import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
@@ -72,11 +73,17 @@ export const BetterAuthLive = Layer.effect(
 		const SECRET = yield* Random("BETTER_AUTH_SECRET");
 		const secret = yield* SECRET.text;
 
-		// Read `ENVIRONMENT` back off the worker env (one cast, one place — same
-		// pattern as `http/health.ts`). It is declared on the worker's `env` block
-		// (`index.ts`), resolved fail-closed to "production" at deploy time.
-		const envRecord = env as unknown as Record<string, string | undefined>;
-		const isDev = envRecord.ENVIRONMENT === "development";
+		// Read `ENVIRONMENT` back off the worker env by decoding the one field we
+		// need (no cast). `Schema.Struct` ignores excess keys by default, so the
+		// other bindings on `env` don't make the decode fail. `ENVIRONMENT` is
+		// declared on the worker's `env` block (`index.ts`), resolved fail-closed
+		// to "production" at deploy time. A decode failure here means the worker
+		// env is malformed — unrecoverable — so it dies rather than widening the
+		// Layer's error channel.
+		const {ENVIRONMENT} = yield* Schema.decodeUnknownEffect(
+			Schema.Struct({ENVIRONMENT: Schema.optional(Schema.String)}),
+		)(env).pipe(Effect.orDie);
+		const isDev = ENVIRONMENT === "development";
 
 		// Dev: hand better-auth the explicit browser origin so its cookie storage
 		// works behind the Vite proxy (the worker sees `Host: 127.0.0.1:<port>`,

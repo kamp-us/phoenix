@@ -629,17 +629,11 @@ describe("sozluk mutations — term admin idempotency / clear", () => {
 			body: "Atomic durability primitive in the producer-consumer outbox pattern.",
 		};
 
-		const first = (await h.seedTerm({slug, title: "Outbox", definitions: [def]})) as unknown as {
-			insertedDefinitions: number;
-			skippedDefinitions: number;
-		};
+		const first = await h.seedTerm({slug, title: "Outbox", definitions: [def]});
 		expect(first.insertedDefinitions).toBe(1);
 		expect(first.skippedDefinitions).toBe(0);
 
-		const second = (await h.seedTerm({slug, title: "Outbox", definitions: [def]})) as unknown as {
-			insertedDefinitions: number;
-			skippedDefinitions: number;
-		};
+		const second = await h.seedTerm({slug, title: "Outbox", definitions: [def]});
 		expect(second.insertedDefinitions).toBe(0);
 		expect(second.skippedDefinitions).toBe(1);
 

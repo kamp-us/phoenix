@@ -3,6 +3,10 @@
 	"files": {
 		"includes": [
 			"**",
+			"!**/.claude",
+			// The GritQL plugin source: biome's `.grit` formatter drops the
+			// `language js;` terminator, which silently breaks the plugin.
+			"!biome-plugins",
 			"!**/worker-configuration.d.ts",
 			"!**/__generated__",
 			"!**/dist",
@@ -28,6 +32,7 @@
 		"lineWidth": 100,
 		"indentStyle": "tab"
 	},
+	"plugins": ["./biome-plugins/no-type-assertions.grit"],
 	"linter": {
 		"enabled": true,
 		"rules": {

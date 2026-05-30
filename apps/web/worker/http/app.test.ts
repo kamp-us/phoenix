@@ -137,9 +137,11 @@ beforeAll(() => {
 
 	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to
 	// `Parameters<typeof makeFateLayer>[1]` (the `Auth` type re-export, which
-	// the deployed worker also satisfies).
+	// the deployed worker also satisfies). The concrete and generic `Auth` types
+	// don't statically overlap (TS2352), so the widen needs the `unknown` hop.
 	const fateLayer = makeFateLayer(
 		db,
+		// biome-ignore lint/plugin: see above — concrete `Auth<…>` vs the generic `Auth` re-export don't overlap (TS2352), so this widen needs the hop.
 		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[1],
 	);
 

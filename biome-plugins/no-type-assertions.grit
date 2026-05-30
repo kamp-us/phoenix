@@ -1,0 +1,27 @@
+// Forbid type-assertion footguns in phoenix source.
+//
+// `as unknown as T` (double-cast) and `as any` blind the TypeScript
+// compiler — they assert a shape the compiler can no longer verify. In
+// phoenix we decode at boundaries with `Schema.decodeUnknown` (or type the
+// value properly) instead of asserting through `unknown` / `any`.
+//
+// Registered via biome.jsonc `"plugins"`. Test/spec/support files that bridge
+// Node/test types to runtime DO/D1/browser surfaces carry justified
+// `biome-ignore lint/plugin` suppressions (this file is excluded from biome's
+// own formatter in biome.jsonc — its formatter drops `language js;`'s `;`).
+language js;
+
+or {
+	`$expr as unknown as $type` where {
+		register_diagnostic(
+			span = $expr,
+			message = "Type assertions are forbidden — `as unknown as` blinds the compiler. Decode at boundaries with Schema.decodeUnknown, or type the value properly."
+		)
+	},
+	`$expr as any` where {
+		register_diagnostic(
+			span = $expr,
+			message = "`as any` is forbidden — it disables type checking. Type the value properly (e.g. `as React.CSSProperties` for CSS-var keys)."
+		)
+	}
+}

@@ -23,7 +23,7 @@
  * NOT a production artifact — it lives under `tests/` and is never imported by
  * `worker/`.
  */
-import {DatabaseSync} from "node:sqlite";
+import {DatabaseSync, type SQLInputValue} from "node:sqlite";
 
 type Params = ReadonlyArray<unknown>;
 
@@ -53,10 +53,13 @@ interface BoundStub {
 }
 
 /** Normalize JS values to ones `node:sqlite` accepts as bound params. */
-function toSqliteParam(value: unknown): unknown {
+function toSqliteParam(value: unknown): SQLInputValue {
 	if (value === undefined) return null;
 	if (typeof value === "boolean") return value ? 1 : 0;
-	return value;
+	// D1's contract types params as `unknown`; drizzle only ever binds primitives
+	// the sozluk/pano write paths produce (string/number/null/bigint/bytes), which
+	// are exactly `SQLInputValue` — narrow the one boundary value here.
+	return value as SQLInputValue;
 }
 
 export interface SqliteD1 {
@@ -72,11 +75,13 @@ export interface SqliteD1 {
 export function makeSqliteD1(): SqliteD1 {
 	const db = new DatabaseSync(":memory:");
 
-	// `node:sqlite` types params as `SQLInputValue` and rows as
-	// `SQLOutputValue`; the D1 contract is `unknown`-shaped, so the bound values
-	// and the read rows cross the boundary through a single cast each.
-	const bind = (params: Params) =>
-		params.map(toSqliteParam) as unknown as Parameters<ReturnType<DatabaseSync["prepare"]>["all"]>;
+	// `toSqliteParam` narrows each bound value to `SQLInputValue`, so `bind`
+	// is typed with no cast. Read rows come back as `Record<string,
+	// SQLOutputValue>` — assignable to `Record<string, unknown>` (an upcast, a
+	// single safe `as`). The `raw` path is the exception: `setReturnArrays(true)`
+	// changes the runtime row shape to arrays, but `node:sqlite` still types
+	// `.all()` as `Record<string, …>[]`, so that one needs the `unknown` hop.
+	const bind = (params: Params): SQLInputValue[] => params.map(toSqliteParam);
 
 	const runSql = (sql: string, params: Params) => {
 		const stmt = db.prepare(sql);
@@ -84,11 +89,12 @@ export function makeSqliteD1(): SqliteD1 {
 	};
 	const allSql = (sql: string, params: Params): Record<string, unknown>[] => {
 		const stmt = db.prepare(sql);
-		return stmt.all(...bind(params)) as unknown as Record<string, unknown>[];
+		return stmt.all(...bind(params)) as Record<string, unknown>[];
 	};
 	const rawSql = (sql: string, params: Params): unknown[][] => {
 		const stmt = db.prepare(sql);
 		stmt.setReturnArrays(true);
+		// biome-ignore lint/plugin: `setReturnArrays(true)` makes `.all()` return arrays at runtime, but `node:sqlite` still types it as `Record<string, SQLOutputValue>[]` — the row-shape change isn't expressible in the type, so this boundary needs the hop.
 		return stmt.all(...bind(params)) as unknown as unknown[][];
 	};
 
@@ -123,6 +129,7 @@ export function makeSqliteD1(): SqliteD1 {
 		},
 	});
 
+	// biome-ignore lint/plugin: only the `prepare`/`exec`/`batch`/`dump` slice drizzle-orm/d1 calls is implemented; the full `D1Database` surface can't be built in a fake, so this assembly point widens to it once.
 	const d1 = {
 		prepare,
 		exec: async (sql: string) => {

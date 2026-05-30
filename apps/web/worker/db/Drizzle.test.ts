@@ -32,6 +32,7 @@ import {
  * untouched, so any sentinel value works. Tests that need to spy on the
  * builder check identity against this.
  */
+// biome-ignore lint/plugin: `DrizzleDb` is a fully-typed drizzle client that can't be structurally constructed in a fake; the wrapper passes this sentinel through untouched.
 const FAKE_DB = {__phoenix_test_db__: true} as unknown as DrizzleDb;
 
 /**
@@ -58,6 +59,7 @@ const TestDrizzleLayer = Layer.succeed(Drizzle, makeAccess(FAKE_DB));
  * length-typed tuple instead of collapsing to `never`).
  */
 const fakeStmt = (id: number) =>
+	// biome-ignore lint/plugin: `BatchItem` is an opaque `RunnableQuery` that can't be built without a live drizzle builder; this sentinel keeps the tuple shape concrete (see the doc comment above).
 	({__stmt__: id, _: {result: {rowsAffected: id}}}) as unknown as BatchItem<"sqlite">;
 
 describe("Drizzle.run", () => {
@@ -128,6 +130,7 @@ describe("Drizzle.batch", () => {
 	 */
 	function makeBatchSpy() {
 		const calls: Array<readonly unknown[]> = [];
+		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.
 		const db = {
 			batch(statements: readonly unknown[]) {
 				calls.push(statements);
@@ -165,6 +168,7 @@ describe("Drizzle.batch", () => {
 
 	it.effect("semantics: rejection → DrizzleError", () => {
 		const boom = new Error("batch failed");
+		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.
 		const db = {
 			batch: () => Promise.reject(boom),
 		} as unknown as DrizzleDb;
@@ -205,6 +209,7 @@ describe("makeDrizzleAccess (extracted factory)", () => {
 
 	it.effect("batch: forwards the tuple to db.batch and returns its result", () => {
 		const calls: Array<readonly unknown[]> = [];
+		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.
 		const db = {
 			batch(statements: readonly unknown[]) {
 				calls.push(statements);
@@ -223,6 +228,7 @@ describe("makeDrizzleAccess (extracted factory)", () => {
 
 	it.effect("batch: rejection → DrizzleError", () => {
 		const boom = new Error("batch failed");
+		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.
 		const db = {
 			batch: () => Promise.reject(boom),
 		} as unknown as DrizzleDb;

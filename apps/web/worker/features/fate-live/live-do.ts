@@ -57,6 +57,17 @@ const PRUNE_ALARM_DELAY_MS = 60_000;
 /** The state value alchemy hands the per-instance Effect (`yield* DurableObjectState`). */
 type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 
+/**
+ * The slice of `DurableObjectState` the unified instance builder actually
+ * touches: the instance name (`id.name`) and the KV `storage` surface
+ * (`get`/`put`/`delete`/`list`/`getAlarm`/`setAlarm`). `makeLiveInstance` is
+ * typed against this slice rather than the whole `DurableObjectState` so the
+ * node-pool fake (`__support__/do-state.ts`) can satisfy it structurally — no
+ * cast — while the real `Cloudflare.DurableObjectState` value still flows in
+ * unchanged (it's a superset, so assignable).
+ */
+export type LiveDoState = Pick<DurableObjectStateValue, "id" | "storage">;
+
 /** A frame delivered to a connection for one of its subscriber rows. */
 interface DeliverInput {
 	readonly frame: DeliverFrame;
@@ -169,7 +180,7 @@ function subscriberKey(row: SubscriberRow): string {
  * builder takes both as plain args so the same algorithm is unit-testable
  * without workerd.
  */
-export const makeLiveInstance = (state: DurableObjectStateValue, live: LiveNamespace) => {
+export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	const encoder = new TextEncoder();
 	const CONNECTED_FRAME = encoder.encode(": connected\n\n");
 	const KEEPALIVE_FRAME = encoder.encode(": keep-alive\n\n");

@@ -35,33 +35,37 @@ export function installLocalhostDns(): void {
 	const isLocalhost = (hostname: string): boolean =>
 		hostname === "localhost" || hostname.endsWith(".localhost");
 
-	// Callback form — node's overloads are messy, so we type the wrapper as a
-	// permissive function and delegate to the original for non-localhost names.
+	// Callback form. The DNS callback's success arity depends on `options.all`:
+	// with `all` it's `(err, LookupAddress[])`, otherwise `(err, address,
+	// family)`. We model that union directly so the localhost short-circuit calls
+	// it without a cast, and delegate non-localhost names to the original
+	// `dns.lookup` (the wrapper is re-typed as `typeof dns.lookup`, not `any`).
+	type LookupCallback = (
+		err: NodeJS.ErrnoException | null,
+		addressOrAll?: string | LookupAddress[],
+		family?: number,
+	) => void;
 	const originalLookup = dns.lookup;
 	const patchedLookup = ((
 		hostname: string,
-		optionsOrCallback: unknown,
-		maybeCallback?: unknown,
+		optionsOrCallback: LookupOptions | LookupCallback,
+		maybeCallback?: LookupCallback,
 	) => {
 		if (isLocalhost(hostname)) {
-			const callback = (
-				typeof optionsOrCallback === "function" ? optionsOrCallback : maybeCallback
-			) as (err: NodeJS.ErrnoException | null, address?: string, family?: number) => void;
-			const options = (
-				typeof optionsOrCallback === "object" && optionsOrCallback !== null
+			const callback: LookupCallback =
+				typeof optionsOrCallback === "function"
 					? optionsOrCallback
-					: undefined
-			) as LookupOptions | undefined;
+					: (maybeCallback as LookupCallback);
+			const options = typeof optionsOrCallback === "object" ? optionsOrCallback : undefined;
 			if (options?.all) {
-				const all: LookupAddress[] = [{address: "127.0.0.1", family: 4}];
-				(callback as unknown as (err: null, all: LookupAddress[]) => void)(null, all);
+				callback(null, [{address: "127.0.0.1", family: 4}]);
 			} else {
 				callback(null, "127.0.0.1", 4);
 			}
 			return;
 		}
-		return (originalLookup as any)(hostname, optionsOrCallback, maybeCallback);
-	}) as any;
+		return originalLookup(hostname, optionsOrCallback as LookupOptions, maybeCallback as never);
+	}) as typeof dns.lookup;
 	dns.lookup = patchedLookup;
 
 	// Promise form.
@@ -73,7 +77,7 @@ export function installLocalhostDns(): void {
 			}
 			return Promise.resolve({address: "127.0.0.1", family: 4} satisfies LookupAddress);
 		}
-		return (originalPromisesLookup as any)(hostname, options);
-	}) as any;
+		return originalPromisesLookup(hostname, options as LookupOptions);
+	}) as typeof dns.promises.lookup;
 	dns.promises.lookup = patchedPromisesLookup;
 }
