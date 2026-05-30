@@ -77,7 +77,7 @@ mutation ──live.update──▶ liveBus.publish(message)
 `createFateServer({live})` still takes a bus so mutation resolvers have the `live.*` publish API. phoenix's bus is **publish-only**: `update`/`delete`/`connection().*` resolve topic strings and `fetch` the `TopicDO`; `subscribe`/`subscribeConnection` throw (never called, because the SSE protocol is served by `ConnectionDO`, not by fate's `handleLiveRequest`). It must still expose a `subscribe` property — fate detects a bus by `"subscribe" in live`.
 
 ```ts
-// worker/fate/live.ts
+// worker/features/fate-live/event-bus.ts
 export const liveBus: PhoenixLiveEventBus = {
   update: (type, id, opts) => publish({kind: "entity", match: {type, entityId: String(id)}, frame: /* … */}),
   delete: (type, id, opts) => publish({kind: "entity", match: {type, entityId: String(id)}, frame: {delete: true, id}}),

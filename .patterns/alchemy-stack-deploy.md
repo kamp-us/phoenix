@@ -36,7 +36,7 @@ Yielding `Phoenix` deploys the worker; the worker's own init phase (its `bind()`
 Resource *declarations* the worker binds — the D1 database, the schema — live in a module both import, so there's one definition:
 
 ```ts
-// apps/web/worker/infra/resources.ts
+// apps/web/worker/db/resources.ts
 export const schema = Drizzle.Schema("phoenix-schema", {
   schema: "../db/drizzle/schema.ts",
   out: "../db/drizzle/migrations",

@@ -46,8 +46,8 @@ Adopt the **modular `.make()` form for Durable Objects** that beta.45 ships:
 the class becomes a lightweight Tag (`Cloudflare.DurableObjectNamespace<Self, Shape>()("Name") {}`),
 and the implementation is a separate `…Live` Layer produced by `.make(body)`.
 That seam retires the inline-form `as never` sibling-cast that the live DOs
-had to carry (see `apps/web/worker/infra/connection-do.ts` and
-`apps/web/worker/infra/topic-do.ts` headers, and the companion ADR for the
+had to carry (see `apps/web/worker/features/fate-live/connection-do.ts` and
+`apps/web/worker/features/fate-live/topic-do.ts` headers, and the companion ADR for the
 remaining sibling-resolution constraint).
 
 Collapse the three deprecated surfaces:

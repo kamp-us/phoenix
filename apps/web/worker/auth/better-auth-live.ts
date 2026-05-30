@@ -5,7 +5,7 @@
  * Why fork instead of reuse `CloudflareD1`:
  *
  *   - `CloudflareD1` declares its OWN `Cloudflare.D1Database("BetterAuth")` —
- *     phoenix already has the canonical `PhoenixDb` D1 (`infra/resources.ts`,
+ *     phoenix already has the canonical `PhoenixDb` D1 (`db/resources.ts`,
  *     ADR 0009), and the better-auth tables live on the same D1 as the rest of
  *     the product data. So this Layer reuses `PhoenixDb` directly.
  *   - Phoenix's better-auth instance needs phoenix-specific plugins (the
@@ -40,7 +40,7 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
 import * as schema from "../db/drizzle/schema.ts";
-import {PhoenixDb} from "../infra/resources.ts";
+import {PhoenixDb} from "../db/resources.ts";
 
 /**
  * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s

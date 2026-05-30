@@ -13,7 +13,7 @@ This is `worker/index.ts` — there is no `wrangler.jsonc` and no Hono `export d
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import {PhoenixDb} from "./infra/resources";
+import {PhoenixDb} from "./db/resources";
 import ConnectionDO from "./fate/connection-do";
 import TopicDO from "./fate/topic-do";
 
@@ -111,7 +111,7 @@ A `bind()` call has a runtime dependency: the *binding service's* Live layer (e.
 ## What lives where
 
 - `worker/index.ts` — this class. Thin: bind resources, build worker-level layers, mount the router.
-- `worker/infra/resources.ts` — the resource *declarations* (`PhoenixDb = Cloudflare.D1Database("phoenix_db")`) shared between the worker and the stack.
+- `worke./db/resources.ts` — the resource *declarations* (`PhoenixDb = Cloudflare.D1Database("phoenix_db")`) shared between the worker and the stack.
 - `alchemy.run.ts` — the stack that deploys this worker. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
 
 ## See also

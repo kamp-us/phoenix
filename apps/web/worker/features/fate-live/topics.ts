@@ -15,7 +15,7 @@ import type * as Effect from "effect/Effect";
 import type {HttpServerError} from "effect/unstable/http/HttpServerError";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import type {PublishMessage, SubscribeControl} from "./live-protocol.ts";
+import type {PublishMessage, SubscribeControl} from "./protocol.ts";
 
 export class LiveTopics extends Context.Service<
 	LiveTopics,

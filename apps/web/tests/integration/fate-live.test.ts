@@ -5,7 +5,7 @@
  * `runDurableObjectAlarm`, named DO stubs) inside `@cloudflare/vitest-pool-workers`.
  * The alchemy worker can't load in that pool, and the DO internals aren't reachable
  * over HTTP — so the cross-isolate fan-out, epoch semantics, and the alarm reap
- * are unit-tested in `worker/infra/live-instance.test.ts` (node pool, over a
+ * are unit-tested in `worker/features/fate-live/do.test.ts` (node pool, over a
  * `node:sqlite`-backed DO-state fake). Here we verify the *observable* live contract
  * end-to-end through the real `/fate/live` SSE transport + `/fate` publish path on a
  * live workerd:

@@ -2,7 +2,7 @@
 
 How phoenix's live fan-out DOs are written on alchemy. The short answer: `export default class TopicDO extends Cloudflare.DurableObjectNamespace<TopicDO>()("TopicDO", body) {}`, where `body` is a two-phase Effect — shared init, then a per-instance Effect that yields `Cloudflare.DurableObjectState` and returns handlers. Methods you return become **typed RPC** the worker (and other DOs) call through a stub; `fetch` handles request-shaped interactions like the SSE upgrade. SQLite, KV storage, alarms, and WebSocket hibernation are all Effect-wrapped.
 
-This is the form in place of a plain `class extends DurableObject`. phoenix has two DOs — `ConnectionDO` (holds one client's SSE stream) and `TopicDO` (the durable subscriber registry + fan-out), split per ADR 0023/0025. They live in `worker/infra/connection-do.ts` and `worker/infra/topic-do.ts`.
+This is the form in place of a plain `class extends DurableObject`. phoenix has two DOs — `ConnectionDO` (holds one client's SSE stream) and `TopicDO` (the durable subscriber registry + fan-out), split per ADR 0023/0025. They live in `worker/features/fate-live/connection-do.ts` and `worker/features/fate-live/topic-do.ts`.
 
 > **Both DOs use the inline form — the modular `.make()` form is not implemented for DOs.** alchemy's `DurableObjectNamespace.ts` JSDoc documents a modular `class Foo extends …()("Foo") {}` + `export default Foo.make(impl)` form (for tree-shaking when DOs reference each other), but in `alchemy@2.0.0-beta.44` it **does not exist**: `()("Name")` with no impl returns a plain object (no `.make`), and `class X extends …()("Name") {}` throws *"superclass is not a constructor"*. Only `Worker` got `.make`; DOs didn't. So both DOs use the **inline** form — `export default class X extends …DurableObjectNamespace<X>()("Name", Effect.gen(…)) {}`. The mutual ES imports between the two DO files are fine; circular *imports* aren't the problem (see the next note for what is).
 
@@ -11,7 +11,7 @@ This is the form in place of a plain `class extends DurableObject`. phoenix has 
 ## The shape
 
 ```ts
-// worker/infra/topic-do.ts
+// worker/features/fate-live/topic-do.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import ConnectionDO from "./connection-do";

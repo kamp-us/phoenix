@@ -35,7 +35,7 @@ import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw
 import * as schema from "../db/drizzle/schema.ts";
 import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
 import {makeAdminLayer, makeFateLayer} from "../fate/layers.ts";
-import {LiveConnections, LiveTopics} from "../fate/live-topics.ts";
+import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {createDrizzle} from "../services/Drizzle.ts";
 import type {WorkerEnv} from "../shared/worker-env.ts";
 import {makeAppLive} from "./app.ts";
@@ -43,7 +43,7 @@ import {makeAppLive} from "./app.ts";
 /**
  * A no-op live layer for the HTTP-surface tests — these cases exercise health /
  * admin / auth / fate, not the live SSE path (the live fan-out has its own
- * `infra/live-instance.test.ts`). `publish` swallows; the connection RPCs are
+ * `features/fate-live/do.test.ts`). `publish` swallows; the connection RPCs are
  * never hit by these cases.
  */
 const liveLayer = Layer.mergeAll(
@@ -334,7 +334,7 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		// The live SSE transport route forwards to the ConnectionDO (ADR 0028); here
 		// we assert it is mounted in the compiled router and gated on a session
 		// cookie before any DO is reached (the cross-DO behavior is proven in
-		// `infra/live-instance.test.ts`). No cookie → 401 fate error envelope.
+		// `features/fate-live/do.test.ts`). No cookie → 401 fate error envelope.
 		const res = await fetch(
 			appLayerAllowed,
 			new Request("https://test.local/fate/live?connectionId=anon"),

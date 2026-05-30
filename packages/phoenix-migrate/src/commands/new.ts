@@ -77,7 +77,8 @@ export const newCommand = Command.make(
 				"apps",
 				"web",
 				"worker",
-				"infra",
+				"features",
+				"fate-live",
 				"migrations",
 			);
 			const targetDir = path.join(migrationsRoot, durableObject);

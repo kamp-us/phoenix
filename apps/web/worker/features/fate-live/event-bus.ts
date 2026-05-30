@@ -26,9 +26,9 @@
  */
 import {AsyncLocalStorage} from "node:async_hooks";
 import type {LiveEventBus} from "@nkzw/fate/server";
-import type {ConnectionFrame, EntityFrame, PublishMessage} from "./live-protocol.ts";
-import {topicsForPublish} from "./live-protocol.ts";
-import type {LiveChangedField, LiveEntities} from "./views.ts";
+import type {LiveChangedField, LiveEntities} from "../../fate/views.ts";
+import type {ConnectionFrame, EntityFrame, PublishMessage} from "./protocol.ts";
+import {topicsForPublish} from "./protocol.ts";
 
 /**
  * Typed `update` for the publish-only bus: the entity name is constrained to the

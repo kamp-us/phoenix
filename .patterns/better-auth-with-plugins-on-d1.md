@@ -30,7 +30,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
 import * as schema from "../db/drizzle/schema.ts";
-import {PhoenixDb} from "../infra/resources.ts";
+import {PhoenixDb} from "../db/resources.ts";
 
 export const BetterAuthLive = Layer.effect(
   BetterAuth.BetterAuth,
@@ -93,7 +93,7 @@ Three load-bearing differences from the reference Layer:
   carry them.
 - **Database reuse.** The reference Layer declares its own
   `Cloudflare.D1Database("BetterAuth")` — a second D1 alongside the
-  canonical `PhoenixDb` defined in `apps/web/worker/infra/resources.ts`.
+  canonical `PhoenixDb` defined in `apps/web/work../db/resources.ts`.
   The better-auth tables (user, session, account, verification) live on
   the same D1 as the rest of the product data (post, term,
   definition, user_profile) — schema is in
@@ -187,7 +187,7 @@ parameter is the seam.
 ## Reuse the existing phoenix D1
 
 `yield* Cloudflare.D1Connection.bind(PhoenixDb)` is how the Layer binds
-to the canonical D1 (declared in `apps/web/worker/infra/resources.ts`).
+to the canonical D1 (declared in `apps/web/work../db/resources.ts`).
 The drizzle adapter then takes `connection.raw` (the underlying
 `D1Database` handle) plus the shared schema:
 
@@ -231,7 +231,7 @@ unchanged.
   factory that takes the resolved instance.
 - `apps/web/worker/index.ts` — the worker init that yields `betterAuth.auth`
   once and threads `authInstance` into the fate Layer.
-- `apps/web/worker/infra/resources.ts` — `PhoenixDb` (the shared D1).
+- `apps/web/work../db/resources.ts` — `PhoenixDb` (the shared D1).
 - `apps/web/worker/db/drizzle/schema.ts` — the shared schema (product
   tables + better-auth tables).
 

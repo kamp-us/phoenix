@@ -28,9 +28,9 @@ import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {Pasaport} from "../features/pasaport/Pasaport.ts";
-import {assertLiveControlRequest, type SubscribeControl} from "./live-protocol.ts";
-import {LiveConnections} from "./live-topics.ts";
+import {Pasaport} from "../pasaport/Pasaport.ts";
+import {assertLiveControlRequest, type SubscribeControl} from "./protocol.ts";
+import {LiveConnections} from "./topics.ts";
 
 /**
  * The fate live error envelope (`{results: [{error}], version: 1}`). The SSE

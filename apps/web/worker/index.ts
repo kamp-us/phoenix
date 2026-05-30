@@ -35,12 +35,12 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {BetterAuthLive} from "./auth/better-auth-live.ts";
+import {PhoenixDb} from "./db/resources.ts";
 import {makeAdminLayer, makeFateLayer} from "./fate/layers.ts";
-import {LiveConnections, LiveTopics} from "./fate/live-topics.ts";
+import ConnectionDO, {ConnectionDOLive} from "./features/fate-live/connection-do.ts";
+import TopicDO, {TopicDOLive} from "./features/fate-live/topic-do.ts";
+import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {makeAppLive} from "./http/app.ts";
-import ConnectionDO, {ConnectionDOLive} from "./infra/connection-do.ts";
-import {PhoenixDb} from "./infra/resources.ts";
-import TopicDO, {TopicDOLive} from "./infra/topic-do.ts";
 import {createDrizzle} from "./services/Drizzle.ts";
 import {resolveDeployEnv} from "./shared/deploy-env.ts";
 import {adminAllowed, type WorkerEnv} from "./shared/worker-env.ts";
@@ -183,7 +183,7 @@ export default Phoenix.make(
 		//     connections by name (`connection:${id}`).
 		// The cross-DO fan-out itself (topic→connection deliver, connection→topic
 		// register) resolves the sibling Tag per call inside the DO RPC methods
-		// (`infra/*-do.ts`), so a stub method that fans out carries that sibling Tag
+		// (`features/fate-live/*-do.ts`), so a stub method that fans out carries that sibling Tag
 		// plus the alchemy `Worker` binding service in `R`: `TopicDO.publish` →
 		// `ConnectionDO | Worker`, `ConnectionDO.subscribe`/`unsubscribe` →
 		// `TopicDO | Worker`. These are resolved on the DO side when alchemy invokes
@@ -250,7 +250,7 @@ export default Phoenix.make(
 		//     worker's exports and resolves the `ConnectionDO`/`TopicDO` Tag the
 		//     init phase yields. Each DO resolves its sibling per fan-out call
 		//     (`yield* TopicDO` / `yield* ConnectionDO` inside an RPC method,
-		//     `infra/*-do.ts`), so the Tag lands on the method's `R`, never on the
+		//     `features/fate-live/*-do.ts`), so the Tag lands on the method's `R`, never on the
 		//     Layer's init requirements — that keeps `ConnectionDOLive` ↔
 		//     `TopicDOLive` free of a circular Layer dependency, so merging both
 		//     satisfies each one's sibling Tag from the other (and from this host).

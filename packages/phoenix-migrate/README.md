@@ -19,14 +19,14 @@ pnpm --filter @kampus-phoenix/phoenix-migrate run phoenix-migrate new <do> <name
 ```bash
 # Scaffold the next migration for the topic DO
 phoenix-migrate new topic add_indexes_to_subscribers
-# → apps/web/worker/infra/migrations/topic/0003_add_indexes_to_subscribers.ts
+# → apps/web/worker/features/fate-live/migrations/topic/0003_add_indexes_to_subscribers.ts
 ```
 
 ## Commands
 
 ### `new <do> <name>`
 
-Scaffolds the next migration file under `apps/web/worker/infra/migrations/<do>/`.
+Scaffolds the next migration file under `apps/web/worker/features/fate-live/migrations/<do>/`.
 
 - `<do>` — directory name of the Durable Object (e.g., `topic`).
 - `<name>` — snake-case description; normalized to `[a-z0-9_]+`.

@@ -12,7 +12,7 @@ tags: [cli, tooling, packages, effect]
 
 Phoenix needs CLIs for repo-local tooling — first up, a DO SQL migration
 scaffolder for the topic DO's `state.storage.sql` schema
-(`infra/migrations/topic/*.ts`). The natural question every time a small
+(`features/fate-live/migrations/topic/*.ts`). The natural question every time a small
 CLI shows up is whether it earns its own package, or whether it should
 land as a subcommand inside an `@phoenix/cli` monolith. The monolith form
 is the default in most monorepos, and the default failure mode is also
@@ -123,7 +123,7 @@ compose further).
   by this ADR, so adding it later is mechanical.
 - **First focused CLI shipped: `@kampus-phoenix/phoenix-migrate`.**
   Single command `new` initially — `phoenix-migrate new <do> <name>`
-  scaffolds a numbered `infra/migrations/<do>/<NNNN>_<name>.ts` file
+  scaffolds a numbered `features/fate-live/migrations/<do>/<NNNN>_<name>.ts` file
   with the `SqliteMigrator` shape the topic DO's migrator loader
   (`topic-do.ts` `SqliteMigrator.fromGlob`) expects. The package
   layout — `package.json` with scoped name, `exports` of `./src/index.ts`,

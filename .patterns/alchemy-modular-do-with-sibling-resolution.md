@@ -22,8 +22,8 @@ for the inline-form precedent. This doc is the working recipe.
   compose without a cycle.
 
 `ConnectionDO` and `TopicDO` use the modular form
-(`apps/web/worker/infra/connection-do.ts`,
-`apps/web/worker/infra/topic-do.ts`). They are currently phoenix's only
+(`apps/web/worker/features/fate-live/connection-do.ts`,
+`apps/web/worker/features/fate-live/topic-do.ts`). They are currently phoenix's only
 DOs; if a third DO lands with no sibling references, write it inline.
 
 ## The shape
@@ -43,7 +43,7 @@ The DO splits into three pieces:
    inner `Effect.gen` is per-instance (once per instance wake).
 
 ```ts
-// infra/connection-do.ts
+// features/fate-live/connection-do.ts
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import TopicDO from "./topic-do.ts";
@@ -153,17 +153,21 @@ satisfy itself.
 ## Where the body actually lives
 
 The closure that holds the per-instance state (the SSE queue, the
-subscription map, the `epoch` cache) lives in a separate factory module —
-`apps/web/worker/infra/live-instance.ts` exports `makeConnectionInstance`
-and `makeTopicInstance`. The `.make()` body resolves the sibling
-namespace, builds the resolver thunk (`(key) => Effect.map(Tag, …)`), and
-hands the state + resolver to the factory. The factory returns the RPC
-handlers.
+subscription map, the `epoch` cache) lives alongside the `.make()` Layer
+in each DO file — `makeConnectionInstance` next to `ConnectionDOLive` in
+`apps/web/worker/features/fate-live/connection-do.ts`, and
+`makeTopicInstance` next to `TopicDOLive` in
+`apps/web/worker/features/fate-live/topic-do.ts`. The `.make()` body
+resolves the sibling namespace, builds the resolver thunk
+(`(key) => Effect.map(Tag, …)`), and hands the state + resolver to the
+factory. The factory returns the RPC handlers. The shared cross-DO RPC
+types (`ConnectionRpc`, `TopicRpc`) live in `./protocol.ts` so both DOs
+import them from one neutral place.
 
 This split keeps the algorithm in a place a plain node-pool unit test can
 drive without workerd — the factory takes a `DurableObjectState["Service"]`
 and a sibling resolver; a test can inject fakes for both. See
-`live-instance.test.ts` for the unit-test driver and
+`features/fate-live/do.test.ts` for the unit-test driver and
 `tests/integration/fate-live.test.ts` for the black-box-over-HTTP version.
 
 ## Cross-references

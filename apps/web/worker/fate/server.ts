@@ -19,9 +19,9 @@
  * `byIds` on every relation-fetchable type).
  */
 import {createFateServer} from "@nkzw/fate/server";
+import {liveBusConfig} from "../features/fate-live/event-bus.ts";
 import type {FateContext} from "./context.ts";
 import {lists} from "./lists.ts";
-import {liveBusConfig} from "./live.ts";
 import {mutations} from "./mutations.ts";
 import {panoMutations} from "./pano-mutations.ts";
 import {pasaportMutations} from "./pasaport-mutations.ts";
@@ -69,6 +69,6 @@ export const fateServer = createFateServer<
 	// a topic and fetches the `TopicDO` instance with inline-resolved data.
 	// fate detects a custom bus by `"subscribe" in live` (the property exists but
 	// throws — the SSE protocol is served by the `/fate/live` route + DO, not by
-	// fate's `handleLiveRequest`). See `worker/fate/live.ts`.
+	// fate's `handleLiveRequest`). See `worker/features/fate-live/event-bus.ts`.
 	live: liveBusConfig,
 });

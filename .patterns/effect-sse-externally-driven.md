@@ -6,7 +6,7 @@ response Effect — the case where frames arrive via a sibling DO's RPC
 stream's own generator. This is the canonical shape for "long-lived
 response, written to by another component".
 
-`ConnectionDO` is the only consumer today (`apps/web/worker/infra/live-instance.ts`
+`ConnectionDO` is the only consumer today (`apps/web/worker/features/fate-live/connection-do.ts and topic-do.ts`
 `openStream`/`deliver`), and the algorithm matters: the legacy code did
 this with a raw `ReadableStream` controller, a `setInterval` for heartbeats,
 and a try/catch around `controller.enqueue`. That worked but spread the
@@ -176,10 +176,10 @@ is `never` — no Layer wiring, no runtime; just a queue offer.
 
 ## Citations
 
-- `apps/web/worker/infra/live-instance.ts` — `openStream`, `deliver`,
+- `apps/web/worker/features/fate-live/connection-do.ts and topic-do.ts` — `openStream`, `deliver`,
   `closeStream` (the production pattern, after the refactor from the raw
   `ReadableStream` controller form).
-- `apps/web/worker/infra/connection-do.ts` — the DO that owns the
+- `apps/web/worker/features/fate-live/connection-do.ts` — the DO that owns the
   `openStream` per instance; the `fetch` handler routes the SSE upgrade
   to `instance.openStream`.
 

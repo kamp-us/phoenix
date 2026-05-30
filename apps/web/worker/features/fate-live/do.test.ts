@@ -25,14 +25,9 @@ import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {makeFakeDurableObjectState} from "./__support__/do-state.ts";
-import {
-	type ConnectionInstance,
-	type ConnectionRpc,
-	makeConnectionInstance,
-	makeTopicInstance,
-	type TopicInstance,
-	type TopicRpc,
-} from "./live-instance.ts";
+import {type ConnectionInstance, makeConnectionInstance} from "./connection-do.ts";
+import type {ConnectionRpc, TopicRpc} from "./protocol.ts";
+import {makeTopicInstance, type TopicInstance} from "./topic-do.ts";
 
 // The test bypasses `topic-do.ts`'s `.make()` Layer (it drives the instance
 // builders directly), so we re-apply the same migrations here through the

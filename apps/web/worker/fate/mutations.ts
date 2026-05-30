@@ -20,10 +20,10 @@
  * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
  */
 
+import {liveBus} from "../features/fate-live/event-bus.ts";
 import {Sozluk} from "../features/sozluk/Sozluk.ts";
 import {Auth} from "../services/index.ts";
 import {fateMutation} from "./effect.ts";
-import {liveBus} from "./live.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition, Term} from "./views.ts";
 
