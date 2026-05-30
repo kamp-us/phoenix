@@ -106,6 +106,10 @@ export const BetterAuthLive = Layer.effect(
 					},
 				},
 				plugins: [
+					// Emits the `set-auth-token` response header that the SPA's `authClient`
+					// (apps/web/src/auth/client.ts) consumes — it sends back as
+					// `Authorization: Bearer <token>` for cross-origin / storage-partitioned
+					// auth paths. Don't remove without `grep "Bearer" apps/web/src/` first.
 					bearer(),
 					magicLink({
 						sendMagicLink: async ({email, token, url}) => {

@@ -20,13 +20,13 @@
  *      with `index.ts` (TS/Vite strip type-only imports at build time).
  */
 /**
- * The worker's assembled env type — the runtime view of the worker's `env`
- * block in `index.ts` plus the bound `PHOENIX_DB` D1 client. Kept as a small
- * hand-rolled shape rather than `Cloudflare.InferEnv<typeof Phoenix>` because
- * the `Phoenix` class self-references through its `Worker<Phoenix, ...>` type
- * param (the DO-host pattern, ADR 0028), which makes `InferEnv` recurse and
- * trip TS2589 ("Type instantiation is excessively deep"). One sentence of
- * duplication is cheaper than that.
+ * The worker's assembled env type — hand-rolled rather than
+ * `Cloudflare.InferEnv<typeof Phoenix>`. `Phoenix` self-references through
+ * its `Worker<Phoenix, ...>` type param (DO-host pattern, ADR 0028), which
+ * makes `InferEnv` recurse and trip TS2589 ("Type instantiation is
+ * excessively deep"). The overlay is the pragmatic workaround until this
+ * lands upstream — worth filing against alchemy's `InferEnv` so the
+ * self-referential `Worker<Self, ...>` shape is supported.
  */
 export interface WorkerEnv {
 	readonly PHOENIX_DB: D1Database;
