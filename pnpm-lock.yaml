@@ -112,11 +112,6 @@ catalogs:
       specifier: 4.4.3
       version: 4.4.3
 
-patchedDependencies:
-  alchemy@2.0.0-beta.45:
-    hash: 08cf485081aea597f6743b47591741ec8bbbdbfcc18ac778e97c6b5d9ec6819d
-    path: patches/alchemy@2.0.0-beta.45.patch
-
 importers:
 
   .:
@@ -171,7 +166,7 @@ importers:
         version: 0.2.0
       alchemy:
         specifier: 'catalog:'
-        version: 2.0.0-beta.45(patch_hash=08cf485081aea597f6743b47591741ec8bbbdbfcc18ac778e97c6b5d9ec6819d)(@effect/platform-bun@4.0.0-beta.74(effect@4.0.0-beta.74))(@effect/platform-node@4.0.0-beta.74(effect@4.0.0-beta.74)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.74(effect@4.0.0-beta.74))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.74)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260526.1)(ws@8.21.0)
+        version: 2.0.0-beta.45(@effect/platform-bun@4.0.0-beta.74(effect@4.0.0-beta.74))(@effect/platform-node@4.0.0-beta.74(effect@4.0.0-beta.74)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.74(effect@4.0.0-beta.74))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.74)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260526.1)(ws@8.21.0)
       better-auth:
         specifier: 'catalog:'
         version: 1.6.10(@cloudflare/workers-types@4.20260509.1)(@opentelemetry/api@1.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))
@@ -3109,7 +3104,7 @@ snapshots:
 
   '@alchemy.run/better-auth@2.0.0-beta.45(859029791a156fd90a3ff63a3a2c486c)':
     dependencies:
-      alchemy: 2.0.0-beta.45(patch_hash=08cf485081aea597f6743b47591741ec8bbbdbfcc18ac778e97c6b5d9ec6819d)(@effect/platform-bun@4.0.0-beta.74(effect@4.0.0-beta.74))(@effect/platform-node@4.0.0-beta.74(effect@4.0.0-beta.74)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.74(effect@4.0.0-beta.74))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.74)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260526.1)(ws@8.21.0)
+      alchemy: 2.0.0-beta.45(@effect/platform-bun@4.0.0-beta.74(effect@4.0.0-beta.74))(@effect/platform-node@4.0.0-beta.74(effect@4.0.0-beta.74)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.74(effect@4.0.0-beta.74))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.74)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260526.1)(ws@8.21.0)
       better-auth: 1.6.10(@cloudflare/workers-types@4.20260509.1)(@opentelemetry/api@1.9.0)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))
       effect: 4.0.0-beta.74
     transitivePeerDependencies:
@@ -4488,7 +4483,7 @@ snapshots:
       convert-source-map: 2.0.0
       tinyrainbow: 3.1.0
 
-  alchemy@2.0.0-beta.45(patch_hash=08cf485081aea597f6743b47591741ec8bbbdbfcc18ac778e97c6b5d9ec6819d)(@effect/platform-bun@4.0.0-beta.74(effect@4.0.0-beta.74))(@effect/platform-node@4.0.0-beta.74(effect@4.0.0-beta.74)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.74(effect@4.0.0-beta.74))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.74)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260526.1)(ws@8.21.0):
+  alchemy@2.0.0-beta.45(@effect/platform-bun@4.0.0-beta.74(effect@4.0.0-beta.74))(@effect/platform-node@4.0.0-beta.74(effect@4.0.0-beta.74)(ioredis@5.10.1))(@effect/sql-pg@4.0.0-beta.74(effect@4.0.0-beta.74))(@types/node@25.6.2)(@types/react@19.2.14)(drizzle-kit@0.31.10)(drizzle-orm@0.45.2(@cloudflare/workers-types@4.20260509.1)(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(kysely@0.28.17)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0))(effect@4.0.0-beta.74)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0))(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(tsx@4.21.0)(yaml@2.9.0)))(workerd@1.20260526.1)(ws@8.21.0):
     dependencies:
       '@alchemy.run/node-utils': 0.0.4
       '@aws-sdk/credential-providers': 3.1053.0

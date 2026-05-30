@@ -69,13 +69,8 @@ export class Phoenix extends Cloudflare.Worker<
 	ConnectionDO | TopicDO
 >()("phoenix", {
 	main: import.meta.filename,
-	// The `env` literal lives in `worker/env.ts` (`phoenixEnvBindings`). Lifting
-	// it out of the class declaration is what makes the {@link WorkerEnv} type
-	// derivable via `Cloudflare.InferEnv<typeof phoenixEnvBindings>` — handing
-	// `InferEnv` the literal record sidesteps both the upstream TS2589 (fixed
-	// by `patches/alchemy@2.0.0-beta.45.patch`) and the modular-`.make()`
-	// Bindings-erasure that would otherwise widen `WorkerEnv` to
-	// `{[x: string]: any}` (see `env.ts` for the full reasoning).
+	// The `env` literal lives in `worker/env.ts` (`phoenixEnvBindings`) — it
+	// declares the worker's bindings, resolved from the deploy-time env.
 	env: phoenixEnvBindings,
 	assets: {
 		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
