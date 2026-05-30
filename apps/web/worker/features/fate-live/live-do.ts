@@ -547,10 +547,17 @@ export const makeLiveInstance = (state: DurableObjectStateValue, live: LiveNames
 export const LiveDOLive = LiveDO.make(
 	Effect.gen(function* () {
 		// ── SHARED INIT (once per namespace) ──
-		// Resolve the self-namespace here (not per call). `LiveDO` is a
-		// `DurableObjectService`, so `.make()` excludes it from the Layer's
-		// requirements — no cycle, Layer<LiveDO, never, Worker>.
-		const live = yield* LiveDO;
+		// Resolve the self-namespace here (not per call) for cross-role addressing.
+		// `LiveDO.from("phoenix")` binds the DO's OWN namespace by its host script
+		// name (the `Phoenix` worker's id) WITHOUT adding the `LiveDO` Tag to the
+		// Layer's requirements: the `.from(scriptName)` overload resolves to
+		// `Effect<…, never, Worker>`, so the Layer is `Layer<LiveDO, never, Worker>`.
+		// A bare `yield* LiveDO` would instead leak `LiveDO` as an unsatisfiable
+		// self-requirement — it is the very Tag this Layer OUTPUTS, so no merge can
+		// discharge it (a self-referencing DO can't satisfy its own Tag from itself).
+		// The string is the host worker's id; it must stay in sync with
+		// `Phoenix.make("phoenix", …)` in `worker/index.ts`.
+		const live = yield* LiveDO.from("phoenix");
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
 		// wake). `return yield*` would run per-instance setup during shared init.
 		// @effect-diagnostics-next-line effect/returnEffectInGen:off

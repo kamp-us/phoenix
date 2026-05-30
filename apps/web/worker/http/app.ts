@@ -42,7 +42,7 @@ import {adminApiLayer, adminAuthLayer} from "./admin-handlers.ts";
  * @param liveLayer    the worker-init-resolved DO namespace handles
  *                     (`LiveTopics` for the `/fate` publish path, `LiveConnections`
  *                     for the `/fate/live` SSE transport), built from the bound
- *                     `TopicDO`/`ConnectionDO` namespaces in worker init.
+ *                     unified `LiveDO` namespace in worker init.
  *
  * The health probe reads `Cloudflare.WorkerEnvironment` directly (alchemy
  * provides it at worker scope), so this layer no longer needs the worker env

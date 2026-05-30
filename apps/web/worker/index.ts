@@ -2,13 +2,12 @@
  * The single phoenix worker, on alchemy-effect (ADR 0026–0031).
  *
  * Modular `.make()` form (ADR 0028): `class Phoenix extends Cloudflare.Worker<
- * Phoenix, {}, ConnectionDO | TopicDO>()(id, props)` is the worker Tag (declaring
- * the two hosted live-fan-out DOs as its `Deps` contract), and the `export
- * default Phoenix.make(body)` Layer is the implementation. Splitting the two lets
- * the worker host the two circular DOs and provide their `.make()` Layers (the
- * inline-body form can't take a `Deps` type param). The body runs in two phases:
- * the init phase binds resources (D1 + the two DO namespaces) once per isolate;
- * the runtime phase
+ * Phoenix, {}, LiveDO>()(id, props)` is the worker Tag (declaring the single
+ * hosted live-fan-out DO as its `Deps` contract), and the `export default
+ * Phoenix.make(body)` Layer is the implementation. Splitting the two lets the
+ * worker host the DO and provide its `.make()` Layer (the inline-body form can't
+ * take a `Deps` type param). The body runs in two phases: the init phase binds
+ * resources (D1 + the `LiveDO` namespace) once per isolate; the runtime phase
  * returns the `fetch` handler — an `HttpRouter` compiled with
  * `HttpRouter.toHttpEffect`. The SPA is served from the `assets` prop, with
  * `runWorkerFirst` keeping the worker-owned paths (`/api/*`, `/fate`, `/fate/*`)
@@ -19,7 +18,7 @@
  * `makeAppLive` (`http/app.ts`): `GET /api/health`, the fate data plane
  * (`POST /fate`), better-auth (`* /api/auth/*`), the dev-only admin seeders
  * (`* /api/admin/*`, gated by `adminAllowed`), and the live SSE route
- * (`* /fate/live` → ConnectionDO). The feature services live under
+ * (`* /fate/live` → LiveDO). The feature services live under
  * `worker/features/` (including the fate bridge under `worker/features/fate/`).
  *
  * Dev vs prod for the SPA (ADR 0030): the `assets` + `runWorkerFirst` config
@@ -38,8 +37,8 @@ import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
 import {phoenixEnvBindings, resolveDeployEnv} from "./env.ts";
 import {makeAdminLayer, makeFateLayer} from "./features/fate/layers.ts";
-import ConnectionDO, {ConnectionDOLive} from "./features/fate-live/connection-do.ts";
-import TopicDO, {TopicDOLive} from "./features/fate-live/topic-do.ts";
+import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
+import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {adminAllowed} from "./http/admin-auth.ts";
@@ -53,6 +52,24 @@ import {makeAppLive} from "./http/app.ts";
 // dev gate).
 const deployEnv = resolveDeployEnv(process.env);
 
+/**
+ * Lift a publish-side {@link PublishMessage} to the {@link DeliverFrame} the
+ * unified `LiveDO.publish` enqueues. `kind` maps to the fate SSE event name
+ * (`entity → next`, `connection → connection`); `event` is the already
+ * inline-resolved frame body the mutation produced. The frame's `id` (the fate
+ * subscription id) is set per-subscriber by the topic instance from each
+ * subscriber row at delivery, so it is left empty here — one publish fans out to
+ * many subscriptions, each with its own id.
+ */
+function deliverFrameOf(message: PublishMessage): DeliverFrame {
+	return {
+		kind: message.kind === "entity" ? "next" : "connection",
+		id: "",
+		event: message.frame,
+		...(message.eventId !== undefined ? {eventId: message.eventId} : {}),
+	};
+}
+
 export class Phoenix extends Cloudflare.Worker<
 	Phoenix,
 	// The worker's own RPC shape — empty: this worker exposes no callable RPC
@@ -63,10 +80,11 @@ export class Phoenix extends Cloudflare.Worker<
 	// which `{fetch}` then fails to satisfy).
 	// biome-ignore lint/complexity/noBannedTypes: alchemy's empty-RPC-shape sentinel
 	{},
-	// The two live-fan-out DOs this worker hosts — declared as its public `Deps`
-	// contract (ADR 0028) so the worker can `yield*` their Tags in init and
-	// provide their `.make()` Layers below.
-	ConnectionDO | TopicDO
+	// The unified live-fan-out DO this worker hosts — declared as its public
+	// `Deps` contract (ADR 0028) so the worker can `yield*` its Tag in init and
+	// provide its `.make()` Layer below. One `LiveDO` namespace plays both the
+	// connection and topic roles, keyed by instance name (`connection:`/`topic:`).
+	LiveDO
 >()("phoenix", {
 	main: import.meta.filename,
 	// The `env` literal lives in `worker/env.ts` (`phoenixEnvBindings`) — it
@@ -94,11 +112,11 @@ export class Phoenix extends Cloudflare.Worker<
 
 /**
  * The worker implementation Layer (modular `.make()` form, ADR 0028). Splitting
- * the class (a lightweight identity, with the two hosted live-fan-out DOs
- * declared in its `Deps` type param) from `.make()` lets the worker host
- * `ConnectionDO` + `TopicDO` and provide their `.make()` Layers without the
- * inline-body form's `InitReq extends WorkerServices | PlatformServices`
- * constraint — the DO Tags `yield*`-ed in init are dischargeable here.
+ * the class (a lightweight identity, with the hosted live-fan-out DO declared in
+ * its `Deps` type param) from `.make()` lets the worker host `LiveDO` and provide
+ * its `.make()` Layer without the inline-body form's `InitReq extends
+ * WorkerServices | PlatformServices` constraint — the `LiveDO` Tag `yield*`-ed in
+ * init is dischargeable here.
  */
 export default Phoenix.make(
 	Effect.gen(function* () {
@@ -109,14 +127,13 @@ export default Phoenix.make(
 		// builds the worker-level `Drizzle` + feature layers from `db`, and tasks 5
 		// wire the live publish path through the two DO namespaces.
 		const db = yield* Cloudflare.D1Connection.bind(PhoenixDb);
-		const connections = yield* ConnectionDO;
-		const topics = yield* TopicDO;
+		const live = yield* LiveDO;
 
 		// Each bound client stays load-bearing through its real use below: `db`
-		// via `db.raw`, and `topics`/`connections` via the `liveLayer` closures'
-		// `getByName(...)` calls — drop a `bind()`/`yield*` above and the type
-		// checker fails at that usage, so an unwired binding is a compile error,
-		// never a runtime `undefined`.
+		// via `db.raw`, and `live` via the `liveLayer` closures' `getByName(...)`
+		// calls — drop a `bind()`/`yield*` above and the type checker fails at that
+		// usage, so an unwired binding is a compile error, never a runtime
+		// `undefined`.
 
 		// Build the worker-level service layers ONCE from the bound D1 (ADR 0029):
 		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
@@ -145,50 +162,43 @@ export default Phoenix.make(
 		// above wires) — no read off `Cloudflare.WorkerEnvironment` needed.
 		const allowAdmin = adminAllowed({ENVIRONMENT: deployEnv.ENVIRONMENT});
 
-		// The live path (ADR 0028/0029): both DO namespaces are resolved ONCE in
-		// init (`topics`/`connections`, above) and wrapped as worker-level services.
+		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
+		// ONCE in init (`live`, above) and wrapped as worker-level services. One
+		// namespace plays both roles, keyed by instance name.
 		//   - `LiveTopics.publish` fans a mutation's `live.*` out via typed RPC
-		//     (`topics.getByName(\`topic:${key}\`).publish(msg)`) — no `env` lookup,
-		//     no `idFromName`, no string-URL `stub.fetch`.
+		//     (`live.getByName(\`topic:${key}\`).publish({topicKey, frame, limits})`)
+		//     — no `env` lookup, no `idFromName`, no string-URL `stub.fetch`. The
+		//     route builds the per-request `LiveLimits` and the publish frame is
+		//     lifted from the `PublishMessage` by `deliverFrameOf`.
 		//   - `LiveConnections` opens the SSE stream (forwarding the request to a
-		//     connection's `fetch`) and drives subscribe/unsubscribe RPC, addressing
-		//     connections by name (`connection:${id}`).
-		// The cross-DO fan-out itself (topic→connection deliver, connection→topic
-		// register) resolves the sibling Tag per call inside the DO RPC methods
-		// (`features/fate-live/*-do.ts`), so a stub method that fans out carries that sibling Tag
-		// plus the alchemy `Worker` binding service in `R`: `TopicDO.publish` →
-		// `ConnectionDO | Worker`, `ConnectionDO.subscribe`/`unsubscribe` →
-		// `TopicDO | Worker`. These are resolved on the DO side when alchemy invokes
-		// the method (it provides the worker's captured services + global context).
-		// At THIS (worker) call seam we discharge them cast-free with the worker's
-		// own context, captured once in init: it already holds `Worker` (alchemy
-		// provides it to this `.make()` body) and both DO namespace Tags (`yield*`-ed
-		// above), so `Effect.provide(_, workerContext)` supplies the real services —
-		// no `as`-cast (the old `rpc` helper is gone).
-		const workerContext = yield* Effect.context<ConnectionDO | TopicDO | Cloudflare.Worker>();
+		//     connection-role `fetch`) and drives subscribe/unsubscribe RPC,
+		//     addressing connections by name (`connection:${id}`). The route resolves
+		//     a subscribe's topic keys + limits before calling.
+		// The cross-role fan-out (topic→connection deliver, connection→topic
+		// register) rides the DO's OWN namespace captured in its init closure
+		// (`live-do.ts`), so the RPC methods' `R` is `never` — no per-call sibling
+		// Tag. At THIS (worker) call seam there is nothing to discharge: every
+		// method already has `R = never`, so no `Effect.provide(workerContext)` cast
+		// is needed (the old split-DO sibling cast is gone).
 		const liveLayer = Layer.mergeAll(
 			Layer.succeed(LiveTopics)(
 				LiveTopics.of({
-					publish: (topicKey, message) =>
-						Effect.asVoid(topics.getByName(`topic:${topicKey}`).publish(message)).pipe(
-							Effect.provide(workerContext),
+					publish: (topicKey, message, limits) =>
+						Effect.asVoid(
+							live
+								.getByName(`topic:${topicKey}`)
+								.publish({topicKey, frame: deliverFrameOf(message), limits}),
 						),
 				}),
 			),
 			Layer.succeed(LiveConnections)(
 				LiveConnections.of({
 					open: (connectionId, request) =>
-						connections.getByName(`connection:${connectionId}`).fetch(request),
+						live.getByName(`connection:${connectionId}`).fetch(request),
 					subscribe: (connectionId, input) =>
-						connections
-							.getByName(`connection:${connectionId}`)
-							.subscribe(input)
-							.pipe(Effect.provide(workerContext)),
+						live.getByName(`connection:${connectionId}`).subscribe(input),
 					unsubscribe: (connectionId, subId) =>
-						connections
-							.getByName(`connection:${connectionId}`)
-							.unsubscribe({subId})
-							.pipe(Effect.provide(workerContext)),
+						live.getByName(`connection:${connectionId}`).unsubscribe({subId}),
 				}),
 			),
 		);
@@ -197,7 +207,7 @@ export default Phoenix.make(
 		//   - typed JSON via `HttpApiBuilder` groups: `GET /api/health` + the
 		//     dev-only `/api/admin/*` seeders (schema-decoded payloads),
 		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
-		//     `* /fate/live` (SSE → ConnectionDO), `* /api/auth/*` (better-auth).
+		//     `* /fate/live` (SSE → LiveDO), `* /api/auth/*` (better-auth).
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
 		// `HttpRouter.provideRequest(...)` and provides the admin services +
 		// platform stubs to the typed groups (`http/app.ts`).
@@ -215,20 +225,17 @@ export default Phoenix.make(
 		// One combined provide (chaining multiple `Effect.provide` can break layer
 		// lifecycle). Three Layers:
 		//   - `D1ConnectionLive` satisfies `D1Connection.bind`'s `R` requirement.
-		//   - `ConnectionDOLive` / `TopicDOLive` are the two live-fan-out DOs in
-		//     `.make()` form (ADR 0028): each registers its DO class with the
-		//     worker's exports and resolves the `ConnectionDO`/`TopicDO` Tag the
-		//     init phase yields. Each DO resolves its sibling per fan-out call
-		//     (`yield* TopicDO` / `yield* ConnectionDO` inside an RPC method,
-		//     `features/fate-live/*-do.ts`), so the Tag lands on the method's `R`, never on the
-		//     Layer's init requirements — that keeps `ConnectionDOLive` ↔
-		//     `TopicDOLive` free of a circular Layer dependency, so merging both
-		//     satisfies each one's sibling Tag from the other (and from this host).
+		//   - `LiveDOLive` is the unified live-fan-out DO in `.make()` form
+		//     (ADR 0028): it registers the single DO class with the worker's exports
+		//     and resolves the `LiveDO` Tag the init phase yields. Cross-role calls
+		//     ride the DO's OWN namespace captured in its init closure (not a sibling
+		//     Tag), so the Layer requires only `Worker` — there is no circular Layer
+		//     dependency to break, unlike the old `ConnectionDOLive` ↔ `TopicDOLive`
+		//     pair this replaces.
 		Effect.provide(
 			Layer.mergeAll(
 				Cloudflare.D1ConnectionLive,
-				ConnectionDOLive,
-				TopicDOLive,
+				LiveDOLive,
 				// `BetterAuthLive` (`features/pasaport/better-auth-live.ts`) satisfies the
 				// `BetterAuth` Context tag yielded above + provides `betterAuth.fetch`
 				// to the `/api/auth/*` route. It self-provides `D1ConnectionLive`

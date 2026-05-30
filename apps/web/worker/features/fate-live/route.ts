@@ -2,13 +2,14 @@
  * The `* /fate/live` route — the SSE transport endpoint (ADR 0023/0028,
  * `.patterns/alchemy-http-router.md`).
  *
- * Serves fate's native SSE live protocol from the `ConnectionDO` rather than
- * fate's in-Worker `handleLiveRequest` (which cannot fan out across isolates).
- * It builds **no** per-request runtime: the session check rides the worker-level
- * `Pasaport` (the same service `/fate` and `/api/auth/*` use), and the connection
- * is reached through the worker-init-resolved `ConnectionDO` namespace (carried
- * by `LiveConnections`) — addressed by name (`connection:${id}`) and driven by
- * typed RPC + a forwarded `fetch`, never `idFromName`/`get`/`stub.fetch(string)`.
+ * Serves fate's native SSE live protocol from the unified `LiveDO`
+ * (connection-role instances) rather than fate's in-Worker `handleLiveRequest`
+ * (which cannot fan out across isolates). It builds **no** per-request runtime:
+ * the session check rides the worker-level `Pasaport` (the same service `/fate`
+ * and `/api/auth/*` use), and the connection is reached through the
+ * worker-init-resolved `LiveDO` namespace (carried by `LiveConnections`) —
+ * addressed by name (`connection:${id}`) and driven by typed RPC + a forwarded
+ * `fetch`, never `idFromName`/`get`/`stub.fetch(string)`.
  *
  *   - `GET  /fate/live?connectionId=…` → validate cookie, forward the request to
  *     the connection DO's `fetch` to open the SSE stream. Rejected (401) without
@@ -29,8 +30,29 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {Pasaport} from "../pasaport/Pasaport.ts";
-import {parseLiveControlRequest, type SubscribeControl} from "./protocol.ts";
+import {
+	type LiveLimits,
+	parseLiveControlRequest,
+	type SubscribeControl,
+	topicsForSubscribe,
+} from "./protocol.ts";
 import {LiveConnections} from "./topics.ts";
+
+/**
+ * The default per-request fan-out budgets, mirroring void's `DEFAULT_LIMITS`
+ * (`void/dist/runtime/live.mjs`). Threaded onto each `LiveDO` subscribe/publish
+ * call (decision 2B) rather than hardcoded in the DO, so a future request-scoped
+ * override has exactly one seam. `maxOperationsPerControlRequest` is void's
+ * control-request cap, not a `LiveLimits` field — it is not part of the DO budget
+ * and so is omitted here.
+ */
+export const defaultLiveLimits: LiveLimits = {
+	maxSubscriptionsPerConnection: 256,
+	maxSubscriptionsPerTopic: 256,
+	maxQueuedEventsPerConnection: 100,
+	maxEncodedEventSize: 64 * 1024,
+	deliveryAttemptTimeoutMs: 1500,
+};
 
 /**
  * The fate live error envelope (`{results: [{error}], version: 1}`). The SSE
@@ -115,7 +137,16 @@ export const handleLive = Effect.gen(function* () {
 							procedure: operation.procedure,
 							...(operation.args ? {args: operation.args} : {}),
 						};
-			const res = yield* connections.subscribe(connectionId, {control, ownerId});
+			// Resolve the control's topic keys here (the same `topicsForSubscribe`
+			// the publish side mirrors) and thread the per-request limits, so the
+			// connection-role `LiveDO` records the subscription + registers each
+			// topic-role row with a budget it never invents itself (decision 2B).
+			const res = yield* connections.subscribe(connectionId, {
+				subId: operation.id,
+				topics: topicsForSubscribe(control),
+				ownerId,
+				limits: defaultLiveLimits,
+			});
 			results.push({id: operation.id, ok: res.ok, data: null});
 		}
 		return HttpServerResponse.jsonUnsafe(

@@ -26,6 +26,7 @@ import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {livePublishContext} from "../fate-live/event-bus.ts";
+import {defaultLiveLimits} from "../fate-live/route.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
@@ -59,9 +60,11 @@ export const handleFate = Effect.gen(function* () {
 			// `liveTopics.publish` is self-contained (R = never), so it needs no
 			// surrounding services — `runPromise` is correct, not `runPromiseWith`.
 			// @effect-diagnostics-next-line effect/runEffectInsideEffect:off
-			Effect.runPromise(liveTopics.publish(topicKey, message)).catch((error: unknown) => {
-				console.error(`live publish to topic:${topicKey} failed`, error);
-			}),
+			Effect.runPromise(liveTopics.publish(topicKey, message, defaultLiveLimits)).catch(
+				(error: unknown) => {
+					console.error(`live publish to topic:${topicKey} failed`, error);
+				},
+			),
 		);
 	};
 
