@@ -11,13 +11,15 @@
  * criteria without workerd (the workerd black-box harness is task 7):
  *
  *   - subscribe → publish → the frame arrives on the held SSE stream;
- *   - a reconnect bumps the generation and the prior subscriber row is detected
- *     stale on the next publish (generation-based stale detection);
+ *   - a reconnect bumps the epoch and the prior subscriber row is detected
+ *     stale on the next publish (epoch-based stale detection);
  *   - the 60s alarm reaps an orphaned row;
  *   - a single unreachable probe never prunes a live subscription.
  *
  * Runs in the node pool.
  */
+import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
+import * as SqliteMigrator from "@effect/sql-sqlite-do/SqliteMigrator";
 import {liveEntityTopic} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -31,6 +33,21 @@ import {
 	type TopicInstance,
 	type TopicRpc,
 } from "./live-instance.ts";
+
+// The test bypasses `topic-do.ts`'s `.make()` Layer (it drives the instance
+// builders directly), so we re-apply the same migrations here through the
+// SqliteClient + Migrator the production DO uses. `import.meta.glob` resolves at
+// Vite build time — `vitest` runs it the same way, eagerly importing each .ts
+// module so the loader sees the already-resolved default export.
+const topicMigrations = import.meta.glob("./migrations/topic/*.ts", {eager: false});
+
+/** Run pending SQL migrations against a fake's `SqlStorage` shim. */
+const migrateTopicSchema = (sql: {readonly raw: unknown}): Effect.Effect<void, never, never> =>
+	SqliteMigrator.run({loader: SqliteMigrator.fromGlob(topicMigrations)}).pipe(
+		Effect.asVoid,
+		Effect.provide(SqliteClient.layer({db: sql.raw as never})),
+		Effect.orDie,
+	);
 
 const run = <A>(effect: Effect.Effect<A, never, never>): Promise<A> => Effect.runPromise(effect);
 
@@ -70,11 +87,14 @@ function makeHarness(connectionId: string): LiveHarness {
 		});
 
 	const resolveTopic = (key: string): Effect.Effect<TopicRpc, never, never> =>
-		Effect.sync(() => {
+		Effect.gen(function* () {
 			let topic = cells.topics.get(key);
 			if (!topic) {
 				const fake = makeFakeDurableObjectState({id: `topic:${key}`});
 				cells.topicStates.set(key, fake);
+				// Apply the same migrations `topic-do.ts` runs on instance wake before
+				// the builder reads/writes `subscribers`.
+				yield* migrateTopicSchema(fake.state.storage.sql as never);
 				topic = makeTopicInstance(fake.state, resolveConnection);
 				cells.topics.set(key, topic);
 			}
@@ -198,10 +218,10 @@ describe("live fan-out (Effect DO model)", () => {
 		expect(sub.ok).toBe(false);
 	});
 
-	it("a reconnect bumps the generation; the prior row is detected stale on publish", async () => {
+	it("a reconnect bumps the epoch; the prior row is detected stale on publish", async () => {
 		const ownerId = "owner-stale";
 		const subId = "stale-op";
-		// Open + subscribe at generation 1.
+		// Open + subscribe at epoch 1.
 		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
 		await run(
 			harness.connection.subscribe({
@@ -212,11 +232,11 @@ describe("live fan-out (Effect DO model)", () => {
 		const topicKey = liveEntityTopic("Comment", "c-1");
 		const topic = harness.topic(topicKey);
 
-		// Reconnect: generation bumps to 2 and the prior subscription is dropped.
-		// The topic DO still holds the generation-1 row.
+		// Reconnect: epoch bumps to 2 and the prior subscription is dropped.
+		// The topic DO still holds the epoch-1 row.
 		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
 
-		// A publish now finds the generation-1 row stale (connection at gen 2) and
+		// A publish now finds the epoch-1 row stale (connection at gen 2) and
 		// prunes it — nothing delivered.
 		const pub = await run(
 			topic.publish({
@@ -238,7 +258,7 @@ describe("live fan-out (Effect DO model)", () => {
 		expect(pub2.delivered).toBe(0);
 	});
 
-	it("the generation is persisted (survives an eviction) so a reconnect lands higher", async () => {
+	it("the epoch is persisted (survives an eviction) so a reconnect lands higher", async () => {
 		// Share the DO's storage across two instances = the same named DO surviving
 		// an eviction (fresh in-memory cache over persisted KV).
 		const {DatabaseSync} = await import("node:sqlite");
@@ -246,22 +266,22 @@ describe("live fan-out (Effect DO model)", () => {
 		const kv = new Map<string, unknown>();
 		const s1 = makeFakeDurableObjectState({id: "connection:evict", db, kv});
 		const conn1 = makeConnectionInstance(s1.state, () => Effect.die("no topic"));
-		await run(conn1.openStream({ownerId: "o", connectionId: "evict"})); // generation → 1
-		expect((await run(conn1.probe())).generation).toBe(1);
+		await run(conn1.openStream({ownerId: "o", connectionId: "evict"})); // epoch → 1
+		expect((await run(conn1.probe())).epoch).toBe(1);
 
 		// Re-instantiate over the same persisted storage (eviction): the fresh cache
-		// reloads generation 1 from KV, and the reconnect bumps to 2 — not back to 1.
+		// reloads epoch 1 from KV, and the reconnect bumps to 2 — not back to 1.
 		const s2 = makeFakeDurableObjectState({id: "connection:evict", db, kv});
 		const conn2 = makeConnectionInstance(s2.state, () => Effect.die("no topic"));
-		expect((await run(conn2.probe())).generation).toBe(1);
-		await run(conn2.openStream({ownerId: "o", connectionId: "evict"})); // generation → 2
-		expect((await run(conn2.probe())).generation).toBe(2);
+		expect((await run(conn2.probe())).epoch).toBe(1);
+		await run(conn2.openStream({ownerId: "o", connectionId: "evict"})); // epoch → 2
+		expect((await run(conn2.probe())).epoch).toBe(2);
 		s1.close();
 		s2.close();
 		db.close();
 	});
 
-	it("the alarm reaps a row whose connection has reconnected to a higher generation", async () => {
+	it("the alarm reaps a row whose connection has reconnected to a higher epoch", async () => {
 		const ownerId = "owner-alarm";
 		const subId = "alarm-op";
 		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
@@ -274,7 +294,7 @@ describe("live fan-out (Effect DO model)", () => {
 		const topicKey = liveEntityTopic("Term", "t-1");
 		const topic = harness.topic(topicKey);
 
-		// Reconnect (generation 2) — the row is now orphaned at generation 1.
+		// Reconnect (epoch 2) — the row is now orphaned at epoch 1.
 		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
 
 		await run(topic.alarm());
@@ -294,13 +314,14 @@ describe("live fan-out (Effect DO model)", () => {
 		// Build a topic whose connection sibling is always unreachable (no instance),
 		// so deliver/probe reject — the topic must treat that as "couldn't reach".
 		const topicState = makeFakeDurableObjectState({id: "topic:unreachable"});
+		await run(migrateTopicSchema(topicState.state.storage.sql as never));
 		const topic = makeTopicInstance(topicState.state, () =>
 			Effect.sync(() => ({
 				deliver: () => Effect.die("unreachable"),
 				probe: () => Effect.die("unreachable"),
 			})),
 		);
-		await run(topic.register({connectionId: "gone", subId: "op", generation: 1}));
+		await run(topic.register({connectionId: "gone", subId: "op", epoch: 1}));
 
 		// One alarm: still unreachable, below the eviction threshold — the row stays,
 		// so a (re)deliver attempt still finds it (delivered 0 because unreachable,
@@ -330,13 +351,14 @@ describe("live fan-out (Effect DO model)", () => {
 
 	it("the alarm reaps a connection that stays unreachable across the prune cycle", async () => {
 		const topicState = makeFakeDurableObjectState({id: "topic:reap"});
+		await run(migrateTopicSchema(topicState.state.storage.sql as never));
 		const topic = makeTopicInstance(topicState.state, () =>
 			Effect.sync(() => ({
 				deliver: () => Effect.die("unreachable"),
 				probe: () => Effect.die("unreachable"),
 			})),
 		);
-		await run(topic.register({connectionId: "dead", subId: "op", generation: 1}));
+		await run(topic.register({connectionId: "dead", subId: "op", epoch: 1}));
 
 		// MAX_PROBE_MISSES = 3: the row survives the first two misses and is reaped on
 		// the third. After reaping, the registry is empty.

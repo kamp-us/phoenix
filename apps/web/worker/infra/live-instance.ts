@@ -12,7 +12,7 @@
  * take the already-resolved `Cloudflare.DurableObjectState` value plus a resolver
  * for the sibling stub.
  * This keeps the connection↔topic algorithm — held SSE
- * stream, generation-based stale detection, the durable subscriber registry in
+ * stream, epoch-based stale detection, the durable subscriber registry in
  * `state.storage.sql`, and the alarm reap — in one place that a node-pool unit
  * test (`live-instance.test.ts`) can drive without workerd. The observable SSE
  * contract is also covered black-box over HTTP in `tests/integration/fate-live.test.ts`.
@@ -24,12 +24,14 @@
  */
 import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Queue from "effect/Queue";
+import * as Stream from "effect/Stream";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {DeliverFrame, PublishMessage, SubscribeControl} from "../fate/live-protocol.ts";
 import {encodeFrame, SSE_HEADERS, topicsForSubscribe} from "../fate/live-protocol.ts";
 
-/** Storage key for the persisted generation counter (survives eviction). */
-const GENERATION_KEY = "generation";
+/** Storage key for the persisted epoch counter (survives eviction). */
+const EPOCH_KEY = "epoch";
 
 /**
  * Per-cross-DO-RPC budget for the publish/alarm fan-out. A `deliver`/`probe`
@@ -54,19 +56,19 @@ type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 /** What a topic DO reports back to the connection it delivered/probed. */
 export interface DeliverResult {
 	readonly delivered: boolean;
-	readonly generation: number;
+	readonly epoch: number;
 }
 
-/** What a connection DO reports for a generation probe. */
+/** What a connection DO reports for an epoch probe. */
 export interface ProbeResult {
-	readonly generation: number;
+	readonly epoch: number;
 }
 
 /** The typed RPC surface a {@link TopicDO} calls on a connection stub. */
 export interface ConnectionRpc {
 	readonly deliver: (input: {
 		readonly frame: DeliverFrame;
-		readonly generation: number;
+		readonly epoch: number;
 	}) => Effect.Effect<DeliverResult, never, never>;
 	readonly probe: () => Effect.Effect<ProbeResult, never, never>;
 }
@@ -76,7 +78,7 @@ export interface TopicRpc {
 	readonly register: (row: {
 		readonly connectionId: string;
 		readonly subId: string;
-		readonly generation: number;
+		readonly epoch: number;
 	}) => Effect.Effect<{readonly ok: true}, never, never>;
 	readonly deregister: (input: {
 		readonly connectionId: string;
@@ -87,15 +89,15 @@ export interface TopicRpc {
 /**
  * A subscriber row: which connection (by its human-readable `connectionId`, the
  * key the topic DO re-derives `connection:${connectionId}` from) wants events for
- * this topic. `generation` captures the connection's stream lifetime at register
- * time; on deliver/probe a *reachable* connection reports its current generation
+ * this topic. `epoch` captures the connection's stream lifetime at register
+ * time; on deliver/probe a *reachable* connection reports its current epoch
  * and a row that mismatches is pruned. `misses` counts consecutive unreachable
  * `alarm()` probes so a connection that stays dead is eventually reaped.
  */
 interface SubscriberRow {
 	connectionId: string;
 	subId: string;
-	generation: number;
+	epoch: number;
 	updatedAt: number;
 	misses: number;
 	// `sql.exec<T>` requires `T extends Record<string, SqlStorageValue>`; the
@@ -170,73 +172,74 @@ export const makeConnectionInstance = <SR = never>(
 	resolveTopic: (topicKey: string) => Effect.Effect<TopicRpc, never, SR>,
 ): ConnectionInstance<SR> => {
 	const encoder = new TextEncoder();
+	const CONNECTED_FRAME = encoder.encode(": connected\n\n");
+	const HEARTBEAT_FRAME = encoder.encode(": heartbeat\n\n");
 
 	// Per-instance, closure-held (was: instance fields on the legacy class). The
-	// open SSE stream pins this DO in memory (no hibernation), so the controller +
-	// subscription list live in memory; only `generation` is persisted.
-	let controller: ReadableStreamDefaultController<Uint8Array> | undefined;
-	let heartbeat: ReturnType<typeof setInterval> | undefined;
+	// open SSE stream pins this DO in memory (no hibernation), so the frame queue
+	// + subscription list live in memory; only `epoch` is persisted. The queue
+	// is the producer side of the merged SSE Stream — `deliver` offers encoded
+	// frames onto it; the heartbeat is a sibling Stream merged in at `openStream`.
+	let framesQueue: Queue.Queue<Uint8Array> | undefined;
 	let ownerId: string | undefined;
 	let connectionId: string | undefined;
-	let generation: number | undefined;
+	let epoch: number | undefined;
 	const subscriptions = new Map<string, {topics: ReadonlyArray<string>}>();
 
-	const loadGeneration = Effect.gen(function* () {
-		if (generation === undefined) {
-			generation = (yield* state.storage.get<number>(GENERATION_KEY)) ?? 0;
+	const loadEpoch = Effect.gen(function* () {
+		if (epoch === undefined) {
+			epoch = (yield* state.storage.get<number>(EPOCH_KEY)) ?? 0;
 		}
-		return generation;
+		return epoch;
 	});
 
-	const closeStream = (): void => {
-		if (heartbeat) {
-			clearInterval(heartbeat);
-			heartbeat = undefined;
+	const closeStream = Effect.gen(function* () {
+		const q = framesQueue;
+		if (q !== undefined) {
+			framesQueue = undefined;
+			// `Queue.shutdown` is idempotent and completes the Dequeue side, which
+			// terminates `Stream.fromQueue`. The merged heartbeat fiber is then torn
+			// down by the merged-stream finalizer (no separate interval to clear).
+			yield* Queue.shutdown(q);
 		}
-		if (controller) {
-			try {
-				controller.close();
-			} catch {
-				// Already closed.
-			}
-			controller = undefined;
-		}
-	};
+	});
 
 	const openStream: ConnectionInstance["openStream"] = (input) =>
 		Effect.gen(function* () {
 			const nextOwner = input.ownerId;
 			const nextConnection = input.connectionId;
-			// A reconnect on the same connection name bumps the generation so the topic
+			// A reconnect on the same connection name bumps the epoch so the topic
 			// DOs' rows from the prior stream are detected stale on next deliver. The
 			// counter is persisted, so a reconnect after eviction still lands on a
-			// higher generation than any stale row (no collision/cross-talk).
-			const next = (yield* loadGeneration) + 1;
-			generation = next;
-			yield* state.storage.put(GENERATION_KEY, next);
+			// higher epoch than any stale row (no collision/cross-talk).
+			const next = (yield* loadEpoch) + 1;
+			epoch = next;
+			yield* state.storage.put(EPOCH_KEY, next);
 			ownerId = nextOwner;
 			connectionId = nextConnection;
 			subscriptions.clear();
-			closeStream();
+			yield* closeStream;
 
-			const stream = new ReadableStream<Uint8Array>({
-				cancel: () => closeStream(),
-				start: (c) => {
-					controller = c;
-					c.enqueue(encoder.encode(": connected\n\n"));
-					heartbeat = setInterval(() => {
-						if (!controller) {
-							return;
-						}
-						try {
-							controller.enqueue(encoder.encode(": heartbeat\n\n"));
-						} catch {
-							closeStream();
-						}
-					}, 25_000);
-				},
-			});
-			return HttpServerResponse.fromWeb(new Response(stream, {headers: SSE_HEADERS}));
+			const queue = yield* Queue.unbounded<Uint8Array>();
+			framesQueue = queue;
+			// Initial SSE preamble — offered before the stream is wired to the response
+			// so the first frame the client reads is `: connected\n\n`, matching the
+			// legacy controller's synchronous `enqueue` in `start`.
+			yield* Queue.offer(queue, CONNECTED_FRAME);
+
+			// 25-second heartbeat cadence. `Stream.tick` emits `void` immediately and
+			// then on every interval; `drop(1)` skips the immediate tick so the first
+			// heartbeat lands at +25s, matching the legacy `setInterval(25_000)`.
+			const heartbeats = Stream.tick("25 seconds").pipe(
+				Stream.drop(1),
+				Stream.map(() => HEARTBEAT_FRAME),
+			);
+
+			const frames = Stream.fromQueue(queue);
+
+			const merged = Stream.merge(frames, heartbeats).pipe(Stream.ensuring(closeStream));
+
+			return HttpServerResponse.stream(merged, {headers: SSE_HEADERS});
 		});
 
 	const subscribe: ConnectionInstance<SR>["subscribe"] = (input) =>
@@ -252,7 +255,7 @@ export const makeConnectionInstance = <SR = never>(
 			}
 			const topics = topicsForSubscribe(input.control);
 			subscriptions.set(input.control.subId, {topics});
-			const gen = yield* loadGeneration;
+			const gen = yield* loadEpoch;
 			yield* Effect.forEach(
 				topics,
 				(topicKey) =>
@@ -260,7 +263,7 @@ export const makeConnectionInstance = <SR = never>(
 						// Lazy sibling resolution happens inside `resolveTopic` (the inline
 						// DO does `yield* TopicDO` there) — never in init.
 						const topic = yield* resolveTopic(topicKey);
-						yield* topic.register({connectionId: id, subId: input.control.subId, generation: gen});
+						yield* topic.register({connectionId: id, subId: input.control.subId, epoch: gen});
 					}),
 				{concurrency: "unbounded"},
 			);
@@ -292,33 +295,32 @@ export const makeConnectionInstance = <SR = never>(
 
 	const deliver: ConnectionInstance["deliver"] = (input) =>
 		Effect.gen(function* () {
-			const current = yield* loadGeneration;
-			// Stale: the row was registered by an earlier stream generation, or this
-			// connection has no open stream. Report the current generation so the topic
+			const current = yield* loadEpoch;
+			// Stale: the row was registered by an earlier stream epoch, or this
+			// connection has no open stream. Report the current epoch so the topic
 			// DO can prune the row.
-			if (input.generation !== current || !controller) {
-				return {delivered: false, generation: current};
+			const queue = framesQueue;
+			if (input.epoch !== current || queue === undefined) {
+				return {delivered: false, epoch: current};
 			}
 			// Only deliver if the subscription is still active on this connection.
 			if (!subscriptions.has(input.frame.id)) {
-				return {delivered: false, generation: current};
+				return {delivered: false, epoch: current};
 			}
-			// `controller.enqueue` is an imperative Web Streams call that throws
-			// synchronously if the held stream is already closed/errored; a plain
-			// try/catch around that single boundary call is clearer than wrapping it
-			// in Effect.try just to map it back to a return value.
-			// @effect-diagnostics-next-line effect/tryCatchInEffectGen:off
-			try {
-				controller.enqueue(encoder.encode(encodeFrame(input.frame)));
-			} catch {
-				closeStream();
-				return {delivered: false, generation: current};
+			// `Queue.offer` is total — it returns `false` if the queue has been shut
+			// down (the stream was finalized by client disconnect) rather than
+			// throwing, so no try/catch is needed. A `false` return means the frame
+			// was dropped; report it as undelivered + emit the current epoch so
+			// the topic DO prunes the now-orphaned row on its next probe.
+			const accepted = yield* Queue.offer(queue, encoder.encode(encodeFrame(input.frame)));
+			if (!accepted) {
+				yield* closeStream;
+				return {delivered: false, epoch: current};
 			}
-			return {delivered: true, generation: current};
+			return {delivered: true, epoch: current};
 		});
 
-	const probe: ConnectionInstance["probe"] = () =>
-		Effect.map(loadGeneration, (g) => ({generation: g}));
+	const probe: ConnectionInstance["probe"] = () => Effect.map(loadEpoch, (g) => ({epoch: g}));
 
 	return {openStream, subscribe, unsubscribe, deliver, probe};
 };
@@ -326,15 +328,6 @@ export const makeConnectionInstance = <SR = never>(
 // ---------------------------------------------------------------------------
 // TopicDO instance
 // ---------------------------------------------------------------------------
-
-const CREATE_SUBSCRIBERS_TABLE = `CREATE TABLE IF NOT EXISTS subscribers (
-	connectionId TEXT NOT NULL,
-	subId TEXT NOT NULL,
-	generation INTEGER NOT NULL,
-	updatedAt INTEGER NOT NULL,
-	misses INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (connectionId, subId)
-)`;
 
 /**
  * Build the topic-role DO's per-instance methods.
@@ -346,6 +339,10 @@ const CREATE_SUBSCRIBERS_TABLE = `CREATE TABLE IF NOT EXISTS subscribers (
  * `R` rather than the Layer's init requirements (non-circular under `.make()`).
  * The subscriber registry lives in `state.storage.sql`, addressed back to a
  * connection by `getByName(\`connection:${row.connectionId}\`)`.
+ *
+ * The `subscribers` schema is owned by the Effect SQL migrator wired in
+ * `topic-do.ts` (`infra/migrations/topic/*.ts`) — the builder assumes the table
+ * already exists and never issues DDL.
  */
 export const makeTopicInstance = <SR = never>(
 	state: DurableObjectStateValue,
@@ -357,11 +354,9 @@ export const makeTopicInstance = <SR = never>(
 	const exec = (query: string, ...bindings: ReadonlyArray<string | number>) =>
 		Effect.asVoid(state.storage.sql.exec(query, ...bindings));
 
-	const ensureTable = exec(CREATE_SUBSCRIBERS_TABLE);
-
 	const loadSubscriberRows = Effect.flatMap(
 		state.storage.sql.exec<SubscriberRow>(
-			`SELECT connectionId, subId, generation, updatedAt, misses FROM subscribers`,
+			`SELECT connectionId, subId, epoch, updatedAt, misses FROM subscribers`,
 		),
 		(cursor) => cursor.toArray(),
 	);
@@ -378,19 +373,18 @@ export const makeTopicInstance = <SR = never>(
 
 	const register: TopicInstance["register"] = (row) =>
 		Effect.gen(function* () {
-			yield* ensureTable;
 			// A fresh register means the connection is alive, so `misses` starts (and
 			// on re-register resets) at 0 — a re-subscribe clears any accrued misses.
 			yield* exec(
-				`INSERT INTO subscribers (connectionId, subId, generation, updatedAt, misses)
+				`INSERT INTO subscribers (connectionId, subId, epoch, updatedAt, misses)
 					VALUES (?, ?, ?, ?, 0)
 					ON CONFLICT(connectionId, subId) DO UPDATE SET
-						generation = excluded.generation,
+						epoch = excluded.epoch,
 						updatedAt = excluded.updatedAt,
 						misses = 0`,
 				row.connectionId,
 				row.subId,
-				row.generation,
+				row.epoch,
 				Date.now(),
 			);
 			// Keep one alarm running to prune rows whose connection DO has gone away
@@ -401,14 +395,12 @@ export const makeTopicInstance = <SR = never>(
 
 	const deregister: TopicInstance["deregister"] = (input) =>
 		Effect.gen(function* () {
-			yield* ensureTable;
 			yield* deleteRow(input.connectionId, input.subId);
 			return {ok: true} as const;
 		});
 
 	const publish: TopicInstance<SR>["publish"] = (message) =>
 		Effect.gen(function* () {
-			yield* ensureTable;
 			const rows = yield* loadSubscriberRows;
 			const outcomes = yield* Effect.forEach(
 				rows,
@@ -421,11 +413,9 @@ export const makeTopicInstance = <SR = never>(
 							...(message.eventId !== undefined ? {eventId: message.eventId} : {}),
 						};
 						// `undefined` reported = couldn't reach/parse (leave the row);
-						// a number = the connection's reported current generation.
+						// a number = the connection's reported current epoch.
 						const result = yield* resolveConnection(row.connectionId).pipe(
-							Effect.flatMap((connection) =>
-								connection.deliver({frame, generation: row.generation}),
-							),
+							Effect.flatMap((connection) => connection.deliver({frame, epoch: row.epoch})),
 							// Bound the fan-out: an unreachable connection aborts here instead
 							// of stalling the (single-threaded) topic DO. ANY failure — a
 							// timeout, a failed RPC, or a DO-side defect — is "couldn't reach",
@@ -439,10 +429,9 @@ export const makeTopicInstance = <SR = never>(
 							// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
 							Effect.catchCause(() => Effect.succeed<DeliverResult | undefined>(undefined)),
 						);
-						// A *reachable* connection reporting a different current generation
+						// A *reachable* connection reporting a different current epoch
 						// means the stream this row was registered for is gone — prune it.
-						const prune =
-							result !== undefined && !result.delivered && result.generation !== row.generation;
+						const prune = result !== undefined && !result.delivered && result.epoch !== row.epoch;
 						return {row, delivered: result?.delivered === true, prune};
 					}),
 				{concurrency: "unbounded"},
@@ -460,19 +449,18 @@ export const makeTopicInstance = <SR = never>(
 
 	const alarm: TopicInstance<SR>["alarm"] = () =>
 		Effect.gen(function* () {
-			yield* ensureTable;
 			const rows = yield* loadSubscriberRows;
 			yield* Effect.forEach(
 				rows,
 				(row) =>
 					Effect.gen(function* () {
-						// `/probe` reports the connection's current generation without
+						// `/probe` reports the connection's current epoch without
 						// enqueueing onto its stream. Bounded so a dead connection aborts
 						// fast instead of stalling the prune.
 						const reported = yield* resolveConnection(row.connectionId).pipe(
 							Effect.flatMap((connection) => connection.probe()),
 							Effect.timeout(FANOUT_TIMEOUT_MS),
-							Effect.map((r): number | undefined => r.generation),
+							Effect.map((r): number | undefined => r.epoch),
 							// ANY failure/defect/timeout → "couldn't reach" (mirrors legacy).
 							// Typed `undefined` is the value the `reported === undefined` check
 							// below reads; `Effect.void` would type it `void` — not equivalent.
@@ -492,7 +480,7 @@ export const makeTopicInstance = <SR = never>(
 									row.subId,
 								);
 							}
-						} else if (reported !== row.generation) {
+						} else if (reported !== row.epoch) {
 							yield* deleteRow(row.connectionId, row.subId);
 						} else if (row.misses !== 0) {
 							// Reachable and current: clear any accrued misses so a transient

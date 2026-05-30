@@ -4,7 +4,7 @@
  * The pre-migration suite drove the Durable Objects directly (`runInDurableObject`,
  * `runDurableObjectAlarm`, named DO stubs) inside `@cloudflare/vitest-pool-workers`.
  * The alchemy worker can't load in that pool, and the DO internals aren't reachable
- * over HTTP — so the cross-isolate fan-out, generation semantics, and the alarm reap
+ * over HTTP — so the cross-isolate fan-out, epoch semantics, and the alarm reap
  * are unit-tested in `worker/infra/live-instance.test.ts` (node pool, over a
  * `node:sqlite`-backed DO-state fake). Here we verify the *observable* live contract
  * end-to-end through the real `/fate/live` SSE transport + `/fate` publish path on a
@@ -14,7 +14,7 @@
  *      `text/event-stream` with one.
  *   2. subscribe → publish → deliver — a `post.submit` mutation publishes a
  *      `prependNode` connection frame that arrives on the held SSE stream.
- *   3. Reconnect bumps generation — a second connect on the same `connectionId`
+ *   3. Reconnect bumps epoch — a second connect on the same `connectionId`
  *      makes the first stream's subscriber stale, so a later publish reaches the
  *      reconnected stream, not the original.
  */
@@ -90,7 +90,7 @@ describe("live views — /fate/live", () => {
 		await reader.cancel();
 	}, 30_000);
 
-	it("reconnect on the same connectionId bumps generation — frames go to the reconnected stream", async () => {
+	it("reconnect on the same connectionId bumps epoch — frames go to the reconnected stream", async () => {
 		const connectionId = `live-regen-${Date.now()}`;
 
 		// First stream + subscription.
@@ -105,7 +105,7 @@ describe("live views — /fate/live", () => {
 			user.cookie,
 		);
 
-		// Reconnect: a second stream on the SAME connectionId bumps the generation,
+		// Reconnect: a second stream on the SAME connectionId bumps the epoch,
 		// staling the first stream's subscriber rows.
 		const second = await h.openSse(connectionId, user.cookie);
 		const secondReader = second.body!.getReader();
@@ -117,7 +117,7 @@ describe("live views — /fate/live", () => {
 			user.cookie,
 		);
 
-		// Publish — the reconnected (current-generation) stream must receive it.
+		// Publish — the reconnected (current-epoch) stream must receive it.
 		const submitted = await h.fate(
 			{
 				kind: "mutation",

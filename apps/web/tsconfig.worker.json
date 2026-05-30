@@ -11,7 +11,11 @@
 		// The alchemy stack (`alchemy.run.ts`) is loaded directly by Node's ESM
 		// loader, which requires explicit `.ts` import specifiers; allow them here.
 		"allowImportingTsExtensions": true,
-		"types": ["@cloudflare/workers-types", "node"]
+		// `vite/client` types are included for `import.meta.glob` — used by
+		// `infra/topic-do.ts` to load Effect SQL migrations as bundled dynamic
+		// imports. Vite resolves the glob at build time; the worker bundle ships
+		// each migration module statically.
+		"types": ["@cloudflare/workers-types", "node", "vite/client"]
 	},
 	"include": [
 		"worker",

@@ -5,7 +5,7 @@
  * One instance per topic, named `topic:<topicKey>`. It owns the **durable
  * subscriber registry** for that topic (in `state.storage.sql`), the **publish
  * fan-out**, and the **alarm reap** — nothing about any client's SSE stream.
- * The algorithm (generation-based stale detection, the consecutive-miss reap, the
+ * The algorithm (epoch-based stale detection, the consecutive-miss reap, the
  * bounded fan-out) is a verbatim port of the legacy `cloudflare:workers` class;
  * the behavior lives in `makeTopicInstance` (`live-instance.ts`).
  *
@@ -27,8 +27,11 @@
  * requirement lands on the RPC method's `R` instead (declared in
  * {@link TopicRpcSurface}).
  */
+import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
+import * as SqliteMigrator from "@effect/sql-sqlite-do/SqliteMigrator";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import ConnectionDO from "./connection-do.ts";
 import {type ConnectionRpc, makeTopicInstance, type TopicInstance} from "./live-instance.ts";
 
@@ -81,17 +84,39 @@ export const TopicDOLive = TopicDO.make(
 		return Effect.gen(function* () {
 			// ── PER-INSTANCE (once per instance wake) ──
 			const state = yield* Cloudflare.DurableObjectState;
-			return makeTopicInstance(
-				state,
-				(connectionId): Effect.Effect<ConnectionRpc, never, ConnectionDO | Cloudflare.Worker> =>
-					// Resolve the sibling ConnectionDO Tag per call (alchemy provides it —
-					// plus the `Worker` binding service `yield* ConnectionDO` needs — on the
-					// DO side), then address one connection by its human-readable name. The
-					// typed stub's RPC surface matches `ConnectionRpc` exactly — no cast.
-					Effect.map(ConnectionDO, (connections) =>
-						connections.getByName(`connection:${connectionId}`),
-					),
-			);
+			// Run pending SQL migrations BEFORE building the instance — the migrator
+			// layer runs on construction (`Layer.effectDiscard`) so by the time the
+			// inner builder runs, `effect_sql_migrations` is up-to-date and the
+			// `subscribers` schema matches what `live-instance.ts` expects. Migrations
+			// are idempotent: on a fresh DO both run; on an existing DO the recorded
+			// id in `effect_sql_migrations` gates pending ones. `import.meta.glob`
+			// resolves at Vite build time, so the migration modules ship with the
+			// worker bundle. `state.storage.sql.raw` is the underlying `cf.SqlStorage`
+			// handle — alchemy wraps `exec` to return an Effect; the upstream adapter
+			// expects the raw sync handle.
+			const sqliteLayer = SqliteClient.layer({db: state.storage.sql.raw});
+			const migratorLayer = SqliteMigrator.layer({
+				loader: SqliteMigrator.fromGlob(
+					import.meta.glob("./migrations/topic/*.ts", {eager: false}),
+				),
+			}).pipe(Layer.provide(sqliteLayer));
+			// `Effect.orDie` absorbs MigrationError | SqlError into a defect — a
+			// migration failure here is a hard infra crash (the DO is unusable), not
+			// a recoverable error to surface to callers. Merging the two layers into
+			// one `provide` keeps the service lifecycle coherent.
+			return yield* Effect.sync(() =>
+				makeTopicInstance(
+					state,
+					(connectionId): Effect.Effect<ConnectionRpc, never, ConnectionDO | Cloudflare.Worker> =>
+						// Resolve the sibling ConnectionDO Tag per call (alchemy provides it —
+						// plus the `Worker` binding service `yield* ConnectionDO` needs — on the
+						// DO side), then address one connection by its human-readable name. The
+						// typed stub's RPC surface matches `ConnectionRpc` exactly — no cast.
+						Effect.map(ConnectionDO, (connections) =>
+							connections.getByName(`connection:${connectionId}`),
+						),
+				),
+			).pipe(Effect.provide(migratorLayer), Effect.orDie);
 		});
 	}),
 );

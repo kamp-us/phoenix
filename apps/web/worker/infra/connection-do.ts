@@ -5,10 +5,10 @@
  * One instance per client connection, named `connection:<connectionId>`. It owns
  * one client's **open SSE stream** (the `ReadableStream` controller), that
  * connection's **subscription list**, the validated **owner**, and the persisted
- * **`generation`** (so a reconnect after eviction always lands on a higher
- * generation than any stale subscriber row a topic DO still holds). The held
+ * **`epoch`** (so a reconnect after eviction always lands on a higher
+ * epoch than any stale subscriber row a topic DO still holds). The held
  * stream pins this DO in memory (no hibernation), so the controller +
- * subscription map live in the per-instance closure; only `generation` is
+ * subscription map live in the per-instance closure; only `epoch` is
  * persisted. The behavior lives in `makeConnectionInstance` (`live-instance.ts`).
  *
  * **Modular `.make()` form** — the `ConnectionDO` class is a lightweight Tag

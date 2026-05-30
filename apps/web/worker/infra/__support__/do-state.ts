@@ -9,6 +9,12 @@
  * alarm (`getAlarm`/`setAlarm`/`deleteAlarm`) the test fires manually. Only the
  * slice the live-fan-out instances touch is implemented.
  *
+ * The `storage.sql.raw` shim mirrors the underlying `cf.SqlStorage` interface
+ * (sync `exec` returning a cursor with `columnNames` + a sync `raw()` iterable)
+ * so the upstream `@effect/sql-sqlite-do` SqliteClient/Migrator drive the same
+ * fake schema as the rest of the test (used by the topic-instance harness to
+ * apply migrations before `makeTopicInstance`).
+ *
  * NOT a production artifact — it lives under `__support__/` and is never imported
  * by the worker graph.
  */
@@ -42,20 +48,23 @@ export function makeFakeDurableObjectState(options?: {
 	const kv = options?.kv ?? new Map<string, unknown>();
 	let alarm: number | null = null;
 
+	/** Run a query against the node:sqlite engine and materialize rows once. */
+	const runQuery = (query: string, bindings: ReadonlyArray<unknown>) => {
+		const stmt = db.prepare(query);
+		const isSelect = /^\s*(select|pragma)/i.test(query);
+		const params = bindings.map((b) =>
+			b === undefined ? null : typeof b === "boolean" ? (b ? 1 : 0) : b,
+		) as unknown as Parameters<ReturnType<DatabaseSync["prepare"]>["all"]>;
+		if (isSelect) {
+			return stmt.all(...params) as Array<Record<string, unknown>>;
+		}
+		stmt.run(...params);
+		return [] as Array<Record<string, unknown>>;
+	};
+
 	const exec = (query: string, ...bindings: ReadonlyArray<unknown>) =>
 		Effect.sync(() => {
-			const stmt = db.prepare(query);
-			const isSelect = /^\s*(select|pragma)/i.test(query);
-			const params = bindings.map((b) =>
-				b === undefined ? null : typeof b === "boolean" ? (b ? 1 : 0) : b,
-			) as unknown as Parameters<ReturnType<DatabaseSync["prepare"]>["all"]>;
-			let rows: Array<Record<string, unknown>>;
-			if (isSelect) {
-				rows = stmt.all(...params) as Array<Record<string, unknown>>;
-			} else {
-				stmt.run(...params);
-				rows = [];
-			}
+			const rows = runQuery(query, bindings);
 			// A `SqlCursor` is a `Stream` of rows with `.toArray()`/`.one()`/`.next()`.
 			let index = 0;
 			const cursor = Object.assign(Stream.fromIterable(rows), {
@@ -75,6 +84,39 @@ export function makeFakeDurableObjectState(options?: {
 			return cursor as never;
 		});
 
+	/**
+	 * Sync `cf.SqlStorage`-shaped shim — the upstream `@effect/sql-sqlite-do`
+	 * `SqliteClient` calls `db.exec(sql, ...params)` synchronously and iterates
+	 * the cursor's `raw()` as a sync iterable. The fake routes both through
+	 * the same `node:sqlite` connection as the Effect-wrapped `exec`, so a
+	 * migrator running through this shim and an instance reading through the
+	 * Effect surface see the same schema and rows.
+	 */
+	const rawExec = (query: string, ...bindings: Array<unknown>) => {
+		const rows = runQuery(query, bindings);
+		const columnNames = rows[0] ? Object.keys(rows[0]) : [];
+		return {
+			columnNames,
+			raw: () => rows.map((r) => columnNames.map((c) => r[c]))[Symbol.iterator](),
+			toArray: () => [...rows],
+			one: () => rows[0],
+			next: () => ({done: rows.length === 0, value: rows[0]}),
+			get rowsRead() {
+				return rows.length;
+			},
+			get rowsWritten() {
+				return 0;
+			},
+			[Symbol.iterator]: () => rows[Symbol.iterator](),
+		};
+	};
+	const rawSql = {
+		exec: rawExec,
+		get databaseSize() {
+			return 0;
+		},
+	};
+
 	const state = {
 		id: {toString: () => options?.id ?? "fake-do", name: options?.id} as never,
 		storage: {
@@ -93,7 +135,7 @@ export function makeFakeDurableObjectState(options?: {
 				Effect.sync(() => {
 					alarm = null;
 				}),
-			sql: {exec} as never,
+			sql: {exec, raw: rawSql} as never,
 		} as never,
 	} as unknown as DurableObjectStateValue;
 
