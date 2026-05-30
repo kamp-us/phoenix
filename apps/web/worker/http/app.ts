@@ -40,9 +40,9 @@ import {healthApiLayer} from "./health.ts";
  *                     for the `/fate/live` SSE transport), built from the bound
  *                     unified `LiveDO` namespace in worker init.
  *
- * The health probe reads `Cloudflare.WorkerEnvironment` directly (alchemy
- * provides it at worker scope), so this layer no longer needs the worker env
- * passed in.
+ * The health probe reads `ENVIRONMENT` via `yield* AppConfig` (the single
+ * `effect/Config` surface), off the `ConfigProvider` alchemy auto-wires at worker
+ * scope, so this layer no longer needs the worker env passed in.
  */
 export const makeAppLive = (options: {
 	readonly fateLayer: Layer.Layer<WorkerFateServices>;
@@ -51,7 +51,7 @@ export const makeAppLive = (options: {
 	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker
 	 * this is `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`), which builds
 	 * the auth instance via alchemy's `Random` + `D1Connection` — its external
-	 * `R` (`Providers`/`Provider<Random>`/`WorkerEnvironment`/`D1ConnectionPolicy`)
+	 * `R` (`Providers`/`Provider<Random>`/`ConfigProvider`/`D1ConnectionPolicy`)
 	 * is supplied by alchemy's worker runtime context. Tests pass a hand-rolled
 	 * Layer over the same tag (`Layer.succeed(BetterAuth.BetterAuth)`); both
 	 * shapes thread through `provideRequest` the same way. `R` is left
@@ -60,9 +60,9 @@ export const makeAppLive = (options: {
 	 */
 	readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth, never, any>;
 }) => {
-	// Typed-JSON group: the `GET /api/health` probe. Its `WorkerEnvironment`
-	// requirement is satisfied at worker scope (alchemy provides it), so the
-	// layer carries no per-request markers to discharge here.
+	// Typed-JSON group: the `GET /api/health` probe. Its `ConfigProvider`
+	// requirement (from `yield* AppConfig`) is satisfied at worker scope (alchemy
+	// auto-wires it), so the layer carries no per-request markers to discharge here.
 	const typedJson = healthApiLayer;
 
 	// Raw-`Request` routes. `provideRequest` discharges the route-requirement

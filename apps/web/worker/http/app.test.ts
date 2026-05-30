@@ -23,6 +23,7 @@ import {drizzleAdapter} from "better-auth/adapters/drizzle";
 import {bearer} from "better-auth/plugins";
 import {drizzle} from "drizzle-orm/d1";
 import {Effect} from "effect";
+import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
@@ -91,6 +92,11 @@ async function fetch(
 		Effect.provideService(Cloudflare.Request, request),
 		Effect.provideService(Cloudflare.WorkerEnvironment, ENV as never),
 		Effect.provideService(Cloudflare.WorkerExecutionContext, EXEC_CTX as never),
+		// The health handler reads `ENVIRONMENT` via `yield* AppConfig` off the
+		// `ConfigProvider` the alchemy runtime auto-wires from the bound env
+		// (`ConfigProvider.fromUnknown(env)`, `WorkerBridge`). Mirror that here so
+		// the read resolves `development` from the same `ENV` snapshot.
+		Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(ENV)),
 		Effect.scoped,
 	);
 	return Effect.runPromise(program as Effect.Effect<Response>);

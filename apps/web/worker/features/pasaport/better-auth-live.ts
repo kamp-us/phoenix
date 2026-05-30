@@ -36,10 +36,10 @@ import {drizzle} from "drizzle-orm/d1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Redacted from "effect/Redacted";
-import * as Schema from "effect/Schema";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
+import {AppConfig} from "../../config.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {PhoenixDb} from "../../db/resources.ts";
 
@@ -50,8 +50,8 @@ import {PhoenixDb} from "../../db/resources.ts";
  * the `makeBetterAuth` call happens once per isolate) and adds phoenix's
  * plugins + `baseURL`/`trustedOrigins`.
  *
- * `baseURL`/`trustedOrigins` are derived from `ENVIRONMENT` (read off the
- * `WorkerEnvironment` Tag at layer build): in dev they are set explicitly to
+ * `baseURL`/`trustedOrigins` are derived from `ENVIRONMENT` (read at layer build
+ * via `yield* AppConfig`, the single `effect/Config` surface): in dev they are set explicitly to
  * `localhost` so cookie storage works behind the Vite proxy (where the worker
  * sees `Host: 127.0.0.1:<port>` rather than the browser origin); in prod they
  * are OMITTED so better-auth infers the origin from the inbound request Host.
@@ -62,7 +62,6 @@ export const BetterAuthLive = Layer.effect(
 	BetterAuth.BetterAuth,
 	Effect.gen(function* () {
 		const connection = yield* Cloudflare.D1Connection.bind(PhoenixDb);
-		const env = yield* Cloudflare.WorkerEnvironment;
 
 		// Mint (or recover from state) the session-signing secret. `Random` is a
 		// deterministic-in-state resource: the value is generated once on create
@@ -73,17 +72,14 @@ export const BetterAuthLive = Layer.effect(
 		const SECRET = yield* Random("BETTER_AUTH_SECRET");
 		const secret = yield* SECRET.text;
 
-		// Read `ENVIRONMENT` back off the worker env by decoding the one field we
-		// need (no cast). `Schema.Struct` ignores excess keys by default, so the
-		// other bindings on `env` don't make the decode fail. `ENVIRONMENT` is
-		// declared on the worker's `env` block (`index.ts`), resolved fail-closed
-		// to "production" at deploy time. A decode failure here means the worker
-		// env is malformed — unrecoverable — so it dies rather than widening the
-		// Layer's error channel.
-		const {ENVIRONMENT} = yield* Schema.decodeUnknownEffect(
-			Schema.Struct({ENVIRONMENT: Schema.optional(Schema.String)}),
-		)(env).pipe(Effect.orDie);
-		const isDev = ENVIRONMENT === "development";
+		// Read `ENVIRONMENT` through the single `effect/Config` surface (`config.ts`),
+		// resolved off the ConfigProvider alchemy auto-wires from the bound worker
+		// env. The constant is `Config.withDefault("production")` (fail-closed), so a
+		// missing var lands in prod mode and closes every dev gate below. The only
+		// residual `ConfigError` is a value outside the two literals — a malformed
+		// env, unrecoverable — so it dies rather than widening the Layer's error channel.
+		const {environment} = yield* AppConfig.pipe(Effect.orDie);
+		const isDev = environment === "development";
 
 		// Dev: hand better-auth the explicit browser origin so its cookie storage
 		// works behind the Vite proxy (the worker sees `Host: 127.0.0.1:<port>`,
@@ -130,7 +126,7 @@ export const BetterAuthLive = Layer.effect(
 					magicLink({
 						sendMagicLink: async ({email, token, url}) => {
 							// Gate on the same `isDev` derived above from `ENVIRONMENT`
-							// (read off `WorkerEnvironment`) — captured in this closure.
+							// (read via `AppConfig`) — captured in this closure.
 							if (isDev) {
 								console.log("[pasaport] magic link", {email, token, url});
 							}

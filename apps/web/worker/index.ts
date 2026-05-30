@@ -32,9 +32,9 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import {environment} from "./config.ts";
 import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
-import {environment} from "./env.ts";
 import {makeFateLayer} from "./features/fate/layers.ts";
 import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
@@ -77,10 +77,13 @@ export class Phoenix extends Cloudflare.Worker<
 	LiveDO
 >()("phoenix", {
 	main: import.meta.filename,
-	// Declares the worker's single ENVIRONMENT binding, resolved from the
-	// deploy-time env in `worker/env.ts` (`environment`, fail-closed to
-	// "production"). `BetterAuthLive` reads it back off `WorkerEnvironment` to
-	// derive the dev auth URLs; the magic-link dev gate reads it too.
+	// Declares the worker's single ENVIRONMENT binding, per-key from the
+	// `effect/Config` constant in `worker/config.ts` (`environment`). Alchemy
+	// resolves the Config at deploy from the deploy-time `process.env`
+	// (fail-closed to "production") and binds it `plain_text` — a non-redacted
+	// Config resolving to a string. Runtime code reads the same value via
+	// `yield* AppConfig` (BetterAuthLive's dev auth URLs + magic-link gate, the
+	// health probe), off the ConfigProvider alchemy auto-wires from this env.
 	env: {ENVIRONMENT: environment},
 	assets: {
 		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,

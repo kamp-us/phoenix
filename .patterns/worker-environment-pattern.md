@@ -1,58 +1,92 @@
 # Worker environment
 
-How runtime code reads the worker's env, and why it isn't a `Config` or a
-service. The short answer: `yield* Cloudflare.WorkerEnvironment` and cast once to
-`Record<string, string | undefined>`. The `env:` literal on the worker is
-deploy-time wiring; reading a value at runtime is a separate, plainer thing.
+How runtime code reads the worker's env: one `effect/Config` surface. A var is
+declared ONCE as a `Config` constant; that same constant binds the worker's
+`env:` block and answers the runtime read. Never `yield* Cloudflare.WorkerEnvironment`
+raw, never cast.
 
-## Reading env at runtime
+## The surface
 
-`Cloudflare.WorkerEnvironment` is the Tag alchemy provides at worker scope for
-the bound `env`. It comes back untyped, so cast it once at the read site:
+`worker/config.ts`. Each var is one `Config` constant; `AppConfig = Config.all`
+aggregates them into the single yieldable read:
 
 ```ts
-const env = yield* Cloudflare.WorkerEnvironment;
-const record = env as unknown as Record<string, string | undefined>;
-const environment = record.ENVIRONMENT; // "development" | "production" | undefined
+import * as Config from "effect/Config";
+
+// One constant per var. Non-redacted → plain_text binding, fail-closed default.
+export const environment = Config.literals(["development", "production"], "ENVIRONMENT").pipe(
+	Config.withDefault("production"),
+);
+
+// The single read surface. Add a var: a const above + a key here.
+export const AppConfig = Config.all({environment});
 ```
 
-`ENVIRONMENT` is the only env var phoenix reads this way. `BetterAuthLive`
+## Binding it
+
+The worker's `env:` block (`index.ts`) references the SAME constant, per-key:
+
+```ts
+env: {ENVIRONMENT: environment},
+```
+
+Per-key — not `env: AppConfig` — because alchemy's binding model maps each `env`
+key to one native binding; a `Config.all` aggregate has no single binding name.
+At deploy time alchemy resolves the `Config` from the deploy-time `process.env`
+(CI sets `ENVIRONMENT=production`, the `dev:worker` script sets `development`,
+default `production`) and binds it.
+
+**A non-redacted `Config` binds `plain_text`, not `secret_text`.** Source fact:
+`alchemy/lib/Cloudflare/Workers/WorkerAsyncBindings.js` `toBinding` resolves a
+`Config` to its inner value and recurses — a plain string lands at the `typeof
+binding === "string"` → `plain_text` branch; only `Redacted.isRedacted(value)`
+(i.e. `Config.redacted`) → `secret_text`. The `Worker.ts` doc comment that says
+Config binds "`secret_text` regardless of the constructor used" is **wrong** —
+the implementation routes by the resolved value's shape. So `ENVIRONMENT`, plain
+policy config, correctly binds `plain_text`.
+
+## Reading it
+
+`yield* AppConfig` returns the resolved record. Works in BOTH the Init phase and
+the runtime phase: alchemy auto-wires a `ConfigProvider` from the bound env at
+worker scope (`WorkerBridge.js`: `ConfigProvider.fromUnknown(env)`), so the read
+resolves off the same values the `env:` block bound.
+
+```ts
+const {environment} = yield* AppConfig.pipe(Effect.orDie);
+const isDev = environment === "development";
+```
+
+`Effect.orDie` because the only residual `ConfigError` is a value outside the
+declared literals — a malformed env, unrecoverable — so it dies rather than
+widening the consumer's error channel. The fail-closed `withDefault` already
+covers the missing-var case (lands in `production`, closing every dev gate).
+
+`ENVIRONMENT` is the only var phoenix reads this way today. `BetterAuthLive`
 (`features/pasaport/better-auth-live.ts`) reads it to derive better-auth's
-`baseURL` / `trustedOrigins` (dev explicit, prod infer-from-Host); the health
-route (`http/health.ts`) reads it to report which deploy answered. One cast per
-read site, no shared typed wrapper.
+`baseURL` / `trustedOrigins` (dev explicit, prod infer-from-Host) and gate the
+magic-link `console.log`; the health route (`http/health.ts`) reads it to report
+which deploy answered.
 
-## Why not `Config`
+## The route requirement
 
-`Config` is the wrong tool for `ENVIRONMENT`. When a `Config` value is resolved
-inside a worker's **Init** phase, alchemy binds it as a `secret_text` binding —
-the path for secrets (API keys, signing secrets). `ENVIRONMENT` is **plain
-policy config**, not a secret: it steers dev gates and cookie-origin handling and
-is visible in plaintext anyway. Binding it as `secret_text` would misrepresent
-it and route it through the secret-provisioning machinery for no reason. Read it
-as a plain binding via `WorkerEnvironment` instead. (Secrets that genuinely are
-secret — the better-auth session key — use `Random(...)`, not the env block; see
-[better-auth-with-plugins-on-d1.md](./better-auth-with-plugins-on-d1.md).)
+A handler that `yield* AppConfig` surfaces a `ConfigProvider` requirement (an
+`HttpRouter` route lifts it to a `Request<"Requires">` marker). It's discharged
+at the app boundary at worker scope — alchemy provides the `ConfigProvider`, so
+no per-request wiring is needed. Tests provide it explicitly:
+`Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(env))`.
 
-## Why no `Context.Service` / `AppConfig`
+## Secrets
 
-There is no `AppConfig` service wrapping the env. A one-field policy var read at
-two sites doesn't earn a service: a service is a seam for swappable behavior or
-captured dependencies, and `ENVIRONMENT` is neither — it's a string the platform
-already hands you through `WorkerEnvironment`. Wrapping it would add a Layer to
-wire, a Tag to provide, and a test double to maintain, all to forward one string.
-The cast-at-read-site keeps the indirection at zero.
+A genuine secret uses `Config.redacted("NAME")` (→ `secret_text` binding) or,
+when alchemy state should be the source of truth, `Random(...)` instead of the
+env block — the better-auth session key is minted by `Random`, never bound from
+`env` (see [better-auth-with-plugins-on-d1.md](./better-auth-with-plugins-on-d1.md)).
 
-## Deploy-time literal vs runtime read
+## Deploy-time helpers stay separate
 
-Two different moments, kept separate:
-
-- **Deploy-time `env:` literal.** The worker's `env: { ENVIRONMENT }` block
-  (`index.ts`) is evaluated in the alchemy CLI process at deploy time and records
-  the binding's value for the Cloudflare API. `ENVIRONMENT` resolves from the
-  deploy-time `process.env`, defaulting to `"production"` (fail-closed) when
-  unset. This is the only thing in the block — no `BETTER_AUTH_*` URLs, no
-  `phoenixEnvBindings` indirection ([ADR 0031](../.decisions/0031-local-first-dev-state.md)).
-- **Runtime read.** At request time the worker reads the bound value back via
-  `yield* Cloudflare.WorkerEnvironment` + the cast. The literal sets it; the read
-  consumes it; nothing in between.
+`worker/env.ts` keeps the deploy-time helpers — `resolveStateMode` /
+`isOfflinePath` (the state-store selector `alchemy.run.ts` calls) and
+`resolveDeployEnv`. These run in the alchemy CLI process over `process.env` at
+deploy time — a different moment from the runtime `Config` reads, with no
+`Config` equivalent (the state store is chosen before any worker exists).

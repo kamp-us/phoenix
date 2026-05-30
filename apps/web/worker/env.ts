@@ -1,17 +1,19 @@
 /**
- * The worker's env — the deploy-time resolver for the `ENVIRONMENT` binding and
- * the state-store selector.
+ * The worker's deploy-time helpers — the state-store selector and the
+ * `resolveDeployEnv` resolver — run in the alchemy CLI process at deploy time.
  *
  * `worker/index.ts` declares the worker's `env` block, which is evaluated in the
  * alchemy CLI process at deploy time — so `process.env` here is the *deploy-time*
  * environment (`alchemy deploy` on CI / from an `--env-file`, or the offline
- * `alchemy dev` / Vitest loop), not the worker runtime. `ENVIRONMENT` gates the
- * auth-layer dev flag — the magic-link token `console.log` and the better-auth
- * dev-URL derivation (`better-auth-live.ts`, which reads `ENVIRONMENT` back off
- * `WorkerEnvironment` at runtime). It resolves from `process.env.ENVIRONMENT`,
- * defaulting to `"production"` (fail-closed) when unset. CI deploys set
- * `ENVIRONMENT=production` explicitly; local `alchemy dev` sets
- * `ENVIRONMENT=development` via the `dev:worker` package script.
+ * `alchemy dev` / Vitest loop), not the worker runtime.
+ *
+ * The `ENVIRONMENT` binding itself is now an `effect/Config` constant in
+ * `config.ts` (referenced per-key by the `env:` block and read at runtime via
+ * `yield* AppConfig`); alchemy resolves it from the deploy-time `process.env`
+ * with the same fail-closed default. This file keeps only the helpers that have
+ * no `Config` equivalent: `resolveStateMode`/`isOfflinePath` (the state-store
+ * selector `alchemy.run.ts` calls) and `resolveDeployEnv` (kept for its unit
+ * tests, documenting the same fail-closed `ENVIRONMENT` policy).
  */
 
 /** The subset of the deploy-time process env this resolver reads. */
@@ -53,16 +55,6 @@ export interface ResolvedDeployEnv {
 export const resolveDeployEnv = (env: DeployEnvInput): ResolvedDeployEnv => ({
 	ENVIRONMENT: env.ENVIRONMENT ?? "production",
 });
-
-/**
- * The deploy-time `ENVIRONMENT` value bound on the worker's `env` block
- * (`index.ts`). Resolved ONCE in the alchemy CLI process when this module is
- * evaluated, so it carries the deploy-time policy (fail-closed): defaults to
- * "production" when unset (CI deploys set it explicitly, and local `alchemy dev`
- * sets `ENVIRONMENT=development` via the `dev:worker` package script — a missing
- * var lands in production mode, closing every dev gate).
- */
-export const environment = resolveDeployEnv(process.env).ENVIRONMENT;
 
 /** Which alchemy state store the stack should use. */
 export type StateMode = "local" | "cloudflare";

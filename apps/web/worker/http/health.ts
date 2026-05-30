@@ -7,16 +7,15 @@
  * environment}` so an uptime check can confirm the worker is live and read which
  * deploy environment answered.
  *
- * The handler reads the deploy environment off the upstream
- * `Cloudflare.WorkerEnvironment` Tag (alchemy provides it at worker scope), so
- * `WorkerEnvironment` surfaces as a route marker discharged at the app boundary
- * with `HttpRouter.provideRequest` (`app.ts`) — satisfied at worker scope.
+ * The handler reads the deploy environment via `yield* AppConfig` (the single
+ * `effect/Config` surface, `config.ts`), so the route's only upstream
+ * requirement is the `ConfigProvider` alchemy auto-wires at worker scope — no
+ * raw `WorkerEnvironment` read, no cast.
  *
  * `healthApiLayer` provides the platform stubs `HttpApiBuilder.layer` needs
  * (Workers have no `FileSystem`); the typed-JSON endpoint never produces a file
  * response, so the stubs are safe.
  */
-import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
@@ -28,6 +27,7 @@ import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiBuilder from "effect/unstable/httpapi/HttpApiBuilder";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
+import {AppConfig} from "../config.ts";
 
 export class HealthStatus extends Schema.Class<HealthStatus>("@phoenix/HealthStatus")({
 	status: Schema.String,
@@ -44,14 +44,16 @@ export class HealthApi extends HttpApi.make("phoenix").add(HealthGroup) {}
 const healthGroup = HttpApiBuilder.group(HealthApi, "health", (h) =>
 	h.handle("health", () =>
 		Effect.gen(function* () {
-			// Read the deploy environment off the upstream `Cloudflare.WorkerEnvironment`
-			// Tag (alchemy provides it at worker scope). The `ENVIRONMENT` field is
-			// declared on the worker's `env` block (`index.ts`); coerce to string at
-			// the boundary since `WorkerEnvironment` is an untyped record.
-			const env = yield* Cloudflare.WorkerEnvironment;
+			// Read the deploy environment through the single `effect/Config` surface
+			// (`config.ts`), off the ConfigProvider alchemy auto-wires from the bound
+			// worker env. `environment` is the typed literal ("development" |
+			// "production"), fail-closed to "production" — no cast, no raw env read. A
+			// `ConfigError` (value outside the two literals) means a malformed env;
+			// die rather than widen the handler's error channel.
+			const {environment} = yield* AppConfig.pipe(Effect.orDie);
 			return new HealthStatus({
 				status: "ok",
-				environment: String((env as {ENVIRONMENT?: unknown}).ENVIRONMENT ?? ""),
+				environment,
 			});
 		}),
 	),
@@ -76,10 +78,11 @@ const platformStubs = Layer.mergeAll(
 );
 
 /**
- * The health route as a single router layer. The handler's `WorkerEnvironment`
- * requirement surfaces as a `Request<"Requires">` marker once the group
- * registers its route; it's discharged at the app boundary at worker scope (see
- * `app.ts`). This layer only wires the group definition and the platform stubs
+ * The health route as a single router layer. The handler's `ConfigProvider`
+ * requirement (from `yield* AppConfig`) surfaces as a `Request<"Requires">`
+ * marker once the group registers its route; it's discharged at the app boundary
+ * at worker scope (alchemy auto-wires the `ConfigProvider`, see `app.ts`). This
+ * layer only wires the group definition and the platform stubs
  * `HttpApiBuilder.layer` needs.
  */
 export const healthApiLayer = HttpApiBuilder.layer(HealthApi).pipe(
