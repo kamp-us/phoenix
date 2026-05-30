@@ -448,7 +448,11 @@ export const makeLiveInstance = (state: DurableObjectStateValue, live: LiveNames
 					// response. We mirror that by reaping the whole group when the call
 					// fails (the first item to fail flips `reachable`).
 					const result = yield* connection
-						.deliver({frame: input.frame, row: item.row, limits: input.limits})
+						.deliver({
+							frame: {...input.frame, id: item.row.subId},
+							row: item.row,
+							limits: input.limits,
+						})
 						.pipe(
 							Effect.timeout(input.limits.deliveryAttemptTimeoutMs),
 							// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off

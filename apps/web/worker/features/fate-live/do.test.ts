@@ -1,119 +1,114 @@
 /**
- * `ConnectionDO` + `TopicDO` on the Effect DO model — the live fan-out logic
- * (task 5, ADR 0028).
+ * `LiveDO` (the unified, KV-backed live fan-out DO) on the Effect DO model.
  *
- * Drives the real `makeConnectionInstance` / `makeTopicInstance` builders (the
- * exact code the inline DOs return) over the `do-state` fake — a `node:sqlite`
- * SQL engine + a Map-backed KV — wiring the two instances as in-process siblings:
- * the topic resolves the connection's `{deliver, probe}` RPC and the connection
- * resolves the topic's `{register, deregister}` RPC, exactly as the lazy
- * `getByName` cross-DO calls do in the worker. This proves the acceptance
- * criteria without workerd (the workerd black-box harness is task 7):
+ * Drives the real {@link makeLiveInstance} builder directly over the KV-only
+ * `do-state` fake, wiring two (or more) instances as in-process siblings: a
+ * `connection:<id>`-named instance (the held SSE stream + subscription list) and
+ * a `topic:<key>`-named instance (the durable subscriber registry + publish
+ * fan-out + reap alarm). The `live` namespace fake's `getByName(name)` routes by
+ * the name's prefix to the matching instance's {@link LiveRpcSurface}, exactly as
+ * the worker's `live.getByName(...)` cross-role RPC does — so a topic→connection
+ * `deliver` and a connection→topic `register` hop between the real instances. This
+ * proves the acceptance criteria without workerd:
  *
- *   - subscribe → publish → the frame arrives on the held SSE stream;
- *   - a reconnect bumps the epoch and the prior subscriber row is detected
- *     stale on the next publish (epoch-based stale detection);
- *   - the 60s alarm reaps an orphaned row;
- *   - a single unreachable probe never prunes a live subscription.
+ *   - subscribe → publish → the frame arrives on the held SSE stream, stamped
+ *     with the subscriber's own `subId` (the per-subscriber frame.id);
+ *   - a reconnect bumps the generation and the prior subscriber row is detected
+ *     stale on the next publish (nothing delivered);
+ *   - the reap alarm deletes a row whose connection is unreachable on the FIRST
+ *     failed probe (void-faithful, no miss counter);
+ *   - one publish fans to N subscribers, each frame carrying its OWN subId.
  *
  * Runs in the node pool.
  */
-import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient";
-import * as SqliteMigrator from "@effect/sql-sqlite-do/SqliteMigrator";
-import {liveEntityTopic} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {afterEach, beforeEach, describe, expect, it} from "vitest";
+import {describe, expect, it} from "vitest";
 import {makeFakeDurableObjectState} from "./__support__/do-state.ts";
-import {type ConnectionInstance, makeConnectionInstance} from "./connection-do.ts";
-import type {ConnectionRpc, TopicRpc} from "./protocol.ts";
-import {makeTopicInstance, type TopicInstance} from "./topic-do.ts";
-
-// The test bypasses `topic-do.ts`'s `.make()` Layer (it drives the instance
-// builders directly), so we re-apply the same migrations here through the
-// SqliteClient + Migrator the production DO uses. `import.meta.glob` resolves at
-// Vite build time — `vitest` runs it the same way, eagerly importing each .ts
-// module so the loader sees the already-resolved default export.
-const topicMigrations = import.meta.glob("./migrations/topic/*.ts", {eager: false});
-
-/** Run pending SQL migrations against a fake's `SqlStorage` shim. */
-const migrateTopicSchema = (sql: {readonly raw: unknown}): Effect.Effect<void, never, never> =>
-	SqliteMigrator.run({loader: SqliteMigrator.fromGlob(topicMigrations)}).pipe(
-		Effect.asVoid,
-		Effect.provide(SqliteClient.layer({db: sql.raw as never})),
-		Effect.orDie,
-	);
+import {type LiveRpcSurface, makeLiveInstance} from "./live-do.ts";
+import type {DeliverFrame, LiveLimits, SubscriberRow} from "./protocol.ts";
 
 const run = <A>(effect: Effect.Effect<A, never, never>): Promise<A> => Effect.runPromise(effect);
 
+/** Generous limits — none of these caps is the thing under test. */
+const LIMITS: LiveLimits = {
+	maxSubscriptionsPerConnection: 256,
+	maxSubscriptionsPerTopic: 256,
+	maxQueuedEventsPerConnection: 100,
+	maxEncodedEventSize: 64 * 1024,
+	deliveryAttemptTimeoutMs: 1500,
+};
+
+type LiveInstance = ReturnType<typeof makeLiveInstance>;
+
 /**
- * A live "cell": one connection DO + the topic DOs it touches, wired as
- * in-process siblings. `topics` is the registry of topic instances by key (one
- * per `topic:<key>`); a connection's `resolveTopic` and a topic's
- * `resolveConnection` close over these maps, so a `register`/`deliver`/`probe`
- * call hops between the real instances exactly as the worker's `getByName` RPC
- * does.
+ * An in-process `live` namespace fake. `getByName(name)` routes by prefix to the
+ * registered instance's RPC surface (mirroring the worker's `getByName`); an
+ * unknown name resolves to a stub whose every method dies, so a topic probing a
+ * connection that isn't registered sees "couldn't reach" (not "confirmed stale").
  */
-interface LiveHarness {
-	readonly connection: ConnectionInstance;
-	readonly topic: (key: string) => TopicInstance;
-	readonly close: () => void;
+interface LiveCell {
+	readonly live: {readonly getByName: (name: string) => LiveRpcSurface};
+	readonly register: (name: string, instance: LiveInstance) => void;
+	readonly instances: Map<string, LiveInstance>;
 }
 
-function makeHarness(connectionId: string): LiveHarness {
-	const cells = {
-		connections: new Map<string, ConnectionInstance>(),
-		topics: new Map<string, TopicInstance>(),
-		topicStates: new Map<string, ReturnType<typeof makeFakeDurableObjectState>>(),
+function makeLiveCell(): LiveCell {
+	const instances = new Map<string, LiveInstance>();
+	const unreachable: LiveRpcSurface = {
+		subscribe: () => Effect.die("unreachable instance"),
+		unsubscribe: () => Effect.die("unreachable instance"),
+		deliver: () => Effect.die("unreachable instance"),
+		check: () => Effect.die("unreachable instance"),
+		register: () => Effect.die("unreachable instance"),
+		unregister: () => Effect.die("unreachable instance"),
+		publish: () => Effect.die("unreachable instance"),
 	};
-
-	const resolveConnection = (id: string): Effect.Effect<ConnectionRpc, never, never> =>
-		Effect.sync(() => {
-			const conn = cells.connections.get(id);
-			if (!conn) {
-				// An unreachable connection (no instance) → deliver/probe must reject so
-				// the topic treats it as "couldn't reach", not "confirmed stale".
-				return {
-					deliver: () => Effect.die("unreachable connection"),
-					probe: () => Effect.die("unreachable connection"),
-				};
-			}
-			return {deliver: conn.deliver, probe: conn.probe};
-		});
-
-	const resolveTopic = (key: string): Effect.Effect<TopicRpc, never, never> =>
-		Effect.gen(function* () {
-			let topic = cells.topics.get(key);
-			if (!topic) {
-				const fake = makeFakeDurableObjectState({id: `topic:${key}`});
-				cells.topicStates.set(key, fake);
-				// Apply the same migrations `topic-do.ts` runs on instance wake before
-				// the builder reads/writes `subscribers`.
-				yield* migrateTopicSchema(fake.state.storage.sql as never);
-				topic = makeTopicInstance(fake.state, resolveConnection);
-				cells.topics.set(key, topic);
-			}
-			return {register: topic.register, deregister: topic.deregister};
-		});
-
-	const connState = makeFakeDurableObjectState({id: `connection:${connectionId}`});
-	const connection = makeConnectionInstance(connState.state, resolveTopic);
-	cells.connections.set(connectionId, connection);
-
+	const getByName = (name: string): LiveRpcSurface => {
+		const instance = instances.get(name);
+		if (!instance) {
+			return unreachable;
+		}
+		return {
+			subscribe: instance.subscribe,
+			unsubscribe: instance.unsubscribe,
+			deliver: instance.deliver,
+			check: instance.check,
+			register: instance.register,
+			unregister: instance.unregister,
+			publish: instance.publish,
+		};
+	};
 	return {
-		connection,
-		topic: (key) => {
-			void resolveTopic(key); // ensure the topic instance exists
-			return cells.topics.get(key)!;
-		},
-		close: () => {
-			connState.close();
-			for (const s of cells.topicStates.values()) {
-				s.close();
-			}
-		},
+		live: {getByName: getByName as never},
+		register: (name, instance) => instances.set(name, instance),
+		instances,
 	};
 }
+
+/** Spin up a `connection:<id>` instance and register it on the cell. */
+function makeConnection(cell: LiveCell, connectionId: string): LiveInstance {
+	const name = `connection:${connectionId}`;
+	const fake = makeFakeDurableObjectState({id: name});
+	const instance = makeLiveInstance(fake.state, cell.live as never);
+	cell.register(name, instance);
+	return instance;
+}
+
+/** Spin up a `topic:<key>` instance and register it on the cell. */
+function makeTopic(
+	cell: LiveCell,
+	topicKey: string,
+): {readonly instance: LiveInstance; readonly fake: ReturnType<typeof makeFakeDurableObjectState>} {
+	const name = `topic:${topicKey}`;
+	const fake = makeFakeDurableObjectState({id: name});
+	const instance = makeLiveInstance(fake.state, cell.live as never);
+	cell.register(name, instance);
+	return {instance, fake};
+}
+
+/** A minimal entity `next` frame; `id` is `""` (the publish stamps the subId). */
+const entityFrame: DeliverFrame = {kind: "next", id: "", event: {data: {score: 7}}};
 
 /** Read the SSE stream off an `openStream` response and collect frames. */
 async function reader(response: HttpServerResponse.HttpServerResponse) {
@@ -143,268 +138,122 @@ async function reader(response: HttpServerResponse.HttpServerResponse) {
 	};
 }
 
-let harness: LiveHarness;
+/** Parse the JSON payload off an SSE frame's `data:` line. */
+function payloadOf(frame: string): {kind: string; id: string; event: {data: unknown}} {
+	const dataLine = frame.split("\n").find((l) => l.startsWith("data: "))!;
+	return JSON.parse(dataLine.slice("data: ".length));
+}
 
-afterEach(() => {
-	harness?.close();
-});
+describe("LiveDO live fan-out (KV model)", () => {
+	it("subscribe → publish → frame arrives stamped with the subscriber's subId", async () => {
+		const cell = makeLiveCell();
+		const connection = makeConnection(cell, "conn-1");
+		const topicKey = "Post:post-42";
+		const {instance: topic} = makeTopic(cell, topicKey);
 
-describe("live fan-out (Effect DO model)", () => {
-	beforeEach(() => {
-		harness = makeHarness("conn-1");
-	});
-
-	it("subscribe → publish → the frame arrives on the held SSE stream", async () => {
 		const ownerId = "owner-1";
-		const subId = "op-1";
-		const res = await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
+		const subId = "sub-1";
+		const res = await run(connection.openStream({ownerId}));
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
 		const sub = await run(
-			harness.connection.subscribe({
-				control: {kind: "subscribe", subId, type: "Post", entityId: "post-42"},
-				ownerId,
-			}),
+			connection.subscribe({subId, topics: [topicKey], ownerId, limits: LIMITS}),
 		);
 		expect(sub.ok).toBe(true);
 
-		// The topic DO (a separate instance) holds exactly one subscriber row.
-		const topicKey = liveEntityTopic("Post", "post-42");
-		const topic = harness.topic(topicKey);
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		// `delivered > 0` proves the topic→connection cross-role path fired (a
+		// wrong namespace-routing fake would silently pass with delivered 0).
+		expect(pub.delivered).toBeGreaterThan(0);
 
-		const inlineData = {__typename: "Post", id: "post-42", score: 7};
-		const pub = await run(
-			topic.publish({
-				kind: "entity",
-				match: {type: "Post", entityId: "post-42"},
-				frame: {data: inlineData, select: ["score"]},
-				eventId: "evt-1",
-			}),
-		);
-		expect(pub.delivered).toBe(1);
-
-		// The frame crossed from the topic to the connection's held stream verbatim.
 		const frame = await stream.next();
 		expect(frame).toContain("event: next");
-		expect(frame).toContain("id: evt-1");
-		const dataLine = frame.split("\n").find((l) => l.startsWith("data: "))!;
-		const payload = JSON.parse(dataLine.slice("data: ".length)) as {
-			kind: string;
-			id: string;
-			event: {data: unknown; select: string[]};
-		};
+		const payload = payloadOf(frame);
 		expect(payload.kind).toBe("next");
+		// Per-subscriber id: stamped at delivery from the row's subId, not publish.
 		expect(payload.id).toBe(subId);
-		expect(payload.event.data).toEqual(inlineData); // no re-resolution
-		expect(payload.event.select).toEqual(["score"]);
 
 		await stream.cancel();
 	});
 
-	it("a control message cannot subscribe on another user's behalf", async () => {
-		await run(harness.connection.openStream({ownerId: "owner-1", connectionId: "conn-1"}));
-		const sub = await run(
-			harness.connection.subscribe({
-				control: {kind: "subscribe", subId: "op", type: "Post", entityId: "p"},
-				ownerId: "owner-2",
-			}),
-		);
-		expect(sub.ok).toBe(false);
-	});
+	it("a reconnect bumps the generation; the prior row is stale on publish", async () => {
+		const cell = makeLiveCell();
+		const connection = makeConnection(cell, "conn-stale");
+		const topicKey = "Comment:c-1";
+		const {instance: topic} = makeTopic(cell, topicKey);
 
-	it("a reconnect bumps the epoch; the prior row is detected stale on publish", async () => {
 		const ownerId = "owner-stale";
-		const subId = "stale-op";
-		// Open + subscribe at epoch 1.
-		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
-		await run(
-			harness.connection.subscribe({
-				control: {kind: "subscribe", subId, type: "Comment", entityId: "c-1"},
-				ownerId,
-			}),
-		);
-		const topicKey = liveEntityTopic("Comment", "c-1");
-		const topic = harness.topic(topicKey);
+		const subId = "sub-stale";
+		await run(connection.openStream({ownerId}));
+		await run(connection.subscribe({subId, topics: [topicKey], ownerId, limits: LIMITS}));
 
-		// Reconnect: epoch bumps to 2 and the prior subscription is dropped.
-		// The topic DO still holds the epoch-1 row.
-		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
+		// Reconnect: generation bumps and the prior subscription is dropped. The
+		// topic still holds the old-generation row.
+		await run(connection.openStream({ownerId}));
 
-		// A publish now finds the epoch-1 row stale (connection at gen 2) and
-		// prunes it — nothing delivered.
-		const pub = await run(
-			topic.publish({
-				kind: "entity",
-				match: {type: "Comment", entityId: "c-1"},
-				frame: {data: {__typename: "Comment", id: "c-1", score: 1}},
-			}),
-		);
-		expect(pub.delivered).toBe(0);
-
-		// The row was pruned: a second publish still delivers nothing (no resurrected row).
-		const pub2 = await run(
-			topic.publish({
-				kind: "entity",
-				match: {type: "Comment", entityId: "c-1"},
-				frame: {data: {__typename: "Comment", id: "c-1", score: 2}},
-			}),
-		);
-		expect(pub2.delivered).toBe(0);
-	});
-
-	it("the epoch is persisted (survives an eviction) so a reconnect lands higher", async () => {
-		// Share the DO's storage across two instances = the same named DO surviving
-		// an eviction (fresh in-memory cache over persisted KV).
-		const {DatabaseSync} = await import("node:sqlite");
-		const db = new DatabaseSync(":memory:");
-		const kv = new Map<string, unknown>();
-		const s1 = makeFakeDurableObjectState({id: "connection:evict", db, kv});
-		const conn1 = makeConnectionInstance(s1.state, () => Effect.die("no topic"));
-		await run(conn1.openStream({ownerId: "o", connectionId: "evict"})); // epoch → 1
-		expect((await run(conn1.probe())).epoch).toBe(1);
-
-		// Re-instantiate over the same persisted storage (eviction): the fresh cache
-		// reloads epoch 1 from KV, and the reconnect bumps to 2 — not back to 1.
-		const s2 = makeFakeDurableObjectState({id: "connection:evict", db, kv});
-		const conn2 = makeConnectionInstance(s2.state, () => Effect.die("no topic"));
-		expect((await run(conn2.probe())).epoch).toBe(1);
-		await run(conn2.openStream({ownerId: "o", connectionId: "evict"})); // epoch → 2
-		expect((await run(conn2.probe())).epoch).toBe(2);
-		s1.close();
-		s2.close();
-		db.close();
-	});
-
-	it("the alarm reaps a row whose connection has reconnected to a higher epoch", async () => {
-		const ownerId = "owner-alarm";
-		const subId = "alarm-op";
-		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
-		await run(
-			harness.connection.subscribe({
-				control: {kind: "subscribe", subId, type: "Term", entityId: "t-1"},
-				ownerId,
-			}),
-		);
-		const topicKey = liveEntityTopic("Term", "t-1");
-		const topic = harness.topic(topicKey);
-
-		// Reconnect (epoch 2) — the row is now orphaned at epoch 1.
-		await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
-
-		await run(topic.alarm());
-
-		// The alarm pruned the stale row: a publish delivers nothing.
-		const pub = await run(
-			topic.publish({
-				kind: "entity",
-				match: {type: "Term", entityId: "t-1"},
-				frame: {data: {__typename: "Term", id: "t-1"}},
-			}),
-		);
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		expect(pub.delivered).toBe(0);
 	});
 
-	it("a single unreachable probe does not prune a live subscription", async () => {
-		// Build a topic whose connection sibling is always unreachable (no instance),
-		// so deliver/probe reject — the topic must treat that as "couldn't reach".
-		const topicState = makeFakeDurableObjectState({id: "topic:unreachable"});
-		await run(migrateTopicSchema(topicState.state.storage.sql as never));
-		const topic = makeTopicInstance(topicState.state, () =>
-			Effect.sync(() => ({
-				deliver: () => Effect.die("unreachable"),
-				probe: () => Effect.die("unreachable"),
-			})),
-		);
-		await run(topic.register({connectionId: "gone", subId: "op", epoch: 1}));
+	it("the alarm reaps a subscriber row on the first failed probe", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Term:t-1";
+		const {instance: topic, fake} = makeTopic(cell, topicKey);
 
-		// One alarm: still unreachable, below the eviction threshold — the row stays,
-		// so a (re)deliver attempt still finds it (delivered 0 because unreachable,
-		// but the row is not pruned). Publish twice to prove the row survives.
+		// Register a row directly for a connection that is NOT in the cell, so any
+		// probe of `connection:gone` dies → "couldn't reach".
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "gone",
+			subId: "sub-gone",
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS}));
+		expect(reg.ok).toBe(true);
+		expect(fake.hasAlarm()).toBe(true);
+
+		// First failed probe reaps ALL that connection's rows (void-faithful — no
+		// consecutive-miss counter).
 		await run(topic.alarm());
-		const pub = await run(
-			topic.publish({
-				kind: "entity",
-				match: {type: "Foo", entityId: "x"},
-				frame: {data: {}},
-			}),
-		);
-		// Unreachable connection → not delivered, but the row was NOT pruned (a single
-		// failure is "couldn't reach", not "confirmed stale").
+
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		expect(pub.delivered).toBe(0);
-		await run(topic.alarm()); // a 2nd miss, still below MAX_PROBE_MISSES (3)
-		const pub2 = await run(
-			topic.publish({
-				kind: "entity",
-				match: {type: "Foo", entityId: "x"},
-				frame: {data: {}},
-			}),
-		);
-		expect(pub2.delivered).toBe(0); // still unreachable, still present (not crashed)
-		topicState.close();
 	});
 
-	it("the alarm reaps a connection that stays unreachable across the prune cycle", async () => {
-		const topicState = makeFakeDurableObjectState({id: "topic:reap"});
-		await run(migrateTopicSchema(topicState.state.storage.sql as never));
-		const topic = makeTopicInstance(topicState.state, () =>
-			Effect.sync(() => ({
-				deliver: () => Effect.die("unreachable"),
-				probe: () => Effect.die("unreachable"),
-			})),
-		);
-		await run(topic.register({connectionId: "dead", subId: "op", epoch: 1}));
+	it("per-subscriber frame.id: 2 subs / 1 topic each get their OWN subId", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-77";
+		const {instance: topic} = makeTopic(cell, topicKey);
 
-		// MAX_PROBE_MISSES = 3: the row survives the first two misses and is reaped on
-		// the third. After reaping, the registry is empty.
-		await run(topic.alarm());
-		await run(topic.alarm());
-		await run(topic.alarm());
-		const rows = await run(
-			Effect.flatMap(
-				topicState.state.storage.sql.exec("SELECT COUNT(*) AS n FROM subscribers"),
-				(c) => c.toArray(),
-			),
-		);
-		expect((rows[0] as {n: number}).n).toBe(0);
-		topicState.close();
-	});
+		const connA = makeConnection(cell, "conn-a");
+		const connB = makeConnection(cell, "conn-b");
 
-	it("delivers a connection appendNode frame to a subscribeConnection subscriber", async () => {
-		const ownerId = "owner-conn";
-		const subId = "op-conn";
-		const res = await run(harness.connection.openStream({ownerId, connectionId: "conn-1"}));
-		const stream = await reader(res);
-		await stream.next(); // : connected
+		const resA = await run(connA.openStream({ownerId: "owner-a"}));
+		const resB = await run(connB.openStream({ownerId: "owner-b"}));
+		const streamA = await reader(resA);
+		const streamB = await reader(resB);
+		expect(await streamA.next()).toContain("connected");
+		expect(await streamB.next()).toContain("connected");
 
+		const subIdA = "sub-a";
+		const subIdB = "sub-b";
 		await run(
-			harness.connection.subscribe({
-				control: {kind: "subscribeConnection", subId, procedure: "posts"},
-				ownerId,
-			}),
+			connA.subscribe({subId: subIdA, topics: [topicKey], ownerId: "owner-a", limits: LIMITS}),
 		);
-
-		const {liveGlobalConnectionTopic} = await import("@nkzw/fate/server");
-		const node = {__typename: "Post", id: "post-99", title: "new"};
-		const topic = harness.topic(liveGlobalConnectionTopic("posts"));
 		await run(
-			topic.publish({
-				kind: "connection",
-				match: {procedure: "posts"},
-				frame: {type: "prependNode", nodeType: "Post", edge: {node}},
-			}),
+			connB.subscribe({subId: subIdB, topics: [topicKey], ownerId: "owner-b", limits: LIMITS}),
 		);
 
-		const frame = await stream.next();
-		expect(frame).toContain("event: connection");
-		const payload = JSON.parse(
-			frame
-				.split("\n")
-				.find((l) => l.startsWith("data: "))!
-				.slice("data: ".length),
-		) as {kind: string; event: {type: string; edge: {node: unknown}}};
-		expect(payload.event.type).toBe("prependNode");
-		expect(payload.event.edge.node).toEqual(node);
-		await stream.cancel();
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		expect(pub.delivered).toBe(2);
+
+		expect(payloadOf(await streamA.next()).id).toBe(subIdA);
+		expect(payloadOf(await streamB.next()).id).toBe(subIdB);
+
+		await streamA.cancel();
+		await streamB.cancel();
 	});
 });

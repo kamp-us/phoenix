@@ -1,121 +1,50 @@
 /**
- * A node-pool fake of alchemy's `Cloudflare.DurableObjectState["Service"]` value.
+ * A node-pool fake of alchemy's `Cloudflare.DurableObjectState["Service"]` value,
+ * KV-only — the slice the unified {@link makeLiveInstance} touches.
  *
- * Task 5 ports `ConnectionDO`/`TopicDO` onto the Effect DO model, but the workerd
- * black-box harness (real DO instances, alarms) is task 7. So this gives the
- * node-pool unit test a real-enough `DurableObjectState`: a `Map`-backed KV
- * (`storage.get/put`), a `node:sqlite`-backed `storage.sql.exec` (a real SQL
- * engine, returning a `SqlCursor` with `.toArray()`/`.one()`), and a single-slot
- * alarm (`getAlarm`/`setAlarm`/`deleteAlarm`) the test fires manually. Only the
- * slice the live-fan-out instances touch is implemented.
+ * The void-aligned `LiveDO` stores everything in `state.storage`'s flat KV API
+ * (no SQLite): subscriber rows under `sub:` keys, the per-connection generation
+ * scalar, plus a single-slot alarm. So this fake backs the lot with one
+ * `Map<string, unknown>` + a `number | null` alarm slot and implements exactly
+ * the `state.storage` methods the instance builder calls:
  *
- * The `storage.sql.raw` shim mirrors the underlying `cf.SqlStorage` interface
- * (sync `exec` returning a cursor with `columnNames` + a sync `raw()` iterable)
- * so the upstream `@effect/sql-sqlite-do` SqliteClient/Migrator drive the same
- * fake schema as the rest of the test (used by the topic-instance harness to
- * apply migrations before `makeTopicInstance`).
+ *   - `get<T>(key)` → `Effect<T | undefined>`
+ *   - `put(key, value)` → `Effect<void>`
+ *   - `delete(key | key[])` → `Effect<void>` (publish bulk-deletes an array)
+ *   - `list<T>({prefix})` → `Effect<Map<string, T>>` (prefix-filtered copy)
+ *   - `getAlarm()` → `Effect<number | null>` / `setAlarm(ms)` → `Effect<void>`
+ *
+ * `state.id.name` is the instance name `resolveRole` reads to pick the
+ * connection/topic role. Pass `kv`/alarm-sharing options are unneeded here — each
+ * call is one instance over its own backing Map.
  *
  * NOT a production artifact — it lives under `__support__/` and is never imported
  * by the worker graph.
  */
-import {DatabaseSync} from "node:sqlite";
 import type * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import * as Stream from "effect/Stream";
 
 type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 
 export interface FakeDurableObjectState {
 	/** The `DurableObjectState`-shaped service value to hand the instance builder. */
 	readonly state: DurableObjectStateValue;
-	/** Fire the scheduled alarm (no-op if none is set), as workerd would at the time. */
+	/** Whether an alarm is currently scheduled (tests assert on this). */
 	readonly hasAlarm: () => boolean;
-	/** Tear down the in-memory database. */
-	readonly close: () => void;
 }
 
 /**
- * Build a fake DO state with its own in-memory SQLite + KV. Each call is one DO
- * instance; pass `db`/`kv` to share storage across instances (simulating the same
- * named DO surviving an eviction — a fresh in-memory cache over persisted state).
+ * Build a fake DO state with its own KV `Map` + single alarm slot. Each call is
+ * one DO instance; `id` is the instance name (`connection:<id>` / `topic:<key>`)
+ * that {@link resolveRole} reads off `state.id.name`. Pass `kv` to share storage
+ * across instances (the same named DO surviving an eviction).
  */
 export function makeFakeDurableObjectState(options?: {
 	readonly id?: string;
-	readonly db?: DatabaseSync;
 	readonly kv?: Map<string, unknown>;
 }): FakeDurableObjectState {
-	const db = options?.db ?? new DatabaseSync(":memory:");
 	const kv = options?.kv ?? new Map<string, unknown>();
 	let alarm: number | null = null;
-
-	/** Run a query against the node:sqlite engine and materialize rows once. */
-	const runQuery = (query: string, bindings: ReadonlyArray<unknown>) => {
-		const stmt = db.prepare(query);
-		const isSelect = /^\s*(select|pragma)/i.test(query);
-		const params = bindings.map((b) =>
-			b === undefined ? null : typeof b === "boolean" ? (b ? 1 : 0) : b,
-		) as unknown as Parameters<ReturnType<DatabaseSync["prepare"]>["all"]>;
-		if (isSelect) {
-			return stmt.all(...params) as Array<Record<string, unknown>>;
-		}
-		stmt.run(...params);
-		return [] as Array<Record<string, unknown>>;
-	};
-
-	const exec = (query: string, ...bindings: ReadonlyArray<unknown>) =>
-		Effect.sync(() => {
-			const rows = runQuery(query, bindings);
-			// A `SqlCursor` is a `Stream` of rows with `.toArray()`/`.one()`/`.next()`.
-			let index = 0;
-			const cursor = Object.assign(Stream.fromIterable(rows), {
-				toArray: () => Effect.succeed([...rows]),
-				one: () => Effect.succeed(rows[0]),
-				next: () =>
-					Effect.succeed(
-						index < rows.length
-							? {done: false as const, value: rows[index++]}
-							: {done: true as const},
-					),
-				raw: () => Stream.fromIterable(rows.map((r) => Object.values(r))),
-				columnNames: rows[0] ? Object.keys(rows[0]) : [],
-				rowsRead: Effect.succeed(rows.length),
-				rowsWritten: Effect.succeed(0),
-			});
-			return cursor as never;
-		});
-
-	/**
-	 * Sync `cf.SqlStorage`-shaped shim — the upstream `@effect/sql-sqlite-do`
-	 * `SqliteClient` calls `db.exec(sql, ...params)` synchronously and iterates
-	 * the cursor's `raw()` as a sync iterable. The fake routes both through
-	 * the same `node:sqlite` connection as the Effect-wrapped `exec`, so a
-	 * migrator running through this shim and an instance reading through the
-	 * Effect surface see the same schema and rows.
-	 */
-	const rawExec = (query: string, ...bindings: Array<unknown>) => {
-		const rows = runQuery(query, bindings);
-		const columnNames = rows[0] ? Object.keys(rows[0]) : [];
-		return {
-			columnNames,
-			raw: () => rows.map((r) => columnNames.map((c) => r[c]))[Symbol.iterator](),
-			toArray: () => [...rows],
-			one: () => rows[0],
-			next: () => ({done: rows.length === 0, value: rows[0]}),
-			get rowsRead() {
-				return rows.length;
-			},
-			get rowsWritten() {
-				return 0;
-			},
-			[Symbol.iterator]: () => rows[Symbol.iterator](),
-		};
-	};
-	const rawSql = {
-		exec: rawExec,
-		get databaseSize() {
-			return 0;
-		},
-	};
 
 	const state = {
 		id: {toString: () => options?.id ?? "fake-do", name: options?.id} as never,
@@ -125,27 +54,39 @@ export function makeFakeDurableObjectState(options?: {
 				Effect.sync(() => {
 					kv.set(key, value);
 				})) as never,
-			delete: ((key: string) => Effect.sync(() => kv.delete(key))) as never,
+			// MUST accept both a single key and an array (publish bulk-deletes rows).
+			delete: ((keyOrKeys: string | ReadonlyArray<string>) =>
+				Effect.sync(() => {
+					if (Array.isArray(keyOrKeys)) {
+						for (const key of keyOrKeys) {
+							kv.delete(key);
+						}
+					} else {
+						kv.delete(keyOrKeys as string);
+					}
+				})) as never,
+			// Returns `Effect<Map<string, T>>` — a prefix-filtered copy of the backing
+			// Map (not the live Map, so callers can't mutate the store through it).
+			list: (<T>({prefix}: {readonly prefix: string}) =>
+				Effect.sync(() => {
+					const out = new Map<string, T>();
+					for (const [key, value] of kv) {
+						if (key.startsWith(prefix)) {
+							out.set(key, value as T);
+						}
+					}
+					return out;
+				})) as never,
 			getAlarm: () => Effect.sync(() => alarm),
 			setAlarm: ((scheduledTime: number) =>
 				Effect.sync(() => {
 					alarm = scheduledTime;
 				})) as never,
-			deleteAlarm: () =>
-				Effect.sync(() => {
-					alarm = null;
-				}),
-			sql: {exec, raw: rawSql} as never,
 		} as never,
 	} as unknown as DurableObjectStateValue;
 
 	return {
 		state,
 		hasAlarm: () => alarm !== null,
-		close: () => {
-			if (!options?.db) {
-				db.close();
-			}
-		},
 	};
 }
