@@ -43,6 +43,9 @@ apps/web/scripts/**/*.js
 test-results
 playwright-report
 
+# Local scratch (uncommitted explorations)
+/.scratch/
+
 # OS
 .DS_Store
 

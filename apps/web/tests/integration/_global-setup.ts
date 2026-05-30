@@ -20,11 +20,11 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type {CompiledStack} from "alchemy/Stack";
 import * as Core from "alchemy/Test/Core";
-import {installLocalhostDns} from "alchemy/Util/LocalhostDns";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Scope from "effect/Scope";
 import Stack from "../../alchemy.run.ts";
+import {installLocalhostDns} from "./_localhost-dns.ts";
 
 installLocalhostDns();
 

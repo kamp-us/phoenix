@@ -33,7 +33,7 @@
  *   - `h.json(...)` / `h.req(...)` — raw HTTP helpers
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
-import {installLocalhostDns} from "alchemy/Util/LocalhostDns";
+import {installLocalhostDns} from "./_localhost-dns.ts";
 
 installLocalhostDns();
 
