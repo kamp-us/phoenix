@@ -33,9 +33,6 @@ catalogs:
     '@effect/sql-pg':
       specifier: 4.0.0-beta.74
       version: 4.0.0-beta.74
-    '@effect/sql-sqlite-do':
-      specifier: 4.0.0-beta.74
-      version: 4.0.0-beta.74
     '@effect/tsgo':
       specifier: ^0.5.2
       version: 0.5.2
@@ -153,9 +150,6 @@ importers:
         specifier: 'catalog:'
         version: 4.0.0-beta.74(effect@4.0.0-beta.74)(ioredis@5.10.1)
       '@effect/sql-pg':
-        specifier: 'catalog:'
-        version: 4.0.0-beta.74(effect@4.0.0-beta.74)
-      '@effect/sql-sqlite-do':
         specifier: 'catalog:'
         version: 4.0.0-beta.74(effect@4.0.0-beta.74)
       '@nkzw/fate':
@@ -665,11 +659,6 @@ packages:
 
   '@effect/sql-pg@4.0.0-beta.74':
     resolution: {integrity: sha512-F1keL+vtp+d2HG7LQQ/WhJx4ezCrNy29T0HLbGPPvTeJTIi5/8fe2frh4WF55p6K3oi8jhkfe3fSH2Lcx0RjRw==}
-    peerDependencies:
-      effect: ^4.0.0-beta.74
-
-  '@effect/sql-sqlite-do@4.0.0-beta.74':
-    resolution: {integrity: sha512-JAyxwPn/voNf3rmIVGUkgJy7k1Xa6OT4wrSim8s4FP0uyK8x2ff0Hdy1LrGERf/VoaOmMtRQVZfVOexr91FT2Q==}
     peerDependencies:
       effect: ^4.0.0-beta.74
 
@@ -3609,10 +3598,6 @@ snapshots:
       pg-types: 4.1.0
     transitivePeerDependencies:
       - pg-native
-
-  '@effect/sql-sqlite-do@4.0.0-beta.74(effect@4.0.0-beta.74)':
-    dependencies:
-      effect: 4.0.0-beta.74
 
   '@effect/tsgo-darwin-arm64@0.5.2':
     optional: true

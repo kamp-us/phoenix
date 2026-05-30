@@ -24,7 +24,6 @@
 		"@effect/platform-bun": "catalog:",
 		"@effect/platform-node": "catalog:",
 		"@effect/sql-pg": "catalog:",
-		"@effect/sql-sqlite-do": "catalog:",
 		"@nkzw/fate": "catalog:",
 		"@usirin/forge": "catalog:",
 		"alchemy": "catalog:",

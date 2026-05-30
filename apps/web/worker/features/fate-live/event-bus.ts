@@ -5,8 +5,7 @@
  * `live.update` reaches only subscribers in the **same** Worker isolate, so it
  * cannot fan out across the isolates a Worker spreads requests over. phoenix
  * keeps fate's SSE wire protocol but moves the connection-owning and fan-out
- * into the `ConnectionDO` + `TopicDO` Durable Objects (`connection-do.ts`,
- * `topic-do.ts`).
+ * into the unified `LiveDO` Durable Object (`live-do.ts`).
  *
  * This module is the **publish** side: `update`/`delete`/`connection().*`
  * resolve a topic string and `fetch` the topic DO with the **inline-resolved**
@@ -21,7 +20,7 @@
  * Node codegen runner and in the Workers runtime under `nodejs_compat`; unlike
  * `cloudflare:workers`, which the codegen runner can't resolve), so the fate
  * codegen graph (`schema.ts → server.ts → live.ts`) loads it without the
- * Workers runtime. The `TOPIC_DO` binding is reached at runtime through
+ * Workers runtime. The `LiveDO` namespace is reached at runtime through
  * {@link livePublishContext}.
  */
 import {AsyncLocalStorage} from "node:async_hooks";
@@ -58,9 +57,10 @@ type PhoenixLiveEventBus = Omit<LiveEventBus, "update"> & {update: TypedLiveUpda
 
 /**
  * A pre-bound per-request publisher: hand it one resolved topic key + the
- * publish message and it fires the typed `TopicDO.publish` RPC, fired-and-
- * forgotten via the request's `waitUntil`. The `/fate` route builds this from
- * the worker-init-resolved `TopicDO` namespace (`getByName`, typed RPC) and
+ * publish message and it fires the typed `LiveDO.publish` RPC (on the
+ * `topic:<key>`-named instance), fired-and-forgotten via the request's
+ * `waitUntil`. The `/fate` route builds this from the worker-init-resolved
+ * `LiveDO` namespace (`getByName`, typed RPC) and
  * `Cloudflare.WorkerExecutionContext.waitUntil` — so the bus reaches the DO
  * with **no** `env`-based namespace lookup, **no** `idFromName`/`idFromString`,
  * and **no** string-URL `stub.fetch` (ADR 0028/0029).
@@ -196,10 +196,10 @@ export const liveBus: PhoenixLiveEventBus = {
 		});
 	},
 	subscribe: () => {
-		throw new Error("live subscriptions are served by ConnectionDO, not the bus");
+		throw new Error("live subscriptions are served by LiveDO, not the bus");
 	},
 	subscribeConnection: () => {
-		throw new Error("live subscriptions are served by ConnectionDO, not the bus");
+		throw new Error("live subscriptions are served by LiveDO, not the bus");
 	},
 };
 

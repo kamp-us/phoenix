@@ -4,19 +4,14 @@
  * This module is import-safe in a plain Node runner (no `cloudflare:workers`):
  * the publish-only `liveBus` (`event-bus.ts`) and the fate codegen graph
  * (`fate/schema.ts → fate/server.ts → event-bus.ts`) depend on it, while only the
- * `ConnectionDO` + `TopicDO` classes (`connection-do.ts`, `topic-do.ts`) and the
- * worker entry pull in the Workers runtime. Keeping the frame shapes + topic
- * resolution here means the bus, the DOs, and the route all speak one vocabulary.
+ * unified `LiveDO` class (`live-do.ts`) and the worker entry pull in the Workers
+ * runtime. Keeping the frame shapes + topic resolution here means the bus, the
+ * DO, and the route all speak one vocabulary.
  *
  * The frame shapes mirror fate's native `livePayload` / `liveConnectionPayload`
  * / `sse()` exactly, so the browser's native fate SSE client parses them
  * unchanged — phoenix only swaps where the frames are produced (the DO, from
  * inline-published data), not their shape.
- *
- * The shared cross-DO RPC types (`ConnectionRpc`, `TopicRpc`, `DeliverResult`,
- * `ProbeResult`) live here too — both `connection-do.ts` and `topic-do.ts` import
- * them, and pinning them in protocol.ts (instead of in either DO file) keeps the
- * two DOs symmetric and avoids an arbitrary "instance" module both have to import.
  */
 
 import {
@@ -218,43 +213,6 @@ export function topicsForSubscribe(control: SubscribeControl): ReadonlyArray<str
 		liveConnectionTopic(control.procedure, control.args),
 		liveGlobalConnectionTopic(control.procedure),
 	];
-}
-
-// ---------------------------------------------------------------------------
-// Cross-DO RPC types (shared by connection-do.ts and topic-do.ts)
-// ---------------------------------------------------------------------------
-
-/** What a topic DO reports back to the connection it delivered/probed. */
-export interface DeliverResult {
-	readonly delivered: boolean;
-	readonly epoch: number;
-}
-
-/** What a connection DO reports for an epoch probe. */
-export interface ProbeResult {
-	readonly epoch: number;
-}
-
-/** The typed RPC surface a `TopicDO` calls on a connection stub. */
-export interface ConnectionRpc {
-	readonly deliver: (input: {
-		readonly frame: DeliverFrame;
-		readonly epoch: number;
-	}) => Effect.Effect<DeliverResult, never, never>;
-	readonly probe: () => Effect.Effect<ProbeResult, never, never>;
-}
-
-/** The typed RPC surface a `ConnectionDO` calls on a topic stub. */
-export interface TopicRpc {
-	readonly register: (row: {
-		readonly connectionId: string;
-		readonly subId: string;
-		readonly epoch: number;
-	}) => Effect.Effect<{readonly ok: true}, never, never>;
-	readonly deregister: (input: {
-		readonly connectionId: string;
-		readonly subId: string;
-	}) => Effect.Effect<{readonly ok: true}, never, never>;
 }
 
 // ---------------------------------------------------------------------------
