@@ -24,6 +24,7 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | `Effect.fn` for service methods, span naming conventions | Writing or naming a service method |
 | [effect-testing.md](./effect-testing.md) | `@effect/vitest`, `it.effect`, integration tests via miniflare, when to use unit tests | Writing tests for features or infrastructure |
 | [effect-schema-validation.md](./effect-schema-validation.md) | `Schema.Class` for trust-boundary input validation | Validating untyped input (resolver inputs, Hono bodies, external APIs) |
+| [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | `Stream.fromQueue` + `Stream.merge(heartbeats)` + `HttpServerResponse.stream`; the deliver path offers onto the queue | Building an SSE response written to from another component (e.g. a sibling DO's RPC) |
 
 ## Index — fate protocol layer
 
@@ -61,8 +62,19 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No per-request `ManagedRuntime`; worker-level vs request-scoped layers; `Effect.context()` capture; how the fate bridge runs the captured map | Touching the fate↔domain seam |
 | [alchemy-http-router.md](./alchemy-http-router.md) | `HttpApiBuilder` for typed JSON + imperative `HttpRouter` for raw-Request/SSE; `toHttpEffect`; assets/worker-first | Adding/moving an HTTP route |
 | [alchemy-durable-objects.md](./alchemy-durable-objects.md) | `DurableObjectNamespace<T>()`, per-instance Effect, typed RPC, `state.storage.sql`, alarms; the `ConnectionDO`/`TopicDO` live DOs | Working on the live DOs |
+| [alchemy-modular-do-with-sibling-resolution.md](./alchemy-modular-do-with-sibling-resolution.md) | Modular `class Tag` + `.make()` Layer; per-call sibling resolution pushes the Tag onto method `R` (not Layer requirements) | Authoring two co-hosted DOs that reference each other ([ADR 0033](../.decisions/0033-mutual-do-layer-cycle-per-call-resolution.md)) |
 | [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) | `D1Connection.bind` → `raw` → `drizzle(raw,{schema})`; `Drizzle` as a worker-level singleton; migrations via `Drizzle.Schema` | Wiring the DB or migrations |
 | [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) | `alchemy.run.ts` + `Alchemy.Stack`, resource declarations, `wrangler.jsonc`→alchemy map, dev/deploy, stages | Declaring resources or deploying |
+| [alchemy-test-harness.md](./alchemy-test-harness.md) | `alchemy/Test/Core` deploy in `globalSetup` (main-process workaround for the pool-worker LoopbackServer race) + a black-box HTTP harness in the pool | Writing integration tests against the deployed worker |
+| [better-auth-with-plugins-on-d1.md](./better-auth-with-plugins-on-d1.md) | Forked `CloudflareD1` Layer on phoenix's existing D1; `Random` for the session secret; threading the resolved `Auth` instance to consumers without leaking `RuntimeContext` | Adding/editing better-auth plugins or wiring an auth consumer |
+
+## Reference notes
+
+Background research and considered-options docs that don't define current code but record why the current shape was picked. Read when revisiting a decision; skip when adding a feature.
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [live-fan-out-options-considered.md](./live-fan-out-options-considered.md) | partyserver / partysub / Agents SDK / `@cloudflare/actors` / SaaS — what was surveyed for live fan-out and why we stayed on alchemy DOs + native SSE | Revisiting the live-channel build-vs-buy ([ADR 0034](../.decisions/0034-fate-native-sse-protocol.md)) |
 
 ## fate protocol conventions
 
