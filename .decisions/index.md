@@ -31,11 +31,12 @@ One row per ADR. Read the file for the why.
 | [0025](0025-split-livedo-connection-topic.md) | Split LiveDO into ConnectionDO and TopicDO | amended-in-part by [0028](0028-effect-durable-object-model.md) | 2026-05-24 |
 | [0026](0026-adopt-alchemy-effect-infra.md) | Adopt alchemy-effect as the infrastructure layer | accepted | 2026-05-25 |
 | [0027](0027-http-router-drop-hono.md) | Drop Hono; HTTP via Effect HttpRouter and HttpApiBuilder | accepted | 2026-05-25 |
-| [0028](0028-effect-durable-object-model.md) | Port Durable Objects to alchemy's Effect DO model | accepted | 2026-05-25 |
+| [0028](0028-effect-durable-object-model.md) | Port Durable Objects to alchemy's Effect DO model | amended-in-part by [0032](0032-alchemy-beta45-and-dev-model.md) | 2026-05-25 |
 | [0029](0029-worker-runtime-servicemap.md) | Dissolve the per-request runtime; worker-level layers and a captured ServiceMap | accepted | 2026-05-25 |
 | [0030](0030-single-worker-vite-dev.md) | Single worker via Worker+assets, with a two-process HMR dev loop | accepted | 2026-05-25 |
-| [0031](0031-local-first-dev-state.md) | Local-first state for dev; remote state for CI and deploy | accepted | 2026-05-25 |
+| [0031](0031-local-first-dev-state.md) | Local-first state for dev; remote state for CI and deploy | amended-in-part by [0032](0032-alchemy-beta45-and-dev-model.md) | 2026-05-25 |
 | [0032](0032-alchemy-beta45-and-dev-model.md) | Upgrade to alchemy@2.0.0-beta.45 + effect@4.0.0-beta.74; accept deploy-infra-to-cloud as the dev model | accepted | 2026-05-29 |
 | [0033](0033-mutual-do-layer-cycle-per-call-resolution.md) | Co-hosted mutual DOs cannot Init-bind each other — use per-call sibling resolution | accepted | 2026-05-29 |
 | [0034](0034-fate-native-sse-protocol.md) | Stay on fate's native SSE + POST protocol; do not redesign to WebSocket | accepted | 2026-05-29 |
 | [0035](0035-phoenix-cli-architecture.md) | phoenix CLI architecture — programmatic composition, one package per verb | accepted | 2026-05-29 |
+| [0036](0036-features-as-any-named-app-grouping.md) | features/ is any named app-level grouping, not just product domains | accepted | 2026-05-30 |

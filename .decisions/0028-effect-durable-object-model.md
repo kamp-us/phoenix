@@ -8,6 +8,14 @@ tags: [durable-objects, effect, live]
 
 # 0028 — Port Durable Objects to alchemy's Effect DO model
 
+> Amended in part by [0032](0032-alchemy-beta45-and-dev-model.md): the modular
+> `class + .make()` DO form is now the preferred shape (it ships in alchemy
+> `2.0.0-beta.45`). The "use the inline form, not modular `.make()`" constraint
+> in the Consequences below is reversed — both live DOs are now authored as
+> `…Namespace<Self, Shape>()("Name") {}` Tags with separate `…Live` Layers
+> produced by `.make(body)`. The per-call sibling-resolution rule stands
+> (see [0033](0033-mutual-do-layer-cycle-per-call-resolution.md)).
+
 ## Context
 
 phoenix's `ConnectionDO` and `TopicDO` — split per

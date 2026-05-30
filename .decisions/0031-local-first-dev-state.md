@@ -8,6 +8,15 @@ tags: [alchemy, dev, state, ci]
 
 # 0031 — Local-first state for dev; remote state for CI and deploy
 
+> Amended in part by [0032](0032-alchemy-beta45-and-dev-model.md): the
+> **state store** selection recorded below stands, but the "fully offline"
+> framing was half-true — `alchemy dev` runs the worker locally in `workerd`
+> while the **resources** it binds (D1, KV, R2, DO namespaces) are real
+> Cloudflare resources in a per-developer stage. The selection signal also
+> moved from `process.env.CI` to a dedicated `resolveStateMode` helper in
+> `apps/web/worker/env.ts` (because `CI` is set for both deploy and
+> integration-test jobs and can't distinguish them).
+
 ## Context
 
 An `Alchemy.Stack`'s `state` option chooses where alchemy stores the

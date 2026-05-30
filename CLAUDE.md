@@ -2,15 +2,16 @@
 
 kamp.us, reborn.
 
-A single Cloudflare Worker. React 19 + Effect + Hono + fate.
-Durable Objects (added incrementally) for code/request co-location.
+A single Cloudflare Worker. React 19 + Effect + fate.
+HTTP via Effect `HttpRouter` / `HttpApiBuilder` (ADR 0027). Durable Objects
+authored on alchemy's Effect DO model (ADR 0028).
 
 ## Architecture
 
 - **One worker** serves both the SPA (via `assets` binding) and the API.
-- The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE (via `LiveDO`). Other backend routes live under `/api/*`, `/agents/*`.
+- The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE. Other backend routes live under `/api/*`.
 - Frontend is React 19 + Vite, built into `dist/client`.
-- DOs are bindings on the same worker (none yet — added per feature).
+- DOs are bindings on the same worker: `ConnectionDO` + `TopicDO` power the fate-live SSE fan-out (ADRs 0023/0025/0028). Add more DOs per feature.
 
 ```
 phoenix/
@@ -57,7 +58,7 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 ## Conventions
 
 - Biome formatting: tabs, 100 col, no bracket spacing.
-- Effect for backend control flow; resolvers run via a per-request runtime.
+- Effect for backend control flow; feature services are isolate-level layers, with only `Auth` provided per request (ADR 0029).
 - Make invalid states unrepresentable. Domain logic in domain objects.
 
 ## Decisions
