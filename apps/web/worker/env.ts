@@ -1,22 +1,17 @@
 /**
- * The worker's env — the deploy-time resolver and the worker's `env` literal.
+ * The worker's env — the deploy-time resolver for the `ENVIRONMENT` binding and
+ * the state-store selector.
  *
- * Two roles for one file:
- *
- *   1. **Deploy-time env resolution.** `worker/index.ts` declares the worker's
- *      `env` block, which is evaluated in the alchemy CLI process at deploy
- *      time — so `process.env` here is the *deploy-time* environment
- *      (`alchemy deploy` on CI / from an `--env-file`, or the offline
- *      `alchemy dev` / Vitest loop), not the worker runtime. `ENVIRONMENT`
- *      gates the auth-layer dev flag — the magic-link token `console.log`
- *      and the better-auth dev-URL fallback (`better-auth-live.ts`).
- *      It resolves from `process.env.ENVIRONMENT`,
- *      defaulting to `"production"` (fail-closed) when unset. CI deploys set
- *      `ENVIRONMENT=production` explicitly; local `alchemy dev` sets
- *      `ENVIRONMENT=development` via the `dev:worker` package script.
- *
- *   2. **The `env` literal.** {@link phoenixEnvBindings} is the literal
- *      record handed to the worker's `env` prop in `index.ts`.
+ * `worker/index.ts` declares the worker's `env` block, which is evaluated in the
+ * alchemy CLI process at deploy time — so `process.env` here is the *deploy-time*
+ * environment (`alchemy deploy` on CI / from an `--env-file`, or the offline
+ * `alchemy dev` / Vitest loop), not the worker runtime. `ENVIRONMENT` gates the
+ * auth-layer dev flag — the magic-link token `console.log` and the better-auth
+ * dev-URL derivation (`better-auth-live.ts`, which reads `ENVIRONMENT` back off
+ * `WorkerEnvironment` at runtime). It resolves from `process.env.ENVIRONMENT`,
+ * defaulting to `"production"` (fail-closed) when unset. CI deploys set
+ * `ENVIRONMENT=production` explicitly; local `alchemy dev` sets
+ * `ENVIRONMENT=development` via the `dev:worker` package script.
  */
 
 /** The subset of the deploy-time process env this resolver reads. */
@@ -59,41 +54,15 @@ export const resolveDeployEnv = (env: DeployEnvInput): ResolvedDeployEnv => ({
 	ENVIRONMENT: env.ENVIRONMENT ?? "production",
 });
 
-// Resolved ONCE in the alchemy CLI process when this module is evaluated, so
-// the `env` literal below is the deploy-time policy (fail-closed): `ENVIRONMENT`
-// defaults to "production" when unset (CI deploys set it explicitly, and local
-// `alchemy dev` sets `ENVIRONMENT=development` via the `dev:worker` package
-// script — a missing var lands in production mode, closing every dev gate).
-const deployEnv = resolveDeployEnv(process.env);
-
 /**
- * The literal `env` record bound on the worker (`index.ts`).
- *
- * `satisfies Record<string, string>` pins each field to `string` (no
- * widening drift, and no narrowing to the literal value either — the deployed
- * `BETTER_AUTH_URL` is a `string` at runtime, not the source literal).
- *
- * `BETTER_AUTH_URL` / `BETTER_AUTH_TRUSTED_ORIGINS` resolve from the
- * deploy-time env (CI sets the real values), falling back to localhost for the
- * local dev loop — mirroring how `ENVIRONMENT` resolves above. Dev runs behind
- * the Vite proxy, so the worker sees `Host: 127.0.0.1:<port>` rather than the
- * browser origin. better-auth needs the real browser origin to set/validate
- * its cookie, so we hand it the origin explicitly (ADR 0031 / `auth.ts`)
- * instead of inferring from the inbound Host. No `https://` in the dev
- * fallback — that would flip the cookie `Secure` flag and break
- * `http://localhost` storage.
- *
- * `BETTER_AUTH_SECRET` is NOT bound here — `BetterAuthLive`
- * (`features/pasaport/better-auth-live.ts`) mints it via alchemy's `Random`
- * resource, which persists the minted value in alchemy state so re-deploys
- * keep the same secret unless the resource is replaced.
+ * The deploy-time `ENVIRONMENT` value bound on the worker's `env` block
+ * (`index.ts`). Resolved ONCE in the alchemy CLI process when this module is
+ * evaluated, so it carries the deploy-time policy (fail-closed): defaults to
+ * "production" when unset (CI deploys set it explicitly, and local `alchemy dev`
+ * sets `ENVIRONMENT=development` via the `dev:worker` package script — a missing
+ * var lands in production mode, closing every dev gate).
  */
-export const phoenixEnvBindings = {
-	ENVIRONMENT: deployEnv.ENVIRONMENT,
-	BETTER_AUTH_URL: process.env.BETTER_AUTH_URL ?? "http://localhost:3000",
-	BETTER_AUTH_TRUSTED_ORIGINS:
-		process.env.BETTER_AUTH_TRUSTED_ORIGINS ?? "http://localhost:3000,http://localhost:5173",
-} satisfies Record<string, string>;
+export const environment = resolveDeployEnv(process.env).ENVIRONMENT;
 
 /** Which alchemy state store the stack should use. */
 export type StateMode = "local" | "cloudflare";

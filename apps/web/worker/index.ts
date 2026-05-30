@@ -34,7 +34,7 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
-import {phoenixEnvBindings} from "./env.ts";
+import {environment} from "./env.ts";
 import {makeFateLayer} from "./features/fate/layers.ts";
 import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
@@ -77,9 +77,11 @@ export class Phoenix extends Cloudflare.Worker<
 	LiveDO
 >()("phoenix", {
 	main: import.meta.filename,
-	// The `env` literal lives in `worker/env.ts` (`phoenixEnvBindings`) — it
-	// declares the worker's bindings, resolved from the deploy-time env.
-	env: phoenixEnvBindings,
+	// Declares the worker's single ENVIRONMENT binding, resolved from the
+	// deploy-time env in `worker/env.ts` (`environment`, fail-closed to
+	// "production"). `BetterAuthLive` reads it back off `WorkerEnvironment` to
+	// derive the dev auth URLs; the magic-link dev gate reads it too.
+	env: {ENVIRONMENT: environment},
 	assets: {
 		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
 		// ADR 0030) emits the client directly into `dist/client`; the path is

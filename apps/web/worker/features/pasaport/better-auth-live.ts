@@ -41,7 +41,6 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
 import * as schema from "../../db/drizzle/schema.ts";
 import {PhoenixDb} from "../../db/resources.ts";
-import {phoenixEnvBindings} from "../../env.ts";
 
 /**
  * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
@@ -50,10 +49,13 @@ import {phoenixEnvBindings} from "../../env.ts";
  * the `makeBetterAuth` call happens once per isolate) and adds phoenix's
  * plugins + `baseURL`/`trustedOrigins`.
  *
- * `BETTER_AUTH_URL` and `BETTER_AUTH_TRUSTED_ORIGINS` are read from the
- * `WorkerEnvironment` at layer build (deploy-time wiring still lives in the
- * worker `env` block) — they steer cookie storage on the dev Vite proxy where
- * the worker sees `Host: 127.0.0.1:<port>` rather than the browser origin.
+ * `baseURL`/`trustedOrigins` are derived from `ENVIRONMENT` (read off the
+ * `WorkerEnvironment` Tag at layer build): in dev they are set explicitly to
+ * `localhost` so cookie storage works behind the Vite proxy (where the worker
+ * sees `Host: 127.0.0.1:<port>` rather than the browser origin); in prod they
+ * are OMITTED so better-auth infers the origin from the inbound request Host.
+ * This is the fix for the latent prod bug — CI never set `BETTER_AUTH_URL`, so
+ * the old env-binding path shipped `http://localhost:3000` as prod's auth URL.
  */
 export const BetterAuthLive = Layer.effect(
 	BetterAuth.BetterAuth,
@@ -70,15 +72,24 @@ export const BetterAuthLive = Layer.effect(
 		const SECRET = yield* Random("BETTER_AUTH_SECRET");
 		const secret = yield* SECRET.text;
 
+		// Read `ENVIRONMENT` back off the worker env (one cast, one place — same
+		// pattern as `http/health.ts`). It is declared on the worker's `env` block
+		// (`index.ts`), resolved fail-closed to "production" at deploy time.
 		const envRecord = env as unknown as Record<string, string | undefined>;
-		const baseURL = envRecord.BETTER_AUTH_URL;
-		const trustedOriginsRaw = envRecord.BETTER_AUTH_TRUSTED_ORIGINS;
-		const trustedOrigins = trustedOriginsRaw
-			? trustedOriginsRaw
-					.split(",")
-					.map((o) => o.trim())
-					.filter(Boolean)
-			: undefined;
+		const isDev = envRecord.ENVIRONMENT === "development";
+
+		// Dev: hand better-auth the explicit browser origin so its cookie storage
+		// works behind the Vite proxy (the worker sees `Host: 127.0.0.1:<port>`,
+		// not the browser origin). `http`, not `https` — keeps the cookie host-only
+		// on `http://localhost` (no `Secure` flag). Prod: OMIT both so better-auth
+		// infers the origin from the inbound request Host (the latent-bug fix — CI
+		// never set `BETTER_AUTH_URL`, so the old path shipped localhost in prod).
+		const authUrlConfig = isDev
+			? {
+					baseURL: "http://localhost:3000",
+					trustedOrigins: ["http://localhost:3000", "http://localhost:5173"],
+				}
+			: {};
 
 		const auth = yield* Effect.gen(function* () {
 			const d1 = yield* connection.raw;
@@ -88,13 +99,10 @@ export const BetterAuthLive = Layer.effect(
 				emailAndPassword: {enabled: true},
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
 				secret: secretText,
-				// Dev runs behind the Vite proxy, so the worker sees
-				// `Host: 127.0.0.1:<port>` rather than the browser origin. Set
-				// `baseURL`/`trustedOrigins` explicitly (ADR 0031) instead of
-				// inferring from the inbound Host. We never flip `Secure` — the
-				// dev cookie must stay host-only on `http://localhost`.
-				...(baseURL ? {baseURL} : {}),
-				...(trustedOrigins ? {trustedOrigins: [...trustedOrigins]} : {}),
+				// Dev sets `baseURL`/`trustedOrigins` explicitly (ADR 0031); prod omits
+				// both so better-auth infers the origin from the request Host. Derived
+				// from `ENVIRONMENT` above.
+				...authUrlConfig,
 				user: {
 					additionalFields: {
 						username: {
@@ -114,13 +122,9 @@ export const BetterAuthLive = Layer.effect(
 					bearer(),
 					magicLink({
 						sendMagicLink: async ({email, token, url}) => {
-							// Read `ENVIRONMENT` off the deploy-time `phoenixEnvBindings`
-							// literal (`env.ts`) — same value the worker's `env` block
-							// ships, resolved once at module-eval in the alchemy CLI. This
-							// sidesteps the `cloudflare:workers` runtime entirely (no
-							// dynamic import, no ambient-`Env` cast, no codegen-vs-workerd
-							// resolution mismatch to worry about).
-							if (phoenixEnvBindings.ENVIRONMENT === "development") {
+							// Gate on the same `isDev` derived above from `ENVIRONMENT`
+							// (read off `WorkerEnvironment`) — captured in this closure.
+							if (isDev) {
 								console.log("[pasaport] magic link", {email, token, url});
 							}
 						},
