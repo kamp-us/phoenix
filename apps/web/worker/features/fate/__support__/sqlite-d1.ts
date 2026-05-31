@@ -27,10 +27,7 @@ import {DatabaseSync, type SQLInputValue} from "node:sqlite";
 
 type Params = ReadonlyArray<unknown>;
 
-interface PreparedStub {
-	bind: (...params: Params) => BoundStub;
-	// D1 also allows calling all()/run()/raw() with no bind (no-param queries);
-	// drizzle's batch path takes that route for param-less statements.
+interface BoundStub {
 	all: <T = Record<string, unknown>>() => Promise<{results: T[]}>;
 	run: () => Promise<{
 		success: true;
@@ -41,15 +38,11 @@ interface PreparedStub {
 	first: <T = Record<string, unknown>>() => Promise<T | null>;
 }
 
-interface BoundStub {
-	all: <T = Record<string, unknown>>() => Promise<{results: T[]}>;
-	run: () => Promise<{
-		success: true;
-		meta: Record<string, unknown>;
-		results: Record<string, unknown>[];
-	}>;
-	raw: <T = unknown[]>() => Promise<T[]>;
-	first: <T = Record<string, unknown>>() => Promise<T | null>;
+// A prepared statement is a bound stub (callable with no params — D1 allows
+// all()/run()/raw() without a bind, the route drizzle's batch path takes for
+// param-less statements) plus the `bind(...params)` entry point.
+interface PreparedStub extends BoundStub {
+	bind: (...params: Params) => BoundStub;
 }
 
 /** Normalize JS values to ones `node:sqlite` accepts as bound params. */
@@ -118,15 +111,12 @@ export function makeSqliteD1(): SqliteD1 {
 		},
 	});
 
+	// A prepared statement is the no-param bound stub plus a `bind` that rebinds
+	// the same SQL with params — so it reuses `bound(sql, [])` rather than
+	// re-spelling the four method bodies.
 	const prepare = (sql: string): PreparedStub => ({
+		...bound(sql, []),
 		bind: (...params: Params) => bound(sql, params),
-		all: async () => ({results: allSql(sql, []) as never[]}),
-		run: async () => ({success: true, meta: {}, results: runReturningSql(sql, [])}),
-		raw: async () => rawSql(sql, []) as never[],
-		first: async () => {
-			const rows = allSql(sql, []);
-			return (rows[0] as never) ?? null;
-		},
 	});
 
 	// biome-ignore lint/plugin: only the `prepare`/`exec`/`batch`/`dump` slice drizzle-orm/d1 calls is implemented; the full `D1Database` surface can't be built in a fake, so this assembly point widens to it once.
