@@ -47,8 +47,11 @@ onlyBuiltDependencies:
   - esbuild
   - workerd
 
-# TEMPORARY: adds `DurableObjectNamespaceScope` to alchemy's `DurableObjectServices`
+# Local patch (policy: patch deps locally, don't depend on an upstream/fork
+# release). Adds `DurableObjectNamespaceScope` to alchemy's `DurableObjectServices`
 # union so the `.make()` DO scope no longer leaks into the Stack's requirements
-# (alchemy.run.ts TS2375). Remove once alchemy publishes the upstream fix (~beta.46).
+# (alchemy.run.ts TS2375). NOT upstreamed — verified still absent from beta.46's
+# published types (2026-05-31); the fix is PR'd to the usirin/alchemy-effect fork,
+# not waited on from upstream. Re-target the version key if the alchemy pin bumps.
 patchedDependencies:
   alchemy@2.0.0-beta.45: patches/alchemy@2.0.0-beta.45.patch
