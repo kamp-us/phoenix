@@ -28,21 +28,34 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # alchemy deploy runs `pnpm build` first (the @phoenix/web `deploy` script),
-      # bundling the worker + uploading dist/client. `--stage prod` is the shared
-      # production stage. State store is chosen by `resolveStateMode` (worker/env.ts)
-      # off the alchemy dev signal — NOT `CI` (ADR 0032; the CI heuristic was a
-      # footgun: `CI` is set for both deploy and test, so it couldn't tell a real
-      # deploy from a test run). A real `alchemy deploy` (dev signal unset) always
-      # resolves to the Cloudflare-hosted store; only `alchemy dev`/Vitest stays local.
+      # The SPA is a plain Vite build; the worker uploads `dist/client` via its
+      # `assets` prop. `alchemy deploy` does not drive Vite for phoenix's shape, so
+      # build it explicitly before the deploy (the package `deploy` script chains
+      # `pnpm build && alchemy deploy`, but we call alchemy directly below).
+      - name: Build SPA
+        run: pnpm --filter @phoenix/web build
+
+      # `exec alchemy` forwards `--stage`/`--yes` to the alchemy CLI. A bare
+      # `pnpm --filter @phoenix/web deploy --stage …` makes *pnpm* eat the flags
+      # ("Unknown options: 'stage', 'yes'"). `--yes` skips the interactive plan
+      # approval (CI would otherwise hang); `--stage prod` is the shared production
+      # stage. State store is chosen by `resolveStateMode` (worker/env.ts) off the
+      # alchemy dev signal — NOT `CI` (ADR 0032; `CI` is set for both deploy and
+      # test, so it couldn't tell a real deploy from a test run). A real
+      # `alchemy deploy` (dev signal unset) always resolves to the Cloudflare-hosted
+      # store; only `alchemy dev`/Vitest stays local.
       - name: Deploy to production
-        run: pnpm --filter @phoenix/web deploy --stage prod --yes
+        run: pnpm --filter @phoenix/web exec alchemy deploy --stage prod --yes
         env:
           CI: "true"
           ENVIRONMENT: production
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
+          # Session-signing secret. `config.ts` reads it via
+          # `Config.redacted("BETTER_AUTH_SECRET")` → a `secret_text` binding; the
+          # value must be present at deploy time (stack-build, Effect.orDie).
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET_TEST }}
 
   deploy-preview:
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
@@ -63,12 +76,17 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Build SPA
+        run: pnpm --filter @phoenix/web build
+
       # `--stage pr-<n>` deploys a fully isolated copy of the stack — its own
       # worker script, D1, and DOs — keyed by the stage name. No second config.
+      # `exec alchemy` so the flags reach the alchemy CLI (a bare `pnpm … deploy
+      # --stage …` makes pnpm reject "Unknown options: 'stage', 'yes'").
       - name: Deploy PR preview
         id: deploy
         run: |
-          pnpm --filter @phoenix/web deploy \
+          pnpm --filter @phoenix/web exec alchemy deploy \
             --stage pr-${{ github.event.pull_request.number }} --yes
         env:
           CI: "true"
@@ -76,6 +94,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET_TEST }}
 
       - name: Comment preview stage
         uses: marocchino/sticky-pull-request-comment@v2
@@ -102,7 +121,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Tear down the isolated preview stack (worker + D1 + DOs).
+      # Tear down the isolated preview stack (worker + D1 + DOs). `destroy` loads
+      # `alchemy.run.ts`, which builds the worker layer → `config.ts` reads
+      # BETTER_AUTH_SECRET (`Effect.orDie`) at stack-build, same as deploy.
       - name: Destroy preview stage
         run: pnpm --filter @phoenix/web exec alchemy destroy --stage pr-${{ github.event.pull_request.number }} --yes
         env:
@@ -110,3 +131,4 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET_TEST }}
