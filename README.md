@@ -31,7 +31,7 @@ Tech is rebuilt from the original `kamp-us/kampus` worker; products are reborn f
 | HTTP | `effect/unstable/http` | `HttpApiBuilder` for typed JSON groups, imperative `HttpRouter` for raw-Request/SSE routes. No Hono, no GraphQL. |
 | Auth | `@alchemy.run/better-auth` | BetterAuth on D1 via a forked `CloudflareD1` Layer; session secret minted by alchemy's `Random` resource. |
 | DB | Drizzle on D1 | `Drizzle` is a worker-level singleton; feature code destructures `run`/`batch` capability methods. |
-| DO storage | `@effect/sql-sqlite-do` | SQL migrations for Durable Object `state.storage.sql` schemas. |
+| DO storage | `state.storage` KV | The single `LiveDO` persists subscriber rows + generation as KV entries on `state.storage`; no per-DO SQL schema or migrations. |
 | Frontend | React 19 + Vite 8 + react-fate | Components declare views; one batched `useRequest` per screen; declarative mutations; live views over SSE. |
 | Type-check | `@effect/tsgo` | 10× tsc plus Effect's LSP. |
 | Lint / format | Biome 2 | Tabs, 100 col, no bracket spacing. |
@@ -79,8 +79,6 @@ Two Durable Objects exist: `ConnectionDO` (holds the SSE connections) and `Topic
 | `pnpm lint` | `biome check .`. |
 | `pnpm format` | `biome check --write .`. |
 
-Tooling lives under `packages/`. The first focused CLI is `@kampus-phoenix/phoenix-migrate` — scaffold a DO SQL migration with `pnpm --filter @kampus-phoenix/phoenix-migrate run phoenix-migrate new <do> <name>`. ADR 0035 fixes the shape future CLIs follow.
-
 ## Where to read deeper
 
 The codebase is documented in two surfaces: ADRs (`.decisions/`) capture the *why* of each choice; patterns (`.patterns/`) describe *how* the current code is shaped. Read the patterns when writing code; read the ADRs when revisiting a decision.
@@ -90,7 +88,6 @@ Highest-leverage entry points for a new contributor:
 | Doc | Why read it |
 |---|---|
 | [ADR 0032](./.decisions/0032-alchemy-beta45-and-dev-model.md) | The foundational dev model — alchemy deploys infra to real Cloudflare, runs the worker locally in workerd. |
-| [ADR 0035](./.decisions/0035-phoenix-cli-architecture.md) | The tooling pattern — one package per verb, composed via Effect `Command` values. |
 | [ADR 0036](./.decisions/0036-features-as-any-named-app-grouping.md) | The structural principle — what counts as a feature, and what doesn't. |
 | [.patterns/alchemy-runtime.md](./.patterns/alchemy-runtime.md) | The worker runtime — no per-request `ManagedRuntime`, worker-level layers, captured ServiceMap. The fate↔domain seam. |
 | [.patterns/fate-effect-bridge.md](./.patterns/fate-effect-bridge.md) | The seam between the fate protocol and the Effect domain. Read first when touching server-side fate code. |

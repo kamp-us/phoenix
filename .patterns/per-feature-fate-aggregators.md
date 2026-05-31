@@ -121,16 +121,6 @@ why does `fate/` exist at all?" Two answers:
    `{getSource, registry}` surface fate resolves by `typeName`. None of these
    belong to a single feature; the barrel is where they live.
 
-## Tooling implication — the CLI assumes the shape
-
-[ADR 0035](../.decisions/0035-phoenix-cli-architecture.md) sketches the
-`phoenix-fate` CLI — `phoenix-fate new <feature>`, `phoenix-fate add-query
-<feature> <name>`, etc. Those verbs assume the per-feature footprint described
-here: a `new` verb scaffolds the standard set of fragments for a product
-domain; `add-query` appends an entry to `features/<feature>/queries.ts` and
-trusts the barrel in `features/fate/queries.ts` to pick it up. The convention
-is the API.
-
 ## When NOT to do this
 
 This pattern is specifically for the **fate aggregators**. Don't generalize it
@@ -155,5 +145,3 @@ in different clothing.
 - [ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md) — the
   feature-locality rule that drove the split; this pattern is its fate-layer
   realization.
-- [ADR 0035](../.decisions/0035-phoenix-cli-architecture.md) — the CLI verbs
-  that scaffold this shape.

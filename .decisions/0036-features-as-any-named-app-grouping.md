@@ -178,9 +178,6 @@ caller forces the abstraction.
 
 ## See also
 
-- [0035](0035-phoenix-cli-architecture.md) — the CLI architecture builds on
-  this convention. `phoenix-fate new <feature>` assumes the per-feature
-  shape this ADR fixes.
 - [feature-services.md](../.patterns/feature-services.md) — the per-feature
   service shape that feature folders host.
 - [effect-layer-composition.md](../.patterns/effect-layer-composition.md) —
