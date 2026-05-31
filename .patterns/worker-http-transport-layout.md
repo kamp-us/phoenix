@@ -18,13 +18,11 @@ worker/http/
 └── health.ts     # the lone HttpApiBuilder group: GET /api/health
 ```
 
-That is the whole folder. The old `/api/admin/*` seeder surface
-(`admin-api.ts`, `admin-handlers.ts`, `admin-auth.ts`, the
-`SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` services, the `adminAllowed`
-(`ENVIRONMENT === "development"`) gate) was deleted (ADR 0012 superseded):
-gating destructive ops behind a single mutable `ENVIRONMENT` string is
-fail-open, and the seeders were throwaway data-population. The only
-`HttpApiBuilder` group that remains is the liveness probe.
+That is the whole folder. `GET /api/health` is the only `HttpApiBuilder`
+group phoenix exposes — there is no admin/seeder transport (gating
+destructive ops behind a mutable `ENVIRONMENT` string was fail-open, and
+the seeders were throwaway data-population; ADR 0012, retired). Future
+seeding is an out-of-band direct-D1 script, not a runtime route.
 
 `worker/index.ts` is the only consumer: it calls `makeAppLive({...})` with the
 worker-init-resolved layers (`fateLayer`, `liveLayer`, `betterAuthLayer`) and

@@ -130,19 +130,17 @@ This is the **only** change to the bridge from [fate-effect-bridge.md](./fate-ef
 
 > **No `dispose`, no `try/finally`, no `waitUntil` for teardown.** Providing a captured service map and running on the default runtime allocates nothing that needs scoped cleanup. The worker-level layers are released when the isolate is torn down, not per request. If a service genuinely needs per-request acquire/release (none do today), wrap *that* service in a `Scope`, not the whole runtime. This is strictly about **runtime teardown** — it is not "no `waitUntil` anywhere." Mutations still fan out to the topic DO via `executionCtx.waitUntil(...)` so the work doesn't block the response; on alchemy that handle comes from `yield* Cloudflare.WorkerExecutionContext` (a service whose value is the CF `ExecutionContext`), not from a disposed runtime. The live fan-out `waitUntil` is a separate, still-required concern.
 
-## The two-runtime story becomes two layer sets
+## The two-runtime story becomes one layer set
 
-phoenix keeps the request/admin split (ADR 0012), but it's no longer two `ManagedRuntime`s — it's two layer sets over the same worker:
+phoenix's old design ran two `ManagedRuntime`s; now there is a single worker-level layer set over one `Drizzle`:
 
 - **request** — `Auth` + `HttpServerRequest` + the feature services. Drives `/fate`.
-- **admin** — `AdminAuth` + the `…Admin` services, env-gated, no session. Drives the dev-only `/api/admin/*` routes.
 
-Both sit on the same worker-level `Drizzle`. The admin routes provide `AdminAuth` the same way `/fate` provides `Auth`: `Effect.provideService` in the handler. See [alchemy-http-router.md](./alchemy-http-router.md) for where each is provided.
+`Drizzle` and the feature services are built once at worker init; the `/fate` route layers `Auth` on top per request with `Effect.provideService` in the handler, and picks up `HttpServerRequest` from the upstream alchemy/HttpRouter Tag. See [alchemy-http-router.md](./alchemy-http-router.md) for where each is provided.
 
 ## See also
 
 - [fate-effect-bridge.md](./fate-effect-bridge.md) — the bridge this doc describes (a captured service map for the old `ManagedRuntime`)
 - [effect-layer-composition.md](./effect-layer-composition.md) — the layer graph, now provided at worker scope
 - [alchemy-worker.md](./alchemy-worker.md) — where worker-level layers are provided
-- [alchemy-http-router.md](./alchemy-http-router.md) — where `Auth`/`HttpServerRequest`/`AdminAuth` are provided per request
-- [ADR 0012](../.decisions/0012-admin-parallel-services.md) — the request/admin split
+- [alchemy-http-router.md](./alchemy-http-router.md) — where `Auth`/`HttpServerRequest` are provided per request

@@ -43,33 +43,29 @@ export class SeedTermBody extends Schema.Class<SeedTermBody>("SeedTermBody")({
 
 ## Parsing at a typed-JSON route boundary
 
-> **Note:** the `/api/admin/*` endpoints used as the example below were deleted (the
-> `ENVIRONMENT`-gated admin surface). The only `HttpApi` group left is `GET
-> /api/health` (`http/health.ts`), which has no payload — so this is the pattern for
-> a payload-bearing `HttpApiEndpoint`, kept for when one returns, not a live example.
+phoenix's only live `HttpApi` group is `GET /api/health` (`http/health.ts`), which takes no payload — so the example below is the shape a payload-bearing endpoint would take, not a route that exists today.
 
-A payload-bearing `HttpApiEndpoint` declares its `payload` Schema at the `HttpApi` level; `HttpApiBuilder` decodes the request body against that Schema before the handler runs, so the handler only sees a typed value:
+A payload-bearing `HttpApiEndpoint` declares its `payload` Schema in the endpoint's options object; `HttpApiBuilder` decodes the request body against that Schema before the handler runs, so the handler only sees a typed value:
 
 ```ts
-// schema lives on the endpoint declaration
-const upsertTerm = HttpApiEndpoint.post("upsertTerm", "/api/admin/sozluk/upsert-term")
-  .setPayload(SeedTermBody)
-  .addSuccess(UpsertTermResult)
-  .addError(Forbidden);
+// schema lives in the endpoint declaration's options object
+const upsertTerm = HttpApiEndpoint.post("upsertTerm", "/api/sozluk/upsert-term", {
+  payload: SeedTermBody,
+  success: UpsertTermResult,
+});
 
-// worker/http/admin-handlers.ts — handler body receives the decoded payload
-HttpApiBuilder.group(AppApi, "sozluk", (h) =>
+// handler body receives the already-decoded payload
+HttpApiBuilder.group(SozlukApi, "sozluk", (h) =>
   h.handle("upsertTerm", ({payload}) =>
     Effect.gen(function* () {
-      yield* requireAdmin;
-      const admin = yield* SozlukAdmin;
-      return yield* admin.seedTerm(payload);
+      const sozluk = yield* Sozluk;
+      return yield* sozluk.upsertTerm(payload);
     }),
   ),
 );
 ```
 
-`HttpApiBuilder` is the boundary. Past it, the admin service receives a typed `SeedTermBody` and never re-validates structure. The service can still enforce domain rules (e.g., uniqueness, ownership) — those are different from structural validation. Schema's `ParseError` surfaces as a typed `BadRequest`-shaped failure at the HTTP edge.
+`HttpApiBuilder` is the boundary. Past it, the service receives a typed `SeedTermBody` and never re-validates structure. The service can still enforce domain rules (e.g., uniqueness, ownership) — those are different from structural validation. Schema's `ParseError` surfaces as a typed `BadRequest`-shaped failure at the HTTP edge.
 
 ## Service-method validation, not Schema
 
@@ -107,7 +103,7 @@ export class PersistedAuditError extends Schema.TaggedErrorClass<PersistedAuditE
 
 `Schema.encode(PersistedAuditError)(err)` produces a structurally-validated JSON form. `Schema.decode(PersistedAuditError)(json)` reconstructs the typed error.
 
-Phoenix doesn't have this need — all errors are encoded by the fate bridge into `FateRequestError`s (`worker/features/fate/errors.ts`) before leaving the worker, and the typed-JSON admin groups carry their failures on the `HttpApiEndpoint`'s declared error channel. Reserve `Schema.TaggedErrorClass` for the moment you need wire-form errors over a non-fate transport.
+Phoenix doesn't have this need — all errors are encoded by the fate bridge into `FateRequestError`s (`worker/features/fate/errors.ts`) before leaving the worker, and any typed-JSON group carries its failures on the `HttpApiEndpoint`'s declared error channel. Reserve `Schema.TaggedErrorClass` for the moment you need wire-form errors over a non-fate transport.
 
 ## Schema features worth knowing about
 
@@ -132,5 +128,5 @@ Documented in `effect-smol`'s `Schema.ts` (`packages/effect/src/Schema.ts`). Not
 
 - [feature-services.md](./feature-services.md) — service methods own their input validation
 - [effect-errors.md](./effect-errors.md) — tagged errors for domain validation failures, `Schema.TaggedErrorClass` for wire-form errors
-- [effect-error-operators.md](./effect-error-operators.md) — handling `ParseError` when it does come up (admin boundaries)
+- [effect-error-operators.md](./effect-error-operators.md) — handling `ParseError` when it does come up (typed-JSON boundaries)
 - effect-smol `Schema.ts` — full API reference at `packages/effect/src/Schema.ts`

@@ -285,7 +285,7 @@ Vote-delegating methods are the one place a method's `R` widens beyond `never`: 
 
 See `apps/web/worker/features/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
 
-`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request `Auth` and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) are layered on top in the `/fate` route. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#multiple-runtimes--graphql--admin) for why this shape avoids the `Layer.mergeAll` dependency warning.
+`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request `Auth` and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) are layered on top in the `/fate` route. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 
@@ -318,7 +318,7 @@ Integration tests in `tests/integration/*.test.ts` use the second form — same 
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — class-form services, layer shapes
-- [effect-layer-composition.md](./effect-layer-composition.md) — runtime wiring, multi-runtime (graphql + admin)
+- [effect-layer-composition.md](./effect-layer-composition.md) — runtime wiring, the worker layer set
 - [effect-errors.md](./effect-errors.md) — tagged error patterns
 - [effect-error-operators.md](./effect-error-operators.md) — catching and inspecting failures
 - [effect-fn-tracing.md](./effect-fn-tracing.md) — `Effect.fn` vs `Effect.fnUntraced` for method shape

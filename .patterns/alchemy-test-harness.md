@@ -116,7 +116,7 @@ The harness API (`apps/web/tests/integration/_harness.ts`):
 | `h.fate(op, opts?)` | POST one fate operation; return its single result. |
 | `h.fateBatch(ops, opts?)` | POST several fate operations; return all results in order. |
 | `h.signUp(email, password, name)` | Sign up via `/api/auth/sign-up/email`; return `{userId, cookie}`. |
-| `h.seedTerm(...)` | Seed a sözlük term + definitions via the dev-only admin route. |
+| `h.seedTerm(...)` | Seed a sözlük term + definitions. Seeding is out-of-band (a direct-D1 script), not a runtime route. |
 | `h.openSse(connectionId, cookie)` | Open the live SSE stream. |
 | `h.liveControl(connectionId, ops, cookie)` | POST control messages (subscribe / unsubscribe). |
 

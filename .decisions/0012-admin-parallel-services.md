@@ -1,21 +1,23 @@
 ---
 id: 0012
 title: Admin operations as parallel `<Feature>Admin` services with a separate runtime
-status: superseded
+status: retired
 date: 2026-05-17
 tags: [backend, effect, admin, architecture]
 ---
 
 # 0012 — Admin operations as parallel `<Feature>Admin` services with a separate runtime
 
-> **Superseded:** the entire `/api/admin/*` surface this ADR describes — the
-> `AdminAuth` gate, the `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` services, the
-> `adminAllowed` (`ENVIRONMENT === "development"`) predicate — was deleted. Gating
-> destructive ops (`/clear` wipes all terms) behind a single mutable `ENVIRONMENT`
-> string is fail-open: a privileged op doesn't belong as a runtime-gated route on the
-> public worker. The seeders were throwaway data-population; sözlük/pano persist via
-> Drizzle+D1, so nothing here is load-bearing for the runtime. Future seeding is a
-> direct-D1 script, not a framework concern.
+> **Retired (PR #12, 2026-05):** the admin parallel-services split this ADR
+> introduced was removed with the `ENVIRONMENT`-gated admin HTTP surface — the
+> `/api/admin/*` seeder routes, the `AdminAuth` gate, the
+> `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` services, and the `adminAllowed`
+> (`ENVIRONMENT === "development"`) predicate. Gating destructive ops (`/clear`
+> wipes all terms) behind a single mutable `ENVIRONMENT` string is fail-open: a
+> privileged op doesn't belong as a runtime-gated route on the public worker. The
+> seeders were throwaway data-population; sözlük/pano persist via Drizzle+D1, so
+> nothing here is load-bearing for the runtime. Future seeding is a direct-D1
+> script, not a framework concern. Kept for historical record.
 
 ## Context
 

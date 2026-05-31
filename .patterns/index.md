@@ -18,12 +18,12 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 |---|---|---|
 | [effect-context-service.md](./effect-context-service.md) | Class-form services, layer shapes, `return yield*`, service-method shape | Defining a new service or layer |
 | [feature-services.md](./feature-services.md) | One service per feature folder, `Drizzle` capability service, `Drizzle.run`/`Drizzle.batch` callbacks | Adding a feature service, writing service methods |
-| [effect-layer-composition.md](./effect-layer-composition.md) | `Layer.mergeAll` / `Layer.provide` / `provideMerge`, parameterized Layer factories, the request + admin two-layer-set story (ADR 0029) | Wiring services into the worker, adding a new feature Layer |
+| [effect-layer-composition.md](./effect-layer-composition.md) | `Layer.mergeAll` / `Layer.provide` / `provideMerge`, parameterized Layer factories, the worker-level layer set (ADR 0029) | Wiring services into the worker, adding a new feature Layer |
 | [effect-errors.md](./effect-errors.md) | `Data.TaggedError` modeling, domain vs infra split, `_tag` → wire-code mapping | Designing a new error or feature's error set |
 | [effect-error-operators.md](./effect-error-operators.md) | `Effect.catchTag`/`Tags`/`All`, `Effect.exit`, `Cause`/`Exit` inspection | Catching, recovering, or inspecting failures at a boundary |
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | `Effect.fn` for service methods, span naming conventions | Writing or naming a service method |
 | [effect-testing.md](./effect-testing.md) | `@effect/vitest`, `it.effect`, unit-test guidance (Drizzle contract, fate-bridge, DO instance factories); integration redirects to `alchemy-test-harness.md` | Writing a unit test that drives Effect; first stop before writing any test |
-| [effect-schema-validation.md](./effect-schema-validation.md) | `Schema.Class` for trust-boundary input validation | Validating untyped input (admin `HttpApi` payloads, external API responses, persisted JSON) |
+| [effect-schema-validation.md](./effect-schema-validation.md) | `Schema.Class` for trust-boundary input validation | Validating untyped input (`HttpApi` payloads, external API responses, persisted JSON) |
 | [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | `Stream.fromQueue` + `Stream.merge(keep-alive)` + `HttpServerResponse.stream`; the deliver path offers onto the queue | Building an SSE response written to from another component (e.g. the `LiveDO` topic role's `deliver` RPC) |
 
 ## Index — fate protocol layer
@@ -70,6 +70,12 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | [alchemy-test-harness.md](./alchemy-test-harness.md) | `alchemy/Test/Core` deploy in `globalSetup` (main-process workaround for the pool-worker LoopbackServer race) + a black-box HTTP harness in the pool | Writing integration tests against the deployed worker |
 | [better-auth-with-plugins-on-d1.md](./better-auth-with-plugins-on-d1.md) | Forked `CloudflareD1` Layer on phoenix's existing D1; `Random` for the session secret; threading the resolved `Auth` instance to consumers without leaking `RuntimeContext` | Adding/editing better-auth plugins or wiring an auth consumer |
 
+## Lint tooling
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [biome-custom-gritql-rules.md](./biome-custom-gritql-rules.md) | Authoring a project-specific lint rule as a biome GritQL plugin (`.grit` in `biome-plugins/`, registered in `biome.jsonc` `"plugins"`); the shipped `no-type-assertions` rule banning `as unknown as`/`as any`; per-line `// biome-ignore lint/plugin:` suppression | Adding/editing a custom biome lint rule, or suppressing one |
+
 ## Reference notes
 
 Background research and considered-options docs that don't define current code but record why the current shape was picked. Read when revisiting a decision; skip when adding a feature.
@@ -93,7 +99,7 @@ Background research and considered-options docs that don't define current code b
 - **Drizzle is the query builder.** Exposed as `DrizzleAccess` methods you destructure (`const {run, batch} = yield* Drizzle`) — feature code never writes `Effect.tryPromise` directly.
 - **House rule: `Effect.tryPromise` always uses object notation** with an explicit `catch` producing a tagged error. The single-arg form is treated like `Effect.promise`.
 - **Service methods always use `Effect.fn("Service.method")(function*(args) {...})`** — automatic spans, automatic stack frames. Reserve `Effect.fnUntraced` for genuinely hot internal helpers.
-- **One service per feature folder.** Reads + writes coexist. Admin operations get a parallel `<Feature>Admin` service.
+- **One service per feature folder.** Reads + writes coexist.
 - **Testing strategy:** product code → integration tests via the alchemy/Test deploy + black-box HTTP harness ([alchemy-test-harness.md](./alchemy-test-harness.md)). Infrastructure (the `Drizzle` service, the fate bridge, the DO instance factories) → isolation tests under `@effect/vitest` ([effect-testing.md](./effect-testing.md)).
 
 ## When to add a new pattern doc here

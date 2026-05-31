@@ -161,37 +161,33 @@ type, not `any`, so it needs its own snippet.
 
 ### Scoping: production source vs. test support
 
-The rule is meant for production code. Test-support fakes under `__support__/` and the
-`*.test.ts` / spec files legitimately bridge Node and test types onto runtime DO/D1
-surfaces that can't be implemented in full, so they're excluded via an `overrides`
-block in `biome.jsonc` rather than weakening the rule itself:
-
-```jsonc
-"overrides": [
-	{
-		"includes": ["**/__support__/**", "**/tests/**", "**/*.test.ts", "**/*.spec.ts"],
-		"plugins": []
-	}
-]
-```
-
-An override that sets `"plugins": []` for those globs turns the plugin off there while
-keeping every built-in rule. Scope the ban to where it carries its weight; don't let a
-justified test fake force a blanket disable.
+The rule should bite everywhere, production *and* tests — a cast is a cast. But
+test-support fakes under `__support__/` and the `*.test.ts` files legitimately bridge
+Node and test types onto runtime DO/D1 surfaces that can't be implemented in full. The
+instinct is to switch the plugin off for those globs via `overrides`, but biome's
+`overrides.plugins` can only **add** plugins to a path — it can't disable one. There is
+no path-scoped off-switch for a plugin the way there is for a built-in rule (where an
+override can set a rule to `"off"`). So the ban stays global and the rare justified line
+is suppressed individually (see below). That's the safer shape anyway: a broad
+`includes` glob would silently exempt any stray production cast that happened to live
+under a matched path.
 
 ### Suppressing one justified line
 
-For a single justified exception in production code, use a `// biome-ignore` comment on
-the line above, with the rule's plugin path as the rule id and a mandatory reason:
+For a single justified exception, use a `// biome-ignore` comment on the line above.
+Plugin diagnostics are suppressed under the **bare `lint/plugin` rule id** — not a
+per-plugin id like `lint/plugin/no-type-assertions` — and the reason after the colon is
+mandatory:
 
 ```ts
-// biome-ignore lint/plugin/no-type-assertions: workerd RpcStub erases the generic; the runtime shape is checked by the DO contract test
-const stub = handle as unknown as SozlukStub;
+// biome-ignore lint/plugin: better-auth's `Auth` instance type can't be partial-constructed; the bridge tests never reach the session path, so a no-op `getSession` stand-in suffices.
+const auth = fakeAuth as unknown as Auth;
 ```
 
-The reason after the colon is required — biome rejects a bare suppression. Keep these
-rare and load-bearing; a growing pile of ignores is a signal the rule (or the code)
-needs rethinking, not more suppressions.
+The reason after the colon is required — biome rejects a bare suppression. These live in
+the test fakes (`__support__/`, `*.test.ts`) where a partial stand-in can't satisfy a
+fully-typed runtime surface; production source carries zero suppressions. A growing pile
+of ignores is a signal the rule (or the code) needs rethinking, not more suppressions.
 
 ## Testing that the rule bites
 
@@ -210,8 +206,9 @@ rm apps/web/src/__grit_probe.ts
 ```
 
 Confirm both that a violation *is* flagged and that a clean file is *not* (no false
-positives), then delete the probe. Run the same check inside `__support__/` to confirm
-the override actually silences it there.
+positives), then delete the probe. To confirm a justified exception, add a
+`// biome-ignore lint/plugin: <reason>` line above a probe violation and check the
+diagnostic goes away.
 
 ## Gotchas
 

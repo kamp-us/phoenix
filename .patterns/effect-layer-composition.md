@@ -61,8 +61,7 @@ The canonical examples — all in `apps/web/worker/`:
 - `makeDrizzleLayer(db)` in `db/Drizzle.ts` — wraps an already-constructed drizzle instance in `Layer.succeed(Drizzle)`.
 - `makePasaportLive(auth)` in `features/pasaport/Pasaport.ts` — closes a `Layer.effect(Pasaport)` body over the resolved better-auth instance.
 - `makeFateLayer(db, auth)` in `features/fate/layers.ts` — composes `Drizzle`, the feature services, and `Pasaport` into the worker-level data plane.
-- `makeAdminLayer(db)` in `features/fate/layers.ts` — the parallel admin layer set (ADR 0012).
-- `makeAppLive(opts)` in `http/app.ts` — the top-level router Layer over its sub-layers (fate, admin, live, better-auth).
+- `makeAppLive(opts)` in `http/app.ts` — the top-level router Layer over its sub-layers (fate, live, better-auth).
 
 This shape has ecosystem precedent: `@effect/sql-d1` exposes its driver as `layer(config)` (a function returning a Layer), and `@alchemy.run/better-auth`'s `AuthProviderLayer<Config>()(name, body)` is a factory that returns a Layer parameterized over the provider's config.
 
@@ -99,22 +98,11 @@ Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request. That's 
 
 ## The worker layer set
 
-> **Update:** the admin layer set (`makeAdminLayer`, `SozlukAdmin`/`PanoAdmin`/
-> `PasaportAdmin`, `AdminAuth`, the `/api/admin/*` groups) described here was
-> deleted (fail-open `ENVIRONMENT` gate; throwaway seeders). Only the request layer
-> set below remains; there is no longer a request/admin split.
-
 The worker builds one Layer set, not a per-request `ManagedRuntime`:
 
 - **Request layer set** — `Drizzle` + feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`). Built by `makeFateLayer(db, auth)` in `worker/features/fate/layers.ts`. The `/fate` route provides `Auth` per request; `HttpServerRequest` comes from the upstream `effect/unstable/http/HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides.
 
-Why the parallel-but-separate shape:
-
-- Admin routes need `AdminAuth.required` (env-gated initially; future hardening lands inside `AdminAuthLive`). Resolvers don't.
-- Admin routes don't need the request-layer `Auth` (user session info). They have no user context — `AdminAuth` is a single boolean today.
-- Admin services (`SozlukAdmin`) own different operations than resolver services (`Sozluk`). Bundling them would force every resolver to depend on admin code.
-
-Both sit on the same `Drizzle` instance, built once from the bound D1 in worker init.
+Built once from the bound D1 in worker init, `Drizzle` is shared by every feature service. The per-request `Auth` is the only service layered on top, and it goes on inside the `/fate` route, not in this Layer.
 
 Why two-step (build feature slice first, merge in request values at top) instead of stacking `Layer.provide` calls: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with `Layer.provide`/`provideMerge`, then merge in the request-level values at the top with `Effect.provideService` inside the route.
 
@@ -162,4 +150,4 @@ Phoenix's feature Layers don't fail at construction today — `DrizzleLive` just
 - [alchemy-runtime.md](./alchemy-runtime.md) — where worker-scope vs per-request Layers get provided; the captured `Context<FateEnv>`
 - [feature-services.md](./feature-services.md) — the layered architecture (`Drizzle → features → resolvers`)
 - [effect-testing.md](./effect-testing.md) — providing test layers
-- `worker/features/fate/layers.ts` — canonical phoenix Layer composition (`makeFateLayer`, `makeAdminLayer`)
+- `worker/features/fate/layers.ts` — canonical phoenix Layer composition (`makeFateLayer`)

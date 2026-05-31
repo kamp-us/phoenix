@@ -1,13 +1,5 @@
 # HTTP routing
 
-> **Doc note (pending docs pass):** the `/api/admin/*` seeder routes (`admin-api.ts`,
-> `admin-handlers.ts`, `admin-auth.ts`, the `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin`
-> services) were deleted — they gated destructive ops behind a mutable `ENVIRONMENT`
-> string (fail-open). The only `HttpApiBuilder` group left is `GET /api/health`
-> (`http/health.ts`). The code samples below still reference the deleted admin group
-> as an illustration of the group pattern; the pattern is unchanged, only the example
-> is gone. Repoint the examples to `health.ts` in the docs pass.
-
 How requests are routed without Hono. The short answer: the worker's `fetch` is an `HttpRouter` compiled with `HttpRouter.toHttpEffect`. The typed JSON endpoint (`GET /api/health`) is an `HttpApiBuilder` group; raw-`Request` and SSE endpoints (`/fate`, `/api/auth/*`, `/fate/live`) are imperative `HttpRouter.add` routes that reach the raw request via `Cloudflare.Request` and return `HttpServerResponse.fromWeb`.
 
 Everything here is `@effect/platform` (`effect/unstable/http`), the model alchemy's worker already speaks — so routes drop straight into `fetch` with no adapter.
@@ -24,53 +16,49 @@ return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
 
 ## Typed JSON: `HttpApiBuilder` groups
 
-For endpoints with a real request/response schema — `GET /api/health`, the `/api/admin/*` seeders — define an `HttpApi` spec and implement it as a group. This gives schema-decoded params/bodies and typed responses for free.
+For endpoints with a real request/response schema — phoenix's lone case is `GET /api/health` — define an `HttpApi` spec and implement it as a group. This gives schema-decoded params/bodies and typed responses for free.
 
 ```ts
-// worker/http/admin-api.ts
+// worker/http/health.ts
 import * as Schema from "effect/Schema";
 import * as HttpApi from "effect/unstable/httpapi/HttpApi";
 import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
-import * as HttpApiSchema from "effect/unstable/httpapi/HttpApiSchema";
 
-// payload / success / error are passed in the endpoint's options object —
-// there is no `.setPayload(...)` builder. Payloads are `Schema.Struct`,
-// responses are `Schema.Class`, errors are `Schema.TaggedErrorClass`.
-const UpsertTerm = Schema.Struct({slug: Schema.String, title: Schema.String /* … */});
+// success / payload / error are passed in the endpoint's options object —
+// there is no `.setPayload(...)` builder. Responses are `Schema.Class`,
+// payloads are `Schema.Struct`, errors are `Schema.TaggedErrorClass`.
+export class HealthStatus extends Schema.Class<HealthStatus>("@phoenix/HealthStatus")({
+  status: Schema.String,
+  environment: Schema.NullOr(Schema.String),
+}) {}
 
-const upsertTerm = HttpApiEndpoint.post("upsertTerm", "/api/admin/sozluk/upsert-term", {
-  payload: UpsertTerm,
-});
-const clear = HttpApiEndpoint.post("clear", "/api/admin/sozluk/clear", {
-  success: HttpApiSchema.NoContent,
-});
+const health = HttpApiEndpoint.get("health", "/api/health", {success: HealthStatus});
 
-export class SozlukAdminGroup extends HttpApiGroup.make("sozluk").add(upsertTerm).add(clear) {}
-export class AdminApi extends HttpApi.make("admin").add(SozlukAdminGroup) {}
+export class HealthGroup extends HttpApiGroup.make("health").add(health) {}
+export class HealthApi extends HttpApi.make("phoenix").add(HealthGroup) {}
 ```
 
-`HttpApi.make(id)` and `HttpApiGroup.make(name)` return values with a variadic `.add(...)`; the `class … extends` form is the convention for naming them (it's what `HttpApiBuilder.group(AdminApi, "sozluk", …)` references by name).
+`HttpApi.make(id)` and `HttpApiGroup.make(name)` return values with a variadic `.add(...)`; the `class … extends` form is the convention for naming them (it's what `HttpApiBuilder.group(HealthApi, "health", …)` references by name).
 
 ```ts
-// worker/http/admin-handlers.ts
-const sozlukGroup = HttpApiBuilder.group(AdminApi, "sozluk", (h) =>
-  h
-    .handle("upsertTerm", ({payload}) =>
-      Effect.gen(function* () {
-        yield* AdminAuth.required;                 // env-gated; Forbidden → 403
-        const admin = yield* SozlukAdmin;
-        return yield* admin.seedTerm(payload);
-      }).pipe(Effect.provideService(AdminAuth, adminAuthOf())),
-    )
-    .handle("clear", () => /* … */),
+// worker/http/health.ts — the handler returns a typed HealthStatus
+const healthGroup = HttpApiBuilder.group(HealthApi, "health", (h) =>
+  h.handle("health", () =>
+    Effect.gen(function* () {
+      const {environment} = yield* AppConfig.pipe(Effect.orDie);
+      return new HealthStatus({status: "ok", environment});
+    }),
+  ),
 );
 ```
+
+A payload-bearing endpoint adds a `payload` Schema to its options; `HttpApiBuilder` decodes the request body against it before the handler runs, so `{payload}` arrives already typed (see [effect-schema-validation.md](./effect-schema-validation.md)).
 
 The group is itself a `Layer`. Compose it into `AppLive`:
 
 ```ts
-const adminLive = HttpApiBuilder.layer(AdminApi).pipe(Layer.provide(sozlukGroup));
+const healthLive = HttpApiBuilder.layer(HealthApi).pipe(Layer.provide(healthGroup));
 ```
 
 > **Workers have no `FileSystem`, so stub `HttpPlatform`.** `HttpApiBuilder.layer` pulls in `HttpPlatform` for file responses, which the Workers runtime can't satisfy. Provide a stub (and `Etag.layer`, `Path.layer`) or the layer won't build:
@@ -138,14 +126,14 @@ If you build a stream *in* the worker rather than a DO, `HttpServerResponse.stre
 Merge the groups and routes, provide the platform layer, compile:
 
 ```ts
-const AppLive = Layer.mergeAll(adminLive, healthLive, routesLive).pipe(
+const AppLive = Layer.mergeAll(healthLive, routesLive).pipe(
   Layer.provide([Etag.layer, HttpPlatformStub, Path.layer]),
 );
 
 return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
 ```
 
-> **`AppLive` mixes `HttpApiBuilder` groups and imperative `HttpRouter.add` routes in one app.** Both produce `Layer`s feeding the same router, so the composition type-checks and runs — the typed-JSON groups (health, admin) and the imperative raw-Request routes (fate, auth, agents, live) merge into the single `AppLive` the worker's `fetch` compiles from. The route-precedence / 404-catch-all / OPTIONS interplay between the two styles holds in the live worker.
+> **`AppLive` mixes `HttpApiBuilder` groups and imperative `HttpRouter.add` routes in one app.** Both produce `Layer`s feeding the same router, so the composition type-checks and runs — the typed-JSON group (health) and the imperative raw-Request routes (fate, auth, agents, live) merge into the single `AppLive` the worker's `fetch` compiles from. The route-precedence / 404-catch-all / OPTIONS interplay between the two styles holds in the live worker.
 
 CORS, when needed, is a layer too: `HttpRouter.cors({allowedOrigins, allowedMethods, allowedHeaders})` provided onto `AppLive`.
 
