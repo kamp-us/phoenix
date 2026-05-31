@@ -27,11 +27,7 @@
 		"test": {
 			"dependsOn": ["^build"],
 			"cache": true,
-			"passThroughEnv": [
-				"CLOUDFLARE_API_TOKEN",
-				"CLOUDFLARE_ACCOUNT_ID",
-				"ALCHEMY_PASSWORD"
-			]
+			"passThroughEnv": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "ALCHEMY_PASSWORD"]
 		},
 		"lint": {
 			"dependsOn": ["^build"],
