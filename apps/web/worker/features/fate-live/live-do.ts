@@ -554,25 +554,38 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 /**
  * The `LiveDO` implementation Layer. The DO's OWN namespace is resolved once in
- * init (`const live = yield* LiveDO`) and captured in the closure for cross-role
- * addressing — because it is the same class referencing itself there is no
- * sibling Layer cycle, so the Layer requires only `Worker` and every RPC
- * method's `R` is `never`.
+ * init from `Cloudflare.DurableObjectNamespaceScope` (the local, scriptName-less
+ * self-binding `.make()` provides) and captured in the closure for cross-role
+ * addressing — void's `this.env[binding]` pattern. Because it is the local
+ * binding (not a cross-script `.from(scriptName)` reference) it works under
+ * `alchemy dev`, requires only `Worker`, and every RPC method's `R` is `never`.
  */
 export const LiveDOLive = LiveDO.make(
 	Effect.gen(function* () {
 		// ── SHARED INIT (once per namespace) ──
-		// Resolve the self-namespace here (not per call) for cross-role addressing.
-		// `LiveDO.from("phoenix")` binds the DO's OWN namespace by its host script
-		// name (the `Phoenix` worker's id) WITHOUT adding the `LiveDO` Tag to the
-		// Layer's requirements: the `.from(scriptName)` overload resolves to
-		// `Effect<…, never, Worker>`, so the Layer is `Layer<LiveDO, never, Worker>`.
-		// A bare `yield* LiveDO` would instead leak `LiveDO` as an unsatisfiable
-		// self-requirement — it is the very Tag this Layer OUTPUTS, so no merge can
-		// discharge it (a self-referencing DO can't satisfy its own Tag from itself).
-		// The string is the host worker's id; it must stay in sync with
-		// `Phoenix.make("phoenix", …)` in `worker/index.ts`.
-		const live = yield* LiveDO.from("phoenix");
+		// Resolve the DO's OWN namespace here (not per call) for cross-role
+		// addressing. This is void's `this.env[bindingName]` self-reference: the
+		// `DurableObjectNamespaceScope` is the LOCAL, scriptName-less namespace that
+		// `.make()` binds and provides into this init effect (alchemy resolves it
+		// from `env[<binding>]` at runtime). It is the right handle for a DO calling
+		// its own siblings.
+		//
+		// Why NOT `LiveDO.from("phoenix")`: every `.from(...)` overload sets a
+		// `scriptName` (the string directly, or the worker's name), which declares a
+		// CROSS-SCRIPT binding. Under `alchemy dev` that routes through the
+		// dev-registry proxy and dies with `Worker "phoenix" not found` — a DO
+		// reaching its own siblings must use the local binding, not a cross-worker
+		// reference. `DurableObjectNamespaceScope` is provided by `.make()`, so it
+		// adds no requirement to the Layer (still `Layer<LiveDO, never, Worker>`);
+		// a bare `yield* LiveDO` would instead leak `LiveDO` as an unsatisfiable
+		// self-requirement (the very Tag this Layer outputs).
+		//
+		// The scope is typed generically as `DurableObjectNamespace<unknown>`
+		// (alchemy can't know each host's DO shape), so we widen it once to this
+		// DO's own statically-known `LiveRpcSurface` contract. This is a pure type
+		// widening of an infrastructure handle — there is no runtime value to decode
+		// — and it is the only `as` in this file.
+		const live = (yield* Cloudflare.DurableObjectNamespaceScope) as LiveNamespace;
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
 		// wake). `return yield*` would run per-instance setup during shared init.
 		// @effect-diagnostics-next-line effect/returnEffectInGen:off
