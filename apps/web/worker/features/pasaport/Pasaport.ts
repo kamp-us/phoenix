@@ -519,9 +519,12 @@ export const makePasaportLive = (auth: Auth) =>
 					// order. `keysetAfter` builds the lexicographic predicate; null
 					// cursor values (no `after`) collapse it to undefined so only the
 					// base author/deleted filter applies.
-					function keysetWhere<
-						TTable extends {createdAt: any; id: any; authorId: any; deletedAt: any},
-					>(table: TTable) {
+					function keysetWhere(
+						table:
+							| typeof schema.definitionView
+							| typeof schema.postSummary
+							| typeof schema.commentView,
+					) {
 						const base = and(eq(table.authorId, input.authorId), isNull(table.deletedAt));
 						const predicate = keysetAfter([
 							{column: table.createdAt, dir: "desc", value: cursor?.createdAt ?? null},
