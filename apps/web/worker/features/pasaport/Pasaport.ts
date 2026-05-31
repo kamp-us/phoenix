@@ -291,6 +291,22 @@ export const makePasaportLive = (auth: Auth) =>
 			// directly so every method's `R` stays `never`.
 			const {run} = yield* Drizzle;
 
+			// `COUNT(*)` of a contribution table's live (non-deleted) rows for one
+			// author. Shared by `hydrateProfile`'s per-kind counts and
+			// `listContributions`'s `totalCount`. Calls `run` directly so callers
+			// keep `R = never`.
+			const countByAuthor = (
+				table: typeof schema.definitionView | typeof schema.postSummary | typeof schema.commentView,
+				authorId: string,
+			): Effect.Effect<number, DrizzleError> =>
+				run((db) =>
+					db
+						.select({n: sql<number>`COUNT(*)`})
+						.from(table)
+						.where(and(eq(table.authorId, authorId), isNull(table.deletedAt)))
+						.then((r) => Number(r[0]?.n ?? 0)),
+				);
+
 			const upsertProfileIdentity = Effect.fn("Pasaport.upsertProfileIdentity")(function* (args: {
 				userId: string;
 				username: string | null;
@@ -325,36 +341,9 @@ export const makePasaportLive = (auth: Auth) =>
 				totalKarma: number;
 			}) {
 				const authorId = row.userId;
-				const defCount = yield* run((db) =>
-					db
-						.select({n: sql<number>`COUNT(*)`})
-						.from(schema.definitionView)
-						.where(
-							and(
-								eq(schema.definitionView.authorId, authorId),
-								isNull(schema.definitionView.deletedAt),
-							),
-						)
-						.then((r) => Number(r[0]?.n ?? 0)),
-				);
-				const postCount = yield* run((db) =>
-					db
-						.select({n: sql<number>`COUNT(*)`})
-						.from(schema.postSummary)
-						.where(
-							and(eq(schema.postSummary.authorId, authorId), isNull(schema.postSummary.deletedAt)),
-						)
-						.then((r) => Number(r[0]?.n ?? 0)),
-				);
-				const commentCount = yield* run((db) =>
-					db
-						.select({n: sql<number>`COUNT(*)`})
-						.from(schema.commentView)
-						.where(
-							and(eq(schema.commentView.authorId, authorId), isNull(schema.commentView.deletedAt)),
-						)
-						.then((r) => Number(r[0]?.n ?? 0)),
-				);
+				const defCount = yield* countByAuthor(schema.definitionView, authorId);
+				const postCount = yield* countByAuthor(schema.postSummary, authorId);
+				const commentCount = yield* countByAuthor(schema.commentView, authorId);
 
 				return {
 					userId: row.userId,
@@ -593,42 +582,9 @@ export const makePasaportLive = (auth: Auth) =>
 							.limit(fetchSize),
 					);
 
-					const defTotal = yield* run((db) =>
-						db
-							.select({n: sql<number>`COUNT(*)`})
-							.from(schema.definitionView)
-							.where(
-								and(
-									eq(schema.definitionView.authorId, input.authorId),
-									isNull(schema.definitionView.deletedAt),
-								),
-							)
-							.then((r) => Number(r[0]?.n ?? 0)),
-					);
-					const postTotal = yield* run((db) =>
-						db
-							.select({n: sql<number>`COUNT(*)`})
-							.from(schema.postSummary)
-							.where(
-								and(
-									eq(schema.postSummary.authorId, input.authorId),
-									isNull(schema.postSummary.deletedAt),
-								),
-							)
-							.then((r) => Number(r[0]?.n ?? 0)),
-					);
-					const commentTotal = yield* run((db) =>
-						db
-							.select({n: sql<number>`COUNT(*)`})
-							.from(schema.commentView)
-							.where(
-								and(
-									eq(schema.commentView.authorId, input.authorId),
-									isNull(schema.commentView.deletedAt),
-								),
-							)
-							.then((r) => Number(r[0]?.n ?? 0)),
-					);
+					const defTotal = yield* countByAuthor(schema.definitionView, input.authorId);
+					const postTotal = yield* countByAuthor(schema.postSummary, input.authorId);
+					const commentTotal = yield* countByAuthor(schema.commentView, input.authorId);
 					const totalCount = defTotal + postTotal + commentTotal;
 
 					if (cursorMissed) {
@@ -673,8 +629,10 @@ export const makePasaportLive = (auth: Auth) =>
 					merged.sort((a, b) => {
 						const aTs = a.createdAt.getTime();
 						const bTs = b.createdAt.getTime();
+						// (createdAt desc, id desc) — matches the per-table keyset order.
 						if (aTs !== bTs) return bTs - aTs;
-						return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
+						if (a.id !== b.id) return a.id < b.id ? 1 : -1;
+						return 0;
 					});
 
 					// Each of the three tables is read with the same keyset predicate and
