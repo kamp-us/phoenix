@@ -12,7 +12,7 @@
 			"persistent": true
 		},
 		"deploy": {
-			"dependsOn": ["^build", "build"],
+			"dependsOn": ["^build"],
 			"cache": false
 		},
 		"build": {
