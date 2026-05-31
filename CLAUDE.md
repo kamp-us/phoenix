@@ -59,6 +59,7 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 - Biome formatting: tabs, 100 col, no bracket spacing.
 - Effect for backend control flow; feature services are isolate-level layers, with only `Auth` provided per request (ADR 0029).
 - Make invalid states unrepresentable. Domain logic in domain objects.
+- In-repo docs: standard markdown links (`[text](relative/path.md)`), not Obsidian `[[wikilinks]]`; use real resolvable paths, no placeholders.
 
 ## Decisions
 

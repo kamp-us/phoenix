@@ -40,3 +40,4 @@ One row per ADR. Read the file for the why.
 | [0034](0034-fate-native-sse-protocol.md) | Stay on fate's native SSE + POST protocol; do not redesign to WebSocket | accepted | 2026-05-29 |
 | [0036](0036-features-as-any-named-app-grouping.md) | features/ is any named app-level grouping, not just product domains | accepted | 2026-05-30 |
 | [0037](0037-unified-void-aligned-live-do.md) | Unified void-aligned LiveDO — one class, two roles, KV storage | accepted | 2026-05-30 |
+| [0038](0038-dependency-patches-local-only.md) | Dependency patches are local-only — no fork/git/unmerged-PR sources; local `pnpm patch` if unavoidable | accepted | 2026-05-31 |
