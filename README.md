@@ -33,7 +33,9 @@ pnpm deploy       # vite build + alchemy deploy (use --stage <name> for isolatio
 
 ## Architecture
 
-One worker serves the React SPA (built to `dist/client`, served via the `assets` binding) and the API. The worker keeps precedence on its own paths — `/api/*`, `/fate`, `/fate/*` — and hands everything else to the SPA. The backend is one Effect program: it declares its bindings, hosts the Durable Object, and returns a `fetch` handler.
+phoenix is a pnpm monorepo with effectively one app — the worker in `apps/web`. The docs live alongside the code: `.decisions/` for the *why*, `.patterns/` for the *how*.
+
+One worker serves the React SPA (built to `dist/client`, served via the `assets` binding) and the API. It keeps precedence on its own paths — `/api/*`, `/fate`, `/fate/*` — and hands everything else to the SPA. The backend is one Effect program: it declares its bindings, hosts the Durable Object, and returns a `fetch` handler.
 
 ```
 apps/web/
@@ -45,7 +47,7 @@ apps/web/
     ├── http/              # router composition (app.ts) + health route
     └── features/          # every named grouping, one folder each
         ├── fate/          # the fate↔Effect bridge, layer assembly, barrels
-        ├── fate-live/     # the live SSE plane — LiveDO + protocol + event bus
+        ├── fate-live/     # the live SSE plane — LiveDO + LiveBus + protocol
         ├── pasaport/      # auth — better-auth fork + session capability
         ├── sozluk/        # product — dictionary
         ├── pano/          # product — link aggregator
@@ -58,7 +60,7 @@ apps/web/
 
 **The runtime.** Services are built once and live for the isolate — `Drizzle` and the feature layers are assembled in `worker/index.ts`, not per request. A request to `/fate` provides only `Auth` and the incoming `HttpServerRequest`, then runs each fate resolver against the captured service map. Resolvers carry no leftover requirements. Read [.patterns/alchemy-runtime.md](./.patterns/alchemy-runtime.md) and [.patterns/fate-effect-bridge.md](./.patterns/fate-effect-bridge.md) before touching server-side fate code.
 
-**The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADR [0037](./.decisions/0037-unified-void-aligned-live-do.md) is the design.
+**The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Mutations reach the DO through an in-isolate `LiveBus` service that publishes to the affected topics. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADRs [0037](./.decisions/0037-unified-void-aligned-live-do.md) (the DO) and [0039](./.decisions/0039-livebus-context-service.md) (the LiveBus) are the design.
 
 ## Commands
 
@@ -90,6 +92,13 @@ Data tasks (seeding, backfills) are one-off direct-D1 scripts against the bound 
 
 ## Where to read deeper
 
-Two doc surfaces carry the rest: **[.decisions/](./.decisions/index.md)** holds the ADRs — the *why* behind each choice and the history of how it got here; **[.patterns/](./.patterns/index.md)** describes *how* the current code is shaped. Read a pattern when you're about to write that kind of code; read an ADR when you want to revisit a decision. New decisions go through `/adr`.
+Two doc surfaces carry the rest: **[.decisions/](./.decisions/index.md)** holds the ADRs — the *why* behind each choice and the history of how it got here; **[.patterns/](./.patterns/index.md)** describes *how* the current code is shaped. Read a pattern when you're about to write that kind of code; read an ADR when you want to revisit a decision. New decisions go through `/adr`. When a doc and `apps/web/worker/` disagree, the source wins — fix the doc.
 
-When a doc and `apps/web/worker/` disagree, the source wins — fix the doc.
+**New here? Read in this order:**
+
+1. This file — the shape and the rules.
+2. ADR [0032](./.decisions/0032-alchemy-beta45-and-dev-model.md) — the dev model: real Cloudflare resources, worker runs locally.
+3. [.patterns/alchemy-runtime.md](./.patterns/alchemy-runtime.md) + [.patterns/fate-effect-bridge.md](./.patterns/fate-effect-bridge.md) — how an HTTP request becomes domain code.
+4. [.patterns/per-feature-fate-aggregators.md](./.patterns/per-feature-fate-aggregators.md) — the footprint you'll copy when adding a feature.
+
+Then open the feature folder you're working in and follow its neighbors.
