@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   check:
-    name: lint / test / typecheck
+    name: lint / format / typecheck
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -27,20 +27,65 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # `biome check` is lint + format in one pass (tabs/100-col/no-bracket-spacing).
       - run: pnpm lint
 
-      # The integration project (vitest.config.ts) deploys the alchemy stack to a
-      # local workerd, but D1 is ALWAYS provisioned against real Cloudflare (no
-      # offline D1) — so the suite needs real creds. On a dev machine these resolve
-      # from a wrangler/alchemy profile; a clean runner has none, so inject them
-      # from secrets. ALCHEMY_PASSWORD encrypts the worker's secret_text bindings
-      # in localState. Turbo 2.x strict env mode strips undeclared vars, so these
-      # are also listed under the `test` task's passThroughEnv in turbo.json.
-      - name: Test (unit + integration)
-        run: pnpm test
+      - run: pnpm typecheck
+
+  unit:
+    name: unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The `unit` vitest project: node pool, no worker deploy, no creds. Fast
+      # signal — Drizzle contracts, the fate bridge over node:sqlite, Effect-DO
+      # builders over a DO-state fake, pure helpers.
+      - run: pnpm --filter @phoenix/web test:unit
+
+  integration:
+    name: integration tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The worker binds `assets: ./dist/client`; the integration deploy needs the
+      # SPA shell to exist even though the suite only asserts over the API/fate
+      # HTTP surface.
+      - name: Build SPA
+        run: pnpm --filter @phoenix/web build
+
+      # The `integration` vitest project deploys the alchemy stack to a local
+      # workerd, but D1 is ALWAYS provisioned against real Cloudflare (no offline
+      # D1) — so it needs real creds. On a dev machine these resolve from a
+      # wrangler/alchemy profile; a clean runner has none, so inject them from
+      # secrets. ALCHEMY_PASSWORD encrypts the worker's secret_text bindings in
+      # localState; BETTER_AUTH_SECRET is self-supplied by the harness when unset.
+      - name: Integration tests
+        run: pnpm --filter @phoenix/web test:integration
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
-
-      - run: pnpm typecheck
