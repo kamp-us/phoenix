@@ -102,7 +102,7 @@ function parseTags(csv: string): Array<{kind: string; label: string}> {
 		.split(",")
 		.map((s) => s.trim())
 		.filter(Boolean)
-		.map((kind) => ({kind, label: TAG_LABELS[kind] ?? kind}));
+		.map((kind) => ({kind, label: tagLabel(kind)}));
 }
 
 /* -------------------------------------------------------------------------- */
