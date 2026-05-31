@@ -20,6 +20,7 @@ import {Layer} from "effect";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import type {Drizzle, DrizzleDb} from "../../db/Drizzle.ts";
 import {makeDrizzleLayer} from "../../db/Drizzle.ts";
+import type {LiveBus} from "../fate-live/event-bus.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
 import type {Auth} from "../pasaport/Auth.ts";
 import {
@@ -34,7 +35,8 @@ import {type Vote, VoteLive} from "../vote/Vote.ts";
 /**
  * Every service available inside a fate resolver / source executor. This is the
  * type parameter of the `Context` the `/fate` route captures and the bridge
- * provides — `Auth` + `HttpServerRequest` are supplied per request, the rest are
+ * provides — `Auth` + `LiveBus` + `HttpServerRequest` are supplied per request
+ * (`LiveBus` is the per-request publish capability, ADR 0039), the rest are
  * worker-level singletons. `HttpServerRequest` is the upstream effect Tag
  * (`effect/unstable/http/HttpServerRequest`) the alchemy worker runtime
  * provides — it carries `headers`, `url`, `method` directly, so the hand-rolled
@@ -48,6 +50,7 @@ export type FateEnv =
 	| Pano
 	| Stats
 	| Auth
+	| LiveBus
 	| HttpServerRequest.HttpServerRequest;
 
 /**

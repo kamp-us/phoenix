@@ -30,7 +30,7 @@
 import {fateMutation} from "../fate/effect.ts";
 import {toComment, toPost, toPostFromPage} from "../fate/shapers.ts";
 import type {Comment, Post} from "../fate/views.ts";
-import {liveBus} from "../fate-live/event-bus.ts";
+import {LiveBus} from "../fate-live/event-bus.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import {Pano} from "./Pano.ts";
 
@@ -129,6 +129,7 @@ export const mutations = {
 		resolve: fateMutation<SubmitPostInput, Post>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.submitPost({
 				title: input.title,
 				...(input.url ? {url: input.url} : {}),
@@ -141,7 +142,9 @@ export const mutations = {
 			const post = shapePost({...r, myVote: null});
 			// New post leads the feed: prepend its node to the `posts` connection
 			// (every feed-sort variant, via the global topic). Inline node, no DB work.
-			liveBus.connection("posts").prependNode("Post", post.id, {node: post});
+			yield* liveBus.useIgnore((bus) =>
+				bus.connection("posts").prependNode("Post", post.id, {node: post}),
+			);
 			return post;
 		}),
 	},
@@ -150,9 +153,12 @@ export const mutations = {
 		resolve: fateMutation<PostIdInput, Post>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
-			liveBus.update("Post", post.id, {changed: ["score"], data: post});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Post", post.id, {changed: ["score"], data: post}),
+			);
 			return post;
 		}),
 	},
@@ -161,9 +167,12 @@ export const mutations = {
 		resolve: fateMutation<PostIdInput, Post>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
-			liveBus.update("Post", post.id, {changed: ["score"], data: post});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Post", post.id, {changed: ["score"], data: post}),
+			);
 			return post;
 		}),
 	},
@@ -172,6 +181,7 @@ export const mutations = {
 		resolve: fateMutation<EditPostInput, Post>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.editPost({
 				postId: input.id,
 				actorId: user.id,
@@ -182,7 +192,9 @@ export const mutations = {
 			// `myVote` (edit doesn't change vote state).
 			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
-			liveBus.update("Post", post.id, {changed: ["title", "body"], data: post});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Post", post.id, {changed: ["title", "body"], data: post}),
+			);
 			return post;
 		}),
 	},
@@ -193,10 +205,11 @@ export const mutations = {
 		resolve: fateMutation<PostIdInput, {__typename: "Post"; id: string}>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
 			// Entity gone; drop its edge from the `posts` feed connection.
-			liveBus.delete("Post", r.postId);
-			liveBus.connection("posts").deleteEdge("Post", r.postId);
+			yield* liveBus.useIgnore((bus) => bus.delete("Post", r.postId));
+			yield* liveBus.useIgnore((bus) => bus.connection("posts").deleteEdge("Post", r.postId));
 			// Not an entity shape — the post is gone; this is an id-only eviction
 			// ref (`{__typename, id}`) the client uses to drop the record. There is
 			// no row left to run through `toPost`, so it stays a bare ref.
@@ -208,6 +221,7 @@ export const mutations = {
 		resolve: fateMutation<AddCommentInput, Comment>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.addComment({
 				postId: input.postId,
 				authorId: user.id,
@@ -218,9 +232,11 @@ export const mutations = {
 			const comment = shapeComment({...r, myVote: null});
 			// New comment joins the post's thread: append its node to the
 			// `Post.comments` connection keyed by the parent post id. Inline node.
-			liveBus.connection("Post.comments", {id: input.postId}).appendNode("Comment", comment.id, {
-				node: comment,
-			});
+			yield* liveBus.useIgnore((bus) =>
+				bus
+					.connection("Post.comments", {id: input.postId})
+					.appendNode("Comment", comment.id, {node: comment}),
+			);
 			return comment;
 		}),
 	},
@@ -229,9 +245,12 @@ export const mutations = {
 		resolve: fateMutation<CommentIdInput, Comment>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
-			liveBus.update("Comment", comment.id, {changed: ["score"], data: comment});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Comment", comment.id, {changed: ["score"], data: comment}),
+			);
 			return comment;
 		}),
 	},
@@ -240,9 +259,12 @@ export const mutations = {
 		resolve: fateMutation<CommentIdInput, Comment>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
-			liveBus.update("Comment", comment.id, {changed: ["score"], data: comment});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Comment", comment.id, {changed: ["score"], data: comment}),
+			);
 			return comment;
 		}),
 	},
@@ -251,10 +273,13 @@ export const mutations = {
 		resolve: fateMutation<EditCommentInput, Comment>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
 			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
-			liveBus.update("Comment", comment.id, {changed: ["body"], data: comment});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Comment", comment.id, {changed: ["body"], data: comment}),
+			);
 			return comment;
 		}),
 	},
@@ -267,6 +292,7 @@ export const mutations = {
 		resolve: fateMutation<CommentIdInput, Post | null>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const pano = yield* Pano;
+			const liveBus = yield* LiveBus;
 			// Resolve the parent post id before the delete (the row still exists).
 			const postId = yield* pano.lookupCommentPostId(input.id);
 			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
@@ -284,16 +310,23 @@ export const mutations = {
 			//    connection (that would orphan the subtree); instead publish the
 			//    re-resolved tombstoned comment so each thread re-renders it in place.
 			if (result.placeholder) {
-				liveBus.update("Comment", input.id, {
-					changed: ["body", "score", "deletedAt", "updatedAt"],
-					data: toComment(result.placeholder),
-				});
+				const placeholder = toComment(result.placeholder);
+				yield* liveBus.useIgnore((bus) =>
+					bus.update("Comment", input.id, {
+						changed: ["body", "score", "deletedAt", "updatedAt"],
+						data: placeholder,
+					}),
+				);
 			} else {
-				liveBus.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id);
+				yield* liveBus.useIgnore((bus) =>
+					bus.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id),
+				);
 			}
 			// Either way the parent post's `commentCount` changes — publish the
 			// re-resolved parent.
-			liveBus.update("Post", post.id, {changed: ["commentCount"], data: post});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Post", post.id, {changed: ["commentCount"], data: post}),
+			);
 			return post;
 		}),
 	},

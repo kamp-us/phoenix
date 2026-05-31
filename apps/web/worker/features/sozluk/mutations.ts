@@ -23,7 +23,7 @@
 import {fateMutation} from "../fate/effect.ts";
 import {toDefinition, toTermFromPage} from "../fate/shapers.ts";
 import type {Definition, Term} from "../fate/views.ts";
-import {liveBus} from "../fate-live/event-bus.ts";
+import {LiveBus} from "../fate-live/event-bus.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import {Sozluk} from "./Sozluk.ts";
 
@@ -72,6 +72,7 @@ export const mutations = {
 		resolve: fateMutation<AddDefinitionInput, Definition>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const sozluk = yield* Sozluk;
+			const liveBus = yield* LiveBus;
 			const result = yield* sozluk.addDefinition({
 				termSlug: input.termSlug,
 				authorId: user.id,
@@ -86,9 +87,11 @@ export const mutations = {
 			// `definition.delete` removes from). This drives every open term page —
 			// including the author's own — without a reload. Inline node; the DO does
 			// no DB work and each client masks `data` to its own selection.
-			liveBus
-				.connection("Term.definitions", {id: input.termSlug})
-				.appendNode("Definition", definition.id, {node: definition});
+			yield* liveBus.useIgnore((bus) =>
+				bus
+					.connection("Term.definitions", {id: input.termSlug})
+					.appendNode("Definition", definition.id, {node: definition}),
+			);
 			return definition;
 		}),
 	},
@@ -97,6 +100,7 @@ export const mutations = {
 		resolve: fateMutation<DefinitionIdInput, Definition>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const sozluk = yield* Sozluk;
+			const liveBus = yield* LiveBus;
 			const result = yield* sozluk.voteDefinition({
 				definitionId: input.id,
 				voterId: user.id,
@@ -105,7 +109,9 @@ export const mutations = {
 			// Publish the re-resolved entity inline; the DO does no DB work and each
 			// client masks `data` to its own selection. `myVote` is viewer-specific,
 			// so it's omitted from `changed` (clients keep their own).
-			liveBus.update("Definition", definition.id, {changed: ["score"], data: definition});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Definition", definition.id, {changed: ["score"], data: definition}),
+			);
 			return definition;
 		}),
 	},
@@ -114,12 +120,15 @@ export const mutations = {
 		resolve: fateMutation<DefinitionIdInput, Definition>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const sozluk = yield* Sozluk;
+			const liveBus = yield* LiveBus;
 			const result = yield* sozluk.retractDefinitionVote({
 				definitionId: input.id,
 				voterId: user.id,
 			});
 			const definition = shapeDefinition(result);
-			liveBus.update("Definition", definition.id, {changed: ["score"], data: definition});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Definition", definition.id, {changed: ["score"], data: definition}),
+			);
 			return definition;
 		}),
 	},
@@ -128,6 +137,7 @@ export const mutations = {
 		resolve: fateMutation<EditDefinitionInput, Definition>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const sozluk = yield* Sozluk;
+			const liveBus = yield* LiveBus;
 			const result = yield* sozluk.editDefinition({
 				definitionId: input.id,
 				actorId: user.id,
@@ -141,7 +151,9 @@ export const mutations = {
 			});
 			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
 			// `body` changed; `myVote` is viewer-specific so left out of `changed`.
-			liveBus.update("Definition", definition.id, {changed: ["body"], data: definition});
+			yield* liveBus.useIgnore((bus) =>
+				bus.update("Definition", definition.id, {changed: ["body"], data: definition}),
+			);
 			return definition;
 		}),
 	},
@@ -152,14 +164,17 @@ export const mutations = {
 		resolve: fateMutation<DefinitionIdInput, Term | null>(function* ({input}) {
 			const {user} = yield* Auth.required;
 			const sozluk = yield* Sozluk;
+			const liveBus = yield* LiveBus;
 			// Resolve the parent slug before the delete (the row still exists),
 			// so we can re-resolve the parent `Term` afterward.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
 			// The entity is gone, and its edge leaves the parent term's connection.
-			liveBus.delete("Definition", input.id);
+			yield* liveBus.useIgnore((bus) => bus.delete("Definition", input.id));
 			if (slug) {
-				liveBus.connection("Term.definitions", {id: slug}).deleteEdge("Definition", input.id);
+				yield* liveBus.useIgnore((bus) =>
+					bus.connection("Term.definitions", {id: slug}).deleteEdge("Definition", input.id),
+				);
 			}
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);

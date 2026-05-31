@@ -26,7 +26,8 @@
  *   - a sozluk mutation (`definition.add`) round-trips and the changed entity
  *     re-resolves over the same bridge.
  */
-import {Effect, type Layer} from "effect";
+import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
+import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
@@ -35,6 +36,7 @@ import {createDrizzle} from "../../db/Drizzle";
 import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../../db/drizzle/schema";
 import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
+import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Auth} from "../pasaport/Auth";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
@@ -65,6 +67,13 @@ async function fateOp(
 		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
 	});
 
+	// Provide a capturing `LiveBus` (ADR 0039) the way the `/fate` route provides
+	// the real one — structurally, through the same context every service flows
+	// through. `published` records the RESOLVED topic keys a mutation's `live.*`
+	// fans out to (run through the real `topicsForPublish`), so the round-trip
+	// tests can assert which topics each write published to.
+	const {layer: LiveBusTest, published} = makeLiveBusTest();
+
 	const captureAndServe = Effect.gen(function* () {
 		// The captured map carries the worker-level services PLUS the per-request
 		// Auth/HttpServerRequest provided just below — the full FateEnv.
@@ -77,7 +86,9 @@ async function fateOp(
 			session: undefined,
 		}),
 		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
-		Effect.provide(WorkerLive),
+		// One merged provide (the capturing `LiveBus` + the worker-level services) —
+		// chaining two `Effect.provide` calls trips the multipleEffectProvide lint.
+		Effect.provide(Layer.mergeAll(LiveBusTest, WorkerLive)),
 	);
 
 	const res = await Effect.runPromise(captureAndServe);
@@ -88,7 +99,7 @@ async function fateOp(
 			| {ok: false; error: {code: string; message?: string}; id: string}
 		>;
 	};
-	return {status: res.status, result: body.results[0]!};
+	return {status: res.status, result: body.results[0]!, published};
 }
 
 const SLUG = "bridge-read";
@@ -251,5 +262,49 @@ describe("fate bridge — sozluk mutation round-trip", () => {
 		const found = term.definitions.items.find((e) => e.node.id === created.id);
 		expect(found).toBeDefined();
 		expect(found!.node.body).toBe("delta definition added via bridge");
+	});
+
+	it("definition.add publishes to the term's args-scoped Term.definitions topic (ADR 0039)", async () => {
+		const add = await fateOp(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {termSlug: SLUG, body: "live-published definition"},
+				select: ["id", "body"],
+			},
+			{auth: SESSION_USER},
+		);
+		expect(add.result.ok).toBe(true);
+		if (!add.result.ok) return;
+		// The mutation appends to `Term.definitions` keyed by the slug — the publish
+		// must reach the ARGS-scoped topic the subscriber registered under, not the
+		// procedure-wide global wildcard (the mis-route ADR 0039 guards against).
+		const expectedKey = liveConnectionTopic("Term.definitions", {id: SLUG});
+		expect(add.published).toContain(expectedKey);
+		expect(add.published).not.toContain("connection:Term.definitions:*");
+	});
+
+	it("definition.vote publishes to the Definition entity topic (ADR 0039)", async () => {
+		// Seed a definition to vote on.
+		const add = await fateOp(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {termSlug: SLUG, body: "votable definition"},
+				select: ["id"],
+			},
+			{auth: SESSION_USER},
+		);
+		expect(add.result.ok).toBe(true);
+		if (!add.result.ok) return;
+		const id = (add.result.data as {id: string}).id;
+
+		const vote = await fateOp(
+			{kind: "mutation", name: "definition.vote", input: {id}, select: ["id", "score"]},
+			{auth: SESSION_USER},
+		);
+		expect(vote.result.ok).toBe(true);
+		if (!vote.result.ok) return;
+		expect(vote.published).toEqual([liveEntityTopic("Definition", id)]);
 	});
 });

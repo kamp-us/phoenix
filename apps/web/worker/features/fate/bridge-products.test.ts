@@ -27,12 +27,14 @@
  *
  * Runs in the node pool (no workerd) — same constraint as `bridge-sozluk.test.ts`.
  */
-import {Effect, type Layer} from "effect";
+import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
+import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
 import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
+import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Pano} from "../pano/Pano";
 import {Auth} from "../pasaport/Auth";
 import {Pasaport} from "../pasaport/Pasaport";
@@ -60,12 +62,17 @@ type FateResult =
 async function fateOp(
 	operation: Record<string, unknown>,
 	opts: {auth?: {id: string; name: string; email: string}} = {},
-): Promise<{status: number; result: FateResult}> {
+): Promise<{status: number; result: FateResult; published: ReadonlyArray<string>}> {
 	const request = new Request("https://test.local/fate", {
 		method: "POST",
 		headers: {"content-type": "application/json"},
 		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
 	});
+
+	// Capturing `LiveBus` (ADR 0039): records the RESOLVED topic keys each
+	// mutation's `live.*` fans out to, provided structurally like the `/fate`
+	// route provides the real one.
+	const {layer: LiveBusTest, published} = makeLiveBusTest();
 
 	const captureAndServe = Effect.gen(function* () {
 		const context = yield* Effect.context<FateEnv>();
@@ -73,12 +80,14 @@ async function fateOp(
 	}).pipe(
 		Effect.provideService(Auth, {user: opts.auth as never, session: undefined}),
 		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
-		Effect.provide(WorkerLive),
+		// One merged provide (the capturing `LiveBus` + the worker-level services) —
+		// chaining two `Effect.provide` calls trips the multipleEffectProvide lint.
+		Effect.provide(Layer.mergeAll(LiveBusTest, WorkerLive)),
 	);
 
 	const res = await Effect.runPromise(captureAndServe);
 	const body = (await res.json()) as {version: number; results: FateResult[]};
-	return {status: res.status, result: body.results[0]!};
+	return {status: res.status, result: body.results[0]!, published};
 }
 
 let POST_ID = "";
@@ -373,6 +382,26 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 		};
 		expect(post.commentCount).toBe(6);
 		expect(post.comments.items.some((e) => e.node.id === created.id)).toBe(true);
+		// The append targets `Post.comments` scoped to the parent post — the publish
+		// must reach the ARGS-scoped topic, not the global wildcard (ADR 0039).
+		expect(add.published).toContain(liveConnectionTopic("Post.comments", {id: POST_ID}));
+		expect(add.published).not.toContain("connection:Post.comments:*");
+	});
+
+	it("post.vote publishes to the Post entity topic (ADR 0039)", async () => {
+		const vote = await fateOp(
+			{kind: "mutation", name: "post.vote", input: {id: POST_ID}, select: ["id", "score"]},
+			{auth: VOTER},
+		);
+		expect(vote.result.ok).toBe(true);
+		if (!vote.result.ok) return;
+		expect(vote.published).toEqual([liveEntityTopic("Post", POST_ID)]);
+
+		// Cleanup: retract so the later vote round-trip test starts from score 0.
+		await fateOp(
+			{kind: "mutation", name: "post.retractVote", input: {id: POST_ID}, select: ["id"]},
+			{auth: VOTER},
+		);
 	});
 
 	it("post.vote moves the score and re-resolves the post (vote service)", async () => {

@@ -162,6 +162,55 @@ const transform = Effect.fnUntraced(function*(row: Row) {
 });
 ```
 
+## Wrapping a non-Effect client — the `use` pattern
+
+When a service wraps a **non-Effect client** (a synchronous fluent object, a
+Promise-based SDK), don't expose the raw client and let callers `Effect.try` at
+every call site. Expose a `use` method that runs a caller-supplied function
+against the client *inside* the Effect, surfacing a typed error. This is
+effect-smol's `NodeRedis.use` / `BunRedis.use` shape, adapted per client.
+
+phoenix's first wrapper is `LiveBus` (ADR
+[0039](../.decisions/0039-livebus-context-service.md),
+`worker/features/fate-live/event-bus.ts`) — a *synchronous* publish-only client
+acquired in mutation resolvers:
+
+```ts
+export class LiveBus extends Context.Service<
+  LiveBus,
+  {
+    readonly use: <A>(f: (bus: PhoenixLiveEventBus) => A) => Effect.Effect<A, LivePublishError>;
+    readonly useIgnore: (f: (bus: PhoenixLiveEventBus) => unknown) => Effect.Effect<void, never>;
+  }
+>()("@phoenix/fate-live/LiveBus") {}
+```
+
+Rules:
+
+- **`use` surfaces a typed error.** Sync client → `Effect.try`; Promise client →
+  `Effect.tryPromise`. The `catch` maps the thrown cause into a
+  `Data.TaggedError` (`LivePublishError`). This is the *only* method the
+  precedent (NodeRedis/BunRedis) keeps — swallowing is normally the caller's job
+  (`use(f).pipe(Effect.ignore)`).
+- **A swallow sibling is a footgun-safety exception, not the norm.** `LiveBus`
+  adds `useIgnore` because a mutation publishes *after* its DB write, so a
+  surfaced-and-yielded publish failure would short-circuit before `return` and
+  fail a committed mutation. `useIgnore = use(f).pipe(Effect.ignore({log:
+  "Warn"}))` → `Effect<void, never>`; the empty error channel makes "a publish
+  can't fail the mutation" a type, not a convention. Only add a swallow sibling
+  when the call site genuinely must not fail on the wrapped client — and name it
+  `useIgnore` (in Effect, `Unsafe` means "synchronous / escapes the runtime", not
+  "swallows errors", so `useUnsafe` is wrong).
+- **Acquire the client per request via the service, not via an ambient store.**
+  `yield* LiveBus` makes provision mandatory: a missing provide fails loudly
+  instead of silently no-opping. Don't reach for `AsyncLocalStorage`,
+  `globalThis`, or `Fiber.getCurrent` to carry a client into a resolver — provide
+  it like any other per-request service (`Effect.provideService(LiveBus, …)` next
+  to `Auth`).
+
+Promote this to a standalone `effect-client-use-wrapper.md` once a second
+non-Effect client gets a `use` wrapper (the folder's 2-usages rule).
+
 ## See also
 
 - [feature-services.md](./feature-services.md) — how to organize phoenix features as one service each, layered on `Drizzle`
