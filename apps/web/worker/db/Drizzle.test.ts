@@ -249,10 +249,12 @@ describe("makeDrizzleAccess (extracted factory)", () => {
 });
 
 /**
- * Batch atomicity over a REAL SQL engine (the `node:sqlite`-backed D1 fake) —
- * the invariant the vote write paths depend on: a `batch([...])` either commits
- * the whole tuple or none of it. The spy tests above prove error propagation;
- * this proves there's no PARTIAL write when one statement in the tuple fails.
+ * Generic `batch` atomicity over a REAL SQL engine (the `node:sqlite`-backed D1
+ * fake): a `batch([...])` either commits the whole tuple or none of it. The spy
+ * tests above prove error propagation; this proves there's no PARTIAL write when
+ * one statement in the tuple fails. The vote-specific end-to-end invariant
+ * (`Vote.cast` rolling back a real vote+score+mirror+karma tuple) has its own
+ * test in `worker/features/vote/Vote.test.ts`.
  */
 describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
 	const now = new Date();
