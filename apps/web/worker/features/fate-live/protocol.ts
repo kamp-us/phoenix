@@ -23,6 +23,22 @@ import {
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
+/**
+ * The closed set of live connection procedures phoenix publishes to / subscribes
+ * on — the connection analogue of {@link ../fate/views.ts#LiveEntities}'s entity
+ * names. A connection publish (`liveBus.connection(<procedure>)`) and the
+ * matching subscribe both key their topic off this string; a typo on either side
+ * silently creates a dead topic (publish and subscribe miss each other with no
+ * failure). Constraining the seam to this union makes a typo a compile error at
+ * the `liveBus.connection(...)` call site, exactly as the entity seam already
+ * does for `liveBus.update`.
+ *
+ * Derived from the live root list (`posts`) and the nested-connection mutation
+ * sites (`Post.comments`, `Term.definitions`). Add a member here when a resolver
+ * publishes to a new connection.
+ */
+export type LiveConnectionProcedure = "posts" | "Post.comments" | "Term.definitions";
+
 /** A fate live entity frame body (matches fate's native `livePayload`). */
 export type EntityFrame =
 	| {readonly delete: true; readonly id: string | number}
@@ -59,7 +75,10 @@ export type PublishMessage =
 	  }
 	| {
 			readonly kind: "connection";
-			readonly match: {readonly procedure: string; readonly args?: Record<string, unknown>};
+			readonly match: {
+				readonly procedure: LiveConnectionProcedure;
+				readonly args?: Record<string, unknown>;
+			};
 			readonly frame: ConnectionFrame;
 			readonly eventId?: string;
 	  };
@@ -75,7 +94,7 @@ export type SubscribeControl =
 	| {
 			readonly kind: "subscribeConnection";
 			readonly subId: string;
-			readonly procedure: string;
+			readonly procedure: LiveConnectionProcedure;
 			readonly args?: Record<string, unknown>;
 	  };
 
@@ -85,6 +104,19 @@ export type SubscribeControl =
  * or an explicit `undefined`, matching the old `isOptionalRecord` guard.
  */
 const OptionalArgs = Schema.optional(Schema.Record(Schema.String, Schema.Unknown));
+
+/**
+ * The subscribe-side schema literal for {@link LiveConnectionProcedure}. A
+ * control request naming an unknown procedure fails decode (→ `BAD_REQUEST`)
+ * rather than registering a dead topic. The literal members are pinned to the
+ * union by the `satisfies` below, so adding a `LiveConnectionProcedure` member
+ * without listing it here is a compile error.
+ */
+const LiveConnectionProcedureSchema = Schema.Literals([
+	"posts",
+	"Post.comments",
+	"Term.definitions",
+] satisfies ReadonlyArray<LiveConnectionProcedure>);
 
 /** A `subscribe` (entity) control operation. */
 const SubscribeOp = Schema.Struct({
@@ -103,7 +135,7 @@ const SubscribeConnectionOp = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.Literal("subscribeConnection"),
 	type: Schema.String,
-	procedure: Schema.String,
+	procedure: LiveConnectionProcedureSchema,
 	args: OptionalArgs,
 	selectionArgs: OptionalArgs,
 	lastEventId: Schema.optional(Schema.String),

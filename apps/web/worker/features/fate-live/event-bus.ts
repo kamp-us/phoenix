@@ -26,7 +26,12 @@
 import {AsyncLocalStorage} from "node:async_hooks";
 import type {LiveEventBus} from "@nkzw/fate/server";
 import type {LiveChangedField, LiveEntities} from "../fate/views.ts";
-import type {ConnectionFrame, EntityFrame, PublishMessage} from "./protocol.ts";
+import type {
+	ConnectionFrame,
+	EntityFrame,
+	LiveConnectionProcedure,
+	PublishMessage,
+} from "./protocol.ts";
 import {topicsForPublish} from "./protocol.ts";
 
 /**
@@ -48,12 +53,30 @@ type TypedLiveUpdate = <Name extends keyof LiveEntities>(
 ) => void;
 
 /**
- * phoenix's bus is fate's `LiveEventBus` with a stricter `update`: callers see
- * the entity-keyed signature ({@link TypedLiveUpdate}), while `server.ts` still
- * passes it where a `LiveEventBus` is expected (the narrower `update` is
- * assignable to the looser `(type: string, …)` one).
+ * Typed `connection` for the publish-only bus: the procedure name is constrained
+ * to the known live connections ({@link LiveConnectionProcedure}) rather than a
+ * bare `string`. A typo (`"post"`) silently creates a dead topic — publish and
+ * subscribe key off different strings and miss each other with no failure — so
+ * the typo becomes a compile error at the mutation site, exactly as
+ * {@link TypedLiveUpdate} does for the entity seam. The returned handle is fate's
+ * own `LiveConnectionHandle` (only the procedure argument is narrowed).
  */
-type PhoenixLiveEventBus = Omit<LiveEventBus, "update"> & {update: TypedLiveUpdate};
+type TypedLiveConnection = (
+	procedure: LiveConnectionProcedure,
+	args?: Record<string, unknown>,
+) => ReturnType<LiveEventBus["connection"]>;
+
+/**
+ * phoenix's bus is fate's `LiveEventBus` with a stricter `update` and
+ * `connection`: callers see the entity-keyed `update` ({@link TypedLiveUpdate})
+ * and the procedure-keyed `connection` ({@link TypedLiveConnection}), while
+ * `server.ts` still passes it where a `LiveEventBus` is expected (each narrower
+ * signature is assignable to its looser `(type: string, …)` counterpart).
+ */
+type PhoenixLiveEventBus = Omit<LiveEventBus, "connection" | "update"> & {
+	connection: TypedLiveConnection;
+	update: TypedLiveUpdate;
+};
 
 /**
  * A pre-bound per-request publisher: hand it one resolved topic key + the
