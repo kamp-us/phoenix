@@ -620,11 +620,10 @@ describe("sozluk mutations — definition.delete", () => {
 	});
 });
 
-describe("sozluk mutations — term admin idempotency / clear", () => {
+describe("sozluk mutations — seed idempotency / emptying a term", () => {
 	it("seedTerm is idempotent: re-seeding the same definition skips it", async () => {
 		const slug = `szmut-${STAMP}-outbox`;
 		const def = {
-			authorId: "u1",
 			authorName: "umut",
 			body: "Atomic durability primitive in the producer-consumer outbox pattern.",
 		};
@@ -643,23 +642,42 @@ describe("sozluk mutations — term admin idempotency / clear", () => {
 		expect((term.data as TermNode).count).toBe(1);
 	});
 
-	it("clear wipes the slug's term + definition rows; term then resolves null", async () => {
+	// The old admin `clear` route is gone (it was a fail-open security hole). The
+	// public surface has no term-wipe, so the equivalent observable behavior is:
+	// soft-deleting every definition empties the term — `count` → 0 and the
+	// `definitions` connection is empty. (The `term_summary` row persists, so the
+	// term still resolves; it just has no live definitions.)
+	it("deleting the term's only definition empties it (count 0, no definitions)", async () => {
 		const slug = `szmut-${STAMP}-transient`;
-		await h.seedTerm({
-			slug,
-			title: "Transient",
-			definitions: [{authorId: "u1", authorName: "umut", body: "Short-lived state."}],
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {termSlug: slug, termTitle: "Transient", body: "Short-lived state."},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(added.ok).toBe(true);
+		if (!added.ok) return;
+		const id = (added.data as DefNode).id;
+
+		const deleted = await h.fate(
+			{kind: "mutation", name: "definition.delete", input: {id}, select: ["slug", "count"]},
+			{cookie: author.cookie},
+		);
+		expect(deleted.ok).toBe(true);
+
+		const term = await h.fate({
+			kind: "query",
+			name: "term",
+			args: {slug, definitions: {first: 10}},
+			select: ["count", "definitions.id"],
 		});
-
-		const res = await h.json("/api/admin/sozluk/clear", {slugs: [slug]});
-		expect(res.status).toBe(200);
-		const cleared = (await res.json()) as {terms: number; definitions: number};
-		expect(cleared.terms).toBe(1);
-		expect(cleared.definitions).toBe(1);
-
-		const empty = await h.fate({kind: "query", name: "term", args: {slug}, select: ["slug"]});
-		expect(empty.ok).toBe(true);
-		if (!empty.ok) return;
-		expect(empty.data).toBeNull();
+		expect(term.ok).toBe(true);
+		if (!term.ok) return;
+		const t = term.data as TermNode & {definitions: Connection<DefNode>};
+		expect(t.count).toBe(0);
+		expect(t.definitions.items).toEqual([]);
 	});
 });

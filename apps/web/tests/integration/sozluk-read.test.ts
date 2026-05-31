@@ -10,7 +10,8 @@
  *   - `sozluk-terms-connection.test.ts` — `terms` connection paging (every row
  *     once, recent ordering, stale cursor).
  *
- * Everything is observed over HTTP: seed via the dev admin route, read via `/fate`.
+ * Everything is observed over HTTP: seed via the public `definition.add` fate
+ * mutation (`h.seedTerm`), read via `/fate`.
  * The connection envelope has NO `totalCount` (`{items:[{cursor,node}],
  * pagination:{hasNext, hasPrevious:false, nextCursor?}}`), so the old `totalCount`
  * assertions are dropped and "every row once" is re-expressed by walking
@@ -46,20 +47,26 @@ type Connection<N> = {
 	pagination: {hasNext: boolean; hasPrevious: boolean; nextCursor?: string};
 };
 
+// The five seeded definitions (filled in `beforeAll`). Identity now comes from
+// the session, so the real `authorId` the worker assigned is captured here rather
+// than chosen by the test. Scores are small distinct descending integers — each
+// score is realized by that many real up-votes, so they stay deterministic for the
+// keyset order (score desc, created_at asc, id asc) without seeding 50+ voters.
+let seeded: Awaited<ReturnType<typeof h.seedTerm>>["definitions"];
+
 beforeAll(async () => {
-	// Five definitions with distinct scores so the keyset order is deterministic:
-	// (score desc, created_at asc, id asc).
-	await h.seedTerm({
+	const result = await h.seedTerm({
 		slug: SLUG,
 		title: "Fate Read",
 		definitions: [
-			{authorId: "u1", authorName: "umut", body: "alpha definition", score: 50},
-			{authorId: "u2", authorName: "elif", body: "beta definition", score: 40},
-			{authorId: "u3", authorName: "ada", body: "gamma definition", score: 30},
-			{authorId: "u4", authorName: "deniz", body: "delta definition", score: 20},
-			{authorId: "u5", authorName: "kaan", body: "epsilon definition", score: 10},
+			{authorName: "umut", body: "alpha definition", score: 5},
+			{authorName: "elif", body: "beta definition", score: 4},
+			{authorName: "ada", body: "gamma definition", score: 3},
+			{authorName: "deniz", body: "delta definition", score: 2},
+			{authorName: "kaan", body: "epsilon definition", score: 1},
 		],
 	});
+	seeded = result.definitions;
 });
 
 describe("sozluk reads — /fate", () => {
@@ -94,7 +101,7 @@ describe("sozluk reads — /fate", () => {
 		expect(data.slug).toBe(SLUG);
 		expect(data.title).toBe("Fate Read");
 		expect(data.count).toBe(5);
-		expect(data.totalScore).toBe(150);
+		expect(data.totalScore).toBe(15);
 	});
 
 	it("term(slug) returns null for an unknown slug", async () => {
@@ -110,7 +117,7 @@ describe("sozluk reads — /fate", () => {
 	});
 
 	it("Term.definitions paginates by DB keyset with no skips/dupes across pages", async () => {
-		// Page 1: first 2 in (score desc) order → alpha(50), beta(40).
+		// Page 1: first 2 in (score desc) order → alpha(5), beta(4).
 		const page1 = await h.fate({
 			kind: "query",
 			name: "term",
@@ -120,7 +127,7 @@ describe("sozluk reads — /fate", () => {
 		expect(page1.ok).toBe(true);
 		if (!page1.ok) return;
 		const d1 = (page1.data as {definitions: Connection<DefNode>}).definitions;
-		expect(d1.items.map((e) => e.node.score)).toEqual([50, 40]);
+		expect(d1.items.map((e) => e.node.score)).toEqual([5, 4]);
 		expect(d1.items[0]!.node.body).toBe("alpha definition");
 		expect(d1.pagination.hasNext).toBe(true);
 		const cursor = d1.pagination.nextCursor;
@@ -128,7 +135,7 @@ describe("sozluk reads — /fate", () => {
 		// Cursor is the last node's id (the keyset cursor).
 		expect(cursor).toBe(d1.items[1]!.node.id);
 
-		// Page 2: after the page-1 cursor → gamma(30), delta(20).
+		// Page 2: after the page-1 cursor → gamma(3), delta(2).
 		const page2 = await h.fate({
 			kind: "query",
 			name: "term",
@@ -138,10 +145,10 @@ describe("sozluk reads — /fate", () => {
 		expect(page2.ok).toBe(true);
 		if (!page2.ok) return;
 		const d2 = (page2.data as {definitions: Connection<DefNode>}).definitions;
-		expect(d2.items.map((e) => e.node.score)).toEqual([30, 20]);
+		expect(d2.items.map((e) => e.node.score)).toEqual([3, 2]);
 		expect(d2.pagination.hasNext).toBe(true);
 
-		// Page 3: last one → epsilon(10), no more.
+		// Page 3: last one → epsilon(1), no more.
 		const page3 = await h.fate({
 			kind: "query",
 			name: "term",
@@ -151,7 +158,7 @@ describe("sozluk reads — /fate", () => {
 		expect(page3.ok).toBe(true);
 		if (!page3.ok) return;
 		const d3 = (page3.data as {definitions: Connection<DefNode>}).definitions;
-		expect(d3.items.map((e) => e.node.score)).toEqual([10]);
+		expect(d3.items.map((e) => e.node.score)).toEqual([1]);
 		expect(d3.pagination.hasNext).toBe(false);
 
 		// No skips/dupes: the union of all page ids is exactly the 5 seeded.
@@ -180,9 +187,12 @@ describe("sozluk reads — /fate", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		const node = (result.data as {definitions: Connection<DefNode>}).definitions.items[0]!.node;
+		// Highest-scoring definition is alpha (umut, score 5), the first seeded row.
+		// Identity is session-derived, so assert the author name + the real id the
+		// worker assigned (captured from the seed), not a caller-chosen id.
 		expect(node.author).toBe("umut");
-		expect(node.authorId).toBe("u1");
-		expect(node.score).toBe(50);
+		expect(node.authorId).toBe(seeded[0]!.authorId);
+		expect(node.score).toBe(5);
 		// Anonymous viewer → myVote null.
 		expect(node.myVote).toBeNull();
 	});
@@ -196,13 +206,11 @@ describe("sozluk reads — /fate", () => {
 			title: "Agent",
 			definitions: [
 				{
-					authorId: "u1",
 					authorName: "umut",
 					body: "An autonomous reasoning entity that orchestrates other tools.",
 					score: 5,
 				},
 				{
-					authorId: "u2",
 					authorName: "elif",
 					body: "Cloudflare Agent base class — typed Durable Object with state sync.",
 					score: 3,
@@ -258,9 +266,7 @@ describe("sozluk reads — /fate", () => {
 			await h.seedTerm({
 				slug,
 				title: `Title ${i}`,
-				definitions: [
-					{authorId: `u-${i}`, authorName: `author${i}`, body: `body for ${slug}`, score: 100 + i},
-				],
+				definitions: [{authorName: `author${i}`, body: `body for ${slug}`, score: 1 + i}],
 			});
 		}
 
@@ -302,9 +308,7 @@ describe("sozluk reads — /fate", () => {
 			await h.seedTerm({
 				slug,
 				title: `Recent ${i}`,
-				definitions: [
-					{authorId: `u-${i}`, authorName: `author${i}`, body: `recent body ${slug}`, score: 1},
-				],
+				definitions: [{authorName: `author${i}`, body: `recent body ${slug}`, score: 1}],
 			});
 			// Force a >1s gap so lastActivityAt's sec-resolution doesn't collapse.
 			if (i < 2) await new Promise((r) => setTimeout(r, 1100));

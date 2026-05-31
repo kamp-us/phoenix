@@ -95,6 +95,7 @@ export async function setup() {
 	// every request before it ever reaches the worker. Strip the trailing slash
 	// once here, at the single canonical publish point, so all callers concatenate
 	// cleanly.
+	if (!out.url) throw new Error("deploy returned no worker url");
 	const url = out.url.replace(/\/+$/, "");
 	let healthy = false;
 	for (let i = 0; i < 120; i++) {

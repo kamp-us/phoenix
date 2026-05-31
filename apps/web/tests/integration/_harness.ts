@@ -29,7 +29,8 @@
  *   - `h.fate(op, opts)`     — POST one fate operation, return its single result
  *   - `h.fateBatch(...)`     — POST several fate operations at once
  *   - `h.signUp(...)`        — sign up a user through `/api/auth/*`, return cookie
- *   - `h.seedTerm(...)`      — seed a sözlük term+definitions via the admin route
+ *   - `h.seedTerm(...)`      — seed a sözlük term+definitions via the PUBLIC fate
+ *                             `definition.add` mutation (+ votes for scores)
  *   - `h.json(...)` / `h.req(...)` — raw HTTP helpers
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
@@ -58,16 +59,30 @@ export interface Harness {
 	fateBatch(ops: FateOp[], opts?: {cookie?: string}): Promise<FateResult[]>;
 	/** Sign up a user through better-auth; return `{userId, cookie}`. */
 	signUp(email: string, password: string, name: string): Promise<{userId: string; cookie: string}>;
-	/** Seed a sözlük term with definitions via the dev-only admin route. */
+	/**
+	 * Seed a sözlük term with definitions through the PUBLIC fate protocol — the
+	 * same `definition.add` mutation the app uses (the dev-only admin route is
+	 * gone). Each definition is added under a real session for its `authorName`
+	 * (signed up on demand and cached); a definition's `score` is realized by
+	 * casting that many up-votes from a shared pool of throwaway voters. Because
+	 * identity now comes from the session, the returned per-definition rows carry
+	 * the REAL `id`/`authorId` the worker assigned — assert against those, not a
+	 * caller-chosen id.
+	 *
+	 * Re-seeding the same `(slug, body)` is idempotent: the body is skipped (not
+	 * re-added), mirroring the old admin upsert's dedup. `created` is true only the
+	 * first time a slug is seeded in this process.
+	 */
 	seedTerm(input: {
 		slug: string;
 		title: string;
-		definitions: Array<{authorId: string; authorName: string; body: string; score?: number}>;
+		definitions: Array<{authorName: string; body: string; score?: number}>;
 	}): Promise<{
 		slug: string;
 		created: boolean;
 		insertedDefinitions: number;
 		skippedDefinitions: number;
+		definitions: Array<{id: string; authorId: string; authorName: string; score: number}>;
 	}>;
 	/** Open a live SSE stream on a connection id (cookie required). */
 	openSse(connectionId: string, cookie: string): Promise<Response>;
@@ -80,6 +95,11 @@ export interface Harness {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// Unique per-process stamp for seeded author/voter emails. D1 is shared across
+// the whole integration deploy, so seed identities must never collide with
+// another file's (or a re-run's) users.
+const STAMP_SEED = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
  * Read one SSE event (frames are delimited by a blank line) off a stream reader,
@@ -200,10 +220,100 @@ export function harness(): Harness {
 		return {userId: data.user.id, cookie};
 	};
 
+	// Per-harness seeding state. A `definition.add` write is identity-bearing
+	// (author = session user) and scores are vote-derived, so seeding drives the
+	// same public surface the app does: one cached session per distinct
+	// `authorName`, and a shared, lazily-grown pool of throwaway voters that each
+	// cast a single up-vote to realize a definition's `score`.
+	let seedCounter = 0;
+	const nextSeedId = () => `seed-${STAMP_SEED}-${seedCounter++}`;
+
+	const authorCookies = new Map<string, string>();
+	const authorCookie = async (authorName: string): Promise<string> => {
+		const existing = authorCookies.get(authorName);
+		if (existing) return existing;
+		const {cookie} = await signUp(`${nextSeedId()}@seed.local`, "seedpass-seedpass", authorName);
+		authorCookies.set(authorName, cookie);
+		return cookie;
+	};
+
+	// Grow-only pool of voter cookies, sized on demand. Each voter is a distinct
+	// session, so `voterPool[0..n)` are n distinct up-votes for a single target.
+	const voterPool: string[] = [];
+	const voters = async (n: number): Promise<string[]> => {
+		while (voterPool.length < n) {
+			const {cookie} = await signUp(`${nextSeedId()}@vote.local`, "voterpass-voterpass", "voter");
+			voterPool.push(cookie);
+		}
+		return voterPool.slice(0, n);
+	};
+
+	// `(slug, body)` dedup so re-seeding is idempotent (the old admin upsert
+	// skipped already-present bodies; the public mutation would otherwise insert
+	// a duplicate definition).
+	const seededBodies = new Set<string>();
+	const seededSlugs = new Set<string>();
+
 	const seedTerm: Harness["seedTerm"] = async (input) => {
-		const res = await json("/api/admin/sozluk/upsert-term", input);
-		if (!res.ok) throw new Error(`seedTerm failed: ${res.status} ${await res.text()}`);
-		return (await res.json()) as Awaited<ReturnType<Harness["seedTerm"]>>;
+		const created = !seededSlugs.has(input.slug);
+		seededSlugs.add(input.slug);
+
+		let insertedDefinitions = 0;
+		let skippedDefinitions = 0;
+		const definitions: Array<{id: string; authorId: string; authorName: string; score: number}> =
+			[];
+
+		// Sequential on purpose: term creation/extension and the per-definition
+		// vote writes share the slug's term_summary row; concurrent writes would
+		// race the denormalized aggregates.
+		for (const def of input.definitions) {
+			const key = `${input.slug} ${def.body}`;
+			if (seededBodies.has(key)) {
+				skippedDefinitions++;
+				continue;
+			}
+			seededBodies.add(key);
+
+			const cookie = await authorCookie(def.authorName);
+			const added = await fate(
+				{
+					kind: "mutation",
+					name: "definition.add",
+					input: {termSlug: input.slug, termTitle: input.title, body: def.body},
+					select: ["id", "authorId"],
+				},
+				{cookie},
+			);
+			if (!added.ok) {
+				throw new Error(`seedTerm add failed (${input.slug}): ${added.error.code}`);
+			}
+			const node = added.data as {id: string; authorId: string};
+			insertedDefinitions++;
+
+			const score = def.score ?? 0;
+			if (score > 0) {
+				// Distinct voters, one up-vote each → score === number of voters.
+				const cookies = await voters(score);
+				for (const voterCookie of cookies) {
+					const voted = await fate(
+						{kind: "mutation", name: "definition.vote", input: {id: node.id}, select: ["score"]},
+						{cookie: voterCookie},
+					);
+					if (!voted.ok) {
+						throw new Error(`seedTerm vote failed (${node.id}): ${voted.error.code}`);
+					}
+				}
+			}
+
+			definitions.push({
+				id: node.id,
+				authorId: node.authorId,
+				authorName: def.authorName,
+				score,
+			});
+		}
+
+		return {slug: input.slug, created, insertedDefinitions, skippedDefinitions, definitions};
 	};
 
 	const openSse: Harness["openSse"] = (connectionId, cookie) =>
