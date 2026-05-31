@@ -456,45 +456,55 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			const entries = yield* loadRows(input.topicKey);
 			// Group rows by connection so each connection sees one deliver pass.
 			const grouped = groupByConnection(entries);
-			let delivered = 0;
-			for (const [connectionId, items] of grouped) {
-				const connection = live.getByName(`connection:${connectionId}`);
-				const staleKeys: Array<string> = [];
-				let reachable = true;
-				for (const item of items) {
-					// Any failure/defect/timeout on the cross-role deliver = "couldn't
-					// reach"; void deletes ALL that connection's rows on a 410/404/no
-					// response. We mirror that by reaping the whole group when the call
-					// fails (the first item to fail flips `reachable`).
-					const result = yield* connection
-						.deliver({
-							frame: {...input.frame, id: item.row.subId},
-							row: item.row,
-							limits: input.limits,
-						})
-						.pipe(
-							Effect.timeout(input.limits.deliveryAttemptTimeoutMs),
-							// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
-							Effect.catchCause(() => Effect.succeed<DeliverResult | undefined>(undefined)),
-						);
-					if (result === undefined) {
-						reachable = false;
-						break;
-					}
-					if (result.delivered) {
-						delivered += 1;
-					} else if (result.stale) {
-						staleKeys.push(item.key);
-					}
-				}
-				if (!reachable) {
-					// Unreachable connection: reap ALL its rows for this topic.
-					yield* state.storage.delete(items.map((item) => item.key));
-				} else if (staleKeys.length > 0) {
-					yield* state.storage.delete(staleKeys);
-				}
-			}
-			return {delivered};
+			// Connections are independent — fan out the per-connection deliver passes
+			// concurrently (subscribe/unsubscribe already do). Each pass returns how
+			// many of its rows were delivered; the inner per-row loop stays sequential
+			// because it short-circuits on the first unreachable item.
+			const perConnection = yield* Effect.forEach(
+				grouped,
+				([connectionId, items]) =>
+					Effect.gen(function* () {
+						const connection = live.getByName(`connection:${connectionId}`);
+						const staleKeys: Array<string> = [];
+						let reachable = true;
+						let delivered = 0;
+						for (const item of items) {
+							// Any failure/defect/timeout on the cross-role deliver = "couldn't
+							// reach"; void deletes ALL that connection's rows on a 410/404/no
+							// response. We mirror that by reaping the whole group when the call
+							// fails (the first item to fail flips `reachable`).
+							const result = yield* connection
+								.deliver({
+									frame: {...input.frame, id: item.row.subId},
+									row: item.row,
+									limits: input.limits,
+								})
+								.pipe(
+									Effect.timeout(input.limits.deliveryAttemptTimeoutMs),
+									// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
+									Effect.catchCause(() => Effect.succeed<DeliverResult | undefined>(undefined)),
+								);
+							if (result === undefined) {
+								reachable = false;
+								break;
+							}
+							if (result.delivered) {
+								delivered += 1;
+							} else if (result.stale) {
+								staleKeys.push(item.key);
+							}
+						}
+						if (!reachable) {
+							// Unreachable connection: reap ALL its rows for this topic.
+							yield* state.storage.delete(items.map((item) => item.key));
+						} else if (staleKeys.length > 0) {
+							yield* state.storage.delete(staleKeys);
+						}
+						return delivered;
+					}),
+				{concurrency: "unbounded"},
+			);
+			return {delivered: perConnection.reduce((sum, n) => sum + n, 0)};
 		});
 
 	const alarm = () =>
@@ -505,32 +515,40 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			const entries = yield* loadRows(role.topicKey);
 			const grouped = groupByConnection(entries);
 			const probeTimeout = 1_500;
-			const staleKeys: Array<string> = [];
-			for (const [connectionId, items] of grouped) {
-				// First failed probe → reap ALL that connection's rows (void-faithful:
-				// no consecutive-miss counter). A reachable connection reports which
-				// of its rows are stale; we reap exactly those.
-				const result = yield* live
-					.getByName(`connection:${connectionId}`)
-					.check({subscriptions: items.map((item) => item.row)})
-					.pipe(
-						Effect.timeout(probeTimeout),
-						// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
-						Effect.catchCause(() =>
-							Effect.succeed<{readonly stale: ReadonlyArray<number>} | undefined>(undefined),
-						),
-					);
-				if (result === undefined) {
-					staleKeys.push(...items.map((item) => item.key));
-					continue;
-				}
-				for (const index of result.stale) {
-					const item = items[index];
-					if (item) {
-						staleKeys.push(item.key);
-					}
-				}
-			}
+			// Probe each connection concurrently (they're independent); each returns
+			// the stale keys it owns, which we flatten and reap in one delete.
+			const perConnection = yield* Effect.forEach(
+				grouped,
+				([connectionId, items]) =>
+					Effect.gen(function* () {
+						// First failed probe → reap ALL that connection's rows (void-faithful:
+						// no consecutive-miss counter). A reachable connection reports which
+						// of its rows are stale; we reap exactly those.
+						const result = yield* live
+							.getByName(`connection:${connectionId}`)
+							.check({subscriptions: items.map((item) => item.row)})
+							.pipe(
+								Effect.timeout(probeTimeout),
+								// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
+								Effect.catchCause(() =>
+									Effect.succeed<{readonly stale: ReadonlyArray<number>} | undefined>(undefined),
+								),
+							);
+						if (result === undefined) {
+							return items.map((item) => item.key);
+						}
+						const keys: Array<string> = [];
+						for (const index of result.stale) {
+							const item = items[index];
+							if (item) {
+								keys.push(item.key);
+							}
+						}
+						return keys;
+					}),
+				{concurrency: "unbounded"},
+			);
+			const staleKeys = perConnection.flat();
 			if (staleKeys.length > 0) {
 				yield* state.storage.delete(staleKeys);
 			}

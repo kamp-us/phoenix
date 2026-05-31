@@ -12,17 +12,9 @@
  *
  * See `.patterns/fate-data-views.md`.
  */
-import type {SourceDefinition} from "@nkzw/fate/server";
 import {dataView, list} from "@nkzw/fate/server";
+import type {DataViewOf, EntityOf, ViewRow} from "../fate/view-types.ts";
 import type {CommentRow, PostSummaryRow, PostTagRow} from "./Pano.ts";
-
-type ViewRow<Row> = {[K in keyof Row]: Row[K]};
-
-type DataViewOf<Item extends Record<string, unknown>> = SourceDefinition<Item>["view"];
-
-type EntityOf<Row, Fields, Name extends string> = {
-	[K in keyof Fields as Fields[K] extends true ? K : never]: K extends keyof Row ? Row[K] : never;
-} & {__typename: Name};
 
 type TagViewRow = ViewRow<PostTagRow>;
 type CommentViewRow = ViewRow<CommentRow>;

@@ -28,25 +28,13 @@ import {type KeysetPage, toConnection} from "../fate/shapers.ts";
 import type {Term} from "../fate/views.ts";
 import {type ListSort, Sozluk} from "./Sozluk.ts";
 import {toTerm} from "./shapers.ts";
+import type {TermSummaryRow} from "./term-summary.ts";
 
 /** Coerce the `sort` arg to the service's `ListSort`; default `recent`. */
 const toListSort = (value: unknown): ListSort => (value === "popular" ? "popular" : "recent");
 
-interface TermSummaryPageRow {
-	slug: string;
-	title: string;
-	count: number;
-	totalScore: number;
-	excerpt: string | null;
-	firstAt: Date | null;
-	lastEdit: Date | null;
-	firstLetter: string;
-	definitionCount: number;
-	lastActivityAt: Date | null;
-}
-
 /** Reshape a `Sozluk` term-summary page onto a `ConnectionResult<Term>`. */
-const toTermConnection = (page: KeysetPage<TermSummaryPageRow>) =>
+const toTermConnection = (page: KeysetPage<TermSummaryRow>) =>
 	// The slug cursor is the service keyset.
 	toConnection(page, (row) => row.slug, toTerm);
 

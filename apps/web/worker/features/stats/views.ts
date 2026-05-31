@@ -14,14 +14,8 @@
  *
  * See `.patterns/fate-data-views.md`.
  */
-import type {SourceDefinition} from "@nkzw/fate/server";
 import {dataView} from "@nkzw/fate/server";
-
-type DataViewOf<Item extends Record<string, unknown>> = SourceDefinition<Item>["view"];
-
-type EntityOf<Row, Fields, Name extends string> = {
-	[K in keyof Fields as Fields[K] extends true ? K : never]: K extends keyof Row ? Row[K] : never;
-} & {__typename: Name};
+import type {DataViewOf, EntityOf} from "../fate/view-types.ts";
 
 interface LandingStatsViewRow {
 	[k: string]: unknown;
