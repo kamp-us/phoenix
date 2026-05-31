@@ -12,7 +12,7 @@ import {Effect, Exit, Layer} from "effect";
 import {createDrizzle, Drizzle, makeDrizzleAccess} from "../../db/Drizzle.ts";
 import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../../db/drizzle/schema.ts";
-import {makeSqliteD1, type SqliteD1} from "../fate/__support__/sqlite-d1.ts";
+import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake.ts";
 import {Vote, VoteLive} from "./Vote.ts";
 
 /**

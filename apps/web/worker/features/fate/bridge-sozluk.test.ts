@@ -34,8 +34,8 @@ import {createDrizzle} from "../../db/Drizzle";
 // project transforms `.sql` to a string by default; the node pool does not).
 import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../../db/drizzle/schema";
+import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {Auth} from "../pasaport/Auth";
-import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
 

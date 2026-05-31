@@ -20,7 +20,6 @@ import {assert, describe, it} from "@effect/vitest";
 import {eq} from "drizzle-orm";
 import type {BatchItem} from "drizzle-orm/batch";
 import {Cause, Effect, Exit, Layer, Option} from "effect";
-import {makeSqliteD1} from "../features/fate/__support__/sqlite-d1";
 import {
 	createDrizzle,
 	Drizzle,
@@ -31,6 +30,7 @@ import {
 } from "./Drizzle";
 import baselineMigration from "./drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "./drizzle/schema";
+import {makeSqliteD1} from "./sqlite-d1.fake";
 
 /**
  * A fake `DrizzleDb` instance — the wrapper passes it to the callback

@@ -24,7 +24,7 @@
 import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {describe, expect, it} from "vitest";
-import {makeFakeDurableObjectState} from "./__support__/do-state.ts";
+import {makeFakeDurableObjectState} from "./do-state.fake.ts";
 import {type LiveRpcSurface, makeLiveInstance} from "./live-do.ts";
 import type {
 	DeliverFrame,

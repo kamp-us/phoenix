@@ -18,11 +18,11 @@
  * connection/topic role. Pass `kv`/alarm-sharing options are unneeded here — each
  * call is one instance over its own backing Map.
  *
- * NOT a production artifact — it lives under `__support__/` and is never imported
- * by the worker graph.
+ * NOT a production artifact — it's a colocated `*.fake.ts` module and is never
+ * imported by the worker graph.
  */
 import * as Effect from "effect/Effect";
-import type {LiveDoState} from "../live-do.ts";
+import type {LiveDoState} from "./live-do.ts";
 
 export interface FakeDurableObjectState {
 	/** The `DurableObjectState`-slice value to hand the instance builder. */

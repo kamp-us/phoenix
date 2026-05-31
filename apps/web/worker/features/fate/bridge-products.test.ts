@@ -32,10 +32,10 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
 import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
+import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {Pano} from "../pano/Pano";
 import {Auth} from "../pasaport/Auth";
 import {Pasaport} from "../pasaport/Pasaport";
-import {makeSqliteD1, type SqliteD1} from "./__support__/sqlite-d1";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
 
