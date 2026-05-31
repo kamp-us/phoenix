@@ -26,7 +26,14 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {describe, expect, it} from "vitest";
 import {makeFakeDurableObjectState} from "./__support__/do-state.ts";
 import {type LiveRpcSurface, makeLiveInstance} from "./live-do.ts";
-import type {DeliverFrame, LiveLimits, SubscriberRow} from "./protocol.ts";
+import type {
+	DeliverFrame,
+	LiveLimits,
+	PublishMessage,
+	SubscribeControl,
+	SubscriberRow,
+} from "./protocol.ts";
+import {topicsForPublish, topicsForSubscribe} from "./protocol.ts";
 
 const run = <A>(effect: Effect.Effect<A, never, never>): Promise<A> => Effect.runPromise(effect);
 
@@ -255,5 +262,100 @@ describe("LiveDO live fan-out (KV model)", () => {
 
 		await streamA.cancel();
 		await streamB.cancel();
+	});
+
+	it("connection sub under specific+global topics gets ONE frame per publish (no double-delivery)", async () => {
+		// A connection subscription registers under BOTH the args-scoped and the
+		// global wildcard connection topic (`topicsForSubscribe`), exactly as fate's
+		// native `subscribeConnection` listens on both event names. The bug was that
+		// `topicsForPublish` fanned a single connection publish out to BOTH keys, so
+		// the connection — registered in both topic DOs — was `deliver`ed twice and
+		// the client saw the same frame twice. Drive the FULL publish path
+		// (`topicsForSubscribe` → register, `topicsForPublish` → publish) so this
+		// asserts the real wiring, not a hand-picked topic key.
+		const cell = makeLiveCell();
+		const connection = makeConnection(cell, "conn-dd");
+
+		const procedure = "posts";
+		const args = {categoryId: "fruit"};
+
+		// Realistic subscribe: ONE subId, registered under every key the subscribe
+		// side resolves (specific + global).
+		const subControl: SubscribeControl = {
+			kind: "subscribeConnection",
+			subId: "sub-dd",
+			procedure,
+			args,
+		};
+		const subscribeTopics = topicsForSubscribe(subControl);
+		expect(subscribeTopics.length).toBe(2);
+		// Spin up a topic DO per key the subscribe side touches.
+		const topics = new Map(
+			subscribeTopics.map((key) => [key, makeTopic(cell, key).instance] as const),
+		);
+
+		const ownerId = "owner-dd";
+		const res = await run(connection.openStream({ownerId}));
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		const sub = await run(
+			connection.subscribe({
+				subId: subControl.subId,
+				topics: [...subscribeTopics],
+				ownerId,
+				limits: LIMITS,
+			}),
+		);
+		expect(sub.ok).toBe(true);
+
+		// A single connection mutation (matching the subscribed procedure + args)
+		// fanned through `topicsForPublish` to whichever topic DO(s) it targets.
+		const message: PublishMessage = {
+			kind: "connection",
+			match: {procedure, args},
+			frame: {
+				type: "prependNode",
+				nodeType: "Post",
+				edge: {node: {id: "post-new"}},
+			},
+		};
+		const publishTopics = topicsForPublish(message);
+		// The fix: a connection publish with args resolves to EXACTLY ONE key (void's
+		// `if (args) emit(specific) else emit(global)`), not both.
+		expect(publishTopics.length).toBe(1);
+
+		let delivered = 0;
+		for (const key of publishTopics) {
+			const topic = topics.get(key);
+			expect(topic, `publish topic ${key} has no DO`).toBeDefined();
+			const pub = await run(
+				topic!.publish({
+					topicKey: key,
+					frame: {kind: "connection", id: "", event: message.frame},
+					limits: LIMITS,
+				}),
+			);
+			delivered += pub.delivered;
+		}
+
+		// The connection was reached exactly once across the whole publish.
+		expect(delivered).toBe(1);
+
+		// And the held SSE stream carries EXACTLY ONE frame for the one mutation.
+		const first = await stream.next();
+		expect(first).toContain("event: connection");
+		expect(payloadOf(first).id).toBe(subControl.subId);
+
+		// No second frame: a one-shot reader race against a short idle window. If a
+		// duplicate were enqueued (the pre-fix double-delivery), it would already be
+		// buffered and `next()` would return it immediately.
+		const second = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(second).toBe("idle");
+
+		await stream.cancel();
 	});
 });

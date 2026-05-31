@@ -191,17 +191,19 @@ export function topicsForPublish(message: PublishMessage): ReadonlyArray<string>
 	if (message.kind === "entity") {
 		return [liveEntityTopic(message.match.type, message.match.entityId)];
 	}
-	// A connection publish reaches both the args-scoped topic (filter args kept,
-	// pagination stripped by fate's `liveConnectionTopic`) and the global wildcard
-	// topic. Threading the publish args yields the SAME args-scoped key the
-	// subscriber registered under in `topicsForSubscribe`, so a publish hits the
-	// narrow topic directly instead of fanning out to every variant via the global
-	// wildcard — `live.connection("posts")` (no args) still reaches every feed-sort
-	// variant through the global topic.
-	return [
-		liveConnectionTopic(message.match.procedure, message.match.args),
-		liveGlobalConnectionTopic(message.match.procedure),
-	];
+	// A connection publish reaches EXACTLY ONE topic, mirroring fate's native
+	// `createLiveEventBus().connection().emit` (`server/live.ts`: `if (args)
+	// emit(connectionEventName) else emit(globalConnectionEventName)`). An args
+	// publish hits only the args-scoped key (filter args kept, pagination stripped
+	// by `liveConnectionTopic`) the subscriber registered under; a no-args publish
+	// (`live.connection("posts")`) hits only the global wildcard, which every
+	// args-variant subscriber also listens on via `topicsForSubscribe`. Publishing
+	// to BOTH keys would deliver one mutation twice to a subscriber registered
+	// under both topics (the SSE double-delivery bug) — the subscribe side fans out
+	// to both keys, the publish side must not.
+	return message.match.args !== undefined
+		? [liveConnectionTopic(message.match.procedure, message.match.args)]
+		: [liveGlobalConnectionTopic(message.match.procedure)];
 }
 
 /** The topic keys a connection subscription registers under. */
