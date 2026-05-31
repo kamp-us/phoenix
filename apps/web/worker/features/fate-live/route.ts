@@ -92,7 +92,7 @@ export const handleLive = Effect.gen(function* () {
 		// stream through). `ownerId` is threaded so the DO can reject a control
 		// message that subscribes on another user's behalf.
 		const forward = new Request(
-			`https://live/connect?connectionId=${encodeURIComponent(connectionId)}&ownerId=${encodeURIComponent(ownerId)}`,
+			`https://live/connect?connectionId=${encodeURIComponent(connectionId)}&ownerId=${encodeURIComponent(ownerId)}&maxQueuedEventsPerConnection=${defaultLiveLimits.maxQueuedEventsPerConnection}`,
 			{headers: raw.headers},
 		);
 		return yield* connections

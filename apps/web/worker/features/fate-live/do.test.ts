@@ -160,7 +160,12 @@ describe("LiveDO live fan-out (KV model)", () => {
 
 		const ownerId = "owner-1";
 		const subId = "sub-1";
-		const res = await run(connection.openStream({ownerId}));
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
@@ -192,12 +197,22 @@ describe("LiveDO live fan-out (KV model)", () => {
 
 		const ownerId = "owner-stale";
 		const subId = "sub-stale";
-		await run(connection.openStream({ownerId}));
+		await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
 		await run(connection.subscribe({subId, topics: [topicKey], ownerId, limits: LIMITS}));
 
 		// Reconnect: generation bumps and the prior subscription is dropped. The
 		// topic still holds the old-generation row.
-		await run(connection.openStream({ownerId}));
+		await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
 
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
 		expect(pub.delivered).toBe(0);
@@ -238,8 +253,18 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const connA = makeConnection(cell, "conn-a");
 		const connB = makeConnection(cell, "conn-b");
 
-		const resA = await run(connA.openStream({ownerId: "owner-a"}));
-		const resB = await run(connB.openStream({ownerId: "owner-b"}));
+		const resA = await run(
+			connA.openStream({
+				ownerId: "owner-a",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const resB = await run(
+			connB.openStream({
+				ownerId: "owner-b",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
 		const streamA = await reader(resA);
 		const streamB = await reader(resB);
 		expect(await streamA.next()).toContain("connected");
@@ -295,7 +320,12 @@ describe("LiveDO live fan-out (KV model)", () => {
 		);
 
 		const ownerId = "owner-dd";
-		const res = await run(connection.openStream({ownerId}));
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
@@ -357,5 +387,40 @@ describe("LiveDO live fan-out (KV model)", () => {
 		expect(second).toBe("idle");
 
 		await stream.cancel();
+	});
+
+	it("a stalled connection past the queue cap is closed and the row goes stale", async () => {
+		const cell = makeLiveCell();
+		const connection = makeConnection(cell, "conn-backpressure");
+		const topicKey = "Post:post-stall";
+		const {instance: topic} = makeTopic(cell, topicKey);
+
+		const ownerId = "owner-backpressure";
+		const subId = "sub-backpressure";
+
+		// Tiny queue cap; the connected frame already occupies the queue, and the
+		// SSE stream is NEVER read (no `reader(res)`), so nothing drains it.
+		const cap = 2;
+		const limits: LiveLimits = {...LIMITS, maxQueuedEventsPerConnection: cap};
+		await run(connection.openStream({ownerId, maxQueuedEventsPerConnection: cap}));
+		const sub = await run(connection.subscribe({subId, topics: [topicKey], ownerId, limits}));
+		expect(sub.ok).toBe(true);
+
+		// Publish more than the cap without ever reading the stream. A bounded queue
+		// fills, the next deliver is refused, the connection is closed, and the row
+		// is reported stale (void's 410 on queue full).
+		let sawStale = false;
+		for (let i = 0; i < cap + 5; i++) {
+			const pub = await run(topic.publish({topicKey, frame: entityFrame, limits}));
+			if (pub.delivered === 0) {
+				sawStale = true;
+				break;
+			}
+		}
+		expect(sawStale).toBe(true);
+
+		// The stream is closed: a subsequent deliver finds no queue → stale.
+		const after = await run(topic.publish({topicKey, frame: entityFrame, limits}));
+		expect(after.delivered).toBe(0);
 	});
 });

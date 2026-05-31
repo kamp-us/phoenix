@@ -194,7 +194,6 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	let framesQueue: Queue.Queue<Uint8Array> | undefined;
 	let ownerId: string | undefined;
 	let generation: number | undefined;
-	let queued = 0;
 	const subscriptions = new Map<
 		string,
 		{revision: number; active: boolean; topics: ReadonlyArray<string>}
@@ -211,14 +210,16 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		const q = framesQueue;
 		if (q !== undefined) {
 			framesQueue = undefined;
-			queued = 0;
 			yield* Queue.shutdown(q);
 		}
 	});
 
 	// ── Connection role ─────────────────────────────────────────────────────
 
-	const openStream = (input: {readonly ownerId: string | undefined}) =>
+	const openStream = (input: {
+		readonly ownerId: string | undefined;
+		readonly maxQueuedEventsPerConnection: number;
+	}) =>
 		Effect.gen(function* () {
 			// A (re)connect bumps the persisted generation so any subscriber row a
 			// topic DO still holds from the prior stream is detected stale on the next
@@ -231,9 +232,15 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			subscriptions.clear();
 			yield* closeStream;
 
-			const queue = yield* Queue.unbounded<Uint8Array>();
+			// Bounded at the per-connection backpressure cap with the DROPPING
+			// strategy: the queue's own invariant IS the cap, so a stalled SSE reader
+			// can buffer at most this many frames. A dropping queue's `Queue.offer`
+			// returns false the moment it's full (a `bounded`/suspend queue would
+			// instead block the producer — wrong here). `deliver` reads that false to
+			// close the connection and report the row stale (void's 410 on queue
+			// full). The connected frame counts against the cap.
+			const queue = yield* Queue.dropping<Uint8Array>(input.maxQueuedEventsPerConnection);
 			framesQueue = queue;
-			queued = 0;
 			yield* Queue.offer(queue, CONNECTED_FRAME);
 
 			// 15-second keep-alive cadence. `Stream.tick` emits immediately then on
@@ -345,20 +352,15 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			if (isStale(input.row)) {
 				return {delivered: false, stale: true};
 			}
-			// Backpressure: a connection that has fallen too far behind is closed and
-			// the row treated as stale (void's 410 on queue full).
-			if (queued >= input.limits.maxQueuedEventsPerConnection) {
-				yield* closeStream;
-				return {delivered: false, stale: true};
-			}
 			const encoded = encoder.encode(encodeFrame(input.frame));
 			if (encoded.byteLength > input.limits.maxEncodedEventSize) {
 				// Oversized event: drop it (not stale — the subscription is fine).
 				return {delivered: false, stale: false};
 			}
-			queued += 1;
+			// Backpressure is the bounded queue's own invariant: `offer` returns false
+			// when the queue is full (a connection that has fallen too far behind).
+			// Close the stream and treat the row as stale (void's 410 on queue full).
 			const accepted = yield* Queue.offer(queue, encoded);
-			queued -= 1;
 			if (!accepted) {
 				yield* closeStream;
 				return {delivered: false, stale: true};
@@ -600,8 +602,15 @@ export const LiveDOLive = LiveDO.make(
 				fetch: Effect.gen(function* () {
 					const raw = yield* Cloudflare.Request;
 					const url = new URL(raw.url);
+					// The route threads the per-request queue cap on the URL (alongside
+					// `ownerId`); it sizes the connection's dropping frame queue. Fall
+					// back to a safe default if the param is missing/unparseable.
+					const capParam = Number(url.searchParams.get("maxQueuedEventsPerConnection"));
+					const maxQueuedEventsPerConnection =
+						Number.isInteger(capParam) && capParam > 0 ? capParam : 100;
 					return yield* instance.openStream({
 						ownerId: url.searchParams.get("ownerId") ?? undefined,
+						maxQueuedEventsPerConnection,
 					});
 				}),
 				subscribe: instance.subscribe,
