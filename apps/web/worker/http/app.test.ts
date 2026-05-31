@@ -228,9 +228,10 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 	});
 
 	it("GET /fate/live is wired into AppLive and rejects 401 without a session", async () => {
-		// The live SSE transport route forwards to the ConnectionDO (ADR 0028); here
-		// we assert it is mounted in the compiled router and gated on a session
-		// cookie before any DO is reached (the cross-DO behavior is proven in
+		// The live SSE transport route forwards to the unified `LiveDO` in its
+		// connection role (`LiveConnections`, ADR 0037); here we assert it is mounted
+		// in the compiled router and gated on a session cookie before any DO is
+		// reached (the cross-role behavior is proven in
 		// `features/fate-live/do.test.ts`). No cookie → 401 fate error envelope.
 		const res = await fetch(
 			appLayer,

@@ -65,10 +65,6 @@ export interface SetUsernameResult {
 	image: string | null;
 }
 
-export interface BackfillProfilesResult {
-	emitted: number;
-}
-
 export interface ProfileRow {
 	userId: string;
 	username: string;

@@ -139,8 +139,8 @@ export default Phoenix.make(
 		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
 		// `drizzle(raw, {schema})`; `Drizzle` + the feature services (`fateLayer`)
 		// are constructed here and stay alive for the isolate — one worker, not a
-		// per-request `ManagedRuntime`. The `/fate` route provides only
-		// `Auth`/`RequestContext` per request.
+		// per-request `ManagedRuntime`. The `/fate` route provides only `Auth`
+		// per request (ADR 0029).
 		const raw = yield* db.raw;
 		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
 		// init — the layer (`BetterAuthLive`, provided below) constructs the

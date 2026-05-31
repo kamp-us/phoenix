@@ -54,17 +54,27 @@ void-aligned rewrite, not a mechanical re-merge of the pre-0025 one-class form.
   A misrouted call (e.g. `register` on a `connection:` instance) hits an
   instance whose role doesn't match and harmlessly returns a no-op result —
   void has no role guard either.
-- **`LiveDO.from("phoenix")` self-namespace.** The DO's OWN namespace is
-  resolved **once in shared init** (`const live = yield* LiveDO.from("phoenix")`)
-  and held in the closure for cross-role addressing
+- **`DurableObjectNamespaceScope` self-namespace.** The DO's OWN namespace is
+  resolved **once in shared init** from `Cloudflare.DurableObjectNamespaceScope`
+  (the LOCAL, scriptName-less self-binding that `.make()` provides) and held in
+  the closure for cross-role addressing
   (`live.getByName(\`topic:${key}\`)` / `live.getByName(\`connection:${id}\`)`).
-  Because it is the same class referencing its own namespace **by host script
-  name**, there is no sibling cycle: `.from(scriptName)` resolves to
-  `Effect<…, never, Worker>`, so the Layer is `Layer<LiveDO, never, Worker>`.
+  This is void's `this.env[bindingName]` self-reference. Because the scope is
+  provided by `.make()`, it adds no requirement, so the Layer is
+  `Layer<LiveDO, never, Worker>` with every RPC method's `R` channel `never`.
   A bare `yield* LiveDO` in init would instead leak `LiveDO` as an
   unsatisfiable self-requirement — the very Tag the Layer outputs, which no
-  merge can discharge. The string is the host worker's id and must stay in sync
-  with `Phoenix.make("phoenix", …)` in `worker/index.ts`.
+  merge can discharge.
+  - **Why NOT `LiveDO.from("phoenix")`** (the shape this ADR first prescribed):
+    every `.from(...)` overload sets a `scriptName` — the string directly, or
+    the worker passed to `.from(Worker)` — which declares a CROSS-SCRIPT
+    binding. Under `alchemy dev` that routes through the dev-registry proxy and
+    dies with `Worker "phoenix" not found`; a DO reaching its own siblings must
+    use the local binding, not a cross-worker reference. So there is no
+    host-script-name string to keep in sync with `worker/index.ts` — the local
+    scope carries no name. The scope is typed `DurableObjectNamespace<unknown>`
+    (alchemy can't know each host's DO shape), widened once to this DO's
+    statically-known `LiveRpcSurface` — the one `as` in `live-do.ts`.
 - **KV storage, not SQLite.** Storage is `state.storage`'s KV API, mirroring
   void's flat keys: subscriber rows under
   `sub:${topicKey}:${connectionId}:${subId}:${generation}:${revision}`, and the
@@ -102,13 +112,16 @@ fan-out rewrite the client never sees.
 
 ## Consequences
 
-- **No sibling Layer cycle.** The self-namespace is resolved by script name, so
-  every RPC method's `R` channel is `never` and the implementation Layer requires
-  only `Worker`. The whole per-call sibling-resolution dance
+- **No sibling Layer cycle.** The self-namespace is the local
+  `DurableObjectNamespaceScope` `.make()` provides, so every RPC method's `R`
+  channel is `never` and the implementation Layer requires only `Worker`. The
+  whole per-call sibling-resolution dance
   ([0033](0033-mutual-do-layer-cycle-per-call-resolution.md)) is eliminated, not
   worked around — there is no second DO Tag to resolve. At the worker call seam
   there is nothing to discharge either: the old split-DO `as never` /
-  `Effect.provide(workerContext)` cast is gone.
+  `Effect.provide(workerContext)` cast is gone. (A cross-script
+  `LiveDO.from("phoenix")` would have a `Worker` requirement too, but it doesn't
+  work under `alchemy dev` — see the Decision.)
 - **No `@effect/sql-sqlite-do`, no migration dir.** KV storage drops the
   `subscribers` SQL table, the `v2` DO migration, and the `@effect/sql-sqlite-do`
   dependency. alchemy derives the single `LiveDO` class's DO migration from the

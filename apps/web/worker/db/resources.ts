@@ -4,10 +4,9 @@
  * ensures the resource exists before deploy; the worker `bind()`s it at runtime.
  *
  * This replaces the `d1_databases` / `migrations_dir` keys of `wrangler.jsonc`
- * (ADR 0026). The Durable Object namespaces are not declared here — they are the
- * `DurableObjectNamespace` classes themselves (`features/fate-live/connection-do.ts`,
- * `features/fate-live/topic-do.ts`); declaring + binding them in the worker is
- * enough for alchemy to derive their migrations.
+ * (ADR 0026). The Durable Object namespace is not declared here — it is the
+ * single unified `LiveDO` class itself (`features/fate-live/live-do.ts`, ADR 0037);
+ * declaring + binding it in the worker is enough for alchemy to wire it.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 
@@ -20,7 +19,8 @@ import * as Cloudflare from "alchemy/Cloudflare";
  * `wrangler d1 migrations apply` step.
  *
  * The cutover creates a *fresh* D1 (ADR 0009: phoenix has no irreplaceable prod
- * data; re-seed via the import scripts), so there is no adoption flag here.
+ * data; any future re-seed is a direct-D1 script against the bound database, not
+ * a runtime route), so there is no adoption flag here.
  */
 export const PhoenixDb = Cloudflare.D1Database("phoenix_db", {
 	migrationsDir: "./worker/db/drizzle/migrations",
