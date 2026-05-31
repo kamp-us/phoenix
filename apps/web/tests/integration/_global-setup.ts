@@ -42,8 +42,11 @@ process.env.CLOUDFLARE_API_TOKEN ??= "local-dev-token";
 // The worker's `env:` block binds `BETTER_AUTH_SECRET` from a required
 // `Config.redacted` (`worker/config.ts`); the deploy resolves it from this env.
 // Inject a deterministic dev secret so the integration deploy is self-contained
-// and better-auth can sign sessions in the local workerd.
-process.env.BETTER_AUTH_SECRET ??= "integration-test-better-auth-secret";
+// and better-auth can sign sessions in the local workerd. An `insecure_`-prefixed
+// 32-byte hex value (not a short word-string) so better-auth's startup
+// length/entropy checks stay quiet on CI runs with no `.env` — matching `.env`.
+process.env.BETTER_AUTH_SECRET ??=
+	"insecure_cb11c15edab29ce190c28e1cf4c2d8e27c6918e99bdb3b280c7af98e1e542bb6";
 
 // Run the deployed test worker in dev mode so better-auth permits the suite's
 // server-side (browser-less, no `Origin` header) sign-ups. In prod mode

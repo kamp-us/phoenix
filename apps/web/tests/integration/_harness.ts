@@ -202,13 +202,15 @@ export function harness(): Harness {
 		return result!;
 	};
 
-	const signUp: Harness["signUp"] = async (email, password, name) => {
-		const res = await json("/api/auth/sign-up/email", {email, password, name});
-		if (!res.ok) {
-			throw new Error(`sign-up failed: ${res.status} ${await res.text()}`);
-		}
+	// Extract the session (`name=value` cookie + user id) from a better-auth
+	// sign-up OR sign-in response — the two share a response shape, so both the
+	// fresh-user and existing-user paths converge here.
+	const sessionFrom = async (
+		res: Response,
+		ctx: string,
+	): Promise<{userId: string; cookie: string}> => {
 		const setCookie = res.headers.get("set-cookie");
-		if (!setCookie) throw new Error("sign-up returned no set-cookie");
+		if (!setCookie) throw new Error(`${ctx} returned no set-cookie`);
 		// `set-cookie` may carry attributes (Path, HttpOnly, …); keep just `name=value`.
 		const cookie = setCookie
 			.split(/,(?=[^;]+=)/)
@@ -216,8 +218,28 @@ export function harness(): Harness {
 			.filter((kv) => kv.includes("="))
 			.join("; ");
 		const data = (await res.json()) as {user?: {id: string}};
-		if (!data.user?.id) throw new Error("sign-up returned no user id");
+		if (!data.user?.id) throw new Error(`${ctx} returned no user id`);
 		return {userId: data.user.id, cookie};
+	};
+
+	const signUp: Harness["signUp"] = async (email, password, name) => {
+		const res = await json("/api/auth/sign-up/email", {email, password, name});
+		if (res.ok) return sessionFrom(res, "sign-up");
+		// Idempotent against the PERSISTENT D1 — under the integration harness only
+		// state + DO storage are offline; D1 is the real Cloudflare DB (ADR 0031),
+		// so a seed user left by a prior run makes sign-up 422 USER_ALREADY_EXISTS.
+		// Fall back to sign-in so re-seeding a fixture is a no-op, not a hard fail.
+		const body = await res.text();
+		if (res.status === 422 && body.includes("USER_ALREADY_EXISTS")) {
+			const signIn = await json("/api/auth/sign-in/email", {email, password});
+			if (!signIn.ok) {
+				throw new Error(
+					`sign-in (existing seed user) failed: ${signIn.status} ${await signIn.text()}`,
+				);
+			}
+			return sessionFrom(signIn, "sign-in");
+		}
+		throw new Error(`sign-up failed: ${res.status} ${body}`);
 	};
 
 	// Per-harness seeding state. A `definition.add` write is identity-bearing

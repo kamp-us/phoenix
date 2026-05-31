@@ -25,6 +25,12 @@ import {defineConfig} from "vitest/config";
 
 export default defineConfig({
 	test: {
+		// `verbose` prints a ✓/✗ line per test (not just per file), so the slow
+		// single-fork integration suite emits a steady heartbeat instead of going
+		// silent for ~20s between files. Root-level on purpose: Vitest forbids a
+		// per-project `reporters` (it's typed `never[]` in a project block — the
+		// reporter aggregates the whole run), so both projects share it.
+		reporters: ["verbose"],
 		projects: [
 			{
 				test: {
