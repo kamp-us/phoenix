@@ -32,6 +32,23 @@ export const environment = Config.literals(["development", "production"], "ENVIR
 );
 
 /**
+ * The better-auth session-signing secret. **Redacted → `secret_text` binding**
+ * (a `Config.redacted` resolves to a Cloudflare secret, not `plain_text`).
+ *
+ * Read at RUNTIME via `yield* betterAuthSecret` (`better-auth-live.ts`), off the
+ * `ConfigProvider` alchemy auto-wires from the bound worker env — the runtime
+ * `Redacted` is registry-backed (minted by `Config.redacted` from the env
+ * string), so `Redacted.value` unwraps it cleanly. This replaces the old
+ * `alchemy/Random` resource path: `Random` is a deploy-time resource with no
+ * value in the workerd runtime isolate (`SECRET.text` is `undefined` there), so
+ * the secret could never be read back at request time — it must travel as a
+ * binding. No default: the secret is REQUIRED at deploy (the `dev:worker` script
+ * supplies a dev value; CI/prod supply the real one), so a missing secret fails
+ * the deploy closed rather than silently signing cookies with a blank key.
+ */
+export const betterAuthSecret = Config.redacted("BETTER_AUTH_SECRET");
+
+/**
  * The single yieldable read surface. `yield* AppConfig` returns `{ environment }`.
  * Add a future var by declaring its `Config` constant above and adding a key here.
  */

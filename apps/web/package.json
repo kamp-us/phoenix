@@ -5,7 +5,7 @@
 	"type": "module",
 	"scripts": {
 		"dev": "vite",
-		"dev:worker": "ENVIRONMENT=development alchemy dev",
+		"dev:worker": "ENVIRONMENT=development BETTER_AUTH_SECRET=dev-insecure-better-auth-secret alchemy dev",
 		"build": "vite build",
 		"preview": "vite preview",
 		"deploy": "pnpm build && alchemy deploy",

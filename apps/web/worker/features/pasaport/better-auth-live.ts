@@ -26,7 +26,6 @@ import * as BetterAuth from "@alchemy.run/better-auth";
 // tsgo can portably name plugin types under composite project refs.
 // See microsoft/typescript-go#1034 and better-auth#5666 for context.
 import type {} from "@better-auth/core";
-import {Random} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
 import {drizzleAdapter} from "better-auth/adapters/drizzle";
@@ -39,16 +38,26 @@ import * as Redacted from "effect/Redacted";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
-import {AppConfig} from "../../config.ts";
+import {AppConfig, betterAuthSecret} from "../../config.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {PhoenixDb} from "../../db/resources.ts";
 
 /**
  * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
- * `CloudflareD1` reference Layer. Mirrors its structure (`Random` for the
- * secret, `Cloudflare.D1Connection.bind` for the database, `Effect.cached` so
- * the `makeBetterAuth` call happens once per isolate) and adds phoenix's
- * plugins + `baseURL`/`trustedOrigins`.
+ * `CloudflareD1` reference Layer. Mirrors its structure
+ * (`Cloudflare.D1Connection.bind` for the database, `Effect.cached` so the
+ * `makeBetterAuth` call happens once per isolate) and adds phoenix's plugins +
+ * `baseURL`/`trustedOrigins`.
+ *
+ * The session-signing secret is read at runtime from the `BETTER_AUTH_SECRET`
+ * `secret_text` binding via `yield* betterAuthSecret` (a `Config.redacted` in
+ * `config.ts`). This deliberately replaces the reference layer's `alchemy/Random`
+ * resource: `Random` is a deploy-time resource and has no value in the workerd
+ * runtime isolate (`yield* Random(...)` yields no `.text` there), so the minted
+ * secret could never be read back at request time — better-auth ended up signing
+ * cookies with an unresolved Effect object. As a binding the secret is present in
+ * the runtime env, and `Config.redacted` mints a registry-backed `Redacted` from
+ * it so `Redacted.value` unwraps the plain string.
  *
  * `baseURL`/`trustedOrigins` are derived from `ENVIRONMENT` (read at layer build
  * via `yield* AppConfig`, the single `effect/Config` surface): in dev they are set explicitly to
@@ -63,14 +72,13 @@ export const BetterAuthLive = Layer.effect(
 	Effect.gen(function* () {
 		const connection = yield* Cloudflare.D1Connection.bind(PhoenixDb);
 
-		// Mint (or recover from state) the session-signing secret. `Random` is a
-		// deterministic-in-state resource: the value is generated once on create
-		// and persisted thereafter, so re-deploys keep the same secret unless the
-		// resource is replaced. The fixed dev fallback `DEV_BETTER_AUTH_SECRET`
-		// (`worker/env.ts`) is no longer in the wire — alchemy state is
-		// the source of truth now.
-		const SECRET = yield* Random("BETTER_AUTH_SECRET");
-		const secret = yield* SECRET.text;
+		// The session-signing secret, read from the `BETTER_AUTH_SECRET`
+		// `secret_text` binding off the auto-wired ConfigProvider. `Config.redacted`
+		// mints a registry-backed `Redacted<string>` from the runtime env value, so
+		// `Redacted.value` (below, at the `makeBetterAuth` call) unwraps the plain
+		// string. `Effect.orDie`: a missing secret is an unrecoverable deploy
+		// misconfiguration, not a widening of the Layer's error channel.
+		const secret = yield* betterAuthSecret.pipe(Effect.orDie);
 
 		// Read `ENVIRONMENT` through the single `effect/Config` surface (`config.ts`),
 		// resolved off the ConfigProvider alchemy auto-wires from the bound worker
@@ -96,12 +104,11 @@ export const BetterAuthLive = Layer.effect(
 
 		const auth = yield* Effect.gen(function* () {
 			const d1 = yield* connection.raw;
-			const secretText = yield* secret.pipe(Effect.map(Redacted.value));
 			const db = drizzle(d1, {schema});
 			return makeBetterAuth({
 				emailAndPassword: {enabled: true},
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
-				secret: secretText,
+				secret: Redacted.value(secret),
 				// Dev sets `baseURL`/`trustedOrigins` explicitly (ADR 0031); prod omits
 				// both so better-auth infers the origin from the request Host. Derived
 				// from `ENVIRONMENT` above.

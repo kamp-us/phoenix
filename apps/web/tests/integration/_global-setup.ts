@@ -39,6 +39,12 @@ installLocalhostDns();
 process.env.CLOUDFLARE_ACCOUNT_ID ??= "local-dev-account";
 process.env.CLOUDFLARE_API_TOKEN ??= "local-dev-token";
 
+// The worker's `env:` block binds `BETTER_AUTH_SECRET` from a required
+// `Config.redacted` (`worker/config.ts`); the deploy resolves it from this env.
+// Inject a deterministic dev secret so the integration deploy is self-contained
+// and better-auth can sign sessions in the local workerd.
+process.env.BETTER_AUTH_SECRET ??= "integration-test-better-auth-secret";
+
 const options = {
 	providers: Cloudflare.providers(),
 	state: Alchemy.localState(),

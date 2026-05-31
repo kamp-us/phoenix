@@ -20,6 +20,7 @@
  * auth route's `Pasaport` comes from the same layer.
  */
 import type * as BetterAuth from "@alchemy.run/better-auth";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
@@ -59,6 +60,14 @@ export const makeAppLive = (options: {
 	 * whatever the layer carries upward.
 	 */
 	readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth, never, any>;
+	/**
+	 * The worker's ambient `RuntimeContext`, captured in init. better-auth's
+	 * `fetch`/`auth` carry an undischarged `RuntimeContext` requirement (the
+	 * reference type is `HttpEffect<RuntimeContext>`) that `HttpRouter.add` lifts
+	 * into the `/api/auth/*` route's per-request markers; we discharge it here by
+	 * providing the isolate's own runtime context to the request layer.
+	 */
+	readonly runtimeContext: BaseRuntimeContext;
 }) => {
 	// Typed-JSON group: the `GET /api/health` probe. Its `ConfigProvider`
 	// requirement (from `yield* AppConfig`) is satisfied at worker scope (alchemy
@@ -80,9 +89,11 @@ export const makeAppLive = (options: {
 	// requirements left to the outer worker `Effect.provide`.
 	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute).pipe(
 		HttpRouter.provideRequest(
-			Layer.mergeAll(options.fateLayer, options.liveLayer).pipe(
-				Layer.merge(options.betterAuthLayer),
-			),
+			Layer.mergeAll(
+				options.fateLayer,
+				options.liveLayer,
+				Layer.succeed(RuntimeContext)(options.runtimeContext),
+			).pipe(Layer.merge(options.betterAuthLayer)),
 		),
 	);
 

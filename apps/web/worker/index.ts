@@ -28,11 +28,12 @@
  * `alchemy dev` this worker is API-only, so a non-API path has no SPA to return.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
+import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import {environment} from "./config.ts";
+import {betterAuthSecret, environment} from "./config.ts";
 import {createDrizzle} from "./db/Drizzle.ts";
 import {PhoenixDb} from "./db/resources.ts";
 import {makeFateLayer} from "./features/fate/layers.ts";
@@ -77,14 +78,18 @@ export class Phoenix extends Cloudflare.Worker<
 	LiveDO
 >()("phoenix", {
 	main: import.meta.filename,
-	// Declares the worker's single ENVIRONMENT binding, per-key from the
-	// `effect/Config` constant in `worker/config.ts` (`environment`). Alchemy
-	// resolves the Config at deploy from the deploy-time `process.env`
-	// (fail-closed to "production") and binds it `plain_text` — a non-redacted
-	// Config resolving to a string. Runtime code reads the same value via
-	// `yield* AppConfig` (BetterAuthLive's dev auth URLs + magic-link gate, the
-	// health probe), off the ConfigProvider alchemy auto-wires from this env.
-	env: {ENVIRONMENT: environment},
+	// The worker's env bindings, per-key from the `effect/Config` constants in
+	// `worker/config.ts`. Alchemy resolves each Config at deploy from the
+	// deploy-time `process.env` and binds it; runtime code reads the same value
+	// off the ConfigProvider alchemy auto-wires from this env.
+	//   - `ENVIRONMENT` — non-redacted Config → `plain_text` binding (fail-closed
+	//     to "production"). Read via `yield* AppConfig` (BetterAuthLive's dev auth
+	//     URLs + magic-link gate, the health probe).
+	//   - `BETTER_AUTH_SECRET` — `Config.redacted` → `secret_text` binding (a
+	//     Cloudflare secret). Read via `yield* betterAuthSecret` in BetterAuthLive
+	//     to sign sessions. Required at deploy (the `dev:worker` script supplies a
+	//     dev value; CI/prod supply the real one) — a missing secret fails closed.
+	env: {ENVIRONMENT: environment, BETTER_AUTH_SECRET: betterAuthSecret},
 	assets: {
 		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
 		// ADR 0030) emits the client directly into `dist/client`; the path is
@@ -189,6 +194,15 @@ export default Phoenix.make(
 			),
 		);
 
+		// Capture the worker's ambient `RuntimeContext` (the alchemy runtime-env
+		// service this isolate runs inside). better-auth's `fetch`/`auth` carry an
+		// undischarged `RuntimeContext` in their `R` (the reference type is
+		// `HttpEffect<RuntimeContext>`), lifted into the `/api/auth/*` route's
+		// per-request requirements by `HttpRouter.add`. `serve` passes `Req`
+		// through rather than auto-providing it, so the worker discharges it for
+		// its own request handler — `makeAppLive` feeds it into `provideRequest`.
+		const runtimeContext = yield* RuntimeContext;
+
 		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027):
 		//   - typed JSON via an `HttpApiBuilder` group: `GET /api/health`,
 		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
@@ -196,10 +210,19 @@ export default Phoenix.make(
 		// `makeAppLive` discharges the raw routes' worker-level requirements with
 		// `HttpRouter.provideRequest(...)` and wires the health group's platform
 		// stubs (`http/app.ts`).
+		// Provide the INIT-RESOLVED `betterAuth` service to the routes — NOT
+		// `BetterAuthLive`. `provideRequest` builds its layer per request, so
+		// passing the layer would reconstruct better-auth (re-running the
+		// `Random`/`Output` secret resolution, which needs `RuntimeContext` and the
+		// deploy-time alchemy machinery absent in the workerd runtime) on every
+		// request. The service resolved here in init carries the already-warmed
+		// `auth` cache, so the `/api/auth/*` route's `betterAuth.fetch` reuses it
+		// with no per-request reconstruction.
 		const AppLive = makeAppLive({
 			fateLayer,
 			liveLayer,
-			betterAuthLayer: BetterAuthLive,
+			betterAuthLayer: Layer.succeed(BetterAuth.BetterAuth)(betterAuth),
+			runtimeContext,
 		});
 
 		// ── RUNTIME PHASE (per request) ──

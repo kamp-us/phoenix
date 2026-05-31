@@ -17,6 +17,7 @@
  * Runs in the node pool (workerd harness is task 7).
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
+import type {BaseRuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
 import {drizzleAdapter} from "better-auth/adapters/drizzle";
@@ -151,10 +152,23 @@ beforeAll(() => {
 		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[1],
 	);
 
+	// A minimal `BaseRuntimeContext` stub. The HTTP-surface cases here never reach
+	// the `/api/auth/*` route's RuntimeContext-consuming secret resolution (sign-up
+	// runs against the hand-rolled test better-auth instance above), so a no-op
+	// key/value store satisfying the structural type is sufficient — no cast needed.
+	const runtimeContext: BaseRuntimeContext = {
+		Type: "test",
+		id: "test",
+		env: {},
+		get: () => Effect.succeed(undefined),
+		set: (id) => Effect.succeed(id),
+	};
+
 	appLayer = makeAppLive({
 		fateLayer,
 		liveLayer,
 		betterAuthLayer,
+		runtimeContext,
 	});
 });
 
