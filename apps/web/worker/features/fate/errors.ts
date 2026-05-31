@@ -135,26 +135,41 @@ export type FateErrorTag =
  */
 type TaggedErrorShape = {readonly code?: string; readonly message?: string};
 
-/** A registry value: turns one tagged error instance into its wire error. */
-type WireCodeFor = (e: TaggedErrorShape) => FateRequestError;
+/**
+ * A registry value: the function that turns one tagged error instance into its
+ * wire error, paired with the closed set of wire `code`s that function can
+ * produce. The `codes` list is what {@link WIRE_CODES} aggregates — so the set of
+ * codes the server can emit is *derived from the registry*, not hand-kept, and
+ * the SPA-list guard (`mutationErrorCodes.test.ts`) checks against it.
+ */
+interface WireCodeFor {
+	readonly encode: (e: TaggedErrorShape) => FateRequestError;
+	readonly codes: ReadonlyArray<MutationErrorCode>;
+}
 
 /** Static-code arm: one wire code, one fixed (or carried) message. */
-const fixed =
-	(code: MutationErrorCode, fallback: string): WireCodeFor =>
-	(e) =>
-		fateError(code, e.message ?? fallback);
+const fixed = (code: MutationErrorCode, fallback: string): WireCodeFor => ({
+	encode: (e) => fateError(code, e.message ?? fallback),
+	codes: [code],
+});
 
 /**
  * Dynamic-code arm: the wire code is the error's own `code` field upcased
  * (`title_required` → `TITLE_REQUIRED`), defaulting to `BAD_REQUEST`. Backs the
- * validation tags whose sub-code lives on the instance.
+ * validation tags whose sub-code lives on the instance. The caller declares the
+ * closed set of codes the arm can produce (the upcased domain sub-codes) so the
+ * dynamic arm still contributes to {@link WIRE_CODES}.
  */
-const upcased =
-	(fallbackMessage: string): WireCodeFor =>
-	(e) => {
+const upcased = (
+	codes: ReadonlyArray<MutationErrorCode>,
+	fallbackMessage: string,
+): WireCodeFor => ({
+	encode: (e) => {
 		const upper = (e.code ? e.code.toUpperCase() : "BAD_REQUEST") as MutationErrorCode;
 		return fateError(upper, e.message ?? fallbackMessage);
-	};
+	},
+	codes,
+});
 
 /**
  * The `_tag` → wire-code registry. Typed `Record<FateErrorTag, WireCodeFor>`,
@@ -169,8 +184,11 @@ export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
 
 	// ── Pasaport ────────────────────────────────────────────────────────────
 	// `code` on `UsernameInvalid` is upcased to the wire contract
-	// (INVALID_FORMAT / TOO_SHORT / TOO_LONG).
-	"pasaport/UsernameInvalid": upcased("validation failed"),
+	// (INVALID_FORMAT / TOO_SHORT / TOO_LONG; `UsernameInvalidCode` upcased).
+	"pasaport/UsernameInvalid": upcased(
+		["INVALID_FORMAT", "TOO_SHORT", "TOO_LONG"],
+		"validation failed",
+	),
 	"pasaport/UsernameTaken": fixed("TAKEN", "bu kullanıcı adı kullanımda"),
 	"pasaport/UsernameAlreadySet": fixed(
 		"ALREADY_SET",
@@ -188,13 +206,47 @@ export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
 	"sozluk/UnauthorizedDefinitionMutation": fixed("UNAUTHORIZED", "not authorized"),
 
 	// ── Pano ──────────────────────────────────────────────────────────────
-	"pano/PostValidation": upcased("validation failed"),
-	"pano/CommentValidation": upcased("validation failed"),
+	// `PostValidationCode` / `CommentValidationCode` upcased to the wire contract.
+	"pano/PostValidation": upcased(
+		[
+			"TITLE_REQUIRED",
+			"TITLE_TOO_LONG",
+			"URL_INVALID",
+			"BODY_TOO_LONG",
+			"TAGS_REQUIRED",
+			"TAG_INVALID",
+		],
+		"validation failed",
+	),
+	"pano/CommentValidation": upcased(
+		["BODY_REQUIRED", "BODY_TOO_LONG", "PARENT_NOT_FOUND"],
+		"validation failed",
+	),
 	"pano/PostNotFound": fixed("POST_NOT_FOUND", "post not found"),
 	"pano/CommentNotFound": fixed("COMMENT_NOT_FOUND", "comment not found"),
 	"pano/UnauthorizedPostMutation": fixed("UNAUTHORIZED", "not authorized"),
 	"pano/UnauthorizedCommentMutation": fixed("UNAUTHORIZED", "not authorized"),
 };
+
+/**
+ * The always-present wire `code`s `encodeFateError` can emit independent of any
+ * registry arm: `INTERNAL_SERVER_ERROR` (the unknown / non-tagged fallback) and
+ * `BAD_REQUEST` (the `upcased` default when an error carries no `code`).
+ */
+const FALLBACK_WIRE_CODES = ["INTERNAL_SERVER_ERROR", "BAD_REQUEST"] as const;
+
+/**
+ * The closed set of wire `code`s the server can put on the wire — every arm's
+ * declared {@link WireCodeFor.codes} plus the always-present
+ * {@link FALLBACK_WIRE_CODES}. Derived from {@link WIRE_CODE_BY_TAG}, so it can't
+ * drift from the encoder. The SPA's `MUTATION_ERROR_CODES` list must cover this
+ * set or an emitted code silently decodes to the SPA's `INTERNAL_SERVER_ERROR`
+ * fallback; `mutationErrorCodes.test.ts` guards that.
+ */
+export const WIRE_CODES: ReadonlySet<MutationErrorCode> = new Set<MutationErrorCode>([
+	...FALLBACK_WIRE_CODES,
+	...Object.values(WIRE_CODE_BY_TAG).flatMap((arm) => arm.codes),
+]);
 
 /**
  * Map any thrown / failed value from inside a resolver or source executor onto
@@ -208,7 +260,7 @@ export function encodeFateError(err: unknown): FateRequestError {
 	const tag = e?._tag;
 
 	if (typeof tag === "string" && tag in WIRE_CODE_BY_TAG) {
-		return WIRE_CODE_BY_TAG[tag as FateErrorTag](e ?? {});
+		return WIRE_CODE_BY_TAG[tag as FateErrorTag].encode(e ?? {});
 	}
 
 	return fateError("INTERNAL_SERVER_ERROR", e?.message ?? "Something went wrong.");
