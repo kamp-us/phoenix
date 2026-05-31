@@ -261,7 +261,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	const subscribe: LiveRpcSurface["subscribe"] = (input) =>
 		Effect.gen(function* () {
 			// A control message cannot subscribe on another user's behalf.
-			if ((ownerId ?? undefined) !== (input.ownerId ?? undefined)) {
+			if (ownerId !== input.ownerId) {
 				return {ok: false};
 			}
 			if (role.kind !== "connection") {
@@ -389,6 +389,17 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			...map,
 		]);
 
+	/** Group a topic's `[key, row]` entries by `connectionId` for per-connection passes. */
+	const groupByConnection = (entries: ReadonlyArray<readonly [string, SubscriberRow]>) => {
+		const grouped = new Map<string, Array<{key: string; row: SubscriberRow}>>();
+		for (const [key, row] of entries) {
+			const list = grouped.get(row.connectionId) ?? [];
+			list.push({key, row});
+			grouped.set(row.connectionId, list);
+		}
+		return grouped;
+	};
+
 	const ensureAlarm = Effect.gen(function* () {
 		const existing = yield* state.storage.getAlarm();
 		if (existing == null) {
@@ -415,10 +426,10 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 					stale.push(key);
 				}
 			}
-			const live = entries.filter(([key]) => !stale.includes(key));
+			const survivors = entries.filter(([key]) => !stale.includes(key));
 			// Topic subscription cap (void returns 409 "topic full"; here a no-op
 			// `{ok: false}` is the equivalent rejection — the connection records it).
-			if (live.length >= input.limits.maxSubscriptionsPerTopic) {
+			if (survivors.length >= input.limits.maxSubscriptionsPerTopic) {
 				return {ok: false};
 			}
 			if (stale.length > 0) {
@@ -442,12 +453,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			const entries = yield* loadRows(input.topicKey);
 			// Group rows by connection so each connection sees one deliver pass.
-			const grouped = new Map<string, Array<{key: string; row: SubscriberRow}>>();
-			for (const [key, row] of entries) {
-				const list = grouped.get(row.connectionId) ?? [];
-				list.push({key, row});
-				grouped.set(row.connectionId, list);
-			}
+			const grouped = groupByConnection(entries);
 			let delivered = 0;
 			for (const [connectionId, items] of grouped) {
 				const connection = live.getByName(`connection:${connectionId}`);
@@ -495,12 +501,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				return;
 			}
 			const entries = yield* loadRows(role.topicKey);
-			const grouped = new Map<string, Array<{key: string; row: SubscriberRow}>>();
-			for (const [key, row] of entries) {
-				const list = grouped.get(row.connectionId) ?? [];
-				list.push({key, row});
-				grouped.set(row.connectionId, list);
-			}
+			const grouped = groupByConnection(entries);
 			const probeTimeout = 1_500;
 			const staleKeys: Array<string> = [];
 			for (const [connectionId, items] of grouped) {
