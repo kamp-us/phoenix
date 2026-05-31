@@ -161,13 +161,13 @@ export function makeSqliteD1(): SqliteD1 {
 				try {
 					db.exec(stmt);
 				} catch (err) {
+					// Swallow ONLY the genuinely-idempotent re-apply cases. A
+					// `no such table`/`no such index` is a real defect (e.g. a
+					// misspelled-table CREATE INDEX or a PK on a missing table) that
+					// would otherwise silently drop a constraint the atomicity tests
+					// depend on — let those throw.
 					const msg = String(err);
-					if (
-						!msg.includes("already exists") &&
-						!msg.includes("duplicate column") &&
-						!msg.includes("no such table") &&
-						!msg.includes("no such index")
-					) {
+					if (!msg.includes("already exists") && !msg.includes("duplicate column")) {
 						throw err;
 					}
 				}
