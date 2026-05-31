@@ -1,10 +1,22 @@
 # Context.Service pattern
 
-How to define and wire services in phoenix's worker, following the conventions used in `~/code/github.com/usirin/effect-smol/` (the canonical effect codebase).
+How to define and wire services in phoenix's worker.
+
+> [!IMPORTANT]
+> **phoenix is on Effect v4** (`effect@4.0.0-beta.*` — the effect-smol line). Every idiom in this doc is v4. Effect **v3** is what most training data and blog posts show, and several of its core idioms are *wrong* here. The one that bites hardest:
+>
+> | concept | Effect **v3** — DO NOT use | Effect **v4** — phoenix |
+> |---|---|---|
+> | define a service | `class S extends Context.Tag("S")<S, Shape>() {}` | `class S extends Context.Service<S, Shape>()("S") {}` |
+> | the bare tag helper | `Context.Tag(...)` / `Context.GenericTag(...)` | `Context.Service<Self, Shape>()(id)` |
+> | the other service helper | `Effect.Service<S>()("S", { … })` | not used — `Context.Service` only |
+> | module imports | `from "effect"` for everything | many things moved: `effect/unstable/http/*`, `effect/Config`, etc. |
+>
+> Note the **argument order**: v4 is `Context.Service<Self, Shape>()(id)` — type args first, then `()`, then the string id. v3's `Context.Tag(id)<Self, Shape>()` puts the id first. If you typed `Context.Tag`, you're writing v3 — stop and use `Context.Service`. When muscle memory disagrees with this table, **the codebase is the spec**: see `worker/features/vote/Vote.ts`, `worker/db/Drizzle.ts`, `worker/features/pasaport/Auth.ts`.
 
 ## Defining a service — class form, always
 
-The class form is the canonical pattern in effect-smol. Use it for every service, even one-field ones.
+The class form is the canonical v4 pattern. Use it for every service, even one-field ones.
 
 ```ts
 import {Context} from "effect";
@@ -50,7 +62,7 @@ class UserRepo extends Context.Service<
 
 ## Static helpers on the service class
 
-Effect-smol attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/features/pasaport/Auth.ts` — the smallest, cleanest example of `static readonly required`.
+Effect v4 attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/features/pasaport/Auth.ts` — the smallest, cleanest example of `static readonly required`.
 
 Call site: `const {user} = yield* Auth.required;`
 
@@ -64,7 +76,7 @@ Use this when the same gen-block recurs at five call sites. Don't pre-derive eve
 export const layer: Layer.Layer<Path> = Layer.succeed(Path)(posixImpl);
 ```
 
-Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `Auth` (`worker/features/pasaport/Auth.ts`) is the canonical example: the `/fate` route provides it with `Effect.provideService(Auth, {user, session})` after validating the session, and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) carries the raw `Request` for free — no hand-rolled `CloudflareEnv`/`RequestContext` Tags. Use `Cloudflare.WorkerEnvironment` (alchemy ships this Tag at worker scope) for env access.
+Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `Auth` (`worker/features/pasaport/Auth.ts`) is the canonical example: the `/fate` route provides it with `Effect.provideService(Auth, {user, session})` after validating the session, and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) carries the raw `Request` for free — no hand-rolled `CloudflareEnv`/`RequestContext` Tags. For worker config (`ENVIRONMENT`, secrets) read `AppConfig` (an `effect/Config` surface; `config.ts`), not a raw-env Tag.
 
 ### `Layer.effect` — service built inside an Effect
 
@@ -103,8 +115,8 @@ Inside `Effect.gen`:
 
 ```ts
 Effect.gen(function*() {
-  const env = yield* CloudflareEnv;
-  const auth = yield* Auth;
+  const auth = yield* Auth;          // per-request capability
+  const environment = yield* AppConfig;  // worker config (effect/Config, not a raw-env Tag)
   // ...
 });
 ```
@@ -121,9 +133,8 @@ Prefer gen — `yield* Service` reads identically to `const service = ...`.
 
 ```ts
 const program = handler.pipe(
-  Effect.provideService(CloudflareEnv, env),
-  Effect.provideService(Auth, {user, session}),
-  Effect.provide(UserRepo.layer),     // layer, when construction is non-trivial
+  Effect.provideService(Auth, {user, session}),   // ready-made per-request value
+  Effect.provide(UserRepo.layer),                 // layer, when construction is non-trivial
 );
 ```
 

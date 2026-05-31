@@ -43,7 +43,7 @@ The remaining unit-test slots, in practice:
 
 - The `Drizzle` service's `run` / `batch` contract (`apps/web/worker/db/Drizzle.test.ts`).
 - The fate bridge over a `node:sqlite`-backed D1 fake.
-- The `ConnectionDO` / `TopicDO` instance factories over a `DurableObjectState` fake (`live-instance.test.ts`).
+- The unified `LiveDO` instance factory over a `DurableObjectState` fake (`apps/web/worker/features/fate-live/do.test.ts`).
 - Pure helpers (cursor codecs, keyset pagination, etc.).
 
 ## Stubbing a service when you genuinely need to
@@ -79,7 +79,8 @@ Canonical implementation: `apps/web/worker/db/Drizzle.test.ts`.
 
 - **Service fixtures** — small builder functions that return realistic input shapes. Live at the top of the test file or in a sibling `fixtures.ts`. Pure functions, plain TS, no Effect needed.
 - **Seed helpers** — wrap calls to the *real* services. `seedTerm(sozluk, slug, defs)` is an Effect that calls `sozluk.addDefinition` multiple times. Lives next to the test that uses it. (In integration tests the equivalent is the harness's `h.seedTerm(...)` — see [alchemy-test-harness.md](./alchemy-test-harness.md).)
-- **Don't share mock layers across files** — if two tests need the same service stub, that's a smell that maybe a fixture or seed helper is the better abstraction.
+- **Shared fakes** — a reusable fake (a `node:sqlite` D1, a `DurableObjectState` stub) that two or more test files import lives in a **colocated `*.fake.ts` module next to the code it fakes**, exporting a `makeXxx()` factory: `worker/db/sqlite-d1.fake.ts`, `worker/features/fate-live/do-state.fake.ts`. **Do not invent a `__support__/`, `__tests__/`, `test-utils/`, or top-level `test/` folder** — that's layered-folder drift (see [[feedback_colocate_over_layered_folders]]); colocate by feature. The `.fake.ts` suffix keeps it out of the vitest `*.test.ts` glob while staying type-checked. Per-line `// biome-ignore lint/plugin:` justifies any boundary cast inside a fake (test/support code is exempt from the no-type-assertions rule by suppression, not by path).
+- **Don't share mock layers across files** — if two tests need the same service *stub* (a `Layer.succeed(Service, …)`), that's a smell that maybe a fixture or seed helper is the better abstraction. (A *fake* — a real in-memory implementation like the D1 above — is fine to share via a `*.fake.ts`.)
 
 ## TestClock and time-dependent tests
 

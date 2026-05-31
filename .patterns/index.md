@@ -16,7 +16,7 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 
 | Doc | Topic | Read when |
 |---|---|---|
-| [effect-context-service.md](./effect-context-service.md) | Class-form services, layer shapes, `return yield*`, service-method shape | Defining a new service or layer |
+| [effect-context-service.md](./effect-context-service.md) | **Effect v4 `Context.Service` (NOT v3 `Context.Tag`)**, class-form services, layer shapes, `return yield*`, service-method shape | Defining a new service or layer |
 | [feature-services.md](./feature-services.md) | One service per feature folder, `Drizzle` capability service, `Drizzle.run`/`Drizzle.batch` callbacks | Adding a feature service, writing service methods |
 | [effect-layer-composition.md](./effect-layer-composition.md) | `Layer.mergeAll` / `Layer.provide` / `provideMerge`, parameterized Layer factories, the worker-level layer set (ADR 0029) | Wiring services into the worker, adding a new feature Layer |
 | [effect-errors.md](./effect-errors.md) | `Data.TaggedError` modeling, domain vs infra split, `_tag` → wire-code mapping | Designing a new error or feature's error set |
