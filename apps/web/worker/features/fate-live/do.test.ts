@@ -423,4 +423,52 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const after = await run(topic.publish({topicKey, frame: entityFrame, limits}));
 		expect(after.delivered).toBe(0);
 	});
+
+	it("publish honors deliveryAttemptTimeoutMs: a hung deliver settles within the budget", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-hung";
+		const {instance: topic} = makeTopic(cell, topicKey);
+
+		// A connection whose `deliver` never resolves — a wedged isolate. Built as a
+		// full `LiveInstance` (only `deliver` matters; the rest die if touched, as
+		// publish never calls them on this connection) so no cast is needed.
+		const hung: LiveInstance = {
+			openStream: () => Effect.die("unused"),
+			subscribe: () => Effect.die("unused"),
+			unsubscribe: () => Effect.die("unused"),
+			deliver: () => Effect.never,
+			check: () => Effect.die("unused"),
+			register: () => Effect.die("unused"),
+			unregister: () => Effect.die("unused"),
+			publish: () => Effect.die("unused"),
+			alarm: () => Effect.die("unused"),
+		};
+		cell.register("connection:hung", hung);
+
+		// Register a subscriber row for the hung connection so publish has someone to
+		// (fail to) deliver to.
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "hung",
+			subId: "sub-hung",
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS}));
+		expect(reg.ok).toBe(true);
+
+		// A tight delivery budget; the hung deliver must NOT wedge publish — the
+		// `Effect.timeout(deliveryAttemptTimeoutMs)` fires, the attempt is treated as
+		// "couldn't reach" (delivered 0), and publish settles well within the budget.
+		const limits: LiveLimits = {...LIMITS, deliveryAttemptTimeoutMs: 50};
+		const started = Date.now();
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits}));
+		const elapsed = Date.now() - started;
+
+		expect(pub.delivered).toBe(0);
+		// Settled near the budget, not hung forever (generous ceiling for CI jitter).
+		expect(elapsed).toBeLessThan(2000);
+		expect(elapsed).toBeGreaterThanOrEqual(40);
+	});
 });
