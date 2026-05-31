@@ -44,9 +44,11 @@ export function makeFakeDurableObjectState(options?: {
 	const kv = options?.kv ?? new Map<string, unknown>();
 	let alarm: number | null = null;
 
-	// `id` and `storage` are typed off the `LiveDoState` slice, so each fake
-	// method is checked against the real DO-state signature (no cast). The slice
-	// is exactly what {@link makeLiveInstance} touches.
+	// `storage` is typed as the `LiveDoState["storage"]` slice — exactly what
+	// {@link makeLiveInstance} touches. Each method is a generic `Effect` closure
+	// cast to its precise `Storage[...]` member signature (`as Storage["get"]`,
+	// etc.) — member-typed casts, never `as any`/`as unknown as`, so the fake's
+	// shape still lines up with the real DO-state signature.
 	type Storage = LiveDoState["storage"];
 
 	const storage: Storage = {

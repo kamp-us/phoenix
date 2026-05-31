@@ -11,8 +11,10 @@
  * error and the build breaks).
  */
 
-import {expectTypeOf, it} from "vitest";
-import {liveBus} from "./event-bus.ts";
+import {assert, it} from "@effect/vitest";
+import {Effect, Exit} from "effect";
+import {expectTypeOf} from "vitest";
+import {liveBus, liveBusFor} from "./event-bus.ts";
 import type {LiveConnectionProcedure} from "./protocol.ts";
 
 it("accepts every real connection procedure", () => {
@@ -34,3 +36,21 @@ it("rejects a typo'd connection procedure at the call site", () => {
 	// @ts-expect-error a procedure outside the closed union is rejected.
 	liveBus.connection("Term.defintions", {id: "slug"});
 });
+
+it.effect("useIgnore swallows a throwing publish — the mutation it follows can't fail", () =>
+	// The void contract (ADR 0039) is the type (`Effect<void, never>`), but lock
+	// the runtime half too: a publisher that throws (a failed DO fan-out) must be
+	// swallowed, so a post-write publish can never fail the committed mutation.
+	Effect.gen(function* () {
+		let published = false;
+		const live = liveBusFor(() => {
+			published = true;
+			throw new Error("DO unreachable");
+		});
+
+		const exit = yield* Effect.exit(live.useIgnore((bus) => bus.delete("Post", "p1")));
+
+		assert.isTrue(published); // the publish actually fired (and threw)
+		assert.isTrue(Exit.isSuccess(exit)); // ...yet useIgnore swallowed it to void
+	}),
+);
