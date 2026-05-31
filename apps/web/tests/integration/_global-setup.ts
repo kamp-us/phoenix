@@ -45,6 +45,15 @@ process.env.CLOUDFLARE_API_TOKEN ??= "local-dev-token";
 // and better-auth can sign sessions in the local workerd.
 process.env.BETTER_AUTH_SECRET ??= "integration-test-better-auth-secret";
 
+// Run the deployed test worker in dev mode so better-auth permits the suite's
+// server-side (browser-less, no `Origin` header) sign-ups. In prod mode
+// better-auth omits `baseURL`/`trustedOrigins` and infers the origin from the
+// request Host, which 403s `INVALID_ORIGIN` for the harness's same-process
+// `fetch`. The integration suite validates application logic, not the prod
+// deploy's origin policy; dev mode matches the local `pnpm dev:worker` loop the
+// suite stands in for.
+process.env.ENVIRONMENT ??= "development";
+
 const options = {
 	providers: Cloudflare.providers(),
 	state: Alchemy.localState(),
@@ -77,7 +86,16 @@ const deployStack = (): Promise<Alchemy.Input.Resolve<StackOutput>> =>
 export async function setup() {
 	const out = await deployStack();
 
-	const url = out.url;
+	// The alchemy dev sidecar publishes the worker URL WITH a trailing slash
+	// (`http://localhost:<port>/`). The probe + every harness request append a
+	// leading-slash path onto it (`${url}/api/health`, `${url()}${path}`), so a
+	// raw concatenation yields a double slash (`//api/health`). The workerd proxy
+	// parses a path starting with `//` as a protocol-relative URL — `api` becomes
+	// the HOST — and fails the outbound DNS lookup (`params.host = api`), 502-ing
+	// every request before it ever reaches the worker. Strip the trailing slash
+	// once here, at the single canonical publish point, so all callers concatenate
+	// cleanly.
+	const url = out.url.replace(/\/+$/, "");
 	let healthy = false;
 	for (let i = 0; i < 120; i++) {
 		try {
