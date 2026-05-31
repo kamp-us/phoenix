@@ -48,7 +48,7 @@
  * target row after `Vote.cast` rather than threading every column through
  * this contract.
  */
-import {and, eq, isNull, sql} from "drizzle-orm";
+import {and, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -96,6 +96,18 @@ export class Vote extends Context.Service<
 		readonly cast: (
 			input: VoteInput,
 		) => Effect.Effect<VoteResult, VoteTargetNotFound | DrizzleError>;
+		/**
+		 * Batched `myVote` presence read. Returns the subset of `targetIds` the
+		 * viewer has a `user_vote` row for, of the given `kind` — one `WHERE
+		 * user_id = ? AND target_kind = ? AND target_id IN (...)` read so callers
+		 * stamp `myVote` without an N+1. A missing viewer or empty `targetIds`
+		 * short-circuits to an empty Set with no read.
+		 */
+		readonly readMine: (
+			viewerId: string | null | undefined,
+			kind: VoteTargetKind,
+			targetIds: ReadonlyArray<string>,
+		) => Effect.Effect<Set<string>, DrizzleError>;
 	}
 >()("@phoenix/vote/Vote") {}
 
@@ -255,7 +267,35 @@ export const VoteLive = Layer.effect(Vote)(
 				}
 			});
 
+		// ── Batched `myVote` presence read ────────────────────────────────
+		// One `WHERE user_id = ? AND target_kind = ? AND target_id IN (...)`
+		// read over the cross-product `user_vote` table — `Vote` owns this
+		// table, so the batched `myVote` stamp lives here rather than being
+		// hand-rolled in each consuming feature (Pano/Sözlük). A missing viewer
+		// or empty id list short-circuits without a read.
+		const readMine = Effect.fn("Vote.readMine")(function* (
+			viewerId: string | null | undefined,
+			kind: VoteTargetKind,
+			targetIds: ReadonlyArray<string>,
+		) {
+			if (!viewerId || targetIds.length === 0) return new Set<string>();
+			const rows = yield* run((db) =>
+				db
+					.select({targetId: schema.userVote.targetId})
+					.from(schema.userVote)
+					.where(
+						and(
+							eq(schema.userVote.userId, viewerId),
+							eq(schema.userVote.targetKind, kind),
+							inArray(schema.userVote.targetId, [...targetIds]),
+						),
+					),
+			);
+			return new Set(rows.map((r) => r.targetId));
+		});
+
 		return {
+			readMine,
 			cast: Effect.fn("Vote.cast")(function* (input: VoteInput) {
 				const meta = yield* loadMeta(input.targetKind, input.targetId);
 

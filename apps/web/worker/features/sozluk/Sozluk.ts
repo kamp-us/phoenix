@@ -446,32 +446,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} satisfies TermPage;
 		});
 
-		/**
-		 * Batch `user_vote` presence for a viewer over a set of definition ids.
-		 * One `WHERE user_id = ? AND target_kind = 'definition' AND target_id IN
-		 * (...)` read; returns the set of voted ids so callers can stamp `myVote`
-		 * without an N+1. Empty when there's no viewer or no ids.
-		 */
-		const readMyVotesBatch = Effect.fn("Sozluk.readMyVotesBatch")(function* (
-			viewerId: string | null | undefined,
-			definitionIds: ReadonlyArray<string>,
-		) {
-			if (!viewerId || definitionIds.length === 0) return new Set<string>();
-			const rows = yield* run((db) =>
-				db
-					.select({targetId: schema.userVote.targetId})
-					.from(schema.userVote)
-					.where(
-						and(
-							eq(schema.userVote.userId, viewerId),
-							eq(schema.userVote.targetKind, "definition"),
-							inArray(schema.userVote.targetId, [...definitionIds]),
-						),
-					),
-			);
-			return new Set(rows.map((r) => r.targetId));
-		});
-
 		const listDefinitionsKeyset = Effect.fn("Sozluk.listDefinitionsKeyset")(function* (
 			slug: string,
 			opts: {
@@ -545,8 +519,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(first + 1),
 			);
 
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
+				"definition",
 				fetched.slice(0, first).map((d) => d.id),
 			);
 			const page = forwardPage(
@@ -576,8 +551,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						),
 					),
 			);
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
+				"definition",
 				fetched.map((d) => d.id),
 			);
 			return fetched.map((d) => toDefinitionRow(d, voted, viewerId));

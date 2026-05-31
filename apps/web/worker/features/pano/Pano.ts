@@ -514,34 +514,6 @@ export const PanoLive = Layer.effect(Pano)(
 		};
 
 		/**
-		 * One `user_vote` read stamping `myVote` for a whole batch of post or
-		 * comment ids. Returns the set of target ids the viewer has upvoted; the
-		 * fate read paths map that to the `1 | null` flag for the
-		 * `Post.myVote` / `Comment.myVote` view fields — one batched read instead
-		 * of a per-row N+1. Signed-out viewers short-circuit without a read.
-		 */
-		const readMyVotesBatch = Effect.fn("Pano.readMyVotesBatch")(function* (
-			viewerId: string | null | undefined,
-			targetKind: "post" | "comment",
-			targetIds: ReadonlyArray<string>,
-		) {
-			if (!viewerId || targetIds.length === 0) return new Set<string>();
-			const rows = yield* run((db) =>
-				db
-					.select({targetId: schema.userVote.targetId})
-					.from(schema.userVote)
-					.where(
-						and(
-							eq(schema.userVote.userId, viewerId),
-							eq(schema.userVote.targetKind, targetKind),
-							inArray(schema.userVote.targetId, [...targetIds]),
-						),
-					),
-			);
-			return new Set(rows.map((r) => r.targetId));
-		});
-
-		/**
 		 * Refresh `pano_stats` totals. Three small COUNT queries plus one
 		 * upsert. Cheap; runs after every write that could affect totals.
 		 */
@@ -850,7 +822,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.limit(first + 1),
 			);
 
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
 				"comment",
 				fetched.slice(0, first).map((c) => c.id),
@@ -882,7 +854,7 @@ export const PanoLive = Layer.effect(Pano)(
 						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.deletedAt)),
 					),
 			);
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
 				"post",
 				fetched.map((p) => p.id),
@@ -919,7 +891,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.from(schema.commentView)
 					.where(inArray(schema.commentView.id, [...ids])),
 			);
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
 				"comment",
 				fetched.map((c) => c.id),
