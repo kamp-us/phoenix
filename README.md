@@ -29,7 +29,7 @@ Tech is rebuilt from the original `kamp-us/kampus` worker; products are reborn f
 | Effect system | `effect@4.0.0-beta.74` | Backend control flow, services, layers, errors, tracing. |
 | Data protocol | [fate](https://github.com/usirin/fate) | Native protocol: `/fate` for data views, `/fate/live` for live views over SSE. Server types are the schema; no codegen artifact between server and client. |
 | HTTP | `effect/unstable/http` | `HttpApiBuilder` for typed JSON groups, imperative `HttpRouter` for raw-Request/SSE routes. No Hono, no GraphQL. |
-| Auth | `@alchemy.run/better-auth` | BetterAuth on D1 via a forked `CloudflareD1` Layer; session secret minted by alchemy's `Random` resource. |
+| Auth | `@alchemy.run/better-auth` | BetterAuth on D1 via a forked `CloudflareD1` Layer; session secret read from the `BETTER_AUTH_SECRET` binding (fail-closed — no default, `Effect.orDie` if missing). |
 | DB | Drizzle on D1 | `Drizzle` is a worker-level singleton; feature code destructures `run`/`batch` capability methods. |
 | DO storage | `state.storage` KV | The single `LiveDO` persists subscriber rows + generation as KV entries on `state.storage`; no per-DO SQL schema or migrations. |
 | Frontend | React 19 + Vite 8 + react-fate | Components declare views; one batched `useRequest` per screen; declarative mutations; live views over SSE. |
