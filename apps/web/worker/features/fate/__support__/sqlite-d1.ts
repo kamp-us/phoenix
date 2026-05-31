@@ -17,8 +17,9 @@
  *   - `raw()`  → arrays-of-column-values (one array per row).
  *   - `first()`→ first row object (drizzle uses `all().results[0]`, but D1 also
  *     exposes `first()` directly — provided for completeness).
- *   - `batch(stmts)` → runs each in order, returns `{results}[]` (atomicity is
- *     not modeled; the sozluk write paths under test don't depend on rollback).
+ *   - `batch(stmts)` → runs each in order inside a SQLite transaction and
+ *     returns `{results}[]`; a mid-batch failure rolls the whole tuple back
+ *     (D1's atomic-batch contract, which the vote write paths depend on).
  *
  * NOT a production artifact — it lives under `tests/` and is never imported by
  * `worker/`.
@@ -127,14 +128,24 @@ export function makeSqliteD1(): SqliteD1 {
 			return {count: 0, duration: 0};
 		},
 		batch: async (statements: BoundStub[]) => {
-			// Sequential execution; drizzle reads `{results}` per statement. The
-			// sozluk write paths use batch only for atomic vote writes — order is
-			// preserved, which is what the re-resolve assertions check.
-			const out: {results: unknown[]}[] = [];
-			for (const stmt of statements) {
-				out.push(await stmt.all());
+			// D1's `batch` is ATOMIC — the whole tuple commits or none of it does.
+			// The vote write paths rely on this (the score-cache update + the
+			// `user_profile.total_karma` bump must land together with the vote row).
+			// Model it faithfully with a SQLite transaction: run each statement in
+			// order, and on the FIRST failure roll the whole thing back and rethrow,
+			// so a mid-batch error leaves no partial write.
+			db.exec("BEGIN IMMEDIATE");
+			try {
+				const out: {results: unknown[]}[] = [];
+				for (const stmt of statements) {
+					out.push(await stmt.all());
+				}
+				db.exec("COMMIT");
+				return out;
+			} catch (err) {
+				db.exec("ROLLBACK");
+				throw err;
 			}
-			return out;
 		},
 		dump: async () => new ArrayBuffer(0),
 	} as unknown as D1Database;

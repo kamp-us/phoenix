@@ -325,6 +325,74 @@ describe("pasaport — profile reads", () => {
 		expect(data.contributions.pagination.hasPrevious).toBe(false);
 	});
 
+	it("totalKarma moves 0 → 1 → 0 as a vote on the author's definition is cast then retracted", async () => {
+		// Restores the old 0→1→0 karma read-back the pre-alchemy suites had: a vote
+		// on the author's content bumps the author's `user_profile.total_karma`
+		// atomically (see `pasaport/karma.ts` + `Vote.cast`); retracting reverses it.
+		const authorUsername = uname("karma");
+		const author = await h.signUp(
+			`pasa-${STAMP}-karma@test.local`,
+			"hunter2hunter2",
+			"Karma Author",
+		);
+		await setUsername(author.cookie, authorUsername);
+
+		// The author writes a definition; a distinct voter will up-vote it.
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {
+					termSlug: `pasa-${STAMP}-karma-term`,
+					termTitle: "Karma Term",
+					body: "a definition whose votes feed the author's karma",
+				},
+				select: ["id"],
+			},
+			{cookie: author.cookie},
+		);
+		expect(added.ok).toBe(true);
+		if (!added.ok) return;
+		const definitionId = (added.data as {id: string}).id;
+
+		const karmaOf = async (): Promise<number> => {
+			const res = await h.fate({
+				kind: "query",
+				name: "profile",
+				args: {username: authorUsername},
+				select: ["totalKarma"],
+			});
+			expect(res.ok).toBe(true);
+			if (!res.ok) throw new Error("profile read failed");
+			return (res.data as ProfileNode).totalKarma;
+		};
+
+		// Baseline: a freshly-seeded author has zero karma.
+		expect(await karmaOf()).toBe(0);
+
+		const voter = await h.signUp(`pasa-${STAMP}-voter@test.local`, "hunter2hunter2", "Voter");
+		const vote = await h.fate(
+			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
+			{cookie: voter.cookie},
+		);
+		expect(vote.ok).toBe(true);
+		// The vote bumped the author's karma to 1.
+		expect(await karmaOf()).toBe(1);
+
+		const retract = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.retractVote",
+				input: {id: definitionId},
+				select: ["score"],
+			},
+			{cookie: voter.cookie},
+		);
+		expect(retract.ok).toBe(true);
+		// Retracting returns the author's karma to 0.
+		expect(await karmaOf()).toBe(0);
+	});
+
 	it("Profile.contributions paginates by keyset with no skips/dupes, discriminant preserved", async () => {
 		// Page 1: first 2 in (createdAt desc, id desc) order.
 		const page1 = await h.fate({

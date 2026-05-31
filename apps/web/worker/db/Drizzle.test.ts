@@ -17,15 +17,20 @@
  * integration tests under `tests/integration/`.
  */
 import {assert, describe, it} from "@effect/vitest";
+import {eq} from "drizzle-orm";
 import type {BatchItem} from "drizzle-orm/batch";
 import {Cause, Effect, Exit, Layer, Option} from "effect";
+import {makeSqliteD1} from "../features/fate/__support__/sqlite-d1";
 import {
+	createDrizzle,
 	Drizzle,
 	type DrizzleAccess,
 	type DrizzleDb,
 	DrizzleError,
 	makeDrizzleAccess,
 } from "./Drizzle";
+import baselineMigration from "./drizzle/migrations/0000_d1_baseline.sql?raw";
+import * as schema from "./drizzle/schema";
 
 /**
  * A fake `DrizzleDb` instance — the wrapper passes it to the callback
@@ -240,5 +245,62 @@ describe("makeDrizzleAccess (extracted factory)", () => {
 			const err = Option.getOrThrow(Cause.findErrorOption(exit.cause));
 			assert.strictEqual((err as DrizzleError).cause, boom);
 		});
+	});
+});
+
+/**
+ * Batch atomicity over a REAL SQL engine (the `node:sqlite`-backed D1 fake) —
+ * the invariant the vote write paths depend on: a `batch([...])` either commits
+ * the whole tuple or none of it. The spy tests above prove error propagation;
+ * this proves there's no PARTIAL write when one statement in the tuple fails.
+ */
+describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
+	const now = new Date();
+
+	it.effect("a mid-batch failure rolls back the whole tuple — no partial write", () => {
+		const sqlite = makeSqliteD1();
+		sqlite.applyMigration(baselineMigration);
+		const db = createDrizzle(sqlite.d1);
+		const layer = Layer.succeed(Drizzle, makeDrizzleAccess(db));
+
+		return Effect.gen(function* () {
+			const {run, batch} = yield* Drizzle;
+
+			// A pre-existing vote row. The batch below tries to insert a DIFFERENT
+			// valid row plus a DUPLICATE of this one — the duplicate violates the
+			// `(definition_id, voter_id)` PK, failing the batch mid-tuple.
+			yield* run((d) =>
+				d
+					.insert(schema.definitionVote)
+					.values({definitionId: "def-1", voterId: "voter-existing", createdAt: now})
+					.run(),
+			);
+
+			const exit = yield* Effect.exit(
+				batch((d) => [
+					d
+						.insert(schema.definitionVote)
+						.values({definitionId: "def-1", voterId: "voter-new", createdAt: now}),
+					// PK collision with the pre-existing row → mid-batch failure.
+					d
+						.insert(schema.definitionVote)
+						.values({definitionId: "def-1", voterId: "voter-existing", createdAt: now}),
+				]),
+			);
+			assert.isTrue(Exit.isFailure(exit), "the duplicate-PK batch must fail");
+
+			// The first (valid) insert in the failed batch must NOT have landed:
+			// only the pre-existing `voter-existing` row remains.
+			const rows = yield* run((d) =>
+				d
+					.select()
+					.from(schema.definitionVote)
+					.where(eq(schema.definitionVote.definitionId, "def-1")),
+			);
+			assert.strictEqual(rows.length, 1, "no partial write: only the pre-existing row survives");
+			assert.strictEqual(rows[0]!.voterId, "voter-existing");
+
+			sqlite.close();
+		}).pipe(Effect.provide(layer));
 	});
 });
