@@ -30,8 +30,11 @@ jobs:
 
       # alchemy deploy runs `pnpm build` first (the @phoenix/web `deploy` script),
       # bundling the worker + uploading dist/client. `--stage prod` is the shared
-      # production stage; CI uses the Cloudflare-hosted state store
-      # (`process.env.CI ? Cloudflare.state() : localState()` in alchemy.run.ts).
+      # production stage. State store is chosen by `resolveStateMode` (worker/env.ts)
+      # off the alchemy dev signal — NOT `CI` (ADR 0032; the CI heuristic was a
+      # footgun: `CI` is set for both deploy and test, so it couldn't tell a real
+      # deploy from a test run). A real `alchemy deploy` (dev signal unset) always
+      # resolves to the Cloudflare-hosted store; only `alchemy dev`/Vitest stays local.
       - name: Deploy to production
         run: pnpm --filter @phoenix/web deploy --stage prod --yes
         env:
