@@ -28,6 +28,7 @@ phoenix/
 
 ```bash
 pnpm install
+cp apps/web/.env.example apps/web/.env   # first run only — local dev env (gitignored)
 pnpm dev          # turbo-driven; two processes: `vite` (SPA/HMR) + `alchemy dev` (worker)
 pnpm dev:web      # just the Vite SPA dev server
 pnpm dev:worker   # just `alchemy dev` (the worker on a local workerd, offline)
@@ -37,6 +38,8 @@ pnpm typecheck
 pnpm lint         # biome check
 pnpm format       # biome check --write
 ```
+
+`alchemy dev` auto-loads `apps/web/.env` (it layers a `.env` over `process.env`), so `BETTER_AUTH_SECRET` (a required `Config.redacted`, no default) and `ENVIRONMENT` come from there — copy `.env.example` → `.env` once. Production secrets are Cloudflare `secret_text` bindings set by `alchemy deploy`, never read from `.env`.
 
 Deploy is alchemy-managed (ADR 0026–0031): `alchemy.run.ts` is the stack, there is
 no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker + D1
