@@ -1,6 +1,7 @@
 /**
- * The worker's deploy-time helpers — the state-store selector and the
- * `resolveDeployEnv` resolver — run in the alchemy CLI process at deploy time.
+ * The worker's deploy-time helper — the state-store selector
+ * (`resolveStateMode`/`isOfflinePath`) — runs in the alchemy CLI process at
+ * deploy time, over `process.env`.
  *
  * `worker/index.ts` declares the worker's `env` block, which is evaluated in the
  * alchemy CLI process at deploy time — so `process.env` here is the *deploy-time*
@@ -10,13 +11,12 @@
  * The `ENVIRONMENT` binding itself is now an `effect/Config` constant in
  * `config.ts` (referenced per-key by the `env:` block and read at runtime via
  * `yield* AppConfig`); alchemy resolves it from the deploy-time `process.env`
- * with the same fail-closed default. This file keeps only the helpers that have
- * no `Config` equivalent: `resolveStateMode`/`isOfflinePath` (the state-store
- * selector `alchemy.run.ts` calls) and `resolveDeployEnv` (kept for its unit
- * tests, documenting the same fail-closed `ENVIRONMENT` policy).
+ * with the same fail-closed default. This file keeps only the state-store
+ * selector (`resolveStateMode`/`isOfflinePath`), which has no `Config`
+ * equivalent — `alchemy.run.ts` calls it before any worker env is bound.
  */
 
-/** The subset of the deploy-time process env this resolver reads. */
+/** The subset of the deploy-time process env the selector reads. */
 export interface DeployEnvInput {
 	readonly ENVIRONMENT?: string | undefined;
 	readonly CI?: string | undefined;
@@ -40,21 +40,6 @@ export interface DeployEnvInput {
 	 */
 	readonly ALCHEMY_DEV?: string | undefined;
 }
-
-/** The safety-critical env fields the worker block resolves at deploy time. */
-export interface ResolvedDeployEnv {
-	readonly ENVIRONMENT: string;
-}
-
-/**
- * Resolve the deploy-time env.
- *
- * Pure over an injected snapshot so the resolution is unit-testable without
- * mutating the real `process.env`.
- */
-export const resolveDeployEnv = (env: DeployEnvInput): ResolvedDeployEnv => ({
-	ENVIRONMENT: env.ENVIRONMENT ?? "production",
-});
 
 /** Which alchemy state store the stack should use. */
 export type StateMode = "local" | "cloudflare";

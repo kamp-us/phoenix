@@ -1,31 +1,12 @@
 /**
- * Unit tests for `resolveDeployEnv` and `resolveStateMode` — the deploy-time env
- * resolution that runs in the alchemy CLI process when `worker/index.ts` is
- * evaluated.
+ * Unit tests for `resolveStateMode` — the deploy-time state-store selector that
+ * runs in the alchemy CLI process when `worker/index.ts` is evaluated.
  *
- * `ENVIRONMENT` gates the auth-layer dev flag (the magic-link token
- * `console.log` and the better-auth dev-URL fallback). A hardcoded
- * `"development"` opens it in production.
- *
- * Both resolvers are pure over an injected `env` snapshot so the behavior is
- * testable without touching the real `process.env`.
+ * Pure over an injected `env` snapshot so the behavior is testable without
+ * touching the real `process.env`.
  */
 import {describe, expect, it} from "vitest";
-import {resolveDeployEnv, resolveStateMode} from "./env.ts";
-
-describe("resolveDeployEnv", () => {
-	describe("ENVIRONMENT", () => {
-		it("defaults to production when unset (fail-closed)", () => {
-			const {ENVIRONMENT} = resolveDeployEnv({});
-			expect(ENVIRONMENT).toBe("production");
-		});
-
-		it("resolves from process.env.ENVIRONMENT when set", () => {
-			const {ENVIRONMENT} = resolveDeployEnv({ENVIRONMENT: "development"});
-			expect(ENVIRONMENT).toBe("development");
-		});
-	});
-});
+import {resolveStateMode} from "./env.ts";
 
 describe("resolveStateMode", () => {
 	it("a real deploy (no CI, no dev signal) uses the Cloudflare-hosted store", () => {

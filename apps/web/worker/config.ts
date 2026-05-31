@@ -15,8 +15,8 @@
  *      `ConfigProvider` from the bound `env` at worker scope (`WorkerBridge`), so
  *      the same provider answers the read in both Init and runtime phases.
  *
- * Deploy-time helpers (`resolveDeployEnv`/`resolveStateMode`/`isOfflinePath`)
- * stay in `env.ts` — they run in the alchemy CLI process over `process.env`, a
+ * The deploy-time state-store selector (`resolveStateMode`/`isOfflinePath`)
+ * stays in `env.ts` — it runs in the alchemy CLI process over `process.env`, a
  * different moment from these runtime reads.
  */
 import * as Config from "effect/Config";
