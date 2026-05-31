@@ -16,7 +16,7 @@
  * custom resolver (full control over the nested `definitions` / `comments` /
  * `contributions` connections — see `.patterns/fate-connections.md`), not a
  * source-masked byId/list root. `live` is the publish-only `LiveEventBus`
- * (ADR 0023) routing mutation events to the `TopicDO` fan-out.
+ * (ADR 0023) routing mutation events to the `LiveDO` (topic role) fan-out.
  * `sources` is the hand-built Effect-backed resolver from `sources.ts`
  * (`User`/`Term`/`Definition`/`Post`/`Comment`/`Tag`/`Profile`/`Contribution`,
  * `byIds` on every relation-fetchable type).

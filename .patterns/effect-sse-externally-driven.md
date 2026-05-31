@@ -1,13 +1,14 @@
 # Externally-driven SSE — `Stream.fromQueue` + `HttpServerResponse.stream`
 
 How phoenix builds an SSE response stream that's pushed from outside the
-response Effect — the case where frames arrive via a sibling DO's RPC
-(`ConnectionDO.deliver(...)`) rather than being produced inline by the
-stream's own generator. This is the canonical shape for "long-lived
+response Effect — the case where frames arrive via the DO's own RPC
+(`LiveDO.deliver(...)`, the connection role) rather than being produced inline
+by the stream's own generator. This is the canonical shape for "long-lived
 response, written to by another component".
 
-`ConnectionDO` is the only consumer today (`apps/web/worker/features/fate-live/connection-do.ts and topic-do.ts`
-`openStream`/`deliver`), and the algorithm matters: the legacy code did
+The `LiveDO` connection role is the only consumer today
+(`apps/web/worker/features/fate-live/live-do.ts`, `openStream`/`deliver`), and
+the algorithm matters: the legacy code did
 this with a raw `ReadableStream` controller, a `setInterval` for heartbeats,
 and a try/catch around `controller.enqueue`. That worked but spread the
 state across three independent imperative subsystems. The effect

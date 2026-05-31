@@ -8,7 +8,7 @@
  *
  *   1. `Drizzle` + the feature services are built ONCE from a bound D1 (here a
  *      `node:sqlite` stand-in) via `makeFateLayer` — the worker init layer.
- *   2. Per "request" the harness provides only `Auth` + `RequestContext`,
+ *   2. Per "request" the harness provides only `Auth` + `HttpServerRequest`,
  *      captures the live service map with `Effect.context<FateEnv>()`, and hands
  *      it to `fateServer.handleRequest` through `{context, request}`.
  *   3. The bridge runs each resolver with `Effect.provide(effect, ctx.context)`

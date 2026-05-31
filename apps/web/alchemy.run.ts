@@ -14,7 +14,8 @@
  * migrations to send — the stack does not re-declare them. The implementation is
  * the modular `.make()` Layer (the worker's `export default`, `PhoenixLive`),
  * which the stack provides so the Tag resolves (ADR 0028): splitting the worker
- * class from its `.make()` Layer lets it host the two circular live-fan-out DOs.
+ * class from its `.make()` Layer lets it host the single unified `LiveDO`
+ * (no DO cycle; ADR 0037).
  *
  * State selection follows ADR 0031 (local-first dev): `Alchemy.localState()` is
  * a file-based store needing only `FileSystem`/`Path` — no credentials, no

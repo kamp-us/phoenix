@@ -6,11 +6,6 @@
  * class, KV (not SQLite) storage, a `generation` (per-connection) +`revision`
  * (per-subscription) stale model, and a first-failed-probe reap.
  *
- * **Not yet wired.** This file is additive (PR #12 step 3a): the worker still
- * routes through `ConnectionDO`/`TopicDO`. The route/index rewiring and the
- * old-DO removal land in the next step. Importing this Tag pulls in no DO
- * runtime (the bundler tree-shakes `.make()` out of consumers).
- *
  * ## One class, two roles, ONE self-namespace
  * A LiveDO instance is named either `connection:<connectionId>` (connection
  * role: owns one client's held SSE stream + its subscription list) or
