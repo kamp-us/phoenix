@@ -63,6 +63,31 @@ const DEFINITION_EXCERPT_LEN = 140;
 
 const excerpt = (body: string): string => excerptText(body, DEFINITION_EXCERPT_LEN);
 
+/**
+ * Earliest `createdAt` across a definition slice (the term's `first_at`), or
+ * `null` when no row carries a timestamp. Callers supply the fallback.
+ */
+const earliestCreatedAt = (defs: ReadonlyArray<{createdAt: Date | null}>): Date | null =>
+	defs.reduce<Date | null>((acc, d) => {
+		const c = d.createdAt;
+		if (!c) return acc;
+		return acc && acc < c ? acc : c;
+	}, null);
+
+/**
+ * Latest `updatedAt ?? createdAt` across a definition slice (the term's
+ * `last_edit_at`), or `null` when no row carries a timestamp. Callers supply
+ * the fallback.
+ */
+const latestEditAt = (
+	defs: ReadonlyArray<{createdAt: Date | null; updatedAt: Date | null}>,
+): Date | null =>
+	defs.reduce<Date | null>((acc, d) => {
+		const u = d.updatedAt ?? d.createdAt;
+		if (!u) return acc;
+		return acc && acc > u ? acc : u;
+	}, null);
+
 /* -------------------------------------------------------------------------- */
 /* Read shapes                                                                 */
 /* -------------------------------------------------------------------------- */
@@ -307,18 +332,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const top = defs[0];
 			const topExcerpt = top ? top.bodyExcerpt || excerpt(top.body) : null;
 			const firstLetter = slug.charAt(0).toLowerCase();
-			const firstAt =
-				defs.reduce<Date | null>((acc, d) => {
-					const c = d.createdAt;
-					if (!c) return acc;
-					return acc && acc < c ? acc : c;
-				}, null) ?? now;
-			const lastEditAt =
-				defs.reduce<Date | null>((acc, d) => {
-					const u = d.updatedAt ?? d.createdAt;
-					if (!u) return acc;
-					return acc && acc > u ? acc : u;
-				}, null) ?? now;
+			const firstAt = earliestCreatedAt(defs) ?? now;
+			const lastEditAt = latestEditAt(defs) ?? now;
 
 			const firstAtSec = Math.floor(firstAt.getTime() / 1000);
 			const lastActivitySec = Math.floor(now.getTime() / 1000);
@@ -408,22 +423,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.orderBy(desc(schema.definitionView.score), asc(schema.definitionView.createdAt)),
 			);
 
-			const firstAt =
-				defs.reduce<Date | null>((acc, d) => {
-					const c = d.createdAt;
-					if (!c) return acc;
-					return acc && acc < c ? acc : c;
-				}, null) ??
-				meta.firstAt ??
-				new Date(0);
-			const lastEdit =
-				defs.reduce<Date | null>((acc, d) => {
-					const u = d.updatedAt ?? d.createdAt;
-					if (!u) return acc;
-					return acc && acc > u ? acc : u;
-				}, null) ??
-				meta.lastEditAt ??
-				firstAt;
+			const firstAt = earliestCreatedAt(defs) ?? meta.firstAt ?? new Date(0);
+			const lastEdit = latestEditAt(defs) ?? meta.lastEditAt ?? firstAt;
 
 			return {
 				id: meta.slug,
