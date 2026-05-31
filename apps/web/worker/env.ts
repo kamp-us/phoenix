@@ -15,6 +15,16 @@
  * selector (`resolveStateMode`/`isOfflinePath`), which has no `Config`
  * equivalent — `alchemy.run.ts` calls it before any worker env is bound.
  */
+import * as Option from "effect/Option";
+import * as Schema from "effect/Schema";
+
+/**
+ * The one field of alchemy's `ALCHEMY_EXEC_OPTIONS` blob the selector reads. The
+ * blob is an untyped trust boundary (an env-var JSON string set by the alchemy
+ * CLI), so it's decoded at the boundary rather than asserted with a cast.
+ */
+const ExecOptions = Schema.Struct({dev: Schema.optional(Schema.Unknown)});
+const decodeExecOptions = Schema.decodeUnknownOption(ExecOptions);
 
 /** The subset of the deploy-time process env the selector reads. */
 export interface DeployEnvInput {
@@ -72,8 +82,8 @@ const isOfflinePath = (env: DeployEnvInput): boolean => {
 
 	if (env.ALCHEMY_EXEC_OPTIONS) {
 		try {
-			const parsed = JSON.parse(env.ALCHEMY_EXEC_OPTIONS) as {dev?: unknown};
-			if (parsed.dev === true) return true;
+			const parsed = decodeExecOptions(JSON.parse(env.ALCHEMY_EXEC_OPTIONS));
+			if (Option.isSome(parsed) && parsed.value.dev === true) return true;
 		} catch {
 			// A malformed blob is not a dev signal — fall through to deploy (shared
 			// store). Failing safe toward the shared store keeps collab/diff intact.

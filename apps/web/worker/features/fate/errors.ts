@@ -77,8 +77,23 @@ export {
  * wire `code`. Widens fate's narrow `FateProtocolErrorCode` constructor — see
  * the note above.
  */
+/**
+ * The exact type of `FateRequestError`'s `code` constructor parameter (fate's
+ * narrow `FateProtocolErrorCode`, which the package doesn't export by name).
+ * Captured structurally so we can widen into it without an unimportable type
+ * reference and without a laundering `as never`/`as unknown` cast.
+ */
+type FateWireCode = ConstructorParameters<typeof FateRequestError>[0];
+
 function fateError(code: MutationErrorCode, message: string): FateRequestError {
-	return new FateRequestError(code as never, message);
+	// `FateRequestError`'s constructor types `code` as the narrow 6-member
+	// `FateProtocolErrorCode`; phoenix's wire vocabulary is the wider
+	// `MutationErrorCode`. At runtime the constructor just stores the string and
+	// fate forwards it on the wire untouched (see the module header). The two
+	// unions overlap (`BAD_REQUEST`/`UNAUTHORIZED`), so this is a single
+	// comparable narrowing cast to the parameter's own type — not a laundering
+	// `as never`/`as unknown` double-cast.
+	return new FateRequestError(code as FateWireCode, message);
 }
 
 /**

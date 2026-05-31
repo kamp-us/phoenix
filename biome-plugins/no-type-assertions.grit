@@ -1,9 +1,33 @@
 // Forbid type-assertion footguns in phoenix source.
 //
-// `as unknown as T` (double-cast) and `as any` blind the TypeScript
-// compiler — they assert a shape the compiler can no longer verify. In
-// phoenix we decode at boundaries with `Schema.decodeUnknown` (or type the
-// value properly) instead of asserting through `unknown` / `any`.
+// Type assertions blind the TypeScript compiler — they assert a shape it can no
+// longer verify. In phoenix we decode at boundaries with `Schema.decodeUnknown`
+// (or type the value properly) instead. This rule bans the assertion forms that
+// fully erase type information:
+//
+//   - `as any`                  — disables checking on the whole expression.
+//   - the double-cast through the top/bottom type, in every spelling:
+//       `x as unknown as T`     · `(x as unknown) as T`
+//       `x as never as T`       · `(x as never) as T`
+//     The inner `as unknown`/`as never` launders the value past the compiler so
+//     the outer cast to `T` is unchecked. Parentheses don't change that, so both
+//     the bare and parenthesized forms are banned.
+//   - `<T>x`                     — the angle-bracket cast (same erasure as
+//                                 `x as T`, harder to grep), matched by node name
+//                                 (`TsTypeAssertionExpression`) because the
+//                                 `<$type>$expr` snippet doesn't bind it.
+//
+// INTENTIONALLY OUT OF SCOPE (GritQL has no type info, so it can't tell a safe
+// narrowing from an unsafe one; over-banning would swallow legitimate code):
+//   - `as const`                — narrows to a literal/readonly type; adds
+//                                 information, never removes it.
+//   - a SINGLE `x as SomeType`  — a plain narrowing cast to a real named type
+//                                 (e.g. `as React.CSSProperties`, or Drizzle's
+//                                 `column.value as never` in `db/keyset.ts`). The
+//                                 double-cast forms above are the laundering
+//                                 footgun; a lone narrowing cast is the
+//                                 compiler's normal assertion and is left to code
+//                                 review, not this rule.
 //
 // Registered via biome.jsonc `"plugins"`. Test/spec/support files that bridge
 // Node/test types to runtime DO/D1/browser surfaces carry justified
@@ -18,10 +42,34 @@ or {
 			message = "Type assertions are forbidden — `as unknown as` blinds the compiler. Decode at boundaries with Schema.decodeUnknown, or type the value properly."
 		)
 	},
+	`($expr as unknown) as $type` where {
+		register_diagnostic(
+			span = $expr,
+			message = "Type assertions are forbidden — `(… as unknown) as T` is a parenthesized double-cast and blinds the compiler. Decode at boundaries with Schema.decodeUnknown, or type the value properly."
+		)
+	},
+	`$expr as never as $type` where {
+		register_diagnostic(
+			span = $expr,
+			message = "Type assertions are forbidden — `as never as T` launders a value past the compiler. Construct/type the value properly instead."
+		)
+	},
+	`($expr as never) as $type` where {
+		register_diagnostic(
+			span = $expr,
+			message = "Type assertions are forbidden — `(… as never) as T` is a parenthesized double-cast that launders a value past the compiler. Construct/type the value properly instead."
+		)
+	},
 	`$expr as any` where {
 		register_diagnostic(
 			span = $expr,
 			message = "`as any` is forbidden — it disables type checking. Type the value properly (e.g. `as React.CSSProperties` for CSS-var keys)."
+		)
+	},
+	TsTypeAssertionExpression() as $assertion where {
+		register_diagnostic(
+			span = $assertion,
+			message = "Angle-bracket type assertions (`<T>x`) are forbidden — same erasure as `x as T`. Decode at boundaries with Schema.decodeUnknown, or type the value properly."
 		)
 	}
 }

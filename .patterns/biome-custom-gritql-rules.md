@@ -133,31 +133,47 @@ boundary phoenix decodes with `Schema.decodeUnknown` instead (see
 [effect-schema-validation.md](./effect-schema-validation.md)); everywhere else the value
 should just be typed properly.
 
-`biome-plugins/no-type-assertions.grit`:
+`biome-plugins/no-type-assertions.grit` bans the assertion forms that *fully erase*
+type information — `as any`, the double-cast through the top/bottom type in every
+spelling (`x as unknown as T`, `(x as unknown) as T`, `x as never as T`,
+`(x as never) as T`), and the angle-bracket cast (`<T>x`). It deliberately leaves a
+*single* narrowing cast to a real named type alone (`as React.CSSProperties`, or
+Drizzle's `column.value as never` in `db/keyset.ts`) — GritQL has no type info, so it
+can't tell a safe narrowing from an unsafe one, and over-banning would swallow
+legitimate code. The full rule (with header rationale) lives in the file; the shape:
 
 ```grit
 language js;
 
-`$expr as unknown as $type` where {
-	register_diagnostic(
-		span = $expr,
-		message = "Type assertions are forbidden — `as unknown as` blinds the compiler. Decode at boundaries with Schema.decodeUnknown, or type the value properly."
-	)
-}
-
-`$expr as any` where {
-	register_diagnostic(
-		span = $expr,
-		message = "`as any` is forbidden — it disables type checking. Type the value properly (e.g. `as React.CSSProperties` for CSS-var keys)."
-	)
+or {
+	`$expr as unknown as $type` where { register_diagnostic(span = $expr, message = "…") },
+	`($expr as unknown) as $type` where { register_diagnostic(span = $expr, message = "…") },
+	`$expr as never as $type` where { register_diagnostic(span = $expr, message = "…") },
+	`($expr as never) as $type` where { register_diagnostic(span = $expr, message = "…") },
+	`$expr as any` where { register_diagnostic(span = $expr, message = "…") },
+	TsTypeAssertionExpression() as $assertion where { register_diagnostic(span = $assertion, message = "…") }
 }
 ```
 
-Why two snippet patterns instead of node-name matching on the cast node: the
-double-cast `$expr as unknown as $type` and the single `$expr as any` are different
-shapes, and the snippet form spells out exactly the source phoenix is banning. The
-first pattern also isn't subsumed by the second — `as unknown as T` ends in a named
-type, not `any`, so it needs its own snippet.
+Two things to note:
+
+- **Snippets over node names — except for the angle-bracket form.** The `as`-cast
+  shapes are spelled out as snippets because they read like the source being banned.
+  The angle-bracket cast is the exception: the `<$type>$expr` snippet does **not**
+  bind biome's TS type-assertion node, so it's matched by node name
+  (`TsTypeAssertionExpression()`), the one place node-name matching earns its keep.
+- **Parentheses need their own arm.** `(x as unknown) as T` is a structurally
+  different node from the bare `x as unknown as T` — biome doesn't unwrap the
+  parens — so the parenthesized double-cast is a separate pattern. Same for
+  `(x as never) as T`.
+
+**A `where { $type <: contains \`unknown\` }` arm to flag *any* cast whose target
+mentions `unknown` was considered and rejected.** It would fire on legitimate
+narrowings like `as Record<string, unknown>` (GritQL can't see that the value really
+is that shape), and the codebase has several such honest casts. The rule stays
+surgical: only the unambiguous *erasing* forms (`any`/`unknown`/`never` as the cast
+target, and the laundering double-cast) are banned; a lone narrowing cast is the
+compiler's normal assertion and is left to code review.
 
 ### Scoping: production source vs. test support
 
@@ -192,21 +208,39 @@ of ignores is a signal the rule (or the code) needs rethinking, not more suppres
 ## Testing that the rule bites
 
 GritQL plugins have no unit-test harness in biome 2.4 — you verify by running the
-linter against a real (or throwaway) violation:
+linter against a **probe matrix**: a throwaway file with one line per shape the rule
+should (and should NOT) flag, then assert `pnpm lint` flags *exactly* the bad ones.
+For `no-type-assertions` the matrix that proved the tightened rule:
 
-```bash
-# add a throwaway violation
-printf 'const x = (1 as unknown as string);\n' > apps/web/src/__grit_probe.ts
+```ts
+// apps/web/src/__grit_probe/probe.ts — throwaway, delete after.
+type T = {dev?: unknown};
+declare const v: unknown;
+declare const col: number;
 
-pnpm lint        # or: pnpm dlx @biomejs/biome check apps/web/src/__grit_probe.ts
-#  → no-type-assertions ━━━━━━━━━
-#    Type assertions are forbidden — `as unknown as` blinds the compiler…
+// BAD (must be flagged):
+const a = v as unknown as T;          // double-cast
+const b = v as any;                   // as any
+const c = (v as unknown) as T;        // parenthesized unknown double-cast
+const d = v as never as T;            // never inner double-cast
+const e = (v as never) as T;          // parenthesized never double-cast
+const f = <T>v;                       // angle-bracket cast
 
-rm apps/web/src/__grit_probe.ts
+// GOOD (must NOT be flagged — out of scope):
+const g = [1, 2] as const;            // as const
+const h = col as never;               // lone narrowing cast (Drizzle keyset style)
+const i = JSON.parse("{}") as {dev?: unknown}; // lone object narrowing cast
+export {a, b, c, d, e, f, g, h, i};
 ```
 
-Confirm both that a violation *is* flagged and that a clean file is *not* (no false
-positives), then delete the probe. To confirm a justified exception, add a
+```bash
+pnpm exec biome lint apps/web/src/__grit_probe/probe.ts 2>&1 | grep -E 'probe.ts:[0-9]+'
+#  → exactly the six BAD lines, none of the three GOOD ones
+rm -rf apps/web/src/__grit_probe
+```
+
+Confirm both that every BAD shape *is* flagged and that every GOOD shape is *not*
+(no false positives), then delete the probe. To confirm a justified exception, add a
 `// biome-ignore lint/plugin: <reason>` line above a probe violation and check the
 diagnostic goes away.
 
