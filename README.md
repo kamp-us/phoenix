@@ -51,7 +51,7 @@ apps/web/
     ├── http/              # router composition (app.ts) + the health route
     └── features/          # everything else, each in its own named folder
         ├── fate/          # data-layer plumbing — bridge, layers, barrels
-        ├── fate-live/     # live SSE plane — ConnectionDO + TopicDO
+        ├── fate-live/     # live SSE plane — the unified LiveDO (KV-backed)
         ├── pasaport/      # auth — better-auth fork + session capability
         ├── sozluk/        # product — dictionary
         ├── pano/          # product — link aggregator
@@ -62,7 +62,7 @@ apps/web/
 
 `features/` is the home for **any named app-level grouping** — product domains, framework concerns, single-file utilities alike. There is no `services/`, `shared/`, `infra/`, or `admin/` bucket; those dissolve on purpose. If it has a coherent name worth grouping, it's a feature; otherwise it's runtime context and lives next to `features/`.
 
-Two Durable Objects exist: `ConnectionDO` (holds the SSE connections) and `TopicDO` (owns the subscriber registry, fans out). The worker hosts both and provides their modular `.make()` Layers; sibling-reference between them resolves per-call rather than at Layer init (ADR 0028, 0033).
+One Durable Object exists: `LiveDO`. A single class plays both roles — per-connection SSE stream holder and per-topic subscriber registry + fan-out — distinguished by instance-name prefix (`connection:` vs `topic:`). It addresses its sibling instances through its own namespace, resolved once at init, so every RPC method's `R` stays `never` — there is no per-call sibling resolution. Subscriber rows + `generation` persist as `state.storage` KV entries; no per-DO SQL schema or migrations (ADR 0028 for the Effect DO model; ADR 0037 unified the earlier split, superseding 0025/0033).
 
 ## Commands
 
