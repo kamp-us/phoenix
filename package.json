@@ -25,6 +25,6 @@
 		"typescript": "catalog:"
 	},
 	"volta": {
-		"node": "25.2.1"
+		"node": "26.2.0"
 	}
 }
