@@ -172,6 +172,27 @@ a `DurableObjectState["Service"]` + a sibling resolver, so
 `live-instance.test.ts` drives it with fakes for both and never touches
 workerd.
 
+## Gotchas
+
+- **The integration suite owns the box — don't run it alongside `pnpm dev`.**
+  `_global-setup.ts` deploys its *own* full workerd stack (worker + DOs + D1
+  binding) for the run. A live `pnpm dev` / `pnpm dev:worker` is a *second*
+  alchemy sidecar + workerd already running. Two workerd processes contending
+  for memory trips the test sidecar's allocator at startup —
+  `workerd … ExternalEntityTable::AllocateEntry: out of memory` (signal 6),
+  which is workerd's internal pointer-table cap, *not* machine RAM (it OOMs with
+  the box mostly free). The probe then reports `worker never became reachable at
+  http://localhost:<port>` and Vitest exits with `No test files found`. The fix
+  is operational, not code: stop the dev server before running the suite. If a
+  prior run leaked a sidecar, `pkill -f 'Cloudflare/Local.js'; pkill -f workerd`
+  clears it.
+- **A fully-green run can still exit non-zero.** Workerd logs an uncaught
+  `All fibers interrupted without error` when a held-open `/fate/live` SSE stream
+  is torn down between tests; this can surface a non-zero exit even though all
+  tests pass and the stack tears down cleanly. Tracked in
+  [kamp-us/phoenix#20](https://github.com/kamp-us/phoenix/issues/20) — a green
+  summary with a `✗` exit is that, not a real failure.
+
 ## Citations
 
 - `apps/web/tests/integration/_global-setup.ts` — the deploy/teardown,
