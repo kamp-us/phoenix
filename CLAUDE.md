@@ -63,6 +63,7 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 - Effect for backend control flow; feature services are isolate-level layers, with only `Auth` provided per request (ADR 0029).
 - Make invalid states unrepresentable. Domain logic in domain objects.
 - In-repo docs: standard markdown links (`[text](relative/path.md)`), not Obsidian `[[wikilinks]]`; use real resolvable paths, no placeholders.
+- Doc surfaces: `README` = current state for builders (never carry retired or old-problem context a new reader has no frame for); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped.
 
 ## Decisions
 
