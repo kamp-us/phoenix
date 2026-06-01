@@ -37,8 +37,12 @@ export default defineConfig({
 					name: "integration",
 					include: ["tests/integration/**/*.test.ts"],
 					globalSetup: ["./tests/integration/_global-setup.ts"],
-					testTimeout: 30_000,
-					hookTimeout: 30_000,
+					// Seed-heavy reads (e.g. `sozluk-read` paginating every seeded
+					// row) make several round-trips to real Cloudflare D1 — from a CI
+					// runner that comfortably exceeds the old 30s wall. Give the
+					// worker a minute; globalSetup's dev-sidecar boot gets the same.
+					testTimeout: 60_000,
+					hookTimeout: 60_000,
 					// D1 is provisioned against real Cloudflare even under localState
 					// (no offline D1), so reads occasionally hit a transient
 					// `D1_ERROR: Network connection lost` from a CI runner. Retry the
