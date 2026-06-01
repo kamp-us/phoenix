@@ -49,12 +49,22 @@ export type FateOp = Record<string, unknown> & {id?: string};
 export interface Harness {
 	/** The deployed worker URL (published by the global setup). */
 	url(): string;
-	/** Raw fetch against the worker; retries transient connection failures. */
-	req(path: string, init?: RequestInit): Promise<Response>;
+	/**
+	 * Raw fetch against the worker; retries transient *connection* failures. Pass
+	 * `timeoutMs` to bound a single attempt (a stall aborts and surfaces as a
+	 * `TimeoutError`); omit it (default 0 = unbounded) for long-lived streams like
+	 * SSE, which must stay open.
+	 */
+	req(path: string, init?: RequestInit, opts?: {timeoutMs?: number}): Promise<Response>;
 	/** POST JSON against the worker (adds `content-type` + dev `origin`). */
 	json(path: string, body: unknown, cookie?: string): Promise<Response>;
-	/** POST one fate operation; return its single result. */
-	fate(op: FateOp, opts?: {cookie?: string}): Promise<FateResult>;
+	/**
+	 * POST one fate operation; return its single result. Reads (`kind: "query"`
+	 * / `"list"`) auto-retry on a transient stall/error; mutations retry only when
+	 * `retry: true` is passed (the caller asserting the op is idempotent, e.g.
+	 * `definition.vote`).
+	 */
+	fate(op: FateOp, opts?: {cookie?: string; retry?: boolean}): Promise<FateResult>;
 	/** POST several fate operations; return all results in order. */
 	fateBatch(ops: FateOp[], opts?: {cookie?: string}): Promise<FateResult[]>;
 	/** Sign up a user through better-auth; return `{userId, cookie}`. */
@@ -95,6 +105,23 @@ export interface Harness {
 }
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+// A per-request timeout fires an `AbortSignal.timeout` → the fetch rejects with a
+// `TimeoutError`/`AbortError`. We treat that as "the request STALLED" (distinct
+// from a connection error, which means it never reached the worker). A stall may
+// have partially applied a write, so only *idempotent* callers retry on it.
+const isAbort = (e: unknown): boolean =>
+	e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+
+// One HTTP request that stalls past this is aborted and (for idempotent ops)
+// retried against a fresh connection. The integration deploy talks to real
+// Cloudflare D1 over the dev-sidecar loopback (no offline D1); under sustained
+// sequential seed load a single round-trip occasionally hangs — without this
+// bound the whole test would wait out the Vitest timeout and die with
+// "All fibers interrupted". 12s is well above a healthy round-trip (incl. the
+// `definition.add` full term_summary recompute) but short enough to retry twice
+// inside a 90s test budget.
+const REQUEST_TIMEOUT_MS = 12_000;
 
 // Unique per-process stamp for seeded author/voter emails. D1 is shared across
 // the whole integration deploy, so seed identities must never collide with
@@ -166,12 +193,19 @@ export function harness(): Harness {
 		return u;
 	};
 
-	const req: Harness["req"] = async (path, init) => {
+	const req: Harness["req"] = async (path, init, opts) => {
+		const timeoutMs = opts?.timeoutMs ?? 0;
 		let lastErr: unknown;
 		for (let i = 0; i < 20; i++) {
 			try {
-				return await fetch(`${url()}${path}`, init);
+				const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : init?.signal;
+				return await fetch(`${url()}${path}`, signal ? {...init, signal} : init);
 			} catch (err) {
+				// A stall (abort/timeout) may have partially applied a write, so it is
+				// NOT safe to silently retry here — surface it and let the idempotency-
+				// aware caller (`fate`, `signUp`) decide. A connection error never
+				// reached the worker, so retry it (covers worker-not-up-yet at startup).
+				if (isAbort(err)) throw err;
 				lastErr = err;
 				await sleep(250);
 			}
@@ -179,16 +213,23 @@ export function harness(): Harness {
 		throw lastErr;
 	};
 
+	// Every JSON POST is time-bounded so a stalled D1-backed request aborts instead
+	// of hanging the whole test. SSE (`openSse`) deliberately bypasses this — its
+	// response body stays open for the life of the stream.
 	const json: Harness["json"] = (path, body, cookie) =>
-		req(path, {
-			method: "POST",
-			headers: {
-				"content-type": "application/json",
-				origin: "http://localhost:3000",
-				...(cookie ? {cookie} : {}),
+		req(
+			path,
+			{
+				method: "POST",
+				headers: {
+					"content-type": "application/json",
+					origin: "http://localhost:3000",
+					...(cookie ? {cookie} : {}),
+				},
+				body: JSON.stringify(body),
 			},
-			body: JSON.stringify(body),
-		});
+			{timeoutMs: REQUEST_TIMEOUT_MS},
+		);
 
 	const fateBatch: Harness["fateBatch"] = async (ops, opts) => {
 		const operations = ops.map((op, i) => ({id: String(i + 1), ...op}));
@@ -197,9 +238,54 @@ export function harness(): Harness {
 		return parsed.results;
 	};
 
+	// Reads are always safe to replay; a mutation only when the caller flags it
+	// idempotent (`definition.vote` re-cast is a no-op — `Vote.ts`). `definition.add`
+	// is NOT idempotent (new id per call), so it is never auto-retried here — its
+	// caller (`addDefinition`) adopts the landed row by body instead.
+	const idempotentOp = (op: FateOp, opts?: {retry?: boolean}): boolean =>
+		op.kind === "query" || op.kind === "list" || opts?.retry === true;
+
 	const fate: Harness["fate"] = async (op, opts) => {
-		const [result] = await fateBatch([op], opts);
-		return result!;
+		const attempts = idempotentOp(op, opts) ? 3 : 1;
+		let lastResult: FateResult | undefined;
+		let lastErr: unknown;
+		for (let i = 0; i < attempts; i++) {
+			try {
+				const [result] = await fateBatch([op], opts);
+				lastResult = result;
+				lastErr = undefined;
+				// Success, or a non-retryable op: take the result as-is. A retryable op
+				// that came back `!ok` is a transient failure → loop and try again.
+				if (result!.ok || attempts === 1) return result!;
+			} catch (err) {
+				lastErr = err;
+				// Only a stall is retryable; a real error (or a non-retryable op) surfaces.
+				if (attempts === 1 || !isAbort(err)) throw err;
+			}
+			if (i < attempts - 1) await sleep(300 * (i + 1));
+		}
+		if (lastResult) return lastResult;
+		throw lastErr;
+	};
+
+	// A sign-up/sign-in POST is idempotent end-to-end (a 422 USER_ALREADY_EXISTS
+	// falls back to sign-in), so a stalled attempt is safe to replay.
+	const postIdempotent = async (
+		path: string,
+		body: unknown,
+		cookie?: string,
+	): Promise<Response> => {
+		let lastErr: unknown;
+		for (let i = 0; i < 3; i++) {
+			try {
+				return await json(path, body, cookie);
+			} catch (err) {
+				lastErr = err;
+				if (!isAbort(err)) throw err;
+				await sleep(300 * (i + 1));
+			}
+		}
+		throw lastErr;
 	};
 
 	// Extract the session (`name=value` cookie + user id) from a better-auth
@@ -223,7 +309,7 @@ export function harness(): Harness {
 	};
 
 	const signUp: Harness["signUp"] = async (email, password, name) => {
-		const res = await json("/api/auth/sign-up/email", {email, password, name});
+		const res = await postIdempotent("/api/auth/sign-up/email", {email, password, name});
 		if (res.ok) return sessionFrom(res, "sign-up");
 		// Idempotent against the PERSISTENT D1 — under the integration harness only
 		// state + DO storage are offline; D1 is the real Cloudflare DB (ADR 0031),
@@ -231,7 +317,7 @@ export function harness(): Harness {
 		// Fall back to sign-in so re-seeding a fixture is a no-op, not a hard fail.
 		const body = await res.text();
 		if (res.status === 422 && body.includes("USER_ALREADY_EXISTS")) {
-			const signIn = await json("/api/auth/sign-in/email", {email, password});
+			const signIn = await postIdempotent("/api/auth/sign-in/email", {email, password});
 			if (!signIn.ok) {
 				throw new Error(
 					`sign-in (existing seed user) failed: ${signIn.status} ${await signIn.text()}`,
@@ -276,6 +362,65 @@ export function harness(): Harness {
 	const seededBodies = new Set<string>();
 	const seededSlugs = new Set<string>();
 
+	// Find an already-landed definition by its body, so a stalled `definition.add`
+	// (which may have committed before the response was lost) is adopted rather
+	// than re-inserted as a duplicate. Reads auto-retry, so this is robust.
+	const findDefByBody = async (
+		cookie: string,
+		slug: string,
+		body: string,
+	): Promise<{id: string; authorId: string} | undefined> => {
+		const t = await fate(
+			{
+				kind: "query",
+				name: "term",
+				args: {slug, definitions: {first: 100}},
+				select: ["definitions.id", "definitions.body", "definitions.authorId"],
+			},
+			{cookie},
+		);
+		if (!t.ok || t.data == null) return undefined;
+		const conn = (
+			t.data as {definitions?: {items: Array<{node: {id: string; body: string; authorId: string}}>}}
+		).definitions;
+		const hit = conn?.items.find((e) => e.node.body === body);
+		return hit ? {id: hit.node.id, authorId: hit.node.authorId} : undefined;
+	};
+
+	// `definition.add` is not idempotent, so we can't blind-retry it. On a stall
+	// (the add may or may not have committed) we look the body up: if it landed,
+	// adopt it; otherwise add again. A `!ok` result is also treated this way.
+	const addDefinition = async (
+		cookie: string,
+		slug: string,
+		title: string,
+		body: string,
+	): Promise<{id: string; authorId: string}> => {
+		let lastErr: unknown;
+		for (let i = 0; i < 3; i++) {
+			try {
+				const added = await fate(
+					{
+						kind: "mutation",
+						name: "definition.add",
+						input: {termSlug: slug, termTitle: title, body},
+						select: ["id", "authorId"],
+					},
+					{cookie},
+				);
+				if (added.ok) return added.data as {id: string; authorId: string};
+				lastErr = new Error(`definition.add (${slug}): ${added.error.code}`);
+			} catch (err) {
+				if (!isAbort(err)) throw err;
+				lastErr = err;
+			}
+			const adopted = await findDefByBody(cookie, slug, body);
+			if (adopted) return adopted;
+			await sleep(400 * (i + 1));
+		}
+		throw new Error(`seedTerm add failed (${slug}) after retries: ${String(lastErr)}`);
+	};
+
 	const seedTerm: Harness["seedTerm"] = async (input) => {
 		const created = !seededSlugs.has(input.slug);
 		seededSlugs.add(input.slug);
@@ -297,29 +442,19 @@ export function harness(): Harness {
 			seededBodies.add(key);
 
 			const cookie = await authorCookie(def.authorName);
-			const added = await fate(
-				{
-					kind: "mutation",
-					name: "definition.add",
-					input: {termSlug: input.slug, termTitle: input.title, body: def.body},
-					select: ["id", "authorId"],
-				},
-				{cookie},
-			);
-			if (!added.ok) {
-				throw new Error(`seedTerm add failed (${input.slug}): ${added.error.code}`);
-			}
-			const node = added.data as {id: string; authorId: string};
+			const node = await addDefinition(cookie, input.slug, input.title, def.body);
 			insertedDefinitions++;
 
 			const score = def.score ?? 0;
 			if (score > 0) {
 				// Distinct voters, one up-vote each → score === number of voters.
+				// `definition.vote` is idempotent (re-cast is a no-op), so a stalled
+				// vote is safe to replay — `retry: true`.
 				const cookies = await voters(score);
 				for (const voterCookie of cookies) {
 					const voted = await fate(
 						{kind: "mutation", name: "definition.vote", input: {id: node.id}, select: ["score"]},
-						{cookie: voterCookie},
+						{cookie: voterCookie, retry: true},
 					);
 					if (!voted.ok) {
 						throw new Error(`seedTerm vote failed (${node.id}): ${voted.error.code}`);

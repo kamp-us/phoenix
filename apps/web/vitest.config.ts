@@ -37,18 +37,16 @@ export default defineConfig({
 					name: "integration",
 					include: ["tests/integration/**/*.test.ts"],
 					globalSetup: ["./tests/integration/_global-setup.ts"],
-					// Seed-heavy reads (e.g. `sozluk-read` paginating every seeded
-					// row) make several round-trips to real Cloudflare D1 — from a CI
-					// runner that comfortably exceeds the old 30s wall. Give the
-					// worker a minute; globalSetup's dev-sidecar boot gets the same.
-					testTimeout: 60_000,
-					hookTimeout: 60_000,
-					// D1 is provisioned against real Cloudflare even under localState
-					// (no offline D1), so reads occasionally hit a transient
-					// `D1_ERROR: Network connection lost` from a CI runner. Retry the
-					// few network-bound assertions rather than redden the whole suite;
-					// the tests are idempotent (black-box HTTP, seeded per file).
-					retry: 2,
+					// Seed-heavy tests (`sozluk-read` seeds + paginates) make dozens of
+					// sequential round-trips to real Cloudflare D1 — no offline D1 — and
+					// the harness retries the occasional stalled request (see `_harness.ts`
+					// `REQUEST_TIMEOUT_MS`), so a slow test needs headroom above the raw
+					// work. NO Vitest `retry`: the harness owns per-request retries at the
+					// right layer, and a test-level retry would re-enter `seedTerm` whose
+					// process-level (slug, body) dedup then reports created:false /
+					// inserted:0 — breaking the very seed assertions it would be retrying.
+					testTimeout: 90_000,
+					hookTimeout: 90_000,
 					pool: "forks",
 					// Vitest 4: `singleFork: true` → `maxWorkers: 1, isolate: false`. One
 					// long-lived fork, no per-file isolation — the HTTP-only test fork
