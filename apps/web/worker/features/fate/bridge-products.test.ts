@@ -47,7 +47,7 @@ let sqlite: SqliteD1;
  * bound D1 — the F4 isolate runtime. `fateOp` hands it to fate on a
  * `FateContext`; the seed helpers run feature services on it directly.
  */
-let WorkerRuntime: WorkerRuntime;
+let fateRuntime: WorkerRuntime;
 
 const AUTHOR = {id: "u-author", name: "umut", email: "umut@example.com"};
 const VOTER = {id: "u-voter", name: "elif", email: "elif@example.com"};
@@ -79,7 +79,7 @@ async function fateOp(
 	const {service: liveBus, published} = makeLiveBusTest();
 
 	const res = await fateServer.handleRequest(request, {
-		runtime: WorkerRuntime,
+		runtime: fateRuntime,
 		request,
 		auth: {user: opts.auth as never, session: undefined},
 		liveBus,
@@ -102,7 +102,7 @@ beforeAll(async () => {
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
 	>[1];
-	WorkerRuntime = ManagedRuntime.make(makeFateLayer(db, fakeAuth));
+	fateRuntime = ManagedRuntime.make(makeFateLayer(db, fakeAuth));
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the
 	// node pool can't forge a session, so we insert the rows the services read).
@@ -117,7 +117,7 @@ beforeAll(async () => {
 	// Seed one post + five chronological comments through the live Pano service —
 	// the same lifecycle a user-driven submit would take, so the view rows + stats
 	// land identically.
-	const seeded = await WorkerRuntime.runPromise(
+	const seeded = await fateRuntime.runPromise(
 		Effect.gen(function* () {
 			const pano = yield* Pano;
 			const post = yield* pano.submitPost({
@@ -146,7 +146,7 @@ beforeAll(async () => {
 
 	// Give AUTHOR a username + profile + one definition contribution so the
 	// pasaport profile feed is a mixed discriminant (post + comment + definition).
-	await WorkerRuntime.runPromise(
+	await fateRuntime.runPromise(
 		Effect.gen(function* () {
 			const pasaport = yield* Pasaport;
 			yield* pasaport.setUsername({userId: AUTHOR.id, value: "umut-author"});
@@ -155,7 +155,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-	await WorkerRuntime?.dispose();
+	await fateRuntime?.dispose();
 	sqlite?.close();
 });
 

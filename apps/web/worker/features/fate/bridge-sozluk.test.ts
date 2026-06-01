@@ -46,7 +46,7 @@ let sqlite: SqliteD1;
  * bound D1 — exactly the F4 isolate runtime the worker init builds. Each `fateOp`
  * hands it to fate on a `FateContext`; the bridge runs each resolver on it.
  */
-let WorkerRuntime: WorkerRuntime;
+let fateRuntime: WorkerRuntime;
 
 const SESSION_USER: {id: string; name: string; email: string} = {
 	id: "u-writer",
@@ -78,7 +78,7 @@ async function fateOp(
 	const {service: liveBus, published} = makeLiveBusTest();
 
 	const res = await fateServer.handleRequest(request, {
-		runtime: WorkerRuntime,
+		runtime: fateRuntime,
 		request,
 		auth: {user: opts.auth as never, session: undefined},
 		liveBus,
@@ -106,7 +106,7 @@ beforeAll(async () => {
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
 	>[1];
-	WorkerRuntime = ManagedRuntime.make(makeFateLayer(db, fakeAuth));
+	fateRuntime = ManagedRuntime.make(makeFateLayer(db, fakeAuth));
 
 	// Seed three definitions with distinct scores so the keyset order is
 	// deterministic: (score desc, created_at asc, id asc). Written straight to the
@@ -150,7 +150,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-	await WorkerRuntime?.dispose();
+	await fateRuntime?.dispose();
 	sqlite?.close();
 });
 

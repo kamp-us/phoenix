@@ -41,9 +41,7 @@ import {fateServer} from "./server.ts";
  * `{runtime, request, auth, liveBus}`. The bridge runs each resolver on the
  * runtime with `auth`/`liveBus` provided onto it.
  */
-export const makeHandleFate = (
-	runtime: WorkerRuntime,
-) =>
+export const makeHandleFate = (runtime: WorkerRuntime) =>
 	Effect.gen(function* () {
 		const raw = yield* Cloudflare.Request;
 		const executionCtx = yield* Cloudflare.WorkerExecutionContext;
@@ -94,6 +92,5 @@ export const makeHandleFate = (
  * The `/fate` route as a router layer, ready to merge into `AppLive`. Built from
  * the isolate's worker `ManagedRuntime` in `app.ts`.
  */
-export const makeFateRoute = (
-	runtime: WorkerRuntime,
-) => HttpRouter.add("POST", "/fate", makeHandleFate(runtime));
+export const makeFateRoute = (runtime: WorkerRuntime) =>
+	HttpRouter.add("POST", "/fate", makeHandleFate(runtime));
