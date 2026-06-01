@@ -26,6 +26,7 @@ import {drizzle} from "drizzle-orm/d1";
 import {Effect} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -146,11 +147,20 @@ beforeAll(() => {
 	// `Parameters<typeof makeFateLayer>[1]` (the `Auth` type re-export, which
 	// the deployed worker also satisfies). The concrete and generic `Auth` types
 	// don't statically overlap (TS2352), so the widen needs the `unknown` hop.
-	const fateLayer = makeFateLayer(
-		db,
-		// biome-ignore lint/plugin: see above — concrete `Auth<…>` vs the generic `Auth` re-export don't overlap (TS2352), so this widen needs the hop.
-		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[1],
+	// Mirror the production wiring (`index.ts`): build ONE worker `ManagedRuntime`
+	// from `makeFateLayer`, then derive the route-context `fateLayer` from that
+	// runtime's built context (`Layer.effectContext(runtime.contextEffect)`) so the
+	// worker services are constructed exactly once — shared by the resolver runtime
+	// and the routes that yield them directly — rather than hand-building a parallel
+	// layer.
+	const fateRuntime = ManagedRuntime.make(
+		makeFateLayer(
+			db,
+			// biome-ignore lint/plugin: see above — concrete `Auth<…>` vs the generic `Auth` re-export don't overlap (TS2352), so this widen needs the hop.
+			testAuthInstance as unknown as Parameters<typeof makeFateLayer>[1],
+		),
 	);
+	const fateLayer = Layer.effectContext(fateRuntime.contextEffect);
 
 	// A minimal `BaseRuntimeContext` stub. The HTTP-surface cases here never reach
 	// the `/api/auth/*` route's RuntimeContext-consuming secret resolution (sign-up
@@ -165,6 +175,7 @@ beforeAll(() => {
 	};
 
 	appLayer = makeAppLive({
+		fateRuntime,
 		fateLayer,
 		liveLayer,
 		betterAuthLayer,

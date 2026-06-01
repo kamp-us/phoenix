@@ -25,11 +25,16 @@ import type {WorkerFateServices} from "./layers.ts";
  * directly (fate also forwards it). Session is NOT a field — it's inside `auth`,
  * read with `yield* Auth.required`.
  *
+ * The interface is generic in the runtime environment `R` (defaulting to the
+ * production {@link WorkerFateServices}) so a test can wrap a `FateContext` over a
+ * tiny marker runtime with no cast; production call sites (`route.ts` /
+ * `index.ts` / `server.ts`) take the default and carry zero churn.
+ *
  * See `.patterns/fate-effect-bridge.md` and `.patterns/alchemy-runtime.md`.
  */
-export interface FateContext {
-	/** The worker-level runtime carrying {@link WorkerFateServices}; one per isolate. */
-	readonly runtime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
+export interface FateContext<R = WorkerFateServices> {
+	/** The worker-level runtime carrying `R` (the {@link WorkerFateServices} by default); one per isolate. */
+	readonly runtime: ManagedRuntime.ManagedRuntime<R, never>;
 	/** The raw request, for resolvers/sources that read headers directly. */
 	readonly request: Request;
 	/** The per-request validated session, provided onto each resolver effect. */

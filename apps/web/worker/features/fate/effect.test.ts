@@ -40,7 +40,7 @@ class Marker extends Context.Service<Marker, {readonly value: string}>()(
  */
 const makeCtx = (
 	opts: {user?: {id: string}; liveBus?: typeof LiveBus.Service; marker?: string} = {},
-): FateContext => {
+): FateContext<Marker> => {
 	const runtime = ManagedRuntime.make(Layer.succeed(Marker)({value: opts.marker ?? "marker"}));
 	const auth: typeof Auth.Service = {
 		user: opts.user as never,
@@ -50,9 +50,9 @@ const makeCtx = (
 	return {runtime, request: new Request("http://test/fate"), auth, liveBus};
 };
 
-const invoke = <A>(
-	fn: (o: {ctx: FateContext; input: {args?: undefined}; select: Array<string>}) => Promise<A>,
-	ctx: FateContext,
+const invoke = <A, R>(
+	fn: (o: {ctx: FateContext<R>; input: {args?: undefined}; select: Array<string>}) => Promise<A>,
+	ctx: FateContext<R>,
 ): Promise<A> => fn({ctx, input: {args: undefined}, select: []});
 
 // fate's source handlers receive a `plan` (the masking plan) that the bridge
@@ -124,7 +124,7 @@ describe("fateQuery", () => {
 		const bus = makeLiveBusTest();
 		const resolve = fateMutation<{id: string}, {ok: true}>(function* ({input}) {
 			const liveBus = yield* LiveBus;
-			yield* liveBus.useIgnore((b) => b.update("term", input.id, {changed: ["definitions"]}));
+			yield* liveBus.useIgnore((b) => b.update("Definition", input.id, {changed: ["score"]}));
 			return {ok: true};
 		});
 		await expect(
@@ -133,7 +133,7 @@ describe("fateQuery", () => {
 		// The capturing bus on the ctx recorded the resolved topic key — proves the
 		// per-request bus VALUE (not a runtime singleton) was provided onto the effect.
 		expect(bus.published.length).toBeGreaterThan(0);
-		expect(bus.published).toContain("entity:term:t1");
+		expect(bus.published).toContain("entity:Definition:t1");
 	});
 
 	it("nests a resolver span under the runtime's request span (F4 win) — old path is detached", async () => {
@@ -147,7 +147,7 @@ describe("fateQuery", () => {
 				Layer.succeed(Tracer.ParentSpan)(requestSpan),
 			),
 		);
-		const ctx: FateContext = {
+		const ctx: FateContext<Marker | Tracer.ParentSpan> = {
 			runtime,
 			request: new Request("http://test/fate"),
 			auth: {user: undefined, session: undefined},
@@ -156,7 +156,7 @@ describe("fateQuery", () => {
 
 		// A resolver that opens its own span and returns it — observable through the
 		// bridge exactly as a value would be.
-		const resolve = fateQuery<undefined, Tracer.AnySpan>(function* () {
+		const resolve = fateQuery<undefined, Tracer.Span>(function* () {
 			return yield* Effect.currentSpan.pipe(Effect.withSpan("resolver"));
 		});
 		const span = await invoke(resolve, ctx);

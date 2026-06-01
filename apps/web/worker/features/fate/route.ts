@@ -24,14 +24,13 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import type * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {liveBusFor} from "../fate-live/event-bus.ts";
 import {defaultLiveLimits} from "../fate-live/route.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
-import type {WorkerFateServices} from "./layers.ts";
+import type {WorkerFateServices, WorkerRuntime} from "./layers.ts";
 import {fateServer} from "./server.ts";
 
 /**
@@ -43,7 +42,7 @@ import {fateServer} from "./server.ts";
  * runtime with `auth`/`liveBus` provided onto it.
  */
 export const makeHandleFate = (
-	runtime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>,
+	runtime: WorkerRuntime,
 ) =>
 	Effect.gen(function* () {
 		const raw = yield* Cloudflare.Request;
@@ -96,5 +95,5 @@ export const makeHandleFate = (
  * the isolate's worker `ManagedRuntime` in `app.ts`.
  */
 export const makeFateRoute = (
-	runtime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>,
+	runtime: WorkerRuntime,
 ) => HttpRouter.add("POST", "/fate", makeHandleFate(runtime));

@@ -7,12 +7,14 @@
  * — every query, list, mutation, and source — driven through the SAME bridge:
  *
  *   1. `Drizzle` + the feature services are built ONCE from a bound D1 (here a
- *      `node:sqlite` stand-in) via `makeFateLayer` — the worker init layer.
- *   2. Per "request" the harness provides only `Auth` + `HttpServerRequest`,
- *      captures the live service map with `Effect.context<FateEnv>()`, and hands
- *      it to `fateServer.handleRequest` through `{context, request}`.
- *   3. The bridge runs each resolver with `Effect.provide(effect, ctx.context)`
- *      — nothing built or disposed per request.
+ *      `node:sqlite` stand-in) via `makeFateLayer`, wrapped in ONE worker-level
+ *      `ManagedRuntime` — the F4 isolate runtime the worker init builds.
+ *   2. Per "request" the harness builds the two per-request service VALUES —
+ *      `Auth` (the session) and a capturing `LiveBus` — and hands fate a
+ *      `FateContext` of `{runtime, request, auth, liveBus}`.
+ *   3. The bridge runs each resolver THROUGH `ctx.runtime`, providing
+ *      `Auth`/`LiveBus` onto each resolver effect — nothing built or disposed per
+ *      request.
  *
  * Asserts wire parity with the pre-migration `/fate` surface for these products
  * (the shapes the pool-workers `fate-pano-*` / `fate-pasaport-*` tests assert):
@@ -36,7 +38,7 @@ import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Pano} from "../pano/Pano";
 import {Pasaport} from "../pasaport/Pasaport";
-import {makeFateLayer, type WorkerFateServices} from "./layers";
+import {makeFateLayer, type WorkerRuntime} from "./layers";
 import {fateServer} from "./server";
 
 let sqlite: SqliteD1;
@@ -45,7 +47,7 @@ let sqlite: SqliteD1;
  * bound D1 — the F4 isolate runtime. `fateOp` hands it to fate on a
  * `FateContext`; the seed helpers run feature services on it directly.
  */
-let WorkerRuntime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
+let WorkerRuntime: WorkerRuntime;
 
 const AUTHOR = {id: "u-author", name: "umut", email: "umut@example.com"};
 const VOTER = {id: "u-voter", name: "elif", email: "elif@example.com"};

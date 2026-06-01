@@ -5,12 +5,20 @@
  * domain lives in Effect `Context.Service`s. This module is the single seam
  * between them: a small helper family — `fateQuery`, `fateList`,
  * `fateMutation`, `fateSource` — wraps an Effect generator into the async
- * function fate expects, running it against the captured `Context`
- * ({@link FateContext.context}) — no per-request `ManagedRuntime` (ADR 0029).
+ * function fate expects.
  *
- * **No `Effect.runPromiseExit` appears anywhere outside this file.** Resolvers
- * and executors are generators; the runner here does the
- * `provide(context) → Exit → wire-error` dance once.
+ * The F4 model (ADR 0029): there is ONE worker-level `ManagedRuntime`, built once
+ * per isolate in worker init (`index.ts`) and carried on every {@link FateContext}
+ * as `ctx.runtime`. The bridge runs each resolver THROUGH that runtime, providing
+ * only the two genuinely per-request services — `Auth` (the validated session)
+ * and `LiveBus` (the publish capability, ADR 0039) — onto each resolver effect
+ * with `Effect.provideService`. Nothing is built or disposed per request, and
+ * because resolvers run through the runtime their spans nest under the runtime's
+ * request span rather than on a detached default-runtime root.
+ *
+ * **No `runPromiseExit` appears anywhere outside this file.** Resolvers and
+ * executors are generators; the runner here does the
+ * `provide(Auth/LiveBus) → run-on-runtime → Exit → wire-error` dance once.
  *
  * See `.patterns/fate-effect-bridge.md`, `.patterns/alchemy-runtime.md`, and
  * ADR 0016 / 0029.
@@ -43,40 +51,45 @@ export type AnyDataView = AnySourceDefinition["view"];
 /**
  * Build an Effect from a resolver/executor generator. The generator yields
  * heterogeneous services (`yield* Stats`, `yield* Auth`, …), so its element type
- * is `any` and `Effect.gen` infers the environment as `unknown`; we assert it
- * back to {@link FateEnv} — the worker-runtime singletons plus the per-request
- * `Auth`/`LiveBus` the bridge provides. This is the single assertion the bridge
- * makes — see the note on {@link runEffect}.
+ * is `any` and `Effect.gen` infers the environment as `unknown`.
+ *
+ * This is the single irreducible assertion the bridge makes: fate's resolver-body
+ * API is `Generator<any, A, any>`, so `Effect.gen` over it can never recover the
+ * real `R` structurally — there is no `FateEnv` to infer from an `any`-yield. We
+ * assert it back to {@link FateEnv} (the worker-runtime singletons plus the
+ * per-request `Auth`/`LiveBus` the bridge provides) — the irreducible F7
+ * assertion (see the note on {@link runEffect}).
  */
 const genEffect = <A>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, FateEnv> =>
 	Effect.gen(body) as Effect.Effect<A, unknown, FateEnv>;
 
 /**
- * The one place `runPromiseExit` is called. Provides the two per-request service
- * VALUES carried by the {@link FateContext} — `Auth` (the validated session) and
+ * The one place an effect is run. Provides the two per-request service VALUES
+ * carried by the {@link FateContext} — `Auth` (the validated session) and
  * `LiveBus` (the publish capability) — onto the resolver Effect, then runs it on
  * the worker-level `ManagedRuntime` ({@link FateContext.runtime}), which supplies
- * the {@link WorkerFateServices} singletons (built once per isolate, never
- * disposed per request). Because the resolver runs THROUGH the runtime, its spans
- * nest under the runtime's request span (the F4 observability win) rather than on
- * a detached default-runtime root. The `Exit` resolves identically to before:
+ * the worker singletons (built once per isolate, never disposed per request).
+ * Because the resolver runs THROUGH the runtime, its spans nest under the
+ * runtime's request span (the F4 observability win) rather than on a detached
+ * default-runtime root. The `Exit` resolves identically to before:
  *
  *   - `Exit.Success`            → the value.
  *   - tagged failure            → `encodeFateError` → throw (fate serializes it).
  *   - `FateRequestError`        → pass through verbatim (already wire-shaped).
  *   - defect (uncaught throw)   → `Cause.squash` → `encodeFateError` → throw.
  *
+ * Generic in the runtime environment `R` (defaulting to the production worker
+ * services) so a test can run a resolver on a tiny marker runtime; production
+ * passes the default with zero churn. The effect's environment is `R | Auth |
+ * LiveBus`; providing `Auth`/`LiveBus` here discharges those two, leaving exactly
+ * `R` — the runtime's own environment.
+ *
  * fate's `executeOperation` catches the throw and turns it into
  * `{ok: false, error: {code, message, issues?}}`.
  */
-const runEffect = <A>(
-	ctx: FateContext,
-	// The generator wrappers build this via `Effect.gen` over a
-	// `Generator<any, A, any>`, so the environment channel erases to `unknown` at
-	// this boundary; `genEffect` asserts it to `FateEnv`. Providing the per-request
-	// `Auth`/`LiveBus` here discharges those two, leaving the `WorkerFateServices`
-	// the runtime supplies.
-	effect: Effect.Effect<A, unknown, FateEnv>,
+const runEffect = <A, R>(
+	ctx: FateContext<R>,
+	effect: Effect.Effect<A, unknown, R | Auth | LiveBus>,
 ): Promise<A> =>
 	ctx.runtime
 		.runPromiseExit(
@@ -86,32 +99,32 @@ const runEffect = <A>(
 			),
 		)
 		.then((exit) => {
-		if (Exit.isSuccess(exit)) {
-			return exit.value;
-		}
-		const found = Cause.findError(exit.cause);
-		if (found._tag === "Success") {
-			const e = found.success;
-			// Already wire-shaped (resolver-side validation, Auth) → pass through.
-			if (e instanceof FateRequestError) {
-				throw e;
+			if (Exit.isSuccess(exit)) {
+				return exit.value;
 			}
-			throw encodeFateError(e);
-		}
-		// Defects (uncaught throw that never became an Effect failure).
-		throw encodeFateError(Cause.squash(exit.cause));
-	});
+			const found = Cause.findError(exit.cause);
+			if (found._tag === "Success") {
+				const e = found.success;
+				// Already wire-shaped (resolver-side validation, Auth) → pass through.
+				if (e instanceof FateRequestError) {
+					throw e;
+				}
+				throw encodeFateError(e);
+			}
+			// Defects (uncaught throw that never became an Effect failure).
+			throw encodeFateError(Cause.squash(exit.cause));
+		});
 
 /** A root-query resolver argument bag fate hands the wrapped function. */
-export interface QueryArgs<Args> {
-	readonly ctx: FateContext;
+export interface QueryArgs<Args, R = FateEnv> {
+	readonly ctx: FateContext<R>;
 	readonly input: {readonly args?: Args};
 	readonly select: Array<string>;
 }
 
 /** A mutation resolver argument bag fate hands the wrapped function. */
-export interface MutationArgs<Input> {
-	readonly ctx: FateContext;
+export interface MutationArgs<Input, R = FateEnv> {
+	readonly ctx: FateContext<R>;
 	readonly input: Input;
 	readonly select: Array<string>;
 }
@@ -127,7 +140,7 @@ export interface MutationArgs<Input> {
  */
 export const fateQuery =
 	<Args, A>(body: (o: {args: Args | undefined; select: Selection}) => Generator<any, A, any>) =>
-	({ctx, input, select}: QueryArgs<Args>): Promise<A> =>
+	<R>({ctx, input, select}: QueryArgs<Args, R>): Promise<A> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({args: input.args, select})),
@@ -145,7 +158,7 @@ export const fateList =
 			select: Selection;
 		}) => Generator<any, ConnectionResult<A>, any>,
 	) =>
-	({ctx, input, select}: QueryArgs<Args>): Promise<ConnectionResult<A>> =>
+	<R>({ctx, input, select}: QueryArgs<Args, R>): Promise<ConnectionResult<A>> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({args: input.args, select})),
@@ -159,7 +172,7 @@ export const fateList =
  */
 export const fateMutation =
 	<Input, A>(body: (o: {input: Input; select: Selection}) => Generator<any, A, any>) =>
-	({ctx, input, select}: MutationArgs<Input>): Promise<A> =>
+	<R>({ctx, input, select}: MutationArgs<Input, R>): Promise<A> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({input, select})),

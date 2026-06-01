@@ -22,9 +22,8 @@
 import type * as BetterAuth from "@alchemy.run/better-auth";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
-import type * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import type {WorkerFateServices} from "../features/fate/layers.ts";
+import type {WorkerFateServices, WorkerRuntime} from "../features/fate/layers.ts";
 import {makeFateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
@@ -56,7 +55,7 @@ import {healthApiLayer} from "./health.ts";
  * scope, so this layer no longer needs the worker env passed in.
  */
 export const makeAppLive = (options: {
-	readonly fateRuntime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
+	readonly fateRuntime: WorkerRuntime;
 	readonly fateLayer: Layer.Layer<WorkerFateServices>;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**

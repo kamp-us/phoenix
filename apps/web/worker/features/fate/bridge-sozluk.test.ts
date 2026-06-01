@@ -5,14 +5,15 @@
  * `ManagedRuntime`:
  *
  *   1. Build `Drizzle` + the feature services ONCE from a bound D1 (here a
- *      `node:sqlite`-backed stand-in) via `makeFateLayer` — the same layer the
- *      worker init builds.
- *   2. Per "request", provide only `Auth` + `RequestContext`, capture the live
- *      service map with `Effect.context<FateEnv>()`, and hand it to
- *      `fateServer.handleRequest` through `adapterContext` (`{context, request}`).
- *   3. The bridge runs each resolver with
- *      `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` — nothing is
- *      built or disposed per request.
+ *      `node:sqlite`-backed stand-in) via `makeFateLayer`, wrapped in ONE
+ *      worker-level `ManagedRuntime` — the same isolate runtime the worker init
+ *      builds.
+ *   2. Per "request", build the two per-request service VALUES — `Auth` (the
+ *      session) and a capturing `LiveBus` — and hand fate a `FateContext` of
+ *      `{runtime, request, auth, liveBus}` (the F4 shape).
+ *   3. The bridge runs each resolver THROUGH `ctx.runtime`, providing
+ *      `Auth`/`LiveBus` onto each resolver effect — nothing is built or disposed
+ *      per request.
  *
  * This runs in the node pool (no workerd): the alchemy worker can't load into
  * `@cloudflare/vitest-pool-workers` yet (task 7 migrates the harness). The proof
@@ -36,7 +37,7 @@ import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?
 import * as schema from "../../db/drizzle/schema";
 import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
-import {makeFateLayer, type WorkerFateServices} from "./layers";
+import {makeFateLayer, type WorkerRuntime} from "./layers";
 import {fateServer} from "./server";
 
 let sqlite: SqliteD1;
@@ -45,7 +46,7 @@ let sqlite: SqliteD1;
  * bound D1 — exactly the F4 isolate runtime the worker init builds. Each `fateOp`
  * hands it to fate on a `FateContext`; the bridge runs each resolver on it.
  */
-let WorkerRuntime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
+let WorkerRuntime: WorkerRuntime;
 
 const SESSION_USER: {id: string; name: string; email: string} = {
 	id: "u-writer",

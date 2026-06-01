@@ -4,19 +4,23 @@
  * The departure from phoenix's original per-request `FateRuntime`: there is **no
  * per-request `ManagedRuntime`**. `Drizzle` (built once from the bound D1) and
  * the feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`) are
- * **worker-level layers**, constructed once in the worker init and provided onto
- * the worker body. Per request the `/fate` route provides only `Auth` +
- * `HttpServerRequest` (see `route.ts`) and captures the live service map with
- * `Effect.context<FateEnv>()`.
+ * **worker-level layers**, constructed once in the worker init and carried by
+ * ONE isolate-level `ManagedRuntime` (the {@link WorkerRuntime}). The `/fate`
+ * bridge runs every resolver THROUGH that runtime, providing only the two
+ * genuinely per-request services — `Auth` + `LiveBus` — onto each resolver
+ * effect (`effect.ts`); the routes that yield a worker service directly take it
+ * from the same runtime's built context (`Layer.effectContext`, see `route.ts`
+ * / `index.ts`).
  *
  * `FateEnv` is the union of every service a fate resolver or source executor may
- * touch — the type parameter of the captured `Context` the bridge runs against.
+ * touch — the environment its generator bodies are checked against.
  *
  * The layer graph (mergeAll / provide / provideMerge) is the one in
  * `.patterns/effect-layer-composition.md`; only *where* it's provided moved,
  * from a per-request runtime to here.
  */
 import {Layer} from "effect";
+import type * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Drizzle, DrizzleDb} from "../../db/Drizzle.ts";
 import {makeDrizzleLayer} from "../../db/Drizzle.ts";
 import type {LiveBus} from "../fate-live/event-bus.ts";
@@ -53,6 +57,15 @@ export type FateEnv = WorkerFateServices | Auth | LiveBus;
  * into the runtime.
  */
 export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Stats;
+
+/**
+ * The ONE isolate-level `ManagedRuntime` the worker init builds from
+ * {@link makeFateLayer} — it carries the {@link WorkerFateServices} singletons and
+ * fails for nothing (`E = never`). The `/fate` bridge runs every resolver through
+ * it; `route.ts`, `app.ts`, `context.ts`, and the bridge tests all name this exact
+ * shape, so it lives here once rather than being re-spelled at each site.
+ */
+export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
 
 /**
  * Build the worker-level data-plane layer from the bound D1.
