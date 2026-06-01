@@ -32,6 +32,7 @@ import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {createDrizzle} from "./db/Drizzle.ts";
@@ -42,6 +43,9 @@ import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.t
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {makeAppLive} from "./http/app.ts";
+// SPIKE (throwaway): static Effect-DI graph + worker-init ManagedRuntime probe.
+import {AppLayer} from "./spike/graph.ts";
+import {makeSpikeRoute} from "./spike/route.ts";
 
 /**
  * Lift a publish-side {@link PublishMessage} to the {@link DeliverFrame} the
@@ -225,8 +229,47 @@ export default Phoenix.make(
 			runtimeContext,
 		});
 
+		// ── SPIKE (throwaway): static-graph ManagedRuntime, wired LAZILY ──
+		// Capture the worker's REAL ambient context — the alchemy services that
+		// `AppLayer`'s leaf layers still demand in their residual `R`
+		// (`RuntimeContext | Providers | WorkerEnvironment | D1ConnectionPolicy`).
+		// These are live in THIS init scope: the outer `Effect.provide` below
+		// supplies `D1ConnectionLive` (which carries `WorkerEnvironment` +
+		// `D1ConnectionPolicy`), and the alchemy worker runtime provides
+		// `RuntimeContext` + `Providers`. `Effect.context<...>()` materializes the
+		// whole map; `Layer.succeedContext(ambient)` turns it into a leaf layer that
+		// discharges `AppLayer`'s residual `R` to `never` — the precondition for
+		// `ManagedRuntime.make`. ZERO casts: the captured context's type IS the
+		// residual `R`, so `Layer.provide` checks the discharge exactly.
+		const spikeAmbient = yield* Effect.context<
+			| RuntimeContext
+			| Cloudflare.Providers
+			| Cloudflare.WorkerEnvironment
+			| Cloudflare.D1ConnectionPolicy
+		>();
+		// LAZY (primary wiring): `ManagedRuntime.make` does NOT build `AppLayer`
+		// here — a ManagedRuntime constructs its layer on FIRST use. The only thing
+		// that forces it is the `/api/spike/whoami` route at REQUEST time. So at
+		// `alchemy deploy` PLAN time this runtime is constructed but the graph is
+		// never built, and `DrizzleLive`'s eager `connection.raw` is never pulled —
+		// Q1 is "safe by lazy construction". (EAGER toggle: to instead STRESS Q1 and
+		// force the graph at plan time, uncomment the `yield*` below — it builds the
+		// whole layer in init, attempting `connection.raw` at plan and proving
+		// whether the eager `raw` pull fires there.)
+		const spikeRuntime = ManagedRuntime.make(
+			AppLayer.pipe(Layer.provide(Layer.succeedContext(spikeAmbient))),
+		);
+		// EAGER toggle (one line) — uncomment to force the graph at init/plan time:
+		// yield* Effect.promise(() => spikeRuntime.runPromise(Effect.void));
+		const spikeRoute = makeSpikeRoute(spikeRuntime);
+
 		// ── RUNTIME PHASE (per request) ──
-		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
+		// Merge the spike route additively — it runs through `spikeRuntime`, so it
+		// is NOT part of `AppLive`'s `provideRequest` service wiring and cannot
+		// disturb `/fate`, `/api/auth/*`, `/fate/live`, or `/api/health`.
+		return {
+			fetch: Layer.mergeAll(AppLive, spikeRoute).pipe(HttpRouter.toHttpEffect),
+		};
 	}).pipe(
 		// One combined provide (chaining multiple `Effect.provide` can break layer
 		// lifecycle). Three Layers:
