@@ -39,6 +39,12 @@ export default defineConfig({
 					globalSetup: ["./tests/integration/_global-setup.ts"],
 					testTimeout: 30_000,
 					hookTimeout: 30_000,
+					// D1 is provisioned against real Cloudflare even under localState
+					// (no offline D1), so reads occasionally hit a transient
+					// `D1_ERROR: Network connection lost` from a CI runner. Retry the
+					// few network-bound assertions rather than redden the whole suite;
+					// the tests are idempotent (black-box HTTP, seeded per file).
+					retry: 2,
 					pool: "forks",
 					// Vitest 4: `singleFork: true` → `maxWorkers: 1, isolate: false`. One
 					// long-lived fork, no per-file isolation — the HTTP-only test fork

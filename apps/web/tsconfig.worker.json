@@ -21,6 +21,9 @@
 		"worker",
 		"src/lib/mutationErrorCodes.ts",
 		"alchemy.run.ts",
+		// The CI-credential stack (`stacks/github.ts`) — a Node-ESM alchemy entry
+		// like `alchemy.run.ts`, so it shares the same `.ts`-import settings.
+		"stacks",
 		// The black-box integration suite (Vitest node pool → HTTP against the
 		// deployed worker) belongs to the worker project: it needs the same `.ts`
 		// import specifiers + workers-runtime globals (`fetch`/`Response`/
