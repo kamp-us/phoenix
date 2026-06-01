@@ -25,7 +25,7 @@ state password) into the repo's Actions secrets, all from code.
 
 | Secret | Why |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | The minted token, scoped to Workers Scripts / KV / D1 / Tail / Account-Settings-Read. Never echoed to your shell — piped from `AccountApiToken.value` straight into `GitHub.Secret`. |
+| `CLOUDFLARE_API_TOKEN` | The minted token, scoped to Workers Scripts / KV / D1 / Tail / Account-Settings-Read / **Secrets-Store-Read+Write** (the last pair is what `Cloudflare.state()` needs to adopt its state-store worker's bearer token + encryption key on every deploy — omit them and the deploy fails with Cloudflare error 10000). Never echoed to your shell — piped from `AccountApiToken.value` straight into `GitHub.Secret`. |
 | `CLOUDFLARE_ACCOUNT_ID` | Which account to deploy into. |
 | `ALCHEMY_PASSWORD` | Encrypts/decrypts secrets in the Cloudflare-hosted alchemy state store. |
 | `BETTER_AUTH_SECRET` | The session-signing secret. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `stacks/github.ts` mints a stable `Random` (persisted in its state) and pushes it. |

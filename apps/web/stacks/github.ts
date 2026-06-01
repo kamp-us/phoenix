@@ -69,6 +69,13 @@ export default Alchemy.Stack(
 		// state-store worker, the D1 database, KV (state-store metadata), tail
 		// logs, and read access to account settings. No R2/Queues — phoenix uses
 		// neither; drop or add groups here if that changes.
+		//
+		// Secrets Store Read+Write is NOT optional: `Cloudflare.state()` (the
+		// hosted state store) keeps its worker's bearer token + AES encryption key
+		// in the account-wide Cloudflare Secrets Store, and adopts/refreshes them
+		// on *every* deploy. Without these the very first deploy call (the
+		// state-store bootstrap) fails with Cloudflare error 10000 "Authentication
+		// error" — even though the token authenticates fine for D1/Workers.
 		const apiToken = yield* Cloudflare.AccountApiToken("phoenix-ci-token", {
 			name: "phoenix-ci",
 			accountId,
@@ -81,6 +88,8 @@ export default Alchemy.Stack(
 						"D1 Write",
 						"Workers Tail Read",
 						"Account Settings Read",
+						"Secrets Store Read",
+						"Secrets Store Write",
 					],
 					resources: {[`com.cloudflare.api.account.${accountId}`]: "*"},
 				},
