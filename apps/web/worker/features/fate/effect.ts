@@ -25,7 +25,7 @@
  */
 import type {ConnectionResult, SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
 import {FateRequestError} from "@nkzw/fate/server";
-import {Cause, Effect, Exit} from "effect";
+import {Cause, Effect, Exit, Option} from "effect";
 import {LiveBus} from "../fate-live/event-bus.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import type {FateContext} from "./context.ts";
@@ -50,18 +50,20 @@ export type AnyDataView = AnySourceDefinition["view"];
 
 /**
  * Build an Effect from a resolver/executor generator. The generator yields
- * heterogeneous services (`yield* Stats`, `yield* Auth`, …), so its element type
- * is `any` and `Effect.gen` infers the environment as `unknown`.
+ * heterogeneous services (`yield* Stats`, `yield* Auth`, …), so the value and
+ * error slots of the yielded `Effect`s stay `any` — that's normal across
+ * heterogeneous services and is cast-free.
  *
- * This is the single irreducible assertion the bridge makes: fate's resolver-body
- * API is `Generator<any, A, any>`, so `Effect.gen` over it can never recover the
- * real `R` structurally — there is no `FateEnv` to infer from an `any`-yield. We
- * assert it back to {@link FateEnv} (the worker-runtime singletons plus the
- * per-request `Auth`/`LiveBus` the bridge provides) — the irreducible F7
- * assertion (see the note on {@link runEffect}).
+ * The body's generator type is `Effect.gen.Return<A, never, R>` — i.e.
+ * `Generator<Effect.Effect<any, any, R>, A, any>` — which pins ONLY the
+ * environment `R` on each yielded effect. With `R` pinned, `Effect.gen` infers
+ * the result Effect's environment structurally as `R`, so there is no cast: the
+ * old `as Effect.Effect<A, unknown, R>` assertion is gone. fate never sees a
+ * generator (its contract is `(args) => Promise<Output>`); the generator is our
+ * internal shape, so we are free to type it precisely.
  */
-const genEffect = <A, R>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, R> =>
-	Effect.gen(body) as Effect.Effect<A, unknown, R>;
+const genEffect = <A, R>(body: () => Effect.gen.Return<A, never, R>): Effect.Effect<A, unknown, R> =>
+	Effect.gen(body);
 
 /**
  * The one place an effect is run. Provides the two per-request service VALUES
@@ -71,12 +73,15 @@ const genEffect = <A, R>(body: () => Generator<any, A, any>): Effect.Effect<A, u
  * the worker singletons (built once per isolate, never disposed per request).
  * Because the resolver runs THROUGH the runtime, its spans nest under the
  * runtime's request span (the F4 observability win) rather than on a detached
- * default-runtime root. The `Exit` resolves identically to before:
+ * default-runtime root. The request's `AbortSignal` is passed as a `RunOption`,
+ * so a disconnected fate client interrupts the resolver fiber. The `Exit` is
+ * unwound with `Cause.findErrorOption` (an `Option`, no `Result` tag leaks into
+ * boundary code):
  *
  *   - `Exit.Success`            → the value.
- *   - tagged failure            → `encodeFateError` → throw (fate serializes it).
- *   - `FateRequestError`        → pass through verbatim (already wire-shaped).
- *   - defect (uncaught throw)   → `Cause.squash` → `encodeFateError` → throw.
+ *   - `Some(error)`             → `encodeFateError` → throw (fate serializes it).
+ *   - `Some(FateRequestError)`  → pass through verbatim (already wire-shaped).
+ *   - `None` (defect only)      → `Cause.squash` → `encodeFateError` → throw.
  *
  * Generic in the runtime environment `R` (defaulting to the production worker
  * services) so a test can run a resolver on a tiny marker runtime; production
@@ -97,22 +102,24 @@ const runEffect = <A, R>(
 				Effect.provideService(Auth, ctx.auth),
 				Effect.provideService(LiveBus, ctx.liveBus),
 			),
+			// Wire the request's abort signal so a disconnected fate client interrupts
+			// the resolver fiber (matches `HttpEffect.ts`'s run-with-signal contract).
+			{signal: ctx.request.signal},
 		)
 		.then((exit) => {
 			if (Exit.isSuccess(exit)) {
 				return exit.value;
 			}
-			const found = Cause.findError(exit.cause);
-			if (found._tag === "Success") {
-				const e = found.success;
-				// Already wire-shaped (resolver-side validation, Auth) → pass through.
-				if (e instanceof FateRequestError) {
-					throw e;
-				}
-				throw encodeFateError(e);
-			}
-			// Defects (uncaught throw that never became an Effect failure).
-			throw encodeFateError(Cause.squash(exit.cause));
+			return Option.match(Cause.findErrorOption(exit.cause), {
+				onSome: (e) => {
+					// Already wire-shaped (resolver-side validation, Auth) → pass through.
+					throw e instanceof FateRequestError ? e : encodeFateError(e);
+				},
+				// Defects (uncaught throw that never became an Effect failure).
+				onNone: () => {
+					throw encodeFateError(Cause.squash(exit.cause));
+				},
+			});
 		});
 
 /** A root-query resolver argument bag fate hands the wrapped function. */
@@ -134,13 +141,15 @@ export interface MutationArgs<Input, R = FateEnv> {
  * `({ctx, input:{args}, select}) => Promise<Output>`. The generator returns the
  * shaped output directly — query resolvers are not masked through a source.
  *
- * The generator's yield type is `any`: `Effect.gen` requires a `Yieldable`
- * element and resolver bodies `yield*` heterogeneous services. The runner
- * constrains the environment to {@link FateEnv}.
+ * The generator body is typed via {@link Effect.gen.Return}, pinning only the
+ * environment slot `R`: resolver bodies `yield*` heterogeneous services, so the
+ * value/error slots stay `any` (cast-free), while `R` is inferred structurally.
  */
 export const fateQuery =
-	<Args, A>(body: (o: {args: Args | undefined; select: Selection}) => Generator<any, A, any>) =>
-	<R>({ctx, input, select}: QueryArgs<Args, R>): Promise<A> =>
+	<Args, A, R = FateEnv>(
+		body: (o: {args: Args | undefined; select: Selection}) => Effect.gen.Return<A, never, R>,
+	) =>
+	({ctx, input, select}: QueryArgs<Args, R>): Promise<A> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({args: input.args, select})),
@@ -152,13 +161,13 @@ export const fateQuery =
  * `.patterns/fate-connections.md`).
  */
 export const fateList =
-	<Args, A>(
+	<Args, A, R = FateEnv>(
 		body: (o: {
 			args: Args | undefined;
 			select: Selection;
-		}) => Generator<any, ConnectionResult<A>, any>,
+		}) => Effect.gen.Return<ConnectionResult<A>, never, R>,
 	) =>
-	<R>({ctx, input, select}: QueryArgs<Args, R>): Promise<ConnectionResult<A>> =>
+	({ctx, input, select}: QueryArgs<Args, R>): Promise<ConnectionResult<A>> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({args: input.args, select})),
@@ -171,8 +180,10 @@ export const fateList =
  * service, ADR 0013).
  */
 export const fateMutation =
-	<Input, A>(body: (o: {input: Input; select: Selection}) => Generator<any, A, any>) =>
-	<R>({ctx, input, select}: MutationArgs<Input, R>): Promise<A> =>
+	<Input, A, R = FateEnv>(
+		body: (o: {input: Input; select: Selection}) => Effect.gen.Return<A, never, R>,
+	) =>
+	({ctx, input, select}: MutationArgs<Input, R>): Promise<A> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({input, select})),
@@ -202,15 +213,15 @@ export type SourceExecutor<R = WorkerFateServices> =
  */
 
 export const fateSource = <Item extends Record<string, unknown>, R = WorkerFateServices>(handlers: {
-	byId?: (id: string) => Generator<any, Item | null, any>;
-	byIds?: (ids: ReadonlyArray<string>) => Generator<any, ReadonlyArray<Item>, any>;
+	byId?: (id: string) => Effect.gen.Return<Item | null, never, R>;
+	byIds?: (ids: ReadonlyArray<string>) => Effect.gen.Return<ReadonlyArray<Item>, never, R>;
 	connection?: (page: {
 		args?: Record<string, unknown>;
 		cursor?: string;
 		direction: "forward" | "backward";
 		take: number;
 		skip?: number;
-	}) => Generator<any, ReadonlyArray<Item>, any>;
+	}) => Effect.gen.Return<ReadonlyArray<Item>, never, R>;
 }): SourceExecutor<R> => {
 	const {byId, byIds, connection} = handlers;
 	// Build as one literal with conditional spreads: under
