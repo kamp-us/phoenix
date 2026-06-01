@@ -76,33 +76,29 @@ This is the single place `runPromiseExit` appears in the codebase. Worker-level 
 
 fate has four callback shapes; each gets one wrapper. All take an Effect generator and return the plain-async function fate invokes.
 
-Each body's generator type is `Effect.gen.Return<A, never, R>` (i.e. `Generator<Effect<any, any, R>, A, any>`), which pins **only** the environment slot `R`. Resolver bodies `yield*` heterogeneous services, so the value/error slots stay `any` (normal, cast-free); pinning `R` lets `Effect.gen` infer the result Effect's env structurally as `R`, so the bridge needs **no `as` assertion**.
+Each body is a `Generator<any, A, any>` (resolver bodies `yield*` heterogeneous services and fail with arbitrary tagged errors, so the yield is `any`). The runtime env `R` is the **inner** returned function's generic — inferred from the `ctx` fate passes at invocation, so production gets `WorkerFateServices` and the isolation tests get their marker `R`, neither naming it. `genEffect` asserts the env to `R` (the bridge's single contained boundary cast — see below).
 
 ```ts
 type Selection = ReadonlyArray<string>;
 
 // Root query: ({ctx, input:{args}, select}) => Promise<Output>
 export const fateQuery =
-  <Args, A, R = FateEnv>(
-    body: (o: {args: Args | undefined; select: Selection}) => Effect.gen.Return<A, never, R>,
-  ) =>
-  ({ctx, input, select}: QueryArgs<Args, R>) =>
+  <Args, A>(body: (o: {args: Args | undefined; select: Selection}) => Generator<any, A, any>) =>
+  <R>({ctx, input, select}: QueryArgs<Args, R>) =>
     runEffect(ctx, genEffect(() => body({args: input.args, select})));
 
 // Root list: same, but returns a ConnectionResult (see fate-connections.md)
 export const fateList =
-  <Args, A, R = FateEnv>(
-    body: (o: {args: Args | undefined; select: Selection}) => Effect.gen.Return<ConnectionResult<A>, never, R>,
+  <Args, A>(
+    body: (o: {args: Args | undefined; select: Selection}) => Generator<any, ConnectionResult<A>, any>,
   ) =>
-  ({ctx, input, select}: QueryArgs<Args, R>) =>
+  <R>({ctx, input, select}: QueryArgs<Args, R>) =>
     runEffect(ctx, genEffect(() => body({args: input.args, select})));
 
 // Mutation: ({ctx, input, select}) => Promise<Output>
 export const fateMutation =
-  <Input, A, R = FateEnv>(
-    body: (o: {input: Input; select: Selection}) => Effect.gen.Return<A, never, R>,
-  ) =>
-  ({ctx, input, select}: MutationArgs<Input, R>) =>
+  <Input, A>(body: (o: {input: Input; select: Selection}) => Generator<any, A, any>) =>
+  <R>({ctx, input, select}: MutationArgs<Input, R>) =>
     runEffect(ctx, genEffect(() => body({input, select})));
 ```
 
@@ -131,14 +127,14 @@ type SourceExecutor<R = WorkerFateServices> =
   SourceRegistry<FateContext<R>> extends Map<unknown, infer V> ? V : never;
 
 export const fateSource = <Item extends Record<string, unknown>, R = WorkerFateServices>(handlers: {
-  byId?: (id: string) => Effect.gen.Return<Item | null, never, R>;
-  byIds?: (ids: ReadonlyArray<string>) => Effect.gen.Return<ReadonlyArray<Item>, never, R>;
+  byId?: (id: string) => Generator<any, Item | null, any>;
+  byIds?: (ids: ReadonlyArray<string>) => Generator<any, ReadonlyArray<Item>, any>;
   connection?: (page: {
     cursor?: string;
     direction: "forward" | "backward";
     take: number;
     skip?: number;
-  }) => Effect.gen.Return<ReadonlyArray<Item>, never, R>;
+  }) => Generator<any, ReadonlyArray<Item>, any>;
 }): SourceExecutor<R> => {
   const {byId, byIds, connection} = handlers;
   return {
@@ -152,7 +148,7 @@ export const fateSource = <Item extends Record<string, unknown>, R = WorkerFateS
 };
 ```
 
-`genEffect` is just `Effect.gen(body)` — **no `as`**. Because each body is typed `Effect.gen.Return<A, never, R>` (the yield's `R` slot pinned), `Effect.gen` infers the result env structurally as `R`; there is nothing to assert. fate never sees a generator (its contract is `(args) => Promise<Output>`), so the generator is our internal shape and we are free to type it precisely.
+`genEffect` is `Effect.gen(body) as Effect.Effect<A, unknown, R>` — the bridge's single contained boundary cast. The body is a `Generator<any, A, any>` whose `any` yield erases the env to `unknown`, so it is asserted to `R`. fate never sees a generator (its contract is `(args) => Promise<Output>`), so the cast is *reducible* in principle (pin `R` in the yield via `Effect.gen.Return`) — but `R` in the yield position is contravariant (a narrow-`R` body fails against the wider `FateEnv`) and the friction cascades into fate's `QueryDefinition<FateContext<WorkerFateServices>>` server constraint, so it is kept as one cast.
 
 See [fate-sources.md](./fate-sources.md) for how these executors wire into the `SourceResolver` and which service backs each type.
 
