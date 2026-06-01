@@ -10,9 +10,13 @@
 		"moduleResolution": "Bundler",
 		"jsx": "react-jsx",
 		"noEmit": true,
+		// The worker entry (`worker/index.ts`) uses explicit `.ts` import
+		// specifiers (required by the alchemy CLI's Node ESM loader). Allow them
+		// here too so the app project type-checks the shared `worker` tree.
+		"allowImportingTsExtensions": true,
 		"types": ["vite/client", "@cloudflare/workers-types", "node"],
 		"exactOptionalPropertyTypes": false
 	},
-	"include": ["src", ".fate/client.generated.ts", "worker", "worker-configuration.d.ts"],
+	"include": ["src", ".fate/client.generated.ts", "worker"],
 	"exclude": ["worker/index.ts", "worker/graphql", "worker/admin"]
 }

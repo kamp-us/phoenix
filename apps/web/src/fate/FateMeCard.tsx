@@ -13,7 +13,7 @@
  * value here comes over `/fate` (cookie-authenticated), proving the path.
  */
 import {useRequest, useView, view} from "react-fate";
-import type {User} from "../../worker/fate/views";
+import type {User} from "../../worker/features/fate/views";
 import {Screen} from "./Screen";
 
 const MeView = view<User>()({

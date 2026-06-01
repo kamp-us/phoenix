@@ -8,7 +8,7 @@
  * `username`/`displayName`/`image` directly off it.
  */
 import {useView, type ViewRef, view} from "react-fate";
-import type {Profile} from "../../../worker/fate/views";
+import type {Profile} from "../../../worker/features/fate/views";
 
 export const UserProfileHeaderView = view<Profile>()({
 	userId: true,

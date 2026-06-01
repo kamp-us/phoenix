@@ -4,6 +4,9 @@ node_modules
 .cache
 .wrangler
 
+# alchemy local state store (Alchemy.localState() — offline dev, per-machine)
+.alchemy
+
 dist
 build
 *.tsbuildinfo
@@ -11,7 +14,6 @@ build
 
 # Generated
 __generated__
-worker-configuration.d.ts
 schema.graphql.generated
 # fate Vite plugin codegen output (build-time; never committed)
 .fate
@@ -39,6 +41,9 @@ apps/web/scripts/**/*.js
 # Playwright test artifacts
 test-results
 playwright-report
+
+# Local scratch (uncommitted explorations)
+/.scratch/
 
 # OS
 .DS_Store

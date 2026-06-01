@@ -5,8 +5,11 @@
 	"description": "kamp.us — single Cloudflare Worker rebirth",
 	"packageManager": "pnpm@10.27.0",
 	"scripts": {
-		"dev": "turbo run dev",
+		"dev": "turbo run dev dev:worker",
+		"dev:web": "turbo run dev",
+		"dev:worker": "turbo run dev:worker",
 		"build": "turbo run build",
+		"deploy": "turbo run deploy",
 		"typecheck": "turbo run typecheck",
 		"test": "turbo run test",
 		"lint": "biome check .",
@@ -22,6 +25,6 @@
 		"typescript": "catalog:"
 	},
 	"volta": {
-		"node": "25.2.1"
+		"node": "26.2.0"
 	}
 }

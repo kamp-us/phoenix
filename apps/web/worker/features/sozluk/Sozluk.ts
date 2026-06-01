@@ -20,33 +20,33 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {forwardPage, keysetAfter} from "../../db/keyset";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle";
-import {excerpt as excerptText} from "../../shared/text";
-import type {VoteTargetNotFound} from "../vote/errors";
-import {Vote} from "../vote/Vote";
+import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
+import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {excerpt as excerptText} from "../text/index.ts";
+import type {VoteTargetNotFound} from "../vote/errors.ts";
+import {Vote} from "../vote/Vote.ts";
 import {
 	type DefinitionConnectionPage,
 	type DefinitionRow,
 	type TermPage,
 	toDefinitionRow,
-} from "./definition-row";
+} from "./definition-row.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
-} from "./errors";
+} from "./errors.ts";
 import {
 	type TermConnectionPage,
 	type TermSummaryRow,
 	termSummaryColumns,
 	toTermSummaryRow,
-} from "./term-summary";
+} from "./term-summary.ts";
 
-export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row";
-export type {TermConnectionPage, TermSummaryRow} from "./term-summary";
+export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row.ts";
+export type {TermConnectionPage, TermSummaryRow} from "./term-summary.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Domain constants                                                            */
@@ -62,6 +62,31 @@ export const DEFINITION_BODY_MAX = 10_000;
 const DEFINITION_EXCERPT_LEN = 140;
 
 const excerpt = (body: string): string => excerptText(body, DEFINITION_EXCERPT_LEN);
+
+/**
+ * Earliest `createdAt` across a definition slice (the term's `first_at`), or
+ * `null` when no row carries a timestamp. Callers supply the fallback.
+ */
+const earliestCreatedAt = (defs: ReadonlyArray<{createdAt: Date | null}>): Date | null =>
+	defs.reduce<Date | null>((acc, d) => {
+		const c = d.createdAt;
+		if (!c) return acc;
+		return acc && acc < c ? acc : c;
+	}, null);
+
+/**
+ * Latest `updatedAt ?? createdAt` across a definition slice (the term's
+ * `last_edit_at`), or `null` when no row carries a timestamp. Callers supply
+ * the fallback.
+ */
+const latestEditAt = (
+	defs: ReadonlyArray<{createdAt: Date | null; updatedAt: Date | null}>,
+): Date | null =>
+	defs.reduce<Date | null>((acc, d) => {
+		const u = d.updatedAt ?? d.createdAt;
+		if (!u) return acc;
+		return acc && acc > u ? acc : u;
+	}, null);
 
 /* -------------------------------------------------------------------------- */
 /* Read shapes                                                                 */
@@ -307,18 +332,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const top = defs[0];
 			const topExcerpt = top ? top.bodyExcerpt || excerpt(top.body) : null;
 			const firstLetter = slug.charAt(0).toLowerCase();
-			const firstAt =
-				defs.reduce<Date | null>((acc, d) => {
-					const c = d.createdAt;
-					if (!c) return acc;
-					return acc && acc < c ? acc : c;
-				}, null) ?? now;
-			const lastEditAt =
-				defs.reduce<Date | null>((acc, d) => {
-					const u = d.updatedAt ?? d.createdAt;
-					if (!u) return acc;
-					return acc && acc > u ? acc : u;
-				}, null) ?? now;
+			const firstAt = earliestCreatedAt(defs) ?? now;
+			const lastEditAt = latestEditAt(defs) ?? now;
 
 			const firstAtSec = Math.floor(firstAt.getTime() / 1000);
 			const lastActivitySec = Math.floor(now.getTime() / 1000);
@@ -408,22 +423,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.orderBy(desc(schema.definitionView.score), asc(schema.definitionView.createdAt)),
 			);
 
-			const firstAt =
-				defs.reduce<Date | null>((acc, d) => {
-					const c = d.createdAt;
-					if (!c) return acc;
-					return acc && acc < c ? acc : c;
-				}, null) ??
-				meta.firstAt ??
-				new Date(0);
-			const lastEdit =
-				defs.reduce<Date | null>((acc, d) => {
-					const u = d.updatedAt ?? d.createdAt;
-					if (!u) return acc;
-					return acc && acc > u ? acc : u;
-				}, null) ??
-				meta.lastEditAt ??
-				firstAt;
+			const firstAt = earliestCreatedAt(defs) ?? meta.firstAt ?? new Date(0);
+			const lastEdit = latestEditAt(defs) ?? meta.lastEditAt ?? firstAt;
 
 			return {
 				id: meta.slug,
@@ -443,32 +444,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
 				})),
 			} satisfies TermPage;
-		});
-
-		/**
-		 * Batch `user_vote` presence for a viewer over a set of definition ids.
-		 * One `WHERE user_id = ? AND target_kind = 'definition' AND target_id IN
-		 * (...)` read; returns the set of voted ids so callers can stamp `myVote`
-		 * without an N+1. Empty when there's no viewer or no ids.
-		 */
-		const readMyVotesBatch = Effect.fn("Sozluk.readMyVotesBatch")(function* (
-			viewerId: string | null | undefined,
-			definitionIds: ReadonlyArray<string>,
-		) {
-			if (!viewerId || definitionIds.length === 0) return new Set<string>();
-			const rows = yield* run((db) =>
-				db
-					.select({targetId: schema.userVote.targetId})
-					.from(schema.userVote)
-					.where(
-						and(
-							eq(schema.userVote.userId, viewerId),
-							eq(schema.userVote.targetKind, "definition"),
-							inArray(schema.userVote.targetId, [...definitionIds]),
-						),
-					),
-			);
-			return new Set(rows.map((r) => r.targetId));
 		});
 
 		const listDefinitionsKeyset = Effect.fn("Sozluk.listDefinitionsKeyset")(function* (
@@ -544,8 +519,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(first + 1),
 			);
 
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
+				"definition",
 				fetched.slice(0, first).map((d) => d.id),
 			);
 			const page = forwardPage(
@@ -575,8 +551,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						),
 					),
 			);
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
+				"definition",
 				fetched.map((d) => d.id),
 			);
 			return fetched.map((d) => toDefinitionRow(d, voted, viewerId));

@@ -1,71 +1,28 @@
 name: Deploy
 
+# Adapted from #19 (Can Sirin / @cansirin) — alchemy-provisioned CI/CD.
+
 on:
   push:
-    branches: [main, staging]
+    branches: [main]
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    types: [opened, reopened, synchronize, closed]
 
 concurrency:
-  group: deploy-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+# The stage name keys an isolated copy of the entire stack (worker + D1 + DOs).
+# Pull requests → `pr-<n>`; pushes to main (the only push trigger) → `prod`.
+env:
+  STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
 
 jobs:
-  deploy-production:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4.2.2
-
-      - uses: pnpm/action-setup@v4.1.0
-        with:
-          version: 10.27.0
-
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version: 25.2.1
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm --filter @phoenix/web build
-
-      - name: Deploy to production
-        run: pnpm --filter @phoenix/web exec wrangler deploy --config wrangler.jsonc --env production
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-  deploy-staging:
-    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4.2.2
-
-      - uses: pnpm/action-setup@v4.1.0
-        with:
-          version: 10.27.0
-
-      - uses: actions/setup-node@v4.4.0
-        with:
-          node-version: 25.2.1
-          cache: pnpm
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm --filter @phoenix/web build
-
-      - name: Deploy to staging
-        run: pnpm --filter @phoenix/web exec wrangler deploy --config wrangler.jsonc --env staging
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-  deploy-preview:
-    if: github.event_name == 'pull_request' && github.event.action != 'closed'
+  deploy:
+    if: github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
+      contents: read
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -75,39 +32,75 @@ jobs:
 
       - uses: actions/setup-node@v4.4.0
         with:
-          node-version: 25.2.1
+          node-version: 26.2.0
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
 
-      - run: pnpm --filter @phoenix/web build
+      # The SPA is a plain Vite build; the worker uploads `dist/client` via its
+      # `assets` prop. `alchemy deploy` does not drive Vite for phoenix's shape.
+      - name: Build SPA
+        run: pnpm --filter @phoenix/web build
 
-      - name: Deploy PR preview
-        id: deploy
-        run: |
-          pnpm --filter @phoenix/web exec wrangler deploy \
-            --config wrangler.jsonc \
-            --env test \
-            --name phoenix-pr-${{ github.event.pull_request.number }}
-          echo "url=https://phoenix-pr-${{ github.event.pull_request.number }}.${CF_SUBDOMAIN}.workers.dev" >> "$GITHUB_OUTPUT"
+      # `exec alchemy` forwards `--stage`/`--yes` to the alchemy CLI. A bare
+      # `pnpm --filter @phoenix/web deploy --stage …` makes *pnpm* eat the flags
+      # ("Unknown options: 'stage', 'yes'"). `--yes` skips the interactive plan
+      # approval (CI would otherwise hang); `--stage` selects the isolated copy.
+      # Creds + BETTER_AUTH_SECRET come from the secrets `stacks/github.ts` provisions.
+      - name: Deploy (stage ${{ env.STAGE }})
+        run: pnpm --filter @phoenix/web exec alchemy deploy --stage "$STAGE" --yes
         env:
+          CI: "true"
+          # `prod` closes the dev gates in `worker/config.ts` (magic-link token
+          # logging); ephemeral `pr-<n>` previews stay `development` for better-auth's
+          # dev-origin leniency and easier auth testing. (The old admin seed/importer
+          # routes are gone — see CLAUDE.md "Sözlük seed" — so dev mode no longer
+          # exposes those.)
+          ENVIRONMENT: ${{ env.STAGE == 'prod' && 'production' || 'development' }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          CF_SUBDOMAIN: ${{ vars.CF_WORKERS_SUBDOMAIN }}
+          ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
+          # The session-signing secret. `config.ts` reads it via
+          # `Config.redacted("BETTER_AUTH_SECRET")` → a `secret_text` binding the
+          # worker reads at runtime; the value must be present at deploy time.
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
 
-      - name: Comment preview URL
-        uses: marocchino/sticky-pull-request-comment@v2
-        with:
-          header: preview-url
-          message: |
-            **Preview:** ${{ steps.deploy.outputs.url }}
-
-  cleanup-preview:
+  cleanup:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
-      - name: Delete preview worker
-        run: npx wrangler delete --name phoenix-pr-${{ github.event.pull_request.number }} --force
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # STAGE is only ever `pr-<n>` in this job (it runs on closed PRs), but fail
+      # loudly rather than ever let a destroy reach the prod stage.
+      - name: Safety check — never destroy prod
+        run: |
+          if [ "$STAGE" = "prod" ]; then
+            echo "ERROR: refusing to destroy the prod stage in cleanup"
+            exit 1
+          fi
+
+      # Tears down the isolated preview stack (worker + D1 + DOs). `destroy` loads
+      # `alchemy.run.ts`, which builds the worker layer → needs BETTER_AUTH_SECRET
+      # (config.ts reads it `Effect.orDie`) just like the deploy.
+      - name: Destroy preview stage ${{ env.STAGE }}
+        run: pnpm --filter @phoenix/web exec alchemy destroy --stage "$STAGE" --yes
         env:
+          CI: "true"
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
+          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}

@@ -27,7 +27,7 @@
  * populated by *walking `roots`* (fate registers a source type only when it's
  * reached from a root). phoenix deliberately keeps `roots: {}` (every read is a
  * custom `queries`/`lists` resolver, which keeps the `fateServer` export type
- * nameable — TS2883, see `worker/fate/server.ts`), so `manifest.live` is empty
+ * nameable — TS2883, see `worker/features/fate/server.ts`), so `manifest.live` is empty
  * and the generated transport is built with `live: false`.
  *
  * Rather than add roots purely to flip a codegen flag (and re-break the export
@@ -69,6 +69,19 @@ interface LiveCapableTransport {
 	subscribeConnection?: unknown;
 }
 
+/**
+ * Reach the fate client's transport so we can graft the live methods onto it.
+ *
+ * fate's `FateClient` stores its transport as a `private readonly` field (it is
+ * deliberately not on the public type), so there is no typed accessor to reach
+ * it — this is fate's own runtime pattern of mutating the transport around
+ * `createClient`. We read it through `Reflect.get` (which yields `unknown`) and
+ * narrow to the minimal {@link LiveCapableTransport} shape we mutate. No
+ * `as unknown as` double-cast: `Reflect.get` already hands back `unknown`.
+ */
+const liveTransportOf = (client: object): LiveCapableTransport =>
+	Reflect.get(client, "transport") as LiveCapableTransport;
+
 /** A live-method pair that never opens a stream — for anonymous clients. */
 const noopLive = {
 	subscribeById: () => () => undefined,
@@ -94,7 +107,7 @@ export const createClient = ({authenticated}: {authenticated: boolean}) => {
 		onLiveError: (error) => console.error("[fate] live", error),
 	});
 
-	const transport = (client as unknown as {transport: LiveCapableTransport}).transport;
+	const transport = liveTransportOf(client);
 	if (authenticated) {
 		// Graft real live support (see the module comment). A `live: true` HTTP
 		// transport builds the native SSE `subscribeById`/`subscribeConnection`

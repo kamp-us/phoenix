@@ -2,7 +2,7 @@
  * Tagged errors raised by the Pano service layer.
  *
  * Wire-code contract — every tag in this file maps to a specific
- * `code` string via `worker/fate/errors.ts::encodeFateError`:
+ * `code` string via `worker/features/fate/errors.ts::encodeFateError`:
  *
  *   pano/PostNotFound                   → POST_NOT_FOUND
  *   pano/CommentNotFound                → COMMENT_NOT_FOUND

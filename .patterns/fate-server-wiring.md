@@ -1,94 +1,116 @@
 # Server wiring
 
-How the backend is assembled and mounted. The short answer: `createFateServer({context, roots, queries, lists, mutations, sources})` produces a server with plain `Request → Response` handlers; the Hono route owns the per-request `ManagedRuntime` — it builds it, hands it to fate as the adapter context, and disposes it when the request ends.
+How the backend is assembled and mounted. The short answer: `createFateServer({context, roots, queries, lists, mutations, sources, live})` produces a server with plain `Request → Response` handlers; the `POST /fate` route owns the per-request seam — it validates the session through the worker-level `Pasaport`, provides `Auth` for the request, captures the live service map with `Effect.context<FateEnv>()`, and hands it to fate through `adapterContext`. No per-request `ManagedRuntime` is built or disposed (ADR 0029).
 
-## The per-request runtime
+> This doc has been rewritten against the post-alchemy source under `apps/web/worker/features/fate/`. The earlier shape (`FateRuntime.make`, `sessionData` baked into a per-request runtime, Hono `try/finally` dispose) is gone — read [alchemy-runtime.md](./alchemy-runtime.md) and [alchemy-http-router.md](./alchemy-http-router.md) for the current runtime model.
 
-The runtime composes the feature layers over `Drizzle` over per-request values — the layer graph in [effect-layer-composition.md](./effect-layer-composition.md). It lives at `worker/fate/runtime.ts`:
+## Worker-level layers, built once
+
+The data plane is composed at worker init from `makeFateLayer(db, auth)` (`features/fate/layers.ts`) and provided onto the worker body. The result Layer is `Layer.Layer<WorkerFateServices>` — `Drizzle`, `Pasaport`, `Vote`, `Sozluk`, `Pano`, `Stats`, all resolved once per isolate. Per-request services (`Auth`, `HttpServerRequest`) are layered on top inside the `/fate` route, not here. See [effect-layer-composition.md](./effect-layer-composition.md) for the layer graph and [alchemy-runtime.md](./alchemy-runtime.md) for the worker-level/per-request split.
+
+## The `/fate` route is the per-request seam
+
+The route — `handleFate` in `features/fate/route.ts`, mounted via `HttpRouter.add("POST", "/fate", handleFate)` — does four things, in order:
+
+1. Reads the raw `Request` via `Cloudflare.Request` and the `ExecutionContext` via `Cloudflare.WorkerExecutionContext`.
+2. Validates the session through the worker-level `Pasaport` — `yield* Pasaport`, then `pasaport.validateSession(raw.headers)`. No throwaway runtime; this replaces the pre-alchemy `validateSessionCookie` helper.
+3. Sets up the per-request live publisher (the `AsyncLocalStorage` `livePublishContext`, see [fate-live-views.md](./fate-live-views.md)) over `executionCtx.waitUntil` so a mutation's `live.*` fan-out reaches the topic DO without blocking the response.
+4. Captures the live service map with `Effect.context<FateEnv>()` and hands it to fate as `adapterContext: {context, request}`. The captured `Context` carries the worker-level services plus the per-request `Auth` (provided just below) plus the upstream `HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides — so it's the full `FateEnv`.
 
 ```ts
-// worker/fate/runtime.ts
-export namespace FateRuntime {
-  export type Context =
-    | CloudflareEnv | RequestContext | Auth
-    | Drizzle | Pasaport | Vote | Sozluk | Pano | Stats;
-  export const make = (env: Env, request: Request, sessionData: SessionData) =>
-    ManagedRuntime.make(layer(env, request, sessionData));
-}
+// features/fate/route.ts (the shape, abridged)
+export const handleFate = Effect.gen(function* () {
+  const raw = yield* Cloudflare.Request;
+  const executionCtx = yield* Cloudflare.WorkerExecutionContext;
+  const pasaport = yield* Pasaport;
+  const session = yield* pasaport.validateSession(raw.headers);
+
+  const publisher = /* … executionCtx.waitUntil over liveTopics.publish … */;
+
+  const res = yield* Effect.gen(function* () {
+    const context = yield* Effect.context<FateEnv>();
+    return yield* Effect.promise(() =>
+      livePublishContext.run(publisher, () =>
+        fateServer.handleRequest(raw, {request: raw, context}),
+      ),
+    );
+  }).pipe(
+    Effect.provideService(Auth, {user: session?.user, session: session?.session}),
+  );
+
+  return HttpServerResponse.fromWeb(res);
+});
+
+export const fateRoute = HttpRouter.add("POST", "/fate", handleFate);
 ```
 
-`sessionData` is resolved once per request (validate the session, then build the runtime with it baked into the `Auth` layer), so resolvers read the caller with `yield* Auth.required`.
+`FateContext` (`features/fate/context.ts`) is just `{context: Context.Context<FateEnv>; request: Request}` — no `ManagedRuntime`, no `sessionData`. Session is read by resolvers as `yield* Auth.required`, not off the context.
 
-## The Hono route owns the runtime
+## The bridge runs each resolver with the captured map
 
-The route builds the runtime, passes it through `adapterContext`, and disposes it in `finally` via the Worker `ExecutionContext` so disposal doesn't block the response. fate's `context` factory just reads what the route built:
+`features/fate/effect.ts` is the only place an Effect is run. The helper family (`fateQuery`, `fateList`, `fateMutation`, `fateSource`) wraps generators into the plain-async functions fate expects, and `runEffect` discharges:
 
 ```ts
-// worker/fate/server.ts
-export const fateServer = createFateServer<FateContext>({
-  context: ({adapterContext}) => adapterContext,   // route supplies {runtime, request}
-  roots: Root,           // list/byId roots (from views.ts)
-  queries,               // {me, health, term, post, profile, landingStats, …} via fateQuery
-  lists,                 // {terms, posts} via fateList — see fate-connections.md
-  mutations,             // {"definition.add", …} via fateMutation — see fate-mutations.md
-  sources,               // hand-built Effect-backed SourceResolver — see fate-sources.md
-  live: liveBus,         // publish-only bus → LiveDO — see fate-live-views.md
+const runEffect = <A>(ctx: FateContext, effect: Effect.Effect<A, unknown, FateEnv>): Promise<A> =>
+  Effect.runPromiseExit(Effect.provide(effect, ctx.context)).then((exit) => {
+    if (Exit.isSuccess(exit)) return exit.value;
+    // … Cause.findError → encodeFateError → throw …
+  });
+```
+
+This is the single change to the bridge from the pre-alchemy shape: `ctx.runtime.runPromiseExit(effect)` became `Effect.runPromiseExit(Effect.provide(effect, ctx.context))`. The resolver's `R = never` after the provide, because the captured `Context` carries the full `FateEnv`. See [fate-effect-bridge.md](./fate-effect-bridge.md).
+
+## The fate server
+
+`fateServer` (`features/fate/server.ts`) is a long-lived `createFateServer` instance — there is nothing per-request about it. Its `context` factory just reads what the route supplied:
+
+```ts
+export const fateServer = createFateServer<FateContext, /* … */>({
+  context: ({adapterContext}) => {
+    if (!adapterContext) throw new Error("fate adapterContext missing — the /fate route must supply it.");
+    return adapterContext;
+  },
+  roots: {},        // empty on purpose — see comment in server.ts
+  queries,          // from queries.ts
+  lists,            // from lists.ts (see fate-connections.md)
+  mutations,        // sozluk + pano + pasaport (see fate-mutations.md)
+  sources,          // hand-built SourceResolver (see fate-sources.md)
+  live: liveBusConfig,  // publish-only bus → TopicDO (see fate-live-views.md)
 });
 ```
 
+`createFateServer`'s `handleRequest` operates on standard `Request` / `Response`, so it drops straight into an `HttpRouter.add` route (ADR 0027 / [alchemy-http-router.md](./alchemy-http-router.md)). `roots` stays empty because every root query is a `query` resolver — keeping `roots` empty also keeps `fateServer`'s exported type nameable (TS2883).
+
+## `runWorkerFirst` for `/fate` and `/fate/*`
+
+The alchemy worker serves the SPA from `assets` with `notFoundHandling: "single-page-application"`, so any path *not* listed in `assets.config.runWorkerFirst` is handed to the asset server first. The asset server answers `GET /fate` with the SPA shell (200) but rejects `POST /fate` with 405 — and the worker route never runs. `apps/web/worker/index.ts` lists `/fate` and `/fate/*` in `runWorkerFirst`:
+
 ```ts
-// worker/index.ts
-app.post("/fate", async (c) => {
-  const sessionData = await validateSession(c.env, c.req.raw);
-  const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
-  try {
-    return await fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime});
-  } finally {
-    c.executionCtx.waitUntil(runtime.dispose());
-  }
-});
+assets: {
+  directory: "./dist/client",
+  config: {
+    notFoundHandling: "single-page-application",
+    runWorkerFirst: ["/api/*", "/fate", "/fate/*"],
+  },
+},
 ```
 
-The fate routes sit in `worker/index.ts` alongside `/api/*`, `/api/auth/*`, `/agents/*`, and the dev-only `/api/admin/*` routes. `createFateServer`'s handlers operate on standard `Request`/`Response`, so they drop onto a Hono route directly.
-
-> **The route also needs a `run_worker_first` entry.** Mounting `app.post("/fate")` is not enough — `wrangler.jsonc` uses `assets.not_found_handling: "single-page-application"`, so any path *not* listed in `assets.run_worker_first` is handed to the **assets handler first**. The asset server answers `GET /fate` with the SPA shell (200) but rejects `POST /fate` with **405**, and the worker route is never reached. This ships to prod, not just dev. Add `/fate` (and `/fate/*` for the live route) to `run_worker_first`:
->
-> ```jsonc
-> "run_worker_first": ["/api/*", "/graphql", "/graphql/*", "/agents/*", "/fate", "/fate/*"]
-> ```
->
-> Integration tests using `SELF.fetch` invoke the worker entry directly and bypass the assets/route layer, so they pass without this entry — verify `POST /fate` in the running app, not only in tests.
-
-> **Why the route owns the runtime, not fate's `context`.** `context` has no symmetric teardown hook. Building the runtime in the route gives a `try/finally` to dispose it deterministically — one `ManagedRuntime` per request, disposed after the response, no leak.
+This ships to prod; integration tests using `SELF.fetch` bypass the asset layer, so they pass without this entry — verify `POST /fate` against the running worker, not only in tests.
 
 ## Live route
 
-`/fate/live` does **not** go through `fateServer.handleLiveRequest` — the SSE stream and fan-out live in the `LiveDO` Durable Object so they cross isolates. The route authenticates, then hands off to the DO:
-
-```ts
-app.all("/fate/live", async (c) => {
-  const session = await validateSession(c.env, c.req.raw); // session cookie (EventSource withCredentials)
-  if (!session) return c.text("unauthorized", 401);
-  const connectionId = new URL(c.req.raw.url).searchParams.get("connectionId")!;
-  return c.env.LIVE_DO.get(c.env.LIVE_DO.idFromName(`connection:${connectionId}`)).fetch(c.req.raw);
-});
-```
-
-No per-request `ManagedRuntime` is built here: the DO relays inline-resolved payloads published by mutations and does no database work. See [fate-live-views.md](./fate-live-views.md) for the DO design and `liveBus`.
+`/fate/live` does **not** go through `fateServer.handleLiveRequest`. The SSE stream and fan-out live in the unified `LiveDO` Durable Object so they cross isolates. The route (`features/fate-live/route.ts`) authenticates through `Pasaport` and hands the request off to a connection-role `LiveDO` instance via `LiveConnections.open(connectionId, request)` — the DO's `fetch` opens the SSE stream, and a subscribe control message registers it with the matching `topic:` instances. No per-request runtime work happens in the route. See [fate-live-views.md](./fate-live-views.md) for the protocol and [alchemy-durable-objects.md](./alchemy-durable-objects.md) for the unified DO pattern ([ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md)).
 
 ## Codegen
 
-The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — there is no hand-run `fate generate` step and nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. The plugin lives in `vite.config.ts`. See [ADR 0022](../.decisions/0022-server-types-single-source-of-truth.md).
-
-## The admin runtime stays separate
-
-The admin runtime (`worker/admin/runtime.ts`, [ADR 0012](../.decisions/0012-admin-parallel-services.md)) is independent: the dev-only `/api/admin/*` routes use `AdminRuntime.make(env)` directly. fate owns only the request runtime. See [effect-layer-composition.md](./effect-layer-composition.md).
+The **fate Vite plugin** generates the client wiring (the `react-fate/client` module) at build time from the server's exported types and manifest — no hand-run `fate generate`, nothing to commit. The server is the single source of truth for types: the client imports `Entity<>` types (type-only) from `worker/features/fate/views.ts`, and there is no schema artifact or SDL fetch step to keep in sync. The plugin lives in `vite.config.ts`. See [ADR 0022](../.decisions/0022-server-types-single-source-of-truth.md).
 
 ## See also
 
-- [fate-effect-bridge.md](./fate-effect-bridge.md) — `FateContext` and the helpers `queries`/`mutations` use
+- [fate-effect-bridge.md](./fate-effect-bridge.md) — `FateContext`, the bridge helpers, error mapping
+- [alchemy-runtime.md](./alchemy-runtime.md) — the worker-level / per-request layer split this doc is built on
+- [alchemy-http-router.md](./alchemy-http-router.md) — where `Auth` is provided per route
+- [effect-layer-composition.md](./effect-layer-composition.md) — the layer graph, provided at worker scope
 - [fate-sources.md](./fate-sources.md) — the `sources` resolver
-- [fate-data-views.md](./fate-data-views.md) — the `roots`/`Root` map
-- [effect-layer-composition.md](./effect-layer-composition.md) — the runtime layer graph
-- [ADR 0012](../.decisions/0012-admin-parallel-services.md) — the separate admin runtime
-- void reference (in the [fate](https://github.com/usirin/fate) repo): `example/void/src/fate/server.ts`, docs `docs/guide/server-integration.md`
+- [fate-data-views.md](./fate-data-views.md) — the `roots`/`Root` map (declared in `views.ts`)
+- [ADR 0029](../.decisions/0029-worker-runtime-servicemap.md) — supersedes ADR 0017 (the old "Hono route owns the runtime" shape this doc used to describe)

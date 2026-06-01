@@ -9,7 +9,7 @@
  */
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
-import type {Term} from "../../../worker/fate/views";
+import type {Term} from "../../../worker/features/fate/views";
 
 /** The fields a term row reads (union of both column variants). */
 export const TermRowView = view<Term>()({

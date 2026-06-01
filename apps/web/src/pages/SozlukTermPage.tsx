@@ -23,7 +23,7 @@
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useNavigate, useParams} from "react-router";
-import type {Term} from "../../worker/fate/views";
+import type {Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";

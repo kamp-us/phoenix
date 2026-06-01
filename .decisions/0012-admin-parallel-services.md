@@ -1,12 +1,23 @@
 ---
 id: 0012
 title: Admin operations as parallel `<Feature>Admin` services with a separate runtime
-status: accepted
+status: retired
 date: 2026-05-17
 tags: [backend, effect, admin, architecture]
 ---
 
 # 0012 — Admin operations as parallel `<Feature>Admin` services with a separate runtime
+
+> **Retired (PR #12, 2026-05):** the admin parallel-services split this ADR
+> introduced was removed with the `ENVIRONMENT`-gated admin HTTP surface — the
+> `/api/admin/*` seeder routes, the `AdminAuth` gate, the
+> `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` services, and the `adminAllowed`
+> (`ENVIRONMENT === "development"`) predicate. Gating destructive ops (`/clear`
+> wipes all terms) behind a single mutable `ENVIRONMENT` string is fail-open: a
+> privileged op doesn't belong as a runtime-gated route on the public worker. The
+> seeders were throwaway data-population; sözlük/pano persist via Drizzle+D1, so
+> nothing here is load-bearing for the runtime. Future seeding is a direct-D1
+> script, not a framework concern. Kept for historical record.
 
 ## Context
 
@@ -38,7 +49,9 @@ Admin routes run against a **separate `ManagedRuntime`** wired in `worker/admin/
 - All `<Feature>Admin` services
 - `CloudflareEnv`
 
-It does **not** provide: `Auth` (GraphQL user session), `RequestContext`, or any resolver-facing feature service. Resolver-facing services are unavailable to admin routes; admin services are unavailable to resolvers.
+It does **not** provide: `Auth` (the fate user session), `HttpServerRequest`, or any resolver-facing feature service. Resolver-facing services are unavailable to admin routes; admin services are unavailable to resolvers.
+
+> Note (post-ADR-0029): the admin layer set runs over the same worker as the request layer set, not as a second `ManagedRuntime`; the `/api/admin/*` typed-JSON groups discharge `AdminAuth` (and the admin services) via `HttpRouter.provideRequest` at the app boundary (`http/app.ts`). The split between the two service surfaces — `Sozluk`/`Pano`/`Pasaport` vs `SozlukAdmin`/`PanoAdmin`/`PasaportAdmin` — and `AdminAuth.required` as the gate are unchanged.
 
 **Auth seam:** `AdminAuth` is a `Context.Service<AdminAuth, {allowed: boolean}>` with a `static readonly required` that fails with `AdminForbidden` if `allowed === false`. The initial `AdminAuthLive` derives `allowed` from `env.ENVIRONMENT === "development"`. Future hardening (signed tokens, allow-lists, audit) lands inside `AdminAuthLive` without touching call sites. The pattern mirrors `Auth.required` from the GraphQL runtime.
 
@@ -58,7 +71,7 @@ app.post("/api/admin/sozluk/upsert-term", async (c) => {
 
 **Easier:**
 - Resolver services stay narrow — `Sozluk` doesn't include `seedTerm`. Resolver typings can't accidentally yield admin-only operations.
-- Admin auth is a single chokepoint. Future tightening (real auth, audit logging, rate limits) lands in one file (`services/AdminAuth.ts`).
+- Admin auth is a single chokepoint. Future tightening (real auth, audit logging, rate limits) lands in one file (`http/admin-auth.ts`).
 - Admin services can grow operations that don't fit the user-facing model (bulk imports, schema migrations, data quality jobs) without polluting the resolver surface.
 
 **Harder / costlier:**

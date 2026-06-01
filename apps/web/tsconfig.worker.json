@@ -8,7 +8,28 @@
 		"module": "ESNext",
 		"moduleResolution": "Bundler",
 		"noEmit": true,
-		"types": ["@cloudflare/workers-types", "node"]
+		// The alchemy stack (`alchemy.run.ts`) is loaded directly by Node's ESM
+		// loader, which requires explicit `.ts` import specifiers; allow them here.
+		"allowImportingTsExtensions": true,
+		// `vite/client` types are included for `import.meta.glob` — used by
+		// `features/fate-live/topic-do.ts` to load Effect SQL migrations as bundled dynamic
+		// imports. Vite resolves the glob at build time; the worker bundle ships
+		// each migration module statically.
+		"types": ["@cloudflare/workers-types", "node", "vite/client"]
 	},
-	"include": ["worker", "worker-configuration.d.ts", "src/lib/mutationErrorCodes.ts"]
+	"include": [
+		"worker",
+		"src/lib/mutationErrorCodes.ts",
+		"alchemy.run.ts",
+		// The CI-credential stack (`stacks/github.ts`) — a Node-ESM alchemy entry
+		// like `alchemy.run.ts`, so it shares the same `.ts`-import settings.
+		"stacks",
+		// The black-box integration suite (Vitest node pool → HTTP against the
+		// deployed worker) belongs to the worker project: it needs the same `.ts`
+		// import specifiers + workers-runtime globals (`fetch`/`Response`/
+		// `ReadableStream`/`TextDecoder`) and imports the stack (`alchemy.run.ts`)
+		// in its global-setup. Without this, `pnpm typecheck` skipped these files
+		// entirely and the editor flagged the `.ts` imports (TS5097).
+		"tests/integration"
+	]
 }

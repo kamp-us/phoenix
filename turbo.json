@@ -7,6 +7,14 @@
 			"cache": false,
 			"persistent": true
 		},
+		"dev:worker": {
+			"cache": false,
+			"persistent": true
+		},
+		"deploy": {
+			"dependsOn": ["^build"],
+			"cache": false
+		},
 		"build": {
 			"dependsOn": ["^build"],
 			"outputs": ["dist", "*.tsbuildinfo", "build"],
@@ -18,7 +26,8 @@
 		},
 		"test": {
 			"dependsOn": ["^build"],
-			"cache": true
+			"cache": true,
+			"passThroughEnv": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "ALCHEMY_PASSWORD"]
 		},
 		"lint": {
 			"dependsOn": ["^build"],

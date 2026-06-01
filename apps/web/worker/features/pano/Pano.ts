@@ -23,12 +23,12 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {forwardPage, keysetAfter} from "../../db/keyset";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../services/Drizzle";
-import {excerpt as excerptText} from "../../shared/text";
-import type {VoteTargetNotFound} from "../vote/errors";
-import {Vote} from "../vote/Vote";
+import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
+import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {excerpt as excerptText} from "../text/index.ts";
+import type {VoteTargetNotFound} from "../vote/errors.ts";
+import {Vote} from "../vote/Vote.ts";
 import {
 	CommentNotFound,
 	CommentValidation,
@@ -36,7 +36,7 @@ import {
 	PostValidation,
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
-} from "./errors";
+} from "./errors.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Domain constants                                                            */
@@ -102,7 +102,7 @@ function parseTags(csv: string): Array<{kind: string; label: string}> {
 		.split(",")
 		.map((s) => s.trim())
 		.filter(Boolean)
-		.map((kind) => ({kind, label: TAG_LABELS[kind] ?? kind}));
+		.map((kind) => ({kind, label: tagLabel(kind)}));
 }
 
 /* -------------------------------------------------------------------------- */
@@ -354,10 +354,6 @@ export class Pano extends Context.Service<
 			host?: string | null;
 		}) => Effect.Effect<PostConnectionPage, DrizzleError>;
 
-		readonly getCommentRow: (
-			commentId: string,
-		) => Effect.Effect<typeof schema.commentView.$inferSelect | null, DrizzleError>;
-
 		/**
 		 * DB-keyset page over a post's comments in chronological-asc order
 		 * `(created_at asc, id asc)`, cursor = comment id. A bounded
@@ -518,34 +514,6 @@ export const PanoLive = Layer.effect(Pano)(
 		};
 
 		/**
-		 * One `user_vote` read stamping `myVote` for a whole batch of post or
-		 * comment ids. Returns the set of target ids the viewer has upvoted; the
-		 * fate read paths map that to the `1 | null` flag for the
-		 * `Post.myVote` / `Comment.myVote` view fields — one batched read instead
-		 * of a per-row N+1. Signed-out viewers short-circuit without a read.
-		 */
-		const readMyVotesBatch = Effect.fn("Pano.readMyVotesBatch")(function* (
-			viewerId: string | null | undefined,
-			targetKind: "post" | "comment",
-			targetIds: ReadonlyArray<string>,
-		) {
-			if (!viewerId || targetIds.length === 0) return new Set<string>();
-			const rows = yield* run((db) =>
-				db
-					.select({targetId: schema.userVote.targetId})
-					.from(schema.userVote)
-					.where(
-						and(
-							eq(schema.userVote.userId, viewerId),
-							eq(schema.userVote.targetKind, targetKind),
-							inArray(schema.userVote.targetId, [...targetIds]),
-						),
-					),
-			);
-			return new Set(rows.map((r) => r.targetId));
-		});
-
-		/**
 		 * Refresh `pano_stats` totals. Three small COUNT queries plus one
 		 * upsert. Cheap; runs after every write that could affect totals.
 		 */
@@ -655,13 +623,6 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 			if (!meta) return null;
 			return rowToPostPage(meta);
-		});
-
-		const getCommentRow = Effect.fn("Pano.getCommentRow")(function* (commentId: string) {
-			const row = yield* run((db) =>
-				db.query.commentView.findFirst({where: eq(schema.commentView.id, commentId)}),
-			);
-			return row ?? null;
 		});
 
 		const listPostsConnection = Effect.fn("Pano.listPostsConnection")(function* (
@@ -861,7 +822,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.limit(first + 1),
 			);
 
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
 				"comment",
 				fetched.slice(0, first).map((c) => c.id),
@@ -893,7 +854,7 @@ export const PanoLive = Layer.effect(Pano)(
 						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.deletedAt)),
 					),
 			);
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
 				"post",
 				fetched.map((p) => p.id),
@@ -930,7 +891,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.from(schema.commentView)
 					.where(inArray(schema.commentView.id, [...ids])),
 			);
-			const voted = yield* readMyVotesBatch(
+			const voted = yield* voteSvc.readMine(
 				viewerId,
 				"comment",
 				fetched.map((c) => c.id),
@@ -1641,7 +1602,6 @@ export const PanoLive = Layer.effect(Pano)(
 			getPostsByIds,
 			getCommentsByIds,
 			lookupCommentPostId,
-			getCommentRow,
 			submitPost,
 			editPost,
 			deletePost,

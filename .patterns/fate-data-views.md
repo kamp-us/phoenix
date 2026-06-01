@@ -7,7 +7,7 @@ Data views are pure declarations — no Effect, no DB. They describe shape and s
 ## The shape
 
 ```ts
-// worker/fate/views.ts
+// worker/features/fate/views.ts
 import {computed, count, dataView, field, list, type Entity} from "@nkzw/fate/server";
 import type {TermSummaryRow, DefinitionRow} from "../features/sozluk/Sozluk";
 
@@ -61,7 +61,7 @@ The client sends a flat list of dotted paths (`["id", "title", "author.username"
 
 ## The local type-derivation helpers (why phoenix doesn't use `Entity<>` directly)
 
-The shape above is the idealized fate API. phoenix's `worker/fate/views.ts` can't use `Entity<typeof view, …>` directly because fate boxes its two type-derivation paths against each other across a module boundary:
+The shape above is the idealized fate API. phoenix's `worker/features/fate/views.ts` can't use `Entity<typeof view, …>` directly because fate boxes its two type-derivation paths against each other across a module boundary:
 
 - **`dataView()`'s inferred return carries an internal symbol** (`dataViewFieldsKey`) that TypeScript can't *name* across a module boundary — an **exported** view must be annotated or `tsgo`'s declaration-nameability check trips **TS2883/TS4023**.
 - **The only portable annotation is `SourceDefinition<Item>["view"]`**, but that erases the field map — so `Entity<typeof view, …>` over an annotated view resolves to an empty shape. Neither annotated nor un-annotated exported views yield a usable `Entity<>`.

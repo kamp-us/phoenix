@@ -95,16 +95,35 @@ export interface ForwardPage<TRow> {
  * from whether it was present, and derives `endCursor` from the last surviving
  * row via `cursorOf`. `first` is clamped to at least 1 defensively.
  */
-export function forwardPage<TFetched, TRow = TFetched>(
+// Identity-default overload: when no `mapRow` is given the fetched row IS the
+// page row, so `TRow` collapses to `TFetched` and the default identity is
+// well-typed (no cast). The two-type-param overload is for callers that map
+// `TFetched → TRow` and always pass `mapRow` explicitly.
+export function forwardPage<TRow>(
+	fetched: ReadonlyArray<TRow>,
+	first: number,
+	cursorOf: (row: TRow) => string,
+): ForwardPage<TRow>;
+export function forwardPage<TFetched, TRow>(
 	fetched: ReadonlyArray<TFetched>,
 	first: number,
 	cursorOf: (row: TRow) => string,
-	mapRow: (row: TFetched) => TRow = (row) => row as unknown as TRow,
+	mapRow: (row: TFetched) => TRow,
+): ForwardPage<TRow>;
+export function forwardPage<TRow>(
+	fetched: ReadonlyArray<unknown>,
+	first: number,
+	cursorOf: (row: TRow) => string,
+	mapRow?: (row: never) => TRow,
 ): ForwardPage<TRow> {
 	const limit = Math.max(1, first);
 	const hasNextPage = fetched.length > limit;
 	const slicedSource = hasNextPage ? fetched.slice(0, limit) : fetched;
-	const rows = slicedSource.map(mapRow);
+	// When `mapRow` is omitted (the identity-default overload), `TFetched` IS
+	// `TRow`, so the fetched rows are already page rows — map them through as-is.
+	// When given, it converts each `TFetched` to a `TRow`. Both overloads above
+	// keep this sound; the impl signature is intentionally broad (`unknown` in).
+	const rows: TRow[] = slicedSource.map((row) => (mapRow ? mapRow(row as never) : (row as TRow)));
 	const last = rows.at(-1) ?? null;
 	return {
 		rows,

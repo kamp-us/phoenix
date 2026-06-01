@@ -159,7 +159,7 @@ What this does:
 3. Typed failure → find it in the cause tree, route through `encodeMutationError` (which switches on `_tag`).
 4. Defect → squash the cause to a single error, route through the same encoder.
 
-If you find yourself writing similar boundary-handling code elsewhere (e.g., admin routes), use this as the template.
+If you find yourself writing similar boundary-handling code elsewhere (e.g., a typed-JSON `HttpApi` group), use this as the template.
 
 ## Anti-patterns
 

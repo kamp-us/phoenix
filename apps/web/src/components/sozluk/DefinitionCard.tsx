@@ -24,7 +24,7 @@
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
-import type {Definition} from "../../../worker/fate/views";
+import type {Definition} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";

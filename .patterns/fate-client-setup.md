@@ -4,24 +4,24 @@ How the SPA talks to the backend. The short answer: a generated `react-fate/clie
 
 ## The generated client
 
-The **fate Vite plugin** (`react-fate/vite`, `transport: "native"` — phoenix runs fate's native protocol on Hono, no tRPC adapter) generates the `react-fate/client` module at build time from the server's exported types and manifest: the typed `mutations`/`roots` tables, the normalization `types` array, and `createFateClient`. There is no hand-run codegen step. App code imports from `react-fate` (hooks, `view`) and `react-fate/client` (the configured client). The generated module imports `Entity<>` types **type-only** from the server schema module — the server is the single source of truth for types, and there is no SDL or committed generated-artifact directory to keep in sync.
+The **fate Vite plugin** (`react-fate/vite`, `transport: "native"` — phoenix runs fate's native protocol over `HttpRouter` (ADR 0027), no tRPC adapter) generates the `react-fate/client` module at build time from the server's exported types and manifest: the typed `mutations`/`roots` tables, the normalization `types` array, and `createFateClient`. There is no hand-run codegen step. App code imports from `react-fate` (hooks, `view`) and `react-fate/client` (the configured client). The generated module imports `Entity<>` types **type-only** from the server schema module — the server is the single source of truth for types, and there is no SDL or committed generated-artifact directory to keep in sync.
 
 ```ts
 // vite.config.ts
 import {fate} from "react-fate/vite";
 
 fate({
-  module: "./worker/fate/schema.ts", // exports the data views + `fateServer` + entity types + `Root`
+  module: "./worker/features/fate/schema.ts", // exports the data views + `fateServer` + entity types + `Root`
   transport: "native",
   tsconfigFile: false,               // we own `.fate/`'s tsconfig story (see "Typecheck wiring")
 });
 ```
 
-The plugin reads its `module` (a barrel re-exporting `worker/fate/views.ts` + `{fateServer}` from `worker/fate/server.ts`) via a Node Vite runner at build time. The output lands in `.fate/client.generated.ts` (**gitignored — never committed**) and carries a `declare module "react-fate/client"` augmentation typed from the server.
+The plugin reads its `module` (a barrel re-exporting `worker/features/fate/views.ts` + `{fateServer}` from `worker/features/fate/server.ts`) via a Node Vite runner at build time. The output lands in `.fate/client.generated.ts` (**gitignored — never committed**) and carries a `declare module "react-fate/client"` augmentation typed from the server.
 
 **Client-exposed roots are declared by a `Root` value exported from `views.ts`** (fate's `viewer` pattern). A view-based `Root` entry (e.g. `me: userDataView`) becomes a typed client root the plugin emits; at runtime it resolves through the matching `queries.<name>` resolver. `Root` is **not** passed to `createFateServer` (`roots: {}` stays empty there) — a non-empty `Roots` generic would surface fate's internal `DataView` symbol (TS2883). byId roots are generated from the source registry; only custom-resolver roots need a `Root` entry.
 
-> **Codegen runner can't see `cloudflare:workers`.** The server module graph transitively imports `cloudflare:workers` (better-auth wiring), which only exists in workerd, so the plugin's Node runner can't resolve it. A `resolve.alias` with a `customResolver` scoped to the `inline` environment (Vite's `runnerImport` env name) swaps in a load-time-safe stub (`worker/fate/codegen-stubs/cloudflare-workers.ts`) for the runner only — every other environment (SPA build, the cloudflare worker build) returns `null` and resolves the real built-in.
+> **Codegen runner can't see `cloudflare:workers`.** The server module graph transitively imports `cloudflare:workers` (better-auth wiring), which only exists in workerd, so the plugin's Node runner can't resolve it. A `resolve.alias` with a `customResolver` scoped to the `inline` environment (Vite's `runnerImport` env name) swaps in a load-time-safe stub (`worker/features/fate/codegen-stubs/cloudflare-workers.ts`) for the runner only — every other environment (SPA build, the cloudflare worker build) returns `null` and resolves the real built-in.
 
 ## Creating the client
 

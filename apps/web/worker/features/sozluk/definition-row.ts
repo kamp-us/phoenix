@@ -6,7 +6,7 @@
  * Kept beside `term-summary.ts` so the two definition/term row shapers live in
  * one place each and the read methods can't drift on field mapping.
  */
-import type * as schema from "../../db/drizzle/schema";
+import type * as schema from "../../db/drizzle/schema.ts";
 
 export interface DefinitionRow {
 	id: string;

@@ -32,7 +32,7 @@ Also considered and deferred: replacing drizzle entirely with `@effect/sql-d1`. 
 
 Errors from both paths surface as `DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{cause: unknown}>`. The resolver wrapper maps `_tag: "@phoenix/Drizzle/Error"` to `INTERNAL_SERVER_ERROR`.
 
-The D1 binding (`env.PHOENIX_DB`) is referenced exactly once — inside `services/Drizzle.ts`. Feature services never touch it directly.
+The D1 binding (`env.PHOENIX_DB`) is referenced exactly once — inside `db/Drizzle.ts`. Feature services never touch it directly.
 
 **House rule:** `Effect.tryPromise` always uses object notation (`{try, catch}`) with an explicit tagged-error catch. Single-arg form (`Effect.tryPromise(() => p)`) is treated as if it were `Effect.promise` — banned.
 
@@ -51,7 +51,7 @@ The D1 binding (`env.PHOENIX_DB`) is referenced exactly once — inside `service
 **Now banned:**
 - `Effect.tryPromise(() => p)` (single-arg) — use the object form with explicit `catch`.
 - `Effect.promise(...)` — assumes the promise never rejects; defects bypass the `E` channel.
-- Direct `env.PHOENIX_DB.*` calls outside `services/Drizzle.ts`.
+- Direct `env.PHOENIX_DB.*` calls outside `db/Drizzle.ts`.
 - Inline `Effect.tryPromise(() => db.foo())` in feature services — use `Drizzle.run` for the single-call case.
 - Prototype-patching drizzle's `QueryPromise`. The technique was considered and rejected for agent-written code.
 

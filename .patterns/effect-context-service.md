@@ -1,10 +1,22 @@
 # Context.Service pattern
 
-How to define and wire services in phoenix's worker, following the conventions used in `~/code/github.com/usirin/effect-smol/` (the canonical effect codebase).
+How to define and wire services in phoenix's worker.
+
+> [!IMPORTANT]
+> **phoenix is on Effect v4** (`effect@4.0.0-beta.*` — the effect-smol line). Every idiom in this doc is v4. Effect **v3** is what most training data and blog posts show, and several of its core idioms are *wrong* here. The one that bites hardest:
+>
+> | concept | Effect **v3** — DO NOT use | Effect **v4** — phoenix |
+> |---|---|---|
+> | define a service | `class S extends Context.Tag("S")<S, Shape>() {}` | `class S extends Context.Service<S, Shape>()("S") {}` |
+> | the bare tag helper | `Context.Tag(...)` / `Context.GenericTag(...)` | `Context.Service<Self, Shape>()(id)` |
+> | the other service helper | `Effect.Service<S>()("S", { … })` | not used — `Context.Service` only |
+> | module imports | `from "effect"` for everything | many things moved: `effect/unstable/http/*`, `effect/Config`, etc. |
+>
+> Note the **argument order**: v4 is `Context.Service<Self, Shape>()(id)` — type args first, then `()`, then the string id. v3's `Context.Tag(id)<Self, Shape>()` puts the id first. If you typed `Context.Tag`, you're writing v3 — stop and use `Context.Service`. When muscle memory disagrees with this table, **the codebase is the spec**: see `worker/features/vote/Vote.ts`, `worker/db/Drizzle.ts`, `worker/features/pasaport/Auth.ts`.
 
 ## Defining a service — class form, always
 
-The class form is the canonical pattern in effect-smol. Use it for every service, even one-field ones.
+The class form is the canonical v4 pattern. Use it for every service, even one-field ones.
 
 ```ts
 import {Context} from "effect";
@@ -50,7 +62,7 @@ class UserRepo extends Context.Service<
 
 ## Static helpers on the service class
 
-Effect-smol attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/services/Auth.ts` — the smallest, cleanest example of `static readonly required`. `worker/services/AdminAuth.ts` mirrors the same shape for admin routes (yields `AdminForbidden` instead of `Unauthorized`).
+Effect v4 attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/features/pasaport/Auth.ts` — the smallest, cleanest example of `static readonly required`.
 
 Call site: `const {user} = yield* Auth.required;`
 
@@ -64,7 +76,7 @@ Use this when the same gen-block recurs at five call sites. Don't pre-derive eve
 export const layer: Layer.Layer<Path> = Layer.succeed(Path)(posixImpl);
 ```
 
-Use when constructing the service has zero deps and zero effects — a plain object literal of functions. `worker/services/CloudflareEnv.ts` and `worker/services/RequestContext.ts` are the per-request examples: the runtime builds them with `Layer.succeed(CloudflareEnv, env)` / `Layer.succeed(RequestContext, {...})` at the start of each request.
+Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `Auth` (`worker/features/pasaport/Auth.ts`) is the canonical example: the `/fate` route provides it with `Effect.provideService(Auth, {user, session})` after validating the session, and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) carries the raw `Request` for free — no hand-rolled `CloudflareEnv`/`RequestContext` Tags. For worker config (`ENVIRONMENT`, secrets) read `AppConfig` (an `effect/Config` surface; `config.ts`), not a raw-env Tag.
 
 ### `Layer.effect` — service built inside an Effect
 
@@ -80,7 +92,7 @@ export const layer = Layer.effect(UserRepo)(
 );
 ```
 
-Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided. `worker/services/Drizzle.ts`'s `DrizzleLive` is the canonical phoenix example — it yields `CloudflareEnv`, constructs the drizzle builder once, and returns a `DrizzleAccess` record.
+Use when the service needs other services from the context (here, `Database`). The resulting layer carries `R = Database` until that's provided. `worker/db/Drizzle.ts`'s `makeDrizzleLayer` is the canonical phoenix example — the worker init builds the drizzle builder once from the bound D1 (via `Cloudflare.D1Connection.bind(PhoenixDb).raw`) and hands it to `makeDrizzleLayer(db)`, which returns a `DrizzleAccess` record.
 
 ### `Layer.effectContext` — providing multiple tags from one construction
 
@@ -103,8 +115,8 @@ Inside `Effect.gen`:
 
 ```ts
 Effect.gen(function*() {
-  const env = yield* CloudflareEnv;
-  const auth = yield* Auth;
+  const auth = yield* Auth;          // per-request capability
+  const environment = yield* AppConfig;  // worker config (effect/Config, not a raw-env Tag)
   // ...
 });
 ```
@@ -121,9 +133,8 @@ Prefer gen — `yield* Service` reads identically to `const service = ...`.
 
 ```ts
 const program = handler.pipe(
-  Effect.provideService(CloudflareEnv, env),
-  Effect.provideService(Auth, {user, session}),
-  Effect.provide(UserRepo.layer),     // layer, when construction is non-trivial
+  Effect.provideService(Auth, {user, session}),   // ready-made per-request value
+  Effect.provide(UserRepo.layer),                 // layer, when construction is non-trivial
 );
 ```
 
@@ -150,6 +161,55 @@ const transform = Effect.fnUntraced(function*(row: Row) {
   // ...
 });
 ```
+
+## Wrapping a non-Effect client — the `use` pattern
+
+When a service wraps a **non-Effect client** (a synchronous fluent object, a
+Promise-based SDK), don't expose the raw client and let callers `Effect.try` at
+every call site. Expose a `use` method that runs a caller-supplied function
+against the client *inside* the Effect, surfacing a typed error. This is
+effect-smol's `NodeRedis.use` / `BunRedis.use` shape, adapted per client.
+
+phoenix's first wrapper is `LiveBus` (ADR
+[0039](../.decisions/0039-livebus-context-service.md),
+`worker/features/fate-live/event-bus.ts`) — a *synchronous* publish-only client
+acquired in mutation resolvers:
+
+```ts
+export class LiveBus extends Context.Service<
+  LiveBus,
+  {
+    readonly use: <A>(f: (bus: PhoenixLiveEventBus) => A) => Effect.Effect<A, LivePublishError>;
+    readonly useIgnore: (f: (bus: PhoenixLiveEventBus) => unknown) => Effect.Effect<void, never>;
+  }
+>()("@phoenix/fate-live/LiveBus") {}
+```
+
+Rules:
+
+- **`use` surfaces a typed error.** Sync client → `Effect.try`; Promise client →
+  `Effect.tryPromise`. The `catch` maps the thrown cause into a
+  `Data.TaggedError` (`LivePublishError`). This is the *only* method the
+  precedent (NodeRedis/BunRedis) keeps — swallowing is normally the caller's job
+  (`use(f).pipe(Effect.ignore)`).
+- **A swallow sibling is a footgun-safety exception, not the norm.** `LiveBus`
+  adds `useIgnore` because a mutation publishes *after* its DB write, so a
+  surfaced-and-yielded publish failure would short-circuit before `return` and
+  fail a committed mutation. `useIgnore = use(f).pipe(Effect.ignore({log:
+  "Warn"}))` → `Effect<void, never>`; the empty error channel makes "a publish
+  can't fail the mutation" a type, not a convention. Only add a swallow sibling
+  when the call site genuinely must not fail on the wrapped client — and name it
+  `useIgnore` (in Effect, `Unsafe` means "synchronous / escapes the runtime", not
+  "swallows errors", so `useUnsafe` is wrong).
+- **Acquire the client per request via the service, not via an ambient store.**
+  `yield* LiveBus` makes provision mandatory: a missing provide fails loudly
+  instead of silently no-opping. Don't reach for `AsyncLocalStorage`,
+  `globalThis`, or `Fiber.getCurrent` to carry a client into a resolver — provide
+  it like any other per-request service (`Effect.provideService(LiveBus, …)` next
+  to `Auth`).
+
+Promote this to a standalone `effect-client-use-wrapper.md` once a second
+non-Effect client gets a `use` wrapper (the folder's 2-usages rule).
 
 ## See also
 

@@ -9,7 +9,7 @@
  * the session and passes in.
  */
 import {useLiveView, type ViewRef, view} from "react-fate";
-import type {Post} from "../../../worker/fate/views";
+import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";

@@ -4,7 +4,7 @@
  * The home is two distinct term connections (recent + popular) rendered side by
  * side. fate keys a `useRequest` by client-root name, and the two columns map to
  * two `list` roots (`recentTerms` / `popularTerms`, fixed-sort wrappers over the
- * `terms` keyset — see `worker/fate/lists.ts`). So the whole page resolves in
+ * `terms` keyset — see `worker/features/fate/lists.ts`). So the whole page resolves in
  * **one** batched `useRequest({recentTerms, popularTerms})` (no waterfall); each
  * column is a `useListView` over its connection ref, and each row reads its slice
  * with `useView(TermRowView, node)`.

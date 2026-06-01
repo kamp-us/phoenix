@@ -1,221 +1,253 @@
-import {routeAgentRequest} from "agents";
-import {Effect} from "effect";
-import {Hono} from "hono";
-import {z} from "zod";
-import {AdminRuntime} from "./admin/runtime";
-import {livePublishContext} from "./fate/live";
-import {handleLiveRequest} from "./fate/live-route";
-import {FateRuntime, toSessionData, validateSessionCookie} from "./fate/runtime";
-import {fateServer} from "./fate/server";
-import {PanoAdmin} from "./features/pano/PanoAdmin";
-import {Pasaport} from "./features/pasaport/Pasaport";
-import {PasaportAdmin} from "./features/pasaport/PasaportAdmin";
-import {SozlukAdmin} from "./features/sozluk/SozlukAdmin";
-import {AdminAuth} from "./services";
+/**
+ * The single phoenix worker, on alchemy-effect (ADR 0026–0031).
+ *
+ * Modular `.make()` form (ADR 0028): `class Phoenix extends Cloudflare.Worker<
+ * Phoenix, {}, LiveDO>()(id, props)` is the worker Tag (declaring the single
+ * hosted live-fan-out DO as its `Deps` contract), and the `export default
+ * Phoenix.make(body)` Layer is the implementation. Splitting the two lets the
+ * worker host the DO and provide its `.make()` Layer (the inline-body form can't
+ * take a `Deps` type param). The body runs in two phases: the init phase binds
+ * resources (D1 + the `LiveDO` namespace) once per isolate; the runtime phase
+ * returns the `fetch` handler — an `HttpRouter` compiled with
+ * `HttpRouter.toHttpEffect`. The SPA is served from the `assets` prop, with
+ * `runWorkerFirst` keeping the worker-owned paths (`/api/*`, `/fate`, `/fate/*`)
+ * from being intercepted by the SPA shell.
+ *
+ * This replaces `wrangler.jsonc` (bindings/DOs/migrations/assets/vars) and the
+ * Hono `export default {fetch}` entry. The full HTTP surface is wired here via
+ * `makeAppLive` (`http/app.ts`): `GET /api/health`, the fate data plane
+ * (`POST /fate`), better-auth (`* /api/auth/*`), and the live SSE route
+ * (`* /fate/live` → LiveDO). The feature services live under
+ * `worker/features/` (including the fate bridge under `worker/features/fate/`).
+ *
+ * Dev vs prod for the SPA (ADR 0030): the `assets` + `runWorkerFirst` config
+ * below is the *production* single-worker precedence — at the Cloudflare edge,
+ * non-worker paths are answered by the asset server and the worker only sees the
+ * `runWorkerFirst` globs. In the local dev loop `vite dev` serves the SPA (with
+ * HMR) and proxies `/api` + `/fate*` to this worker (task 6); under bare
+ * `alchemy dev` this worker is API-only, so a non-API path has no SPA to return.
+ */
+import * as BetterAuth from "@alchemy.run/better-auth";
+import {RuntimeContext} from "alchemy";
+import * as Cloudflare from "alchemy/Cloudflare";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import {betterAuthSecret, environment} from "./config.ts";
+import {createDrizzle} from "./db/Drizzle.ts";
+import {PhoenixDb} from "./db/resources.ts";
+import {makeFateLayer} from "./features/fate/layers.ts";
+import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
+import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
+import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
+import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
+import {makeAppLive} from "./http/app.ts";
 
-// The two live-fan-out Durable Objects (ADR 0023, split per ADR 0025):
-// `ConnectionDO` owns a client's SSE stream + subscription list + generation;
-// `TopicDO` owns the durable subscriber registry + publish fan-out + reap.
-// Exported here so wrangler's `CONNECTION_DO`/`TOPIC_DO` bindings resolve them.
-export {ConnectionDO} from "./fate/connection-do";
-export {TopicDO} from "./fate/topic-do";
+/**
+ * Lift a publish-side {@link PublishMessage} to the {@link DeliverFrame} the
+ * unified `LiveDO.publish` enqueues. `kind` maps to the fate SSE event name
+ * (`entity → next`, `connection → connection`); `event` is the already
+ * inline-resolved frame body the mutation produced. The frame's `id` (the fate
+ * subscription id) is set per-subscriber by the topic instance from each
+ * subscriber row at delivery, so it is left empty here — one publish fans out to
+ * many subscriptions, each with its own id.
+ */
+function deliverFrameOf(message: PublishMessage): DeliverFrame {
+	return {
+		kind: message.kind === "entity" ? "next" : "connection",
+		id: "",
+		event: message.frame,
+		...(message.eventId !== undefined ? {eventId: message.eventId} : {}),
+	};
+}
 
-// Per ADR 0009 (d1-direct): no product DOs, no projection workflow.
-// Every product surface (sozluk, pano, pasaport) runs as module functions
-// against `PHOENIX_DB`. Worker exports no DO or Workflow classes.
+export class Phoenix extends Cloudflare.Worker<
+	Phoenix,
+	// The worker's own RPC shape — empty: this worker exposes no callable RPC
+	// surface, only `fetch` (which alchemy's `WorkerShape` always adds). `{}` is
+	// the empty-shape sentinel alchemy's `MakeShape` collapses to that base
+	// `{fetch}`; biome bans bare `{}` as a type, but here it is load-bearing (no
+	// other type expresses "no extra shape" without forcing every key to `never`,
+	// which `{fetch}` then fails to satisfy).
+	// biome-ignore lint/complexity/noBannedTypes: alchemy's empty-RPC-shape sentinel
+	{},
+	// The unified live-fan-out DO this worker hosts — declared as its public
+	// `Deps` contract (ADR 0028) so the worker can `yield*` its Tag in init and
+	// provide its `.make()` Layer below. One `LiveDO` namespace plays both the
+	// connection and topic roles, keyed by instance name (`connection:`/`topic:`).
+	LiveDO
+>()("phoenix", {
+	main: import.meta.filename,
+	// The worker's env bindings, per-key from the `effect/Config` constants in
+	// `worker/config.ts`. Alchemy resolves each Config at deploy from the
+	// deploy-time `process.env` and binds it; runtime code reads the same value
+	// off the ConfigProvider alchemy auto-wires from this env.
+	//   - `ENVIRONMENT` — non-redacted Config → `plain_text` binding (fail-closed
+	//     to "production"). Read via `yield* AppConfig` (BetterAuthLive's dev auth
+	//     URLs + magic-link gate, the health probe).
+	//   - `BETTER_AUTH_SECRET` — `Config.redacted` → `secret_text` binding (a
+	//     Cloudflare secret). Read via `yield* betterAuthSecret` in BetterAuthLive
+	//     to sign sessions. Required at deploy (the `dev:worker` script supplies a
+	//     dev value; CI/prod supply the real one) — a missing secret fails closed.
+	env: {ENVIRONMENT: environment, BETTER_AUTH_SECRET: betterAuthSecret},
+	assets: {
+		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
+		// ADR 0030) emits the client directly into `dist/client`; the path is
+		// relative to the alchemy CLI's working dir (`apps/web`). At the
+		// Cloudflare edge the worker serves this via `assets` + `runWorkerFirst`
+		// (below) with no proxy; the dev proxy in `vite.config.ts` exists only
+		// for the two-process dev loop.
+		directory: "./dist/client",
+		config: {
+			// The SPA shell answers any non-worker path; the worker-owned paths
+			// are listed in `runWorkerFirst` so the asset server doesn't shadow
+			// them (a missing entry returns the shell for GET and 405 for POST).
+			notFoundHandling: "single-page-application",
+			runWorkerFirst: ["/api/*", "/fate", "/fate/*"],
+		},
+	},
+	compatibility: {flags: ["nodejs_compat"]},
+	observability: {enabled: true},
+}) {}
 
-const app = new Hono<{Bindings: Env}>();
+/**
+ * The worker implementation Layer (modular `.make()` form, ADR 0028). Splitting
+ * the class (a lightweight identity, with the hosted live-fan-out DO declared in
+ * its `Deps` type param) from `.make()` lets the worker host `LiveDO` and provide
+ * its `.make()` Layer without the inline-body form's `InitReq extends
+ * WorkerServices | PlatformServices` constraint — the `LiveDO` Tag `yield*`-ed in
+ * init is dischargeable here.
+ */
+export default Phoenix.make(
+	Effect.gen(function* () {
+		// ── INIT PHASE (deploy time + once per isolate) ──
+		// Bind the resources. At deploy time each call records the binding's
+		// metadata for the Cloudflare API; at runtime it resolves the typed client.
+		// Everything bound here is in scope for the worker's whole lifetime — task 2
+		// builds the worker-level `Drizzle` + feature layers from `db`, and tasks 5
+		// wire the live publish path through the two DO namespaces.
+		const db = yield* Cloudflare.D1Connection.bind(PhoenixDb);
+		const live = yield* LiveDO;
 
-app.get("/api/health", (c) => c.json({status: "ok", environment: c.env.ENVIRONMENT}));
+		// Each bound client stays load-bearing through its real use below: `db`
+		// via `db.raw`, and `live` via the `liveLayer` closures' `getByName(...)`
+		// calls — drop a `bind()`/`yield*` above and the type checker fails at that
+		// usage, so an unwired binding is a compile error, never a runtime
+		// `undefined`.
 
-// Dev-only sözlük admin endpoints. Backs the `pnpm sozluk:import` script that
-// pulls MDX content from the legacy monorepo into the Sozluk DO. Gated on
-// ENVIRONMENT === "development" — the binding is `vars.ENVIRONMENT` in
-// wrangler.jsonc and is overridden per-deploy.
-const upsertTermSchema = z.object({
-	slug: z.string().min(1),
-	title: z.string().min(1),
-	definitions: z
-		.array(
-			z.object({
-				authorId: z.string().min(1),
-				authorName: z.string().min(1),
-				body: z.string().min(1),
-				score: z.number().int().optional(),
-			}),
-		)
-		.min(1),
-});
+		// Build the worker-level service layers ONCE from the bound D1 (ADR 0029):
+		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
+		// `drizzle(raw, {schema})`; `Drizzle` + the feature services (`fateLayer`)
+		// are constructed here and stay alive for the isolate — one worker, not a
+		// per-request `ManagedRuntime`. The `/fate` route provides only `Auth`
+		// per request (ADR 0029).
+		const raw = yield* db.raw;
+		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
+		// init — the layer (`BetterAuthLive`, provided below) constructs the
+		// `makeBetterAuth(...)` instance once and caches it. Yielding `auth` here
+		// materializes the cached `Auth` reference, so `Pasaport.validateSession`
+		// (which runs `auth.api.getSession(...)` per request) and the `/api/auth/*`
+		// route (which runs `auth.handler(request)`) share one instance — sign +
+		// validate with the same secret.
+		const betterAuth = yield* BetterAuth.BetterAuth;
+		const authInstance = yield* betterAuth.auth;
+		const fateLayer = makeFateLayer(createDrizzle(raw), authInstance);
 
-// Writes go straight to `PHOENIX_DB` via the SozlukAdmin service.
-// Idempotent: re-running with the same `(authorId, body)` skips the existing
-// row. `AdminAuth.required` gates on `ENVIRONMENT === "development"`.
-app.post("/api/admin/sozluk/upsert-term", async (c) => {
-	const parsed = upsertTermSchema.safeParse(await c.req.json());
-	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
-	const {slug, title, definitions} = parsed.data;
-
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const sozlukAdmin = yield* SozlukAdmin;
-				const result = yield* sozlukAdmin.seedTerm({slug, title, definitions});
-				return c.json({slug, ...result});
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
+		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
+		// ONCE in init (`live`, above) and wrapped as worker-level services. One
+		// namespace plays both roles, keyed by instance name.
+		//   - `LiveTopics.publish` fans a mutation's `live.*` out via typed RPC
+		//     (`live.getByName(\`topic:${key}\`).publish({topicKey, frame, limits})`)
+		//     — no `env` lookup, no `idFromName`, no string-URL `stub.fetch`. The
+		//     route builds the per-request `LiveLimits` and the publish frame is
+		//     lifted from the `PublishMessage` by `deliverFrameOf`.
+		//   - `LiveConnections` opens the SSE stream (forwarding the request to a
+		//     connection-role `fetch`) and drives subscribe/unsubscribe RPC,
+		//     addressing connections by name (`connection:${id}`). The route resolves
+		//     a subscribe's topic keys + limits before calling.
+		// The cross-role fan-out (topic→connection deliver, connection→topic
+		// register) rides the DO's OWN namespace captured in its init closure
+		// (`live-do.ts`), so the RPC methods' `R` is `never` — no per-call sibling
+		// Tag. At THIS (worker) call seam there is nothing to discharge: every
+		// method already has `R = never`, so no `Effect.provide(workerContext)` cast
+		// is needed (the old split-DO sibling cast is gone).
+		const liveLayer = Layer.mergeAll(
+			Layer.succeed(LiveTopics)(
+				LiveTopics.of({
+					publish: (topicKey, message, limits) =>
+						Effect.asVoid(
+							live
+								.getByName(`topic:${topicKey}`)
+								.publish({topicKey, frame: deliverFrameOf(message), limits}),
+						),
+				}),
+			),
+			Layer.succeed(LiveConnections)(
+				LiveConnections.of({
+					open: (connectionId, request) =>
+						live.getByName(`connection:${connectionId}`).fetch(request),
+					subscribe: (connectionId, input) =>
+						live.getByName(`connection:${connectionId}`).subscribe(input),
+					unsubscribe: (connectionId, subId) =>
+						live.getByName(`connection:${connectionId}`).unsubscribe({subId}),
+				}),
 			),
 		);
-	} finally {
-		await runtime.dispose();
-	}
-});
 
-// Drop the term_summary + definition_view + vote rows for the given slugs in
-// one D1 pass. `sozluk_stats` recomputes from what's left. `AdminAuth.required`
-// gates on `ENVIRONMENT === "development"`.
-app.post("/api/admin/sozluk/clear", async (c) => {
-	const body = (await c.req.json().catch(() => ({}))) as {slugs?: string[]};
-	const slugs = body.slugs ?? [];
+		// Capture the worker's ambient `RuntimeContext` (the alchemy runtime-env
+		// service this isolate runs inside). better-auth's `fetch`/`auth` carry an
+		// undischarged `RuntimeContext` in their `R` (the reference type is
+		// `HttpEffect<RuntimeContext>`), lifted into the `/api/auth/*` route's
+		// per-request requirements by `HttpRouter.add`. `serve` passes `Req`
+		// through rather than auto-providing it, so the worker discharges it for
+		// its own request handler — `makeAppLive` feeds it into `provideRequest`.
+		const runtimeContext = yield* RuntimeContext;
 
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const sozlukAdmin = yield* SozlukAdmin;
-				const result = yield* sozlukAdmin.clearAllTerms(slugs);
-				return c.json(result);
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
+		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027):
+		//   - typed JSON via an `HttpApiBuilder` group: `GET /api/health`,
+		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
+		//     `* /fate/live` (SSE → LiveDO), `* /api/auth/*` (better-auth).
+		// `makeAppLive` discharges the raw routes' worker-level requirements with
+		// `HttpRouter.provideRequest(...)` and wires the health group's platform
+		// stubs (`http/app.ts`).
+		// Provide the INIT-RESOLVED `betterAuth` service to the routes — NOT
+		// `BetterAuthLive`. `provideRequest` builds its layer per request, so
+		// passing the layer would reconstruct better-auth (re-running the
+		// `Random`/`Output` secret resolution, which needs `RuntimeContext` and the
+		// deploy-time alchemy machinery absent in the workerd runtime) on every
+		// request. The service resolved here in init carries the already-warmed
+		// `auth` cache, so the `/api/auth/*` route's `betterAuth.fetch` reuses it
+		// with no per-request reconstruction.
+		const AppLive = makeAppLive({
+			fateLayer,
+			liveLayer,
+			betterAuthLayer: Layer.succeed(BetterAuth.BetterAuth)(betterAuth),
+			runtimeContext,
+		});
+
+		// ── RUNTIME PHASE (per request) ──
+		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
+	}).pipe(
+		// One combined provide (chaining multiple `Effect.provide` can break layer
+		// lifecycle). Three Layers:
+		//   - `D1ConnectionLive` satisfies `D1Connection.bind`'s `R` requirement.
+		//   - `LiveDOLive` is the unified live-fan-out DO in `.make()` form
+		//     (ADR 0028): it registers the single DO class with the worker's exports
+		//     and resolves the `LiveDO` Tag the init phase yields. Cross-role calls
+		//     ride the DO's OWN namespace captured in its init closure (not a sibling
+		//     Tag), so the Layer requires only `Worker` — there is no circular Layer
+		//     dependency to break, unlike the old `ConnectionDOLive` ↔ `TopicDOLive`
+		//     pair this replaces.
+		Effect.provide(
+			Layer.mergeAll(
+				Cloudflare.D1ConnectionLive,
+				LiveDOLive,
+				// `BetterAuthLive` (`features/pasaport/better-auth-live.ts`) satisfies the
+				// `BetterAuth` Context tag yielded above + provides `betterAuth.fetch`
+				// to the `/api/auth/*` route. It self-provides `D1ConnectionLive`
+				// internally but merging that one twice is idempotent.
+				BetterAuthLive,
 			),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Dev-only pano admin endpoint. Backs `pnpm pano:import`. Routes through the
-// admin runtime + `AdminAuth.required` + `PanoAdmin.seedPosts` — same shape as
-// the sozluk admin endpoints. Gated on `ENVIRONMENT === "development"`.
-const panoSeedSchema = z.object({
-	clear: z.boolean().optional(),
-});
-
-app.post("/api/admin/pano/seed", async (c) => {
-	const body = (await c.req.json().catch(() => ({}))) as unknown;
-	const parsed = panoSeedSchema.safeParse(body);
-	if (!parsed.success) return c.json({error: "invalid input", issues: parsed.error.issues}, 400);
-
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const panoAdmin = yield* PanoAdmin;
-				const result = yield* panoAdmin.seedPosts({
-					...(parsed.data.clear !== undefined ? {clear: parsed.data.clear} : {}),
-				});
-				return c.json(result);
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
-			),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Dev-only Pasaport admin endpoint: backfill `user_profile` rows in PHOENIX_DB
-// for every existing user. Idempotent — re-runs overwrite the same identity
-// values per user, no side effects on counters. `AdminAuth.required` gates the
-// route on `ENVIRONMENT === "development"`; the admin runtime provides
-// `PasaportAdmin`.
-app.post("/api/admin/pasaport/backfill-profiles", async (c) => {
-	const runtime = AdminRuntime.make(c.env);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				yield* AdminAuth.required;
-				const pasaportAdmin = yield* PasaportAdmin;
-				const result = yield* pasaportAdmin.backfillProfiles;
-				return c.json(result);
-			}).pipe(
-				Effect.catchTag("@phoenix/AdminAuth/Forbidden", () =>
-					Effect.succeed(c.text("Forbidden", 403)),
-				),
-			),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Better Auth handler — wired straight into the Hono router (ADR 0009).
-// Single global auth realm; `Pasaport.handleAuth` constructs a better-auth
-// instance per request against `env.PHOENIX_DB`.
-app.on(["GET", "POST"], "/api/auth/*", async (c) => {
-	const runtime = FateRuntime.make(c.env, c.req.raw, null);
-	try {
-		return await runtime.runPromise(
-			Effect.gen(function* () {
-				const pasaport = yield* Pasaport;
-				return yield* pasaport.handleAuth(c.req.raw);
-			}),
-		);
-	} finally {
-		await runtime.dispose();
-	}
-});
-
-// Agent WebSocket subscriptions (T16). No product Agent DOs remain on the
-// worker post-d1-direct, so this handler currently has nothing to dispatch
-// to and always returns 404. Kept as a stub: future per-atom Agents (chat,
-// presence, künye, …) will plug in here without changing the router shape.
-app.all("/agents/*", async (c) => {
-	const res = await routeAgentRequest(c.req.raw, c.env);
-	return res ?? c.text("Not Found", 404);
-});
-
-// The SSE live transport (ADR 0023). Served from the `ConnectionDO` —
-// it builds NO per-request `ManagedRuntime` (the DO relays inline-published
-// data; no Effect runtime in the live path). Mounted before `/fate` so the more
-// specific path wins. Both GET (open stream) and POST (control) authenticate the
-// better-auth session cookie at connect.
-app.all("/fate/live", (c) => handleLiveRequest(c));
-
-// fate native protocol (ADR 0015–0017). The single data plane for the SPA.
-// The route owns the per-request runtime: it validates the session, builds a
-// `ManagedRuntime` with that session baked into the `Auth` layer, hands it to
-// fate via `adapterContext`, and disposes it in `finally` via
-// `executionCtx.waitUntil` so disposal doesn't block the response.
-app.post("/fate", async (c) => {
-	// Validate the session through a minimal Pasaport-only runtime; the request
-	// runtime is then built once with the resolved session attached to `Auth`.
-	const session = await validateSessionCookie(c.env, c.req.raw);
-	const sessionData = toSessionData(session);
-
-	const runtime = FateRuntime.make(c.env, c.req.raw, sessionData);
-	try {
-		// Run the operation inside the live publish context so a mutation's `live.*`
-		// publishes can resolve the `TOPIC_DO` binding and `waitUntil` the fan-out
-		// (it doesn't block the response). The publish carries inline-resolved data.
-		return await livePublishContext.run(
-			{env: c.env, waitUntil: (p: Promise<unknown>) => c.executionCtx.waitUntil(p)},
-			() => fateServer.handleRequest(c.req.raw, {request: c.req.raw, runtime}),
-		);
-	} finally {
-		c.executionCtx.waitUntil(runtime.dispose());
-	}
-});
-
-export default {
-	fetch: app.fetch,
-} satisfies ExportedHandler<Env>;
+		),
+	),
+);

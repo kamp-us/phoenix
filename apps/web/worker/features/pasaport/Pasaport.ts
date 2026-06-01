@@ -3,10 +3,11 @@
  *
  * Surface (resolver-facing):
  *   - `validateSession(headers)` — per-request session lookup via better-auth.
- *   - `handleAuth(request)`       — better-auth handler for `/api/auth/*`.
+ *     The auth instance is supplied by `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`,
+ *     phoenix's fork of `@alchemy.run/better-auth`'s `CloudflareD1` reference Layer).
+ *     The `/api/auth/*` route reads `BetterAuth.fetch` directly from the same
+ *     Context tag — `Pasaport` no longer mounts the handler itself.
  *   - `getUserById(userId)`       — canonical user row by id.
- *   - `findUsername(username)`    — reverse lookup, used by tests + admin tools.
- *   - `countUsersWithoutUsername` — admin/backfill helper.
  *   - `setUsername({userId, value})` — bootstrap-step username write +
  *     `user_profile` upsert in one D1 batch.
  *   - `lookupProfile(username)` / `lookupProfileById(userId)` — profile-page
@@ -26,14 +27,24 @@
  *   - `UserNotFound`
  *   - `DrizzleError` (any infrastructure failure)
  */
+import type {Auth as BetterAuth} from "better-auth";
 import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import * as schema from "../../db/drizzle/schema";
-import {forwardPage, keysetAfter} from "../../db/keyset";
-import {CloudflareEnv} from "../../services/CloudflareEnv";
-import {Drizzle, type DrizzleError} from "../../services/Drizzle";
-import {createAuth, type Session} from "./auth";
-import {UserNotFound, UsernameAlreadySet, UsernameInvalid, UsernameTaken} from "./errors";
+import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
+import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {UserNotFound, UsernameAlreadySet, UsernameInvalid, UsernameTaken} from "./errors.ts";
+
+/**
+ * The better-auth instance phoenix uses everywhere. Constructed by
+ * `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`) — phoenix's fork of
+ * `@alchemy.run/better-auth`'s `CloudflareD1` reference Layer. Mirrors the shape
+ * of the `BetterAuth` Context tag's `auth` field (`Effect.Effect<Auth<any>,
+ * never, RuntimeContext>`, see `@alchemy.run/better-auth/BetterAuth.ts`) —
+ * phoenix never specializes the options at the type level.
+ */
+export type Auth = BetterAuth;
+export type Session = NonNullable<Awaited<ReturnType<Auth["api"]["getSession"]>>>;
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */
@@ -52,10 +63,6 @@ export interface SetUsernameResult {
 	username: string;
 	displayName: string | null;
 	image: string | null;
-}
-
-export interface BackfillProfilesResult {
-	emitted: number;
 }
 
 export interface ProfileRow {
@@ -145,50 +152,6 @@ export interface ContributionRow {
 	postTitle: string | null;
 }
 
-/**
- * Flatten a discriminated {@link ContributionNode} into the flat
- * {@link ContributionRow} the fate view masks. The discriminant `kind` is
- * carried straight through; non-applicable variant fields are `null`.
- */
-export function toContributionRow(node: ContributionNode): ContributionRow {
-	const base = {kind: node.kind, id: node.id, score: node.score, createdAt: node.createdAt};
-	switch (node.kind) {
-		case "definition":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: node.termSlug,
-				termTitle: node.termTitle,
-				title: null,
-				slug: null,
-				postId: null,
-				postTitle: null,
-			};
-		case "post":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: null,
-				termTitle: null,
-				title: node.title,
-				slug: node.slug,
-				postId: null,
-				postTitle: null,
-			};
-		case "comment":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: null,
-				termTitle: null,
-				title: null,
-				slug: null,
-				postId: node.postId,
-				postTitle: node.postTitle,
-			};
-	}
-}
-
 /* -------------------------------------------------------------------------- */
 /* Service                                                                     */
 /* -------------------------------------------------------------------------- */
@@ -196,8 +159,6 @@ export function toContributionRow(node: ContributionNode): ContributionRow {
 export class Pasaport extends Context.Service<
 	Pasaport,
 	{
-		readonly handleAuth: (request: Request) => Effect.Effect<Response, never>;
-
 		readonly validateSession: (headers: Headers) => Effect.Effect<Session | null, never>;
 
 		readonly getUserById: (userId: string) => Effect.Effect<UserRow | null, DrizzleError>;
@@ -211,12 +172,6 @@ export class Pasaport extends Context.Service<
 		readonly getUsersByIds: (
 			userIds: ReadonlyArray<string>,
 		) => Effect.Effect<UserRow[], DrizzleError>;
-
-		readonly findUsername: (
-			username: string,
-		) => Effect.Effect<{userId: string; username: string} | null, DrizzleError>;
-
-		readonly countUsersWithoutUsername: Effect.Effect<number, DrizzleError>;
 
 		readonly setUsername: (input: {
 			userId: string;
@@ -316,23 +271,47 @@ function decodeCursor(cursor: string): {createdAt: Date; id: string} | null {
 /* Live layer                                                                  */
 /* -------------------------------------------------------------------------- */
 
-export const PasaportLive = Layer.effect(Pasaport)(
-	Effect.gen(function* () {
-		const env = yield* CloudflareEnv;
-		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
-		// destructure its bound methods. Method bodies call `run` / `batch`
-		// directly so every method's `R` stays `never`.
-		const {run} = yield* Drizzle;
+/**
+ * Build the `Pasaport` Layer over an already-resolved better-auth instance. The
+ * worker resolves the `BetterAuth` Context tag (`@alchemy.run/better-auth`) once
+ * in init and hands the instance here — `Pasaport` no longer constructs its own
+ * auth (that lived inline as `createAuth(env.PHOENIX_DB, ...)`). Sharing the
+ * single auth instance with the `/api/auth/*` route keeps session cookies
+ * signed and validated by the same secret.
+ */
+export const makePasaportLive = (auth: Auth) =>
+	Layer.effect(Pasaport)(
+		Effect.gen(function* () {
+			// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
+			// destructure its bound methods. Method bodies call `run` / `batch`
+			// directly so every method's `R` stays `never`.
+			const {run} = yield* Drizzle;
 
-		const upsertProfileIdentity = Effect.fn("Pasaport.upsertProfileIdentity")(function* (args: {
-			userId: string;
-			username: string | null;
-			displayName: string | null;
-			image: string | null;
-			updatedAtSec: number;
-		}) {
-			yield* run((db) =>
-				db.run(sql`
+			// `COUNT(*)` of a contribution table's live (non-deleted) rows for one
+			// author. Shared by `hydrateProfile`'s per-kind counts and
+			// `listContributions`'s `totalCount`. Calls `run` directly so callers
+			// keep `R = never`.
+			const countByAuthor = (
+				table: typeof schema.definitionView | typeof schema.postSummary | typeof schema.commentView,
+				authorId: string,
+			): Effect.Effect<number, DrizzleError> =>
+				run((db) =>
+					db
+						.select({n: sql<number>`COUNT(*)`})
+						.from(table)
+						.where(and(eq(table.authorId, authorId), isNull(table.deletedAt)))
+						.then((r) => Number(r[0]?.n ?? 0)),
+				);
+
+			const upsertProfileIdentity = Effect.fn("Pasaport.upsertProfileIdentity")(function* (args: {
+				userId: string;
+				username: string | null;
+				displayName: string | null;
+				image: string | null;
+				updatedAtSec: number;
+			}) {
+				yield* run((db) =>
+					db.run(sql`
 					INSERT INTO user_profile (
 						user_id, username, display_name, image,
 						total_karma, definition_count, post_count, comment_count,
@@ -347,404 +326,328 @@ export const PasaportLive = Layer.effect(Pasaport)(
 						image         = excluded.image,
 						updated_at    = excluded.updated_at
 				`),
-			);
-		});
+				);
+			});
 
-		const hydrateProfile = Effect.fn("Pasaport.hydrateProfile")(function* (row: {
-			userId: string;
-			username: string;
-			displayName: string | null;
-			image: string | null;
-			totalKarma: number;
-		}) {
-			const authorId = row.userId;
-			const defCount = yield* run((db) =>
-				db
-					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.definitionView)
-					.where(
-						and(
-							eq(schema.definitionView.authorId, authorId),
-							isNull(schema.definitionView.deletedAt),
-						),
-					)
-					.then((r) => Number(r[0]?.n ?? 0)),
-			);
-			const postCount = yield* run((db) =>
-				db
-					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.postSummary)
-					.where(
-						and(eq(schema.postSummary.authorId, authorId), isNull(schema.postSummary.deletedAt)),
-					)
-					.then((r) => Number(r[0]?.n ?? 0)),
-			);
-			const commentCount = yield* run((db) =>
-				db
-					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.commentView)
-					.where(
-						and(eq(schema.commentView.authorId, authorId), isNull(schema.commentView.deletedAt)),
-					)
-					.then((r) => Number(r[0]?.n ?? 0)),
-			);
+			const hydrateProfile = Effect.fn("Pasaport.hydrateProfile")(function* (row: {
+				userId: string;
+				username: string;
+				displayName: string | null;
+				image: string | null;
+				totalKarma: number;
+			}) {
+				const authorId = row.userId;
+				const defCount = yield* countByAuthor(schema.definitionView, authorId);
+				const postCount = yield* countByAuthor(schema.postSummary, authorId);
+				const commentCount = yield* countByAuthor(schema.commentView, authorId);
+
+				return {
+					userId: row.userId,
+					username: row.username,
+					displayName: row.displayName,
+					image: row.image,
+					totalKarma: row.totalKarma,
+					definitionCount: defCount,
+					postCount,
+					commentCount,
+				} satisfies ProfileRow;
+			});
 
 			return {
-				userId: row.userId,
-				username: row.username,
-				displayName: row.displayName,
-				image: row.image,
-				totalKarma: row.totalKarma,
-				definitionCount: defCount,
-				postCount,
-				commentCount,
-			} satisfies ProfileRow;
-		});
-
-		return {
-			handleAuth: Effect.fn("Pasaport.handleAuth")(function* (request: Request) {
-				const auth = createAuth(env.PHOENIX_DB, env.BETTER_AUTH_SECRET);
-				return yield* Effect.promise(() => auth.handler(request));
-			}),
-
-			validateSession: Effect.fn("Pasaport.validateSession")(function* (headers: Headers) {
-				// better-auth's `getSession` can throw on a flaky JWT, missing
-				// cookie, etc. Treat any failure as "no session" — same
-				// behavior as the legacy module function, which logged +
-				// swallowed.
-				return yield* Effect.tryPromise({
-					try: async () => {
-						const auth = createAuth(env.PHOENIX_DB, env.BETTER_AUTH_SECRET);
-						const session = await auth.api.getSession({headers});
-						if (!session?.user) return null;
-						return session;
-					},
-					catch: (cause): {readonly _tag: "ValidateSessionError"; readonly cause: unknown} => ({
-						_tag: "ValidateSessionError",
-						cause,
-					}),
-				}).pipe(
-					Effect.catch((error) =>
-						Effect.sync(() => {
-							console.error("[pasaport.validateSession]", error.cause);
-							return null as Session | null;
+				validateSession: Effect.fn("Pasaport.validateSession")(function* (headers: Headers) {
+					// better-auth's `getSession` can throw on a flaky JWT, missing
+					// cookie, etc. Treat any failure as "no session" — same
+					// behavior as the legacy module function, which logged +
+					// swallowed.
+					return yield* Effect.tryPromise({
+						try: async () => {
+							const session = await auth.api.getSession({headers});
+							if (!session?.user) return null;
+							return session;
+						},
+						catch: (cause): {readonly _tag: "ValidateSessionError"; readonly cause: unknown} => ({
+							_tag: "ValidateSessionError",
+							cause,
 						}),
-					),
-				);
-			}),
+					}).pipe(
+						Effect.catch((error) =>
+							Effect.sync(() => {
+								console.error("[pasaport.validateSession]", error.cause);
+								return null as Session | null;
+							}),
+						),
+					);
+				}),
 
-			getUserById: Effect.fn("Pasaport.getUserById")(function* (userId: string) {
-				const row = yield* run((db) =>
-					db.query.user.findFirst({where: eq(schema.user.id, userId)}),
-				);
-				if (!row) return null;
-				return {
-					id: row.id,
-					email: row.email,
-					name: row.name ?? null,
-					image: row.image ?? null,
-					username: row.username ?? null,
-				} satisfies UserRow;
-			}),
-
-			getUsersByIds: Effect.fn("Pasaport.getUsersByIds")(function* (
-				userIds: ReadonlyArray<string>,
-			) {
-				if (userIds.length === 0) return [];
-				const rows = yield* run((db) =>
-					db.query.user.findMany({where: inArray(schema.user.id, [...userIds])}),
-				);
-				return rows.map(
-					(row) =>
-						({
-							id: row.id,
-							email: row.email,
-							name: row.name ?? null,
-							image: row.image ?? null,
-							username: row.username ?? null,
-						}) satisfies UserRow,
-				);
-			}),
-
-			findUsername: Effect.fn("Pasaport.findUsername")(function* (username: string) {
-				const row = yield* run((db) =>
-					db.query.user.findFirst({where: eq(schema.user.username, username)}),
-				);
-				if (!row?.username) return null;
-				return {userId: row.id, username: row.username};
-			}),
-
-			countUsersWithoutUsername: Effect.gen(function* () {
-				const rows = yield* run((db) =>
-					db.select({id: schema.user.id}).from(schema.user).where(isNull(schema.user.username)),
-				);
-				return rows.length;
-			}),
-
-			setUsername: Effect.fn("Pasaport.setUsername")(function* (input: {
-				userId: string;
-				value: string;
-			}) {
-				const {userId} = input;
-				const normalized = input.value.trim().toLowerCase();
-				yield* assertUsername(normalized);
-
-				const existingUser = yield* run((db) =>
-					db.query.user.findFirst({where: eq(schema.user.id, userId)}),
-				);
-				if (!existingUser) {
-					return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
-				}
-				if (existingUser.username) {
-					return yield* new UsernameAlreadySet({
-						message: "kullanıcı adı zaten ayarlandı; değiştirilemez",
-					});
-				}
-
-				const conflict = yield* run((db) =>
-					db.query.user.findFirst({where: eq(schema.user.username, normalized)}),
-				);
-				if (conflict) {
-					return yield* new UsernameTaken({message: "bu kullanıcı adı kullanımda"});
-				}
-
-				const now = new Date();
-
-				yield* run((db) =>
-					db
-						.update(schema.user)
-						.set({username: normalized, updatedAt: now})
-						.where(eq(schema.user.id, userId)),
-				);
-
-				yield* upsertProfileIdentity({
-					userId,
-					username: normalized,
-					displayName: existingUser.name ?? null,
-					image: existingUser.image ?? null,
-					updatedAtSec: Math.floor(now.getTime() / 1000),
-				});
-
-				return {
-					userId,
-					username: normalized,
-					displayName: existingUser.name ?? null,
-					image: existingUser.image ?? null,
-				} satisfies SetUsernameResult;
-			}),
-
-			lookupProfile: Effect.fn("Pasaport.lookupProfile")(function* (username: string) {
-				const rows = yield* run((db) =>
-					db
-						.select({
-							userId: schema.userProfile.userId,
-							username: schema.userProfile.username,
-							displayName: schema.userProfile.displayName,
-							image: schema.userProfile.image,
-							totalKarma: schema.userProfile.totalKarma,
-						})
-						.from(schema.userProfile)
-						.where(eq(schema.userProfile.username, username))
-						.limit(1),
-				);
-				const row = rows[0];
-				if (!row || row.username == null) return null;
-				return yield* hydrateProfile({...row, username: row.username});
-			}),
-
-			lookupProfileById: Effect.fn("Pasaport.lookupProfileById")(function* (userId: string) {
-				const rows = yield* run((db) =>
-					db
-						.select({
-							userId: schema.userProfile.userId,
-							username: schema.userProfile.username,
-							displayName: schema.userProfile.displayName,
-							image: schema.userProfile.image,
-							totalKarma: schema.userProfile.totalKarma,
-						})
-						.from(schema.userProfile)
-						.where(eq(schema.userProfile.userId, userId))
-						.limit(1),
-				);
-				const row = rows[0];
-				if (!row || row.username == null) return null;
-				return yield* hydrateProfile({...row, username: row.username});
-			}),
-
-			listContributions: Effect.fn("Pasaport.listContributions")(function* (input: {
-				authorId: string;
-				after: string | null;
-				first: number;
-			}) {
-				const first = Math.max(1, Math.min(input.first, 50));
-				const cursor = input.after ? decodeCursor(input.after) : null;
-				const fetchSize = first + 1;
-
-				// `after` present but undecodable is a cursor miss → empty page (the
-				// one cursor-miss semantic shared by all five keyset methods).
-				const cursorMissed = input.after !== null && cursor === null;
-
-				// Per-table keyset for the global `(created_at desc, id desc)` merge
-				// order. `keysetAfter` builds the lexicographic predicate; null
-				// cursor values (no `after`) collapse it to undefined so only the
-				// base author/deleted filter applies.
-				function keysetWhere<
-					TTable extends {createdAt: any; id: any; authorId: any; deletedAt: any},
-				>(table: TTable) {
-					const base = and(eq(table.authorId, input.authorId), isNull(table.deletedAt));
-					const predicate = keysetAfter([
-						{column: table.createdAt, dir: "desc", value: cursor?.createdAt ?? null},
-						{column: table.id, dir: "desc", value: cursor?.id ?? null},
-					]);
-					return predicate ? and(base, predicate) : base;
-				}
-
-				const defs = yield* run((db) =>
-					db
-						.select({
-							id: schema.definitionView.id,
-							createdAt: schema.definitionView.createdAt,
-							score: schema.definitionView.score,
-							bodyExcerpt: schema.definitionView.bodyExcerpt,
-							termSlug: schema.definitionView.termSlug,
-							termTitle: schema.definitionView.termTitle,
-						})
-						.from(schema.definitionView)
-						.where(keysetWhere(schema.definitionView))
-						.orderBy(desc(schema.definitionView.createdAt), desc(schema.definitionView.id))
-						.limit(fetchSize),
-				);
-
-				const posts = yield* run((db) =>
-					db
-						.select({
-							id: schema.postSummary.id,
-							slug: schema.postSummary.slug,
-							createdAt: schema.postSummary.createdAt,
-							score: schema.postSummary.score,
-							title: schema.postSummary.title,
-							bodyExcerpt: schema.postSummary.bodyExcerpt,
-						})
-						.from(schema.postSummary)
-						.where(keysetWhere(schema.postSummary))
-						.orderBy(desc(schema.postSummary.createdAt), desc(schema.postSummary.id))
-						.limit(fetchSize),
-				);
-
-				const comments = yield* run((db) =>
-					db
-						.select({
-							id: schema.commentView.id,
-							createdAt: schema.commentView.createdAt,
-							score: schema.commentView.score,
-							bodyExcerpt: schema.commentView.bodyExcerpt,
-							postId: schema.commentView.postId,
-							postTitle: schema.commentView.postTitle,
-						})
-						.from(schema.commentView)
-						.where(keysetWhere(schema.commentView))
-						.orderBy(desc(schema.commentView.createdAt), desc(schema.commentView.id))
-						.limit(fetchSize),
-				);
-
-				const defTotal = yield* run((db) =>
-					db
-						.select({n: sql<number>`COUNT(*)`})
-						.from(schema.definitionView)
-						.where(
-							and(
-								eq(schema.definitionView.authorId, input.authorId),
-								isNull(schema.definitionView.deletedAt),
-							),
-						)
-						.then((r) => Number(r[0]?.n ?? 0)),
-				);
-				const postTotal = yield* run((db) =>
-					db
-						.select({n: sql<number>`COUNT(*)`})
-						.from(schema.postSummary)
-						.where(
-							and(
-								eq(schema.postSummary.authorId, input.authorId),
-								isNull(schema.postSummary.deletedAt),
-							),
-						)
-						.then((r) => Number(r[0]?.n ?? 0)),
-				);
-				const commentTotal = yield* run((db) =>
-					db
-						.select({n: sql<number>`COUNT(*)`})
-						.from(schema.commentView)
-						.where(
-							and(
-								eq(schema.commentView.authorId, input.authorId),
-								isNull(schema.commentView.deletedAt),
-							),
-						)
-						.then((r) => Number(r[0]?.n ?? 0)),
-				);
-				const totalCount = defTotal + postTotal + commentTotal;
-
-				if (cursorMissed) {
+				getUserById: Effect.fn("Pasaport.getUserById")(function* (userId: string) {
+					const row = yield* run((db) =>
+						db.query.user.findFirst({where: eq(schema.user.id, userId)}),
+					);
+					if (!row) return null;
 					return {
-						edges: [],
-						hasNextPage: false,
-						endCursor: null,
+						id: row.id,
+						email: row.email,
+						name: row.name ?? null,
+						image: row.image ?? null,
+						username: row.username ?? null,
+					} satisfies UserRow;
+				}),
+
+				getUsersByIds: Effect.fn("Pasaport.getUsersByIds")(function* (
+					userIds: ReadonlyArray<string>,
+				) {
+					if (userIds.length === 0) return [];
+					const rows = yield* run((db) =>
+						db.query.user.findMany({where: inArray(schema.user.id, [...userIds])}),
+					);
+					return rows.map(
+						(row) =>
+							({
+								id: row.id,
+								email: row.email,
+								name: row.name ?? null,
+								image: row.image ?? null,
+								username: row.username ?? null,
+							}) satisfies UserRow,
+					);
+				}),
+
+				setUsername: Effect.fn("Pasaport.setUsername")(function* (input: {
+					userId: string;
+					value: string;
+				}) {
+					const {userId} = input;
+					const normalized = input.value.trim().toLowerCase();
+					yield* assertUsername(normalized);
+
+					const existingUser = yield* run((db) =>
+						db.query.user.findFirst({where: eq(schema.user.id, userId)}),
+					);
+					if (!existingUser) {
+						return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
+					}
+					if (existingUser.username) {
+						return yield* new UsernameAlreadySet({
+							message: "kullanıcı adı zaten ayarlandı; değiştirilemez",
+						});
+					}
+
+					const conflict = yield* run((db) =>
+						db.query.user.findFirst({where: eq(schema.user.username, normalized)}),
+					);
+					if (conflict) {
+						return yield* new UsernameTaken({message: "bu kullanıcı adı kullanımda"});
+					}
+
+					const now = new Date();
+
+					yield* run((db) =>
+						db
+							.update(schema.user)
+							.set({username: normalized, updatedAt: now})
+							.where(eq(schema.user.id, userId)),
+					);
+
+					yield* upsertProfileIdentity({
+						userId,
+						username: normalized,
+						displayName: existingUser.name ?? null,
+						image: existingUser.image ?? null,
+						updatedAtSec: Math.floor(now.getTime() / 1000),
+					});
+
+					return {
+						userId,
+						username: normalized,
+						displayName: existingUser.name ?? null,
+						image: existingUser.image ?? null,
+					} satisfies SetUsernameResult;
+				}),
+
+				lookupProfile: Effect.fn("Pasaport.lookupProfile")(function* (username: string) {
+					const rows = yield* run((db) =>
+						db
+							.select({
+								userId: schema.userProfile.userId,
+								username: schema.userProfile.username,
+								displayName: schema.userProfile.displayName,
+								image: schema.userProfile.image,
+								totalKarma: schema.userProfile.totalKarma,
+							})
+							.from(schema.userProfile)
+							.where(eq(schema.userProfile.username, username))
+							.limit(1),
+					);
+					const row = rows[0];
+					if (!row || row.username == null) return null;
+					return yield* hydrateProfile({...row, username: row.username});
+				}),
+
+				lookupProfileById: Effect.fn("Pasaport.lookupProfileById")(function* (userId: string) {
+					const rows = yield* run((db) =>
+						db
+							.select({
+								userId: schema.userProfile.userId,
+								username: schema.userProfile.username,
+								displayName: schema.userProfile.displayName,
+								image: schema.userProfile.image,
+								totalKarma: schema.userProfile.totalKarma,
+							})
+							.from(schema.userProfile)
+							.where(eq(schema.userProfile.userId, userId))
+							.limit(1),
+					);
+					const row = rows[0];
+					if (!row || row.username == null) return null;
+					return yield* hydrateProfile({...row, username: row.username});
+				}),
+
+				listContributions: Effect.fn("Pasaport.listContributions")(function* (input: {
+					authorId: string;
+					after: string | null;
+					first: number;
+				}) {
+					const first = Math.max(1, Math.min(input.first, 50));
+					const cursor = input.after ? decodeCursor(input.after) : null;
+					const fetchSize = first + 1;
+
+					// `after` present but undecodable is a cursor miss → empty page (the
+					// one cursor-miss semantic shared by all five keyset methods).
+					const cursorMissed = input.after !== null && cursor === null;
+
+					// Per-table keyset for the global `(created_at desc, id desc)` merge
+					// order. `keysetAfter` builds the lexicographic predicate; null
+					// cursor values (no `after`) collapse it to undefined so only the
+					// base author/deleted filter applies.
+					function keysetWhere(
+						table:
+							| typeof schema.definitionView
+							| typeof schema.postSummary
+							| typeof schema.commentView,
+					) {
+						const base = and(eq(table.authorId, input.authorId), isNull(table.deletedAt));
+						const predicate = keysetAfter([
+							{column: table.createdAt, dir: "desc", value: cursor?.createdAt ?? null},
+							{column: table.id, dir: "desc", value: cursor?.id ?? null},
+						]);
+						return predicate ? and(base, predicate) : base;
+					}
+
+					const defs = yield* run((db) =>
+						db
+							.select({
+								id: schema.definitionView.id,
+								createdAt: schema.definitionView.createdAt,
+								score: schema.definitionView.score,
+								bodyExcerpt: schema.definitionView.bodyExcerpt,
+								termSlug: schema.definitionView.termSlug,
+								termTitle: schema.definitionView.termTitle,
+							})
+							.from(schema.definitionView)
+							.where(keysetWhere(schema.definitionView))
+							.orderBy(desc(schema.definitionView.createdAt), desc(schema.definitionView.id))
+							.limit(fetchSize),
+					);
+
+					const posts = yield* run((db) =>
+						db
+							.select({
+								id: schema.postSummary.id,
+								slug: schema.postSummary.slug,
+								createdAt: schema.postSummary.createdAt,
+								score: schema.postSummary.score,
+								title: schema.postSummary.title,
+								bodyExcerpt: schema.postSummary.bodyExcerpt,
+							})
+							.from(schema.postSummary)
+							.where(keysetWhere(schema.postSummary))
+							.orderBy(desc(schema.postSummary.createdAt), desc(schema.postSummary.id))
+							.limit(fetchSize),
+					);
+
+					const comments = yield* run((db) =>
+						db
+							.select({
+								id: schema.commentView.id,
+								createdAt: schema.commentView.createdAt,
+								score: schema.commentView.score,
+								bodyExcerpt: schema.commentView.bodyExcerpt,
+								postId: schema.commentView.postId,
+								postTitle: schema.commentView.postTitle,
+							})
+							.from(schema.commentView)
+							.where(keysetWhere(schema.commentView))
+							.orderBy(desc(schema.commentView.createdAt), desc(schema.commentView.id))
+							.limit(fetchSize),
+					);
+
+					const defTotal = yield* countByAuthor(schema.definitionView, input.authorId);
+					const postTotal = yield* countByAuthor(schema.postSummary, input.authorId);
+					const commentTotal = yield* countByAuthor(schema.commentView, input.authorId);
+					const totalCount = defTotal + postTotal + commentTotal;
+
+					if (cursorMissed) {
+						return {
+							edges: [],
+							hasNextPage: false,
+							endCursor: null,
+							totalCount,
+						} satisfies ContributionConnection;
+					}
+
+					const merged: ContributionNode[] = [
+						...defs.map<ContributionNode>((d) => ({
+							kind: "definition",
+							id: d.id,
+							createdAt: d.createdAt ?? new Date(0),
+							score: d.score,
+							bodyExcerpt: d.bodyExcerpt,
+							termSlug: d.termSlug,
+							termTitle: d.termTitle,
+						})),
+						...posts.map<ContributionNode>((p) => ({
+							kind: "post",
+							id: p.id,
+							createdAt: p.createdAt ?? new Date(0),
+							score: p.score,
+							title: p.title,
+							slug: p.slug,
+							bodyExcerpt: p.bodyExcerpt,
+						})),
+						...comments.map<ContributionNode>((c) => ({
+							kind: "comment",
+							id: c.id,
+							createdAt: c.createdAt ?? new Date(0),
+							score: c.score,
+							bodyExcerpt: c.bodyExcerpt,
+							postId: c.postId,
+							postTitle: c.postTitle,
+						})),
+					];
+
+					merged.sort((a, b) => {
+						const aTs = a.createdAt.getTime();
+						const bTs = b.createdAt.getTime();
+						// (createdAt desc, id desc) — matches the per-table keyset order.
+						if (aTs !== bTs) return bTs - aTs;
+						if (a.id !== b.id) return a.id < b.id ? 1 : -1;
+						return 0;
+					});
+
+					// Each of the three tables is read with the same keyset predicate and
+					// `LIMIT first+1`, so the merged set holds every candidate that could
+					// fall in the next `first` slots of the global `(createdAt desc, id
+					// desc)` order — `forwardPage` slices the probe and assembles the
+					// shared `{rows, hasNextPage, endCursor}` envelope.
+					const page = forwardPage<ContributionNode>(merged, first, encodeCursor);
+
+					return {
+						edges: page.rows.map((node) => ({cursor: encodeCursor(node), node})),
+						hasNextPage: page.hasNextPage,
+						endCursor: page.endCursor,
 						totalCount,
 					} satisfies ContributionConnection;
-				}
-
-				const merged: ContributionNode[] = [
-					...defs.map<ContributionNode>((d) => ({
-						kind: "definition",
-						id: d.id,
-						createdAt: d.createdAt ?? new Date(0),
-						score: d.score,
-						bodyExcerpt: d.bodyExcerpt,
-						termSlug: d.termSlug,
-						termTitle: d.termTitle,
-					})),
-					...posts.map<ContributionNode>((p) => ({
-						kind: "post",
-						id: p.id,
-						createdAt: p.createdAt ?? new Date(0),
-						score: p.score,
-						title: p.title,
-						slug: p.slug,
-						bodyExcerpt: p.bodyExcerpt,
-					})),
-					...comments.map<ContributionNode>((c) => ({
-						kind: "comment",
-						id: c.id,
-						createdAt: c.createdAt ?? new Date(0),
-						score: c.score,
-						bodyExcerpt: c.bodyExcerpt,
-						postId: c.postId,
-						postTitle: c.postTitle,
-					})),
-				];
-
-				merged.sort((a, b) => {
-					const aTs = a.createdAt.getTime();
-					const bTs = b.createdAt.getTime();
-					if (aTs !== bTs) return bTs - aTs;
-					return a.id < b.id ? 1 : a.id > b.id ? -1 : 0;
-				});
-
-				// Each of the three tables is read with the same keyset predicate and
-				// `LIMIT first+1`, so the merged set holds every candidate that could
-				// fall in the next `first` slots of the global `(createdAt desc, id
-				// desc)` order — `forwardPage` slices the probe and assembles the
-				// shared `{rows, hasNextPage, endCursor}` envelope.
-				const page = forwardPage<ContributionNode>(merged, first, encodeCursor);
-
-				return {
-					edges: page.rows.map((node) => ({cursor: encodeCursor(node), node})),
-					hasNextPage: page.hasNextPage,
-					endCursor: page.endCursor,
-					totalCount,
-				} satisfies ContributionConnection;
-			}),
-		};
-	}),
-);
+				}),
+			};
+		}),
+	);

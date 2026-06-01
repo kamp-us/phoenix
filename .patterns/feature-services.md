@@ -22,11 +22,11 @@ Drizzle           — holds the singleton drizzle(env.PHOENIX_DB, {schema}) buil
 Sozluk, Pano,     — domain services: feature-shaped methods
 Vote, Pasaport
   ↑
-fate resolvers /  — orchestrate domain services, shape wire entities (worker/fate/)
+fate resolvers /  — orchestrate domain services, shape wire entities (worker/features/fate/)
 sources
 ```
 
-Each layer depends only on the one below it. Resolvers never touch `Drizzle` directly. Domain services never touch `CloudflareEnv` directly.
+Each layer depends only on the one below it. Resolvers never touch `Drizzle` directly. Domain services never read `Cloudflare.WorkerEnvironment` directly — the bound D1 is threaded in via `Drizzle`, env vars are read at worker scope, not inside features.
 
 ## The `Drizzle` service
 
@@ -43,7 +43,7 @@ export interface DrizzleAccess {
 // The `DrizzleError` catch lives in `DrizzleLive`'s body — exactly one place.
 ```
 
-Canonical implementation: `apps/web/worker/services/Drizzle.ts`. Read it once — the shape above is the contract, not the implementation.
+Canonical implementation: `apps/web/worker/db/Drizzle.ts`. Read it once — the shape above is the contract, not the implementation.
 
 Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `run` (single statement) or `batch` (atomic multi-statement), destructured off the service value at layer build. The D1 binding never leaves the `Drizzle` service.
 
@@ -96,7 +96,7 @@ The callback returns the tuple of unexecuted drizzle statements. Drizzle's `db.b
 
 ### Raw SQL escape hatch
 
-When you need a SQL statement drizzle's builder doesn't model cleanly (e.g. multi-row `INSERT … ON CONFLICT DO UPDATE`, `DELETE FROM x WHERE id IN (subquery)`), route it through `run((db) => db.run(sql\`…\`))` rather than reaching for `env.PHOENIX_DB.prepare(...)`. Every db touch must flow through the Drizzle service — `apps/web/worker/services/Drizzle.ts` is the only file that legitimately reads `env.PHOENIX_DB` (to build the drizzle builder once).
+When you need a SQL statement drizzle's builder doesn't model cleanly (e.g. multi-row `INSERT … ON CONFLICT DO UPDATE`, `DELETE FROM x WHERE id IN (subquery)`), route it through `run((db) => db.run(sql\`…\`))` rather than reaching for `env.PHOENIX_DB.prepare(...)`. Every db touch must flow through the Drizzle service — `apps/web/worker/db/Drizzle.ts` is the only file that legitimately reads `env.PHOENIX_DB` (to build the drizzle builder once).
 
 ## A feature service
 
@@ -106,7 +106,7 @@ import {and, asc, desc, eq, isNull} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {id} from "@usirin/forge";
 import * as schema from "../../db/drizzle/schema";
-import {Drizzle} from "../../services/Drizzle";
+import {Drizzle} from "../../db/Drizzle";
 import {
   BodyRequired,
   BodyTooLong,
@@ -230,12 +230,12 @@ Notes:
 
 ## Resolver call sites
 
-Fate resolvers (`worker/fate/mutations.ts`, `queries.ts`) are thin orchestrations over a service, wrapped by a bridge helper (`fateMutation`/`fateQuery`/`fateList`/`fateSource`) that runs the Effect on the per-request runtime:
+Fate resolvers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, wrapped by a bridge helper (`fateMutation`/`fateQuery`/`fateList`/`fateSource`) that runs the Effect on the per-request runtime. The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
 
 ```ts
-// worker/fate/mutations.ts
-import {Sozluk} from "../features/sozluk/Sozluk";
-import {fateMutation} from "./effect";
+// worker/features/sozluk/mutations.ts
+import {Sozluk} from "./Sozluk";
+import {fateMutation} from "../fate/effect";
 
 resolve: fateMutation<AddDefinitionInput, Definition>(function*({input}) {
   const {user} = yield* Auth.required;
@@ -253,7 +253,7 @@ resolve: fateQuery<{slug: string}, Term | null>(function*({input}) {
 }),
 ```
 
-The bridge runner (`worker/fate/effect.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeFateError` to wire codes.
+The bridge runner (`worker/features/fate/effect.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeFateError` to wire codes.
 
 ## Cross-feature dependencies
 
@@ -283,9 +283,9 @@ Vote-delegating methods are the one place a method's `R` widens beyond `never`: 
 
 ## Wiring at the worker entry
 
-See `apps/web/worker/fate/runtime.ts` (the `FateRuntime.make` namespace) for the canonical composition. The shape, summarized:
+See `apps/web/worker/features/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
 
-`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied by `RequestValues` in one step; merging `RequestValues` back in at the top re-exposes `Auth` / `CloudflareEnv` / `RequestContext` so resolvers can `yield* Auth` directly. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so the runtime is runnable. See [effect-layer-composition.md](./effect-layer-composition.md#multiple-runtimes--graphql--admin) for why this shape avoids the `Layer.mergeAll` dependency warning.
+`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request `Auth` and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) are layered on top in the `/fate` route. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 
@@ -306,24 +306,22 @@ it.effect("rejects empty body via resolver", () =>
 );
 ```
 
-**Integration tests — keep the live layers, swap the env:**
+**Integration tests — keep the live layers, build over a real D1:**
 
 ```ts
-const TestLive = SozlukLive.pipe(
-  Layer.provide(DrizzleLive),
-  Layer.provide(Layer.succeed(CloudflareEnv, miniflareEnv)),
-);
+const db = createDrizzle(sqlite.d1);
+const TestLive = makeFateLayer(db, fakeAuthInstance);
 ```
 
-Integration tests in `tests/integration/*.test.ts` use the second form — same miniflare D1, provided through the layer pipeline.
+Integration tests in `tests/integration/*.test.ts` use the second form — same `makeFateLayer` factory the worker init calls, just over a node-`sqlite`-backed D1 stand-in.
 
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — class-form services, layer shapes
-- [effect-layer-composition.md](./effect-layer-composition.md) — runtime wiring, multi-runtime (graphql + admin)
+- [effect-layer-composition.md](./effect-layer-composition.md) — runtime wiring, the worker layer set
 - [effect-errors.md](./effect-errors.md) — tagged error patterns
 - [effect-error-operators.md](./effect-error-operators.md) — catching and inspecting failures
 - [effect-fn-tracing.md](./effect-fn-tracing.md) — `Effect.fn` vs `Effect.fnUntraced` for method shape
 - [effect-testing.md](./effect-testing.md) — integration via miniflare + the live runtime
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema` for trust-boundary input validation
-- `worker/services/Auth.ts` — canonical small-service example with a static helper
+- `worker/features/pasaport/Auth.ts` — canonical small-service example with a static helper

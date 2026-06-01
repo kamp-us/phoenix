@@ -39,7 +39,7 @@ import type {ViewData, ViewEntity, ViewSelection} from "@nkzw/fate";
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
-import type {Post} from "../../worker/fate/views";
+import type {Post} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";

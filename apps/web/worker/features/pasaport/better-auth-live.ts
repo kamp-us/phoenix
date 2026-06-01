@@ -1,0 +1,160 @@
+/**
+ * Phoenix's `BetterAuth` Layer — a fork of `@alchemy.run/better-auth`'s
+ * `CloudflareD1` reference Layer, adapted for phoenix's existing infrastructure.
+ *
+ * Why fork instead of reuse `CloudflareD1`:
+ *
+ *   - `CloudflareD1` declares its OWN `Cloudflare.D1Database("BetterAuth")` —
+ *     phoenix already has the canonical `PhoenixDb` D1 (`db/resources.ts`,
+ *     ADR 0009), and the better-auth tables live on the same D1 as the rest of
+ *     the product data. So this Layer reuses `PhoenixDb` directly.
+ *   - Phoenix's better-auth instance needs phoenix-specific plugins (the
+ *     `magicLink` token-delivery plugin, `bearer`), an `additionalFields.username`
+ *     on `user`, and explicit `baseURL`/`trustedOrigins` for the dev Vite proxy
+ *     (ADR 0031). The reference Layer is minimal by design — this fork carries
+ *     phoenix's configuration.
+ *
+ * The session-signing secret is a `BETTER_AUTH_SECRET` `secret_text` binding,
+ * read at runtime via `yield* betterAuthSecret` (a `Config.redacted` in
+ * `config.ts`). This replaces the reference layer's `alchemy/Random` resource:
+ * `Random` is a deploy-time resource with no value in the workerd runtime
+ * isolate, so the minted secret could never be read back at request time — as a
+ * binding it is present in the runtime env, and `Config.redacted` mints a
+ * registry-backed `Redacted` that `Redacted.value` unwraps to the plain string.
+ */
+
+import * as BetterAuth from "@alchemy.run/better-auth";
+// Re-anchor transitive type specifiers away from `.pnpm/<hash>/...` paths so
+// tsgo can portably name plugin types under composite project refs.
+// See microsoft/typescript-go#1034 and better-auth#5666 for context.
+import type {} from "@better-auth/core";
+import * as Cloudflare from "alchemy/Cloudflare";
+import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
+import {drizzleAdapter} from "better-auth/adapters/drizzle";
+import {bearer, magicLink} from "better-auth/plugins";
+import type {} from "better-call";
+import {drizzle} from "drizzle-orm/d1";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Redacted from "effect/Redacted";
+import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import type {} from "zod/v4/core";
+import {AppConfig, betterAuthSecret} from "../../config.ts";
+import * as schema from "../../db/drizzle/schema.ts";
+import {PhoenixDb} from "../../db/resources.ts";
+
+/**
+ * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
+ * `CloudflareD1` reference Layer. Mirrors its structure
+ * (`Cloudflare.D1Connection.bind` for the database, `Effect.cached` so the
+ * `makeBetterAuth` call happens once per isolate) and adds phoenix's plugins +
+ * `baseURL`/`trustedOrigins`.
+ *
+ * The session-signing secret is read at runtime from the `BETTER_AUTH_SECRET`
+ * `secret_text` binding via `yield* betterAuthSecret` (a `Config.redacted` in
+ * `config.ts`). This deliberately replaces the reference layer's `alchemy/Random`
+ * resource: `Random` is a deploy-time resource and has no value in the workerd
+ * runtime isolate (`yield* Random(...)` yields no `.text` there), so the minted
+ * secret could never be read back at request time — better-auth ended up signing
+ * cookies with an unresolved Effect object. As a binding the secret is present in
+ * the runtime env, and `Config.redacted` mints a registry-backed `Redacted` from
+ * it so `Redacted.value` unwraps the plain string.
+ *
+ * `baseURL`/`trustedOrigins` are derived from `ENVIRONMENT` (read at layer build
+ * via `yield* AppConfig`, the single `effect/Config` surface): in dev they are set explicitly to
+ * `localhost` so cookie storage works behind the Vite proxy (where the worker
+ * sees `Host: 127.0.0.1:<port>` rather than the browser origin); in prod they
+ * are OMITTED so better-auth infers the origin from the inbound request Host.
+ * This is the fix for the latent prod bug — CI never set `BETTER_AUTH_URL`, so
+ * the old env-binding path shipped `http://localhost:3000` as prod's auth URL.
+ */
+export const BetterAuthLive = Layer.effect(
+	BetterAuth.BetterAuth,
+	Effect.gen(function* () {
+		const connection = yield* Cloudflare.D1Connection.bind(PhoenixDb);
+
+		// The session-signing secret, read from the `BETTER_AUTH_SECRET`
+		// `secret_text` binding off the auto-wired ConfigProvider. `Config.redacted`
+		// mints a registry-backed `Redacted<string>` from the runtime env value, so
+		// `Redacted.value` (below, at the `makeBetterAuth` call) unwraps the plain
+		// string. `Effect.orDie`: a missing secret is an unrecoverable deploy
+		// misconfiguration, not a widening of the Layer's error channel.
+		const secret = yield* betterAuthSecret.pipe(Effect.orDie);
+
+		// Read `ENVIRONMENT` through the single `effect/Config` surface (`config.ts`),
+		// resolved off the ConfigProvider alchemy auto-wires from the bound worker
+		// env. The constant is `Config.withDefault("production")` (fail-closed), so a
+		// missing var lands in prod mode and closes every dev gate below. The only
+		// residual `ConfigError` is a value outside the two literals — a malformed
+		// env, unrecoverable — so it dies rather than widening the Layer's error channel.
+		const {environment} = yield* AppConfig.pipe(Effect.orDie);
+		const isDev = environment === "development";
+
+		// Dev: hand better-auth the explicit browser origin so its cookie storage
+		// works behind the Vite proxy (the worker sees `Host: 127.0.0.1:<port>`,
+		// not the browser origin). `http`, not `https` — keeps the cookie host-only
+		// on `http://localhost` (no `Secure` flag). Prod: OMIT both so better-auth
+		// infers the origin from the inbound request Host (the latent-bug fix — CI
+		// never set `BETTER_AUTH_URL`, so the old path shipped localhost in prod).
+		const authUrlConfig = isDev
+			? {
+					baseURL: "http://localhost:3000",
+					trustedOrigins: ["http://localhost:3000", "http://localhost:5173"],
+				}
+			: {};
+
+		const auth = yield* Effect.gen(function* () {
+			const d1 = yield* connection.raw;
+			const db = drizzle(d1, {schema});
+			return makeBetterAuth({
+				emailAndPassword: {enabled: true},
+				database: drizzleAdapter(db, {provider: "sqlite", schema}),
+				secret: Redacted.value(secret),
+				// Dev sets `baseURL`/`trustedOrigins` explicitly (ADR 0031); prod omits
+				// both so better-auth infers the origin from the request Host. Derived
+				// from `ENVIRONMENT` above.
+				...authUrlConfig,
+				user: {
+					additionalFields: {
+						username: {
+							type: "string",
+							required: false,
+							// Public API can't write `username` — only the server-side
+							// `setUsername` mutation (through `Pasaport`) can.
+							input: false,
+						},
+					},
+				},
+				plugins: [
+					// Emits the `set-auth-token` response header that the SPA's `authClient`
+					// (apps/web/src/auth/client.ts) consumes — it sends back as
+					// `Authorization: Bearer <token>` for cross-origin / storage-partitioned
+					// auth paths. Don't remove without `grep "Bearer" apps/web/src/` first.
+					bearer(),
+					magicLink({
+						sendMagicLink: async ({email, token, url}) => {
+							// Gate on the same `isDev` derived above from `ENVIRONMENT`
+							// (read via `AppConfig`) — captured in this closure.
+							if (isDev) {
+								console.log("[pasaport] magic link", {email, token, url});
+							}
+						},
+					}),
+				],
+			} satisfies BetterAuthOptions);
+		}).pipe(Effect.cached);
+
+		return {
+			auth,
+			fetch: Effect.gen(function* () {
+				const request = yield* HttpServerRequest.HttpServerRequest;
+				const authInstance = yield* auth;
+				const response = yield* Effect.promise(() =>
+					authInstance.handler(request.source as Request),
+				);
+				return HttpServerResponse.fromWeb(response);
+			}),
+		};
+	}),
+).pipe(Layer.provide(Cloudflare.D1ConnectionLive));
