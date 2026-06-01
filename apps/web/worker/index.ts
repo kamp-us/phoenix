@@ -32,6 +32,7 @@ import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {createDrizzle} from "./db/Drizzle.ts";
@@ -151,7 +152,23 @@ export default Phoenix.make(
 		// validate with the same secret.
 		const betterAuth = yield* BetterAuth.BetterAuth;
 		const authInstance = yield* betterAuth.auth;
-		const fateLayer = makeFateLayer(createDrizzle(raw), authInstance);
+
+		// Build the ONE worker-level `ManagedRuntime` for this isolate from the fate
+		// layer (`Drizzle` + the feature services). It carries the
+		// `WorkerFateServices` singletons; the `/fate` bridge runs every resolver on
+		// it, providing the per-request `Auth`/`LiveBus` onto each resolver effect
+		// (`features/fate/effect.ts`). Built once here, lives for the isolate, never
+		// per request — so resolver spans nest under the runtime's request span and
+		// there is nothing to dispose between requests.
+		const fateRuntime = ManagedRuntime.make(makeFateLayer(createDrizzle(raw), authInstance));
+
+		// The route-context fate services, derived from the SAME runtime's built
+		// context (`Layer.effectContext(runtime.contextEffect)`) — so the worker
+		// services are constructed exactly once per isolate, then shared by both the
+		// resolver runtime and the routes that yield them directly (the fate + live
+		// routes' `yield* Pasaport` for session validation). `provideRequest`
+		// (in `app.ts`) discharges those direct route requirements with this layer.
+		const fateLayer = Layer.effectContext(fateRuntime.contextEffect);
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One
@@ -219,6 +236,7 @@ export default Phoenix.make(
 		// `auth` cache, so the `/api/auth/*` route's `betterAuth.fetch` reuses it
 		// with no per-request reconstruction.
 		const AppLive = makeAppLive({
+			fateRuntime,
 			fateLayer,
 			liveLayer,
 			betterAuthLayer: Layer.succeed(BetterAuth.BetterAuth)(betterAuth),

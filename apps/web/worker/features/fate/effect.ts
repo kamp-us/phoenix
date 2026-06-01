@@ -18,6 +18,8 @@
 import type {ConnectionResult, SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
 import {FateRequestError} from "@nkzw/fate/server";
 import {Cause, Effect, Exit} from "effect";
+import {LiveBus} from "../fate-live/event-bus.ts";
+import {Auth} from "../pasaport/Auth.ts";
 import type {FateContext} from "./context.ts";
 import {encodeFateError} from "./errors.ts";
 import type {FateEnv} from "./layers.ts";
@@ -40,19 +42,24 @@ export type AnyDataView = AnySourceDefinition["view"];
 
 /**
  * Build an Effect from a resolver/executor generator. The generator yields
- * heterogeneous services (`yield* Stats`, `yield* Auth`, …), so its element
- * type is `any` and `Effect.gen` infers the environment as `unknown`; we assert
- * it back to {@link FateEnv}, which the captured `Context` provides. This is the
- * single assertion the bridge makes — see the note on {@link runEffect}.
+ * heterogeneous services (`yield* Stats`, `yield* Auth`, …), so its element type
+ * is `any` and `Effect.gen` infers the environment as `unknown`; we assert it
+ * back to {@link FateEnv} — the worker-runtime singletons plus the per-request
+ * `Auth`/`LiveBus` the bridge provides. This is the single assertion the bridge
+ * makes — see the note on {@link runEffect}.
  */
 const genEffect = <A>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, FateEnv> =>
 	Effect.gen(body) as Effect.Effect<A, unknown, FateEnv>;
 
 /**
- * The one place `runPromiseExit` is called. Provides the captured worker +
- * per-request `Context` ({@link FateContext.context}) onto the resolver Effect,
- * runs it on the default runtime (ADR 0029 — no per-request `ManagedRuntime`,
- * nothing to dispose), and resolves the `Exit`:
+ * The one place `runPromiseExit` is called. Provides the two per-request service
+ * VALUES carried by the {@link FateContext} — `Auth` (the validated session) and
+ * `LiveBus` (the publish capability) — onto the resolver Effect, then runs it on
+ * the worker-level `ManagedRuntime` ({@link FateContext.runtime}), which supplies
+ * the {@link WorkerFateServices} singletons (built once per isolate, never
+ * disposed per request). Because the resolver runs THROUGH the runtime, its spans
+ * nest under the runtime's request span (the F4 observability win) rather than on
+ * a detached default-runtime root. The `Exit` resolves identically to before:
  *
  *   - `Exit.Success`            → the value.
  *   - tagged failure            → `encodeFateError` → throw (fate serializes it).
@@ -64,15 +71,21 @@ const genEffect = <A>(body: () => Generator<any, A, any>): Effect.Effect<A, unkn
  */
 const runEffect = <A>(
 	ctx: FateContext,
-	// The generator wrappers below build this via `Effect.gen` over a
-	// `Generator<any, A, any>`, so the environment channel erases to `unknown`
-	// at this boundary. The resolver/executor bodies are checked at their
-	// own definition site, where `yield* Service` carries the real types; the
-	// captured `Context` provides `FateEnv` at run time. We assert that shape
-	// into `Effect.provide` rather than leaking `any` outward.
+	// The generator wrappers build this via `Effect.gen` over a
+	// `Generator<any, A, any>`, so the environment channel erases to `unknown` at
+	// this boundary; `genEffect` asserts it to `FateEnv`. Providing the per-request
+	// `Auth`/`LiveBus` here discharges those two, leaving the `WorkerFateServices`
+	// the runtime supplies.
 	effect: Effect.Effect<A, unknown, FateEnv>,
 ): Promise<A> =>
-	Effect.runPromiseExit(Effect.provide(effect, ctx.context)).then((exit) => {
+	ctx.runtime
+		.runPromiseExit(
+			effect.pipe(
+				Effect.provideService(Auth, ctx.auth),
+				Effect.provideService(LiveBus, ctx.liveBus),
+			),
+		)
+		.then((exit) => {
 		if (Exit.isSuccess(exit)) {
 			return exit.value;
 		}

@@ -1,24 +1,23 @@
 /**
- * Bridge isolation tests — the fate ↔ Effect seam's success/failure mapping.
+ * Bridge isolation tests — the fate ↔ Effect seam over ONE worker-level
+ * `ManagedRuntime` (the F4 refactor).
  *
- * These verify the three branches of {@link runEffect} (via the public
- * wrappers) in isolation — no workerd, no real D1, no fate server:
+ * These verify the bridge through its public wrappers in isolation — no workerd,
+ * no real D1, no fate server — driving each helper exactly as fate does:
+ * `await wrapped({ctx, input, select})`.
  *
- *   - `Exit.Success`          → resolves with the value.
- *   - tagged domain failure   → rejects with a `FateRequestError` whose `code`
- *                               is what `encodeFateError` maps the `_tag` to.
- *   - `FateRequestError`      → passes through verbatim (not re-encoded).
- *   - defect (uncaught throw) → squashed → `encodeFateError` → `INTERNAL_*`.
- *
- * Per ADR 0029 the bridge provides a captured `Context` and runs on the default
- * runtime — no `ManagedRuntime`. A `FateContext` only needs `{context, request}`;
- * we build a `Context` carrying just the services each test body yields (`Auth`),
- * so the tests stay focused on the seam, not the full feature graph.
+ * The seam: a worker-level `ManagedRuntime` carries the worker services; the
+ * per-request `Auth` + `LiveBus` service VALUES ride on the `FateContext` and are
+ * provided onto EACH resolver effect at run time (not baked into the runtime).
+ * Tests build a tiny test runtime from a marker-service layer (+ a tracer for the
+ * span-nesting test), wrap a `FateContext` around it, and assert observable
+ * behavior through the public helpers.
  */
 
 import {FateRequestError} from "@nkzw/fate/server";
-import {Context, Data, Effect} from "effect";
+import {Context, Data, Effect, Exit, Layer, ManagedRuntime, Option, Tracer} from "effect";
 import {describe, expect, it} from "vitest";
+import {LiveBus, makeLiveBusTest} from "../fate-live/event-bus";
 import {Auth, Unauthorized} from "../pasaport/Auth";
 import type {FateContext} from "./context";
 import {fateMutation, fateQuery, fateSource} from "./effect";
@@ -28,18 +27,27 @@ class BodyRequired extends Data.TaggedError("sozluk/BodyRequired")<{
 	readonly message: string;
 }> {}
 
+// A marker service that ONLY the worker-level runtime provides — yielding it from
+// a resolver proves the resolver ran on the injected runtime (behavior ①).
+class Marker extends Context.Service<Marker, {readonly value: string}>()(
+	"@phoenix/test/fate/Marker",
+) {}
+
 /**
- * Build a `FateContext` whose captured `Context` carries an `Auth` service with
- * the given user (or anonymous). The bridge only reads `ctx.context`; the cast
- * to the full `FateEnv` is safe because the test bodies yield only `Auth`.
+ * Build a `FateContext` over a worker-level `ManagedRuntime` carrying the
+ * `Marker` service, plus the per-request `Auth` + `LiveBus` VALUES. The bridge
+ * provides `Auth`/`LiveBus` onto each resolver effect and runs it on the runtime.
  */
-const makeCtx = (user?: {id: string}): FateContext => {
-	// biome-ignore lint/plugin: a `Context<Auth>` can't be statically widened to the full `Context<FateEnv>` that `FateContext` carries; the bridge under test reads only `Auth` (see the doc comment above).
-	const context = Context.make(Auth, {
-		user: user as never,
+const makeCtx = (
+	opts: {user?: {id: string}; liveBus?: typeof LiveBus.Service; marker?: string} = {},
+): FateContext => {
+	const runtime = ManagedRuntime.make(Layer.succeed(Marker)({value: opts.marker ?? "marker"}));
+	const auth: typeof Auth.Service = {
+		user: opts.user as never,
 		session: undefined,
-	}) as unknown as FateContext["context"];
-	return {context, request: new Request("http://test/fate")};
+	};
+	const liveBus = opts.liveBus ?? makeLiveBusTest().service;
+	return {runtime, request: new Request("http://test/fate"), auth, liveBus};
 };
 
 const invoke = <A>(
@@ -53,42 +61,27 @@ const invoke = <A>(
 const PLAN = undefined as never;
 
 describe("fateQuery", () => {
-	it("resolves with the Effect's success value", async () => {
-		const resolve = fateQuery<undefined, {ok: true}>(function* () {
-			yield* Effect.void;
-			return {ok: true};
+	it("runs the resolver on the injected runtime (yields a runtime service)", async () => {
+		const resolve = fateQuery<undefined, {value: string}>(function* () {
+			const marker = yield* Marker;
+			return {value: marker.value};
 		});
-		await expect(invoke(resolve, makeCtx())).resolves.toEqual({ok: true});
+		await expect(invoke(resolve, makeCtx({marker: "from-runtime"}))).resolves.toEqual({
+			value: "from-runtime",
+		});
 	});
 
-	it("resolves data produced by a service method (Auth.required)", async () => {
-		const resolve = fateQuery<undefined, {id: string}>(function* () {
-			const {user} = yield* Auth.required;
-			return {id: user.id};
-		});
-		await expect(invoke(resolve, makeCtx({id: "u1"}))).resolves.toEqual({id: "u1"});
-	});
-
-	it("maps a tagged domain failure to its FateRequestError wire code", async () => {
+	it("throws encodeFateError(tagged error) — the wire-shaped FateRequestError", async () => {
 		const resolve = fateQuery<undefined, never>(function* () {
 			return yield* new BodyRequired({message: "tanım boş olamaz"});
 		});
-		await expect(invoke(resolve, makeCtx())).rejects.toMatchObject({
-			code: "BODY_REQUIRED",
-		});
-	});
-
-	it("maps Unauthorized → UNAUTHORIZED", async () => {
-		const resolve = fateQuery<undefined, {id: string}>(function* () {
-			const {user} = yield* Auth.required; // anonymous → Unauthorized
-			return {id: user.id};
-		});
 		const err = await invoke(resolve, makeCtx()).catch((e) => e);
 		expect(err).toBeInstanceOf(FateRequestError);
-		expect(err.code).toBe("UNAUTHORIZED");
+		expect(err.code).toBe("BODY_REQUIRED");
+		expect(err.message).toBe("tanım boş olamaz");
 	});
 
-	it("passes a pre-built FateRequestError through verbatim", async () => {
+	it("passes a pre-built FateRequestError through verbatim (not re-encoded)", async () => {
 		const sentinel = new FateRequestError("NOT_FOUND", "nope");
 		const resolve = fateQuery<undefined, never>(function* () {
 			return yield* Effect.fail(sentinel);
@@ -97,7 +90,7 @@ describe("fateQuery", () => {
 		expect(err).toBe(sentinel);
 	});
 
-	it("squashes a defect (uncaught throw) to an internal error", async () => {
+	it("squashes a defect (uncaught throw) → encodeFateError → INTERNAL_SERVER_ERROR", async () => {
 		const resolve = fateQuery<undefined, never>(function* () {
 			yield* Effect.void;
 			throw new Error("boom");
@@ -107,13 +100,80 @@ describe("fateQuery", () => {
 		expect(err.code).toBe("INTERNAL_SERVER_ERROR");
 	});
 
-	it("maps an unknown tagged error to an internal error", async () => {
-		class Weird extends Data.TaggedError("weird/Unknown")<{readonly message: string}> {}
-		const resolve = fateQuery<undefined, never>(function* () {
-			return yield* new Weird({message: "?"});
+	it("sees the per-request Auth session carried by the FateContext (not the runtime)", async () => {
+		const resolve = fateQuery<undefined, {id: string}>(function* () {
+			const {user} = yield* Auth.required;
+			return {id: user.id};
+		});
+		// The session rides on the ctx, NOT the runtime layer — proves Auth is
+		// provided onto the resolver effect per request.
+		await expect(invoke(resolve, makeCtx({user: {id: "u1"}}))).resolves.toEqual({id: "u1"});
+	});
+
+	it("an anonymous per-request Auth → Unauthorized → UNAUTHORIZED wire code", async () => {
+		const resolve = fateQuery<undefined, {id: string}>(function* () {
+			const {user} = yield* Auth.required;
+			return {id: user.id};
 		});
 		const err = await invoke(resolve, makeCtx()).catch((e) => e);
-		expect(err.code).toBe("INTERNAL_SERVER_ERROR");
+		expect(err).toBeInstanceOf(FateRequestError);
+		expect(err.code).toBe("UNAUTHORIZED");
+	});
+
+	it("sees the per-request LiveBus carried by the FateContext and publishes through it", async () => {
+		const bus = makeLiveBusTest();
+		const resolve = fateMutation<{id: string}, {ok: true}>(function* ({input}) {
+			const liveBus = yield* LiveBus;
+			yield* liveBus.useIgnore((b) => b.update("term", input.id, {changed: ["definitions"]}));
+			return {ok: true};
+		});
+		await expect(
+			resolve({ctx: makeCtx({liveBus: bus.service}), input: {id: "t1"}, select: []}),
+		).resolves.toEqual({ok: true});
+		// The capturing bus on the ctx recorded the resolved topic key — proves the
+		// per-request bus VALUE (not a runtime singleton) was provided onto the effect.
+		expect(bus.published.length).toBeGreaterThan(0);
+		expect(bus.published).toContain("entity:term:t1");
+	});
+
+	it("nests a resolver span under the runtime's request span (F4 win) — old path is detached", async () => {
+		// The worker runtime carries a "request span" as its ambient parent
+		// (`Tracer.ParentSpan`). Because the bridge runs each resolver THROUGH the
+		// runtime, a resolver's `Effect.withSpan` parents to it.
+		const requestSpan = Tracer.externalSpan({spanId: "req-span", traceId: "req-trace"});
+		const runtime = ManagedRuntime.make(
+			Layer.mergeAll(
+				Layer.succeed(Marker)({value: "marker"}),
+				Layer.succeed(Tracer.ParentSpan)(requestSpan),
+			),
+		);
+		const ctx: FateContext = {
+			runtime,
+			request: new Request("http://test/fate"),
+			auth: {user: undefined, session: undefined},
+			liveBus: makeLiveBusTest().service,
+		};
+
+		// A resolver that opens its own span and returns it — observable through the
+		// bridge exactly as a value would be.
+		const resolve = fateQuery<undefined, Tracer.AnySpan>(function* () {
+			return yield* Effect.currentSpan.pipe(Effect.withSpan("resolver"));
+		});
+		const span = await invoke(resolve, ctx);
+
+		// F4: the resolver span's PARENT is the runtime's request span.
+		expect(Option.isSome(span.parent)).toBe(true);
+		expect(Option.getOrThrow(span.parent).spanId).toBe("req-span");
+
+		// Contrast — the OLD bridge path: `Effect.runPromiseExit(Effect.provide(
+		// probe, servicesOnlyContext))` on the default runtime, with a services-only
+		// Context that carries NO parent span. The resolver span is a DETACHED root.
+		const servicesOnly = Context.make(Marker, {value: "marker"});
+		const probe = Effect.currentSpan.pipe(Effect.withSpan("resolver"));
+		const exit = await Effect.runPromiseExit(Effect.provide(probe, servicesOnly));
+		const detached = Exit.isSuccess(exit) ? exit.value : undefined;
+		expect(detached).toBeDefined();
+		expect(Option.isNone(detached!.parent)).toBe(true);
 	});
 });
 

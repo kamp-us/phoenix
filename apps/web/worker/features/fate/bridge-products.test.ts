@@ -28,22 +28,24 @@
  * Runs in the node pool (no workerd) — same constraint as `bridge-sozluk.test.ts`.
  */
 import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
-import {Effect, Layer} from "effect";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import {Effect, ManagedRuntime} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
 import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Pano} from "../pano/Pano";
-import {Auth} from "../pasaport/Auth";
 import {Pasaport} from "../pasaport/Pasaport";
-import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
+import {makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
 
 let sqlite: SqliteD1;
-/** The worker-level layer (Drizzle + features), built once over the bound D1. */
-let WorkerLive: Layer.Layer<WorkerFateServices>;
+/**
+ * The worker-level `ManagedRuntime` (Drizzle + features), built ONCE over the
+ * bound D1 — the F4 isolate runtime. `fateOp` hands it to fate on a
+ * `FateContext`; the seed helpers run feature services on it directly.
+ */
+let WorkerRuntime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
 
 const AUTHOR = {id: "u-author", name: "umut", email: "umut@example.com"};
 const VOTER = {id: "u-voter", name: "elif", email: "elif@example.com"};
@@ -55,9 +57,9 @@ type FateResult =
 
 /**
  * Drive one fate operation through the bridge the way the `/fate` route does:
- * provide per-request `Auth` + `HttpServerRequest`, capture the `Context`, and
- * run `fateServer.handleRequest`. `auth` chooses the session (anonymous by
- * default).
+ * build the per-request `Auth` + `LiveBus` VALUES and hand fate a `FateContext`
+ * of `{runtime, request, auth, liveBus}`, then run `fateServer.handleRequest`.
+ * `auth` chooses the session (anonymous by default).
  */
 async function fateOp(
 	operation: Record<string, unknown>,
@@ -70,22 +72,16 @@ async function fateOp(
 	});
 
 	// Capturing `LiveBus` (ADR 0039): records the RESOLVED topic keys each
-	// mutation's `live.*` fans out to, provided structurally like the `/fate`
-	// route provides the real one.
-	const {layer: LiveBusTest, published} = makeLiveBusTest();
+	// mutation's `live.*` fans out to, carried as the per-request VALUE like the
+	// `/fate` route carries the real one.
+	const {service: liveBus, published} = makeLiveBusTest();
 
-	const captureAndServe = Effect.gen(function* () {
-		const context = yield* Effect.context<FateEnv>();
-		return yield* Effect.promise(() => fateServer.handleRequest(request, {request, context}));
-	}).pipe(
-		Effect.provideService(Auth, {user: opts.auth as never, session: undefined}),
-		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
-		// One merged provide (the capturing `LiveBus` + the worker-level services) —
-		// chaining two `Effect.provide` calls trips the multipleEffectProvide lint.
-		Effect.provide(Layer.mergeAll(LiveBusTest, WorkerLive)),
-	);
-
-	const res = await Effect.runPromise(captureAndServe);
+	const res = await fateServer.handleRequest(request, {
+		runtime: WorkerRuntime,
+		request,
+		auth: {user: opts.auth as never, session: undefined},
+		liveBus,
+	});
 	const body = (await res.json()) as {version: number; results: FateResult[]};
 	return {status: res.status, result: body.results[0]!, published};
 }
@@ -104,7 +100,7 @@ beforeAll(async () => {
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
 	>[1];
-	WorkerLive = makeFateLayer(db, fakeAuth);
+	WorkerRuntime = ManagedRuntime.make(makeFateLayer(db, fakeAuth));
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the
 	// node pool can't forge a session, so we insert the rows the services read).
@@ -119,7 +115,7 @@ beforeAll(async () => {
 	// Seed one post + five chronological comments through the live Pano service —
 	// the same lifecycle a user-driven submit would take, so the view rows + stats
 	// land identically.
-	const seeded = await Effect.runPromise(
+	const seeded = await WorkerRuntime.runPromise(
 		Effect.gen(function* () {
 			const pano = yield* Pano;
 			const post = yield* pano.submitPost({
@@ -141,22 +137,23 @@ beforeAll(async () => {
 				ids.push(c.commentId);
 			}
 			return {postId: post.postId, commentIds: ids};
-		}).pipe(Effect.provide(WorkerLive)),
+		}),
 	);
 	POST_ID = seeded.postId;
 	COMMENT_IDS.push(...seeded.commentIds);
 
 	// Give AUTHOR a username + profile + one definition contribution so the
 	// pasaport profile feed is a mixed discriminant (post + comment + definition).
-	await Effect.runPromise(
+	await WorkerRuntime.runPromise(
 		Effect.gen(function* () {
 			const pasaport = yield* Pasaport;
 			yield* pasaport.setUsername({userId: AUTHOR.id, value: "umut-author"});
-		}).pipe(Effect.provide(WorkerLive)),
+		}),
 	);
 });
 
-afterAll(() => {
+afterAll(async () => {
+	await WorkerRuntime?.dispose();
 	sqlite?.close();
 });
 

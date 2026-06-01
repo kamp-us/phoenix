@@ -320,11 +320,14 @@ export function liveBusFor(publisher: LivePublisher): typeof LiveBus.Service {
  * A capturing {@link LiveBus} for bridge tests. Its publisher runs the real
  * {@link topicsForPublish} (so it captures the *resolved* topic keys, catching a
  * wrong-but-valid mis-route — e.g. an args publish collapsing to the global
- * wildcard) and records each key into the returned `published` array. The test
- * provides `layer` with `Effect.provide` and asserts on `published`.
+ * wildcard) and records each key into the returned `published` array. Tests that
+ * provide the bus through a `Context`/runtime use `layer`; tests that carry the
+ * per-request bus VALUE on a `FateContext` (the F4 bridge) use `service`. Both
+ * close over the SAME `published` array.
  */
 export function makeLiveBusTest(): {
 	readonly layer: Layer.Layer<LiveBus>;
+	readonly service: typeof LiveBus.Service;
 	readonly published: ReadonlyArray<string>;
 } {
 	const published: Array<string> = [];
@@ -335,5 +338,5 @@ export function makeLiveBusTest(): {
 	const service = liveBusFor((topicKey) => {
 		published.push(topicKey);
 	});
-	return {layer: Layer.succeed(LiveBus)(service), published};
+	return {layer: Layer.succeed(LiveBus)(service), service, published};
 }

@@ -22,9 +22,10 @@
 import type * as BetterAuth from "@alchemy.run/better-auth";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
+import type * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
-import {fateRoute} from "../features/fate/route.ts";
+import {makeFateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {authRoute} from "../features/pasaport/route.ts";
@@ -33,9 +34,18 @@ import {healthApiLayer} from "./health.ts";
 /**
  * Build the application router layer.
  *
- * @param fateLayer    the worker-level fate services (Drizzle + features),
- *                     built once in init — discharges the fate, auth, and live
- *                     routes' service requirements via `HttpRouter.provideRequest`.
+ * @param fateRuntime  the isolate's worker `ManagedRuntime` carrying the
+ *                     {@link WorkerFateServices} — the `/fate` route runs every
+ *                     fate resolver on it (the bridge provides per-request
+ *                     `Auth`/`LiveBus` onto each resolver effect, `effect.ts`).
+ * @param fateLayer    the worker-level fate services as a route-context layer,
+ *                     derived ONCE from `fateRuntime.contextEffect` in init
+ *                     (`Layer.effectContext`) — discharges the fate/auth/live
+ *                     routes' direct service requirements (`Pasaport` for the
+ *                     fate + live routes' session validation) via
+ *                     `HttpRouter.provideRequest`. Sharing the runtime's built
+ *                     context means the worker services are constructed exactly
+ *                     once per isolate, not once for the runtime and once here.
  * @param liveLayer    the worker-init-resolved DO namespace handles
  *                     (`LiveTopics` for the `/fate` publish path, `LiveConnections`
  *                     for the `/fate/live` SSE transport), built from the bound
@@ -46,6 +56,7 @@ import {healthApiLayer} from "./health.ts";
  * scope, so this layer no longer needs the worker env passed in.
  */
 export const makeAppLive = (options: {
+	readonly fateRuntime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
 	readonly fateLayer: Layer.Layer<WorkerFateServices>;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**
@@ -87,7 +98,7 @@ export const makeAppLive = (options: {
 	// `provideMerge` makes the build order explicit: fateLayer + liveLayer
 	// first, then betterAuthLayer's outputs merged on top with its own
 	// requirements left to the outer worker `Effect.provide`.
-	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute).pipe(
+	const rawRoutes = Layer.mergeAll(makeFateRoute(options.fateRuntime), authRoute, liveRoute).pipe(
 		HttpRouter.provideRequest(
 			Layer.mergeAll(
 				options.fateLayer,

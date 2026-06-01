@@ -3,12 +3,12 @@
  *
  * `createFateServer` produces plain `Request → Response` handlers
  * (`handleRequest` / `handleLiveRequest`) that the `HttpRouter.add` for the
- * `POST /fate` route invokes directly — no Hono in between. The route resolves
- * `Effect.context<FateEnv>()` once per request and hands the resulting `Context`
- * down through `adapterContext`; fate's `context` factory passes it through to
- * each resolver as `FateContext`. The bridge runner (`features/fate/effect.ts`)
- * then runs each resolver Effect via `Effect.provide(effect, ctx.context)` —
- * no `ManagedRuntime` (ADR 0029). See `.patterns/fate-server-wiring.md`.
+ * `POST /fate` route invokes directly — no Hono in between. The route hands a
+ * `FateContext` of `{runtime, request, auth, liveBus}` down through
+ * `adapterContext`; fate's `context` factory passes it through to each resolver
+ * as `ctx`. The bridge runner (`features/fate/effect.ts`) runs each resolver
+ * Effect on the worker `ManagedRuntime` (`ctx.runtime`) with the per-request
+ * `Auth`/`LiveBus` provided onto it. See `.patterns/fate-server-wiring.md`.
  *
  * Wired surface: sozluk (`term`/`terms`/`definition.*`) + pano
  * (`post`/`posts`/`post.*`/`comment.*`) + pasaport (`me`/`profile`/

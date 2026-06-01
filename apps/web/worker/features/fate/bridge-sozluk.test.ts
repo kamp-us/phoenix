@@ -27,8 +27,7 @@
  *     re-resolves over the same bridge.
  */
 import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
-import {Effect, Layer} from "effect";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
+import {ManagedRuntime} from "effect";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
 // `?raw` so the node/unit pool imports the SQL as a string (the pool-workers
@@ -37,13 +36,16 @@ import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?
 import * as schema from "../../db/drizzle/schema";
 import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
-import {Auth} from "../pasaport/Auth";
-import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
+import {makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
 
 let sqlite: SqliteD1;
-/** The worker-level layer (Drizzle + features), built once over the bound D1. */
-let WorkerLive: Layer.Layer<WorkerFateServices>;
+/**
+ * The worker-level `ManagedRuntime` (Drizzle + features), built ONCE over the
+ * bound D1 — exactly the F4 isolate runtime the worker init builds. Each `fateOp`
+ * hands it to fate on a `FateContext`; the bridge runs each resolver on it.
+ */
+let WorkerRuntime: ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
 
 const SESSION_USER: {id: string; name: string; email: string} = {
 	id: "u-writer",
@@ -53,9 +55,9 @@ const SESSION_USER: {id: string; name: string; email: string} = {
 
 /**
  * Drive one fate operation through the bridge the way the `/fate` route does:
- * provide per-request `Auth` + `HttpServerRequest`, capture the `Context`, and
- * run `fateServer.handleRequest`. `auth` chooses the session (anonymous by
- * default).
+ * build the per-request `Auth` + `LiveBus` VALUES and hand fate a `FateContext`
+ * of `{runtime, request, auth, liveBus}`, then run `fateServer.handleRequest`.
+ * `auth` chooses the session (anonymous by default).
  */
 async function fateOp(
 	operation: Record<string, unknown>,
@@ -67,31 +69,19 @@ async function fateOp(
 		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
 	});
 
-	// Provide a capturing `LiveBus` (ADR 0039) the way the `/fate` route provides
-	// the real one — structurally, through the same context every service flows
-	// through. `published` records the RESOLVED topic keys a mutation's `live.*`
-	// fans out to (run through the real `topicsForPublish`), so the round-trip
-	// tests can assert which topics each write published to.
-	const {layer: LiveBusTest, published} = makeLiveBusTest();
+	// A capturing `LiveBus` (ADR 0039) carried as the per-request VALUE the way the
+	// `/fate` route carries the real one. `published` records the RESOLVED topic
+	// keys a mutation's `live.*` fans out to (run through the real
+	// `topicsForPublish`), so the round-trip tests can assert which topics each
+	// write published to.
+	const {service: liveBus, published} = makeLiveBusTest();
 
-	const captureAndServe = Effect.gen(function* () {
-		// The captured map carries the worker-level services PLUS the per-request
-		// Auth/HttpServerRequest provided just below — the full FateEnv.
-		const context = yield* Effect.context<FateEnv>();
-		const res = yield* Effect.promise(() => fateServer.handleRequest(request, {request, context}));
-		return res;
-	}).pipe(
-		Effect.provideService(Auth, {
-			user: opts.auth as never,
-			session: undefined,
-		}),
-		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
-		// One merged provide (the capturing `LiveBus` + the worker-level services) —
-		// chaining two `Effect.provide` calls trips the multipleEffectProvide lint.
-		Effect.provide(Layer.mergeAll(LiveBusTest, WorkerLive)),
-	);
-
-	const res = await Effect.runPromise(captureAndServe);
+	const res = await fateServer.handleRequest(request, {
+		runtime: WorkerRuntime,
+		request,
+		auth: {user: opts.auth as never, session: undefined},
+		liveBus,
+	});
 	const body = (await res.json()) as {
 		version: number;
 		results: Array<
@@ -115,7 +105,7 @@ beforeAll(async () => {
 	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
 		typeof makeFateLayer
 	>[1];
-	WorkerLive = makeFateLayer(db, fakeAuth);
+	WorkerRuntime = ManagedRuntime.make(makeFateLayer(db, fakeAuth));
 
 	// Seed three definitions with distinct scores so the keyset order is
 	// deterministic: (score desc, created_at asc, id asc). Written straight to the
@@ -158,7 +148,8 @@ beforeAll(async () => {
 	});
 });
 
-afterAll(() => {
+afterAll(async () => {
+	await WorkerRuntime?.dispose();
 	sqlite?.close();
 });
 
