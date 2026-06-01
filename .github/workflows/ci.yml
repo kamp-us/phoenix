@@ -10,6 +10,35 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
+  # Which parts of the tree changed — gates the heavy integration job so a
+  # frontend/docs-only PR doesn't pay the slow real-D1 suite. `check` + `unit`
+  # always run (cheap). Vitest's own `--changed` can't do this: the integration
+  # tests are black-box (HTTP against the deployed worker), so a `worker/**` edit
+  # never appears in their module graph — a path filter is the right tool.
+  changes:
+    name: detect backend changes
+    runs-on: ubuntu-latest
+    permissions:
+      pull-requests: read
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: dorny/paths-filter@v3.0.2
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'apps/web/worker/**'
+              - 'apps/web/tests/integration/**'
+              - 'apps/web/alchemy.run.ts'
+              - 'apps/web/stacks/**'
+              - 'apps/web/vitest.config.ts'
+              - 'apps/web/package.json'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yml'
+
   check:
     name: lint / format / typecheck
     runs-on: ubuntu-latest
@@ -56,6 +85,10 @@ jobs:
 
   integration:
     name: integration tests
+    needs: changes
+    # Only when backend-ish paths changed (see `changes`). Skipped → green, not
+    # blocking. PRs that touch `worker/**` (like the framework PR) still run it.
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2

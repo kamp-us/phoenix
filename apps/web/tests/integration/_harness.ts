@@ -115,13 +115,17 @@ const isAbort = (e: unknown): boolean =>
 
 // One HTTP request that stalls past this is aborted and (for idempotent ops)
 // retried against a fresh connection. The integration deploy talks to real
-// Cloudflare D1 over the dev-sidecar loopback (no offline D1); under sustained
-// sequential seed load a single round-trip occasionally hangs — without this
-// bound the whole test would wait out the Vitest timeout and die with
-// "All fibers interrupted". 12s is well above a healthy round-trip (incl. the
-// `definition.add` full term_summary recompute) but short enough to retry twice
-// inside a 90s test budget.
-const REQUEST_TIMEOUT_MS = 12_000;
+// Cloudflare D1 over the dev-sidecar loopback (no offline D1); a request can
+// occasionally hang outright — without this bound the whole test waits out the
+// Vitest timeout and dies with "All fibers interrupted".
+//
+// Sizing is a balance: too low and it chops *legitimately slow* requests rather
+// than just hung ones. The long single-fork run holds one workerd↔remote-D1
+// connection whose latency creeps up over ~10 min, so single round-trips late in
+// the run genuinely take many seconds (an early 12s bound aborted them and
+// reddened whole files). 30s clears that degraded tail while still catching a
+// true hang and leaving room to retry inside the 120s test budget.
+const REQUEST_TIMEOUT_MS = 30_000;
 
 // Unique per-process stamp for seeded author/voter emails. D1 is shared across
 // the whole integration deploy, so seed identities must never collide with

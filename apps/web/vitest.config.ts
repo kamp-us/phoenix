@@ -45,8 +45,8 @@ export default defineConfig({
 					// right layer, and a test-level retry would re-enter `seedTerm` whose
 					// process-level (slug, body) dedup then reports created:false /
 					// inserted:0 — breaking the very seed assertions it would be retrying.
-					testTimeout: 90_000,
-					hookTimeout: 90_000,
+					testTimeout: 120_000,
+					hookTimeout: 120_000,
 					pool: "forks",
 					// Vitest 4: `singleFork: true` → `maxWorkers: 1, isolate: false`. One
 					// long-lived fork, no per-file isolation — the HTTP-only test fork
