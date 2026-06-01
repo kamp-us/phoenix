@@ -197,7 +197,7 @@ describe("fateMutation", () => {
 
 describe("fateSource", () => {
 	it("byId resolves a raw row through the runtime", async () => {
-		const executor = fateSource<{id: string; name: string}>({
+		const executor = fateSource<{id: string; name: string}, Marker>({
 			byId: function* (id) {
 				yield* Effect.void;
 				return {id, name: `row-${id}`};
@@ -208,7 +208,7 @@ describe("fateSource", () => {
 	});
 
 	it("byIds returns a mutable array (spread) of rows", async () => {
-		const executor = fateSource<{id: string}>({
+		const executor = fateSource<{id: string}, Marker>({
 			byIds: function* (ids) {
 				yield* Effect.void;
 				return ids.map((id) => ({id}));
@@ -220,7 +220,7 @@ describe("fateSource", () => {
 	});
 
 	it("maps a failing source executor to a wire error", async () => {
-		const executor = fateSource<{id: string}>({
+		const executor = fateSource<{id: string}, Marker>({
 			byId: function* () {
 				return yield* new Unauthorized({message: "no"});
 			},
@@ -230,7 +230,7 @@ describe("fateSource", () => {
 	});
 
 	it("only defines the handlers that were provided", () => {
-		const executor = fateSource<{id: string}>({
+		const executor = fateSource<{id: string}, Marker>({
 			byId: function* (id) {
 				yield* Effect.void;
 				return {id};

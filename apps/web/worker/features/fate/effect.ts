@@ -30,7 +30,7 @@ import {LiveBus} from "../fate-live/event-bus.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import type {FateContext} from "./context.ts";
 import {encodeFateError} from "./errors.ts";
-import type {FateEnv} from "./layers.ts";
+import type {FateEnv, WorkerFateServices} from "./layers.ts";
 
 type Selection = ReadonlyArray<string>;
 
@@ -60,8 +60,8 @@ export type AnyDataView = AnySourceDefinition["view"];
  * per-request `Auth`/`LiveBus` the bridge provides) — the irreducible F7
  * assertion (see the note on {@link runEffect}).
  */
-const genEffect = <A>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, FateEnv> =>
-	Effect.gen(body) as Effect.Effect<A, unknown, FateEnv>;
+const genEffect = <A, R>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, R> =>
+	Effect.gen(body) as Effect.Effect<A, unknown, R>;
 
 /**
  * The one place an effect is run. Provides the two per-request service VALUES
@@ -184,7 +184,12 @@ export const fateMutation =
  * recover it from the exported `SourceRegistry` Map's value type rather than
  * naming it directly.
  */
-export type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, infer V> ? V : never;
+// Generic in the runtime env `R` (defaulting to the production worker services)
+// so the per-feature `sources.ts` registries slot into `createFateServer`'s
+// `FateContext` Context unchanged, while the isolation tests can name a marker
+// `R` and drive an executor with a marker-runtime ctx — both cast-free.
+export type SourceExecutor<R = WorkerFateServices> =
+	SourceRegistry<FateContext<R>> extends Map<unknown, infer V> ? V : never;
 
 /**
  * Wrap a set of Effect-generator source handlers as a fate `SourceExecutor`.
@@ -196,7 +201,7 @@ export type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, in
  * reachable as a relation. See `.patterns/fate-sources.md`.
  */
 
-export const fateSource = <Item extends Record<string, unknown>>(handlers: {
+export const fateSource = <Item extends Record<string, unknown>, R = WorkerFateServices>(handlers: {
 	byId?: (id: string) => Generator<any, Item | null, any>;
 	byIds?: (ids: ReadonlyArray<string>) => Generator<any, ReadonlyArray<Item>, any>;
 	connection?: (page: {
@@ -206,7 +211,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 		take: number;
 		skip?: number;
 	}) => Generator<any, ReadonlyArray<Item>, any>;
-}): SourceExecutor => {
+}): SourceExecutor<R> => {
 	const {byId, byIds, connection} = handlers;
 	// Build as one literal with conditional spreads: under
 	// `exactOptionalPropertyTypes`, assigning to declared-optional fields would
@@ -214,7 +219,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 	return {
 		...(byId
 			? {
-					byId: ({ctx, id}: {ctx: FateContext; id: string}) =>
+					byId: ({ctx, id}: {ctx: FateContext<R>; id: string}) =>
 						runEffect(
 							ctx,
 							genEffect(() => byId(id)),
@@ -223,7 +228,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 			: {}),
 		...(byIds
 			? {
-					byIds: ({ctx, ids}: {ctx: FateContext; ids: Array<string>}) =>
+					byIds: ({ctx, ids}: {ctx: FateContext<R>; ids: Array<string>}) =>
 						runEffect(
 							ctx,
 							genEffect(() => byIds(ids)),
@@ -240,7 +245,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 						skip,
 						plan,
 					}: {
-						ctx: FateContext;
+						ctx: FateContext<R>;
 						cursor?: string;
 						direction: "forward" | "backward";
 						take: number;
