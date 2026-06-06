@@ -3,17 +3,17 @@ packages:
   - apps/*
 
 catalog:
-  '@alchemy.run/better-auth': 2.0.0-beta.45
+  '@alchemy.run/better-auth': 2.0.0-beta.52
   '@base-ui/react': ^1.4.1
   '@better-auth/core': 1.6.10
   '@biomejs/biome': ^2.4.15
   '@cloudflare/workers-types': ^4.20260509.1
   '@effect/language-service': ^0.85.1
-  '@effect/platform-bun': 4.0.0-beta.74
-  '@effect/platform-node': 4.0.0-beta.74
-  '@effect/sql-pg': 4.0.0-beta.74
+  '@effect/platform-bun': 4.0.0-beta.78
+  '@effect/platform-node': 4.0.0-beta.78
+  '@effect/sql-pg': 4.0.0-beta.78
   '@effect/tsgo': ^0.5.2
-  '@effect/vitest': 4.0.0-beta.74
+  '@effect/vitest': 4.0.0-beta.78
   '@nkzw/fate': 1.0.3
   '@playwright/test': ^1.59.1
   '@types/node': ^25.6.2
@@ -22,12 +22,12 @@ catalog:
   '@typescript/native-preview': ^7.0.0-dev.20260509.2
   '@usirin/forge': ^0.2.0
   '@vitejs/plugin-react-swc': ^4.3.0
-  alchemy: 2.0.0-beta.45
+  alchemy: 2.0.0-beta.52
   better-auth: ^1.6.10
   better-call: 1.3.5
-  drizzle-kit: ^0.31.10
-  drizzle-orm: ^0.45.2
-  effect: 4.0.0-beta.74
+  drizzle-kit: 1.0.0-rc.3
+  drizzle-orm: 1.0.0-rc.3
+  effect: 4.0.0-beta.78
   react: 19.2.6
   react-dom: 19.2.6
   react-fate: 1.0.3
@@ -50,8 +50,9 @@ onlyBuiltDependencies:
 # Local patch (policy: patch deps locally, don't depend on an upstream/fork
 # release). Adds `DurableObjectNamespaceScope` to alchemy's `DurableObjectServices`
 # union so the `.make()` DO scope no longer leaks into the Stack's requirements
-# (alchemy.run.ts TS2375). NOT upstreamed — verified still absent from beta.46's
-# published types (2026-05-31); the fix is PR'd to the usirin/alchemy-effect fork,
-# not waited on from upstream. Re-target the version key if the alchemy pin bumps.
+# (alchemy.run.ts TS2375). NOT upstreamed — verified still absent from beta.52,
+# in BOTH the npm published types AND the usirin/alchemy-effect fork source
+# (the union in DurableObjectNamespace.ts never adds the Scope; 2026-06-06).
+# Re-keyed beta.45 → beta.52 with the alchemy pin bump; re-target again on the next bump.
 patchedDependencies:
-  alchemy@2.0.0-beta.45: patches/alchemy@2.0.0-beta.45.patch
+  alchemy@2.0.0-beta.52: patches/alchemy@2.0.0-beta.52.patch

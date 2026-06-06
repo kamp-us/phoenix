@@ -23,14 +23,26 @@
  */
 import type {BatchItem, BatchResponse} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
+import {defineRelations} from "drizzle-orm/relations";
 import {Context, Data, Effect, Layer} from "effect";
 import * as schema from "../db/drizzle/schema.ts";
 
 /**
- * The fully-typed drizzle builder phoenix uses everywhere. Constructed once
- * per request from `env.PHOENIX_DB`.
+ * RQB v2 relations config (drizzle 1.0). The Relational Query Builder
+ * (`db.query.<table>`) is now driven by a relations definition, not by `schema`
+ * alone — passing only `{schema}` leaves `db.query` empty (`{}`). phoenix uses
+ * no cross-table `.with` traversal, so the single-arg `defineRelations(schema)`
+ * (empty relations) is enough: it registers every table so `db.query.<table>`
+ * is typed again. Raw-SQL `where` (`and(eq(...))`) still works in RQB v2.
  */
-export type DrizzleDb = ReturnType<typeof drizzle<typeof schema>>;
+export const relations = defineRelations(schema);
+
+/**
+ * The fully-typed drizzle builder phoenix uses everywhere. Constructed once
+ * per request from `env.PHOENIX_DB`. Carries both the `schema` and `relations`
+ * generics (RQB v2) so `db.query.<table>` and `db.select()` are both typed.
+ */
+export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relations>>;
 
 /**
  * Infrastructure error raised when a drizzle promise rejects inside
@@ -108,7 +120,7 @@ export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@phoenix
  * `D1Connection.raw`) and tests hand it a `D1Database` and get back the same
  * `DrizzleDb` every feature service runs on.
  */
-export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema});
+export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema, relations});
 
 /**
  * Build a `DrizzleAccess` value over an already-constructed drizzle instance —

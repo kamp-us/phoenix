@@ -618,7 +618,7 @@ export const PanoLive = Layer.effect(Pano)(
 		const getPost = Effect.fn("Pano.getPost")(function* (postId: string) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: and(eq(schema.postSummary.id, postId), isNull(schema.postSummary.deletedAt)),
+					where: {id: postId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!meta) return null;
@@ -1009,7 +1009,7 @@ export const PanoLive = Layer.effect(Pano)(
 		const editPost = Effect.fn("Pano.editPost")(function* (input: EditPostInput) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: and(eq(schema.postSummary.id, input.postId), isNull(schema.postSummary.deletedAt)),
+					where: {id: input.postId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!meta) {
@@ -1090,9 +1090,7 @@ export const PanoLive = Layer.effect(Pano)(
 		 * "fixing" one path to match the other.
 		 */
 		const deletePost = Effect.fn("Pano.deletePost")(function* (input: DeletePostInput) {
-			const meta = yield* run((db) =>
-				db.query.postSummary.findFirst({where: eq(schema.postSummary.id, input.postId)}),
-			);
+			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
 			if (!meta) {
 				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 			}
@@ -1173,7 +1171,7 @@ export const PanoLive = Layer.effect(Pano)(
 		) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: and(eq(schema.postSummary.id, input.postId), isNull(schema.postSummary.deletedAt)),
+					where: {id: input.postId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!meta) {
@@ -1205,9 +1203,7 @@ export const PanoLive = Layer.effect(Pano)(
 			// Vote.cast wrote post_summary.score + hot_score inside its batch.
 			// Re-read so the response surfaces the converged values.
 			const refreshed = voteResult.changed
-				? yield* run((db) =>
-						db.query.postSummary.findFirst({where: eq(schema.postSummary.id, input.postId)}),
-					)
+				? yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}))
 				: meta;
 			const score = refreshed?.score ?? voteResult.score;
 			const hotScore = refreshed?.hotScore ?? meta.hotScore;
@@ -1247,7 +1243,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const post = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: and(eq(schema.postSummary.id, input.postId), isNull(schema.postSummary.deletedAt)),
+					where: {id: input.postId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!post) {
@@ -1261,11 +1257,7 @@ export const PanoLive = Layer.effect(Pano)(
 			if (parentId !== null) {
 				const parent = yield* run((db) =>
 					db.query.commentView.findFirst({
-						where: and(
-							eq(schema.commentView.id, parentId),
-							eq(schema.commentView.postId, input.postId),
-							isNull(schema.commentView.deletedAt),
-						),
+						where: {id: parentId, postId: input.postId, deletedAt: {isNull: true}},
 					}),
 				);
 				if (!parent) {
@@ -1337,10 +1329,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const row = yield* run((db) =>
 				db.query.commentView.findFirst({
-					where: and(
-						eq(schema.commentView.id, input.commentId),
-						isNull(schema.commentView.deletedAt),
-					),
+					where: {id: input.commentId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!row) {
@@ -1381,7 +1370,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const deleteComment = Effect.fn("Pano.deleteComment")(function* (input: DeleteCommentInput) {
 			const row = yield* run((db) =>
-				db.query.commentView.findFirst({where: eq(schema.commentView.id, input.commentId)}),
+				db.query.commentView.findFirst({where: {id: input.commentId}}),
 			);
 			if (!row) {
 				return yield* new CommentNotFound({
@@ -1481,9 +1470,7 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 
 			// Decrement post.commentCount and refresh hot_score.
-			const post = yield* run((db) =>
-				db.query.postSummary.findFirst({where: eq(schema.postSummary.id, row.postId)}),
-			);
+			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
 			if (post) {
 				const newCommentCount = Math.max(0, post.commentCount - 1);
 				const hotScore = computeHotScore(
@@ -1539,10 +1526,7 @@ export const PanoLive = Layer.effect(Pano)(
 		) {
 			const row = yield* run((db) =>
 				db.query.commentView.findFirst({
-					where: and(
-						eq(schema.commentView.id, input.commentId),
-						isNull(schema.commentView.deletedAt),
-					),
+					where: {id: input.commentId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!row) {

@@ -408,9 +408,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		/* ------------------------------------------------------------------ */
 
 		const getTerm = Effect.fn("Sozluk.getTerm")(function* (slug: string) {
-			const meta = yield* run((db) =>
-				db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
-			);
+			const meta = yield* run((db) => db.query.termSummary.findFirst({where: {slug}}));
 			if (!meta) return null;
 
 			const defs = yield* run((db) =>
@@ -718,9 +716,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const rawBody = yield* validateBody(input.body);
 
 			const slug = input.termSlug;
-			const existing = yield* run((db) =>
-				db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
-			);
+			const existing = yield* run((db) => db.query.termSummary.findFirst({where: {slug}}));
 			const termCreated = !existing;
 			const title = existing?.title ?? input.termTitle ?? slug.replace(/-/g, " ");
 
@@ -767,10 +763,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
-					where: and(
-						eq(schema.definitionView.id, input.definitionId),
-						isNull(schema.definitionView.deletedAt),
-					),
+					where: {id: input.definitionId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!definition) {
@@ -822,7 +815,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		) {
 			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
-					where: eq(schema.definitionView.id, input.definitionId),
+					where: {id: input.definitionId},
 				}),
 			);
 			if (!definition) {
@@ -880,10 +873,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			// changed/no-op path.
 			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
-					where: and(
-						eq(schema.definitionView.id, input.definitionId),
-						isNull(schema.definitionView.deletedAt),
-					),
+					where: {id: input.definitionId, deletedAt: {isNull: true}},
 				}),
 			);
 			if (!definition) {
