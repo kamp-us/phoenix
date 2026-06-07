@@ -57,9 +57,11 @@ describe("keysetAfter", () => {
 		]);
 		const {sql} = render(predicate as SQL);
 		// First arm: strict on c1. Second arm: c1 equal AND strict on c2.
+		// drizzle 1.0 fully parenthesizes every comparison and and/or group
+		// (semantically identical to the sparser 0.45 output).
 		expect(sql).toBe(
-			'("comment_view"."created_at" > ? or ' +
-				'("comment_view"."created_at" = ? and "comment_view"."id" > ?))',
+			'(("comment_view"."created_at" > ?) or ' +
+				'((("comment_view"."created_at" = ?) and ("comment_view"."id" > ?))))',
 		);
 	});
 
@@ -74,9 +76,9 @@ describe("keysetAfter", () => {
 		// desc → `<`, asc → `>`; each later arm prefixes equalities on the
 		// earlier columns. This is exactly the hand-rolled predicate it replaces.
 		expect(sql).toBe(
-			'("definition_view"."score" < ? or ' +
-				'("definition_view"."score" = ? and "definition_view"."created_at" > ?) or ' +
-				'("definition_view"."score" = ? and "definition_view"."created_at" = ? and "definition_view"."id" > ?))',
+			'(("definition_view"."score" < ?) or ' +
+				'((("definition_view"."score" = ?) and ("definition_view"."created_at" > ?))) or ' +
+				'((("definition_view"."score" = ?) and ("definition_view"."created_at" = ?) and ("definition_view"."id" > ?))))',
 		);
 	});
 

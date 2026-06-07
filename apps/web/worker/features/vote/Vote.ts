@@ -48,7 +48,7 @@
  * target row after `Vote.cast` rather than threading every column through
  * this contract.
  */
-import {and, eq, inArray, isNull, sql} from "drizzle-orm";
+import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -144,10 +144,7 @@ export const VoteLive = Layer.effect(Vote)(
 				case "definition": {
 					const row = yield* run((db) =>
 						db.query.definitionView.findFirst({
-							where: and(
-								eq(schema.definitionView.id, targetId),
-								isNull(schema.definitionView.deletedAt),
-							),
+							where: {id: targetId, deletedAt: {isNull: true}},
 						}),
 					);
 					if (!row) {
@@ -165,7 +162,7 @@ export const VoteLive = Layer.effect(Vote)(
 				case "post": {
 					const row = yield* run((db) =>
 						db.query.postSummary.findFirst({
-							where: and(eq(schema.postSummary.id, targetId), isNull(schema.postSummary.deletedAt)),
+							where: {id: targetId, deletedAt: {isNull: true}},
 						}),
 					);
 					if (!row) {
@@ -183,7 +180,7 @@ export const VoteLive = Layer.effect(Vote)(
 				case "comment": {
 					const row = yield* run((db) =>
 						db.query.commentView.findFirst({
-							where: and(eq(schema.commentView.id, targetId), isNull(schema.commentView.deletedAt)),
+							where: {id: targetId, deletedAt: {isNull: true}},
 						}),
 					);
 					if (!row) {
@@ -211,25 +208,19 @@ export const VoteLive = Layer.effect(Vote)(
 				switch (kind) {
 					case "definition": {
 						const row = await db.query.definitionVote.findFirst({
-							where: and(
-								eq(schema.definitionVote.definitionId, targetId),
-								eq(schema.definitionVote.voterId, userId),
-							),
+							where: {definitionId: targetId, voterId: userId},
 						});
 						return row != null;
 					}
 					case "post": {
 						const row = await db.query.postVote.findFirst({
-							where: and(eq(schema.postVote.postId, targetId), eq(schema.postVote.voterId, userId)),
+							where: {postId: targetId, voterId: userId},
 						});
 						return row != null;
 					}
 					case "comment": {
 						const row = await db.query.commentVote.findFirst({
-							where: and(
-								eq(schema.commentVote.commentId, targetId),
-								eq(schema.commentVote.voterId, userId),
-							),
+							where: {commentId: targetId, voterId: userId},
 						});
 						return row != null;
 					}
@@ -245,21 +236,21 @@ export const VoteLive = Layer.effect(Vote)(
 				switch (kind) {
 					case "definition": {
 						const row = await db.query.definitionView.findFirst({
-							where: eq(schema.definitionView.id, targetId),
+							where: {id: targetId},
 							columns: {score: true},
 						});
 						return row?.score ?? 0;
 					}
 					case "post": {
 						const row = await db.query.postSummary.findFirst({
-							where: eq(schema.postSummary.id, targetId),
+							where: {id: targetId},
 							columns: {score: true},
 						});
 						return row?.score ?? 0;
 					}
 					case "comment": {
 						const row = await db.query.commentView.findFirst({
-							where: eq(schema.commentView.id, targetId),
+							where: {id: targetId},
 							columns: {score: true},
 						});
 						return row?.score ?? 0;

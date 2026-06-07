@@ -28,7 +28,7 @@
  *   - `DrizzleError` (any infrastructure failure)
  */
 import type {Auth as BetterAuth} from "better-auth";
-import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
+import {and, desc, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -380,9 +380,7 @@ export const makePasaportLive = (auth: Auth) =>
 				}),
 
 				getUserById: Effect.fn("Pasaport.getUserById")(function* (userId: string) {
-					const row = yield* run((db) =>
-						db.query.user.findFirst({where: eq(schema.user.id, userId)}),
-					);
+					const row = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
 					if (!row) return null;
 					return {
 						id: row.id,
@@ -398,7 +396,7 @@ export const makePasaportLive = (auth: Auth) =>
 				) {
 					if (userIds.length === 0) return [];
 					const rows = yield* run((db) =>
-						db.query.user.findMany({where: inArray(schema.user.id, [...userIds])}),
+						db.query.user.findMany({where: {id: {in: [...userIds]}}}),
 					);
 					return rows.map(
 						(row) =>
@@ -420,9 +418,7 @@ export const makePasaportLive = (auth: Auth) =>
 					const normalized = input.value.trim().toLowerCase();
 					yield* assertUsername(normalized);
 
-					const existingUser = yield* run((db) =>
-						db.query.user.findFirst({where: eq(schema.user.id, userId)}),
-					);
+					const existingUser = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
 					if (!existingUser) {
 						return yield* new UserNotFound({message: "kullanıcı bulunamadı"});
 					}
@@ -433,7 +429,7 @@ export const makePasaportLive = (auth: Auth) =>
 					}
 
 					const conflict = yield* run((db) =>
-						db.query.user.findFirst({where: eq(schema.user.username, normalized)}),
+						db.query.user.findFirst({where: {username: normalized}}),
 					);
 					if (conflict) {
 						return yield* new UsernameTaken({message: "bu kullanıcı adı kullanımda"});

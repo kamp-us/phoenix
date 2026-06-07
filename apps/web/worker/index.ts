@@ -98,13 +98,13 @@ export class Phoenix extends Cloudflare.Worker<
 		// (below) with no proxy; the dev proxy in `vite.config.ts` exists only
 		// for the two-process dev loop.
 		directory: "./dist/client",
-		config: {
-			// The SPA shell answers any non-worker path; the worker-owned paths
-			// are listed in `runWorkerFirst` so the asset server doesn't shadow
-			// them (a missing entry returns the shell for GET and 405 for POST).
-			notFoundHandling: "single-page-application",
-			runWorkerFirst: ["/api/*", "/fate", "/fate/*"],
-		},
+		// The SPA shell answers any non-worker path; the worker-owned paths
+		// are listed in `runWorkerFirst` so the asset server doesn't shadow
+		// them (a missing entry returns the shell for GET and 405 for POST).
+		// beta.52 flattened the asset config onto `AssetsProps` (no `config`
+		// wrapper): `notFoundHandling` / `runWorkerFirst` sit beside `directory`.
+		notFoundHandling: "single-page-application",
+		runWorkerFirst: ["/api/*", "/fate", "/fate/*"],
 	},
 	compatibility: {flags: ["nodejs_compat"]},
 	observability: {enabled: true},
