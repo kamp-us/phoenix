@@ -16,17 +16,63 @@
  * A **factory, not a shared instance** (`.patterns/effect-testing.md`).
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
-import type {Auth} from "better-auth";
+import {type Auth, type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
+import {drizzleAdapter} from "better-auth/adapters/drizzle";
+import {bearer} from "better-auth/plugins";
+import {drizzle} from "drizzle-orm/d1";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import * as schema from "../../db/drizzle/schema.ts";
+
+/**
+ * Build a REAL better-auth instance over a test `D1Database` handle (the
+ * `node:sqlite`-backed `SqliteD1.d1`), mirroring the deployed `BetterAuthLive`
+ * (`worker/features/pasaport/better-auth-live.ts`) — the canonical config.
+ *
+ * MUST be kept in lockstep with `BetterAuthLive`: same `emailAndPassword`,
+ * `drizzleAdapter(..., {provider: "sqlite", schema})`, `bearer()` plugin, and the
+ * `user.additionalFields.username` field. The deployed worker assembles its auth
+ * via `BetterAuthLive`, but that Layer needs the full alchemy provider stack
+ * (`RuntimeContext`, the `secret_text` binding) which the node test pool lacks —
+ * so the construction is reproduced directly here. If this and `BetterAuthLive`
+ * drift, the guard suites silently test a different shape than production.
+ *
+ * Differences from `BetterAuthLive`, all test-only and immaterial to the shape
+ * under test: an explicit literal `secret`/`baseURL`/`trustedOrigins` (the Layer
+ * derives these from config/`ENVIRONMENT`), and the `magicLink` plugin is
+ * dropped (no test exercises token delivery).
+ *
+ * Returns the concrete `Auth<{…}>` from `makeBetterAuth`; callers widen it to the
+ * generic `Auth` that {@link makeBetterAuthTestLayer} takes (see its note).
+ */
+export function makeRealAuthForTest(d1: D1Database) {
+	const db = drizzle(d1, {schema});
+	return makeBetterAuth({
+		emailAndPassword: {enabled: true},
+		database: drizzleAdapter(db, {provider: "sqlite", schema}),
+		secret: "phoenix-test-secret",
+		baseURL: "http://localhost:3000",
+		trustedOrigins: ["http://localhost:3000"],
+		user: {
+			additionalFields: {
+				username: {type: "string", required: false, input: false},
+			},
+		},
+		plugins: [bearer()],
+	} satisfies BetterAuthOptions);
+}
 
 /**
  * A `BetterAuth` layer wrapping an already-constructed better-auth instance —
- * `app.test.ts` builds a real one over its `node:sqlite` D1 and wires both the
- * `auth` field (for `Pasaport`) and a `fetch` that delegates to the instance's
- * `handler` (for the `/api/auth/*` route).
+ * `app.test.ts` builds a real one (via {@link makeRealAuthForTest}) over its
+ * `node:sqlite` D1 and wires both the `auth` field (for `Pasaport`) and a `fetch`
+ * that delegates to the instance's `handler` (for the `/api/auth/*` route).
+ *
+ * The parameter is the generic `Auth`; `makeRealAuthForTest` returns a concrete
+ * `Auth<{…}>` that doesn't statically overlap it (TS2345), so callers widen with
+ * a documented `as unknown as Parameters<typeof makeBetterAuthTestLayer>[0]` hop.
  */
 export const makeBetterAuthTestLayer = (instance: Auth): Layer.Layer<BetterAuth.BetterAuth> =>
 	Layer.succeed(BetterAuth.BetterAuth)({

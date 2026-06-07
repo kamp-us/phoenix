@@ -21,24 +21,13 @@
  * (T2 — `app.test.ts` exercises this path implicitly through the whole router;
  * this is the focused, self-diagnosing version.)
  */
-import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
-import {drizzleAdapter} from "better-auth/adapters/drizzle";
-import {bearer} from "better-auth/plugins";
-import {drizzle} from "drizzle-orm/d1";
 import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {Database} from "../../db/Database";
-import * as schema from "../../db/drizzle/schema";
 import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
-import {makeBetterAuthTestLayer} from "../pasaport/better-auth.fake";
+import {makeBetterAuthTestLayer, makeRealAuthForTest} from "../pasaport/better-auth.fake";
 import {Pasaport} from "../pasaport/Pasaport";
 import {makeFateLayer} from "./layers";
-
-const ENV = {
-	BETTER_AUTH_URL: "http://localhost:3000",
-	BETTER_AUTH_TRUSTED_ORIGINS: "http://localhost:3000",
-	BETTER_AUTH_SECRET: "phoenix-guard-secret",
-} as const;
 
 /** The per-test in-memory D1; created in `beforeEach`, closed in `afterEach`. */
 let sqlite: SqliteD1;
@@ -51,33 +40,9 @@ afterEach(() => {
 	sqlite?.close();
 });
 
-/**
- * Build a real better-auth instance over the per-test `node:sqlite` D1 — the
- * same construction `app.test.ts` uses, mirroring the deployed `BetterAuthLive`
- * but constructed directly because that Layer needs the alchemy provider stack
- * the node pool lacks.
- */
-function makeRealAuth() {
-	const betterAuthDrizzle = drizzle(sqlite.d1, {schema});
-	const instance = makeBetterAuth({
-		emailAndPassword: {enabled: true},
-		database: drizzleAdapter(betterAuthDrizzle, {provider: "sqlite", schema}),
-		secret: ENV.BETTER_AUTH_SECRET,
-		baseURL: ENV.BETTER_AUTH_URL,
-		trustedOrigins: [ENV.BETTER_AUTH_TRUSTED_ORIGINS],
-		user: {
-			additionalFields: {
-				username: {type: "string", required: false, input: false},
-			},
-		},
-		plugins: [bearer()],
-	} satisfies BetterAuthOptions);
-	return instance;
-}
-
 describe("PasaportFromTag — inert RuntimeContext stub guard", () => {
 	it("resolves Pasaport through the real auth path and validateSession works", async () => {
-		const auth = makeRealAuth();
+		const auth = makeRealAuthForTest(sqlite.d1);
 
 		// Sign a user up directly against the same auth instance to mint a real
 		// session, then capture the session cookie it sets.

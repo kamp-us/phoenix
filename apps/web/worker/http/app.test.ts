@@ -18,10 +18,6 @@
  */
 import type {BaseRuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
-import {drizzleAdapter} from "better-auth/adapters/drizzle";
-import {bearer} from "better-auth/plugins";
-import {drizzle} from "drizzle-orm/d1";
 import {Effect} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
@@ -30,11 +26,13 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {Database} from "../db/Database.ts";
-import * as schema from "../db/drizzle/schema.ts";
 import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.fake.ts";
 import {makeFateLayer} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
-import {makeBetterAuthTestLayer} from "../features/pasaport/better-auth.fake.ts";
+import {
+	makeBetterAuthTestLayer,
+	makeRealAuthForTest,
+} from "../features/pasaport/better-auth.fake.ts";
 import {makeAppLive} from "./app.ts";
 
 /**
@@ -112,29 +110,17 @@ beforeAll(() => {
 	// better-auth's own drizzle) is gone.
 	const databaseLayer = Layer.succeed(Database)(sqlite.d1);
 
-	// Build a real better-auth instance over the SAME `node:sqlite`-backed D1. The
-	// deployed worker assembles this via `BetterAuthLive`
-	// (`worker/features/pasaport/better-auth-live.ts`), but that Layer needs the
-	// full alchemy provider stack (`RuntimeContext`, the `secret_text` binding)
-	// which doesn't exist in the node test runtime. Constructing the instance
-	// directly here and providing it through a hand-rolled Layer over the same
-	// `BetterAuth` Context tag (`makeBetterAuthTestLayer`) is the test-mode
-	// equivalent. The adapter's `drizzle(sqlite.d1, ...)` is better-auth's own
-	// internal builder over the same handle — not a second feature `Drizzle`.
-	const betterAuthDrizzle = drizzle(sqlite.d1, {schema});
-	const testAuthInstance = makeBetterAuth({
-		emailAndPassword: {enabled: true},
-		database: drizzleAdapter(betterAuthDrizzle, {provider: "sqlite", schema}),
-		secret: ENV.BETTER_AUTH_SECRET,
-		baseURL: ENV.BETTER_AUTH_URL,
-		trustedOrigins: [ENV.BETTER_AUTH_TRUSTED_ORIGINS],
-		user: {
-			additionalFields: {
-				username: {type: "string", required: false, input: false},
-			},
-		},
-		plugins: [bearer()],
-	} satisfies BetterAuthOptions);
+	// Build a real better-auth instance over the SAME `node:sqlite`-backed D1 via
+	// the shared `makeRealAuthForTest` helper (colocated with `better-auth.fake.ts`),
+	// which mirrors the deployed `BetterAuthLive`
+	// (`worker/features/pasaport/better-auth-live.ts`). That Layer needs the full
+	// alchemy provider stack (`RuntimeContext`, the `secret_text` binding) which
+	// doesn't exist in the node test runtime; the helper reproduces the same
+	// construction directly. Provided through a hand-rolled Layer over the same
+	// `BetterAuth` Context tag (`makeBetterAuthTestLayer`), it is the test-mode
+	// equivalent. The helper's `drizzle(d1, ...)` is better-auth's own internal
+	// builder over the same handle — not a second feature `Drizzle`.
+	const testAuthInstance = makeRealAuthForTest(sqlite.d1);
 
 	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to the
 	// generic `Auth` `makeBetterAuthTestLayer` takes (the same type the deployed
