@@ -10,16 +10,21 @@
  *   - `FateRequestError`      → passes through verbatim (not re-encoded).
  *   - defect (uncaught throw) → squashed → `encodeFateError` → `INTERNAL_*`.
  *
- * Per ADR 0029 the bridge provides a captured `Context` and runs on the default
- * runtime — no `ManagedRuntime`. A `FateContext` only needs `{context, request}`;
- * we build a `Context` carrying just the services each test body yields (`Auth`),
- * so the tests stay focused on the seam, not the full feature graph.
+ * The F4 model (ADR 0041, supersedes 0029): every resolver runs THROUGH a
+ * worker-level `ManagedRuntime` carried on the `FateContext` as `ctx.runtime`,
+ * with the per-request `Auth` + `LiveBus` VALUES provided onto each resolver
+ * effect. These tests build a tiny EMPTY marker runtime (the bodies here yield
+ * only `Auth` and `Effect.void`, never a worker service) and per-request
+ * `auth`/`liveBus` values, so the seam — not the full feature graph — is under
+ * test. The full 7-behavior suite (incl. the span-nesting F4 proof) lands in
+ * the feature's task 2.
  */
 
 import {FateRequestError} from "@nkzw/fate/server";
-import {Context, Effect} from "effect";
+import {Effect, Layer, ManagedRuntime} from "effect";
 import * as Schema from "effect/Schema";
 import {describe, expect, it} from "vitest";
+import {liveBusFor} from "../fate-live/event-bus";
 import {Auth, Unauthorized} from "../pasaport/Auth";
 import type {FateContext} from "./context";
 import {fateMutation, fateQuery, fateSource} from "./effect";
@@ -30,22 +35,25 @@ class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()("sozluk/BodyR
 }) {}
 
 /**
- * Build a `FateContext` whose captured `Context` carries an `Auth` service with
- * the given user (or anonymous). The bridge only reads `ctx.context`; the cast
- * to the full `FateEnv` is safe because the test bodies yield only `Auth`.
+ * Build a `FateContext` over an EMPTY marker `ManagedRuntime` (the bodies here
+ * yield only `Auth` + `Effect.void`, so the runtime carries no worker service),
+ * plus the per-request `Auth` + `LiveBus` VALUES the bridge provides onto each
+ * resolver effect. Generic in `never` — no cast, thanks to `FateContext<R>`.
  */
-const makeCtx = (user?: {id: string}): FateContext => {
-	// biome-ignore lint/plugin: a `Context<Auth>` can't be statically widened to the full `Context<FateEnv>` that `FateContext` carries; the bridge under test reads only `Auth` (see the doc comment above).
-	const context = Context.make(Auth, {
-		user: user as never,
-		session: undefined,
-	}) as unknown as FateContext["context"];
-	return {context, request: new Request("http://test/fate")};
+const makeCtx = (user?: {id: string}): FateContext<never> => {
+	const runtime = ManagedRuntime.make(Layer.empty);
+	const auth: typeof Auth.Service = {user: user as never, session: undefined};
+	const liveBus = liveBusFor(() => {});
+	return {runtime, request: new Request("http://test/fate"), auth, liveBus};
 };
 
 const invoke = <A>(
-	fn: (o: {ctx: FateContext; input: {args?: undefined}; select: Array<string>}) => Promise<A>,
-	ctx: FateContext,
+	fn: (o: {
+		ctx: FateContext<never>;
+		input: {args?: undefined};
+		select: Array<string>;
+	}) => Promise<A>,
+	ctx: FateContext<never>,
 ): Promise<A> => fn({ctx, input: {args: undefined}, select: []});
 
 // fate's source handlers receive a `plan` (the masking plan) that the bridge
@@ -140,7 +148,7 @@ describe("fateMutation", () => {
 
 describe("fateSource", () => {
 	it("byId resolves a raw row through the runtime", async () => {
-		const executor = fateSource<{id: string; name: string}>({
+		const executor = fateSource<{id: string; name: string}, never>({
 			byId: function* (id) {
 				yield* Effect.void;
 				return {id, name: `row-${id}`};
@@ -151,7 +159,7 @@ describe("fateSource", () => {
 	});
 
 	it("byIds returns a mutable array (spread) of rows", async () => {
-		const executor = fateSource<{id: string}>({
+		const executor = fateSource<{id: string}, never>({
 			byIds: function* (ids) {
 				yield* Effect.void;
 				return ids.map((id) => ({id}));
@@ -163,7 +171,7 @@ describe("fateSource", () => {
 	});
 
 	it("maps a failing source executor to a wire error", async () => {
-		const executor = fateSource<{id: string}>({
+		const executor = fateSource<{id: string}, never>({
 			byId: function* () {
 				return yield* new Unauthorized({message: "no"});
 			},
@@ -173,7 +181,7 @@ describe("fateSource", () => {
 	});
 
 	it("only defines the handlers that were provided", () => {
-		const executor = fateSource<{id: string}>({
+		const executor = fateSource<{id: string}, never>({
 			byId: function* (id) {
 				yield* Effect.void;
 				return {id};

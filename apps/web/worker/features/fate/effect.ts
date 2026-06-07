@@ -5,22 +5,36 @@
  * domain lives in Effect `Context.Service`s. This module is the single seam
  * between them: a small helper family — `fateQuery`, `fateList`,
  * `fateMutation`, `fateSource` — wraps an Effect generator into the async
- * function fate expects, running it against the captured `Context`
- * ({@link FateContext.context}) — no per-request `ManagedRuntime` (ADR 0029).
+ * function fate expects.
  *
- * **No `Effect.runPromiseExit` appears anywhere outside this file.** Resolvers
- * and executors are generators; the runner here does the
- * `provide(context) → Exit → wire-error` dance once.
+ * The F4 model (ADR 0041, supersedes 0029): there is ONE worker-level
+ * `ManagedRuntime`, built once per isolate in worker init (`index.ts`) and
+ * carried on every {@link FateContext} as `ctx.runtime`. The bridge runs each
+ * resolver THROUGH that runtime, providing only the two genuinely per-request
+ * services — `Auth` (the validated session) and `LiveBus` (the publish
+ * capability, ADR 0039) — onto each resolver effect with `Effect.provideService`.
+ * Nothing is built or disposed per request, and because resolvers run through the
+ * runtime their spans nest under the runtime's request span rather than on a
+ * detached default-runtime root. This is the LLMS-documented "Integrating Effect
+ * into existing applications" pattern (effect-smol `LLMS.md` →
+ * `ai-docs/src/03_integration/10_managed-runtime.ts`): fate's `(args) => Promise`
+ * resolvers are the non-Effect callback boundary `ManagedRuntime` targets.
+ *
+ * **No `runPromiseExit` appears anywhere outside this file.** Resolvers and
+ * executors are generators; the runner here does the
+ * `provide(Auth/LiveBus) → run-on-runtime → Exit → wire-error` dance once.
  *
  * See `.patterns/fate-effect-bridge.md`, `.patterns/alchemy-runtime.md`, and
- * ADR 0016 / 0029.
+ * ADR 0016 / 0041.
  */
 import type {ConnectionResult, SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
 import {FateRequestError} from "@nkzw/fate/server";
-import {Cause, Effect, Exit} from "effect";
+import {Cause, Effect, Exit, Option} from "effect";
+import {LiveBus} from "../fate-live/event-bus.ts";
+import {Auth} from "../pasaport/Auth.ts";
 import type {FateContext} from "./context.ts";
 import {encodeFateError} from "./errors.ts";
-import type {FateEnv} from "./layers.ts";
+import type {FateEnv, WorkerFateServices} from "./layers.ts";
 
 type Selection = ReadonlyArray<string>;
 
@@ -39,66 +53,91 @@ export type AnySourceDefinition = SourceDefinition<Record<string, unknown>, unkn
 export type AnyDataView = AnySourceDefinition["view"];
 
 /**
- * Build an Effect from a resolver/executor generator. The generator yields
- * heterogeneous services (`yield* Stats`, `yield* Auth`, …), so its element
- * type is `any` and `Effect.gen` infers the environment as `unknown`; we assert
- * it back to {@link FateEnv}, which the captured `Context` provides. This is the
- * single assertion the bridge makes — see the note on {@link runEffect}.
+ * Build an Effect from a resolver/executor generator. The generator body is
+ * typed `Generator<any, A, any>` — its `any` element type makes `Effect.gen`
+ * infer the environment as `unknown`, so we assert it back to `R`. This is the
+ * bridge's single contained boundary cast (F7).
+ *
+ * **The cast is irreducible in practice.** `Effect.gen.Return` pins the error
+ * channel `E` to `never`, which rejects failing resolvers (a body that does
+ * `yield* new BodyRequired(...)` or `yield* Auth.required` — `DrizzleError`,
+ * `Unauthorized`). And `R` in the generator yield position is *contravariant*:
+ * a narrow-`R` body (`yield* Sozluk`) does not satisfy the wider `R`, and the
+ * friction cascades into fate's `QueryDefinition<FateContext<WorkerFateServices>>`
+ * server constraint. Kept as one plain `as` (not `as any` / `as unknown as`):
+ * resolver bodies are still checked at their own definition sites, and
+ * `runEffect` runs them on a runtime that surfaces a wrong environment as a
+ * runtime "service not found", not a silent miss. See ADR 0041 (F7).
  */
-const genEffect = <A>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, FateEnv> =>
-	Effect.gen(body) as Effect.Effect<A, unknown, FateEnv>;
+const genEffect = <A, R>(body: () => Generator<any, A, any>): Effect.Effect<A, unknown, R> =>
+	Effect.gen(body) as Effect.Effect<A, unknown, R>;
 
 /**
- * The one place `runPromiseExit` is called. Provides the captured worker +
- * per-request `Context` ({@link FateContext.context}) onto the resolver Effect,
- * runs it on the default runtime (ADR 0029 — no per-request `ManagedRuntime`,
- * nothing to dispose), and resolves the `Exit`:
+ * The one place an effect is run. Provides the two per-request service VALUES
+ * carried by the {@link FateContext} — `Auth` (the validated session) and
+ * `LiveBus` (the publish capability) — onto the resolver Effect, then runs it on
+ * the worker-level `ManagedRuntime` ({@link FateContext.runtime}), which supplies
+ * the worker singletons (built once per isolate, never disposed per request).
+ * Because the resolver runs THROUGH the runtime, its spans nest under the
+ * runtime's request span (the F4 observability win) rather than on a detached
+ * default-runtime root. The `Exit` resolves identically to before:
  *
  *   - `Exit.Success`            → the value.
  *   - tagged failure            → `encodeFateError` → throw (fate serializes it).
  *   - `FateRequestError`        → pass through verbatim (already wire-shaped).
  *   - defect (uncaught throw)   → `Cause.squash` → `encodeFateError` → throw.
  *
+ * Generic in the runtime environment `R` (defaulting to the production worker
+ * services) so a test can run a resolver on a tiny marker runtime; production
+ * passes the default with zero churn. The effect's environment is `R | Auth |
+ * LiveBus`; providing `Auth`/`LiveBus` here discharges those two, leaving exactly
+ * `R` — the runtime's own environment.
+ *
  * fate's `executeOperation` catches the throw and turns it into
  * `{ok: false, error: {code, message, issues?}}`.
  */
-const runEffect = <A>(
-	ctx: FateContext,
-	// The generator wrappers below build this via `Effect.gen` over a
-	// `Generator<any, A, any>`, so the environment channel erases to `unknown`
-	// at this boundary. The resolver/executor bodies are checked at their
-	// own definition site, where `yield* Service` carries the real types; the
-	// captured `Context` provides `FateEnv` at run time. We assert that shape
-	// into `Effect.provide` rather than leaking `any` outward.
-	effect: Effect.Effect<A, unknown, FateEnv>,
+const runEffect = <A, R>(
+	ctx: FateContext<R>,
+	effect: Effect.Effect<A, unknown, R | Auth | LiveBus>,
 ): Promise<A> =>
-	Effect.runPromiseExit(Effect.provide(effect, ctx.context)).then((exit) => {
-		if (Exit.isSuccess(exit)) {
-			return exit.value;
-		}
-		const found = Cause.findError(exit.cause);
-		if (found._tag === "Success") {
-			const e = found.success;
-			// Already wire-shaped (resolver-side validation, Auth) → pass through.
-			if (e instanceof FateRequestError) {
-				throw e;
+	ctx.runtime
+		.runPromiseExit(
+			effect.pipe(
+				Effect.provideService(Auth, ctx.auth),
+				Effect.provideService(LiveBus, ctx.liveBus),
+			),
+			// Wire the request's abort signal so a disconnected fate client interrupts
+			// the resolver fiber (matches `HttpEffect`'s run-with-signal contract).
+			{signal: ctx.request.signal},
+		)
+		.then((exit) => {
+			if (Exit.isSuccess(exit)) {
+				return exit.value;
 			}
-			throw encodeFateError(e);
-		}
-		// Defects (uncaught throw that never became an Effect failure).
-		throw encodeFateError(Cause.squash(exit.cause));
-	});
+			// Unwind the Cause with `findErrorOption` (an `Option`) so no `Result`
+			// tag leaks into boundary code.
+			return Option.match(Cause.findErrorOption(exit.cause), {
+				// Already wire-shaped (resolver-side validation, Auth) → pass through.
+				onSome: (e) => {
+					throw e instanceof FateRequestError ? e : encodeFateError(e);
+				},
+				// Defects (uncaught throw that never became an Effect failure).
+				onNone: () => {
+					throw encodeFateError(Cause.squash(exit.cause));
+				},
+			});
+		});
 
 /** A root-query resolver argument bag fate hands the wrapped function. */
-export interface QueryArgs<Args> {
-	readonly ctx: FateContext;
+export interface QueryArgs<Args, R = FateEnv> {
+	readonly ctx: FateContext<R>;
 	readonly input: {readonly args?: Args};
 	readonly select: Array<string>;
 }
 
 /** A mutation resolver argument bag fate hands the wrapped function. */
-export interface MutationArgs<Input> {
-	readonly ctx: FateContext;
+export interface MutationArgs<Input, R = FateEnv> {
+	readonly ctx: FateContext<R>;
 	readonly input: Input;
 	readonly select: Array<string>;
 }
@@ -114,7 +153,7 @@ export interface MutationArgs<Input> {
  */
 export const fateQuery =
 	<Args, A>(body: (o: {args: Args | undefined; select: Selection}) => Generator<any, A, any>) =>
-	({ctx, input, select}: QueryArgs<Args>): Promise<A> =>
+	<R>({ctx, input, select}: QueryArgs<Args, R>): Promise<A> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({args: input.args, select})),
@@ -132,7 +171,7 @@ export const fateList =
 			select: Selection;
 		}) => Generator<any, ConnectionResult<A>, any>,
 	) =>
-	({ctx, input, select}: QueryArgs<Args>): Promise<ConnectionResult<A>> =>
+	<R>({ctx, input, select}: QueryArgs<Args, R>): Promise<ConnectionResult<A>> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({args: input.args, select})),
@@ -146,7 +185,7 @@ export const fateList =
  */
 export const fateMutation =
 	<Input, A>(body: (o: {input: Input; select: Selection}) => Generator<any, A, any>) =>
-	({ctx, input, select}: MutationArgs<Input>): Promise<A> =>
+	<R>({ctx, input, select}: MutationArgs<Input, R>): Promise<A> =>
 		runEffect(
 			ctx,
 			genEffect(() => body({input, select})),
@@ -157,8 +196,14 @@ export const fateMutation =
  * `@nkzw/fate/server` does not re-export the `SourceExecutor` type, so we
  * recover it from the exported `SourceRegistry` Map's value type rather than
  * naming it directly.
+ *
+ * Generic in the runtime env `R` (defaulting to the production worker services)
+ * so the per-feature `sources.ts` registries slot into `createFateServer`'s
+ * `FateContext` Context unchanged, while the isolation tests can name a marker
+ * `R` and drive an executor with a marker-runtime ctx — both cast-free.
  */
-export type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, infer V> ? V : never;
+export type SourceExecutor<R = WorkerFateServices> =
+	SourceRegistry<FateContext<R>> extends Map<unknown, infer V> ? V : never;
 
 /**
  * Wrap a set of Effect-generator source handlers as a fate `SourceExecutor`.
@@ -170,7 +215,7 @@ export type SourceExecutor = SourceRegistry<FateContext> extends Map<unknown, in
  * reachable as a relation. See `.patterns/fate-sources.md`.
  */
 
-export const fateSource = <Item extends Record<string, unknown>>(handlers: {
+export const fateSource = <Item extends Record<string, unknown>, R = WorkerFateServices>(handlers: {
 	byId?: (id: string) => Generator<any, Item | null, any>;
 	byIds?: (ids: ReadonlyArray<string>) => Generator<any, ReadonlyArray<Item>, any>;
 	connection?: (page: {
@@ -180,7 +225,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 		take: number;
 		skip?: number;
 	}) => Generator<any, ReadonlyArray<Item>, any>;
-}): SourceExecutor => {
+}): SourceExecutor<R> => {
 	const {byId, byIds, connection} = handlers;
 	// Build as one literal with conditional spreads: under
 	// `exactOptionalPropertyTypes`, assigning to declared-optional fields would
@@ -188,7 +233,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 	return {
 		...(byId
 			? {
-					byId: ({ctx, id}: {ctx: FateContext; id: string}) =>
+					byId: ({ctx, id}: {ctx: FateContext<R>; id: string}) =>
 						runEffect(
 							ctx,
 							genEffect(() => byId(id)),
@@ -197,7 +242,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 			: {}),
 		...(byIds
 			? {
-					byIds: ({ctx, ids}: {ctx: FateContext; ids: Array<string>}) =>
+					byIds: ({ctx, ids}: {ctx: FateContext<R>; ids: Array<string>}) =>
 						runEffect(
 							ctx,
 							genEffect(() => byIds(ids)),
@@ -214,7 +259,7 @@ export const fateSource = <Item extends Record<string, unknown>>(handlers: {
 						skip,
 						plan,
 					}: {
-						ctx: FateContext;
+						ctx: FateContext<R>;
 						cursor?: string;
 						direction: "forward" | "backward";
 						take: number;
