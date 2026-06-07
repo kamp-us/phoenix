@@ -1,7 +1,25 @@
 /**
- * Vitest config — two projects: integration (alchemy/Test) + unit (node).
+ * Vitest config — two projects mapping onto the T0–T3 taxonomy (ADR 0040,
+ * `.patterns/effect-testing.md`). A tier is *which layer satisfies a fixed
+ * R-channel*, not a folder; the project boundary is the workerd process boundary.
  *
- * `integration` deploys the real alchemy stack to a local workerd — offline,
+ *   - `unit` (this config's `unit` project) hosts T0–T2 — everything reachable
+ *     in-process by `Effect.provide`, all offline in the default node pool:
+ *       T0  pure logic, zero storage, tagged `*.unit.test.ts` (the glob below
+ *           already catches them — a label, not a third project, which would
+ *           re-trigger Vitest 4's distinct-`sequence.groupOrder` rule);
+ *       T1  a feature service over a real `node:sqlite` D1 (`Vote.test.ts`);
+ *       T2  the fate bridge through the full worker layer (`bridge-*.test.ts`,
+ *           `app.test.ts`) + the DO instance factory over a DO-state fake.
+ *     T1/T2 keep the plain `*.test.ts` suffix. Tests are colocated next to the
+ *     module under test under `worker/**` and `src/**`.
+ *   - `integration` (this config's `integration` project) hosts T3 — the
+ *     deployed alchemy stack on local workerd, asserted black-box over HTTP. NOT
+ *     a layer: there is no R-channel to provide to. Reserve it for what the
+ *     in-process algebra can't reach (deployed-worker smoke, DO+SSE+D1); domain
+ *     correctness belongs down in T1/T2 where `node:sqlite` is faithful & offline.
+ *
+ * `integration` (T3) deploys the real alchemy stack to a local workerd — offline,
  * `dev: true` + `Alchemy.localState()` — once per run in `tests/integration/_global-setup.ts`
  * (the Vitest **main process**, the only context where the alchemy dev sidecar's
  * Node-side LoopbackServer comes up reliably; see `tests/integration/_harness.ts`).
@@ -14,12 +32,6 @@
  * process) inherits stdout, and Vitest's console wrapper otherwise breaks that
  * inherited pipe (EPIPE). `_global-setup.ts` (where the sidecar actually lives) is
  * the main process, so this only affects how the HTTP-only test fork is run.
- *
- * `unit` runs in the default node pool for isolation tests that don't need a
- * worker — Drizzle service contract tests, the fate bridge over a `node:sqlite`
- * D1, the Effect-DO instance builders over a DO-state fake, pure helpers. Unit
- * tests are colocated next to the module under test as `<module>.test.ts` under
- * `worker/**` and `src/**`.
  */
 import {defineConfig} from "vitest/config";
 
@@ -64,6 +76,10 @@ export default defineConfig({
 			},
 			{
 				test: {
+					// T0–T2 (see the header). The glob ends in `*.test.ts`, so it
+					// catches both the plain `*.test.ts` (T1/T2) and the T0
+					// `*.unit.test.ts` files — the `.unit` infix is a label, no
+					// separate `include` entry needed.
 					name: "unit",
 					include: ["worker/**/*.test.ts", "src/**/*.test.ts"],
 					exclude: ["tests/**", "node_modules/**", "dist/**"],

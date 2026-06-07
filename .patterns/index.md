@@ -22,7 +22,7 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 | [effect-errors.md](./effect-errors.md) | `Data.TaggedError` modeling, domain vs infra split, `_tag` → wire-code mapping | Designing a new error or feature's error set |
 | [effect-error-operators.md](./effect-error-operators.md) | `Effect.catchTag`/`Tags`/`All`, `Effect.exit`, `Cause`/`Exit` inspection | Catching, recovering, or inspecting failures at a boundary |
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | `Effect.fn` for service methods, span naming conventions | Writing or naming a service method |
-| [effect-testing.md](./effect-testing.md) | `@effect/vitest`, `it.effect`, unit-test guidance (Drizzle contract, fate-bridge, DO instance factories); integration redirects to `alchemy-test-harness.md` | Writing a unit test that drives Effect; first stop before writing any test |
+| [effect-testing.md](./effect-testing.md) | The **T0–T3 taxonomy** ([ADR 0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md)), the test-kit (`makeSqliteTestDb`/`Database`/`makeDatabaseTest`/`runFateOp`), the `*.unit.test.ts` (T0) convention, the per-test-vs-`it.layer` isolation rule, `@effect/vitest`/`it.effect`; T3 system redirects to `alchemy-test-harness.md` | First stop before writing any test — pick the tier, then the kit |
 | [effect-schema-validation.md](./effect-schema-validation.md) | `Schema.Class` for trust-boundary input validation | Validating untyped input (`HttpApi` payloads, external API responses, persisted JSON) |
 | [effect-sse-externally-driven.md](./effect-sse-externally-driven.md) | `Stream.fromQueue` + `Stream.merge(keep-alive)` + `HttpServerResponse.stream`; the deliver path offers onto the queue | Building an SSE response written to from another component (e.g. the `LiveDO` topic role's `deliver` RPC) |
 
@@ -101,7 +101,7 @@ Background research and considered-options docs that don't define current code b
 - **House rule: `Effect.tryPromise` always uses object notation** with an explicit `catch` producing a tagged error. The single-arg form is treated like `Effect.promise`.
 - **Service methods always use `Effect.fn("Service.method")(function*(args) {...})`** — automatic spans, automatic stack frames. Reserve `Effect.fnUntraced` for genuinely hot internal helpers.
 - **One service per feature folder.** Reads + writes coexist.
-- **Testing strategy:** product code → integration tests via the alchemy/Test deploy + black-box HTTP harness ([alchemy-test-harness.md](./alchemy-test-harness.md)). Infrastructure (the `Drizzle` service, the fate bridge, the DO instance factories) → isolation tests under `@effect/vitest` ([effect-testing.md](./effect-testing.md)).
+- **Testing strategy:** a **T0–T3 taxonomy** ([ADR 0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md)). T0 pure (`*.unit.test.ts`), T1 a feature service over `node:sqlite`, T2 the fate bridge through the full worker layer — all offline in the `unit` Vitest project under `@effect/vitest`. T3 is the deployed-worker stack-smoke (black-box HTTP, [alchemy-test-harness.md](./alchemy-test-harness.md)). Pick the lowest tier that exercises the behavior; domain correctness lives in T1/T2, not T3. See [effect-testing.md](./effect-testing.md).
 
 ## When to add a new pattern doc here
 
