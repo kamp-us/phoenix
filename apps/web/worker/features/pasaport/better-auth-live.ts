@@ -15,14 +15,10 @@
  *     on `user`, and explicit `baseURL`/`trustedOrigins` for the dev Vite proxy
  *     (ADR 0031). The reference Layer is minimal by design — this fork carries
  *     phoenix's configuration.
- *
- * The session-signing secret is a `BETTER_AUTH_SECRET` `secret_text` binding,
- * read at runtime via `yield* betterAuthSecret` (a `Config.redacted` in
- * `config.ts`). This replaces the reference layer's `alchemy/Random` resource:
- * `Random` is a deploy-time resource with no value in the workerd runtime
- * isolate, so the minted secret could never be read back at request time — as a
- * binding it is present in the runtime env, and `Config.redacted` mints a
- * registry-backed `Redacted` that `Redacted.value` unwraps to the plain string.
+ *   - `CloudflareD1` mints the session secret via `alchemy/Random`, a deploy-time
+ *     resource with no value in the workerd runtime isolate; this fork reads
+ *     `BETTER_AUTH_SECRET` from a `secret_text` binding instead. Full rationale
+ *     and the failure mode it fixes are on `BetterAuthLive` below.
  */
 
 import * as BetterAuth from "@alchemy.run/better-auth";
