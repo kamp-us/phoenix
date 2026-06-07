@@ -13,7 +13,7 @@
  * Matching strategy
  * -----------------
  * The encoder dispatches on **`_tag`** through {@link WIRE_CODE_BY_TAG} — a
- * registry keyed by the union of every `Data.TaggedError` `_tag` raised by an
+ * registry keyed by the union of every tagged-error `_tag` raised by an
  * Effect service (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Drizzle`, `Auth`).
  * The key type {@link FateErrorTag} is *derived from the error
  * classes themselves*, so the registry is `Record<FateErrorTag, …>`: add a new
@@ -73,11 +73,6 @@ export {
 } from "../../../src/lib/mutationErrorCodes.ts";
 
 /**
- * Construct a `FateRequestError` carrying a phoenix `MutationErrorCode` as its
- * wire `code`. Widens fate's narrow `FateProtocolErrorCode` constructor — see
- * the note above.
- */
-/**
  * The exact type of `FateRequestError`'s `code` constructor parameter (fate's
  * narrow `FateProtocolErrorCode`, which the package doesn't export by name).
  * Captured structurally so we can widen into it without an unimportable type
@@ -101,7 +96,7 @@ function fateError(code: MutationErrorCode, message: string): FateRequestError {
  *
  * Derived from the error classes (`InstanceType<typeof X>["_tag"]`) rather than
  * hand-written, so it can't drift from the classes it claims to cover. Adding a
- * new `Data.TaggedError` and importing it here widens this union, which forces a
+ * new tagged error and importing it here widens this union, which forces a
  * matching {@link WIRE_CODE_BY_TAG} entry (see below).
  */
 export type FateErrorTag =

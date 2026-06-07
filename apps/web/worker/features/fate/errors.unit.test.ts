@@ -71,7 +71,7 @@ describe("encodeFateError", () => {
 
 	describe("exhaustiveness", () => {
 		// The registry is keyed by the union of every feature error `_tag`. If a
-		// new `Data.TaggedError` is added without a registry entry, `FateErrorTag`
+		// new tagged error is added without a registry entry, `FateErrorTag`
 		// widens and the `Record<FateErrorTag, ...>` literal fails to typecheck —
 		// the silent INTERNAL_SERVER_ERROR downgrade becomes a compile error.
 		it("has a registry entry for every known feature tag", () => {

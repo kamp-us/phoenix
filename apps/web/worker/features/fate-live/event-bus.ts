@@ -26,7 +26,8 @@
  */
 
 import type {LiveEventBus} from "@nkzw/fate/server";
-import {Context, Data, Effect, Layer} from "effect";
+import {Context, Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
 import type {LiveChangedField, LiveEntities} from "../fate/views.ts";
 import type {
 	ConnectionFrame,
@@ -86,9 +87,9 @@ export type PhoenixLiveEventBus = Omit<LiveEventBus, "connection" | "update"> & 
  * `topic:<key>`-named instance), fired-and-forgotten via the request's
  * `waitUntil`. The `/fate` route builds this from the worker-init-resolved
  * `LiveDO` namespace (`getByName`, typed RPC) and
- * `Cloudflare.WorkerExecutionContext.waitUntil` — so the bus reaches the DO
- * with **no** `env`-based namespace lookup, **no** `idFromName`/`idFromString`,
- * and **no** string-URL `stub.fetch` (ADR 0028/0029).
+ * `Cloudflare.WorkerExecutionContext.waitUntil` — so the bus reaches the DO via
+ * the typed RPC stub, not an `env`-lookup/`idFromName`/string-URL `stub.fetch`
+ * (ADR 0028/0029).
  */
 export type LivePublisher = (topicKey: string, message: PublishMessage) => void;
 
@@ -99,11 +100,13 @@ export type LivePublisher = (topicKey: string, message: PublishMessage) => void;
  * fail the committed mutation — `useIgnore` (the only caller) maps this away in
  * its `never` error channel. There is therefore no `WIRE_CODE_BY_TAG` entry.
  */
-export class LivePublishError extends Data.TaggedError("fate-live/LivePublishError")<{
-	readonly cause: unknown;
-}> {}
+export class LivePublishError extends Schema.TaggedErrorClass<LivePublishError>()(
+	"fate-live/LivePublishError",
+	{
+		cause: Schema.Defect(),
+	},
+) {}
 
-/** Fan a publish message out to every topic key it targets, via the given publisher. */
 function publish(publisher: LivePublisher, message: PublishMessage): void {
 	for (const topicKey of topicsForPublish(message)) {
 		publisher(topicKey, message);
@@ -291,10 +294,9 @@ export class LiveBus extends Context.Service<
 
 /**
  * Build a {@link LiveBus} value over one {@link PhoenixLiveEventBus}. `use` wraps
- * the synchronous client call in `Effect.try` (sync → `try`, not `tryPromise`);
- * `useIgnore` = `use(f)` then `Effect.ignore({log: "Warn"})` → `Effect<void,
- * never>`. Shared by both the live and test layers — the only thing that varies
- * between them is which bus (which publisher) is closed over.
+ * the synchronous client call in `Effect.try` (sync → `try`, not `tryPromise`).
+ * Shared by both the live and test layers — the only thing that varies between
+ * them is which bus (which publisher) is closed over.
  */
 function makeLiveBusService(bus: PhoenixLiveEventBus): typeof LiveBus.Service {
 	const use = <A>(f: (bus: PhoenixLiveEventBus) => A) =>
@@ -317,13 +319,16 @@ export function liveBusFor(publisher: LivePublisher): typeof LiveBus.Service {
 }
 
 /**
- * A capturing {@link LiveBus} for bridge tests. Its publisher runs the real
- * {@link topicsForPublish} (so it captures the *resolved* topic keys, catching a
- * wrong-but-valid mis-route — e.g. an args publish collapsing to the global
- * wildcard) and records each key into the returned `published` array. The test
- * provides `layer` with `Effect.provide` and asserts on `published`.
+ * A capturing {@link LiveBus} test double for bridge tests. Its publisher runs
+ * the real {@link topicsForPublish} (so it captures the *resolved* topic keys,
+ * catching a wrong-but-valid mis-route — e.g. an args publish collapsing to the
+ * global wildcard) and records each key into the returned `published` array. The
+ * test provides `layer` with `Effect.provide` and asserts on `published`.
+ *
+ * A factory (not a bare `layerTest`) because it returns the capture sink
+ * alongside the layer — the test needs both halves.
  */
-export function makeLiveBusTest(): {
+export function makeLiveBusForTest(): {
 	readonly layer: Layer.Layer<LiveBus>;
 	readonly published: ReadonlyArray<string>;
 } {

@@ -42,11 +42,11 @@ import {
 /* Domain constants                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Title cap (per PRD: ≤ 200 chars). */
+/** Title cap (per PRD). */
 export const POST_TITLE_MAX = 200;
-/** Body cap (per PRD: ≤ 10 000 chars on submit / edit). */
+/** Body cap on submit / edit (per PRD). */
 export const POST_BODY_MAX = 10_000;
-/** Comment body cap (per PRD: ≤ 5 000 chars). */
+/** Comment body cap (per PRD). */
 export const COMMENT_BODY_MAX = 5_000;
 
 /** Pano excerpt cap (tweet-sized, matches pre-effect-migration). */
@@ -401,11 +401,11 @@ export class Pano extends Context.Service<
 
 		readonly voteOnPost: (
 			input: VoteOnPostInput,
-		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError, Vote>;
+		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError>;
 
 		readonly retractPostVote: (
 			input: VoteOnPostInput,
-		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError, Vote>;
+		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError>;
 
 		readonly addComment: (
 			input: AddCommentInput,
@@ -427,11 +427,11 @@ export class Pano extends Context.Service<
 
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError, Vote>;
+		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError>;
 
 		readonly retractCommentVote: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError, Vote>;
+		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError>;
 	}
 >()("@phoenix/pano/Pano") {}
 
@@ -441,10 +441,10 @@ export class Pano extends Context.Service<
 
 export const PanoLive = Layer.effect(Pano)(
 	Effect.gen(function* () {
-		// Yield Drizzle once at layer build and destructure its bound methods.
-		// Method bodies call `run` / `batch` directly so every method's `R` stays
-		// `never` — except the four vote-delegating methods, which call
-		// `voteSvc.cast` and therefore type as `R = Vote`.
+		// Yield Drizzle and Vote once at layer build and destructure/close over
+		// their bound methods. Method bodies call `run` / `batch` / `voteSvc`
+		// directly — the deps are owned by this layer, so every method's `R`
+		// stays `never` (the dep never reaches the caller-visible R channel).
 		const {run, batch} = yield* Drizzle;
 		const voteSvc = yield* Vote;
 
@@ -564,52 +564,51 @@ export const PanoLive = Layer.effect(Pano)(
 		 * otherwise. Per ADR 0013, validation lives in service methods, not
 		 * resolvers.
 		 */
-		const validatePostBody = (rawBody: string) =>
-			Effect.gen(function* () {
-				if (rawBody.length > POST_BODY_MAX) {
-					return yield* new PostValidation({
-						code: "body_too_long",
-						message: `metin en fazla ${POST_BODY_MAX} karakter olabilir`,
-					});
-				}
-				return rawBody.length === 0 ? null : rawBody;
-			});
+		const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
+			if (rawBody.length > POST_BODY_MAX) {
+				return yield* new PostValidation({
+					code: "body_too_long",
+					message: `metin en fazla ${POST_BODY_MAX} karakter olabilir`,
+				});
+			}
+			return rawBody.length === 0 ? null : rawBody;
+		});
 
-		const validatePostTitle = (raw: string) =>
-			Effect.gen(function* () {
-				const trimmed = raw.trim();
-				if (trimmed.length === 0) {
-					return yield* new PostValidation({
-						code: "title_required",
-						message: "başlık boş olamaz",
-					});
-				}
-				if (trimmed.length > POST_TITLE_MAX) {
-					return yield* new PostValidation({
-						code: "title_too_long",
-						message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
-					});
-				}
-				return trimmed;
-			});
+		const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: string) {
+			const trimmed = raw.trim();
+			if (trimmed.length === 0) {
+				return yield* new PostValidation({
+					code: "title_required",
+					message: "başlık boş olamaz",
+				});
+			}
+			if (trimmed.length > POST_TITLE_MAX) {
+				return yield* new PostValidation({
+					code: "title_too_long",
+					message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
+				});
+			}
+			return trimmed;
+		});
 
-		const validateCommentBody = (body: string | null | undefined) =>
-			Effect.gen(function* () {
-				const rawBody = body ?? "";
-				if (rawBody.trim().length === 0) {
-					return yield* new CommentValidation({
-						code: "body_required",
-						message: "yorum boş olamaz",
-					});
-				}
-				if (rawBody.length > COMMENT_BODY_MAX) {
-					return yield* new CommentValidation({
-						code: "body_too_long",
-						message: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
-					});
-				}
-				return rawBody;
-			});
+		const validateCommentBody = Effect.fn("Pano.validateCommentBody")(function* (
+			body: string | null | undefined,
+		) {
+			const rawBody = body ?? "";
+			if (rawBody.trim().length === 0) {
+				return yield* new CommentValidation({
+					code: "body_required",
+					message: "yorum boş olamaz",
+				});
+			}
+			if (rawBody.length > COMMENT_BODY_MAX) {
+				return yield* new CommentValidation({
+					code: "body_too_long",
+					message: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
+				});
+			}
+			return rawBody;
+		});
 
 		/* ------------------------------------------------------------------ */
 		/* Reads                                                               */
@@ -1469,7 +1468,6 @@ export const PanoLive = Layer.effect(Pano)(
 				]);
 			}
 
-			// Decrement post.commentCount and refresh hot_score.
 			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
 			if (post) {
 				const newCommentCount = Math.max(0, post.commentCount - 1);

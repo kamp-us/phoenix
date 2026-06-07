@@ -269,10 +269,10 @@ export class Sozluk extends Context.Service<
 
 export const SozlukLive = Layer.effect(Sozluk)(
 	Effect.gen(function* () {
-		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
-		// destructure its bound methods. Method bodies call `run` directly so
-		// every method's `R` stays `never` (or `Vote` for the vote-delegating
-		// methods, since `voteSvc.cast` introduces `Vote` into `R`).
+		// Yield Drizzle and Vote once at layer build and destructure/close over
+		// their bound methods. Method bodies call `run` / `voteSvc` directly —
+		// the deps are owned by this layer, so every method's `R` stays `never`
+		// (the dep never reaches the caller-visible R channel).
 		const {run} = yield* Drizzle;
 		const voteSvc = yield* Vote;
 
@@ -286,20 +286,21 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		 * with the appropriate tagged error otherwise. Per ADR 0013,
 		 * validation lives in service methods, not resolvers.
 		 */
-		const validateBody = (body: string | null | undefined) =>
-			Effect.gen(function* () {
-				const rawBody = body ?? "";
-				if (rawBody.trim().length === 0) {
-					return yield* new BodyRequired({message: "tanım boş olamaz"});
-				}
-				if (rawBody.length > DEFINITION_BODY_MAX) {
-					return yield* new BodyTooLong({
-						max: DEFINITION_BODY_MAX,
-						message: `tanım en fazla ${DEFINITION_BODY_MAX} karakter olabilir`,
-					});
-				}
-				return rawBody;
-			});
+		const validateBody = Effect.fn("Sozluk.validateBody")(function* (
+			body: string | null | undefined,
+		) {
+			const rawBody = body ?? "";
+			if (rawBody.trim().length === 0) {
+				return yield* new BodyRequired({message: "tanım boş olamaz"});
+			}
+			if (rawBody.length > DEFINITION_BODY_MAX) {
+				return yield* new BodyTooLong({
+					max: DEFINITION_BODY_MAX,
+					message: `tanım en fazla ${DEFINITION_BODY_MAX} karakter olabilir`,
+				});
+			}
+			return rawBody;
+		});
 
 		/**
 		 * Recompute the `term_summary` row for one slug from the live

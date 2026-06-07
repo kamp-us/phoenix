@@ -16,13 +16,8 @@
  *
  * Runs in the node pool (workerd harness is task 7).
  */
-import * as BetterAuth from "@alchemy.run/better-auth";
 import type {BaseRuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
-import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
-import {drizzleAdapter} from "better-auth/adapters/drizzle";
-import {bearer} from "better-auth/plugins";
-import {drizzle} from "drizzle-orm/d1";
 import {Effect} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
@@ -30,12 +25,11 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {createDrizzle} from "../db/Drizzle.ts";
-import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
-import * as schema from "../db/drizzle/schema.ts";
-import {makeSqliteD1, type SqliteD1} from "../db/sqlite-d1.fake.ts";
+import {Database} from "../db/Database.ts";
+import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.testing.ts";
 import {makeFateLayer} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
+import {layerTest, makeRealAuthForTest} from "../features/pasaport/better-auth.testing.ts";
 import {makeAppLive} from "./app.ts";
 
 /**
@@ -104,53 +98,39 @@ async function fetch(
 }
 
 beforeAll(() => {
-	sqlite = makeSqliteD1();
-	sqlite.applyMigration(baselineMigration);
+	sqlite = makeSqliteTestDb();
 
-	const db = createDrizzle(sqlite.d1);
+	// ONE database for the whole test (ADR 0040): a single `node:sqlite` handle
+	// behind the `Database` seam. `makeFateLayer`'s `Drizzle` and the better-auth
+	// adapter below both run on this handle — the old dual-drizzle accident (a
+	// separate `createDrizzle(...)` threaded into `makeFateLayer` alongside
+	// better-auth's own drizzle) is gone.
+	const databaseLayer = Layer.succeed(Database)(sqlite.d1);
 
-	// Build a real better-auth instance over the same node:sqlite-backed D1 the
-	// rest of the test uses. The deployed worker assembles this via
-	// `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`), but that Layer needs
-	// the full alchemy provider stack (`Random`, `D1Connection`) which doesn't
-	// exist in the node test runtime. Constructing the instance directly here and
-	// providing it through a hand-rolled Layer over the same `BetterAuth` Context
-	// tag is the test-mode equivalent.
-	const betterAuthDrizzle = drizzle(sqlite.d1, {schema});
-	const testAuthInstance = makeBetterAuth({
-		emailAndPassword: {enabled: true},
-		database: drizzleAdapter(betterAuthDrizzle, {provider: "sqlite", schema}),
-		secret: ENV.BETTER_AUTH_SECRET,
-		baseURL: ENV.BETTER_AUTH_URL,
-		trustedOrigins: [ENV.BETTER_AUTH_TRUSTED_ORIGINS],
-		user: {
-			additionalFields: {
-				username: {type: "string", required: false, input: false},
-			},
-		},
-		plugins: [bearer()],
-	} satisfies BetterAuthOptions);
+	// Build a real better-auth instance over the SAME `node:sqlite`-backed D1 via
+	// the shared `makeRealAuthForTest` helper (colocated with `better-auth.testing.ts`),
+	// which mirrors the deployed `BetterAuthLive`
+	// (`worker/features/pasaport/better-auth-live.ts`). That Layer needs the full
+	// alchemy provider stack (`RuntimeContext`, the `secret_text` binding) which
+	// doesn't exist in the node test runtime; the helper reproduces the same
+	// construction directly. Provided through a hand-rolled Layer over the same
+	// `BetterAuth` Context tag (`layerTest`), it is the test-mode
+	// equivalent. The helper's `drizzle(d1, ...)` is better-auth's own internal
+	// builder over the same handle — not a second feature `Drizzle`.
+	const testAuthInstance = makeRealAuthForTest(sqlite.d1);
 
-	const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)({
-		auth: Effect.succeed(testAuthInstance),
-		fetch: Effect.gen(function* () {
-			const request = yield* HttpServerRequest.HttpServerRequest;
-			const response = yield* Effect.promise(() =>
-				testAuthInstance.handler(request.source as Request),
-			);
-			return HttpServerResponse.fromWeb(response);
-		}),
-	});
+	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to the
+	// generic `Auth` `layerTest` takes (the same type the deployed
+	// worker satisfies). The concrete and generic `Auth` types don't statically
+	// overlap (TS2345), so the widen needs the `unknown` hop.
+	// biome-ignore lint/plugin: concrete `Auth<…>` vs the generic `Auth` don't overlap (TS2345), so this widen needs the hop.
+	const widenedAuth = testAuthInstance as unknown as Parameters<typeof layerTest>[0];
+	const betterAuthLayer = layerTest(widenedAuth);
 
-	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to
-	// `Parameters<typeof makeFateLayer>[1]` (the `Auth` type re-export, which
-	// the deployed worker also satisfies). The concrete and generic `Auth` types
-	// don't statically overlap (TS2352), so the widen needs the `unknown` hop.
-	const fateLayer = makeFateLayer(
-		db,
-		// biome-ignore lint/plugin: see above — concrete `Auth<…>` vs the generic `Auth` re-export don't overlap (TS2352), so this widen needs the hop.
-		testAuthInstance as unknown as Parameters<typeof makeFateLayer>[1],
-	);
+	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth`
+	// (ADR 0040); the two seams are discharged inside `makeAppLive`'s request
+	// layer from `databaseLayer` + `betterAuthLayer`.
+	const fateLayer = makeFateLayer;
 
 	// A minimal `BaseRuntimeContext` stub. The HTTP-surface cases here never reach
 	// the `/api/auth/*` route's RuntimeContext-consuming secret resolution (sign-up
@@ -166,6 +146,7 @@ beforeAll(() => {
 
 	appLayer = makeAppLive({
 		fateLayer,
+		databaseLayer,
 		liveLayer,
 		betterAuthLayer,
 		runtimeContext,

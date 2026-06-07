@@ -34,8 +34,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
-import {createDrizzle} from "./db/Drizzle.ts";
-import {PhoenixDb} from "./db/resources.ts";
+import {Database, DatabaseLive} from "./db/Database.ts";
 import {makeFateLayer} from "./features/fate/layers.ts";
 import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
@@ -123,35 +122,41 @@ export default Phoenix.make(
 		// ── INIT PHASE (deploy time + once per isolate) ──
 		// Bind the resources. At deploy time each call records the binding's
 		// metadata for the Cloudflare API; at runtime it resolves the typed client.
-		// Everything bound here is in scope for the worker's whole lifetime — task 2
-		// builds the worker-level `Drizzle` + feature layers from `db`, and tasks 5
-		// wire the live publish path through the two DO namespaces.
-		const db = yield* Cloudflare.D1Connection.bind(PhoenixDb);
+		// Everything bound here is in scope for the worker's whole lifetime.
 		const live = yield* LiveDO;
 
-		// Each bound client stays load-bearing through its real use below: `db`
-		// via `db.raw`, and `live` via the `liveLayer` closures' `getByName(...)`
-		// calls — drop a `bind()`/`yield*` above and the type checker fails at that
+		// `live` stays load-bearing through the `liveLayer` closures' `getByName(...)`
+		// calls below — drop the `yield*` above and the type checker fails at that
 		// usage, so an unwired binding is a compile error, never a runtime
-		// `undefined`.
+		// `undefined`. The raw D1 is no longer bound here: it lives behind the
+		// `Database` seam (ADR 0040), provided as `DatabaseLive` in the
+		// outer `Effect.provide`, and both `DrizzleLive` and `BetterAuthLive` derive
+		// from it — one shared handle, type-enforced.
 
-		// Build the worker-level service layers ONCE from the bound D1 (ADR 0029):
-		// `conn.raw` is the underlying Cloudflare `D1Database`, handed to
-		// `drizzle(raw, {schema})`; `Drizzle` + the feature services (`fateLayer`)
-		// are constructed here and stay alive for the isolate — one worker, not a
-		// per-request `ManagedRuntime`. The `/fate` route provides only `Auth`
-		// per request (ADR 0029).
-		const raw = yield* db.raw;
+		// Resolve the raw D1 handle from the `Database` seam ONCE in init (ADR
+		// 0040). `DatabaseLive` (provided in the outer `Effect.provide`)
+		// resolves the `PhoenixDb` binding; wrapping the resolved handle in a
+		// `Layer.succeed(Database)` gives `makeAppLive` a stable, dependency-free
+		// `databaseLayer` whose value `DrizzleLive` and `BetterAuthLive` both derive
+		// from — one shared handle, type-enforced.
+		const raw = yield* Database;
+		const databaseLayer = Layer.succeed(Database)(raw);
+
+		// The worker-level service layer (ADR 0029, ADR 0040): `makeFateLayer` is
+		// a zero-arg constant whose `R` is `Database | BetterAuth`. Both seams are
+		// discharged inside `makeAppLive`'s request layer (`databaseLayer` +
+		// `betterAuthLayer` below). The `/fate` route provides only `Auth` per
+		// request (ADR 0029).
+		const fateLayer = makeFateLayer;
+
 		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
 		// init — the layer (`BetterAuthLive`, provided below) constructs the
-		// `makeBetterAuth(...)` instance once and caches it. Yielding `auth` here
-		// materializes the cached `Auth` reference, so `Pasaport.validateSession`
-		// (which runs `auth.api.getSession(...)` per request) and the `/api/auth/*`
-		// route (which runs `auth.handler(request)`) share one instance — sign +
-		// validate with the same secret.
+		// `makeBetterAuth(...)` instance once and caches it. Yielding it here
+		// materializes the cached service, so `Pasaport.validateSession` (which runs
+		// `auth.api.getSession(...)` per request) and the `/api/auth/*` route (which
+		// runs `auth.handler(request)`) share one instance — sign + validate with
+		// the same secret.
 		const betterAuth = yield* BetterAuth.BetterAuth;
-		const authInstance = yield* betterAuth.auth;
-		const fateLayer = makeFateLayer(createDrizzle(raw), authInstance);
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One
@@ -220,6 +225,7 @@ export default Phoenix.make(
 		// with no per-request reconstruction.
 		const AppLive = makeAppLive({
 			fateLayer,
+			databaseLayer,
 			liveLayer,
 			betterAuthLayer: Layer.succeed(BetterAuth.BetterAuth)(betterAuth),
 			runtimeContext,
@@ -229,8 +235,10 @@ export default Phoenix.make(
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
 	}).pipe(
 		// One combined provide (chaining multiple `Effect.provide` can break layer
-		// lifecycle). Three Layers:
-		//   - `D1ConnectionLive` satisfies `D1Connection.bind`'s `R` requirement.
+		// lifecycle). The Layers:
+		//   - `D1ConnectionLive` satisfies `D1Connection.bind`'s `R` requirement —
+		//     `DatabaseLive` (provided into `BetterAuthLive` below) binds `PhoenixDb`
+		//     through it.
 		//   - `LiveDOLive` is the unified live-fan-out DO in `.make()` form
 		//     (ADR 0028): it registers the single DO class with the worker's exports
 		//     and resolves the `LiveDO` Tag the init phase yields. Cross-role calls
@@ -238,16 +246,19 @@ export default Phoenix.make(
 		//     Tag), so the Layer requires only `Worker` — there is no circular Layer
 		//     dependency to break, unlike the old `ConnectionDOLive` ↔ `TopicDOLive`
 		//     pair this replaces.
+		//   - `BetterAuthLive` (`features/pasaport/better-auth-live.ts`) satisfies the
+		//     `BetterAuth` Context tag yielded above + provides `betterAuth.fetch` to
+		//     the `/api/auth/*` route. It derives its raw d1 from the `Database` seam
+		//     (ADR 0040), so `DatabaseLive` is provided into it here.
 		Effect.provide(
 			Layer.mergeAll(
-				Cloudflare.D1ConnectionLive,
 				LiveDOLive,
-				// `BetterAuthLive` (`features/pasaport/better-auth-live.ts`) satisfies the
-				// `BetterAuth` Context tag yielded above + provides `betterAuth.fetch`
-				// to the `/api/auth/*` route. It self-provides `D1ConnectionLive`
-				// internally but merging that one twice is idempotent.
-				BetterAuthLive,
-			),
+				// `DatabaseLive` resolves `PhoenixDb`; `BetterAuthLive` derives its raw
+				// d1 from it. `provideMerge` keeps both `Database` (yielded in init) and
+				// `BetterAuth` in scope while satisfying the dependency in build order
+				// (a flat `mergeAll` would run them in parallel and not wire it).
+				BetterAuthLive.pipe(Layer.provideMerge(DatabaseLive)),
+			).pipe(Layer.provideMerge(Cloudflare.D1ConnectionLive)),
 		),
 	),
 );

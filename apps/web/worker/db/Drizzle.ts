@@ -18,13 +18,14 @@
  * only the home of `run` / `batch` moved (Tag-value field instead of class
  * static).
  *
- * ADR 0011 records the decision; the post-fbb57d8 corrective pass in task 4
- * codified the destructure-at-build idiom.
+ * ADR 0011 records the decision.
  */
 import type {BatchItem, BatchResponse} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
-import {Context, Data, Effect, Layer} from "effect";
+import {Context, Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
+import {Database} from "../db/Database.ts";
 import * as schema from "../db/drizzle/schema.ts";
 
 /**
@@ -38,9 +39,10 @@ import * as schema from "../db/drizzle/schema.ts";
 export const relations = defineRelations(schema);
 
 /**
- * The fully-typed drizzle builder phoenix uses everywhere. Constructed once
- * per request from `env.PHOENIX_DB`. Carries both the `schema` and `relations`
- * generics (RQB v2) so `db.query.<table>` and `db.select()` are both typed.
+ * The fully-typed drizzle builder phoenix uses everywhere. Built once per
+ * isolate from the bound D1 handle (the `Database` seam). Carries both the
+ * `schema` and `relations` generics (RQB v2) so `db.query.<table>` and
+ * `db.select()` are both typed.
  */
 export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relations>>;
 
@@ -49,9 +51,12 @@ export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relation
  * `run` / `batch`. Maps to `INTERNAL_SERVER_ERROR` at the resolver edge; the
  * `cause` is preserved for logs but never reaches the user.
  */
-export class DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{
-	readonly cause: unknown;
-}> {}
+export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
+	"@phoenix/Drizzle/Error",
+	{
+		cause: Schema.Defect(),
+	},
+) {}
 
 /**
  * Single statement type used by `batch`. The tuple shape `[Stmt, ...Stmt[]]`
@@ -127,10 +132,6 @@ export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema,
  * the single home of the `run` / `batch` bodies. {@link makeDrizzleLayer} wraps
  * this, so the promise → Effect boundary and the tagged `DrizzleError` catch
  * live in exactly one place.
- *
- * House rule (`.patterns/feature-services.md`): `Effect.tryPromise` always uses
- * object notation with an explicit `catch` producing a tagged error — here
- * `DrizzleError`, so resolvers can map it cleanly to `INTERNAL_SERVER_ERROR`.
  */
 export const makeDrizzleAccess = (db: DrizzleDb): DrizzleAccess => ({
 	run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
@@ -157,3 +158,21 @@ export const makeDrizzleAccess = (db: DrizzleDb): DrizzleAccess => ({
  */
 export const makeDrizzleLayer = (db: DrizzleDb): Layer.Layer<Drizzle> =>
 	Layer.succeed(Drizzle, makeDrizzleAccess(db));
+
+/**
+ * The `Drizzle` layer derived from the `Database` seam (ADR 0040).
+ *
+ * Reads the raw `D1Database` from the `Database` tag, builds the typed drizzle
+ * instance with {@link createDrizzle}, and wraps the `run` / `batch` surface via
+ * {@link makeDrizzleAccess}. Because both this layer and the better-auth adapter
+ * derive from the SAME `Database` tag, feature services and auth are guaranteed
+ * to share one underlying handle — the one-`sqlite` invariant is now
+ * type-enforced by the layer graph (`R = Database`), not test-owned.
+ *
+ * This replaces the concrete-handle threading {@link makeDrizzleLayer} expressed:
+ * the raw handle now lives behind the tag, not as a passed-in argument.
+ */
+export const DrizzleLive: Layer.Layer<Drizzle, never, Database> = Layer.effect(
+	Drizzle,
+	Effect.map(Database, (raw) => makeDrizzleAccess(createDrizzle(raw))),
+);

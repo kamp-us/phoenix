@@ -47,7 +47,13 @@ dedicated profile, not your day-to-day one.
 #    a GitHub credential (gh-cli or a PAT with `repo`).
 alchemy login --profile admin
 
-# 2. Deploy the one-shot. It mints the scoped CF token + a stable BETTER_AUTH_SECRET
+# 2. Provision the Cloudflare-hosted state store (a Worker+DO that holds alchemy
+#    state). Required once per account before any `Cloudflare.state()` deploy.
+#    Subcommand order is `alchemy cloudflare bootstrap`, NOT `alchemy bootstrap
+#    cloudflare` (the "State store not found" error suggests the wrong form).
+pnpm --filter @phoenix/web exec alchemy cloudflare bootstrap --profile admin
+
+# 3. Deploy the one-shot. It mints the scoped CF token + a stable BETTER_AUTH_SECRET
 #    and pushes all four repo secrets. ALCHEMY_PASSWORD is the state-encryption
 #    password; reuse the same value the app stack deploys with.
 CLOUDFLARE_ACCOUNT_ID=<account-id> ALCHEMY_PASSWORD=<password> \
@@ -63,6 +69,16 @@ a clean diff, not an orphaned token.
 
 ## Gotchas baked into the files
 
+- **CI never uses an alchemy profile.** The `admin` profile is laptop-only
+  (`~/.alchemy/profiles.json`, with the elevated token-minting + GitHub creds). CI
+  authenticates purely via the env-var `CLOUDFLARE_API_TOKEN`/`CLOUDFLARE_ACCOUNT_ID` +
+  `ALCHEMY_PASSWORD` secrets — do **not** set `ALCHEMY_PROFILE` in the workflow.
+- **The state store is versioned; re-bootstrap on alchemy bumps.** A `Cloudflare.state()`
+  deploy fails with `Cloudflare State store not found … run 'alchemy … bootstrap'` when the
+  account's state-store worker is out of date (e.g. alchemy `beta.52` expects store **v7**,
+  `beta.45` used **v6**). Re-run the `alchemy cloudflare bootstrap --profile admin` step
+  above to upgrade it in place. The upgrade is **account-global and one-way**, so once you
+  bump, branches still on the older alchemy can no longer deploy against that account.
 - **`exec alchemy`, not the package script.** `pnpm --filter @phoenix/web deploy --stage X`
   makes *pnpm* swallow `--stage`/`--yes` (`Unknown options: 'stage', 'yes'`). The
   workflow builds the SPA, then runs `pnpm --filter @phoenix/web exec alchemy deploy

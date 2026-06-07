@@ -19,7 +19,17 @@ env:
 
 jobs:
   deploy:
-    if: github.event.action != 'closed'
+    # Defense-in-depth: never run a secret-bearing deploy for an outside
+    # contributor's PR. The repo's fork-PR approval policy already gates this
+    # (all_external_contributors → manual "Approve and run"), but encoding the
+    # author gate here makes it explicit and survives any settings drift. `push`
+    # (prod, main-only) always proceeds; PRs run only for repo owners, org
+    # members, and invited collaborators — `author_association` is set by GitHub,
+    # not user-controllable, so a drive-by CONTRIBUTOR/NONE can't slip through.
+    if: >-
+      github.event.action != 'closed' &&
+      (github.event_name == 'push' ||
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -99,7 +109,12 @@ jobs:
             }
 
   cleanup:
-    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    # Same author gate as `deploy` — an outside PR never deployed a stage, so
+    # there's nothing to tear down, and we don't run secret-bearing `destroy`
+    # for it either.
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
     runs-on: ubuntu-latest
     permissions:
       contents: read

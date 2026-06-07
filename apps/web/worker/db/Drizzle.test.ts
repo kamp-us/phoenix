@@ -8,10 +8,10 @@
  * because the wrapper never inspects the builder, it just forwards it to the
  * caller's callback.
  *
- * Post-fbb57d8 reshape: `run` and `batch` are no longer Context-bound statics.
- * They are bound methods on the Tag's value (`DrizzleAccess`). Tests
- * destructure them at the top of each Effect.gen, mirroring the production
- * service idiom (`const {run, batch} = yield* Drizzle`).
+ * `run` and `batch` are bound methods on the Tag's value (`DrizzleAccess`),
+ * not Context-bound statics. Tests destructure them at the top of each
+ * Effect.gen, mirroring the production service idiom
+ * (`const {run, batch} = yield* Drizzle`).
  *
  * Integration coverage (real D1 via miniflare) lives in the per-feature
  * integration tests under `tests/integration/`.
@@ -28,9 +28,8 @@ import {
 	DrizzleError,
 	makeDrizzleAccess,
 } from "./Drizzle";
-import baselineMigration from "./drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "./drizzle/schema";
-import {makeSqliteD1} from "./sqlite-d1.fake";
+import {makeSqliteTestDb} from "./sqlite-d1.testing";
 
 /**
  * A fake `DrizzleDb` instance — the wrapper passes it to the callback
@@ -50,9 +49,9 @@ const makeAccess = (db: DrizzleDb): DrizzleAccess => makeDrizzleAccess(db);
 
 /**
  * Test layer that provides the fake builder as the `Drizzle` service. The real
- * worker-level layer (`makeDrizzleLayer`) wraps a `drizzle(env.PHOENIX_DB,
- * {...})` instance which requires a workerd D1 binding; the contract under test
- * is the `run` / `batch` wrapping, not the builder construction.
+ * worker-level layer (`makeDrizzleLayer`) wraps a `drizzle()` instance over a
+ * workerd-bound D1 handle; the contract under test is the `run` / `batch`
+ * wrapping, not the builder construction.
  */
 const TestDrizzleLayer = Layer.succeed(Drizzle, makeAccess(FAKE_DB));
 
@@ -260,8 +259,7 @@ describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
 	const now = new Date();
 
 	it.effect("a mid-batch failure rolls back the whole tuple — no partial write", () => {
-		const sqlite = makeSqliteD1();
-		sqlite.applyMigration(baselineMigration);
+		const sqlite = makeSqliteTestDb();
 		const db = createDrizzle(sqlite.d1);
 		const layer = Layer.succeed(Drizzle, makeDrizzleAccess(db));
 

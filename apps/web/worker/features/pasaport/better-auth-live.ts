@@ -7,7 +7,9 @@
  *   - `CloudflareD1` declares its OWN `Cloudflare.D1Database("BetterAuth")` —
  *     phoenix already has the canonical `PhoenixDb` D1 (`db/resources.ts`,
  *     ADR 0009), and the better-auth tables live on the same D1 as the rest of
- *     the product data. So this Layer reuses `PhoenixDb` directly.
+ *     the product data. So this Layer derives its raw d1 from the shared
+ *     `Database` seam (ADR 0040) — the same tag `DrizzleLive`
+ *     derives from, so features and auth provably share one handle.
  *   - Phoenix's better-auth instance needs phoenix-specific plugins (the
  *     `magicLink` token-delivery plugin, `bearer`), an `additionalFields.username`
  *     on `user`, and explicit `baseURL`/`trustedOrigins` for the dev Vite proxy
@@ -28,7 +30,6 @@ import * as BetterAuth from "@alchemy.run/better-auth";
 // tsgo can portably name plugin types under composite project refs.
 // See microsoft/typescript-go#1034 and better-auth#5666 for context.
 import type {} from "@better-auth/core";
-import * as Cloudflare from "alchemy/Cloudflare";
 import {type BetterAuthOptions, betterAuth as makeBetterAuth} from "better-auth";
 import {drizzleAdapter} from "better-auth/adapters/drizzle";
 import {bearer, magicLink} from "better-auth/plugins";
@@ -41,15 +42,15 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {} from "zod/v4/core";
 import {AppConfig, betterAuthSecret} from "../../config.ts";
+import {Database} from "../../db/Database.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {PhoenixDb} from "../../db/resources.ts";
 
 /**
  * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
- * `CloudflareD1` reference Layer. Mirrors its structure
- * (`Cloudflare.D1Connection.bind` for the database, `Effect.cached` so the
- * `makeBetterAuth` call happens once per isolate) and adds phoenix's plugins +
- * `baseURL`/`trustedOrigins`.
+ * `CloudflareD1` reference Layer. It derives its raw d1 from the shared
+ * `Database` seam (not its own `D1Connection.bind`) and keeps the reference
+ * layer's `Effect.cached` so the `makeBetterAuth` call happens once per isolate,
+ * and adds phoenix's plugins + `baseURL`/`trustedOrigins`.
  *
  * The session-signing secret is read at runtime from the `BETTER_AUTH_SECRET`
  * `secret_text` binding via `yield* betterAuthSecret` (a `Config.redacted` in
@@ -72,7 +73,11 @@ import {PhoenixDb} from "../../db/resources.ts";
 export const BetterAuthLive = Layer.effect(
 	BetterAuth.BetterAuth,
 	Effect.gen(function* () {
-		const connection = yield* Cloudflare.D1Connection.bind(PhoenixDb);
+		// The raw `D1Database` from the shared `Database` seam (ADR 0040).
+		// `DrizzleLive` derives its drizzle builder from this same tag,
+		// so the better-auth adapter and every feature service provably run on one
+		// underlying handle — the one-`sqlite` invariant is type-enforced.
+		const raw = yield* Database;
 
 		// The session-signing secret, read from the `BETTER_AUTH_SECRET`
 		// `secret_text` binding off the auto-wired ConfigProvider. `Config.redacted`
@@ -105,8 +110,7 @@ export const BetterAuthLive = Layer.effect(
 			: {};
 
 		const auth = yield* Effect.gen(function* () {
-			const d1 = yield* connection.raw;
-			const db = drizzle(d1, {schema});
+			const db = drizzle(raw, {schema});
 			return makeBetterAuth({
 				emailAndPassword: {enabled: true},
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
@@ -157,4 +161,4 @@ export const BetterAuthLive = Layer.effect(
 			}),
 		};
 	}),
-).pipe(Layer.provide(Cloudflare.D1ConnectionLive));
+);

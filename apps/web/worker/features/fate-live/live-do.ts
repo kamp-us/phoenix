@@ -43,7 +43,6 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {DeliverFrame, LiveLimits, SubscriberRow} from "./protocol.ts";
 import {encodeFrame, SSE_HEADERS} from "./protocol.ts";
 
-/** Storage key for the persisted per-connection generation counter. */
 const GENERATION_KEY = "connection:generation";
 
 /** Reap-alarm cadence: probe each subscriber's connection every 60s. */
@@ -54,12 +53,11 @@ type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 
 /**
  * The slice of `DurableObjectState` the unified instance builder actually
- * touches: the instance name (`id.name`) and the KV `storage` surface
- * (`get`/`put`/`delete`/`list`/`getAlarm`/`setAlarm`). `makeLiveInstance` is
- * typed against this slice rather than the whole `DurableObjectState` so the
- * node-pool fake (`do-state.fake.ts`) can satisfy it structurally — no
- * cast — while the real `Cloudflare.DurableObjectState` value still flows in
- * unchanged (it's a superset, so assignable).
+ * touches: the instance name (`id.name`) and the KV `storage` surface.
+ * `makeLiveInstance` is typed against this slice rather than the whole
+ * `DurableObjectState` so the node-pool fake (`do-state.testing.ts`) can satisfy
+ * it structurally — no cast — while the real `Cloudflare.DurableObjectState`
+ * value still flows in unchanged (it's a superset, so assignable).
  */
 export type LiveDoState = Pick<DurableObjectStateValue, "id" | "storage">;
 
@@ -136,7 +134,6 @@ export class LiveDO extends Cloudflare.DurableObjectNamespace<LiveDO, LiveRpcSur
  */
 type LiveNamespace = Effect.Success<typeof LiveDO>;
 
-/** The role an instance plays, derived from `state.id.name`. */
 type Role =
 	| {readonly kind: "connection"; readonly connectionId: string}
 	| {readonly kind: "topic"; readonly topicKey: string}
@@ -238,9 +235,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			framesQueue = queue;
 			yield* Queue.offer(queue, CONNECTED_FRAME);
 
-			// 15-second keep-alive cadence. `Stream.tick` emits immediately then on
-			// every interval; `drop(1)` skips the immediate tick so the first
-			// keep-alive lands at +15s (void's `keepAlive.intervalMs = 15e3`).
+			// `Stream.tick` emits immediately then on every interval; `drop(1)` skips
+			// the immediate tick so the first keep-alive lands at +15s (void's
+			// `keepAlive.intervalMs = 15e3`).
 			const keepAlive = Stream.tick("15 seconds").pipe(
 				Stream.drop(1),
 				Stream.map(() => KEEPALIVE_FRAME),
@@ -352,9 +349,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				// Oversized event: drop it (not stale — the subscription is fine).
 				return {delivered: false, stale: false};
 			}
-			// Backpressure is the bounded queue's own invariant: `offer` returns false
-			// when the queue is full (a connection that has fallen too far behind).
-			// Close the stream and treat the row as stale (void's 410 on queue full).
+			// `offer` returns false when the dropping queue is full (a connection that
+			// has fallen too far behind): close the stream and treat the row as stale
+			// (void's 410 on queue full).
 			const accepted = yield* Queue.offer(queue, encoded);
 			if (!accepted) {
 				yield* closeStream;
@@ -450,11 +447,10 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			const entries = yield* loadRows(input.topicKey);
 			// Group rows by connection so each connection sees one deliver pass.
+			// Group rows by connection, then fan out the per-connection deliver passes
+			// concurrently (connections are independent). The inner per-row loop stays
+			// sequential because it short-circuits on the first unreachable item.
 			const grouped = groupByConnection(entries);
-			// Connections are independent — fan out the per-connection deliver passes
-			// concurrently (subscribe/unsubscribe already do). Each pass returns how
-			// many of its rows were delivered; the inner per-row loop stays sequential
-			// because it short-circuits on the first unreachable item.
 			const perConnection = yield* Effect.forEach(
 				grouped,
 				([connectionId, items]) =>
