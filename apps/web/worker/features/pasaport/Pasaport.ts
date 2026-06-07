@@ -371,8 +371,8 @@ export const makePasaportLive = (auth: Auth) =>
 						}),
 					}).pipe(
 						Effect.catch((error) =>
-							Effect.sync(() => {
-								console.error("[pasaport.validateSession]", error.cause);
+							Effect.gen(function* () {
+								yield* Effect.logError("[pasaport.validateSession]", error.cause);
 								return null as Session | null;
 							}),
 						),

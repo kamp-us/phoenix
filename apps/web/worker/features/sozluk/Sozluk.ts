@@ -286,20 +286,21 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		 * with the appropriate tagged error otherwise. Per ADR 0013,
 		 * validation lives in service methods, not resolvers.
 		 */
-		const validateBody = (body: string | null | undefined) =>
-			Effect.gen(function* () {
-				const rawBody = body ?? "";
-				if (rawBody.trim().length === 0) {
-					return yield* new BodyRequired({message: "tanım boş olamaz"});
-				}
-				if (rawBody.length > DEFINITION_BODY_MAX) {
-					return yield* new BodyTooLong({
-						max: DEFINITION_BODY_MAX,
-						message: `tanım en fazla ${DEFINITION_BODY_MAX} karakter olabilir`,
-					});
-				}
-				return rawBody;
-			});
+		const validateBody = Effect.fn("Sozluk.validateBody")(function* (
+			body: string | null | undefined,
+		) {
+			const rawBody = body ?? "";
+			if (rawBody.trim().length === 0) {
+				return yield* new BodyRequired({message: "tanım boş olamaz"});
+			}
+			if (rawBody.length > DEFINITION_BODY_MAX) {
+				return yield* new BodyTooLong({
+					max: DEFINITION_BODY_MAX,
+					message: `tanım en fazla ${DEFINITION_BODY_MAX} karakter olabilir`,
+				});
+			}
+			return rawBody;
+		});
 
 		/**
 		 * Recompute the `term_summary` row for one slug from the live
