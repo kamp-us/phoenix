@@ -16,18 +16,17 @@
  * `.patterns/effect-layer-composition.md`; only *where* it's provided moved,
  * from a per-request runtime to here.
  */
-import {Layer} from "effect";
+import * as BetterAuth from "@alchemy.run/better-auth";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
+import {Effect, Layer} from "effect";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import type {Drizzle, DrizzleDb} from "../../db/Drizzle.ts";
-import {makeDrizzleLayer} from "../../db/Drizzle.ts";
+import type {Database} from "../../db/Database.ts";
+import type {Drizzle} from "../../db/Drizzle.ts";
+import {DrizzleLive} from "../../db/Drizzle.ts";
 import type {LiveBus} from "../fate-live/event-bus.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
 import type {Auth} from "../pasaport/Auth.ts";
-import {
-	type Auth as BetterAuthInstance,
-	makePasaportLive,
-	type Pasaport,
-} from "../pasaport/Pasaport.ts";
+import {makePasaportLive, type Pasaport} from "../pasaport/Pasaport.ts";
 import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
 import {type Stats, StatsLive} from "../stats/Stats.ts";
 import {type Vote, VoteLive} from "../vote/Vote.ts";
@@ -61,28 +60,62 @@ export type FateEnv =
 export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Stats;
 
 /**
- * Build the worker-level data-plane layer from the bound D1.
+ * The `Pasaport` layer, sourced from the shared `Database` seam + `BetterAuth`
+ * tag. Resolves the better-auth instance from the `BetterAuth` Context tag
+ * (`@alchemy.run/better-auth`, implemented by `better-auth-live.ts`) once at
+ * layer build, then hands it to {@link makePasaportLive} — Pasaport no longer
+ * builds its own auth. Requires `Drizzle` (provided below) + `BetterAuth`.
  *
- * `Drizzle` is built once from `db` (via {@link makeDrizzleLayer}); the feature
- * services provide over it. `SozlukLive` and `PanoLive` both depend on `Vote`,
- * so they merge first and `provideMerge(VoteLive)` once; `PasaportLive` and
- * `StatsLive` depend only on `Drizzle`. Pasaport's better-auth instance is
- * resolved in worker init via the `BetterAuth` Context tag (`@alchemy.run/better-auth`,
- * implemented by `worker/features/pasaport/better-auth-live.ts`) and threaded
- * in through `makePasaportLive(auth)` — Pasaport no longer builds its own auth.
- *
- * The result requires nothing (`R = never`); the per-request `Auth` +
- * `HttpServerRequest` are layered on top in the `/fate` route, not here.
+ * `betterAuth.auth` carries a `RuntimeContext` requirement in its value type
+ * (the reference is `Effect<Auth, never, RuntimeContext>`), but phoenix's fork
+ * (`better-auth-live.ts`) reads its secret from a `secret_text` binding, not from
+ * alchemy's `Random`/`Output` — so resolving the cached instance never actually
+ * touches the runtime context. We satisfy the *type* requirement with an inert
+ * `RuntimeContext` stub so `makeFateLayer`'s `R` stays exactly `Database |
+ * BetterAuth`; the worker still provides the real `RuntimeContext` to the
+ * `/api/auth/*` route's `betterAuth.fetch` path through `makeAppLive`.
  */
-export const makeFateLayer = (
-	db: DrizzleDb,
-	auth: BetterAuthInstance,
-): Layer.Layer<WorkerFateServices> => {
-	const DrizzleLayer = makeDrizzleLayer(db);
-
-	const PasaportLive = makePasaportLive(auth);
-	const SozlukPanoLayer = Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive));
-	const FeatureLayer = Layer.mergeAll(PasaportLive, SozlukPanoLayer, StatsLive);
-
-	return FeatureLayer.pipe(Layer.provideMerge(DrizzleLayer));
+const inertRuntimeContext: BaseRuntimeContext = {
+	Type: "fate-layer",
+	id: "fate-layer",
+	env: {},
+	get: () => Effect.succeed(undefined),
+	set: (id) => Effect.succeed(id),
 };
+
+const PasaportFromTag = Layer.unwrap(
+	Effect.gen(function* () {
+		const betterAuth = yield* BetterAuth.BetterAuth;
+		const auth = yield* betterAuth.auth.pipe(
+			Effect.provideService(RuntimeContext, inertRuntimeContext),
+		);
+		return makePasaportLive(auth);
+	}),
+);
+
+/**
+ * The worker-level data-plane layer (ADR 0029, ADR 0040 b1 addendum).
+ *
+ * Zero-arg layer constant: it derives everything from the two seams it requires
+ * in its `R` channel — `Database` (the raw d1 handle, behind `DrizzleLive`) and
+ * `BetterAuth` (the auth instance, for `Pasaport.validateSession`). No caller
+ * threads a concrete `db` or `auth` argument: both `Drizzle` and Pasaport's
+ * auth derive from those tags, so features and auth provably share one handle.
+ *
+ * `Drizzle` is built from {@link DrizzleLive} (sourced from `Database`); the
+ * feature services provide over it. `SozlukLive` and `PanoLive` both depend on
+ * `Vote`, so they merge first and `provideMerge(VoteLive)` once; `PasaportFromTag`
+ * and `StatsLive` depend only on `Drizzle` (Pasaport also on `BetterAuth`).
+ *
+ * `R = Database | BetterAuth`; the per-request `Auth` + `HttpServerRequest` are
+ * layered on top in the `/fate` route, not here.
+ */
+export const makeFateLayer: Layer.Layer<
+	WorkerFateServices,
+	never,
+	Database | BetterAuth.BetterAuth
+> = Layer.mergeAll(
+	PasaportFromTag,
+	Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive)),
+	StatsLive,
+).pipe(Layer.provideMerge(DrizzleLive));

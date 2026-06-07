@@ -23,6 +23,7 @@ import type * as BetterAuth from "@alchemy.run/better-auth";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import type {Database} from "../db/Database.ts";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
 import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
@@ -46,7 +47,19 @@ import {healthApiLayer} from "./health.ts";
  * scope, so this layer no longer needs the worker env passed in.
  */
 export const makeAppLive = (options: {
-	readonly fateLayer: Layer.Layer<WorkerFateServices>;
+	/**
+	 * The worker-level fate services (`makeFateLayer`, ADR 0040 b1). Its `R` is
+	 * the two seams `Database | BetterAuth`: `databaseLayer` (below) + the same
+	 * `betterAuthLayer` discharge them inside the request layer, so the fate, auth,
+	 * and live routes' service requirements resolve through `provideRequest`.
+	 */
+	readonly fateLayer: Layer.Layer<WorkerFateServices, never, Database | BetterAuth.BetterAuth>;
+	/**
+	 * The `Database` seam (ADR 0040 b1): the raw `D1Database` handle both
+	 * `DrizzleLive` (inside `fateLayer`) and `BetterAuthLive` derive from. In the
+	 * deployed worker this is `DatabaseLive`; tests pass `makeDatabaseTest()`.
+	 */
+	readonly databaseLayer: Layer.Layer<Database, never, any>;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**
 	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker
@@ -93,7 +106,13 @@ export const makeAppLive = (options: {
 				options.fateLayer,
 				options.liveLayer,
 				Layer.succeed(RuntimeContext)(options.runtimeContext),
-			).pipe(Layer.merge(options.betterAuthLayer)),
+			).pipe(
+				// `provideMerge` the two seams `fateLayer` requires (`Database` +
+				// `BetterAuth`) so its `Drizzle`/`Pasaport` resolve here; their own
+				// upstream requirements (`D1Connection`/`Providers`/`RuntimeContext`)
+				// are left for the worker's outer `Effect.provide`.
+				Layer.provideMerge(Layer.merge(options.databaseLayer, options.betterAuthLayer)),
+			),
 		),
 	);
 

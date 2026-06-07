@@ -30,6 +30,7 @@ import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {Database} from "../../db/Database";
 import {createDrizzle} from "../../db/Drizzle";
 // `?raw` so the node/unit pool imports the SQL as a string (the pool-workers
 // project transforms `.sql` to a string by default; the node pool does not).
@@ -37,6 +38,7 @@ import * as schema from "../../db/drizzle/schema";
 import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Auth} from "../pasaport/Auth";
+import {makeStubBetterAuthLayer} from "../pasaport/better-auth.fake";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
 
@@ -107,13 +109,16 @@ beforeAll(async () => {
 	sqlite = makeSqliteTestDb();
 
 	const db = createDrizzle(sqlite.d1);
-	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;
-	// the bridge tests never hit that path, so a typed no-op stand-in is enough.
-	// biome-ignore lint/plugin: better-auth's `Auth` instance type can't be partial-constructed; the bridge tests never reach the session path, so a `getSession` no-op stand-in suffices.
-	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
-		typeof makeFateLayer
-	>[1];
-	WorkerLive = makeFateLayer(db, fakeAuth);
+
+	// `makeFateLayer` is now a zero-arg layer with `R = Database | BetterAuth`
+	// (ADR 0040 b1). Provide the seam from the SAME `node:sqlite` handle the
+	// seeding above writes to (`Layer.succeed(Database)(sqlite.d1)`) so features
+	// and seeding share one database — the one-`sqlite` invariant is type-enforced.
+	const DatabaseTest = Layer.succeed(Database)(sqlite.d1);
+
+	const BetterAuthTest = makeStubBetterAuthLayer();
+
+	WorkerLive = makeFateLayer.pipe(Layer.provide(Layer.merge(DatabaseTest, BetterAuthTest)));
 
 	// Seed three definitions with distinct scores so the keyset order is
 	// deterministic: (score desc, created_at asc, id asc). Written straight to the

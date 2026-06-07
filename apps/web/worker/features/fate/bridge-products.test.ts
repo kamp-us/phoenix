@@ -31,11 +31,12 @@ import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
-import {createDrizzle} from "../../db/Drizzle";
+import {Database} from "../../db/Database";
 import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Pano} from "../pano/Pano";
 import {Auth} from "../pasaport/Auth";
+import {makeStubBetterAuthLayer} from "../pasaport/better-auth.fake";
 import {Pasaport} from "../pasaport/Pasaport";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
 import {fateServer} from "./server";
@@ -95,14 +96,16 @@ const COMMENT_IDS: string[] = [];
 beforeAll(async () => {
 	sqlite = makeSqliteTestDb();
 
-	const db = createDrizzle(sqlite.d1);
-	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;
-	// the bridge tests never hit that path, so a typed no-op stand-in is enough.
-	// biome-ignore lint/plugin: better-auth's `Auth` instance type can't be partial-constructed; the bridge tests never reach the session path, so a `getSession` no-op stand-in suffices.
-	const fakeAuth = {api: {getSession: async () => null}} as unknown as Parameters<
-		typeof makeFateLayer
-	>[1];
-	WorkerLive = makeFateLayer(db, fakeAuth);
+	// `makeFateLayer` is now a zero-arg layer with `R = Database | BetterAuth`
+	// (ADR 0040 b1). Provide the seam from the SAME `node:sqlite` handle the
+	// seeding below writes to (`Layer.succeed(Database)(sqlite.d1)`) so features
+	// and seeding share one database — the one-`sqlite` invariant is type-enforced.
+	// The stub `BetterAuth` layer is enough: these tests never reach the session
+	// path (`Pasaport.validateSession`).
+	const DatabaseTest = Layer.succeed(Database)(sqlite.d1);
+	WorkerLive = makeFateLayer.pipe(
+		Layer.provide(Layer.merge(DatabaseTest, makeStubBetterAuthLayer())),
+	);
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the
 	// node pool can't forge a session, so we insert the rows the services read).

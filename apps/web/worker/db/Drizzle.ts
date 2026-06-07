@@ -25,6 +25,7 @@ import type {BatchItem, BatchResponse} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
 import {Context, Data, Effect, Layer} from "effect";
+import {Database} from "../db/Database.ts";
 import * as schema from "../db/drizzle/schema.ts";
 
 /**
@@ -157,3 +158,21 @@ export const makeDrizzleAccess = (db: DrizzleDb): DrizzleAccess => ({
  */
 export const makeDrizzleLayer = (db: DrizzleDb): Layer.Layer<Drizzle> =>
 	Layer.succeed(Drizzle, makeDrizzleAccess(db));
+
+/**
+ * The `Drizzle` layer derived from the `Database` seam (ADR 0040, b1 addendum).
+ *
+ * Reads the raw `D1Database` from the `Database` tag, builds the typed drizzle
+ * instance with {@link createDrizzle}, and wraps the `run` / `batch` surface via
+ * {@link makeDrizzleAccess}. Because both this layer and the better-auth adapter
+ * derive from the SAME `Database` tag, feature services and auth are guaranteed
+ * to share one underlying handle — the one-`sqlite` invariant is now
+ * type-enforced by the layer graph (`R = Database`), not test-owned.
+ *
+ * This replaces the concrete-handle threading {@link makeDrizzleLayer} expressed:
+ * the raw handle now lives behind the tag, not as a passed-in argument.
+ */
+export const DrizzleLive: Layer.Layer<Drizzle, never, Database> = Layer.effect(
+	Drizzle,
+	Effect.map(Database, (raw) => makeDrizzleAccess(createDrizzle(raw))),
+);
