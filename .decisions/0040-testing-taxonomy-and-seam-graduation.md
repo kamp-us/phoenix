@@ -2,7 +2,7 @@
 id: 0040
 title: Testing Taxonomy and Test-Seam Graduation
 status: accepted
-date: 2026-06-06
+date: 2026-06-07
 tags: [testing, framework, architecture]
 ---
 
@@ -60,43 +60,47 @@ HTTP URL to a separately-deployed worker, not a layer.
 | Tier | Definition | Backed by | Examples |
 |------|-----------|-----------|----------|
 | **T0 — unit (pure)** | Pure fns / Effect logic, zero storage | none (`it.effect`) | keyset codec, hot-score arithmetic, `encodeFateError` |
-| **T1 — service-integration** | Real feature service over real SQL; only the `Drizzle` layer swaps | `node:sqlite` `:memory:` (`sqlite-d1.fake.ts`) + real `0000_d1_baseline.sql` | `Vote.test.ts`, `Drizzle.test.ts` |
+| **T1 — service-integration** | Real feature service over real SQL; only the `Database` layer swaps | `node:sqlite` `:memory:` (`sqlite-d1.testing.ts`) + real `0000_d1_baseline.sql` | `Vote.test.ts`, `Drizzle.test.ts` |
 | **T2 — bridge/app-integration** | Full `FateEnv` (minus per-request trio) through `fateServer.handleRequest`; wire codes, topic publishes, real-or-stubbed better-auth | `node:sqlite` under the worker layer, no workerd | `bridge-sozluk.test.ts`, `bridge-products.test.ts`, `app.test.ts` |
 | **T3 — system (stack-smoke, NOT a layer)** | Black-box HTTP over deployed workerd; no R-channel | **real remote D1** + workerd | `seam.test.ts`, `fate-live.test.ts` |
 
-T1 and T2 stay distinct because they swap *different* layers: T1 swaps only
-`Drizzle`; T2 also crosses the wire-encoding boundary and varies the auth
-layer. `app.test.ts` is T2 with a real auth layer, not its own tier.
+T1 and T2 stay distinct because they swap *different* layers: T1 swaps only the
+`Database` seam (and through it `Drizzle`); T2 also crosses the wire-encoding
+boundary and varies the auth layer. `app.test.ts` is T2 with a real auth layer,
+not its own tier.
 
-> **⚠️ SUPERSEDED by the [b1 addendum](#addendum-b1--database-tag-supersedes-concrete-handles) below.**
-> The "keep concrete handles / not layer-swappable" reasoning here is retained as
-> ADR history but no longer reflects the decision: a `Database` tag holding the
-> raw `D1Database` is the single seam, and both `Drizzle` and the better-auth
-> adapter derive from it, so the trio *is* layer-swappable and the one-`sqlite`
-> guarantee is type-enforced rather than test-owned. See the addendum.
-
-**One shared `d1`, surfaced two ways.** The seam is a single `d1`: the `Drizzle`
-Tag for feature services, and the raw `d1` handle for the better-auth adapter.
-`makeFateLayer(db, auth)` keeps taking concrete handles — it is **not** cleanly
-layer-swappable, because better-auth is constructed off the raw `d1`, and a
-`Layer<Drizzle>` swap would hand features and auth two different in-memory
-SQLites. Tests must thread **one** `sqlite` into both surfaces.
+**One `Database` seam; both surfaces derive from it.** A `Database` tag holds
+the raw `D1Database` handle — the single seam (`apps/web/worker/db/Database.ts`).
+Both downstream surfaces *derive* from it: the `Drizzle` service is built from
+`Database` (via `createDrizzle`), and the better-auth adapter is built from
+`Database`. Because both derive from the **same** tag, they are guaranteed to
+share one underlying handle — the one-`sqlite` invariant is **type-enforced by
+the layer graph**, not upheld by hand in each test. The trio is therefore
+genuinely layer-swappable: provide one `Database` layer and both `Drizzle` and
+auth rebind. `makeFateLayer` is a zero-arg layer (`R = Database | BetterAuth`);
+a test (or any consumer) provides one `Database` layer over the `node:sqlite`
+fake and the whole `FateEnv` follows.
 
 **Fidelity boundary.** `node:sqlite` is the same engine as D1 — keyset order
 (BINARY collation), `ON CONFLICT`, `COUNT(*)`, soft-delete filters are
 hermetically faithful, so **domain correctness belongs in T1/T2**. Genuine
 real-D1-only divergences, reserved for T3 (or a binding-level micro-tier):
 
-1. batch meta-envelope (the fake hardcodes `meta: {}`),
-2. `foreign_keys` default (fake defaults ON, D1 defaults OFF),
+1. batch meta-envelope (`changes` / `last_row_id`),
+2. `foreign_keys` default (raw `node:sqlite` defaults ON, D1 defaults OFF),
 3. D1 `changes` / `last_row_id` / statement-index-on-batch-error,
 4. the DO + SSE + D1 composite (`fate-live.test.ts`).
 
-Recorded gap: **batch-meta fidelity (#1, #3) is currently untested at every
-tier** — T3 asserts over the fate wire protocol, which never serializes
-`changes`/`last_row_id`. Resolve by adding a narrow binding-level micro-tier
-holding `env.PHOENIX_DB`, or document it as explicitly untested. Do not pretend
-T3 covers it.
+Divergences #1/#3 (batch-meta) are **resolved on this branch**: the d1 fake
+populates D1's `meta` envelope from `node:sqlite`'s `StatementSync.run()`
+(`changes` / `last_row_id`, per-statement on `batch()`), and a binding-level
+micro-tier asserts that contract in-process — `sqlite-d1.testing.test.ts`
+exercises the raw `prepare(...).run()` / `batch([...])` surface, since `meta` is
+a property of that binding contract, not of Drizzle. The previous recorded gap
+("batch-meta untested at every tier") is closed; do not re-file it. Divergence
+#2 is reconciled in the test helper: `makeSqliteTestDb()` forces
+`PRAGMA foreign_keys=OFF` to match D1's default. Statement-index-on-batch-error
+and the live composite (#4) remain T3/real-D1 territory.
 
 **Test-seam graduation rule (organic evolution):**
 
@@ -111,6 +115,19 @@ T3 covers it.
   `usirin/alchemy-effect`, per [0038](0038-dependency-patches-local-only.md)),
   and only after the `seedTerm`/better-auth coupling is cut.
 
+## Alternatives considered
+
+**Pass concrete `db` + `auth` handles into `makeFateLayer`.** The first draft
+held that `makeFateLayer(db, auth)` *had* to take concrete handles and was
+**not** cleanly layer-swappable, because better-auth is constructed off the raw
+`d1`, and a `Layer<Drizzle>` swap would hand features and auth two different
+in-memory SQLites. That premise conflated "one shared handle" with "passed as a
+concrete argument." The `Database` tag dissolves it: deriving both `Drizzle` and
+the auth adapter from one tag gives the shared-handle guarantee *by
+construction*, so no caller threads two handles and none can accidentally split
+features and auth onto two SQLites. The seam became swappable and the layer
+zero-arg.
+
 ## Consequences
 
 - The `unit` Vitest project must be re-tiered. Do it atomically across
@@ -121,53 +138,19 @@ T3 covers it.
   differing `maxWorkers`). Convention-first is preferred.
 - Domain-correctness assertions move from T3 down to T1/T2. This is a **fixture
   rewrite, not a relocation**: seed by direct INSERT, not by N HTTP voter
-  sign-ups (the current flake engine in `sozluk-read`).
-- `makeFateLayer` stays signature-stable (concrete `db` + `auth`); tests own the
-  one-`sqlite` guarantee. `createDrizzle` stays exported for the auth adapter.
+  sign-ups (the former flake engine in `sozluk-read`).
+- `makeFateLayer` is a **zero-arg layer** (`R = Database | BetterAuth`): the raw
+  handle lives behind the `Database` tag and both surfaces derive from it, so the
+  single-`sqlite` guarantee is enforced by construction rather than owned by
+  tests. `createDrizzle` stays exported for the auth adapter (both build off the
+  same raw handle from `Database`).
+- The test kit is **built and pattern-doc'd** (`.patterns/effect-testing.md`):
+  `makeSqliteTestDb()` (baseline migration applied, `PRAGMA foreign_keys=OFF`
+  baked in) and `runFateOp()` (driving one fate operation through the bridge,
+  owning the single-`provide` contract). These are API shapes, so their home is
+  `.patterns/`, not this decision.
 - Banned: calling a test that boots `node:sqlite` a "unit" test; filing
   deterministic-SQL correctness assertions in T3.
-- Follow-on (deliberately **not** in this ADR — these are API shapes, destined
-  for `.patterns/`, not decisions): extract `makeSqliteTestDb()` with
-  `PRAGMA foreign_keys=OFF` baked in, extract `runFateOp()` (owning
-  `makeLiveBusTest` internally to preserve the single-`provide`
-  `multipleEffectProvide` contract), then pattern-doc the test-kit API.
-
-## Addendum (b1) — `Database` tag supersedes concrete handles
-
-**Status: accepted (this ADR stays `accepted`; this addendum revises one section).**
-
-This addendum supersedes the **"One shared `d1`, surfaced two ways"** section in
-the Decision above (and the matching `makeFateLayer` bullet under Consequences).
-That section claimed `makeFateLayer(db, auth)` *must* take concrete handles and
-is **not** cleanly layer-swappable, because better-auth is built off the raw
-`d1`. That premise is wrong — it conflated "one shared handle" with "passed as a
-concrete argument."
-
-**Decision (b1):** introduce a `Database` tag holding the raw `D1Database`. It is
-the single seam. Both downstream surfaces *derive* from it:
-
-- the `Drizzle` service is built from `Database`, and
-- the better-auth adapter is built from `Database`.
-
-Because both derive from the **same** `Database` tag, they are guaranteed to
-share one underlying handle — the one-`sqlite` invariant the original section
-asked tests to uphold by hand is now **type-enforced** by the layer graph, not
-test-owned. The trio is therefore genuinely layer-swappable: a test (or any
-consumer) provides one `Database` layer and both `Drizzle` and auth follow. No
-caller threads two handles; no caller can accidentally hand features and auth two
-different in-memory SQLites.
-
-**What this changes vs. the superseded text:**
-
-- "*`makeFateLayer` keeps taking concrete handles*" → the raw handle lives behind
-  the `Database` tag; surfaces derive from the tag, not from passed-in concretes.
-- "*not cleanly layer-swappable*" → it **is** layer-swappable; swap the `Database`
-  layer and `Drizzle` + auth both rebind.
-- "*Tests must thread **one** `sqlite` into both surfaces*" → tests provide one
-  `Database` layer; the single-handle guarantee is enforced by construction.
-
-Everything else in this ADR (the four-tier taxonomy, the fidelity boundary, the
-graduation gates) stands unchanged.
 
 Builds on [0011](0011-drizzle-context-service.md),
 [0014](0014-drizzle-run-batch-as-service-methods.md),
