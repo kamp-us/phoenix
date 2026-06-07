@@ -13,7 +13,7 @@
  * redeclared here — `Auth.required` is the single source of truth for the
  * unauthorized wire code.
  */
-import {Data} from "effect";
+import * as Schema from "effect/Schema";
 
 /**
  * Sub-codes for username validation failures. They mirror the legacy
@@ -21,19 +21,28 @@ import {Data} from "effect";
  */
 export type UsernameInvalidCode = "invalid_format" | "too_short" | "too_long";
 
-export class UsernameInvalid extends Data.TaggedError("pasaport/UsernameInvalid")<{
-	readonly code: UsernameInvalidCode;
-	readonly message: string;
-}> {}
+export class UsernameInvalid extends Schema.TaggedErrorClass<UsernameInvalid>()(
+	"pasaport/UsernameInvalid",
+	{
+		code: Schema.Literals(["invalid_format", "too_short", "too_long"]),
+		message: Schema.String,
+	},
+) {}
 
-export class UsernameTaken extends Data.TaggedError("pasaport/UsernameTaken")<{
-	readonly message: string;
-}> {}
+export class UsernameTaken extends Schema.TaggedErrorClass<UsernameTaken>()(
+	"pasaport/UsernameTaken",
+	{
+		message: Schema.String,
+	},
+) {}
 
-export class UsernameAlreadySet extends Data.TaggedError("pasaport/UsernameAlreadySet")<{
-	readonly message: string;
-}> {}
+export class UsernameAlreadySet extends Schema.TaggedErrorClass<UsernameAlreadySet>()(
+	"pasaport/UsernameAlreadySet",
+	{
+		message: Schema.String,
+	},
+) {}
 
-export class UserNotFound extends Data.TaggedError("pasaport/UserNotFound")<{
-	readonly message: string;
-}> {}
+export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()("pasaport/UserNotFound", {
+	message: Schema.String,
+}) {}

@@ -26,7 +26,8 @@
  */
 
 import type {LiveEventBus} from "@nkzw/fate/server";
-import {Context, Data, Effect, Layer} from "effect";
+import {Context, Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
 import type {LiveChangedField, LiveEntities} from "../fate/views.ts";
 import type {
 	ConnectionFrame,
@@ -99,9 +100,12 @@ export type LivePublisher = (topicKey: string, message: PublishMessage) => void;
  * fail the committed mutation — `useIgnore` (the only caller) maps this away in
  * its `never` error channel. There is therefore no `WIRE_CODE_BY_TAG` entry.
  */
-export class LivePublishError extends Data.TaggedError("fate-live/LivePublishError")<{
-	readonly cause: unknown;
-}> {}
+export class LivePublishError extends Schema.TaggedErrorClass<LivePublishError>()(
+	"fate-live/LivePublishError",
+	{
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** Fan a publish message out to every topic key it targets, via the given publisher. */
 function publish(publisher: LivePublisher, message: PublishMessage): void {

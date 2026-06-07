@@ -13,7 +13,7 @@
  * Matching strategy
  * -----------------
  * The encoder dispatches on **`_tag`** through {@link WIRE_CODE_BY_TAG} — a
- * registry keyed by the union of every `Data.TaggedError` `_tag` raised by an
+ * registry keyed by the union of every tagged-error `_tag` raised by an
  * Effect service (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Drizzle`, `Auth`).
  * The key type {@link FateErrorTag} is *derived from the error
  * classes themselves*, so the registry is `Record<FateErrorTag, …>`: add a new
@@ -101,7 +101,7 @@ function fateError(code: MutationErrorCode, message: string): FateRequestError {
  *
  * Derived from the error classes (`InstanceType<typeof X>["_tag"]`) rather than
  * hand-written, so it can't drift from the classes it claims to cover. Adding a
- * new `Data.TaggedError` and importing it here widens this union, which forces a
+ * new tagged error and importing it here widens this union, which forces a
  * matching {@link WIRE_CODE_BY_TAG} entry (see below).
  */
 export type FateErrorTag =

@@ -24,7 +24,8 @@
 import type {BatchItem, BatchResponse} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
 import {defineRelations} from "drizzle-orm/relations";
-import {Context, Data, Effect, Layer} from "effect";
+import {Context, Effect, Layer} from "effect";
+import * as Schema from "effect/Schema";
 import {Database} from "../db/Database.ts";
 import * as schema from "../db/drizzle/schema.ts";
 
@@ -50,9 +51,12 @@ export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relation
  * `run` / `batch`. Maps to `INTERNAL_SERVER_ERROR` at the resolver edge; the
  * `cause` is preserved for logs but never reaches the user.
  */
-export class DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{
-	readonly cause: unknown;
-}> {}
+export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
+	"@phoenix/Drizzle/Error",
+	{
+		cause: Schema.Defect(),
+	},
+) {}
 
 /**
  * Single statement type used by `batch`. The tuple shape `[Stmt, ...Stmt[]]`

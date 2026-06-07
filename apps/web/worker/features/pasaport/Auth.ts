@@ -1,12 +1,13 @@
-import {Context, Data, Effect} from "effect";
+import {Context, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import type {Session} from "./Pasaport.ts";
 
 /**
  * Thrown when an authenticated user is required but not present.
  */
-export class Unauthorized extends Data.TaggedError("Unauthorized")<{
-	readonly message: string;
-}> {}
+export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()("Unauthorized", {
+	message: Schema.String,
+}) {}
 
 /**
  * Per-request auth state. `user`/`session` are undefined for anonymous traffic.

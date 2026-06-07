@@ -17,16 +17,17 @@
  */
 
 import {FateRequestError} from "@nkzw/fate/server";
-import {Context, Data, Effect} from "effect";
+import {Context, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {describe, expect, it} from "vitest";
 import {Auth, Unauthorized} from "../pasaport/Auth";
 import type {FateContext} from "./context";
 import {fateMutation, fateQuery, fateSource} from "./effect";
 
 // A domain tagged error whose `_tag` `encodeFateError` knows.
-class BodyRequired extends Data.TaggedError("sozluk/BodyRequired")<{
-	readonly message: string;
-}> {}
+class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()("sozluk/BodyRequired", {
+	message: Schema.String,
+}) {}
 
 /**
  * Build a `FateContext` whose captured `Context` carries an `Auth` service with
@@ -108,7 +109,9 @@ describe("fateQuery", () => {
 	});
 
 	it("maps an unknown tagged error to an internal error", async () => {
-		class Weird extends Data.TaggedError("weird/Unknown")<{readonly message: string}> {}
+		class Weird extends Schema.TaggedErrorClass<Weird>()("weird/Unknown", {
+			message: Schema.String,
+		}) {}
 		const resolve = fateQuery<undefined, never>(function* () {
 			return yield* new Weird({message: "?"});
 		});

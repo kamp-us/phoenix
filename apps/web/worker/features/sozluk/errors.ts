@@ -14,42 +14,46 @@
  * pre-effect-migration. Wire codes preserved verbatim so SPA pattern-matching
  * keeps working unchanged.
  */
-import {Data} from "effect";
+import * as Schema from "effect/Schema";
 
 /**
  * `body` field of `addDefinition` / `editDefinition` was empty after trimming.
  * Maps to `BODY_REQUIRED`.
  */
-export class BodyRequired extends Data.TaggedError("sozluk/BodyRequired")<{
-	readonly message: string;
-}> {}
+export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()("sozluk/BodyRequired", {
+	message: Schema.String,
+}) {}
 
 /**
  * `body` exceeded the configured maximum (`DEFINITION_BODY_MAX`). Maps to
  * `BODY_TOO_LONG`.
  */
-export class BodyTooLong extends Data.TaggedError("sozluk/BodyTooLong")<{
-	readonly max: number;
-	readonly message: string;
-}> {}
+export class BodyTooLong extends Schema.TaggedErrorClass<BodyTooLong>()("sozluk/BodyTooLong", {
+	max: Schema.Number,
+	message: Schema.String,
+}) {}
 
 /**
  * Raised by every mutation that targets a `definition_view` row that doesn't
  * exist (or has been soft-deleted in cases where existence is required). Maps
  * to `DEFINITION_NOT_FOUND`.
  */
-export class DefinitionNotFound extends Data.TaggedError("sozluk/DefinitionNotFound")<{
-	readonly definitionId: string;
-	readonly message: string;
-}> {}
+export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+	"sozluk/DefinitionNotFound",
+	{
+		definitionId: Schema.String,
+		message: Schema.String,
+	},
+) {}
 
 /**
  * Raised by `editDefinition` / `deleteDefinition` when the calling user is not
  * the row's author. Maps to `UNAUTHORIZED`.
  */
-export class UnauthorizedDefinitionMutation extends Data.TaggedError(
+export class UnauthorizedDefinitionMutation extends Schema.TaggedErrorClass<UnauthorizedDefinitionMutation>()(
 	"sozluk/UnauthorizedDefinitionMutation",
-)<{
-	readonly definitionId: string;
-	readonly message: string;
-}> {}
+	{
+		definitionId: Schema.String,
+		message: Schema.String,
+	},
+) {}

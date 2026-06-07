@@ -9,7 +9,7 @@
  * Replaces the pre-effect-migration `VoteTargetNotFoundError` class-form
  * error; wire code preserved verbatim so SPA pattern-matching keeps working.
  */
-import {Data} from "effect";
+import * as Schema from "effect/Schema";
 
 /**
  * The three polymorphic vote targets in the system. Lives here (alongside the
@@ -20,8 +20,11 @@ import {Data} from "effect";
  */
 export type VoteTargetKind = "definition" | "post" | "comment";
 
-export class VoteTargetNotFound extends Data.TaggedError("vote/VoteTargetNotFound")<{
-	readonly targetKind: VoteTargetKind;
-	readonly targetId: string;
-	readonly message: string;
-}> {}
+export class VoteTargetNotFound extends Schema.TaggedErrorClass<VoteTargetNotFound>()(
+	"vote/VoteTargetNotFound",
+	{
+		targetKind: Schema.Literals(["definition", "post", "comment"]),
+		targetId: Schema.String,
+		message: Schema.String,
+	},
+) {}
