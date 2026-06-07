@@ -129,6 +129,12 @@ export function makeSqliteD1(): SqliteD1 {
 		sql: string,
 		params: Params,
 	): {results: Record<string, unknown>[]; meta: D1MetaEnvelope} => {
+		// CAVEAT: this sniff classifies by the leading keyword only — a
+		// `WITH ... SELECT` CTE reads as DML (no rows surfaced) and a
+		// `... RETURNING` write reads as DML (its returned rows dropped). Both would
+		// misclassify, but neither shape appears in the narrow slice drizzle-orm/d1
+		// drives here (plain `SELECT` reads, leading-DML writes), so the
+		// leading-keyword heuristic is sufficient for the fake.
 		if (/^\s*select/i.test(sql)) {
 			return {results: allSql(sql, params), meta: {changes: 0, last_row_id: 0}};
 		}

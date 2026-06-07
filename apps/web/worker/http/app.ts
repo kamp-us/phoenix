@@ -60,7 +60,7 @@ export const makeAppLive = (options: {
 	 * deployed worker this is `DatabaseLive`; tests pass a `Database` layer over
 	 * the `node:sqlite` fake (`Layer.succeed(Database)(makeSqliteTestDb().d1)`).
 	 */
-	readonly databaseLayer: Layer.Layer<Database, never, any>;
+	readonly databaseLayer: Layer.Layer<Database>;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**
 	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker

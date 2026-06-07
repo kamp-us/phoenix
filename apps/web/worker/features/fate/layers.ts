@@ -74,6 +74,13 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
  * `RuntimeContext` stub so `makeFateLayer`'s `R` stays exactly `Database |
  * BetterAuth`; the worker still provides the real `RuntimeContext` to the
  * `/api/auth/*` route's `betterAuth.fetch` path through `makeAppLive`.
+ *
+ * The runtime-safety of this stub is pinned by a focused guard test —
+ * `pasaport-from-tag.test.ts` resolves `Pasaport` through this very path over a
+ * REAL better-auth fake with only the inert context, and asserts
+ * `validateSession` works. The day the fork (or upstream alchemy better-auth)
+ * starts reading `RuntimeContext` during `auth` resolution, that test fails
+ * in-process instead of a prod session silently mis-resolving.
  */
 const inertRuntimeContext: BaseRuntimeContext = {
 	Type: "fate-layer",
