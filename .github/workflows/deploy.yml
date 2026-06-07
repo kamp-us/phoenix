@@ -23,6 +23,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write # post the preview-URL comment on PRs
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -48,7 +49,14 @@ jobs:
       # approval (CI would otherwise hang); `--stage` selects the isolated copy.
       # Creds + BETTER_AUTH_SECRET come from the secrets `stacks/github.ts` provisions.
       - name: Deploy (stage ${{ env.STAGE }})
-        run: pnpm --filter @phoenix/web exec alchemy deploy --stage "$STAGE" --yes
+        id: deploy
+        run: |
+          set -o pipefail
+          pnpm --filter @phoenix/web exec alchemy deploy --stage "$STAGE" --yes | tee deploy.log
+          # alchemy has no structured URL output, so scrape the worker URL it
+          # prints (`url: 'https://…workers.dev'`). `set -o pipefail` keeps the
+          # deploy's exit code through the `tee` so a failed deploy still fails.
+          echo "url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)" >> "$GITHUB_OUTPUT"
         env:
           CI: "true"
           # `prod` closes the dev gates in `worker/config.ts` (magic-link token
@@ -65,11 +73,37 @@ jobs:
           # worker reads at runtime; the value must be present at deploy time.
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
 
+      # Post (or update) a sticky comment with the preview URL on PRs. The hidden
+      # marker makes it sticky: re-deploys (each `synchronize` push) edit the same
+      # comment instead of piling new ones up. Skipped on pushes to main (`prod`).
+      - name: Comment preview URL
+        if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
+        uses: actions/github-script@v7.0.1
+        env:
+          PREVIEW_URL: ${{ steps.deploy.outputs.url }}
+          STAGE_NAME: ${{ env.STAGE }}
+        with:
+          script: |
+            const marker = "<!-- preview-deploy -->";
+            const body = `${marker}\n### 🚀 Preview deployed\n`
+              + `Stage \`${process.env.STAGE_NAME}\` → ${process.env.PREVIEW_URL}\n\n`
+              + `<sub>Updated for ${context.sha.slice(0, 7)}</sub>`;
+            const {data: comments} = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({...context.repo, comment_id: existing.id, body});
+            } else {
+              await github.rest.issues.createComment({...context.repo, issue_number: context.issue.number, body});
+            }
+
   cleanup:
     if: github.event_name == 'pull_request' && github.event.action == 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      pull-requests: write # update the preview comment to "torn down"
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -104,3 +138,23 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
           BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+
+      # Flip the sticky preview comment to "torn down" so it never points at a
+      # destroyed stage. `always()`: update it even if the destroy step errored.
+      - name: Update preview comment (torn down)
+        if: always()
+        uses: actions/github-script@v7.0.1
+        env:
+          STAGE_NAME: ${{ env.STAGE }}
+        with:
+          script: |
+            const marker = "<!-- preview-deploy -->";
+            const body = `${marker}\n### 🧹 Preview torn down\n`
+              + `Stage \`${process.env.STAGE_NAME}\` was destroyed when the PR closed.`;
+            const {data: comments} = await github.rest.issues.listComments({
+              ...context.repo, issue_number: context.issue.number, per_page: 100,
+            });
+            const existing = comments.find((c) => c.body?.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({...context.repo, comment_id: existing.id, body});
+            }
