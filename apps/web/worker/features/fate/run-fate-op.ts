@@ -17,9 +17,10 @@
  *      topic keys the operation's `live.*` fanned out to.
  *
  * The caller supplies a fully-resolved worker layer (`Layer<WorkerFateServices>`)
- * — typically `makeFateLayer` with a fresh `makeDatabaseTest()` + a `BetterAuth`
- * layer provided per `it.effect`, so each case runs against its own in-memory
- * D1 (no row leakage; the `it.layer`/`describe`-once form is deliberately avoided).
+ * — typically `makeFateLayer` over a stable shared `Database` handle
+ * (`Layer.succeed(Database)(sqlite.d1)`) + a `BetterAuth` layer, with the handle
+ * rebuilt per `it` in `beforeEach`/`afterEach`, so each case runs against its own
+ * in-memory D1 (no row leakage; the `it.layer`/`describe`-once form is avoided).
  */
 import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";

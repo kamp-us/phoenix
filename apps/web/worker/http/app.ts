@@ -57,7 +57,8 @@ export const makeAppLive = (options: {
 	/**
 	 * The `Database` seam (ADR 0040 b1): the raw `D1Database` handle both
 	 * `DrizzleLive` (inside `fateLayer`) and `BetterAuthLive` derive from. In the
-	 * deployed worker this is `DatabaseLive`; tests pass `makeDatabaseTest()`.
+	 * deployed worker this is `DatabaseLive`; tests pass a `Database` layer over
+	 * the `node:sqlite` fake (`Layer.succeed(Database)(makeSqliteTestDb().d1)`).
 	 */
 	readonly databaseLayer: Layer.Layer<Database, never, any>;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;

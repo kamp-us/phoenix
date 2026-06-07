@@ -13,15 +13,16 @@
  * consumer (or a test) provides one `Database` layer and both `Drizzle` and
  * auth follow.
  *
- * This module is purely additive: it introduces the tag plus its production
- * (`DatabaseLive`) and test (`makeDatabaseTest`) layers. Nothing else is
- * rewired onto `Database` yet — the seam wiring (`Drizzle` + auth deriving from
- * the tag) is a follow-on.
+ * This module introduces the tag plus its production (`DatabaseLive`) layer.
+ * Tests build their own `Database` layer over the `node:sqlite` fake — either
+ * `Layer.succeed(Database)(makeSqliteTestDb().d1)` for a stable shared handle
+ * (Promise-based bridge tests) or `Layer.succeed(Drizzle, …)` straight over
+ * `createDrizzle` for `it.effect`-shaped service tests (see
+ * `.patterns/effect-testing.md`).
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import {Context, Effect, Layer} from "effect";
 import {PhoenixDb} from "./resources.ts";
-import {makeSqliteTestDb} from "./sqlite-d1.fake.ts";
 
 /**
  * `Database` is the Tag whose value is the raw Cloudflare `D1Database` handle.
@@ -49,26 +50,3 @@ export const DatabaseLive = Layer.effect(
 		return yield* connection.raw;
 	}),
 );
-
-/**
- * Test `Database` layer: a fresh in-memory `node:sqlite`-backed D1 handle (via
- * {@link makeSqliteTestDb}, with the baseline migration applied and
- * `foreign_keys` forced OFF to match D1) wrapped in `Effect.acquireRelease`, so
- * the handle is closed when the scope ends.
- *
- * A **factory, not a shared instance** — each call yields an independent
- * `:memory:` database, so tests never cross-contaminate.
- *
- * `Layer.scoped` does not exist at this effect pin; `Layer.effect` over an
- * `Effect.acquireRelease` is the equivalent — `Layer.effect` consumes the
- * `Scope` the acquire-release introduces, so the finalizer runs on the layer's
- * scope teardown.
- */
-export const makeDatabaseTest = (): Layer.Layer<Database> =>
-	Layer.effect(
-		Database,
-		Effect.acquireRelease(
-			Effect.sync(() => makeSqliteTestDb()),
-			(sqlite) => Effect.sync(() => sqlite.close()),
-		).pipe(Effect.map((sqlite) => sqlite.d1)),
-	);
