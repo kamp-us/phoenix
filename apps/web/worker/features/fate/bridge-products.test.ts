@@ -4,18 +4,18 @@
  * Task 2 proved the worker-as-runtime seam on sozluk (see `bridge-sozluk.test.ts`).
  * This file ports the proof to **pano** (posts, comments), **pasaport** (profile,
  * `me`), **vote** (cross-product up-vote / retract), and **stats** (landingStats)
- * — every query, list, mutation, and source — driven through the SAME bridge:
+ * — every query, list, mutation, and source — driven through the SAME bridge via
+ * {@link runFateOp}:
  *
- *   1. `Drizzle` + the feature services are built ONCE from a bound D1 (here a
+ *   1. `Drizzle` + the feature services are built from a bound D1 (here a
  *      `node:sqlite` stand-in) via `makeFateLayer` — the worker init layer.
- *   2. Per "request" the harness provides only `Auth` + `HttpServerRequest`,
- *      captures the live service map with `Effect.context<FateEnv>()`, and hands
- *      it to `fateServer.handleRequest` through `{context, request}`.
+ *   2. Per "request" {@link runFateOp} provides only `Auth` + `HttpServerRequest`
+ *      (plus the capturing `LiveBus` it owns), captures the live service map with
+ *      `Effect.context<FateEnv>()`, and hands it to `fateServer.handleRequest`.
  *   3. The bridge runs each resolver with `Effect.provide(effect, ctx.context)`
  *      — nothing built or disposed per request.
  *
- * Asserts wire parity with the pre-migration `/fate` surface for these products
- * (the shapes the pool-workers `fate-pano-*` / `fate-pasaport-*` tests assert):
+ * Asserts wire parity with the pre-migration `/fate` surface for these products:
  *   - pano: `posts(sort/host)` list, `post(idOrSlug)` detail + `Post.comments`
  *     keyset connection, post + comment mutations re-resolving the changed entity.
  *   - pasaport: `profile(username)` identity + counters + `Profile.contributions`
@@ -23,88 +23,53 @@
  *     `user.setUsername` round-trip.
  *   - vote: `post.vote` / `comment.vote` move the score and re-resolve the entity.
  *   - stats: `landingStats` returns the four counters + the build version.
- *   - sources: `User.byIds` (post author), `Post.byId` resolve their relations.
  *
  * Runs in the node pool (no workerd) — same constraint as `bridge-sozluk.test.ts`.
+ *
+ * Per-test DB isolation: each `it` builds its own worker layer over a fresh
+ * `node:sqlite` handle ({@link freshDb}) seeded identically, and closes it in
+ * `afterEach`, so no rows leak across cases. Counts are therefore exact (the
+ * previous file-order `>=` accumulation is gone).
  */
 import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {Database} from "../../db/Database";
 import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
-import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Pano} from "../pano/Pano";
-import {Auth} from "../pasaport/Auth";
 import {makeStubBetterAuthLayer} from "../pasaport/better-auth.fake";
 import {Pasaport} from "../pasaport/Pasaport";
-import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
-import {fateServer} from "./server";
-
-let sqlite: SqliteD1;
-/** The worker-level layer (Drizzle + features), built once over the bound D1. */
-let WorkerLive: Layer.Layer<WorkerFateServices>;
+import {makeFateLayer, type WorkerFateServices} from "./layers";
+import {runFateOp} from "./run-fate-op";
 
 const AUTHOR = {id: "u-author", name: "umut", email: "umut@example.com"};
 const VOTER = {id: "u-voter", name: "elif", email: "elif@example.com"};
 const BOOTSTRAP = {id: "u-bootstrap", name: "Ada Boot", email: "ada@example.com"};
 
-type FateResult =
-	| {ok: true; data: unknown; id: string}
-	| {ok: false; error: {code: string; message?: string}; id: string};
-
-/**
- * Drive one fate operation through the bridge the way the `/fate` route does:
- * provide per-request `Auth` + `HttpServerRequest`, capture the `Context`, and
- * run `fateServer.handleRequest`. `auth` chooses the session (anonymous by
- * default).
- */
-async function fateOp(
-	operation: Record<string, unknown>,
-	opts: {auth?: {id: string; name: string; email: string}} = {},
-): Promise<{status: number; result: FateResult; published: ReadonlyArray<string>}> {
-	const request = new Request("https://test.local/fate", {
-		method: "POST",
-		headers: {"content-type": "application/json"},
-		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
-	});
-
-	// Capturing `LiveBus` (ADR 0039): records the RESOLVED topic keys each
-	// mutation's `live.*` fans out to, provided structurally like the `/fate`
-	// route provides the real one.
-	const {layer: LiveBusTest, published} = makeLiveBusTest();
-
-	const captureAndServe = Effect.gen(function* () {
-		const context = yield* Effect.context<FateEnv>();
-		return yield* Effect.promise(() => fateServer.handleRequest(request, {request, context}));
-	}).pipe(
-		Effect.provideService(Auth, {user: opts.auth as never, session: undefined}),
-		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
-		// One merged provide (the capturing `LiveBus` + the worker-level services) —
-		// chaining two `Effect.provide` calls trips the multipleEffectProvide lint.
-		Effect.provide(Layer.mergeAll(LiveBusTest, WorkerLive)),
-	);
-
-	const res = await Effect.runPromise(captureAndServe);
-	const body = (await res.json()) as {version: number; results: FateResult[]};
-	return {status: res.status, result: body.results[0]!, published};
-}
-
+/** The per-test in-memory D1; created in `beforeEach`, closed in `afterEach`. */
+let sqlite: SqliteD1;
+/** The per-test worker layer (Drizzle + features) over {@link sqlite}'s handle. */
+let WorkerLive: Layer.Layer<WorkerFateServices>;
+/** The seeded post id + its five chronological comment ids (per-test). */
 let POST_ID = "";
 const COMMENT_IDS: string[] = [];
 
-beforeAll(async () => {
+/**
+ * Build a fresh worker layer over a new `node:sqlite` handle, seed the three
+ * users + one post + five comments + AUTHOR's username, and stash `POST_ID` /
+ * `COMMENT_IDS`. `WorkerLive` wraps the SAME handle every `runFateOp` call hits
+ * (`Layer.succeed(Database)(sqlite.d1)` over a shared object reference).
+ */
+async function freshDb(): Promise<void> {
 	sqlite = makeSqliteTestDb();
 
-	// `makeFateLayer` is now a zero-arg layer with `R = Database | BetterAuth`
-	// (ADR 0040 b1). Provide the seam from the SAME `node:sqlite` handle the
-	// seeding below writes to (`Layer.succeed(Database)(sqlite.d1)`) so features
-	// and seeding share one database — the one-`sqlite` invariant is type-enforced.
-	// The stub `BetterAuth` layer is enough: these tests never reach the session
-	// path (`Pasaport.validateSession`).
-	const DatabaseTest = Layer.succeed(Database)(sqlite.d1);
+	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth` (ADR
+	// 0040 b1). Provide the seam from the SAME handle the seeding below writes to
+	// so features and seeding share one database — the one-`sqlite` invariant is
+	// type-enforced. The stub `BetterAuth` is enough: these tests never reach the
+	// session path (`Pasaport.validateSession`).
 	WorkerLive = makeFateLayer.pipe(
-		Layer.provide(Layer.merge(DatabaseTest, makeStubBetterAuthLayer())),
+		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), makeStubBetterAuthLayer())),
 	);
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the
@@ -119,7 +84,8 @@ beforeAll(async () => {
 
 	// Seed one post + five chronological comments through the live Pano service —
 	// the same lifecycle a user-driven submit would take, so the view rows + stats
-	// land identically.
+	// land identically. Give AUTHOR a username so the pasaport profile feed is a
+	// mixed discriminant (post + comment).
 	const seeded = await Effect.runPromise(
 		Effect.gen(function* () {
 			const pano = yield* Pano;
@@ -141,23 +107,21 @@ beforeAll(async () => {
 				});
 				ids.push(c.commentId);
 			}
+			const pasaport = yield* Pasaport;
+			yield* pasaport.setUsername({userId: AUTHOR.id, value: "umut-author"});
 			return {postId: post.postId, commentIds: ids};
 		}).pipe(Effect.provide(WorkerLive)),
 	);
 	POST_ID = seeded.postId;
+	COMMENT_IDS.length = 0;
 	COMMENT_IDS.push(...seeded.commentIds);
+}
 
-	// Give AUTHOR a username + profile + one definition contribution so the
-	// pasaport profile feed is a mixed discriminant (post + comment + definition).
-	await Effect.runPromise(
-		Effect.gen(function* () {
-			const pasaport = yield* Pasaport;
-			yield* pasaport.setUsername({userId: AUTHOR.id, value: "umut-author"});
-		}).pipe(Effect.provide(WorkerLive)),
-	);
+beforeEach(async () => {
+	await freshDb();
 });
 
-afterAll(() => {
+afterEach(() => {
 	sqlite?.close();
 });
 
@@ -167,7 +131,7 @@ afterAll(() => {
 
 describe("fate bridge — pano reads", () => {
 	it("posts(hot) returns rows with id cursors", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "list",
 			name: "posts",
 			args: {sort: "hot"},
@@ -188,7 +152,7 @@ describe("fate bridge — pano reads", () => {
 	});
 
 	it("posts(host) filters by host", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "list",
 			name: "posts",
 			args: {sort: "new", host: "example.com"},
@@ -203,7 +167,7 @@ describe("fate bridge — pano reads", () => {
 	});
 
 	it("post(idOrSlug) returns the detail row with tags", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: POST_ID},
@@ -226,7 +190,7 @@ describe("fate bridge — pano reads", () => {
 	});
 
 	it("post(idOrSlug) returns null for an unknown id", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: "post_does_not_exist"},
@@ -238,7 +202,7 @@ describe("fate bridge — pano reads", () => {
 	});
 
 	it("Post.comments paginates by DB keyset with no skips/dupes across pages", async () => {
-		const page1 = await fateOp({
+		const page1 = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: POST_ID, comments: {first: 2}},
@@ -257,7 +221,7 @@ describe("fate bridge — pano reads", () => {
 		const cursor = d1.comments.pagination.nextCursor;
 		expect(cursor).toBe(COMMENT_IDS[1]);
 
-		const page2 = await fateOp({
+		const page2 = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: POST_ID, comments: {first: 2, after: cursor}},
@@ -270,7 +234,7 @@ describe("fate bridge — pano reads", () => {
 		};
 		expect(d2.comments.items.map((e) => e.node.id)).toEqual(COMMENT_IDS.slice(2, 4));
 
-		const page3 = await fateOp({
+		const page3 = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: POST_ID, comments: {first: 2, after: d2.comments.pagination.nextCursor}},
@@ -294,7 +258,7 @@ describe("fate bridge — pano reads", () => {
 	});
 
 	it("Comment nodes carry the author/authorId/myVote scalar surface", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: POST_ID, comments: {first: 1}},
@@ -323,7 +287,8 @@ describe("fate bridge — pano reads", () => {
 
 describe("fate bridge — pano mutations + vote round-trip", () => {
 	it("post.submit round-trips and the post re-resolves over the bridge", async () => {
-		const add = await fateOp(
+		const add = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "post.submit",
@@ -340,7 +305,7 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 		expect(created.score).toBe(0);
 		expect(created.authorId).toBe(AUTHOR.id);
 
-		const reread = await fateOp({
+		const reread = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: created.id},
@@ -352,7 +317,8 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 	});
 
 	it("comment.add round-trips and the changed parent re-resolves over the bridge", async () => {
-		const add = await fateOp(
+		const add = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "comment.add",
@@ -369,7 +335,7 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 
 		// Re-resolve the parent post: commentCount now reflects the added comment,
 		// and the new comment is in the Post.comments connection.
-		const reread = await fateOp({
+		const reread = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
 			args: {idOrSlug: POST_ID, comments: {first: 50}},
@@ -390,23 +356,19 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 	});
 
 	it("post.vote publishes to the Post entity topic (ADR 0039)", async () => {
-		const vote = await fateOp(
+		const vote = await runFateOp(
+			WorkerLive,
 			{kind: "mutation", name: "post.vote", input: {id: POST_ID}, select: ["id", "score"]},
 			{auth: VOTER},
 		);
 		expect(vote.result.ok).toBe(true);
 		if (!vote.result.ok) return;
 		expect(vote.published).toEqual([liveEntityTopic("Post", POST_ID)]);
-
-		// Cleanup: retract so the later vote round-trip test starts from score 0.
-		await fateOp(
-			{kind: "mutation", name: "post.retractVote", input: {id: POST_ID}, select: ["id"]},
-			{auth: VOTER},
-		);
 	});
 
 	it("post.vote moves the score and re-resolves the post (vote service)", async () => {
-		const vote = await fateOp(
+		const vote = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "post.vote",
@@ -423,7 +385,8 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 		expect(voted.myVote).toBe(1);
 
 		// Re-cast is idempotent; retract returns score to 0.
-		const retract = await fateOp(
+		const retract = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "post.retractVote",
@@ -441,7 +404,8 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 
 	it("comment.vote moves the comment score and re-resolves it (vote service)", async () => {
 		const target = COMMENT_IDS[0]!;
-		const vote = await fateOp(
+		const vote = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "comment.vote",
@@ -459,7 +423,7 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 	});
 
 	it("a write gated by Auth.required fails anonymously → UNAUTHORIZED", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "mutation",
 			name: "post.vote",
 			input: {id: POST_ID},
@@ -477,12 +441,13 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 
 describe("fate bridge — pasaport", () => {
 	it("me anonymous → UNAUTHORIZED, authed → the full user row", async () => {
-		const anon = await fateOp({kind: "query", name: "me", select: ["id"]});
+		const anon = await runFateOp(WorkerLive, {kind: "query", name: "me", select: ["id"]});
 		expect(anon.result.ok).toBe(false);
 		if (anon.result.ok) return;
 		expect(anon.result.error.code).toBe("UNAUTHORIZED");
 
-		const authed = await fateOp(
+		const authed = await runFateOp(
+			WorkerLive,
 			{kind: "query", name: "me", select: ["id", "email", "username"]},
 			{auth: AUTHOR},
 		);
@@ -491,12 +456,12 @@ describe("fate bridge — pasaport", () => {
 		const me = authed.result.data as {id: string; email: string; username: string | null};
 		expect(me.id).toBe(AUTHOR.id);
 		expect(me.email).toBe(AUTHOR.email);
-		// username was set in beforeAll.
+		// username was set during seeding.
 		expect(me.username).toBe("umut-author");
 	});
 
 	it("profile(username) returns identity + live-aggregated counters", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "profile",
 			args: {username: "umut-author"},
@@ -514,14 +479,13 @@ describe("fate bridge — pasaport", () => {
 		expect(data.userId).toBe(AUTHOR.id);
 		expect(data.username).toBe("umut-author");
 		expect(data.displayName).toBe(AUTHOR.name);
-		// AUTHOR authored the seeded post + 5 comments (+ the mutation-added post +
-		// comment from the earlier describe block, which run in file order).
-		expect(data.postCount).toBeGreaterThanOrEqual(1);
-		expect(data.commentCount).toBeGreaterThanOrEqual(5);
+		// AUTHOR authored exactly the seeded post + 5 comments (fresh DB per test).
+		expect(data.postCount).toBe(1);
+		expect(data.commentCount).toBe(5);
 	});
 
 	it("profile(username) returns null for an unknown username", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "profile",
 			args: {username: "no-such-user-99999"},
@@ -533,7 +497,7 @@ describe("fate bridge — pasaport", () => {
 	});
 
 	it("Profile.contributions is a discriminant feed (kind per node, keyset cursor)", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "profile",
 			args: {username: "umut-author", contributions: {first: 50}},
@@ -554,7 +518,8 @@ describe("fate bridge — pasaport", () => {
 	});
 
 	it("user.setUsername round-trips and re-resolves the User entity", async () => {
-		const set = await fateOp(
+		const set = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "user.setUsername",
@@ -570,7 +535,8 @@ describe("fate bridge — pasaport", () => {
 		expect(user.username).toBe("ada-boot");
 
 		// Re-resolve via me: the freshly-set username round-trips.
-		const me = await fateOp(
+		const me = await runFateOp(
+			WorkerLive,
 			{kind: "query", name: "me", select: ["id", "username"]},
 			{auth: BOOTSTRAP},
 		);
@@ -586,7 +552,7 @@ describe("fate bridge — pasaport", () => {
 
 describe("fate bridge — stats", () => {
 	it("landingStats returns the four counters plus the build version", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "landingStats",
 			select: ["id", "totalDefinitions", "totalPosts", "totalComments", "totalAuthors", "version"],

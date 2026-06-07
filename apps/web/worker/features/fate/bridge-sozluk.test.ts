@@ -1,23 +1,23 @@
 /**
  * fate bridge on sozluk — the task-2 proof (ADR 0029).
  *
- * Exercises the new worker-as-runtime seam end-to-end without a per-request
+ * Exercises the worker-as-runtime seam end-to-end without a per-request
  * `ManagedRuntime`:
  *
- *   1. Build `Drizzle` + the feature services ONCE from a bound D1 (here a
+ *   1. Build `Drizzle` + the feature services from a bound D1 (here a
  *      `node:sqlite`-backed stand-in) via `makeFateLayer` — the same layer the
  *      worker init builds.
- *   2. Per "request", provide only `Auth` + `RequestContext`, capture the live
- *      service map with `Effect.context<FateEnv>()`, and hand it to
- *      `fateServer.handleRequest` through `adapterContext` (`{context, request}`).
+ *   2. Per "request", {@link runFateOp} provides only `Auth` + `HttpServerRequest`
+ *      (plus the capturing `LiveBus` it owns), captures the live service map with
+ *      `Effect.context<FateEnv>()`, and hands it to `fateServer.handleRequest`.
  *   3. The bridge runs each resolver with
  *      `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` — nothing is
  *      built or disposed per request.
  *
  * This runs in the node pool (no workerd): the alchemy worker can't load into
- * `@cloudflare/vitest-pool-workers` yet (task 7 migrates the harness). The proof
- * is the bridge + worker-level layers, driven through `fateServer.handleRequest`
- * exactly as the `/fate` route drives them.
+ * `@cloudflare/vitest-pool-workers` yet. The proof is the bridge + worker-level
+ * layers, driven through `fateServer.handleRequest` exactly as the `/fate` route
+ * drives them.
  *
  * Asserts wire parity with the pre-migration `/fate` surface:
  *   - a sozluk query (`term`) and list (`terms`) return correct data,
@@ -25,100 +25,49 @@
  *     `UNAUTHORIZED`),
  *   - a sozluk mutation (`definition.add`) round-trips and the changed entity
  *     re-resolves over the same bridge.
+ *
+ * Per-test DB isolation: each `it` builds its own worker layer over a fresh
+ * `node:sqlite` handle ({@link freshDb}) and closes it in `finally`, so no rows
+ * leak across cases (the `freshDb()` idiom from `Vote.test.ts`).
  */
 import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
-import {Effect, Layer} from "effect";
-import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import {afterAll, beforeAll, describe, expect, it} from "vitest";
+import {Layer} from "effect";
+import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {Database} from "../../db/Database";
 import {createDrizzle} from "../../db/Drizzle";
-// `?raw` so the node/unit pool imports the SQL as a string (the pool-workers
-// project transforms `.sql` to a string by default; the node pool does not).
 import * as schema from "../../db/drizzle/schema";
 import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
-import {makeLiveBusTest} from "../fate-live/event-bus";
-import {Auth} from "../pasaport/Auth";
 import {makeStubBetterAuthLayer} from "../pasaport/better-auth.fake";
-import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
-import {fateServer} from "./server";
+import {makeFateLayer, type WorkerFateServices} from "./layers";
+import {runFateOp} from "./run-fate-op";
 
-let sqlite: SqliteD1;
-/** The worker-level layer (Drizzle + features), built once over the bound D1. */
-let WorkerLive: Layer.Layer<WorkerFateServices>;
-
-const SESSION_USER: {id: string; name: string; email: string} = {
-	id: "u-writer",
-	name: "umut",
-	email: "umut@example.com",
-};
-
-/**
- * Drive one fate operation through the bridge the way the `/fate` route does:
- * provide per-request `Auth` + `HttpServerRequest`, capture the `Context`, and
- * run `fateServer.handleRequest`. `auth` chooses the session (anonymous by
- * default).
- */
-async function fateOp(
-	operation: Record<string, unknown>,
-	opts: {auth?: {id: string; name: string; email: string}} = {},
-) {
-	const request = new Request("https://test.local/fate", {
-		method: "POST",
-		headers: {"content-type": "application/json"},
-		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
-	});
-
-	// Provide a capturing `LiveBus` (ADR 0039) the way the `/fate` route provides
-	// the real one — structurally, through the same context every service flows
-	// through. `published` records the RESOLVED topic keys a mutation's `live.*`
-	// fans out to (run through the real `topicsForPublish`), so the round-trip
-	// tests can assert which topics each write published to.
-	const {layer: LiveBusTest, published} = makeLiveBusTest();
-
-	const captureAndServe = Effect.gen(function* () {
-		// The captured map carries the worker-level services PLUS the per-request
-		// Auth/HttpServerRequest provided just below — the full FateEnv.
-		const context = yield* Effect.context<FateEnv>();
-		const res = yield* Effect.promise(() => fateServer.handleRequest(request, {request, context}));
-		return res;
-	}).pipe(
-		Effect.provideService(Auth, {
-			user: opts.auth as never,
-			session: undefined,
-		}),
-		Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
-		// One merged provide (the capturing `LiveBus` + the worker-level services) —
-		// chaining two `Effect.provide` calls trips the multipleEffectProvide lint.
-		Effect.provide(Layer.mergeAll(LiveBusTest, WorkerLive)),
-	);
-
-	const res = await Effect.runPromise(captureAndServe);
-	const body = (await res.json()) as {
-		version: number;
-		results: Array<
-			| {ok: true; data: unknown; id: string}
-			| {ok: false; error: {code: string; message?: string}; id: string}
-		>;
-	};
-	return {status: res.status, result: body.results[0]!, published};
-}
-
+const SESSION_USER = {id: "u-writer", name: "umut", email: "umut@example.com"};
 const SLUG = "bridge-read";
 
-beforeAll(async () => {
+/** The per-test in-memory D1; created in `beforeEach`, closed in `afterEach`. */
+let sqlite: SqliteD1;
+/** The per-test worker layer (Drizzle + features) over {@link sqlite}'s handle. */
+let WorkerLive: Layer.Layer<WorkerFateServices>;
+
+/**
+ * Build a fresh worker layer over a new `node:sqlite` handle and seed the SLUG
+ * term + three definitions. `WorkerLive` wraps the SAME handle every `runFateOp`
+ * call hits (`Layer.succeed(Database)(sqlite.d1)` is a constant over a shared
+ * object reference, so reuse across separate `runFateOp` runs is one database).
+ */
+async function freshDb(): Promise<void> {
 	sqlite = makeSqliteTestDb();
 
+	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth` (ADR
+	// 0040 b1). Provide the seam from the SAME handle the seeding writes to so
+	// features and seeding share one database — the one-`sqlite` invariant is
+	// type-enforced. The stub `BetterAuth` is enough: reads never reach the
+	// session path (`Pasaport.validateSession`).
+	WorkerLive = makeFateLayer.pipe(
+		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), makeStubBetterAuthLayer())),
+	);
+
 	const db = createDrizzle(sqlite.d1);
-
-	// `makeFateLayer` is now a zero-arg layer with `R = Database | BetterAuth`
-	// (ADR 0040 b1). Provide the seam from the SAME `node:sqlite` handle the
-	// seeding above writes to (`Layer.succeed(Database)(sqlite.d1)`) so features
-	// and seeding share one database — the one-`sqlite` invariant is type-enforced.
-	const DatabaseTest = Layer.succeed(Database)(sqlite.d1);
-
-	const BetterAuthTest = makeStubBetterAuthLayer();
-
-	WorkerLive = makeFateLayer.pipe(Layer.provide(Layer.merge(DatabaseTest, BetterAuthTest)));
 
 	// Seed three definitions with distinct scores so the keyset order is
 	// deterministic: (score desc, created_at asc, id asc). Written straight to the
@@ -159,15 +108,19 @@ beforeAll(async () => {
 		lastEditAt: now,
 		lastEventId: "",
 	});
+}
+
+beforeEach(async () => {
+	await freshDb();
 });
 
-afterAll(() => {
+afterEach(() => {
 	sqlite?.close();
 });
 
 describe("fate bridge — sozluk reads", () => {
 	it("terms(recent) returns rows with slug cursors", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "list",
 			name: "terms",
 			args: {sort: "recent"},
@@ -186,7 +139,7 @@ describe("fate bridge — sozluk reads", () => {
 	});
 
 	it("term(slug) returns the detail row", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "term",
 			args: {slug: SLUG},
@@ -202,7 +155,7 @@ describe("fate bridge — sozluk reads", () => {
 	});
 
 	it("term(slug) returns null for an unknown slug", async () => {
-		const {result} = await fateOp({
+		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "term",
 			args: {slug: "nope"},
@@ -214,7 +167,7 @@ describe("fate bridge — sozluk reads", () => {
 	});
 
 	it("a failing resolver maps to its wire error code — me anonymous → UNAUTHORIZED", async () => {
-		const {result} = await fateOp({kind: "query", name: "me", select: ["id"]});
+		const {result} = await runFateOp(WorkerLive, {kind: "query", name: "me", select: ["id"]});
 		expect(result.ok).toBe(false);
 		if (result.ok) return;
 		expect(result.error.code).toBe("UNAUTHORIZED");
@@ -223,7 +176,8 @@ describe("fate bridge — sozluk reads", () => {
 
 describe("fate bridge — sozluk mutation round-trip", () => {
 	it("definition.add round-trips and the changed entity re-resolves over the bridge", async () => {
-		const add = await fateOp(
+		const add = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "definition.add",
@@ -249,7 +203,7 @@ describe("fate bridge — sozluk mutation round-trip", () => {
 		// Re-resolve the changed entity (the term it joined) over the SAME bridge:
 		// the new definition is now in the term's definition list, and the term's
 		// count reflects it.
-		const reread = await fateOp({
+		const reread = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "term",
 			args: {slug: SLUG, definitions: {first: 10}},
@@ -268,7 +222,8 @@ describe("fate bridge — sozluk mutation round-trip", () => {
 	});
 
 	it("definition.add publishes to the term's args-scoped Term.definitions topic (ADR 0039)", async () => {
-		const add = await fateOp(
+		const add = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "definition.add",
@@ -289,7 +244,8 @@ describe("fate bridge — sozluk mutation round-trip", () => {
 
 	it("definition.vote publishes to the Definition entity topic (ADR 0039)", async () => {
 		// Seed a definition to vote on.
-		const add = await fateOp(
+		const add = await runFateOp(
+			WorkerLive,
 			{
 				kind: "mutation",
 				name: "definition.add",
@@ -302,7 +258,8 @@ describe("fate bridge — sozluk mutation round-trip", () => {
 		if (!add.result.ok) return;
 		const id = (add.result.data as {id: string}).id;
 
-		const vote = await fateOp(
+		const vote = await runFateOp(
+			WorkerLive,
 			{kind: "mutation", name: "definition.vote", input: {id}, select: ["id", "score"]},
 			{auth: SESSION_USER},
 		);
