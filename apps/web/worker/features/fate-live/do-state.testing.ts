@@ -11,9 +11,7 @@
  * bulk-deletes rows).
  *
  * `state.id.name` is the instance name `resolveRole` reads to pick the
- * connection/topic role. The `kv` option lets two calls share one backing Map,
- * modelling a named DO that survives eviction (cross-isolate continuity); by
- * default each call is one instance over its own Map.
+ * connection/topic role. Each call is one instance over its own backing Map.
  *
  * A **platform fake** ({@link makeDurableObjectStateForTest}, a `makeXxxForTest`
  * factory over the raw `DurableObjectState` platform type) — NOT a production
@@ -32,14 +30,12 @@ export interface DurableObjectStateForTest {
 /**
  * Build a test DO state with its own KV `Map` + single alarm slot. Each call is
  * one DO instance; `id` is the instance name (`connection:<id>` / `topic:<key>`)
- * that {@link resolveRole} reads off `state.id.name`. Pass `kv` to share storage
- * across instances (the same named DO surviving an eviction).
+ * that {@link resolveRole} reads off `state.id.name`.
  */
 export function makeDurableObjectStateForTest(options?: {
 	readonly id?: string;
-	readonly kv?: Map<string, unknown>;
 }): DurableObjectStateForTest {
-	const kv = options?.kv ?? new Map<string, unknown>();
+	const kv = new Map<string, unknown>();
 	let alarm: number | null = null;
 
 	// `storage` is typed as the `LiveDoState["storage"]` slice — exactly what
