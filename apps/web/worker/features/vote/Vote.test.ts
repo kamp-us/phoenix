@@ -10,9 +10,8 @@ import {assert, describe, it} from "@effect/vitest";
 import {and, eq, sql} from "drizzle-orm";
 import {Effect, Exit, Layer} from "effect";
 import {createDrizzle, Drizzle, makeDrizzleAccess} from "../../db/Drizzle.ts";
-import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../../db/drizzle/schema.ts";
-import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake.ts";
+import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake.ts";
 import {Vote, VoteLive} from "./Vote.ts";
 
 /**
@@ -21,8 +20,7 @@ import {Vote, VoteLive} from "./Vote.ts";
  * `Drizzle` while driving the real `Vote` service).
  */
 function freshDb(): {sqlite: SqliteD1; layer: Layer.Layer<Vote | Drizzle>} {
-	const sqlite = makeSqliteD1();
-	sqlite.applyMigration(baselineMigration);
+	const sqlite = makeSqliteTestDb();
 	const db = createDrizzle(sqlite.d1);
 	const DrizzleLayer = Layer.succeed(Drizzle, makeDrizzleAccess(db));
 	const layer = VoteLive.pipe(Layer.provideMerge(DrizzleLayer));

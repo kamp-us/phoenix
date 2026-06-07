@@ -28,9 +28,8 @@ import {
 	DrizzleError,
 	makeDrizzleAccess,
 } from "./Drizzle";
-import baselineMigration from "./drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "./drizzle/schema";
-import {makeSqliteD1} from "./sqlite-d1.fake";
+import {makeSqliteTestDb} from "./sqlite-d1.fake";
 
 /**
  * A fake `DrizzleDb` instance — the wrapper passes it to the callback
@@ -260,8 +259,7 @@ describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
 	const now = new Date();
 
 	it.effect("a mid-batch failure rolls back the whole tuple — no partial write", () => {
-		const sqlite = makeSqliteD1();
-		sqlite.applyMigration(baselineMigration);
+		const sqlite = makeSqliteTestDb();
 		const db = createDrizzle(sqlite.d1);
 		const layer = Layer.succeed(Drizzle, makeDrizzleAccess(db));
 

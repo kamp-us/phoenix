@@ -31,9 +31,8 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../db/Drizzle.ts";
-import baselineMigration from "../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../db/drizzle/schema.ts";
-import {makeSqliteD1, type SqliteD1} from "../db/sqlite-d1.fake.ts";
+import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.fake.ts";
 import {makeFateLayer} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {makeAppLive} from "./app.ts";
@@ -104,8 +103,7 @@ async function fetch(
 }
 
 beforeAll(() => {
-	sqlite = makeSqliteD1();
-	sqlite.applyMigration(baselineMigration);
+	sqlite = makeSqliteTestDb();
 
 	const db = createDrizzle(sqlite.d1);
 

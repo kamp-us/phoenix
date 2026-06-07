@@ -32,8 +32,7 @@ import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
-import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
-import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
+import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Pano} from "../pano/Pano";
 import {Auth} from "../pasaport/Auth";
@@ -94,8 +93,7 @@ let POST_ID = "";
 const COMMENT_IDS: string[] = [];
 
 beforeAll(async () => {
-	sqlite = makeSqliteD1();
-	sqlite.applyMigration(baselineMigration);
+	sqlite = makeSqliteTestDb();
 
 	const db = createDrizzle(sqlite.d1);
 	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;

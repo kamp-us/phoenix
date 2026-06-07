@@ -33,9 +33,8 @@ import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {createDrizzle} from "../../db/Drizzle";
 // `?raw` so the node/unit pool imports the SQL as a string (the pool-workers
 // project transforms `.sql` to a string by default; the node pool does not).
-import baselineMigration from "../../db/drizzle/migrations/0000_d1_baseline.sql?raw";
 import * as schema from "../../db/drizzle/schema";
-import {makeSqliteD1, type SqliteD1} from "../../db/sqlite-d1.fake";
+import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
 import {makeLiveBusTest} from "../fate-live/event-bus";
 import {Auth} from "../pasaport/Auth";
 import {type FateEnv, makeFateLayer, type WorkerFateServices} from "./layers";
@@ -105,8 +104,7 @@ async function fateOp(
 const SLUG = "bridge-read";
 
 beforeAll(async () => {
-	sqlite = makeSqliteD1();
-	sqlite.applyMigration(baselineMigration);
+	sqlite = makeSqliteTestDb();
 
 	const db = createDrizzle(sqlite.d1);
 	// `makeFateLayer` now takes a better-auth instance for `Pasaport.validateSession`;

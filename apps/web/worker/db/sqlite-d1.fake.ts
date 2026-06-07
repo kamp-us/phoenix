@@ -25,6 +25,7 @@
  * `worker/`.
  */
 import {DatabaseSync, type SQLInputValue} from "node:sqlite";
+import baselineMigration from "./drizzle/migrations/0000_d1_baseline.sql?raw";
 
 type Params = ReadonlyArray<unknown>;
 
@@ -175,4 +176,29 @@ export function makeSqliteD1(): SqliteD1 {
 		},
 		close: () => db.close(),
 	};
+}
+
+/**
+ * The one-call test-kit factory: a fresh in-memory SQLite D1 with the committed
+ * baseline migration already applied and `foreign_keys` forced OFF to match D1's
+ * default.
+ *
+ * This is a **factory, not a shared instance** — each call yields an independent
+ * `:memory:` database, so tests never cross-contaminate. It folds the
+ * `makeSqliteD1()` + `applyMigration(baseline)` pair that every D1-backed unit
+ * test repeated into a single call; the returned {@link SqliteD1} still exposes
+ * `d1` (hand to `createDrizzle`), `applyMigration` (for any extra per-test seed
+ * SQL), and `close`.
+ *
+ * `foreign_keys=OFF` is load-bearing, not cosmetic: `node:sqlite`'s
+ * `DatabaseSync` defaults the pragma to ON, whereas Cloudflare D1 ships with it
+ * OFF. Forcing it OFF here keeps the fake faithful to production so a test never
+ * passes (or fails) on an FK constraint D1 wouldn't enforce.
+ */
+export function makeSqliteTestDb(): SqliteD1 {
+	const sqlite = makeSqliteD1();
+	// Match D1's default — `node:sqlite` defaults this pragma ON, D1 ships it OFF.
+	sqlite.applyMigration("PRAGMA foreign_keys=OFF;");
+	sqlite.applyMigration(baselineMigration);
+	return sqlite;
 }
