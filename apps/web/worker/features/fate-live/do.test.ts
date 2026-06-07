@@ -24,7 +24,7 @@
 import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {describe, expect, it} from "vitest";
-import {makeFakeDurableObjectState} from "./do-state.fake.ts";
+import {makeDurableObjectStateForTest} from "./do-state.testing.ts";
 import {type LiveRpcSurface, makeLiveInstance} from "./live-do.ts";
 import type {
 	DeliverFrame,
@@ -96,7 +96,7 @@ function makeLiveCell(): LiveCell {
 /** Spin up a `connection:<id>` instance and register it on the cell. */
 function makeConnection(cell: LiveCell, connectionId: string): LiveInstance {
 	const name = `connection:${connectionId}`;
-	const fake = makeFakeDurableObjectState({id: name});
+	const fake = makeDurableObjectStateForTest({id: name});
 	const instance = makeLiveInstance(fake.state, cell.live as never);
 	cell.register(name, instance);
 	return instance;
@@ -106,9 +106,12 @@ function makeConnection(cell: LiveCell, connectionId: string): LiveInstance {
 function makeTopic(
 	cell: LiveCell,
 	topicKey: string,
-): {readonly instance: LiveInstance; readonly fake: ReturnType<typeof makeFakeDurableObjectState>} {
+): {
+	readonly instance: LiveInstance;
+	readonly fake: ReturnType<typeof makeDurableObjectStateForTest>;
+} {
 	const name = `topic:${topicKey}`;
-	const fake = makeFakeDurableObjectState({id: name});
+	const fake = makeDurableObjectStateForTest({id: name});
 	const instance = makeLiveInstance(fake.state, cell.live as never);
 	cell.register(name, instance);
 	return {instance, fake};

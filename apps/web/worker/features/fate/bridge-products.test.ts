@@ -35,9 +35,9 @@ import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {Database} from "../../db/Database";
-import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
+import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.testing";
 import {Pano} from "../pano/Pano";
-import {makeStubBetterAuthLayer} from "../pasaport/better-auth.fake";
+import {layerStub} from "../pasaport/better-auth.testing";
 import {Pasaport} from "../pasaport/Pasaport";
 import {makeFateLayer, type WorkerFateServices} from "./layers";
 import {runFateOp} from "./run-fate-op";
@@ -69,7 +69,7 @@ async function freshDb(): Promise<void> {
 	// type-enforced. The stub `BetterAuth` is enough: these tests never reach the
 	// session path (`Pasaport.validateSession`).
 	WorkerLive = makeFateLayer.pipe(
-		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), makeStubBetterAuthLayer())),
+		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), layerStub())),
 	);
 
 	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the

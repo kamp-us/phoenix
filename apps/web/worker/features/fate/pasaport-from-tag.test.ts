@@ -11,8 +11,9 @@
  * would silently mis-resolve.
  *
  * This test pins the contract so that regression fails **in-process** instead of
- * in prod: it resolves `Pasaport` through the REAL `PasaportFromTag` path — a
- * real better-auth fake over `node:sqlite`, NOT the `makeStubBetterAuthLayer`
+ * in prod: it resolves `Pasaport` through the REAL `PasaportFromTag` path — a real
+ * better-auth instance (`makeRealAuthForTest`) over `node:sqlite` wrapped by
+ * `layerTest`, NOT the `layerStub`
  * bypass — with only the inert `RuntimeContext` discharging the requirement, then
  * proves `Pasaport.validateSession` resolves a real session end-to-end. If the
  * inert stub ever stops being sufficient, the auth resolution inside `makeFateLayer`
@@ -24,8 +25,8 @@
 import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {Database} from "../../db/Database";
-import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
-import {makeBetterAuthTestLayer, makeRealAuthForTest} from "../pasaport/better-auth.fake";
+import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.testing";
+import {layerTest, makeRealAuthForTest} from "../pasaport/better-auth.testing";
 import {Pasaport} from "../pasaport/Pasaport";
 import {makeFateLayer} from "./layers";
 
@@ -72,7 +73,7 @@ describe("PasaportFromTag — inert RuntimeContext stub guard", () => {
 				Layer.mergeAll(
 					Layer.succeed(Database)(sqlite.d1),
 					// biome-ignore lint/plugin: concrete `Auth<…>` vs the generic `Auth` don't overlap (TS2345), so this widen needs the hop.
-					makeBetterAuthTestLayer(auth as unknown as Parameters<typeof makeBetterAuthTestLayer>[0]),
+					layerTest(auth as unknown as Parameters<typeof layerTest>[0]),
 				),
 			),
 		);

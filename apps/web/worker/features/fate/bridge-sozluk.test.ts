@@ -36,8 +36,8 @@ import {afterEach, beforeEach, describe, expect, it} from "vitest";
 import {Database} from "../../db/Database";
 import {createDrizzle} from "../../db/Drizzle";
 import * as schema from "../../db/drizzle/schema";
-import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake";
-import {makeStubBetterAuthLayer} from "../pasaport/better-auth.fake";
+import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.testing";
+import {layerStub} from "../pasaport/better-auth.testing";
 import {makeFateLayer, type WorkerFateServices} from "./layers";
 import {runFateOp} from "./run-fate-op";
 
@@ -64,7 +64,7 @@ async function freshDb(): Promise<void> {
 	// type-enforced. The stub `BetterAuth` is enough: reads never reach the
 	// session path (`Pasaport.validateSession`).
 	WorkerLive = makeFateLayer.pipe(
-		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), makeStubBetterAuthLayer())),
+		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), layerStub())),
 	);
 
 	const db = createDrizzle(sqlite.d1);

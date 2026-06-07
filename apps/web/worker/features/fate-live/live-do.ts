@@ -57,7 +57,7 @@ type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
  * touches: the instance name (`id.name`) and the KV `storage` surface
  * (`get`/`put`/`delete`/`list`/`getAlarm`/`setAlarm`). `makeLiveInstance` is
  * typed against this slice rather than the whole `DurableObjectState` so the
- * node-pool fake (`do-state.fake.ts`) can satisfy it structurally — no
+ * node-pool fake (`do-state.testing.ts`) can satisfy it structurally — no
  * cast — while the real `Cloudflare.DurableObjectState` value still flows in
  * unchanged (it's a superset, so assignable).
  */

@@ -317,13 +317,16 @@ export function liveBusFor(publisher: LivePublisher): typeof LiveBus.Service {
 }
 
 /**
- * A capturing {@link LiveBus} for bridge tests. Its publisher runs the real
- * {@link topicsForPublish} (so it captures the *resolved* topic keys, catching a
- * wrong-but-valid mis-route — e.g. an args publish collapsing to the global
- * wildcard) and records each key into the returned `published` array. The test
- * provides `layer` with `Effect.provide` and asserts on `published`.
+ * A capturing {@link LiveBus} test double for bridge tests. Its publisher runs
+ * the real {@link topicsForPublish} (so it captures the *resolved* topic keys,
+ * catching a wrong-but-valid mis-route — e.g. an args publish collapsing to the
+ * global wildcard) and records each key into the returned `published` array. The
+ * test provides `layer` with `Effect.provide` and asserts on `published`.
+ *
+ * A `makeXxxForTest` factory (not a bare `static layerTest`) because it returns
+ * the capture sink alongside the layer — the test needs both halves.
  */
-export function makeLiveBusTest(): {
+export function makeLiveBusForTest(): {
 	readonly layer: Layer.Layer<LiveBus>;
 	readonly published: ReadonlyArray<string>;
 } {

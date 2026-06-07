@@ -18,13 +18,15 @@
  * connection/topic role. Pass `kv`/alarm-sharing options are unneeded here — each
  * call is one instance over its own backing Map.
  *
- * NOT a production artifact — it's a colocated `*.fake.ts` module and is never
- * imported by the worker graph.
+ * A **platform fake** ({@link makeDurableObjectStateForTest}, a `makeXxxForTest`
+ * factory over the raw `DurableObjectState` platform type) — NOT a production
+ * artifact: it's a colocated `*.testing.ts` module never imported by the worker
+ * graph, and a factory, not a shared instance (`.patterns/effect-testing.md`).
  */
 import * as Effect from "effect/Effect";
 import type {LiveDoState} from "./live-do.ts";
 
-export interface FakeDurableObjectState {
+export interface DurableObjectStateForTest {
 	/** The `DurableObjectState`-slice value to hand the instance builder. */
 	readonly state: LiveDoState;
 	/** Whether an alarm is currently scheduled (tests assert on this). */
@@ -32,15 +34,15 @@ export interface FakeDurableObjectState {
 }
 
 /**
- * Build a fake DO state with its own KV `Map` + single alarm slot. Each call is
+ * Build a test DO state with its own KV `Map` + single alarm slot. Each call is
  * one DO instance; `id` is the instance name (`connection:<id>` / `topic:<key>`)
  * that {@link resolveRole} reads off `state.id.name`. Pass `kv` to share storage
  * across instances (the same named DO surviving an eviction).
  */
-export function makeFakeDurableObjectState(options?: {
+export function makeDurableObjectStateForTest(options?: {
 	readonly id?: string;
 	readonly kv?: Map<string, unknown>;
-}): FakeDurableObjectState {
+}): DurableObjectStateForTest {
 	const kv = options?.kv ?? new Map<string, unknown>();
 	let alarm: number | null = null;
 

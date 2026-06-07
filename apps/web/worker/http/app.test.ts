@@ -26,13 +26,10 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {Database} from "../db/Database.ts";
-import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.fake.ts";
+import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.testing.ts";
 import {makeFateLayer} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
-import {
-	makeBetterAuthTestLayer,
-	makeRealAuthForTest,
-} from "../features/pasaport/better-auth.fake.ts";
+import {layerTest, makeRealAuthForTest} from "../features/pasaport/better-auth.testing.ts";
 import {makeAppLive} from "./app.ts";
 
 /**
@@ -111,24 +108,24 @@ beforeAll(() => {
 	const databaseLayer = Layer.succeed(Database)(sqlite.d1);
 
 	// Build a real better-auth instance over the SAME `node:sqlite`-backed D1 via
-	// the shared `makeRealAuthForTest` helper (colocated with `better-auth.fake.ts`),
+	// the shared `makeRealAuthForTest` helper (colocated with `better-auth.testing.ts`),
 	// which mirrors the deployed `BetterAuthLive`
 	// (`worker/features/pasaport/better-auth-live.ts`). That Layer needs the full
 	// alchemy provider stack (`RuntimeContext`, the `secret_text` binding) which
 	// doesn't exist in the node test runtime; the helper reproduces the same
 	// construction directly. Provided through a hand-rolled Layer over the same
-	// `BetterAuth` Context tag (`makeBetterAuthTestLayer`), it is the test-mode
+	// `BetterAuth` Context tag (`layerTest`), it is the test-mode
 	// equivalent. The helper's `drizzle(d1, ...)` is better-auth's own internal
 	// builder over the same handle — not a second feature `Drizzle`.
 	const testAuthInstance = makeRealAuthForTest(sqlite.d1);
 
 	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to the
-	// generic `Auth` `makeBetterAuthTestLayer` takes (the same type the deployed
+	// generic `Auth` `layerTest` takes (the same type the deployed
 	// worker satisfies). The concrete and generic `Auth` types don't statically
 	// overlap (TS2345), so the widen needs the `unknown` hop.
 	// biome-ignore lint/plugin: concrete `Auth<…>` vs the generic `Auth` don't overlap (TS2345), so this widen needs the hop.
-	const widenedAuth = testAuthInstance as unknown as Parameters<typeof makeBetterAuthTestLayer>[0];
-	const betterAuthLayer = makeBetterAuthTestLayer(widenedAuth);
+	const widenedAuth = testAuthInstance as unknown as Parameters<typeof layerTest>[0];
+	const betterAuthLayer = layerTest(widenedAuth);
 
 	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth`
 	// (ADR 0040 b1); the two seams are discharged inside `makeAppLive`'s request

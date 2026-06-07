@@ -6,7 +6,7 @@
  * (`bridge-sozluk.test.ts`, `bridge-products.test.ts`) each copy-pasted. It:
  *
  *   1. builds the fate request envelope from the operation,
- *   2. owns the capturing `LiveBus` stub internally (`makeLiveBusTest`) so the
+ *   2. owns the capturing `LiveBus` stub internally (`makeLiveBusForTest`) so the
  *      whole program is provided in **exactly one** `Effect.provide` — chaining a
  *      second `Effect.provide` would trip the `multipleEffectProvide` lint, and a
  *      shared layer-memo map across the request handler + every service is what
@@ -24,7 +24,7 @@
  */
 import {Effect, Layer} from "effect";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
-import {makeLiveBusTest} from "../fate-live/event-bus.ts";
+import {makeLiveBusForTest} from "../fate-live/event-bus.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import type {FateEnv, WorkerFateServices} from "./layers.ts";
 import {fateServer} from "./server.ts";
@@ -72,7 +72,7 @@ export async function runFateOp(
 	// keys each mutation's `live.*` fans out to (run through the real
 	// `topicsForPublish`), so the caller can assert which topics a write published
 	// to. Constructing it inside keeps the single-`provide` contract — see below.
-	const {layer: LiveBusTest, published} = makeLiveBusTest();
+	const {layer: LiveBusTest, published} = makeLiveBusForTest();
 
 	const captureAndServe = Effect.gen(function* () {
 		// The captured map carries the worker-level services PLUS the per-request

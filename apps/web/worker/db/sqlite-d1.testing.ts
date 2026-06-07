@@ -23,8 +23,8 @@
  *     `meta`); a mid-batch failure rolls the whole tuple back (D1's atomic-batch
  *     contract, which the vote write paths depend on).
  *
- * NOT a production artifact — it lives under `tests/` and is never imported by
- * `worker/`.
+ * NOT a production artifact — a colocated `*.testing.ts` platform fake (kept out
+ * of the vitest unit-test glob by the suffix) never imported by the worker graph.
  */
 import {DatabaseSync, type SQLInputValue} from "node:sqlite";
 import baselineMigration from "./drizzle/migrations/0000_d1_baseline.sql?raw";

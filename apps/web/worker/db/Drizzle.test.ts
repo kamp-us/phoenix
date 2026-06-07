@@ -29,7 +29,7 @@ import {
 	makeDrizzleAccess,
 } from "./Drizzle";
 import * as schema from "./drizzle/schema";
-import {makeSqliteTestDb} from "./sqlite-d1.fake";
+import {makeSqliteTestDb} from "./sqlite-d1.testing";
 
 /**
  * A fake `DrizzleDb` instance — the wrapper passes it to the callback

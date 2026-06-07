@@ -12,7 +12,7 @@
  * Drizzle), because `meta` is a property of that binding contract.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {makeSqliteTestDb} from "./sqlite-d1.fake.ts";
+import {makeSqliteTestDb} from "./sqlite-d1.testing.ts";
 
 describe("d1 fake — meta envelope", () => {
 	it("run() reports last_row_id after an INSERT", async () => {

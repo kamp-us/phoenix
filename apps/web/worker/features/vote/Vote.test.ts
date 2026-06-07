@@ -11,7 +11,7 @@ import {and, eq, sql} from "drizzle-orm";
 import {Effect, Exit, Layer} from "effect";
 import {createDrizzle, Drizzle, makeDrizzleAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.fake.ts";
+import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.testing.ts";
 import {Vote, VoteLive} from "./Vote.ts";
 
 /**

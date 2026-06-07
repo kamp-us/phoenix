@@ -45,7 +45,7 @@ import * as schema from "../../db/drizzle/schema.ts";
  * dropped (no test exercises token delivery).
  *
  * Returns the concrete `Auth<{…}>` from `makeBetterAuth`; callers widen it to the
- * generic `Auth` that {@link makeBetterAuthTestLayer} takes (see its note).
+ * generic `Auth` that {@link layerTest} takes (see its note).
  */
 export function makeRealAuthForTest(d1: D1Database) {
 	const db = drizzle(d1, {schema});
@@ -65,16 +65,20 @@ export function makeRealAuthForTest(d1: D1Database) {
 }
 
 /**
- * A `BetterAuth` layer wrapping an already-constructed better-auth instance —
+ * A `BetterAuth` test layer wrapping an already-constructed better-auth instance —
  * `app.test.ts` builds a real one (via {@link makeRealAuthForTest}) over its
  * `node:sqlite` D1 and wires both the `auth` field (for `Pasaport`) and a `fetch`
  * that delegates to the instance's `handler` (for the `/api/auth/*` route).
  *
+ * Module-level `layerTest` (the `HttpServer.layerTestClient` form, not a class
+ * static) because `BetterAuth` is a third-party tag (`@alchemy.run/better-auth`),
+ * not a phoenix `Context.Service` we own.
+ *
  * The parameter is the generic `Auth`; `makeRealAuthForTest` returns a concrete
  * `Auth<{…}>` that doesn't statically overlap it (TS2345), so callers widen with
- * a documented `as unknown as Parameters<typeof makeBetterAuthTestLayer>[0]` hop.
+ * a documented `as unknown as Parameters<typeof layerTest>[0]` hop.
  */
-export const makeBetterAuthTestLayer = (instance: Auth): Layer.Layer<BetterAuth.BetterAuth> =>
+export const layerTest = (instance: Auth): Layer.Layer<BetterAuth.BetterAuth> =>
 	Layer.succeed(BetterAuth.BetterAuth)({
 		auth: Effect.succeed(instance),
 		fetch: Effect.gen(function* () {
@@ -85,11 +89,14 @@ export const makeBetterAuthTestLayer = (instance: Auth): Layer.Layer<BetterAuth.
 	});
 
 /**
- * A stub `BetterAuth` layer whose `auth` is a no-op `getSession` instance — for
- * tests that never reach the session path (`Pasaport.validateSession`) and never
- * hit `/api/auth/*` (so `fetch` dies if reached). The bridge tests use this.
+ * A fail-on-contact stub `BetterAuth` layer: `auth` is a canned no-op
+ * `getSession`, and `fetch` is `Effect.die` — for tests that never reach the
+ * session path (`Pasaport.validateSession`) and never hit `/api/auth/*` (so
+ * `fetch` dies if reached). The bridge tests use this. It's a `layerStub` (a
+ * canned/fail-on-contact double), not a `layerNoop` (which would silently
+ * succeed). Module-level for the same third-party-tag reason as {@link layerTest}.
  */
-export const makeStubBetterAuthLayer = (): Layer.Layer<BetterAuth.BetterAuth> =>
+export const layerStub = (): Layer.Layer<BetterAuth.BetterAuth> =>
 	Layer.succeed(BetterAuth.BetterAuth)({
 		// biome-ignore lint/plugin: better-auth's `Auth` instance type can't be partial-constructed; the bridge tests never reach the session path, so a `getSession` no-op stand-in suffices.
 		auth: Effect.succeed({api: {getSession: async () => null}} as unknown as Auth),
