@@ -127,9 +127,9 @@ interface TargetMeta {
 
 export const VoteLive = Layer.effect(Vote)(
 	Effect.gen(function* () {
-		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
-		// destructure its bound methods. Method bodies call `run` / `batch`
-		// directly so every method's `R` stays `never`. No closure-captured
+		// Yield Drizzle once at layer build and destructure its bound methods.
+		// Method bodies call `run` / `batch` directly so every method's `R`
+		// stays `never`. No closure-captured
 		// `db` escapes — `db` only appears inside `run((db) => ...)` /
 		// `batch((db) => ...)` callbacks.
 		const {run, batch} = yield* Drizzle;
@@ -470,7 +470,7 @@ function buildScoreCacheStatement(
 				})
 				.where(eq(schema.definitionView.id, targetId));
 		case "post": {
-			// Same hot-score formula as `pano/module.ts` on submit:
+			// Same hot-score formula as `Pano.ts`'s `computeHotScore`:
 			//   floor(score * 1000 / (hours+2)^1.8)
 			// Precompute the multiplier in JS so SQL only multiplies.
 			const hoursOld = Math.max(0, (now.getTime() - meta.createdAtMs) / 3_600_000);

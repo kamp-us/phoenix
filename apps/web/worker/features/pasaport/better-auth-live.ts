@@ -8,7 +8,7 @@
  *     phoenix already has the canonical `PhoenixDb` D1 (`db/resources.ts`,
  *     ADR 0009), and the better-auth tables live on the same D1 as the rest of
  *     the product data. So this Layer derives its raw d1 from the shared
- *     `Database` seam (ADR 0040, b1 addendum) — the same tag `DrizzleLive`
+ *     `Database` seam (ADR 0040) — the same tag `DrizzleLive`
  *     derives from, so features and auth provably share one handle.
  *   - Phoenix's better-auth instance needs phoenix-specific plugins (the
  *     `magicLink` token-delivery plugin, `bearer`), an `additionalFields.username`
@@ -47,10 +47,10 @@ import * as schema from "../../db/drizzle/schema.ts";
 
 /**
  * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
- * `CloudflareD1` reference Layer. Mirrors its structure
- * (`Cloudflare.D1Connection.bind` for the database, `Effect.cached` so the
- * `makeBetterAuth` call happens once per isolate) and adds phoenix's plugins +
- * `baseURL`/`trustedOrigins`.
+ * `CloudflareD1` reference Layer. It derives its raw d1 from the shared
+ * `Database` seam (not its own `D1Connection.bind`) and keeps the reference
+ * layer's `Effect.cached` so the `makeBetterAuth` call happens once per isolate,
+ * and adds phoenix's plugins + `baseURL`/`trustedOrigins`.
  *
  * The session-signing secret is read at runtime from the `BETTER_AUTH_SECRET`
  * `secret_text` binding via `yield* betterAuthSecret` (a `Config.redacted` in
@@ -73,8 +73,8 @@ import * as schema from "../../db/drizzle/schema.ts";
 export const BetterAuthLive = Layer.effect(
 	BetterAuth.BetterAuth,
 	Effect.gen(function* () {
-		// The raw `D1Database` from the shared `Database` seam (ADR 0040, b1
-		// addendum). `DrizzleLive` derives its drizzle builder from this same tag,
+		// The raw `D1Database` from the shared `Database` seam (ADR 0040).
+		// `DrizzleLive` derives its drizzle builder from this same tag,
 		// so the better-auth adapter and every feature service provably run on one
 		// underlying handle — the one-`sqlite` invariant is type-enforced.
 		const raw = yield* Database;

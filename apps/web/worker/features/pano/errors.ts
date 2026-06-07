@@ -31,8 +31,7 @@ import * as Schema from "effect/Schema";
  * `PostValidationError.code` union. Each value upcased becomes the wire-format
  * `extensions.code` (`TITLE_REQUIRED`, etc.).
  *
- * Lives in `errors.ts` (the leaf of the import graph) per the feature-service
- * layout rule — `Pano.ts → errors.ts` is the only allowed direction.
+ * Lives in `errors.ts`, the import-graph leaf: `Pano.ts → errors.ts` is one-way.
  */
 export type PostValidationCode =
 	| "title_required"

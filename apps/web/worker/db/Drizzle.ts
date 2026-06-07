@@ -18,8 +18,7 @@
  * only the home of `run` / `batch` moved (Tag-value field instead of class
  * static).
  *
- * ADR 0011 records the decision; the post-fbb57d8 corrective pass in task 4
- * codified the destructure-at-build idiom.
+ * ADR 0011 records the decision.
  */
 import type {BatchItem, BatchResponse} from "drizzle-orm/batch";
 import {drizzle} from "drizzle-orm/d1";
@@ -40,9 +39,10 @@ import * as schema from "../db/drizzle/schema.ts";
 export const relations = defineRelations(schema);
 
 /**
- * The fully-typed drizzle builder phoenix uses everywhere. Constructed once
- * per request from `env.PHOENIX_DB`. Carries both the `schema` and `relations`
- * generics (RQB v2) so `db.query.<table>` and `db.select()` are both typed.
+ * The fully-typed drizzle builder phoenix uses everywhere. Built once per
+ * isolate from the bound D1 handle (the `Database` seam). Carries both the
+ * `schema` and `relations` generics (RQB v2) so `db.query.<table>` and
+ * `db.select()` are both typed.
  */
 export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relations>>;
 
@@ -132,10 +132,6 @@ export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema,
  * the single home of the `run` / `batch` bodies. {@link makeDrizzleLayer} wraps
  * this, so the promise → Effect boundary and the tagged `DrizzleError` catch
  * live in exactly one place.
- *
- * House rule (`.patterns/feature-services.md`): `Effect.tryPromise` always uses
- * object notation with an explicit `catch` producing a tagged error — here
- * `DrizzleError`, so resolvers can map it cleanly to `INTERNAL_SERVER_ERROR`.
  */
 export const makeDrizzleAccess = (db: DrizzleDb): DrizzleAccess => ({
 	run: <A>(fn: (db: DrizzleDb) => Promise<A>) =>
@@ -164,7 +160,7 @@ export const makeDrizzleLayer = (db: DrizzleDb): Layer.Layer<Drizzle> =>
 	Layer.succeed(Drizzle, makeDrizzleAccess(db));
 
 /**
- * The `Drizzle` layer derived from the `Database` seam (ADR 0040, b1 addendum).
+ * The `Drizzle` layer derived from the `Database` seam (ADR 0040).
  *
  * Reads the raw `D1Database` from the `Database` tag, builds the typed drizzle
  * instance with {@link createDrizzle}, and wraps the `run` / `batch` surface via

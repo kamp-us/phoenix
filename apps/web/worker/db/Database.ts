@@ -1,6 +1,6 @@
 /**
  * `Database` service — the single seam holding the raw `D1Database` handle
- * (ADR 0040, b1 addendum).
+ * (ADR 0040).
  *
  * The Tag's value IS the raw Cloudflare `D1Database` binding. Both downstream
  * surfaces *derive* from it:

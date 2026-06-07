@@ -73,11 +73,6 @@ export {
 } from "../../../src/lib/mutationErrorCodes.ts";
 
 /**
- * Construct a `FateRequestError` carrying a phoenix `MutationErrorCode` as its
- * wire `code`. Widens fate's narrow `FateProtocolErrorCode` constructor — see
- * the note above.
- */
-/**
  * The exact type of `FateRequestError`'s `code` constructor parameter (fate's
  * narrow `FateProtocolErrorCode`, which the package doesn't export by name).
  * Captured structurally so we can widen into it without an unimportable type

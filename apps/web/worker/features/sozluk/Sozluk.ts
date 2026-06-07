@@ -269,10 +269,10 @@ export class Sozluk extends Context.Service<
 
 export const SozlukLive = Layer.effect(Sozluk)(
 	Effect.gen(function* () {
-		// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
-		// destructure its bound methods. Method bodies call `run` directly so
-		// every method's `R` stays `never` (or `Vote` for the vote-delegating
-		// methods, since `voteSvc.cast` introduces `Vote` into `R`).
+		// Yield Drizzle and Vote once at layer build and destructure/close over
+		// their bound methods. Method bodies call `run` / `voteSvc` directly —
+		// the deps are owned by this layer, so every method's `R` stays `never`
+		// (the dep never reaches the caller-visible R channel).
 		const {run} = yield* Drizzle;
 		const voteSvc = yield* Vote;
 

@@ -1,12 +1,10 @@
 /**
  * A `node:sqlite`-backed stand-in for the Cloudflare `D1Database` binding.
  *
- * Task 2 proves the fate bridge end-to-end on sozluk, but the integration
- * harness can't load the alchemy worker into workerd yet (that's task 7). So
- * this module gives the node-pool test a *real* SQL engine behind the same D1
- * surface `drizzle-orm/d1` calls — `prepare(sql) → {bind(...params), all(),
- * run(), raw(), first()}` plus `batch([...])` and `exec()`. Drizzle then builds
- * the production `drizzle(d1, {schema})` instance over it, so the worker-level
+ * Gives the node-pool test a *real* SQL engine behind the same D1 surface
+ * `drizzle-orm/d1` calls — `prepare(sql) → {bind(...params), all(), run(),
+ * raw(), first()}` plus `batch([...])` and `exec()`. Drizzle then builds the
+ * production `drizzle(d1, {schema})` instance over it, so the worker-level
  * `Drizzle` layer and every Sozluk service method run unmodified against actual
  * SQLite rows.
  *

@@ -42,11 +42,11 @@ import {
 /* Domain constants                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Title cap (per PRD: ≤ 200 chars). */
+/** Title cap (per PRD). */
 export const POST_TITLE_MAX = 200;
-/** Body cap (per PRD: ≤ 10 000 chars on submit / edit). */
+/** Body cap on submit / edit (per PRD). */
 export const POST_BODY_MAX = 10_000;
-/** Comment body cap (per PRD: ≤ 5 000 chars). */
+/** Comment body cap (per PRD). */
 export const COMMENT_BODY_MAX = 5_000;
 
 /** Pano excerpt cap (tweet-sized, matches pre-effect-migration). */
@@ -1468,7 +1468,6 @@ export const PanoLive = Layer.effect(Pano)(
 				]);
 			}
 
-			// Decrement post.commentCount and refresh hot_score.
 			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
 			if (post) {
 				const newCommentCount = Math.max(0, post.commentCount - 1);

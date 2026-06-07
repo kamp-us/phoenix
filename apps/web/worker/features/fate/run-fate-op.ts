@@ -1,6 +1,6 @@
 /**
  * `runFateOp` — drive one fate operation through the bridge the way the `/fate`
- * route does, in a single `Effect.provide` (ADR 0040, b1 addendum follow-on).
+ * route does, in a single `Effect.provide` (ADR 0040).
  *
  * This is the extraction of the per-file `fateOp` helper the bridge suites
  * (`bridge-sozluk.test.ts`, `bridge-products.test.ts`) each copy-pasted. It:

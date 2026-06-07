@@ -1,7 +1,7 @@
 /**
  * Test stand-ins for the `BetterAuth` Context tag (`@alchemy.run/better-auth`).
  *
- * `makeFateLayer` (ADR 0040 b1) is a zero-arg layer with `R = Database |
+ * `makeFateLayer` (ADR 0040) is a zero-arg layer with `R = Database |
  * BetterAuth`: a test provides one `Database` layer and one `BetterAuth` layer
  * and both `Drizzle` and `Pasaport`'s auth derive from them. The deployed worker
  * satisfies `BetterAuth` with `BetterAuthLive` (which needs the full alchemy

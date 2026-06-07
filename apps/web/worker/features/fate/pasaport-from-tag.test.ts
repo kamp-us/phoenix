@@ -3,8 +3,9 @@
  *
  * `makeFateLayer`'s `PasaportFromTag` resolves the better-auth instance from the
  * `BetterAuth` Context tag while satisfying the *type-level* `RuntimeContext`
- * requirement on `betterAuth.auth` with a hand-built **inert** stub (`layers.ts`
- * ~lines 78-94). That is runtime-safe **only** because phoenix's better-auth
+ * requirement on `betterAuth.auth` with a hand-built **inert** stub
+ * (`PasaportFromTag` in `layers.ts`). That is runtime-safe **only** because
+ * phoenix's better-auth
  * fork reads its secret from a binding and never touches `RuntimeContext` during
  * auth resolution. The day the fork (or upstream `@alchemy.run/better-auth`)
  * starts reading `RuntimeContext` while resolving `auth`, a deployed session

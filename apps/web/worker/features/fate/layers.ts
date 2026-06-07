@@ -101,7 +101,7 @@ const PasaportFromTag = Layer.unwrap(
 );
 
 /**
- * The worker-level data-plane layer (ADR 0029, ADR 0040 b1 addendum).
+ * The worker-level data-plane layer (ADR 0029, ADR 0040).
  *
  * Zero-arg layer constant: it derives everything from the two seams it requires
  * in its `R` channel — `Database` (the raw d1 handle, behind `DrizzleLive`) and

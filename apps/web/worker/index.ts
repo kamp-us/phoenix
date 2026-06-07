@@ -129,12 +129,12 @@ export default Phoenix.make(
 		// calls below — drop the `yield*` above and the type checker fails at that
 		// usage, so an unwired binding is a compile error, never a runtime
 		// `undefined`. The raw D1 is no longer bound here: it lives behind the
-		// `Database` seam (ADR 0040, b1 addendum), provided as `DatabaseLive` in the
+		// `Database` seam (ADR 0040), provided as `DatabaseLive` in the
 		// outer `Effect.provide`, and both `DrizzleLive` and `BetterAuthLive` derive
 		// from it — one shared handle, type-enforced.
 
-		// Resolve the raw D1 handle from the `Database` seam ONCE in init (ADR 0040
-		// b1 addendum). `DatabaseLive` (provided in the outer `Effect.provide`)
+		// Resolve the raw D1 handle from the `Database` seam ONCE in init (ADR
+		// 0040). `DatabaseLive` (provided in the outer `Effect.provide`)
 		// resolves the `PhoenixDb` binding; wrapping the resolved handle in a
 		// `Layer.succeed(Database)` gives `makeAppLive` a stable, dependency-free
 		// `databaseLayer` whose value `DrizzleLive` and `BetterAuthLive` both derive
@@ -142,7 +142,7 @@ export default Phoenix.make(
 		const raw = yield* Database;
 		const databaseLayer = Layer.succeed(Database)(raw);
 
-		// The worker-level service layer (ADR 0029, ADR 0040 b1): `makeFateLayer` is
+		// The worker-level service layer (ADR 0029, ADR 0040): `makeFateLayer` is
 		// a zero-arg constant whose `R` is `Database | BetterAuth`. Both seams are
 		// discharged inside `makeAppLive`'s request layer (`databaseLayer` +
 		// `betterAuthLayer` below). The `/fate` route provides only `Auth` per
@@ -249,7 +249,7 @@ export default Phoenix.make(
 		//   - `BetterAuthLive` (`features/pasaport/better-auth-live.ts`) satisfies the
 		//     `BetterAuth` Context tag yielded above + provides `betterAuth.fetch` to
 		//     the `/api/auth/*` route. It derives its raw d1 from the `Database` seam
-		//     (ADR 0040, b1 addendum), so `DatabaseLive` is provided into it here.
+		//     (ADR 0040), so `DatabaseLive` is provided into it here.
 		Effect.provide(
 			Layer.mergeAll(
 				LiveDOLive,

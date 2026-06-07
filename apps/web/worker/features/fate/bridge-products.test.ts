@@ -64,7 +64,7 @@ async function freshDb(): Promise<void> {
 	sqlite = makeSqliteTestDb();
 
 	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth` (ADR
-	// 0040 b1). Provide the seam from the SAME handle the seeding below writes to
+	// 0040). Provide the seam from the SAME handle the seeding below writes to
 	// so features and seeding share one database — the one-`sqlite` invariant is
 	// type-enforced. The stub `BetterAuth` is enough: these tests never reach the
 	// session path (`Pasaport.validateSession`).

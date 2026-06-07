@@ -48,14 +48,14 @@ import {healthApiLayer} from "./health.ts";
  */
 export const makeAppLive = (options: {
 	/**
-	 * The worker-level fate services (`makeFateLayer`, ADR 0040 b1). Its `R` is
+	 * The worker-level fate services (`makeFateLayer`, ADR 0040). Its `R` is
 	 * the two seams `Database | BetterAuth`: `databaseLayer` (below) + the same
 	 * `betterAuthLayer` discharge them inside the request layer, so the fate, auth,
 	 * and live routes' service requirements resolve through `provideRequest`.
 	 */
 	readonly fateLayer: Layer.Layer<WorkerFateServices, never, Database | BetterAuth.BetterAuth>;
 	/**
-	 * The `Database` seam (ADR 0040 b1): the raw `D1Database` handle both
+	 * The `Database` seam (ADR 0040): the raw `D1Database` handle both
 	 * `DrizzleLive` (inside `fateLayer`) and `BetterAuthLive` derive from. In the
 	 * deployed worker this is `DatabaseLive`; tests pass a `Database` layer over
 	 * the `node:sqlite` fake (`Layer.succeed(Database)(makeSqliteTestDb().d1)`).
@@ -65,13 +65,13 @@ export const makeAppLive = (options: {
 	/**
 	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker
 	 * this is `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`), which builds
-	 * the auth instance via alchemy's `Random` + `D1Connection` — its external
-	 * `R` (`Providers`/`Provider<Random>`/`ConfigProvider`/`D1ConnectionPolicy`)
-	 * is supplied by alchemy's worker runtime context. Tests pass a hand-rolled
-	 * Layer over the same tag (`Layer.succeed(BetterAuth.BetterAuth)`); both
-	 * shapes thread through `provideRequest` the same way. `R` is left
-	 * unconstrained (`any`) so the worker's outer `Effect.provide` discharges
-	 * whatever the layer carries upward.
+	 * the auth instance from the `Database` seam (the raw d1 handle) + the
+	 * `BETTER_AUTH_SECRET` binding — its external `R` (the `ConfigProvider` the
+	 * secret is read through) is supplied by alchemy's worker runtime context.
+	 * Tests pass a hand-rolled Layer over the same tag
+	 * (`Layer.succeed(BetterAuth.BetterAuth)`); both shapes thread through
+	 * `provideRequest` the same way. `R` is left unconstrained (`any`) so the
+	 * worker's outer `Effect.provide` discharges whatever the layer carries upward.
 	 */
 	readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth, never, any>;
 	/**

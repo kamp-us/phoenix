@@ -100,7 +100,7 @@ async function fetch(
 beforeAll(() => {
 	sqlite = makeSqliteTestDb();
 
-	// ONE database for the whole test (ADR 0040 b1): a single `node:sqlite` handle
+	// ONE database for the whole test (ADR 0040): a single `node:sqlite` handle
 	// behind the `Database` seam. `makeFateLayer`'s `Drizzle` and the better-auth
 	// adapter below both run on this handle — the old dual-drizzle accident (a
 	// separate `createDrizzle(...)` threaded into `makeFateLayer` alongside
@@ -128,7 +128,7 @@ beforeAll(() => {
 	const betterAuthLayer = layerTest(widenedAuth);
 
 	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth`
-	// (ADR 0040 b1); the two seams are discharged inside `makeAppLive`'s request
+	// (ADR 0040); the two seams are discharged inside `makeAppLive`'s request
 	// layer from `databaseLayer` + `betterAuthLayer`.
 	const fateLayer = makeFateLayer;
 

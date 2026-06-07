@@ -282,9 +282,9 @@ function decodeCursor(cursor: string): {createdAt: Date; id: string} | null {
 export const makePasaportLive = (auth: Auth) =>
 	Layer.effect(Pasaport)(
 		Effect.gen(function* () {
-			// Per the post-fbb57d8 reshape: yield Drizzle once at layer build and
-			// destructure its bound methods. Method bodies call `run` / `batch`
-			// directly so every method's `R` stays `never`.
+			// Yield Drizzle once at layer build and destructure its bound methods.
+			// Method bodies call `run` / `batch` directly so every method's `R`
+			// stays `never`.
 			const {run} = yield* Drizzle;
 
 			// `COUNT(*)` of a contribution table's live (non-deleted) rows for one
