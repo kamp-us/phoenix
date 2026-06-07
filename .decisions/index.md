@@ -43,3 +43,4 @@ One row per ADR. Read the file for the why.
 | [0037](0037-unified-void-aligned-live-do.md) | Unified void-aligned LiveDO — one class, two roles, KV storage | accepted | 2026-05-30 |
 | [0038](0038-dependency-patches-local-only.md) | Dependency patches are local-only — no fork/git/unmerged-PR sources; local `pnpm patch` if unavoidable | accepted | 2026-05-31 |
 | [0039](0039-livebus-context-service.md) | LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge | accepted | 2026-05-31 |
+| [0040](0040-testing-taxonomy-and-seam-graduation.md) | Testing taxonomy and test-seam graduation | accepted | 2026-06-06 |
