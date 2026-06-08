@@ -74,12 +74,18 @@ const liveBusCapture = (): {
  * Generic in `Marker` — no cast, thanks to `FateContext<R>`.
  */
 const makeCtx = (
-	opts: {user?: {id: string}; liveBus?: typeof LiveBus.Service; marker?: string} = {},
+	opts: {
+		user?: {id: string};
+		liveBus?: typeof LiveBus.Service;
+		marker?: string;
+		signal?: AbortSignal;
+	} = {},
 ): FateContext<Marker> => {
 	const runtime = ManagedRuntime.make(Layer.succeed(Marker)({value: opts.marker ?? "marker"}));
 	const auth: typeof Auth.Service = {user: opts.user as never, session: undefined};
 	const liveBus = opts.liveBus ?? liveBusFor(() => {});
-	return {runtime, request: new Request("http://test/fate"), auth, liveBus};
+	const request = new Request("http://test/fate", opts.signal ? {signal: opts.signal} : {});
+	return {runtime, request, auth, liveBus};
 };
 
 const invoke = <A, R>(
@@ -134,6 +140,35 @@ describe("fateQuery", () => {
 		const err = await invoke(resolve, makeCtx()).catch((e) => e);
 		expect(err).toBeInstanceOf(FateRequestError);
 		expect(err.code).toBe("INTERNAL_SERVER_ERROR");
+	});
+
+	// ④b signal-interrupt SURFACES — it is NOT silently swallowed into a success.
+	//    The bridge wires `ctx.request.signal` into `runPromiseExit({signal})`, so a
+	//    disconnected client aborts the resolver fiber. The resulting Exit is a pure
+	//    interrupt Cause (no `Fail` reason) → `findErrorOption` is `None` → the
+	//    `onNone` branch `Cause.squash`es it (yielding effect's
+	//    "All fibers interrupted without error") → `encodeFateError` →
+	//    `INTERNAL_SERVER_ERROR`. The guarantee under test is that an aborted request
+	//    THROWS (surfaces) rather than resolving to an empty/undefined value — i.e.
+	//    the interrupt does not vanish silently. (Regression guard: if `onNone` ever
+	//    stops throwing, an aborted request would silently resolve `undefined`.)
+	it("surfaces a signal interrupt as a throw — an aborted request never resolves silently", async () => {
+		const aborted = AbortSignal.abort();
+		// A resolver that would never complete on its own, so the only way the promise
+		// settles is via the abort-driven interrupt.
+		const resolve = fateQuery<undefined, never>(function* () {
+			return yield* Effect.never;
+		});
+		const settled = await invoke(resolve, makeCtx({signal: aborted})).then(
+			(value) => ({tag: "resolved" as const, value}),
+			(error) => ({tag: "threw" as const, error}),
+		);
+		// The load-bearing assertion: it THREW (surfaced), it did not resolve silently.
+		expect(settled.tag).toBe("threw");
+		if (settled.tag === "threw") {
+			expect(settled.error).toBeInstanceOf(FateRequestError);
+			expect(settled.error.code).toBe("INTERNAL_SERVER_ERROR");
+		}
 	});
 
 	// ⑤ per-request Auth carried by the FateContext reaches the resolver (NOT the
