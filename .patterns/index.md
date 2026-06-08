@@ -7,7 +7,7 @@ Start with [effect-context-service.md](./effect-context-service.md) and [feature
 ## Three layers
 
 - **Effect domain layer** (the `effect-*` docs) — services, errors, layer composition, tracing, testing, validation. Transport-agnostic: domain logic lives here and knows nothing about how data reaches the client.
-- **fate protocol layer** (the server-side `fate-*` docs) — how the backend serves data. Data views are the schema, an Effect bridge runs domain services through the captured worker service map, and hand-built sources back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol via `createFateServer` mounted on an imperative `HttpRouter.add` route (no tRPC/GraphQL adapter; no Hono).
+- **fate protocol layer** (the server-side `fate-*` docs) — how the backend serves data. Data views are the schema, an Effect bridge runs domain services through the one worker-level `ManagedRuntime`, and hand-built sources back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol via `createFateServer` mounted on an imperative `HttpRouter.add` route (no tRPC/GraphQL adapter; no Hono).
 - **fate client layer** (the client-side `fate-*` docs) — how the SPA consumes data. Components declare views, one batched `useRequest` per screen, declarative mutations, and live views over SSE. Built on `react-fate`.
 
 The protocol and client layers share one view/type model: the server's `Entity<>` types are the client's types, generated, with no schema artifact between them. The bridge ([fate-effect-bridge.md](./fate-effect-bridge.md)) is the seam between the domain and protocol layers — read it first when working server-side.
@@ -32,12 +32,12 @@ Read [fate-effect-bridge.md](./fate-effect-bridge.md) first — it's the seam ev
 
 | Doc | Topic | Read when |
 |---|---|---|
-| [fate-effect-bridge.md](./fate-effect-bridge.md) | `fateQuery`/`fateList`/`fateMutation`/`fateSource`, `FateContext` carrying the captured service map, `encodeFateError` | The seam between fate and Effect — read first |
+| [fate-effect-bridge.md](./fate-effect-bridge.md) | `fateQuery`/`fateList`/`fateMutation`/`fateSource`, `FateContext<R>` carrying `{runtime, auth, liveBus}`, `ctx.runtime.runPromiseExit`, the F7 cast, `encodeFateError` | The seam between fate and Effect — read first |
 | [fate-data-views.md](./fate-data-views.md) | `dataView`/`Entity`/`computed`/`count`/`list`, selection masking, modeling conventions, raw IDs | Declaring an entity type |
 | [fate-sources.md](./fate-sources.md) | Hand-built `SourceResolver`, Effect-backed `byId`/`byIds`/`connection` executors, never the Drizzle adapter | Wiring a view's reads to a service |
 | [fate-mutations.md](./fate-mutations.md) | `mutations` map, validation in services, re-resolving the changed entity, delete returns the parent | Writing a mutation |
 | [fate-connections.md](./fate-connections.md) | `ConnectionResult`, custom `lists` resolvers vs source `connection`, cursor ownership | Writing a paginated list |
-| [fate-server-wiring.md](./fate-server-wiring.md) | `createFateServer` composition, the captured service map provided by the `/fate` route, codegen | Assembling/mounting the server |
+| [fate-server-wiring.md](./fate-server-wiring.md) | `createFateServer` composition, the `FateContext` (runtime + per-request values) handed by the `/fate` route, codegen | Assembling/mounting the server |
 | [per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md) | Per-feature `queries.ts`/`lists.ts`/`views.ts`/`shapers.ts`/`sources.ts`/`mutations.ts`; `features/fate/*` as barrels; SPA import surface preserved | Adding/moving a fate fragment, scaffolding a new feature ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
 
 ## Index — fate client layer
@@ -60,7 +60,7 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | [alchemy-overview.md](./alchemy-overview.md) | One program = infra + runtime; the two phases; how the layers stack (domain/fate over alchemy); reading order | First — the mental model |
 | [alchemy-worker.md](./alchemy-worker.md) | `Cloudflare.Worker<T>()(...)`, init vs runtime phase, props, providing binding Live layers | Defining/editing the worker entry |
 | [alchemy-bindings.md](./alchemy-bindings.md) | `bind()` = deploy-policy + runtime-service; `yield*` DO vs `.bind` resource; the Live-layer convention | Reaching a Cloudflare resource |
-| [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No per-request `ManagedRuntime`; worker-level vs request-scoped layers; `Effect.context()` capture; how the fate bridge runs the captured map | Touching the fate↔domain seam |
+| [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No _per-request_ `ManagedRuntime` — ONE _worker-level_ runtime (built once per isolate, never disposed — CF deviation); `Layer.effectContext` context-sharing; how the fate bridge runs each resolver through `ctx.runtime` | Touching the fate↔domain seam |
 | [alchemy-http-router.md](./alchemy-http-router.md) | `HttpApiBuilder` for typed JSON + imperative `HttpRouter` for raw-Request/SSE; `toHttpEffect`; assets/worker-first | Adding/moving an HTTP route |
 | [worker-http-transport-layout.md](./worker-http-transport-layout.md) | `worker/http/` as a transport surface (not a feature); `app.ts` composition (`makeAppLive`); the lone `health.ts` typed-JSON group; per-feature route modules merged in | Moving/adding an HTTP route, sanity-checking the http/ vs features/ split ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
 | [worker-environment-pattern.md](./worker-environment-pattern.md) | Reading worker env at runtime via `Cloudflare.WorkerEnvironment` + one cast; why `Config`/`AppConfig` are wrong for plain policy vars; deploy-time `env:` literal vs runtime read | Reading `ENVIRONMENT` (or any plain binding) in worker code ([ADR 0031](../.decisions/0031-local-first-dev-state.md)) |
