@@ -32,6 +32,7 @@ import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
@@ -142,13 +143,6 @@ export default Phoenix.make(
 		const raw = yield* Database;
 		const databaseLayer = Layer.succeed(Database)(raw);
 
-		// The worker-level service layer (ADR 0029, ADR 0040): `makeFateLayer` is
-		// a zero-arg constant whose `R` is `Database | BetterAuth`. Both seams are
-		// discharged inside `makeAppLive`'s request layer (`databaseLayer` +
-		// `betterAuthLayer` below). The `/fate` route provides only `Auth` per
-		// request (ADR 0029).
-		const fateLayer = makeFateLayer;
-
 		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
 		// init — the layer (`BetterAuthLive`, provided below) constructs the
 		// `makeBetterAuth(...)` instance once and caches it. Yielding it here
@@ -157,6 +151,38 @@ export default Phoenix.make(
 		// runs `auth.handler(request)`) share one instance — sign + validate with
 		// the same secret.
 		const betterAuth = yield* BetterAuth.BetterAuth;
+		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
+
+		// ── THE ONE WORKER-LEVEL RUNTIME (ADR 0041, supersedes 0029) ──
+		// Build exactly one `ManagedRuntime` per isolate from the zero-arg
+		// `makeFateLayer` (its `R` is `Database | BetterAuth`, both provided here from
+		// the init-resolved `databaseLayer` + `betterAuthLayer`). The `/fate` bridge
+		// runs every resolver THROUGH this runtime (`ctx.runtime.runPromiseExit`,
+		// `features/fate/effect.ts`), so resolver spans nest under the runtime's
+		// request span (F4) and nothing is built or disposed per request. A shared
+		// `memoMap` (per the LLMS "Integrating Effect into existing applications"
+		// example — `~/code/github.com/usirin/effect-smol/ai-docs/src/03_integration/
+		// 10_managed-runtime.ts`) keeps layer memoization correct across the runtime
+		// and the route-context layer derived from it.
+		//
+		// CF DEVIATION — NEVER DISPOSE: the LLMS example disposes the runtime on
+		// SIGINT/SIGTERM, but a Cloudflare Worker isolate has no shutdown hook, so
+		// phoenix never calls `fateRuntime.dispose()` — the runtime lives for the
+		// isolate's lifetime and Drizzle/D1 holds no poolable socket to release. See
+		// ADR 0041 (`.decisions/0041-fate-bridge-worker-managed-runtime.md`).
+		const appMemoMap = Layer.makeMemoMapUnsafe();
+		const fateRuntime = ManagedRuntime.make(
+			makeFateLayer.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
+			{memoMap: appMemoMap},
+		);
+
+		// Derive the route-context layer ONCE from the runtime's built context: the
+		// worker singletons (`Drizzle` + the feature services) are built a single
+		// time and SHARED by both the bridge runtime and the routes that yield a
+		// worker service directly (`Pasaport` in the `/fate` route). `effectContext`
+		// reuses the runtime's already-built `Context<WorkerFateServices>` instead of
+		// rebuilding the layer per request through `provideRequest`.
+		const fateLayer = Layer.effectContext(fateRuntime.contextEffect);
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One
@@ -225,9 +251,10 @@ export default Phoenix.make(
 		// with no per-request reconstruction.
 		const AppLive = makeAppLive({
 			fateLayer,
+			fateRuntime,
 			databaseLayer,
 			liveLayer,
-			betterAuthLayer: Layer.succeed(BetterAuth.BetterAuth)(betterAuth),
+			betterAuthLayer,
 			runtimeContext,
 		});
 

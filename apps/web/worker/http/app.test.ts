@@ -21,6 +21,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import {Effect} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -127,10 +128,17 @@ beforeAll(() => {
 	const widenedAuth = testAuthInstance as unknown as Parameters<typeof layerTest>[0];
 	const betterAuthLayer = layerTest(widenedAuth);
 
-	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth`
-	// (ADR 0040); the two seams are discharged inside `makeAppLive`'s request
-	// layer from `databaseLayer` + `betterAuthLayer`.
-	const fateLayer = makeFateLayer;
+	// Build the one worker-level `ManagedRuntime` from `makeFateLayer`
+	// (a zero-arg layer, `R = Database | BetterAuth`, ADR 0040/0041), with both
+	// seams provided from the test `databaseLayer` + `betterAuthLayer` — exactly as
+	// `index.ts` does in the deployed worker. `fateLayer` is then the route-context
+	// layer derived from the runtime's built context (`Layer.effectContext`), so the
+	// worker singletons are built once and shared by the runtime + routes. Never
+	// disposed (matches the CF no-shutdown-hook deviation — ADR 0041).
+	const fateRuntime = ManagedRuntime.make(
+		makeFateLayer.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
+	);
+	const fateLayer = Layer.effectContext(fateRuntime.contextEffect);
 
 	// A minimal `BaseRuntimeContext` stub. The HTTP-surface cases here never reach
 	// the `/api/auth/*` route's RuntimeContext-consuming secret resolution (sign-up
@@ -146,6 +154,7 @@ beforeAll(() => {
 
 	appLayer = makeAppLive({
 		fateLayer,
+		fateRuntime,
 		databaseLayer,
 		liveLayer,
 		betterAuthLayer,

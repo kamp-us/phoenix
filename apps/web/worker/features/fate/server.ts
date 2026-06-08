@@ -3,12 +3,15 @@
  *
  * `createFateServer` produces plain `Request → Response` handlers
  * (`handleRequest` / `handleLiveRequest`) that the `HttpRouter.add` for the
- * `POST /fate` route invokes directly — no Hono in between. The route resolves
- * `Effect.context<FateEnv>()` once per request and hands the resulting `Context`
- * down through `adapterContext`; fate's `context` factory passes it through to
+ * `POST /fate` route invokes directly — no Hono in between. The route builds a
+ * per-request {@link FateContext} of `{runtime, request, auth, liveBus}` and hands
+ * it down through `adapterContext`; fate's `context` factory passes it through to
  * each resolver as `FateContext`. The bridge runner (`features/fate/effect.ts`)
- * then runs each resolver Effect via `Effect.provide(effect, ctx.context)` —
- * no `ManagedRuntime` (ADR 0029). See `.patterns/fate-server-wiring.md`.
+ * then runs each resolver Effect THROUGH the one worker-level `ManagedRuntime`
+ * (`ctx.runtime.runPromiseExit(...)`, with the per-request `Auth`/`LiveBus`
+ * provided onto the effect), built once per isolate in worker init and never
+ * disposed (CF has no shutdown hook — ADR 0041, supersedes 0029). See
+ * `.patterns/fate-server-wiring.md`.
  *
  * Wired surface: sozluk (`term`/`terms`/`definition.*`) + pano
  * (`post`/`posts`/`post.*`/`comment.*`) + pasaport (`me`/`profile`/
@@ -37,8 +40,9 @@ export const fateServer = createFateServer<
 	typeof mutations,
 	FateContext
 >({
-	// The `/fate` route always supplies {runtime, request} as adapterContext
-	// (fate types it optional); read it through, asserting its presence.
+	// The `/fate` route always supplies the full `FateContext`
+	// ({runtime, request, auth, liveBus}) as adapterContext (fate types it
+	// optional); read it through, asserting its presence.
 	context: ({adapterContext}) => {
 		if (!adapterContext) {
 			throw new Error("fate adapterContext missing — the /fate route must supply it.");
