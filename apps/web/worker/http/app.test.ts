@@ -21,14 +21,13 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import {Effect} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {Database} from "../db/Database.ts";
 import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.testing.ts";
-import {makeFateLayer} from "../features/fate/layers.ts";
+import {makeFateLayer, makeFateRuntime} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {layerTest, makeRealAuthForTest} from "../features/pasaport/better-auth.testing.ts";
 import {makeAppLive} from "./app.ts";
@@ -128,17 +127,14 @@ beforeAll(() => {
 	const widenedAuth = testAuthInstance as unknown as Parameters<typeof layerTest>[0];
 	const betterAuthLayer = layerTest(widenedAuth);
 
-	// Build the one worker-level `ManagedRuntime` from `makeFateLayer`
-	// (a zero-arg layer, `R = Database | BetterAuth`, ADR 0040/0041), with both
-	// seams provided from the test `databaseLayer` + `betterAuthLayer` — exactly as
-	// `index.ts` does in the deployed worker. `fateLayer` is then the route-context
-	// layer derived from the runtime's built context (`Layer.effectContext`), so the
-	// worker singletons are built once and shared by the runtime + routes. Never
-	// disposed (matches the CF no-shutdown-hook deviation — ADR 0041).
-	const fateRuntime = ManagedRuntime.make(
+	// Build the one worker-level runtime + its route-context layer through the same
+	// `makeFateRuntime` the deployed worker (`index.ts`) uses — `makeFateLayer`
+	// (zero-arg, `R = Database | BetterAuth`, ADR 0040/0041) with both seams provided
+	// from the test `databaseLayer` + `betterAuthLayer`. One construction point keeps
+	// the shared memoMap + never-dispose decision identical to production.
+	const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
 		makeFateLayer.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 	);
-	const fateLayer = Layer.effectContext(fateRuntime.contextEffect);
 
 	// A minimal `BaseRuntimeContext` stub. The HTTP-surface cases here never reach
 	// the `/api/auth/*` route's RuntimeContext-consuming secret resolution (sign-up

@@ -9,10 +9,10 @@
  *
  *   1. builds the fate request envelope from the operation,
  *   2. builds ONE worker-level `ManagedRuntime` from the caller's worker layer
- *      (`ManagedRuntime.make(workerLayer)`) — the single runtime-build boundary,
- *      so the whole program runs through one shared layer-memo map (a second
- *      `Effect.provide`/runtime build would trip the `multipleEffectProvide`
- *      lint),
+ *      through `makeFateRuntime` (the same construction point `index.ts` uses) —
+ *      the single runtime-build boundary, so the whole program runs through one
+ *      shared layer-memo map (a second `Effect.provide`/runtime build would trip
+ *      the `multipleEffectProvide` lint),
  *   3. owns the capturing `LiveBus` VALUE internally (`liveBusFor` over a capture
  *      array, ADR 0039) — it records the RESOLVED topic keys each mutation's
  *      `live.*` fans out to (run through the real `topicsForPublish`),
@@ -29,12 +29,11 @@
  * rebuilt per `it` in `beforeEach`/`afterEach`, so each case runs against its own
  * in-memory D1 (no row leakage; the `it.layer`/`describe`-once form is avoided).
  */
-import {ManagedRuntime} from "effect";
 import type * as Layer from "effect/Layer";
 import {liveBusFor} from "../fate-live/event-bus.ts";
 import type {Auth} from "../pasaport/Auth.ts";
 import type {FateContext} from "./context.ts";
-import type {WorkerFateServices} from "./layers.ts";
+import {makeFateRuntime, type WorkerFateServices} from "./layers.ts";
 import {fateServer} from "./server.ts";
 
 /** A single fate operation result as it appears on the wire. */
@@ -76,12 +75,13 @@ export async function runFateOp(
 		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
 	});
 
-	// The ONE worker-level runtime for this op (ADR 0041): it carries the
-	// WorkerFateServices the way `index.ts` builds the isolate runtime. This is the
-	// single runtime-build / `provide` boundary — the bridge runs each resolver on
-	// it via `ctx.runtime.runPromiseExit`, so there is no second `Effect.provide`
-	// (which would trip the `multipleEffectProvide` lint).
-	const runtime = ManagedRuntime.make(workerLayer);
+	// The ONE worker-level runtime for this op (ADR 0041), built through the same
+	// `makeFateRuntime` the deployed worker (`index.ts`) uses. This is the single
+	// runtime-build / `provide` boundary — the bridge runs each resolver on it via
+	// `ctx.runtime.runPromiseExit`, so there is no second `Effect.provide` (which
+	// would trip the `multipleEffectProvide` lint). The op drives fate directly off
+	// the runtime, so the helper's route-context layer half is unused here.
+	const {runtime} = makeFateRuntime(workerLayer);
 
 	// Own the capturing `LiveBus` VALUE (ADR 0039) here — the per-request form the
 	// route provides (`liveBusFor`), NOT the `Layer` form. It records the RESOLVED

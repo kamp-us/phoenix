@@ -53,8 +53,7 @@ class Marker extends Context.Service<Marker, {readonly value: string}>()(
  * `topicsForPublish` (inside `makeLiveBus`) so it captures the *resolved* topic
  * keys, recording each into the returned `published` array. Built via
  * `liveBusFor(captureFn)` — the per-request VALUE form the bridge provides onto
- * each effect (NOT the `Layer` form `makeLiveBusForTest()` returns, which is for
- * tests that `Effect.provide` a layer).
+ * each effect, matching how `route.ts` / `run-fate-op.ts` build the bus.
  */
 const liveBusCapture = (): {
 	readonly liveBus: typeof LiveBus.Service;

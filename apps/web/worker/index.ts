@@ -32,11 +32,10 @@ import {RuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import * as ManagedRuntime from "effect/ManagedRuntime";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
-import {makeFateLayer} from "./features/fate/layers.ts";
+import {makeFateLayer, makeFateRuntime} from "./features/fate/layers.ts";
 import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
@@ -159,30 +158,14 @@ export default Phoenix.make(
 		// the init-resolved `databaseLayer` + `betterAuthLayer`). The `/fate` bridge
 		// runs every resolver THROUGH this runtime (`ctx.runtime.runPromiseExit`,
 		// `features/fate/effect.ts`), so resolver spans nest under the runtime's
-		// request span (F4) and nothing is built or disposed per request. A shared
-		// `memoMap` (per the LLMS "Integrating Effect into existing applications"
-		// example — effect-smol `ai-docs/src/03_integration/10_managed-runtime.ts`)
-		// keeps layer memoization correct across the runtime and the route-context
-		// layer derived from it.
-		//
-		// CF DEVIATION — NEVER DISPOSE: the LLMS example disposes the runtime on
-		// SIGINT/SIGTERM, but a Cloudflare Worker isolate has no shutdown hook, so
-		// phoenix never calls `fateRuntime.dispose()` — the runtime lives for the
-		// isolate's lifetime and Drizzle/D1 holds no poolable socket to release. See
-		// ADR 0041 (`.decisions/0041-fate-bridge-worker-managed-runtime.md`).
-		const appMemoMap = Layer.makeMemoMapUnsafe();
-		const fateRuntime = ManagedRuntime.make(
+		// request span (F4) and nothing is built or disposed per request. The shared
+		// memoMap, the derived route-context layer (`fateLayer` — built once, reused
+		// instead of rebuilt per request through `provideRequest`), and the
+		// never-dispose deviation all live in `makeFateRuntime` — the single
+		// construction point shared with the bridge tests.
+		const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
 			makeFateLayer.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
-			{memoMap: appMemoMap},
 		);
-
-		// Derive the route-context layer ONCE from the runtime's built context: the
-		// worker singletons (`Drizzle` + the feature services) are built a single
-		// time and SHARED by both the bridge runtime and the routes that yield a
-		// worker service directly (`Pasaport` in the `/fate` route). `effectContext`
-		// reuses the runtime's already-built `Context<WorkerFateServices>` instead of
-		// rebuilding the layer per request through `provideRequest`.
-		const fateLayer = Layer.effectContext(fateRuntime.contextEffect);
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One

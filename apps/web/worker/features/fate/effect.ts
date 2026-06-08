@@ -34,7 +34,7 @@ import {LiveBus} from "../fate-live/event-bus.ts";
 import {Auth} from "../pasaport/Auth.ts";
 import type {FateContext} from "./context.ts";
 import {encodeFateError} from "./errors.ts";
-import type {FateEnv, WorkerFateServices} from "./layers.ts";
+import type {WorkerFateServices} from "./layers.ts";
 
 type Selection = ReadonlyArray<string>;
 
@@ -128,15 +128,20 @@ const runEffect = <A, R>(
 			});
 		});
 
-/** A root-query resolver argument bag fate hands the wrapped function. */
-export interface QueryArgs<Args, R = FateEnv> {
+/**
+ * A root-query resolver argument bag fate hands the wrapped function. `R` is the
+ * runtime environment carried by `ctx.runtime`, defaulting to the production
+ * {@link WorkerFateServices} — matching `FateContext` / `SourceExecutor`. (`Auth` +
+ * `LiveBus` are provided onto the effect per request, so they are NOT part of `R`.)
+ */
+export interface QueryArgs<Args, R = WorkerFateServices> {
 	readonly ctx: FateContext<R>;
 	readonly input: {readonly args?: Args};
 	readonly select: Array<string>;
 }
 
-/** A mutation resolver argument bag fate hands the wrapped function. */
-export interface MutationArgs<Input, R = FateEnv> {
+/** A mutation resolver argument bag fate hands the wrapped function. `R` as in {@link QueryArgs}. */
+export interface MutationArgs<Input, R = WorkerFateServices> {
 	readonly ctx: FateContext<R>;
 	readonly input: Input;
 	readonly select: Array<string>;
@@ -149,7 +154,8 @@ export interface MutationArgs<Input, R = FateEnv> {
  *
  * The generator's yield type is `any`: `Effect.gen` requires a `Yieldable`
  * element and resolver bodies `yield*` heterogeneous services. The runner
- * constrains the environment to {@link FateEnv}.
+ * constrains the environment to the worker services `R` plus the per-request
+ * `Auth`/`LiveBus` it provides onto the effect (the conceptual `FateEnv`).
  */
 export const fateQuery =
 	<Args, A>(body: (o: {args: Args | undefined; select: Selection}) => Generator<any, A, any>) =>

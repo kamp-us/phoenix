@@ -9,8 +9,8 @@
  * runs every resolver THROUGH that runtime, providing only the two genuinely
  * per-request services — `Auth` + `LiveBus` — onto each resolver effect
  * (`effect.ts`); the routes that yield a worker service directly take it from the
- * same runtime's built context (`Layer.effectContext`, see `route.ts` /
- * `index.ts`).
+ * same runtime's built context (`Layer.effectContext`, built in `index.ts` via
+ * {@link makeFateRuntime} and consumed by `route.ts`).
  *
  * `FateEnv` is the union of every service a fate resolver or source executor may
  * touch — the environment its generator bodies are checked against.
@@ -22,7 +22,7 @@
 import * as BetterAuth from "@alchemy.run/better-auth";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
-import type * as ManagedRuntime from "effect/ManagedRuntime";
+import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
 import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
@@ -35,11 +35,17 @@ import {type Stats, StatsLive} from "../stats/Stats.ts";
 import {type Vote, VoteLive} from "../vote/Vote.ts";
 
 /**
- * Every service a fate resolver / source executor may touch — the environment
- * the bridge's generator bodies are checked against. It is the worker-level
- * {@link WorkerFateServices} plus the two genuinely per-request services the
- * bridge provides onto each resolver effect at run time: `Auth` (the validated
- * session) and `LiveBus` (the publish capability, ADR 0039).
+ * Every service a fate resolver / source executor may touch — the conceptual
+ * authoring environment. It is the worker-level {@link WorkerFateServices} plus
+ * the two genuinely per-request services the bridge provides onto each resolver
+ * effect at run time: `Auth` (the validated session) and `LiveBus` (the publish
+ * capability, ADR 0039) — i.e. exactly the environment of a resolver effect
+ * (`WorkerFateServices | Auth | LiveBus`).
+ *
+ * Post-F4 no signature binds this directly: the bridge casts the generator's
+ * erased env to `R` ({@link WorkerFateServices}, the runtime's environment) and
+ * provides `Auth`/`LiveBus` per effect. It stays as the named contract a resolver
+ * body is authored against (referenced across `.patterns/` and ADR 0041).
  *
  * `HttpServerRequest` is deliberately NOT here: no resolver yields it, and the
  * F4 bridge runs each resolver on the worker `ManagedRuntime` (carrying
@@ -65,6 +71,40 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
  * shape, so it lives here once rather than being re-spelled at each site (ADR 0041).
  */
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
+
+/**
+ * Build the ONE worker-level {@link WorkerRuntime} from a fully-resolved worker
+ * layer (`Database`/`BetterAuth` already discharged), plus the route-context layer
+ * derived from its built context. The single construction point shared by
+ * `index.ts` (the deployed worker), `app.test.ts`, and `run-fate-op.ts` — so the
+ * "how" lives here once rather than being re-spelled (and silently varied) at each
+ * site.
+ *
+ * A shared `memoMap` (the effect-smol "Integrating Effect into existing
+ * applications" idiom — `ai-docs/src/03_integration/10_managed-runtime.ts`) keeps
+ * layer memoization correct across the runtime and the `contextLayer` derived from
+ * it: the worker singletons (`Drizzle` + the feature services) are built exactly
+ * once and SHARED by both the bridge runtime and the routes that yield a worker
+ * service directly (`Pasaport` in the `/fate` route). `contextLayer` reuses the
+ * runtime's already-built `Context<WorkerFateServices>` rather than rebuilding the
+ * layer per request through `provideRequest`.
+ *
+ * NEVER DISPOSED: a Cloudflare Worker isolate has no shutdown hook, so phoenix
+ * never calls `runtime.dispose()` — the runtime lives for the isolate's lifetime
+ * and Drizzle/D1 holds no poolable socket to release (ADR 0041). Callers that only
+ * need the runtime (no route layer — e.g. `run-fate-op.ts`) destructure `{runtime}`.
+ */
+export const makeFateRuntime = (
+	layer: Layer.Layer<WorkerFateServices>,
+): {
+	readonly runtime: WorkerRuntime;
+	readonly contextLayer: Layer.Layer<WorkerFateServices>;
+} => {
+	const memoMap = Layer.makeMemoMapUnsafe();
+	const runtime = ManagedRuntime.make(layer, {memoMap});
+	const contextLayer = Layer.effectContext(runtime.contextEffect);
+	return {runtime, contextLayer};
+};
 
 /**
  * The `Pasaport` layer, sourced from the shared `Database` seam + `BetterAuth`

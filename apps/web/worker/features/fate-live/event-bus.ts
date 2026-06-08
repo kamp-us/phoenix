@@ -26,7 +26,7 @@
  */
 
 import type {LiveEventBus} from "@nkzw/fate/server";
-import {Context, Effect, Layer} from "effect";
+import {Context, Effect} from "effect";
 import * as Schema from "effect/Schema";
 import type {LiveChangedField, LiveEntities} from "../fate/views.ts";
 import type {
@@ -316,29 +316,4 @@ function makeLiveBusService(bus: PhoenixLiveEventBus): typeof LiveBus.Service {
  */
 export function liveBusFor(publisher: LivePublisher): typeof LiveBus.Service {
 	return makeLiveBusService(makeLiveBus(publisher));
-}
-
-/**
- * A capturing {@link LiveBus} test double for bridge tests. Its publisher runs
- * the real {@link topicsForPublish} (so it captures the *resolved* topic keys,
- * catching a wrong-but-valid mis-route — e.g. an args publish collapsing to the
- * global wildcard) and records each key into the returned `published` array. The
- * test provides `layer` with `Effect.provide` and asserts on `published`.
- *
- * A factory (not a bare `layerTest`) because it returns the capture sink
- * alongside the layer — the test needs both halves.
- */
-export function makeLiveBusForTest(): {
-	readonly layer: Layer.Layer<LiveBus>;
-	readonly published: ReadonlyArray<string>;
-} {
-	const published: Array<string> = [];
-	// The real publisher contract is `(topicKey, message) => void`; the keys are
-	// already resolved by `makeLiveBus`'s `topicsForPublish` pass before they reach
-	// the publisher, so capturing `topicKey` here records exactly the keys a real
-	// publish would fan out to.
-	const service = liveBusFor((topicKey) => {
-		published.push(topicKey);
-	});
-	return {layer: Layer.succeed(LiveBus)(service), published};
 }
