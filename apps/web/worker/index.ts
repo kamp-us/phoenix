@@ -161,9 +161,9 @@ export default Phoenix.make(
 		// `features/fate/effect.ts`), so resolver spans nest under the runtime's
 		// request span (F4) and nothing is built or disposed per request. A shared
 		// `memoMap` (per the LLMS "Integrating Effect into existing applications"
-		// example — `~/code/github.com/usirin/effect-smol/ai-docs/src/03_integration/
-		// 10_managed-runtime.ts`) keeps layer memoization correct across the runtime
-		// and the route-context layer derived from it.
+		// example — effect-smol `ai-docs/src/03_integration/10_managed-runtime.ts`)
+		// keeps layer memoization correct across the runtime and the route-context
+		// layer derived from it.
 		//
 		// CF DEVIATION — NEVER DISPOSE: the LLMS example disposes the runtime on
 		// SIGINT/SIGTERM, but a Cloudflare Worker isolate has no shutdown hook, so
