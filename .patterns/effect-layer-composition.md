@@ -38,7 +38,7 @@ Read this inside-out:
 2. `Pasaport` + `Stats` only need `Drizzle`, so they merge alongside the Sozluk/Pano slice.
 3. `Drizzle` is the bottom — `provideMerge(DrizzleLayer)` feeds it to every consumer above *and* re-exposes it at the top, so a downstream `yield* Drizzle` works.
 
-The result is `Layer.Layer<WorkerFateServices>` — `R` is `never`, every dep is satisfied. Per-request services (`Auth`, `HttpServerRequest`) layer on top inside the `/fate` route, not here. See [alchemy-runtime.md](./alchemy-runtime.md) for the worker-scope vs request-scope split.
+The result is `Layer.Layer<WorkerFateServices, never, Database | BetterAuth>` — the feature graph is fully wired internally, and the only unresolved `R` is the two seams (`Database`, `BetterAuth`) provided once when the runtime is built (`index.ts`). The per-request services (`Auth`, `LiveBus`) are layered on top by the bridge onto each resolver effect, not here. See [alchemy-runtime.md](./alchemy-runtime.md) for the worker-scope vs request-scope split.
 
 ### Direction of `Layer.provide`
 
@@ -50,7 +50,7 @@ If `Sozluk` needs `Drizzle`:
 
 ### `provide` vs `provideMerge`
 
-`Layer.provide(B)` discharges `B`'s services from `A`'s `R` channel but *does not* re-expose them at the top — the output type drops them. `Layer.provideMerge(B)` does the same discharge *and* keeps `B`'s services in the output. Use `provideMerge` when something downstream of this Layer (a sibling in the same `mergeAll`, or a consumer that yields the Tag directly) needs to reach the provided service. Phoenix uses it for `Vote` (both `Sozluk` and `Pano` depend on it) and for `Drizzle` (the per-request `/fate` route still needs to provide `Auth` over a Layer that exposes `Drizzle`).
+`Layer.provide(B)` discharges `B`'s services from `A`'s `R` channel but *does not* re-expose them at the top — the output type drops them. `Layer.provideMerge(B)` does the same discharge *and* keeps `B`'s services in the output. Use `provideMerge` when something downstream of this Layer (a sibling in the same `mergeAll`, or a consumer that yields the Tag directly) needs to reach the provided service. Phoenix uses it for `Vote` (both `Sozluk` and `Pano` depend on it) and for `Drizzle` (the `/fate` route yields `Pasaport` directly over a Layer that exposes `Drizzle`, via the runtime's built context — `Layer.effectContext`).
 
 ## Parameterized Layer factories
 
@@ -60,18 +60,18 @@ The canonical examples — all in `apps/web/worker/`:
 
 - `makeDrizzleLayer(db)` in `db/Drizzle.ts` — wraps an already-constructed drizzle instance in `Layer.succeed(Drizzle)`.
 - `makePasaportLive(auth)` in `features/pasaport/Pasaport.ts` — closes a `Layer.effect(Pasaport)` body over the resolved better-auth instance.
-- `makeFateLayer(db, auth)` in `features/fate/layers.ts` — composes `Drizzle`, the feature services, and `Pasaport` into the worker-level data plane.
+- `makeFateLayer` in `features/fate/layers.ts` — composes `Drizzle`, the feature services, and `Pasaport` into the worker-level data plane. (This one is NOT a `(deps) => Layer` factory: it's a **zero-arg layer constant** whose `R` declares the two seams `Database | BetterAuth`, discharged once when the runtime is built — see the note below.)
 - `makeAppLive(opts)` in `http/app.ts` — the top-level router Layer over its sub-layers (fate, live, better-auth).
 
 This shape has ecosystem precedent: `@effect/sql-d1` exposes its driver as `layer(config)` (a function returning a Layer), and `@alchemy.run/better-auth`'s `AuthProviderLayer<Config>()(name, body)` is a factory that returns a Layer parameterized over the provider's config.
 
 ### Why a factory, not a `Context.Service` wrapper
 
-The temptation is to define `class FateLayer extends Context.Service<FateLayer, Layer.Layer<…>>(…)` and yield it. Don't. The factory shape is the right one here for three reasons:
+The temptation is to define `class FateLayer extends Context.Service<FateLayer, Layer.Layer<…>>(…)` and yield it. Don't. A plain Layer value (either a `(deps) => Layer` factory or a zero-arg layer constant that declares its seams in `R`) is the right one here for three reasons:
 
-- **The signature is the proof.** `makeFateLayer(db, auth): Layer.Layer<WorkerFateServices, never, never>` says, at the type level, that no `RuntimeContext` (or any other upstream service) leaks downstream — the Layer's `R` is `never` because every dep was resolved at the factory call. Wrapping it in a `Context.Service` adds a yield site between caller and Layer and obscures that proof.
-- **No construction effect, no async, no scoped resource.** A `Context.Service<…Layer>` wrapper buys nothing the factory doesn't already give you: there is no `Effect.gen` to host (the composition is pure), no scoped acquire/release (the Layers themselves own their lifecycle), and no async init (deps are already resolved). It's ceremony around a function call.
-- **Dep visibility is a feature.** The two or three call sites that wire the Layer — `worker/index.ts`, the integration test harness — are exactly where the wiring should be visible. A signature change (`makeFateLayer(db)` → `makeFateLayer(db, auth)`) is a compile error at the call site, which is the correct blast radius. A `Context.Service` wrapper would absorb that into a layer file and hide it from every call site that just yields the tag.
+- **The signature is the proof.** `makePasaportLive(auth): Layer.Layer<Pasaport, never, never>` says, at the type level, that the resolved `auth` was discharged at the factory call (no `RuntimeContext` leaks downstream); `makeFateLayer: Layer.Layer<WorkerFateServices, never, Database | BetterAuth>` says exactly which seams remain — both unresolved deps are right there in the type. Wrapping either in a `Context.Service` adds a yield site between caller and Layer and obscures that proof.
+- **No construction effect, no async, no scoped resource.** A `Context.Service<…Layer>` wrapper buys nothing the plain Layer doesn't already give you: there is no `Effect.gen` to host (the composition is pure), no scoped acquire/release (the Layers themselves own their lifecycle). It's ceremony around a Layer value.
+- **Dep visibility is a feature.** The two or three sites that wire the Layer — `worker/index.ts`, the integration test harness — are exactly where the wiring should be visible. `makeFateLayer`'s `Database | BetterAuth` requirement is a compile error at whatever provides those seams (the runtime build in `index.ts`), which is the correct blast radius. A `Context.Service` wrapper would absorb that into a layer file and hide it from every call site that just yields the tag.
 
 ### When a `Context.Service` Layer *does* earn its place
 
@@ -92,25 +92,25 @@ Two related patterns thread the same needle (resolve once, hand the plain value 
 
 Both follow the same idiom: pay the discharge cost once, at a known seam, and downstream consumers see a plain value (or a Layer with `R = never`).
 
-## No per-request `ManagedRuntime`
+## One worker-level `ManagedRuntime`, built from the worker layer set
 
-Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request. That's gone (ADR 0029). The worker's init phase builds `Drizzle` + the feature services once and provides them as worker-level Layers; the `/fate` route provides `Auth` per request and picks up the upstream `HttpServerRequest` Tag from `alchemy/HttpRouter`. fate's bridge runs each resolver with `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` over the captured `Context<FateEnv>` — no per-request runtime, nothing to dispose. See [alchemy-runtime.md](./alchemy-runtime.md) for the full picture.
+Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request; a brief correction (ADR 0029) removed it entirely, capturing a `Context<FateEnv>` and running each resolver on the *default* runtime. Both are gone. Now there is exactly ONE worker-level `ManagedRuntime` (ADR 0041, supersedes 0029): the worker's init phase builds `Drizzle` + the feature services once as the worker layer set, folds them into that one runtime, and the bridge runs every resolver THROUGH it. `Auth` + `LiveBus` are provided onto each resolver effect per request, not baked into the runtime. See [alchemy-runtime.md](./alchemy-runtime.md) for the full picture.
 
 ## The worker layer set
 
-The worker builds one Layer set, not a per-request `ManagedRuntime`:
+The worker builds one Layer set and folds it into the one worker-level `ManagedRuntime`:
 
-- **Request layer set** — `Drizzle` + feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`). Built by `makeFateLayer(db, auth)` in `worker/features/fate/layers.ts`. The `/fate` route provides `Auth` per request; `HttpServerRequest` comes from the upstream `effect/unstable/http/HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides.
+- **Worker layer set** — `Drizzle` + feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`), the `WorkerFateServices`. Built by the zero-arg `makeFateLayer` in `worker/features/fate/layers.ts` (its `R` is the two seams `Database | BetterAuth`, resolved once in init). The two genuinely per-request services (`Auth`, `LiveBus`) are not in this Layer — the bridge provides them onto each resolver effect at run time.
 
-Built once from the bound D1 in worker init, `Drizzle` is shared by every feature service. The per-request `Auth` is the only service layered on top, and it goes on inside the `/fate` route, not in this Layer.
+Built once from the `Database` seam in worker init, `Drizzle` is shared by every feature service. The per-request `Auth`/`LiveBus` are the only services layered on top, and they go on inside the bridge per resolver, not in this Layer.
 
-Why two-step (build feature slice first, merge in request values at top) instead of stacking `Layer.provide` calls: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with `Layer.provide`/`provideMerge`, then merge in the request-level values at the top with `Effect.provideService` inside the route.
+Why two-step (build feature slice first, then fold into the runtime) instead of stacking `Layer.provide` calls inline: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with `Layer.provide`/`provideMerge`, then the bridge merges in the per-request values with `Effect.provideService` onto each resolver effect.
 
 Why `provideMerge` for `Vote` specifically: `Sozluk` and `Pano` both yield `Vote`, but a plain `Layer.provide(VoteLive)` would erase `Vote` from the merged layer's output type. `Layer.provideMerge(VoteLive)` provides `Vote` to consumers *and* re-exposes it at the top — useful when other layers in the same merge (or a downstream resolver) also reach for `Vote`.
 
 ## Running an Effect
 
-In the old per-request-runtime world there were three forms (`runPromise`, `runPromiseExit`, `runtime`). On alchemy the only one that matters at the seam is `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` — and **that lives inside the fate bridge**, exactly once (`worker/features/fate/effect.ts`). Resolver and source bodies are Effect generators that `yield*` services; they never call `runPromise*` themselves.
+In the old per-request-runtime world there were three forms (`runPromise`, `runPromiseExit`, `runtime`). Now the only one that matters at the seam is `ctx.runtime.runPromiseExit(effect.pipe(provideService Auth, provideService LiveBus), {signal})` — running each resolver THROUGH the one worker-level `ManagedRuntime` (ADR 0041) — and **that lives inside the fate bridge**, exactly once (`worker/features/fate/effect.ts`). Resolver and source bodies are Effect generators that `yield*` services; they never call `runPromise*` themselves.
 
 The bridge inspects the `Exit` and maps tagged errors onto fate wire codes ([fate-effect-bridge.md](./fate-effect-bridge.md)). The HTTP edge (`HttpRouter.toHttpEffect`) compiles the router Layer into the worker's `fetch` and handles `Exit` for typed-JSON groups itself ([alchemy-http-router.md](./alchemy-http-router.md)).
 
@@ -147,7 +147,7 @@ Phoenix's feature Layers don't fail at construction today — `DrizzleLive` just
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — service definition
-- [alchemy-runtime.md](./alchemy-runtime.md) — where worker-scope vs per-request Layers get provided; the captured `Context<FateEnv>`
+- [alchemy-runtime.md](./alchemy-runtime.md) — the one worker-level `ManagedRuntime` the worker layer set is folded into; worker-scope vs per-request split
 - [feature-services.md](./feature-services.md) — the layered architecture (`Drizzle → features → resolvers`)
 - [effect-testing.md](./effect-testing.md) — providing test layers
 - `worker/features/fate/layers.ts` — canonical phoenix Layer composition (`makeFateLayer`)

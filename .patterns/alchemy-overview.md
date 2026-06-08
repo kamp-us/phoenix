@@ -14,11 +14,11 @@ phoenix is on effect v4; so is alchemy-effect (`effect@4.0.0-*`). The domain lay
 | Reaching a binding | `env.PHOENIX_DB`, `env.CONNECTION_DO` | `yield* Cloudflare.D1Connection.bind(PhoenixDb)`, `yield* ConnectionDO` |
 | Worker entry | `export default {fetch: app.fetch}` (Hono) | `export default class Phoenix extends Cloudflare.Worker<Phoenix>()(...)` |
 | HTTP routing | Hono `app.get/post` | `HttpRouter` + `HttpApiBuilder` (`@effect/platform`) |
-| Per-request runtime | `ManagedRuntime.make(...)` built + disposed per request | worker-level layers + a captured service map (no per-request runtime) |
+| Runtime | `ManagedRuntime.make(...)` built + disposed per request | ONE worker-level `ManagedRuntime`, built once per isolate and never disposed (ADR 0041) |
 | Durable Objects | plain `class extends DurableObject` | `Cloudflare.DurableObjectNamespace<T>()(...)` (Effect handlers) |
 | Deploy | `wrangler deploy` | `alchemy deploy` |
 
-**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, the bridge helpers. The one fate-side consequence is what `FateContext` carries: a captured service map (a `Context.Context<FateEnv>`) rather than a `ManagedRuntime` — see [alchemy-runtime.md](./alchemy-runtime.md).
+**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, the bridge helpers. The one fate-side consequence is what `FateContext` carries: the one worker-level `ManagedRuntime` plus the two per-request VALUES (`auth`, `liveBus`), rather than a fresh per-request runtime — see [alchemy-runtime.md](./alchemy-runtime.md).
 
 ## The two phases
 
@@ -51,14 +51,14 @@ The init phase is where `bind()` happens; the runtime phase is the handlers it r
 phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *under* them:
 
 - **Effect domain layer** (`effect-*`) — services, errors, layers. Transport- *and* infra-agnostic.
-- **fate protocol + client layer** (`fate-*`) — data views, sources, mutations, live views. The only infra-facing detail is the bridge's service-map handle.
+- **fate protocol + client layer** (`fate-*`) — data views, sources, mutations, live views. The only infra-facing detail is the bridge's worker-level `ManagedRuntime` handle (carried on `FateContext`).
 - **alchemy infra layer** (these `alchemy-*` docs) — the worker, its bindings, the DOs, the HTTP router, deploy. The bottom layer; `worker/index.ts` is the alchemy worker, and there is no `wrangler.jsonc` or Hono shell.
 
 ## Reading order
 
 1. [alchemy-worker.md](./alchemy-worker.md) — the `Cloudflare.Worker` class and its two phases.
 2. [alchemy-bindings.md](./alchemy-bindings.md) — `bind()`, the deploy-policy/runtime-service split, the Live-layer convention.
-3. [alchemy-runtime.md](./alchemy-runtime.md) — **the load-bearing doc.** Worker-level vs request-scoped layers, the captured `ServiceMap`, the fate bridge delta.
+3. [alchemy-runtime.md](./alchemy-runtime.md) — **the load-bearing doc.** Worker-level vs request-scoped layers, the one worker-level `ManagedRuntime`, the fate bridge delta.
 4. [alchemy-http-router.md](./alchemy-http-router.md) — `HttpRouter` + `HttpApiBuilder`, mounting fate/auth/SSE.
 5. [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the Effect DO model; `ConnectionDO`/`TopicDO`.
 6. [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — D1 + Drizzle + migrations.
@@ -67,5 +67,5 @@ phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *unde
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — the service model that rides on top
-- [fate-effect-bridge.md](./fate-effect-bridge.md) — the seam that carries a captured service map instead of a `ManagedRuntime`
+- [fate-effect-bridge.md](./fate-effect-bridge.md) — the seam that runs each resolver through the one worker-level `ManagedRuntime`
 - [alchemy-runtime.md](./alchemy-runtime.md) — start here for the runtime story
