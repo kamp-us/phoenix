@@ -1,19 +1,21 @@
 /**
- * Legacy fate source entries — the bridge's `{definition, executor}` pairs,
- * composed across features for the fate-effect server config.
+ * fate source entries — `Fate.source` entries and the bridge's legacy
+ * `{definition, executor}` pairs, composed across features for the
+ * fate-effect server config.
  *
- * fate is pure transport (ADR 0016): it never queries D1. Per-feature source
- * executors live in their owning feature (`features/<feature>/sources.ts`);
- * this file composes them into the ARRAY form `FateServer.config` takes. The
- * compile step (`FateExecutor`, `.patterns/fate-effect-compiler.md`) builds
- * fate's `{getSource, registry}` from these entries: one registry Map keyed by
- * each entry's `definition` OBJECT (fate looks executors up by identity, so
- * the entries hold the features' exported definition objects, never copies),
- * and `getSource` resolving a view to the same keyed object by `typeName`.
+ * fate is pure transport (ADR 0016): it never queries D1. Per-feature sources
+ * live in their owning feature (`features/<feature>/sources.ts`); this file
+ * composes them into the ARRAY form `FateServer.config` takes. The compile
+ * step (`FateExecutor`, `.patterns/fate-effect-compiler.md`) builds fate's
+ * `{getSource, registry}` from these entries: one registry Map keyed by each
+ * entry's `definition` OBJECT (fate looks executors up by identity, so the
+ * entries hold the features' exported definition objects, never copies), and
+ * `getSource` resolving a view to the same keyed object by `typeName`.
  *
- * Every entry is annotated {@link RawFateSourceEntry} at the declaration site:
- * the definitions embed kernel `dataView()` values, whose non-exported symbol
- * key would otherwise surface in the exported config's inferred type (TS2883 —
+ * Migrated features contribute `Fate.source` entries directly (sozluk —
+ * `.patterns/fate-effect-sources.md`); the remaining legacy pairs ride beside
+ * them, each annotated {@link RawFateSourceEntry} at its feature declaration
+ * site (a raw kernel `dataView()` in an exported type is the TS2883 hazard —
  * see `packages/fate-effect/src/Server.ts`).
  *
  * Sources carry **no** `connection` executor or `orderBy` contract: every
@@ -23,7 +25,6 @@
  * `list(view, {orderBy})` mirrors it. See `.patterns/fate-connections.md` and
  * `.patterns/fate-sources.md`.
  */
-import type {RawFateSourceEntry} from "@phoenix/fate-effect";
 import {
 	commentExecutor,
 	commentSource,
@@ -40,21 +41,21 @@ import {
 	userExecutor,
 	userSource,
 } from "../pasaport/sources.ts";
-import {definitionExecutor, definitionSource, termExecutor, termSource} from "../sozluk/sources.ts";
+import {definitionSource, termSource} from "../sozluk/sources.ts";
 
 /**
- * The composed legacy source entries, in the registry order the bridge's
- * hand-built Map used. `Contribution` is registered with a capability-less
- * executor (see `features/pasaport/sources.ts`) — the entity is view-reachable
- * through `Profile.contributions` but has no fetch path by design.
+ * The composed source entries, in the registry order the bridge's hand-built
+ * Map used. `Contribution` is registered with a capability-less executor (see
+ * `features/pasaport/sources.ts`) — the entity is view-reachable through
+ * `Profile.contributions` but has no fetch path by design.
  */
-export const sources: ReadonlyArray<RawFateSourceEntry> = [
+export const sources = [
 	{definition: userSource, executor: userExecutor},
-	{definition: definitionSource, executor: definitionExecutor},
-	{definition: termSource, executor: termExecutor},
+	definitionSource,
+	termSource,
 	{definition: postSource, executor: postExecutor},
 	{definition: commentSource, executor: commentExecutor},
 	{definition: tagSource, executor: tagExecutor},
 	{definition: profileSource, executor: profileExecutor},
 	{definition: contributionSource, executor: contributionExecutor},
-];
+] as const;

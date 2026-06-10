@@ -59,6 +59,23 @@ export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
 ) {}
 
 /**
+ * Collapse the `DrizzleError` channel into the defect channel — the
+ * infra-failures-are-defects rule for migrated fate handlers
+ * (`.patterns/fate-effect-wire-errors.md`): a DB failure is not a domain
+ * value, so it dies here and `encodeWireError` maps the defect to
+ * `INTERNAL_SERVER_ERROR` with a fixed message — `cause` reaches logs, never
+ * the wire. Pipe any service call whose typed channel carries `DrizzleError`
+ * through this at the fate-handler call site; domain errors in the same union
+ * pass through untouched.
+ */
+export const orDieDrizzle = <A, E, R>(self: Effect.Effect<A, E, R>) =>
+	Effect.catchIf(
+		self,
+		(e): e is E & DrizzleError => e instanceof DrizzleError,
+		(e) => Effect.die(e),
+	);
+
+/**
  * Single statement type used by `batch`. The tuple shape `[Stmt, ...Stmt[]]`
  * preserves drizzle's per-statement result inference end-to-end.
  */

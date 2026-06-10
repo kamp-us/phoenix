@@ -1,24 +1,30 @@
 /**
  * Sözlük fate data views — `Term`, `Definition`.
  *
- * Data views are the schema (ADR 0018): each `dataView` declares an entity
- * type's fields; the exported `Entity<>` types are the client's types (codegen,
- * no schema artifact). IDs are raw per-type values — no global-ID encoding, no
- * `Node` interface.
+ * Data views are the schema (ADR 0018): each view is a `FateDataView` class
+ * whose static `view` IS the kernel `dataView()` output and whose `Entity<>`
+ * derivation is the client's type (codegen, no schema artifact). IDs are raw
+ * per-type values — no global-ID encoding, no `Node` interface.
  *
- * `Term.definitions` is a `list(definitionDataView, {orderBy})` whose `orderBy`
- * is kept in lockstep with the service's term-page `ORDER BY` (`score desc,
- * createdAt asc, id asc`) so the keyset cursors round-trip (ADR 0019; see
- * `.patterns/fate-connections.md`).
+ * `Term.definitions` is a `FateDataView.list(DefinitionView, {orderBy})` whose
+ * `orderBy` is kept in lockstep with the service's term-page `ORDER BY`
+ * (`score desc, createdAt asc, id asc`) so the keyset cursors round-trip
+ * (ADR 0019; see `.patterns/fate-connections.md`).
  *
- * See `.patterns/fate-data-views.md`.
+ * See `.patterns/fate-effect-data-views.md`.
  */
-import {dataView, list} from "@nkzw/fate/server";
-import type {DataViewOf, EntityOf, ViewRow} from "../fate/view-types.ts";
+import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import type {ViewRow} from "../fate/view-types.ts";
 import type {DefinitionRow, TermSummaryRow} from "./Sozluk.ts";
 
-type DefinitionViewRow = ViewRow<DefinitionRow>;
-type TermViewRow = ViewRow<TermSummaryRow>;
+/**
+ * The view row types — mapped restatements of the service rows
+ * (`Record<string, unknown>`-assignable, which the plain row interfaces are
+ * not). Exported because the `Fate.source` entries over these views surface
+ * the row type in their declarations (`fate/sources.ts` — TS2883 portability).
+ */
+export type DefinitionViewRow = ViewRow<DefinitionRow>;
+export type TermViewRow = ViewRow<TermSummaryRow>;
 
 /**
  * `Definition` — a single dictionary entry.
@@ -29,7 +35,7 @@ type TermViewRow = ViewRow<TermSummaryRow>;
  * `user_vote` query (`Sozluk.getDefinitionsByIds` / `listDefinitionsKeyset`), so
  * it surfaces here as a plain stamped scalar (no per-row resolver, no N+1).
  */
-const definitionFields = {
+export class DefinitionView extends FateDataView<DefinitionViewRow>()("Definition")({
 	id: true,
 	body: true,
 	score: true,
@@ -38,10 +44,7 @@ const definitionFields = {
 	createdAt: true,
 	updatedAt: true,
 	myVote: true,
-} as const;
-
-export const definitionDataView: DataViewOf<DefinitionViewRow> =
-	dataView<DefinitionViewRow>("Definition")(definitionFields);
+}) {}
 
 /**
  * `Term` — a dictionary headword plus its connection of definitions.
@@ -55,7 +58,7 @@ export const definitionDataView: DataViewOf<DefinitionViewRow> =
  * keyset cursors the service builds round-trip without skips or dupes
  * (ADR 0019). `id` is the explicit final tiebreaker.
  */
-const termFields = {
+export class TermView extends FateDataView<TermViewRow>()("Term")({
 	id: true,
 	slug: true,
 	title: true,
@@ -67,16 +70,37 @@ const termFields = {
 	firstLetter: true,
 	definitionCount: true,
 	lastActivityAt: true,
-} as const;
-
-export const termDataView: DataViewOf<TermViewRow> = dataView<TermViewRow>("Term")({
-	...termFields,
-	definitions: list(definitionDataView, {
+	definitions: FateDataView.list(DefinitionView, {
 		orderBy: [{score: "desc"}, {createdAt: "asc"}, {id: "asc"}],
 	}),
-});
+}) {}
 
-export type Definition = EntityOf<DefinitionViewRow, typeof definitionFields, "Definition">;
-export type Term = EntityOf<TermViewRow, typeof termFields, "Term"> & {
-	definitions?: Definition[];
-};
+/**
+ * The kernel views, for the cross-feature surfaces that want fate's plain
+ * `dataView()` value (the `fate/views.ts` `Root` map + barrel re-exports).
+ */
+export const definitionDataView = DefinitionView.view;
+export const termDataView = TermView.view;
+
+/*
+ * The `Replacements` second parameter restates two things fate's wire-facing
+ * `Entity<>` derivation widens/narrows away:
+ *
+ *   - list relations (`definitions`) — kernel `list()` widens the child field
+ *     map, the same reason fate's own docs use `Replacements`;
+ *   - timestamp fields — fate types `Date` row fields as `string` (the
+ *     JSON-serialized wire shape), but these worker-side entity values carry
+ *     live `Date` objects until fate serializes the response. The shapers and
+ *     every worker call site operate pre-serialization, so the types restate
+ *     the bridge-era row truth (the SPA's date helpers accept both).
+ */
+export type Definition = Entity<typeof DefinitionView, {createdAt: Date; updatedAt: Date}>;
+export type Term = Entity<
+	typeof TermView,
+	{
+		firstAt: Date | null;
+		lastEdit: Date | null;
+		lastActivityAt: Date | null;
+		definitions?: Definition[];
+	}
+>;

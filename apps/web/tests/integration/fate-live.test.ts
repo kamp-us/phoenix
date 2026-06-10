@@ -15,7 +15,11 @@
  *      `text/event-stream` with one.
  *   2. subscribe → publish → deliver — a `post.submit` mutation publishes a
  *      `prependNode` connection frame that arrives on the held SSE stream.
- *   3. Reconnect bumps epoch — a second connect on the same `connectionId`
+ *   3. The same contract through the migrated `LivePublisher` path — a sozluk
+ *      `definition.add` (a `Fate.mutation` publishing via `yield* LivePublisher`,
+ *      not the bridge's `LiveBus`) lands an `appendNode` frame on an args-scoped
+ *      `Term.definitions` subscription (`.patterns/fate-effect-worker-wiring.md`).
+ *   4. Reconnect bumps epoch — a second connect on the same `connectionId`
  *      makes the first stream's subscriber stale, so a later publish reaches the
  *      reconnected stream, not the original.
  */
@@ -87,6 +91,63 @@ describe("live views — /fate/live", () => {
 		expect(payload.kind).toBe("connection");
 		expect(payload.event.type).toBe("prependNode");
 		expect(payload.event.edge.node.title).toBe("live post");
+
+		await reader.cancel();
+	}, 30_000);
+
+	it("subscribe → definition.add → appendNode arrives — the LivePublisher path end-to-end", async () => {
+		// `definition.add` is a migrated `Fate.mutation`: its publish goes through
+		// the per-request `LivePublisher` value (worker `livePublisherFor`), not the
+		// bridge's `LiveBus` — this case proves that surface reaches a subscribed
+		// connection through the deployed DO fan-out.
+		const slug = `live-term-${Date.now()}`;
+		const connectionId = `live-sozluk-${Date.now()}`;
+		const connect = await h.openSse(connectionId, user.cookie);
+		expect(connect.status).toBe(200);
+
+		const reader = connect.body!.getReader();
+		const decoder = new TextDecoder();
+		const buffer = {value: ""};
+		const connected = await readFrame(reader, decoder, buffer);
+		expect(connected).toContain("connected");
+
+		// Subscribe to the ARGS-scoped `Term.definitions` connection for this slug —
+		// the exact topic the mutation's `live.connection(..., {id: slug})` publishes to.
+		const sub = await h.liveControl(
+			connectionId,
+			[
+				{
+					kind: "subscribeConnection",
+					id: "sub-defs",
+					type: "Definition",
+					procedure: "Term.definitions",
+					args: {id: slug},
+					select: [],
+				},
+			],
+			user.cookie,
+		);
+		expect(sub.status).toBe(200);
+
+		const added = await h.fate(
+			{
+				kind: "mutation",
+				name: "definition.add",
+				input: {termSlug: slug, body: "canlı tanım"},
+				select: ["id", "body"],
+			},
+			{cookie: user.cookie},
+		);
+		expect(added.ok).toBe(true);
+
+		const frame = await readEvent(reader, decoder, buffer);
+		expect(frame).toContain("event: connection");
+		const payload = frameData<{kind: string; event: {type: string; edge: {node: {body: string}}}}>(
+			frame,
+		);
+		expect(payload.kind).toBe("connection");
+		expect(payload.event.type).toBe("appendNode");
+		expect(payload.event.edge.node.body).toBe("canlı tanım");
 
 		await reader.cancel();
 	}, 30_000);

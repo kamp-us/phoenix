@@ -3,9 +3,9 @@
  *
  * Per ADR 0019, **root lists** resolve via custom `lists` resolvers that map a
  * service keyset page onto a `ConnectionResult`. The service owns the cursor
- * and the keyset SQL; this layer only reshapes the page. Wrapped by `fateList`
- * so the generator runs through the request runtime
- * (see `.patterns/fate-effect-bridge.md`, `.patterns/fate-connections.md`).
+ * and the keyset SQL; this layer only reshapes the page. Each is a `Fate.list`
+ * def + `Effect.fn` pair (`.patterns/fate-effect-operations.md`,
+ * `.patterns/fate-connections.md`).
  *
  * `terms(sort, first, after)`:
  *   - `sort` is a plain validated string (`recent | popular`) — fate has no
@@ -23,56 +23,68 @@
  * configurable connection.
  */
 
-import {fateList} from "../fate/effect.ts";
+import {Fate} from "@phoenix/fate-effect";
+import {Effect} from "effect";
+import * as Schema from "effect/Schema";
+import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {type KeysetPage, toConnection} from "../fate/shapers.ts";
-import type {Term} from "../fate/views.ts";
 import {type ListSort, Sozluk} from "./Sozluk.ts";
 import {toTerm} from "./shapers.ts";
 import type {TermSummaryRow} from "./term-summary.ts";
+import {TermView} from "./views.ts";
 
 /** Coerce the `sort` arg to the service's `ListSort`; default `recent`. */
-const toListSort = (value: unknown): ListSort => (value === "popular" ? "popular" : "recent");
+const toListSort = (value: string | undefined): ListSort =>
+	value === "popular" ? "popular" : "recent";
+
+/** Forward keyset pagination args, shared by all three term lists. */
+const pageArgs = {
+	first: Schema.optional(Schema.Number),
+	after: Schema.optional(Schema.String),
+};
+
+const TermsArgs = Schema.Struct({sort: Schema.optional(Schema.String), ...pageArgs});
+const TermPageArgs = Schema.Struct(pageArgs);
 
 /** Reshape a `Sozluk` term-summary page onto a `ConnectionResult<Term>`. */
 const toTermConnection = (page: KeysetPage<TermSummaryRow>) =>
 	// The slug cursor is the service keyset.
 	toConnection(page, (row) => row.slug, toTerm);
 
+/** The shared handler body: one keyset page at a fixed-or-passed sort. */
+const listTerms = (
+	sort: ListSort,
+	args: {first?: number | undefined; after?: string | undefined},
+) =>
+	Effect.gen(function* () {
+		const sozluk = yield* Sozluk;
+		const page = yield* sozluk
+			.listTermSummariesConnection({
+				sort,
+				...(args.first !== undefined ? {first: args.first} : {}),
+				...(args.after !== undefined ? {after: args.after} : {}),
+			})
+			.pipe(orDieDrizzle);
+		return toTermConnection(page);
+	});
+
 export const lists = {
-	terms: {
-		type: "Term",
-		resolve: fateList<{sort?: string; first?: number; after?: string}, Term>(function* ({args}) {
-			const sozluk = yield* Sozluk;
-			const page = yield* sozluk.listTermSummariesConnection({
-				sort: toListSort(args?.sort),
-				...(typeof args?.first === "number" ? {first: args.first} : {}),
-				...(typeof args?.after === "string" ? {after: args.after} : {}),
-			});
-			return toTermConnection(page);
+	terms: Fate.list(
+		{args: TermsArgs, type: TermView},
+		Effect.fn("terms")(function* ({args}) {
+			return yield* listTerms(toListSort(args.sort), args);
 		}),
-	},
-	recentTerms: {
-		type: "Term",
-		resolve: fateList<{first?: number; after?: string}, Term>(function* ({args}) {
-			const sozluk = yield* Sozluk;
-			const page = yield* sozluk.listTermSummariesConnection({
-				sort: "recent",
-				...(typeof args?.first === "number" ? {first: args.first} : {}),
-				...(typeof args?.after === "string" ? {after: args.after} : {}),
-			});
-			return toTermConnection(page);
+	),
+	recentTerms: Fate.list(
+		{args: TermPageArgs, type: TermView},
+		Effect.fn("recentTerms")(function* ({args}) {
+			return yield* listTerms("recent", args);
 		}),
-	},
-	popularTerms: {
-		type: "Term",
-		resolve: fateList<{first?: number; after?: string}, Term>(function* ({args}) {
-			const sozluk = yield* Sozluk;
-			const page = yield* sozluk.listTermSummariesConnection({
-				sort: "popular",
-				...(typeof args?.first === "number" ? {first: args.first} : {}),
-				...(typeof args?.after === "string" ? {after: args.after} : {}),
-			});
-			return toTermConnection(page);
+	),
+	popularTerms: Fate.list(
+		{args: TermPageArgs, type: TermView},
+		Effect.fn("popularTerms")(function* ({args}) {
+			return yield* listTerms("popular", args);
 		}),
-	},
+	),
 };
