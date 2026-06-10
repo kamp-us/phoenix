@@ -26,12 +26,13 @@
  *      `ProtocolResponse` codec — field order is the schema's, which is
  *      fate's serialization order.
  *
- * Interpreter coverage in this task is the DISPATCH plane: query, mutation,
- * and custom-list operations (phoenix has no root lists — ADR 0016/0019).
- * `byId` requires the selection walk and lands in task 15; the connection
- * plane completes in task 16. Until then a byId operation fails CLOSED: an
- * un-annotated defect, surfacing as the fixed internal wire error with no
- * detail leak.
+ * Interpreter coverage: the DISPATCH plane — query, mutation, and
+ * custom-list operations (phoenix has no root lists — ADR 0016/0019) — plus
+ * the BYID plane (`Walk.ts`: the Effect selection walk over
+ * `RequestResolver`-batched sources; the walk is constructed once per
+ * request, BEFORE the dispatch loop, so its batch window spans every
+ * operation in the request). The connection plane completes in task 16 and
+ * fails CLOSED until then.
  *
  * Raw legacy records (`kind: undefined` config arms) are NOT interpreted —
  * the live config has none since the v1 cutover (ADR 0042 marks the arms
@@ -50,6 +51,8 @@ import type {
 import {decodeProtocolRequest, encodeProtocolResponse} from "./Protocol.ts";
 import type {FateServerService} from "./Server.ts";
 import {FateServer} from "./Server.ts";
+import type {FateWalk} from "./Walk.ts";
+import {makeWalk} from "./Walk.ts";
 import {encodeWireError} from "./WireError.ts";
 
 type OperationResultValue = (typeof ProtocolResponse)["Type"]["results"][number];
@@ -154,11 +157,12 @@ const namedOperationEffect = (
 /** fate's `executeOperation` preamble: byId first, then the name gate. */
 const operationEffect = (
 	server: FateServerService,
+	walk: FateWalk,
 	operation: DecodedProtocolOperation,
 ): Effect.Effect<unknown, unknown, unknown> => {
 	if (operation.kind === "byId") {
-		// Task 15: the selection walk (resolveSourceByIds over the sources).
-		return pending("byId (the selection walk, task 15)");
+		// The selection walk: masking, authorize gates, batched source loads.
+		return walk.byId(operation);
 	}
 	if (operation.name === "") {
 		// The protocol gate lets "" through (a string); fate rejects it here.
@@ -178,11 +182,12 @@ const operationEffect = (
  */
 const runOperation = (
 	server: FateServerService,
+	walk: FateWalk,
 	context: FateRequestContext,
 	operation: DecodedProtocolOperation,
 ): Effect.Effect<OperationResultValue> =>
 	toRunnable(
-		operationEffect(server, operation).pipe(
+		operationEffect(server, walk, operation).pipe(
 			// The per-request pair as VALUES — the request context wins over
 			// anything beneath (the v1 compiler's provision order, verbatim).
 			Effect.provideService(CurrentUser, context.currentUser),
@@ -236,13 +241,16 @@ const handleRequest = (
 ): Effect.Effect<Response, never, FateServer> =>
 	Effect.gen(function* () {
 		const server = yield* FateServer;
+		// ONE walk per request — its RequestResolver instance IS the batch
+		// window, so it must exist before the dispatch loop fans out.
+		const walk = makeWalk(server, context);
 		const exit = yield* Effect.exit(
 			Effect.gen(function* () {
 				const body = yield* parseBody(request);
 				const operations = yield* decodeProtocolRequest(body);
 				const results = yield* Effect.forEach(
 					operations,
-					(operation) => runOperation(server, context, operation),
+					(operation) => runOperation(server, walk, context, operation),
 					{concurrency: "unbounded"},
 				);
 				return yield* respond(results, 200);
