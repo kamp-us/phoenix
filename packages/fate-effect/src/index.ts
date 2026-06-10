@@ -6,7 +6,8 @@
  * This barrel grows task by task; today it ships the error half of the
  * contract — the `fateWireCode` annotation key and the wire-error codec —
  * the views half (the `FateDataView` class factory + `Entity` helper), and
- * the first record-value constructor: `Fate.source`, the per-entity loader.
+ * the record-value constructors: `Fate.source` (the per-entity loader) and
+ * `Fate.query` / `Fate.list` / `Fate.mutation` (the operation resolvers).
  *
  * Exports stay flat (every supporting type a consumer's exported value can
  * surface must be nameable through this barrel); the `Fate` namespace is the
@@ -23,6 +24,32 @@ export {
 	type ListFieldOf,
 } from "./DataView.ts";
 export * as Fate from "./Fate.ts";
+export {
+	type DefinitionArgs,
+	type DefinitionDecodeError,
+	type DefinitionDecodingServices,
+	type DefinitionErrors,
+	type DefinitionInput,
+	type DefinitionTypeName,
+	type FateList,
+	type FateMutation,
+	type FateOperationServices,
+	type FateQuery,
+	InputValidationError,
+	type ListDefinition,
+	list,
+	type MutationDefinition,
+	type MutationHandlerInput,
+	mutation,
+	type OperationSelect,
+	type QueryDefinition,
+	type QueryHandlerInput,
+	query,
+	type RawArgsInput,
+	type RawMutationInput,
+	type TypeNameOf,
+	type TypeRef,
+} from "./Operation.ts";
 export {
 	type FateSource,
 	type FateSourceHandlers,

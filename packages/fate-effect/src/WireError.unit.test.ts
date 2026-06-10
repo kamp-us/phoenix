@@ -129,13 +129,16 @@ describe("encodeWireError", () => {
 describe("shipped error-class ↔ wire-code pairs", () => {
 	/**
 	 * The pin: every annotated error class exported from the package barrel,
-	 * as `identifier → wire code`. The package ships none today — domain
-	 * errors live in phoenix's features and annotate themselves. When a
-	 * future task ships a package-owned annotated error (e.g. an input
-	 * validation error), discovery below finds it and this literal must gain
-	 * the row — silent codec drift is a test failure, not a runtime surprise.
+	 * as `identifier → wire code`. Domain errors live in phoenix's features
+	 * and annotate themselves; the package ships only the Schema-derived
+	 * input-validation failure. When a future task ships another
+	 * package-owned annotated error, discovery below finds it and this
+	 * literal must gain the row — silent codec drift is a test failure, not
+	 * a runtime surprise.
 	 */
-	const SHIPPED_PAIRS: Readonly<Record<string, string>> = {};
+	const SHIPPED_PAIRS: Readonly<Record<string, string>> = {
+		"fate-effect/InputValidationError": "VALIDATION_ERROR",
+	};
 
 	/**
 	 * Discover every annotated error class reachable from the barrel —
