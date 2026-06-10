@@ -1,4 +1,4 @@
-# fate-effect feature shape — migrating a feature off the bridge
+# fate-effect feature shape — the per-feature assembly (migration record)
 
 How a phoenix feature's fate aggregator files look on the `@phoenix/fate-effect` constructors — sozluk (`apps/web/worker/features/sozluk/`) is the shipped reference; pano, pasaport, and stats followed this template (every feature is migrated). The short answer: **the feature keeps its file layout ([per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md)) and its domain service untouched; only the five fate-facing modules rewrite in place** — views become `FateDataView` classes, sources become `Fate.source`, queries/lists/mutations become def + `Effect.fn` pairs, errors gain `fateWireCode` annotations, live publishes go through `LivePublisher`. The per-construct docs ([fate-effect-data-views.md](./fate-effect-data-views.md), [fate-effect-sources.md](./fate-effect-sources.md), [fate-effect-operations.md](./fate-effect-operations.md), [fate-effect-wire-errors.md](./fate-effect-wire-errors.md)) own each piece; this doc is the per-feature assembly.
 
@@ -10,7 +10,7 @@ How a phoenix feature's fate aggregator files look on the `@phoenix/fate-effect`
 | `views.ts` | `dataView()` consts annotated `DataViewOf`, hand-rolled `EntityOf` types | `FateDataView<Row>()("Name")({fields})` classes; `Entity<typeof View, Replacements>` types; kernel-view consts (`export const termDataView = TermView.view`) kept for the `fate/views.ts` barrel + `Root` |
 | `sources.ts` | `fateSource<Row>({...})` executor + hand-written `AnySourceDefinition` literal | one `Fate.source(ViewClass, {id}, handlers)` per entity; the `SourceExecutor`/`AnySourceDefinition` annotations and casts disappear. A **synthetic** entity with no fetch path keeps a capability-less registration as a hand-built `AnyFateSourceEntry` (pasaport's `Contribution`); a **root-only** synthetic entity stays sourceless via a string-typed query (stats' `LandingStats`) — see [fate-effect-sources.md](./fate-effect-sources.md) "The escape hatch" |
 | `queries.ts` / `lists.ts` / `mutations.ts` | `{type, resolve: fateQuery<Args, A>(...)}` records, hand-typed args/inputs | `Fate.query/list/mutation({args/input, type: ViewClass, error}, Effect.fn("<wire name>")(function* ...))` — Schema replaces the hand-typed generics; handler bodies keep their generator content |
-| `features/fate/sources.ts` | `{definition, executor}` pair entries | the feature's entries become the bare `Fate.source` values in the same array slot; legacy pairs ride beside them |
+| `features/fate/sources.ts` | `{definition, executor}` pair entries | the feature's entries become the bare `Fate.source` values in the same array slot |
 
 Nothing else moves: `config.ts`/`layers.ts`/`route.ts`/`schema.ts` are untouched by a feature migration (the [worker wiring](./fate-effect-worker-wiring.md) was built for exactly this swap), the barrels (`fate/queries.ts` etc.) keep their spreads, the SPA keeps importing entity types from `worker/features/fate/views`, and the generated client is byte-identical (checked by diff for sozluk).
 
@@ -50,7 +50,7 @@ Two restatements ride in the `Replacements` parameter (see `sozluk/views.ts`):
 
 - The feature's T2 suites (`bridge-<feature>*.test.ts`) port **without edits** — `runFateOp` v2 already serves both record kinds and captures `LivePublisher` publishes into the same `published` array of resolved topic keys.
 - Add the app-side wire-code enumeration pin (`<feature>/errors.unit.test.ts`, T0): every error class ↔ code pair via `wireCodeOfClass`, codes pinned to the bridge registry's values, plus one `encodeWireError` round-trip.
-- Live end-to-end: one T3 case in `tests/integration/fate-live.test.ts` subscribes to a topic the migrated mutation publishes to and asserts the frame arrives (the sozluk `definition.add` → args-scoped `Term.definitions` `appendNode` case is the reference) — the bridge-era cases only exercise the legacy `LiveBus` path.
+- Live end-to-end: one T3 case in `tests/integration/fate-live.test.ts` subscribes to a topic the mutation publishes to and asserts the frame arrives (the sozluk `definition.add` → args-scoped `Term.definitions` `appendNode` case is the reference).
 
 ## What not to do
 

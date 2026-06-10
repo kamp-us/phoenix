@@ -15,9 +15,9 @@
  *      `text/event-stream` with one.
  *   2. subscribe → publish → deliver — a `post.submit` mutation publishes a
  *      `prependNode` connection frame that arrives on the held SSE stream.
- *   3. The same contract through the migrated `LivePublisher` path — a sozluk
- *      `definition.add` (a `Fate.mutation` publishing via `yield* LivePublisher`,
- *      not the bridge's `LiveBus`) lands an `appendNode` frame on an args-scoped
+ *   3. The same contract through the `LivePublisher` path — a sozluk
+ *      `definition.add` (a `Fate.mutation` publishing via `yield* LivePublisher`)
+ *      lands an `appendNode` frame on an args-scoped
  *      `Term.definitions` subscription (`.patterns/fate-effect-worker-wiring.md`).
  *   4. Reconnect bumps epoch — a second connect on the same `connectionId`
  *      makes the first stream's subscriber stale, so a later publish reaches the
@@ -96,10 +96,10 @@ describe("live views — /fate/live", () => {
 	}, 30_000);
 
 	it("subscribe → definition.add → appendNode arrives — the LivePublisher path end-to-end", async () => {
-		// `definition.add` is a migrated `Fate.mutation`: its publish goes through
-		// the per-request `LivePublisher` value (worker `livePublisherFor`), not the
-		// bridge's `LiveBus` — this case proves that surface reaches a subscribed
-		// connection through the deployed DO fan-out.
+		// `definition.add` is a `Fate.mutation`: its publish goes through the
+		// per-request `LivePublisher` value (worker `livePublisherFor`) — this case
+		// proves that surface reaches a subscribed connection through the deployed
+		// DO fan-out.
 		const slug = `live-term-${Date.now()}`;
 		const connectionId = `live-sozluk-${Date.now()}`;
 		const connect = await h.openSse(connectionId, user.cookie);

@@ -57,24 +57,27 @@ The client sends a flat list of dotted paths (`["id", "title", "author.username"
 
 ## `Entity<>` is the shared type
 
-`Entity<typeof view, "TypeName", {relations}>` derives the row type a resolved view produces, including `__typename`. These exported types are what the client imports (type-only) and what codegen reads. The server is the single source of truth for types — there is no schema artifact to keep in sync. See [fate-server-wiring.md](./fate-server-wiring.md) for codegen.
+`Entity<typeof view, "TypeName", {relations}>` derives the row type a resolved view produces, including `__typename`. These exported types are what the client imports (type-only) and what codegen reads. The server is the single source of truth for types — there is no schema artifact to keep in sync. See [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) for codegen.
 
-## The local type-derivation helpers (why phoenix doesn't use `Entity<>` directly)
+## How phoenix declares views — `FateDataView` classes
 
-The shape above is the idealized fate API. phoenix's `worker/features/fate/views.ts` can't use `Entity<typeof view, …>` directly because fate boxes its two type-derivation paths against each other across a module boundary:
+The shape above is the raw fate API. phoenix can't export raw `dataView()` consts with usable
+`Entity<>` types — fate's inferred return carries an internal symbol (`dataViewFieldsKey`) that
+trips TS2883/TS4023 in a composite tsgo project, and the only portable raw annotation erases the
+field map. The solution is `@phoenix/fate-effect`'s **`FateDataView<Row>()("Name")({fields})`
+class factory** ([fate-effect-data-views.md](./fate-effect-data-views.md)): the class is the
+nameable export, its static `view` IS the kernel `dataView()` value, and
+`Entity<typeof View, Replacements>` derives the entity type from the one field map the class
+declares. The only surviving local helper is `ViewRow<Row>`
+(`worker/features/fate/view-types.ts`) — the homomorphic mapped type that gives a service row
+interface the implicit index signature the `Record<string, unknown>` item bound requires.
 
-- **`dataView()`'s inferred return carries an internal symbol** (`dataViewFieldsKey`) that TypeScript can't *name* across a module boundary — an **exported** view must be annotated or `tsgo`'s declaration-nameability check trips **TS2883/TS4023**.
-- **The only portable annotation is `SourceDefinition<Item>["view"]`**, but that erases the field map — so `Entity<typeof view, …>` over an annotated view resolves to an empty shape. Neither annotated nor un-annotated exported views yield a usable `Entity<>`.
-
-The fate Vite plugin doesn't need `Entity<>` anyway — it reads the *runtime* view object (`view.typeName`/`view.fields`) for the schema/manifest and imports the entity *type names* (`User`, `Term`, …) verbatim from `views.ts` as the client's view types. So phoenix derives the entity types with three small local helpers instead:
-
-| Helper | What it does |
-|---|---|
-| `ViewRow<Row>` | `{[K in keyof Row]: Row[K]}` — a homomorphic mapped type over a service row interface, giving it the implicit string index signature `dataView<Item extends Record<string, unknown>>` requires (an interface alone doesn't satisfy it). |
-| `DataViewOf<Item>` | `SourceDefinition<Item>["view"]` — the portable, nameable annotation for an **exported** `*DataView` const (dodges TS2883). |
-| `EntityOf<Row, Fields, Name>` | Derives the client entity type from the **scalar field selection** (`*Fields` const) the `dataView(...)` call shares, keeping the row's field types while staying nameable (no symbol). |
-
-So each scalar field set is a standalone `*Fields` const passed to `dataView` **and** read by `EntityOf` — one source of truth, no hand-restated fields. Relation fields (`list(...)`) are declared on the exported entity *type* (intersected onto the `EntityOf` result), not in the `*Fields` set: the server attaches each nested connection conditionally as a `ConnectionResult` (only when selected), and the client masks relations into `ViewRef`s through the view selection rather than reading them off the parent. That's why `Term.definitions` / `Post.comments` / `Profile.contributions` are optional (`?`) on their entity types.
+Relation fields (`FateDataView.list(...)`) surface on the entity type through `Replacements`
+(restated as `comments?: Comment[]` etc.): the server attaches each nested connection
+conditionally as a `ConnectionResult` (only when selected), and the client masks relations into
+`ViewRef`s through the view selection rather than reading them off the parent. That's why
+`Term.definitions` / `Post.comments` / `Profile.contributions` are optional (`?`) on their
+entity types.
 
 ## Modeling conventions
 

@@ -18,7 +18,7 @@
  * `makeAppLive` (`http/app.ts`): `GET /api/health`, the fate data plane
  * (`POST /fate`), better-auth (`* /api/auth/*`), and the live SSE route
  * (`* /fate/live` → LiveDO). The feature services live under
- * `worker/features/` (including the fate bridge under `worker/features/fate/`).
+ * `worker/features/` (the fate config + route under `worker/features/fate/`).
  *
  * Dev vs prod for the SPA (ADR 0030): the `assets` + `runWorkerFirst` config
  * below is the *production* single-worker precedence — at the Cloudflare edge,
@@ -161,14 +161,13 @@ export default Phoenix.make(
 		// (its `R` is `Database | BetterAuth`, both provided here from the
 		// init-resolved `databaseLayer` + `betterAuthLayer`). The `/fate` route's
 		// `FateExecutor.toFetchHandler` resolves the `FateServer` service from this
-		// runtime and runs every compiled resolver through it (legacy bridge records
-		// run through the same runtime via `ctx.runtime` during coexistence), so
-		// resolver spans nest under the runtime's request span (F4) and nothing is
-		// built or disposed per request. The shared memoMap, the derived
-		// route-context layer (`fateLayer` — built once, reused instead of rebuilt
-		// per request through `provideRequest`), and the never-dispose deviation all
-		// live in `makeFateRuntime` — the single construction point shared with the
-		// bridge tests.
+		// runtime and runs every compiled resolver through it, so resolver spans
+		// nest under the runtime's request span (F4) and nothing is built or
+		// disposed per request. The shared memoMap, the derived route-context layer
+		// (`fateLayer` — built once, reused instead of rebuilt per request through
+		// `provideRequest`), and the never-dispose deviation all live in
+		// `makeFateRuntime` — the single construction point shared with the app
+		// suites.
 		const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
 			PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 		);
@@ -177,8 +176,8 @@ export default Phoenix.make(
 		// Workerd disallows async/timer work in the isolate's init (global) scope,
 		// so forcing the layer build here stalls the worker before it can serve
 		// (observed: with a warmup the T3 harness's `/api/health` poll never
-		// succeeds). The layer builds lazily on the first request instead — exactly
-		// the bridge's behavior. Config validation does NOT wait for that first
+		// succeeds). The layer builds lazily on the first request instead.
+		// Config validation does NOT wait for that first
 		// request: the same `collectConfigIssues` walk runs at BUILD time inside
 		// `FateExecutor.toCodegenServer` (`schema.ts`), so `vite build` — which
 		// every deploy runs — fails on duplicate wire names / missing sources

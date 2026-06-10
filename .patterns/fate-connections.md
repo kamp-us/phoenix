@@ -19,7 +19,7 @@ Services return a page (`{rows, hasNextPage, endCursor, totalCount}` — e.g. `D
 lists: {
   terms: {
     type: "Term",
-    resolve: fateList(function* ({args}) {
+    // inside the Fate.list handler — Effect.fn("terms")(function* ({args}) {
       const sozluk = yield* Sozluk;
       const page = yield* sozluk.listTermSummariesConnection({
         first: typeof args?.first === "number" ? args.first : 20,
@@ -60,7 +60,7 @@ Always include `id` as the final `orderBy` key — it's the stable tiebreaker th
 
 - [fate-data-views.md](./fate-data-views.md) — `list(view, {orderBy})` in a view
 - [fate-sources.md](./fate-sources.md) — the `byId`/`byIds` source executors
-- [fate-effect-bridge.md](./fate-effect-bridge.md) — `fateList` returning `ConnectionResult`
+- [fate-effect-operations.md](./fate-effect-operations.md) — `Fate.list` handlers returning `ConnectionResult`
 - [ADR 0019](../.decisions/0019-connection-pagination-strategy.md) — connection pagination strategy
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `example/void/src/fate/server.ts` (`commentSearch` custom list)
 - fate internals (`node_modules/@nkzw/fate`): `resolveConnection`/`arrayToConnection`/`resolveSourceConnection` in `sourceRouter-*.mjs`; root-list call site in `server.mjs`

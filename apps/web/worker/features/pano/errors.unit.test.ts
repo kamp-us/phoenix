@@ -5,8 +5,8 @@
  * annotation on each error class (`.patterns/fate-effect-wire-errors.md`) —
  * no registry. This pin is the app-side counterpart of the package's
  * `WireError.unit.test.ts` enumeration: every error class pano operations
- * can fail with, paired with the exact wire code the bridge's
- * `WIRE_CODE_BY_TAG` registry emitted for it, so the annotation-derived codec
+ * can fail with, paired with the exact wire code the retired bridge's
+ * `WIRE_CODE_BY_TAG` registry emitted for it (deleted in the v1 cutover), so the annotation-derived codec
  * and the SPA's `MUTATION_ERROR_CODES` vocabulary cannot drift through the
  * migration.
  *
@@ -37,7 +37,7 @@ import {
 
 /**
  * The pinned pairs — wire codes preserved verbatim from the bridge registry
- * (`worker/features/fate/errors.ts` `WIRE_CODE_BY_TAG`, pano section: the
+ * (`WIRE_CODE_BY_TAG`, pano section — registry deleted in the v1 cutover: the
  * `fixed` arms plus every member of the two `upcased` arms' declared sets).
  */
 const PANO_WIRE_CODES = [

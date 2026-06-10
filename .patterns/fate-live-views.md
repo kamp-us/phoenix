@@ -20,14 +20,15 @@ const [comments, loadNext] = useLiveListView(CommentConnectionView, post.comment
 
 ## Server — publishing from mutations
 
-A mutation resolver publishes events after the write, through the `live` handle ([fate-mutations.md](./fate-mutations.md)):
+A mutation handler publishes events after the write, through the per-request `LivePublisher` service ([fate-mutations.md](./fate-mutations.md)):
 
 ```ts
-// inside a fateMutation, after the service write + re-resolve
-live.update("Post", post.id, {changed: ["score", "myVote"], data: post});
-live.connection("Post.comments", {id: post.id}).appendNode("Comment", comment.id, {node: comment});
-live.connection("posts").prependNode("Post", post.id);
-live.connection("Post.comments", {id: postId}).deleteEdge("Comment", commentId);
+// inside a Fate.mutation handler, after the service write + shaping
+const live = yield* LivePublisher;
+yield* live.update("Post", post.id, {changed: ["score", "myVote"], data: post});
+yield* live.connection("Post.comments", {id: post.id}).appendNode("Comment", comment.id, {node: comment});
+yield* live.connection("posts").prependNode("Post", post.id);
+yield* live.connection("Post.comments", {id: postId}).deleteEdge("Comment", commentId);
 ```
 
 - `live.update(type, id, {changed, data})` — entity field change. **Publish the re-resolved entity inline as `data`.** The mutation already re-resolved it for its own response ([fate-mutations.md](./fate-mutations.md)), so the live event carries resolved data and each client masks it to its own selection. The DO does no database work and needs no Effect runtime.
@@ -72,23 +73,17 @@ mutation ──live.update──▶ LiveTopics.publish(topicKey, message, limits
 
 > **On hibernation.** An open SSE stream pins its connection-role `LiveDO` instance in memory. At phoenix's scale that's fine. The escape hatch, if concurrent live connections grow large, is to switch the browser transport to a WebSocket and use the DO WebSocket Hibernation API — a transport swap behind the same bus + topology, not a redesign.
 
-## The `LiveEventBus` shim
+## The publish-only event bus
 
-`createFateServer({live})` still takes a bus so mutation resolvers have the `live.*` publish API. phoenix's bus is **publish-only**: `update`/`delete`/`connection().*` resolve topic strings and fire the topic-role `publish` RPC; `subscribe`/`subscribeConnection` throw (never called, because the SSE protocol is served by the `/fate/live` route + `LiveDO`, not by fate's `handleLiveRequest`). It must still expose a `subscribe` property — fate detects a bus by `"subscribe" in live`.
+`createFateServer({live})` still takes a bus value (fate detects a custom bus by `"subscribe" in live`), but phoenix's publish path is the per-request **`LivePublisher` service** ([fate-effect-server.md](./fate-effect-server.md)): the worker's `livePublisherFor` wraps `makeLiveEventBus` (`worker/features/fate-live/event-bus.ts`) — the one frame-building code path — over the request's topic publish + `waitUntil`. The bus handed to fate's config (`liveBusConfig`) is the same constructor over a no-op publisher: its `subscribe`/`subscribeConnection` throw (never called, because the SSE protocol is served by the `/fate/live` route + `LiveDO`, not by fate's `handleLiveRequest`), and its publish methods are vestigial.
 
 ```ts
-// worker/features/fate-live/event-bus.ts
-export const liveBus: PhoenixLiveEventBus = {
-  update: (type, id, opts) => publish({kind: "entity", match: {type, entityId: String(id)}, frame: /* … */}),
-  delete: (type, id, opts) => publish({kind: "entity", match: {type, entityId: String(id)}, frame: {delete: true, id}}),
-  connection: (procedure, args) => connectionHandle(procedure, args),  // .appendNode/… → publish(connection msg)
-  subscribe() { throw new Error("live subscriptions are served by the LiveDO, not the bus"); },
-  subscribeConnection() { throw new Error("live subscriptions are served by the LiveDO, not the bus"); },
-  emit: (...) => /* … */,
-};
+// worker/features/fate-live/event-bus.ts — the frame builder every surface derives from
+export function makeLiveEventBus(publisher: LivePublisher): LiveEventBus { /* update/delete/connection/emit → publish(topicKey, message) */ }
+export const liveBusConfig: LiveEventBus = makeLiveEventBus(() => {});
 ```
 
-`publish` fans the message out to every topic key it targets through the per-request `livePublishContext` (an `AsyncLocalStorage` carrying a typed-RPC `LivePublisher` closure, **not** `{env, waitUntil}`). The `/fate` route builds that publisher from the worker-init-resolved `LiveDO` namespace — `LiveTopics.publish(topicKey, message, limits)` fires `live.getByName(\`topic:${key}\`).publish({topicKey, frame, limits})`, fired-and-forgotten via `Cloudflare.WorkerExecutionContext.waitUntil` so it doesn't block the mutation response. No `env`-based lookup, no `idFromName`, no string-URL `stub.fetch` (ADR 0028/0029). Wire it in `createFateServer({live: liveBus})` and route `/fate/live` to a connection-role `LiveDO` instance ([fate-server-wiring.md](./fate-server-wiring.md)).
+Each publish resolves the topic keys it targets (`topicsForPublish`) and hands the inline-resolved frame to the publisher. The `/fate` route builds that publisher from the worker-init-resolved `LiveDO` namespace — `LiveTopics.publish(topicKey, message, limits)` fires `live.getByName(\`topic:${key}\`).publish({topicKey, frame, limits})`, fired-and-forgotten via `Cloudflare.WorkerExecutionContext.waitUntil` so it doesn't block the mutation response. No `env`-based lookup, no `idFromName`, no string-URL `stub.fetch` (ADR 0028/0029); no `AsyncLocalStorage` — the publisher is provided per request as a service value (ADR 0039's insight, now living in `LivePublisher`). Wire `createFateServer({live: liveBusConfig})` (done by the fate config — [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md)) and route `/fate/live` to a connection-role `LiveDO` instance.
 
 ## Auth {#auth}
 
@@ -108,6 +103,6 @@ The DO runs locally under the same `alchemy dev` worker, so there is one live pa
 - [fate-mutations.md](./fate-mutations.md) — where `live.*` is published, and the inline re-resolution
 - [fate-mutations-client.md](./fate-mutations-client.md) — connection membership driven by these events
 - [fate-views-and-requests.md](./fate-views-and-requests.md) — `useView`/`useListView` the live hooks mirror
-- [fate-server-wiring.md](./fate-server-wiring.md) — mounting the `/fate/live` route and the `live` bus
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — mounting the fate server and the `live` bus config
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `packages/void-fate/src/server.ts`, `example/void/src/fate/live.ts`, and void's `createLiveDurableObject` (the DO template)
 - fate live internals: `packages/fate/src/server/live.ts` (`LiveEventBus`), `liveTopics.ts`, `protocol.ts` (live message types)

@@ -42,6 +42,7 @@ One row per ADR. Read the file for the why.
 | [0036](0036-features-as-any-named-app-grouping.md) | features/ is any named app-level grouping, not just product domains | accepted | 2026-05-30 |
 | [0037](0037-unified-void-aligned-live-do.md) | Unified void-aligned LiveDO — one class, two roles, KV storage | accepted | 2026-05-30 |
 | [0038](0038-dependency-patches-local-only.md) | Dependency patches are local-only — no fork/git/unmerged-PR sources; local `pnpm patch` if unavoidable | accepted | 2026-05-31 |
-| [0039](0039-livebus-context-service.md) | LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge | accepted | 2026-05-31 |
+| [0039](0039-livebus-context-service.md) | LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge | amended-in-part by [0042](0042-fate-effect-v1-architecture.md) | 2026-05-31 |
 | [0040](0040-testing-taxonomy-and-seam-graduation.md) | Testing taxonomy and test-seam graduation | accepted | 2026-06-07 |
-| [0041](0041-fate-bridge-worker-managed-runtime.md) | fate↔Effect bridge — one worker-level ManagedRuntime (F4) | accepted | 2026-06-07 |
+| [0041](0041-fate-bridge-worker-managed-runtime.md) | fate↔Effect bridge — one worker-level ManagedRuntime (F4) | amended-in-part by [0042](0042-fate-effect-v1-architecture.md) | 2026-06-07 |
+| [0042](0042-fate-effect-v1-architecture.md) | fate-effect v1 — the Effect-native fate integration; the bridge is deleted | accepted | 2026-06-10 |

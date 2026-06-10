@@ -16,7 +16,7 @@
  * `HttpRouter.add` routes lift their handler's `R` into route-requirement
  * markers that plain `Layer.provide` does NOT discharge — they must be
  * discharged with `HttpRouter.provideRequest` (see task-2 notes / ADR 0029).
- * The fate route's worker-level `FateEnv` subset comes from `fateLayer`; the
+ * The fate route's worker-service subset comes from `fateLayer`; the
  * auth route's `Pasaport` comes from the same layer.
  */
 import type * as BetterAuth from "@alchemy.run/better-auth";
@@ -94,7 +94,7 @@ export const makeAppLive = (options: {
 	const typedJson = healthApiLayer;
 
 	// Raw-`Request` routes. `provideRequest` discharges the route-requirement
-	// markers `HttpRouter.add` lifts (fate's `FateEnv` subset + `LiveTopics`;
+	// markers `HttpRouter.add` lifts (the fate route's worker services + `LiveTopics`;
 	// `BetterAuth` for `/api/auth/*`; live's `Pasaport` + `LiveConnections`) —
 	// plain `Layer.provide` does not. `fateLayer` carries `Pasaport`,
 	// `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`) carries `BetterAuth`,

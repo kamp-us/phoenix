@@ -1,6 +1,6 @@
 # fate-effect wire errors — the `fateWireCode` annotation
 
-How `@phoenix/fate-effect` (the workspace package at `packages/fate-effect`) maps Effect failures onto fate's wire error shape. The short answer: **the wire code is a schema annotation on the error class** — one edit per domain error, no registry. This is the package's replacement for the bridge's `WIRE_CODE_BY_TAG` registry ([fate-effect-bridge.md](./fate-effect-bridge.md)), now fully retired by the feature migrations (the registry survives only as dead, type-forced rows until the v1 cutover deletes the bridge).
+How `@phoenix/fate-effect` (the workspace package at `packages/fate-effect`) maps Effect failures onto fate's wire error shape. The short answer: **the wire code is a schema annotation on the error class** — one edit per domain error, no registry. This replaced the bridge's `WIRE_CODE_BY_TAG` registry (deleted in the v1 cutover, ADR 0042). Two guards hold the contract: each feature's `errors.unit.test.ts` enumeration pin, and `worker/features/fate/wireCodes.unit.test.ts` — which derives the server-emittable code set from the fate config's declared error unions and asserts the SPA's `MUTATION_ERROR_CODES` covers it.
 
 ## Declaring an error
 
@@ -33,7 +33,7 @@ That is the whole contract — the class declaration carries its own wire mappin
 
 At runtime the codec reads the annotation off `instance.constructor` — a `Schema.TaggedErrorClass`'s annotations land on the class's static `ast.annotations` — through structural guards (`Predicate.hasProperty`), so arbitrary defect values are safe inputs and no type assertion is needed. `wireCodeOf` (instance) and `wireCodeOfClass` (class) expose the same read for tests and tooling.
 
-`INTERNAL_WIRE_CODE` is `INTERNAL_SERVER_ERROR` — phoenix's historical bridge code and the SPA's `MUTATION_ERROR_CODES` vocabulary — not fate's protocol `INTERNAL_ERROR`, so compiled and legacy records stay wire-identical through the migration.
+`INTERNAL_WIRE_CODE` is `INTERNAL_SERVER_ERROR` — phoenix's historical wire code and the SPA's `MUTATION_ERROR_CODES` vocabulary — not fate's protocol `INTERNAL_ERROR`, preserved verbatim through the migration.
 
 ## Keeping the codec honest
 

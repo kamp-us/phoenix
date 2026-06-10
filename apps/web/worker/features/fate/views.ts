@@ -11,10 +11,8 @@
  */
 
 import {list} from "@nkzw/fate/server";
-import type {Comment, Post} from "../pano/views.ts";
 import {postDataView} from "../pano/views.ts";
 import {profileDataView, userDataView} from "../pasaport/views.ts";
-import type {Definition} from "../sozluk/views.ts";
 import {termDataView} from "../sozluk/views.ts";
 import {landingStatsDataView} from "../stats/views.ts";
 
@@ -30,46 +28,6 @@ export type {Definition, Term} from "../sozluk/views.ts";
 export {definitionDataView, termDataView} from "../sozluk/views.ts";
 export type {LandingStats} from "../stats/views.ts";
 export {landingStatsDataView} from "../stats/views.ts";
-
-/* -------------------------------------------------------------------------- */
-/* Live registry — entity name → entity type                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The entities a mutation can publish a `live.update` for, keyed by their wire
- * `__typename`. Single-sources the entity-name → entity-type relation so the
- * live bus can type `update`'s `type` discriminant (instead of a bare `string`)
- * and its `changed` field list against the entity's own field keys — a typo or
- * renamed field becomes a compile error at the mutation site. Mirrors the typed
- * `targetKind` discriminant the codebase prefers over magic strings.
- *
- * `Term` and `Profile` are intentionally omitted: their live updates flow
- * through the nested-connection path (`liveBus.connection(...)`), not
- * `update`. Add an entity here only when a resolver calls `liveBus.update` for
- * it.
- */
-export interface LiveEntities {
-	Definition: Definition;
-	Post: Post;
-	Comment: Comment;
-}
-
-/**
- * The fields a `live.update("<Name>", …)` may name in `changed` — every field
- * key of the entity except the `__typename` discriminant (which never
- * "changes"). Keying `changed` against this makes a nonexistent or renamed
- * field a compile error at the mutation site.
- *
- * `Extract<…, string>` keeps the generic provably string-keyed: under an
- * uninstantiated `Name`, bare `keyof LiveEntities[Name]` widens to
- * `string | number | symbol`, which blocks the loose `makeLiveEventBus` value
- * from narrowing to the typed bridge surface (`event-bus.ts`). Entity fields
- * are string keys by construction, so this excludes nothing real.
- */
-export type LiveChangedField<Name extends keyof LiveEntities> = Exclude<
-	Extract<keyof LiveEntities[Name], string>,
-	"__typename"
->;
 
 /* -------------------------------------------------------------------------- */
 /* Root — client-exposed root queries                                         */

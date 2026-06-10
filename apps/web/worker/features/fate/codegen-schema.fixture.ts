@@ -10,7 +10,7 @@
  * codegen path executed anything, generation would fail loudly.
  *
  * Deliberately self-contained (it does not import the live feature modules):
- * the spike pins the module SHAPE against the plugin, not today's bridge
+ * the spike pins the module SHAPE against the plugin, not the live config's
  * content.
  */
 import type {ConnectionResult} from "@nkzw/fate/server";

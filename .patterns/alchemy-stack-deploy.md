@@ -75,7 +75,7 @@ alchemy deploy    # bundle the worker, upload dist/client, push to the Cloudflar
 alchemy deploy --stage prod
 ```
 
-The SPA is built by Vite as a normal build step (`dist/client`), then uploaded via the worker's `assets` prop — `alchemy deploy` does not drive Vite for phoenix's single-worker shape ([alchemy-worker.md](./alchemy-worker.md) explains why it's `Cloudflare.Worker` + `assets`, not `Cloudflare.Vite`). Drop `@cloudflare/vite-plugin` from `vite.config.ts` (alchemy is incompatible with it); keep `react()` and the `fate()` codegen plugin, which reads the server's `Entity<>` types regardless of deploy path (see [fate-server-wiring.md](./fate-server-wiring.md)).
+The SPA is built by Vite as a normal build step (`dist/client`), then uploaded via the worker's `assets` prop — `alchemy deploy` does not drive Vite for phoenix's single-worker shape ([alchemy-worker.md](./alchemy-worker.md) explains why it's `Cloudflare.Worker` + `assets`, not `Cloudflare.Vite`). Drop `@cloudflare/vite-plugin` from `vite.config.ts` (alchemy is incompatible with it); keep `react()` and the `fate()` codegen plugin, which reads the server's `Entity<>` types regardless of deploy path (see [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md)).
 
 ### Local dev — two processes (the decided model)
 

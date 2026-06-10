@@ -7,19 +7,17 @@
  *   1. the error channel of every publish method is `never` — "a publish
  *      cannot fail the mutation" is a TYPE, the whole point of the service
  *      (type-level assertions);
- *   2. the published `(topicKey, PublishMessage)` pairs match the bridge's
- *      current wire shape — pinned against literal frame fixtures AND
- *      differentially (the same mutation calls through `makeLiveBus`, the
- *      exact publish path every bridge mutation uses today);
+ *   2. the published `(topicKey, PublishMessage)` pairs match the established
+ *      wire shape — pinned against literal frame fixtures AND differentially
+ *      (the same mutation calls through the raw `makeLiveEventBus`, the one
+ *      frame-building code path the publisher wraps);
  *   3. a publish whose underlying topic call rejects cannot fail the calling
  *      effect, and the failure is logged (failing topic stub);
  *   4. publishes are scheduled through the request's execution context
  *      (`waitUntil`), never awaited on the request path (slow topic stub —
  *      the calling effect completes while the publish is still in flight).
  *
- * T0 per ADR 0040: stubs at the topic seam, zero storage, no platform fake —
- * the same tier as `event-bus.unit.test.ts`, whose publish surface this
- * service replaces (tasks 10–13 drop `useIgnore`).
+ * T0 per ADR 0040: stubs at the topic seam, zero storage, no platform fake.
  */
 
 import {assert, it} from "@effect/vitest";
@@ -27,7 +25,7 @@ import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@
 import type {LivePublisher} from "@phoenix/fate-effect";
 import {Effect, Exit} from "effect";
 import {expectTypeOf, vi} from "vitest";
-import {makeLiveBus} from "./event-bus.ts";
+import {makeLiveEventBus} from "./event-bus.ts";
 import {livePublisherFor} from "./live-publisher.ts";
 import type {PublishMessage} from "./protocol.ts";
 
@@ -171,7 +169,7 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 	}),
 );
 
-it.effect("wire shape is identical to the bridge bus for the same mutation calls", () =>
+it.effect("wire shape is identical to the raw event bus for the same mutation calls", () =>
 	Effect.gen(function* () {
 		// The new surface...
 		const {live, recorded, flush} = makeHarness();
@@ -189,10 +187,11 @@ it.effect("wire shape is identical to the bridge bus for the same mutation calls
 		yield* live.connection("posts").appendNode("Post", "p1", {node: {id: "p1"}});
 		yield* Effect.promise(flush);
 
-		// ...and the bridge baseline: the SAME calls through `makeLiveBus` over a
-		// capturing publisher — the exact publish path every mutation uses today.
+		// ...and the raw-bus baseline: the SAME calls through `makeLiveEventBus`
+		// over a capturing publisher — the one frame-building code path the
+		// publisher wraps, so a drift between the two surfaces fails here.
 		const bridgeRecorded: Array<Recorded> = [];
-		const bridge = makeLiveBus((topicKey, message) => {
+		const bridge = makeLiveEventBus((topicKey, message) => {
 			bridgeRecorded.push({topicKey, message});
 		});
 		bridge.update("Definition", "d1", {eventId: "e1"});

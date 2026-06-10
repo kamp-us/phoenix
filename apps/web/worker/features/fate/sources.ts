@@ -28,10 +28,7 @@ import {commentSource, postSource, tagSource} from "../pano/sources.ts";
 import {contributionSource, profileSource, userSource} from "../pasaport/sources.ts";
 import {definitionSource, termSource} from "../sozluk/sources.ts";
 
-/**
- * The composed source entries, in the registry order the bridge's hand-built
- * Map used.
- */
+/** The composed source entries (registry order preserved from the original wiring). */
 export const sources = [
 	userSource,
 	definitionSource,

@@ -25,13 +25,13 @@ import * as Schema from "effect/Schema";
 
 /**
  * The closed set of live connection procedures phoenix publishes to / subscribes
- * on — the connection analogue of {@link ../fate/views.ts#LiveEntities}'s entity
- * names. A connection publish (`liveBus.connection(<procedure>)`) and the
- * matching subscribe both key their topic off this string; a typo on either side
- * silently creates a dead topic (publish and subscribe miss each other with no
- * failure). Constraining the seam to this union makes a typo a compile error at
- * the `liveBus.connection(...)` call site, exactly as the entity seam already
- * does for `liveBus.update`.
+ * on. A connection publish (`live.connection(<procedure>)` on the per-request
+ * `LivePublisher` service) and the matching subscribe both key their topic off
+ * this string; a typo on either side silently creates a dead topic (publish and
+ * subscribe miss each other with no failure). The subscribe side is gated by
+ * {@link LiveConnectionProcedureSchema}; the publish side is plain-string typed
+ * (the package's `LivePublisher` cannot know phoenix's procedures), so a
+ * publish-site typo is caught by the live integration suite, not the compiler.
  *
  * Derived from the live root list (`posts`) and the nested-connection mutation
  * sites (`Post.comments`, `Term.definitions`). Add a member here when a resolver

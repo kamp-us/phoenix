@@ -7,8 +7,8 @@
  * (used in tests) re-exports from `features/stats/queries` so importers can
  * keep reaching `worker/features/fate/queries`.
  *
- * Each is a thin orchestration over a service, wrapped by `fateQuery` so it
- * runs through the request runtime (see `.patterns/fate-effect-bridge.md`).
+ * Each entry is a `Fate.query` value — a pure-data definition paired with an
+ * `Effect.fn` handler (see `.patterns/fate-effect-operations.md`).
  */
 
 import {queries as panoQueries} from "../pano/queries.ts";

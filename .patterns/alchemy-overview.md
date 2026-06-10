@@ -18,7 +18,7 @@ phoenix is on effect v4; so is alchemy-effect (`effect@4.0.0-*`). The domain lay
 | Durable Objects | plain `class extends DurableObject` | `Cloudflare.DurableObjectNamespace<T>()(...)` (Effect handlers) |
 | Deploy | `wrangler deploy` | `alchemy deploy` |
 
-**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, the bridge helpers. The one fate-side consequence is what `FateContext` carries: the one worker-level `ManagedRuntime` plus the two per-request VALUES (`auth`, `liveBus`), rather than a fresh per-request runtime — see [alchemy-runtime.md](./alchemy-runtime.md).
+**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, operations. The one fate-side consequence is the runtime shape: the one worker-level `ManagedRuntime` plus the two per-request VALUES (`currentUser`, `livePublisher`), rather than a fresh per-request runtime — see [alchemy-runtime.md](./alchemy-runtime.md).
 
 ## The two phases
 
@@ -51,14 +51,14 @@ The init phase is where `bind()` happens; the runtime phase is the handlers it r
 phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *under* them:
 
 - **Effect domain layer** (`effect-*`) — services, errors, layers. Transport- *and* infra-agnostic.
-- **fate protocol + client layer** (`fate-*`) — data views, sources, mutations, live views. The only infra-facing detail is the bridge's worker-level `ManagedRuntime` handle (carried on `FateContext`).
+- **fate protocol + client layer** (`fate-*`) — data views, sources, mutations, live views. The only infra-facing detail is the worker-level `ManagedRuntime` the compile step runs handlers through.
 - **alchemy infra layer** (these `alchemy-*` docs) — the worker, its bindings, the DOs, the HTTP router, deploy. The bottom layer; `worker/index.ts` is the alchemy worker, and there is no `wrangler.jsonc` or Hono shell.
 
 ## Reading order
 
 1. [alchemy-worker.md](./alchemy-worker.md) — the `Cloudflare.Worker` class and its two phases.
 2. [alchemy-bindings.md](./alchemy-bindings.md) — `bind()`, the deploy-policy/runtime-service split, the Live-layer convention.
-3. [alchemy-runtime.md](./alchemy-runtime.md) — **the load-bearing doc.** Worker-level vs request-scoped layers, the one worker-level `ManagedRuntime`, the fate bridge delta.
+3. [alchemy-runtime.md](./alchemy-runtime.md) — **the load-bearing doc.** Worker-level vs request-scoped layers, the one worker-level `ManagedRuntime`, the fate seam.
 4. [alchemy-http-router.md](./alchemy-http-router.md) — `HttpRouter` + `HttpApiBuilder`, mounting fate/auth/SSE.
 5. [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the Effect DO model; `ConnectionDO`/`TopicDO`.
 6. [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — D1 + Drizzle + migrations.
@@ -67,5 +67,5 @@ phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *unde
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — the service model that rides on top
-- [fate-effect-bridge.md](./fate-effect-bridge.md) — the seam that runs each resolver through the one worker-level `ManagedRuntime`
+- [fate-effect-compiler.md](./fate-effect-compiler.md) — the seam that runs each handler through the one worker-level `ManagedRuntime`
 - [alchemy-runtime.md](./alchemy-runtime.md) — start here for the runtime story

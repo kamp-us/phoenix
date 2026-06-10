@@ -1,6 +1,6 @@
 # fate-effect sources — `Fate.source`, the per-entity loader
 
-How `@phoenix/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This is the package's replacement for the bridge's `fateSource` + hand-written `SourceDefinition` literals ([fate-sources.md](./fate-sources.md), [fate-effect-bridge.md](./fate-effect-bridge.md)) — every feature is migrated, so no legacy source pair remains (the bridge module is dead code awaiting the v1 cutover deletion).
+How `@phoenix/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This replaced the bridge's `fateSource` + hand-written `SourceDefinition` literals (deleted in the v1 cutover, ADR 0042); conventions in [fate-sources.md](./fate-sources.md).
 
 ## Declaring a source
 

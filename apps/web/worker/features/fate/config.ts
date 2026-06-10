@@ -2,13 +2,10 @@
  * The one fate server config (`.patterns/fate-effect-server.md`,
  * `.patterns/fate-effect-compiler.md`).
  *
- * `FateServer.config` mirrors `createFateServer`'s options shape, and at zero
- * migration every record value is a raw legacy bridge entry
- * (`RawFateOperation` / `RawFateSourceEntry`) — migration coexistence is
- * literally these spreads: as tasks migrate features onto the `Fate.*`
- * constructors, the per-feature records swap from bridge-wrapped resolvers to
- * `Fate.query`/`Fate.list`/`Fate.mutation`/`Fate.source` entries in the same
- * maps, one feature at a time, and this module does not change shape.
+ * `FateServer.config` mirrors `createFateServer`'s options shape; every record
+ * value is a `Fate.query`/`Fate.list`/`Fate.mutation`/`Fate.source` entry
+ * composed from the per-feature aggregator barrels (`queries.ts`/`lists.ts`/
+ * `mutations.ts`/`sources.ts`).
  *
  * The config is consumed at BOTH edges from this single declaration:
  *

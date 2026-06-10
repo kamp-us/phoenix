@@ -1,5 +1,5 @@
 /**
- * `runFateOp` v2 — drive one fate operation through the fate-effect server the
+ * `runFateOp` — drive one fate operation through the fate-effect server the
  * way the `/fate` route does: `FateServer.layer(fateConfig)` over the caller's
  * worker layer, one per-op `ManagedRuntime`, `FateExecutor.toFetchHandler`
  * (ADR 0041's mechanism, the harness lifecycle).
@@ -17,19 +17,17 @@
  *      of leaking for the suite's lifetime. The trade-off: every op runs cold —
  *      cross-request layer memoization is a production property this harness
  *      does not exercise,
- *   3. owns BOTH per-request publish captures internally — the recording
+ *   3. owns the per-request publish capture internally — the recording
  *      `LivePublisher` value (`livePublisherFor` over a capturing publish +
- *      a collecting `waitUntil`, flushed before returning) for fate-effect
- *      entries, and the capturing legacy `LiveBus` (`liveBusFor`, ADR 0039)
- *      for not-yet-migrated bridge records — each records the RESOLVED topic
- *      keys a mutation's `live.*` fans out to (run through the real
- *      `topicsForPublish` frame builder),
+ *      a collecting `waitUntil`, flushed before returning) records the
+ *      RESOLVED topic keys a mutation's `live.*` fans out to (run through the
+ *      real `topicsForPublish` frame builder),
  *   4. hands `FateExecutor.toFetchHandler(runtime)`'s handler ONE
- *      {@link CoexistenceFateContext} — the per-request pair (`currentUser`,
- *      `livePublisher`) plus the legacy `FateContext` fields, exactly the
- *      route's shape,
+ *      {@link FateRequestContext} — the per-request pair (`currentUser`,
+ *      `livePublisher`) plus the request's `signal`, exactly the route's
+ *      shape,
  *   5. returns `{status, result, published}` — `published` being the resolved
- *      topic keys the operation's `live.*` fanned out to, from either surface.
+ *      topic keys the operation's `live.*` fanned out to.
  *
  * The caller supplies a fully-resolved worker layer (`Layer<WorkerFateServices>`)
  * — typically `makeFateLayer` over a stable shared `Database` handle
@@ -37,14 +35,11 @@
  * rebuilt per `it` in `beforeEach`/`afterEach`, so each case runs against its own
  * in-memory D1 (no row leakage; the `it.layer`/`describe`-once form is avoided).
  */
-import {FateExecutor, FateServer} from "@phoenix/fate-effect";
+import {FateExecutor, type FateRequestContext, FateServer} from "@phoenix/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
-import {liveBusFor} from "../fate-live/event-bus.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
-import type {Auth} from "../pasaport/Auth.ts";
 import {fateConfig} from "./config.ts";
-import type {CoexistenceFateContext} from "./context.ts";
 import {makeFateRuntime, type WorkerFateServices} from "./layers.ts";
 
 /** A single fate operation result as it appears on the wire. */
@@ -73,8 +68,7 @@ export interface FateOpAuth {
  * @param workerLayer a fully-resolved worker layer (`Database`/`BetterAuth`
  *   already discharged) — `FateServer.layer(fateConfig)` is provided over it
  *   and the whole thing wrapped in a per-op `ManagedRuntime` here; the
- *   per-request pair + the legacy `Auth`/`LiveBus` ride on the one context
- *   object.
+ *   per-request pair rides on the one context object.
  * @param operation the fate operation body (`kind`/`name`/`args`/`input`/`select`).
  * @param opts.auth the session to provide (anonymous by default).
  */
@@ -103,14 +97,14 @@ export async function runFateOp(
 	);
 	const handleFate = FateExecutor.toFetchHandler(runtime);
 
-	// Both publish captures record RESOLVED topic keys (run through the real
-	// frame/topic builders) into ONE array, so a suite asserts the same way
-	// whichever surface the record under test publishes through.
+	// The publish capture records RESOLVED topic keys (run through the real
+	// frame/topic builders), so a suite asserts the exact keys a mutation's
+	// `live.*` fanned out to.
 	const published: Array<string> = [];
 
-	// The recording `LivePublisher` VALUE for fate-effect entries: capturing
-	// publish, collecting `waitUntil` (a Node harness has no execution context;
-	// the scheduled promises are flushed before this op reports).
+	// The recording `LivePublisher` VALUE: capturing publish, collecting
+	// `waitUntil` (a Node harness has no execution context; the scheduled
+	// promises are flushed before this op reports).
 	const scheduled: Array<Promise<unknown>> = [];
 	const livePublisher = livePublisherFor({
 		publish: (topicKey) =>
@@ -122,23 +116,12 @@ export async function runFateOp(
 		},
 	});
 
-	// The capturing legacy `LiveBus` VALUE (ADR 0039) for bridge records — dies
-	// with the bridge (tasks 10–13).
-	const liveBus = liveBusFor((topicKey) => {
-		published.push(topicKey);
-	});
-
-	// ONE context object, the route's exact coexistence shape: the per-request
-	// pair for compiled entries + the legacy `FateContext` fields for bridge
-	// records (identity is the compat contract — see `CoexistenceFateContext`).
-	const ctx: CoexistenceFateContext = {
+	// ONE context object, the route's exact shape: the per-request pair plus
+	// the request's abort signal.
+	const ctx: FateRequestContext = {
 		currentUser: {user: opts.auth},
 		livePublisher,
 		signal: request.signal,
-		runtime,
-		request,
-		auth: {user: opts.auth as never, session: undefined} satisfies typeof Auth.Service,
-		liveBus,
 	};
 
 	try {

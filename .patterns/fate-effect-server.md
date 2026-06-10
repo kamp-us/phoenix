@@ -41,11 +41,11 @@ Effect.fn("definition.add")(function* ({input}) {
 })
 ```
 
-but **no worker-level layer ever provides them**: the compile step ([fate-effect-compiler.md](./fate-effect-compiler.md)) provides the pair onto each handler per request (`CurrentUser` from the session, `LivePublisher` from the request's execution context) and `FateServerRequirements` excludes both from the layer's R. This is what makes the bridge's `FateContext` smuggling unnecessary. `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a `useIgnore` convention.
+but **no worker-level layer ever provides them**: the compile step ([fate-effect-compiler.md](./fate-effect-compiler.md)) provides the pair onto each handler per request (`CurrentUser` from the session, `LivePublisher` from the request's execution context) and `FateServerRequirements` excludes both from the layer's R. This is what made the bridge's `FateContext` smuggling unnecessary (the bridge is deleted — ADR 0042). `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a per-call-site convention.
 
 ### The `LivePublisher` live implementation (worker-side)
 
-The package owns only the tag + contract; the live implementation is the worker's — it needs the LiveDO topic fan-out and the request's execution context, which the package can't know. [`livePublisherFor(options)`](../apps/web/worker/features/fate-live/live-publisher.ts) builds the per-request service VALUE (the `liveBusFor` shape, not a `Layer`) over two capabilities:
+The package owns only the tag + contract; the live implementation is the worker's — it needs the LiveDO topic fan-out and the request's execution context, which the package can't know. [`livePublisherFor(options)`](../apps/web/worker/features/fate-live/live-publisher.ts) builds the per-request service VALUE (a value, not a `Layer`) over two capabilities:
 
 ```ts
 livePublisherFor({
@@ -54,9 +54,9 @@ livePublisherFor({
 });
 ```
 
-- **Wire shape by construction**: every publish resolves topics + frames through `makeLiveEventBus` ([`event-bus.ts`](../apps/web/worker/features/fate-live/event-bus.ts)) — the single frame-building code path the bridge's typed bus also derives from — so the `PublishMessage` shape cannot drift between the old and new publish surfaces. (`PublishMessage.match.procedure` is a plain `string`: the envelope is wire data; the typo gate is the caller surface — `TypedLiveConnection` for the bridge, worker-level narrowing over `LivePublisher` post-migration — plus the schema-closed subscribe side.)
+- **Wire shape by construction**: every publish resolves topics + frames through `makeLiveEventBus` ([`event-bus.ts`](../apps/web/worker/features/fate-live/event-bus.ts)) — the single frame-building code path, shared with the static `liveBusConfig` fate holds — so the `PublishMessage` shape cannot drift between surfaces. (`PublishMessage.match.procedure` is a plain `string`: the envelope is wire data; the publish side is string-typed — the package cannot know phoenix's procedures — and the typo gate is the schema-closed subscribe side plus the live integration suite.)
 - **Scheduling**: the topic call is handed to `waitUntil` as a detached promise — nothing on the request path awaits the fan-out. The `Effect.runPromise` at that sink is a deliberate boundary: `waitUntil` is a Promise sink outside the request fiber, and on CF it is the *only* way to extend work past the response (no shutdown hook, no surviving daemon fibers — ADR 0029/0041), so a forked fiber would be killed with the request.
-- **Swallowing, both halves**: a rejecting topic call is caught on the detached promise and logged; a synchronous throw is caught by `Effect.try` + `Effect.ignore({log: "Warn"})` — ADR 0039's `use`/`useIgnore` law applied once inside the implementation, which is what lets every call site drop `useIgnore`.
+- **Swallowing, both halves**: a rejecting topic call is caught on the detached promise and logged; a synchronous throw is caught by `Effect.try` + `Effect.ignore({log: "Warn"})` — ADR 0039's swallow law applied once inside the implementation, which is what lets call sites carry no error handling at all.
 
 ## Init-time validation (dies at layer construction, names attached)
 
@@ -66,9 +66,9 @@ livePublisherFor({
 - **Duplicate sources per entity** — fate resolves a view to one definition by type name, so a second source is a silent override waiting to happen.
 - **View-reachable entities without a source** — every entity reachable through a view object (operation success views + nested relation views, recursively) must have a source: `view-reachable entity "Definition" has no source (reached from queries["term"])`. String-typed operations (`type: "Health"`) have no view by design and require nothing.
 
-## Migration coexistence (raw legacy records)
+## Raw legacy records (retired migration affordance)
 
-Raw bridge-shaped entries spread into the same config and pass through to `createFateServer` untouched ([fate-effect-compiler.md](./fate-effect-compiler.md)), contributing `never` to R:
+The config types still admit raw bridge-shaped entries (`RawFateOperation` / `RawFateSourceEntry`), which pass through to `createFateServer` untouched ([fate-effect-compiler.md](./fate-effect-compiler.md)) and contribute `never` to R. This was the migration-coexistence affordance; **no raw record exists in phoenix since the v1 cutover (ADR 0042)** — the arms remain package capability only, slated for removal with the v2 interpreter:
 
 ```ts
 queries: {...bridgeQueries, term: Fate.query(...)},           // legacy promise resolvers + new entries

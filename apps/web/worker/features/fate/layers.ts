@@ -5,14 +5,12 @@
  * *per-request* `ManagedRuntime`**. `Drizzle` (built once from the bound D1) and
  * the feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`) are
  * **worker-level layers**, constructed once in the worker init and carried by ONE
- * isolate-level `ManagedRuntime` (the {@link WorkerRuntime}). Mechanism — how the
- * bridge runs each resolver through that runtime: see the `effect.ts` header +
- * ADR 0041. The routes that yield a worker service directly take it from the
- * same runtime's built context (`Layer.effectContext`, built in `index.ts` via
- * {@link makeFateRuntime} and consumed by `route.ts`).
- *
- * `FateEnv` is the union of every service a fate resolver or source executor may
- * touch — the environment its generator bodies are checked against.
+ * isolate-level `ManagedRuntime` (the {@link WorkerRuntime}); the compile step
+ * (`FateExecutor`, `.patterns/fate-effect-compiler.md`) runs every handler
+ * through it, providing the per-request pair (`CurrentUser`, `LivePublisher`)
+ * onto each handler effect. The routes that yield a worker service directly
+ * take it from the same runtime's built context (`Layer.effectContext`, built
+ * in `index.ts` via {@link makeFateRuntime} and consumed by `route.ts`).
  *
  * The layer graph (mergeAll / provide / provideMerge) is the one in
  * `.patterns/effect-layer-composition.md`; only *where* it's provided moved,
@@ -26,9 +24,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
 import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
-import type {LiveBus} from "../fate-live/event-bus.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
-import type {Auth} from "../pasaport/Auth.ts";
 import {makePasaportLive, type Pasaport} from "../pasaport/Pasaport.ts";
 import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
 import {type Stats, StatsLive} from "../stats/Stats.ts";
@@ -36,31 +32,10 @@ import {type Vote, VoteLive} from "../vote/Vote.ts";
 import {fateConfig} from "./config.ts";
 
 /**
- * Every service a fate resolver / source executor may touch — the conceptual
- * authoring environment. It is the worker-level {@link WorkerFateServices} plus
- * the two genuinely per-request services the bridge provides onto each resolver
- * effect at run time: `Auth` (the validated session) and `LiveBus` (the publish
- * capability, ADR 0039) — i.e. exactly the environment of a resolver effect
- * (`WorkerFateServices | Auth | LiveBus`).
- *
- * Post-F4 no signature binds this directly: the bridge casts the generator's
- * erased env to `R` ({@link WorkerFateServices}, the runtime's environment) and
- * provides `Auth`/`LiveBus` per effect. It stays as the named contract a resolver
- * body is authored against (referenced across `.patterns/` and ADR 0041).
- *
- * `HttpServerRequest` is deliberately NOT here: no resolver yields it, and the
- * F4 bridge runs each resolver on the worker `ManagedRuntime` (carrying
- * {@link WorkerFateServices}) rather than capturing the whole HttpRouter context
- * — so the upstream Tag never reaches a resolver. The raw `Request` rides the
- * `FateContext` (`ctx.request`) for the rare resolver that needs headers.
- */
-export type FateEnv = WorkerFateServices | Auth | LiveBus;
-
-/**
  * The worker-level services `makeFateLayer` provides — the singletons the worker
- * `ManagedRuntime` carries. The per-request `Auth` + `LiveBus` ({@link FateEnv}
- * minus these) are provided onto each resolver effect by the bridge, not baked
- * into the runtime.
+ * `ManagedRuntime` carries. The per-request pair (`CurrentUser` + `LivePublisher`,
+ * the package's documented request contract) is provided onto each handler
+ * effect by the compile step, not baked into the runtime.
  */
 export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Stats;
 
@@ -70,12 +45,9 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
  * PLUS the composed `FateServer` service and fails for nothing (`E = never`).
  * `FateExecutor.toFetchHandler` resolves `FateServer` from it and runs every
  * compiled resolver through it (`ManagedRuntime` is contravariant in R, so this
- * wider runtime satisfies the package's `FateExecutorRuntime`); legacy bridge
- * records during coexistence run through the same runtime via `ctx.runtime`
- * (the same contravariance — `FateContext.runtime` only demands the
- * {@link WorkerFateServices}). `route.ts`, `app.ts`, `context.ts`, and the
- * bridge tests all name this exact shape, so it lives here once rather than
- * being re-spelled at each site (ADR 0041).
+ * wider runtime satisfies the package's `FateExecutorRuntime`). `route.ts`,
+ * `app.ts`, and the app suites all name this exact shape, so it lives here once
+ * rather than being re-spelled at each site (ADR 0041).
  */
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -92,7 +64,7 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | F
  * applications" idiom — `ai-docs/src/03_integration/10_managed-runtime.ts`) keeps
  * layer memoization correct across the runtime and the `contextLayer` derived from
  * it: the worker singletons (`Drizzle` + the feature services) are built exactly
- * once and SHARED by both the bridge runtime and the routes that yield a worker
+ * once and SHARED by both the fate runtime and the routes that yield a worker
  * service directly (`Pasaport` in the `/fate` route). `contextLayer` reuses the
  * runtime's already-built `Context<WorkerFateServices>` rather than rebuilding the
  * layer per request through `provideRequest`.
@@ -172,8 +144,9 @@ const PasaportFromTag = Layer.unwrap(
  * `Vote`, so they merge first and `provideMerge(VoteLive)` once; `PasaportFromTag`
  * and `StatsLive` depend only on `Drizzle` (Pasaport also on `BetterAuth`).
  *
- * `R = Database | BetterAuth`; the per-request `Auth` + `LiveBus` are provided
- * by the bridge onto each resolver effect (`effect.ts`), not here.
+ * `R = Database | BetterAuth`; the per-request pair (`CurrentUser` +
+ * `LivePublisher`) is provided onto each handler effect by the compile step,
+ * not here.
  */
 export const makeFateLayer: Layer.Layer<
 	WorkerFateServices,
@@ -193,13 +166,10 @@ export const makeFateLayer: Layer.Layer<
  *
  * `provideMerge` (not `provide`) keeps the {@link WorkerFateServices} in the
  * layer's output alongside `FateServer`: the routes still yield worker services
- * directly (the runtime-derived `contextLayer`), and during migration
- * coexistence the legacy bridge records run through `ctx.runtime`, which
- * carries those singletons. `FateServer.layer`'s own R — the union of `Fate.*`
- * handler/source requirements minus the per-request pair — is discharged by
- * the same domain layers, so a migrated record needing a forgotten service is
- * a compile error HERE, the composition site (at zero migration that R is
- * `never`; tasks 10–12 grow it).
+ * directly (the runtime-derived `contextLayer`). `FateServer.layer`'s own R —
+ * the union of `Fate.*` handler/source requirements minus the per-request
+ * pair — is discharged by the same domain layers, so a record needing a
+ * forgotten service is a compile error HERE, the composition site.
  *
  * `R = Database | BetterAuth` exactly as {@link makeFateLayer}'s — provided in
  * worker init from the init-resolved seams.

@@ -83,8 +83,8 @@ type FateProtocolErrorCode = ConstructorParameters<typeof FateRequestError>[0];
  * it stores whatever string it is given and forwards it on the wire
  * untouched; phoenix's wire vocabulary (`BODY_REQUIRED`, `TAKEN`, …) is
  * wider. A single comparable narrowing cast to the parameter's own type —
- * the same documented widening the bridge uses (`.patterns/fate-effect-bridge.md`),
- * not a laundering double-cast.
+ * the same documented widening the retired bridge used — not a laundering
+ * double-cast.
  */
 function makeWireError(code: string, message: string): FateRequestError {
 	return new FateRequestError(code as FateProtocolErrorCode, message);

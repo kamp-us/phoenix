@@ -9,7 +9,7 @@ contract — and it preserves the SPA's import surface untouched.
 
 Read this with [feature-services.md](./feature-services.md) (the per-feature
 service shape these fragments orchestrate) and
-[fate-server-wiring.md](./fate-server-wiring.md) (how the assembled maps get
+[fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) (how the assembled maps get
 mounted).
 
 ## The shape
@@ -136,7 +136,7 @@ in different clothing.
 
 - [feature-services.md](./feature-services.md) — the per-feature service shape
   whose `queries.ts`/`mutations.ts`/`lists.ts` resolvers orchestrate.
-- [fate-server-wiring.md](./fate-server-wiring.md) — how the assembled maps
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — how the assembled maps
   get handed to `createFateServer`.
 - [fate-data-views.md](./fate-data-views.md) — `dataView`/`Entity`/`Root`
   semantics; `Root` is the cross-feature piece in `fate/views.ts`.

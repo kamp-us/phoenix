@@ -228,32 +228,35 @@ Notes:
 - **Each method gets a named span automatically via `Effect.fn`.** See [effect-fn-tracing.md](./effect-fn-tracing.md) for naming conventions and when to use `fnUntraced` instead.
 - **Validation is part of the method, not a separate concern.** `validateBody` returns either a tagged error or the cleaned body. The method's `E` channel surfaces what can fail.
 
-## Resolver call sites
+## Handler call sites
 
-Fate resolvers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, wrapped by a bridge helper (`fateMutation`/`fateQuery`/`fateList`/`fateSource`) that runs the Effect on the worker-level `ManagedRuntime` (one per isolate, with the per-request `Auth`/`LiveBus` provided onto each effect — ADR 0041). The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
+Fate handlers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, authored as a `Fate.query`/`Fate.list`/`Fate.mutation` entry — a pure-data definition paired with an `Effect.fn("<wire name>")` handler, run through the worker-level `ManagedRuntime` (one per isolate, with the per-request `CurrentUser`/`LivePublisher` provided onto each effect — ADR 0041, [fate-effect-operations.md](./fate-effect-operations.md)). The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
 
 ```ts
 // worker/features/sozluk/mutations.ts
-import {Sozluk} from "./Sozluk";
-import {fateMutation} from "../fate/effect";
-
-resolve: fateMutation<AddDefinitionInput, Definition>(function*({input}) {
-  const {user} = yield* Auth.required;
-  const sozluk = yield* Sozluk;
-  return yield* sozluk.addDefinition({...input, authorId: user.id});
-}),
+"definition.add": Fate.mutation(
+  {input: AddDefinitionInput, type: DefinitionView, error: Schema.Union([Unauthorized, BodyRequired, BodyTooLong])},
+  Effect.fn("definition.add")(function* ({input}) {
+    const user = yield* CurrentUser.required;
+    const sozluk = yield* Sozluk;
+    return yield* sozluk.addDefinition({...input, authorId: user.id}).pipe(orDieDrizzle);
+  }),
+),
 ```
 
-Read resolvers look the same (`fateQuery`):
+Read handlers look the same (`Fate.query`):
 
 ```ts
-resolve: fateQuery<{slug: string}, Term | null>(function*({input}) {
-  const sozluk = yield* Sozluk;
-  return yield* sozluk.getTerm(input.slug, {first: 50});
-}),
+term: Fate.query(
+  {args: {slug: Schema.String}, type: TermView},
+  Effect.fn("term")(function* ({args}) {
+    const sozluk = yield* Sozluk;
+    return yield* sozluk.getTerm(args.slug, {first: 50}).pipe(orDieDrizzle);
+  }),
+),
 ```
 
-The bridge runner (`worker/features/fate/effect.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeFateError` to wire codes.
+The compile step ([fate-effect-compiler.md](./fate-effect-compiler.md)) handles `Effect.Exit`. Tagged errors in the handler's declared `error` union flow through `encodeWireError` (the `fateWireCode` annotation) to wire codes.
 
 ## Cross-feature dependencies
 
@@ -285,7 +288,7 @@ Vote-delegating methods are the one place a method's `R` widens beyond `never`: 
 
 See `apps/web/worker/features/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
 
-`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request `Auth` and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) are layered on top in the `/fate` route. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
+`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request pair (`CurrentUser`/`LivePublisher`) is provided onto each handler by the compile step, never at layer scope. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 
@@ -324,4 +327,4 @@ Integration tests in `tests/integration/*.test.ts` use the second form — same 
 - [effect-fn-tracing.md](./effect-fn-tracing.md) — `Effect.fn` vs `Effect.fnUntraced` for method shape
 - [effect-testing.md](./effect-testing.md) — integration via miniflare + the live runtime
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema` for trust-boundary input validation
-- `worker/features/pasaport/Auth.ts` — canonical small-service example with a static helper
+- `packages/fate-effect/src/CurrentUser.ts` — canonical small-service example with a static helper
