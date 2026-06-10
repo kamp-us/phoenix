@@ -1,5 +1,6 @@
 /**
- * fate bridge — data-plane parity for the remaining products (task 3, ADR 0029).
+ * fate bridge — data-plane parity for the remaining products (task 3, ADR 0041,
+ * supersedes 0029).
  *
  * Task 2 proved the worker-as-runtime seam on sozluk (see `bridge-sozluk.test.ts`).
  * This file ports the proof to **pano** (posts, comments), **pasaport** (profile,
@@ -9,11 +10,14 @@
  *
  *   1. `Drizzle` + the feature services are built from a bound D1 (here a
  *      `node:sqlite` stand-in) via `makeFateLayer` — the worker init layer.
- *   2. Per "request" {@link runFateOp} provides only `Auth` + `HttpServerRequest`
- *      (plus the capturing `LiveBus` it owns), captures the live service map with
- *      `Effect.context<FateEnv>()`, and hands it to `fateServer.handleRequest`.
- *   3. The bridge runs each resolver with `Effect.provide(effect, ctx.context)`
- *      — nothing built or disposed per request.
+ *   2. Per op, {@link runFateOp} wraps that worker layer in a per-op
+ *      `ManagedRuntime` (built and disposed inside the call — see
+ *      `run-fate-op.ts`), builds only the two per-request VALUES — `Auth` and the
+ *      capturing `LiveBus` it owns — and hands fate a `FateContext` of
+ *      `{runtime, request, auth, liveBus}`.
+ *   3. The bridge runs each resolver THROUGH that runtime with
+ *      `ctx.runtime.runPromiseExit(...)` — the same mechanism the deployed
+ *      worker runs (`effect.ts` header + ADR 0041).
  *
  * Asserts wire parity with the pre-migration `/fate` surface for these products:
  *   - pano: `posts(sort/host)` list, `post(idOrSlug)` detail + `Post.comments`

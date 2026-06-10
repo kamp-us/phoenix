@@ -32,7 +32,7 @@ One row per ADR. Read the file for the why.
 | [0026](0026-adopt-alchemy-effect-infra.md) | Adopt alchemy-effect as the infrastructure layer | accepted | 2026-05-25 |
 | [0027](0027-http-router-drop-hono.md) | Drop Hono; HTTP via Effect HttpRouter and HttpApiBuilder | accepted | 2026-05-25 |
 | [0028](0028-effect-durable-object-model.md) | Port Durable Objects to alchemy's Effect DO model | amended-in-part by [0032](0032-alchemy-beta45-and-dev-model.md) | 2026-05-25 |
-| [0029](0029-worker-runtime-servicemap.md) | Dissolve the per-request runtime; worker-level layers and a captured ServiceMap | accepted | 2026-05-25 |
+| [0029](0029-worker-runtime-servicemap.md) | Dissolve the per-request runtime; worker-level layers and a captured ServiceMap | superseded-in-part by [0041](0041-fate-bridge-worker-managed-runtime.md) | 2026-05-25 |
 | [0030](0030-single-worker-vite-dev.md) | Single worker via Worker+assets, with a two-process HMR dev loop | accepted | 2026-05-25 |
 | [0031](0031-local-first-dev-state.md) | Local-first state for dev; remote state for CI and deploy | amended-in-part by [0032](0032-alchemy-beta45-and-dev-model.md) | 2026-05-25 |
 | [0032](0032-alchemy-beta45-and-dev-model.md) | Upgrade to alchemy@2.0.0-beta.45 + effect@4.0.0-beta.74; accept deploy-infra-to-cloud as the dev model | accepted | 2026-05-29 |
@@ -44,3 +44,4 @@ One row per ADR. Read the file for the why.
 | [0038](0038-dependency-patches-local-only.md) | Dependency patches are local-only — no fork/git/unmerged-PR sources; local `pnpm patch` if unavoidable | accepted | 2026-05-31 |
 | [0039](0039-livebus-context-service.md) | LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge | accepted | 2026-05-31 |
 | [0040](0040-testing-taxonomy-and-seam-graduation.md) | Testing taxonomy and test-seam graduation | accepted | 2026-06-07 |
+| [0041](0041-fate-bridge-worker-managed-runtime.md) | fate↔Effect bridge — one worker-level ManagedRuntime (F4) | accepted | 2026-06-07 |

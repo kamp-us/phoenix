@@ -67,6 +67,12 @@ build from the bound client. See [.patterns/alchemy-runtime.md](../.patterns/alc
 
 ## Consequences
 
+> **Superseded by [0041](0041-fate-bridge-worker-managed-runtime.md):** the
+> default-runtime + captured-`Context` runner below produced detached resolver
+> spans (audit finding F4); resolvers now run through one *worker-level*
+> `ManagedRuntime`. 0029's worker-level-singletons / no-per-request-runtime
+> insight is retained — only the run-on-default-runtime choice is superseded.
+
 **Easier:**
 
 - **Feature services are isolate singletons.** No per-request allocation; the

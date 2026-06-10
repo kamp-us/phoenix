@@ -35,7 +35,7 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
-import {makeFateLayer} from "./features/fate/layers.ts";
+import {makeFateLayer, makeFateRuntime} from "./features/fate/layers.ts";
 import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
@@ -136,18 +136,14 @@ export default Phoenix.make(
 		// Resolve the raw D1 handle from the `Database` seam ONCE in init (ADR
 		// 0040). `DatabaseLive` (provided in the outer `Effect.provide`)
 		// resolves the `PhoenixDb` binding; wrapping the resolved handle in a
-		// `Layer.succeed(Database)` gives `makeAppLive` a stable, dependency-free
-		// `databaseLayer` whose value `DrizzleLive` and `BetterAuthLive` both derive
-		// from — one shared handle, type-enforced.
+		// `Layer.succeed(Database)` gives the runtime build (below) a stable,
+		// dependency-free `databaseLayer` whose value `DrizzleLive` and
+		// `BetterAuthLive` both derive from — one shared handle, type-enforced.
+		// It feeds ONLY the runtime construction: `makeAppLive`'s `fateLayer` is
+		// the runtime-derived context layer (`R = never`), so the routes never
+		// rebuild the seams per request (ADR 0041).
 		const raw = yield* Database;
 		const databaseLayer = Layer.succeed(Database)(raw);
-
-		// The worker-level service layer (ADR 0029, ADR 0040): `makeFateLayer` is
-		// a zero-arg constant whose `R` is `Database | BetterAuth`. Both seams are
-		// discharged inside `makeAppLive`'s request layer (`databaseLayer` +
-		// `betterAuthLayer` below). The `/fate` route provides only `Auth` per
-		// request (ADR 0029).
-		const fateLayer = makeFateLayer;
 
 		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
 		// init — the layer (`BetterAuthLive`, provided below) constructs the
@@ -157,6 +153,22 @@ export default Phoenix.make(
 		// runs `auth.handler(request)`) share one instance — sign + validate with
 		// the same secret.
 		const betterAuth = yield* BetterAuth.BetterAuth;
+		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
+
+		// ── THE ONE WORKER-LEVEL RUNTIME (ADR 0041, supersedes 0029) ──
+		// Build exactly one `ManagedRuntime` per isolate from the zero-arg
+		// `makeFateLayer` (its `R` is `Database | BetterAuth`, both provided here from
+		// the init-resolved `databaseLayer` + `betterAuthLayer`). The `/fate` bridge
+		// runs every resolver THROUGH this runtime (`ctx.runtime.runPromiseExit`,
+		// `features/fate/effect.ts`), so resolver spans nest under the runtime's
+		// request span (F4) and nothing is built or disposed per request. The shared
+		// memoMap, the derived route-context layer (`fateLayer` — built once, reused
+		// instead of rebuilt per request through `provideRequest`), and the
+		// never-dispose deviation all live in `makeFateRuntime` — the single
+		// construction point shared with the bridge tests.
+		const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
+			makeFateLayer.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
+		);
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One
@@ -225,9 +237,9 @@ export default Phoenix.make(
 		// with no per-request reconstruction.
 		const AppLive = makeAppLive({
 			fateLayer,
-			databaseLayer,
+			fateRuntime,
 			liveLayer,
-			betterAuthLayer: Layer.succeed(BetterAuth.BetterAuth)(betterAuth),
+			betterAuthLayer,
 			runtimeContext,
 		});
 

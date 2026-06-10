@@ -23,9 +23,8 @@ import type * as BetterAuth from "@alchemy.run/better-auth";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import type {Database} from "../db/Database.ts";
-import type {WorkerFateServices} from "../features/fate/layers.ts";
-import {fateRoute} from "../features/fate/route.ts";
+import type {WorkerFateServices, WorkerRuntime} from "../features/fate/layers.ts";
+import {makeFateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {authRoute} from "../features/pasaport/route.ts";
@@ -34,9 +33,11 @@ import {healthApiLayer} from "./health.ts";
 /**
  * Build the application router layer.
  *
- * @param fateLayer    the worker-level fate services (Drizzle + features),
- *                     built once in init — discharges the fate, auth, and live
- *                     routes' service requirements via `HttpRouter.provideRequest`.
+ * @param fateLayer    the worker-level fate services (Drizzle + features) as a
+ *                     dependency-free context layer derived from the one
+ *                     per-isolate runtime (`makeFateRuntime`'s `contextLayer`) —
+ *                     discharges the fate, auth, and live routes' service
+ *                     requirements via `HttpRouter.provideRequest`.
  * @param liveLayer    the worker-init-resolved DO namespace handles
  *                     (`LiveTopics` for the `/fate` publish path, `LiveConnections`
  *                     for the `/fate/live` SSE transport), built from the bound
@@ -48,19 +49,23 @@ import {healthApiLayer} from "./health.ts";
  */
 export const makeAppLive = (options: {
 	/**
-	 * The worker-level fate services (`makeFateLayer`, ADR 0040). Its `R` is
-	 * the two seams `Database | BetterAuth`: `databaseLayer` (below) + the same
-	 * `betterAuthLayer` discharge them inside the request layer, so the fate, auth,
-	 * and live routes' service requirements resolve through `provideRequest`.
+	 * The worker-level fate services as a DEPENDENCY-FREE context layer
+	 * (`R = never`): `makeFateRuntime`'s `contextLayer`, derived from the one
+	 * per-isolate runtime whose `Database`/`BetterAuth` seams were provided at
+	 * construction. Pinning `R = never` makes the dual-build state
+	 * unrepresentable — raw `makeFateLayer` (whose `R` is `Database | BetterAuth`)
+	 * no longer typechecks here, so `provideRequest` can never silently construct
+	 * a second Drizzle/Pasaport per request (ADR 0041).
 	 */
-	readonly fateLayer: Layer.Layer<WorkerFateServices, never, Database | BetterAuth.BetterAuth>;
+	readonly fateLayer: Layer.Layer<WorkerFateServices>;
 	/**
-	 * The `Database` seam (ADR 0040): the raw `D1Database` handle both
-	 * `DrizzleLive` (inside `fateLayer`) and `BetterAuthLive` derive from. In the
-	 * deployed worker this is `DatabaseLive`; tests pass a `Database` layer over
-	 * the `node:sqlite` fake (`Layer.succeed(Database)(makeSqliteTestDb().d1)`).
+	 * The single per-isolate fate `ManagedRuntime` ({@link WorkerRuntime}), built
+	 * once in worker init from the zero-arg `makeFateLayer` (Database+BetterAuth
+	 * provided). The `/fate` route runs every resolver through it; `makeFateRoute`
+	 * closes over it so the route holds no module-level runtime. The runtime is
+	 * never disposed (CF isolates have no shutdown hook — ADR 0041).
 	 */
-	readonly databaseLayer: Layer.Layer<Database>;
+	readonly fateRuntime: WorkerRuntime;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**
 	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker
@@ -101,18 +106,18 @@ export const makeAppLive = (options: {
 	// `provideMerge` makes the build order explicit: fateLayer + liveLayer
 	// first, then betterAuthLayer's outputs merged on top with its own
 	// requirements left to the outer worker `Effect.provide`.
-	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute).pipe(
+	const rawRoutes = Layer.mergeAll(makeFateRoute(options.fateRuntime), authRoute, liveRoute).pipe(
 		HttpRouter.provideRequest(
 			Layer.mergeAll(
 				options.fateLayer,
 				options.liveLayer,
 				Layer.succeed(RuntimeContext)(options.runtimeContext),
 			).pipe(
-				// `provideMerge` the two seams `fateLayer` requires (`Database` +
-				// `BetterAuth`) so its `Drizzle`/`Pasaport` resolve here; their own
-				// upstream requirements (`D1Connection`/`Providers`/`RuntimeContext`)
-				// are left for the worker's outer `Effect.provide`.
-				Layer.provideMerge(Layer.merge(options.databaseLayer, options.betterAuthLayer)),
+				// `provideMerge` the `BetterAuth` seam the auth route needs; its own
+				// upstream requirements (`Providers`/`RuntimeContext`) are left for the
+				// worker's outer `Effect.provide`. `fateLayer` is dependency-free
+				// (runtime-derived, `R = never`), so no `Database` is provided here.
+				Layer.provideMerge(options.betterAuthLayer),
 			),
 		),
 	);

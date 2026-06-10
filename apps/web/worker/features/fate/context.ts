@@ -1,27 +1,40 @@
-import type * as Context from "effect/Context";
-import type {FateEnv} from "./layers.ts";
+import type * as ManagedRuntime from "effect/ManagedRuntime";
+import type {LiveBus} from "../fate-live/event-bus.ts";
+import type {Auth} from "../pasaport/Auth.ts";
+import type {WorkerFateServices} from "./layers.ts";
 
 /**
  * The per-request context fate hands to every resolver and source executor as
  * `ctx`.
  *
- * Per ADR 0029 it carries a captured `Context.Context<FateEnv>` (effect v4's
- * service map — the `ServiceMap` the patterns name), **not** a `ManagedRuntime`.
- * Worker init builds the worker-level services once (`Drizzle` + features); the
- * `/fate` route provides `Auth` per request and picks up the upstream
- * `HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides
- * (replacing the hand-rolled `RequestContext`), then captures the live map with
- * `Effect.context<FateEnv>()` and hands it here. The bridge runs each resolver
- * with `Effect.runPromiseExit(Effect.provide(effect, ctx.context))` — nothing is
- * built or disposed per request.
+ * Mechanism (how the bridge runs resolvers on `runtime`): see the `effect.ts`
+ * header + ADR 0041. The shape here: `runtime` carries the worker singletons,
+ * and the two genuinely per-request services ride as VALUES — `auth` (the
+ * validated session) and `liveBus` (the publish capability, ADR 0039).
  *
- * Session is **not** a field here. It's provided into the captured context's
- * `Auth` service when the route runs, so resolvers read the caller with
- * `yield* Auth.required` rather than off the context.
+ * Carrying the two service VALUES (rather than a captured `Context` or a bundled
+ * `provideRequest` closure) makes the per-request contract explicit and invalid
+ * states unrepresentable: a `FateContext` cannot exist without both, and the
+ * bridge cannot forget to provide one.
  *
- * See `.patterns/alchemy-runtime.md` and `.patterns/fate-effect-bridge.md`.
+ * `request` is the raw `Request` for the rare resolver/source that needs headers
+ * directly (fate also forwards it). Session is NOT a field — it's inside `auth`,
+ * read with `yield* Auth.required`.
+ *
+ * The interface is generic in the runtime environment `R` (defaulting to the
+ * production {@link WorkerFateServices}) so a test can wrap a `FateContext` over a
+ * tiny marker runtime with no cast; production call sites (`route.ts` /
+ * `index.ts` / `server.ts`) take the default and carry zero churn.
+ *
+ * See `.patterns/fate-effect-bridge.md` and `.patterns/alchemy-runtime.md`.
  */
-export interface FateContext {
-	readonly context: Context.Context<FateEnv>;
+export interface FateContext<R = WorkerFateServices> {
+	/** The worker-level runtime carrying `R` (the {@link WorkerFateServices} by default); one per isolate. */
+	readonly runtime: ManagedRuntime.ManagedRuntime<R, never>;
+	/** The raw request, for resolvers/sources that read headers directly. */
 	readonly request: Request;
+	/** The per-request validated session, provided onto each resolver effect. */
+	readonly auth: typeof Auth.Service;
+	/** The per-request publish capability (ADR 0039), provided onto each resolver effect. */
+	readonly liveBus: typeof LiveBus.Service;
 }
