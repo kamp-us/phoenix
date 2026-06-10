@@ -151,7 +151,6 @@ beforeAll(() => {
 	appLayer = makeAppLive({
 		fateLayer,
 		fateRuntime,
-		databaseLayer,
 		liveLayer,
 		betterAuthLayer,
 		runtimeContext,

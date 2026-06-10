@@ -136,9 +136,12 @@ export default Phoenix.make(
 		// Resolve the raw D1 handle from the `Database` seam ONCE in init (ADR
 		// 0040). `DatabaseLive` (provided in the outer `Effect.provide`)
 		// resolves the `PhoenixDb` binding; wrapping the resolved handle in a
-		// `Layer.succeed(Database)` gives `makeAppLive` a stable, dependency-free
-		// `databaseLayer` whose value `DrizzleLive` and `BetterAuthLive` both derive
-		// from — one shared handle, type-enforced.
+		// `Layer.succeed(Database)` gives the runtime build (below) a stable,
+		// dependency-free `databaseLayer` whose value `DrizzleLive` and
+		// `BetterAuthLive` both derive from — one shared handle, type-enforced.
+		// It feeds ONLY the runtime construction: `makeAppLive`'s `fateLayer` is
+		// the runtime-derived context layer (`R = never`), so the routes never
+		// rebuild the seams per request (ADR 0041).
 		const raw = yield* Database;
 		const databaseLayer = Layer.succeed(Database)(raw);
 
@@ -235,7 +238,6 @@ export default Phoenix.make(
 		const AppLive = makeAppLive({
 			fateLayer,
 			fateRuntime,
-			databaseLayer,
 			liveLayer,
 			betterAuthLayer,
 			runtimeContext,
