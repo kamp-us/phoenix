@@ -12,12 +12,13 @@
  * per-request pair (`CurrentUser`, `LivePublisher`) it provides to handlers —
  * the v1 compile step (`FateExecutor`): config → pure `createFateServer`
  * over the one worker-level ManagedRuntime, exposed as a fetch handler — and
- * the v2 native plane in progress: the wire-protocol Schema codecs
- * (`Protocol.ts`, drift-pinned against fate's exported types) and the
- * `FateInterpreter` dispatch loop with the byId selection walk over
- * `RequestResolver`-batched sources (`Walk.ts`; oracle-verified byte-equal
- * to fate's walk; connections land in task 16, the `route()` cutover in
- * task 17).
+ * the v2 native plane: the wire-protocol Schema codecs (`Protocol.ts`,
+ * drift-pinned against fate's exported types) and the `FateInterpreter`
+ * dispatch loop with the byId selection walk over `RequestResolver`-batched
+ * sources (`Walk.ts`) and its connection plane (`Connection.ts` —
+ * Schema-decoded pagination args, fate's only runtime zod replaced) —
+ * oracle-verified byte-equal to fate across the full operation surface; the
+ * `route()` cutover lands in task 17.
  *
  * Exports stay flat (every supporting type a consumer's exported value can
  * surface must be nameable through this barrel); the `Fate` namespace is the

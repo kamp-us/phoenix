@@ -31,8 +31,10 @@
  * the BYID plane (`Walk.ts`: the Effect selection walk over
  * `RequestResolver`-batched sources; the walk is constructed once per
  * request, BEFORE the dispatch loop, so its batch window spans every
- * operation in the request). The connection plane completes in task 16 and
- * fails CLOSED until then.
+ * operation in the request) and its CONNECTION plane (`Connection.ts`:
+ * Schema-decoded pagination args + fate's in-array windowing for raw arrays
+ * under selected list-kind fields). The full operation surface is
+ * oracle-green; what remains is the task-17 `route()` cutover.
  *
  * Raw legacy records (`kind: undefined` config arms) are NOT interpreted —
  * the live config has none since the v1 cutover (ADR 0042 marks the arms

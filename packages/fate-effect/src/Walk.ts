@@ -25,6 +25,13 @@
  *   - **`filterToViewFields`**: masking emits keys in the VIEW's field
  *     declaration order — the byId plane's serialization-order mechanism
  *     (the named-operation planes get theirs from the `Protocol.ts` structs).
+ *   - **`toConnectionResult`** (the connection plane, `Connection.ts`): a
+ *     selected list-kind field holding a RAW array wraps via fate's
+ *     `arrayToConnection`, windowed by the operation args scoped to the
+ *     field's dotted path (`getScopedArgs`); an already-shaped connection
+ *     envelope passes through, recursing per entry node. Pagination args
+ *     decode through Effect Schema with fate's exact accept/reject boundary;
+ *     a rejected bag is fate's masked internal arm on the wire.
  *   - **The error taxonomy**: a view callback throwing a `FateRequestError`
  *     passes through verbatim; any other callback throw is fate's OWN
  *     `toProtocolError` arm (`INTERNAL_ERROR` / "Internal server error.") —
@@ -67,12 +74,11 @@
  *   - **Source lookup**: fate populates `sourcesByType` by visiting ROOT
  *     views only; the v1 compiled server passes `roots: {}` (ADR 0016/0019),
  *     leaving its byId plane unreachable dead code. The interpreter resolves
- *     `config.sources` directly — strictly additive on the wire (no phoenix
- *     client issues byId today), pinned loudly in the oracle suite.
- *   - **Connections inside the walk** (a selected list-kind field holding a
- *     raw array → fate's `arrayToConnection`) are task 16 and fail CLOSED
- *     (defect → fixed internal wire error). Already-shaped connection
- *     results mask/resolve correctly.
+ *     `config.sources` directly — strictly additive on the wire: fate's
+ *     client CAN emit `kind: "byId"` (cache-miss node fetches, missing-field
+ *     refetches, the live-payload fallback), and v1 serves all of those
+ *     NOT_FOUND today, so the divergence is error→data and fixes a latent
+ *     live-refetch breakage at cutover. Pinned loudly in the oracle suite.
  *   - fate's hidden computed-state stamping (`attachComputedState`, a
  *     module-private symbol) is unreachable for package-authored loaders —
  *     plain rows never carry it — so computed deps derive from the `select`
@@ -83,6 +89,7 @@
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit, Request, RequestResolver} from "effect";
+import {arrayToConnection, getScopedArgs} from "./Connection.ts";
 import {CurrentUser} from "./CurrentUser.ts";
 import type {FateRequestContext} from "./Executor.ts";
 import {LivePublisher} from "./LivePublisher.ts";
@@ -450,11 +457,19 @@ const filterToViewFields = (
 
 /**
  * fate's `toConnectionResult` over a masked item: already-shaped connection
- * envelopes recurse per entry node; a selected list-kind field holding a RAW
- * array is fate's `arrayToConnection` — the connection plane, task 16 — and
- * fails CLOSED until then.
+ * envelopes pass through, recursing per entry node; a selected list-kind
+ * field holding a RAW array is fate's `arrayToConnection` — the connection
+ * plane (`Connection.ts`), windowed by the OPERATION args scoped to the
+ * field's full dotted path (`getScopedArgs`). The operation-level `args` and
+ * the running `path` thread through every recursion exactly as fate's do, so
+ * a connection nested anywhere in the tree scopes off the same root bag.
  */
-const toConnectionResult = (item: unknown, view: ViewLike): Effect.Effect<unknown> =>
+const toConnectionResult = (
+	item: unknown,
+	view: ViewLike,
+	args: WalkArgs,
+	path: string | null,
+): Effect.Effect<unknown, FateRequestError> =>
 	Effect.gen(function* () {
 		if (!isRecord(item)) {
 			return item;
@@ -472,6 +487,7 @@ const toConnectionResult = (item: unknown, view: ViewLike): Effect.Effect<unknow
 				continue;
 			}
 			const current = (result ?? row)[field];
+			const nextPath = path ? `${path}.${field}` : field;
 			if (isRecord(config) && config.kind === "list") {
 				if (isConnectionResult(current)) {
 					const items = yield* Effect.forEach(current.items, (entry) =>
@@ -479,7 +495,10 @@ const toConnectionResult = (item: unknown, view: ViewLike): Effect.Effect<unknow
 							if (!isRecord(entry)) {
 								return entry;
 							}
-							return {...entry, node: yield* toConnectionResult(entry.node, config)};
+							return {
+								...entry,
+								node: yield* toConnectionResult(entry.node, config, args, nextPath),
+							};
 						}),
 					);
 					assign(field, {...current, items});
@@ -488,18 +507,23 @@ const toConnectionResult = (item: unknown, view: ViewLike): Effect.Effect<unknow
 				if (!Array.isArray(current)) {
 					continue;
 				}
-				return yield* Effect.die(
-					new Error(
-						"fate-effect interpreter: nested list connections are not interpreted yet (task 16)",
-					),
+				const nodes = yield* Effect.forEach(current, (entry) =>
+					toConnectionResult(entry, config, args, nextPath),
 				);
+				assign(field, yield* arrayToConnection(nodes, getScopedArgs(args, nextPath)));
+				continue;
 			}
 			if (Array.isArray(current)) {
-				assign(field, yield* Effect.forEach(current, (entry) => toConnectionResult(entry, config)));
+				assign(
+					field,
+					yield* Effect.forEach(current, (entry) =>
+						toConnectionResult(entry, config, args, nextPath),
+					),
+				);
 				continue;
 			}
 			if (isRecord(current)) {
-				assign(field, yield* toConnectionResult(current, config));
+				assign(field, yield* toConnectionResult(current, config, args, nextPath));
 			}
 		}
 		return result ?? row;
@@ -693,7 +717,7 @@ export const makeWalk = (server: FateServerService, context: FateRequestContext)
 				(rowValue) =>
 					resolveNode(rowValue, plan.root, {args: operation.args, context}).pipe(
 						Effect.map((resolved) => filterToViewFields(resolved, view, plan.selectedPaths)),
-						Effect.flatMap((masked) => toConnectionResult(masked, view)),
+						Effect.flatMap((masked) => toConnectionResult(masked, view, operation.args, null)),
 					),
 				{concurrency: "unbounded"},
 			);
