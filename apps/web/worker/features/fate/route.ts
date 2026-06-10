@@ -1,9 +1,9 @@
 /**
  * The `POST /fate` route (ADR 0041, supersedes 0029; `.patterns/alchemy-http-router.md`).
  *
- * The worker builds ONE isolate-level `ManagedRuntime` ({@link WorkerRuntime}) from
- * the zero-arg `makeFateLayer` in init (`index.ts`); it carries the
- * {@link WorkerFateServices} singletons and is handed to this route as a value.
+ * The worker builds the isolate-level `ManagedRuntime` ({@link WorkerRuntime}) in
+ * init (`index.ts`) and hands it to this route as a value (mechanism — how the
+ * bridge runs resolvers through it: see the `effect.ts` header + ADR 0041).
  * This route is the per-request seam:
  *
  *   1. Read the raw `Request` (`Cloudflare.Request`) and the execution context.
@@ -12,9 +12,7 @@
  *   3. Build the two genuinely per-request services as VALUES — `Auth` (the
  *      validated session) and `LiveBus` (the publish capability, ADR 0039) — and
  *      hand fate a {@link FateContext} of `{runtime, request, auth, liveBus}` as
- *      `adapterContext`. The bridge (`effect.ts`) provides `auth`/`liveBus` onto
- *      EACH resolver effect and runs it on `runtime` — no per-request layer build,
- *      no `Effect.context<FateEnv>()` capture, nothing built or disposed per request.
+ *      `adapterContext`.
  *   4. `LiveBus` closes over a per-request publisher so a mutation's `live.*`
  *      fan-out reaches the topic DO without blocking the response — `waitUntil`
  *      comes from `Cloudflare.WorkerExecutionContext` (ADR 0029), not a disposed

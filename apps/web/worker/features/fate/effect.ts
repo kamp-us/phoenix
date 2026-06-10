@@ -220,7 +220,6 @@ export type SourceExecutor<R = WorkerFateServices> =
  * (it avoids the N+1 the cache exists to prevent) — implement it for every type
  * reachable as a relation. See `.patterns/fate-sources.md`.
  */
-
 export const fateSource = <Item extends Record<string, unknown>, R = WorkerFateServices>(handlers: {
 	byId?: (id: string) => Generator<any, Item | null, any>;
 	byIds?: (ids: ReadonlyArray<string>) => Generator<any, ReadonlyArray<Item>, any>;

@@ -7,14 +7,10 @@ import type {WorkerFateServices} from "./layers.ts";
  * The per-request context fate hands to every resolver and source executor as
  * `ctx`.
  *
- * The F4 shape (ADR 0041, supersedes 0029): ONE worker-level `ManagedRuntime`
- * (built once per isolate in worker init from the fate layer — `Drizzle` + the
- * feature services) carries the {@link WorkerFateServices}, and the two genuinely
- * per-request services ride here as VALUES — `auth` (the validated session) and
- * `liveBus` (the publish capability, ADR 0039). The bridge (`effect.ts`) provides
- * `auth`/`liveBus` onto EACH resolver effect with `Effect.provideService` and
- * runs it on `runtime`, so resolver spans nest under the runtime's request span
- * and nothing is built or disposed per request.
+ * Mechanism (how the bridge runs resolvers on `runtime`): see the `effect.ts`
+ * header + ADR 0041. The shape here: `runtime` carries the worker singletons,
+ * and the two genuinely per-request services ride as VALUES — `auth` (the
+ * validated session) and `liveBus` (the publish capability, ADR 0039).
  *
  * Carrying the two service VALUES (rather than a captured `Context` or a bundled
  * `provideRequest` closure) makes the per-request contract explicit and invalid

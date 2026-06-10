@@ -1,19 +1,20 @@
 /**
  * fate bridge on sozluk — the task-2 proof (ADR 0041, supersedes 0029).
  *
- * Exercises the worker-as-runtime seam end-to-end over ONE worker-level
- * `ManagedRuntime`:
+ * Exercises the worker-as-runtime seam end-to-end through {@link runFateOp}:
  *
  *   1. Build `Drizzle` + the feature services from a bound D1 (here a
  *      `node:sqlite`-backed stand-in) via `makeFateLayer` — the same layer the
  *      worker init builds.
- *   2. Per "request", {@link runFateOp} wraps that worker layer in ONE
- *      `ManagedRuntime`, builds only the two per-request VALUES — `Auth` and the
- *      capturing `LiveBus` it owns — and hands fate a `FateContext` of
+ *   2. Per op, {@link runFateOp} wraps that worker layer in a per-op
+ *      `ManagedRuntime` (built and disposed inside the call — see
+ *      `run-fate-op.ts`), builds only the two per-request VALUES — `Auth` and
+ *      the capturing `LiveBus` it owns — and hands fate a `FateContext` of
  *      `{runtime, request, auth, liveBus}`.
  *   3. The bridge runs each resolver THROUGH that runtime with
  *      `ctx.runtime.runPromiseExit(...)` (`Auth`/`LiveBus` provided onto the
- *      effect) — nothing is built or disposed per request.
+ *      effect) — the same mechanism the deployed worker runs (`effect.ts`
+ *      header + ADR 0041).
  *
  * This runs in the node pool (no workerd): the alchemy worker can't load into
  * `@cloudflare/vitest-pool-workers` yet. The proof is the bridge + worker-level

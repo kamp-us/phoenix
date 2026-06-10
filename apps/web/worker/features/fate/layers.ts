@@ -5,10 +5,9 @@
  * *per-request* `ManagedRuntime`**. `Drizzle` (built once from the bound D1) and
  * the feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`) are
  * **worker-level layers**, constructed once in the worker init and carried by ONE
- * isolate-level `ManagedRuntime` (the {@link WorkerRuntime}). The `/fate` bridge
- * runs every resolver THROUGH that runtime, providing only the two genuinely
- * per-request services — `Auth` + `LiveBus` — onto each resolver effect
- * (`effect.ts`); the routes that yield a worker service directly take it from the
+ * isolate-level `ManagedRuntime` (the {@link WorkerRuntime}). Mechanism — how the
+ * bridge runs each resolver through that runtime: see the `effect.ts` header +
+ * ADR 0041. The routes that yield a worker service directly take it from the
  * same runtime's built context (`Layer.effectContext`, built in `index.ts` via
  * {@link makeFateRuntime} and consumed by `route.ts`).
  *
