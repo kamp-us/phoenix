@@ -115,7 +115,9 @@ export type FateErrorTag =
 	| BodyTooLong["_tag"]
 	| DefinitionNotFound["_tag"]
 	| UnauthorizedDefinitionMutation["_tag"]
-	// Pano
+	// Pano — `PostValidation`/`CommentValidation` are union aliases over the
+	// per-code classes since the pano migration, so each contributes its
+	// members' tags (one registry row per class below).
 	| PostValidation["_tag"]
 	| CommentValidation["_tag"]
 	| PostNotFound["_tag"]
@@ -201,22 +203,23 @@ export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
 	"sozluk/UnauthorizedDefinitionMutation": fixed("UNAUTHORIZED", "not authorized"),
 
 	// ── Pano ──────────────────────────────────────────────────────────────
-	// `PostValidationCode` / `CommentValidationCode` upcased to the wire contract.
-	"pano/PostValidation": upcased(
-		[
-			"TITLE_REQUIRED",
-			"TITLE_TOO_LONG",
-			"URL_INVALID",
-			"BODY_TOO_LONG",
-			"TAGS_REQUIRED",
-			"TAG_INVALID",
-		],
-		"validation failed",
-	),
-	"pano/CommentValidation": upcased(
-		["BODY_REQUIRED", "BODY_TOO_LONG", "PARENT_NOT_FOUND"],
-		"validation failed",
-	),
+	// Dead but type-forced: pano migrated onto the fate-effect annotations
+	// (`pano/errors.ts` `fateWireCode`, pinned by `pano/errors.unit.test.ts`),
+	// so no legacy record can raise these tags anymore — but `FateErrorTag`
+	// still derives them from the classes, so the rows stay until the registry
+	// dies with the bridge (task 13). The former `upcased` arms' dynamic
+	// sub-codes are now one per-code class each, hence one `fixed` row each;
+	// keeping them here also keeps {@link WIRE_CODES} covering the full pano
+	// vocabulary for the SPA-list guard.
+	"pano/TitleRequired": fixed("TITLE_REQUIRED", "validation failed"),
+	"pano/TitleTooLong": fixed("TITLE_TOO_LONG", "validation failed"),
+	"pano/UrlInvalid": fixed("URL_INVALID", "validation failed"),
+	"pano/PostBodyTooLong": fixed("BODY_TOO_LONG", "validation failed"),
+	"pano/TagsRequired": fixed("TAGS_REQUIRED", "validation failed"),
+	"pano/TagInvalid": fixed("TAG_INVALID", "validation failed"),
+	"pano/CommentBodyRequired": fixed("BODY_REQUIRED", "validation failed"),
+	"pano/CommentBodyTooLong": fixed("BODY_TOO_LONG", "validation failed"),
+	"pano/ParentCommentNotFound": fixed("PARENT_NOT_FOUND", "validation failed"),
 	"pano/PostNotFound": fixed("POST_NOT_FOUND", "post not found"),
 	"pano/CommentNotFound": fixed("COMMENT_NOT_FOUND", "comment not found"),
 	"pano/UnauthorizedPostMutation": fixed("UNAUTHORIZED", "not authorized"),

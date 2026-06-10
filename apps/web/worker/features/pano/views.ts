@@ -1,37 +1,42 @@
 /**
  * Pano fate data views — `Post`, `Comment`, `Tag`.
  *
- * Data views are the schema (ADR 0018): each `dataView` declares an entity
- * type's fields; the exported `Entity<>` types are the client's types (codegen,
- * no schema artifact).
+ * Data views are the schema (ADR 0018): each view is a `FateDataView` class
+ * whose static `view` IS the kernel `dataView()` output and whose `Entity<>`
+ * derivation is the client's type (codegen, no schema artifact). IDs are raw
+ * per-type values — no global-ID encoding, no `Node` interface.
  *
- * `Post.comments` is a `list(commentDataView, {orderBy})` whose `orderBy` is
- * kept in lockstep with the service's comment-thread `ORDER BY` (`created_at
- * asc, id asc`) so the keyset cursors round-trip (ADR 0019; see
+ * `Post.comments` is a `FateDataView.list(CommentView, {orderBy})` whose
+ * `orderBy` is kept in lockstep with the service's comment-thread `ORDER BY`
+ * (`created_at asc, id asc`) so the keyset cursors round-trip (ADR 0019; see
  * `.patterns/fate-connections.md`).
  *
- * See `.patterns/fate-data-views.md`.
+ * See `.patterns/fate-effect-data-views.md`.
  */
-import {dataView, list} from "@nkzw/fate/server";
-import type {DataViewOf, EntityOf, ViewRow} from "../fate/view-types.ts";
+import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import type {ViewRow} from "../fate/view-types.ts";
 import type {CommentRow, PostSummaryRow, PostTagRow} from "./Pano.ts";
 
-type TagViewRow = ViewRow<PostTagRow>;
-type CommentViewRow = ViewRow<CommentRow>;
-type PostViewRow = ViewRow<PostSummaryRow>;
+/**
+ * The view row types — mapped restatements of the service rows
+ * (`Record<string, unknown>`-assignable, which the plain row interfaces are
+ * not). Exported because the `Fate.source` entries over these views surface
+ * the row type in their declarations (`fate/sources.ts` — TS2883 portability).
+ */
+export type TagViewRow = ViewRow<PostTagRow>;
+export type CommentViewRow = ViewRow<CommentRow>;
+export type PostViewRow = ViewRow<PostSummaryRow>;
 
 /**
  * `Tag` — a post's category chip (`kind` + display `label`). Tags are embedded
  * scalars on the post row (parsed from `post_summary.tags` CSV), not a
- * standalone table; the `Post.tags` list carries the pre-built array on the
+ * standalone table; the `Post.tags` field carries the pre-built array on the
  * parent row. `kind` is the natural key.
  */
-const tagFields = {
+export class TagView extends FateDataView<TagViewRow>()("Tag")({
 	kind: true,
 	label: true,
-} as const;
-
-export const tagDataView: DataViewOf<TagViewRow> = dataView<TagViewRow>("Tag")(tagFields);
+}) {}
 
 /**
  * `Comment` — a single discussion comment. `author` is the plain author-name
@@ -41,7 +46,7 @@ export const tagDataView: DataViewOf<TagViewRow> = dataView<TagViewRow>("Tag")(t
  * (`Pano.getCommentsByIds` / `listCommentsKeyset`), surfaced here as a stamped
  * scalar (no per-row resolver, no N+1).
  */
-const commentFields = {
+export class CommentView extends FateDataView<CommentViewRow>()("Comment")({
 	id: true,
 	parentId: true,
 	author: true,
@@ -52,24 +57,30 @@ const commentFields = {
 	updatedAt: true,
 	deletedAt: true,
 	myVote: true,
-} as const;
-
-export const commentDataView: DataViewOf<CommentViewRow> =
-	dataView<CommentViewRow>("Comment")(commentFields);
+}) {}
 
 /**
  * `Post` — a link-aggregator submission plus its connection of comments.
  *
  * Scalar surface: `slug, title, url, host, body, author, authorId, score,
  * commentCount, createdAt, updatedAt, myVote`. `tags` is an embedded scalar
- * array carrying the pre-built `{kind, label}[]` on the row.
+ * array carrying the pre-built `{kind, label}[]` on the row — NOT a normalized
+ * `FateDataView.list(TagView)` relation. The tags are parsed from the
+ * `post_summary.tags` CSV and ride inline on the post row — there is no
+ * standalone tag table. fate's vite codegen builds the client type config from
+ * data views only and never carries a source's id field, so it hardcodes the
+ * default `getId` (reads `.id`) for every relation entity; `Tag` is keyed by
+ * `kind` (no `id`), so a list relation would throw `Missing 'id' on entity
+ * record` when the client normalizes the feed/post nodes. Modeling `tags` as a
+ * scalar passes the array through verbatim (server → cache) without per-`Tag`
+ * normalization. See `.patterns/fate-data-views.md` (embedded-scalar note).
  *
  * `comments` is the nested connection. Its `orderBy` MUST equal the service's
  * comment-thread `ORDER BY` — `(created_at asc, id asc)` — so the keyset cursors
  * the service builds round-trip without skips/dupes (ADR 0019). `id` is the
  * explicit final tiebreaker.
  */
-const postFields = {
+export class PostView extends FateDataView<PostViewRow>()("Post")({
 	id: true,
 	slug: true,
 	title: true,
@@ -83,29 +94,40 @@ const postFields = {
 	createdAt: true,
 	updatedAt: true,
 	myVote: true,
-	// `tags` is an **embedded scalar array** (`{kind, label}[]`), NOT a normalized
-	// `list(tagDataView)` relation. The tags are parsed from the `post_summary.tags`
-	// CSV and ride inline on the post row — there is no standalone tag table. fate's
-	// vite codegen builds the client type config from data views only and never
-	// carries a source's id field, so it hardcodes the default `getId` (reads `.id`)
-	// for every relation entity; `Tag` is keyed by `kind` (no `id`), so a
-	// `list(tagDataView)` relation would throw `Missing 'id' on entity record` when
-	// the client normalizes the feed/post nodes. Modeling `tags` as a scalar passes
-	// the array through verbatim (server → cache) without per-`Tag` normalization.
-	// See `.patterns/fate-data-views.md` (embedded-scalar note).
 	tags: true,
-} as const;
+	comments: FateDataView.list(CommentView, {orderBy: [{createdAt: "asc"}, {id: "asc"}]}),
+}) {}
 
-export const postDataView: DataViewOf<PostViewRow> = dataView<PostViewRow>("Post")({
-	...postFields,
-	comments: list(commentDataView, {orderBy: [{createdAt: "asc"}, {id: "asc"}]}),
-});
+/**
+ * The kernel views, for the cross-feature surfaces that want fate's plain
+ * `dataView()` value (the `fate/views.ts` `Root` map + barrel re-exports).
+ */
+export const tagDataView = TagView.view;
+export const commentDataView = CommentView.view;
+export const postDataView = PostView.view;
 
-export type Tag = EntityOf<TagViewRow, typeof tagFields, "Tag">;
-export type Comment = EntityOf<CommentViewRow, typeof commentFields, "Comment">;
-// `tags` is an embedded scalar array on the row; `comments` is an optional
-// relation intersected on. See `.patterns/fate-data-views.md`.
-export type Post = EntityOf<PostViewRow, typeof postFields, "Post"> &
-	Pick<PostViewRow, "tags"> & {
+/*
+ * The `Replacements` second parameter restates two things fate's wire-facing
+ * `Entity<>` derivation widens/narrows away:
+ *
+ *   - list relations (`comments`) — kernel `list()` widens the child field
+ *     map, the same reason fate's own docs use `Replacements`;
+ *   - timestamp fields — fate types `Date` row fields as `string` (the
+ *     JSON-serialized wire shape), but these worker-side entity values carry
+ *     live `Date` objects until fate serializes the response. The shapers and
+ *     every worker call site operate pre-serialization, so the types restate
+ *     the bridge-era row truth (the SPA's date helpers accept both).
+ */
+export type Tag = Entity<typeof TagView>;
+export type Comment = Entity<
+	typeof CommentView,
+	{createdAt: Date; updatedAt: Date; deletedAt: Date | null}
+>;
+export type Post = Entity<
+	typeof PostView,
+	{
+		createdAt: Date;
+		updatedAt: Date;
 		comments?: Comment[];
-	};
+	}
+>;

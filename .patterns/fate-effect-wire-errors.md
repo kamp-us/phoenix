@@ -19,6 +19,8 @@ export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 
 That is the whole contract — the class declaration carries its own wire mapping. Custom annotation keys are effect's documented schema extension point (effect-smol `Schema.ts` › `Annotations` namespace, "Defining your own annotations"); the package augments `Schema.Annotations.Annotations` so the key's value is typed `string | undefined` at every definition site.
 
+**One class, one code.** The annotation is class-level — `wireCodeOf` reads it off `instance.constructor` — so a bridge-era class whose wire code depended on an instance field (the registry's `upcased` arms: `PostValidation`'s `code: "title_required"` upcased to `TITLE_REQUIRED`) cannot port as a single class. Split it into one class per sub-code, with a union alias + a members tuple so service signatures and mutation `error:` unions stay one name (`apps/web/worker/features/pano/errors.ts`: `TitleRequired`/`TitleTooLong`/… , `type PostValidation = …` union, `PostValidationErrors` tuple spread into `Schema.Union([...])`). The split also retires the stringly `code` field — each sub-code is its own type.
+
 ## The codec
 
 `encodeWireError(unknown): FateRequestError` is total — it never throws, whatever the failed/thrown value:

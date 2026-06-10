@@ -45,8 +45,19 @@ describe("encodeFateError", () => {
 	});
 
 	it("maps Pano tags", () => {
-		expect(code("pano/PostValidation", {code: "title_required"})).toBe("TITLE_REQUIRED");
-		expect(code("pano/CommentValidation")).toBe("BAD_REQUEST");
+		// The former `upcased` validation arms are per-code classes since the
+		// pano migration — one fixed row per sub-code (dead but type-forced;
+		// the live path is the `fateWireCode` annotations, pinned by
+		// `pano/errors.unit.test.ts`).
+		expect(code("pano/TitleRequired")).toBe("TITLE_REQUIRED");
+		expect(code("pano/TitleTooLong")).toBe("TITLE_TOO_LONG");
+		expect(code("pano/UrlInvalid")).toBe("URL_INVALID");
+		expect(code("pano/PostBodyTooLong")).toBe("BODY_TOO_LONG");
+		expect(code("pano/TagsRequired")).toBe("TAGS_REQUIRED");
+		expect(code("pano/TagInvalid")).toBe("TAG_INVALID");
+		expect(code("pano/CommentBodyRequired")).toBe("BODY_REQUIRED");
+		expect(code("pano/CommentBodyTooLong")).toBe("BODY_TOO_LONG");
+		expect(code("pano/ParentCommentNotFound")).toBe("PARENT_NOT_FOUND");
 		expect(code("pano/PostNotFound")).toBe("POST_NOT_FOUND");
 		expect(code("pano/CommentNotFound")).toBe("COMMENT_NOT_FOUND");
 		expect(code("pano/UnauthorizedPostMutation")).toBe("UNAUTHORIZED");

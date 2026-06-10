@@ -1,11 +1,11 @@
 /**
  * Pano root query resolvers — `post(idOrSlug)`.
  *
- * Thin orchestration over `Pano`, wrapped by `fateQuery` so it runs through the
- * request runtime (see `.patterns/fate-effect-bridge.md`). Query resolvers
- * return shaped output directly — they are **not** masked through a source, so
- * the resolver builds the exact wire shape the client selected (including
- * nested connections).
+ * A `Fate.query` def + `Effect.fn("post")` pair
+ * (`.patterns/fate-effect-operations.md`). Query resolvers return shaped
+ * output directly — they are **not** masked through a source, so the resolver
+ * builds the exact wire shape the client selected (including nested
+ * connections).
  *
  * Roots:
  *   - `post(idOrSlug)` — the pano detail page. Returns the `Post` entity; when
@@ -14,39 +14,51 @@
  *     comment-thread order. See `.patterns/fate-connections.md`.
  */
 
-import type {ConnectionResult} from "@nkzw/fate/server";
 import {hasNestedSelection} from "@nkzw/fate/server";
-import {fateQuery} from "../fate/effect.ts";
+import {CurrentUser, Fate} from "@phoenix/fate-effect";
+import {Effect} from "effect";
+import * as Schema from "effect/Schema";
+import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {toConnection} from "../fate/shapers.ts";
-import type {Comment, Post} from "../fate/views.ts";
-import {Auth} from "../pasaport/Auth.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
+import type {Comment} from "./views.ts";
+import {PostView} from "./views.ts";
 
 /** Default page size for the nested `Post.comments` connection. */
 const COMMENTS_PAGE_SIZE = 50;
 
+/**
+ * `post(idOrSlug)` args. Nested connection args are scoped under the field
+ * path (`args.comments.{first,after}`), matching fate's `getScopedArgs`.
+ * `Post.id` is the raw per-type post id (no global-id encoding — fate carries
+ * the type on the operation).
+ */
+const PostArgs = Schema.Struct({
+	idOrSlug: Schema.String,
+	comments: Schema.optional(
+		Schema.Struct({
+			first: Schema.optional(Schema.Number),
+			after: Schema.optional(Schema.String),
+		}),
+	),
+});
+
 export const queries = {
-	post: {
-		type: "Post",
-		resolve: fateQuery<
-			{idOrSlug: string; comments?: {first?: number; after?: string}},
-			Post | null
-		>(function* ({args, select}) {
-			// Raw per-type id (no global-id encoding — fate carries the type on the
-			// operation). `Post.id` is the raw post id.
-			const key = args?.idOrSlug ?? "";
+	post: Fate.query(
+		{args: PostArgs, type: PostView},
+		Effect.fn("post")(function* ({args, select}) {
 			const pano = yield* Pano;
-			const page = yield* pano.getPost(key);
+			const page = yield* pano.getPost(args.idOrSlug).pipe(orDieDrizzle);
 			if (!page) return null;
 
-			const auth = yield* Auth;
-			const viewerId = auth.user?.id ?? null;
+			const {user} = yield* CurrentUser;
+			const viewerId = user?.id ?? null;
 
 			// Stamp the viewer's vote so `Post.myVote` is authoritative without a
 			// per-row resolver: batch the single post through the same `user_vote`
 			// read.
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId});
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId}).pipe(orDieDrizzle);
 
 			const base = toPostFromPage(page, stamped?.myVote ?? null);
 
@@ -60,19 +72,21 @@ export const queries = {
 				return base;
 			}
 
-			const cArgs = args?.comments;
-			const connection = yield* pano.listCommentsKeyset(page.id, {
-				first: typeof cArgs?.first === "number" ? cArgs.first : COMMENTS_PAGE_SIZE,
-				...(typeof cArgs?.after === "string" ? {after: cArgs.after} : {}),
-				viewerId,
-			});
+			const cArgs = args.comments;
+			const connection = yield* pano
+				.listCommentsKeyset(page.id, {
+					first: cArgs?.first ?? COMMENTS_PAGE_SIZE,
+					...(cArgs?.after !== undefined ? {after: cArgs.after} : {}),
+					viewerId,
+				})
+				.pipe(orDieDrizzle);
 			const comments = toConnection<(typeof connection.rows)[number], Comment>(
 				connection,
 				(row) => row.id,
 				(row) => toComment(row),
 			);
 
-			return {...base, comments} as Post & {comments: ConnectionResult<Comment>};
+			return {...base, comments};
 		}),
-	},
+	),
 };

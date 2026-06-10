@@ -12,7 +12,7 @@
  * entries hold the features' exported definition objects, never copies), and
  * `getSource` resolving a view to the same keyed object by `typeName`.
  *
- * Migrated features contribute `Fate.source` entries directly (sozluk —
+ * Migrated features contribute `Fate.source` entries directly (sozluk, pano —
  * `.patterns/fate-effect-sources.md`); the remaining legacy pairs ride beside
  * them, each annotated {@link RawFateSourceEntry} at its feature declaration
  * site (a raw kernel `dataView()` in an exported type is the TS2883 hazard —
@@ -25,14 +25,7 @@
  * `list(view, {orderBy})` mirrors it. See `.patterns/fate-connections.md` and
  * `.patterns/fate-sources.md`.
  */
-import {
-	commentExecutor,
-	commentSource,
-	postExecutor,
-	postSource,
-	tagExecutor,
-	tagSource,
-} from "../pano/sources.ts";
+import {commentSource, postSource, tagSource} from "../pano/sources.ts";
 import {
 	contributionExecutor,
 	contributionSource,
@@ -53,9 +46,9 @@ export const sources = [
 	{definition: userSource, executor: userExecutor},
 	definitionSource,
 	termSource,
-	{definition: postSource, executor: postExecutor},
-	{definition: commentSource, executor: commentExecutor},
-	{definition: tagSource, executor: tagExecutor},
+	postSource,
+	commentSource,
+	tagSource,
 	{definition: profileSource, executor: profileExecutor},
 	{definition: contributionSource, executor: contributionExecutor},
 ] as const;

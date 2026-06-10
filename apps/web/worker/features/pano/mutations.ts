@@ -1,65 +1,84 @@
 /**
  * Pano mutation resolvers — the post + comment write path.
  *
- * Per ADR 0020, mutations are `{type, input?, resolve: fateMutation(...)}`,
- * named `entity.verb`. Each calls a `Pano` service method, then returns the
- * **re-resolved affected entity** shaped exactly like a read. A `comment.delete`
- * returns the re-resolved **parent `Post`** so the client's normalized cache
- * updates the surrounding comment thread; a `post.delete` returns the deleted
- * post's `{id}` (a post has no parent — the client evicts it by id).
+ * Per ADR 0020, mutations are `Fate.mutation` def + `Effect.fn` pairs named
+ * `entity.verb` (`.patterns/fate-effect-operations.md`). Each calls a `Pano`
+ * service method, then returns the **re-resolved affected entity** shaped
+ * exactly like a read. A `comment.delete` returns the re-resolved **parent
+ * `Post`** so the client's normalized cache updates the surrounding comment
+ * thread; a `post.delete` returns the deleted post's `{id}` (a post has no
+ * parent — the client evicts it by id).
  *
- * Validation stays in the service (ADR 0013) — the resolvers carry no `input`
- * schema beyond fate's thin boundary coercion; domain failures
- * (`PostValidation`, `CommentValidation`, `PostNotFound`, `CommentNotFound`,
- * `UnauthorizedPostMutation`, `UnauthorizedCommentMutation`) surface through the
- * bridge's `encodeFateError` as stable wire codes.
+ * Input Schemas carry the wire field shapes only — domain validation stays in
+ * the service (ADR 0013); domain failures (the `PostValidation` /
+ * `CommentValidation` per-code classes, `PostNotFound`, `CommentNotFound`,
+ * `UnauthorizedPostMutation`, `UnauthorizedCommentMutation`) are declared on
+ * each definition and surface through their `fateWireCode` annotations as
+ * stable wire codes (`.patterns/fate-effect-wire-errors.md`). The
+ * `DrizzleError` channel is infrastructure and dies (`orDieDrizzle`).
  *
- * `Auth.required` gates every write (anonymous → `UNAUTHORIZED`). The vote
- * mutations stamp `myVote` authoritatively from the vote write so the field is
- * correct without a follow-up `user_vote` read.
+ * `CurrentUser.required` gates every write (anonymous → `UNAUTHORIZED`). The
+ * vote mutations stamp `myVote` authoritatively from the vote write so the
+ * field is correct without a follow-up `user_vote` read.
  *
- * Lives in `features/pano/mutations.ts` (per-feature colocation); the `fate`
- * barrel (`features/fate/server.ts`) composes it into the single mutation map
- * fate expects, alongside the sozluk and pasaport mutations. The exported
- * input interfaces below ride the `typeof mutations` type across the
- * `fateServer` export (TS4023).
- *
- * See `.patterns/fate-mutations.md`, `.patterns/fate-effect-bridge.md`.
+ * Live publishes go through `LivePublisher` — every publish method's error
+ * channel is `never`, so a failed publish can never fail the mutation
+ * (`.patterns/fate-effect-server.md`).
  */
 
-import {fateMutation} from "../fate/effect.ts";
+import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effect";
+import {Effect} from "effect";
+import * as Schema from "effect/Schema";
+import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {toComment, toPost, toPostFromPage} from "../fate/shapers.ts";
-import type {Comment, Post} from "../fate/views.ts";
-import {LiveBus} from "../fate-live/event-bus.ts";
-import {Auth} from "../pasaport/Auth.ts";
+import {
+	CommentNotFound,
+	CommentValidationErrors,
+	PostNotFound,
+	PostValidationErrors,
+	UnauthorizedCommentMutation,
+	UnauthorizedPostMutation,
+} from "./errors.ts";
 import {Pano} from "./Pano.ts";
+import type {Comment, Post} from "./views.ts";
+import {CommentView, PostView} from "./views.ts";
 
-export interface SubmitPostInput {
-	title: string;
-	url?: string | null;
-	body?: string | null;
-	tags: ReadonlyArray<{kind: string; label?: string | null}>;
-}
-export interface PostIdInput {
-	id: string;
-}
-export interface EditPostInput {
-	id: string;
-	title?: string | null;
-	body?: string | null;
-}
-export interface AddCommentInput {
-	postId: string;
-	parentId?: string | null;
-	body: string;
-}
-export interface CommentIdInput {
-	id: string;
-}
-export interface EditCommentInput {
-	id: string;
-	body: string;
-}
+const SubmitPostInput = Schema.Struct({
+	title: Schema.String,
+	url: Schema.optional(Schema.NullOr(Schema.String)),
+	body: Schema.optional(Schema.NullOr(Schema.String)),
+	tags: Schema.Array(
+		Schema.Struct({
+			kind: Schema.String,
+			label: Schema.optional(Schema.NullOr(Schema.String)),
+		}),
+	),
+});
+
+const PostIdInput = Schema.Struct({
+	id: Schema.String,
+});
+
+const EditPostInput = Schema.Struct({
+	id: Schema.String,
+	title: Schema.optional(Schema.NullOr(Schema.String)),
+	body: Schema.optional(Schema.NullOr(Schema.String)),
+});
+
+const AddCommentInput = Schema.Struct({
+	postId: Schema.String,
+	parentId: Schema.optional(Schema.NullOr(Schema.String)),
+	body: Schema.String,
+});
+
+const CommentIdInput = Schema.Struct({
+	id: Schema.String,
+});
+
+const EditCommentInput = Schema.Struct({
+	id: Schema.String,
+	body: Schema.String,
+});
 
 /**
  * The `Pano` write results name the id `postId`/`commentId` and the author
@@ -124,182 +143,236 @@ const shapeComment = (r: {
 	});
 
 export const mutations = {
-	"post.submit": {
-		type: "Post",
-		resolve: fateMutation<SubmitPostInput, Post>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	"post.submit": Fate.mutation(
+		{
+			input: SubmitPostInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, ...PostValidationErrors]),
+		},
+		Effect.fn("post.submit")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.submitPost({
-				title: input.title,
-				...(input.url ? {url: input.url} : {}),
-				...(input.body ? {body: input.body} : {}),
-				tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
-				authorId: user.id,
-				authorName: user.name ?? user.email,
-			});
+			const live = yield* LivePublisher;
+			const r = yield* pano
+				.submitPost({
+					title: input.title,
+					...(input.url ? {url: input.url} : {}),
+					...(input.body ? {body: input.body} : {}),
+					tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
+					authorId: user.id,
+					authorName: user.name ?? user.email,
+				})
+				.pipe(orDieDrizzle);
 			// Fresh write: not yet voted by anyone.
 			const post = shapePost({...r, myVote: null});
 			// New post leads the feed: prepend its node to the `posts` connection
 			// (every feed-sort variant, via the global topic). Inline node, no DB work.
-			yield* liveBus.useIgnore((bus) =>
-				bus.connection("posts").prependNode("Post", post.id, {node: post}),
-			);
+			yield* live.connection("posts").prependNode("Post", post.id, {node: post});
 			return post;
 		}),
-	},
-	"post.vote": {
-		type: "Post",
-		resolve: fateMutation<PostIdInput, Post>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"post.vote": Fate.mutation(
+		{
+			input: PostIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, PostNotFound]),
+		},
+		Effect.fn("post.vote")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
+			const live = yield* LivePublisher;
+			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id}).pipe(orDieDrizzle);
 			const post = shapePost(r);
-			yield* liveBus.useIgnore((bus) =>
-				bus.update("Post", post.id, {changed: ["score"], data: post}),
-			);
+			yield* live.update("Post", post.id, {changed: ["score"], data: post});
 			return post;
 		}),
-	},
-	"post.retractVote": {
-		type: "Post",
-		resolve: fateMutation<PostIdInput, Post>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"post.retractVote": Fate.mutation(
+		{
+			input: PostIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, PostNotFound]),
+		},
+		Effect.fn("post.retractVote")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
+			const live = yield* LivePublisher;
+			const r = yield* pano
+				.retractPostVote({postId: input.id, voterId: user.id})
+				.pipe(orDieDrizzle);
 			const post = shapePost(r);
-			yield* liveBus.useIgnore((bus) =>
-				bus.update("Post", post.id, {changed: ["score"], data: post}),
-			);
+			yield* live.update("Post", post.id, {changed: ["score"], data: post});
 			return post;
 		}),
-	},
-	"post.edit": {
-		type: "Post",
-		resolve: fateMutation<EditPostInput, Post>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"post.edit": Fate.mutation(
+		{
+			input: EditPostInput,
+			type: PostView,
+			error: Schema.Union([
+				Unauthorized,
+				...PostValidationErrors,
+				PostNotFound,
+				UnauthorizedPostMutation,
+			]),
+		},
+		Effect.fn("post.edit")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.editPost({
-				postId: input.id,
-				actorId: user.id,
-				...(input.title != null ? {title: input.title} : {}),
-				...(input.body != null ? {body: input.body} : {}),
-			});
+			const live = yield* LivePublisher;
+			const r = yield* pano
+				.editPost({
+					postId: input.id,
+					actorId: user.id,
+					...(input.title != null ? {title: input.title} : {}),
+					...(input.body != null ? {body: input.body} : {}),
+				})
+				.pipe(orDieDrizzle);
 			// Re-read the viewer's vote so the edited entity carries an accurate
 			// `myVote` (edit doesn't change vote state).
-			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
+			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id}).pipe(orDieDrizzle);
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
-			yield* liveBus.useIgnore((bus) =>
-				bus.update("Post", post.id, {changed: ["title", "body"], data: post}),
-			);
+			yield* live.update("Post", post.id, {changed: ["title", "body"], data: post});
 			return post;
 		}),
-	},
-	"post.delete": {
-		// A post has no parent entity; return the deleted post's id so the client
-		// evicts it by id.
-		type: "Post",
-		resolve: fateMutation<PostIdInput, {__typename: "Post"; id: string}>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"post.delete": Fate.mutation(
+		{
+			// A post has no parent entity; return the deleted post's id so the client
+			// evicts it by id.
+			input: PostIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, UnauthorizedPostMutation]),
+		},
+		Effect.fn("post.delete")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
+			const live = yield* LivePublisher;
+			const r = yield* pano.deletePost({postId: input.id, actorId: user.id}).pipe(orDieDrizzle);
 			// Entity gone; drop its edge from the `posts` feed connection.
-			yield* liveBus.useIgnore((bus) => bus.delete("Post", r.postId));
-			yield* liveBus.useIgnore((bus) => bus.connection("posts").deleteEdge("Post", r.postId));
+			yield* live.delete("Post", r.postId);
+			yield* live.connection("posts").deleteEdge("Post", r.postId);
 			// Not an entity shape — the post is gone; this is an id-only eviction
 			// ref (`{__typename, id}`) the client uses to drop the record. There is
 			// no row left to run through `toPost`, so it stays a bare ref.
 			return {__typename: "Post", id: r.postId};
 		}),
-	},
-	"comment.add": {
-		type: "Comment",
-		resolve: fateMutation<AddCommentInput, Comment>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"comment.add": Fate.mutation(
+		{
+			input: AddCommentInput,
+			type: CommentView,
+			error: Schema.Union([Unauthorized, ...CommentValidationErrors, PostNotFound]),
+		},
+		Effect.fn("comment.add")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.addComment({
-				postId: input.postId,
-				authorId: user.id,
-				authorName: user.name ?? user.email,
-				body: input.body,
-				...(input.parentId ? {parentId: input.parentId} : {}),
-			});
+			const live = yield* LivePublisher;
+			const r = yield* pano
+				.addComment({
+					postId: input.postId,
+					authorId: user.id,
+					authorName: user.name ?? user.email,
+					body: input.body,
+					...(input.parentId ? {parentId: input.parentId} : {}),
+				})
+				.pipe(orDieDrizzle);
 			const comment = shapeComment({...r, myVote: null});
 			// New comment joins the post's thread: append its node to the
 			// `Post.comments` connection keyed by the parent post id. Inline node.
-			yield* liveBus.useIgnore((bus) =>
-				bus
-					.connection("Post.comments", {id: input.postId})
-					.appendNode("Comment", comment.id, {node: comment}),
-			);
+			yield* live
+				.connection("Post.comments", {id: input.postId})
+				.appendNode("Comment", comment.id, {node: comment});
 			return comment;
 		}),
-	},
-	"comment.vote": {
-		type: "Comment",
-		resolve: fateMutation<CommentIdInput, Comment>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"comment.vote": Fate.mutation(
+		{
+			input: CommentIdInput,
+			type: CommentView,
+			error: Schema.Union([Unauthorized, CommentNotFound]),
+		},
+		Effect.fn("comment.vote")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
+			const live = yield* LivePublisher;
+			const r = yield* pano
+				.voteOnComment({commentId: input.id, voterId: user.id})
+				.pipe(orDieDrizzle);
 			const comment = shapeComment(r);
-			yield* liveBus.useIgnore((bus) =>
-				bus.update("Comment", comment.id, {changed: ["score"], data: comment}),
-			);
+			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
 			return comment;
 		}),
-	},
-	"comment.retractVote": {
-		type: "Comment",
-		resolve: fateMutation<CommentIdInput, Comment>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"comment.retractVote": Fate.mutation(
+		{
+			input: CommentIdInput,
+			type: CommentView,
+			error: Schema.Union([Unauthorized, CommentNotFound]),
+		},
+		Effect.fn("comment.retractVote")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
+			const live = yield* LivePublisher;
+			const r = yield* pano
+				.retractCommentVote({commentId: input.id, voterId: user.id})
+				.pipe(orDieDrizzle);
 			const comment = shapeComment(r);
-			yield* liveBus.useIgnore((bus) =>
-				bus.update("Comment", comment.id, {changed: ["score"], data: comment}),
-			);
+			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
 			return comment;
 		}),
-	},
-	"comment.edit": {
-		type: "Comment",
-		resolve: fateMutation<EditCommentInput, Comment>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"comment.edit": Fate.mutation(
+		{
+			input: EditCommentInput,
+			type: CommentView,
+			error: Schema.Union([
+				Unauthorized,
+				...CommentValidationErrors,
+				CommentNotFound,
+				UnauthorizedCommentMutation,
+			]),
+		},
+		Effect.fn("comment.edit")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
-			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
-			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
+			const live = yield* LivePublisher;
+			const r = yield* pano
+				.editComment({commentId: input.id, actorId: user.id, body: input.body})
+				.pipe(orDieDrizzle);
+			const [fresh] = yield* pano
+				.getCommentsByIds([r.commentId], {viewerId: user.id})
+				.pipe(orDieDrizzle);
 			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
-			yield* liveBus.useIgnore((bus) =>
-				bus.update("Comment", comment.id, {changed: ["body"], data: comment}),
-			);
+			yield* live.update("Comment", comment.id, {changed: ["body"], data: comment});
 			return comment;
 		}),
-	},
-	"comment.delete": {
-		// A delete returns the re-resolved **parent `Post`** so the client's
-		// normalized cache updates the surrounding comment thread (ADR 0020).
-		// Reply-aware soft-delete vs hard-delete is handled inside the service; the
-		// parent post's `commentCount` reflects the result.
-		type: "Post",
-		resolve: fateMutation<CommentIdInput, Post | null>(function* ({input}) {
-			const {user} = yield* Auth.required;
+	),
+	"comment.delete": Fate.mutation(
+		{
+			// A delete returns the re-resolved **parent `Post`** so the client's
+			// normalized cache updates the surrounding comment thread (ADR 0020).
+			// Reply-aware soft-delete vs hard-delete is handled inside the service;
+			// the parent post's `commentCount` reflects the result.
+			input: CommentIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, CommentNotFound, UnauthorizedCommentMutation]),
+		},
+		Effect.fn("comment.delete")(function* ({input}) {
+			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const liveBus = yield* LiveBus;
+			const live = yield* LivePublisher;
 			// Resolve the parent post id before the delete (the row still exists).
-			const postId = yield* pano.lookupCommentPostId(input.id);
-			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
+			const postId = yield* pano.lookupCommentPostId(input.id).pipe(orDieDrizzle);
+			const result = yield* pano
+				.deleteComment({commentId: input.id, actorId: user.id})
+				.pipe(orDieDrizzle);
 			if (!postId) return null;
-			const page = yield* pano.getPost(postId);
+			const page = yield* pano.getPost(postId).pipe(orDieDrizzle);
 			if (!page) return null;
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
+			const [stamped] = yield* pano
+				.getPostsByIds([page.id], {viewerId: user.id})
+				.pipe(orDieDrizzle);
 			const post = toPostFromPage(page, stamped?.myVote ?? null);
 			// Two delete shapes, driven by the service's reply-aware decision:
 			//  - hard delete (leaf): the row is gone, so drop its edge from the
@@ -311,23 +384,17 @@ export const mutations = {
 			//    re-resolved tombstoned comment so each thread re-renders it in place.
 			if (result.placeholder) {
 				const placeholder = toComment(result.placeholder);
-				yield* liveBus.useIgnore((bus) =>
-					bus.update("Comment", input.id, {
-						changed: ["body", "score", "deletedAt", "updatedAt"],
-						data: placeholder,
-					}),
-				);
+				yield* live.update("Comment", input.id, {
+					changed: ["body", "score", "deletedAt", "updatedAt"],
+					data: placeholder,
+				});
 			} else {
-				yield* liveBus.useIgnore((bus) =>
-					bus.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id),
-				);
+				yield* live.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id);
 			}
 			// Either way the parent post's `commentCount` changes — publish the
 			// re-resolved parent.
-			yield* liveBus.useIgnore((bus) =>
-				bus.update("Post", post.id, {changed: ["commentCount"], data: post}),
-			);
+			yield* live.update("Post", post.id, {changed: ["commentCount"], data: post});
 			return post;
 		}),
-	},
+	),
 };

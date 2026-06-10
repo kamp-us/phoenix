@@ -30,12 +30,21 @@ import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {
+	CommentBodyRequired,
+	CommentBodyTooLong,
 	CommentNotFound,
-	CommentValidation,
+	type CommentValidation,
+	ParentCommentNotFound,
+	PostBodyTooLong,
 	PostNotFound,
-	PostValidation,
+	type PostValidation,
+	TagInvalid,
+	TagsRequired,
+	TitleRequired,
+	TitleTooLong,
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
+	UrlInvalid,
 } from "./errors.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -566,8 +575,7 @@ export const PanoLive = Layer.effect(Pano)(
 		 */
 		const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
 			if (rawBody.length > POST_BODY_MAX) {
-				return yield* new PostValidation({
-					code: "body_too_long",
+				return yield* new PostBodyTooLong({
 					message: `metin en fazla ${POST_BODY_MAX} karakter olabilir`,
 				});
 			}
@@ -577,14 +585,12 @@ export const PanoLive = Layer.effect(Pano)(
 		const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: string) {
 			const trimmed = raw.trim();
 			if (trimmed.length === 0) {
-				return yield* new PostValidation({
-					code: "title_required",
+				return yield* new TitleRequired({
 					message: "başlık boş olamaz",
 				});
 			}
 			if (trimmed.length > POST_TITLE_MAX) {
-				return yield* new PostValidation({
-					code: "title_too_long",
+				return yield* new TitleTooLong({
 					message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
 				});
 			}
@@ -596,14 +602,12 @@ export const PanoLive = Layer.effect(Pano)(
 		) {
 			const rawBody = body ?? "";
 			if (rawBody.trim().length === 0) {
-				return yield* new CommentValidation({
-					code: "body_required",
+				return yield* new CommentBodyRequired({
 					message: "yorum boş olamaz",
 				});
 			}
 			if (rawBody.length > COMMENT_BODY_MAX) {
-				return yield* new CommentValidation({
-					code: "body_too_long",
+				return yield* new CommentBodyTooLong({
 					message: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
 				});
 			}
@@ -928,8 +932,7 @@ export const PanoLive = Layer.effect(Pano)(
 				const parsed = yield* Effect.try({
 					try: () => new URL(input.url as string),
 					catch: () =>
-						new PostValidation({
-							code: "url_invalid",
+						new UrlInvalid({
 							message: "URL geçersiz",
 						}),
 				});
@@ -938,8 +941,7 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 
 			if (!input.tags || input.tags.length === 0) {
-				return yield* new PostValidation({
-					code: "tags_required",
+				return yield* new TagsRequired({
 					message: "en az bir etiket seç",
 				});
 			}
@@ -949,8 +951,7 @@ export const PanoLive = Layer.effect(Pano)(
 			for (const t of input.tags) {
 				const kind = (t.kind ?? "").trim();
 				if (!allowed.has(kind)) {
-					return yield* new PostValidation({
-						code: "tag_invalid",
+					return yield* new TagInvalid({
 						message: `geçersiz etiket: ${kind || "(boş)"}`,
 					});
 				}
@@ -1027,8 +1028,7 @@ export const PanoLive = Layer.effect(Pano)(
 			const hasTitle = input.title !== undefined;
 			const hasBody = input.body !== undefined;
 			if (!hasTitle && !hasBody) {
-				return yield* new PostValidation({
-					code: "title_required",
+				return yield* new TitleRequired({
 					message: "başlık veya metin gerekli",
 				});
 			}
@@ -1260,8 +1260,7 @@ export const PanoLive = Layer.effect(Pano)(
 					}),
 				);
 				if (!parent) {
-					return yield* new CommentValidation({
-						code: "parent_not_found",
+					return yield* new ParentCommentNotFound({
 						message: "yanıtlanan yorum bulunamadı",
 					});
 				}
