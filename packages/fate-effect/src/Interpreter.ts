@@ -18,7 +18,7 @@
  *      request context, then the captured build-time services — the same
  *      provision pipeline as the v1 compiler's `runResolve`, minus the
  *      Promise hop: no runtime here, the program stays an Effect and the
- *      caller (the oracle today, the platform layer at the task-17 cutover)
+ *      caller (the worker route's request fiber; the oracle's test runtime)
  *      owns the run.
  *   3. **Encode** — per-operation outcomes map through `encodeWireError`
  *      (the ONE annotation codec both backends share) onto the protocol
@@ -33,12 +33,14 @@
  * request, BEFORE the dispatch loop, so its batch window spans every
  * operation in the request) and its CONNECTION plane (`Connection.ts`:
  * Schema-decoded pagination args + fate's in-array windowing for raw arrays
- * under selected list-kind fields). The full operation surface is
- * oracle-green; what remains is the task-17 `route()` cutover.
+ * under selected list-kind fields).
  *
- * Raw legacy records (`kind: undefined` config arms) are NOT interpreted —
- * the live config has none since the v1 cutover (ADR 0042 marks the arms
- * v2-slated for removal) — and also fail closed.
+ * **This IS the serving path since the v2 cutover (ADR 0043)**: the worker's
+ * `POST /fate` route yields `handleRequest` on the request fiber — no
+ * per-request runtime, spans nest under the platform's request span, and
+ * the route wires the request's abort signal to fiber interruption. The v1
+ * compiled server (`Executor.ts`) remains only as the differential oracle's
+ * baseline; the raw legacy config arms were removed with the cutover.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Cause, Effect, Exit, Option} from "effect";
@@ -104,10 +106,6 @@ const failureOf = (cause: Cause.Cause<unknown>): unknown =>
 		onNone: () => Cause.squash(cause),
 	});
 
-/** Operation kinds pending their interpreter plane (fails closed until then). */
-const pending = (what: string): Effect.Effect<never> =>
-	Effect.die(new Error(`fate-effect interpreter: ${what} is not interpreted yet`));
-
 /**
  * Resolve a named operation to its entry's effect — fate's `executeOperation`
  * dispatch order and NOT_FOUND messages, against the package's config
@@ -126,18 +124,12 @@ const namedOperationEffect = (
 			if (entry === undefined) {
 				return Effect.fail(new FateRequestError("NOT_FOUND", `No list registered for '${name}'.`));
 			}
-			if (entry.kind === undefined) {
-				return pending(`raw legacy list "${name}"`);
-			}
 			return entry.resolve({args: operation.args, select: operation.select});
 		}
 		case "query": {
 			const entry = Object.hasOwn(server.queries, name) ? server.queries[name] : undefined;
 			if (entry === undefined) {
 				return Effect.fail(new FateRequestError("NOT_FOUND", `No query registered for '${name}'.`));
-			}
-			if (entry.kind === undefined) {
-				return pending(`raw legacy query "${name}"`);
 			}
 			return entry.resolve({args: operation.args, select: operation.select});
 		}
@@ -147,9 +139,6 @@ const namedOperationEffect = (
 				return Effect.fail(
 					new FateRequestError("NOT_FOUND", `No mutation registered for '${name}'.`),
 				);
-			}
-			if (entry.kind === undefined) {
-				return pending(`raw legacy mutation "${name}"`);
 			}
 			return entry.resolve({input: operation.input, select: operation.select});
 		}
@@ -232,10 +221,11 @@ const respond = (
  * JSON/protocol) serializes as fate's single `id: "request"` error result
  * with the error's own status.
  *
- * No runtime is owned here: the caller runs the program (the oracle through
- * a test ManagedRuntime today; the platform layer at the task-17 `route()`
- * cutover). Per-operation interrupts/signals are the caller's concern for
- * the same reason.
+ * No runtime is owned here: the caller runs the program — the worker route
+ * yields it on the request fiber (the platform layer's `runPromiseExit` is
+ * the conversion point); the oracle runs it through a test ManagedRuntime.
+ * Interrupts/abort signals are the caller's concern for the same reason
+ * (the route wires the request's abort signal to fiber interruption).
  */
 const handleRequest = (
 	request: Request,
@@ -272,8 +262,9 @@ const handleRequest = (
 	});
 
 /**
- * The v2 interpreter surface. Today: the oracle-exercised request handler.
- * Task 17 wraps it as `FateExecutor.route` and retires the v1 request path.
+ * The v2 interpreter surface — the request handler the worker's `/fate`
+ * route serves (and the differential oracle exercises against the v1
+ * compiled baseline).
  */
 export const FateInterpreter = {
 	handleRequest,

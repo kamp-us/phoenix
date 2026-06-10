@@ -20,18 +20,16 @@
  *      the layer-construction tests tasks.md tiers as T1: they build the
  *      layer for real (`Layer.build` through the Effect runtime) — no
  *      storage, but not pure-value T0 either.
- *   4. **Raw legacy fate records pass through** `config` next to `Fate.*`
- *      entries (the migration-coexistence shape, PRD story 12) and contribute
- *      `never` to R.
+ *   4. **Every record is constructor-built** — the raw legacy bridge-shaped
+ *      arms were removed with the v2 cutover (ADR 0043), so a non-`Fate.*`
+ *      record is a compile error at the config site.
  *
  * Like the sibling suites, this module **exports** its config/layer consts on
  * purpose: the package tsconfig is `composite`, so tsgo's declaration
  * nameability checks (TS2883) run over `FateServer.config`'s inferred type —
  * the PRD's named watchpoint — with a representative multi-feature config
- * (new sozluk-shaped records + a legacy bridge-shaped record + a legacy
- * source).
+ * (sozluk-shaped records + a string-typed query).
  */
-import {dataView} from "@nkzw/fate/server";
 import {Cause, Context, Effect, Exit, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
@@ -39,7 +37,6 @@ import {CurrentUser, Unauthorized} from "./CurrentUser.ts";
 import {FateDataView} from "./DataView.ts";
 import {Fate} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
-import type {FateServerRequirements, RawFateSourceEntry} from "./Server.ts";
 import {FateServer, FateServerConfigError} from "./Server.ts";
 import {fateWireCode} from "./WireError.ts";
 
@@ -164,32 +161,19 @@ export const definitionSource = Fate.source(
 );
 
 /**
- * A raw legacy bridge-shaped source. Annotated with the portable
- * `RawFateSourceEntry` on purpose (the TS2883 discipline): the kernel
- * `dataView()` value inside would otherwise surface fate's non-exported
- * symbol key in the exported config's inferred type.
- */
-const legacyPostSource: RawFateSourceEntry = {
-	definition: {id: "id", view: dataView<{id: string}>("Post")({id: true})},
-	executor: {byId: () => Promise.resolve(null)},
-};
-
-/**
  * The representative multi-feature config (exported: the TS2883 watchpoint
- * fixture): two `Fate.*` features' records spread together with a raw legacy
- * record + legacy source, exactly fate's options shape.
+ * fixture): two `Fate.*` features' records spread together, exactly fate's
+ * options shape.
  */
 export const phoenixConfig = FateServer.config({
 	queries: {
 		...sozlukQueries,
 		// stats-shaped: a string `type` (no view class) — no source required.
 		health: Fate.query({type: "Health"}, () => Effect.succeed({status: "ok"})),
-		// a raw legacy bridge record entry, passing through untouched.
-		post: {type: "Post", resolve: () => Promise.resolve(null)},
 	},
 	lists: {...sozlukLists},
 	mutations: {...sozlukMutations},
-	sources: [termSource, definitionSource, legacyPostSource],
+	sources: [termSource, definitionSource],
 	live: false,
 });
 
@@ -240,16 +224,6 @@ describe("FateServer.layer — the R channel", () => {
 		expectTypeOf(discharged).toExtend<Layer.Layer<FateServer>>();
 		expectTypeOf<LayerIn<typeof discharged>>().toEqualTypeOf<never>();
 	});
-
-	it("a legacy-only config contributes nothing to R", () => {
-		const legacyConfig = FateServer.config({
-			queries: {post: {type: "Post", resolve: () => Promise.resolve(null)}},
-			sources: [legacyPostSource],
-		});
-		const legacyLayer = FateServer.layer(legacyConfig);
-		expectTypeOf<LayerIn<typeof legacyLayer>>().toEqualTypeOf<never>();
-		expectTypeOf<FateServerRequirements<typeof legacyConfig>>().toEqualTypeOf<never>();
-	});
 });
 
 // --- runtime: construction + init-time validation ----------------------------
@@ -257,10 +231,10 @@ describe("FateServer.layer — the R channel", () => {
 describe("FateServer.layer — construction", () => {
 	it("builds the service: records, sources, live, and captured services", async () => {
 		const service = await buildService(phoenixLayer.pipe(Layer.provide(TermStoreLive)));
-		expect(Object.keys(service.queries).sort()).toEqual(["health", "post", "term"]);
+		expect(Object.keys(service.queries).sort()).toEqual(["health", "term"]);
 		expect(Object.keys(service.lists)).toEqual(["terms"]);
 		expect(Object.keys(service.mutations)).toEqual(["definition.add"]);
-		expect(service.sources).toHaveLength(3);
+		expect(service.sources).toHaveLength(2);
 		expect(service.live).toBe(false);
 		// The captured build-time services are what task 7's compiler provides
 		// onto each handler (with the per-request pair added per request).
@@ -281,8 +255,15 @@ describe("FateServer.layer — construction", () => {
 		const exit = await buildExit(
 			FateServer.layer(
 				FateServer.config({
-					queries: {term: {type: "Term", resolve: () => Promise.resolve(null)}},
-					lists: {term: {type: "Term", resolve: () => Promise.resolve(null)}},
+					queries: {term: Fate.query({type: "Term"}, () => Effect.succeed(null))},
+					lists: {
+						term: Fate.list({args: Schema.Struct({}), type: "Term"}, () =>
+							Effect.succeed({
+								items: [],
+								pagination: {hasNext: false, hasPrevious: false},
+							}),
+						),
+					},
 					sources: [],
 				}),
 			),

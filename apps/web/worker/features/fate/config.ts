@@ -10,9 +10,9 @@
  * The config is consumed at BOTH edges from this single declaration:
  *
  *   - **live** — `PhoenixFateLive` (`layers.ts`) wraps it in
- *     `FateServer.layer(fateConfig)`; the compile step
- *     (`FateExecutor.toFetchHandler`) turns the resolved service into the real
- *     `createFateServer` value the `/fate` route serves.
+ *     `FateServer.layer(fateConfig)`; the `/fate` route serves the resolved
+ *     service through the native interpreter (`FateInterpreter.handleRequest`,
+ *     ADR 0043).
  *   - **build time** — `schema.ts` exports
  *     `FateExecutor.toCodegenServer(fateConfig)` for the fate Vite plugin: same
  *     record keys, same `type` strings, inert handlers, no database.

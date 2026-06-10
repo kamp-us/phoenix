@@ -2,6 +2,19 @@
  * `FateExecutor` — the v1 compile step: a validated `FateServer` service →
  * a pure `createFateServer` call (PRD stories 8, 11; tasks.md task 7).
  *
+ * **Since the v2 cutover (ADR 0043) this module no longer serves `/fate`.**
+ * The deployed route runs `FateInterpreter.handleRequest` (`Interpreter.ts`)
+ * on the request fiber; what remains here has exactly two consumers:
+ *
+ *   - **`compile`/`toFetchHandler` are the differential oracle's BASELINE** —
+ *     `Interpreter.test.ts` byte-compares the interpreter against fate's own
+ *     `createFateServer` over these compiled executors. The oracle is the
+ *     regression net for the native plane, so the v1 side stays exactly as
+ *     it served, including its `ManagedRuntime` conversion point.
+ *   - **`toCodegenServer` is the build-time surface** — `schema.ts` exports
+ *     it for Vite codegen (inert handlers, no database); it is untouched by
+ *     the cutover and is how `InferFateAPI` reaches the generated client.
+ *
  * The compiled fate server IS a real fate server — the client manifest,
  * `InferFateAPI`, and Vite codegen hold by construction — and every compiled
  * resolver is the same four-step pipeline:
@@ -27,25 +40,18 @@
  *      defects collapse to the fixed internal error, never leaking details;
  *      a `FateRequestError` passes through verbatim.
  *
- * **Raw legacy records pass through untouched**: a bridge-shaped promise
- * resolver (or `{definition, executor}` source pair) lands in the compiled
- * options verbatim and receives the SAME ctx object the route passes as
- * adapterContext — `FateContext` compatibility during migration is identity,
- * not adaptation (PRD story 12).
- *
  * ## The erased→kernel boundary (the package's F7, contained)
  *
  * The compile step works TYPE-ERASED: `FateServer.layer`'s public R already
  * carried composition correctness (a config whose handlers need a domain
  * service cannot become a dischargeable layer without it), so the erased
- * entry shapes stored on the service carry `R = unknown`, and the runtime
- * values of legacy entries/definitions are fate's own objects behind
- * deliberately weak portable types (TS2883 — fate's view symbol must not
- * surface in exported config types). Recovering both is a handful of single
- * named-type narrowings, each a one-direction comparable cast (never
- * `as any` / a laundering double-cast), each marked `erased→kernel` below —
- * the same contained-boundary precedent as the bridge's `genEffect` (ADR
- * 0041 F7) and `WireError.ts`'s protocol-code widening.
+ * entry shapes stored on the service carry `R = unknown`, and definition
+ * objects sit behind deliberately weak portable types (TS2883 — fate's view
+ * symbol must not surface in exported config types). Recovering both is a
+ * handful of single named-type narrowings, each a one-direction comparable
+ * cast (never `as any` / a laundering double-cast), each marked
+ * `erased→kernel` below — the same contained-boundary precedent as
+ * `WireError.ts`'s protocol-code widening.
  */
 import type {
 	ConnectionResult,
@@ -77,7 +83,6 @@ import type {
 	FateServerConfig,
 	FateServerService,
 	FateSourcesList,
-	RawFateOperation,
 	SourceDefinitionLike,
 } from "./Server.ts";
 import {collectConfigIssues, FateServer, FateServerConfigError} from "./Server.ts";
@@ -88,17 +93,17 @@ type AnyRow = Record<string, unknown>;
 // --- the per-request contract -----------------------------------------------------
 
 /**
- * What the worker hands the fetch handler per request: the per-request pair
- * as VALUES — `currentUser` from the validated session, `livePublisher` from
- * the request's execution context (built worker-side, e.g. via
- * `livePublisherFor`; the package never imports the implementation) — plus
- * an optional abort signal so a disconnected client interrupts the resolver
- * fiber.
+ * What the caller hands a request handler: the per-request pair as VALUES —
+ * `currentUser` from the validated session, `livePublisher` from the
+ * request's execution context (built worker-side, e.g. via
+ * `livePublisherFor`; the package never imports the implementation).
  *
- * This object IS fate's adapterContext and the ctx every resolver receives:
- * the worker may carry extra fields on it (the legacy `FateContext` members
- * during migration coexistence) — compiled resolvers read only the pair,
- * legacy resolvers read their own fields, both off the same object.
+ * `signal` is consumed only by THIS module's v1 compile path (the oracle
+ * baseline): `runResolve` hands it to `runtime.runPromise` so an abort
+ * interrupts the resolver fiber. The serving path (`FateInterpreter`)
+ * deliberately leaves interruption to the caller — the worker route wires
+ * the request's abort signal to fiber interruption at the platform edge
+ * (ADR 0043), so it never sets this field.
  */
 export interface FateRequestContext {
 	readonly currentUser: typeof CurrentUser.Service;
@@ -259,24 +264,13 @@ const adaptMutation = (
 	};
 };
 
-// erased→kernel: a raw legacy entry's runtime value IS the bridge's fate
-// resolver record, passed through untouched; only its portable static shape
-// (`resolve: (options: never) => unknown`) is too weak to name fate's
-// resolver contract. One comparable narrowing per record category.
-const legacyQuery = (entry: RawFateOperation): CompiledQueryDefinition =>
-	entry as CompiledQueryDefinition;
-const legacyList = (entry: RawFateOperation): CompiledListDefinition =>
-	entry as CompiledListDefinition;
-const legacyMutation = (entry: RawFateOperation): CompiledMutationDefinition =>
-	entry as CompiledMutationDefinition;
-
 const compileQueries = (
 	options: CompileOptions,
 	record: FateQueriesRecord,
 ): Record<string, CompiledQueryDefinition> => {
 	const compiled: Record<string, CompiledQueryDefinition> = {};
 	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] = entry.kind === undefined ? legacyQuery(entry) : adaptQuery(options, entry);
+		compiled[name] = adaptQuery(options, entry);
 	}
 	return compiled;
 };
@@ -287,7 +281,7 @@ const compileLists = (
 ): Record<string, CompiledListDefinition> => {
 	const compiled: Record<string, CompiledListDefinition> = {};
 	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] = entry.kind === undefined ? legacyList(entry) : adaptList(options, entry);
+		compiled[name] = adaptList(options, entry);
 	}
 	return compiled;
 };
@@ -298,8 +292,7 @@ const compileMutations = (
 ): Record<string, CompiledMutationDefinition> => {
 	const compiled: Record<string, CompiledMutationDefinition> = {};
 	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] =
-			entry.kind === undefined ? legacyMutation(entry) : adaptMutation(options, name, entry);
+		compiled[name] = adaptMutation(options, name, entry);
 	}
 	return compiled;
 };
@@ -317,17 +310,11 @@ type KernelSourceExecutor =
 	SourceRegistry<FateRequestContext> extends Map<unknown, infer V> ? V : never;
 
 // erased→kernel: the definition object IS the kernel `SourceDefinition` the
-// entry was built with (`Fate.source` creates it once; legacy entries hold
-// the feature's exported definition by identity — fate's registry keys on
-// that identity). The portable `SourceDefinitionLike` exists only because
+// entry was built with (`Fate.source` creates it once — fate's registry keys
+// on that identity). The portable `SourceDefinitionLike` exists only because
 // fate's `DataView` would trip TS2883 in exported config types.
 const toKernelDefinition = (definition: SourceDefinitionLike): KernelSourceDefinition =>
 	definition as KernelSourceDefinition;
-
-// erased→kernel: a legacy executor's runtime value is the bridge's
-// promise-shaped `SourceExecutor`, passed through verbatim.
-const toKernelExecutor = (executor: object): KernelSourceExecutor =>
-	executor as KernelSourceExecutor;
 
 /**
  * Adapt a `Fate.source` entry's spanned Effect handlers to fate's
@@ -407,8 +394,8 @@ export interface CompiledFateSources {
  * registry Map keyed by each entry's definition object (the SAME object —
  * fate looks executors up by identity); `getSource` resolves a view or
  * definition by `typeName` to the same keyed object. The executor half is
- * caller-supplied: live compilation adapts/passes through real executors,
- * the codegen path installs empty (inert) ones.
+ * caller-supplied: live compilation adapts the entry's Effect handlers, the
+ * codegen path installs empty (inert) ones.
  */
 const buildSourceResolver = (
 	sources: FateSourcesList,
@@ -441,18 +428,16 @@ const buildSourceResolver = (
 
 /**
  * Compile the config's source entries into fate's source resolver: adapted
- * Effect executors and legacy promise executors side by side in one
- * identity-keyed registry (see {@link buildSourceResolver}).
+ * Effect executors in one identity-keyed registry (see
+ * {@link buildSourceResolver}). A capability-less entry (`handlers: {}`)
+ * adapts to an empty executor — registered for `getSource`, loud on any
+ * capability call.
  */
 export const compileFateSources = (
 	sources: FateSourcesList,
 	options: CompileOptions,
 ): CompiledFateSources =>
-	buildSourceResolver(sources, (entry) =>
-		entry.handlers === undefined
-			? toKernelExecutor(entry.executor)
-			: adaptSourceHandlers(options, entry.handlers),
-	);
+	buildSourceResolver(sources, (entry) => adaptSourceHandlers(options, entry.handlers));
 
 // --- the compile step + fetch handler -----------------------------------------------
 
@@ -474,8 +459,7 @@ const compile = (service: FateServerService, runtime: FateExecutorRuntime): Comp
 	>({
 		// The fetch handler always supplies the per-request context (fate types
 		// adapterContext optional); read it through, asserting its presence. The
-		// SAME object becomes every resolver's ctx — legacy records keep their
-		// FateContext fields by identity.
+		// SAME object becomes every resolver's ctx (identity, never a copy).
 		context: ({adapterContext}) => {
 			if (!adapterContext) {
 				throw new Error(
@@ -498,15 +482,16 @@ const compile = (service: FateServerService, runtime: FateExecutorRuntime): Comp
 };
 
 /**
- * Build the fetch handler over the worker runtime: resolves the `FateServer`
- * service from the runtime (first call builds the layer — init-time config
- * validation surfaces here), compiles it ONCE, and exposes fate's
- * `handleRequest` bound to the compiled server.
+ * Build the fetch handler over a runtime: resolves the `FateServer` service
+ * from the runtime (first call builds the layer — config validation
+ * surfaces here), compiles it ONCE, and exposes fate's `handleRequest`
+ * bound to the compiled server. Since the v2 cutover this is the oracle
+ * harness's baseline entry point, not a serving surface.
  *
  * ```ts
  * const runtime = ManagedRuntime.make(FateServer.layer(config).pipe(Layer.provide(domainLayers)));
  * const handleFate = FateExecutor.toFetchHandler(runtime);
- * // per request: handleFate(request, {currentUser, livePublisher, ...legacyCtx})
+ * // per request: handleFate(request, {currentUser, livePublisher, signal})
  * ```
  */
 const toFetchHandler = (runtime: FateExecutorRuntime): FateFetchHandler => {
@@ -522,44 +507,22 @@ const toFetchHandler = (runtime: FateExecutorRuntime): FateFetchHandler => {
 
 /**
  * What `InferFateAPI` must yield for one config QUERY entry — fate's own
- * `QueryAPI` mapping reproduced over the package's entry types:
- *
- *   - A `Fate.query` entry surfaces the definition's WIRE args (the Schema's
- *     ENCODED side — what the client sends before `resolve` decodes) and the
- *     handler's success type.
- *   - A raw legacy record keeps fate's own inference (args/output off its
- *     promise resolver), so coexistence emits the same client types it does
- *     today; a record too weakly typed to infer maps to `never`, exactly as
- *     fate's `QueryAPI` does.
+ * `QueryAPI` mapping reproduced over the package's entry types: a
+ * `Fate.query` entry surfaces the definition's WIRE args (the Schema's
+ * ENCODED side — what the client sends before `resolve` decodes) and the
+ * handler's success type. A non-entry maps to `never`, exactly as fate's
+ * `QueryAPI` does for an uninferrable record.
  */
 export type FateCodegenQueryApi<E> =
 	E extends FateQuery<infer D, infer A, infer _E, infer _R>
 		? {input: {args?: DefinitionWireArgs<D>; select: Array<string>}; output: A}
-		: E extends {
-					readonly resolve: (options: {
-						ctx: never;
-						input: {args?: infer Args};
-						select: Array<string>;
-					}) => infer Out;
-				}
-			? {input: {args?: Args; select: Array<string>}; output: Awaited<Out>}
-			: never;
+		: never;
 
 /** As {@link FateCodegenQueryApi}, with fate's `ConnectionResult` envelope. */
 export type FateCodegenListApi<E> =
 	E extends FateList<infer D, infer Item, infer _E, infer _R>
 		? {input: {args?: DefinitionWireArgs<D>; select: Array<string>}; output: ConnectionResult<Item>}
-		: E extends {
-					readonly resolve: (options: {
-						ctx: never;
-						input: {args?: infer Args};
-						select: Array<string>;
-					}) => infer Out;
-				}
-			? Awaited<Out> extends ConnectionResult<infer Item>
-				? {input: {args?: Args; select: Array<string>}; output: ConnectionResult<Item>}
-				: never
-			: never;
+		: never;
 
 /**
  * As {@link FateCodegenQueryApi}, for mutations: `entity` is the definition's
@@ -570,16 +533,7 @@ export type FateCodegenListApi<E> =
 export type FateCodegenMutationApi<E> =
 	E extends FateMutation<infer D, infer A, infer _E, infer _R>
 		? {entity: DefinitionTypeName<D>; input: DefinitionWireInput<D>; output: A}
-		: E extends {
-					readonly type: infer Name;
-					readonly resolve: (options: {
-						ctx: never;
-						input: infer In;
-						select: Array<string>;
-					}) => infer Out;
-				}
-			? {entity: Name; input: In; output: Awaited<Out>}
-			: never;
+		: never;
 
 /**
  * The full `InferFateAPI` surface of a codegen server — structurally fate's
@@ -701,11 +655,13 @@ function toCodegenServer(config: AnyFateServerConfig): KernelFateServer<unknown,
 }
 
 /**
- * The executor surface (PRD's five-export contract): `compile` builds the
- * fate server value from a resolved `FateServer` service; `toFetchHandler`
- * is the worker-facing form; `toCodegenServer` is the build-time form (inert
- * handlers, no database — the `schema.ts` export for Vite codegen). The v2
- * native `route` lands in a later task.
+ * The executor surface: `compile` builds the fate server value from a
+ * resolved `FateServer` service; `toFetchHandler` wraps it as a fetch
+ * handler — since the v2 cutover (ADR 0043) both exist ONLY as the
+ * differential oracle's baseline backend (`Interpreter.test.ts`);
+ * `toCodegenServer` is the build-time form (inert handlers, no database —
+ * the `schema.ts` export for Vite codegen). The serving path is
+ * `FateInterpreter.handleRequest` on the worker route.
  */
 export const FateExecutor = {
 	compile,

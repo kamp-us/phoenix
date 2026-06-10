@@ -155,24 +155,26 @@ export default Phoenix.make(
 		const betterAuth = yield* BetterAuth.BetterAuth;
 		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
 
-		// ── THE ONE WORKER-LEVEL RUNTIME (ADR 0041, supersedes 0029) ──
+		// ── THE ONE WORKER-LEVEL RUNTIME (ADR 0041/0043 — init-only wiring) ──
 		// Build exactly one `ManagedRuntime` per isolate from `PhoenixFateLive` —
 		// the composed `FateServer.layer(fateConfig)` over the worker singletons
 		// (its `R` is `Database | BetterAuth`, both provided here from the
-		// init-resolved `databaseLayer` + `betterAuthLayer`). The `/fate` route's
-		// `FateExecutor.toFetchHandler` resolves the `FateServer` service from this
-		// runtime and runs every compiled resolver through it, so resolver spans
-		// nest under the runtime's request span (F4) and nothing is built or
-		// disposed per request. The shared memoMap, the derived route-context layer
-		// (`fateLayer` — built once, reused instead of rebuilt per request through
-		// `provideRequest`), and the never-dispose deviation all live in
-		// `makeFateRuntime` — the single construction point shared with the app
-		// suites.
-		const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
+		// init-resolved `databaseLayer` + `betterAuthLayer`). Since the v2
+		// cutover (ADR 0043) the runtime is the LAYER-BUILD VEHICLE only: no
+		// request runs through it. Its built context — the worker singletons
+		// AND the `FateServer` service — reaches the routes as `fateLayer`
+		// (built once, reused instead of rebuilt per request through
+		// `provideRequest`); the `/fate` route yields the native interpreter
+		// (`FateInterpreter.handleRequest`) on the request fiber, so resolver
+		// spans nest under the router's request span and nothing is built or
+		// disposed per request. The shared memoMap and the never-dispose
+		// deviation live in `makeFateRuntime` — the single construction point
+		// shared with the app suites.
+		const {contextLayer: fateLayer} = makeFateRuntime(
 			PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 		);
 
-		// NO init-time warmup (`yield* fateRuntime.contextEffect`) — deliberately.
+		// NO init-time warmup (`yield*`-ing the runtime's `contextEffect`) — deliberately.
 		// Workerd disallows async/timer work in the isolate's init (global) scope,
 		// so forcing the layer build here stalls the worker before it can serve
 		// (observed: with a warmup the T3 harness's `/api/health` poll never
@@ -250,7 +252,6 @@ export default Phoenix.make(
 		// with no per-request reconstruction.
 		const AppLive = makeAppLive({
 			fateLayer,
-			fateRuntime,
 			liveLayer,
 			betterAuthLayer,
 			runtimeContext,

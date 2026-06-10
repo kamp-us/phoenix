@@ -1,10 +1,11 @@
-# fate-effect worker wiring — the v1 server composition at the worker edge
+# fate-effect worker wiring — the server composition at the worker edge
 
-How `apps/web/worker` runs `@phoenix/fate-effect`'s v1 server: the one config, the composed
-layer, the one runtime, and the per-request seam — the worker-side half of
-[fate-effect-compiler.md](./fate-effect-compiler.md) (the package-side mechanism). Every record
-is a `Fate.*` entry composed from the per-feature aggregator barrels; the legacy bridge is
-deleted (v1 cutover, ADR 0042).
+How `apps/web/worker` serves `@phoenix/fate-effect`: the one config, the composed layer, the
+init-only runtime, and the per-request seam. Since the v2 cutover (ADR 0043) the `/fate` route
+serves the NATIVE interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) on
+the request fiber — the compile path ([fate-effect-compiler.md](./fate-effect-compiler.md)) is
+the differential oracle's baseline plus the build-time codegen surface, not a serving path.
+Every record is a `Fate.*` entry composed from the per-feature aggregator barrels.
 
 ## The pieces (one config, two consumers)
 
@@ -13,7 +14,7 @@ worker/features/fate/
 ├── config.ts      # fateConfig = FateServer.config({queries, lists, mutations, sources, live})
 ├── sources.ts     # the features' Fate.source entries, composed into the config's array
 ├── layers.ts      # PhoenixFateLive = FateServer.layer(fateConfig) ⊕ makeFateLayer; makeFateRuntime
-├── route.ts       # POST /fate: toFetchHandler(runtime) + the per-request context build
+├── route.ts       # POST /fate: FateInterpreter.handleRequest on the request fiber + abort wiring
 ├── schema.ts      # fateServer = FateExecutor.toCodegenServer(fateConfig)  (Vite codegen, inert)
 └── run-fate-op.ts # runFateOp — the T2 harness mirror of route.ts
 ```
@@ -32,7 +33,7 @@ worker/features/fate/
   [fate-effect-sources.md](./fate-effect-sources.md) "The escape hatch") — `getSource` resolves,
   any capability call fails loudly.
 
-## The layer and the one runtime (ADR 0041)
+## The layer and the init-only runtime (ADR 0041/0043)
 
 ```ts
 // layers.ts
@@ -40,25 +41,30 @@ export const PhoenixFateLive: Layer.Layer<WorkerFateServices | FateServer, never
 	FateServer.layer(fateConfig).pipe(Layer.provideMerge(makeFateLayer));
 
 // index.ts (worker init — once per isolate, never disposed: CF has no shutdown hook)
-const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
+const {contextLayer: fateLayer} = makeFateRuntime(
 	PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 );
 // NO init warmup — the layer builds lazily on the first request (see below).
 ```
 
-- **`provideMerge`, not `provide`**: the runtime must carry the `WorkerFateServices` singletons
-  *alongside* `FateServer` — the routes yield worker services from the runtime-derived
-  `contextLayer`. `ManagedRuntime` is contravariant in R, so the wider `WorkerRuntime` satisfies
-  the package's `FateExecutorRuntime` (`ManagedRuntime<FateServer>`).
+- **The `ManagedRuntime` is init-only wiring** (ADR 0043): no request runs through it. It is
+  the layer-build/memoization vehicle behind `contextLayer`
+  (`Layer<WorkerFateServices | FateServer>`, `Layer.effectContext` over the runtime's built
+  context), which `HttpRouter.provideRequest` discharges into the routes — the `/fate` route's
+  interpreter program takes `FateServer` from there, and routes yield worker services
+  (`Pasaport`) from the same one built context.
+- **`provideMerge`, not `provide`**: the layer must carry the `WorkerFateServices` singletons
+  *alongside* `FateServer` — both reach the routes through the one `contextLayer`.
 - `FateServer.layer`'s own R (handler/source requirements minus the per-request pair) is
   discharged by the same domain layers — a record needing a forgotten service is a compile error
   at this composition site.
 - **The layer builds lazily on the first request — there is deliberately NO init warmup.**
   Worker init constructs the `ManagedRuntime` value only; the first `/fate` request forces the
-  layer build (and `toFetchHandler` compiles lazily on first call and memoizes).
+  layer build through `provideRequest`.
   - **Hazard: async work in the isolate's init (global) scope hangs deployed workerd.** Forcing
-    the layer build in init (`yield* fateRuntime.contextEffect` / awaiting `runtime.context()`
-    inside `Phoenix.make`'s init phase) stalls the worker before it can serve a single request —
+    the layer build in init (`yield*`-ing the runtime's `contextEffect` / awaiting
+    `runtime.context()` inside `Phoenix.make`'s init phase) stalls the worker before it can
+    serve a single request —
     observed as the T3 harness's `/api/health` readiness poll never succeeding after a successful
     deploy. Build lazily; never block init on the runtime.
   - **Config validation does not wait for the first request.** The same `collectConfigIssues`
@@ -71,21 +77,30 @@ const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
 
 ## The route (the per-request seam)
 
-`makeHandleFate(runtime)` binds `FateExecutor.toFetchHandler(runtime)` once; per request it
-builds **one context object** and serves through the compiled server:
+`handleFate` (a plain route handler Effect — `fateRoute = HttpRouter.add("POST", "/fate",
+handleFate)`) builds **one context object** per request and yields the interpreter on the
+request fiber:
 
 ```ts
 const ctx: FateRequestContext = {
 	currentUser: {user: session?.user},          // CurrentUserInfo is a structural subset — direct assignment
 	livePublisher: livePublisherFor({publish: publishToTopic, waitUntil}),
-	signal: raw.signal,                          // client abort interrupts the handler fiber
+	// no `signal` field — abort is wired at this edge, below
 };
-const res = yield* Effect.promise(() => handleFate(raw, ctx));
+const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort(raw.signal));
 ```
 
-- **Identity is the contract**: the compiled `context` factory returns the object it was
-  handed (pinned in the package's `Executor.test.ts`), so every handler reads the pair off the
-  same object. Never copy/rebuild the ctx per resolver.
+- **No runtime, no Promise hop**: `handleRequest` is `Effect<Response, never, FateServer>`;
+  the platform layer (alchemy's worker bridge running the compiled router) owns the single run
+  boundary for the whole HTTP surface. Handler/source `Effect.fn` spans therefore nest under
+  the router's request span (the `HttpEffect.toHandled` tracer middleware) — pinned in the
+  package's `Interpreter.test.ts`.
+- **Abort → interruption is the route's job**: alchemy's bridge wires no signal, so
+  `interruptOnAbort(signal)` (exported from `route.ts`, T0-tested in `route.unit.test.ts`)
+  forks the program as a child of the request fiber and interrupts it from the signal's
+  `abort` listener — effect-smol's own platform idiom (`HttpEffect.toWebHandlerWith`).
+- **One ctx object per request**: the interpreter provides the pair as VALUES off this object
+  to every operation. Never copy/rebuild it per resolver.
 - The publish surface rides one topic capability: the worker-init `LiveTopics.publish` with the
   route's `LiveLimits` applied + the request's `waitUntil`. `livePublisherFor` (the per-request
   `LivePublisher` service value) resolves frames through `makeLiveEventBus` — the one
@@ -95,21 +110,23 @@ const res = yield* Effect.promise(() => handleFate(raw, ctx));
 
 `schema.ts` exports `fateServer = FateExecutor.toCodegenServer(fateConfig)` + the views barrel.
 The fate Vite plugin `runnerImport`s it with no database: same record keys, same `type` strings,
-same `roots: {}`/`live` passthrough as the live compile, every handler inert — so the manifest
-(and the generated client) matches the served server. Build-time config validation throws the
-same `FateServerConfigError` the layer dies with. The worker entry never imports `schema.ts`;
-the live path is `route.ts` → `toFetchHandler`.
+same `roots: {}`/`live` passthrough as the live config, every handler inert — so the manifest
+(and the generated client) matches the served wire contract. Build-time config validation
+throws the same `FateServerConfigError` the layer dies with. The worker entry never imports
+`schema.ts`; the serving path is `route.ts` → `FateInterpreter.handleRequest`.
 
 ## `runFateOp` (the T2 harness)
 
-The test mirror of the route, same composition over the caller's worker layer:
+The test mirror of the route, same composition over the caller's worker layer, serving through
+the SAME interpreter the route serves:
 
 ```ts
 const {runtime} = makeFateRuntime(FateServer.layer(fateConfig).pipe(Layer.provideMerge(workerLayer)));
-const handleFate = FateExecutor.toFetchHandler(runtime);
+const res = await runtime.runPromise(FateInterpreter.handleRequest(request, ctx));
 // ctx: FateRequestContext with a recording livePublisherFor (capturing publish + collected
 // waitUntil promises, flushed before returning) — `published` is the array of resolved topic
-// keys the operation's live.* fanned out to.
+// keys the operation's live.* fanned out to. The per-op runtime is the Node harness's RUN
+// vehicle (production's conversion point is the platform layer's).
 // finally: await runtime.dispose()  — the Node harness HAS a shutdown point (per-op lifecycle)
 ```
 
@@ -120,11 +137,14 @@ data-plane regression harness.
 
 ## What not to do
 
-- **Don't compose `FateServer.layer` with plain `Layer.provide(makeFateLayer)`.** The runtime
-  would carry only `FateServer`; the route-context layer needs the worker singletons in the
-  runtime's output. `provideMerge` is load-bearing.
+- **Don't compose `FateServer.layer` with plain `Layer.provide(makeFateLayer)`.** The built
+  context would carry only `FateServer`; the route-context layer needs the worker singletons in
+  the output too. `provideMerge` is load-bearing.
+- **Don't run the interpreter through a runtime in the route.** It is an ordinary Effect on the
+  request fiber; a runtime hop would detach spans from the request span and re-create the
+  conversion point ADR 0043 removed.
 - **Don't import `schema.ts` from worker runtime code.** It is the build-time artifact; the
-  served server comes from `toFetchHandler` over the runtime. (Conversely the Vite plugin must
+  serving path is the interpreter over the route context. (Conversely the Vite plugin must
   never import `layers.ts`/`index.ts` — `config.ts` is the shared, import-pure meeting point.)
 - **Don't register a real-looking executor for an unfetchable entity.** A capability-less entry
   keeps "no fetch path" an explicit, loud property; inventing a `byId` that queries something
@@ -133,3 +153,6 @@ data-plane regression harness.
   in worker init): workerd disallows async/timer work in the isolate's init scope and the
   deployed worker hangs before serving. The layer builds lazily on first request; config
   validation already happens at `vite build` time via `toCodegenServer`'s `collectConfigIssues`.
+- **Don't put `signal` on the route's ctx.** The interpreter never reads it (interruption is
+  the caller's); the field exists only for the v1 compile path inside the package (the oracle
+  baseline). The route's abort handling is `interruptOnAbort`.

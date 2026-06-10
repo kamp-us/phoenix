@@ -8,17 +8,17 @@
  *
  *   - **`FateServer.config({queries, lists, mutations, sources, live})`**
  *     mirrors `createFateServer`'s options shape. Record values are
- *     `Fate.query`/`Fate.list`/`Fate.mutation` entries OR raw legacy
- *     bridge-shaped fate records ({@link RawFateOperation} — migration
- *     coexistence is literally spreading the bridge's remaining records into
- *     the same config, PRD story 12). `sources` is the package's array of
- *     `Fate.source` entries / legacy `{definition, executor}` pairs (fate's
- *     own `sources` option is the derived `{getSource, registry}` resolver,
- *     which the compile step builds in task 7 — the definition objects here
- *     are held BY IDENTITY for fate's identity-keyed registry). `config` is
- *     pure data capture: full entry types are preserved on the value (task
- *     8's `InferFateAPI` fidelity rides on them); validation happens at
- *     layer construction.
+ *     `Fate.query`/`Fate.list`/`Fate.mutation` entries; `sources` is the
+ *     package's array of `Fate.source` entries (fate's own `sources` option
+ *     is the derived `{getSource, registry}` resolver, which the compile
+ *     step builds — the definition objects here are held BY IDENTITY for
+ *     fate's identity-keyed registry). The raw legacy bridge-shaped arms
+ *     (`RawFateOperation`/`RawFateSourceEntry`) that carried migration
+ *     coexistence were removed with the v2 cutover (ADR 0042's removal
+ *     slate): every entry is constructor-built. `config` is pure data
+ *     capture: full entry types are preserved on the value (task 8's
+ *     `InferFateAPI` fidelity rides on them); validation happens at layer
+ *     construction.
  *
  *   - **`FateServer.layer(config)`** returns `Layer<FateServer>` whose R is
  *     the union of handler/source requirements
@@ -108,23 +108,6 @@ export interface AnyFateMutation {
 }
 
 /**
- * A raw legacy fate record entry — the bridge's promise-shaped resolvers
- * (`{resolve, type?, input?, defaultSize?}`), passing through to
- * `createFateServer` untouched (task 7) with the same FateContext-compatible
- * ctx they receive today. `kind?: undefined` is the discriminant AND a
- * guard: a `Fate.*` entry (which carries `kind`) cannot pose as a raw entry
- * in the wrong record — a mutation dropped into `queries` is a compile
- * error, not a silently miscategorized resolver.
- */
-export interface RawFateOperation {
-	readonly kind?: undefined;
-	readonly resolve: (options: never) => unknown;
-	readonly type?: string;
-	readonly input?: unknown;
-	readonly defaultSize?: number;
-}
-
-/**
  * The structural shape of a runtime data view this module can walk for the
  * source-completeness check: fate's `DataView` carries plain `typeName` +
  * `fields`, and nested relation views appear as field values of the same
@@ -167,37 +150,20 @@ export interface AnyFateSourceEntry {
 	readonly handlers: AnyFateSourceHandlers;
 }
 
-/**
- * A raw legacy source — the bridge's `[SourceDefinition, SourceExecutor]`
- * registry pair as one entry. The `definition` is the SAME object the
- * legacy feature exports (identity matters: fate's registry is keyed by the
- * definition object); the `executor` is the bridge's promise-shaped
- * `SourceExecutor`, passed through untouched by the compile step.
- *
- * Annotate legacy entries with this type at the declaration site: a raw
- * kernel `dataView()` value inside an exported config would otherwise
- * surface fate's non-exported symbol key in the config's inferred type
- * (TS2883 — see `DataView.ts`).
- */
-export interface RawFateSourceEntry {
-	readonly handlers?: undefined;
-	readonly definition: SourceDefinitionLike;
-	readonly executor: object;
-}
-
 // --- the config shape ---------------------------------------------------------
 
-/** What `config.queries` accepts: `Fate.query` entries or raw legacy records. */
-export type FateQueriesRecord = Record<string, AnyFateQuery | RawFateOperation>;
+/** What `config.queries` accepts: `Fate.query` entries. */
+export type FateQueriesRecord = Record<string, AnyFateQuery>;
 
-/** What `config.lists` accepts: `Fate.list` entries or raw legacy records. */
-export type FateListsRecord = Record<string, AnyFateList | RawFateOperation>;
+/** What `config.lists` accepts: `Fate.list` entries. */
+export type FateListsRecord = Record<string, AnyFateList>;
 
-/** What `config.mutations` accepts: `Fate.mutation` entries or raw legacy records. */
-export type FateMutationsRecord = Record<string, AnyFateMutation | RawFateOperation>;
+/** What `config.mutations` accepts: `Fate.mutation` entries. */
+export type FateMutationsRecord = Record<string, AnyFateMutation>;
 
-/** What `config.sources` accepts: `Fate.source` entries or legacy pairs. */
-export type FateSourcesList = ReadonlyArray<AnyFateSourceEntry | RawFateSourceEntry>;
+/** What `config.sources` accepts: `Fate.source` entries (a capability-less
+ * entry — `handlers: {}` — is the registered-but-unfetchable escape hatch). */
+export type FateSourcesList = ReadonlyArray<AnyFateSourceEntry>;
 
 /**
  * What `config.live` accepts — fate's `live` option through portable names:
@@ -244,7 +210,7 @@ export type FateRecordServices<Ops> = {[K in keyof Ops]: FateOperationServices<O
 /**
  * Everything a config requires: handler requirements (including Schema
  * decoding services) across the three operation records, plus source
- * handler requirements. Raw legacy entries contribute `never`.
+ * handler requirements.
  */
 export type FateConfigServices<C extends AnyFateServerConfig> =
 	| FateRecordServices<C["queries"]>
@@ -352,9 +318,7 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 
 	// Source completeness: every entity reachable through a view object —
 	// operation success views and nested relation views, recursively — must
-	// have a source. Raw legacy operations carry only a wire type string
-	// (nothing to walk); their entities are covered by the legacy sources
-	// spread into the same config.
+	// have a source.
 	const reachable = new Map<string, string>();
 	const walk = (view: DataViewLike, origin: string): void => {
 		if (reachable.has(view.typeName)) {
@@ -369,9 +333,6 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 	};
 	for (const [category, record] of categories) {
 		for (const [name, entry] of Object.entries(record)) {
-			if (entry.kind === undefined) {
-				continue;
-			}
 			const view = viewOfTypeRef(entry.definition.type);
 			if (view !== undefined) {
 				walk(view, `${category}["${name}"]`);

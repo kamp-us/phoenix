@@ -16,16 +16,20 @@
  *   3. **The per-request pair are ordinary services** — handlers `yield*`
  *      `CurrentUser` / `LivePublisher`; two CONCURRENT requests observe their
  *      own values (a barrier holds both in flight at once).
- *   4. **Raw legacy records pass through untouched** — a bridge-shaped
- *      promise resolver in the same config receives the SAME ctx object the
- *      route passes (`FateContext` compatibility is identity), alongside
- *      compiled entries in one wire request.
+ *   4. **Oracle-baseline role** — since the v2 cutover (ADR 0043) this
+ *      compiled path serves nothing; it exists as the differential oracle's
+ *      v1 baseline (`Interpreter.test.ts`), so this suite keeps pinning its
+ *      behavior.
  *   5. **Spans nest under the runtime's request span** (ADR 0041): the
  *      runtime carries `Tracer.ParentSpan`; a handler's `Effect.fn` span —
  *      operation AND source — parents to it, not to a detached root.
  *   6. **One conversion point** — no static `Effect.run*` anywhere in the
  *      package's non-test sources; the ManagedRuntime promise runner appears
  *      exactly once, inside `Executor.ts` (the LLMS.md integration idiom).
+ *      Since the v2 cutover the PRODUCTION conversion point is the platform
+ *      layer's boundary (alchemy's worker bridge runs the request fiber) —
+ *      the package-side runner exists only because fate's compiled `(args)
+ *      => Promise` resolvers (the oracle baseline) demand one.
  */
 import {readdir, readFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
@@ -45,7 +49,7 @@ import type {
 import {compileFateSources, FateExecutor} from "./Executor.ts";
 import {Fate} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
-import type {RawFateOperation, SourceDefinitionLike} from "./Server.ts";
+import type {SourceDefinitionLike} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 import {fateWireCode} from "./WireError.ts";
 
@@ -183,7 +187,7 @@ const makeBarrier = (count: number): {arrive: () => Promise<void>} => {
 	};
 };
 
-// --- span + legacy observation channels ------------------------------------------
+// --- span observation channel ------------------------------------------------------
 
 const currentSpan = Effect.orDie(Effect.currentSpan);
 
@@ -198,18 +202,7 @@ const logSpan = Effect.gen(function* () {
 	});
 });
 
-/** The legacy resolver's observations — proves ctx passthrough by identity. */
-const legacySeen: Array<{ctx: unknown; args: unknown; select: unknown}> = [];
-
-const legacyEntry: RawFateOperation = {
-	type: "Legacy",
-	resolve: (options: {ctx: unknown; input: {args?: unknown}; select: Array<string>}) => {
-		legacySeen.push({ctx: options.ctx, args: options.input.args, select: options.select});
-		return Promise.resolve({legacy: true});
-	},
-};
-
-// --- the representative config (decode evidence, errors, live, legacy, sources) --
+// --- the representative config (decode evidence, errors, live, sources) -----------
 
 const termSource = Fate.source(
 	TermView,
@@ -305,7 +298,7 @@ const mutations = {
 };
 
 const config = FateServer.config({
-	queries: {...queries, legacy: legacyEntry},
+	queries,
 	lists,
 	mutations,
 	sources: [termSource, definitionSource],
@@ -575,39 +568,6 @@ describe("FateExecutor — per-request services", () => {
 	});
 });
 
-// --- 4. legacy passthrough --------------------------------------------------------
-
-describe("FateExecutor — legacy records", () => {
-	it("a bridge-shaped record executes unchanged alongside compiled entries, with the same ctx", async () => {
-		const harness = makeHarness();
-		const context = makeContext();
-		legacySeen.length = 0;
-		try {
-			const res = await harness.handle(
-				fateRequest([
-					{id: "1", kind: "query", name: "term", args: {slug: "fate"}, select: []},
-					{id: "2", kind: "query", name: "legacy", args: {from: "bridge"}, select: ["legacy"]},
-				]),
-				context,
-			);
-			const results = await resultsOf(res);
-			expect(results).toEqual([
-				{id: "1", ok: true, data: {slug: "fate", title: "fate", take: null}},
-				{id: "2", ok: true, data: {legacy: true}},
-			]);
-			// The legacy resolver received the SAME ctx object the route passed as
-			// adapterContext (FateContext compatibility is identity, not a copy),
-			// plus its untouched args/select.
-			expect(legacySeen).toHaveLength(1);
-			expect(legacySeen[0]?.ctx).toBe(context);
-			expect(legacySeen[0]?.args).toEqual({from: "bridge"});
-			expect(legacySeen[0]?.select).toEqual(["legacy"]);
-		} finally {
-			await harness.dispose();
-		}
-	});
-});
-
 // --- 5. span nesting (ADR 0041) ---------------------------------------------------
 
 describe("FateExecutor — observability", () => {
@@ -638,29 +598,24 @@ describe("FateExecutor — observability", () => {
 	});
 });
 
-// --- sources: identity-keyed registry, adapted + legacy executors ------------------
+// --- sources: identity-keyed registry, adapted executors ---------------------------
 
 describe("compileFateSources", () => {
 	it("keys the registry by definition identity and resolves getSource by typeName", async () => {
-		const legacyExecutor = {byId: () => Promise.resolve(null)};
 		const harness = makeHarness({
 			layer: FateServer.layer(
 				FateServer.config({
 					queries: {term: queries.term},
-					sources: [
-						termSource,
-						{definition: definitionSource.definition, executor: legacyExecutor},
-					],
+					sources: [termSource, definitionSource],
 				}),
 			).pipe(Layer.provide(SozlukDbLive)),
 		});
 		try {
 			const sources = await compiledSourcesOf(harness);
 			// The registry key IS the entry's definition object (fate's identity
-			// requirement) — for new and legacy entries alike; the legacy executor
-			// lands in the Map verbatim.
+			// requirement); each entry's adapted executor lands in the Map.
 			expect(executorOf(sources, termSource.definition)).toBeDefined();
-			expect(executorOf(sources, definitionSource.definition)).toBe(legacyExecutor);
+			expect(executorOf(sources, definitionSource.definition)).toBeDefined();
 			// getSource resolves a view OR a definition to the SAME object.
 			expect(sources.getSource(termSource.definition.view)).toBe(termSource.definition);
 			expect(sources.getSource(termSource.definition)).toBe(termSource.definition);
@@ -747,7 +702,9 @@ describe("the single conversion point", () => {
 			expect(source, name).not.toMatch(/Effect\.run(Promise|Sync|Fork|Callback)/);
 			const conversions = source.match(/\.runPromise(Exit)?\(/g) ?? [];
 			if (name === "Executor.ts") {
-				// Exactly one conversion point — the compiler's runtime promise runner.
+				// Exactly one conversion point — the compiler's runtime promise
+				// runner (oracle-baseline-only since the v2 cutover: the serving
+				// path's conversion is the platform layer's, outside the package).
 				expect(conversions, name).toHaveLength(1);
 			} else {
 				expect(conversions, name).toHaveLength(0);

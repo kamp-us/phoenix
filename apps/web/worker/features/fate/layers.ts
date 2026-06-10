@@ -1,16 +1,19 @@
 /**
- * Worker-level fate layers (ADR 0041, supersedes 0029; `.patterns/alchemy-runtime.md`).
+ * Worker-level fate layers (ADR 0041/0043; `.patterns/alchemy-runtime.md`).
  *
- * The departure from phoenix's original per-request `FateRuntime`: there is **no
- * *per-request* `ManagedRuntime`**. `Drizzle` (built once from the bound D1) and
- * the feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`) are
- * **worker-level layers**, constructed once in the worker init and carried by ONE
- * isolate-level `ManagedRuntime` (the {@link WorkerRuntime}); the compile step
- * (`FateExecutor`, `.patterns/fate-effect-compiler.md`) runs every handler
- * through it, providing the per-request pair (`CurrentUser`, `LivePublisher`)
- * onto each handler effect. The routes that yield a worker service directly
- * take it from the same runtime's built context (`Layer.effectContext`, built
- * in `index.ts` via {@link makeFateRuntime} and consumed by `route.ts`).
+ * There is **no per-request `ManagedRuntime`** — and since the v2 cutover
+ * (ADR 0043) no runtime on the request path at all. `Drizzle` (built once
+ * from the bound D1) and the feature services (`Sozluk`, `Pano`, `Vote`,
+ * `Pasaport`, `Stats`) are **worker-level layers**, constructed once in the
+ * worker init and carried by ONE isolate-level `ManagedRuntime` (the
+ * {@link WorkerRuntime}). That runtime is the LAYER-BUILD VEHICLE: the
+ * routes take everything — the worker singletons AND the composed
+ * `FateServer` service — from its built context (`Layer.effectContext` via
+ * {@link makeFateRuntime}, discharged per request by
+ * `HttpRouter.provideRequest` in `http/app.ts`); the `/fate` route yields
+ * `FateInterpreter.handleRequest` on the request fiber, which provides the
+ * per-request pair (`CurrentUser`, `LivePublisher`) onto each handler
+ * effect itself.
  *
  * The layer graph (mergeAll / provide / provideMerge) is the one in
  * `.patterns/effect-layer-composition.md`; only *where* it's provided moved,
@@ -35,7 +38,7 @@ import {fateConfig} from "./config.ts";
  * The worker-level services `makeFateLayer` provides — the singletons the worker
  * `ManagedRuntime` carries. The per-request pair (`CurrentUser` + `LivePublisher`,
  * the package's documented request contract) is provided onto each handler
- * effect by the compile step, not baked into the runtime.
+ * effect by the interpreter per request, not baked into the runtime.
  */
 export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Stats;
 
@@ -43,11 +46,11 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
  * The ONE isolate-level `ManagedRuntime` the worker init builds from
  * {@link PhoenixFateLive} — it carries the {@link WorkerFateServices} singletons
  * PLUS the composed `FateServer` service and fails for nothing (`E = never`).
- * `FateExecutor.toFetchHandler` resolves `FateServer` from it and runs every
- * compiled resolver through it (`ManagedRuntime` is contravariant in R, so this
- * wider runtime satisfies the package's `FateExecutorRuntime`). `route.ts`,
- * `app.ts`, and the app suites all name this exact shape, so it lives here once
- * rather than being re-spelled at each site (ADR 0041).
+ * Since the v2 cutover (ADR 0043) it is INIT-ONLY wiring: the layer-build /
+ * memoization vehicle behind {@link makeFateRuntime}'s `contextLayer` — no
+ * request runs through it in the deployed worker (the `/fate` route yields
+ * the interpreter on the request fiber). The T2 harness (`run-fate-op.ts`)
+ * still runs the interpreter program through a per-op runtime of this shape.
  */
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -64,10 +67,11 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | F
  * applications" idiom — `ai-docs/src/03_integration/10_managed-runtime.ts`) keeps
  * layer memoization correct across the runtime and the `contextLayer` derived from
  * it: the worker singletons (`Drizzle` + the feature services) are built exactly
- * once and SHARED by both the fate runtime and the routes that yield a worker
- * service directly (`Pasaport` in the `/fate` route). `contextLayer` reuses the
- * runtime's already-built `Context<WorkerFateServices>` rather than rebuilding the
- * layer per request through `provideRequest`.
+ * once and SHARED by every route through the one built context. `contextLayer`
+ * carries the runtime's already-built `Context<WorkerFateServices | FateServer>`
+ * — the worker services the routes yield directly (`Pasaport` in the `/fate`
+ * route) AND the `FateServer` service the route's interpreter program needs —
+ * rather than rebuilding the layer per request through `provideRequest`.
  *
  * NEVER DISPOSED IN THE WORKER: a Cloudflare Worker isolate has no shutdown
  * hook, so the deployed worker never calls `runtime.dispose()` — the runtime
@@ -75,13 +79,13 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | F
  * release (ADR 0041). That deviation is platform-scoped: the Node test harness
  * (`run-fate-op.ts`) builds a runtime per operation and DOES dispose it after
  * the round-trip. Callers that only need the runtime (no route layer)
- * destructure `{runtime}`.
+ * destructure `{runtime}`; the deployed worker destructures `{contextLayer}`.
  */
 export const makeFateRuntime = (
 	layer: Layer.Layer<WorkerFateServices | FateServer>,
 ): {
 	readonly runtime: WorkerRuntime;
-	readonly contextLayer: Layer.Layer<WorkerFateServices>;
+	readonly contextLayer: Layer.Layer<WorkerFateServices | FateServer>;
 } => {
 	const memoMap = Layer.makeMemoMapUnsafe();
 	const runtime = ManagedRuntime.make(layer, {memoMap});

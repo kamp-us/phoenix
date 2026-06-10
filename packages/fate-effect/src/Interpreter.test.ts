@@ -31,7 +31,7 @@ import {
 	list,
 	resolver,
 } from "@nkzw/fate/server";
-import {Context, Effect, Layer, ManagedRuntime} from "effect";
+import {Context, Effect, Layer, ManagedRuntime, Option, Tracer} from "effect";
 import * as Schema from "effect/Schema";
 import {describe, expect, it} from "vitest";
 import {CurrentUser, type CurrentUserInfo, Unauthorized} from "./CurrentUser.ts";
@@ -1587,6 +1587,86 @@ describe("FateInterpreter — concurrent dispatch", () => {
 				],
 				version: 1,
 			});
+		} finally {
+			await runtime.dispose();
+		}
+	});
+});
+
+// --- span nesting (the cutover observability AC, task 17 / ADR 0043) ---------------
+//
+// v2 owns no runtime: `handleRequest` runs on the CALLER's fiber, so every
+// handler/source `Effect.fn` span must parent to the caller's ambient span —
+// in production that is the router's request span (the `HttpEffect.toHandled`
+// tracer middleware sets it on the request fiber). The harness simulates the
+// route fiber by carrying a `Tracer.ParentSpan` in the runtime context, the
+// same collector idiom as `Executor.test.ts` § observability. The byId arm is
+// the risky one — source loads run through the walk's `RequestResolver`
+// batch fiber, which must not detach from the request span.
+
+describe("FateInterpreter — observability", () => {
+	it("handler and batched-source spans nest under the route's request span", async () => {
+		const spanLog: Array<{name: string; parent: string | undefined}> = [];
+		const logSpan = Effect.gen(function* () {
+			const span = yield* Effect.orDie(Effect.currentSpan);
+			spanLog.push({
+				name: span.name,
+				parent: Option.isSome(span.parent) ? span.parent.value.spanId : undefined,
+			});
+		});
+
+		class SpannedView extends FateDataView<{id: string}>()("Spanned")({id: true}) {}
+		const spannedSource = Fate.source(
+			SpannedView,
+			{id: "id"},
+			{
+				byIds: function* (ids) {
+					// Inside the constructor-owned `Spanned.byIds` span.
+					yield* logSpan;
+					return ids.map((id) => ({id}));
+				},
+			},
+		);
+		const spanned = Fate.query(
+			{type: "Spanned"},
+			Effect.fn("spanned")(function* () {
+				yield* logSpan;
+				return {ok: true};
+			}),
+		);
+
+		// The runtime context carries the request span — the stand-in for the
+		// route fiber's ambient `ParentSpan`.
+		const runtime = ManagedRuntime.make(
+			Layer.mergeAll(
+				FateServer.layer(FateServer.config({queries: {spanned}, sources: [spannedSource]})),
+				Layer.succeed(Tracer.ParentSpan)(
+					Tracer.externalSpan({spanId: "route-span", traceId: "route-trace"}),
+				),
+			),
+		);
+		try {
+			const response = await runtime.runPromise(
+				FateInterpreter.handleRequest(
+					requestOf({
+						label: "spans",
+						operations: [
+							{id: "1", kind: "query", name: "spanned", select: []},
+							{id: "2", kind: "byId", type: "Spanned", ids: ["s1"], select: ["id"]},
+						],
+					}),
+					{currentUser: {user: undefined}, livePublisher: recordingPublisher().publisher},
+				),
+			);
+			expect(response.status).toBe(200);
+			// Both spans — the operation handler's wire-name span AND the source
+			// handler's constructor-owned span (reached through the
+			// RequestResolver batch window) — parent to the request span, never
+			// a detached root.
+			expect([...spanLog].sort((a, b) => (a.name < b.name ? -1 : 1))).toEqual([
+				{name: "Spanned.byIds", parent: "route-span"},
+				{name: "spanned", parent: "route-span"},
+			]);
 		} finally {
 			await runtime.dispose();
 		}

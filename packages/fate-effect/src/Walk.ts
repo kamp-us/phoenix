@@ -76,9 +76,10 @@
  *     leaving its byId plane unreachable dead code. The interpreter resolves
  *     `config.sources` directly — strictly additive on the wire: fate's
  *     client CAN emit `kind: "byId"` (cache-miss node fetches, missing-field
- *     refetches, the live-payload fallback), and v1 serves all of those
- *     NOT_FOUND today, so the divergence is error→data and fixes a latent
- *     live-refetch breakage at cutover. Pinned loudly in the oracle suite.
+ *     refetches, the live-payload fallback), and v1 served all of those
+ *     NOT_FOUND, so the divergence is error→data — live since the v2
+ *     cutover (ADR 0043), fixing a latent live-refetch breakage. Pinned
+ *     loudly in the oracle suite.
  *   - fate's hidden computed-state stamping (`attachComputedState`, a
  *     module-private symbol) is unreachable for package-authored loaders —
  *     plain rows never carry it — so computed deps derive from the `select`
@@ -94,13 +95,7 @@ import {CurrentUser} from "./CurrentUser.ts";
 import type {FateRequestContext} from "./Executor.ts";
 import {LivePublisher} from "./LivePublisher.ts";
 import type {ProtocolByIdOperation} from "./Protocol.ts";
-import type {
-	AnyFateSourceEntry,
-	AnyFateSourceHandlers,
-	FateServerService,
-	FateSourcesList,
-	RawFateSourceEntry,
-} from "./Server.ts";
+import type {AnyFateSourceEntry, AnyFateSourceHandlers, FateServerService} from "./Server.ts";
 
 type AnyRow = Record<string, unknown>;
 
@@ -578,7 +573,7 @@ export interface FateWalk {
  * concurrent operations share the window.
  */
 export const makeWalk = (server: FateServerService, context: FateRequestContext): FateWalk => {
-	const sourcesByType = new Map<string, FateSourcesList[number]>();
+	const sourcesByType = new Map<string, AnyFateSourceEntry>();
 	for (const entry of server.sources) {
 		sourcesByType.set(entry.definition.view.typeName, entry);
 	}
@@ -704,9 +699,6 @@ export const makeWalk = (server: FateServerService, context: FateRequestContext)
 					new FateRequestError("NOT_FOUND", `No source registered for '${operation.type}'.`),
 				);
 			}
-			if (source.handlers === undefined) {
-				return yield* rawLegacySource(source);
-			}
 			const ids = operation.ids.map(String);
 			const view = source.definition.view;
 			const plan = buildSelectionPlan(view, operation.select);
@@ -725,11 +717,3 @@ export const makeWalk = (server: FateServerService, context: FateRequestContext)
 
 	return {byId};
 };
-
-/** Raw legacy sources are not interpreted — fail closed (ADR 0042 removal slate). */
-const rawLegacySource = (source: RawFateSourceEntry): Effect.Effect<never> =>
-	Effect.die(
-		new Error(
-			`fate-effect interpreter: raw legacy source "${source.definition.view.typeName}" is not interpreted yet`,
-		),
-	);

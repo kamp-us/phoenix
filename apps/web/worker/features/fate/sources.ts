@@ -4,12 +4,13 @@
  *
  * fate is pure transport (ADR 0016): it never queries D1. Per-feature sources
  * live in their owning feature (`features/<feature>/sources.ts`); this file
- * composes them into the ARRAY form `FateServer.config` takes. The compile
- * step (`FateExecutor`, `.patterns/fate-effect-compiler.md`) builds fate's
- * `{getSource, registry}` from these entries: one registry Map keyed by each
- * entry's `definition` OBJECT (fate looks executors up by identity, so the
- * entries hold the features' exported definition objects, never copies), and
- * `getSource` resolving a view to the same keyed object by `typeName`.
+ * composes them into the ARRAY form `FateServer.config` takes. The serving
+ * path (the interpreter's walk, `.patterns/fate-effect-interpreter.md`)
+ * resolves byId loads from these entries directly by `typeName`; the oracle
+ * baseline (`compileFateSources`, `.patterns/fate-effect-compiler.md`) builds
+ * fate's `{getSource, registry}` from the same entries: one registry Map keyed
+ * by each entry's `definition` OBJECT (fate looks executors up by identity, so
+ * the entries hold the features' exported definition objects, never copies).
  *
  * Every feature is migrated (`.patterns/fate-effect-sources.md`), so every
  * entry is a `Fate.source` value — except `Contribution`, the hand-built

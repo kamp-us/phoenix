@@ -9,9 +9,9 @@
  *      the live option mirrored on both sides).
  *   2. **`InferFateAPI` fidelity** — `InferFateAPI<typeof codegenServer>` and
  *      `InferFateAPI<typeof liveServer>` are assignable in BOTH directions for
- *      a representative config (Fate.* entries with args/input Schemas +
- *      precisely-typed legacy records), where the live reference is fate's own
- *      `createFateServer` over real typed resolvers. Client-facing args/input
+ *      a representative config (Fate.* entries with args/input Schemas),
+ *      where the live reference is fate's own `createFateServer` over real
+ *      typed resolvers. Client-facing args/input
  *      are the Schema's ENCODED side — the wire contract, what the client
  *      sends before the server decodes.
  *   3. **Inertness** — building the codegen server runs NOTHING (the fixture
@@ -81,28 +81,10 @@ type TermArgsWire = (typeof TermArgs)["Encoded"];
 type TermsArgsWire = (typeof TermsArgs)["Encoded"];
 type AddDefinitionWire = (typeof AddDefinitionInput)["Encoded"];
 
-// --- precisely-typed legacy records (shared by BOTH configs — coexistence) ------
+// --- the reference server's adapterContext shape ---------------------------------
 
-/** The legacy adapterContext shape — never surfaces in the API types. */
-type LegacyCtx = {requestId: string};
-
-const legacyQueryEntry = {
-	type: "Legacy",
-	resolve: (_options: {
-		ctx: LegacyCtx;
-		input: {args?: {q: string}};
-		select: Array<string>;
-	}): Promise<{legacy: boolean}> => Promise.resolve({legacy: true}),
-};
-
-const legacyMutationEntry = {
-	type: "Legacy",
-	resolve: (_options: {
-		ctx: LegacyCtx;
-		input: {id: string};
-		select: Array<string>;
-	}): Promise<{touched: boolean}> => Promise.resolve({touched: true}),
-};
+/** The reference server's ctx shape — never surfaces in the API types. */
+type RefCtx = {requestId: string};
 
 // --- the representative config -------------------------------------------------
 
@@ -137,7 +119,6 @@ const queries = {
 		}),
 	),
 	health: Fate.query({type: "Health"}, () => Effect.succeed({ok: true})),
-	legacy: legacyQueryEntry,
 };
 
 const lists = {
@@ -169,7 +150,6 @@ const mutations = {
 			return definition;
 		}),
 	),
-	"legacy.touch": legacyMutationEntry,
 };
 
 const config = FateServer.config({
@@ -190,7 +170,7 @@ const liveQueries = {
 	term: {
 		type: "Term",
 		resolve: (_options: {
-			ctx: LegacyCtx;
+			ctx: RefCtx;
 			input: {args?: TermArgsWire};
 			select: Array<string>;
 		}): Promise<TermRow | null> => Promise.resolve(null),
@@ -198,19 +178,18 @@ const liveQueries = {
 	health: {
 		type: "Health",
 		resolve: (_options: {
-			ctx: LegacyCtx;
+			ctx: RefCtx;
 			input: {args?: undefined};
 			select: Array<string>;
 		}): Promise<{ok: boolean}> => Promise.resolve({ok: true}),
 	},
-	legacy: legacyQueryEntry,
 };
 
 const liveLists = {
 	terms: {
 		type: "Term",
 		resolve: (_options: {
-			ctx: LegacyCtx;
+			ctx: RefCtx;
 			input: {args?: TermsArgsWire};
 			select: Array<string>;
 		}): Promise<ConnectionResult<TermRow>> =>
@@ -225,21 +204,20 @@ const liveMutations = {
 		// (`DefinitionTypeName`), so the reference must too.
 		type: "Definition" as const,
 		resolve: (_options: {
-			ctx: LegacyCtx;
+			ctx: RefCtx;
 			input: AddDefinitionWire;
 			select: Array<string>;
 		}): Promise<DefinitionRow> => Promise.resolve({id: "def-1", body: "", term: ""}),
 	},
-	"legacy.touch": legacyMutationEntry,
 };
 
 const liveServer = createFateServer<
-	LegacyCtx,
+	RefCtx,
 	Record<never, never>,
 	typeof liveQueries,
 	typeof liveLists,
 	typeof liveMutations,
-	LegacyCtx
+	RefCtx
 >({
 	roots: {},
 	queries: liveQueries,
@@ -300,11 +278,9 @@ describe("FateExecutor.toCodegenServer — manifest", () => {
 			live: {},
 			mutations: {
 				"definition.add": {type: "Definition"},
-				"legacy.touch": {type: "Legacy"},
 			},
 			queries: {
 				health: {type: "Health"},
-				legacy: {type: "Legacy"},
 				term: {type: "Term"},
 			},
 			types: {},
@@ -388,13 +364,5 @@ describe("InferFateAPI fidelity — codegen ≡ live", () => {
 		expectTypeOf<
 			CodegenAPI["mutations"]["definition.add"]["entity"]
 		>().toEqualTypeOf<"Definition">();
-	});
-
-	it("legacy records keep fate's own inference on both sides", () => {
-		expectTypeOf<CodegenAPI["queries"]["legacy"]>().toEqualTypeOf<LiveAPI["queries"]["legacy"]>();
-		expectTypeOf<CodegenAPI["mutations"]["legacy.touch"]>().toEqualTypeOf<
-			LiveAPI["mutations"]["legacy.touch"]
-		>();
-		expectTypeOf<CodegenAPI["queries"]["legacy"]["output"]>().toEqualTypeOf<{legacy: boolean}>();
 	});
 });
