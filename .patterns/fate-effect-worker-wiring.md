@@ -46,7 +46,7 @@ export const PhoenixFateLive: Layer.Layer<WorkerFateServices | FateServer, never
 const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
 	PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 );
-yield* fateRuntime.contextEffect; // warmup: config-validation defects die at init, not first request
+// NO init warmup — the layer builds lazily on the first request (see below).
 ```
 
 - **`provideMerge`, not `provide`**: the runtime must carry the `WorkerFateServices` singletons
@@ -58,10 +58,23 @@ yield* fateRuntime.contextEffect; // warmup: config-validation defects die at in
 - `FateServer.layer`'s own R (handler/source requirements minus the per-request pair) is
   discharged by the same domain layers — a migrated record needing a forgotten service is a
   compile error at this composition site. At zero migration that R is `never`.
-- The **warmup `contextEffect`** in init builds the layer eagerly, so `FateServer.layer`'s
-  config validation (duplicate wire names, missing sources) dies at worker init in dev rather
-  than on the first `/fate` request. (`toFetchHandler` itself compiles lazily on first call and
-  memoizes.)
+- **The layer builds lazily on the first request — there is deliberately NO init warmup.**
+  Worker init constructs the `ManagedRuntime` value only; the first `/fate` request forces the
+  layer build (and `toFetchHandler` compiles lazily on first call and memoizes). This is exactly
+  the bridge's behavior.
+  - **Hazard: async work in the isolate's init (global) scope hangs deployed workerd.** Forcing
+    the layer build in init (`yield* fateRuntime.contextEffect` / awaiting `runtime.context()`
+    inside `Phoenix.make`'s init phase) stalls the worker before it can serve a single request —
+    observed as the T3 harness's `/api/health` readiness poll never succeeding after a successful
+    deploy. Build lazily; never block init on the runtime.
+  - **Config validation does not wait for the first request.** The same `collectConfigIssues`
+    walk `FateServer.layer` runs is executed at BUILD time by `FateExecutor.toCodegenServer`
+    in `schema.ts` — a bad config (duplicate wire names, missing sources) throws
+    `FateServerConfigError` during `vite build`, which every deploy runs.
+  - **Accepted gap:** a config error that only manifests at layer-build time (i.e. not caught by
+    `collectConfigIssues`) surfaces on the first `/fate` request instead of at init. That is the
+    bridge's exact failure timing, so the cutover loses nothing — and the alternative (init
+    warmup) is the hang above.
 
 ## The route (the per-request seam)
 
@@ -130,5 +143,7 @@ IS the cutover's behavioral evidence.
   invents behavior the bridge never had.
 - **Don't build a second context object for legacy records** (or "adapt" them) — identity, not
   adaptation, is what keeps the bridge records' runtime/zod/`defaultSize` behavior untouched.
-- **Don't skip the init warmup** when touching `index.ts`: without it an invalid config
-  surfaces on the first request (and `toFetchHandler` caches the rejected compile).
+- **Don't add an init warmup** (`yield* runtime.contextEffect` or awaiting `runtime.context()`
+  in worker init): workerd disallows async/timer work in the isolate's init scope and the
+  deployed worker hangs before serving. The layer builds lazily on first request; config
+  validation already happens at `vite build` time via `toCodegenServer`'s `collectConfigIssues`.
