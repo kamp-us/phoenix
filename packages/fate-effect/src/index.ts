@@ -10,8 +10,12 @@
  * `Fate.query` / `Fate.list` / `Fate.mutation` for operation resolvers), the
  * composite — the `FateServer` tag + `config` + `layer`, with the
  * per-request pair (`CurrentUser`, `LivePublisher`) it provides to handlers —
- * and the v1 compile step (`FateExecutor`): config → pure `createFateServer`
- * over the one worker-level ManagedRuntime, exposed as a fetch handler.
+ * the v1 compile step (`FateExecutor`): config → pure `createFateServer`
+ * over the one worker-level ManagedRuntime, exposed as a fetch handler — and
+ * the v2 native plane in progress: the wire-protocol Schema codecs
+ * (`Protocol.ts`, drift-pinned against fate's exported types) and the
+ * `FateInterpreter` dispatch loop (oracle-verified byte-equal to v1; the
+ * `route()` cutover lands with tasks 15–17).
  *
  * Exports stay flat (every supporting type a consumer's exported value can
  * surface must be nameable through this barrel); the `Fate` namespace is the
@@ -43,6 +47,7 @@ export {
 	type FateRequestContext,
 } from "./Executor.ts";
 export * as Fate from "./Fate.ts";
+export {FateInterpreter} from "./Interpreter.ts";
 export {
 	type LiveConnectionPublisher,
 	type LiveEdgeOptions,
@@ -78,6 +83,21 @@ export {
 	type TypeNameOf,
 	type TypeRef,
 } from "./Operation.ts";
+export {
+	type DecodedProtocolOperation,
+	decodeProtocolRequest,
+	encodeProtocolResponse,
+	PROTOCOL_OPERATION_KINDS,
+	type ProtocolByIdOperation,
+	ProtocolError,
+	ProtocolFailureResult,
+	type ProtocolNamedOperation,
+	ProtocolOperation,
+	ProtocolOperationResult,
+	ProtocolRequest,
+	ProtocolResponse,
+	ProtocolSuccessResult,
+} from "./Protocol.ts";
 export {
 	type AnyFateList,
 	type AnyFateMutation,
