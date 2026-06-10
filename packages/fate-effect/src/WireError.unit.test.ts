@@ -137,10 +137,16 @@ describe("shipped error-class ↔ wire-code pairs", () => {
 	 */
 	const SHIPPED_PAIRS: Readonly<Record<string, string>> = {};
 
-	/** Discover every annotated error class reachable from the barrel. */
+	/**
+	 * Discover every annotated error class reachable from the barrel —
+	 * including through namespace exports (`export * as Fate`), which are
+	 * plain objects: discovery recurses into object values so an error class
+	 * shipped under a namespace cannot dodge the pin.
+	 */
 	const discover = (exports: Record<string, unknown>): Record<string, string> => {
 		const found: Record<string, string> = {};
-		for (const value of Object.values(exports)) {
+		const seen = new Set<unknown>();
+		const visit = (value: unknown): void => {
 			const code = wireCodeOfClass(value);
 			if (code !== undefined && typeof value === "function") {
 				const identifier =
@@ -148,7 +154,17 @@ describe("shipped error-class ↔ wire-code pairs", () => {
 						? value.identifier
 						: value.name;
 				found[identifier] = code;
+				return;
 			}
+			if (typeof value === "object" && value !== null && !seen.has(value)) {
+				seen.add(value);
+				for (const nested of Object.values(value)) {
+					visit(nested);
+				}
+			}
+		};
+		for (const value of Object.values(exports)) {
+			visit(value);
 		}
 		return found;
 	};
@@ -159,6 +175,14 @@ describe("shipped error-class ↔ wire-code pairs", () => {
 
 	it("discovery would catch a shipped annotated class (the guard guards)", () => {
 		const found = discover({BodyRequired, DefinitionNotFound, Unannotated, encodeWireError});
+		expect(found).toEqual({
+			"test/BodyRequired": "BODY_REQUIRED",
+			"test/DefinitionNotFound": "DEFINITION_NOT_FOUND",
+		});
+	});
+
+	it("discovery recurses into namespace exports (the guard guards, nested)", () => {
+		const found = discover({Nested: {BodyRequired, deeper: {DefinitionNotFound}}});
 		expect(found).toEqual({
 			"test/BodyRequired": "BODY_REQUIRED",
 			"test/DefinitionNotFound": "DEFINITION_NOT_FOUND",
