@@ -138,6 +138,7 @@ describe("shipped error-class ↔ wire-code pairs", () => {
 	 */
 	const SHIPPED_PAIRS: Readonly<Record<string, string>> = {
 		"fate-effect/InputValidationError": "VALIDATION_ERROR",
+		"fate-effect/Unauthorized": "UNAUTHORIZED",
 	};
 
 	/**

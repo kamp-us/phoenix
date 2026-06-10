@@ -5,14 +5,17 @@
  * shapes; each entry pairs a pure-data definition with an `Effect.fn` handler.
  * This barrel grows task by task; today it ships the error half of the
  * contract — the `fateWireCode` annotation key and the wire-error codec —
- * the views half (the `FateDataView` class factory + `Entity` helper), and
- * the record-value constructors: `Fate.source` (the per-entity loader) and
- * `Fate.query` / `Fate.list` / `Fate.mutation` (the operation resolvers).
+ * the views half (the `FateDataView` class factory + `Entity` helper), the
+ * record-value constructors (`Fate.source` for per-entity loaders,
+ * `Fate.query` / `Fate.list` / `Fate.mutation` for operation resolvers), and
+ * the composite: the `FateServer` tag + `config` + `layer`, with the
+ * per-request pair (`CurrentUser`, `LivePublisher`) it provides to handlers.
  *
  * Exports stay flat (every supporting type a consumer's exported value can
  * surface must be nameable through this barrel); the `Fate` namespace is the
  * PRD's authoring surface layered over the same flat members.
  */
+export {CurrentUser, type CurrentUserInfo, Unauthorized} from "./CurrentUser.ts";
 export {
 	type DataViewFieldsKey,
 	type DataViewOf,
@@ -24,6 +27,13 @@ export {
 	type ListFieldOf,
 } from "./DataView.ts";
 export * as Fate from "./Fate.ts";
+export {
+	type LiveConnectionPublisher,
+	type LiveEdgeOptions,
+	type LiveEventOptions,
+	LivePublisher,
+	type LiveUpdateOptions,
+} from "./LivePublisher.ts";
 export {
 	type DefinitionArgs,
 	type DefinitionDecodeError,
@@ -50,6 +60,30 @@ export {
 	type TypeNameOf,
 	type TypeRef,
 } from "./Operation.ts";
+export {
+	type AnyFateList,
+	type AnyFateMutation,
+	type AnyFateQuery,
+	type AnyFateServerConfig,
+	type AnyFateSourceEntry,
+	type AnyFateSourceHandlers,
+	type DataViewLike,
+	type FateConfigServices,
+	type FateListsRecord,
+	type FateLiveOption,
+	type FateMutationsRecord,
+	type FateQueriesRecord,
+	type FateRecordServices,
+	FateServer,
+	type FateServerConfig,
+	FateServerConfigError,
+	type FateServerRequirements,
+	type FateServerService,
+	type FateSourcesList,
+	type RawFateOperation,
+	type RawFateSourceEntry,
+	type SourceDefinitionLike,
+} from "./Server.ts";
 export {
 	type FateSource,
 	type FateSourceHandlers,
