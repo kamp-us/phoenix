@@ -41,7 +41,22 @@ Effect.fn("definition.add")(function* ({input}) {
 })
 ```
 
-but **no worker-level layer ever provides them**: the compile step provides the pair onto each handler per request (`CurrentUser` from the session, `LivePublisher` from the request's execution context) and `FateServerRequirements` excludes both from the layer's R. This is what makes the bridge's `FateContext` smuggling unnecessary. `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer (task 6), once, so "a publish cannot fail the mutation" is a type, not a `useIgnore` convention.
+but **no worker-level layer ever provides them**: the compile step provides the pair onto each handler per request (`CurrentUser` from the session, `LivePublisher` from the request's execution context) and `FateServerRequirements` excludes both from the layer's R. This is what makes the bridge's `FateContext` smuggling unnecessary. `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a `useIgnore` convention.
+
+### The `LivePublisher` live implementation (worker-side)
+
+The package owns only the tag + contract; the live implementation is the worker's — it needs the LiveDO topic fan-out and the request's execution context, which the package can't know. [`livePublisherFor(options)`](../apps/web/worker/features/fate-live/live-publisher.ts) builds the per-request service VALUE (the `liveBusFor` shape, not a `Layer`) over two capabilities:
+
+```ts
+livePublisherFor({
+	publish: (topicKey, message) => liveTopics.publish(topicKey, message, limits), // worker-init LiveTopics
+	waitUntil: (promise) => executionCtx.waitUntil(promise),                       // the request's execution context
+});
+```
+
+- **Wire shape by construction**: every publish resolves topics + frames through `makeLiveEventBus` ([`event-bus.ts`](../apps/web/worker/features/fate-live/event-bus.ts)) — the single frame-building code path the bridge's typed bus also derives from — so the `PublishMessage` shape cannot drift between the old and new publish surfaces. (`PublishMessage.match.procedure` is a plain `string`: the envelope is wire data; the typo gate is the caller surface — `TypedLiveConnection` for the bridge, worker-level narrowing over `LivePublisher` post-migration — plus the schema-closed subscribe side.)
+- **Scheduling**: the topic call is handed to `waitUntil` as a detached promise — nothing on the request path awaits the fan-out. The `Effect.runPromise` at that sink is a deliberate boundary: `waitUntil` is a Promise sink outside the request fiber, and on CF it is the *only* way to extend work past the response (no shutdown hook, no surviving daemon fibers — ADR 0029/0041), so a forked fiber would be killed with the request.
+- **Swallowing, both halves**: a rejecting topic call is caught on the detached promise and logged; a synchronous throw is caught by `Effect.try` + `Effect.ignore({log: "Warn"})` — ADR 0039's `use`/`useIgnore` law applied once inside the implementation, which is what lets every call site drop `useIgnore`.
 
 ## Init-time validation (dies at layer construction, names attached)
 
@@ -67,4 +82,5 @@ The legacy operation shape is `RawFateOperation` (`{resolve, type?, input?, defa
 - **Don't `@ts-expect-error` an undischarged-layer pin.** The effect LSP plugin reports the mismatch as TS377034 (`missingLayerContext`), which escapes the directive under tsgo — same family as the TS377003 finding in [fate-effect-operations.md](./fate-effect-operations.md). Pin with `expectTypeOf(...).not.toExtend<Layer.Layer<FateServer>>()` bounds instead.
 - **Don't export a config whose inferred type embeds a raw kernel `dataView()` value** (e.g. inside an inline legacy source) — fate's non-exported symbol key trips TS2883 under composite tsgo. Annotate legacy source entries with `RawFateSourceEntry` at the declaration site; `Fate.*` entries are already portable.
 - **Don't provide `CurrentUser`/`LivePublisher` from worker-level layers** — they're per-request. If they show up at a `Layer.provide` site, the request boundary is in the wrong place.
+- **Never re-tag `CurrentUser` or `LivePublisher`.** The tag identifiers (`fate-effect/CurrentUser`, `fate-effect/LivePublisher`) are load-bearing: `FateServerRequirements` excludes the pair from R *by tag identity*, so a second tag with the same shape silently re-adds the requirement. Extend the service interface in place instead.
 - **Don't pre-merge feature records through a helper** — the config's spreads ARE the merge, exactly fate's shape; the layer's init check is the safety net for cross-record collisions.

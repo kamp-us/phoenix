@@ -65,6 +65,14 @@ export type ConnectionFrame =
  * A publish to a topic DO. The mutation side resolves the topic string and the
  * per-event payload (already inline-resolved `data`/`node`), so the topic DO
  * relays it to every subscriber's connection DO with no re-resolution.
+ *
+ * `procedure` is a plain `string` here: the envelope is wire data (the DO and
+ * `topicsForPublish` genuinely key off any string), and the publish-side typo
+ * gate lives at the CALLER surface — `TypedLiveConnection` for bridge
+ * mutations today, a worker-level narrowing over the package's `LivePublisher`
+ * (which takes plain strings by design) when features migrate. The subscribe
+ * side stays closed: {@link SubscribeControl} and the control-request schema
+ * still reject unknown procedures, so a dead topic cannot be *registered*.
  */
 export type PublishMessage =
 	| {
@@ -76,7 +84,7 @@ export type PublishMessage =
 	| {
 			readonly kind: "connection";
 			readonly match: {
-				readonly procedure: LiveConnectionProcedure;
+				readonly procedure: string;
 				readonly args?: Record<string, unknown>;
 			};
 			readonly frame: ConnectionFrame;

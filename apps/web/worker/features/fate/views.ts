@@ -59,9 +59,15 @@ export interface LiveEntities {
  * key of the entity except the `__typename` discriminant (which never
  * "changes"). Keying `changed` against this makes a nonexistent or renamed
  * field a compile error at the mutation site.
+ *
+ * `Extract<…, string>` keeps the generic provably string-keyed: under an
+ * uninstantiated `Name`, bare `keyof LiveEntities[Name]` widens to
+ * `string | number | symbol`, which blocks the loose `makeLiveEventBus` value
+ * from narrowing to the typed bridge surface (`event-bus.ts`). Entity fields
+ * are string keys by construction, so this excludes nothing real.
  */
 export type LiveChangedField<Name extends keyof LiveEntities> = Exclude<
-	keyof LiveEntities[Name],
+	Extract<keyof LiveEntities[Name], string>,
 	"__typename"
 >;
 

@@ -129,14 +129,22 @@ function entityFrame(
 }
 
 /**
- * Build phoenix's publish-only fluent {@link PhoenixLiveEventBus} over one
- * {@link LivePublisher}. Every `update`/`delete`/`connection().*` resolves a
- * topic and hands the inline-resolved frame to `publisher`; `subscribe`/
- * `subscribeConnection` throw. The fluent surface is identical regardless of how
- * the publisher is obtained — {@link LiveBus} swaps only the publisher, not this
- * client shape.
+ * Build the publish-only fluent bus over one {@link LivePublisher}, at fate's
+ * own loose `LiveEventBus` typing (`string` entity/procedure params). This is
+ * the ONE frame-building code path — every publish surface derives from it, so
+ * the wire shape ({@link PublishMessage}) cannot drift between surfaces:
+ *
+ *   - {@link makeLiveBus} narrows it to the bridge's typed
+ *     {@link PhoenixLiveEventBus} (param contravariance: the loose bus accepts
+ *     any string, so the narrowing is a plain assignment, no cast);
+ *   - `live-publisher.ts` wraps it as the package's string-typed
+ *     `LivePublisher` per-request service (the post-bridge publish surface).
+ *
+ * Every `update`/`delete`/`connection().*` resolves a topic and hands the
+ * inline-resolved frame to `publisher`; `subscribe`/`subscribeConnection`
+ * throw.
  */
-export function makeLiveBus(publisher: LivePublisher): PhoenixLiveEventBus {
+export function makeLiveEventBus(publisher: LivePublisher): LiveEventBus {
 	return {
 		update: (type, id, options) => {
 			publish(publisher, {
@@ -240,6 +248,17 @@ export function makeLiveBus(publisher: LivePublisher): PhoenixLiveEventBus {
 }
 
 /**
+ * The bridge's typed view over {@link makeLiveEventBus}: the same bus value at
+ * the stricter {@link PhoenixLiveEventBus} surface (entity-keyed `update`,
+ * procedure-keyed `connection`). Pure narrowing by assignment — the loose bus
+ * accepts any string, so each narrower signature is satisfied contravariantly;
+ * no cast, no second implementation.
+ */
+export function makeLiveBus(publisher: LivePublisher): PhoenixLiveEventBus {
+	return makeLiveEventBus(publisher);
+}
+
+/**
  * The publish-only bus handed to fate at worker init (`createFateServer`'s
  * `live` config). fate only ever touches the **subscribe** side of this object
  * (`"subscribe" in live` detection — phoenix throws on the actual subscribe), so
@@ -250,13 +269,11 @@ export function makeLiveBus(publisher: LivePublisher): PhoenixLiveEventBus {
 export const liveBus: PhoenixLiveEventBus = makeLiveBus(() => {});
 
 /**
- * The bus widened back to fate's `LiveEventBus` for `createFateServer`'s `live`
- * config. The typed `update` ({@link TypedLiveUpdate}) accepts a *narrower*
- * `type` than `LiveEventBus.update`, so TS's parameter contravariance rejects
- * the direct assignment — but the runtime impl genuinely accepts any string, so
- * the widening is sound. `server.ts` consumes this (subscribe-only role).
+ * The same no-op bus at fate's own `LiveEventBus` typing for `createFateServer`'s
+ * `live` config (`server.ts` consumes this, subscribe-only role) — built from
+ * the loose constructor directly, so no widening cast is needed.
  */
-export const liveBusConfig: LiveEventBus = liveBus as LiveEventBus;
+export const liveBusConfig: LiveEventBus = makeLiveEventBus(() => {});
 
 /**
  * The per-request publish capability, acquired in Effect world (ADR 0039). A
