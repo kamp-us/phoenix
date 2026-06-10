@@ -230,7 +230,7 @@ Notes:
 
 ## Handler call sites
 
-Fate handlers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, authored as a `Fate.query`/`Fate.list`/`Fate.mutation` entry — a pure-data definition paired with an `Effect.fn("<wire name>")` handler, run through the worker-level `ManagedRuntime` (one per isolate, with the per-request `CurrentUser`/`LivePublisher` provided onto each effect — ADR 0041, [fate-effect-operations.md](./fate-effect-operations.md)). The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
+Fate handlers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, authored as a `Fate.query`/`Fate.list`/`Fate.mutation` entry — a pure-data definition paired with an `Effect.fn("<wire name>")` handler, run by the native interpreter on the request fiber (the per-request `CurrentUser`/`LivePublisher` provided onto each effect as values off the request context — ADR 0043, [fate-effect-operations.md](./fate-effect-operations.md)). The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
 
 ```ts
 // worker/features/sozluk/mutations.ts
@@ -288,7 +288,7 @@ Vote-delegating methods are the one place a method's `R` widens beyond `never`: 
 
 See `apps/web/worker/features/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
 
-`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request pair (`CurrentUser`/`LivePublisher`) is provided onto each handler by the compile step, never at layer scope. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
+`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request pair (`CurrentUser`/`LivePublisher`) is provided onto each operation by the interpreter, never at layer scope. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 

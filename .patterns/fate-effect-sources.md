@@ -24,7 +24,7 @@ export const termSource = Fate.source(TermView, {id: "slug"}, {
 
 - The first argument is the **`FateDataView` class** ([fate-effect-data-views.md](./fate-effect-data-views.md)); the constructor reads `View.view` off it. Handler parameter types and the row type are inferred from the class — no annotations needed.
 - `{id}` names the row's primary-key field — the field fate refs the entity by (`"slug"` for Term, `"id"` for most entities).
-- The result carries `definition` (a kernel `SourceDefinition`, `{id, view}` — the exact object fate's identity-keyed registry will hold, created once), `typeName` (the literal entity name), and `handlers` (Effect-returning functions). The compile step (task 7) adapts `handlers` to fate's promise-shaped `SourceExecutor` through the worker runtime; `FateServer.layer` (task 5) unions `FateSourceServices<typeof src>` into its requirements.
+- The result carries `definition` (a kernel `SourceDefinition`, `{id, view}` — the exact object fate's identity-keyed registry will hold, created once), `typeName` (the literal entity name), and `handlers` (Effect-returning functions). The serving path consumes `handlers` natively: the interpreter's byId walk batches them through `RequestResolver` on the request fiber ([fate-effect-interpreter.md](./fate-effect-interpreter.md)); the compile step's promise-shaped `SourceExecutor` adaptation survives only as the differential oracle's baseline ([fate-effect-compiler.md](./fate-effect-compiler.md)). `FateServer.layer` unions `FateSourceServices<typeof src>` into its requirements.
 
 ## The loader contract (loader/resolver split)
 

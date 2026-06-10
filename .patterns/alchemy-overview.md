@@ -14,11 +14,11 @@ phoenix is on effect v4; so is alchemy-effect (`effect@4.0.0-*`). The domain lay
 | Reaching a binding | `env.PHOENIX_DB`, `env.CONNECTION_DO` | `yield* Cloudflare.D1Connection.bind(PhoenixDb)`, `yield* ConnectionDO` |
 | Worker entry | `export default {fetch: app.fetch}` (Hono) | `export default class Phoenix extends Cloudflare.Worker<Phoenix>()(...)` |
 | HTTP routing | Hono `app.get/post` | `HttpRouter` + `HttpApiBuilder` (`@effect/platform`) |
-| Runtime | `ManagedRuntime.make(...)` built + disposed per request | ONE worker-level `ManagedRuntime`, built once per isolate and never disposed (ADR 0041) |
+| Runtime | `ManagedRuntime.make(...)` built + disposed per request | ONE worker-level `ManagedRuntime`, built once per isolate and never disposed — init-only layer-build vehicle; requests are served on the request fiber (ADR 0041/0043) |
 | Durable Objects | plain `class extends DurableObject` | `Cloudflare.DurableObjectNamespace<T>()(...)` (Effect handlers) |
 | Deploy | `wrangler deploy` | `alchemy deploy` |
 
-**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, operations. The one fate-side consequence is the runtime shape: the one worker-level `ManagedRuntime` plus the two per-request VALUES (`currentUser`, `livePublisher`), rather than a fresh per-request runtime — see [alchemy-runtime.md](./alchemy-runtime.md).
+**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, operations. The one fate-side consequence is the runtime shape: the one init-only worker-level `ManagedRuntime` (the layer-build vehicle behind the route context layer) plus the two per-request VALUES (`currentUser`, `livePublisher`), rather than a fresh per-request runtime — see [alchemy-runtime.md](./alchemy-runtime.md).
 
 ## The two phases
 
@@ -51,7 +51,7 @@ The init phase is where `bind()` happens; the runtime phase is the handlers it r
 phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *under* them:
 
 - **Effect domain layer** (`effect-*`) — services, errors, layers. Transport- *and* infra-agnostic.
-- **fate protocol + client layer** (`fate-*`) — data views, sources, mutations, live views. The only infra-facing detail is the worker-level `ManagedRuntime` the compile step runs handlers through.
+- **fate protocol + client layer** (`fate-*`) — data views, sources, mutations, live views. The only infra-facing details are the init-only worker-level `ManagedRuntime` (the layer-build vehicle that hands the routes their context) and the route-edge abort wiring at the platform bridge boundary (ADR 0043).
 - **alchemy infra layer** (these `alchemy-*` docs) — the worker, its bindings, the DOs, the HTTP router, deploy. The bottom layer; `worker/index.ts` is the alchemy worker, and there is no `wrangler.jsonc` or Hono shell.
 
 ## Reading order
@@ -67,5 +67,5 @@ phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *unde
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — the service model that rides on top
-- [fate-effect-compiler.md](./fate-effect-compiler.md) — the seam that runs each handler through the one worker-level `ManagedRuntime`
+- [fate-effect-interpreter.md](./fate-effect-interpreter.md) — the serving path the `/fate` route yields on the request fiber (ADR 0043)
 - [alchemy-runtime.md](./alchemy-runtime.md) — start here for the runtime story

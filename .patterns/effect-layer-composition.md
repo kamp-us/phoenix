@@ -38,7 +38,7 @@ Read this inside-out:
 2. `Pasaport` + `Stats` only need `Drizzle`, so they merge alongside the Sozluk/Pano slice.
 3. `Drizzle` is the bottom — `provideMerge(DrizzleLayer)` feeds it to every consumer above *and* re-exposes it at the top, so a downstream `yield* Drizzle` works.
 
-The result is `Layer.Layer<WorkerFateServices, never, Database | BetterAuth>` — the feature graph is fully wired internally, and the only unresolved `R` is the two seams (`Database`, `BetterAuth`) provided once when the runtime is built (`index.ts`). The per-request pair (`CurrentUser`, `LivePublisher`) is provided onto each handler effect by the compile step, not here. See [alchemy-runtime.md](./alchemy-runtime.md) for the worker-scope vs request-scope split.
+The result is `Layer.Layer<WorkerFateServices, never, Database | BetterAuth>` — the feature graph is fully wired internally, and the only unresolved `R` is the two seams (`Database`, `BetterAuth`) provided once when the runtime is built (`index.ts`). The per-request pair (`CurrentUser`, `LivePublisher`) is provided onto each operation effect by the interpreter, not here. See [alchemy-runtime.md](./alchemy-runtime.md) for the worker-scope vs request-scope split.
 
 ### Direction of `Layer.provide`
 
@@ -92,27 +92,27 @@ Two related patterns thread the same needle (resolve once, hand the plain value 
 
 Both follow the same idiom: pay the discharge cost once, at a known seam, and downstream consumers see a plain value (or a Layer with `R = never`).
 
-## One worker-level `ManagedRuntime`, built from the worker layer set
+## One worker-level `ManagedRuntime`, built from the worker layer set — init-only
 
-Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request; a brief correction (ADR 0029) removed it entirely, capturing a `Context` and running each resolver on the *default* runtime. Both are gone. Now there is exactly ONE worker-level `ManagedRuntime` (ADR 0041, supersedes 0029): the worker's init phase builds `Drizzle` + the feature services once as the worker layer set, folds them into that one runtime, and the compile step runs every handler THROUGH it. `CurrentUser` + `LivePublisher` are provided onto each handler effect per request, not baked into the runtime. See [alchemy-runtime.md](./alchemy-runtime.md) for the full picture.
+Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request; a brief correction (ADR 0029) removed it entirely, capturing a `Context` and running each resolver on the *default* runtime. Both are gone. Now there is exactly ONE worker-level `ManagedRuntime` (ADR 0041, supersedes 0029) and since the v2 cutover (ADR 0043) it is **init-only wiring**: the worker's init phase builds `Drizzle` + the feature services once as the worker layer set, folds them into that one runtime as the layer-build/memoization vehicle, and the built context reaches the routes as a dependency-free context layer. Nothing runs through the runtime per request — the `/fate` route yields the native interpreter on the request fiber, and `CurrentUser` + `LivePublisher` are provided onto each operation per request as values off the request context, not baked into the runtime. See [alchemy-runtime.md](./alchemy-runtime.md) for the full picture.
 
 ## The worker layer set
 
 The worker builds one Layer set and folds it into the one worker-level `ManagedRuntime`:
 
-- **Worker layer set** — `Drizzle` + feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`), the `WorkerFateServices`. Built by the zero-arg `makeFateLayer` in `worker/features/fate/layers.ts` (its `R` is the two seams `Database | BetterAuth`, resolved once in init). The two genuinely per-request services (`CurrentUser`, `LivePublisher`) are not in this Layer — the compile step provides them onto each handler effect at run time.
+- **Worker layer set** — `Drizzle` + feature services (`Sozluk`, `Pano`, `Vote`, `Pasaport`, `Stats`), the `WorkerFateServices`. Built by the zero-arg `makeFateLayer` in `worker/features/fate/layers.ts` (its `R` is the two seams `Database | BetterAuth`, resolved once in init). The two genuinely per-request services (`CurrentUser`, `LivePublisher`) are not in this Layer — the interpreter provides them onto each operation at run time, as values off the request context.
 
-Built once from the `Database` seam in worker init, `Drizzle` is shared by every feature service. The per-request `CurrentUser`/`LivePublisher` are the only services layered on top, and they go on inside the compile step per handler, not in this Layer.
+Built once from the `Database` seam in worker init, `Drizzle` is shared by every feature service. The per-request `CurrentUser`/`LivePublisher` are the only services layered on top, and they go on inside the interpreter per operation, not in this Layer.
 
-Why two-step (build feature slice first, then fold into the runtime) instead of stacking `Layer.provide` calls inline: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with `Layer.provide`/`provideMerge`, then the bridge merges in the per-request values with `Effect.provideService` onto each resolver effect.
+Why two-step (build feature slice first, then fold into the runtime) instead of stacking `Layer.provide` calls inline: `Layer.mergeAll(A, B)` runs `A` and `B` in parallel, so when `A` needs something `B` provides the dep won't resolve. Build the dependent slice with `Layer.provide`/`provideMerge`, then the interpreter merges in the per-request values with `Effect.provideService` onto each operation effect.
 
 Why `provideMerge` for `Vote` specifically: `Sozluk` and `Pano` both yield `Vote`, but a plain `Layer.provide(VoteLive)` would erase `Vote` from the merged layer's output type. `Layer.provideMerge(VoteLive)` provides `Vote` to consumers *and* re-exposes it at the top — useful when other layers in the same merge (or a downstream resolver) also reach for `Vote`.
 
 ## Running an Effect
 
-In the old per-request-runtime world there were three forms (`runPromise`, `runPromiseExit`, `runtime`). Now the only one that matters at the seam is `runtime.runPromiseExit(handler(input).pipe(provideService CurrentUser, provideService LivePublisher), {signal})` — running each handler THROUGH the one worker-level `ManagedRuntime` (ADR 0041) — and **that lives inside `@phoenix/fate-effect`'s compile step**, exactly once (`packages/fate-effect/src/Executor.ts`). Handler and source bodies are `Effect.fn` generators that `yield*` services; they never call `runPromise*` themselves.
+Worker code never calls `runPromise*` on the request path. Since the v2 cutover (ADR 0043) the whole serving path is one Effect: the `/fate` route yields `FateInterpreter.handleRequest` on the request fiber, the interpreter provides the per-request pair onto each operation (`Effect.provideService(CurrentUser, ...)` / `(LivePublisher, ...)`), and the single Effect→Promise boundary is the **platform bridge** (alchemy's worker bridge running the compiled `HttpRouter.toHttpEffect`). The package's one `runtime.runPromise` survives in `packages/fate-effect/src/Executor.ts`, oracle-baseline-only ([fate-effect-compiler.md](./fate-effect-compiler.md)). Handler and source bodies are `Effect.fn` generators that `yield*` services; they never call `runPromise*` themselves.
 
-The compile step inspects the `Exit` and maps tagged errors onto fate wire codes via their `fateWireCode` annotations ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)). The HTTP edge (`HttpRouter.toHttpEffect`) compiles the router Layer into the worker's `fetch` and handles `Exit` for typed-JSON groups itself ([alchemy-http-router.md](./alchemy-http-router.md)).
+The interpreter inspects each operation's `Exit` and maps tagged errors onto fate wire codes via their `fateWireCode` annotations ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)). The HTTP edge (`HttpRouter.toHttpEffect`) compiles the router Layer into the worker's `fetch` and handles `Exit` for typed-JSON groups itself ([alchemy-http-router.md](./alchemy-http-router.md)).
 
 ## Don't construct layers per call
 
@@ -147,7 +147,7 @@ Phoenix's feature Layers don't fail at construction today — `DrizzleLive` just
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — service definition
-- [alchemy-runtime.md](./alchemy-runtime.md) — the one worker-level `ManagedRuntime` the worker layer set is folded into; worker-scope vs per-request split
+- [alchemy-runtime.md](./alchemy-runtime.md) — the one init-only worker-level `ManagedRuntime` the worker layer set is folded into; worker-scope vs per-request split
 - [feature-services.md](./feature-services.md) — the layered architecture (`Drizzle → features → resolvers`)
 - [effect-testing.md](./effect-testing.md) — providing test layers
 - `worker/features/fate/layers.ts` — canonical phoenix Layer composition (`makeFateLayer`)

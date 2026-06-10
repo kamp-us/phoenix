@@ -73,7 +73,7 @@ Use this when the same gen-block recurs at five call sites. Don't pre-derive eve
 export const layer: Layer.Layer<Path> = Layer.succeed(Path)(posixImpl);
 ```
 
-Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `CurrentUser` is the canonical example: the `/fate` route builds the value (`{user: session?.user}`) after validating the session, and the compile step provides it onto each handler with `Effect.provideService(CurrentUser, ctx.currentUser)`. No hand-rolled `CloudflareEnv`/`RequestContext` Tags. For worker config (`ENVIRONMENT`, secrets) read `AppConfig` (an `effect/Config` surface; `config.ts`), not a raw-env Tag.
+Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `CurrentUser` is the canonical example: the `/fate` route builds the value (`{user: session?.user}`) after validating the session, and the interpreter provides it onto each operation with `Effect.provideService(CurrentUser, context.currentUser)`. No hand-rolled `CloudflareEnv`/`RequestContext` Tags. For worker config (`ENVIRONMENT`, secrets) read `AppConfig` (an `effect/Config` surface; `config.ts`), not a raw-env Tag.
 
 ### `Layer.effect` — service built inside an Effect
 

@@ -23,7 +23,7 @@ export const FateServerLive = FateServer.layer(fateConfig).pipe(
 );
 ```
 
-- `config` mirrors `createFateServer`'s options shape. `queries`/`lists`/`mutations` are fate's records (dotted wire names → entries); `sources` is an **array** of `Fate.source` entries (the package's one deviation: fate's own `sources` option is the derived `{getSource, registry}` resolver, which the compile step builds — [fate-effect-compiler.md](./fate-effect-compiler.md) — keying the registry by the definition objects' identity). `live` passes through to fate unchanged.
+- `config` mirrors `createFateServer`'s options shape. `queries`/`lists`/`mutations` are fate's records (dotted wire names → entries); `sources` is an **array** of `Fate.source` entries (the package's one deviation: fate's own `sources` option is the derived `{getSource, registry}` resolver, which only the oracle-baseline compile step builds — [fate-effect-compiler.md](./fate-effect-compiler.md) — keying the registry by the definition objects' identity; the serving interpreter reads the entry array directly). `live` passes through to fate unchanged.
 - `config` is **pure data capture** — full entry types are preserved on the value (`InferFateAPI`/codegen fidelity rides on them); all validation happens at layer construction.
 - `FateServer.layer(config)` returns `Layer<FateServer, never, R>` where **R is the union of every handler's and source's requirements** (Schema decoding services included) **minus the per-request pair**. A forgotten domain layer is a compile error where the layer is consumed (e.g. `ManagedRuntime.make`), because the undischarged layer is not a `Layer<FateServer>`.
 
@@ -41,7 +41,7 @@ Effect.fn("definition.add")(function* ({input}) {
 })
 ```
 
-but **no worker-level layer ever provides them**: the compile step ([fate-effect-compiler.md](./fate-effect-compiler.md)) provides the pair onto each handler per request (`CurrentUser` from the session, `LivePublisher` from the request's execution context) and `FateServerRequirements` excludes both from the layer's R. This is what made the bridge's `FateContext` smuggling unnecessary (the bridge is deleted — ADR 0042). `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a per-call-site convention.
+but **no worker-level layer ever provides them**: the interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) provides the pair onto each operation as VALUES off the one `FateRequestContext` the route builds (`currentUser` from the session, `livePublisher` from the request's execution context — the oracle-baseline compile step does the same on its plane), and `FateServerRequirements` excludes both from the layer's R. This is what made the bridge's `FateContext` smuggling unnecessary (the bridge is deleted — ADR 0042). `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a per-call-site convention.
 
 ### The `LivePublisher` live implementation (worker-side)
 
@@ -66,21 +66,16 @@ livePublisherFor({
 - **Duplicate sources per entity** — fate resolves a view to one definition by type name, so a second source is a silent override waiting to happen.
 - **View-reachable entities without a source** — every entity reachable through a view object (operation success views + nested relation views, recursively) must have a source: `view-reachable entity "Definition" has no source (reached from queries["term"])`. String-typed operations (`type: "Health"`) have no view by design and require nothing.
 
-## Raw legacy records (retired migration affordance)
+## Entries are constructor-built only
 
-The config types still admit raw bridge-shaped entries (`RawFateOperation` / `RawFateSourceEntry`), which pass through to `createFateServer` untouched ([fate-effect-compiler.md](./fate-effect-compiler.md)) and contribute `never` to R. This was the migration-coexistence affordance; **no raw record exists in phoenix since the v1 cutover (ADR 0042)** — the arms remain package capability only, slated for removal with the v2 interpreter:
+Every config entry is a constructor value: the record types are `Record<string, AnyFateQuery>` / `AnyFateList` / `AnyFateMutation`, and `sources` is `FateSourcesList = ReadonlyArray<AnyFateSourceEntry>`. The raw bridge-shaped arms (`RawFateOperation` / `RawFateSourceEntry`) that carried migration coexistence were **removed with the v2 cutover** (ADR 0042's removal slate, landed with ADR 0043) — they no longer exist in the package, and no raw record exists in phoenix.
 
-```ts
-queries: {...bridgeQueries, term: Fate.query(...)},           // legacy promise resolvers + new entries
-sources: [...newSources, {definition: userSource, executor: userExecutor}], // legacy pair as one entry
-```
-
-The legacy operation shape is `RawFateOperation` (`{resolve, type?, input?, defaultSize?}` — `kind?: undefined` is the discriminant, so a `Fate.*` entry dropped into the wrong record is a compile error, not a miscategorized resolver). The legacy source shape is `RawFateSourceEntry` (`{definition, executor}` — the definition object is held by identity for fate's registry).
+The one structural escape hatch that remains is a hand-built `AnyFateSourceEntry` with empty `handlers: {}` — for a **synthetic** view-reachable entity that has no by-id fetch path (`Contribution`). It satisfies the source-completeness validation while adapting to a capability-less executor; see the escape-hatch section of [fate-effect-sources.md](./fate-effect-sources.md).
 
 ## What not to do
 
 - **Don't `@ts-expect-error` an undischarged-layer pin.** The effect LSP plugin reports the mismatch as TS377034 (`missingLayerContext`), which escapes the directive under tsgo — same family as the TS377003 finding in [fate-effect-operations.md](./fate-effect-operations.md). Pin with `expectTypeOf(...).not.toExtend<Layer.Layer<FateServer>>()` bounds instead.
-- **Don't export a config whose inferred type embeds a raw kernel `dataView()` value** (e.g. inside an inline legacy source) — fate's non-exported symbol key trips TS2883 under composite tsgo. Annotate legacy source entries with `RawFateSourceEntry` at the declaration site; `Fate.*` entries are already portable.
+- **Don't export a config whose inferred type embeds a raw kernel `dataView()` value** (e.g. inside an inline hand-built source entry) — fate's non-exported symbol key trips TS2883 under composite tsgo. Annotate hand-built entries with `AnyFateSourceEntry` at the declaration site (as `contributionSource` does); `Fate.*` entries are already portable.
 - **Don't provide `CurrentUser`/`LivePublisher` from worker-level layers** — they're per-request. If they show up at a `Layer.provide` site, the request boundary is in the wrong place.
 - **Never re-tag `CurrentUser` or `LivePublisher`.** The tag identifiers (`fate-effect/CurrentUser`, `fate-effect/LivePublisher`) are load-bearing: `FateServerRequirements` excludes the pair from R *by tag identity*, so a second tag with the same shape silently re-adds the requirement. Extend the service interface in place instead.
 - **Don't pre-merge feature records through a helper** — the config's spreads ARE the merge, exactly fate's shape; the layer's init check is the safety net for cross-record collisions.

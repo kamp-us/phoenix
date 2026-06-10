@@ -152,10 +152,11 @@ const ensureTermExists = Effect.fn("Sozluk.ensureTermExists")(function*(slug) {
 
 ## Mapping to wire codes (the fate boundary)
 
-The compile step catches every error in the `E` channel and routes it through
-`@phoenix/fate-effect`'s `encodeWireError`, which reads the `fateWireCode` annotation off the
-error's class to produce a `FateRequestError` with a stable `code` — no registry, one edit per
-error ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)):
+The interpreter's dispatch catches every error in the `E` channel and routes it through
+`@phoenix/fate-effect`'s `encodeWireError` (the oracle-baseline compile step uses the same
+helper), which reads the `fateWireCode` annotation off the error's class to produce a
+`FateRequestError` with a stable `code` — no registry, one edit per error
+([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)):
 
 - **annotated error** → its annotated code + its own `message`;
 - **un-annotated error / defect** → `INTERNAL_SERVER_ERROR` with a fixed message;

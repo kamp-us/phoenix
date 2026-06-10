@@ -29,9 +29,12 @@ handlers returning **raw domain rows**, which fate masks/shapes to the view+sele
 The registry is identity-keyed — fate looks an executor up by the object identity of the
 `SourceDefinition` that `getSource` returns.
 
-phoenix code never builds this resolver by hand anymore: `@phoenix/fate-effect`'s compile step
-(`compileFateSources`, [fate-effect-compiler.md](./fate-effect-compiler.md)) builds the
-`{getSource, registry}` pair from the composed `Fate.source` entries
+phoenix code never builds this resolver by hand anymore — and since the v2 cutover (ADR 0043)
+the serving path doesn't build it at all: the interpreter resolves sources from the config's
+entry array directly ([fate-effect-interpreter.md](./fate-effect-interpreter.md)).
+`@phoenix/fate-effect`'s compile step (`compileFateSources`,
+[fate-effect-compiler.md](./fate-effect-compiler.md)) still builds the `{getSource, registry}`
+pair from the composed `Fate.source` entries for the differential oracle's baseline
 (`worker/features/fate/sources.ts` is the array of the features' exported entries — never
 copies, because the registry is identity-keyed).
 

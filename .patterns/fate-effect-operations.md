@@ -50,11 +50,11 @@ export const queries = {
 
 ## The error contract
 
-The constructor bounds the handler's `E` by the declared union (`E extends DefinitionErrors<D>`), so **failing with an undeclared error is a compile error at the constructor call** — it surfaces as TS2345 on the handler argument (and the effect LSP plugin's TS377003 "Missing errors … in the expected Effect type"). Declared errors are annotated with `fateWireCode` ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)); the compile step derives their wire codes from the annotation, no registry.
+The constructor bounds the handler's `E` by the declared union (`E extends DefinitionErrors<D>`), so **failing with an undeclared error is a compile error at the constructor call** — it surfaces as TS2345 on the handler argument (and the effect LSP plugin's TS377003 "Missing errors … in the expected Effect type"). Declared errors are annotated with `fateWireCode` ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)); the wire boundary (`encodeWireError` — used by the interpreter's dispatch and the oracle-baseline compile step alike) derives their wire codes from the annotation, no registry.
 
 ## The decode-then-run wrapper (`entry.resolve`)
 
-Each entry carries `resolve` — what task 7's compiler adapts to fate's promise-shaped resolvers:
+Each entry carries `resolve` — the Effect the interpreter's dispatch yields per operation (and what the oracle-baseline compiler adapts to fate's promise-shaped resolvers):
 
 - **Mutation `input` is decoded before the handler runs.** A Schema rejection fails with the package's `InputValidationError` (annotated `VALIDATION_ERROR`, the code fate itself emits for schema failures); the handler never sees invalid input.
 - **Query/list `args` decode wire args including absence**: missing wire args decode as the empty bag `{}`, so args schemas are structs of optional fields and a declared-args handler never sees `undefined`. A definition without an `args` schema passes `undefined` — stray wire args are not smuggled past the declared contract.

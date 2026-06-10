@@ -70,7 +70,7 @@ Pick the lowest tier that exercises the behavior — the taxonomy table above is
 
 - **T0 (`*.unit.test.ts`)** — pure helpers (cursor codecs, keyset SQL building), the wire-code annotation pins (`<feature>/errors.unit.test.ts`, `wireCodes.unit.test.ts`), the `livePublisherFor` frame/swallow contract.
 - **T1 (`*.test.ts`)** — a feature service driven over a real `node:sqlite` D1 (`Vote.test.ts`), the `Drizzle` `run`/`batch` contract (`Drizzle.test.ts`), the D1 fake's own meta fidelity (`sqlite-d1.testing.test.ts`).
-- **T2 (`*.test.ts`)** — a fate operation through the compiled server's `handleRequest` over the full worker layer (`bridge-sozluk.test.ts`, `bridge-products.test.ts` — named for the bridge era; the assertions survive it), keyset ordering on the wire (`bridge-sozluk-keyset.test.ts`), the HTTP surface (`app.test.ts`). Also the unified `LiveDO` instance factory over a `DurableObjectState` fake (`do.test.ts`).
+- **T2 (`*.test.ts`)** — a fate operation through the native interpreter's `handleRequest` (`runFateOp` — the serving path since ADR 0043) over the full worker layer (`bridge-sozluk.test.ts`, `bridge-products.test.ts` — named for the bridge era; the assertions survive it), keyset ordering on the wire (`bridge-sozluk-keyset.test.ts`), the HTTP surface (`app.test.ts`). Also the unified `LiveDO` instance factory over a `DurableObjectState` fake (`do.test.ts`).
 - **T3** — only what the in-process algebra can't reach: the deployed-worker smoke + the DO+SSE+D1 composite. Black-box HTTP, see [alchemy-test-harness.md](./alchemy-test-harness.md).
 
 All of T0–T2 run offline in the `unit` project. Don't push a deterministic-SQL or wire-code assertion up to T3 — that pays remote-D1 flake to test what `node:sqlite` covers faithfully.
