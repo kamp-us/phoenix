@@ -103,7 +103,9 @@ export type FateErrorTag =
 	// Auth / infra
 	| Unauthorized["_tag"]
 	| DrizzleError["_tag"]
-	// Pasaport
+	// Pasaport — `UsernameInvalid` is a union alias over the per-code classes
+	// since the pasaport migration, so it contributes its members' tags (one
+	// registry row per class below), same as the pano aliases.
 	| UsernameInvalid["_tag"]
 	| UsernameTaken["_tag"]
 	| UsernameAlreadySet["_tag"]
@@ -126,11 +128,11 @@ export type FateErrorTag =
 	| UnauthorizedCommentMutation["_tag"];
 
 /**
- * The runtime payload `encodeFateError` reads off a tagged error. Only `code`
- * (carried by the validation tags) and `message` are consulted; everything else
- * on a given error class is for logging, not the wire.
+ * The runtime payload `encodeFateError` reads off a tagged error. Only
+ * `message` is consulted; everything else on a given error class is for
+ * logging, not the wire.
  */
-type TaggedErrorShape = {readonly code?: string; readonly message?: string};
+type TaggedErrorShape = {readonly message?: string};
 
 /**
  * A registry value: the function that turns one tagged error instance into its
@@ -144,28 +146,16 @@ interface WireCodeFor {
 	readonly codes: ReadonlyArray<MutationErrorCode>;
 }
 
-/** Static-code arm: one wire code, one fixed (or carried) message. */
+/**
+ * Static-code arm: one wire code, one fixed (or carried) message. The
+ * bridge-era `upcased` arm (the wire code derived from an instance `code`
+ * field) retired with the pasaport migration — its last consumer — when the
+ * validation classes split one-per-code (`pasaport/errors.ts`,
+ * `pano/errors.ts`).
+ */
 const fixed = (code: MutationErrorCode, fallback: string): WireCodeFor => ({
 	encode: (e) => fateError(code, e.message ?? fallback),
 	codes: [code],
-});
-
-/**
- * Dynamic-code arm: the wire code is the error's own `code` field upcased
- * (`title_required` → `TITLE_REQUIRED`), defaulting to `BAD_REQUEST`. Backs the
- * validation tags whose sub-code lives on the instance. The caller declares the
- * closed set of codes the arm can produce (the upcased domain sub-codes) so the
- * dynamic arm still contributes to {@link WIRE_CODES}.
- */
-const upcased = (
-	codes: ReadonlyArray<MutationErrorCode>,
-	fallbackMessage: string,
-): WireCodeFor => ({
-	encode: (e) => {
-		const upper = (e.code ? e.code.toUpperCase() : "BAD_REQUEST") as MutationErrorCode;
-		return fateError(upper, e.message ?? fallbackMessage);
-	},
-	codes,
 });
 
 /**
@@ -180,12 +170,14 @@ export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
 	"@phoenix/Drizzle/Error": fixed("INTERNAL_SERVER_ERROR", "internal error"),
 
 	// ── Pasaport ────────────────────────────────────────────────────────────
-	// `code` on `UsernameInvalid` is upcased to the wire contract
-	// (INVALID_FORMAT / TOO_SHORT / TOO_LONG; `UsernameInvalidCode` upcased).
-	"pasaport/UsernameInvalid": upcased(
-		["INVALID_FORMAT", "TOO_SHORT", "TOO_LONG"],
-		"validation failed",
-	),
+	// Dead but type-forced (same story as the pano rows below): pasaport
+	// migrated onto the fate-effect annotations (`pasaport/errors.ts`
+	// `fateWireCode`, pinned by `pasaport/errors.unit.test.ts`). The former
+	// `upcased` arm's dynamic sub-codes are now one per-code class each, hence
+	// one `fixed` row each.
+	"pasaport/UsernameInvalidFormat": fixed("INVALID_FORMAT", "validation failed"),
+	"pasaport/UsernameTooShort": fixed("TOO_SHORT", "validation failed"),
+	"pasaport/UsernameTooLong": fixed("TOO_LONG", "validation failed"),
 	"pasaport/UsernameTaken": fixed("TAKEN", "bu kullanıcı adı kullanımda"),
 	"pasaport/UsernameAlreadySet": fixed(
 		"ALREADY_SET",
@@ -227,11 +219,12 @@ export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
 };
 
 /**
- * The always-present wire `code`s `encodeFateError` can emit independent of any
- * registry arm: `INTERNAL_SERVER_ERROR` (the unknown / non-tagged fallback) and
- * `BAD_REQUEST` (the `upcased` default when an error carries no `code`).
+ * The always-present wire `code` `encodeFateError` can emit independent of any
+ * registry arm: `INTERNAL_SERVER_ERROR` (the unknown / non-tagged fallback).
+ * (`BAD_REQUEST` left this list with the `upcased` arm — it now reaches the
+ * wire only through the vote row above.)
  */
-const FALLBACK_WIRE_CODES = ["INTERNAL_SERVER_ERROR", "BAD_REQUEST"] as const;
+const FALLBACK_WIRE_CODES = ["INTERNAL_SERVER_ERROR"] as const;
 
 /**
  * The closed set of wire `code`s the server can put on the wire — every arm's

@@ -21,7 +21,8 @@
  * {@link UsernameInvalid} for the wire-code mapping.
  *
  * Errors raised:
- *   - `UsernameInvalid` (with `code: invalid_format | too_short | too_long`)
+ *   - `UsernameInvalid` (the `UsernameInvalidFormat | UsernameTooShort |
+ *     UsernameTooLong` union — one class per wire sub-code)
  *   - `UsernameTaken`
  *   - `UsernameAlreadySet`
  *   - `UserNotFound`
@@ -33,7 +34,15 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
-import {UserNotFound, UsernameAlreadySet, UsernameInvalid, UsernameTaken} from "./errors.ts";
+import {
+	UserNotFound,
+	UsernameAlreadySet,
+	type UsernameInvalid,
+	UsernameInvalidFormat,
+	UsernameTaken,
+	UsernameTooLong,
+	UsernameTooShort,
+} from "./errors.ts";
 
 /**
  * The better-auth instance phoenix uses everywhere. Constructed by
@@ -208,24 +217,21 @@ const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){1,28}[a-z0-9]$|^[a-z
 function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid> {
 	if (normalized.length < 3) {
 		return Effect.fail(
-			new UsernameInvalid({
-				code: "too_short",
+			new UsernameTooShort({
 				message: "kullanıcı adı en az 3 karakter olmalı",
 			}),
 		);
 	}
 	if (normalized.length > 30) {
 		return Effect.fail(
-			new UsernameInvalid({
-				code: "too_long",
+			new UsernameTooLong({
 				message: "kullanıcı adı en fazla 30 karakter olabilir",
 			}),
 		);
 	}
 	if (!USERNAME_REGEX.test(normalized)) {
 		return Effect.fail(
-			new UsernameInvalid({
-				code: "invalid_format",
+			new UsernameInvalidFormat({
 				message: "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir",
 			}),
 		);

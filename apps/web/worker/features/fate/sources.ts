@@ -1,6 +1,5 @@
 /**
- * fate source entries — `Fate.source` entries and the bridge's legacy
- * `{definition, executor}` pairs, composed across features for the
+ * fate source entries — the features' `Fate.source` entries, composed for the
  * fate-effect server config.
  *
  * fate is pure transport (ADR 0016): it never queries D1. Per-feature sources
@@ -12,11 +11,11 @@
  * entries hold the features' exported definition objects, never copies), and
  * `getSource` resolving a view to the same keyed object by `typeName`.
  *
- * Migrated features contribute `Fate.source` entries directly (sozluk, pano —
- * `.patterns/fate-effect-sources.md`); the remaining legacy pairs ride beside
- * them, each annotated {@link RawFateSourceEntry} at its feature declaration
- * site (a raw kernel `dataView()` in an exported type is the TS2883 hazard —
- * see `packages/fate-effect/src/Server.ts`).
+ * Every feature is migrated (`.patterns/fate-effect-sources.md`), so every
+ * entry is a `Fate.source` value — except `Contribution`, the hand-built
+ * capability-less `AnyFateSourceEntry` (the entity is view-reachable through
+ * `Profile.contributions` but has no fetch path by design — see
+ * `features/pasaport/sources.ts`).
  *
  * Sources carry **no** `connection` executor or `orderBy` contract: every
  * connection — root *and* nested — is delivered by a custom resolver in
@@ -26,29 +25,20 @@
  * `.patterns/fate-sources.md`.
  */
 import {commentSource, postSource, tagSource} from "../pano/sources.ts";
-import {
-	contributionExecutor,
-	contributionSource,
-	profileExecutor,
-	profileSource,
-	userExecutor,
-	userSource,
-} from "../pasaport/sources.ts";
+import {contributionSource, profileSource, userSource} from "../pasaport/sources.ts";
 import {definitionSource, termSource} from "../sozluk/sources.ts";
 
 /**
  * The composed source entries, in the registry order the bridge's hand-built
- * Map used. `Contribution` is registered with a capability-less executor (see
- * `features/pasaport/sources.ts`) — the entity is view-reachable through
- * `Profile.contributions` but has no fetch path by design.
+ * Map used.
  */
 export const sources = [
-	{definition: userSource, executor: userExecutor},
+	userSource,
 	definitionSource,
 	termSource,
 	postSource,
 	commentSource,
 	tagSource,
-	{definition: profileSource, executor: profileExecutor},
-	{definition: contributionSource, executor: contributionExecutor},
+	profileSource,
+	contributionSource,
 ] as const;

@@ -1,6 +1,6 @@
 # fate-effect sources — `Fate.source`, the per-entity loader
 
-How `@phoenix/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This is the package's replacement for the bridge's `fateSource` + hand-written `SourceDefinition` literals ([fate-sources.md](./fate-sources.md), [fate-effect-bridge.md](./fate-effect-bridge.md)), which keep governing legacy records until the migration rewrites them.
+How `@phoenix/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This is the package's replacement for the bridge's `fateSource` + hand-written `SourceDefinition` literals ([fate-sources.md](./fate-sources.md), [fate-effect-bridge.md](./fate-effect-bridge.md)) — every feature is migrated, so no legacy source pair remains (the bridge module is dead code awaiting the v1 cutover deletion).
 
 ## Declaring a source
 
@@ -34,6 +34,22 @@ Sources LOAD, operations RESOLVE. The constructor's types encode the whole contr
 - **Reads are silent.** `byId` returns `null` for a missing id; `byIds` returns the rows that exist — fewer than asked is success, not failure. Handlers return **raw domain rows**; fate masks them to the requested selection afterward.
 - **`E` is pinned `never`.** A handler whose effect has a typed failure is a compile error. Infrastructure failures are defects (`Effect.die` / a dying service call), exactly like every other unrecoverable fault — they reject the operation without becoming domain values.
 - **`R` is inferred** from the handler bodies (a domain service, `Auth`-style per-request services, …) and is visible on the source's type — a forgotten layer is a compile error at the composition site, not a runtime miss.
+
+## The escape hatch: a view-reachable entity with no fetch path
+
+The server's source-completeness validation ([fate-effect-server.md](./fate-effect-server.md)) requires every view-reachable entity to be registered, but some entities are **synthetic** — their rows exist only as a resolver's reshape, with no by-id fetch path at all (`Contribution`: flattened from definitions/posts/comments by `queries.profile`, delivered inline through `Profile.contributions`). `Fate.source` deliberately refuses a loader-less source, so such an entity registers as a hand-built **type-erased entry** instead (`apps/web/worker/features/pasaport/sources.ts`):
+
+```ts
+export const contributionSource: AnyFateSourceEntry = {
+	typeName: "Contribution",
+	definition: {id: "id", view: ContributionView.view},
+	handlers: {},
+};
+```
+
+The empty handlers bag compiles to an executor with no capabilities — any actual capability call fails loudly, exactly like the bridge era's capability-less executor. Reserve this for genuinely synthetic entities; if a fetch path exists, implement `byIds`.
+
+A **root-only** synthetic entity (no view nesting reaches it) needs no source at all — give its query the wire type-name *string* instead of the view class (`stats/queries.ts`: `landingStats` is `{type: "LandingStats"}`), which keeps the entity out of the reachability walk; the `Root` map still carries the kernel view for codegen.
 
 ## Spans come from the constructor
 

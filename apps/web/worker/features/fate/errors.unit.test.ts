@@ -30,8 +30,13 @@ describe("encodeFateError", () => {
 	});
 
 	it("maps Pasaport tags", () => {
-		expect(code("pasaport/UsernameInvalid", {code: "too_short"})).toBe("TOO_SHORT");
-		expect(code("pasaport/UsernameInvalid")).toBe("BAD_REQUEST");
+		// The former `upcased` validation arm is per-code classes since the
+		// pasaport migration — one fixed row per sub-code (dead but type-forced;
+		// the live path is the `fateWireCode` annotations, pinned by
+		// `pasaport/errors.unit.test.ts`).
+		expect(code("pasaport/UsernameInvalidFormat")).toBe("INVALID_FORMAT");
+		expect(code("pasaport/UsernameTooShort")).toBe("TOO_SHORT");
+		expect(code("pasaport/UsernameTooLong")).toBe("TOO_LONG");
 		expect(code("pasaport/UsernameTaken")).toBe("TAKEN");
 		expect(code("pasaport/UsernameAlreadySet")).toBe("ALREADY_SET");
 		expect(code("pasaport/UserNotFound")).toBe("USER_NOT_FOUND");
