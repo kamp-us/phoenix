@@ -23,7 +23,7 @@ export const FateServerLive = FateServer.layer(fateConfig).pipe(
 );
 ```
 
-- `config` mirrors `createFateServer`'s options shape. `queries`/`lists`/`mutations` are fate's records (dotted wire names → entries); `sources` is an **array** of `Fate.source` entries (the package's one deviation: fate's own `sources` option is the derived `{getSource, registry}` resolver, which the compile step builds — task 7 — keying the registry by the definition objects' identity). `live` passes through to fate unchanged.
+- `config` mirrors `createFateServer`'s options shape. `queries`/`lists`/`mutations` are fate's records (dotted wire names → entries); `sources` is an **array** of `Fate.source` entries (the package's one deviation: fate's own `sources` option is the derived `{getSource, registry}` resolver, which the compile step builds — [fate-effect-compiler.md](./fate-effect-compiler.md) — keying the registry by the definition objects' identity). `live` passes through to fate unchanged.
 - `config` is **pure data capture** — full entry types are preserved on the value (`InferFateAPI`/codegen fidelity rides on them); all validation happens at layer construction.
 - `FateServer.layer(config)` returns `Layer<FateServer, never, R>` where **R is the union of every handler's and source's requirements** (Schema decoding services included) **minus the per-request pair**. A forgotten domain layer is a compile error where the layer is consumed (e.g. `ManagedRuntime.make`), because the undischarged layer is not a `Layer<FateServer>`.
 
@@ -41,7 +41,7 @@ Effect.fn("definition.add")(function* ({input}) {
 })
 ```
 
-but **no worker-level layer ever provides them**: the compile step provides the pair onto each handler per request (`CurrentUser` from the session, `LivePublisher` from the request's execution context) and `FateServerRequirements` excludes both from the layer's R. This is what makes the bridge's `FateContext` smuggling unnecessary. `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a `useIgnore` convention.
+but **no worker-level layer ever provides them**: the compile step ([fate-effect-compiler.md](./fate-effect-compiler.md)) provides the pair onto each handler per request (`CurrentUser` from the session, `LivePublisher` from the request's execution context) and `FateServerRequirements` excludes both from the layer's R. This is what makes the bridge's `FateContext` smuggling unnecessary. `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a `useIgnore` convention.
 
 ### The `LivePublisher` live implementation (worker-side)
 
@@ -68,7 +68,7 @@ livePublisherFor({
 
 ## Migration coexistence (raw legacy records)
 
-Raw bridge-shaped entries spread into the same config and pass through to `createFateServer` untouched (task 7), contributing `never` to R:
+Raw bridge-shaped entries spread into the same config and pass through to `createFateServer` untouched ([fate-effect-compiler.md](./fate-effect-compiler.md)), contributing `never` to R:
 
 ```ts
 queries: {...bridgeQueries, term: Fate.query(...)},           // legacy promise resolvers + new entries

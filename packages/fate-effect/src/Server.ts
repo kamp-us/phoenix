@@ -48,7 +48,7 @@
  * worker-level ManagedRuntime (effect-smol `LLMS.md` § "Integrating Effect
  * into existing applications").
  */
-import type {LiveEventBus} from "@nkzw/fate/server";
+import type {ConnectionResult, LiveEventBus} from "@nkzw/fate/server";
 import {Context, Effect, Layer} from "effect";
 import type {CurrentUser} from "./CurrentUser.ts";
 import type {LivePublisher} from "./LivePublisher.ts";
@@ -57,6 +57,8 @@ import type {
 	ListDefinition,
 	MutationDefinition,
 	QueryDefinition,
+	RawArgsInput,
+	RawMutationInput,
 	TypeRef,
 } from "./Operation.ts";
 import type {FateSourceServices, SourceConnectionInput} from "./Source.ts";
@@ -65,26 +67,35 @@ import type {FateSourceServices, SourceConnectionInput} from "./Source.ts";
 
 /**
  * Any `Fate.query` entry, type-erased: the supertype every
- * `FateQuery<D, A, E, R>` is assignable to (parameters at `never`, channels
- * at `unknown`). The config record constraints and the stored
- * {@link FateServerService} records are typed in these — the precise entry
- * types live on the {@link FateServerConfig} value itself.
+ * `FateQuery<D, A, E, R>` is assignable to (handler parameters at `never`,
+ * channels at `unknown`). `resolve` keeps its CONCRETE raw-wire parameter
+ * ({@link RawArgsInput} / {@link RawMutationInput}) so the compile step
+ * (`Executor.ts`) can call it without recovering the precise entry type. The
+ * config record constraints and the stored {@link FateServerService} records
+ * are typed in these — the precise entry types live on the
+ * {@link FateServerConfig} value itself.
  */
 export interface AnyFateQuery {
 	readonly kind: "query";
 	readonly definition: QueryDefinition;
 	readonly type: string | undefined;
 	readonly handler: (input: never) => Effect.Effect<unknown, unknown, unknown>;
-	readonly resolve: (input: never) => Effect.Effect<unknown, unknown, unknown>;
+	readonly resolve: (input: RawArgsInput) => Effect.Effect<unknown, unknown, unknown>;
 }
 
-/** Any `Fate.list` entry, type-erased (see {@link AnyFateQuery}). */
+/**
+ * Any `Fate.list` entry, type-erased (see {@link AnyFateQuery}). The success
+ * channel keeps fate's `ConnectionResult` envelope (item type erased) — the
+ * compiled fate list resolver promises that shape.
+ */
 export interface AnyFateList {
 	readonly kind: "list";
 	readonly definition: ListDefinition;
 	readonly type: string | undefined;
 	readonly handler: (input: never) => Effect.Effect<unknown, unknown, unknown>;
-	readonly resolve: (input: never) => Effect.Effect<unknown, unknown, unknown>;
+	readonly resolve: (
+		input: RawArgsInput,
+	) => Effect.Effect<ConnectionResult<unknown>, unknown, unknown>;
 }
 
 /** Any `Fate.mutation` entry, type-erased (see {@link AnyFateQuery}). */
@@ -93,7 +104,7 @@ export interface AnyFateMutation {
 	readonly definition: MutationDefinition;
 	readonly type: string | undefined;
 	readonly handler: (input: never) => Effect.Effect<unknown, unknown, unknown>;
-	readonly resolve: (input: never) => Effect.Effect<unknown, unknown, unknown>;
+	readonly resolve: (input: RawMutationInput) => Effect.Effect<unknown, unknown, unknown>;
 }
 
 /**
@@ -130,11 +141,20 @@ export interface SourceDefinitionLike {
 	readonly view: DataViewLike;
 }
 
-/** Any `Fate.source` handlers bag, type-erased. */
+/**
+ * Any `Fate.source` handlers bag, type-erased. Row types erase to the plain
+ * record (`Item` is covariant in the success channel), so the compile step
+ * can adapt these to fate's row-typed `SourceExecutor` without recovering
+ * the precise source type.
+ */
 export interface AnyFateSourceHandlers {
-	readonly byId?: (id: string) => Effect.Effect<unknown, never, unknown>;
-	readonly byIds?: (ids: ReadonlyArray<string>) => Effect.Effect<unknown, never, unknown>;
-	readonly connection?: (page: SourceConnectionInput) => Effect.Effect<unknown, never, unknown>;
+	readonly byId?: (id: string) => Effect.Effect<Record<string, unknown> | null, never, unknown>;
+	readonly byIds?: (
+		ids: ReadonlyArray<string>,
+	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, never, unknown>;
+	readonly connection?: (
+		page: SourceConnectionInput,
+	) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, never, unknown>;
 }
 
 /**

@@ -7,9 +7,11 @@
  * contract — the `fateWireCode` annotation key and the wire-error codec —
  * the views half (the `FateDataView` class factory + `Entity` helper), the
  * record-value constructors (`Fate.source` for per-entity loaders,
- * `Fate.query` / `Fate.list` / `Fate.mutation` for operation resolvers), and
- * the composite: the `FateServer` tag + `config` + `layer`, with the
- * per-request pair (`CurrentUser`, `LivePublisher`) it provides to handlers.
+ * `Fate.query` / `Fate.list` / `Fate.mutation` for operation resolvers), the
+ * composite — the `FateServer` tag + `config` + `layer`, with the
+ * per-request pair (`CurrentUser`, `LivePublisher`) it provides to handlers —
+ * and the v1 compile step (`FateExecutor`): config → pure `createFateServer`
+ * over the one worker-level ManagedRuntime, exposed as a fetch handler.
  *
  * Exports stay flat (every supporting type a consumer's exported value can
  * surface must be nameable through this barrel); the `Fate` namespace is the
@@ -26,6 +28,15 @@ export {
 	type KernelDataView,
 	type ListFieldOf,
 } from "./DataView.ts";
+export {
+	type CompiledFateServer,
+	type CompiledFateSources,
+	compileFateSources,
+	FateExecutor,
+	type FateExecutorRuntime,
+	type FateFetchHandler,
+	type FateRequestContext,
+} from "./Executor.ts";
 export * as Fate from "./Fate.ts";
 export {
 	type LiveConnectionPublisher,
