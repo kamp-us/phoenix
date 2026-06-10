@@ -25,7 +25,7 @@ const response = await handleFate(request, {
 });
 ```
 
-- `toFetchHandler(runtime)` resolves the `FateServer` service from the runtime on first call (config validation surfaces there), compiles **once**, and returns fate's `handleRequest` bound to the compiled server. `FateExecutor.compile(service, runtime)` is the pure construction underneath — the codegen comparisons read the live server's `manifest` through it.
+- `toFetchHandler(runtime)` resolves the `FateServer` service from the runtime on first call (config validation surfaces there), compiles **once**, and returns fate's `handleRequest` bound to the compiled server. `FateExecutor.compile(service, runtime)` is the pure construction underneath — the codegen comparisons read the executable compiled server's `manifest` through it.
 - `FateExecutorRuntime` is `ManagedRuntime<FateServer, never>`; `ManagedRuntime` is contravariant in R, so a wider runtime satisfies it.
 
 ## What a compiled resolver does (the four-step pipeline)
@@ -47,7 +47,7 @@ For every `Fate.query`/`Fate.list`/`Fate.mutation` entry, the compiled fate reso
 
 ## The codegen server (`toCodegenServer` — build time, no database)
 
-`FateExecutor.toCodegenServer(config)` is the **build-time** form of the same compile: the identical `createFateServer` call (same record keys, same `type` strings, same `roots: {}`, same `live` passthrough — so `manifest` deep-equals the live compiled server's) with every resolver and source executor **inert** (throws if executed). `schema.ts` exports it as `fateServer` for the fate Vite plugin's `runnerImport`:
+`FateExecutor.toCodegenServer(config)` is the **build-time** form of the same compile: the identical `createFateServer` call (same record keys, same `type` strings, same `roots: {}`, same `live` passthrough — so `manifest` deep-equals the executable compiled server's) with every resolver and source executor **inert** (throws if executed). `schema.ts` exports it as `fateServer` for the fate Vite plugin's `runnerImport`:
 
 ```ts
 // worker/features/fate/schema.ts (the task-9 shape; spike fixture: codegen-schema.fixture.ts)

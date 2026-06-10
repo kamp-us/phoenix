@@ -256,7 +256,7 @@ term: Fate.query(
 ),
 ```
 
-The compile step ([fate-effect-compiler.md](./fate-effect-compiler.md)) handles `Effect.Exit`. Tagged errors in the handler's declared `error` union flow through `encodeWireError` (the `fateWireCode` annotation) to wire codes.
+The interpreter's dispatch ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) handles `Effect.Exit` (the oracle-baseline compile step maps exits the same way). Tagged errors in the handler's declared `error` union flow through `encodeWireError` (the `fateWireCode` annotation) to wire codes.
 
 ## Cross-feature dependencies
 

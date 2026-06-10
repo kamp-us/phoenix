@@ -155,7 +155,7 @@ assets: {
 
 ## See also
 
-- [alchemy-runtime.md](./alchemy-runtime.md) — what `handleFate` does (the one runtime + per-request pair)
+- [alchemy-runtime.md](./alchemy-runtime.md) — what `handleFate` does (the native interpreter on the request fiber + the per-request pair; the runtime is init-only wiring)
 - [alchemy-worker.md](./alchemy-worker.md) — the `assets` prop and where `fetch` is returned
 - [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the connection DO behind `/fate/live`
-- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — the compiled fate server and the request context it receives
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — the interpreter-served fate route and the request context it receives
