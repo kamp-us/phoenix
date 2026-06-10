@@ -45,6 +45,23 @@ For every `Fate.query`/`Fate.list`/`Fate.mutation` entry, the compiled fate reso
 
 A raw bridge-shaped entry (`RawFateOperation` / `RawFateSourceEntry`) passes into the compiled options **verbatim** — same function object, same `input` zod schema, same `defaultSize`. The compiled server's `context` factory returns the adapterContext object itself, so legacy resolvers receive the **same ctx object** the route passed (identity, not a copy): during coexistence the worker carries the legacy `FateContext` fields and the per-request pair on one object, compiled resolvers read the pair, legacy resolvers read theirs.
 
+## The codegen server (`toCodegenServer` — build time, no database)
+
+`FateExecutor.toCodegenServer(config)` is the **build-time** form of the same compile: the identical `createFateServer` call (same record keys, same `type` strings, same `roots: {}`, same `live` passthrough — so `manifest` deep-equals the live compiled server's) with every resolver and source executor **inert** (throws if executed). `schema.ts` exports it as `fateServer` for the fate Vite plugin's `runnerImport`:
+
+```ts
+// worker/features/fate/schema.ts (the task-9 shape; spike fixture: codegen-schema.fixture.ts)
+export const termDataView = TermView.view;            // the plugin's schema walk picks up kernel views
+export type Term = Fate.Entity<typeof TermView>;      // generated client imports types by manifest name
+export const Root: Record<string, unknown> = {…};     // client root entries (annotated for nameability)
+export const fateServer = FateExecutor.toCodegenServer(config);  // .manifest + InferFateAPI
+```
+
+- **It takes the TYPED config** (`FateServerConfig<Q, L, M, S>` — the value `FateServer.config` returns), not the erased service: the precise entry types are what the API types are computed from. The declared return type is `FateCodegenServer<Q, L, M>` — fate's server value carrying `FateCodegenAPI<Q, L, M>` as the `__api` phantom, so `InferFateAPI<typeof fateServer>` in the generated client resolves to it.
+- **`InferFateAPI` fidelity holds, both directions** (the PRD's settled open question, pinned in `Codegen.test.ts`): `FateCodegenQueryApi`/`FateCodegenListApi`/`FateCodegenMutationApi` reproduce fate's own `QueryAPI`/`ListAPI`/`MutationAPI` mappings over the package's entry types. Client-facing `args`/`input` are the definition Schemas' **ENCODED** side (`DefinitionWireArgs`/`DefinitionWireInput`) — the wire contract: a `FiniteFromString` arg is `number` to the handler but `string` to the client. Outputs are the handlers' success types; mutation `entity` keeps the definition's literal type name. Raw legacy records keep fate's own inference (a record too weak to infer maps to `never`, exactly as fate's mapping does).
+- **Construction runs nothing.** Importing the schema module evaluates pure data — handlers are captured, never invoked (`Codegen.fixture.ts` proves it under a throw-on-touch Proxy database); no `ManagedRuntime`, no D1, no bindings at build time. The Vite-plugin end-to-end check lives in `apps/web/worker/features/fate/codegen-vite.test.ts` (a programmatic `vite build` through the plugin's real `runnerImport` path).
+- **Validation parity**: the same `collectConfigIssues` walk `FateServer.layer` dies with runs here and **throws `FateServerConfigError` at build time** — duplicate wire names / missing sources fail the Vite build with the offenders named, before the worker ever boots.
+
 ## The erased→kernel boundary (the package's F7, contained)
 
 The compiler works **type-erased**: composition correctness was already enforced where it is enforceable — handler definition sites typed their own R/E, `FateServer.layer`'s public R forced the domain layers, and the runtime could not exist without discharging them. Crossing back from the portable erased shapes (R at `unknown`; legacy values behind weak portable types because fate's `DataView` symbol trips TS2883 in exported configs) to fate's kernel types is a handful of **single named-type narrowings**, each one-directional-comparable, each marked `erased→kernel` in `Executor.ts`. Same contained-boundary precedent as the bridge's `genEffect` cast (ADR 0041 F7) and `WireError.ts`'s protocol-code widening. The package pins the discipline in tests: no static `Effect.run*` anywhere in package sources, and the runtime promise runner appears exactly once, in `Executor.ts`.

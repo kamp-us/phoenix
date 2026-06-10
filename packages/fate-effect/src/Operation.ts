@@ -127,6 +127,22 @@ export type DefinitionInput<D> = D extends {readonly input: infer S extends Sche
 	? S["Type"]
 	: never;
 
+/**
+ * The WIRE args of a query/list definition — the args Schema's ENCODED side,
+ * what the CLIENT sends before the server decodes (`undefined` if no schema).
+ * The codegen server's `InferFateAPI` surface (task 8) is typed in these:
+ * a `FiniteFromString` arg is `number` to the handler but `string` on the
+ * wire, and the generated client must demand the wire shape.
+ */
+export type DefinitionWireArgs<D> = D extends {readonly args: infer S extends Schema.Top}
+	? S["Encoded"]
+	: undefined;
+
+/** The WIRE input of a mutation definition (see {@link DefinitionWireArgs}). */
+export type DefinitionWireInput<D> = D extends {readonly input: infer S extends Schema.Top}
+	? S["Encoded"]
+	: never;
+
 /** The declared error union's instance type — the handler's `E` bound. */
 export type DefinitionErrors<D> = D extends {readonly error: infer S extends Schema.Top}
 	? S["Type"]

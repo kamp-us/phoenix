@@ -306,8 +306,13 @@ const viewOfTypeRef = (ref: TypeRef | undefined): DataViewLike | undefined => {
 	return isDataViewLike(ref.view) ? ref.view : undefined;
 };
 
-/** Collect every config problem — all of them at once, names attached. */
-const collectConfigIssues = (config: AnyFateServerConfig): Array<string> => {
+/**
+ * Collect every config problem — all of them at once, names attached. Shared
+ * by `FateServer.layer` (dies at worker init) and
+ * `FateExecutor.toCodegenServer` (throws at build time): the SAME composition
+ * mistakes surface at both edges, with the same wording.
+ */
+export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> => {
 	const issues: Array<string> = [];
 	const categories = [
 		["queries", config.queries],
