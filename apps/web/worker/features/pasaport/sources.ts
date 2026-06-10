@@ -19,7 +19,7 @@ import {
 	type SourceExecutor,
 } from "../fate/effect.ts";
 import {Pasaport, type ProfileRow, type UserRow} from "./Pasaport.ts";
-import {profileDataView, userDataView} from "./views.ts";
+import {contributionDataView, profileDataView, userDataView} from "./views.ts";
 
 type UserViewRow = {[K in keyof UserRow]: UserRow[K]};
 // The `Profile` view row adds the client normalization key `id` (=== `userId`)
@@ -47,8 +47,25 @@ export const profileExecutor: SourceExecutor = fateSource<ProfileViewRow>({
 	},
 });
 
+/**
+ * `Contribution` has no fetch path of its own — the rows are synthetic
+ * (flattened from definitions/posts/comments by `queries.profile`'s shaper) and
+ * the `Profile.contributions` connection is delivered inline by that custom
+ * resolver (ADR 0019), so no byId/byIds/connection executor is implementable or
+ * needed. The capability-less executor exists because the entity is
+ * view-reachable (`Profile.contributions` nests `contributionDataView`) and the
+ * fate-effect server's source-completeness validation requires every reachable
+ * entity to be registered; any actual capability call would fail loudly,
+ * exactly as the previously-unregistered entity did.
+ */
+export const contributionExecutor: SourceExecutor = {};
+
 export const userSource: AnySourceDefinition = {id: "id", view: userDataView as AnyDataView};
 export const profileSource: AnySourceDefinition = {
 	id: "userId",
 	view: profileDataView as AnyDataView,
+};
+export const contributionSource: AnySourceDefinition = {
+	id: "id",
+	view: contributionDataView as AnyDataView,
 };

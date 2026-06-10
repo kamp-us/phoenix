@@ -17,7 +17,7 @@ fate({
 });
 ```
 
-The plugin reads its `module` (a barrel re-exporting `worker/features/fate/views.ts` + `{fateServer}` from `worker/features/fate/server.ts`) via a Node Vite runner at build time. The output lands in `.fate/client.generated.ts` (**gitignored — never committed**) and carries a `declare module "react-fate/client"` augmentation typed from the server.
+The plugin reads its `module` (a barrel re-exporting `worker/features/fate/views.ts` + the build-time `fateServer = FateExecutor.toCodegenServer(fateConfig)` — inert handlers, no database at build time; see [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md)) via a Node Vite runner at build time. The output lands in `.fate/client.generated.ts` (**gitignored — never committed**) and carries a `declare module "react-fate/client"` augmentation typed from the server.
 
 **Client-exposed roots are declared by a `Root` value exported from `views.ts`** (fate's `viewer` pattern). A view-based `Root` entry (e.g. `me: userDataView`) becomes a typed client root the plugin emits; at runtime it resolves through the matching `queries.<name>` resolver. `Root` is **not** passed to `createFateServer` (`roots: {}` stays empty there) — a non-empty `Roots` generic would surface fate's internal `DataView` symbol (TS2883). byId roots are generated from the source registry; only custom-resolver roots need a `Root` entry.
 

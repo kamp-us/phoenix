@@ -1,21 +1,20 @@
 /**
- * Hand-built `SourceResolver` — Effect-backed reads, composed across features.
+ * Legacy fate source entries — the bridge's `{definition, executor}` pairs,
+ * composed across features for the fate-effect server config.
  *
  * fate is pure transport (ADR 0016): it never queries D1. Per-feature source
- * executors live in their owning feature (`features/<feature>/sources.ts`); this
- * file composes them into the registry fate expects and exposes the
- * `{getSource, registry}` surface `server.ts` hands to `createFateServer`.
+ * executors live in their owning feature (`features/<feature>/sources.ts`);
+ * this file composes them into the ARRAY form `FateServer.config` takes. The
+ * compile step (`FateExecutor`, `.patterns/fate-effect-compiler.md`) builds
+ * fate's `{getSource, registry}` from these entries: one registry Map keyed by
+ * each entry's `definition` OBJECT (fate looks executors up by identity, so
+ * the entries hold the features' exported definition objects, never copies),
+ * and `getSource` resolving a view to the same keyed object by `typeName`.
  *
- * `@nkzw/fate/server` does **not** re-export `createSourceDefinition` /
- * `getDataViewSourceConfig` / `createSourceRegistry` / `getBaseDataView` (only
- * the public `createDrizzleSourceAdapter`, which phoenix bans), so the three
- * pieces are built directly:
- *
- *   - each `SourceDefinition` is a plain object literal `{id, view, orderBy?}`,
- *   - the `registry` is a `new Map` keyed by the `SourceDefinition` *object*
- *     (fate looks executors up by object identity),
- *   - `getSource` resolves a view to its definition by `view.typeName`,
- *     returning the *same* object used as the registry key.
+ * Every entry is annotated {@link RawFateSourceEntry} at the declaration site:
+ * the definitions embed kernel `dataView()` values, whose non-exported symbol
+ * key would otherwise surface in the exported config's inferred type (TS2883 —
+ * see `packages/fate-effect/src/Server.ts`).
  *
  * Sources carry **no** `connection` executor or `orderBy` contract: every
  * connection — root *and* nested — is delivered by a custom resolver in
@@ -24,7 +23,7 @@
  * `list(view, {orderBy})` mirrors it. See `.patterns/fate-connections.md` and
  * `.patterns/fate-sources.md`.
  */
-import type {SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
+import type {RawFateSourceEntry} from "@phoenix/fate-effect";
 import {
 	commentExecutor,
 	commentSource,
@@ -33,47 +32,29 @@ import {
 	tagExecutor,
 	tagSource,
 } from "../pano/sources.ts";
-import {profileExecutor, profileSource, userExecutor, userSource} from "../pasaport/sources.ts";
+import {
+	contributionExecutor,
+	contributionSource,
+	profileExecutor,
+	profileSource,
+	userExecutor,
+	userSource,
+} from "../pasaport/sources.ts";
 import {definitionExecutor, definitionSource, termExecutor, termSource} from "../sozluk/sources.ts";
-import type {FateContext} from "./context.ts";
-import type {AnyDataView, AnySourceDefinition} from "./effect.ts";
 
-// The registry is a plain Map keyed by the SourceDefinition object (identity).
-const registry: SourceRegistry<FateContext> = new Map([
-	[userSource, userExecutor],
-	[definitionSource, definitionExecutor],
-	[termSource, termExecutor],
-	[postSource, postExecutor],
-	[commentSource, commentExecutor],
-	[tagSource, tagExecutor],
-	[profileSource, profileExecutor],
-]);
-
-// fate calls getSource with a base or list()-wrapped view; both share
-// `typeName`, so resolve by typeName. It must return the *same* SourceDefinition
-// object used as the registry key.
-const sourcesByType = new Map<string, AnySourceDefinition>(
-	[
-		userSource,
-		definitionSource,
-		termSource,
-		postSource,
-		commentSource,
-		tagSource,
-		profileSource,
-	].map((s) => [s.view.typeName, s]),
-);
-
-export const sources = {
-	getSource: <Item extends Record<string, unknown>>(
-		view: AnyDataView | SourceDefinition<Item, unknown>,
-	): SourceDefinition<Item, unknown> => {
-		const typeName = "view" in view ? view.view.typeName : view.typeName;
-		const source = sourcesByType.get(typeName);
-		if (!source) {
-			throw new Error(`No source registered for '${typeName}'.`);
-		}
-		return source as SourceDefinition<Item, unknown>;
-	},
-	registry,
-};
+/**
+ * The composed legacy source entries, in the registry order the bridge's
+ * hand-built Map used. `Contribution` is registered with a capability-less
+ * executor (see `features/pasaport/sources.ts`) — the entity is view-reachable
+ * through `Profile.contributions` but has no fetch path by design.
+ */
+export const sources: ReadonlyArray<RawFateSourceEntry> = [
+	{definition: userSource, executor: userExecutor},
+	{definition: definitionSource, executor: definitionExecutor},
+	{definition: termSource, executor: termExecutor},
+	{definition: postSource, executor: postExecutor},
+	{definition: commentSource, executor: commentExecutor},
+	{definition: tagSource, executor: tagExecutor},
+	{definition: profileSource, executor: profileExecutor},
+	{definition: contributionSource, executor: contributionExecutor},
+];

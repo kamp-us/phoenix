@@ -1,51 +1,60 @@
 /**
- * The `POST /fate` route (ADR 0041, supersedes 0029; `.patterns/alchemy-http-router.md`).
+ * The `POST /fate` route (ADR 0041; `.patterns/alchemy-http-router.md`,
+ * `.patterns/fate-effect-compiler.md`).
  *
- * The worker builds the isolate-level `ManagedRuntime` ({@link WorkerRuntime}) in
- * init (`index.ts`) and hands it to this route as a value (mechanism — how the
- * bridge runs resolvers through it: see the `effect.ts` header + ADR 0041).
- * This route is the per-request seam:
+ * The worker builds the isolate-level `ManagedRuntime` ({@link WorkerRuntime})
+ * in init (`index.ts`) — carrying the worker singletons AND the composed
+ * `FateServer` service ({@link PhoenixFateLive}) — and hands it to this route
+ * as a value. `FateExecutor.toFetchHandler(runtime)` resolves the service and
+ * compiles the real fate server ONCE (memoized across requests); this route is
+ * the per-request seam:
  *
  *   1. Read the raw `Request` (`Cloudflare.Request`) and the execution context.
- *   2. Validate the session through the worker-level `Pasaport` — no throwaway
- *      runtime (this replaces the old `validateSessionCookie`).
- *   3. Build the two genuinely per-request services as VALUES — `Auth` (the
- *      validated session) and `LiveBus` (the publish capability, ADR 0039) — and
- *      hand fate a {@link FateContext} of `{runtime, request, auth, liveBus}` as
- *      `adapterContext`.
- *   4. `LiveBus` closes over a per-request publisher so a mutation's `live.*`
- *      fan-out reaches the topic DO without blocking the response — `waitUntil`
- *      comes from `Cloudflare.WorkerExecutionContext` (ADR 0029), not a disposed
- *      runtime. There is no `AsyncLocalStorage` bridge (ADR 0039): the bus rides
- *      the `FateContext` like `Auth`, so a missing value is a type error, not a
- *      silent no-op.
+ *   2. Validate the session through the worker-level `Pasaport`.
+ *   3. Build ONE request-context object ({@link CoexistenceFateContext}) and
+ *      hand it to the fetch handler as fate's adapterContext:
+ *      - the fate-effect per-request pair as VALUES — `currentUser` (the
+ *        session user; `CurrentUserInfo` is a structural subset of the
+ *        better-auth user) and `livePublisher` (`livePublisherFor` over the
+ *        worker-init `LiveTopics` publish + the request's `waitUntil`) — plus
+ *        the abort `signal` so a disconnected client interrupts the resolver
+ *        fiber;
+ *      - the legacy bridge `FateContext` fields (`runtime`, `request`, `auth`,
+ *        `liveBus`) on the SAME object, for the not-yet-migrated records.
+ *   4. Both publishers ride the same worker-init `LiveTopics` + per-request
+ *      `waitUntil` (ADR 0028/0029/0039): a mutation's `live.*` fan-out reaches
+ *      the topic DO without blocking the response, and a failed publish is
+ *      swallowed loudly — the mutation response already succeeded.
  *
- * Because the runtime is a constructor argument (`makeHandleFate(runtime)`), the
- * route holds no module-level runtime — `index.ts` is the single construction +
- * ownership point (the runtime is never disposed; CF isolates have no shutdown
- * hook — see ADR 0041).
+ * Because the runtime is a constructor argument (`makeHandleFate(runtime)`),
+ * the route holds no module-level runtime — `index.ts` is the single
+ * construction + ownership point (the runtime is never disposed; CF isolates
+ * have no shutdown hook — see ADR 0041).
  */
+import {FateExecutor} from "@phoenix/fate-effect";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {liveBusFor} from "../fate-live/event-bus.ts";
+import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {defaultLiveLimits} from "../fate-live/route.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
-import type {FateContext} from "./context.ts";
+import type {CoexistenceFateContext} from "./context.ts";
 import type {WorkerRuntime} from "./layers.ts";
-import {fateServer} from "./server.ts";
 
 /**
  * Build the `POST /fate` handler over the isolate's worker {@link WorkerRuntime}.
- * Resolves the session through the worker-level `Pasaport`, builds the per-request
- * `Auth` + `LiveBus` VALUES, and hands fate a `FateContext` of
- * `{runtime, request, auth, liveBus}` — the bridge runs each resolver on the
- * runtime with those two services provided onto the effect.
+ * `toFetchHandler` is bound once per route construction (the compiled server is
+ * memoized inside it); per request the handler resolves the session, builds the
+ * one {@link CoexistenceFateContext} object, and serves through the compiled
+ * fate server.
  */
-export const makeHandleFate = (runtime: WorkerRuntime) =>
-	Effect.gen(function* () {
+export const makeHandleFate = (runtime: WorkerRuntime) => {
+	const handleFate = FateExecutor.toFetchHandler(runtime);
+
+	return Effect.gen(function* () {
 		const raw = yield* Cloudflare.Request;
 		const executionCtx = yield* Cloudflare.WorkerExecutionContext;
 		const pasaport = yield* Pasaport;
@@ -53,43 +62,53 @@ export const makeHandleFate = (runtime: WorkerRuntime) =>
 
 		const session = yield* pasaport.validateSession(raw.headers);
 
-		// The per-request live publisher (ADR 0028/0029/0039): a mutation's synchronous
-		// `live.*` call resolves topic keys and fires the typed `TopicDO.publish` RPC
-		// here. The topic namespace is worker-init-resolved (carried by `LiveTopics`,
-		// no `env` lookup, no `idFromName`, no string-URL `stub.fetch`); `waitUntil`
-		// comes from `Cloudflare.WorkerExecutionContext` so the best-effort fan-out
-		// doesn't block the response. A failed publish is swallowed loudly — the
-		// mutation response already succeeded.
+		// The per-request live publish capability, shared by both publish surfaces
+		// (ADR 0028/0029/0039): one worker-init-resolved `LiveTopics` (typed
+		// `TopicDO.publish` RPC — no `env` lookup, no `idFromName`, no string-URL
+		// `stub.fetch`) with the route's `LiveLimits` applied, one `waitUntil` from
+		// `Cloudflare.WorkerExecutionContext` so the best-effort fan-out doesn't
+		// block the response.
+		const publishToTopic = (topicKey: string, message: Parameters<typeof liveTopics.publish>[1]) =>
+			liveTopics.publish(topicKey, message, defaultLiveLimits);
+		const waitUntil = (promise: Promise<unknown>) => {
+			executionCtx.waitUntil(promise);
+		};
+
+		// The legacy bridge bus (dies with the bridge, tasks 10–13): same topic
+		// publish, detached onto `waitUntil` here — `liveBusFor` takes the sync
+		// fire-and-forget form. A failed publish is swallowed loudly; the mutation
+		// response already succeeded.
 		const publisher = (topicKey: string, message: Parameters<typeof liveTopics.publish>[1]) => {
-			executionCtx.waitUntil(
+			waitUntil(
 				// Deliberate Effect→Promise boundary: this fire-and-forget publish is
 				// handed to `waitUntil` (a Promise sink) outside the request fiber.
 				// `liveTopics.publish` is self-contained (R = never), so it needs no
 				// surrounding services — `runPromise` is correct, not `runPromiseWith`.
 				// @effect-diagnostics-next-line effect/runEffectInsideEffect:off
-				Effect.runPromise(liveTopics.publish(topicKey, message, defaultLiveLimits)).catch(
-					(error: unknown) => {
-						console.error(`live publish to topic:${topicKey} failed`, error);
-					},
-				),
+				Effect.runPromise(publishToTopic(topicKey, message)).catch((error: unknown) => {
+					console.error(`live publish to topic:${topicKey} failed`, error);
+				}),
 			);
 		};
 
-		// Hand fate a `FateContext` of `{runtime, request, auth, liveBus}` as
-		// `adapterContext`. The bridge (`effect.ts`) provides `auth`/`liveBus` onto
-		// each resolver effect and runs it on `runtime` — no per-request layer build,
-		// no `Effect.context<FateEnv>()` capture.
-		const ctx: FateContext = {
+		// ONE context object for the whole request (identity is the coexistence
+		// contract — see `CoexistenceFateContext`): the fate-effect pair + signal
+		// for compiled entries, the legacy `FateContext` fields for bridge records.
+		const ctx: CoexistenceFateContext = {
+			currentUser: {user: session?.user},
+			livePublisher: livePublisherFor({publish: publishToTopic, waitUntil}),
+			signal: raw.signal,
 			runtime,
 			request: raw,
 			auth: {user: session?.user, session: session?.session},
 			liveBus: liveBusFor(publisher),
 		};
 
-		const res = yield* Effect.promise(() => fateServer.handleRequest(raw, ctx));
+		const res = yield* Effect.promise(() => handleFate(raw, ctx));
 
 		return HttpServerResponse.fromWeb(res);
 	});
+};
 
 /**
  * Build the `/fate` route as a router layer over the isolate's worker runtime,

@@ -19,6 +19,7 @@
  * from a per-request runtime to here.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
+import {FateServer} from "@phoenix/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";
@@ -32,6 +33,7 @@ import {makePasaportLive, type Pasaport} from "../pasaport/Pasaport.ts";
 import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
 import {type Stats, StatsLive} from "../stats/Stats.ts";
 import {type Vote, VoteLive} from "../vote/Vote.ts";
+import {fateConfig} from "./config.ts";
 
 /**
  * Every service a fate resolver / source executor may touch — the conceptual
@@ -64,20 +66,27 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
 
 /**
  * The ONE isolate-level `ManagedRuntime` the worker init builds from
- * {@link makeFateLayer} — it carries the {@link WorkerFateServices} singletons and
- * fails for nothing (`E = never`). The `/fate` bridge runs every resolver through
- * it; `route.ts`, `app.ts`, `context.ts`, and the bridge tests all name this exact
- * shape, so it lives here once rather than being re-spelled at each site (ADR 0041).
+ * {@link PhoenixFateLive} — it carries the {@link WorkerFateServices} singletons
+ * PLUS the composed `FateServer` service and fails for nothing (`E = never`).
+ * `FateExecutor.toFetchHandler` resolves `FateServer` from it and runs every
+ * compiled resolver through it (`ManagedRuntime` is contravariant in R, so this
+ * wider runtime satisfies the package's `FateExecutorRuntime`); legacy bridge
+ * records during coexistence run through the same runtime via `ctx.runtime`
+ * (the same contravariance — `FateContext.runtime` only demands the
+ * {@link WorkerFateServices}). `route.ts`, `app.ts`, `context.ts`, and the
+ * bridge tests all name this exact shape, so it lives here once rather than
+ * being re-spelled at each site (ADR 0041).
  */
-export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices, never>;
+export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
 /**
- * Build the ONE worker-level {@link WorkerRuntime} from a fully-resolved worker
- * layer (`Database`/`BetterAuth` already discharged), plus the route-context layer
- * derived from its built context. The single construction point shared by
- * `index.ts` (the deployed worker), `app.test.ts`, and `run-fate-op.ts` — so the
- * "how" lives here once rather than being re-spelled (and silently varied) at each
- * site.
+ * Build the ONE worker-level {@link WorkerRuntime} from a fully-resolved fate
+ * layer (typically {@link PhoenixFateLive} with `Database`/`BetterAuth`
+ * provided — the worker singletons + the `FateServer` service), plus the
+ * route-context layer derived from its built context. The single construction
+ * point shared by `index.ts` (the deployed worker), `app.test.ts`, and
+ * `run-fate-op.ts` — so the "how" lives here once rather than being re-spelled
+ * (and silently varied) at each site.
  *
  * A shared `memoMap` (the effect-smol "Integrating Effect into existing
  * applications" idiom — `ai-docs/src/03_integration/10_managed-runtime.ts`) keeps
@@ -97,7 +106,7 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices, ne
  * destructure `{runtime}`.
  */
 export const makeFateRuntime = (
-	layer: Layer.Layer<WorkerFateServices>,
+	layer: Layer.Layer<WorkerFateServices | FateServer>,
 ): {
 	readonly runtime: WorkerRuntime;
 	readonly contextLayer: Layer.Layer<WorkerFateServices>;
@@ -175,3 +184,28 @@ export const makeFateLayer: Layer.Layer<
 	Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive)),
 	StatsLive,
 ).pipe(Layer.provideMerge(DrizzleLive));
+
+/**
+ * The composed fate-server layer (`.patterns/fate-effect-server.md`):
+ * `FateServer.layer(fateConfig)` over the worker-level domain layers. This is
+ * the layer the one isolate runtime is built from
+ * (`ManagedRuntime.make(PhoenixFateLive)` via {@link makeFateRuntime}).
+ *
+ * `provideMerge` (not `provide`) keeps the {@link WorkerFateServices} in the
+ * layer's output alongside `FateServer`: the routes still yield worker services
+ * directly (the runtime-derived `contextLayer`), and during migration
+ * coexistence the legacy bridge records run through `ctx.runtime`, which
+ * carries those singletons. `FateServer.layer`'s own R — the union of `Fate.*`
+ * handler/source requirements minus the per-request pair — is discharged by
+ * the same domain layers, so a migrated record needing a forgotten service is
+ * a compile error HERE, the composition site (at zero migration that R is
+ * `never`; tasks 10–12 grow it).
+ *
+ * `R = Database | BetterAuth` exactly as {@link makeFateLayer}'s — provided in
+ * worker init from the init-resolved seams.
+ */
+export const PhoenixFateLive: Layer.Layer<
+	WorkerFateServices | FateServer,
+	never,
+	Database | BetterAuth.BetterAuth
+> = FateServer.layer(fateConfig).pipe(Layer.provideMerge(makeFateLayer));

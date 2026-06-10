@@ -1,3 +1,4 @@
+import type {FateRequestContext} from "@phoenix/fate-effect";
 import type * as ManagedRuntime from "effect/ManagedRuntime";
 import type {LiveBus} from "../fate-live/event-bus.ts";
 import type {Auth} from "../pasaport/Auth.ts";
@@ -38,3 +39,20 @@ export interface FateContext<R = WorkerFateServices> {
 	/** The per-request publish capability (ADR 0039), provided onto each resolver effect. */
 	readonly liveBus: typeof LiveBus.Service;
 }
+
+/**
+ * The migration-coexistence request context: the fate-effect server's
+ * per-request contract ({@link FateRequestContext} — `currentUser`,
+ * `livePublisher`, `signal`) AND the legacy bridge's {@link FateContext}
+ * fields, on ONE object. The route (and `runFateOp`) builds this once per
+ * request and hands it to `FateExecutor.toFetchHandler`'s handler as fate's
+ * adapterContext; the compiled `context` factory returns the object it was
+ * handed (identity, pinned in the package's `Executor.test.ts`), so compiled
+ * entries read the pair and legacy bridge records read their `FateContext`
+ * fields off the SAME object — never copy or rebuild it per resolver.
+ *
+ * Dies with the bridge: when tasks 10–13 migrate the last legacy record, the
+ * route passes a bare {@link FateRequestContext} and this type (with the rest
+ * of this module) is deleted.
+ */
+export interface CoexistenceFateContext extends FateRequestContext, FateContext {}

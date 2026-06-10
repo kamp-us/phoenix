@@ -35,7 +35,7 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
-import {makeFateLayer, makeFateRuntime} from "./features/fate/layers.ts";
+import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
 import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
@@ -156,19 +156,33 @@ export default Phoenix.make(
 		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
 
 		// ── THE ONE WORKER-LEVEL RUNTIME (ADR 0041, supersedes 0029) ──
-		// Build exactly one `ManagedRuntime` per isolate from the zero-arg
-		// `makeFateLayer` (its `R` is `Database | BetterAuth`, both provided here from
-		// the init-resolved `databaseLayer` + `betterAuthLayer`). The `/fate` bridge
-		// runs every resolver THROUGH this runtime (`ctx.runtime.runPromiseExit`,
-		// `features/fate/effect.ts`), so resolver spans nest under the runtime's
-		// request span (F4) and nothing is built or disposed per request. The shared
-		// memoMap, the derived route-context layer (`fateLayer` — built once, reused
-		// instead of rebuilt per request through `provideRequest`), and the
-		// never-dispose deviation all live in `makeFateRuntime` — the single
-		// construction point shared with the bridge tests.
+		// Build exactly one `ManagedRuntime` per isolate from `PhoenixFateLive` —
+		// the composed `FateServer.layer(fateConfig)` over the worker singletons
+		// (its `R` is `Database | BetterAuth`, both provided here from the
+		// init-resolved `databaseLayer` + `betterAuthLayer`). The `/fate` route's
+		// `FateExecutor.toFetchHandler` resolves the `FateServer` service from this
+		// runtime and runs every compiled resolver through it (legacy bridge records
+		// run through the same runtime via `ctx.runtime` during coexistence), so
+		// resolver spans nest under the runtime's request span (F4) and nothing is
+		// built or disposed per request. The shared memoMap, the derived
+		// route-context layer (`fateLayer` — built once, reused instead of rebuilt
+		// per request through `provideRequest`), and the never-dispose deviation all
+		// live in `makeFateRuntime` — the single construction point shared with the
+		// bridge tests.
 		const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
-			makeFateLayer.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
+			PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 		);
+
+		// NO init-time warmup (`yield* fateRuntime.contextEffect`) — deliberately.
+		// Workerd disallows async/timer work in the isolate's init (global) scope,
+		// so forcing the layer build here stalls the worker before it can serve
+		// (observed: with a warmup the T3 harness's `/api/health` poll never
+		// succeeds). The layer builds lazily on the first request instead — exactly
+		// the bridge's behavior. Config validation does NOT wait for that first
+		// request: the same `collectConfigIssues` walk runs at BUILD time inside
+		// `FateExecutor.toCodegenServer` (`schema.ts`), so `vite build` — which
+		// every deploy runs — fails on duplicate wire names / missing sources
+		// before the worker exists.
 
 		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One

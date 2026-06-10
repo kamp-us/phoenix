@@ -1,5 +1,7 @@
 # Server wiring
 
+> **Superseded for the assembly half** by [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md): the worker no longer calls `createFateServer` by hand (`features/fate/server.ts` is gone). The records and sources are declared in `features/fate/config.ts` (`FateServer.config`), composed by `PhoenixFateLive` (`layers.ts`), and compiled into the real fate server by `FateExecutor.toFetchHandler` over the one worker runtime ([fate-effect-compiler.md](./fate-effect-compiler.md)); `schema.ts` exports `FateExecutor.toCodegenServer(fateConfig)` for Vite codegen. The legacy bridge records still execute exactly as described below — they pass through the compile step verbatim and read the same `FateContext` fields off the route's one context object (`CoexistenceFateContext`) — so the per-request-seam and bridge-mechanism halves of this doc remain accurate during migration (tasks 10–13).
+
 How the backend is assembled and mounted. The short answer: `createFateServer({context, roots, queries, lists, mutations, sources, live})` produces a server with plain `Request → Response` handlers; the `POST /fate` route owns the per-request seam — it validates the session through the worker-level `Pasaport`, builds the two genuinely per-request VALUES (`Auth` and `LiveBus`), and hands fate a `FateContext` of `{runtime, request, auth, liveBus}` through `adapterContext`. The runtime it carries is the ONE worker-level `ManagedRuntime`, built once per isolate; nothing is built or disposed per request (ADR 0041, supersedes 0029).
 
 > This doc has been rewritten against the post-alchemy source under `apps/web/worker/features/fate/`. The pre-alchemy shape (`FateRuntime.make`, `sessionData` baked into a per-request runtime, Hono `try/finally` dispose) is gone, and so is the brief zero-runtime correction (a captured `Context` run on the default runtime) that ADR 0029 described — read [alchemy-runtime.md](./alchemy-runtime.md) and [alchemy-http-router.md](./alchemy-http-router.md) for the current worker-level `ManagedRuntime` model (ADR 0041).
@@ -72,7 +74,7 @@ This is the key change from both prior shapes: the resolver runs THROUGH the wor
 
 ## The fate server
 
-`fateServer` (`features/fate/server.ts`) is a long-lived `createFateServer` instance — there is nothing per-request about it. Its `context` factory just reads what the route supplied:
+The served fate server is a long-lived `createFateServer` instance — there is nothing per-request about it. Since task 9 it is built by the compile step (`FateExecutor.toFetchHandler` over the one runtime — `features/fate/server.ts` is gone; see the banner above), but its `context` factory behaves exactly as the hand-built one did — it returns what the route supplied:
 
 ```ts
 export const fateServer = createFateServer<FateContext, /* … */>({
