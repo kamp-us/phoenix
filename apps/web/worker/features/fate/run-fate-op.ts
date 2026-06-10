@@ -1,18 +1,24 @@
 /**
  * `runFateOp` — drive one fate operation through the bridge the way the `/fate`
- * route does, on a single worker-level `ManagedRuntime` (ADR 0041, supersedes
- * 0040/0029).
+ * route does, on a per-operation `ManagedRuntime` (ADR 0041's mechanism, the
+ * harness lifecycle).
  *
  * This is the extraction of the per-file `fateOp` helper the bridge suites
  * (`bridge-sozluk.test.ts`, `bridge-products.test.ts`) each copy-pasted. It is
  * the test mirror of `route.ts`'s `makeHandleFate`:
  *
  *   1. builds the fate request envelope from the operation,
- *   2. builds ONE worker-level `ManagedRuntime` from the caller's worker layer
- *      through `makeFateRuntime` (the same construction point `index.ts` uses) —
- *      the single runtime-build boundary, so the whole program runs through one
- *      shared layer-memo map (a second `Effect.provide`/runtime build would trip
- *      the `multipleEffectProvide` lint),
+ *   2. builds a `ManagedRuntime` for THIS operation from the caller's worker
+ *      layer through `makeFateRuntime` (the same construction point `index.ts`
+ *      uses) and DISPOSES it after the round-trip — the single runtime-build
+ *      boundary for the op, so the whole program runs through one shared
+ *      layer-memo map (a second `Effect.provide`/runtime build would trip the
+ *      `multipleEffectProvide` lint). Production's never-dispose deviation (no
+ *      CF shutdown hook) does not transfer here: the Node harness HAS a
+ *      shutdown point, so each runtime's scope is released when its op
+ *      completes instead of leaking for the suite's lifetime. The trade-off:
+ *      every op runs cold — cross-request layer memoization is a production
+ *      property this harness does not exercise,
  *   3. owns the capturing `LiveBus` VALUE internally (`liveBusFor` over a capture
  *      array, ADR 0039) — it records the RESOLVED topic keys each mutation's
  *      `live.*` fans out to (run through the real `topicsForPublish`),
@@ -75,12 +81,14 @@ export async function runFateOp(
 		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
 	});
 
-	// The ONE worker-level runtime for this op (ADR 0041), built through the same
-	// `makeFateRuntime` the deployed worker (`index.ts`) uses. This is the single
-	// runtime-build / `provide` boundary — the bridge runs each resolver on it via
+	// The runtime for THIS op, built through the same `makeFateRuntime` the
+	// deployed worker (`index.ts`) uses. This is the single runtime-build /
+	// `provide` boundary — the bridge runs each resolver on it via
 	// `ctx.runtime.runPromiseExit`, so there is no second `Effect.provide` (which
 	// would trip the `multipleEffectProvide` lint). The op drives fate directly off
 	// the runtime, so the helper's route-context layer half is unused here.
+	// Disposed in the `finally` below — see the header on why the production
+	// never-dispose deviation does not apply to this Node harness.
 	const {runtime} = makeFateRuntime(workerLayer);
 
 	// Own the capturing `LiveBus` VALUE (ADR 0039) here — the per-request form the
@@ -103,11 +111,17 @@ export async function runFateOp(
 		liveBus,
 	};
 
-	const res = await fateServer.handleRequest(request, ctx);
-	const body = (await res.json()) as {version: number; results: FateResult[]};
-	const [result] = body.results;
-	if (result === undefined) {
-		throw new Error(`fate response carried no result: ${JSON.stringify(body)}`);
+	try {
+		const res = await fateServer.handleRequest(request, ctx);
+		const body = (await res.json()) as {version: number; results: FateResult[]};
+		const [result] = body.results;
+		if (result === undefined) {
+			throw new Error(`fate response carried no result: ${JSON.stringify(body)}`);
+		}
+		return {status: res.status, result, published};
+	} finally {
+		// Release the runtime's scope once the op (including body read) completes —
+		// no harness-built runtime outlives its operation.
+		await runtime.dispose();
 	}
-	return {status: res.status, result, published};
 }

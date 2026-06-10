@@ -89,10 +89,13 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices, ne
  * runtime's already-built `Context<WorkerFateServices>` rather than rebuilding the
  * layer per request through `provideRequest`.
  *
- * NEVER DISPOSED: a Cloudflare Worker isolate has no shutdown hook, so phoenix
- * never calls `runtime.dispose()` — the runtime lives for the isolate's lifetime
- * and Drizzle/D1 holds no poolable socket to release (ADR 0041). Callers that only
- * need the runtime (no route layer — e.g. `run-fate-op.ts`) destructure `{runtime}`.
+ * NEVER DISPOSED IN THE WORKER: a Cloudflare Worker isolate has no shutdown
+ * hook, so the deployed worker never calls `runtime.dispose()` — the runtime
+ * lives for the isolate's lifetime and Drizzle/D1 holds no poolable socket to
+ * release (ADR 0041). That deviation is platform-scoped: the Node test harness
+ * (`run-fate-op.ts`) builds a runtime per operation and DOES dispose it after
+ * the round-trip. Callers that only need the runtime (no route layer)
+ * destructure `{runtime}`.
  */
 export const makeFateRuntime = (
 	layer: Layer.Layer<WorkerFateServices>,
