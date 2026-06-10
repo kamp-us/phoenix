@@ -34,6 +34,7 @@ Read [fate-effect-bridge.md](./fate-effect-bridge.md) first — it's the seam ev
 |---|---|---|
 | [fate-effect-bridge.md](./fate-effect-bridge.md) | `fateQuery`/`fateList`/`fateMutation`/`fateSource`, `FateContext<R>` carrying `{runtime, auth, liveBus}`, `ctx.runtime.runPromiseExit`, the F7 cast, `encodeFateError` | The seam between fate and Effect — read first |
 | [fate-effect-wire-errors.md](./fate-effect-wire-errors.md) | The `@phoenix/fate-effect` package's error contract: the `fateWireCode` annotation on `Schema.TaggedErrorClass`, `encodeWireError`, the no-registry/one-edit rule, the enumeration pin | Declaring a domain error for a fate-effect (non-bridge) record |
+| [fate-effect-data-views.md](./fate-effect-data-views.md) | The `@phoenix/fate-effect` package's view authoring: the `FateDataView<Row>()("Name")({fields})` class factory (static `view` IS the kernel dataView), `FateDataView.list` relations, `Entity<typeof View>`, the TS2883 nameability story | Declaring an entity view for a fate-effect (non-bridge) record |
 | [fate-data-views.md](./fate-data-views.md) | `dataView`/`Entity`/`computed`/`count`/`list`, selection masking, modeling conventions, raw IDs | Declaring an entity type |
 | [fate-sources.md](./fate-sources.md) | Hand-built `SourceResolver`, Effect-backed `byId`/`byIds`/`connection` executors, never the Drizzle adapter | Wiring a view's reads to a service |
 | [fate-mutations.md](./fate-mutations.md) | `mutations` map, validation in services, re-resolving the changed entity, delete returns the parent | Writing a mutation |
