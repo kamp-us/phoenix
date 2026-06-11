@@ -24,10 +24,10 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {toConnection} from "../fate/connection.ts";
+import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Pasaport} from "./Pasaport.ts";
-import {toContributionRow, toUser} from "./shapers.ts";
-import type {Contribution, Profile} from "./views.ts";
+import {toContributionRow, toProfile, toUser} from "./shapers.ts";
+import type {Contribution} from "./views.ts";
 import {ProfileView, UserView} from "./views.ts";
 
 /** Default page size for the nested `Profile.contributions` feed. */
@@ -39,12 +39,7 @@ const CONTRIBUTIONS_PAGE_SIZE = 20;
  */
 const ProfileArgs = Schema.Struct({
 	username: Schema.String,
-	contributions: Schema.optional(
-		Schema.Struct({
-			first: Schema.optional(Schema.Number),
-			after: Schema.optional(Schema.String),
-		}),
-	),
+	contributions: connectionArgs(),
 });
 
 export const queries = {
@@ -90,30 +85,20 @@ export const queries = {
 			const row = yield* pasaport.lookupProfile(args.username);
 			if (!row) return null;
 
-			const base: Profile = {
-				__typename: "Profile",
-				// `id` === `userId`: the client normalizes by `record.id` (a `Profile`
-				// is one-to-one with its user).
-				id: row.userId,
-				userId: row.userId,
-				username: row.username,
-				displayName: row.displayName,
-				image: row.image,
-				totalKarma: row.totalKarma,
-				definitionCount: row.definitionCount,
-				postCount: row.postCount,
-				commentCount: row.commentCount,
-			};
+			// `id` === `userId` is stamped once, in `toProfile`.
+			const base = toProfile(row);
 
 			if (!hasNestedSelection(select, "contributions")) {
 				return base;
 			}
 
-			const cArgs = args.contributions;
+			// `listContributions` takes a required `after: string | null`, so the
+			// keyset input's present-only `after` lands as an explicit `null`.
+			const input = keysetInput(args.contributions, CONTRIBUTIONS_PAGE_SIZE);
 			const connection = yield* pasaport.listContributions({
 				authorId: row.userId,
-				first: cArgs?.first ?? CONTRIBUTIONS_PAGE_SIZE,
-				after: cArgs?.after ?? null,
+				first: input.first,
+				after: input.after ?? null,
 			});
 			const contributions = toConnection<(typeof connection.edges)[number], Contribution>(
 				{

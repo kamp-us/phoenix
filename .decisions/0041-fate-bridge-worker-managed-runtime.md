@@ -109,7 +109,7 @@ phoenix is the framework and its first app simultaneously. The worker-level
 organic-evolution lens):
 
 - It is documented as a framework **pattern**
-  ([.patterns/fate-effect-bridge.md](../.patterns/fate-effect-bridge.md),
+  ([.patterns/fate-effect-worker-wiring.md](../.patterns/fate-effect-worker-wiring.md) — bridge doc retired, ADR 0042,
   [.patterns/alchemy-runtime.md](../.patterns/alchemy-runtime.md)) so the next
   feature inherits the LLMS-sanctioned integration idiom rather than reinventing
   it.

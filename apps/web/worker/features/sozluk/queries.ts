@@ -18,7 +18,7 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {toConnection} from "../fate/connection.ts";
+import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
@@ -33,12 +33,7 @@ const DEFINITIONS_PAGE_SIZE = 50;
  */
 const TermArgs = Schema.Struct({
 	slug: Schema.String,
-	definitions: Schema.optional(
-		Schema.Struct({
-			first: Schema.optional(Schema.Number),
-			after: Schema.optional(Schema.String),
-		}),
-	),
+	definitions: connectionArgs(),
 });
 
 export const queries = {
@@ -66,10 +61,8 @@ export const queries = {
 				return base;
 			}
 
-			const defArgs = args.definitions;
 			const connection = yield* sozluk.listDefinitionsKeyset(args.slug, {
-				first: defArgs?.first ?? DEFINITIONS_PAGE_SIZE,
-				...(defArgs?.after !== undefined ? {after: defArgs.after} : {}),
+				...keysetInput(args.definitions, DEFINITIONS_PAGE_SIZE),
 				viewerId,
 			});
 			const definitions = toConnection<(typeof connection.rows)[number], Definition>(

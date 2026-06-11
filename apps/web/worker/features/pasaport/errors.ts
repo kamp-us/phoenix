@@ -55,22 +55,23 @@ export class UsernameTooLong extends Schema.TaggedErrorClass<UsernameTooLong>()(
 ) {}
 
 /**
- * `setUsername` rejected its value — the union the `Pasaport` service
- * signatures declare. Replaces the bridge-era single `UsernameInvalid` class
- * (whose `code` field named the sub-code; see the module header).
- */
-export type UsernameInvalid = UsernameInvalidFormat | UsernameTooShort | UsernameTooLong;
-
-/**
- * The `UsernameInvalid` members as schema classes, in bridge-registry order —
- * spread into the mutation `error:` union so the declared set cannot drift
- * from the alias above.
+ * The username-validation classes, in bridge-registry order — spread into the
+ * mutation `error:` union; {@link UsernameInvalid} is derived from this tuple,
+ * so the two can never drift.
  */
 export const UsernameInvalidErrors = [
 	UsernameInvalidFormat,
 	UsernameTooShort,
 	UsernameTooLong,
 ] as const;
+
+/**
+ * `setUsername` rejected its value — the union the `Pasaport` service
+ * signatures declare, derived from {@link UsernameInvalidErrors}. Replaces the
+ * bridge-era single `UsernameInvalid` class (whose `code` field named the
+ * sub-code; see the module header).
+ */
+export type UsernameInvalid = InstanceType<(typeof UsernameInvalidErrors)[number]>;
 
 /* -------------------------------------------------------------------------- */
 /* Uniqueness / immutability / existence                                       */

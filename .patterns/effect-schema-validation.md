@@ -103,7 +103,7 @@ export class PersistedAuditError extends Schema.TaggedErrorClass<PersistedAuditE
 
 `Schema.encode(PersistedAuditError)(err)` produces a structurally-validated JSON form. `Schema.decode(PersistedAuditError)(json)` reconstructs the typed error.
 
-Phoenix doesn't have this need — all errors are encoded by the fate bridge into `FateRequestError`s (`worker/features/fate/errors.ts`) before leaving the worker, and any typed-JSON group carries its failures on the `HttpApiEndpoint`'s declared error channel. Reserve `Schema.TaggedErrorClass` for the moment you need wire-form errors over a non-fate transport.
+Phoenix doesn't have this need — phoenix's domain errors *are* `Schema.TaggedErrorClass`es, but only for the `ErrorCode` annotation they carry: at the fate boundary `encodeWireError` (`packages/fate-effect/src/WireError.ts`) reads the annotation off the failed instance's class and emits the wire `FateRequestError`; nothing ever decodes an error back from JSON. Any typed-JSON group carries its failures on the `HttpApiEndpoint`'s declared error channel. See [fate-effect-wire-errors.md](./fate-effect-wire-errors.md); reserve the full encode/decode round-trip for the moment you need wire-form errors over a non-fate transport.
 
 ## Schema features worth knowing about
 

@@ -31,4 +31,4 @@ replaces the relay plugin in `vite.config.ts`).
   file drifting from the code.
 - **Cost:** remove the Relay toolchain and committed `schema.graphql`; wire
   fate codegen into the client build.
-- See [fate-server-wiring.md](../.patterns/fate-server-wiring.md) and [fate-client-setup.md](../.patterns/fate-client-setup.md).
+- See [fate-effect-worker-wiring.md](../.patterns/fate-effect-worker-wiring.md) and [fate-client-setup.md](../.patterns/fate-client-setup.md) (server-wiring doc retired, ADR 0042).

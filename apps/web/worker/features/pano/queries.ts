@@ -18,7 +18,7 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {toConnection} from "../fate/connection.ts";
+import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
 import type {Comment} from "./views.ts";
@@ -35,12 +35,7 @@ const COMMENTS_PAGE_SIZE = 50;
  */
 const PostArgs = Schema.Struct({
 	idOrSlug: Schema.String,
-	comments: Schema.optional(
-		Schema.Struct({
-			first: Schema.optional(Schema.Number),
-			after: Schema.optional(Schema.String),
-		}),
-	),
+	comments: connectionArgs(),
 });
 
 export const queries = {
@@ -71,10 +66,8 @@ export const queries = {
 				return base;
 			}
 
-			const cArgs = args.comments;
 			const connection = yield* pano.listCommentsKeyset(page.id, {
-				first: cArgs?.first ?? COMMENTS_PAGE_SIZE,
-				...(cArgs?.after !== undefined ? {after: cArgs.after} : {}),
+				...keysetInput(args.comments, COMMENTS_PAGE_SIZE),
 				viewerId,
 			});
 			const comments = toConnection<(typeof connection.rows)[number], Comment>(

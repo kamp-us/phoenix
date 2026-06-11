@@ -17,6 +17,7 @@
  */
 import {type AnyFateSourceEntry, Fate} from "@phoenix/fate-effect";
 import {Pasaport} from "./Pasaport.ts";
+import {toProfile} from "./shapers.ts";
 import {ContributionView, ProfileView, UserView} from "./views.ts";
 
 export const userSource = Fate.source(
@@ -41,9 +42,9 @@ export const profileSource = Fate.source(
 		byId: function* (userId) {
 			const pasaport = yield* Pasaport;
 			const row = yield* pasaport.lookupProfileById(userId);
-			// Stamp the client normalization key `id` (=== `userId`); the service row
-			// carries only `userId`.
-			return row ? {...row, id: row.userId} : row;
+			// `toProfile` stamps the client normalization key `id` (=== `userId`);
+			// the service row carries only `userId`.
+			return row ? toProfile(row) : row;
 		},
 	},
 );

@@ -33,7 +33,7 @@ inline-resolved payloads and does no database work (see [0023](0023-live-views-s
   no leaked runtimes.
 - **Harder:** runtime construction lives in the route rather than the server
   config — slightly more wiring at the mount point.
-- See [fate-server-wiring.md](../.patterns/fate-server-wiring.md).
+- See [fate-effect-worker-wiring.md](../.patterns/fate-effect-worker-wiring.md) (server-wiring doc retired, ADR 0042).
 
 Superseded by [0027](0027-http-router-drop-hono.md) and
 [0029](0029-worker-runtime-servicemap.md): Hono is gone — the `/fate` route is

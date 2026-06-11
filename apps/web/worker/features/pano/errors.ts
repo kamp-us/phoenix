@@ -79,22 +79,9 @@ export class TagInvalid extends Schema.TaggedErrorClass<TagInvalid>()(
 ) {}
 
 /**
- * `submitPost` / `editPost` rejected its input — the union the `Pano` service
- * signatures declare. Replaces the bridge-era single `PostValidation` class
- * (whose `code` field named the sub-code; see the module header).
- */
-export type PostValidation =
-	| TitleRequired
-	| TitleTooLong
-	| UrlInvalid
-	| PostBodyTooLong
-	| TagsRequired
-	| TagInvalid;
-
-/**
- * The `PostValidation` members as schema classes, in bridge-registry order —
- * spread into mutation `error:` unions so the declared set cannot drift from
- * the alias above.
+ * The post-validation classes, in bridge-registry order — spread into mutation
+ * `error:` unions; {@link PostValidation} is derived from this tuple, so the
+ * two can never drift.
  */
 export const PostValidationErrors = [
 	TitleRequired,
@@ -104,6 +91,14 @@ export const PostValidationErrors = [
 	TagsRequired,
 	TagInvalid,
 ] as const;
+
+/**
+ * `submitPost` / `editPost` rejected its input — the union the `Pano` service
+ * signatures declare, derived from {@link PostValidationErrors}. Replaces the
+ * bridge-era single `PostValidation` class (whose `code` field named the
+ * sub-code; see the module header).
+ */
+export type PostValidation = InstanceType<(typeof PostValidationErrors)[number]>;
 
 /* -------------------------------------------------------------------------- */
 /* Comment validation (one class per bridge sub-code)                          */
@@ -130,18 +125,19 @@ export class ParentCommentNotFound extends Schema.TaggedErrorClass<ParentComment
 	{[ErrorCode]: "PARENT_NOT_FOUND"},
 ) {}
 
-/**
- * `addComment` / `editComment` rejected its input — the union the `Pano`
- * service signatures declare (see {@link PostValidation}).
- */
-export type CommentValidation = CommentBodyRequired | CommentBodyTooLong | ParentCommentNotFound;
-
-/** The `CommentValidation` members as schema classes (see {@link PostValidationErrors}). */
+/** The comment-validation classes (see {@link PostValidationErrors}). */
 export const CommentValidationErrors = [
 	CommentBodyRequired,
 	CommentBodyTooLong,
 	ParentCommentNotFound,
 ] as const;
+
+/**
+ * `addComment` / `editComment` rejected its input — the union the `Pano`
+ * service signatures declare, derived from {@link CommentValidationErrors}
+ * (see {@link PostValidation}).
+ */
+export type CommentValidation = InstanceType<(typeof CommentValidationErrors)[number]>;
 
 /* -------------------------------------------------------------------------- */
 /* Not-found / authorization                                                   */
