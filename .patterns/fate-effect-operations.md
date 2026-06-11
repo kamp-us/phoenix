@@ -43,7 +43,7 @@ export const queries = {
 };
 ```
 
-- **The definition is pure data**: `input`/`args` (Effect Schema), `type` (a `FateDataView` class, or the wire type-name string for viewless types like `Health`), `error` (one error class, or `Schema.Union([...])` of several — optional; absent means the handler cannot fail). The entry's `.type` is the normalized wire name, kept literal (`"Definition"`, not `string`) — `InferFateAPI` fidelity depends on it (task 8).
+- **The definition is pure data**: `input`/`args` (Effect Schema), `type` (a `FateDataView` class, or the wire type-name string for viewless types like `Health`), `error` (one error class, or `Schema.Union([...])` of several — optional; absent means the handler cannot fail). The entry's `.type` is the normalized wire name, kept literal (`"Definition"`, not `string`) — `InferFateAPI` fidelity depends on it.
 - **The handler is `Effect.fn("<wire name>")`** — the wire name (the record key) is the span name, so traces point at the operation. The handler slot accepts **Effect-returning functions only**; raw generators don't typecheck. This is the deliberate asymmetry with `Fate.source`, which wraps plain bodies itself: a source capability's span name is fully determined by entity+capability, while an operation's wire name is author-owned.
 - Contextual typing flows through `Effect.fn` into the generator's parameters: `{input}` / `{args, select}` need **no annotations** — they are the Schema's decoded `Type`.
 - `Fate.list` pins the handler's success to fate's `ConnectionResult` — keyset pagination stays service-owned (ADR 0019).
@@ -60,7 +60,7 @@ Each entry carries `resolve` — the Effect the interpreter's dispatch yields pe
 
 - **Mutation `input` is decoded before the handler runs.** A Schema rejection fails with the package's `InputValidationError` (annotated `VALIDATION_ERROR`, the code fate itself emits for schema failures); the handler never sees invalid input.
 - **Query/list `args` decode wire args including absence**: missing wire args decode as the empty bag `{}`, so args schemas are structs of optional fields and a declared-args handler never sees `undefined`. A definition without an `args` schema passes `undefined` — stray wire args are not smuggled past the declared contract.
-- `R` is inferred from the handler and visible on the entry (`FateOperationServices<typeof op>`), so a forgotten domain layer is a compile error at the composition site (`FateServer.layer`, task 5).
+- `R` is inferred from the handler and visible on the entry (`FateOperationServices<typeof op>`), so a forgotten domain layer is a compile error at the composition site (`FateServer.layer`).
 
 ## Write conventions
 
@@ -85,6 +85,6 @@ How phoenix mutations are shaped, beyond the constructor mechanics:
 - Don't author handlers as raw generators or `() => Effect.gen(...)` — the documented form is `Effect.fn("<wire name>")(function* ...)`; the types only accept Effect-returning functions.
 - Don't pre-validate inside the handler what the Schema already declares — the wrapper rejects invalid input before the handler runs; the handler's `input`/`args` are already decoded.
 - Don't fail with an error outside the declared union "temporarily" — widen the union in the definition instead; the bound exists so the wire contract and the handler cannot drift.
-- Don't reach for `@ts-expect-error` to pin error-union violations in tests — the effect LSP plugin's TS377003 escapes the directive (recurring finding, tasks 3 and 4); pin the `DefinitionErrors<D>` bound with `expectTypeOf` instead.
+- Don't reach for `@ts-expect-error` to pin error-union violations in tests — the effect LSP plugin's TS377003 escapes the directive (a recurring finding); pin the `DefinitionErrors<D>` bound with `expectTypeOf` instead.
 
-`packages/fate-effect/src/Operation.unit.test.ts` is the standing guard: exported operation consts keep the TS2883 nameability gate honest, the `DefinitionErrors` pins guard the error bound, and the decode tests pin the wrapper contract task 7 builds on.
+`packages/fate-effect/src/Operation.unit.test.ts` is the standing guard: exported operation consts keep the TS2883 nameability gate honest, the `DefinitionErrors` pins guard the error bound, and the decode tests pin the `entry.resolve` wrapper contract.

@@ -177,8 +177,8 @@ data-plane regression harness.
   in worker init): workerd disallows async/timer work in the isolate's init scope and the
   deployed worker hangs before serving. The layer builds lazily on first request; config
   validation already happens at `vite build` time via `toCodegenServer`'s `collectConfigIssues`.
-- **Don't smuggle abort through the ctx.** The served `FateRequestContext` has no `signal`
-  field to set (audit fix A1 removed it — the interpreter never read it, and a field nobody
-  reads misleads route authors); the only signal-bearing context is the oracle baseline's
+- **Don't smuggle abort through the ctx.** The served `FateRequestContext` deliberately has no
+  `signal` field — the interpreter would never read it, and a field nobody reads misleads
+  route authors; the only signal-bearing context is the oracle baseline's
   Executor-local `ExecutorRequestContext` inside the package. The route's abort handling is
   `interruptOnAbort`.
