@@ -26,7 +26,7 @@
 import {Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {type KeysetPage, toConnection} from "../fate/shapers.ts";
+import {type KeysetPage, toConnection} from "../fate/connection.ts";
 import {type ListSort, Sozluk} from "./Sozluk.ts";
 import {toTerm} from "./shapers.ts";
 import type {TermSummaryRow} from "./term-summary.ts";

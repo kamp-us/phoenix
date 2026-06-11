@@ -18,7 +18,7 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {toConnection} from "../fate/shapers.ts";
+import {toConnection} from "../fate/connection.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
 import type {Comment} from "./views.ts";

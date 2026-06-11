@@ -1,27 +1,20 @@
 /**
- * fate shapers — barrel + cross-feature connection envelope.
- *
- * Per-feature wire-entity shapers live in their owning feature
- * (`features/<feature>/shapers.ts`); this barrel re-exports them so call sites
- * can keep importing from `worker/features/fate/shapers`.
+ * Cross-feature connection envelope — a leaf module (imports no feature code).
  *
  * The connection envelope (`{items, pagination}`) is the one truly cross-feature
- * piece — `toConnection` is a generic over the keyset page shape every service
- * returns (`{rows, hasNextPage, endCursor}`) plus a per-node shaper. Services
- * page forward only, so `hasPrevious` is always `false` and the cursor is the
- * service keyset (opaque to the client).
+ * shaping piece — `toConnection` is a generic over the keyset page shape every
+ * service returns (`{rows, hasNextPage, endCursor}`) plus a per-node shaper.
+ * Services page forward only, so `hasPrevious` is always `false` and the cursor
+ * is the service keyset (opaque to the client).
+ *
+ * Per-feature wire-entity shapers live in their owning feature
+ * (`features/<feature>/shapers.ts`); features import this module directly so no
+ * feature's import graph transitively pulls another feature's shapers.
  *
  * See `.patterns/fate-connections.md`, `.patterns/fate-mutations.md`.
  */
 
 import type {ConnectionResult} from "@nkzw/fate/server";
-
-export type {CommentFields, PostFields} from "../pano/shapers.ts";
-export {toComment, toPost, toPostFromPage} from "../pano/shapers.ts";
-export type {UserFields} from "../pasaport/shapers.ts";
-export {toContributionRow, toUser} from "../pasaport/shapers.ts";
-export type {DefinitionFields, TermFields} from "../sozluk/shapers.ts";
-export {toDefinition, toTerm, toTermFromPage} from "../sozluk/shapers.ts";
 
 /**
  * A service keyset page: forward-only rows plus the `hasNextPage` flag and the

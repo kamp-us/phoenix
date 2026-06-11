@@ -23,7 +23,7 @@
 import {Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {toConnection} from "../fate/shapers.ts";
+import {toConnection} from "../fate/connection.ts";
 import {Pano, type PostSort} from "./Pano.ts";
 import {toPost} from "./shapers.ts";
 import type {Post} from "./views.ts";

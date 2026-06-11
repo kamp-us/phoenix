@@ -33,15 +33,15 @@ worker/features/
     ├── queries.ts      # barrel: spreads sozlukQueries, panoQueries, ...
     ├── lists.ts        # barrel: spreads sozlukLists, panoLists
     ├── views.ts        # barrel + cross-feature `Root`/`LiveEntities`
-    ├── shapers.ts      # barrel + the cross-feature `toConnection` envelope
+    ├── connection.ts   # leaf: the cross-feature `toConnection`/`KeysetPage` envelope
     ├── sources.ts      # barrel + the `{getSource, registry}` surface
     └── mutations.ts    # barrel: spreads sozlukMutations, panoMutations, ...
 ```
 
 Each barrel is small and mechanical — re-exports plus, where the cross-feature
-piece is genuinely cross-feature (e.g. `Root` in `views.ts`, `toConnection` in
-`shapers.ts`, the `{getSource, registry}` surface in `sources.ts`), one tiny
-piece of composition the per-feature fragments can't own:
+piece is genuinely cross-feature (e.g. `Root` in `views.ts`, the
+`{getSource, registry}` surface in `sources.ts`), one tiny piece of composition
+the per-feature fragments can't own:
 
 ```ts
 // worker/features/fate/queries.ts
@@ -116,10 +116,19 @@ why does `fate/` exist at all?" Two answers:
 2. **The genuinely cross-feature pieces have a home.** `views.ts` owns `Root`
    (the client-exposed root map, which spans every feature's screens) and
    `LiveEntities` (the entity-name → entity-type registry the live bus types
-   against). `shapers.ts` owns the `toConnection` envelope (the keyset-page →
-   `ConnectionResult` reshape that every feature uses). `sources.ts` owns the
-   `{getSource, registry}` surface fate resolves by `typeName`. None of these
-   belong to a single feature; the barrel is where they live.
+   against). `sources.ts` owns the `{getSource, registry}` surface fate
+   resolves by `typeName`. None of these belong to a single feature; the
+   barrel is where they live.
+
+A cross-feature **definition** that features import back, however, must NOT
+live in a barrel — that's how a barrel becomes a cycle seed. The `toConnection`/
+`KeysetPage` envelope used to live in a `fate/shapers.ts` barrel that also
+re-exported every feature's shapers; the five feature import sites pulling
+`toConnection` transitively loaded *every other* feature's shaper modules. It
+now lives in `fate/connection.ts`, a leaf module (imports no feature code,
+like `fate/view-types.ts`), and the shapers barrel was deleted — nothing
+consumed its re-exports (per-feature shapers are imported directly by their
+owning feature).
 
 ## When NOT to do this
 
@@ -141,7 +150,7 @@ in different clothing.
 - [fate-data-views.md](./fate-data-views.md) — `dataView`/`Entity`/`Root`
   semantics; `Root` is the cross-feature piece in `fate/views.ts`.
 - [fate-connections.md](./fate-connections.md) — the `KeysetPage` →
-  `ConnectionResult` envelope `toConnection` builds.
+  `ConnectionResult` envelope `toConnection` (in `fate/connection.ts`) builds.
 - [ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md) — the
   feature-locality rule that drove the split; this pattern is its fate-layer
   realization.

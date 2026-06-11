@@ -24,7 +24,7 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {toConnection} from "../fate/shapers.ts";
+import {toConnection} from "../fate/connection.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toContributionRow, toUser} from "./shapers.ts";
 import type {Contribution, Profile} from "./views.ts";
