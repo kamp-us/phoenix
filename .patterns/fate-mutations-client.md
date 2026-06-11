@@ -79,5 +79,5 @@ UI keys off `error.code`, never the message string — the codes are the shared 
 - [fate-views-and-requests.md](./fate-views-and-requests.md) — the views mutations write back through
 - [fate-client-setup.md](./fate-client-setup.md) — the client + error boundary
 - [fate-live-views.md](./fate-live-views.md) — server live events that drive connection membership
-- [fate-mutations.md](./fate-mutations.md) — the server side of these mutations
+- [fate-effect-operations.md](./fate-effect-operations.md) "Write conventions" — the server side of these mutations
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `src/ui/PostCard.tsx`, `src/ui/CreatePost.tsx`

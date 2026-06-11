@@ -41,7 +41,7 @@ export const makeDrizzleLayer = (db: DrizzleDb) =>
   });
 ```
 
-Versus the old `Layer.effect(Drizzle)(Effect.gen(… yield* CloudflareEnv …))`: same `{run, batch}` shape, same `Effect.tryPromise` object-notation house rule, but the `db` arrives as an argument instead of being built from `env` on every request. The feature layers provide over it exactly as in [effect-layer-composition.md](./effect-layer-composition.md) — and all of it sits at worker scope per [alchemy-runtime.md](./alchemy-runtime.md).
+Versus the old `Layer.effect(Drizzle)(Effect.gen(… yield* CloudflareEnv …))`: same `{run, batch}` shape, same `Effect.tryPromise` object-notation house rule, but the `db` arrives as an argument instead of being built from `env` on every request. The feature layers provide over it exactly as in [effect-layer-composition.md](./effect-layer-composition.md) — and all of it sits at worker scope per [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md).
 
 > **Why once-per-isolate is correct.** The D1 binding is stable for the isolate's life, and `drizzle()` is a thin wrapper with no per-request state. Rebuilding it per request buys nothing on alchemy and costs an allocation; building it in init is both simpler and faster. The same logic makes the feature services worker-level singletons.
 
@@ -85,12 +85,12 @@ const auth = betterAuth({
 
 The adapter is shape-only — it speaks the SQLite dialect, so it doesn't care that `raw` is a D1 driver. The better-auth tables (`user`, `session`, `account`, …) are part of the same `schema.ts` and migrate through the same pipeline.
 
-> **`createAuth` is built out of the request path.** `Pasaport` builds its `betterAuth` instance **once** when its layer is constructed (init phase), not per request inside `handleAuth`/`validateSession`. This follows the worker-singleton model ([ADR 0029](../.decisions/0029-worker-runtime-servicemap.md), [alchemy-runtime.md](./alchemy-runtime.md)) — the same instance is reused across requests, consistent with how `Drizzle` and the feature services are worker-level singletons. The `betterAuth` instance has no per-request state; rebuilding it each call would only cost allocations.
+> **`createAuth` is built out of the request path.** `Pasaport` builds its `betterAuth` instance **once** when its layer is constructed (init phase), not per request inside `handleAuth`/`validateSession`. This follows the worker-singleton model ([ADR 0029](../.decisions/0029-worker-runtime-servicemap.md), [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md)) — the same instance is reused across requests, consistent with how `Drizzle` and the feature services are worker-level singletons. The `betterAuth` instance has no per-request state; rebuilding it each call would only cost allocations.
 
 ## See also
 
 - [feature-services.md](./feature-services.md) — the `Drizzle.run`/`Drizzle.batch` callback surface (unchanged)
 - [alchemy-bindings.md](./alchemy-bindings.md) — `D1Connection.bind` and the `raw` escape hatch
-- [alchemy-runtime.md](./alchemy-runtime.md) — why `Drizzle` is a worker-level singleton
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — why `Drizzle` is a worker-level singleton
 - [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — the D1 resource declaration + how alchemy applies committed migrations
 - [ADR 0014](../.decisions/0014-drizzle-run-batch-as-service-methods.md) — the bound `run`/`batch` shape

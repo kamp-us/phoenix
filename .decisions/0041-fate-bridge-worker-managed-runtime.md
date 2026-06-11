@@ -110,7 +110,7 @@ organic-evolution lens):
 
 - It is documented as a framework **pattern**
   ([.patterns/fate-effect-worker-wiring.md](../.patterns/fate-effect-worker-wiring.md) — bridge doc retired, ADR 0042,
-  [.patterns/alchemy-runtime.md](../.patterns/alchemy-runtime.md)) so the next
+  [.patterns/fate-effect-worker-wiring.md](../.patterns/fate-effect-worker-wiring.md)) so the next
   feature inherits the LLMS-sanctioned integration idiom rather than reinventing
   it.
 - It stays **app-local under `worker/`**. ADR 0040's **Gate B** (graduation to

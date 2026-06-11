@@ -1,6 +1,6 @@
 # fate-effect sources — `Fate.source`, the per-entity loader
 
-How `@phoenix/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This replaced the bridge's `fateSource` + hand-written `SourceDefinition` literals (deleted in the v1 cutover, ADR 0042); conventions in [fate-sources.md](./fate-sources.md).
+How `@phoenix/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This replaced the bridge's `fateSource` + hand-written `SourceDefinition` literals (deleted in the v1 cutover, ADR 0042). Handlers delegate to the domain services — fate never queries the database ([ADR 0016](../.decisions/0016-fate-pure-transport-effect-services-domain.md)).
 
 ## Declaring a source
 
@@ -35,6 +35,21 @@ Sources LOAD, operations RESOLVE. The constructor's types encode the whole contr
 - **Reads are silent.** `byId` returns `null` for a missing id; `byIds` returns the rows that exist — fewer than asked is success, not failure. Handlers return **raw domain rows**; fate masks them to the requested selection afterward.
 - **`E` is pinned `never`.** A handler whose effect has a typed failure is a compile error. Infrastructure failures are defects — and the die happens one layer DOWN, inside the domain service ([feature-services.md](./feature-services.md) boundary rule), so a source handler calls the service bare; there is nothing to `orDie` here and no `Drizzle` import belongs in a sources file. Defects reject the operation without becoming domain values.
 - **`R` is inferred** from the handler bodies (a domain service, `Auth`-style per-request services, …) and is visible on the source's type — a forgotten layer is a compile error at the composition site, not a runtime miss.
+
+## No `connection` handlers — keyset order lives in the service
+
+Sources carry **no** `connection` handler and no `orderBy` contract: every connection — root *and* nested — is delivered by a custom resolver in `queries.ts`/`lists.ts` calling the service keyset method directly ([ADR 0019](../.decisions/0019-connection-pagination-strategy.md)). The keyset `ORDER BY` lives in the service; the view's `FateDataView.list(View, {orderBy})` mirrors it. See [fate-connections.md](./fate-connections.md).
+
+## Where each entity's data comes from
+
+| View | Service | Notes |
+|---|---|---|
+| `Term`, `Definition` | `Sozluk` | `definitionCount` via the service row |
+| `Post`, `Comment`, `Tag` | `Pano` | `Tag` is a pure kind→label map (no DB) |
+| `User`, `Profile` | `Pasaport` | `User.byIds` is the hottest path (authors everywhere) |
+| `Contribution` | — | synthetic; capability-less entry, rows exist only in `queries.profile`'s reshape |
+
+Vote/karma stay inside Sozluk/Pano (which delegate to `Vote`) — there is no fate view for votes; scores surface as fields on the entity that owns them.
 
 ## The escape hatch: a view-reachable entity with no fetch path
 

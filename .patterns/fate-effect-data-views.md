@@ -30,7 +30,9 @@ export type Term = Entity<typeof TermView, {definitions?: Array<Definition>}>;
 - The inner calls are exactly fate's `dataView("Name")({fields})` curry; the leading `()` is the Effect dummy-call (`Schema.TaggedErrorClass<Self>()`'s reason: TypeScript has no partial type-argument inference, and the row type must be explicit while the name infers as a literal).
 - The field map is fate's own config vocabulary — `true`, `computed`, `resolver`, `count` all pass through untouched. Only list relations use `FateDataView.list` (below).
 - `View.view` is the kernel dataView (pass it anywhere fate wants one); `View.typeName` is the literal name. Instances of the class are meaningless.
-- `Entity<typeof View>` is fate's `Entity<view, name>` with both arguments read off the class; the optional second parameter is fate's `Replacements`, unchanged. List relations still want a replacement (`definitions?: ...`) for the same reason they do under fate directly — kernel `list()` widens the child's field map in its return type.
+- `Entity<typeof View>` is fate's `Entity<view, name>` with both arguments read off the class; the optional second parameter is fate's `Replacements`, unchanged. Two restatements ride in it (see `sozluk/views.ts`):
+  - **list relations** (`definitions?: Array<Definition>`) — for the same reason they do under fate directly: kernel `list()` widens the child's field map in its return type;
+  - **timestamp fields** (`createdAt: Date`, …) — fate's `Entity<>` types `Date` row fields as `string` (the JSON wire shape), but worker-side entity values carry live `Date` objects until fate serializes the response. The shapers and every worker call site are pre-serialization, so restate them — otherwise every shaper literal breaks.
 
 ## Why a class (the TS2883 story)
 

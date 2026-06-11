@@ -109,17 +109,10 @@ export const noteSource = Fate.source(
 );
 ```
 
-The loader contract lives in the types:
-
-- **At least one of `byId`/`byIds` is required** — a source that can't load doesn't compile.
-- **Absence is not an error**: `byIds` returns the rows that exist; `byId` returns `null`.
-- **`E = never`**: loaders can't fail typefully. Infrastructure failures die at the *service*
-  boundary — domain methods convert infra errors to defects internally, so fate-layer code
-  never names the database (the boundary rule in
-  [feature services](../../.patterns/feature-services.md)) — and surface as
-  `INTERNAL_SERVER_ERROR`.
-- The service you `yield*` (here `Notes`) becomes part of the source's requirements and is
-  checked at server composition (step 5).
+The loader contract lives in the types — at least one of `byId`/`byIds`, silent reads (absence
+is `null`/fewer rows, not an error), `E = never` (infra failures die at the service boundary),
+inferred requirements checked at composition (step 5). The full contract is the pattern doc's:
+[sources](../../.patterns/fate-effect-sources.md).
 
 At runtime, every ref to the same entity within one protocol request lands in **one** `byIds`
 call, deduped — that's the interpreter's per-request batch window, and it's why `byIds` is
@@ -161,17 +154,13 @@ export const mutations = {
 };
 ```
 
-What the types enforce here:
-
-- **The declared error union is checked at the call site.** If the handler can fail with
-  something not in `error`, the `Fate.mutation(...)` call itself is a compile error.
-- **`input` is already decoded** when the handler runs — invalid input is rejected *before* your
-  code executes, as a `VALIDATION_ERROR`. Same for query/list `args` (absent args decode to `{}`;
-  write args schemas as structs of `Schema.optional` fields and default with `args.x ?? N`).
-- **Raw generators are not accepted** — the documented authoring form is
-  `Effect.fn("<wire name>")(function* ...)`, which is also what names the trace span.
-- `CurrentUser` and `LivePublisher` are ordinary services from the handler's point of view; the
-  serving layer provides fresh per-request values.
+What the types enforce here: the declared error union is checked at the constructor call (an
+undeclared failure is a compile error), `input`/`args` are already decoded when the handler runs
+(invalid input rejects as `VALIDATION_ERROR` before your code executes), and raw generators are
+not accepted — `Effect.fn("<wire name>")` is the authoring form and names the trace span. The
+full contract is the pattern doc's: [operations](../../.patterns/fate-effect-operations.md).
+`CurrentUser` and `LivePublisher` are ordinary services from the handler's point of view; the
+serving layer provides fresh per-request values.
 
 Queries are the same minus `input`: `Fate.query({args: ArgsSchema, type: NoteView}, handler)`,
 where the handler bag is `{args, select}` — `select` is the client's field selection, useful for
@@ -201,13 +190,11 @@ export const FateLive = FateServer.layer(fateConfig).pipe(
 );
 ```
 
-Composition is where the remaining contracts fire:
-
-- A handler requirement you forgot to provide is a **compile error** at the
-  `Layer.provide` site — not a runtime "service not found".
-- Config validation runs at layer build (and at codegen, so a bad config fails `pnpm build`):
-  duplicate wire names and view-reachable entities without a source throw with every offender
-  named.
+Composition is where the remaining contracts fire: a forgotten handler requirement is a
+**compile error** at the `Layer.provide` site, and config validation (duplicate wire names,
+view-reachable entities without a source) throws with every offender named — at layer build and
+at codegen, so a bad config fails `pnpm build`. The validation list is the pattern doc's:
+[server](../../.patterns/fate-effect-server.md).
 
 ### 6. Serve and generate
 
@@ -289,7 +276,7 @@ type-level tests in this package.
   [interpreter](../../.patterns/fate-effect-interpreter.md) ·
   [compiler/codegen](../../.patterns/fate-effect-compiler.md) ·
   [worker wiring](../../.patterns/fate-effect-worker-wiring.md) ·
-  [feature migration](../../.patterns/fate-effect-feature-migration.md)
+  [per-feature assembly](../../.patterns/per-feature-fate-aggregators.md)
 - Decisions (the why): [ADR 0042](../../.decisions/0042-fate-effect-v1-architecture.md) (v1
   architecture), [ADR 0043](../../.decisions/0043-fate-effect-v2-native-interpreter-cutover.md)
   (native interpreter cutover)

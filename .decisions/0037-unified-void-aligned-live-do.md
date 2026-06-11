@@ -135,7 +135,7 @@ fan-out rewrite the client never sees.
   (role-guarded by `resolveRole`) rather than failing to compile. Accepted as
   void-faithful: the role guard is one branch, and the alignment to void's
   proven shape (which the live-fan-out survey
-  [live-fan-out-options-considered.md](../.patterns/live-fan-out-options-considered.md)
+  [live-fan-out-options-considered.md](./0034a-live-fan-out-options-considered.md)
   already settled on) outweighs the lost compile-time guarantee.
 - **Supersedes [0025](0025-split-livedo-connection-topic.md)** (the split is
   reversed). **Amends [0023](0023-live-views-sse-livedo.md)** (one-class

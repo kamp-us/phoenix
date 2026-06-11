@@ -53,6 +53,15 @@ const {contextLayer: fateLayer} = makeFateRuntime(
   context), which `HttpRouter.provideRequest` discharges into the routes — the `/fate` route's
   interpreter program takes `FateServer` from there, and routes yield worker services
   (`Pasaport`) from the same one built context.
+- **`makeFateRuntime` (`layers.ts`) is the single construction point.** It wraps
+  `Layer.makeMemoMapUnsafe()` + `ManagedRuntime.make(layer, {memoMap})` +
+  `Layer.effectContext(runtime.contextEffect)`. The shared `memoMap` (passed at
+  `ManagedRuntime.make`) is what keeps layer memoization consistent between the runtime and the
+  route-context layer derived from it: `contextEffect` resolves the runtime's already-built
+  context, and wrapping it as a layer reuses those exact instances instead of rebuilding the
+  layer per request — the routes see the **same** singletons the runtime carries, not a second
+  copy. The layer graph itself (mergeAll / provide / provideMerge) is the one in
+  [effect-layer-composition.md](./effect-layer-composition.md).
 - **`provideMerge`, not `provide`**: the layer must carry the `WorkerFateServices` singletons
   *alongside* `FateServer` — both reach the routes through the one `contextLayer`.
 - `FateServer.layer`'s own R (handler/source requirements minus the per-request pair) is
@@ -74,6 +83,19 @@ const {contextLayer: fateLayer} = makeFateRuntime(
   - **Accepted gap:** a config error that only manifests at layer-build time (i.e. not caught by
     `collectConfigIssues`) surfaces on the first `/fate` request instead of at init — the
     alternative (init warmup) is the hang above.
+
+### CF deviation — never dispose
+
+effect-smol's `LLMS.md` integration example disposes the runtime on `SIGINT`/`SIGTERM`. A
+Cloudflare Worker isolate **has no shutdown hook**, so phoenix never calls `dispose()`: the
+runtime lives for the isolate's lifetime, and Drizzle/D1 holds no poolable socket to release, so
+there is nothing leaked by not disposing. Recorded in
+[ADR 0041](../.decisions/0041-fate-bridge-worker-managed-runtime.md). If a service genuinely
+needs per-request acquire/release (none do today), wrap *that* service in a `Scope`, not the
+runtime. (The Node test harness `runFateOp`, below, HAS a shutdown point, so it builds and
+disposes a runtime per operation.) This is strictly about runtime teardown — mutations still
+fan out to the topic DO via `executionCtx.waitUntil(...)` so the live fan-out doesn't block the
+response.
 
 ## The route (the per-request seam)
 

@@ -3,9 +3,10 @@
 Each feature owns its own fate-shaped fragments (`queries.ts` / `lists.ts` /
 `views.ts` / `shapers.ts` / `sources.ts` / `mutations.ts`); the files under
 `worker/features/fate/` are **barrels** that compose those fragments into the
-single maps fate expects on `createFateServer`. The split is what makes feature
-locality (ADR 0036) compatible with fate's "one map per aggregator" wire
-contract — and it preserves the SPA's import surface untouched.
+single records (and the one source entry array) `FateServer.config` takes. The
+split is what makes feature locality (ADR 0036) compatible with fate's "one map
+per aggregator" wire contract — and it preserves the SPA's import surface
+untouched.
 
 Read this with [feature-services.md](./feature-services.md) (the per-feature
 service shape these fragments orchestrate) and
@@ -21,9 +22,9 @@ worker/features/
 ├── sozluk/
 │   ├── queries.ts      # exports `queries = { term: ... }`
 │   ├── lists.ts        # exports `lists = { recentTerms: ..., popularTerms: ... }`
-│   ├── views.ts        # exports `termDataView`, `definitionDataView`, types
+│   ├── views.ts        # exports `TermView`/`DefinitionView` classes, kernel-view consts, types
 │   ├── shapers.ts      # exports `toTerm`, `toDefinition`, ...
-│   ├── sources.ts      # exports `termSource`, `termExecutor`, ...
+│   ├── sources.ts      # exports `termSource`, `definitionSource` (`Fate.source` entries)
 │   └── mutations.ts    # exports `mutations = { "definition.add": ... }`
 ├── pano/               # same fragments, scoped to pano
 ├── pasaport/           # same, scoped to pasaport
@@ -34,14 +35,14 @@ worker/features/
     ├── lists.ts        # barrel: spreads sozlukLists, panoLists
     ├── views.ts        # barrel + cross-feature `Root`/`LiveEntities`
     ├── connection.ts   # leaf: the cross-feature `toConnection`/`KeysetPage` envelope
-    ├── sources.ts      # barrel + the `{getSource, registry}` surface
+    ├── sources.ts      # barrel: the features' `Fate.source` entries as the config's array
     └── mutations.ts    # barrel: spreads sozlukMutations, panoMutations, ...
 ```
 
 Each barrel is small and mechanical — re-exports plus, where the cross-feature
-piece is genuinely cross-feature (e.g. `Root` in `views.ts`, the
-`{getSource, registry}` surface in `sources.ts`), one tiny piece of composition
-the per-feature fragments can't own:
+piece is genuinely cross-feature (e.g. `Root` in `views.ts`, the composed
+source entry array in `sources.ts`), one tiny piece of composition the
+per-feature fragments can't own:
 
 ```ts
 // worker/features/fate/queries.ts
@@ -57,6 +58,36 @@ export const queries = {
   ...panoQueries,
 };
 ```
+
+## What each fragment contains
+
+The per-feature assembly on the `@phoenix/fate-effect` constructors — sozluk
+(`apps/web/worker/features/sozluk/`) is the shipped reference; pano, pasaport,
+and stats follow the same template. The feature's domain service stays
+untouched; the fate-facing fragments are:
+
+- **`errors.ts`** — `Schema.TaggedErrorClass`es carrying `{[ErrorCode]: "<CODE>"}`
+  annotations ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)), with a
+  per-feature `errors.unit.test.ts` enumeration pin.
+- **`views.ts`** — `FateDataView<Row>()("Name")({fields})` classes,
+  `Entity<typeof View, Replacements>` types, plus kernel-view consts
+  (`export const termDataView = TermView.view`) for the `fate/views.ts`
+  barrel + `Root` ([fate-effect-data-views.md](./fate-effect-data-views.md)).
+- **`sources.ts`** — one `Fate.source(ViewClass, {id}, handlers)` per entity;
+  a synthetic entity with no fetch path registers via `Fate.syntheticSource`
+  ([fate-effect-sources.md](./fate-effect-sources.md)).
+- **`queries.ts` / `lists.ts` / `mutations.ts`** — records of
+  `Fate.query`/`Fate.list`/`Fate.mutation` entries, each a pure-data definition
+  paired with an `Effect.fn("<wire name>")` handler
+  ([fate-effect-operations.md](./fate-effect-operations.md)).
+- **`shapers.ts`** — the row → entity field-set mappers the resolvers return
+  through.
+
+Two handler conventions hold across every fragment: the per-request services
+are `CurrentUser` and `LivePublisher` only ([fate-effect-server.md](./fate-effect-server.md)),
+and infra failures die INSIDE the domain service ([feature-services.md](./feature-services.md)
+boundary rule) — so no fate-layer file imports `Drizzle` or carries an `orDie`
+pipe, and handlers call the services bare.
 
 ## The critical property — the SPA's import surface is preserved
 
@@ -109,15 +140,21 @@ aggregator; an empty one would be a lie.
 A reasonable instinct after seeing this is "if every fragment is per-feature,
 why does `fate/` exist at all?" Two answers:
 
-1. **Fate's wire contract is one map per aggregator.** `createFateServer({queries,
-   lists, mutations, sources})` takes a single `queries` object — fate dispatches
-   by the request key, not by feature. The barrel is where the per-feature
-   fragments collapse into the shape fate expects.
+1. **The wire contract is one record per aggregator.** `FateServer.config({queries,
+   lists, mutations, sources, live})` takes a single `queries` record — dispatch
+   is by the request key, not by feature. The barrel is where the per-feature
+   fragments collapse into that shape. (The same is true downstream of the
+   config: fate's own `createFateServer` — alive only at codegen and as the
+   differential oracle's baseline, [fate-effect-compiler.md](./fate-effect-compiler.md) —
+   consumes the identical records.)
 2. **The genuinely cross-feature pieces have a home.** `views.ts` owns `Root`
    (the client-exposed root map, which spans every feature's screens) and
    `LiveEntities` (the entity-name → entity-type registry the live bus types
-   against). `sources.ts` owns the `{getSource, registry}` surface fate
-   resolves by `typeName`. None of these belong to a single feature; the
+   against). `sources.ts` owns the composed source entry **array** the config
+   takes — the interpreter resolves entities from it by `typeName`; the
+   oracle-baseline compile step builds fate's `{getSource, registry}` from the
+   same entries (identity-keyed, so the array holds the features' exported
+   objects, never copies). None of these belong to a single feature; the
    barrel is where they live.
 
 A cross-feature **definition** that features import back, however, must NOT
@@ -145,8 +182,8 @@ in different clothing.
 
 - [feature-services.md](./feature-services.md) — the per-feature service shape
   whose `queries.ts`/`mutations.ts`/`lists.ts` resolvers orchestrate.
-- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — how the assembled maps
-  get handed to `createFateServer`.
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — how the assembled records
+  get handed to `FateServer.config` and served.
 - [fate-data-views.md](./fate-data-views.md) — `dataView`/`Entity`/`Root`
   semantics; `Root` is the cross-feature piece in `fate/views.ts`.
 - [fate-connections.md](./fate-connections.md) — the `KeysetPage` →

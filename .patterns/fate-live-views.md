@@ -20,7 +20,7 @@ const [comments, loadNext] = useLiveListView(CommentConnectionView, post.comment
 
 ## Server — publishing from mutations
 
-A mutation handler publishes events after the write, through the per-request `LivePublisher` service ([fate-mutations.md](./fate-mutations.md)):
+A mutation handler publishes events after the write, through the per-request `LivePublisher` service ([fate-effect-operations.md](./fate-effect-operations.md) "Write conventions"):
 
 ```ts
 // inside a Fate.mutation handler, after the service write + shaping
@@ -31,11 +31,13 @@ yield* live.connection("posts").prependNode("Post", post.id);
 yield* live.connection("Post.comments", {id: postId}).deleteEdge("Comment", commentId);
 ```
 
-- `live.update(type, id, {changed, data})` — entity field change. **Publish the re-resolved entity inline as `data`.** The mutation already re-resolved it for its own response ([fate-mutations.md](./fate-mutations.md)), so the live event carries resolved data and each client masks it to its own selection. The DO does no database work and needs no Effect runtime.
+- `live.update(type, id, {changed, data})` — entity field change. **Publish the re-resolved entity inline as `data`.** The mutation already re-resolved it for its own response ([fate-effect-operations.md](./fate-effect-operations.md)), so the live event carries resolved data and each client masks it to its own selection. The DO does no database work and needs no Effect runtime.
 - `live.connection(name | "Type.field", args?).appendNode/prependNode/deleteEdge/invalidate(...)` — list membership. Pass the resolved `node` inline.
 - Connection identity strips pagination args, keeps filter args — `live.connection("posts")` reaches every feed-sort variant; `live.connection("Post.comments", {id})` targets one post's comments.
 
 This is why connection membership is server-driven ([fate-mutations-client.md](./fate-mutations-client.md)): one publish updates every subscribed client, instead of each client patching its own cache.
+
+**Testing a publishing mutation end-to-end:** one T3 case in `tests/integration/fate-live.test.ts` subscribes to a topic the mutation publishes to and asserts the frame arrives — the sozluk `definition.add` → args-scoped `Term.definitions` `appendNode` case is the reference.
 
 ## Transport — SSE
 
@@ -99,7 +101,7 @@ The DO runs locally under the same `alchemy dev` worker, so there is one live pa
 - [ADR 0023](../.decisions/0023-live-views-sse-livedo.md) — the SSE transport, DO fan-out, cookie auth, and `generation` decisions (amended-in-part by 0037; the SSE/fan-out/auth semantics stand unchanged)
 - [ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md) — why the split `ConnectionDO`/`TopicDO` pair was reunified into one void-aligned `LiveDO` (supersedes 0025, retires 0033)
 - [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the unified `LiveDO` recipe (`.make()`, role dispatch, KV, the alarm)
-- [fate-mutations.md](./fate-mutations.md) — where `live.*` is published, and the inline re-resolution
+- [fate-effect-operations.md](./fate-effect-operations.md) — where `live.*` is published, and the inline re-resolution
 - [fate-mutations-client.md](./fate-mutations-client.md) — connection membership driven by these events
 - [fate-views-and-requests.md](./fate-views-and-requests.md) — `useView`/`useListView` the live hooks mirror
 - [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — mounting the fate server and the `live` bus config

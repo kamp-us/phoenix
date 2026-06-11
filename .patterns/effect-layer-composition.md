@@ -1,6 +1,6 @@
 # Layer composition and runtime wiring
 
-How phoenix builds Effect runtimes from layers. Read [effect-context-service.md](./effect-context-service.md) first, then [alchemy-runtime.md](./alchemy-runtime.md) for *where* these layers get provided (worker scope vs per request).
+How phoenix builds Effect runtimes from layers. Read [effect-context-service.md](./effect-context-service.md) first, then [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) for *where* these layers get provided (worker scope vs per request).
 
 ## The three layer constructors
 
@@ -38,7 +38,7 @@ Read this inside-out:
 2. `Pasaport` + `Stats` only need `Drizzle`, so they merge alongside the Sozluk/Pano slice.
 3. `Drizzle` is the bottom — `provideMerge(DrizzleLayer)` feeds it to every consumer above *and* re-exposes it at the top, so a downstream `yield* Drizzle` works.
 
-The result is `Layer.Layer<WorkerFateServices, never, Database | BetterAuth>` — the feature graph is fully wired internally, and the only unresolved `R` is the two seams (`Database`, `BetterAuth`) provided once when the runtime is built (`index.ts`). The per-request pair (`CurrentUser`, `LivePublisher`) is provided onto each operation effect by the interpreter, not here. See [alchemy-runtime.md](./alchemy-runtime.md) for the worker-scope vs request-scope split.
+The result is `Layer.Layer<WorkerFateServices, never, Database | BetterAuth>` — the feature graph is fully wired internally, and the only unresolved `R` is the two seams (`Database`, `BetterAuth`) provided once when the runtime is built (`index.ts`). The per-request pair (`CurrentUser`, `LivePublisher`) is provided onto each operation effect by the interpreter, not here. See [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) for the worker-scope vs request-scope split.
 
 ### Direction of `Layer.provide`
 
@@ -94,7 +94,7 @@ Both follow the same idiom: pay the discharge cost once, at a known seam, and do
 
 ## One worker-level `ManagedRuntime`, built from the worker layer set — init-only
 
-Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request; a brief correction (ADR 0029) removed it entirely, capturing a `Context` and running each resolver on the *default* runtime. Both are gone. Now there is exactly ONE worker-level `ManagedRuntime` (ADR 0041, supersedes 0029) and since the v2 cutover (ADR 0043) it is **init-only wiring**: the worker's init phase builds `Drizzle` + the feature services once as the worker layer set, folds them into that one runtime as the layer-build/memoization vehicle, and the built context reaches the routes as a dependency-free context layer. Nothing runs through the runtime per request — the `/fate` route yields the native interpreter on the request fiber, and `CurrentUser` + `LivePublisher` are provided onto each operation per request as values off the request context, not baked into the runtime. See [alchemy-runtime.md](./alchemy-runtime.md) for the full picture.
+Phoenix's old design built a fresh `ManagedRuntime` per `/fate` request; a brief correction (ADR 0029) removed it entirely, capturing a `Context` and running each resolver on the *default* runtime. Both are gone. Now there is exactly ONE worker-level `ManagedRuntime` (ADR 0041, supersedes 0029) and since the v2 cutover (ADR 0043) it is **init-only wiring**: the worker's init phase builds `Drizzle` + the feature services once as the worker layer set, folds them into that one runtime as the layer-build/memoization vehicle, and the built context reaches the routes as a dependency-free context layer. Nothing runs through the runtime per request — the `/fate` route yields the native interpreter on the request fiber, and `CurrentUser` + `LivePublisher` are provided onto each operation per request as values off the request context, not baked into the runtime. See [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) for the full picture.
 
 ## The worker layer set
 
@@ -147,7 +147,7 @@ Phoenix's feature Layers don't fail at construction today — `DrizzleLive` just
 ## See also
 
 - [effect-context-service.md](./effect-context-service.md) — service definition
-- [alchemy-runtime.md](./alchemy-runtime.md) — the one init-only worker-level `ManagedRuntime` the worker layer set is folded into; worker-scope vs per-request split
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — the one init-only worker-level `ManagedRuntime` the worker layer set is folded into; worker-scope vs per-request split
 - [feature-services.md](./feature-services.md) — the layered architecture (`Drizzle → features → resolvers`)
 - [effect-testing.md](./effect-testing.md) — providing test layers
 - `worker/features/fate/layers.ts` — canonical phoenix Layer composition (`makeFateLayer`)

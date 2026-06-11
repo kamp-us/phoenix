@@ -62,6 +62,24 @@ Each entry carries `resolve` — the Effect the interpreter's dispatch yields pe
 - **Query/list `args` decode wire args including absence**: missing wire args decode as the empty bag `{}`, so args schemas are structs of optional fields and a declared-args handler never sees `undefined`. A definition without an `args` schema passes `undefined` — stray wire args are not smuggled past the declared contract.
 - `R` is inferred from the handler and visible on the entry (`FateOperationServices<typeof op>`), so a forgotten domain layer is a compile error at the composition site (`FateServer.layer`, task 5).
 
+## Write conventions
+
+How phoenix mutations are shaped, beyond the constructor mechanics:
+
+- **Names are `entity.verb`** (`definition.add`, `post.submit`, `comment.delete`) — namespaced commands that read as the action they perform. The wire name is the record key AND the `Effect.fn` span name.
+- **Domain validation lives in the service** ([ADR 0013](../.decisions/0013-validation-in-service-methods.md)). The service raises the domain errors whose `ErrorCode` annotations become wire codes; the definition's `input` Schema is shape coercion at the trust boundary only. Don't restate domain rules in the Schema — the service is the single source of truth.
+- **Return the changed entity's shaped row.** After the write, the service returns the fresh row and the feature's shaper maps it to the entity field set; fate masks it to the client's selection exactly as it masks a read — no hand-shaped responses.
+- **A delete returns the affected *parent* entity, re-resolved**, so the client's normalized cache updates the surrounding list: `definition.delete` returns the `Term`, `comment.delete` returns the `Post`. A parentless entity (`post.delete`) returns the deleted entity's `{__typename, id}` instead — there is no parent to re-resolve.
+- **Publish live events after the write**, through the per-request `LivePublisher` service, so subscribed views update in place:
+
+  ```ts
+  const live = yield* LivePublisher;
+  yield* live.update("Definition", id, {data: definition});                    // entity change
+  yield* live.connection("Term.definitions", {id: termSlug}).appendNode("Definition", id, {node: definition});
+  ```
+
+  Every publish method is `Effect<void>` (`E = never`) — a failed publish cannot fail the committed mutation; the swallow-with-log lives inside the implementation ([fate-effect-server.md](./fate-effect-server.md)). Publish the **already shaped** entity/node inline as `data`/`node`: the handler shaped it for the response, so the live event carries resolved data and clients mask it to their own selection. The mutating client gets the entity returned directly; live events update *other* clients. See [fate-live-views.md](./fate-live-views.md).
+
 ## What not to do
 
 - Don't author handlers as raw generators or `() => Effect.gen(...)` — the documented form is `Effect.fn("<wire name>")(function* ...)`; the types only accept Effect-returning functions.

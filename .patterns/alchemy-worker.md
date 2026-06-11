@@ -71,13 +71,13 @@ Effect.gen(function* () {
   const db = yield* Cloudflare.D1Connection.bind(PhoenixDb);  // typed D1 client
   const connections = yield* ConnectionDO;                    // typed DO namespace
   const topics = yield* TopicDO;
-  // …build worker-level services from these (Drizzle, features) — alchemy-runtime.md
+  // …build worker-level services from these (Drizzle, features) — fate-effect-worker-wiring.md
 })
 ```
 
 Two binding flavors show up here — `yield* SomeDO` for Durable Objects vs `yield* Cloudflare.X.bind(resource)` for D1/R2/KV. [alchemy-bindings.md](./alchemy-bindings.md) explains why they differ.
 
-> **Build worker-wide singletons in init, not per request.** The bound `db` is stable for the isolate's life, so the `Drizzle` capability service and the feature services (Sozluk, Pano, …) are constructed once here and provided as worker-level layers. Only request-scoped values (`Auth`) are provided per request; `HttpServerRequest` comes from the upstream `effect/unstable/http/HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides. This is the central difference from the old "rebuild a `ManagedRuntime` every request" design — see [alchemy-runtime.md](./alchemy-runtime.md).
+> **Build worker-wide singletons in init, not per request.** The bound `db` is stable for the isolate's life, so the `Drizzle` capability service and the feature services (Sozluk, Pano, …) are constructed once here and provided as worker-level layers. Only request-scoped values (`Auth`) are provided per request; `HttpServerRequest` comes from the upstream `effect/unstable/http/HttpServerRequest` Tag the alchemy/HttpRouter runtime already provides. This is the central difference from the old "rebuild a `ManagedRuntime` every request" design — see [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md).
 
 ## Runtime phase — return handlers
 
@@ -117,6 +117,6 @@ A `bind()` call has a runtime dependency: the *binding service's* Live layer (e.
 ## See also
 
 - [alchemy-bindings.md](./alchemy-bindings.md) — `bind()` and the Live-layer convention
-- [alchemy-runtime.md](./alchemy-runtime.md) — worker-level vs request-scoped layers; the captured service map
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — worker-level vs request-scoped layers; the captured service map
 - [alchemy-http-router.md](./alchemy-http-router.md) — building the router that becomes `fetch`
 - [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — declaring resources and deploying this worker

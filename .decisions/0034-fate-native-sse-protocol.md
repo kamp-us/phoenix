@@ -97,7 +97,7 @@ Until either trigger hits, the current topology stands.
 - **The "considered alternatives" exploration is preserved as a reference
   doc** so the decision can be re-litigated against fresh evidence without
   re-doing the survey — see
-  [`live-fan-out-options-considered.md`](../.patterns/live-fan-out-options-considered.md).
+  [`live-fan-out-options-considered.md`](./0034a-live-fan-out-options-considered.md).
 - See [fate-live-views.md](../.patterns/fate-live-views.md),
   [0023](0023-live-views-sse-livedo.md), and
   [0033](0033-mutual-do-layer-cycle-per-call-resolution.md).

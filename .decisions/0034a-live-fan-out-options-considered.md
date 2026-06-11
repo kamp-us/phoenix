@@ -1,18 +1,26 @@
-# Live fan-out — options considered
+---
+id: 0034a
+title: Live fan-out — options considered (appendix to 0034)
+status: reference
+date: 2026-05-29
+tags: [fate, live, sse, durable-objects, build-vs-buy]
+---
 
-A reference for the build-vs-buy investigation behind phoenix's live channel.
-Future revisits don't re-do the research; they read this, check which triggers
-have moved (see [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md)),
-and only re-survey the box that changed.
+# 0034a — Live fan-out: options considered (appendix to ADR 0034)
 
-The chosen path is **build on alchemy's modular `Cloudflare.DurableObjectNamespace<Self, Shape>().make(body)` + fate's native SSE wire protocol**, with patterns harvested from the Cloudflare Agents SDK as a reference but the package not adopted. The reasoning below is what got us there. (The fan-out runs on a single void-aligned `LiveDO` playing both roles — [ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md); the build-vs-buy reasoning here is unchanged by that reunification.)
+The build-vs-buy survey behind phoenix's live channel — an appendix to
+[ADR 0034](./0034-fate-native-sse-protocol.md). Future revisits don't re-do the
+research; they read this, check which triggers have moved (the triggers live in
+0034), and only re-survey the box that changed.
+
+The chosen path is **build on alchemy's modular `Cloudflare.DurableObjectNamespace<Self, Shape>().make(body)` + fate's native SSE wire protocol**, with patterns harvested from the Cloudflare Agents SDK as a reference but the package not adopted. The reasoning below is what got us there. (The fan-out runs on a single void-aligned `LiveDO` playing both roles — [ADR 0037](./0037-unified-void-aligned-live-do.md); the build-vs-buy reasoning here is unchanged by that reunification.)
 
 ## Read first
 
-- [fate-live-views.md](./fate-live-views.md) — the protocol and DO phoenix actually runs.
-- [ADR 0023](../.decisions/0023-live-views-sse-livedo.md) — the SSE + LiveDO decision.
-- [ADR 0037](../.decisions/0037-unified-void-aligned-live-do.md) — the single void-aligned `LiveDO` (supersedes the 0025 connection/topic split).
-- [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md) — why we stay on the native protocol.
+- [fate-live-views.md](../.patterns/fate-live-views.md) — the protocol and DO phoenix actually runs.
+- [ADR 0023](./0023-live-views-sse-livedo.md) — the SSE + LiveDO decision.
+- [ADR 0037](./0037-unified-void-aligned-live-do.md) — the single void-aligned `LiveDO` (supersedes the 0025 connection/topic split).
+- [ADR 0034](./0034-fate-native-sse-protocol.md) — why we stay on the native protocol.
 
 ## The candidates
 
@@ -29,9 +37,9 @@ exactly what `LiveDO`'s connection + topic roles would look like if phoenix
 moved off SSE.
 
 **Why rejected (for now).** It is **WebSocket** infrastructure. Phoenix's
-client transport is fate's `EventSource` (SSE), per [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md);
+client transport is fate's `EventSource` (SSE), per [ADR 0034](./0034-fate-native-sse-protocol.md);
 adopting partyserver would mean redesigning the client transport at the same
-time. Reconsider only if and when [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md)
+time. Reconsider only if and when [ADR 0034](./0034-fate-native-sse-protocol.md)
 is revisited and the WebSocket trigger fires.
 
 ### partysub
@@ -98,7 +106,7 @@ publish path". Worth understanding as a pattern.
   state would re-introduce the over-fetching problem fate's data-view layer
   exists to solve.
 - `@callable` is **WebSocket-only.** phoenix's transport is SSE
-  ([ADR 0034](../.decisions/0034-fate-native-sse-protocol.md)).
+  ([ADR 0034](./0034-fate-native-sse-protocol.md)).
 - The package inherits from `Agent` (which inherits from partyserver's
   `Server`), so adopting it would mean inheriting the WebSocket transport too.
 
@@ -143,7 +151,7 @@ Two filters narrowed the search:
 1. **Same edge as the publisher.** Anything that routes a `live.update` off
    Cloudflare is out — the locality bet is load-bearing.
 2. **Same wire as the existing client.** Anything that requires the client
-   transport to swap from SSE to WebSocket is out *until* [ADR 0034](../.decisions/0034-fate-native-sse-protocol.md)
+   transport to swap from SSE to WebSocket is out *until* [ADR 0034](./0034-fate-native-sse-protocol.md)
    is revisited; the cost of writing a custom `liveConnector` is the whole
    point of the SSE decision.
 
@@ -155,7 +163,7 @@ the second.
 ## Triggers to revisit
 
 The state of this survey is anchored to the conditions recorded in
-[ADR 0034](../.decisions/0034-fate-native-sse-protocol.md):
+[ADR 0034](./0034-fate-native-sse-protocol.md):
 
 - **partysub goes stable** with documented durability + QoS → re-evaluate as
   a replacement for the hand-written `LiveDO` fan-out algorithm.

@@ -18,7 +18,7 @@ phoenix is on effect v4; so is alchemy-effect (`effect@4.0.0-*`). The domain lay
 | Durable Objects | plain `class extends DurableObject` | `Cloudflare.DurableObjectNamespace<T>()(...)` (Effect handlers) |
 | Deploy | `wrangler deploy` | `alchemy deploy` |
 
-**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, operations. The one fate-side consequence is the runtime shape: the one init-only worker-level `ManagedRuntime` (the layer-build vehicle behind the route context layer) plus the two per-request VALUES (`currentUser`, `livePublisher`), rather than a fresh per-request runtime — see [alchemy-runtime.md](./alchemy-runtime.md).
+**Untouched by the infra:** every `effect-*` doc (services, errors, tracing, testing), and the *shape* of the `fate-*` protocol layer — data views, sources, mutations, operations. The one fate-side consequence is the runtime shape: the one init-only worker-level `ManagedRuntime` (the layer-build vehicle behind the route context layer) plus the two per-request VALUES (`currentUser`, `livePublisher`), rather than a fresh per-request runtime — see [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md).
 
 ## The two phases
 
@@ -44,7 +44,7 @@ export default class Phoenix extends Cloudflare.Worker<Phoenix>()(
 ) {}
 ```
 
-The init phase is where `bind()` happens; the runtime phase is the handlers it returns. The single most important consequence: **bindings resolved in init are in scope for the whole worker lifetime**, so worker-wide singletons (the `Drizzle` service, the feature services) are built once in init, not per request. See [alchemy-runtime.md](./alchemy-runtime.md).
+The init phase is where `bind()` happens; the runtime phase is the handlers it returns. The single most important consequence: **bindings resolved in init are in scope for the whole worker lifetime**, so worker-wide singletons (the `Drizzle` service, the feature services) are built once in init, not per request. See [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md).
 
 ## How the layers map onto phoenix
 
@@ -58,7 +58,7 @@ phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *unde
 
 1. [alchemy-worker.md](./alchemy-worker.md) — the `Cloudflare.Worker` class and its two phases.
 2. [alchemy-bindings.md](./alchemy-bindings.md) — `bind()`, the deploy-policy/runtime-service split, the Live-layer convention.
-3. [alchemy-runtime.md](./alchemy-runtime.md) — **the load-bearing doc.** Worker-level vs request-scoped layers, the one worker-level `ManagedRuntime`, the fate seam.
+3. [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — **the load-bearing doc.** Worker-level vs request-scoped layers, the one worker-level `ManagedRuntime`, the fate seam.
 4. [alchemy-http-router.md](./alchemy-http-router.md) — `HttpRouter` + `HttpApiBuilder`, mounting fate/auth/SSE.
 5. [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the Effect DO model; `ConnectionDO`/`TopicDO`.
 6. [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — D1 + Drizzle + migrations.
@@ -68,4 +68,4 @@ phoenix has three layers (see [index.md](./index.md)). alchemy-effect sits *unde
 
 - [effect-context-service.md](./effect-context-service.md) — the service model that rides on top
 - [fate-effect-interpreter.md](./fate-effect-interpreter.md) — the serving path the `/fate` route yields on the request fiber (ADR 0043)
-- [alchemy-runtime.md](./alchemy-runtime.md) — start here for the runtime story
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — start here for the runtime story
