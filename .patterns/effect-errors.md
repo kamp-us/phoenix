@@ -6,17 +6,17 @@ Failure in phoenix's backend is modeled as tagged errors in the `E` channel. No 
 
 Every phoenix error class is a `Schema.TaggedErrorClass`. The schema form is load-bearing: a
 domain error that can reach the wire carries its wire code as a **schema annotation**
-(`fateWireCode`, [fate-effect-wire-errors.md](./fate-effect-wire-errors.md)), and annotations
+(`WireCode`, [fate-effect-wire-errors.md](./fate-effect-wire-errors.md)), and annotations
 ride the class's AST — `Data.TaggedError` has nowhere to put one.
 
 ```ts
 import * as Schema from "effect/Schema";
-import {fateWireCode} from "@phoenix/fate-effect";
+import {WireCode} from "@phoenix/fate-effect";
 
 export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
   "sozluk/DefinitionNotFound",
   {definitionId: Schema.String, message: Schema.String},
-  {[fateWireCode]: "DEFINITION_NOT_FOUND"},
+  {[WireCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 ```
 
@@ -55,12 +55,12 @@ Every feature ends up with two flavors of tagged error. Keep them distinct.
 export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
   "sozluk/BodyRequired",
   {message: Schema.String},
-  {[fateWireCode]: "BODY_REQUIRED"},
+  {[WireCode]: "BODY_REQUIRED"},
 ) {}
 export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
   "sozluk/DefinitionNotFound",
   {definitionId: Schema.String, message: Schema.String},
-  {[fateWireCode]: "DEFINITION_NOT_FOUND"},
+  {[WireCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 ```
 
@@ -69,7 +69,7 @@ These carry their wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, …) as a
 **Infrastructure errors** — things that went wrong below the domain:
 
 ```ts
-// From db/Drizzle.ts — NO fateWireCode annotation, by design
+// From db/Drizzle.ts — NO WireCode annotation, by design
 export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
   "@phoenix/Drizzle/Error",
   {cause: Schema.Defect()},
@@ -152,7 +152,7 @@ const ensureTermExists = Effect.fn("Sozluk.ensureTermExists")(function*(slug) {
 
 The interpreter's dispatch catches every error in the `E` channel and routes it through
 `@phoenix/fate-effect`'s `encodeWireError` (the oracle-baseline compile step uses the same
-helper), which reads the `fateWireCode` annotation off the error's class to produce a
+helper), which reads the `WireCode` annotation off the error's class to produce a
 `FateRequestError` with a stable `code` — no registry, one edit per error
 ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)):
 
@@ -179,4 +179,4 @@ fate config's declared error unions and asserts the SPA's `MUTATION_ERROR_CODES`
 - [effect-error-operators.md](./effect-error-operators.md) — catching, `Exit`, `Cause`, recovering from specific tags
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.TaggedErrorClass` for errors that cross serialization boundaries
 - `packages/fate-effect/src/CurrentUser.ts` — `Unauthorized` is the canonical annotated tagged error
-- [fate-effect-wire-errors.md](./fate-effect-wire-errors.md) — the `fateWireCode` annotation + `encodeWireError` codec
+- [fate-effect-wire-errors.md](./fate-effect-wire-errors.md) — the `WireCode` annotation + `encodeWireError` codec

@@ -1,6 +1,6 @@
 /**
  * The wire contract for mutation-error `code` strings.
- * The worker derives these from the `fateWireCode` annotations on its error
+ * The worker derives these from the `WireCode` annotations on its error
  * classes (`@phoenix/fate-effect`'s `encodeWireError`); the SPA
  * `decodeMutationErrorCode` decoder narrows incoming codes to this union so
  * UI code can `switch` on a typed value instead of stringly comparing against

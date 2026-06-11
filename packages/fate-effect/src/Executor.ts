@@ -43,7 +43,7 @@
  *      span nests under the runtime's ambient request span instead of
  *      opening a detached root.
  *   4. **Encode failures** — declared annotated errors and the validation
- *      error map through `encodeWireError` (the `fateWireCode` codec);
+ *      error map through `encodeWireError` (the `WireCode` codec);
  *      defects collapse to the fixed internal error, never leaking details;
  *      a `FateRequestError` passes through verbatim.
  *

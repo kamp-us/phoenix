@@ -1,5 +1,5 @@
 /**
- * The `fateWireCode` annotation key and the wire-error codec.
+ * The `WireCode` annotation key and the wire-error codec.
  *
  * One edit per domain error, no registry: a feature defines its error class
  * with the wire code attached as a schema annotation —
@@ -8,7 +8,7 @@
  * class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
  *   "sozluk/BodyRequired",
  *   {message: Schema.String},
- *   {[fateWireCode]: "BODY_REQUIRED"},
+ *   {[WireCode]: "BODY_REQUIRED"},
  * ) {}
  * ```
  *
@@ -43,14 +43,14 @@ import * as Predicate from "effect/Predicate";
  * The annotation key. Declared on `Schema.Annotations.Annotations` below so
  * definition sites get `string | undefined` typing for the value.
  */
-export const fateWireCode = "fate-effect/wireCode";
+export const WireCode = "fate-effect/wireCode";
 
 declare module "effect/Schema" {
 	namespace Annotations {
 		interface Annotations {
 			/**
 			 * The fate wire `code` this error class maps to. Set it on a
-			 * `Schema.TaggedErrorClass` via the `fateWireCode` key; the
+			 * `Schema.TaggedErrorClass` via the `WireCode` key; the
 			 * fate-effect codec derives the wire error from it.
 			 */
 			readonly "fate-effect/wireCode"?: string | undefined;
@@ -91,7 +91,7 @@ function makeWireError(code: string, message: string): FateRequestError {
 }
 
 /**
- * Read the `fateWireCode` annotation off an error *class* (or anything —
+ * Read the `WireCode` annotation off an error *class* (or anything —
  * non-classes and un-annotated classes yield `undefined`). A schema class's
  * annotations live on its static `ast.annotations`; everything here is
  * structural guarding, so arbitrary values are safe inputs.
@@ -102,13 +102,13 @@ export function wireCodeOfClass(ctor: unknown): string | undefined {
 	const ast: unknown = ctor.ast;
 	if (!Predicate.hasProperty(ast, "annotations")) return undefined;
 	const annotations: unknown = ast.annotations;
-	if (!Predicate.hasProperty(annotations, fateWireCode)) return undefined;
-	const code: unknown = annotations[fateWireCode];
+	if (!Predicate.hasProperty(annotations, WireCode)) return undefined;
+	const code: unknown = annotations[WireCode];
 	return typeof code === "string" ? code : undefined;
 }
 
 /**
- * Read the `fateWireCode` annotation off an error *instance*, via its
+ * Read the `WireCode` annotation off an error *instance*, via its
  * constructor. `undefined` for primitives and un-annotated values.
  */
 export function wireCodeOf(value: unknown): string | undefined {

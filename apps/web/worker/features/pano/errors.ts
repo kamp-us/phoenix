@@ -2,7 +2,7 @@
  * Tagged errors raised by the Pano service layer.
  *
  * Wire-code contract — every class carries its wire `code` as a
- * `fateWireCode` annotation (`.patterns/fate-effect-wire-errors.md`), which
+ * `WireCode` annotation (`.patterns/fate-effect-wire-errors.md`), which
  * `encodeWireError` reads at the fate boundary:
  *
  *   pano/TitleRequired                  → TITLE_REQUIRED
@@ -21,7 +21,7 @@
  *
  * The bridge-era `PostValidation` / `CommentValidation` classes carried a
  * dynamic `code` field the registry upcased per instance (`title_required` →
- * `TITLE_REQUIRED`). `fateWireCode` is one static code per class — the codec
+ * `TITLE_REQUIRED`). `WireCode` is one static code per class — the codec
  * reads the instance's CONSTRUCTOR annotation (`wireCodeOf`), so each
  * sub-code is its own class and {@link PostValidation} /
  * {@link CommentValidation} survive as the union aliases the `Pano` service
@@ -29,7 +29,7 @@
  * retired `upcased`/`fixed` registry arms exactly) so SPA pattern-matching
  * keeps working unchanged; `errors.unit.test.ts` pins each pair.
  */
-import {fateWireCode} from "@phoenix/fate-effect";
+import {WireCode} from "@phoenix/fate-effect";
 import * as Schema from "effect/Schema";
 
 /* -------------------------------------------------------------------------- */
@@ -40,42 +40,42 @@ import * as Schema from "effect/Schema";
 export class TitleRequired extends Schema.TaggedErrorClass<TitleRequired>()(
 	"pano/TitleRequired",
 	{message: Schema.String},
-	{[fateWireCode]: "TITLE_REQUIRED"},
+	{[WireCode]: "TITLE_REQUIRED"},
 ) {}
 
 /** `title` exceeded the configured maximum (`POST_TITLE_MAX`). */
 export class TitleTooLong extends Schema.TaggedErrorClass<TitleTooLong>()(
 	"pano/TitleTooLong",
 	{message: Schema.String},
-	{[fateWireCode]: "TITLE_TOO_LONG"},
+	{[WireCode]: "TITLE_TOO_LONG"},
 ) {}
 
 /** `url` of `submitPost` did not parse as a URL. */
 export class UrlInvalid extends Schema.TaggedErrorClass<UrlInvalid>()(
 	"pano/UrlInvalid",
 	{message: Schema.String},
-	{[fateWireCode]: "URL_INVALID"},
+	{[WireCode]: "URL_INVALID"},
 ) {}
 
 /** Post `body` exceeded the configured maximum (`POST_BODY_MAX`). */
 export class PostBodyTooLong extends Schema.TaggedErrorClass<PostBodyTooLong>()(
 	"pano/PostBodyTooLong",
 	{message: Schema.String},
-	{[fateWireCode]: "BODY_TOO_LONG"},
+	{[WireCode]: "BODY_TOO_LONG"},
 ) {}
 
 /** `submitPost` received an empty tag list. */
 export class TagsRequired extends Schema.TaggedErrorClass<TagsRequired>()(
 	"pano/TagsRequired",
 	{message: Schema.String},
-	{[fateWireCode]: "TAGS_REQUIRED"},
+	{[WireCode]: "TAGS_REQUIRED"},
 ) {}
 
 /** A submitted tag `kind` is outside the fixed enum (`ALLOWED_POST_TAG_KINDS`). */
 export class TagInvalid extends Schema.TaggedErrorClass<TagInvalid>()(
 	"pano/TagInvalid",
 	{message: Schema.String},
-	{[fateWireCode]: "TAG_INVALID"},
+	{[WireCode]: "TAG_INVALID"},
 ) {}
 
 /**
@@ -113,21 +113,21 @@ export const PostValidationErrors = [
 export class CommentBodyRequired extends Schema.TaggedErrorClass<CommentBodyRequired>()(
 	"pano/CommentBodyRequired",
 	{message: Schema.String},
-	{[fateWireCode]: "BODY_REQUIRED"},
+	{[WireCode]: "BODY_REQUIRED"},
 ) {}
 
 /** Comment `body` exceeded the configured maximum (`COMMENT_BODY_MAX`). */
 export class CommentBodyTooLong extends Schema.TaggedErrorClass<CommentBodyTooLong>()(
 	"pano/CommentBodyTooLong",
 	{message: Schema.String},
-	{[fateWireCode]: "BODY_TOO_LONG"},
+	{[WireCode]: "BODY_TOO_LONG"},
 ) {}
 
 /** `addComment`'s `parentId` names no live comment on the target post. */
 export class ParentCommentNotFound extends Schema.TaggedErrorClass<ParentCommentNotFound>()(
 	"pano/ParentCommentNotFound",
 	{message: Schema.String},
-	{[fateWireCode]: "PARENT_NOT_FOUND"},
+	{[WireCode]: "PARENT_NOT_FOUND"},
 ) {}
 
 /**
@@ -158,7 +158,7 @@ export class PostNotFound extends Schema.TaggedErrorClass<PostNotFound>()(
 		postId: Schema.String,
 		message: Schema.String,
 	},
-	{[fateWireCode]: "POST_NOT_FOUND"},
+	{[WireCode]: "POST_NOT_FOUND"},
 ) {}
 
 /**
@@ -171,7 +171,7 @@ export class CommentNotFound extends Schema.TaggedErrorClass<CommentNotFound>()(
 		commentId: Schema.String,
 		message: Schema.String,
 	},
-	{[fateWireCode]: "COMMENT_NOT_FOUND"},
+	{[WireCode]: "COMMENT_NOT_FOUND"},
 ) {}
 
 /**
@@ -184,7 +184,7 @@ export class UnauthorizedPostMutation extends Schema.TaggedErrorClass<Unauthoriz
 		postId: Schema.String,
 		message: Schema.String,
 	},
-	{[fateWireCode]: "UNAUTHORIZED"},
+	{[WireCode]: "UNAUTHORIZED"},
 ) {}
 
 /**
@@ -197,5 +197,5 @@ export class UnauthorizedCommentMutation extends Schema.TaggedErrorClass<Unautho
 		commentId: Schema.String,
 		message: Schema.String,
 	},
-	{[fateWireCode]: "UNAUTHORIZED"},
+	{[WireCode]: "UNAUTHORIZED"},
 ) {}

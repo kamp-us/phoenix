@@ -1,7 +1,7 @@
 /**
  * Tagged errors raised by the Vote service layer.
  *
- * `VoteTargetNotFound` carries NO `fateWireCode` annotation by design: it
+ * `VoteTargetNotFound` carries NO `WireCode` annotation by design: it
  * never reaches the wire. The consuming services translate it at their own
  * boundary (`Sozluk.vote.cast` → `DefinitionNotFound`, `Pano.post.vote` →
  * `PostNotFound`, `Pano.comment.vote` → `CommentNotFound`, all via

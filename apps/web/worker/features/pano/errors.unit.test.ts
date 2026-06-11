@@ -1,7 +1,7 @@
 /**
  * Pano error-class ↔ wire-code enumeration pin (T0).
  *
- * The migrated pano records derive wire codes from the `fateWireCode`
+ * The migrated pano records derive wire codes from the `WireCode`
  * annotation on each error class (`.patterns/fate-effect-wire-errors.md`) —
  * no registry. This pin is the app-side counterpart of the package's
  * `WireError.unit.test.ts` enumeration: every error class pano operations
@@ -12,7 +12,7 @@
  *
  * The bridge's `pano/PostValidation` / `pano/CommentValidation` carried a
  * dynamic `code` field the registry upcased per instance (`title_required` →
- * `TITLE_REQUIRED`); `fateWireCode` is ONE static code per class
+ * `TITLE_REQUIRED`); `WireCode` is ONE static code per class
  * (`wireCodeOf` reads the instance's CONSTRUCTOR annotation), so each
  * sub-code is now its own class — this table pins every split class to the
  * exact upcased code the `upcased` registry arm produced for it.

@@ -11,7 +11,7 @@
  * the username constraints (length / format / uniqueness / immutability) and
  * raises the domain errors (the `UsernameInvalid` union, `UsernameTaken`,
  * `UsernameAlreadySet`, `UserNotFound`). Those surface through their
- * `fateWireCode` annotations as stable wire codes (`INVALID_FORMAT` /
+ * `WireCode` annotations as stable wire codes (`INVALID_FORMAT` /
  * `TOO_SHORT` / `TOO_LONG` / `TAKEN` / `ALREADY_SET` / `USER_NOT_FOUND`;
  * `.patterns/fate-effect-wire-errors.md`). `CurrentUser.required` gates the
  * write (anonymous → `UNAUTHORIZED`). Infra failures never reach this layer —

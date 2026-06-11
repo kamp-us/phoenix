@@ -112,7 +112,7 @@ Why `provideMerge` for `Vote` specifically: `Sozluk` and `Pano` both yield `Vote
 
 Worker code never calls `runPromise*` on the request path. Since the v2 cutover (ADR 0043) the whole serving path is one Effect: the `/fate` route yields `FateInterpreter.handleRequest` on the request fiber, the interpreter provides the per-request pair onto each operation (`Effect.provideService(CurrentUser, ...)` / `(LivePublisher, ...)`), and the single Effect→Promise boundary is the **platform bridge** (alchemy's worker bridge running the compiled `HttpRouter.toHttpEffect`). The package's one `runtime.runPromise` survives in `packages/fate-effect/src/Executor.ts`, oracle-baseline-only ([fate-effect-compiler.md](./fate-effect-compiler.md)). Handler and source bodies are `Effect.fn` generators that `yield*` services; they never call `runPromise*` themselves.
 
-The interpreter inspects each operation's `Exit` and maps tagged errors onto fate wire codes via their `fateWireCode` annotations ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)). The HTTP edge (`HttpRouter.toHttpEffect`) compiles the router Layer into the worker's `fetch` and handles `Exit` for typed-JSON groups itself ([alchemy-http-router.md](./alchemy-http-router.md)).
+The interpreter inspects each operation's `Exit` and maps tagged errors onto fate wire codes via their `WireCode` annotations ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)). The HTTP edge (`HttpRouter.toHttpEffect`) compiles the router Layer into the worker's `fetch` and handles `Exit` for typed-JSON groups itself ([alchemy-http-router.md](./alchemy-http-router.md)).
 
 ## Don't construct layers per call
 

@@ -1,11 +1,11 @@
 /**
- * T0 — the `fateWireCode` annotation key and the wire-error codec.
+ * T0 — the `WireCode` annotation key and the wire-error codec.
  *
  * The contract under test (PRD: "define a domain error once with a
- * `fateWireCode` annotation on the error class and have the wire codec
+ * `WireCode` annotation on the error class and have the wire codec
  * derived from it — one edit instead of three"):
  *
- *   1. Annotating a `Schema.TaggedErrorClass` with `fateWireCode` is
+ *   1. Annotating a `Schema.TaggedErrorClass` with `WireCode` is
  *      *sufficient* for {@link encodeWireError} to produce the correct wire
  *      code + message. No registry, no second edit.
  *   2. Un-annotated errors and defects (arbitrary thrown values) map to the
@@ -22,8 +22,8 @@ import {describe, expect, expectTypeOf, it} from "vitest";
 import * as FateEffect from "./index.ts";
 import {
 	encodeWireError,
-	fateWireCode,
 	INTERNAL_WIRE_CODE,
+	WireCode,
 	wireCodeOf,
 	wireCodeOfClass,
 } from "./WireError.ts";
@@ -32,14 +32,14 @@ import {
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
-	{[fateWireCode]: "BODY_REQUIRED"},
+	{[WireCode]: "BODY_REQUIRED"},
 ) {}
 
 /** An annotated error with extra fields beyond `message`. */
 class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
 	"test/DefinitionNotFound",
 	{definitionId: Schema.String, message: Schema.String},
-	{[fateWireCode]: "DEFINITION_NOT_FOUND"},
+	{[WireCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 
 /** A tagged error WITHOUT the annotation — must fall back to internal. */
@@ -47,7 +47,7 @@ class Unannotated extends Schema.TaggedErrorClass<Unannotated>()("test/Unannotat
 	message: Schema.String,
 }) {}
 
-describe("fateWireCode annotation", () => {
+describe("WireCode annotation", () => {
 	it("is readable off the class", () => {
 		expect(wireCodeOfClass(BodyRequired)).toBe("BODY_REQUIRED");
 		expect(wireCodeOfClass(DefinitionNotFound)).toBe("DEFINITION_NOT_FOUND");
@@ -69,7 +69,7 @@ describe("fateWireCode annotation", () => {
 
 	it("is typed `string | undefined` through the Schema.Annotations augmentation", () => {
 		const annotations = Schema.resolveAnnotations(BodyRequired);
-		expectTypeOf(annotations?.[fateWireCode]).toEqualTypeOf<string | undefined>();
+		expectTypeOf(annotations?.[WireCode]).toEqualTypeOf<string | undefined>();
 	});
 });
 
