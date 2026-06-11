@@ -16,7 +16,13 @@
  *     the request path awaits the DO fan-out. `waitUntil` is the platform's
  *     ONLY way to extend work past the response on CF (no shutdown hook, no
  *     daemon fibers surviving the request — ADR 0029/0041), so the
- *     Effect→Promise conversion at that sink is the documented boundary;
+ *     Effect→Promise conversion at that sink is the documented boundary.
+ *     One known asymmetry: the detached `Effect.runPromise` starts a FRESH
+ *     fiber with no ambient tracer context, so publish spans do not nest
+ *     under the request span (they surface as roots). Accepted — the
+ *     fan-out is fire-and-forget by design; if span lineage ever matters,
+ *     capture the request context at the boundary with `runForkWith`-style
+ *     wiring instead of bare `runPromise`;
  *   - **swallowing**: a rejecting topic call is caught on the detached
  *     promise and logged (`console.error`); a synchronous throw (topic
  *     resolution, a gone execution context) is caught by `Effect.try` and

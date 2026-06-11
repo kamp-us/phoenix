@@ -25,7 +25,9 @@
  *     ({@link FateConfigServices}) MINUS the per-request pair —
  *     `CurrentUser` and `LivePublisher` are the server's documented
  *     per-request contract, provided onto each handler per request by the
- *     compile step, never by a worker-level layer
+ *     provision pipeline (`provideRequestPair`, `Provision.ts` — the
+ *     interpreter's serving path since ADR 0043), never by a worker-level
+ *     layer
  *     ({@link FateServerRequirements}). Domain layers discharge R with
  *     ordinary `Layer.provide`; a forgotten domain layer is a compile error
  *     at the composition site (PRD story 7).
@@ -43,10 +45,11 @@
  *     merge silently.
  *
  * The layer captures the build-time services (`Effect.context()`) into the
- * service value: task 7's compiler provides that captured context plus the
- * per-request pair onto each entry's `resolve` and runs it through the one
- * worker-level ManagedRuntime (effect-smol `LLMS.md` § "Integrating Effect
- * into existing applications").
+ * service value: the per-request provision pipeline (`provideRequestPair`,
+ * `Provision.ts`) provides that captured context plus the per-request pair
+ * onto each entry's `resolve` — on the request fiber via the interpreter
+ * (the serving path since ADR 0043); the compile step applies the same
+ * pipeline only as the differential oracle's baseline.
  */
 import type {ConnectionResult, LiveEventBus} from "@nkzw/fate/server";
 import {Context, Effect, Layer} from "effect";

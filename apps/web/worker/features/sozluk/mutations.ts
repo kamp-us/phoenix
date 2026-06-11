@@ -27,7 +27,6 @@ import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effe
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {orDieDrizzle} from "../../db/Drizzle.ts";
-import {toDefinition, toTermFromPage} from "../fate/shapers.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -35,6 +34,7 @@ import {
 	UnauthorizedDefinitionMutation,
 } from "./errors.ts";
 import {Sozluk} from "./Sozluk.ts";
+import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
 import {DefinitionView, TermView} from "./views.ts";
 

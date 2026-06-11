@@ -22,9 +22,9 @@ import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {orDieDrizzle} from "../../db/Drizzle.ts";
-import {toUser} from "../fate/shapers.ts";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalidErrors, UsernameTaken} from "./errors.ts";
 import {Pasaport} from "./Pasaport.ts";
+import {toUser} from "./shapers.ts";
 import {UserView} from "./views.ts";
 
 const SetUsernameInput = Schema.Struct({

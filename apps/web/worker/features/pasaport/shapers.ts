@@ -14,8 +14,8 @@
  * See `.patterns/fate-mutations.md`.
  */
 
-import type {User} from "../fate/views.ts";
 import type {ContributionNode, ContributionRow} from "./Pasaport.ts";
+import type {User} from "./views.ts";
 
 export interface UserFields {
 	id: string;

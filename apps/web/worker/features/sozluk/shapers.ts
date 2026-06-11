@@ -14,8 +14,8 @@
  * See `.patterns/fate-connections.md`, `.patterns/fate-mutations.md`.
  */
 
-import type {Definition, Term} from "../fate/views.ts";
 import type {TermPage} from "./Sozluk.ts";
+import type {Definition, Term} from "./views.ts";
 
 export interface TermFields {
 	slug: string;

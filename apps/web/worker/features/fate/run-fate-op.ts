@@ -65,8 +65,9 @@ export interface FateOpAuth {
 }
 
 /**
- * Run `operation` against `workerLayer` through the compiled fate-effect
- * server's `handleRequest`.
+ * Run `operation` against `workerLayer` through the native interpreter's
+ * `handleRequest` (`FateInterpreter` — the serving path since the v2
+ * cutover, ADR 0043).
  *
  * @param workerLayer a fully-resolved worker layer (`Database`/`BetterAuth`
  *   already discharged) — `FateServer.layer(fateConfig)` is provided over it

@@ -124,8 +124,13 @@ export interface ConnectionEnvelope {
 	};
 }
 
-/** The wire arm a connection-plane throw takes in fate (`toProtocolError`). */
-const internalArm = (): FateRequestError =>
+/**
+ * The wire arm an internal throw takes in fate (`toProtocolError`'s fallback):
+ * `INTERNAL_ERROR` / "Internal server error.". The message is byte-pinned by
+ * the walk oracle — this is the ONE construction site (`Walk.ts` imports it),
+ * so the pinned bytes cannot drift between arms.
+ */
+export const internalArm = (): FateRequestError =>
 	new FateRequestError("INTERNAL_ERROR", "Internal server error.");
 
 /**
@@ -135,7 +140,9 @@ const internalArm = (): FateRequestError =>
  */
 const cursorOf = (node: unknown): string => {
 	if (node === null || node === undefined) {
-		throw new TypeError("Cannot read properties of null (reading 'id')");
+		// The message never reaches the wire — `arrayToConnection` masks every
+		// throw onto `internalArm()` — so it is honest, not a V8 imitation.
+		throw new TypeError("default cursor derivation: node is nullish, cannot read 'id'");
 	}
 	return String(isRecord(node) ? node.id : undefined);
 };

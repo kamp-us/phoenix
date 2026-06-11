@@ -69,6 +69,18 @@
  * the resolver fiber needs no ambient context. No runtime is owned here — the conversion-point rule
  * (`Executor.test.ts`) covers this module automatically.
  *
+ * ## Span design (deliberate)
+ *
+ * The internal helpers (`resolveNode`, `toConnectionResult`,
+ * `callViewFunction`, …) are span-less arrow functions returning
+ * `Effect.gen` ON PURPOSE. effect-smol's `LLMS.md` prefers `Effect.fn` for
+ * named Effect-returning functions, but these recurse per row and per
+ * relation — wrapping them would emit a span per node visited, polluting
+ * traces and changing the span tree the observability tests pin. Spans live
+ * at the operation/source boundaries (`Fate.*` constructors, the
+ * interpreter's dispatch), not inside the walk. Don't "fix" this to
+ * `Effect.fn`.
+ *
  * ## Deliberately NOT mirrored (documented divergences)
  *
  *   - **Source lookup**: fate populates `sourcesByType` by visiting ROOT
@@ -90,7 +102,7 @@
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit, Request, RequestResolver} from "effect";
-import {arrayToConnection, getScopedArgs} from "./Connection.ts";
+import {arrayToConnection, getScopedArgs, internalArm} from "./Connection.ts";
 import type {ProtocolByIdOperation} from "./Protocol.ts";
 import {provideRequestPair} from "./Provision.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
@@ -242,9 +254,7 @@ const buildSelectionPlan = (view: ViewLike, select: ReadonlyArray<string>): Sele
  * module doc's taxonomy.)
  */
 const walkError = (error: unknown): FateRequestError =>
-	error instanceof FateRequestError
-		? error
-		: new FateRequestError("INTERNAL_ERROR", "Internal server error.");
+	error instanceof FateRequestError ? error : internalArm();
 
 /**
  * Invoke one kernel view callback (`authorize`/`resolve` — promise-shaped or
@@ -260,7 +270,7 @@ const callViewFunction = (
 				try: async (): Promise<unknown> => fn(...args),
 				catch: walkError,
 			})
-		: Effect.fail(new FateRequestError("INTERNAL_ERROR", "Internal server error."));
+		: Effect.fail(internalArm());
 
 /**
  * fate's `getComputedDeps`, minus the hidden computed-state read (module-doc
@@ -648,9 +658,7 @@ export const makeWalk = (server: FateServerService, context: FateRequestContext)
 			// Capability-less source: fate throws a plain Error here and its
 			// `toProtocolError` masks it — the internal arm, fixed message.
 			for (const entry of group) {
-				entry.completeUnsafe(
-					Exit.fail(new FateRequestError("INTERNAL_ERROR", "Internal server error.")),
-				);
+				entry.completeUnsafe(Exit.fail(internalArm()));
 			}
 		});
 

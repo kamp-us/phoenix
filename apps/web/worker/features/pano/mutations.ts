@@ -30,7 +30,6 @@ import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effe
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {orDieDrizzle} from "../../db/Drizzle.ts";
-import {toComment, toPost, toPostFromPage} from "../fate/shapers.ts";
 import {
 	CommentNotFound,
 	CommentValidationErrors,
@@ -40,6 +39,7 @@ import {
 	UnauthorizedPostMutation,
 } from "./errors.ts";
 import {Pano} from "./Pano.ts";
+import {toComment, toPost, toPostFromPage} from "./shapers.ts";
 import type {Comment, Post} from "./views.ts";
 import {CommentView, PostView} from "./views.ts";
 

@@ -14,8 +14,8 @@
  * See `.patterns/fate-connections.md`, `.patterns/fate-mutations.md`.
  */
 
-import type {Comment, Post} from "../fate/views.ts";
 import type {PostPage} from "./Pano.ts";
+import type {Comment, Post} from "./views.ts";
 
 export interface PostFields {
 	id: string;
