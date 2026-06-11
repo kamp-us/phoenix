@@ -14,12 +14,12 @@
  *   2. **Run** — operations dispatch CONCURRENTLY via `Effect.forEach` with
  *      `concurrency: "unbounded"` (effect-smol `Effect.ts` § `forEach` —
  *      the order-preserving collector; fate's own loop is `Promise.all`).
- *      Each operation provides the per-request pair as VALUES off the
- *      request context, then the captured build-time services — the same
- *      provision pipeline as the v1 compiler's `runResolve`, minus the
- *      Promise hop: no runtime here, the program stays an Effect and the
- *      caller (the worker route's request fiber; the oracle's test runtime)
- *      owns the run.
+ *      Each operation runs through the ONE shared provision pipeline
+ *      (`provideRequestPair`, `Provision.ts`: the per-request pair as VALUES
+ *      off the request context, captured build-time services beneath) — the
+ *      v1 compiler's `runResolve` minus the Promise hop: no runtime here,
+ *      the program stays an Effect and the caller (the worker route's
+ *      request fiber; the oracle's test runtime) owns the run.
  *   3. **Encode** — per-operation outcomes map through `encodeWireError`
  *      (the ONE annotation codec both backends share) onto the protocol
  *      error shape, and the response encodes through the canonical
@@ -44,15 +44,14 @@
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Cause, Effect, Exit, Option} from "effect";
-import {CurrentUser} from "./CurrentUser.ts";
 import type {FateRequestContext} from "./Executor.ts";
-import {LivePublisher} from "./LivePublisher.ts";
 import type {
 	DecodedProtocolOperation,
 	ProtocolNamedOperation,
 	ProtocolResponse,
 } from "./Protocol.ts";
 import {decodeProtocolRequest, encodeProtocolResponse} from "./Protocol.ts";
+import {type ProvideRequestPair, provideRequestPair} from "./Provision.ts";
 import type {FateServerService} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 import type {FateWalk} from "./Walk.ts";
@@ -65,18 +64,6 @@ type ProtocolErrorValue = Extract<OperationResultValue, {readonly ok: false}>["e
 
 /** fate's response headers, byte for byte. */
 const JSON_HEADERS = {"content-type": "application/json; charset=utf-8"};
-
-/**
- * erased→kernel: re-pin an erased entry effect's requirements to `never` —
- * the same contained narrowing as the v1 compiler's `toRunnable`
- * (`Executor.ts`): the REAL requirements were enforced at the definition
- * site and discharged by `FateServer.layer`'s public R; the erased shapes
- * carry `R = unknown` only because every entry assigns into the config
- * records. A genuinely missing service still fails loudly at run time.
- */
-const toRunnable = <A>(
-	effect: Effect.Effect<A, unknown, unknown>,
-): Effect.Effect<A, unknown, never> => effect as Effect.Effect<A, unknown, never>;
 
 /**
  * fate's `toProtocolError`, exactly: a `FateRequestError` keeps its code,
@@ -174,18 +161,10 @@ const operationEffect = (
 const runOperation = (
 	server: FateServerService,
 	walk: FateWalk,
-	context: FateRequestContext,
+	provide: ProvideRequestPair,
 	operation: DecodedProtocolOperation,
 ): Effect.Effect<OperationResultValue> =>
-	toRunnable(
-		operationEffect(server, walk, operation).pipe(
-			// The per-request pair as VALUES — the request context wins over
-			// anything beneath (the v1 compiler's provision order, verbatim).
-			Effect.provideService(CurrentUser, context.currentUser),
-			Effect.provideService(LivePublisher, context.livePublisher),
-			Effect.provideContext(server.services),
-		),
-	).pipe(
+	provide(operationEffect(server, walk, operation)).pipe(
 		Effect.exit,
 		Effect.map(
 			(exit): OperationResultValue =>
@@ -236,13 +215,16 @@ const handleRequest = (
 		// ONE walk per request — its RequestResolver instance IS the batch
 		// window, so it must exist before the dispatch loop fans out.
 		const walk = makeWalk(server, context);
+		// ONE provision pipeline per request (`Provision.ts` — the pair as
+		// request VALUES over the captured services); every operation applies it.
+		const provide = provideRequestPair(context, server.services);
 		const exit = yield* Effect.exit(
 			Effect.gen(function* () {
 				const body = yield* parseBody(request);
 				const operations = yield* decodeProtocolRequest(body);
 				const results = yield* Effect.forEach(
 					operations,
-					(operation) => runOperation(server, walk, context, operation),
+					(operation) => runOperation(server, walk, provide, operation),
 					{concurrency: "unbounded"},
 				);
 				return yield* respond(results, 200);

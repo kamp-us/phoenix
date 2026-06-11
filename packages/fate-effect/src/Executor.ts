@@ -26,7 +26,9 @@
  *      request context as VALUES (`CurrentUser` from the session,
  *      `LivePublisher` from the request's execution context), then the
  *      build-time services captured by `FateServer.layer`
- *      (`service.services`) are provided underneath.
+ *      (`service.services`) are provided underneath — the ONE shared
+ *      provision pipeline (`provideRequestPair`, `Provision.ts`), the same
+ *      one the v2 interpreter and walk apply.
  *   3. **Run** — through the ONE worker-level `ManagedRuntime`, the package's
  *      single Effect→Promise conversion point ({@link FateExecutorRuntime};
  *      effect-smol `LLMS.md` § "Integrating Effect into existing
@@ -50,8 +52,10 @@
  * symbol must not surface in exported config types). Recovering both is a
  * handful of single named-type narrowings, each a one-direction comparable
  * cast (never `as any` / a laundering double-cast), each marked
- * `erased→kernel` below — the same contained-boundary precedent as
- * `WireError.ts`'s protocol-code widening.
+ * `erased→kernel` where it lives — the request-pipeline `R: unknown → never`
+ * re-pin in `Provision.ts` (shared with the interpreter and walk), the
+ * definition/source recoveries below — the same contained-boundary precedent
+ * as `WireError.ts`'s protocol-code widening.
  */
 import type {
 	ConnectionResult,
@@ -61,8 +65,8 @@ import type {
 } from "@nkzw/fate/server";
 import {createFateServer} from "@nkzw/fate/server";
 import {Cause, Context, Effect, Exit, type ManagedRuntime, Option} from "effect";
-import {CurrentUser} from "./CurrentUser.ts";
-import {LivePublisher} from "./LivePublisher.ts";
+import type {CurrentUser} from "./CurrentUser.ts";
+import type {LivePublisher} from "./LivePublisher.ts";
 import type {
 	DefinitionTypeName,
 	DefinitionWireArgs,
@@ -71,6 +75,7 @@ import type {
 	FateMutation,
 	FateQuery,
 } from "./Operation.ts";
+import {provideRequestPair} from "./Provision.ts";
 import type {
 	AnyFateList,
 	AnyFateMutation,
@@ -135,24 +140,11 @@ interface CompileOptions {
 // --- the single conversion point ----------------------------------------------------
 
 /**
- * erased→kernel: re-pin an erased entry effect's requirements to `never` so
- * the worker runtime can run it. The erased shapes carry `R = unknown` (the
- * covariant top — every entry assigns into the config records); the REAL
- * requirements were enforced where they are enforceable: the handler's own
- * definition site typed them, `FateServer.layer`'s public R surfaced their
- * union minus the per-request pair, and the layer could not have produced a
- * runtime without discharging it. A genuinely missing service still fails
- * loudly at run time ("Service not found"), never silently.
- */
-const toRunnable = <A>(
-	effect: Effect.Effect<A, unknown, unknown>,
-): Effect.Effect<A, unknown, never> => effect as Effect.Effect<A, unknown, never>;
-
-/**
- * Run one resolver effect: provide the per-request pair (the request context
- * VALUES win over anything beneath), provide the captured build-time
- * services, run through the worker runtime — the package's ONE
- * Effect→Promise conversion — and map the `Exit`:
+ * Run one resolver effect: through the ONE shared provision pipeline
+ * (`provideRequestPair`, `Provision.ts` — the per-request pair as request
+ * VALUES over the captured build-time services; carries the erased→kernel
+ * `R: unknown → never` re-pin), then through the worker runtime — the
+ * package's ONE Effect→Promise conversion — and map the `Exit`:
  *
  *   - success → the value;
  *   - failure → `encodeWireError(error)` thrown (annotated errors keep their
@@ -169,18 +161,9 @@ const runResolve = <A>(
 	effect: Effect.Effect<A, unknown, unknown>,
 ): Promise<A> =>
 	options.runtime
-		.runPromise(
-			Effect.exit(
-				toRunnable(
-					effect.pipe(
-						Effect.provideService(CurrentUser, ctx.currentUser),
-						Effect.provideService(LivePublisher, ctx.livePublisher),
-						Effect.provideContext(options.services),
-					),
-				),
-			),
-			{signal: ctx.signal},
-		)
+		.runPromise(Effect.exit(provideRequestPair(ctx, options.services)(effect)), {
+			signal: ctx.signal,
+		})
 		.then((exit) => {
 			if (Exit.isSuccess(exit)) {
 				return exit.value;

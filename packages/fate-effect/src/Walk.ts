@@ -65,8 +65,8 @@
  *     that asked for it.
  *
  * Loads provide the per-request pair + captured services themselves (the
- * same provision pipeline as the dispatch loop), so the resolver fiber needs
- * no ambient context. No runtime is owned here — the conversion-point rule
+ * ONE shared provision pipeline — `provideRequestPair`, `Provision.ts`), so
+ * the resolver fiber needs no ambient context. No runtime is owned here — the conversion-point rule
  * (`Executor.test.ts`) covers this module automatically.
  *
  * ## Deliberately NOT mirrored (documented divergences)
@@ -91,10 +91,9 @@
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit, Request, RequestResolver} from "effect";
 import {arrayToConnection, getScopedArgs} from "./Connection.ts";
-import {CurrentUser} from "./CurrentUser.ts";
 import type {FateRequestContext} from "./Executor.ts";
-import {LivePublisher} from "./LivePublisher.ts";
 import type {ProtocolByIdOperation} from "./Protocol.ts";
+import {provideRequestPair} from "./Provision.ts";
 import type {AnyFateSourceEntry, AnyFateSourceHandlers, FateServerService} from "./Server.ts";
 
 type AnyRow = Record<string, unknown>;
@@ -578,18 +577,9 @@ export const makeWalk = (server: FateServerService, context: FateRequestContext)
 		sourcesByType.set(entry.definition.view.typeName, entry);
 	}
 
-	/**
-	 * erased→kernel: re-pin an erased source handler's requirements to `never`
-	 * — the same contained narrowing as the dispatch loop's `toRunnable`
-	 * (`Interpreter.ts`): the REAL requirements were enforced at the
-	 * definition site and discharged by `FateServer.layer`'s public R.
-	 */
-	const provide = <A>(effect: Effect.Effect<A, never, unknown>): Effect.Effect<A> =>
-		effect.pipe(
-			Effect.provideService(CurrentUser, context.currentUser),
-			Effect.provideService(LivePublisher, context.livePublisher),
-			Effect.provideContext(server.services),
-		) as Effect.Effect<A, never, never>;
+	// ONE provision pipeline per request (`Provision.ts` — the pair as request
+	// VALUES over the captured services; carries the erased→kernel re-pin).
+	const provide = provideRequestPair(context, server.services);
 
 	const runGroup = (
 		source: AnyFateSourceEntry,
