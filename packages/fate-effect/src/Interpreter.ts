@@ -44,7 +44,6 @@
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Cause, Effect, Exit, Option} from "effect";
-import type {FateRequestContext} from "./Executor.ts";
 import type {
 	DecodedProtocolOperation,
 	ProtocolNamedOperation,
@@ -52,6 +51,7 @@ import type {
 } from "./Protocol.ts";
 import {decodeProtocolRequest, encodeProtocolResponse} from "./Protocol.ts";
 import {type ProvideRequestPair, provideRequestPair} from "./Provision.ts";
+import type {FateRequestContext} from "./RequestContext.ts";
 import type {FateServerService} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 import type {FateWalk} from "./Walk.ts";

@@ -22,9 +22,9 @@
 import {Context, Effect} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {CurrentUser, type CurrentUserInfo} from "./CurrentUser.ts";
-import type {FateRequestContext} from "./Executor.ts";
 import {LivePublisher} from "./LivePublisher.ts";
 import {provideRequestPair} from "./Provision.ts";
+import type {FateRequestContext} from "./RequestContext.ts";
 
 /** A build-time domain service, as `FateServer.layer` would capture it. */
 class Greeting extends Context.Service<Greeting, {readonly word: string}>()("test/Greeting") {}

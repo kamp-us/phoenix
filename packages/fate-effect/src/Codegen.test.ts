@@ -1,5 +1,5 @@
 /**
- * `FateExecutor.toCodegenServer` — the task-8 fidelity spike (PRD story 13;
+ * `toCodegenServer` (`Codegen.ts`) — the task-8 fidelity spike (PRD story 13;
  * the PRD's FIRST open question).
  *
  * The contract under test:
@@ -26,8 +26,9 @@ import {createFateServer} from "@nkzw/fate/server";
 import {Context, Effect, Layer, ManagedRuntime} from "effect";
 import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
+import {toCodegenServer} from "./Codegen.ts";
 import {FateDataView} from "./DataView.ts";
-import {FateExecutor} from "./Executor.ts";
+import {compile} from "./Executor.ts";
 import {Fate} from "./index.ts";
 import {FateServer, FateServerConfigError} from "./Server.ts";
 
@@ -231,7 +232,7 @@ const liveServer = createFateServer<
 	},
 });
 
-const codegenServer = FateExecutor.toCodegenServer(config);
+const codegenServer = toCodegenServer(config);
 
 type CodegenAPI = InferFateAPI<typeof codegenServer>;
 type LiveAPI = InferFateAPI<typeof liveServer>;
@@ -260,12 +261,12 @@ const resultsOf = async (res: Response): Promise<ReadonlyArray<WireResult>> => {
 
 // --- 1. manifest equality ---------------------------------------------------------
 
-describe("FateExecutor.toCodegenServer — manifest", () => {
+describe("toCodegenServer — manifest", () => {
 	it("equals the live compiled server's manifest for the same config", async () => {
 		const runtime = ManagedRuntime.make(FateServer.layer(config).pipe(Layer.provide(SozlukDbLive)));
 		try {
 			const context = await runtime.context();
-			const live = FateExecutor.compile(Context.get(context, FateServer), runtime);
+			const live = compile(Context.get(context, FateServer), runtime);
 			expect(codegenServer.manifest).toEqual(live.manifest);
 		} finally {
 			await runtime.dispose();
@@ -290,7 +291,7 @@ describe("FateExecutor.toCodegenServer — manifest", () => {
 
 // --- 2. inertness ------------------------------------------------------------------
 
-describe("FateExecutor.toCodegenServer — inert handlers", () => {
+describe("toCodegenServer — inert handlers", () => {
 	it("the codegen module evaluates in bare node without touching any backing service", async () => {
 		// The fixture's handlers close over a throw-on-touch Proxy database; a
 		// successful dynamic import proves construction runs nothing.
@@ -310,7 +311,7 @@ describe("FateExecutor.toCodegenServer — inert handlers", () => {
 
 // --- 3. validation parity ------------------------------------------------------------
 
-describe("FateExecutor.toCodegenServer — validation", () => {
+describe("toCodegenServer — validation", () => {
 	it("an invalid config throws FateServerConfigError at build time (live-init parity)", () => {
 		const invalid = FateServer.config({
 			queries: {dup: Fate.query({type: "Health"}, () => Effect.succeed({ok: true}))},
@@ -323,8 +324,8 @@ describe("FateExecutor.toCodegenServer — validation", () => {
 				),
 			},
 		});
-		expect(() => FateExecutor.toCodegenServer(invalid)).toThrow(FateServerConfigError);
-		expect(() => FateExecutor.toCodegenServer(invalid)).toThrow(/duplicate wire name "dup"/);
+		expect(() => toCodegenServer(invalid)).toThrow(FateServerConfigError);
+		expect(() => toCodegenServer(invalid)).toThrow(/duplicate wire name "dup"/);
 	});
 });
 

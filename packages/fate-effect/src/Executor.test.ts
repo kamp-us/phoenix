@@ -38,17 +38,14 @@ import type {ConnectionResult} from "@nkzw/fate/server";
 import {Context, Effect, Layer, ManagedRuntime, Option, Tracer} from "effect";
 import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
+import type {CompiledFateSources} from "./Compiled.ts";
 import {CurrentUser, type CurrentUserInfo, Unauthorized} from "./CurrentUser.ts";
 import {FateDataView} from "./DataView.ts";
-import type {
-	CompiledFateSources,
-	FateExecutorRuntime,
-	FateFetchHandler,
-	FateRequestContext,
-} from "./Executor.ts";
-import {compileFateSources, FateExecutor} from "./Executor.ts";
-import {Fate} from "./index.ts";
+import type {FateExecutorRuntime, FateFetchHandler} from "./Executor.ts";
+import {compileFateSources} from "./Executor.ts";
+import {Fate, FateExecutor} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
+import type {FateRequestContext} from "./RequestContext.ts";
 import type {SourceDefinitionLike} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 import {fateWireCode} from "./WireError.ts";

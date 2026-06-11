@@ -5,6 +5,17 @@ How `@phoenix/fate-effect` turns a composed `FateServer` into fate's own server 
 - **The differential oracle's baseline** — `Interpreter.test.ts` byte-compares the interpreter against fate's real `createFateServer` over these compiled executors (including the walk-baseline rigs over `compileFateSources`). The oracle is the regression net, so the v1 side stays exactly as it served.
 - **The build-time codegen surface** — `toCodegenServer` (below) is what `schema.ts` exports for Vite codegen; the output is a **real fate server** value, so the client manifest and `InferFateAPI` hold by construction.
 
+The two roles are opposite lifecycles (frozen test baseline vs. production build path), so they live in separate modules that never import each other:
+
+| Module | Holds | Lifecycle |
+| --- | --- | --- |
+| `Executor.ts` | `compile`/`toFetchHandler`, `runResolve` (the `ManagedRuntime` conversion point), `compileFateSources` | Oracle baseline — test-harness-only since ADR 0043, someday deletable |
+| `Codegen.ts` | `toCodegenServer` + the `FateCodegen*` type family | Production — every deploy's Vite codegen runs it |
+| `Compiled.ts` | The shared compiled-definition shapes (`Compiled*Definition`), the identity-keyed `buildSourceResolver` → `CompiledFateSources`, the definition/source `erased→kernel` recoveries | Shared internals of both |
+| `RequestContext.ts` | The `FateRequestContext` contract | Neutral — the serving path (`Interpreter.ts`, the worker route) and `Provision.ts` depend on it without touching either compile module |
+
+The public `FateExecutor` namespace (`compile`/`toFetchHandler`/`toCodegenServer`) is assembled in the barrel (`index.ts`), so consumers spell `FateExecutor.toCodegenServer` exactly as before the split.
+
 Entries are authored per [fate-effect-operations.md](./fate-effect-operations.md) / [fate-effect-sources.md](./fate-effect-sources.md), composed per [fate-effect-server.md](./fate-effect-server.md).
 
 ## Wiring it (the oracle-harness shape)
@@ -47,7 +58,7 @@ For every `Fate.query`/`Fate.list`/`Fate.mutation` entry, the compiled fate reso
 
 ## The codegen server (`toCodegenServer` — build time, no database)
 
-`FateExecutor.toCodegenServer(config)` is the **build-time** form of the same compile: the identical `createFateServer` call (same record keys, same `type` strings, same `roots: {}`, same `live` passthrough — so `manifest` deep-equals the executable compiled server's) with every resolver and source executor **inert** (throws if executed). `schema.ts` exports it as `fateServer` for the fate Vite plugin's `runnerImport`:
+`FateExecutor.toCodegenServer(config)` (`Codegen.ts` — the production half of the split) is the **build-time** form of the same compile: the identical `createFateServer` call (same record keys, same `type` strings, same `roots: {}`, same `live` passthrough — so `manifest` deep-equals the executable compiled server's) with every resolver and source executor **inert** (throws if executed). `schema.ts` exports it as `fateServer` for the fate Vite plugin's `runnerImport`:
 
 ```ts
 // worker/features/fate/schema.ts (the task-9 shape; spike fixture: codegen-schema.fixture.ts)
@@ -64,7 +75,7 @@ export const fateServer = FateExecutor.toCodegenServer(config);  // .manifest + 
 
 ## The erased→kernel boundary (the package's F7, contained)
 
-The compiler works **type-erased**: composition correctness was already enforced where it is enforceable — handler definition sites typed their own R/E, `FateServer.layer`'s public R forced the domain layers, and the runtime could not exist without discharging them. Crossing back from the portable erased shapes (R at `unknown`; weak portable types because fate's `DataView` symbol trips TS2883 in exported configs) to fate's kernel types is a handful of **single named-type narrowings**, each one-directional-comparable, each marked `erased→kernel` where it lives: the request-pipeline `R: unknown → never` re-pin once in `Provision.ts` (shared by `runResolve`, the dispatch loop, and the walk — no call site spells it), the definition/source recoveries in `Executor.ts`. Same contained-boundary precedent as `WireError.ts`'s protocol-code widening. The package pins the discipline in tests: no static `Effect.run*` anywhere in package sources, and the runtime promise runner appears exactly once, in `Executor.ts`.
+The compiler works **type-erased**: composition correctness was already enforced where it is enforceable — handler definition sites typed their own R/E, `FateServer.layer`'s public R forced the domain layers, and the runtime could not exist without discharging them. Crossing back from the portable erased shapes (R at `unknown`; weak portable types because fate's `DataView` symbol trips TS2883 in exported configs) to fate's kernel types is a handful of **single named-type narrowings**, each one-directional-comparable, each marked `erased→kernel` where it lives: the request-pipeline `R: unknown → never` re-pin once in `Provision.ts` (shared by `runResolve`, the dispatch loop, and the walk — no call site spells it), the definition/source recoveries in `Compiled.ts` (shared by the oracle compile and the codegen build). Same contained-boundary precedent as `WireError.ts`'s protocol-code widening. The package pins the discipline in tests: no static `Effect.run*` anywhere in package sources, and the runtime promise runner appears exactly once, in `Executor.ts`.
 
 ## What not to do
 

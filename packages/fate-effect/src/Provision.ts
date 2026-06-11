@@ -27,8 +27,8 @@
 import type {Context} from "effect";
 import {Effect} from "effect";
 import {CurrentUser} from "./CurrentUser.ts";
-import type {FateRequestContext} from "./Executor.ts";
 import {LivePublisher} from "./LivePublisher.ts";
+import type {FateRequestContext} from "./RequestContext.ts";
 
 /**
  * The applied form: what one request's provision pipeline looks like to a

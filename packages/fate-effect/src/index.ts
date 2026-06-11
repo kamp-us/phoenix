@@ -18,13 +18,25 @@
  * zod replaced) — oracle-verified byte-equal to fate across the full
  * operation surface. The v1 compile step (`FateExecutor`: config → pure
  * `createFateServer` over a ManagedRuntime) remains as the differential
- * oracle's baseline and, via `toCodegenServer`, the build-time codegen
- * surface.
+ * oracle's baseline (`Executor.ts`) and, via `toCodegenServer`
+ * (`Codegen.ts`), the build-time codegen surface — two modules sharing
+ * `Compiled.ts`, stitched into the one `FateExecutor` namespace below.
  *
  * Exports stay flat (every supporting type a consumer's exported value can
  * surface must be nameable through this barrel); the `Fate` namespace is the
  * PRD's authoring surface layered over the same flat members.
  */
+import {toCodegenServer} from "./Codegen.ts";
+import {compile, toFetchHandler} from "./Executor.ts";
+
+export type {
+	FateCodegenAPI,
+	FateCodegenListApi,
+	FateCodegenMutationApi,
+	FateCodegenQueryApi,
+	FateCodegenServer,
+} from "./Codegen.ts";
+export type {CompiledFateSources} from "./Compiled.ts";
 export {CurrentUser, type CurrentUserInfo, Unauthorized} from "./CurrentUser.ts";
 export {
 	type DataViewFieldsKey,
@@ -38,17 +50,9 @@ export {
 } from "./DataView.ts";
 export {
 	type CompiledFateServer,
-	type CompiledFateSources,
 	compileFateSources,
-	type FateCodegenAPI,
-	type FateCodegenListApi,
-	type FateCodegenMutationApi,
-	type FateCodegenQueryApi,
-	type FateCodegenServer,
-	FateExecutor,
 	type FateExecutorRuntime,
 	type FateFetchHandler,
-	type FateRequestContext,
 } from "./Executor.ts";
 export * as Fate from "./Fate.ts";
 export {FateInterpreter} from "./Interpreter.ts";
@@ -102,6 +106,7 @@ export {
 	ProtocolResponse,
 	ProtocolSuccessResult,
 } from "./Protocol.ts";
+export type {FateRequestContext} from "./RequestContext.ts";
 export {
 	type AnyFateList,
 	type AnyFateMutation,
@@ -144,3 +149,19 @@ export {
 	wireCodeOf,
 	wireCodeOfClass,
 } from "./WireError.ts";
+
+/**
+ * The compile-step namespace: `compile`/`toFetchHandler` — the differential
+ * oracle's baseline (`Executor.ts`, test-harness-only since ADR 0043) — and
+ * `toCodegenServer` — the build-time codegen surface (`Codegen.ts`, what
+ * `schema.ts` exports for Vite codegen). Assembled HERE so the frozen
+ * oracle-baseline module and the production codegen module never import
+ * each other (they share internals through `Compiled.ts` only), while the
+ * public spelling (`FateExecutor.toCodegenServer` in `schema.ts`) stays
+ * exactly what it was before the split (review fix, tasks.md task 20).
+ */
+export const FateExecutor = {
+	compile,
+	toFetchHandler,
+	toCodegenServer,
+};

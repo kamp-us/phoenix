@@ -91,9 +91,9 @@
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit, Request, RequestResolver} from "effect";
 import {arrayToConnection, getScopedArgs} from "./Connection.ts";
-import type {FateRequestContext} from "./Executor.ts";
 import type {ProtocolByIdOperation} from "./Protocol.ts";
 import {provideRequestPair} from "./Provision.ts";
+import type {FateRequestContext} from "./RequestContext.ts";
 import type {AnyFateSourceEntry, AnyFateSourceHandlers, FateServerService} from "./Server.ts";
 
 type AnyRow = Record<string, unknown>;

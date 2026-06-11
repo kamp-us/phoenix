@@ -14,8 +14,8 @@ import type {ConnectionResult} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {FateDataView} from "./DataView.ts";
-import {FateExecutor} from "./Executor.ts";
 import * as Fate from "./Fate.ts";
+import {FateExecutor} from "./index.ts";
 import {FateServer} from "./Server.ts";
 
 type TermRow = {slug: string; title: string};
