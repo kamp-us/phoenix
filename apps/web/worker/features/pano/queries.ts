@@ -18,7 +18,6 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {toConnection} from "../fate/shapers.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
@@ -49,7 +48,7 @@ export const queries = {
 		{args: PostArgs, type: PostView},
 		Effect.fn("post")(function* ({args, select}) {
 			const pano = yield* Pano;
-			const page = yield* pano.getPost(args.idOrSlug).pipe(orDieDrizzle);
+			const page = yield* pano.getPost(args.idOrSlug);
 			if (!page) return null;
 
 			const {user} = yield* CurrentUser;
@@ -58,7 +57,7 @@ export const queries = {
 			// Stamp the viewer's vote so `Post.myVote` is authoritative without a
 			// per-row resolver: batch the single post through the same `user_vote`
 			// read.
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId}).pipe(orDieDrizzle);
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId});
 
 			const base = toPostFromPage(page, stamped?.myVote ?? null);
 
@@ -73,13 +72,11 @@ export const queries = {
 			}
 
 			const cArgs = args.comments;
-			const connection = yield* pano
-				.listCommentsKeyset(page.id, {
-					first: cArgs?.first ?? COMMENTS_PAGE_SIZE,
-					...(cArgs?.after !== undefined ? {after: cArgs.after} : {}),
-					viewerId,
-				})
-				.pipe(orDieDrizzle);
+			const connection = yield* pano.listCommentsKeyset(page.id, {
+				first: cArgs?.first ?? COMMENTS_PAGE_SIZE,
+				...(cArgs?.after !== undefined ? {after: cArgs.after} : {}),
+				viewerId,
+			});
 			const comments = toConnection<(typeof connection.rows)[number], Comment>(
 				connection,
 				(row) => row.id,

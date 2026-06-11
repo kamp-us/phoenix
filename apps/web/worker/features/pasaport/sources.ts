@@ -11,12 +11,11 @@
  * exists for relation/by-id callers; it re-aggregates the live counts.
  *
  * The loader contract is in the types (`.patterns/fate-effect-sources.md`):
- * reads are silent (absence = `null`/fewer rows), `E = never` — the
- * `DrizzleError` channel is infrastructure, so it dies (`orDieDrizzle`)
- * instead of becoming a wire value.
+ * reads are silent (absence = `null`/fewer rows), `E = never` — infra
+ * failures are defects, died inside the domain service (the boundary rule in
+ * `.patterns/feature-services.md`), so they never become wire values.
  */
 import {type AnyFateSourceEntry, Fate} from "@phoenix/fate-effect";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {ContributionView, ProfileView, UserView} from "./views.ts";
 
@@ -26,11 +25,11 @@ export const userSource = Fate.source(
 	{
 		byId: function* (id) {
 			const pasaport = yield* Pasaport;
-			return yield* pasaport.getUserById(id).pipe(orDieDrizzle);
+			return yield* pasaport.getUserById(id);
 		},
 		byIds: function* (ids) {
 			const pasaport = yield* Pasaport;
-			return yield* pasaport.getUsersByIds(ids).pipe(orDieDrizzle);
+			return yield* pasaport.getUsersByIds(ids);
 		},
 	},
 );
@@ -41,7 +40,7 @@ export const profileSource = Fate.source(
 	{
 		byId: function* (userId) {
 			const pasaport = yield* Pasaport;
-			const row = yield* pasaport.lookupProfileById(userId).pipe(orDieDrizzle);
+			const row = yield* pasaport.lookupProfileById(userId);
 			// Stamp the client normalization key `id` (=== `userId`); the service row
 			// carries only `userId`.
 			return row ? {...row, id: row.userId} : row;

@@ -21,17 +21,15 @@ Migrated handlers must not yield the bridge's per-request services — the compi
 - `yield* Auth` → `const {user} = yield* CurrentUser` (anonymous reads), `Auth.required` → `const user = yield* CurrentUser.required` (gated writes — fails with the package's `Unauthorized`, annotated `UNAUTHORIZED`, so it must appear in the mutation's declared `error` union).
 - `liveBus.useIgnore((bus) => bus.connection(...).appendNode(...))` → `const live = yield* LivePublisher; yield* live.connection(...).appendNode(...)`. No `useIgnore`: every publish method's error channel is `never` by construction ([fate-effect-server.md](./fate-effect-server.md)). Topic keys and frames are unchanged — `livePublisherFor` builds them through the same `makeLiveEventBus` path the bridge bus used.
 
-## Infra failures die — `orDieDrizzle`
+## Infra failures die — inside the domain service, not in fate handlers
 
-Domain service methods carry `DrizzleError` in their typed channel. On the wire that is infrastructure, not a domain value (loader contract: *infra failures are defects*), so every service call in a fate handler pipes through `orDieDrizzle` (`worker/db/Drizzle.ts`):
+The loader contract (*infra failures are defects*) still holds, but the WHERE moved: domain services die on `DrizzleError` INSIDE their implementations (`orDieAccess` over the Drizzle `run`/`batch` at layer build — see [feature-services.md](./feature-services.md)), so their public method signatures carry domain errors only. A fate handler therefore calls the service bare — no `orDieDrizzle` pipe, no `Drizzle` import anywhere in `sources.ts`/`queries.ts`/`lists.ts`/`mutations.ts`:
 
 ```ts
-const result = yield* sozluk
-	.addDefinition({...})
-	.pipe(orDieDrizzle); // E: BodyRequired | BodyTooLong — DrizzleError now a defect
+const result = yield* sozluk.addDefinition({...}); // E: BodyRequired | BodyTooLong — already domain-only
 ```
 
-Domain errors in the same union pass through untouched and stay in the handler's `E` (checked against the declared union at the constructor call). A DB failure reaches the wire as `INTERNAL_SERVER_ERROR` + the fixed message via the defect path of `encodeWireError` — `cause` goes to logs, never the client. This is required for sources (`E` pinned `never`) and the rule for operations.
+Domain errors stay in the handler's `E` (checked against the declared union at the constructor call). A DB failure reaches the wire as `INTERNAL_SERVER_ERROR` + the fixed message via the defect path of `encodeWireError` — `cause` goes to logs, never the client. Sources' `E = never` and operations' domain-only unions now hold by the service types alone; `worker/features/domain-error-boundary.unit.test.ts` pins this per service.
 
 ## Entity types: `Entity<typeof View, Replacements>`
 
@@ -55,6 +53,6 @@ Two restatements ride in the `Replacements` parameter (see `sozluk/views.ts`):
 ## What not to do
 
 - Don't keep `Auth`/`LiveBus` in a migrated handler — the compiled pipeline doesn't provide them; the handler's `R` will surface them and `FateServer.layer`'s composition site fails to typecheck (they are worker singletons' per-request values, not layers).
-- Don't declare `DrizzleError` in an operation's `error` union or annotate it with a wire code — its message could carry DB detail onto the wire; defect-ify it with `orDieDrizzle`.
+- Don't declare `DrizzleError` in an operation's `error` union or annotate it with a wire code — its message could carry DB detail onto the wire. It can't appear there anyway: the services defect-ify it internally, and a fate-layer file that names `Drizzle` at all is reintroducing the abstraction leak this boundary removed.
 - Don't delete the feature's kernel-view consts (`termDataView = TermView.view`) while the cross-feature `Root`/barrel still consume kernel views — they are the codegen walk's input.
 - Don't hand the wire types a new shape "while you're in there" — the migration's contract is byte-identical operation results, codegen text, topic keys, and wire codes; the T2 suites and the codegen diff are the proof.

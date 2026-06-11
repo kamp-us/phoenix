@@ -21,7 +21,7 @@ like a read. Authoring mechanics live in
     const user = yield* CurrentUser.required;  // → UNAUTHORIZED (declared above)
     const sozluk = yield* Sozluk;
     const live = yield* LivePublisher;
-    const result = yield* sozluk.addDefinition({...input, authorId: user.id}).pipe(orDieDrizzle);
+    const result = yield* sozluk.addDefinition({...input, authorId: user.id});
     const definition = shapeDefinition({...result, myVote: null});
     yield* live
       .connection("Term.definitions", {id: input.termSlug})

@@ -11,8 +11,9 @@
  * the service (ADR 0013); domain failures (`BodyRequired`, `BodyTooLong`,
  * `DefinitionNotFound`, `UnauthorizedDefinitionMutation`) are declared on each
  * definition and surface through their `fateWireCode` annotations as stable
- * wire codes (`.patterns/fate-effect-wire-errors.md`). The `DrizzleError`
- * channel is infrastructure and dies (`orDieDrizzle`).
+ * wire codes (`.patterns/fate-effect-wire-errors.md`). Infra failures never
+ * reach this layer — they die inside the domain service (the boundary rule in
+ * `.patterns/feature-services.md`).
  *
  * `CurrentUser.required` gates every write (anonymous → `UNAUTHORIZED`). The
  * vote mutations stamp `myVote` authoritatively from the vote write so the
@@ -26,7 +27,6 @@
 import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -90,15 +90,13 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = yield* LivePublisher;
-			const result = yield* sozluk
-				.addDefinition({
-					termSlug: input.termSlug,
-					authorId: user.id,
-					authorName: user.name ?? user.email,
-					body: input.body,
-					...(input.termTitle ? {termTitle: input.termTitle} : {}),
-				})
-				.pipe(orDieDrizzle);
+			const result = yield* sozluk.addDefinition({
+				termSlug: input.termSlug,
+				authorId: user.id,
+				authorName: user.name ?? user.email,
+				body: input.body,
+				...(input.termTitle ? {termTitle: input.termTitle} : {}),
+			});
 			// Fresh write: not yet voted by anyone.
 			const definition = shapeDefinition({...result, myVote: null});
 			// New definition joins the term's list: append its node to the
@@ -122,9 +120,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = yield* LivePublisher;
-			const result = yield* sozluk
-				.voteDefinition({definitionId: input.id, voterId: user.id})
-				.pipe(orDieDrizzle);
+			const result = yield* sozluk.voteDefinition({definitionId: input.id, voterId: user.id});
 			const definition = shapeDefinition(result);
 			// Publish the re-resolved entity inline; the DO does no DB work and each
 			// client masks `data` to its own selection. `myVote` is viewer-specific,
@@ -143,9 +139,10 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = yield* LivePublisher;
-			const result = yield* sozluk
-				.retractDefinitionVote({definitionId: input.id, voterId: user.id})
-				.pipe(orDieDrizzle);
+			const result = yield* sozluk.retractDefinitionVote({
+				definitionId: input.id,
+				voterId: user.id,
+			});
 			const definition = shapeDefinition(result);
 			yield* live.update("Definition", definition.id, {changed: ["score"], data: definition});
 			return definition;
@@ -167,15 +164,15 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = yield* LivePublisher;
-			const result = yield* sozluk
-				.editDefinition({definitionId: input.id, actorId: user.id, body: input.body})
-				.pipe(orDieDrizzle);
+			const result = yield* sozluk.editDefinition({
+				definitionId: input.id,
+				actorId: user.id,
+				body: input.body,
+			});
 			// Re-read the viewer's vote so the edited entity carries an accurate
 			// `myVote` (edit doesn't change vote state, but the read shouldn't
 			// drop it). Batched single-id read.
-			const [fresh] = yield* sozluk
-				.getDefinitionsByIds([result.definitionId], {viewerId: user.id})
-				.pipe(orDieDrizzle);
+			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {viewerId: user.id});
 			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
 			// `body` changed; `myVote` is viewer-specific so left out of `changed`.
 			yield* live.update("Definition", definition.id, {changed: ["body"], data: definition});
@@ -196,15 +193,15 @@ export const mutations = {
 			const live = yield* LivePublisher;
 			// Resolve the parent slug before the delete (the row still exists),
 			// so we can re-resolve the parent `Term` afterward.
-			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id).pipe(orDieDrizzle);
-			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id}).pipe(orDieDrizzle);
+			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
+			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
 			// The entity is gone, and its edge leaves the parent term's connection.
 			yield* live.delete("Definition", input.id);
 			if (slug) {
 				yield* live.connection("Term.definitions", {id: slug}).deleteEdge("Definition", input.id);
 			}
 			if (!slug) return null;
-			const page = yield* sozluk.getTerm(slug).pipe(orDieDrizzle);
+			const page = yield* sozluk.getTerm(slug);
 			if (!page) return null;
 			return toTermFromPage(page);
 		}),

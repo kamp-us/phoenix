@@ -8,12 +8,11 @@
  * connections come from custom resolvers (ADR 0019).
  *
  * The loader contract is in the types (`.patterns/fate-effect-sources.md`):
- * reads are silent (absence = `null`/fewer rows), `E = never` — the
- * `DrizzleError` channel is infrastructure, so it dies (`orDieDrizzle`)
- * instead of becoming a wire value.
+ * reads are silent (absence = `null`/fewer rows), `E = never` — infra
+ * failures are defects, died inside the domain service (the boundary rule in
+ * `.patterns/feature-services.md`), so they never become wire values.
  */
 import {CurrentUser, Fate} from "@phoenix/fate-effect";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {Pano, tagLabel} from "./Pano.ts";
 import {CommentView, PostView, TagView} from "./views.ts";
 
@@ -24,13 +23,13 @@ export const postSource = Fate.source(
 		byId: function* (id) {
 			const pano = yield* Pano;
 			const {user} = yield* CurrentUser;
-			const rows = yield* pano.getPostsByIds([id], {viewerId: user?.id ?? null}).pipe(orDieDrizzle);
+			const rows = yield* pano.getPostsByIds([id], {viewerId: user?.id ?? null});
 			return rows[0] ?? null;
 		},
 		byIds: function* (ids) {
 			const pano = yield* Pano;
 			const {user} = yield* CurrentUser;
-			return yield* pano.getPostsByIds(ids, {viewerId: user?.id ?? null}).pipe(orDieDrizzle);
+			return yield* pano.getPostsByIds(ids, {viewerId: user?.id ?? null});
 		},
 	},
 );
@@ -42,7 +41,7 @@ export const commentSource = Fate.source(
 		byIds: function* (ids) {
 			const pano = yield* Pano;
 			const {user} = yield* CurrentUser;
-			return yield* pano.getCommentsByIds(ids, {viewerId: user?.id ?? null}).pipe(orDieDrizzle);
+			return yield* pano.getCommentsByIds(ids, {viewerId: user?.id ?? null});
 		},
 	},
 );

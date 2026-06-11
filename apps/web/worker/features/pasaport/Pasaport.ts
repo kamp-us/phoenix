@@ -26,12 +26,15 @@
  *   - `UsernameTaken`
  *   - `UsernameAlreadySet`
  *   - `UserNotFound`
- *   - `DrizzleError` (any infrastructure failure)
+ *
+ * Infrastructure failures are NOT raised: every internal DB call dies on
+ * `DrizzleError` (`orDieAccess` at layer build — the domain-boundary rule),
+ * so the public signatures carry domain errors only.
  */
 import type {Auth as BetterAuth} from "better-auth";
 import {and, desc, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
+import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {
@@ -170,7 +173,7 @@ export class Pasaport extends Context.Service<
 	{
 		readonly validateSession: (headers: Headers) => Effect.Effect<Session | null, never>;
 
-		readonly getUserById: (userId: string) => Effect.Effect<UserRow | null, DrizzleError>;
+		readonly getUserById: (userId: string) => Effect.Effect<UserRow | null>;
 
 		/**
 		 * Batched read of user rows by id — the fate `User` source's `byIds`
@@ -178,27 +181,25 @@ export class Pasaport extends Context.Service<
 		 * feed), so this is a single `WHERE id IN (...)` over the user table.
 		 * Order is not guaranteed; fate re-associates rows by id.
 		 */
-		readonly getUsersByIds: (
-			userIds: ReadonlyArray<string>,
-		) => Effect.Effect<UserRow[], DrizzleError>;
+		readonly getUsersByIds: (userIds: ReadonlyArray<string>) => Effect.Effect<UserRow[]>;
 
 		readonly setUsername: (input: {
 			userId: string;
 			value: string;
 		}) => Effect.Effect<
 			SetUsernameResult,
-			UsernameInvalid | UsernameTaken | UsernameAlreadySet | UserNotFound | DrizzleError
+			UsernameInvalid | UsernameTaken | UsernameAlreadySet | UserNotFound
 		>;
 
-		readonly lookupProfile: (username: string) => Effect.Effect<ProfileRow | null, DrizzleError>;
+		readonly lookupProfile: (username: string) => Effect.Effect<ProfileRow | null>;
 
-		readonly lookupProfileById: (userId: string) => Effect.Effect<ProfileRow | null, DrizzleError>;
+		readonly lookupProfileById: (userId: string) => Effect.Effect<ProfileRow | null>;
 
 		readonly listContributions: (input: {
 			authorId: string;
 			after: string | null;
 			first: number;
-		}) => Effect.Effect<ContributionConnection, DrizzleError>;
+		}) => Effect.Effect<ContributionConnection>;
 	}
 >()("@phoenix/pasaport/Pasaport") {}
 
@@ -288,10 +289,12 @@ function decodeCursor(cursor: string): {createdAt: Date; id: string} | null {
 export const makePasaportLive = (auth: Auth) =>
 	Layer.effect(Pasaport)(
 		Effect.gen(function* () {
-			// Yield Drizzle once at layer build and destructure its bound methods.
-			// Method bodies call `run` / `batch` directly so every method's `R`
-			// stays `never`.
-			const {run} = yield* Drizzle;
+			// Yield Drizzle once at layer build and destructure its bound methods
+			// through `orDieAccess`: every internal DB call site dies on
+			// `DrizzleError` (infra failures are defects — the domain-boundary
+			// rule), so public signatures carry domain errors only. Every
+			// method's `R` stays `never`.
+			const {run} = orDieAccess(yield* Drizzle);
 
 			// `COUNT(*)` of a contribution table's live (non-deleted) rows for one
 			// author. Shared by `hydrateProfile`'s per-kind counts and
@@ -300,7 +303,7 @@ export const makePasaportLive = (auth: Auth) =>
 			const countByAuthor = (
 				table: typeof schema.definitionView | typeof schema.postSummary | typeof schema.commentView,
 				authorId: string,
-			): Effect.Effect<number, DrizzleError> =>
+			): Effect.Effect<number> =>
 				run((db) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})

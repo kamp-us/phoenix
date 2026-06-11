@@ -15,13 +15,13 @@
  *     the `LandingStats` entity stamped with a constant `id` so the client
  *     normalizes it to a single cache record.
  *
- * Both are plain anonymous reads (no `CurrentUser`); the `DrizzleError`
- * channel is infrastructure and dies (`orDieDrizzle`).
+ * Both are plain anonymous reads (no `CurrentUser`). Infra failures never
+ * reach this layer — they die inside the domain service (the boundary rule in
+ * `.patterns/feature-services.md`).
  */
 
 import {Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {Stats} from "./Stats.ts";
 
 export interface Health {
@@ -44,7 +44,7 @@ export const queries = {
 		{type: "Health"},
 		Effect.fn("health")(function* () {
 			const stats = yield* Stats;
-			const {totalDefinitions} = yield* stats.getLandingStats().pipe(orDieDrizzle);
+			const {totalDefinitions} = yield* stats.getLandingStats();
 			return {status: "ok", definitions: totalDefinitions} satisfies Health;
 		}),
 	),
@@ -59,7 +59,7 @@ export const queries = {
 		{type: "LandingStats"},
 		Effect.fn("landingStats")(function* () {
 			const stats = yield* Stats;
-			const result = yield* stats.getLandingStats().pipe(orDieDrizzle);
+			const result = yield* stats.getLandingStats();
 			return {
 				__typename: "LandingStats",
 				id: LANDING_STATS_ID,

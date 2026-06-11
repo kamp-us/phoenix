@@ -76,24 +76,22 @@ export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
 ) {}
 ```
 
-These never appear in a declared error union: fate handlers pipe service calls through `orDieDrizzle` (`worker/db/Drizzle.ts`), turning the failure into a defect — which encodes as `INTERNAL_SERVER_ERROR` with a fixed message. The `cause` is preserved for logging but not surfaced to the user.
+These never appear in a declared error union — and never in a domain service's **public signature** either. The infra-failure policy is a domain-boundary decision: each feature service collapses `DrizzleError` into the defect channel at its own internal `run`/`batch` call sites (`orDieAccess(yield* Drizzle)` at layer build — `worker/db/Drizzle.ts`), so service methods expose domain errors only and the fate layer (sources/queries/lists/mutations) never names Drizzle at all. A defect encodes as `INTERNAL_SERVER_ERROR` with a fixed message; the `cause` is preserved for logging but not surfaced to the user.
+
+The trade-off is deliberate: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option that had zero consumers when the policy moved into the services. Defects remain reachable via `Effect.sandbox` / `Effect.catchAllDefect` if a caller ever genuinely needs to observe them. The rule is pinned per service in `worker/features/domain-error-boundary.unit.test.ts` (a type-level sweep: no method's `E` contains `DrizzleError`).
 
 The split matters because: domain errors are *expected* (they happen on the happy path of an invalid input), infrastructure errors are *unexpected* (they indicate a bug or outage). The wire encoding handles them differently — don't conflate them.
 
 ## Composing error unions
 
-A service method's `E` channel is the union of every error its body can raise. Be explicit — don't widen to `unknown`:
+A service method's `E` channel is the union of every DOMAIN error its body can raise (infra failures died inside the method — see above). Be explicit — don't widen to `unknown`:
 
 ```ts
 readonly editDefinition: (
   input: EditDefinitionInput,
 ) => Effect.Effect<
   EditDefinitionResult,
-  | BodyRequired
-  | BodyTooLong
-  | DefinitionNotFound
-  | UnauthorizedDefinitionMutation
-  | DrizzleError
+  BodyRequired | BodyTooLong | DefinitionNotFound | UnauthorizedDefinitionMutation
 >;
 ```
 

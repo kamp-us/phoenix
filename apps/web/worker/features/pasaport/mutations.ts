@@ -14,14 +14,14 @@
  * `fateWireCode` annotations as stable wire codes (`INVALID_FORMAT` /
  * `TOO_SHORT` / `TOO_LONG` / `TAKEN` / `ALREADY_SET` / `USER_NOT_FOUND`;
  * `.patterns/fate-effect-wire-errors.md`). `CurrentUser.required` gates the
- * write (anonymous → `UNAUTHORIZED`); the `DrizzleError` channel is
- * infrastructure and dies (`orDieDrizzle`).
+ * write (anonymous → `UNAUTHORIZED`). Infra failures never reach this layer —
+ * they die inside the domain service (the boundary rule in
+ * `.patterns/feature-services.md`).
  */
 
 import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalidErrors, UsernameTaken} from "./errors.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toUser} from "./shapers.ts";
@@ -47,9 +47,7 @@ export const mutations = {
 		Effect.fn("user.setUsername")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
-			const result = yield* pasaport
-				.setUsername({userId: user.id, value: input.value})
-				.pipe(orDieDrizzle);
+			const result = yield* pasaport.setUsername({userId: user.id, value: input.value});
 			// Re-resolve the affected `User` entity (email comes from the session;
 			// the service result carries identity + the freshly-set username).
 			return toUser({

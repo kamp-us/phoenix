@@ -24,7 +24,6 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {toConnection} from "../fate/shapers.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toContributionRow, toUser} from "./shapers.ts";
@@ -59,7 +58,7 @@ export const queries = {
 		Effect.fn("me")(function* () {
 			const user = yield* CurrentUser.required; // Unauthorized → UNAUTHORIZED
 			const pasaport = yield* Pasaport;
-			const fresh = yield* pasaport.getUserById(user.id).pipe(orDieDrizzle);
+			const fresh = yield* pasaport.getUserById(user.id);
 			if (!fresh) {
 				return toUser({
 					id: user.id,
@@ -88,7 +87,7 @@ export const queries = {
 		{args: ProfileArgs, type: ProfileView},
 		Effect.fn("profile")(function* ({args, select}) {
 			const pasaport = yield* Pasaport;
-			const row = yield* pasaport.lookupProfile(args.username).pipe(orDieDrizzle);
+			const row = yield* pasaport.lookupProfile(args.username);
 			if (!row) return null;
 
 			const base: Profile = {
@@ -111,13 +110,11 @@ export const queries = {
 			}
 
 			const cArgs = args.contributions;
-			const connection = yield* pasaport
-				.listContributions({
-					authorId: row.userId,
-					first: cArgs?.first ?? CONTRIBUTIONS_PAGE_SIZE,
-					after: cArgs?.after ?? null,
-				})
-				.pipe(orDieDrizzle);
+			const connection = yield* pasaport.listContributions({
+				authorId: row.userId,
+				first: cArgs?.first ?? CONTRIBUTIONS_PAGE_SIZE,
+				after: cArgs?.after ?? null,
+			});
 			const contributions = toConnection<(typeof connection.edges)[number], Contribution>(
 				{
 					rows: connection.edges,

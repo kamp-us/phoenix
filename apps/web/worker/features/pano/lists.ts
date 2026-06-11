@@ -23,7 +23,6 @@
 import {Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {toConnection} from "../fate/shapers.ts";
 import {Pano, type PostSort} from "./Pano.ts";
 import {toPost} from "./shapers.ts";
@@ -46,14 +45,12 @@ export const lists = {
 		{args: PostsArgs, type: PostView},
 		Effect.fn("posts")(function* ({args}) {
 			const pano = yield* Pano;
-			const page = yield* pano
-				.listPostsConnection({
-					sort: toPostSort(args.sort),
-					...(args.first !== undefined ? {first: args.first} : {}),
-					...(args.after !== undefined ? {after: args.after} : {}),
-					...(args.host !== undefined && args.host.length > 0 ? {host: args.host} : {}),
-				})
-				.pipe(orDieDrizzle);
+			const page = yield* pano.listPostsConnection({
+				sort: toPostSort(args.sort),
+				...(args.first !== undefined ? {first: args.first} : {}),
+				...(args.after !== undefined ? {after: args.after} : {}),
+				...(args.host !== undefined && args.host.length > 0 ? {host: args.host} : {}),
+			});
 			// Summary rows carry no `updatedAt`; `toPost` owns the
 			// `updatedAt ?? createdAt` fallback.
 			return toConnection<(typeof page.rows)[number], Post>(

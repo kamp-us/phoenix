@@ -18,7 +18,6 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {CurrentUser, Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {toConnection} from "../fate/shapers.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
@@ -47,7 +46,7 @@ export const queries = {
 		{args: TermArgs, type: TermView},
 		Effect.fn("term")(function* ({args, select}) {
 			const sozluk = yield* Sozluk;
-			const page = yield* sozluk.getTerm(args.slug).pipe(orDieDrizzle);
+			const page = yield* sozluk.getTerm(args.slug);
 			if (!page) return null;
 
 			const {user} = yield* CurrentUser;
@@ -68,13 +67,11 @@ export const queries = {
 			}
 
 			const defArgs = args.definitions;
-			const connection = yield* sozluk
-				.listDefinitionsKeyset(args.slug, {
-					first: defArgs?.first ?? DEFINITIONS_PAGE_SIZE,
-					...(defArgs?.after !== undefined ? {after: defArgs.after} : {}),
-					viewerId,
-				})
-				.pipe(orDieDrizzle);
+			const connection = yield* sozluk.listDefinitionsKeyset(args.slug, {
+				first: defArgs?.first ?? DEFINITIONS_PAGE_SIZE,
+				...(defArgs?.after !== undefined ? {after: defArgs.after} : {}),
+				viewerId,
+			});
 			const definitions = toConnection<(typeof connection.rows)[number], Definition>(
 				connection,
 				(row) => row.id,

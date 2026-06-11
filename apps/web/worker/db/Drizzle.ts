@@ -60,13 +60,16 @@ export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
 
 /**
  * Collapse the `DrizzleError` channel into the defect channel — the
- * infra-failures-are-defects rule for migrated fate handlers
- * (`.patterns/fate-effect-wire-errors.md`): a DB failure is not a domain
- * value, so it dies here and `encodeWireError` maps the defect to
+ * infra-failures-are-defects rule (`.patterns/effect-errors.md`): a DB failure
+ * is not a domain value, so it dies and `encodeWireError` maps the defect to
  * `INTERNAL_SERVER_ERROR` with a fixed message — `cause` reaches logs, never
- * the wire. Pipe any service call whose typed channel carries `DrizzleError`
- * through this at the fate-handler call site; domain errors in the same union
- * pass through untouched.
+ * the wire.
+ *
+ * This is a DOMAIN-BOUNDARY policy, applied INSIDE the feature services (via
+ * {@link orDieAccess} at layer build) — not at the fate-handler call sites.
+ * Service public signatures therefore carry domain errors only, and the fate
+ * layer never names Drizzle. Domain errors in the same union pass through
+ * untouched.
  */
 export const orDieDrizzle = <A, E, R>(self: Effect.Effect<A, E, R>) =>
 	Effect.catchIf(
@@ -116,6 +119,33 @@ export interface DrizzleAccess {
 		fn: (db: DrizzleDb) => T,
 	) => Effect.Effect<BatchResult<T>, DrizzleError>;
 }
+
+/**
+ * The domain-service view of {@link DrizzleAccess}: the same `run` / `batch`,
+ * with the `DrizzleError` channel already collapsed into the defect channel at
+ * the Drizzle call site itself (via {@link orDieDrizzle}). Feature services
+ * destructure THIS at layer build (`const {run, batch} = orDieAccess(yield*
+ * Drizzle)`), so every internal DB call dies on infra failure and the
+ * services' public method signatures carry domain errors only — the boundary
+ * rule in `.patterns/feature-services.md`.
+ */
+export interface DrizzleAccessOrDie {
+	readonly run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.Effect<A>;
+	readonly batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(
+		fn: (db: DrizzleDb) => T,
+	) => Effect.Effect<BatchResult<T>>;
+}
+
+/**
+ * Wrap a {@link DrizzleAccess} so every `run` / `batch` dies on
+ * `DrizzleError` instead of surfacing it as a typed failure. The one
+ * construction site of the domain-boundary policy — services consume this;
+ * the fate layer never sees the tech at all.
+ */
+export const orDieAccess = (access: DrizzleAccess): DrizzleAccessOrDie => ({
+	run: (fn) => orDieDrizzle(access.run(fn)),
+	batch: (fn) => orDieDrizzle(access.batch(fn)),
+});
 
 /**
  * `Drizzle` is the Tag whose value carries the bound `run` / `batch` methods.

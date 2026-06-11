@@ -23,7 +23,7 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
+import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -354,14 +354,14 @@ export interface DeleteCommentResult {
 export class Pano extends Context.Service<
 	Pano,
 	{
-		readonly getPost: (postId: string) => Effect.Effect<PostPage | null, DrizzleError>;
+		readonly getPost: (postId: string) => Effect.Effect<PostPage | null>;
 
 		readonly listPostsConnection: (opts?: {
 			sort?: PostSort;
 			first?: number;
 			after?: string | null;
 			host?: string | null;
-		}) => Effect.Effect<PostConnectionPage, DrizzleError>;
+		}) => Effect.Effect<PostConnectionPage>;
 
 		/**
 		 * DB-keyset page over a post's comments in chronological-asc order
@@ -376,71 +376,63 @@ export class Pano extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 			},
-		) => Effect.Effect<CommentConnectionPage, DrizzleError>;
+		) => Effect.Effect<CommentConnectionPage>;
 
 		/** Post source `byIds` — batched read avoiding the relation N+1. */
 		readonly getPostsByIds: (
 			ids: ReadonlyArray<string>,
 			opts?: {viewerId?: string | null | undefined},
-		) => Effect.Effect<ReadonlyArray<PostSummaryRow>, DrizzleError>;
+		) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
 
 		/** Comment source `byIds` — batched read avoiding the relation N+1. */
 		readonly getCommentsByIds: (
 			ids: ReadonlyArray<string>,
 			opts?: {viewerId?: string | null | undefined},
-		) => Effect.Effect<ReadonlyArray<CommentRow>, DrizzleError>;
+		) => Effect.Effect<ReadonlyArray<CommentRow>>;
 
 		/** Resolve a comment's parent post id (for re-resolving on delete). */
-		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null, DrizzleError>;
+		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null>;
 
 		readonly submitPost: (
 			input: SubmitPostInput,
-		) => Effect.Effect<SubmitPostResult, PostValidation | DrizzleError>;
+		) => Effect.Effect<SubmitPostResult, PostValidation>;
 
 		readonly editPost: (
 			input: EditPostInput,
-		) => Effect.Effect<
-			EditPostResult,
-			PostValidation | PostNotFound | UnauthorizedPostMutation | DrizzleError
-		>;
+		) => Effect.Effect<EditPostResult, PostValidation | PostNotFound | UnauthorizedPostMutation>;
 
 		readonly deletePost: (
 			input: DeletePostInput,
-		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation | DrizzleError>;
+		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation>;
 
-		readonly voteOnPost: (
-			input: VoteOnPostInput,
-		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError>;
+		readonly voteOnPost: (input: VoteOnPostInput) => Effect.Effect<VoteOnPostResult, PostNotFound>;
 
 		readonly retractPostVote: (
 			input: VoteOnPostInput,
-		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError>;
+		) => Effect.Effect<VoteOnPostResult, PostNotFound>;
 
 		readonly addComment: (
 			input: AddCommentInput,
-		) => Effect.Effect<AddCommentResult, CommentValidation | PostNotFound | DrizzleError>;
+		) => Effect.Effect<AddCommentResult, CommentValidation | PostNotFound>;
 
 		readonly editComment: (
 			input: EditCommentInput,
 		) => Effect.Effect<
 			EditCommentResult,
-			CommentValidation | CommentNotFound | UnauthorizedCommentMutation | DrizzleError
+			CommentValidation | CommentNotFound | UnauthorizedCommentMutation
 		>;
 
 		readonly deleteComment: (
 			input: DeleteCommentInput,
-		) => Effect.Effect<
-			DeleteCommentResult,
-			CommentNotFound | UnauthorizedCommentMutation | DrizzleError
-		>;
+		) => Effect.Effect<DeleteCommentResult, CommentNotFound | UnauthorizedCommentMutation>;
 
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError>;
+		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
 
 		readonly retractCommentVote: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError>;
+		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
 	}
 >()("@phoenix/pano/Pano") {}
 
@@ -451,10 +443,12 @@ export class Pano extends Context.Service<
 export const PanoLive = Layer.effect(Pano)(
 	Effect.gen(function* () {
 		// Yield Drizzle and Vote once at layer build and destructure/close over
-		// their bound methods. Method bodies call `run` / `batch` / `voteSvc`
-		// directly — the deps are owned by this layer, so every method's `R`
-		// stays `never` (the dep never reaches the caller-visible R channel).
-		const {run, batch} = yield* Drizzle;
+		// their bound methods. Drizzle is taken through `orDieAccess`: every
+		// internal DB call site dies on `DrizzleError` (infra failures are
+		// defects — the domain-boundary rule), so public signatures carry
+		// domain errors only. The deps are owned by this layer, so every
+		// method's `R` stays `never`.
+		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
 		/* ------------------------------------------------------------------ */

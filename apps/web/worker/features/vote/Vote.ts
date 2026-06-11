@@ -50,7 +50,7 @@
  */
 import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
+import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {type VoteTargetKind, VoteTargetNotFound} from "./errors.ts";
@@ -93,9 +93,7 @@ export interface VoteResult {
 export class Vote extends Context.Service<
 	Vote,
 	{
-		readonly cast: (
-			input: VoteInput,
-		) => Effect.Effect<VoteResult, VoteTargetNotFound | DrizzleError>;
+		readonly cast: (input: VoteInput) => Effect.Effect<VoteResult, VoteTargetNotFound>;
 		/**
 		 * Batched `myVote` presence read. Returns the subset of `targetIds` the
 		 * viewer has a `user_vote` row for, of the given `kind` — one `WHERE
@@ -107,7 +105,7 @@ export class Vote extends Context.Service<
 			viewerId: string | null | undefined,
 			kind: VoteTargetKind,
 			targetIds: ReadonlyArray<string>,
-		) => Effect.Effect<Set<string>, DrizzleError>;
+		) => Effect.Effect<Set<string>>;
 	}
 >()("@phoenix/vote/Vote") {}
 
@@ -127,12 +125,14 @@ interface TargetMeta {
 
 export const VoteLive = Layer.effect(Vote)(
 	Effect.gen(function* () {
-		// Yield Drizzle once at layer build and destructure its bound methods.
-		// Method bodies call `run` / `batch` directly so every method's `R`
-		// stays `never`. No closure-captured
-		// `db` escapes — `db` only appears inside `run((db) => ...)` /
+		// Yield Drizzle once at layer build and destructure its bound methods
+		// through `orDieAccess`: every internal DB call site dies on
+		// `DrizzleError` (infra failures are defects — the domain-boundary
+		// rule), so method bodies stay clean and public signatures carry
+		// domain errors only. `R` stays `never`. No closure-captured `db`
+		// escapes — `db` only appears inside `run((db) => ...)` /
 		// `batch((db) => ...)` callbacks.
-		const {run, batch} = yield* Drizzle;
+		const {run, batch} = orDieAccess(yield* Drizzle);
 
 		// ── Per-target metadata lookup ────────────────────────────────────
 		// Each target kind has its own view table holding `author_id` +

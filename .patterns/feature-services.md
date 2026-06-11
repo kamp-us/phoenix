@@ -41,11 +41,30 @@ export interface DrizzleAccess {
   ) => Effect.Effect<BatchResult<T>, DrizzleError>;
 }
 // The `DrizzleError` catch lives in `DrizzleLive`'s body — exactly one place.
+
+// The domain-service view — same methods, `DrizzleError` already a defect.
+export interface DrizzleAccessOrDie {
+  readonly run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.Effect<A>;
+  readonly batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(
+    fn: (db: DrizzleDb) => T,
+  ) => Effect.Effect<BatchResult<T>>;
+}
+export const orDieAccess: (access: DrizzleAccess) => DrizzleAccessOrDie;
 ```
 
 Canonical implementation: `apps/web/worker/db/Drizzle.ts`. Read it once — the shape above is the contract, not the implementation.
 
-Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `run` (single statement) or `batch` (atomic multi-statement), destructured off the service value at layer build. The D1 binding never leaves the `Drizzle` service.
+Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `run` (single statement) or `batch` (atomic multi-statement), destructured off the service value at layer build — through `orDieAccess`, see the boundary rule below. The D1 binding never leaves the `Drizzle` service.
+
+### The boundary rule: infra failures die inside the service
+
+Infra-failure policy is a domain-boundary decision. A feature service destructures `orDieAccess(yield* Drizzle)` at layer build, so every internal DB call site collapses `DrizzleError` into the defect channel — and the service's **public method signatures carry domain errors only** (`Effect<TermPage | null>`, not `Effect<TermPage | null, DrizzleError>`). The fate layer (sources/queries/lists/mutations) consequently never imports or names Drizzle: there is nothing to `orDie` at the transport edge.
+
+Why here and not at the call sites: the typed `DrizzleError` channel had **zero typeful consumers** — nothing caught, retried, or matched it; every one of ~64 fate-handler call sites uniformly piped `orDieDrizzle`, which meant the transport layer named the persistence tech everywhere while exercising a single policy that belongs to the domain.
+
+The trade-off, recorded: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option nothing used. If a future caller genuinely needs to observe infra failures, defects remain reachable (`Effect.sandbox` / `Effect.catchAllDefect`), or that one method can reintroduce a typed infra error deliberately. The die happens per `run`/`batch` call (the Drizzle call sites), not as a blanket wrap around whole methods — future domain errors keep flowing through method bodies untouched.
+
+`worker/features/domain-error-boundary.unit.test.ts` pins the rule per service: a type-level sweep proves no method's `E` contains `DrizzleError`, plus one exact-domain-union pin per service.
 
 ### Why `run` / `batch` are NOT statics on the Tag class
 
@@ -67,7 +86,7 @@ Object notation forces an explicit `catch` at every async boundary. The single-a
 ### Single-query reads/writes
 
 ```ts
-const {run} = yield* Drizzle;  // at layer build, once
+const {run} = orDieAccess(yield* Drizzle);  // at layer build, once
 
 const term = yield* run((db) =>
   db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
@@ -78,12 +97,12 @@ const inserted = yield* run((db) =>
 );
 ```
 
-The callback receives the typed drizzle builder. The Effect's success type is inferred from the callback's return type. Errors flow as `DrizzleError`. Method `R` channels stay `never` because `Drizzle` was already yielded at layer build.
+The callback receives the typed drizzle builder. The Effect's success type is inferred from the callback's return type. Infra failures die right here (the boundary rule above), so `E` stays whatever the method's domain logic raises. Method `R` channels stay `never` because `Drizzle` was already yielded at layer build.
 
 ### Atomic batch
 
 ```ts
-const {batch} = yield* Drizzle;
+const {batch} = orDieAccess(yield* Drizzle);
 
 yield* batch((db) => [
   db.insert(schema.definitionVote).values({/* ... */}),
@@ -117,45 +136,42 @@ import {
 export class Sozluk extends Context.Service<
   Sozluk,
   {
-    // reads
+    // reads — infra failures are defects, so a pure read has NO error channel
     readonly getTerm: (
       slug: string,
-    ) => Effect.Effect<TermPage | null, DrizzleError>;
+    ) => Effect.Effect<TermPage | null>;
 
     readonly listDefinitionsConnection: (
       slug: string,
       opts: {first?: number; after?: string | null},
-    ) => Effect.Effect<DefinitionConnectionPage, DrizzleError>;
+    ) => Effect.Effect<DefinitionConnectionPage>;
 
     readonly listTermSummaries: (
       opts: {sort?: "recent" | "popular"; limit?: number},
-    ) => Effect.Effect<ReadonlyArray<TermSummaryRow>, DrizzleError>;
+    ) => Effect.Effect<ReadonlyArray<TermSummaryRow>>;
 
-    // writes
+    // writes — domain errors only
     readonly addDefinition: (
       input: AddDefinitionInput,
-    ) => Effect.Effect<AddDefinitionResult, BodyRequired | BodyTooLong | DrizzleError>;
+    ) => Effect.Effect<AddDefinitionResult, BodyRequired | BodyTooLong>;
 
     readonly editDefinition: (
       input: EditDefinitionInput,
     ) => Effect.Effect<
       EditDefinitionResult,
-      BodyRequired | BodyTooLong | DefinitionNotFound | UnauthorizedDefinitionMutation | DrizzleError
+      BodyRequired | BodyTooLong | DefinitionNotFound | UnauthorizedDefinitionMutation
     >;
 
     readonly deleteDefinition: (
       input: DeleteDefinitionInput,
     ) => Effect.Effect<
       DeleteDefinitionResult,
-      DefinitionNotFound | UnauthorizedDefinitionMutation | DrizzleError
+      DefinitionNotFound | UnauthorizedDefinitionMutation
     >;
 
     readonly voteDefinition: (
       input: VoteDefinitionInput,
-    ) => Effect.Effect<
-      VoteDefinitionResult,
-      DefinitionNotFound | DrizzleError
-    >;
+    ) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
   }
 >()("@phoenix/sozluk/Sozluk") {}
 ```
@@ -165,7 +181,7 @@ export class Sozluk extends Context.Service<
 - **One service per feature folder.** Even if the feature has 20 methods. Splitting buys nothing if the methods share a layer dep and a domain.
 - **Reads and writes sit together.** Read methods (`listTermSummaries`) live alongside mutation methods (`addDefinition`). They share the same drizzle builder, schema, error type, and tests.
 - **Method names are domain-shaped.** `addDefinition`, not `insertDefinitionRow`. The service is the domain layer.
-- **Errors in the `E` channel, tagged.** Per-method error unions are explicit in the type. The resolver pattern-matches on `_tag` to map to wire codes. See [effect-errors.md](./effect-errors.md).
+- **Errors in the `E` channel, tagged — and DOMAIN errors only.** Per-method error unions are explicit in the type; infra failures (`DrizzleError`) die inside the service (the boundary rule above) and never appear in a public signature. The resolver pattern-matches on `_tag` to map to wire codes. See [effect-errors.md](./effect-errors.md).
 - **No `env` or `D1Database` in method signatures.** The `Drizzle` dep is captured at layer-build time.
 
 ### The live layer
@@ -174,8 +190,8 @@ export class Sozluk extends Context.Service<
 export const SozlukLive = Layer.effect(Sozluk)(
   Effect.gen(function*() {
     // ----- Yield deps once at layer build -----
-    const {run, batch} = yield* Drizzle;   // bound methods, R = never in callers
-    const vote = yield* Vote;              // cross-service dep, see below
+    const {run, batch} = orDieAccess(yield* Drizzle); // infra failures die here; R = never in callers
+    const vote = yield* Vote;                         // cross-service dep, see below
 
     // ----- Helpers: private closures, intermediate consts -----
 
@@ -239,7 +255,7 @@ Fate handlers live per-feature (`worker/features/<feature>/mutations.ts`, `queri
   Effect.fn("definition.add")(function* ({input}) {
     const user = yield* CurrentUser.required;
     const sozluk = yield* Sozluk;
-    return yield* sozluk.addDefinition({...input, authorId: user.id}).pipe(orDieDrizzle);
+    return yield* sozluk.addDefinition({...input, authorId: user.id});
   }),
 ),
 ```
@@ -251,7 +267,7 @@ term: Fate.query(
   {args: {slug: Schema.String}, type: TermView},
   Effect.fn("term")(function* ({args}) {
     const sozluk = yield* Sozluk;
-    return yield* sozluk.getTerm(args.slug, {first: 50}).pipe(orDieDrizzle);
+    return yield* sozluk.getTerm(args.slug, {first: 50});
   }),
 ),
 ```

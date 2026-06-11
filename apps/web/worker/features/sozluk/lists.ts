@@ -26,7 +26,6 @@
 import {Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {type KeysetPage, toConnection} from "../fate/shapers.ts";
 import {type ListSort, Sozluk} from "./Sozluk.ts";
 import {toTerm} from "./shapers.ts";
@@ -58,13 +57,11 @@ const listTerms = (
 ) =>
 	Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
-		const page = yield* sozluk
-			.listTermSummariesConnection({
-				sort,
-				...(args.first !== undefined ? {first: args.first} : {}),
-				...(args.after !== undefined ? {after: args.after} : {}),
-			})
-			.pipe(orDieDrizzle);
+		const page = yield* sozluk.listTermSummariesConnection({
+			sort,
+			...(args.first !== undefined ? {first: args.first} : {}),
+			...(args.after !== undefined ? {after: args.after} : {}),
+		});
 		return toTermConnection(page);
 	});
 

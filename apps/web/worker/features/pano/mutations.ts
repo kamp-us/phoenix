@@ -14,8 +14,9 @@
  * `CommentValidation` per-code classes, `PostNotFound`, `CommentNotFound`,
  * `UnauthorizedPostMutation`, `UnauthorizedCommentMutation`) are declared on
  * each definition and surface through their `fateWireCode` annotations as
- * stable wire codes (`.patterns/fate-effect-wire-errors.md`). The
- * `DrizzleError` channel is infrastructure and dies (`orDieDrizzle`).
+ * stable wire codes (`.patterns/fate-effect-wire-errors.md`). Infra failures
+ * never reach this layer — they die inside the domain service (the boundary
+ * rule in `.patterns/feature-services.md`).
  *
  * `CurrentUser.required` gates every write (anonymous → `UNAUTHORIZED`). The
  * vote mutations stamp `myVote` authoritatively from the vote write so the
@@ -29,7 +30,6 @@
 import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {
 	CommentNotFound,
 	CommentValidationErrors,
@@ -153,16 +153,14 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano
-				.submitPost({
-					title: input.title,
-					...(input.url ? {url: input.url} : {}),
-					...(input.body ? {body: input.body} : {}),
-					tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
-					authorId: user.id,
-					authorName: user.name ?? user.email,
-				})
-				.pipe(orDieDrizzle);
+			const r = yield* pano.submitPost({
+				title: input.title,
+				...(input.url ? {url: input.url} : {}),
+				...(input.body ? {body: input.body} : {}),
+				tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
+				authorId: user.id,
+				authorName: user.name ?? user.email,
+			});
 			// Fresh write: not yet voted by anyone.
 			const post = shapePost({...r, myVote: null});
 			// New post leads the feed: prepend its node to the `posts` connection
@@ -181,7 +179,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id}).pipe(orDieDrizzle);
+			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
 			yield* live.update("Post", post.id, {changed: ["score"], data: post});
 			return post;
@@ -197,9 +195,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano
-				.retractPostVote({postId: input.id, voterId: user.id})
-				.pipe(orDieDrizzle);
+			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
 			yield* live.update("Post", post.id, {changed: ["score"], data: post});
 			return post;
@@ -220,17 +216,15 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano
-				.editPost({
-					postId: input.id,
-					actorId: user.id,
-					...(input.title != null ? {title: input.title} : {}),
-					...(input.body != null ? {body: input.body} : {}),
-				})
-				.pipe(orDieDrizzle);
+			const r = yield* pano.editPost({
+				postId: input.id,
+				actorId: user.id,
+				...(input.title != null ? {title: input.title} : {}),
+				...(input.body != null ? {body: input.body} : {}),
+			});
 			// Re-read the viewer's vote so the edited entity carries an accurate
 			// `myVote` (edit doesn't change vote state).
-			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id}).pipe(orDieDrizzle);
+			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
 			yield* live.update("Post", post.id, {changed: ["title", "body"], data: post});
 			return post;
@@ -248,7 +242,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano.deletePost({postId: input.id, actorId: user.id}).pipe(orDieDrizzle);
+			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
 			// Entity gone; drop its edge from the `posts` feed connection.
 			yield* live.delete("Post", r.postId);
 			yield* live.connection("posts").deleteEdge("Post", r.postId);
@@ -268,15 +262,13 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano
-				.addComment({
-					postId: input.postId,
-					authorId: user.id,
-					authorName: user.name ?? user.email,
-					body: input.body,
-					...(input.parentId ? {parentId: input.parentId} : {}),
-				})
-				.pipe(orDieDrizzle);
+			const r = yield* pano.addComment({
+				postId: input.postId,
+				authorId: user.id,
+				authorName: user.name ?? user.email,
+				body: input.body,
+				...(input.parentId ? {parentId: input.parentId} : {}),
+			});
 			const comment = shapeComment({...r, myVote: null});
 			// New comment joins the post's thread: append its node to the
 			// `Post.comments` connection keyed by the parent post id. Inline node.
@@ -296,9 +288,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano
-				.voteOnComment({commentId: input.id, voterId: user.id})
-				.pipe(orDieDrizzle);
+			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
 			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
 			return comment;
@@ -314,9 +304,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano
-				.retractCommentVote({commentId: input.id, voterId: user.id})
-				.pipe(orDieDrizzle);
+			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
 			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
 			return comment;
@@ -337,12 +325,8 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
-			const r = yield* pano
-				.editComment({commentId: input.id, actorId: user.id, body: input.body})
-				.pipe(orDieDrizzle);
-			const [fresh] = yield* pano
-				.getCommentsByIds([r.commentId], {viewerId: user.id})
-				.pipe(orDieDrizzle);
+			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
+			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
 			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
 			yield* live.update("Comment", comment.id, {changed: ["body"], data: comment});
 			return comment;
@@ -363,16 +347,12 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = yield* LivePublisher;
 			// Resolve the parent post id before the delete (the row still exists).
-			const postId = yield* pano.lookupCommentPostId(input.id).pipe(orDieDrizzle);
-			const result = yield* pano
-				.deleteComment({commentId: input.id, actorId: user.id})
-				.pipe(orDieDrizzle);
+			const postId = yield* pano.lookupCommentPostId(input.id);
+			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
 			if (!postId) return null;
-			const page = yield* pano.getPost(postId).pipe(orDieDrizzle);
+			const page = yield* pano.getPost(postId);
 			if (!page) return null;
-			const [stamped] = yield* pano
-				.getPostsByIds([page.id], {viewerId: user.id})
-				.pipe(orDieDrizzle);
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null);
 			// Two delete shapes, driven by the service's reply-aware decision:
 			//  - hard delete (leaf): the row is gone, so drop its edge from the
