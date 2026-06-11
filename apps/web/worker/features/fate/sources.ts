@@ -13,8 +13,8 @@
  * the entries hold the features' exported definition objects, never copies).
  *
  * Every feature is migrated (`.patterns/fate-effect-sources.md`), so every
- * entry is a `Fate.source` value — except `Contribution`, the hand-built
- * capability-less `AnyFateSourceEntry` (the entity is view-reachable through
+ * entry is a `Fate.source` value — except `Contribution`, the capability-less
+ * `Fate.syntheticSource` entry (the entity is view-reachable through
  * `Profile.contributions` but has no fetch path by design — see
  * `features/pasaport/sources.ts`).
  *

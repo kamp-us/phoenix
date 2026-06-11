@@ -28,7 +28,6 @@ import {Fate, FateExecutor} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
 import {assertParity, type OracleBackend, user} from "./Oracle.fixture.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
-import type {AnyFateSourceEntry} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 
 // --- the feature fixture world (pano / pasaport / stats rows + views) --------------
@@ -356,12 +355,9 @@ const fxProfileSource = Fate.source(
 );
 
 /** pasaport's `Contribution`: capability-less BY DESIGN (the feed is
- * resolver-delivered; there is no standalone fetch path). */
-const fxContributionSource: AnyFateSourceEntry = {
-	typeName: "FxContribution",
-	definition: {id: "id", view: FxContributionView.view},
-	handlers: {},
-};
+ * resolver-delivered; there is no standalone fetch path) — registered via
+ * `Fate.syntheticSource`, whose loud failure the corpus pins on both planes. */
+const fxContributionSource = Fate.syntheticSource(FxContributionView);
 
 const featureConfig = FateServer.config({
 	queries: fxQueries,

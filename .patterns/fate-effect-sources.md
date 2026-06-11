@@ -38,17 +38,13 @@ Sources LOAD, operations RESOLVE. The constructor's types encode the whole contr
 
 ## The escape hatch: a view-reachable entity with no fetch path
 
-The server's source-completeness validation ([fate-effect-server.md](./fate-effect-server.md)) requires every view-reachable entity to be registered, but some entities are **synthetic** — their rows exist only as a resolver's reshape, with no by-id fetch path at all (`Contribution`: flattened from definitions/posts/comments by `queries.profile`, delivered inline through `Profile.contributions`). `Fate.source` deliberately refuses a loader-less source, so such an entity registers as a hand-built **type-erased entry** instead (`apps/web/worker/features/pasaport/sources.ts`):
+The server's source-completeness validation ([fate-effect-server.md](./fate-effect-server.md)) requires every view-reachable entity to be registered, but some entities are **synthetic** — their rows exist only as a resolver's reshape, with no by-id fetch path at all (`Contribution`: flattened from definitions/posts/comments by `queries.profile`, delivered inline through `Profile.contributions`). `Fate.source` deliberately refuses a loader-less source; `Fate.syntheticSource` is the one sanctioned escape hatch (`apps/web/worker/features/pasaport/sources.ts`):
 
 ```ts
-export const contributionSource: AnyFateSourceEntry = {
-	typeName: "Contribution",
-	definition: {id: "id", view: ContributionView.view},
-	handlers: {},
-};
+export const contributionSource = Fate.syntheticSource(ContributionView);
 ```
 
-The empty handlers bag compiles to an executor with no capabilities — any actual capability call fails loudly, exactly like the bridge era's capability-less executor. Reserve this for genuinely synthetic entities; if a fetch path exists, implement `byIds`.
+The constructor registers the entity with an **empty handlers bag** — zero capabilities, kept inside the package: any actual capability call fails loudly (the walk's capability-less arm is fate's internal error arm; the oracle baseline adapts `{}` to an empty executor fate rejects the same way), exactly like the bridge era's capability-less executor. The loud failure is pinned by the package's parity corpus (`Interpreter.walk.test.ts` / `Interpreter.features.test.ts`). Reserve this for genuinely synthetic entities; if a fetch path exists, implement `byIds`.
 
 A **root-only** synthetic entity (no view nesting reaches it) needs no source at all — give its query the wire type-name *string* instead of the view class (`stats/queries.ts`: `landingStats` is `{type: "LandingStats"}`), which keeps the entity out of the reachability walk; the `Root` map still carries the kernel view for codegen.
 

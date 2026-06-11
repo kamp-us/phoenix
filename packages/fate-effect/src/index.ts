@@ -115,6 +115,7 @@ export {
 	type AnyFateSourceEntry,
 	type AnyFateSourceHandlers,
 	type DataViewLike,
+	declaredWireCodes,
 	type FateConfigServices,
 	type FateListsRecord,
 	type FateLiveOption,
@@ -141,6 +142,7 @@ export {
 	type SourceLoaderContract,
 	type SourceOptions,
 	source,
+	syntheticSource,
 } from "./Source.ts";
 export {
 	ErrorCode,

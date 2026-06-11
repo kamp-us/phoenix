@@ -25,6 +25,7 @@ import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {FateDataView} from "./DataView.ts";
 import {Fate} from "./index.ts";
+import type {FateSourcesList} from "./Server.ts";
 import type {FateSourceServices, SourceHandlerBody} from "./Source.ts";
 
 // --- fixture row + view (exported: the TS2883 nameability fixture) ----------
@@ -264,5 +265,55 @@ describe("Fate.source — type-level contract", () => {
 			Effect.provideService(Viewer, {id: "u1"}),
 		);
 		expectTypeOf(provided).toEqualTypeOf<Effect.Effect<ReadonlyArray<TermRow>, never, never>>();
+	});
+});
+
+// --- the synthetic escape hatch (exported: nameability fixture) -------------
+
+export type GhostRow = {
+	id: string;
+	kind: string;
+};
+
+/** A synthetic entity: rows exist only as a resolver's reshape. */
+export class GhostView extends FateDataView<GhostRow>()("Ghost")({
+	id: true,
+	kind: true,
+}) {}
+
+export const ghostSource = Fate.syntheticSource(GhostView);
+
+describe("Fate.syntheticSource — synthetic entity, no fetch path", () => {
+	it("is byte-identical to the hand-built erased entry it replaces", () => {
+		// The exact shape the first consumer (pasaport's `contributionSource`)
+		// hand-built before this constructor existed: kernel definition with
+		// the conventional `id` PK field, the view BY IDENTITY, and an EMPTY
+		// handlers bag — zero capabilities. The empty bag is the loud-failure
+		// contract: the walk's capability-less arm fails the load with fate's
+		// internal arm (`Interpreter.walk.test.ts` corpus: "a capability-less
+		// source is fate's internal arm"), and the oracle baseline adapts `{}`
+		// to an empty executor that fate masks the same way — both planes are
+		// parity-pinned over a `Fate.syntheticSource` fixture.
+		expect(ghostSource).toEqual({
+			typeName: "Ghost",
+			definition: {id: "id", view: GhostView.view},
+			handlers: {},
+		});
+		expect(ghostSource.definition.view).toBe(GhostView.view);
+	});
+
+	it("has no capabilities: nothing for any loader arm to call", () => {
+		expect(ghostSource.handlers.byId).toBeUndefined();
+		expect(ghostSource.handlers.byIds).toBeUndefined();
+		expect(ghostSource.handlers.connection).toBeUndefined();
+	});
+
+	it("type-level: literal typeName, R = never, config-assignable", () => {
+		expectTypeOf(ghostSource.typeName).toEqualTypeOf<"Ghost">();
+		expectTypeOf<FateSourceServices<typeof ghostSource>>().toEqualTypeOf<never>();
+		// Registers like any other source entry — the reachability validation
+		// accepts it (the whole reason it exists).
+		const entries: FateSourcesList = [ghostSource];
+		expect(entries).toHaveLength(1);
 	});
 });

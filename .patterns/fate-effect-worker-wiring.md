@@ -29,7 +29,7 @@ worker/features/fate/
 - **Source completeness is validated**: every view-reachable entity must be registered, so an
   entity that is *reachable but deliberately unfetchable* (e.g. `Contribution`, whose rows are
   synthetic and whose connection is a custom resolver per ADR 0019) registers a
-  **capability-less entry** (a hand-built `AnyFateSourceEntry` with empty handlers — see
+  **capability-less entry** (`Fate.syntheticSource(ViewClass)` — see
   [fate-effect-sources.md](./fate-effect-sources.md) "The escape hatch") — `getSource` resolves,
   any capability call fails loudly.
 

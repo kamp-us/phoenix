@@ -15,7 +15,7 @@
  * failures are defects, died inside the domain service (the boundary rule in
  * `.patterns/feature-services.md`), so they never become wire values.
  */
-import {type AnyFateSourceEntry, Fate} from "@phoenix/fate-effect";
+import {Fate} from "@phoenix/fate-effect";
 import {Pasaport} from "./Pasaport.ts";
 import {toProfile} from "./shapers.ts";
 import {ContributionView, ProfileView, UserView} from "./views.ts";
@@ -54,16 +54,11 @@ export const profileSource = Fate.source(
  * (flattened from definitions/posts/comments by `queries.profile`'s shaper) and
  * the `Profile.contributions` connection is delivered inline by that custom
  * resolver (ADR 0019), so no byId/byIds/connection handler is implementable or
- * needed. `Fate.source` makes a loader-less source unrepresentable by design,
- * so this entry is the hand-built type-erased form (`AnyFateSourceEntry`,
- * empty handlers): it exists because the entity is view-reachable
- * (`Profile.contributions` nests `ContributionView`) and the fate-effect
- * server's source-completeness validation requires every reachable entity to
- * be registered; any actual capability call still fails loudly, exactly as the
- * bridge's capability-less executor did.
+ * needed. `Fate.syntheticSource` is the package's canonical spelling for this:
+ * it registers the entity so the server's source-completeness validation
+ * accepts it (`Profile.contributions` nests `ContributionView`, making it
+ * view-reachable) with ZERO capabilities — any actual capability call fails
+ * loudly inside the package, exactly as the bridge's capability-less executor
+ * did (`.patterns/fate-effect-sources.md`, the escape hatch).
  */
-export const contributionSource: AnyFateSourceEntry = {
-	typeName: "Contribution",
-	definition: {id: "id", view: ContributionView.view},
-	handlers: {},
-};
+export const contributionSource = Fate.syntheticSource(ContributionView);

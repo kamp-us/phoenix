@@ -23,5 +23,5 @@
  */
 export type {Entity} from "./DataView.ts";
 export {list, mutation, query} from "./Operation.ts";
-export {source} from "./Source.ts";
+export {source, syntheticSource} from "./Source.ts";
 export {ErrorCode} from "./WireError.ts";

@@ -189,3 +189,37 @@ export function source(
 		},
 	};
 }
+
+/**
+ * Register a **synthetic** entity — one whose rows exist only as a resolver's
+ * reshape, with no by-id fetch path at all (pasaport's `Contribution`:
+ * flattened from definitions/posts/comments by a custom resolver, delivered
+ * inline through a parent connection).
+ *
+ * {@link source} deliberately makes a loader-less source unrepresentable
+ * ({@link SourceLoaderContract}); this is the one sanctioned escape hatch.
+ * The entry exists so the server's source-completeness validation accepts the
+ * view-reachable entity — and for nothing else: the handlers bag is EMPTY, so
+ * any actual capability call fails loudly inside the package. On the serving
+ * path the walk's capability-less arm fails the load with fate's internal arm
+ * (`Walk.ts` `runGroup`); on the oracle baseline the empty bag adapts to an
+ * empty executor that fate itself rejects and masks (`Executor.ts`
+ * `adaptSourceHandlers`). Identical bytes to the hand-built erased entry this
+ * constructor replaces.
+ *
+ * Reserve this for genuinely synthetic entities; if a fetch path exists,
+ * implement `byIds`. A root-only synthetic entity (no view nesting reaches
+ * it) needs no source at all — give its operation the wire type-name string.
+ */
+export function syntheticSource<Item extends AnyRow, Name extends string>(View: {
+	readonly view: DataViewOf<Item>;
+	readonly typeName: Name;
+}): FateSource<Item, Name, never> {
+	return {
+		// `id` is the conventional PK field name; with zero capabilities it is
+		// never used to mask rows — it only completes the kernel definition.
+		definition: {id: "id", view: View.view},
+		typeName: View.typeName,
+		handlers: {},
+	};
+}

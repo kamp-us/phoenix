@@ -53,6 +53,7 @@
  */
 import type {ConnectionResult, LiveEventBus} from "@nkzw/fate/server";
 import {Context, Effect, Layer} from "effect";
+import * as Predicate from "effect/Predicate";
 import type {CurrentUser} from "./CurrentUser.ts";
 import type {LivePublisher} from "./LivePublisher.ts";
 import type {
@@ -64,7 +65,9 @@ import type {
 	RawMutationInput,
 	TypeRef,
 } from "./Operation.ts";
+import {InputValidationError} from "./Operation.ts";
 import type {FateSourceServices, SourceConnectionInput} from "./Source.ts";
+import {ErrorCode, INTERNAL_WIRE_CODE, wireCodeOfClass} from "./WireError.ts";
 
 // --- the erased entry shapes (what the config records may contain) ----------
 
@@ -365,6 +368,62 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 	}
 
 	return issues;
+};
+
+// --- the declared wire vocabulary -----------------------------------------------
+
+/**
+ * Collect every `ErrorCode` annotation reachable from one Schema AST node:
+ * the node's own annotation plus (for a union) each member's. Structural
+ * guards throughout — the walk must not assume AST internals beyond what it
+ * reads (the same defensive shape as `wireCodeOfClass`); the package's
+ * AST-drift canary (`Server.unit.test.ts`) fails loudly if effect moves
+ * either anchor (`ast.annotations`, union members on `ast.types`).
+ */
+const collectWireCodes = (ast: unknown, out: Set<string>): void => {
+	if (Predicate.hasProperty(ast, "annotations")) {
+		const annotations: unknown = ast.annotations;
+		if (Predicate.hasProperty(annotations, ErrorCode)) {
+			const code: unknown = annotations[ErrorCode];
+			if (typeof code === "string") out.add(code);
+		}
+	}
+	// A `Schema.Union([...])` AST carries its members on `types`.
+	if (Predicate.hasProperty(ast, "types") && Array.isArray(ast.types)) {
+		for (const member of ast.types) collectWireCodes(member, out);
+	}
+};
+
+/**
+ * Every wire code this config can emit through the annotation codec
+ * (`encodeWireError`): each operation's DECLARED error union, walked via its
+ * Schema AST (annotations land on each class's AST, so the registered config
+ * is the single source), plus the two codes the package can always emit
+ * independent of any declaration — {@link INTERNAL_WIRE_CODE} for
+ * defects/un-annotated failures and `InputValidationError`'s annotated code
+ * for Schema rejections.
+ *
+ * Sources are excluded by construction: loaders have `E = never` (the
+ * loader/resolver split), so they declare no errors to walk. fate's own
+ * walk-internal arm (`internalArm`: `INTERNAL_ERROR`) is the byId plane's
+ * taxonomy, not part of this operation-plane vocabulary.
+ *
+ * This is the canonical walker a client-coverage guard consumes (the worker's
+ * `wireCodes.unit.test.ts`: "the SPA list covers every code the server can
+ * emit") — exported so no consumer re-rolls the AST walk against
+ * package-private knowledge (review D1).
+ */
+export const declaredWireCodes = (config: AnyFateServerConfig): ReadonlySet<string> => {
+	const codes = new Set<string>([INTERNAL_WIRE_CODE]);
+	const validationCode = wireCodeOfClass(InputValidationError);
+	if (validationCode !== undefined) codes.add(validationCode);
+	for (const record of [config.queries, config.lists, config.mutations]) {
+		for (const entry of Object.values(record)) {
+			const error = entry.definition.error;
+			if (error !== undefined) collectWireCodes(error.ast, codes);
+		}
+	}
+	return codes;
 };
 
 // --- the service ---------------------------------------------------------------

@@ -34,7 +34,6 @@ import {
 	user,
 } from "./Oracle.fixture.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
-import type {AnyFateSourceEntry} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 
 // --- the walk fixtures (task 15: byId + nested refs over static tables) -----------
@@ -215,12 +214,10 @@ const walkReviewSource = Fate.source(
 	},
 );
 
-/** Capability-less (the `contributionSource` shape): any load is fate's internal arm. */
-const walkGhostSource: AnyFateSourceEntry = {
-	typeName: "WalkGhost",
-	definition: {id: "id", view: WalkGhostView.view},
-	handlers: {},
-};
+/** Capability-less (the `contributionSource` shape — `Fate.syntheticSource`,
+ * the package's synthetic-entity escape hatch): any load is fate's internal
+ * arm, parity-pinned below on both planes — the loud-failure contract. */
+const walkGhostSource = Fate.syntheticSource(WalkGhostView);
 
 /** A defecting loader: detail must not leak on either side. */
 const walkCursedSource = Fate.source(
