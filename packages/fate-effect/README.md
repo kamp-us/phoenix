@@ -95,7 +95,6 @@ package wraps them in `Effect.fn` and names the spans (`Note.byIds`) for you.
 
 ```ts
 import {Fate} from "@phoenix/fate-effect";
-import {orDieDrizzle} from "../../db/Drizzle.ts";
 import {Notes} from "./Notes.ts"; // your domain service
 
 export const noteSource = Fate.source(
@@ -104,7 +103,7 @@ export const noteSource = Fate.source(
 	{
 		byIds: function* (ids) {
 			const notes = yield* Notes;
-			return yield* notes.getByIds(ids).pipe(orDieDrizzle);
+			return yield* notes.getByIds(ids);
 		},
 	},
 );
@@ -114,8 +113,11 @@ The loader contract lives in the types:
 
 - **At least one of `byId`/`byIds` is required** — a source that can't load doesn't compile.
 - **Absence is not an error**: `byIds` returns the rows that exist; `byId` returns `null`.
-- **`E = never`**: loaders can't fail typefully. Infrastructure failures *die* (that's what
-  `orDieDrizzle` does to the `DrizzleError` channel) and surface as `INTERNAL_SERVER_ERROR`.
+- **`E = never`**: loaders can't fail typefully. Infrastructure failures die at the *service*
+  boundary — domain methods convert infra errors to defects internally, so fate-layer code
+  never names the database (the boundary rule in
+  [feature services](../../.patterns/feature-services.md)) — and surface as
+  `INTERNAL_SERVER_ERROR`.
 - The service you `yield*` (here `Notes`) becomes part of the source's requirements and is
   checked at server composition (step 5).
 
@@ -147,7 +149,7 @@ export const mutations = {
 			const notes = yield* Notes;
 			const live = yield* LivePublisher;
 
-			const note = yield* notes.add({...input, authorId: user.id}).pipe(orDieDrizzle);
+			const note = yield* notes.add({...input, authorId: user.id});
 
 			// Live publish: error channel is `never` by construction — a failed
 			// publish can never fail the mutation, and it never blocks the response.
@@ -192,9 +194,10 @@ export const fateConfig = FateServer.config({
 import * as Layer from "effect/Layer";
 
 // Layer<FateServer, never, R> where R = everything your handlers/sources need
-// MINUS CurrentUser/LivePublisher (those are per-request, provided by the route).
+// MINUS CurrentUser/LivePublisher (those are per-request values; the interpreter
+// provides them onto each handler from the request context).
 export const FateLive = FateServer.layer(fateConfig).pipe(
-	Layer.provideMerge(Notes.layer), // discharge domain services here
+	Layer.provideMerge(NotesLive), // discharge domain services here
 );
 ```
 
@@ -215,7 +218,7 @@ import {FateInterpreter, type FateRequestContext} from "@phoenix/fate-effect";
 
 // per request:
 const context: FateRequestContext = {
-	currentUser: {user: session?.user ?? null},
+	currentUser: {user: session?.user},
 	livePublisher, // the worker builds this from its live topics + waitUntil
 };
 const response = yield* FateInterpreter.handleRequest(request, context);
@@ -247,14 +250,14 @@ type-level tests in this package.
 | Invariant | Enforced by |
 | --- | --- |
 | A source with no loader doesn't exist | type-level (`SourceLoaderContract`) |
-| Loaders can't fail typefully; infra dies | `E = never` on handler slots |
+| Loaders can't fail typefully; infra dies | the service-boundary die rule + `E = never` on handler slots |
 | Undeclared wire errors don't compile | `E extends DefinitionErrors<D>` bound |
 | Invalid input never reaches a handler | Schema decode in the entry's `resolve` |
 | A missing domain layer doesn't compile | `FateServer.layer`'s `R` |
 | Wire codes can't silently drift | per-feature enumeration pin tests |
 | A failed live publish can't fail a mutation | `LivePublisher` methods are `Effect<void>` |
-| One Effect→Promise boundary in the package | an enumeration test source-greps for `run*` |
-| v2 serves exactly what fate would | the differential oracle (byte-equal corpus) |
+| One Effect→Promise conversion in the package — the oracle baseline's runner in `Executor.ts`; the serving path converts at the platform edge, outside the package | an enumeration test source-greps `src/` for `run*` |
+| v2 serves exactly what fate would | the differential oracle (byte-equal corpus, per-plane suites) |
 
 ## Module map
 
@@ -264,11 +267,16 @@ type-level tests in this package.
 | `DataView.ts` | `FateDataView` class factory, `Entity<>`, `FateDataView.list` |
 | `Source.ts` | `Fate.source` — per-entity loaders, span-named handlers |
 | `Operation.ts` | `Fate.query` / `Fate.list` / `Fate.mutation` + `InputValidationError` |
-| `Server.ts` | `FateServer` tag, `config`, `layer`; init-time config validation |
+| `Fate.ts` | the `Fate` authoring namespace (the constructors + `Entity` + `fateWireCode`; every member is also flat-exported) |
+| `Server.ts` | `FateServer` tag, `config`, `layer`; config validation (shared with codegen, so a bad config also fails the build) |
 | `CurrentUser.ts`, `LivePublisher.ts` | the per-request pair (tags; values come from the host) |
+| `RequestContext.ts` | `FateRequestContext` — the per-request contract (the pair as values; deliberately no `signal`) |
+| `Provision.ts` | `provideRequestPair` — the one per-request provision pipeline (request values innermost, captured build-time services beneath) |
 | `Protocol.ts` | the wire protocol as Effect Schema, drift-pinned against fate's types |
 | `Interpreter.ts`, `Walk.ts`, `Connection.ts` | the native serving path: dispatch, selection walk with `RequestResolver` batching, pagination |
-| `Executor.ts` | the v1 compile step — today the differential oracle's baseline and the `toCodegenServer` build surface |
+| `Executor.ts` | the frozen v1 compile step — the differential oracle's baseline only since the cutover (and the package's one `runPromise` conversion) |
+| `Codegen.ts` | `toCodegenServer` — the build-time codegen surface (inert handlers; what `schema.ts` exports) |
+| `Compiled.ts` | the compiled-definition internals `Executor.ts` and `Codegen.ts` share (so the two lifecycles never import each other) |
 
 ## Going deeper
 
@@ -279,6 +287,7 @@ type-level tests in this package.
   [wire errors](../../.patterns/fate-effect-wire-errors.md) ·
   [server](../../.patterns/fate-effect-server.md) ·
   [interpreter](../../.patterns/fate-effect-interpreter.md) ·
+  [compiler/codegen](../../.patterns/fate-effect-compiler.md) ·
   [worker wiring](../../.patterns/fate-effect-worker-wiring.md) ·
   [feature migration](../../.patterns/fate-effect-feature-migration.md)
 - Decisions (the why): [ADR 0042](../../.decisions/0042-fate-effect-v1-architecture.md) (v1
