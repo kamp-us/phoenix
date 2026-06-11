@@ -50,7 +50,7 @@ export const queries = {
 
 ## The error contract
 
-The constructor bounds the handler's `E` by the declared union (`E extends DefinitionErrors<D>`), so **failing with an undeclared error is a compile error at the constructor call** — it surfaces as TS2345 on the handler argument (and the effect LSP plugin's TS377003 "Missing errors … in the expected Effect type"). Declared errors are annotated with `WireCode` ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)); the wire boundary (`encodeWireError` — used by the interpreter's dispatch and the oracle-baseline compile step alike) derives their wire codes from the annotation, no registry.
+The constructor bounds the handler's `E` by the declared union (`E extends DefinitionErrors<D>`), so **failing with an undeclared error is a compile error at the constructor call** — it surfaces as TS2345 on the handler argument (and the effect LSP plugin's TS377003 "Missing errors … in the expected Effect type"). Declared errors are annotated with `ErrorCode` ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)); the wire boundary (`encodeWireError` — used by the interpreter's dispatch and the oracle-baseline compile step alike) derives their wire codes from the annotation, no registry.
 
 Declared unions are DOMAIN errors only. Infrastructure failures never enter a handler's `E`: domain services die on them internally ([feature-services.md](./feature-services.md) boundary rule), so a handler calls the service bare — no `orDie` pipe at the call site, no `Drizzle` import in an operations file — and a DB failure reaches the wire as `INTERNAL_SERVER_ERROR` via `encodeWireError`'s defect path.
 

@@ -13,7 +13,7 @@
  * the service (ADR 0013); domain failures (the `PostValidation` /
  * `CommentValidation` per-code classes, `PostNotFound`, `CommentNotFound`,
  * `UnauthorizedPostMutation`, `UnauthorizedCommentMutation`) are declared on
- * each definition and surface through their `WireCode` annotations as
+ * each definition and surface through their `ErrorCode` annotations as
  * stable wire codes (`.patterns/fate-effect-wire-errors.md`). Infra failures
  * never reach this layer — they die inside the domain service (the boundary
  * rule in `.patterns/feature-services.md`).

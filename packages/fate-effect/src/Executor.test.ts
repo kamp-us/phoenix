@@ -11,7 +11,7 @@
  *      build-time services) → wire result out. T1: the domain service is a
  *      mutable in-memory database, and a mutation's write is visible to a
  *      later read through the same runtime.
- *   2. **Failures map through the `WireCode` codec** — a declared
+ *   2. **Failures map through the `ErrorCode` codec** — a declared
  *      annotated error produces its wire code; an undeclared defect produces
  *      `INTERNAL_SERVER_ERROR` with the fixed message (no detail leak).
  *   3. **The per-request pair are ordinary services** — handlers `yield*`
@@ -245,7 +245,7 @@ describe("FateExecutor.toFetchHandler — round-trip", () => {
 	});
 });
 
-// --- 2. failure mapping through the WireCode codec ---------------------------
+// --- 2. failure mapping through the ErrorCode codec ---------------------------
 
 describe("FateExecutor — wire errors", () => {
 	it("a declared annotated error produces its annotated wire code", async () => {

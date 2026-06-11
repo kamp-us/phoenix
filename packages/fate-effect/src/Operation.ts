@@ -51,7 +51,7 @@
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {WireCode} from "./WireError.ts";
+import {ErrorCode} from "./WireError.ts";
 
 /** The wire selection fate hands a resolver (`select`). */
 export type OperationSelect = ReadonlyArray<string>;
@@ -93,7 +93,7 @@ export type DefinitionTypeName<D> = D extends {readonly type: infer T}
 export class InputValidationError extends Schema.TaggedErrorClass<InputValidationError>()(
 	"fate-effect/InputValidationError",
 	{message: Schema.String},
-	{[WireCode]: "VALIDATION_ERROR"},
+	{[ErrorCode]: "VALIDATION_ERROR"},
 ) {}
 
 /** A query definition: optional args Schema, error union, and success view. */

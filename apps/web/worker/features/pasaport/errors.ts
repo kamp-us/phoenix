@@ -2,7 +2,7 @@
  * Tagged errors raised by the Pasaport service layer.
  *
  * Wire-code contract — every class carries its wire `code` as a
- * `WireCode` annotation (`.patterns/fate-effect-wire-errors.md`), which
+ * `ErrorCode` annotation (`.patterns/fate-effect-wire-errors.md`), which
  * `encodeWireError` reads at the fate boundary:
  *
  *   pasaport/UsernameInvalidFormat → INVALID_FORMAT
@@ -13,7 +13,7 @@
  *   pasaport/UserNotFound          → USER_NOT_FOUND
  *
  * The bridge-era `UsernameInvalid` class carried a dynamic `code` field the
- * registry upcased per instance (`too_short` → `TOO_SHORT`). `WireCode`
+ * registry upcased per instance (`too_short` → `TOO_SHORT`). `ErrorCode`
  * is one static code per class — the codec reads the instance's CONSTRUCTOR
  * annotation (`wireCodeOf`), so each sub-code is its own class and
  * {@link UsernameInvalid} survives as the union alias the `Pasaport` service
@@ -26,7 +26,7 @@
  * The package's `Unauthorized` (annotated `UNAUTHORIZED`) gates the writes
  * via `CurrentUser.required` and is not redeclared here.
  */
-import {WireCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@phoenix/fate-effect";
 import * as Schema from "effect/Schema";
 
 /* -------------------------------------------------------------------------- */
@@ -37,21 +37,21 @@ import * as Schema from "effect/Schema";
 export class UsernameInvalidFormat extends Schema.TaggedErrorClass<UsernameInvalidFormat>()(
 	"pasaport/UsernameInvalidFormat",
 	{message: Schema.String},
-	{[WireCode]: "INVALID_FORMAT"},
+	{[ErrorCode]: "INVALID_FORMAT"},
 ) {}
 
 /** The username is shorter than the 3-character minimum. */
 export class UsernameTooShort extends Schema.TaggedErrorClass<UsernameTooShort>()(
 	"pasaport/UsernameTooShort",
 	{message: Schema.String},
-	{[WireCode]: "TOO_SHORT"},
+	{[ErrorCode]: "TOO_SHORT"},
 ) {}
 
 /** The username exceeds the 30-character maximum. */
 export class UsernameTooLong extends Schema.TaggedErrorClass<UsernameTooLong>()(
 	"pasaport/UsernameTooLong",
 	{message: Schema.String},
-	{[WireCode]: "TOO_LONG"},
+	{[ErrorCode]: "TOO_LONG"},
 ) {}
 
 /**
@@ -82,7 +82,7 @@ export class UsernameTaken extends Schema.TaggedErrorClass<UsernameTaken>()(
 	{
 		message: Schema.String,
 	},
-	{[WireCode]: "TAKEN"},
+	{[ErrorCode]: "TAKEN"},
 ) {}
 
 /** The user already has a username — it is immutable once set. */
@@ -91,7 +91,7 @@ export class UsernameAlreadySet extends Schema.TaggedErrorClass<UsernameAlreadyS
 	{
 		message: Schema.String,
 	},
-	{[WireCode]: "ALREADY_SET"},
+	{[ErrorCode]: "ALREADY_SET"},
 ) {}
 
 /** `setUsername` targeted a user id with no canonical user row. */
@@ -100,5 +100,5 @@ export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
 	{
 		message: Schema.String,
 	},
-	{[WireCode]: "USER_NOT_FOUND"},
+	{[ErrorCode]: "USER_NOT_FOUND"},
 ) {}

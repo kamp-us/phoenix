@@ -31,7 +31,7 @@ import {Fate, FateExecutor} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
 import {FateServer} from "./Server.ts";
-import {WireCode} from "./WireError.ts";
+import {ErrorCode} from "./WireError.ts";
 
 // --- span observation channel ------------------------------------------------------
 //
@@ -102,13 +102,13 @@ export const SozlukDbLive = Layer.sync(SozlukDb, () => ({
 export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
-	{[WireCode]: "BODY_REQUIRED"},
+	{[ErrorCode]: "BODY_REQUIRED"},
 ) {}
 
 export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
 	"test/DefinitionNotFound",
 	{message: Schema.String},
-	{[WireCode]: "VOTE_TARGET_NOT_FOUND"},
+	{[ErrorCode]: "VOTE_TARGET_NOT_FOUND"},
 ) {}
 
 // --- the operation config (sozluk's shapes over the in-memory db) -------------------

@@ -33,7 +33,7 @@ import {FateDataView} from "./DataView.ts";
 import {Fate} from "./index.ts";
 import type {DefinitionErrors, FateOperationServices} from "./Operation.ts";
 import {InputValidationError} from "./Operation.ts";
-import {encodeWireError, WireCode} from "./WireError.ts";
+import {ErrorCode, encodeWireError} from "./WireError.ts";
 
 // --- fixture row + view (exported: the TS2883 nameability fixture) ----------
 
@@ -66,13 +66,13 @@ const rows: ReadonlyArray<TermRow> = [
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
-	{[WireCode]: "BODY_REQUIRED"},
+	{[ErrorCode]: "BODY_REQUIRED"},
 ) {}
 
 class TermNotFound extends Schema.TaggedErrorClass<TermNotFound>()(
 	"test/TermNotFound",
 	{message: Schema.String},
-	{[WireCode]: "TERM_NOT_FOUND"},
+	{[ErrorCode]: "TERM_NOT_FOUND"},
 ) {}
 
 class Unrelated extends Schema.TaggedErrorClass<Unrelated>()("test/Unrelated", {

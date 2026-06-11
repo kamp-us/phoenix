@@ -4,7 +4,7 @@
  * fate's structure with Effect's semantics: feature code keeps fate's record
  * shapes; each entry pairs a pure-data definition with an `Effect.fn` handler.
  * This barrel grows task by task; today it ships the error half of the
- * contract — the `WireCode` annotation key and the wire-error codec —
+ * contract — the `ErrorCode` annotation key and the wire-error codec —
  * the views half (the `FateDataView` class factory + `Entity` helper), the
  * record-value constructors (`Fate.source` for per-entity loaders,
  * `Fate.query` / `Fate.list` / `Fate.mutation` for operation resolvers), the
@@ -144,9 +144,9 @@ export {
 	source,
 } from "./Source.ts";
 export {
+	ErrorCode,
 	encodeWireError,
 	INTERNAL_WIRE_CODE,
-	WireCode,
 	wireCodeOf,
 	wireCodeOfClass,
 } from "./WireError.ts";

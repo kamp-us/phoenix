@@ -1,7 +1,7 @@
 /**
  * SPA wire-code list ⇄ server config guard (T0).
  *
- * The server derives wire codes from the `WireCode` annotation on each
+ * The server derives wire codes from the `ErrorCode` annotation on each
  * error class (`.patterns/fate-effect-wire-errors.md`), but the SPA's
  * `MUTATION_ERROR_CODES` (`src/lib/mutationErrorCodes.ts`) is a hand-kept
  * `as const` list. A server `code` the SPA list omits silently decodes to the
@@ -11,7 +11,7 @@
  * This is a *guard*, not a red→green feature — it passes today (no drift). It
  * derives the closed set of codes the server can emit from `fateConfig`
  * itself: every operation's DECLARED error union is walked (union members'
- * `WireCode` annotations — annotations land on each class's AST, so the
+ * `ErrorCode` annotations — annotations land on each class's AST, so the
  * registered config is the single source), plus the two codes the package can
  * always emit independent of any declaration (`INTERNAL_SERVER_ERROR` for
  * defects/un-annotated failures, `VALIDATION_ERROR` for Schema rejections).
@@ -27,9 +27,9 @@
  */
 
 import {
+	ErrorCode,
 	INTERNAL_WIRE_CODE,
 	InputValidationError,
-	WireCode,
 	wireCodeOfClass,
 } from "@phoenix/fate-effect";
 import * as Predicate from "effect/Predicate";
@@ -38,7 +38,7 @@ import {MUTATION_ERROR_CODES} from "../../../src/lib/mutationErrorCodes.ts";
 import {fateConfig} from "./config.ts";
 
 /**
- * Collect every `WireCode` annotation reachable from one Schema AST node:
+ * Collect every `ErrorCode` annotation reachable from one Schema AST node:
  * the node's own annotation plus (for a union) each member's. Structural
  * guards throughout — the walk must not assume AST internals beyond what it
  * reads (the same defensive shape as the package's `wireCodeOfClass`).
@@ -46,8 +46,8 @@ import {fateConfig} from "./config.ts";
 function collectWireCodes(ast: unknown, out: Set<string>): void {
 	if (Predicate.hasProperty(ast, "annotations")) {
 		const annotations: unknown = ast.annotations;
-		if (Predicate.hasProperty(annotations, WireCode)) {
-			const code: unknown = annotations[WireCode];
+		if (Predicate.hasProperty(annotations, ErrorCode)) {
+			const code: unknown = annotations[ErrorCode];
 			if (typeof code === "string") out.add(code);
 		}
 	}

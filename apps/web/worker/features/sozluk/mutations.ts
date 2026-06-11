@@ -10,7 +10,7 @@
  * Input Schemas carry the wire field shapes only — domain validation stays in
  * the service (ADR 0013); domain failures (`BodyRequired`, `BodyTooLong`,
  * `DefinitionNotFound`, `UnauthorizedDefinitionMutation`) are declared on each
- * definition and surface through their `WireCode` annotations as stable
+ * definition and surface through their `ErrorCode` annotations as stable
  * wire codes (`.patterns/fate-effect-wire-errors.md`). Infra failures never
  * reach this layer — they die inside the domain service (the boundary rule in
  * `.patterns/feature-services.md`).

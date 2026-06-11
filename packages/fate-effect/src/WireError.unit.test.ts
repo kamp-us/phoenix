@@ -1,11 +1,11 @@
 /**
- * T0 — the `WireCode` annotation key and the wire-error codec.
+ * T0 — the `ErrorCode` annotation key and the wire-error codec.
  *
  * The contract under test (PRD: "define a domain error once with a
- * `WireCode` annotation on the error class and have the wire codec
+ * `ErrorCode` annotation on the error class and have the wire codec
  * derived from it — one edit instead of three"):
  *
- *   1. Annotating a `Schema.TaggedErrorClass` with `WireCode` is
+ *   1. Annotating a `Schema.TaggedErrorClass` with `ErrorCode` is
  *      *sufficient* for {@link encodeWireError} to produce the correct wire
  *      code + message. No registry, no second edit.
  *   2. Un-annotated errors and defects (arbitrary thrown values) map to the
@@ -21,9 +21,9 @@ import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import * as FateEffect from "./index.ts";
 import {
+	ErrorCode,
 	encodeWireError,
 	INTERNAL_WIRE_CODE,
-	WireCode,
 	wireCodeOf,
 	wireCodeOfClass,
 } from "./WireError.ts";
@@ -32,14 +32,14 @@ import {
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
-	{[WireCode]: "BODY_REQUIRED"},
+	{[ErrorCode]: "BODY_REQUIRED"},
 ) {}
 
 /** An annotated error with extra fields beyond `message`. */
 class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
 	"test/DefinitionNotFound",
 	{definitionId: Schema.String, message: Schema.String},
-	{[WireCode]: "DEFINITION_NOT_FOUND"},
+	{[ErrorCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 
 /** A tagged error WITHOUT the annotation — must fall back to internal. */
@@ -47,7 +47,7 @@ class Unannotated extends Schema.TaggedErrorClass<Unannotated>()("test/Unannotat
 	message: Schema.String,
 }) {}
 
-describe("WireCode annotation", () => {
+describe("ErrorCode annotation", () => {
 	it("is readable off the class", () => {
 		expect(wireCodeOfClass(BodyRequired)).toBe("BODY_REQUIRED");
 		expect(wireCodeOfClass(DefinitionNotFound)).toBe("DEFINITION_NOT_FOUND");
@@ -69,7 +69,7 @@ describe("WireCode annotation", () => {
 
 	it("is typed `string | undefined` through the Schema.Annotations augmentation", () => {
 		const annotations = Schema.resolveAnnotations(BodyRequired);
-		expectTypeOf(annotations?.[WireCode]).toEqualTypeOf<string | undefined>();
+		expectTypeOf(annotations?.[ErrorCode]).toEqualTypeOf<string | undefined>();
 	});
 });
 

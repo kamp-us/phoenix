@@ -10,7 +10,7 @@
  * class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
  *   "sozluk/BodyRequired",
  *   {message: Schema.String},
- *   {[Fate.WireCode]: "BODY_REQUIRED"},
+ *   {[Fate.ErrorCode]: "BODY_REQUIRED"},
  * ) {}
  * ```
  *
@@ -24,4 +24,4 @@
 export type {Entity} from "./DataView.ts";
 export {list, mutation, query} from "./Operation.ts";
 export {source} from "./Source.ts";
-export {WireCode} from "./WireError.ts";
+export {ErrorCode} from "./WireError.ts";

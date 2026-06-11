@@ -2,7 +2,7 @@
  * Tagged errors raised by the Sozluk service layer.
  *
  * Wire-code contract — every class carries its wire `code` as a
- * `WireCode` annotation (`.patterns/fate-effect-wire-errors.md`), which
+ * `ErrorCode` annotation (`.patterns/fate-effect-wire-errors.md`), which
  * `encodeWireError` reads at the fate boundary:
  *
  *   sozluk/BodyRequired                   → BODY_REQUIRED
@@ -16,7 +16,7 @@
  * retired registry entries exactly) so SPA pattern-matching keeps working
  * unchanged; `errors.unit.test.ts` pins each pair.
  */
-import {WireCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@phoenix/fate-effect";
 import * as Schema from "effect/Schema";
 
 /**
@@ -25,7 +25,7 @@ import * as Schema from "effect/Schema";
 export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"sozluk/BodyRequired",
 	{message: Schema.String},
-	{[WireCode]: "BODY_REQUIRED"},
+	{[ErrorCode]: "BODY_REQUIRED"},
 ) {}
 
 /** `body` exceeded the configured maximum (`DEFINITION_BODY_MAX`). */
@@ -35,7 +35,7 @@ export class BodyTooLong extends Schema.TaggedErrorClass<BodyTooLong>()(
 		max: Schema.Number,
 		message: Schema.String,
 	},
-	{[WireCode]: "BODY_TOO_LONG"},
+	{[ErrorCode]: "BODY_TOO_LONG"},
 ) {}
 
 /**
@@ -48,7 +48,7 @@ export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFou
 		definitionId: Schema.String,
 		message: Schema.String,
 	},
-	{[WireCode]: "DEFINITION_NOT_FOUND"},
+	{[ErrorCode]: "DEFINITION_NOT_FOUND"},
 ) {}
 
 /**
@@ -61,5 +61,5 @@ export class UnauthorizedDefinitionMutation extends Schema.TaggedErrorClass<Unau
 		definitionId: Schema.String,
 		message: Schema.String,
 	},
-	{[WireCode]: "UNAUTHORIZED"},
+	{[ErrorCode]: "UNAUTHORIZED"},
 ) {}

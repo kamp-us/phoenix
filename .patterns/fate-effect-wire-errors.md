@@ -1,19 +1,19 @@
-# fate-effect wire errors — the `WireCode` annotation
+# fate-effect wire errors — the `ErrorCode` annotation
 
 How `@phoenix/fate-effect` (the workspace package at `packages/fate-effect`) maps Effect failures onto fate's wire error shape. The short answer: **the wire code is a schema annotation on the error class** — one edit per domain error, no registry. This replaced the bridge's `WIRE_CODE_BY_TAG` registry (deleted in the v1 cutover, ADR 0042). Two guards hold the contract: each feature's `errors.unit.test.ts` enumeration pin, and `worker/features/fate/wireCodes.unit.test.ts` — which derives the server-emittable code set from the fate config's declared error unions and asserts the SPA's `MUTATION_ERROR_CODES` covers it.
 
 ## Declaring an error
 
-Attach the wire code where the error is defined, via the `WireCode` annotation key (`Schema.TaggedErrorClass`'s third parameter):
+Attach the wire code where the error is defined, via the `ErrorCode` annotation key (`Schema.TaggedErrorClass`'s third parameter):
 
 ```ts
-import {WireCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@phoenix/fate-effect";
 import * as Schema from "effect/Schema";
 
 export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"sozluk/BodyRequired",
 	{message: Schema.String},
-	{[WireCode]: "BODY_REQUIRED"},
+	{[ErrorCode]: "BODY_REQUIRED"},
 ) {}
 ```
 
@@ -27,7 +27,7 @@ That is the whole contract — the class declaration carries its own wire mappin
 
 | input | wire result |
 |---|---|
-| error whose class carries `WireCode` | the annotated code + the instance's own `message` |
+| error whose class carries `ErrorCode` | the annotated code + the instance's own `message` |
 | un-annotated error, defect, any other value | `INTERNAL_WIRE_CODE` (`INTERNAL_SERVER_ERROR`) + a fixed message — **defect details never reach the wire** |
 | `FateRequestError` | passed through verbatim (the escape hatch for code already speaking the wire shape) |
 

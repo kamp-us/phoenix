@@ -1,7 +1,7 @@
 /**
  * Pasaport error-class ↔ wire-code enumeration pin (T0).
  *
- * The migrated pasaport records derive wire codes from the `WireCode`
+ * The migrated pasaport records derive wire codes from the `ErrorCode`
  * annotation on each error class (`.patterns/fate-effect-wire-errors.md`) —
  * no registry. This pin is the app-side counterpart of the package's
  * `WireError.unit.test.ts` enumeration: every error class pasaport operations
@@ -11,7 +11,7 @@
  * migration.
  *
  * The bridge's `pasaport/UsernameInvalid` carried a dynamic `code` field the
- * registry upcased per instance (`too_short` → `TOO_SHORT`); `WireCode`
+ * registry upcased per instance (`too_short` → `TOO_SHORT`); `ErrorCode`
  * is ONE static code per class (`wireCodeOf` reads the instance's
  * CONSTRUCTOR annotation), so each sub-code is now its own class — this
  * table pins every split class to the exact upcased code the `upcased`

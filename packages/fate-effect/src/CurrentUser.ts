@@ -21,7 +21,7 @@
  */
 import {Context, Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {WireCode} from "./WireError.ts";
+import {ErrorCode} from "./WireError.ts";
 
 /**
  * The identity of the authenticated user, as resolvers consume it — a
@@ -42,7 +42,7 @@ export interface CurrentUserInfo {
 export class Unauthorized extends Schema.TaggedErrorClass<Unauthorized>()(
 	"fate-effect/Unauthorized",
 	{message: Schema.String},
-	{[WireCode]: "UNAUTHORIZED"},
+	{[ErrorCode]: "UNAUTHORIZED"},
 ) {}
 
 /**

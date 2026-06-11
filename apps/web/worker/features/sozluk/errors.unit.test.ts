@@ -1,7 +1,7 @@
 /**
  * Sozluk error-class ↔ wire-code enumeration pin (T0).
  *
- * The migrated sozluk records derive wire codes from the `WireCode`
+ * The migrated sozluk records derive wire codes from the `ErrorCode`
  * annotation on each error class (`.patterns/fate-effect-wire-errors.md`) —
  * no registry. This pin is the app-side counterpart of the package's
  * `WireError.unit.test.ts` enumeration: every error class sozluk operations
