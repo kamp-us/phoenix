@@ -2,11 +2,11 @@
  * Shared live wire types + topic helpers for the SSE fan-out (ADR 0023).
  *
  * This module is import-safe in a plain Node runner (no `cloudflare:workers`):
- * the publish-only `liveBus` (`event-bus.ts`) and the fate codegen graph
- * (`fate/schema.ts → fate/server.ts → event-bus.ts`) depend on it, while only the
- * unified `LiveDO` class (`live-do.ts`) and the worker entry pull in the Workers
- * runtime. Keeping the frame shapes + topic resolution here means the bus, the
- * DO, and the route all speak one vocabulary.
+ * the per-request live publisher (`live-publisher.ts`) and the fate codegen
+ * graph (`fate/schema.ts → fate/config.ts → event-bus.ts`) depend on it, while
+ * only the unified `LiveDO` class (`live-do.ts`) and the worker entry pull in
+ * the Workers runtime. Keeping the frame shapes + topic resolution here means
+ * the publisher, the DO, and the route all speak one vocabulary.
  *
  * The frame shapes mirror fate's native `livePayload` / `liveConnectionPayload`
  * / `sse()` exactly, so the browser's native fate SSE client parses them
@@ -90,6 +90,20 @@ export type PublishMessage =
 			readonly frame: ConnectionFrame;
 			readonly eventId?: string;
 	  };
+
+/**
+ * A pre-bound per-request topic publish: hand it one resolved topic key + the
+ * publish message and it fires the typed `LiveDO.publish` RPC (on the
+ * `topic:<key>`-named instance), fired-and-forgotten via the request's
+ * `waitUntil`. `live-publisher.ts` builds this from the worker-init-resolved
+ * `LiveDO` namespace (`getByName`, typed RPC) and
+ * `Cloudflare.WorkerExecutionContext.waitUntil` — so a publish reaches the DO
+ * via the typed RPC stub, not an `env`-lookup/`idFromName`/string-URL
+ * `stub.fetch` (ADR 0028/0029). Named `PublishToTopic` — NOT `LivePublisher`,
+ * which is the package's per-request service tag this function ultimately
+ * powers (`@phoenix/fate-effect`).
+ */
+export type PublishToTopic = (topicKey: string, message: PublishMessage) => void;
 
 /** A control message a connection DO records as a subscription. */
 export type SubscribeControl =

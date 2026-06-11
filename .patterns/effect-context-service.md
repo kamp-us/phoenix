@@ -170,8 +170,8 @@ effect-smol's `NodeRedis.use` / `BunRedis.use` shape, adapted per client.
 phoenix's shipped application of this pattern is the live publisher
 (`worker/features/fate-live/live-publisher.ts`, originating as the `LiveBus`
 service of ADR [0039](../.decisions/0039-livebus-context-service.md), retired
-in the fate-effect v1 cutover): the synchronous publish-only bus
-(`makeLiveEventBus`) is wrapped in `Effect.try` with a typed
+in the fate-effect v1 cutover): the synchronous frame-building publish path
+is wrapped in `Effect.try` with a typed
 `LivePublishError`, and the swallow law is applied ONCE inside the layer —
 every `LivePublisher` method is `Effect<void>` (`E = never`), so "a publish
 can't fail the mutation" is a type, not a per-call-site convention:

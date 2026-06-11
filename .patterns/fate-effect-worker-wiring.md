@@ -96,15 +96,17 @@ const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort
   the router's request span (the `HttpEffect.toHandled` tracer middleware) — pinned in the
   package's `Interpreter.batch.test.ts`.
 - **Abort → interruption is the route's job**: alchemy's bridge wires no signal, so
-  `interruptOnAbort(signal)` (exported from `route.ts`, T0-tested in `route.unit.test.ts`)
+  `interruptOnAbort(signal)` (`worker/http/interrupt-on-abort.ts`, beside the router assembly
+  it serves; T0-tested in `interrupt-on-abort.unit.test.ts`)
   forks the program as a child of the request fiber and interrupts it from the signal's
   `abort` listener — effect-smol's own platform idiom (`HttpEffect.toWebHandlerWith`).
 - **One ctx object per request**: the interpreter provides the pair as VALUES off this object
   to every operation. Never copy/rebuild it per resolver.
 - The publish surface rides one topic capability: the worker-init `LiveTopics.publish` with the
   route's `LiveLimits` applied + the request's `waitUntil`. `livePublisherFor` (the per-request
-  `LivePublisher` service value) resolves frames through `makeLiveEventBus` — the one
-  frame-building code path, shared with the static `liveBusConfig` fate holds.
+  `LivePublisher` service value) builds frames + topic keys directly — the one
+  frame-building code path; the static `liveBusConfig` fate holds is a throwing stub
+  for the build-time `"subscribe" in live` check only.
 
 ## `schema.ts` (build time — the codegen export)
 

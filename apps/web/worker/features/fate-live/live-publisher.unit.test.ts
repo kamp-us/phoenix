@@ -8,9 +8,10 @@
  *      cannot fail the mutation" is a TYPE, the whole point of the service
  *      (type-level assertions);
  *   2. the published `(topicKey, PublishMessage)` pairs match the established
- *      wire shape — pinned against literal frame fixtures AND differentially
- *      (the same mutation calls through the raw `makeLiveEventBus`, the one
- *      frame-building code path the publisher wraps);
+ *      wire shape — pinned against literal frame fixtures AND against the
+ *      frozen byte baseline recorded from the retired bridge event-bus
+ *      (`makeLiveEventBus`, deleted in the PR-30 R6 fix — the publisher now
+ *      builds frames directly and these pins are the drift guard);
  *   3. a publish whose underlying topic call rejects cannot fail the calling
  *      effect, and the failure is logged (failing topic stub);
  *   4. publishes are scheduled through the request's execution context
@@ -25,7 +26,6 @@ import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@
 import type {LivePublisher} from "@phoenix/fate-effect";
 import {Effect, Exit} from "effect";
 import {expectTypeOf, vi} from "vitest";
-import {makeLiveEventBus} from "./event-bus.ts";
 import {livePublisherFor} from "./live-publisher.ts";
 import type {PublishMessage} from "./protocol.ts";
 
@@ -169,9 +169,9 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 	}),
 );
 
-it.effect("wire shape is identical to the raw event bus for the same mutation calls", () =>
+it.effect("wire shape is identical to the retired event bus for the same mutation calls", () =>
 	Effect.gen(function* () {
-		// The new surface...
+		// The live surface...
 		const {live, recorded, flush} = makeHarness();
 		yield* live.update("Definition", "d1", {eventId: "e1"});
 		yield* live.delete("Post", 7, {eventId: "e2"});
@@ -187,25 +187,79 @@ it.effect("wire shape is identical to the raw event bus for the same mutation ca
 		yield* live.connection("posts").appendNode("Post", "p1", {node: {id: "p1"}});
 		yield* Effect.promise(flush);
 
-		// ...and the raw-bus baseline: the SAME calls through `makeLiveEventBus`
-		// over a capturing publisher — the one frame-building code path the
-		// publisher wraps, so a drift between the two surfaces fails here.
-		const bridgeRecorded: Array<Recorded> = [];
-		const bridge = makeLiveEventBus((topicKey, message) => {
-			bridgeRecorded.push({topicKey, message});
-		});
-		bridge.update("Definition", "d1", {eventId: "e1"});
-		bridge.delete("Post", 7, {eventId: "e2"});
-		const bridgeDefinitions = bridge.connection("Term.definitions", {slug: "effect"});
-		bridgeDefinitions.appendNode("Definition", "d2", {
-			node: {id: "d2"},
-			cursor: "c1",
-			eventId: "e3",
-		});
-		bridgeDefinitions.prependNode("Definition", "d3", {node: {id: "d3"}});
-		bridgeDefinitions.deleteEdge("Definition", "d2", {eventId: "e4"});
-		bridgeDefinitions.invalidate({eventId: "e5"});
-		bridge.connection("posts").appendNode("Post", "p1", {node: {id: "p1"}});
+		// ...and the FROZEN baseline: the exact `(topicKey, message)` pairs the
+		// bridge's `makeLiveEventBus` recorded for these same calls before its
+		// deletion (PR-30 R6) — the bus's output for this corpus, frozen as
+		// literal bytes. Note `frame: {data: undefined}`: an update without
+		// `data` still carried the `data` key (the bus spelled `{data:
+		// options?.data}`), and the publisher must keep doing so.
+		const bridgeRecorded: Array<Recorded> = [
+			{
+				topicKey: liveEntityTopic("Definition", "d1"),
+				message: {
+					kind: "entity",
+					match: {type: "Definition", entityId: "d1"},
+					frame: {data: undefined},
+					eventId: "e1",
+				},
+			},
+			{
+				topicKey: liveEntityTopic("Post", 7),
+				message: {
+					kind: "entity",
+					match: {type: "Post", entityId: "7"},
+					frame: {delete: true, id: 7},
+					eventId: "e2",
+				},
+			},
+			{
+				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
+				message: {
+					kind: "connection",
+					match: {procedure: "Term.definitions", args: {slug: "effect"}},
+					frame: {
+						type: "appendNode",
+						nodeType: "Definition",
+						edge: {node: {id: "d2"}, cursor: "c1"},
+					},
+					eventId: "e3",
+				},
+			},
+			{
+				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
+				message: {
+					kind: "connection",
+					match: {procedure: "Term.definitions", args: {slug: "effect"}},
+					frame: {type: "prependNode", nodeType: "Definition", edge: {node: {id: "d3"}}},
+				},
+			},
+			{
+				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
+				message: {
+					kind: "connection",
+					match: {procedure: "Term.definitions", args: {slug: "effect"}},
+					frame: {type: "deleteEdge", nodeType: "Definition", id: "d2"},
+					eventId: "e4",
+				},
+			},
+			{
+				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
+				message: {
+					kind: "connection",
+					match: {procedure: "Term.definitions", args: {slug: "effect"}},
+					frame: {type: "invalidate"},
+					eventId: "e5",
+				},
+			},
+			{
+				topicKey: liveGlobalConnectionTopic("posts"),
+				message: {
+					kind: "connection",
+					match: {procedure: "posts"},
+					frame: {type: "appendNode", nodeType: "Post", edge: {node: {id: "p1"}}},
+				},
+			},
+		];
 
 		assert.deepStrictEqual(recorded, bridgeRecorded);
 	}),

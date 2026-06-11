@@ -1,15 +1,15 @@
 /**
- * `interruptOnAbort` — the `/fate` route's platform-edge abort wiring
- * (ADR 0043). alchemy's worker bridge runs the request handler with
- * `Effect.runPromiseExit` and wires no signal, so the route owns
- * abort→interruption itself (effect-smol's `HttpEffect.toWebHandlerWith`
+ * `interruptOnAbort` — the platform-edge abort wiring for the routes
+ * assembled in `app.ts` (ADR 0043). alchemy's worker bridge runs the request
+ * handler with `Effect.runPromiseExit` and wires no signal, so the HTTP edge
+ * owns abort→interruption itself (effect-smol's `HttpEffect.toWebHandlerWith`
  * idiom: `request.signal` listener → fiber interrupt). T0: pure helper, no
  * router, no workerd.
  */
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import {describe, expect, it} from "vitest";
-import {type AbortSignalLike, interruptOnAbort} from "./route.ts";
+import {type AbortSignalLike, interruptOnAbort} from "./interrupt-on-abort.ts";
 
 describe("interruptOnAbort", () => {
 	it("passes a completing program through untouched", async () => {

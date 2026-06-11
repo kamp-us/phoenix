@@ -19,7 +19,7 @@ Nothing else moves: `config.ts`/`layers.ts`/`route.ts`/`schema.ts` are untouched
 Migrated handlers must not yield the bridge's per-request services — the compiler provides only `CurrentUser` and `LivePublisher`:
 
 - `yield* Auth` → `const {user} = yield* CurrentUser` (anonymous reads), `Auth.required` → `const user = yield* CurrentUser.required` (gated writes — fails with the package's `Unauthorized`, annotated `UNAUTHORIZED`, so it must appear in the mutation's declared `error` union).
-- `liveBus.useIgnore((bus) => bus.connection(...).appendNode(...))` → `const live = yield* LivePublisher; yield* live.connection(...).appendNode(...)`. No `useIgnore`: every publish method's error channel is `never` by construction ([fate-effect-server.md](./fate-effect-server.md)). Topic keys and frames are unchanged — `livePublisherFor` builds them through the same `makeLiveEventBus` path the bridge bus used.
+- `liveBus.useIgnore((bus) => bus.connection(...).appendNode(...))` → `const live = yield* LivePublisher; yield* live.connection(...).appendNode(...)`. No `useIgnore`: every publish method's error channel is `never` by construction ([fate-effect-server.md](./fate-effect-server.md)). Topic keys and frames are unchanged — `livePublisherFor` builds them directly (the bridge's `makeLiveEventBus` is deleted; the frame bytes are pinned by `live-publisher.unit.test.ts`'s literal + frozen-baseline fixtures).
 
 ## Infra failures die — inside the domain service, not in fate handlers
 

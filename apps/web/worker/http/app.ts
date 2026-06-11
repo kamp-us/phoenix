@@ -65,17 +65,19 @@ export const makeAppLive = (options: {
 	readonly fateLayer: Layer.Layer<WorkerFateServices | FateServer>;
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**
-	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`). In the deployed worker
-	 * this is `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`), which builds
-	 * the auth instance from the `Database` seam (the raw d1 handle) + the
-	 * `BETTER_AUTH_SECRET` binding — its external `R` (the `ConfigProvider` the
-	 * secret is read through) is supplied by alchemy's worker runtime context.
-	 * Tests pass a hand-rolled Layer over the same tag
-	 * (`Layer.succeed(BetterAuth.BetterAuth)`); both shapes thread through
-	 * `provideRequest` the same way. `R` is left unconstrained (`any`) so the
-	 * worker's outer `Effect.provide` discharges whatever the layer carries upward.
+	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`), dependency-free
+	 * (`R = never`). In the deployed worker this is the INIT-RESOLVED
+	 * `Layer.succeed(BetterAuth.BetterAuth)(betterAuth)` (`index.ts`) — NOT
+	 * `BetterAuthLive`: `provideRequest` builds its layer per request, so
+	 * passing `BetterAuthLive` would reconstruct better-auth (re-running the
+	 * secret resolution, which needs deploy-time alchemy machinery absent in
+	 * the workerd runtime) on every request; init resolves the service once
+	 * and hands the warmed instance here (see `index.ts`'s `makeAppLive` call
+	 * site). Tests pass `layerTest` over the same tag
+	 * (`better-auth.testing.ts`); both shapes thread through `provideRequest`
+	 * the same way.
 	 */
-	readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth, never, any>;
+	readonly betterAuthLayer: Layer.Layer<BetterAuth.BetterAuth>;
 	/**
 	 * The worker's ambient `RuntimeContext`, captured in init. better-auth's
 	 * `fetch`/`auth` carry an undischarged `RuntimeContext` requirement (the
@@ -94,28 +96,17 @@ export const makeAppLive = (options: {
 	// markers `HttpRouter.add` lifts (the fate route's worker services +
 	// `FateServer` + `LiveTopics`; `BetterAuth` for `/api/auth/*`; live's
 	// `Pasaport` + `LiveConnections`) — plain `Layer.provide` does not.
-	// `fateLayer` carries `Pasaport` AND `FateServer`, `BetterAuthLive`
-	// (`worker/features/pasaport/better-auth-live.ts`) carries `BetterAuth`,
-	// `liveLayer` adds the DO handles.
-	// `provideMerge(betterAuthLayer)` instead of a flat 3-way `mergeAll`: with
-	// `any` in `betterAuthLayer`'s `R` the effect language service flags the
-	// mergeAll as "this layer needs services from another in the same call"
-	// (false positive — BetterAuthLive doesn't depend on Pasaport/LiveTopics).
-	// `provideMerge` makes the build order explicit: fateLayer + liveLayer
-	// first, then betterAuthLayer's outputs merged on top with its own
-	// requirements left to the outer worker `Effect.provide`.
+	// `fateLayer` carries `Pasaport` AND `FateServer`, `betterAuthLayer` (the
+	// init-resolved service layer) carries `BetterAuth`, `liveLayer` adds the
+	// DO handles. All four are dependency-free (`R = never`), so they merge
+	// flat — nothing here is provided into anything else.
 	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute).pipe(
 		HttpRouter.provideRequest(
 			Layer.mergeAll(
 				options.fateLayer,
 				options.liveLayer,
+				options.betterAuthLayer,
 				Layer.succeed(RuntimeContext)(options.runtimeContext),
-			).pipe(
-				// `provideMerge` the `BetterAuth` seam the auth route needs; its own
-				// upstream requirements (`Providers`/`RuntimeContext`) are left for the
-				// worker's outer `Effect.provide`. `fateLayer` is dependency-free
-				// (runtime-derived, `R = never`), so no `Database` is provided here.
-				Layer.provideMerge(options.betterAuthLayer),
 			),
 		),
 	);

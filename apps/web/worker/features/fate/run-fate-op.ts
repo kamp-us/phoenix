@@ -38,17 +38,34 @@
  * rebuilt per `it` in `beforeEach`/`afterEach`, so each case runs against its own
  * in-memory D1 (no row leakage; the `it.layer`/`describe`-once form is avoided).
  */
-import {FateInterpreter, type FateRequestContext, FateServer} from "@phoenix/fate-effect";
+import {
+	FateInterpreter,
+	type FateRequestContext,
+	FateServer,
+	type ProtocolOperation,
+	ProtocolResponse,
+} from "@phoenix/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {fateConfig} from "./config.ts";
 import {makeFateRuntime, type WorkerFateServices} from "./layers.ts";
 
-/** A single fate operation result as it appears on the wire. */
-export type FateResult =
-	| {ok: true; data: unknown; id: string}
-	| {ok: false; error: {code: string; message?: string}; id: string};
+/**
+ * A fate operation body as a suite spells it — the package's encoded
+ * `ProtocolOperation` wire shape, minus the `id` this harness stamps. Typing
+ * the harness input off the package codec means an operation a suite can
+ * write IS an operation the protocol gate can decode.
+ */
+export type FateOperationBody = Omit<Schema.Codec.Encoded<typeof ProtocolOperation>, "id">;
+
+/**
+ * A single fate operation result as decoded from the wire through the
+ * package's `ProtocolResponse` codec — the same schemas the interpreter's
+ * protocol pins ride on, so the harness cannot drift from the wire shape.
+ */
+export type FateResult = Schema.Schema.Type<typeof ProtocolResponse>["results"][number];
 
 /** What one operation round-trip returns: HTTP status, the result, captured publishes. */
 export interface FateOpResult {
@@ -78,7 +95,7 @@ export interface FateOpAuth {
  */
 export async function runFateOp(
 	workerLayer: Layer.Layer<WorkerFateServices>,
-	operation: Record<string, unknown>,
+	operation: FateOperationBody,
 	opts: {auth?: FateOpAuth} = {},
 ): Promise<FateOpResult> {
 	const request = new Request("https://test.local/fate", {
@@ -128,7 +145,10 @@ export async function runFateOp(
 
 	try {
 		const res = await runtime.runPromise(FateInterpreter.handleRequest(request, ctx));
-		const body = (await res.json()) as {version: number; results: FateResult[]};
+		// Decode the wire body through the package's `ProtocolResponse` codec —
+		// no hand-rolled result type, no `as` cast; a malformed response throws
+		// the `ParseError` (a harness bug or a wire drift, either way loud).
+		const body = Schema.decodeUnknownSync(ProtocolResponse)(await res.json());
 		const [result] = body.results;
 		if (result === undefined) {
 			throw new Error(`fate response carried no result: ${JSON.stringify(body)}`);

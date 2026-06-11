@@ -6,7 +6,7 @@ A tier is **which layer satisfies a fixed R-channel**, not a folder. The boundar
 
 | Tier | What it tests | Backed by | Examples |
 |---|---|---|---|
-| **T0 — unit (pure)** | Pure fns / Effect logic, **zero storage, no I/O** | nothing (`it`/`it.effect`) | `keyset.unit.test.ts`, `errors.unit.test.ts`, `wireCodes.unit.test.ts`, `env.unit.test.ts`, `effect.unit.test.ts`, `event-bus.unit.test.ts` |
+| **T0 — unit (pure)** | Pure fns / Effect logic, **zero storage, no I/O** | nothing (`it`/`it.effect`) | `keyset.unit.test.ts`, `errors.unit.test.ts`, `wireCodes.unit.test.ts`, `env.unit.test.ts`, `effect.unit.test.ts`, `live-publisher.unit.test.ts` |
 | **T1 — service-integration** | A real feature service over a real SQL engine; only the `Database` (→ `Drizzle`) layer swaps | `node:sqlite` `:memory:` ([`sqlite-d1.testing.ts`](../apps/web/worker/db/sqlite-d1.testing.ts)) + the committed baseline migration | `Vote.test.ts`, `Drizzle.test.ts`, `sqlite-d1.testing.test.ts` |
 | **T2 — app-integration** | The full worker layer through the native interpreter's `handleRequest` (`runFateOp` — the serving path since ADR 0043) — wire codes, topic publishes, real-or-stubbed better-auth | `node:sqlite` under the worker layer, no workerd | `bridge-sozluk.test.ts`, `bridge-sozluk-keyset.test.ts`, `bridge-products.test.ts`, `app.test.ts` |
 | **T3 — system (stack-smoke)** | Black-box HTTP over the deployed workerd; **not a layer** | **real remote D1** + workerd | the suites under `tests/integration/` |

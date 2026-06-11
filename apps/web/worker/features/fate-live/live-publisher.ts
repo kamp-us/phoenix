@@ -4,18 +4,25 @@
  * package — `packages/fate-effect/src/LivePublisher.ts` — and its tag identity
  * is load-bearing, see `.patterns/fate-effect-server.md`).
  *
- * This module is where "a publish cannot fail the mutation" is the service's
+ * This module is THE frame-building code path: each of the service's six
+ * publish methods (`update`, `delete`, `connection().appendNode`/
+ * `prependNode`/`deleteEdge`/`invalidate`) resolves its `PublishMessage`
+ * frame + topic keys right here (frame shapes and `topicsForPublish` come
+ * from `protocol.ts`), byte-identical to the retired bridge event-bus —
+ * pinned by `live-publisher.unit.test.ts`'s literal + frozen-baseline
+ * fixtures. The bus fate's config holds (`event-bus.ts`) is a throwing stub
+ * that exists only for the build-time `"subscribe" in live` check.
+ *
+ * This is also where "a publish cannot fail the mutation" is the service's
  * type, not a per-call-site convention: every publish method is
  * `Effect<void>` (E = `never`), and the two failure modes are handled HERE,
  * once —
  *
  *   - **scheduling**: each publish resolves its topics + frame synchronously
- *     (the one `makeLiveEventBus` frame-building code path, so the
- *     `PublishMessage` wire shape cannot drift between surfaces) and hands
- *     the topic call to `waitUntil` as a fire-and-forget promise. Nothing on
- *     the request path awaits the DO fan-out. `waitUntil` is the platform's
- *     ONLY way to extend work past the response on CF (no shutdown hook, no
- *     daemon fibers surviving the request — ADR 0029/0041), so the
+ *     and hands the topic call to `waitUntil` as a fire-and-forget promise.
+ *     Nothing on the request path awaits the DO fan-out. `waitUntil` is the
+ *     platform's ONLY way to extend work past the response on CF (no shutdown
+ *     hook, no daemon fibers surviving the request — ADR 0029/0041), so the
  *     Effect→Promise conversion at that sink is the documented boundary.
  *     One known asymmetry: the detached `Effect.runPromise` starts a FRESH
  *     fiber with no ambient tracer context, so publish spans do not nest
@@ -36,12 +43,28 @@
  */
 import type {LivePublisher} from "@phoenix/fate-effect";
 import * as Effect from "effect/Effect";
+import * as Schema from "effect/Schema";
 import {
-	LivePublishError,
-	makeLiveEventBus,
-	type LivePublisher as PublishToTopic,
-} from "./event-bus.ts";
-import type {PublishMessage} from "./protocol.ts";
+	type ConnectionFrame,
+	type EntityFrame,
+	type PublishMessage,
+	type PublishToTopic,
+	topicsForPublish,
+} from "./protocol.ts";
+
+/**
+ * A publish failed inside the swallow wrapper below. It never reaches the
+ * fate boundary: a mutation publishes *after* its DB write, so the publish
+ * must not be able to fail the committed mutation — the publisher maps this
+ * away (logged at `Warn`) in its `never` error channel (ADR 0039's
+ * use/useIgnore law, applied once inside the layer).
+ */
+export class LivePublishError extends Schema.TaggedErrorClass<LivePublishError>()(
+	"fate-live/LivePublishError",
+	{
+		cause: Schema.Defect(),
+	},
+) {}
 
 /** The two per-request capabilities the live publisher closes over. */
 export interface LivePublisherOptions {
@@ -60,6 +83,24 @@ export interface LivePublisherOptions {
 	readonly waitUntil: (promise: Promise<unknown>) => void;
 }
 
+/** Build the fate entity frame for an update/delete publish (fate's `livePayload` shape). */
+const entityFrame = (
+	type: "update" | "delete",
+	id: string | number,
+	options?: {readonly data?: unknown},
+): EntityFrame => (type === "delete" ? {delete: true, id} : {data: options?.data});
+
+/** Build the connection edge frame for an appendNode/prependNode publish. */
+const nodeFrame = (
+	type: "appendNode" | "prependNode",
+	nodeType: string,
+	options?: {readonly node?: unknown; readonly cursor?: string},
+): ConnectionFrame => ({
+	type,
+	nodeType,
+	edge: {node: options?.node, ...(options?.cursor ? {cursor: options.cursor} : {})},
+});
+
 /** Build the per-request `LivePublisher` service value. */
 export function livePublisherFor(options: LivePublisherOptions): typeof LivePublisher.Service {
 	// One topic publish = one detached promise on the execution context. The
@@ -74,7 +115,13 @@ export function livePublisherFor(options: LivePublisherOptions): typeof LivePubl
 			}),
 		);
 	};
-	const bus = makeLiveEventBus(schedule);
+
+	// Resolve the message's topic keys and schedule one delivery per key.
+	const publish = (message: PublishMessage): void => {
+		for (const topicKey of topicsForPublish(message)) {
+			schedule(topicKey, message);
+		}
+	};
 
 	// The sync half of the swallow-with-log contract: frame building, topic
 	// resolution, and the `waitUntil` call itself run inside `Effect.try`, and
@@ -86,15 +133,47 @@ export function livePublisherFor(options: LivePublisherOptions): typeof LivePubl
 		);
 
 	return {
-		update: (type, id, opts) => swallow(() => bus.update(type, id, opts)),
-		delete: (type, id, opts) => swallow(() => bus.delete(type, id, opts)),
+		update: (type, id, opts) =>
+			swallow(() =>
+				publish({
+					kind: "entity",
+					match: {type, entityId: String(id)},
+					frame: entityFrame("update", id, opts),
+					...(opts?.eventId !== undefined ? {eventId: opts.eventId} : {}),
+				}),
+			),
+		delete: (type, id, opts) =>
+			swallow(() =>
+				publish({
+					kind: "entity",
+					match: {type, entityId: String(id)},
+					frame: entityFrame("delete", id),
+					...(opts?.eventId !== undefined ? {eventId: opts.eventId} : {}),
+				}),
+			),
 		connection: (procedure, args) => {
-			const handle = bus.connection(procedure, args);
+			// Carry the connection's filter args into the publish match so
+			// `topicsForPublish` resolves the SAME args-scoped `liveConnectionTopic`
+			// key the subscriber registered under — the publish hits the narrow topic
+			// directly instead of falling back to the procedure-wide global wildcard
+			// (which would fan one term's new definition out to every `Term.definitions`
+			// subscriber across all slugs/tabs/sessions).
+			const match = {procedure, ...(args !== undefined ? {args} : {})};
+			const emit = (frame: ConnectionFrame, eventId?: string) =>
+				publish({
+					kind: "connection",
+					match,
+					frame,
+					...(eventId !== undefined ? {eventId} : {}),
+				});
 			return {
-				appendNode: (nodeType, id, opts) => swallow(() => handle.appendNode(nodeType, id, opts)),
-				prependNode: (nodeType, id, opts) => swallow(() => handle.prependNode(nodeType, id, opts)),
-				deleteEdge: (nodeType, id, opts) => swallow(() => handle.deleteEdge(nodeType, id, opts)),
-				invalidate: (opts) => swallow(() => handle.invalidate(opts)),
+				appendNode: (nodeType, _id, opts) =>
+					swallow(() => emit(nodeFrame("appendNode", nodeType, opts), opts?.eventId)),
+				prependNode: (nodeType, _id, opts) =>
+					swallow(() => emit(nodeFrame("prependNode", nodeType, opts), opts?.eventId)),
+				deleteEdge: (nodeType, id, opts) =>
+					swallow(() => emit({type: "deleteEdge", nodeType, id}, opts?.eventId)),
+				invalidate: (opts) => swallow(() => emit({type: "invalidate"}, opts?.eventId)),
 			};
 		},
 	};

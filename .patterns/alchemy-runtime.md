@@ -79,7 +79,7 @@ export const handleFate = Effect.gen(function* () {
 });
 ```
 
-- **Abort → interruption**: alchemy's worker bridge runs the request fiber with `Effect.runPromiseExit` and no signal wiring, so `interruptOnAbort` (exported from `route.ts`, T0-tested) forks the program as a child of the request fiber and interrupts it from the signal's `abort` listener — the same mechanism effect-smol's own platform handler uses (`HttpEffect.toWebHandlerWith`).
+- **Abort → interruption**: alchemy's worker bridge runs the request fiber with `Effect.runPromiseExit` and no signal wiring, so `interruptOnAbort` (`worker/http/interrupt-on-abort.ts`, T0-tested) forks the program as a child of the request fiber and interrupts it from the signal's `abort` listener — the same mechanism effect-smol's own platform handler uses (`HttpEffect.toWebHandlerWith`).
 - **There is no context capture and no per-request layer build**: the worker singletons come through `provideRequest`'s context layer, and `currentUser`/`livePublisher` ride the `FateRequestContext` as values, provided onto each operation effect by the interpreter (`Effect.provideService` — the v1 compiler's provision order, kept verbatim).
 
 > **Spans nest under the request span for free.** The interpreter runs in the request fiber's tree, and the router's tracer middleware (`HttpEffect.toHandled`) opens the request span on that fiber — so every `Effect.fn` handler/source span (including loads through the walk's `RequestResolver` batch fiber) is a live child of the request. Pinned in the package's `Interpreter.batch.test.ts`. phoenix has ~59 `Effect.fn(...)`-traced functions; once a Tracer/exporter is installed at worker scope, those spans are live children of the request with no further change.
