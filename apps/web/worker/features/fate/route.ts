@@ -48,6 +48,17 @@ import {LiveTopics} from "../fate-live/topics.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 
 /**
+ * The subset of `AbortSignal` the wiring below actually reads. Structural on
+ * purpose: a unit test can model an abort dispatched inside the
+ * pre-check→listener gap (not reachable deterministically through a real
+ * `AbortController`) without a cast.
+ */
+export type AbortSignalLike = Pick<
+	AbortSignal,
+	"aborted" | "addEventListener" | "removeEventListener"
+>;
+
+/**
  * Run `program` as a child of the current (request) fiber, interrupted when
  * `signal` aborts — the platform-layer abort wiring (effect-smol's
  * `HttpEffect.toWebHandlerWith` idiom: `request.signal` listener →
@@ -56,7 +67,7 @@ import {Pasaport} from "../pasaport/Pasaport.ts";
  * The child inherits the fiber context, so spans/services flow through.
  */
 export const interruptOnAbort =
-	(signal: AbortSignal) =>
+	(signal: AbortSignalLike) =>
 	<A, E, R>(program: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
 		Effect.gen(function* () {
 			if (signal.aborted) {
@@ -65,6 +76,15 @@ export const interruptOnAbort =
 			const fiber = yield* Effect.forkChild(program);
 			const onAbort = () => fiber.interruptUnsafe();
 			signal.addEventListener("abort", onAbort, {once: true});
+			// `Effect.forkChild` is a fiber yield point, so unlike effect-smol's
+			// `HttpEffect.toWebHandlerWith` (HttpEffect.ts ~261: listener registered
+			// in the same synchronous tick as the fork) there is a gap between the
+			// pre-check above and this registration. An abort dispatched in that gap
+			// fires no listener — re-check and interrupt directly (the same call
+			// `onAbort` makes; idempotent if both run).
+			if (signal.aborted) {
+				fiber.interruptUnsafe();
+			}
 			return yield* Fiber.join(fiber).pipe(
 				Effect.onExit(() => Effect.sync(() => signal.removeEventListener("abort", onAbort))),
 			);

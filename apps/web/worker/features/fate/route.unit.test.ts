@@ -9,7 +9,7 @@
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import {describe, expect, it} from "vitest";
-import {interruptOnAbort} from "./route.ts";
+import {type AbortSignalLike, interruptOnAbort} from "./route.ts";
 
 describe("interruptOnAbort", () => {
 	it("passes a completing program through untouched", async () => {
@@ -44,6 +44,29 @@ describe("interruptOnAbort", () => {
 		expect(started).toBe(true);
 		controller.abort();
 		const exit = await exitPromise;
+		expect(Exit.isFailure(exit) && Exit.hasInterrupts(exit)).toBe(true);
+	});
+
+	it("an abort dispatched in the pre-check→listener gap still interrupts (recheck branch)", async () => {
+		// `Effect.forkChild` is a fiber yield point between the `signal.aborted`
+		// pre-check and `addEventListener` — an abort dispatched in that gap
+		// fires no listener. A real AbortController can't hit the gap
+		// deterministically, so simulate exactly what it looks like from the
+		// helper's view: `aborted` reads false at the pre-check and true after,
+		// and the registered listener never fires (the event already dispatched).
+		let aborted = false;
+		const gapSignal: AbortSignalLike = {
+			get aborted() {
+				const value = aborted;
+				aborted = true; // flips after the first (pre-check) read
+				return value;
+			},
+			// Registered too late: the event already dispatched, so the listener
+			// is never invoked — only the recheck can interrupt.
+			addEventListener: () => {},
+			removeEventListener: () => {},
+		};
+		const exit = await Effect.runPromiseExit(Effect.never.pipe(interruptOnAbort(gapSignal)));
 		expect(Exit.isFailure(exit) && Exit.hasInterrupts(exit)).toBe(true);
 	});
 
