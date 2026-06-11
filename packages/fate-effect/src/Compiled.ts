@@ -23,6 +23,44 @@ import type {FateSourcesList, SourceDefinitionLike} from "./Server.ts";
 
 export type AnyRow = Record<string, unknown>;
 
+/**
+ * Map a record's values, keys preserved — the compile surfaces' ONE
+ * entries→record loop (review R1: six hand-rolled `Object.entries` builds
+ * across `Executor.ts`/`Codegen.ts` collapsed to this).
+ */
+export const mapRecord = <V, R>(
+	record: Record<string, V>,
+	f: (value: V, name: string) => R,
+): Record<string, R> => {
+	const out: Record<string, R> = {};
+	for (const [name, value] of Object.entries(record)) {
+		out[name] = f(value, name);
+	}
+	return out;
+};
+
+/**
+ * Re-pin a validated config's invariant for the type system: every mutation
+ * carries a wire type — `collectConfigIssues` rejects a typeless one before
+ * either compile surface runs (`FateServer.layer` dies, `toCodegenServer`
+ * throws; review B2 moved the check there, the ONE wording site), so the
+ * erased `string | undefined` narrows here. The residual throw is an
+ * invariant DEFECT (a caller bypassed validation), not config validation —
+ * config errors have exactly one home.
+ */
+export const mutationWireType = (
+	name: string,
+	entry: {readonly type: string | undefined},
+): string => {
+	const {type} = entry;
+	if (type === undefined) {
+		throw new Error(
+			`unvalidated config reached the compile step: mutation "${name}" carries no wire type (collectConfigIssues rejects this)`,
+		);
+	}
+	return type;
+};
+
 // --- compiled operation records ------------------------------------------------------
 
 /** The resolver argument bag fate hands a compiled operation. */

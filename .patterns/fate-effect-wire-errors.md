@@ -35,6 +35,13 @@ At runtime the codec reads the annotation off `instance.constructor` — a `Sche
 
 `INTERNAL_WIRE_CODE` is `INTERNAL_SERVER_ERROR` — phoenix's historical wire code and the SPA's `MUTATION_ERROR_CODES` vocabulary — not fate's protocol `INTERNAL_ERROR`, preserved verbatim through the migration.
 
+## The module is the package's whole error taxonomy
+
+Two more pieces live in `WireError.ts` beside the codec — anything that spells wire-error bytes or extracts the value the codec encodes belongs here, not in the plane that happens to use it:
+
+- **`internalArm()`** — fate's *own* internal arm (`toProtocolError`'s fallback): `FateRequestError("INTERNAL_ERROR", "Internal server error.")`. Distinct from `INTERNAL_WIRE_CODE`: that is the annotation codec's arm for per-operation failures; this is what fate spells for walk-internal throws (view callbacks, pagination rejections, capability-less sources) and the interpreter's request-level defect fallback. It is the **one construction site** for those bytes — `Walk.ts`, `Connection.ts`, and `Interpreter.ts` all derive from it, so the oracle-pinned bytes cannot drift between arms.
+- **`failureOf(cause)`** — the failed/thrown value behind a `Cause`: the typed failure if one exists, otherwise the squashed defect. Shared by the interpreter's dispatch loop and the oracle baseline's `runResolve`, both of which feed the result straight into `encodeWireError`.
+
 ## Keeping the codec honest
 
 Two test layers (both T0, [effect-testing.md](./effect-testing.md)):

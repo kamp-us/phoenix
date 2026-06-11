@@ -48,12 +48,11 @@ export {
 	type KernelDataView,
 	type ListFieldOf,
 } from "./DataView.ts";
-export {
-	type CompiledFateServer,
-	compileFateSources,
-	type ExecutorRequestContext,
-	type FateExecutorRuntime,
-	type FateFetchHandler,
+export type {
+	CompiledFateServer,
+	ExecutorRequestContext,
+	FateExecutorRuntime,
+	FateFetchHandler,
 } from "./Executor.ts";
 export * as Fate from "./Fate.ts";
 export {FateInterpreter} from "./Interpreter.ts";

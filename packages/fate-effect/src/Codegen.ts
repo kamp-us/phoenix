@@ -21,7 +21,7 @@ import type {
 	CompiledMutationDefinition,
 	CompiledQueryDefinition,
 } from "./Compiled.ts";
-import {buildSourceResolver} from "./Compiled.ts";
+import {buildSourceResolver, mapRecord, mutationWireType} from "./Compiled.ts";
 import type {
 	DefinitionTypeName,
 	DefinitionWireArgs,
@@ -105,44 +105,19 @@ const inertResolve = (category: string, name: string) => (): never => {
 	);
 };
 
-const codegenQueries = (record: FateQueriesRecord): Record<string, CompiledQueryDefinition> => {
-	const compiled: Record<string, CompiledQueryDefinition> = {};
-	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] = {
-			...(entry.type !== undefined ? {type: entry.type} : {}),
-			resolve: inertResolve("query", name),
-		};
-	}
-	return compiled;
-};
-
-const codegenLists = (record: FateListsRecord): Record<string, CompiledListDefinition> => {
-	const compiled: Record<string, CompiledListDefinition> = {};
-	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] = {
-			...(entry.type !== undefined ? {type: entry.type} : {}),
-			resolve: inertResolve("list", name),
-		};
-	}
-	return compiled;
-};
-
-const codegenMutations = (
-	record: FateMutationsRecord,
-): Record<string, CompiledMutationDefinition> => {
-	const compiled: Record<string, CompiledMutationDefinition> = {};
-	for (const [name, entry] of Object.entries(record)) {
-		const {type} = entry;
-		if (type === undefined) {
-			// Mirrors the live compile's `adaptMutation`: fate's manifest carries
-			// every mutation's wire type, so a typeless mutation is a config error
-			// at BUILD time exactly as it would be at compile time.
-			throw new FateServerConfigError([`mutation "${name}" carries no wire type`]);
-		}
-		compiled[name] = {type, resolve: inertResolve("mutation", name)};
-	}
-	return compiled;
-};
+/**
+ * An inert definition: the entry's `type` passed through, nothing executable.
+ * The inferred `resolve: () => never` satisfies both the query and list
+ * definition shapes, so one helper serves both categories.
+ */
+const inertDefinition = (
+	entry: {readonly type: string | undefined},
+	category: string,
+	name: string,
+) => ({
+	...(entry.type !== undefined ? {type: entry.type} : {}),
+	resolve: inertResolve(category, name),
+});
 
 /**
  * Build the CODEGEN server from a typed config: the same `createFateServer`
@@ -180,9 +155,15 @@ export function toCodegenServer(config: AnyFateServerConfig): KernelFateServer<u
 		// No `context` factory: the codegen server never handles a real request;
 		// an executed operation hits an inert resolver and fails closed.
 		roots: {},
-		queries: codegenQueries(config.queries),
-		lists: codegenLists(config.lists),
-		mutations: codegenMutations(config.mutations),
+		queries: mapRecord(config.queries, (entry, name) => inertDefinition(entry, "query", name)),
+		lists: mapRecord(config.lists, (entry, name) => inertDefinition(entry, "list", name)),
+		// The validated-config invariant narrows the mutation's wire type
+		// (`mutationWireType`, Compiled.ts) — `collectConfigIssues` above
+		// already rejected any typeless mutation (review B2).
+		mutations: mapRecord(config.mutations, (entry, name) => ({
+			type: mutationWireType(name, entry),
+			resolve: inertResolve("mutation", name),
+		})),
 		// The identity-keyed registry with EMPTY executors: same definitions
 		// (manifest/schema parity), no capabilities to run.
 		sources: buildSourceResolver(config.sources, () => ({})),

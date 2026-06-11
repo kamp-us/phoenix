@@ -30,6 +30,7 @@ import {toCodegenServer} from "./Codegen.ts";
 import {FateDataView} from "./DataView.ts";
 import {compile} from "./Executor.ts";
 import {Fate} from "./index.ts";
+import type {AnyFateMutation} from "./Server.ts";
 import {FateServer, FateServerConfigError} from "./Server.ts";
 
 // --- fixture rows + views ------------------------------------------------------
@@ -326,6 +327,23 @@ describe("toCodegenServer — validation", () => {
 		});
 		expect(() => toCodegenServer(invalid)).toThrow(FateServerConfigError);
 		expect(() => toCodegenServer(invalid)).toThrow(/duplicate wire name "dup"/);
+	});
+
+	it("a typeless mutation throws at build time with the layer's wording (review B2)", () => {
+		// Hand-built erased entry — `Fate.mutation` makes this unrepresentable;
+		// the runtime check in `collectConfigIssues` guards non-TS callers. The
+		// asserted wording is the SAME string `FateServer.layer` dies with
+		// (Server.test.ts) and the oracle baseline rejects with (Executor.test.ts).
+		const typelessMutation = {
+			kind: "mutation",
+			definition: {input: Schema.Struct({}), type: "Broken"},
+			type: undefined,
+			handler: () => Effect.succeed(null),
+			resolve: () => Effect.succeed(null),
+		} satisfies AnyFateMutation;
+		const invalid = FateServer.config({mutations: {"broken.op": typelessMutation}});
+		expect(() => toCodegenServer(invalid)).toThrow(FateServerConfigError);
+		expect(() => toCodegenServer(invalid)).toThrow(/mutation "broken\.op" carries no wire type/);
 	});
 });
 

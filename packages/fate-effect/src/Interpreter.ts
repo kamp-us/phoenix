@@ -43,7 +43,7 @@
  * baseline; the raw legacy config arms were removed with the cutover.
  */
 import {FateRequestError} from "@nkzw/fate/server";
-import {Cause, Effect, Exit, Option} from "effect";
+import {Effect, Exit} from "effect";
 import type {
 	DecodedProtocolOperation,
 	ProtocolNamedOperation,
@@ -56,7 +56,7 @@ import type {FateServerService} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 import type {FateWalk} from "./Walk.ts";
 import {makeWalk} from "./Walk.ts";
-import {encodeWireError} from "./WireError.ts";
+import {encodeWireError, failureOf, internalArm} from "./WireError.ts";
 
 type OperationResultValue = (typeof ProtocolResponse)["Type"]["results"][number];
 
@@ -67,31 +67,33 @@ const JSON_HEADERS = {"content-type": "application/json; charset=utf-8"};
 
 /**
  * fate's `toProtocolError`, exactly: a `FateRequestError` keeps its code,
- * issues, and message; anything else is fate's OWN internal arm (`code:
- * "INTERNAL_ERROR"` — distinct from the annotation codec's
- * `INTERNAL_SERVER_ERROR`, which only per-operation failures produce). The
- * conditional `issues` spread matches fate's `issues: error.issues` +
- * JSON.stringify dropping `undefined`.
+ * issues, and message; anything else derives from `internalArm()` — fate's
+ * OWN internal arm (`code: "INTERNAL_ERROR"` — distinct from the annotation
+ * codec's `INTERNAL_SERVER_ERROR`, which only per-operation failures
+ * produce), the package's ONE construction site for those bytes
+ * (`WireError.ts`, review B1). The conditional `issues` spread matches fate's
+ * `issues: error.issues` + JSON.stringify dropping `undefined` —
+ * `internalArm()` carries no issues, so the fallback serializes as
+ * `{code, message}` exactly as fate's literal does.
+ *
+ * The fallback arm is provably dead per-operation (`runOperation` routes
+ * every failure through `encodeWireError`, which always returns a
+ * `FateRequestError`) and near-dead at request level (`parseBody` and
+ * `decodeProtocolRequest` both fail with `FateRequestError`; `respond` DIES
+ * on an encode failure) — it fires only on a defect inside the dispatch/
+ * encode region, i.e. a package bug. No non-contrived test can reach it;
+ * sharing `internalArm()` is the drift guard: the bytes are byte-pinned by
+ * the walk oracle through the connection plane's reachable arms, and this
+ * arm now has no spelling of its own to drift.
  */
-const toProtocolErrorValue = (error: unknown): ProtocolErrorValue =>
-	error instanceof FateRequestError
-		? {
-				code: error.code,
-				...(error.issues !== undefined ? {issues: error.issues} : {}),
-				message: error.message,
-			}
-		: {code: "INTERNAL_ERROR", message: "Internal server error."};
-
-/**
- * The failed/thrown value behind a Cause — the v1 compiler's exact branch
- * (`runResolve`): a typed failure if one exists, otherwise the squashed
- * defect.
- */
-const failureOf = (cause: Cause.Cause<unknown>): unknown =>
-	Option.match(Cause.findErrorOption(cause), {
-		onSome: (error) => error,
-		onNone: () => Cause.squash(cause),
-	});
+const toProtocolErrorValue = (error: unknown): ProtocolErrorValue => {
+	const wireError = error instanceof FateRequestError ? error : internalArm();
+	return {
+		code: wireError.code,
+		...(wireError.issues !== undefined ? {issues: wireError.issues} : {}),
+		message: wireError.message,
+	};
+};
 
 /**
  * Resolve a named operation to its entry's effect — fate's `executeOperation`

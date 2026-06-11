@@ -39,6 +39,7 @@ import {readdir, readFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {Context, Effect, Layer, ManagedRuntime, Tracer} from "effect";
+import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {CompiledFateSources} from "./Compiled.ts";
 import {CurrentUser, type CurrentUserInfo} from "./CurrentUser.ts";
@@ -59,7 +60,7 @@ import {
 	user,
 } from "./Oracle.fixture.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
-import type {SourceDefinitionLike} from "./Server.ts";
+import type {AnyFateMutation, SourceDefinitionLike} from "./Server.ts";
 import {FateServer} from "./Server.ts";
 
 // fate's source executors receive a masking `plan` the adapted handlers only
@@ -239,6 +240,38 @@ describe("FateExecutor.toFetchHandler — round-trip", () => {
 					pagination: {hasNext: true, hasPrevious: false},
 				},
 			});
+		} finally {
+			await harness.dispose();
+		}
+	});
+});
+
+// --- 1b. config validation surfaces here (the layer builds on first call) ---------
+
+describe("FateExecutor.toFetchHandler — config validation", () => {
+	it("a typeless mutation fails the first request with the layer's wording (review B2)", async () => {
+		// Hand-built erased entry — `Fate.mutation` makes this unrepresentable;
+		// the check lives in `collectConfigIssues`, so the oracle baseline fails
+		// through layer construction (toFetchHandler resolves the service on
+		// first call) with the SAME wording `FateServer.layer` dies with
+		// (Server.test.ts) and `toCodegenServer` throws (Codegen.test.ts).
+		const typelessMutation = {
+			kind: "mutation",
+			definition: {input: Schema.Struct({}), type: "Broken"},
+			type: undefined,
+			handler: () => Effect.succeed(null),
+			resolve: () => Effect.succeed(null),
+		} satisfies AnyFateMutation;
+		const harness = makeHarness({
+			layer: FateServer.layer(FateServer.config({mutations: {"broken.op": typelessMutation}})),
+		});
+		try {
+			await expect(
+				harness.handle(
+					fateRequest([{id: "1", kind: "query", name: "health", select: []}]),
+					makeContext(),
+				),
+			).rejects.toThrow(/mutation "broken\.op" carries no wire type/);
 		} finally {
 			await harness.dispose();
 		}

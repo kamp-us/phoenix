@@ -65,31 +65,29 @@
  */
 import type {FateServer as KernelFateServer} from "@nkzw/fate/server";
 import {createFateServer} from "@nkzw/fate/server";
-import {Cause, Context, Effect, Exit, type ManagedRuntime, Option} from "effect";
+import {Context, Effect, Exit, type ManagedRuntime} from "effect";
 import type {
 	AnyRow,
+	CompiledArgsInput,
 	CompiledFateSources,
 	CompiledListDefinition,
 	CompiledMutationDefinition,
 	CompiledQueryDefinition,
+	CompiledResolverOptions,
 	KernelSourceExecutor,
 } from "./Compiled.ts";
-import {buildSourceResolver} from "./Compiled.ts";
+import {buildSourceResolver, mapRecord, mutationWireType} from "./Compiled.ts";
+import type {RawArgsInput} from "./Operation.ts";
 import {provideRequestPair} from "./Provision.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
 import type {
-	AnyFateList,
 	AnyFateMutation,
-	AnyFateQuery,
 	AnyFateSourceHandlers,
-	FateListsRecord,
-	FateMutationsRecord,
-	FateQueriesRecord,
 	FateServerService,
 	FateSourcesList,
 } from "./Server.ts";
-import {FateServer, FateServerConfigError} from "./Server.ts";
-import {encodeWireError} from "./WireError.ts";
+import {FateServer} from "./Server.ts";
+import {encodeWireError, failureOf} from "./WireError.ts";
 
 /**
  * The worker-level `ManagedRuntime` the compiled server runs on: built ONCE
@@ -161,25 +159,28 @@ const runResolve = <A>(
 			if (Exit.isSuccess(exit)) {
 				return exit.value;
 			}
-			return Option.match(Cause.findErrorOption(exit.cause), {
-				onSome: (error) => {
-					throw encodeWireError(error);
-				},
-				onNone: () => {
-					throw encodeWireError(Cause.squash(exit.cause));
-				},
-			});
+			// `failureOf` (WireError.ts, shared with the interpreter): the typed
+			// failure if one exists, otherwise the squashed defect.
+			throw encodeWireError(failureOf(exit.cause));
 		});
 
 // --- compiled operation records ------------------------------------------------------
 
-const adaptQuery = (options: CompileOptions, entry: AnyFateQuery): CompiledQueryDefinition => ({
-	...(entry.type !== undefined ? {type: entry.type} : {}),
-	resolve: ({ctx, input, select}) =>
-		runResolve(options, ctx, entry.resolve({args: input.args, select})),
-});
-
-const adaptList = (options: CompileOptions, entry: AnyFateList): CompiledListDefinition => ({
+/**
+ * One adapter for both args-shaped categories — queries and lists were
+ * byte-identical adapters (review R1), so the success channel is generic:
+ * `unknown` for a query entry, fate's connection envelope for a list entry.
+ */
+const adaptArgsEntry = <A>(
+	options: CompileOptions,
+	entry: {
+		readonly type: string | undefined;
+		readonly resolve: (input: RawArgsInput) => Effect.Effect<A, unknown, unknown>;
+	},
+): {
+	readonly type?: string;
+	readonly resolve: (options: CompiledResolverOptions<CompiledArgsInput>) => Promise<A>;
+} => ({
 	...(entry.type !== undefined ? {type: entry.type} : {}),
 	resolve: ({ctx, input, select}) =>
 		runResolve(options, ctx, entry.resolve({args: input.args, select})),
@@ -189,51 +190,13 @@ const adaptMutation = (
 	options: CompileOptions,
 	name: string,
 	entry: AnyFateMutation,
-): CompiledMutationDefinition => {
-	const {type} = entry;
-	if (type === undefined) {
-		// Unreachable for constructor-built entries (`MutationDefinition`
-		// requires `type:`); defends the erased shape's wider `string | undefined`.
-		throw new FateServerConfigError([`mutation "${name}" carries no wire type`]);
-	}
-	return {
-		type,
-		resolve: ({ctx, input, select}) => runResolve(options, ctx, entry.resolve({input, select})),
-	};
-};
-
-const compileQueries = (
-	options: CompileOptions,
-	record: FateQueriesRecord,
-): Record<string, CompiledQueryDefinition> => {
-	const compiled: Record<string, CompiledQueryDefinition> = {};
-	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] = adaptQuery(options, entry);
-	}
-	return compiled;
-};
-
-const compileLists = (
-	options: CompileOptions,
-	record: FateListsRecord,
-): Record<string, CompiledListDefinition> => {
-	const compiled: Record<string, CompiledListDefinition> = {};
-	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] = adaptList(options, entry);
-	}
-	return compiled;
-};
-
-const compileMutations = (
-	options: CompileOptions,
-	record: FateMutationsRecord,
-): Record<string, CompiledMutationDefinition> => {
-	const compiled: Record<string, CompiledMutationDefinition> = {};
-	for (const [name, entry] of Object.entries(record)) {
-		compiled[name] = adaptMutation(options, name, entry);
-	}
-	return compiled;
-};
+): CompiledMutationDefinition => ({
+	// The validated-config invariant narrows the erased `string | undefined`
+	// (`mutationWireType`, Compiled.ts) — the config-error check itself lives
+	// in `collectConfigIssues` (review B2).
+	type: mutationWireType(name, entry),
+	resolve: ({ctx, input, select}) => runResolve(options, ctx, entry.resolve({input, select})),
+});
 
 // --- compiled sources ------------------------------------------------------------------
 
@@ -346,9 +309,9 @@ export const compile = (
 		// `roots` stays empty (ADR 0016/0019: every read is a custom resolver;
 		// root views are a codegen-side concern, not a server option here).
 		roots: {},
-		queries: compileQueries(options, service.queries),
-		lists: compileLists(options, service.lists),
-		mutations: compileMutations(options, service.mutations),
+		queries: mapRecord(service.queries, (entry) => adaptArgsEntry(options, entry)),
+		lists: mapRecord(service.lists, (entry) => adaptArgsEntry(options, entry)),
+		mutations: mapRecord(service.mutations, (entry, name) => adaptMutation(options, name, entry)),
 		sources: compileFateSources(service.sources, options),
 		// fate types `live?: false | LiveConfig` — an omitted config key stays
 		// omitted (exactOptionalPropertyTypes), it does not become `undefined`.

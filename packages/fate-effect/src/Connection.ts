@@ -33,9 +33,10 @@
  * by the domain services). The interpreter's list plane is custom lists; an
  * unknown list name is `NOT_FOUND` on both backends.
  */
-import {FateRequestError} from "@nkzw/fate/server";
+import type {FateRequestError} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {internalArm} from "./WireError.ts";
 
 type AnyRow = Record<string, unknown>;
 
@@ -123,15 +124,6 @@ export interface ConnectionEnvelope {
 		readonly previousCursor: string | undefined;
 	};
 }
-
-/**
- * The wire arm an internal throw takes in fate (`toProtocolError`'s fallback):
- * `INTERNAL_ERROR` / "Internal server error.". The message is byte-pinned by
- * the walk oracle — this is the ONE construction site (`Walk.ts` imports it),
- * so the pinned bytes cannot drift between arms.
- */
-export const internalArm = (): FateRequestError =>
-	new FateRequestError("INTERNAL_ERROR", "Internal server error.");
 
 /**
  * fate's default `getCursor` — `String(node.id)` with JavaScript's property

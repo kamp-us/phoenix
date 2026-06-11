@@ -37,6 +37,8 @@
  *     code that already speaks the wire shape (parity with the bridge).
  */
 import {FateRequestError} from "@nkzw/fate/server";
+import * as Cause from "effect/Cause";
+import * as Option from "effect/Option";
 import * as Predicate from "effect/Predicate";
 
 /**
@@ -69,6 +71,33 @@ export const INTERNAL_WIRE_CODE = "INTERNAL_SERVER_ERROR";
 
 /** The fixed internal-error message — defect details never reach the wire. */
 const INTERNAL_WIRE_MESSAGE = "Something went wrong.";
+
+/**
+ * fate's OWN internal arm (`toProtocolError`'s fallback): `INTERNAL_ERROR` /
+ * "Internal server error.". Distinct from {@link INTERNAL_WIRE_CODE} — that is
+ * the annotation codec's arm for per-operation failures; THIS is what fate
+ * spells for walk-internal throws and request-level defects. The bytes are
+ * pinned by the walk oracle, and this is the ONE construction site — the walk
+ * (`Walk.ts`), the connection plane (`Connection.ts`), and the interpreter's
+ * request-level fallback (`Interpreter.ts`) all derive from it, so the pinned
+ * bytes cannot drift between arms (review B1). Package-wide error taxonomy,
+ * which is why it lives here and not in the pagination plane.
+ */
+export const internalArm = (): FateRequestError =>
+	new FateRequestError("INTERNAL_ERROR", "Internal server error.");
+
+/**
+ * The failed/thrown value behind a `Cause` — the v1 compiler's exact branch
+ * (`runResolve`): the typed failure if one exists, otherwise the squashed
+ * defect. Shared here (review R2) because both call sites — the interpreter's
+ * dispatch loop and the oracle baseline's `runResolve` — feed the result
+ * straight into {@link encodeWireError}.
+ */
+export const failureOf = (cause: Cause.Cause<unknown>): unknown =>
+	Option.match(Cause.findErrorOption(cause), {
+		onSome: (error) => error,
+		onNone: () => Cause.squash(cause),
+	});
 
 /**
  * The exact type of `FateRequestError`'s `code` constructor parameter (fate's

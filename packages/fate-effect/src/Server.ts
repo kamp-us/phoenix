@@ -305,6 +305,19 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 		}
 	}
 
+	// Typeless mutations: fate's manifest carries every mutation's wire type,
+	// so a mutation entry without one is a config error. `Fate.mutation` makes
+	// this unrepresentable in typed code (`MutationDefinition` requires
+	// `type:`); the check guards the erased shape's wider `string | undefined`
+	// — and it lives HERE so the same mistake fails layer construction and
+	// both compile surfaces with the same wording (review B2; previously each
+	// compile surface threw its own copy and the layer let it through).
+	for (const [name, entry] of Object.entries(config.mutations)) {
+		if (entry.type === undefined) {
+			issues.push(`mutation "${name}" carries no wire type`);
+		}
+	}
+
 	// Duplicate sources per entity: fate resolves a view to ONE definition by
 	// type name, so a second source for the same entity is a silent override
 	// waiting to happen.

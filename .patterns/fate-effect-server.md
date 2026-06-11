@@ -65,6 +65,7 @@ livePublisherFor({
 - **Duplicate wire names across the category records** — `duplicate wire name "term" — declared by queries["term"] and lists["term"]`. Within ONE record, spread collapses duplicate keys before any code can see them (fate's own shape; the PRD's recorded open question) — the check covers collisions across the spread records, which the manifest would otherwise merge silently.
 - **Duplicate sources per entity** — fate resolves a view to one definition by type name, so a second source is a silent override waiting to happen.
 - **View-reachable entities without a source** — every entity reachable through a view object (operation success views + nested relation views, recursively) must have a source: `view-reachable entity "Definition" has no source (reached from queries["term"])`. String-typed operations (`type: "Health"`) have no view by design and require nothing.
+- **Typeless mutations** — `mutation "definition.add" carries no wire type`: fate's manifest carries every mutation's wire type. `Fate.mutation` makes this unrepresentable in typed code (`MutationDefinition` requires `type:`); the runtime check guards the erased shape's wider `string | undefined`. It lives in `collectConfigIssues` so the same mistake fails layer construction AND both compile surfaces (`toCodegenServer` at build time; the oracle baseline's `toFetchHandler` on first call) with the same wording — pinned in all three suites.
 
 ## Entries are constructor-built only
 

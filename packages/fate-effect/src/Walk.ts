@@ -102,11 +102,12 @@
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit, Request, RequestResolver} from "effect";
-import {arrayToConnection, getScopedArgs, internalArm} from "./Connection.ts";
+import {arrayToConnection, getScopedArgs} from "./Connection.ts";
 import type {ProtocolByIdOperation} from "./Protocol.ts";
 import {provideRequestPair} from "./Provision.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
 import type {AnyFateSourceEntry, AnyFateSourceHandlers, FateServerService} from "./Server.ts";
+import {internalArm} from "./WireError.ts";
 
 type AnyRow = Record<string, unknown>;
 
@@ -570,9 +571,14 @@ const uniqueIdsOf = (group: ReadonlyArray<SourceRowsEntry>): Array<string> => {
 
 // --- the walk surface ---------------------------------------------------------------
 
-/** What `makeWalk` hands the dispatch loop: the interpreted byId plane. */
+/**
+ * What `makeWalk` hands the dispatch loop: the interpreted byId plane. Every
+ * failure inside is wire-shaped already (`loadRows`/`resolveNode`/
+ * `toConnectionResult` are all typed so), so the error channel is pinned to
+ * `FateRequestError` — the byId plane's error taxonomy in the type (review R3).
+ */
 export interface FateWalk {
-	readonly byId: (operation: ProtocolByIdOperation) => Effect.Effect<unknown, unknown>;
+	readonly byId: (operation: ProtocolByIdOperation) => Effect.Effect<unknown, FateRequestError>;
 }
 
 /**
@@ -682,7 +688,7 @@ export const makeWalk = (server: FateServerService, context: FateRequestContext)
 	): Effect.Effect<ReadonlyArray<AnyRow>, FateRequestError> =>
 		Effect.request(new SourceRowsRequest({source, ids}), resolver);
 
-	const byId = (operation: ProtocolByIdOperation): Effect.Effect<unknown, unknown> =>
+	const byId = (operation: ProtocolByIdOperation): Effect.Effect<unknown, FateRequestError> =>
 		Effect.gen(function* () {
 			// fate's dispatch gate: `!operation.type || !operation.ids` — after the
 			// protocol decode only the empty-string type can still be falsy.

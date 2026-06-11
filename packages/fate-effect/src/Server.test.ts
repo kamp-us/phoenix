@@ -37,6 +37,7 @@ import {CurrentUser, Unauthorized} from "./CurrentUser.ts";
 import {FateDataView} from "./DataView.ts";
 import {Fate} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
+import type {AnyFateMutation} from "./Server.ts";
 import {FateServer, FateServerConfigError} from "./Server.ts";
 import {ErrorCode} from "./WireError.ts";
 
@@ -296,6 +297,30 @@ describe("FateServer.layer — construction", () => {
 		);
 		const service = await buildService(layer);
 		expect(Object.keys(service.queries)).toEqual(["health"]);
+	});
+
+	it("a typeless mutation dies at layer construction (review B2)", async () => {
+		// `Fate.mutation` makes a typeless entry unrepresentable
+		// (`MutationDefinition` requires `type:`), so this hand-built erased
+		// entry models a validation-bypassing caller — exactly what the runtime
+		// check in `collectConfigIssues` exists for. `satisfies` keeps the
+		// inferred (R = never) handler types so the layer is dischargeable.
+		const typelessMutation = {
+			kind: "mutation",
+			definition: {input: Schema.Struct({}), type: "Broken"},
+			type: undefined,
+			handler: () => Effect.succeed(null),
+			resolve: () => Effect.succeed(null),
+		} satisfies AnyFateMutation;
+		const defect = defectOf(
+			await buildExit(
+				FateServer.layer(FateServer.config({mutations: {"broken.op": typelessMutation}})),
+			),
+		);
+		expect(defect).toBeInstanceOf(FateServerConfigError);
+		// The SAME wording both compile surfaces fail with — pinned in
+		// Codegen.test.ts (build time) and Executor.test.ts (oracle baseline).
+		expect(String(defect)).toContain('mutation "broken.op" carries no wire type');
 	});
 
 	it("two sources for one entity die naming the entity", async () => {
