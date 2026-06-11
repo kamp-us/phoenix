@@ -1,5 +1,5 @@
 /**
- * The shared differential-oracle fixture (tasks.md task 14; PRD story 16):
+ * The shared differential-oracle fixture:
  * the dual-stack harness plus the ONE sozluk-shaped fixture world consumed by
  * every suite that drives a compiled or interpreted fate server.
  *

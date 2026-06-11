@@ -51,11 +51,11 @@ import {
 /* Domain constants                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Title cap (per PRD). */
+/** Title cap. */
 export const POST_TITLE_MAX = 200;
-/** Body cap on submit / edit (per PRD). */
+/** Body cap on submit / edit. */
 export const POST_BODY_MAX = 10_000;
-/** Comment body cap (per PRD). */
+/** Comment body cap. */
 export const COMMENT_BODY_MAX = 5_000;
 
 /** Pano excerpt cap (tweet-sized, matches pre-effect-migration). */
@@ -64,7 +64,7 @@ const POST_EXCERPT_LEN = 280;
 const excerpt = (body: string): string => excerptText(body, POST_EXCERPT_LEN);
 
 /**
- * Fixed tag enum for Pano posts (per PRD). Resolver-side validation enforces
+ * Fixed tag enum for Pano posts. Resolver-side validation enforces
  * the same set, but the service is the durability boundary so it re-validates.
  * Stored on `post_summary.tags` as comma-separated values.
  */

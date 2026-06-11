@@ -47,10 +47,8 @@ export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Sta
  * The ONE isolate-level `ManagedRuntime` the worker init builds from
  * {@link PhoenixFateLive} — it carries the {@link WorkerFateServices} singletons
  * PLUS the composed `FateServer` service and fails for nothing (`E = never`).
- * Since the v2 cutover (ADR 0043) it is INIT-ONLY wiring: the layer-build /
- * memoization vehicle behind {@link makeFateRuntime}'s `contextLayer` — no
- * request runs through it in the deployed worker (the `/fate` route yields
- * the interpreter on the request fiber). The T2 harness (`run-fate-op.ts`)
+ * Init-only wiring — the layer-build vehicle, no request runs through it (the
+ * module doc owns that story). The T2 harness (`run-fate-op.ts`)
  * still runs the interpreter program through a per-op runtime of this shape.
  */
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
@@ -70,9 +68,8 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | F
  * it: the worker singletons (`Drizzle` + the feature services) are built exactly
  * once and SHARED by every route through the one built context. `contextLayer`
  * carries the runtime's already-built `Context<WorkerFateServices | FateServer>`
- * — the worker services the routes yield directly (`Pasaport` in the `/fate`
- * route) AND the `FateServer` service the route's interpreter program needs —
- * rather than rebuilding the layer per request through `provideRequest`.
+ * — what the routes consume instead of rebuilding layers per request (the
+ * module doc's runtime story).
  *
  * NEVER DISPOSED IN THE WORKER: a Cloudflare Worker isolate has no shutdown
  * hook, so the deployed worker never calls `runtime.dispose()` — the runtime
@@ -137,7 +134,7 @@ const PasaportFromTag = Layer.unwrap(
 
 /**
  * Pasaport's implementation of the `KarmaBump` contract VOTE owns (dependency
- * inversion at the layer seam; architecture audit A2): the statement Vote
+ * inversion at the layer seam): the statement Vote
  * batches when a cast lands is pasaport's `karmaBumpStatement` (an UPDATE on
  * `user_profile.total_karma`). Wired HERE — the composition root — so the
  * `vote/ → pasaport/` arrow exists only at this seam, never inside Vote.
@@ -164,8 +161,8 @@ const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStat
  * `StatsLive` depend only on `Drizzle` (Pasaport also on `BetterAuth`).
  *
  * `R = Database | BetterAuth`; the per-request pair (`CurrentUser` +
- * `LivePublisher`) is provided onto each handler effect by the compile step,
- * not here.
+ * `LivePublisher`) is provided onto each handler effect by the interpreter
+ * per request, not here.
  */
 export const makeFateLayer: Layer.Layer<
 	WorkerFateServices,
@@ -182,9 +179,8 @@ export const makeFateLayer: Layer.Layer<
 
 /**
  * The composed fate-server layer (`.patterns/fate-effect-server.md`):
- * `FateServer.layer(fateConfig)` over the worker-level domain layers. This is
- * the layer the one isolate runtime is built from
- * (`ManagedRuntime.make(PhoenixFateLive)` via {@link makeFateRuntime}).
+ * `FateServer.layer(fateConfig)` over the worker-level domain layers — what
+ * {@link makeFateRuntime} builds the one isolate runtime from.
  *
  * `provideMerge` (not `provide`) keeps the {@link WorkerFateServices} in the
  * layer's output alongside `FateServer`: the routes still yield worker services

@@ -1,7 +1,6 @@
 /**
  * `FateInterpreter` — the v2 native dispatch loop: fate's `handleRequest` as
- * an Effect program (PRD "v2 backend: the native interpreter"; tasks.md task
- * 14; ADR 0042 "What v2 changes").
+ * an Effect program (ADR 0042 "What v2 changes").
  *
  * The loop is decode → run → encode, every stage byte-faithful to the v1
  * compiled server (the differential oracle in the `Interpreter*.test.ts` suites enforces
@@ -40,7 +39,7 @@
  * per-request runtime, spans nest under the platform's request span, and
  * the route wires the request's abort signal to fiber interruption. The v1
  * compiled server (`Executor.ts`) remains only as the differential oracle's
- * baseline; the raw legacy config arms were removed with the cutover.
+ * baseline.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import {Effect, Exit} from "effect";
@@ -71,7 +70,7 @@ const JSON_HEADERS = {"content-type": "application/json; charset=utf-8"};
  * OWN internal arm (`code: "INTERNAL_ERROR"` — distinct from the annotation
  * codec's `INTERNAL_SERVER_ERROR`, which only per-operation failures
  * produce), the package's ONE construction site for those bytes
- * (`WireError.ts`, review B1). The conditional `issues` spread matches fate's
+ * (`WireError.ts`). The conditional `issues` spread matches fate's
  * `issues: error.issues` + JSON.stringify dropping `undefined` —
  * `internalArm()` carries no issues, so the fallback serializes as
  * `{code, message}` exactly as fate's literal does.

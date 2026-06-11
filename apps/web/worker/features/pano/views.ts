@@ -107,16 +107,9 @@ export const commentDataView = CommentView.view;
 export const postDataView = PostView.view;
 
 /*
- * The `Replacements` second parameter restates two things fate's wire-facing
- * `Entity<>` derivation widens/narrows away:
- *
- *   - list relations (`comments`) — kernel `list()` widens the child field
- *     map, the same reason fate's own docs use `Replacements`;
- *   - timestamp fields — fate types `Date` row fields as `string` (the
- *     JSON-serialized wire shape), but these worker-side entity values carry
- *     live `Date` objects until fate serializes the response. The shapers and
- *     every worker call site operate pre-serialization, so the types restate
- *     the bridge-era row truth (the SPA's date helpers accept both).
+ * `Replacements` restates the list relations (`comments`) and the live-`Date`
+ * timestamp fields that fate's wire-facing `Entity<>` derivation
+ * widens/narrows away — the full rationale lives in `sozluk/views.ts`.
  */
 export type Tag = Entity<typeof TagView>;
 export type Comment = Entity<

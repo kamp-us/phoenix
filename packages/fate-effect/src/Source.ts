@@ -1,7 +1,7 @@
 /**
  * `Fate.source` — the per-entity loader constructor.
  *
- * The loader half of the loader/resolver split (PRD; grill Q-resolved):
+ * The loader half of the loader/resolver split:
  * sources LOAD, operations RESOLVE. A source's handlers therefore have a
  * deliberately narrow contract:
  *
@@ -15,7 +15,7 @@
  * - **`R` is inferred** from the handler bodies and surfaces on the returned
  *   {@link FateSource}, so a source's domain-service requirements participate
  *   in layer composition like any other Effect requirement
- *   ({@link FateSourceServices}, consumed by `FateServer.layer` in task 5).
+ *   ({@link FateSourceServices}, consumed by `FateServer.layer`).
  *
  * Spans come from the constructor, not the author: each provided handler body
  * is passed to `Effect.fn("<Entity>.<capability>")` (effect-smol `LLMS.md` §
@@ -126,7 +126,7 @@ export type SourceHandlersServices<H> = {
 /**
  * The wrapped handlers a {@link FateSource} carries: plain Effect-returning
  * functions, each already spanned `<Entity>.<capability>` via `Effect.fn`.
- * Task 7's compiler adapts these to fate's promise-shaped `SourceExecutor`
+ * The compile step adapts these to fate's promise-shaped `SourceExecutor`
  * through the worker runtime.
  */
 export interface FateSourceHandlers<Item extends AnyRow, R> {
@@ -152,7 +152,7 @@ export interface FateSource<Item extends AnyRow, Name extends string, R> {
 /**
  * The services a source requires — the `R` of {@link FateSource}, named the
  * way effect v4 names the extractor (`Effect.Services`). `FateServer.layer`
- * (task 5) unions these across the config to type its own requirements.
+ * unions these across the config to type its own requirements.
  */
 export type FateSourceServices<S> = S extends FateSource<AnyRow, string, infer R> ? R : never;
 

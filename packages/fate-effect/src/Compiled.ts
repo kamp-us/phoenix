@@ -1,6 +1,6 @@
 /**
  * The shared compiled-definition internals — the common vocabulary of the
- * compile step's two surfaces (review fix, tasks.md task 20): the oracle
+ * compile step's two surfaces: the oracle
  * baseline (`Executor.ts`, test-harness-only since ADR 0043) and the
  * build-time codegen server (`Codegen.ts`, the production build path every
  * deploy runs through `schema.ts`). Those two lifecycles must never import
@@ -25,8 +25,8 @@ export type AnyRow = Record<string, unknown>;
 
 /**
  * Map a record's values, keys preserved — the compile surfaces' ONE
- * entries→record loop (review R1: six hand-rolled `Object.entries` builds
- * across `Executor.ts`/`Codegen.ts` collapsed to this).
+ * entries→record loop (shared so `Executor.ts`/`Codegen.ts` never hand-roll
+ * their own `Object.entries` builds).
  */
 export const mapRecord = <V, R>(
 	record: Record<string, V>,
@@ -43,7 +43,7 @@ export const mapRecord = <V, R>(
  * Re-pin a validated config's invariant for the type system: every mutation
  * carries a wire type — `collectConfigIssues` rejects a typeless one before
  * either compile surface runs (`FateServer.layer` dies, `toCodegenServer`
- * throws; review B2 moved the check there, the ONE wording site), so the
+ * throws; the check lives there, the ONE wording site), so the
  * erased `string | undefined` narrows here. The residual throw is an
  * invariant DEFECT (a caller bypassed validation), not config validation —
  * config errors have exactly one home.
@@ -75,7 +75,7 @@ export interface CompiledArgsInput {
 	readonly args?: AnyRow | undefined;
 }
 
-/** A compiled (or passed-through legacy) fate query definition. */
+/** A compiled fate query definition. */
 export interface CompiledQueryDefinition {
 	readonly type?: string;
 	readonly resolve: (options: CompiledResolverOptions<CompiledArgsInput>) => Promise<unknown>;
@@ -92,9 +92,8 @@ export interface CompiledListDefinition {
 
 /**
  * A compiled fate mutation definition. fate's `input?: SchemaLike` slot is
- * deliberately NOT populated for compiled entries — the decode already lives
- * in the entry's `resolve` (a second validator would double-validate);
- * legacy entries keep whatever zod schema they carried.
+ * deliberately NOT populated — the decode already lives in the entry's
+ * `resolve` (a second validator would double-validate).
  */
 export interface CompiledMutationDefinition {
 	readonly type: string;

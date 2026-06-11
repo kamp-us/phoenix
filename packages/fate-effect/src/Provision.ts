@@ -1,7 +1,7 @@
 /**
  * `provideRequestPair` — THE per-request provision pipeline, spelled once
- * (review fix, tasks.md task 19; previously triplicated across `Executor.ts`
- * `runResolve`, `Interpreter.ts` `runOperation`, and `Walk.ts` `provide`).
+ * (consumed by `Executor.ts` `runResolve`, `Interpreter.ts` `runOperation`,
+ * and `Walk.ts` `provide`).
  *
  * The invariant, in one place: the two genuinely per-request services come
  * off the request context as VALUES — `CurrentUser` from the session,

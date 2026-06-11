@@ -7,28 +7,12 @@
  * The test mirror of `route.ts`'s `handleFate`:
  *
  *   1. builds the fate request envelope from the operation,
- *   2. builds a `ManagedRuntime` for THIS operation from
- *      `FateServer.layer(fateConfig)` provided-merged over the caller's worker
- *      layer (the same composition shape as `PhoenixFateLive`, through the same
- *      `makeFateRuntime` construction point `index.ts` uses) and DISPOSES it
- *      after the round-trip. The runtime here is the Node harness's RUN
- *      vehicle for the interpreter program — production has no runtime on
- *      the request path (the route yields the program on the request fiber);
- *      a Node test still needs one conversion point, and it lives here, per
- *      op. Production's never-dispose deviation (no CF shutdown hook) does
- *      not transfer: the Node harness HAS a shutdown point, so each
- *      runtime's scope is released when its op completes. The trade-off:
- *      every op runs cold — cross-request layer memoization is a production
- *      property this harness does not exercise,
- *   3. owns the per-request publish capture internally — the recording
- *      `LivePublisher` value (`livePublisherFor` over a capturing publish +
- *      a collecting `waitUntil`, flushed before returning) records the
- *      RESOLVED topic keys a mutation's `live.*` fans out to (run through the
- *      real `topicsForPublish` frame builder),
+ *   2. builds (and after the round-trip disposes) a per-op `ManagedRuntime`
+ *      over the caller's worker layer — the Node harness's run vehicle,
+ *   3. owns the per-request publish capture internally (a recording
+ *      `LivePublisher` over the real `topicsForPublish` frame builder),
  *   4. hands `FateInterpreter.handleRequest` ONE {@link FateRequestContext} —
- *      the per-request pair (`currentUser`, `livePublisher`), exactly the
- *      route's shape (no `signal`: the route wires abort→interruption at its
- *      own edge; the interpreter never reads it),
+ *      the route's exact per-request-pair shape,
  *   5. returns `{status, result, published}` — `published` being the resolved
  *      topic keys the operation's `live.*` fanned out to.
  *
@@ -111,8 +95,11 @@ export async function runFateOp(
 	// `provide` boundary — the interpreter program resolves `FateServer` from
 	// it when run, so there is no second `Effect.provide` (which would trip
 	// the `multipleEffectProvide` lint). Disposed in the `finally` below —
-	// see the header on why the production never-dispose deviation does not
-	// apply to this Node harness.
+	// production's never-dispose deviation (no CF shutdown hook) does not
+	// transfer: the Node harness HAS a shutdown point, so each runtime's scope
+	// is released when its op completes. The trade-off: every op runs cold —
+	// cross-request layer memoization is a production property this harness
+	// does not exercise.
 	const {runtime} = makeFateRuntime(
 		FateServer.layer(fateConfig).pipe(Layer.provideMerge(workerLayer)),
 	);

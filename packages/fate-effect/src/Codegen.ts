@@ -1,7 +1,6 @@
 /**
- * `toCodegenServer` — the BUILD-TIME compile surface (task 8: the
- * `InferFateAPI` fidelity spike; PRD story 13), split out of `Executor.ts`
- * (review fix, tasks.md task 20): this module is the PRODUCTION build path —
+ * `toCodegenServer` — the BUILD-TIME compile surface, split out of
+ * `Executor.ts`: this module is the PRODUCTION build path —
  * `schema.ts` exports its value for Vite codegen on every deploy — while
  * `Executor.ts` keeps only the frozen oracle baseline. The two share the
  * compiled-definition vocabulary through `Compiled.ts` and never import each
@@ -128,7 +127,7 @@ const inertDefinition = (
  * constructs pure data (nothing runs, no database at build time), and its
  * declared type carries {@link FateCodegenAPI}, so
  * `InferFateAPI<typeof fateServer>` in the generated client matches the live
- * wire contract (the task-8 spike, pinned in `Codegen.test.ts`).
+ * wire contract (pinned in `Codegen.test.ts`).
  *
  * Invalid configs throw {@link FateServerConfigError} here — the same issues
  * `FateServer.layer` dies with at worker init, surfaced at build time.
@@ -159,7 +158,7 @@ export function toCodegenServer(config: AnyFateServerConfig): KernelFateServer<u
 		lists: mapRecord(config.lists, (entry, name) => inertDefinition(entry, "list", name)),
 		// The validated-config invariant narrows the mutation's wire type
 		// (`mutationWireType`, Compiled.ts) — `collectConfigIssues` above
-		// already rejected any typeless mutation (review B2).
+		// already rejected any typeless mutation.
 		mutations: mapRecord(config.mutations, (entry, name) => ({
 			type: mutationWireType(name, entry),
 			resolve: inertResolve("mutation", name),

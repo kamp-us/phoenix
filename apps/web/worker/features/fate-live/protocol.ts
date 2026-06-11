@@ -281,7 +281,7 @@ export function topicsForSubscribe(control: SubscribeControl): ReadonlyArray<str
  * caps its own subscriptions and its queued-but-unflushed event backlog, a topic
  * caps how many subscribers it registers, and every fan-out event has a maximum
  * encoded size and a per-attempt delivery timeout. The worker/route supplies
- * these on each call (wired in a later step); the DO never invents its own.
+ * these on each call ({@link defaultLiveLimits}); the DO never invents its own.
  */
 export interface LiveLimits {
 	readonly maxSubscriptionsPerConnection: number;
@@ -298,7 +298,7 @@ export interface LiveLimits {
  * override has exactly one seam. Both routes that publish/subscribe consume it
  * (`fate-live/route.ts`, `fate/route.ts`) — it lives HERE, beside the
  * {@link LiveLimits} shape, so neither route imports config out of a sibling
- * ROUTE module (audit fix A3). `maxOperationsPerControlRequest` is void's
+ * ROUTE module. `maxOperationsPerControlRequest` is void's
  * control-request cap, not a `LiveLimits` field — it is not part of the DO
  * budget and so is omitted here.
  */

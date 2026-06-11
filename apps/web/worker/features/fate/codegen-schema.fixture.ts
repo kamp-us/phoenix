@@ -1,8 +1,8 @@
 /**
- * Task-8 spike fixture — the `schema.ts` shape of the fate-effect era, fed to
+ * Codegen fixture — the `schema.ts` shape of the fate-effect era, fed to
  * the REAL fate Vite plugin in `codegen-vite.test.ts`.
  *
- * This module is what `worker/features/fate/schema.ts` becomes in task 9: data
+ * This module mirrors `worker/features/fate/schema.ts`: data
  * views + entity types + `Root` from the views half, and `fateServer` built by
  * `FateExecutor.toCodegenServer(config)` — definitions with inert handlers, so
  * the plugin's `runnerImport` evaluates it with NO database at build time. The
@@ -10,7 +10,7 @@
  * codegen path executed anything, generation would fail loudly.
  *
  * Deliberately self-contained (it does not import the live feature modules):
- * the spike pins the module SHAPE against the plugin, not the live config's
+ * it pins the module SHAPE against the plugin, not the live config's
  * content.
  */
 import type {ConnectionResult} from "@nkzw/fate/server";

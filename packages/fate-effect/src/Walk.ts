@@ -2,8 +2,8 @@
  * The selection walk — fate's byId plane (`executeOperation`'s byId arm →
  * `resolveSourceByIds` → `resolveNode`/`filterToViewFields`/
  * `toConnectionResult`) reimplemented as an Effect program, with every source
- * load riding `Request.Class` + `RequestResolver` (PRD story 17; tasks.md
- * task 15). This is where N+1 dies: the batch window is ONE protocol request
+ * load riding `Request.Class` + `RequestResolver`.
+ * This is where N+1 dies: the batch window is ONE protocol request
  * (`makeWalk` is constructed once per `FateInterpreter.handleRequest`, so the
  * resolver instance — and with it the window — never spans requests), and ids
  * are deduplicated before they reach the source.
@@ -575,7 +575,7 @@ const uniqueIdsOf = (group: ReadonlyArray<SourceRowsEntry>): Array<string> => {
  * What `makeWalk` hands the dispatch loop: the interpreted byId plane. Every
  * failure inside is wire-shaped already (`loadRows`/`resolveNode`/
  * `toConnectionResult` are all typed so), so the error channel is pinned to
- * `FateRequestError` — the byId plane's error taxonomy in the type (review R3).
+ * `FateRequestError` — the byId plane's error taxonomy in the type.
  */
 export interface FateWalk {
 	readonly byId: (operation: ProtocolByIdOperation) => Effect.Effect<unknown, FateRequestError>;

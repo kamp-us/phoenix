@@ -1,11 +1,11 @@
 /**
  * `LivePublisher` — the per-request live-publish service, the other half of
- * the server's per-request contract (PRD stories 8–9; `CurrentUser` is the
- * first half).
+ * the server's per-request contract (`CurrentUser` is the first half).
  *
- * THIS MODULE DEFINES THE CONTRACT ONLY (task 5). The live layer — waitUntil
+ * THIS MODULE DEFINES THE CONTRACT ONLY. The live layer — waitUntil
  * scheduling, error swallowing-with-log, the LiveDO topic targeting — is
- * task 6, and it lives inside the layer ONCE, so "a publish cannot fail the
+ * worker-side (`apps/web/worker/features/fate-live/live-publisher.ts`), and
+ * it lives there ONCE, so "a publish cannot fail the
  * mutation" is a type, not a convention: every publish method's error channel
  * is `never` (`Effect.Effect<void>`), which is what kills the bridge's
  * per-call-site `useIgnore` boilerplate.
@@ -18,8 +18,9 @@
  * narrowing (the bridge's `TypedLiveUpdate` idea) over this service when it
  * migrates.
  *
- * Like `CurrentUser`, no worker-level layer provides this: the compiler
- * (task 7) provides it per request from the request's execution context, and
+ * Like `CurrentUser`, no worker-level layer provides this: the provision
+ * pipeline (`Provision.ts`) provides it per request from the request's
+ * execution context, and
  * `FateServer.layer` excludes it from R (`FateServerRequirements`).
  */
 import {Context, type Effect} from "effect";

@@ -36,8 +36,8 @@ import {sources} from "./sources.ts";
 /**
  * The composed config: sozluk (`term`/`terms`/`definition.*`) + pano
  * (`post`/`posts`/`post.*`/`comment.*`) + pasaport (`me`/`profile`/
- * `user.setUsername`) + stats (`landingStats`/`health`), with the legacy
- * source entries for every relation-fetchable entity.
+ * `user.setUsername`) + stats (`landingStats`/`health`), with the
+ * `Fate.source` entries for every relation-fetchable entity.
  */
 export const fateConfig = FateServer.config({
 	queries,

@@ -1,9 +1,8 @@
 /**
  * The walk's connection plane — fate's `paginationArgsSchema`,
  * `arrayToConnection`, and `getScopedArgs` (`src/server/connection.ts` +
- * `queryArgs.ts`) reimplemented on Effect Schema (tasks.md task 16; PRD "v2
- * backend: the native interpreter" — "removes fate's only runtime zod usage
- * from our graph").
+ * `queryArgs.ts`) reimplemented on Effect Schema — removing fate's only
+ * runtime zod usage from our graph.
  *
  * ## What is mirrored, byte for byte (the walk oracle enforces it)
  *

@@ -1,6 +1,6 @@
 /**
  * The v1 compile step — a validated `FateServer` service → a pure
- * `createFateServer` call (PRD stories 8, 11; tasks.md task 7). Exposed
+ * `createFateServer` call. Exposed
  * publicly as `FateExecutor.compile` / `FateExecutor.toFetchHandler` — the
  * namespace is assembled in the barrel (`index.ts`).
  *
@@ -14,8 +14,8 @@
  *     regression net for the native plane, so the v1 side stays exactly as
  *     it served, including its `ManagedRuntime` conversion point.
  *
- * The build-time codegen surface (`toCodegenServer`) lives in `Codegen.ts`
- * (review fix, tasks.md task 20): that module is the PRODUCTION build path
+ * The build-time codegen surface (`toCodegenServer`) lives in `Codegen.ts`:
+ * that module is the PRODUCTION build path
  * every deploy runs; this one is the frozen test-harness baseline. They
  * share the compiled-definition vocabulary through `Compiled.ts` and never
  * import each other.
@@ -102,8 +102,8 @@ export type FateExecutorRuntime = ManagedRuntime.ManagedRuntime<FateServer, neve
  * The oracle baseline's request context: the served contract
  * ({@link FateRequestContext}) plus the one field only THIS path consumes —
  * `signal`, handed to the runtime's promise runner in {@link runResolve} so
- * an abort interrupts the resolver fiber. Executor-local on purpose (audit
- * fix A1): the serving path (`FateInterpreter`) leaves interruption to the
+ * an abort interrupts the resolver fiber. Executor-local on purpose:
+ * the serving path (`FateInterpreter`) leaves interruption to the
  * caller (the worker route wires abort→interruption at the platform edge,
  * ADR 0043), so the served contract must not carry an abort knob — a
  * `runPromise`-shaped conversion point is the only place one exists, and the
@@ -131,19 +131,10 @@ interface CompileOptions {
 // --- the single conversion point ----------------------------------------------------
 
 /**
- * Run one resolver effect: through the ONE shared provision pipeline
- * (`provideRequestPair`, `Provision.ts` — the per-request pair as request
- * VALUES over the captured build-time services; carries the erased→kernel
- * `R: unknown → never` re-pin), then through the worker runtime — the
- * package's ONE Effect→Promise conversion — and map the `Exit`:
- *
- *   - success → the value;
- *   - failure → `encodeWireError(error)` thrown (annotated errors keep their
- *     wire code, `FateRequestError` passes through);
- *   - defect → `encodeWireError(Cause.squash(...))` thrown (un-annotated
- *     defects become the fixed internal error — no detail leak).
- *
- * fate's `executeOperation` catches the throw and serializes
+ * Run one resolver effect: steps 2–4 of the module doc's pipeline —
+ * provision (`provideRequestPair`), the worker runtime (the package's ONE
+ * Effect→Promise conversion), failure/defect encoding via `encodeWireError`
+ * on the `Exit`. fate's `executeOperation` catches the throw and serializes
  * `{ok: false, error: {code, message}}`.
  */
 const runResolve = <A>(
@@ -168,7 +159,7 @@ const runResolve = <A>(
 
 /**
  * One adapter for both args-shaped categories — queries and lists were
- * byte-identical adapters (review R1), so the success channel is generic:
+ * byte-identical adapters, so the success channel is generic:
  * `unknown` for a query entry, fate's connection envelope for a list entry.
  */
 const adaptArgsEntry = <A>(
@@ -193,7 +184,7 @@ const adaptMutation = (
 ): CompiledMutationDefinition => ({
 	// The validated-config invariant narrows the erased `string | undefined`
 	// (`mutationWireType`, Compiled.ts) — the config-error check itself lives
-	// in `collectConfigIssues` (review B2).
+	// in `collectConfigIssues`.
 	type: mutationWireType(name, entry),
 	resolve: ({ctx, input, select}) => runResolve(options, ctx, entry.resolve({input, select})),
 });

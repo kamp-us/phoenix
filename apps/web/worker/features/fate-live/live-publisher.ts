@@ -1,6 +1,6 @@
 /**
  * The worker-side live implementation of `@phoenix/fate-effect`'s
- * `LivePublisher` per-request service (PRD story 9; the contract lives in the
+ * `LivePublisher` per-request service (the contract lives in the
  * package — `packages/fate-effect/src/LivePublisher.ts` — and its tag identity
  * is load-bearing, see `.patterns/fate-effect-server.md`).
  *
@@ -38,7 +38,7 @@
  *
  * No worker-level layer provides this service: the `/fate` route builds the
  * value per request — from the request's execution context + the worker-init
- * `LiveTopics` publish capability — and hands it to the compiled server on
+ * `LiveTopics` publish capability — and hands it to the interpreter on
  * the request context, exactly where it hands `currentUser`.
  */
 import type {LivePublisher} from "@phoenix/fate-effect";

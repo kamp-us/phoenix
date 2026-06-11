@@ -2,7 +2,7 @@
  * `Fate.query` / `Fate.list` / `Fate.mutation` — the record-entry
  * constructors.
  *
- * The resolver half of the loader/resolver split (PRD; sources are the loader
+ * The resolver half of the loader/resolver split (sources are the loader
  * half, see `Source.ts`): operations carry domain logic, typed errors, and
  * writes. Each constructor pairs a **pure-data definition** with an
  * **`Effect.fn` handler**:
@@ -36,7 +36,7 @@
  * ```
  *
  * Each entry also carries `resolve` — the **decode-then-run wrapper** the
- * compile step (task 7) adapts to fate's promise-shaped resolvers:
+ * compile step adapts to fate's promise-shaped resolvers:
  *
  * - Mutation `input` is decoded by the definition's Schema before the handler
  *   runs; a decode failure is an {@link InputValidationError} (annotated
@@ -130,7 +130,7 @@ export type DefinitionInput<D> = D extends {readonly input: infer S extends Sche
 /**
  * The WIRE args of a query/list definition — the args Schema's ENCODED side,
  * what the CLIENT sends before the server decodes (`undefined` if no schema).
- * The codegen server's `InferFateAPI` surface (task 8) is typed in these:
+ * The codegen server's `InferFateAPI` surface is typed in these:
  * a `FiniteFromString` arg is `number` to the handler but `string` on the
  * wire, and the generated client must demand the wire shape.
  */
@@ -227,7 +227,7 @@ export interface FateMutation<D extends MutationDefinition, A, E, R> {
 
 /**
  * The services an operation requires — the `R` of its `resolve` (handler
- * services plus any Schema decoding services). `FateServer.layer` (task 5)
+ * services plus any Schema decoding services). `FateServer.layer`
  * unions these across the config, like `FateSourceServices` for sources.
  */
 export type FateOperationServices<Op> = Op extends {

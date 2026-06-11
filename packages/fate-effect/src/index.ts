@@ -1,30 +1,14 @@
 /**
- * `@phoenix/fate-effect` — phoenix's Effect-native fate integration.
- *
- * fate's structure with Effect's semantics: feature code keeps fate's record
- * shapes; each entry pairs a pure-data definition with an `Effect.fn` handler.
- * This barrel grows task by task; today it ships the error half of the
- * contract — the `ErrorCode` annotation key and the wire-error codec —
- * the views half (the `FateDataView` class factory + `Entity` helper), the
- * record-value constructors (`Fate.source` for per-entity loaders,
- * `Fate.query` / `Fate.list` / `Fate.mutation` for operation resolvers), the
- * composite — the `FateServer` tag + `config` + `layer`, with the
- * per-request pair (`CurrentUser`, `LivePublisher`) it provides to handlers —
- * and the v2 native plane THAT SERVES `/fate` (ADR 0043): the wire-protocol
- * Schema codecs (`Protocol.ts`, drift-pinned against fate's exported types)
- * and the `FateInterpreter` dispatch loop with the byId selection walk over
- * `RequestResolver`-batched sources (`Walk.ts`) and its connection plane
- * (`Connection.ts` — Schema-decoded pagination args, fate's only runtime
- * zod replaced) — oracle-verified byte-equal to fate across the full
- * operation surface. The v1 compile step (`FateExecutor`: config → pure
- * `createFateServer` over a ManagedRuntime) remains as the differential
- * oracle's baseline (`Executor.ts`) and, via `toCodegenServer`
- * (`Codegen.ts`), the build-time codegen surface — two modules sharing
- * `Compiled.ts`, stitched into the one `FateExecutor` namespace below.
+ * `@phoenix/fate-effect` — phoenix's Effect-native fate integration: fate's
+ * record shapes with Effect semantics. Ships the views, the wire-error
+ * codec, the `Fate.*` entry constructors, the `FateServer`
+ * tag/config/layer, and the v2 native plane that serves `/fate` (ADR 0043);
+ * the v1 compile step (`FateExecutor`) survives as the differential
+ * oracle's baseline and the build-time codegen surface.
  *
  * Exports stay flat (every supporting type a consumer's exported value can
  * surface must be nameable through this barrel); the `Fate` namespace is the
- * PRD's authoring surface layered over the same flat members.
+ * authoring surface layered over the same flat members.
  */
 import {toCodegenServer} from "./Codegen.ts";
 import {compile, toFetchHandler} from "./Executor.ts";
@@ -160,7 +144,7 @@ export {
  * oracle-baseline module and the production codegen module never import
  * each other (they share internals through `Compiled.ts` only), while the
  * public spelling (`FateExecutor.toCodegenServer` in `schema.ts`) stays
- * exactly what it was before the split (review fix, tasks.md task 20).
+ * exactly what it was before the split.
  */
 export const FateExecutor = {
 	compile,

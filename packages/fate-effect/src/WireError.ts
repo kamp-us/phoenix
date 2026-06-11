@@ -65,7 +65,7 @@ declare module "effect/Schema" {
  * un-annotated failures and defects. `INTERNAL_SERVER_ERROR` (not fate's
  * protocol `INTERNAL_ERROR`) on purpose — it is the code phoenix's bridge has
  * always emitted and the SPA's `MUTATION_ERROR_CODES` contract decodes, so
- * compiled and legacy records stay wire-identical through the migration.
+ * the package stays wire-identical with what the SPA expects.
  */
 export const INTERNAL_WIRE_CODE = "INTERNAL_SERVER_ERROR";
 
@@ -80,7 +80,7 @@ const INTERNAL_WIRE_MESSAGE = "Something went wrong.";
  * pinned by the walk oracle, and this is the ONE construction site — the walk
  * (`Walk.ts`), the connection plane (`Connection.ts`), and the interpreter's
  * request-level fallback (`Interpreter.ts`) all derive from it, so the pinned
- * bytes cannot drift between arms (review B1). Package-wide error taxonomy,
+ * bytes cannot drift between arms. Package-wide error taxonomy,
  * which is why it lives here and not in the pagination plane.
  */
 export const internalArm = (): FateRequestError =>
@@ -89,7 +89,7 @@ export const internalArm = (): FateRequestError =>
 /**
  * The failed/thrown value behind a `Cause` — the v1 compiler's exact branch
  * (`runResolve`): the typed failure if one exists, otherwise the squashed
- * defect. Shared here (review R2) because both call sites — the interpreter's
+ * defect. Shared here because both call sites — the interpreter's
  * dispatch loop and the oracle baseline's `runResolve` — feed the result
  * straight into {@link encodeWireError}.
  */

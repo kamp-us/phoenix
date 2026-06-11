@@ -62,41 +62,29 @@ export {landingStatsDataView} from "../stats/views.ts";
  */
 export const Root: Record<string, unknown> = {
 	me: userDataView,
-	// Sözlük term detail page (`queries.term`). A view-based entry becomes a
-	// typed `query` client root; at runtime the native transport dispatches it by
-	// the request key (= root name = `term`) to `queries.term`. The `term(slug)`
-	// args ride on the `useRequest` item. The nested `definitions` connection is
-	// carried inline by the resolver (see `.patterns/fate-connections.md`).
+	// Sözlük term detail page (`queries.term`); the nested `definitions`
+	// connection is carried inline by the resolver (see
+	// `.patterns/fate-connections.md`).
 	term: termDataView,
-	// Sözlük home's two columns. Each is a `list(...)`-wrapped root → a `list`
-	// client root the plugin emits as `FateAPI['lists'][name]`; the generated
-	// root NAME must equal the server `lists` resolver name (`recentTerms` /
-	// `popularTerms`), so the home reads both in one `useRequest` without aliasing
-	// a single `terms` resolver (which the request-key→root-name mapping forbids).
+	// Sözlük home's two columns. A generated `list` root's NAME must equal the
+	// server `lists` resolver name (`recentTerms`/`popularTerms`), so the home
+	// reads both in one `useRequest` without aliasing a single `terms` resolver
+	// (which the request-key→root-name mapping forbids).
 	recentTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
 	popularTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
-	// Pano post detail page (`queries.post`). A view-based entry becomes a typed
-	// `query` client root; the native transport dispatches it by the request key
-	// (= root name = `post`) to `queries.post`. The `post(idOrSlug)` args ride on
-	// the `useRequest` item. The nested `comments` connection is carried inline by
-	// the resolver (see `.patterns/fate-connections.md`).
+	// Pano post detail page (`queries.post`); the nested `comments` connection
+	// is carried inline by the resolver.
 	post: postDataView,
-	// Pano feed (`lists.posts`). A `list(...)`-wrapped root → a `list` client root
-	// the plugin emits as `FateAPI['lists'][name]`; the generated root NAME must
-	// equal the server `lists` resolver name (`posts`). Filter args (`sort`/`host`)
-	// keep each filtered feed a distinct connection that paginates independently;
-	// the feed with no filter args is the registered root list a `post.submit`
-	// `insert` reaches (see `.patterns/fate-mutations-client.md`).
+	// Pano feed (`lists.posts`). Filter args (`sort`/`host`) keep each filtered
+	// feed a distinct connection that paginates independently; the feed with no
+	// filter args is the registered root list a `post.submit` `insert` reaches
+	// (see `.patterns/fate-mutations-client.md`).
 	posts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
-	// Public profile page (`queries.profile`). A view-based entry → a typed
-	// `query` client root; the native transport dispatches it by the request key
-	// (= root name = `profile`) to `queries.profile`. The `profile(username)` args
-	// ride on the `useRequest` item. The nested `contributions` discriminant feed
-	// is carried inline by the resolver (see `.patterns/fate-connections.md`).
+	// Public profile page (`queries.profile`); the nested `contributions`
+	// discriminant feed is carried inline by the resolver.
 	profile: profileDataView,
-	// Landing-page stats card (`queries.landingStats`). A view-based entry → a
-	// typed `query` client root; dispatched by the request key (= `landingStats`)
-	// to `queries.landingStats`. Returns the single `LandingStats` entity (stamped
-	// with a constant `id`) the SPA reads directly.
+	// Landing-page stats card (`queries.landingStats`): the single
+	// `LandingStats` entity (stamped with a constant `id`) the SPA reads
+	// directly.
 	landingStats: landingStatsDataView,
 };

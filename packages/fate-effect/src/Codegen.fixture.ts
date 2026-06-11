@@ -1,14 +1,14 @@
 /**
- * The task-8 codegen fixture — the module shape `schema.ts` adopts in task 9:
- * definitions at module scope, `FateExecutor.toCodegenServer(config)` exported
- * as `fateServer`, NOTHING executable evaluated at import time.
+ * The codegen fixture — the module shape `schema.ts` adopts: definitions at
+ * module scope, `FateExecutor.toCodegenServer(config)` exported as
+ * `fateServer`, NOTHING executable evaluated at import time.
  *
  * Every handler and source closes over `tripwire` — a Proxy that throws on ANY
  * property access, standing in for a D1 binding that does not exist at build
  * time. `Codegen.test.ts` imports this module dynamically: a successful import
- * + a populated manifest prove the codegen path is construction-only (the
- * spike's "no database at build time" claim), because a single touched handler
- * would throw here, at module evaluation.
+ * + a populated manifest prove the codegen path is construction-only ("no
+ * database at build time"), because a single touched handler would throw
+ * here, at module evaluation.
  */
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {Effect} from "effect";

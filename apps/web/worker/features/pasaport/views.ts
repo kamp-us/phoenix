@@ -113,15 +113,10 @@ export const contributionDataView = ContributionView.view;
 export const profileDataView = ProfileView.view;
 
 /*
- * The `Replacements` second parameter restates two things fate's wire-facing
- * `Entity<>` derivation widens/narrows away (see `sozluk/views.ts`):
- *
- *   - list relations (`contributions`) — kernel `list()` widens the child
- *     field map, the same reason fate's own docs use `Replacements`;
- *   - timestamp fields — fate types `Date` row fields as `string` (the
- *     JSON-serialized wire shape), but these worker-side entity values carry
- *     live `Date` objects until fate serializes the response
- *     (`Contribution.createdAt`).
+ * `Replacements` restates the list relations (`contributions`) and the
+ * live-`Date` timestamp fields (`Contribution.createdAt`) that fate's
+ * wire-facing `Entity<>` derivation widens/narrows away — the full rationale
+ * lives in `sozluk/views.ts`.
  */
 export type User = Entity<typeof UserView>;
 export type Contribution = Entity<typeof ContributionView, {createdAt: Date}>;

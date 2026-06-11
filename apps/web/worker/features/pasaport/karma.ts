@@ -4,7 +4,7 @@
  * `karmaBumpStatement(db, userId, delta)` returns an **unexecuted** drizzle
  * `UPDATE` against `user_profile.total_karma`. It is pasaport's implementation
  * of the `KarmaBump` contract VOTE owns (`vote/Vote.ts` — dependency
- * inversion, audit A2): `fate/layers.ts` wraps it in `Layer.succeed(KarmaBump,
+ * inversion): `fate/layers.ts` wraps it in `Layer.succeed(KarmaBump,
  * …)` at composition, and the Vote service includes the provided statement
  * inside its `batch((db) => [...])` so the karma adjustment commits atomically
  * with the vote insert / score update. Vote itself never imports this module.

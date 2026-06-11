@@ -1,6 +1,5 @@
 /**
- * The v2 wire-protocol codecs — fate's protocol as Effect Schema (PRD "v2
- * backend: the native interpreter"; tasks.md task 14).
+ * The v2 wire-protocol codecs — fate's protocol as Effect Schema.
  *
  * Two codec surfaces, deliberately split the way fate itself splits them:
  *

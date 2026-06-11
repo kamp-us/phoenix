@@ -1,9 +1,10 @@
 /**
  * `CurrentUser` — the per-request session service, half of the server's
- * per-request contract (PRD story 8; `LivePublisher` is the other half).
+ * per-request contract (`LivePublisher` is the other half).
  *
  * Handlers `yield*` it like any other service, but no worker-level layer ever
- * provides it: the compile step (task 7) provides the pair onto each handler
+ * provides it: the provision pipeline (`Provision.ts`) provides the pair onto
+ * each handler
  * per request — `CurrentUser` from the session, `LivePublisher` from the
  * request's execution context. `FateServer.layer` therefore EXCLUDES both
  * from its R (`FateServerRequirements` in `Server.ts`); a handler's

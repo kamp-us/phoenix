@@ -24,7 +24,7 @@
  * below is the *production* single-worker precedence — at the Cloudflare edge,
  * non-worker paths are answered by the asset server and the worker only sees the
  * `runWorkerFirst` globs. In the local dev loop `vite dev` serves the SPA (with
- * HMR) and proxies `/api` + `/fate*` to this worker (task 6); under bare
+ * HMR) and proxies `/api` + `/fate*` to this worker; under bare
  * `alchemy dev` this worker is API-only, so a non-API path has no SPA to return.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
@@ -128,10 +128,7 @@ export default Phoenix.make(
 		// `live` stays load-bearing through the `liveLayer` closures' `getByName(...)`
 		// calls below — drop the `yield*` above and the type checker fails at that
 		// usage, so an unwired binding is a compile error, never a runtime
-		// `undefined`. The raw D1 is no longer bound here: it lives behind the
-		// `Database` seam (ADR 0040), provided as `DatabaseLive` in the
-		// outer `Effect.provide`, and both `DrizzleLive` and `BetterAuthLive` derive
-		// from it — one shared handle, type-enforced.
+		// `undefined`.
 
 		// Resolve the raw D1 handle from the `Database` seam ONCE in init (ADR
 		// 0040). `DatabaseLive` (provided in the outer `Effect.provide`)
@@ -156,20 +153,13 @@ export default Phoenix.make(
 		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
 
 		// ── THE ONE WORKER-LEVEL RUNTIME (ADR 0041/0043 — init-only wiring) ──
-		// Build exactly one `ManagedRuntime` per isolate from `PhoenixFateLive` —
-		// the composed `FateServer.layer(fateConfig)` over the worker singletons
+		// Build exactly one `ManagedRuntime` per isolate from `PhoenixFateLive`
 		// (its `R` is `Database | BetterAuth`, both provided here from the
-		// init-resolved `databaseLayer` + `betterAuthLayer`). Since the v2
-		// cutover (ADR 0043) the runtime is the LAYER-BUILD VEHICLE only: no
-		// request runs through it. Its built context — the worker singletons
-		// AND the `FateServer` service — reaches the routes as `fateLayer`
-		// (built once, reused instead of rebuilt per request through
-		// `provideRequest`); the `/fate` route yields the native interpreter
-		// (`FateInterpreter.handleRequest`) on the request fiber, so resolver
-		// spans nest under the router's request span and nothing is built or
-		// disposed per request. The shared memoMap and the never-dispose
-		// deviation live in `makeFateRuntime` — the single construction point
-		// shared with the app suites.
+		// init-resolved `databaseLayer` + `betterAuthLayer`). The runtime story —
+		// layer-build vehicle only, no runtime on the request path, the shared
+		// memoMap, the never-dispose deviation — lives in `fate/layers.ts`
+		// (`makeFateRuntime` + the module doc); its built context reaches the
+		// routes as `fateLayer`.
 		const {contextLayer: fateLayer} = makeFateRuntime(
 			PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 		);
@@ -243,13 +233,8 @@ export default Phoenix.make(
 		// `HttpRouter.provideRequest(...)` and wires the health group's platform
 		// stubs (`http/app.ts`).
 		// Provide the INIT-RESOLVED `betterAuth` service to the routes — NOT
-		// `BetterAuthLive`. `provideRequest` builds its layer per request, so
-		// passing the layer would reconstruct better-auth (re-running the
-		// `Random`/`Output` secret resolution, which needs `RuntimeContext` and the
-		// deploy-time alchemy machinery absent in the workerd runtime) on every
-		// request. The service resolved here in init carries the already-warmed
-		// `auth` cache, so the `/api/auth/*` route's `betterAuth.fetch` reuses it
-		// with no per-request reconstruction.
+		// `BetterAuthLive`; the why lives on `makeAppLive`'s `betterAuthLayer`
+		// property doc (`http/app.ts`).
 		const AppLive = makeAppLive({
 			fateLayer,
 			liveLayer,

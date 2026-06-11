@@ -15,7 +15,7 @@
  *
  * `HttpRouter.add` routes lift their handler's `R` into route-requirement
  * markers that plain `Layer.provide` does NOT discharge — they must be
- * discharged with `HttpRouter.provideRequest` (see task-2 notes / ADR 0029).
+ * discharged with `HttpRouter.provideRequest` (ADR 0029).
  * The fate route's worker-service subset comes from `fateLayer`; the
  * auth route's `Pasaport` comes from the same layer.
  */
@@ -32,18 +32,8 @@ import {authRoute} from "../features/pasaport/route.ts";
 import {healthApiLayer} from "./health.ts";
 
 /**
- * Build the application router layer.
- *
- * @param fateLayer    the worker-level fate services (Drizzle + features) PLUS
- *                     the composed `FateServer` service as a dependency-free
- *                     context layer derived from the one per-isolate runtime
- *                     (`makeFateRuntime`'s `contextLayer`) — discharges the
- *                     fate, auth, and live routes' service requirements via
- *                     `HttpRouter.provideRequest`.
- * @param liveLayer    the worker-init-resolved DO namespace handles
- *                     (`LiveTopics` for the `/fate` publish path, `LiveConnections`
- *                     for the `/fate/live` SSE transport), built from the bound
- *                     unified `LiveDO` namespace in worker init.
+ * Build the application router layer. Each option documents its own contract
+ * on the property below.
  *
  * The health probe reads `ENVIRONMENT` via `yield* AppConfig` (the single
  * `effect/Config` surface), off the `ConfigProvider` alchemy auto-wires at worker
@@ -63,6 +53,12 @@ export const makeAppLive = (options: {
 	 * second Drizzle/Pasaport per request (ADR 0041).
 	 */
 	readonly fateLayer: Layer.Layer<WorkerFateServices | FateServer>;
+	/**
+	 * The worker-init-resolved DO namespace handles (`LiveTopics` for the
+	 * `/fate` publish path, `LiveConnections` for the `/fate/live` SSE
+	 * transport), built from the bound unified `LiveDO` namespace in worker
+	 * init.
+	 */
 	readonly liveLayer: Layer.Layer<LiveTopics | LiveConnections>;
 	/**
 	 * The `BetterAuth` Layer (`@alchemy.run/better-auth`), dependency-free
