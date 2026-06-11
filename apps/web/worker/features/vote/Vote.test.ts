@@ -12,7 +12,23 @@ import {Effect, Exit, Layer} from "effect";
 import {createDrizzle, Drizzle, makeDrizzleAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.testing.ts";
-import {Vote, VoteLive} from "./Vote.ts";
+import {KarmaBump, Vote, VoteLive} from "./Vote.ts";
+
+/**
+ * The test provision for Vote's own `KarmaBump` contract — the same
+ * `UPDATE user_profile SET total_karma = total_karma + ?` pasaport provides
+ * in production (`fate/layers.ts` wraps `pasaport/karma.ts`), spelled locally
+ * so `vote/` imports nothing from `pasaport/` (the boundary pinned in
+ * `vote-boundary.unit.test.ts`). The atomicity test below depends on the
+ * statement targeting `user_profile` (it renames the table away mid-test).
+ */
+const KarmaBumpTest = Layer.succeed(KarmaBump, {
+	statement: (db, userId, delta) =>
+		db
+			.update(schema.userProfile)
+			.set({totalKarma: sql`${schema.userProfile.totalKarma} + ${delta}`})
+			.where(eq(schema.userProfile.userId, userId)),
+});
 
 /**
  * Build a fresh in-memory D1 with the baseline migration applied, and a layer
@@ -23,7 +39,7 @@ function freshDb(): {sqlite: SqliteD1; layer: Layer.Layer<Vote | Drizzle>} {
 	const sqlite = makeSqliteTestDb();
 	const db = createDrizzle(sqlite.d1);
 	const DrizzleLayer = Layer.succeed(Drizzle, makeDrizzleAccess(db));
-	const layer = VoteLive.pipe(Layer.provideMerge(DrizzleLayer));
+	const layer = VoteLive.pipe(Layer.provide(KarmaBumpTest), Layer.provideMerge(DrizzleLayer));
 	return {sqlite, layer};
 }
 

@@ -14,15 +14,15 @@ import type {LivePublisher} from "./LivePublisher.ts";
  * request's execution context (built worker-side, e.g. via
  * `livePublisherFor`; the package never imports the implementation).
  *
- * `signal` is consumed only by the v1 compile path (`Executor.ts` — the
- * oracle baseline): `runResolve` hands it to the runtime's promise runner so
- * an abort interrupts the resolver fiber. The serving path
- * (`FateInterpreter`) deliberately leaves interruption to the caller — the
- * worker route wires the request's abort signal to fiber interruption at the
- * platform edge (ADR 0043), so it never sets this field.
+ * Deliberately NO `signal` field (audit fix A1): the serving path
+ * (`FateInterpreter`) leaves interruption to the caller — the worker route
+ * wires the request's abort signal to fiber interruption at the platform
+ * edge (ADR 0043) — so an abort knob on the served contract would only
+ * mislead future route authors. The one path that does consume a signal is
+ * the oracle baseline's `runPromise` conversion, and it extends this
+ * contract locally (`ExecutorRequestContext`, `Executor.ts`).
  */
 export interface FateRequestContext {
 	readonly currentUser: typeof CurrentUser.Service;
 	readonly livePublisher: typeof LivePublisher.Service;
-	readonly signal?: AbortSignal;
 }

@@ -51,6 +51,7 @@ export {
 export {
 	type CompiledFateServer,
 	compileFateSources,
+	type ExecutorRequestContext,
 	type FateExecutorRuntime,
 	type FateFetchHandler,
 } from "./Executor.ts";

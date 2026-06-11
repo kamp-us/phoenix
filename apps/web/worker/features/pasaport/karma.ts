@@ -2,13 +2,15 @@
  * Karma bump helper — pure drizzle statement factory.
  *
  * `karmaBumpStatement(db, userId, delta)` returns an **unexecuted** drizzle
- * `UPDATE` against `user_profile.total_karma`. The Vote service (task 3)
- * includes the returned statement inside its `batch((db) => [...])` so the
- * karma adjustment commits atomically with the vote insert / score update.
+ * `UPDATE` against `user_profile.total_karma`. It is pasaport's implementation
+ * of the `KarmaBump` contract VOTE owns (`vote/Vote.ts` — dependency
+ * inversion, audit A2): `fate/layers.ts` wraps it in `Layer.succeed(KarmaBump,
+ * …)` at composition, and the Vote service includes the provided statement
+ * inside its `batch((db) => [...])` so the karma adjustment commits atomically
+ * with the vote insert / score update. Vote itself never imports this module.
  *
  * This file owns no Effect, no service, no D1 binding lookup — it's a thin
- * statement builder so consumers compose it into their own batch tuples
- * without taking a `Pasaport` dependency just for karma.
+ * statement builder consumers compose into their own batch tuples.
  */
 import {eq, sql} from "drizzle-orm";
 import type {DrizzleDb} from "../../db/Drizzle.ts";

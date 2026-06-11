@@ -100,11 +100,29 @@ import {encodeWireError} from "./WireError.ts";
  */
 export type FateExecutorRuntime = ManagedRuntime.ManagedRuntime<FateServer, never>;
 
+/**
+ * The oracle baseline's request context: the served contract
+ * ({@link FateRequestContext}) plus the one field only THIS path consumes —
+ * `signal`, handed to the runtime's promise runner in {@link runResolve} so
+ * an abort interrupts the resolver fiber. Executor-local on purpose (audit
+ * fix A1): the serving path (`FateInterpreter`) leaves interruption to the
+ * caller (the worker route wires abort→interruption at the platform edge,
+ * ADR 0043), so the served contract must not carry an abort knob — a
+ * `runPromise`-shaped conversion point is the only place one exists, and the
+ * v1 compile path is the only such point in the package.
+ */
+export interface ExecutorRequestContext extends FateRequestContext {
+	readonly signal?: AbortSignal;
+}
+
 /** The compiled fate server — fate's own value, API type-erased. */
-export type CompiledFateServer = KernelFateServer<unknown, FateRequestContext>;
+export type CompiledFateServer = KernelFateServer<unknown, ExecutorRequestContext>;
 
 /** What {@link toFetchHandler} returns: fate's handleRequest, bound. */
-export type FateFetchHandler = (request: Request, context: FateRequestContext) => Promise<Response>;
+export type FateFetchHandler = (
+	request: Request,
+	context: ExecutorRequestContext,
+) => Promise<Response>;
 
 /** What every compiled resolver closes over: the runtime + captured services. */
 interface CompileOptions {
@@ -132,7 +150,7 @@ interface CompileOptions {
  */
 const runResolve = <A>(
 	options: CompileOptions,
-	ctx: FateRequestContext,
+	ctx: ExecutorRequestContext,
 	effect: Effect.Effect<A, unknown, unknown>,
 ): Promise<A> =>
 	options.runtime
@@ -237,13 +255,13 @@ const adaptSourceHandlers = (
 	return {
 		...(byId
 			? {
-					byId: ({ctx, id}: {ctx: FateRequestContext; id: string}) =>
+					byId: ({ctx, id}: {ctx: ExecutorRequestContext; id: string}) =>
 						runResolve(options, ctx, byId(id)),
 				}
 			: {}),
 		...(byIds
 			? {
-					byIds: ({ctx, ids}: {ctx: FateRequestContext; ids: Array<string>}) =>
+					byIds: ({ctx, ids}: {ctx: ExecutorRequestContext; ids: Array<string>}) =>
 						runResolve(options, ctx, byIds(ids)).then((rows) => [...rows]),
 				}
 			: {}),
@@ -257,7 +275,7 @@ const adaptSourceHandlers = (
 						skip,
 						plan,
 					}: {
-						ctx: FateRequestContext;
+						ctx: ExecutorRequestContext;
 						cursor?: string;
 						direction: "backward" | "forward";
 						take: number;
@@ -299,7 +317,7 @@ export const compileFateSources = (
  * Compile a validated `FateServer` service into a real `createFateServer`
  * value over the worker runtime. Pure construction — no request state; the
  * per-request pair arrives later through each request's adapterContext
- * ({@link FateRequestContext}).
+ * ({@link ExecutorRequestContext}).
  */
 export const compile = (
 	service: FateServerService,
@@ -307,12 +325,12 @@ export const compile = (
 ): CompiledFateServer => {
 	const options: CompileOptions = {runtime, services: service.services};
 	return createFateServer<
-		FateRequestContext,
+		ExecutorRequestContext,
 		Record<never, never>,
 		Record<string, CompiledQueryDefinition>,
 		Record<string, CompiledListDefinition>,
 		Record<string, CompiledMutationDefinition>,
-		FateRequestContext
+		ExecutorRequestContext
 	>({
 		// The fetch handler always supplies the per-request context (fate types
 		// adapterContext optional); read it through, asserting its presence. The

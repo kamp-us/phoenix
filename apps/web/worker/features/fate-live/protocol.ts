@@ -278,6 +278,25 @@ export interface LiveLimits {
 }
 
 /**
+ * The default per-request fan-out budgets, mirroring void's `DEFAULT_LIMITS`
+ * (`void/dist/runtime/live.mjs`). Threaded onto each `LiveDO` subscribe/publish
+ * call (decision 2B) rather than hardcoded in the DO, so a future request-scoped
+ * override has exactly one seam. Both routes that publish/subscribe consume it
+ * (`fate-live/route.ts`, `fate/route.ts`) — it lives HERE, beside the
+ * {@link LiveLimits} shape, so neither route imports config out of a sibling
+ * ROUTE module (audit fix A3). `maxOperationsPerControlRequest` is void's
+ * control-request cap, not a `LiveLimits` field — it is not part of the DO
+ * budget and so is omitted here.
+ */
+export const defaultLiveLimits: LiveLimits = {
+	maxSubscriptionsPerConnection: 256,
+	maxSubscriptionsPerTopic: 256,
+	maxQueuedEventsPerConnection: 100,
+	maxEncodedEventSize: 64 * 1024,
+	deliveryAttemptTimeoutMs: 1500,
+};
+
+/**
  * A persisted topic-role subscriber row (the value stored under a `sub:` KV key,
  * void's flat-key model). `connectionId` is the human-readable connection name
  * the topic re-derives `connection:${connectionId}` from; `subId` is the

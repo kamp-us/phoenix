@@ -28,10 +28,11 @@ import type {Database} from "../../db/Database.ts";
 import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
+import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {makePasaportLive, type Pasaport} from "../pasaport/Pasaport.ts";
 import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
 import {type Stats, StatsLive} from "../stats/Stats.ts";
-import {type Vote, VoteLive} from "../vote/Vote.ts";
+import {KarmaBump, type Vote, VoteLive} from "../vote/Vote.ts";
 import {fateConfig} from "./config.ts";
 
 /**
@@ -135,6 +136,17 @@ const PasaportFromTag = Layer.unwrap(
 );
 
 /**
+ * Pasaport's implementation of the `KarmaBump` contract VOTE owns (dependency
+ * inversion at the layer seam; architecture audit A2): the statement Vote
+ * batches when a cast lands is pasaport's `karmaBumpStatement` (an UPDATE on
+ * `user_profile.total_karma`). Wired HERE — the composition root — so the
+ * `vote/ → pasaport/` arrow exists only at this seam, never inside Vote.
+ * Künye later swaps this provided value for a DO-backed bump without
+ * touching Vote.
+ */
+const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStatement});
+
+/**
  * The worker-level data-plane layer (ADR 0029, ADR 0040).
  *
  * Zero-arg layer constant: it derives everything from the two seams it requires
@@ -145,8 +157,11 @@ const PasaportFromTag = Layer.unwrap(
  *
  * `Drizzle` is built from {@link DrizzleLive} (sourced from `Database`); the
  * feature services provide over it. `SozlukLive` and `PanoLive` both depend on
- * `Vote`, so they merge first and `provideMerge(VoteLive)` once; `PasaportFromTag`
- * and `StatsLive` depend only on `Drizzle` (Pasaport also on `BetterAuth`).
+ * `Vote`, so they merge first and `provideMerge(VoteLive)` once — with Vote's
+ * own `KarmaBump` contract discharged by {@link KarmaBumpFromPasaport} right
+ * there (`Layer.provide`, not `provideMerge`: the contract is Vote's internal
+ * seam, not a worker service the routes see). `PasaportFromTag` and
+ * `StatsLive` depend only on `Drizzle` (Pasaport also on `BetterAuth`).
  *
  * `R = Database | BetterAuth`; the per-request pair (`CurrentUser` +
  * `LivePublisher`) is provided onto each handler effect by the compile step,
@@ -158,7 +173,10 @@ export const makeFateLayer: Layer.Layer<
 	Database | BetterAuth.BetterAuth
 > = Layer.mergeAll(
 	PasaportFromTag,
-	Layer.mergeAll(SozlukLive, PanoLive).pipe(Layer.provideMerge(VoteLive)),
+	Layer.mergeAll(SozlukLive, PanoLive).pipe(
+		Layer.provideMerge(VoteLive),
+		Layer.provide(KarmaBumpFromPasaport),
+	),
 	StatsLive,
 ).pipe(Layer.provideMerge(DrizzleLive));
 

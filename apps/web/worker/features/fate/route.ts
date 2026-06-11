@@ -43,7 +43,7 @@ import * as Fiber from "effect/Fiber";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
-import {defaultLiveLimits} from "../fate-live/route.ts";
+import {defaultLiveLimits} from "../fate-live/protocol.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 

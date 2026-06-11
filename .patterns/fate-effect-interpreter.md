@@ -6,7 +6,7 @@ The v2 native plane of `@phoenix/fate-effect` (PRD story 16; ADR 0043): fate's `
 
 - **No runtime on the request path**: the route yields the program; the platform layer (alchemy's worker bridge running the compiled `HttpRouter.toHttpEffect`) owns the one run boundary. The package-side `runtime.runPromise` in `Executor.ts` is oracle-baseline-only (the conversion-point enumeration in `Executor.test.ts` still pins it to exactly one site).
 - **Spans**: handler/source `Effect.fn` spans parent to the router's request span (the `HttpEffect.toHandled` tracer middleware) because everything runs in the request fiber's tree — including loads through the walk's `RequestResolver` batch fiber. Pinned in `Interpreter.batch.test.ts` § observability with a `ParentSpan` collector.
-- **Abort**: the interpreter deliberately leaves interruption to the caller. The route wires `request.signal` → fiber interruption via `interruptOnAbort` (effect-smol's `HttpEffect.toWebHandlerWith` idiom), because alchemy's bridge passes no signal. `FateRequestContext.signal` is v1-compile-path-only.
+- **Abort**: the interpreter deliberately leaves interruption to the caller. The route wires `request.signal` → fiber interruption via `interruptOnAbort` (effect-smol's `HttpEffect.toWebHandlerWith` idiom), because alchemy's bridge passes no signal. The served `FateRequestContext` carries no `signal` field at all (audit fix A1); the only signal-bearing context is the oracle baseline's Executor-local `ExecutorRequestContext` (`Executor.ts`).
 
 ## The protocol codecs (`Protocol.ts`)
 

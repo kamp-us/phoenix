@@ -298,13 +298,32 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 The dep graph: `Pano → Vote → Drizzle`, `Sozluk → Vote → Drizzle`. Vote's own deps (karma rules, rate limits, audit when those land) stay encapsulated — consumers don't see them.
 
+### Shared service → feature dependency: invert it
+
+A shared low-level service (Vote sits below the feature directories — Sozluk AND Pano consume it) must not import FROM a feature directory. When Vote needs something a feature owns — the karma counter lives in pasaport's `user_profile` — Vote declares a contract IT owns and the feature provides the implementation at composition:
+
+```ts
+// vote/Vote.ts — the contract, owned by Vote (names only db primitives)
+export interface KarmaBumpService {
+  readonly statement: (db: DrizzleDb, userId: string, delta: number) => Stmt;
+}
+export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
+  "@phoenix/vote/KarmaBump",
+) {}
+
+// fate/layers.ts — the composition root provides pasaport's implementation
+const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStatement});
+```
+
+`VoteLive` yields `KarmaBump` at layer build and batches the provided statement atomically with the vote insert / score update — the batching is identical, Vote just stops knowing where the statement comes from. The `vote/ → pasaport/` arrow exists only at the composition seam (`fate/layers.ts`), and the contract is künye's swap point: a DO-backed karma bump replaces the provided value there without touching Vote. Pinned in `vote-boundary.unit.test.ts` (an import sweep over `vote/` + exact type pins on `VoteLive`'s `R` and the contract's surface). Tests that build `VoteLive` directly provide their own `KarmaBump` (see `Vote.test.ts`); tests composing through `makeFateLayer`/`PhoenixFateLive` get the production provision for free.
+
 Vote-delegating methods are the one place a method's `R` widens beyond `never`: `voteDefinition` / `retractDefinitionVote` infer as `Effect<A, E, Vote>` because they call `yield* vote.cast(...)`. That's correct — the dep is real. The Drizzle dep is satisfied by the destructured `run` and stays out of `R`.
 
 ## Wiring at the worker entry
 
 See `apps/web/worker/features/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
 
-`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request pair (`CurrentUser`/`LivePublisher`) is provided onto each operation by the interpreter, never at layer scope. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
+`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request pair (`CurrentUser`/`LivePublisher`) is provided onto each operation by the interpreter, never at layer scope. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output — with Vote's own `KarmaBump` contract discharged right there via `Layer.provide(KarmaBumpFromPasaport)` (plain `provide`: the contract is Vote's internal seam, not a worker service routes see). The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 

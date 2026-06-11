@@ -31,28 +31,12 @@ import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 import {
-	type LiveLimits,
+	defaultLiveLimits,
 	parseLiveControlRequest,
 	type SubscribeControl,
 	topicsForSubscribe,
 } from "./protocol.ts";
 import {LiveConnections} from "./topics.ts";
-
-/**
- * The default per-request fan-out budgets, mirroring void's `DEFAULT_LIMITS`
- * (`void/dist/runtime/live.mjs`). Threaded onto each `LiveDO` subscribe/publish
- * call (decision 2B) rather than hardcoded in the DO, so a future request-scoped
- * override has exactly one seam. `maxOperationsPerControlRequest` is void's
- * control-request cap, not a `LiveLimits` field — it is not part of the DO budget
- * and so is omitted here.
- */
-export const defaultLiveLimits: LiveLimits = {
-	maxSubscriptionsPerConnection: 256,
-	maxSubscriptionsPerTopic: 256,
-	maxQueuedEventsPerConnection: 100,
-	maxEncodedEventSize: 64 * 1024,
-	deliveryAttemptTimeoutMs: 1500,
-};
 
 /**
  * The fate live error envelope (`{results: [{error}], version: 1}`). The SSE

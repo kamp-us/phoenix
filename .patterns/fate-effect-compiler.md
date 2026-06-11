@@ -12,7 +12,7 @@ The two roles are opposite lifecycles (frozen test baseline vs. production build
 | `Executor.ts` | `compile`/`toFetchHandler`, `runResolve` (the `ManagedRuntime` conversion point), `compileFateSources` | Oracle baseline — test-harness-only since ADR 0043, someday deletable |
 | `Codegen.ts` | `toCodegenServer` + the `FateCodegen*` type family | Production — every deploy's Vite codegen runs it |
 | `Compiled.ts` | The shared compiled-definition shapes (`Compiled*Definition`), the identity-keyed `buildSourceResolver` → `CompiledFateSources`, the definition/source `erased→kernel` recoveries | Shared internals of both |
-| `RequestContext.ts` | The `FateRequestContext` contract | Neutral — the serving path (`Interpreter.ts`, the worker route) and `Provision.ts` depend on it without touching either compile module |
+| `RequestContext.ts` | The `FateRequestContext` contract (the per-request pair as VALUES — **no `signal` field**; abort is the serving caller's wiring) | Neutral — the serving path (`Interpreter.ts`, the worker route) and `Provision.ts` depend on it without touching either compile module |
 
 The public `FateExecutor` namespace (`compile`/`toFetchHandler`/`toCodegenServer`) is assembled in the barrel (`index.ts`), so consumers spell `FateExecutor.toCodegenServer` exactly as before the split.
 
@@ -32,7 +32,7 @@ const handleFate = FateExecutor.toFetchHandler(runtime);
 const response = await handleFate(request, {
 	currentUser: {user: session?.user},                       // CurrentUserInfo is a structural subset of the better-auth user
 	livePublisher: livePublisherFor({publish, waitUntil}),    // worker-side live implementation (fate-effect-server.md)
-	signal: request.signal,                                   // v1-path-only: abort interrupts the resolver fiber via runPromise
+	signal: request.signal,                                   // ExecutorRequestContext (Executor-local) only: abort interrupts the resolver fiber via runPromise
 });
 ```
 
@@ -45,7 +45,7 @@ For every `Fate.query`/`Fate.list`/`Fate.mutation` entry, the compiled fate reso
 
 1. **Decode** — the entry's `resolve` (built by the constructor) runs the definition's Schema before the handler; failures are the annotated `InputValidationError` (`VALIDATION_ERROR`, fate's own schema-failure code). The compiled mutation **never** populates fate's `input?: SchemaLike` slot — the decode already lives in `resolve`; a second validator would double-validate.
 2. **Provide** — `CurrentUser` and `LivePublisher` are provided from the request context VALUES (innermost, so they always win), then the build-time services captured by `FateServer.layer` (`service.services`) underneath — via the ONE shared `provideRequestPair` (`Provision.ts`), the same pipeline the v2 interpreter and walk apply (the oracle proved the unification byte-equal). This is the whole per-request story: no per-request layer, no runtime rebuild, no context smuggling.
-3. **Run** — `runtime.runPromise` on the runtime, with the request's abort signal. This is the package's **single Effect→Promise conversion point** (effect-smol LLMS.md § "Integrating Effect into existing applications": fate's `(args) => Promise` resolvers are the non-Effect callback boundary `ManagedRuntime` targets) — oracle-baseline-only since the cutover: the SERVING path's conversion is the platform layer's, outside the package. Because the fiber starts from the runtime, the handler's `Effect.fn` span (wire name; `<Entity>.<capability>` for sources) nests under the runtime's ambient span if one is present — pinned in `Executor.test.ts` with a `Tracer.ParentSpan` collector.
+3. **Run** — `runtime.runPromise` on the runtime, with the request's abort signal (`signal` lives on `ExecutorRequestContext`, the Executor-local extension of the served `FateRequestContext` — the served contract itself carries no abort knob, audit fix A1). This is the package's **single Effect→Promise conversion point** (effect-smol LLMS.md § "Integrating Effect into existing applications": fate's `(args) => Promise` resolvers are the non-Effect callback boundary `ManagedRuntime` targets) — oracle-baseline-only since the cutover: the SERVING path's conversion is the platform layer's, outside the package. Because the fiber starts from the runtime, the handler's `Effect.fn` span (wire name; `<Entity>.<capability>` for sources) nests under the runtime's ambient span if one is present — pinned in `Executor.test.ts` with a `Tracer.ParentSpan` collector.
 4. **Encode failures** — the `Exit` is mapped once: declared annotated errors (and `InputValidationError`) go through `encodeWireError` keeping their wire code; defects collapse to `INTERNAL_SERVER_ERROR` + `"Something went wrong."` (details never reach the wire); a `FateRequestError` passes through verbatim. The thrown wire error is what fate serializes as `{ok: false, error: {code, message}}`.
 
 ## Sources

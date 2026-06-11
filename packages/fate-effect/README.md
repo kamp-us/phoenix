@@ -217,15 +217,16 @@ import {FateInterpreter, type FateRequestContext} from "@phoenix/fate-effect";
 const context: FateRequestContext = {
 	currentUser: {user: session?.user ?? null},
 	livePublisher, // the worker builds this from its live topics + waitUntil
-	signal: request.signal,
 };
 const response = yield* FateInterpreter.handleRequest(request, context);
 ```
 
 The interpreter owns no runtime — the caller decides how the Effect runs (phoenix's worker
 yields it inside its HTTP route; the test suite runs it through a `ManagedRuntime`). Abort
-signals are likewise the caller's wiring; see the worker's
-[route](../../apps/web/worker/features/fate/route.ts) for the abort→interruption pattern.
+signals are likewise the caller's wiring — the context deliberately has no `signal` field
+(the oracle baseline's `ExecutorRequestContext` is the one signal-bearing extension); see the
+worker's [route](../../apps/web/worker/features/fate/route.ts) for the abort→interruption
+pattern.
 
 Client codegen needs the same config with **inert** handlers — no database, importable at build
 time:
