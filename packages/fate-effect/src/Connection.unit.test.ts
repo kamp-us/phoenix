@@ -7,7 +7,7 @@
  * phoenix's execution path before this module replaced it) and
  * `arrayToConnection` — `@nkzw/fate` `src/server/connection.ts`. Every
  * accept/reject boundary and every windowing default below restates fate's
- * source; the walk oracle corpus (`Interpreter.test.ts`) additionally proves
+ * source; the walk oracle corpus (`Interpreter.walk.test.ts`) additionally proves
  * the wire bytes against fate's real server.
  */
 import {FateRequestError} from "@nkzw/fate/server";
@@ -219,7 +219,7 @@ describe("getScopedArgs — fate's nested-args scoping", () => {
 	});
 });
 
-// The walk corpus (`Interpreter.test.ts`) proves the wire BYTES against
+// The walk corpus (`Interpreter.walk.test.ts`) proves the wire BYTES against
 // fate's real server; this sanity pin catches an accidental defect-vs-failure
 // flip early (a defect would take the WRONG taxonomy arm — `encodeWireError`'s
 // INTERNAL_SERVER_ERROR instead of fate's INTERNAL_ERROR).

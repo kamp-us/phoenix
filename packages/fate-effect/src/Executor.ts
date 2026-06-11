@@ -9,7 +9,7 @@
  * on the request fiber; what remains here has exactly ONE consumer:
  *
  *   - **`compile`/`toFetchHandler` are the differential oracle's BASELINE** —
- *     `Interpreter.test.ts` byte-compares the interpreter against fate's own
+ *     the oracle suites (`Interpreter*.test.ts`) byte-compare the interpreter against fate's own
  *     `createFateServer` over these compiled executors. The oracle is the
  *     regression net for the native plane, so the v1 side stays exactly as
  *     it served, including its `ManagedRuntime` conversion point.

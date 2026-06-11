@@ -3,7 +3,8 @@
  * `toFetchHandler` (tasks.md task 7; PRD stories 8, 11).
  *
  * The contract under test, end to end over the wire (fate's own
- * `handleRequest`):
+ * `handleRequest`), driven over the shared sozluk fixture world
+ * (`Oracle.fixture.ts` — the same world the differential oracle runs):
  *
  *   1. **A full operation round-trips** — wire request in → Schema decode →
  *      handler (yielding a domain service from the runtime + the captured
@@ -18,37 +19,48 @@
  *      own values (a barrier holds both in flight at once).
  *   4. **Oracle-baseline role** — since the v2 cutover (ADR 0043) this
  *      compiled path serves nothing; it exists as the differential oracle's
- *      v1 baseline (`Interpreter.test.ts`), so this suite keeps pinning its
+ *      v1 baseline (the `Interpreter*.test.ts` suites), so this suite keeps pinning its
  *      behavior.
  *   5. **Spans nest under the runtime's request span** (ADR 0041): the
  *      runtime carries `Tracer.ParentSpan`; a handler's `Effect.fn` span —
  *      operation AND source — parents to it, not to a detached root.
  *   6. **One conversion point** — no static `Effect.run*` anywhere in the
- *      package's non-test sources; the ManagedRuntime promise runner appears
- *      exactly once, inside `Executor.ts` (the LLMS.md integration idiom).
- *      Since the v2 cutover the PRODUCTION conversion point is the platform
- *      layer's boundary (alchemy's worker bridge runs the request fiber) —
- *      the package-side runner exists only because fate's compiled `(args)
- *      => Promise` resolvers (the oracle baseline) demand one.
+ *      package's non-test, non-fixture sources; the ManagedRuntime promise
+ *      runner appears exactly once, inside `Executor.ts` (the LLMS.md
+ *      integration idiom). Since the v2 cutover the PRODUCTION conversion
+ *      point is the platform layer's boundary (alchemy's worker bridge runs
+ *      the request fiber) — the package-side runner exists only because
+ *      fate's compiled `(args) => Promise` resolvers (the oracle baseline)
+ *      demand one. Test-support `*.fixture.ts` modules sit outside the pin:
+ *      the oracle harness's v2 backend runs the interpreter on a
+ *      harness-owned runtime, standing in for the platform layer.
  */
 import {readdir, readFile} from "node:fs/promises";
 import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
-import type {ConnectionResult} from "@nkzw/fate/server";
-import {Context, Effect, Layer, ManagedRuntime, Option, Tracer} from "effect";
-import * as Schema from "effect/Schema";
+import {Context, Effect, Layer, ManagedRuntime, Tracer} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import type {CompiledFateSources} from "./Compiled.ts";
-import {CurrentUser, type CurrentUserInfo, Unauthorized} from "./CurrentUser.ts";
-import {FateDataView} from "./DataView.ts";
+import {CurrentUser, type CurrentUserInfo} from "./CurrentUser.ts";
 import type {FateExecutorRuntime, FateFetchHandler} from "./Executor.ts";
 import {compileFateSources} from "./Executor.ts";
 import {Fate, FateExecutor} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
+import {
+	definitionSource,
+	recordingPublisher,
+	SozlukDb,
+	SozlukDbLive,
+	sozlukConfig,
+	sozlukQueries,
+	spanLog,
+	TermView,
+	termSource,
+	user,
+} from "./Oracle.fixture.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
 import type {SourceDefinitionLike} from "./Server.ts";
 import {FateServer} from "./Server.ts";
-import {fateWireCode} from "./WireError.ts";
 
 // fate's source executors receive a masking `plan` the adapted handlers only
 // read `args` from (connection) or ignore entirely (byId/byIds). Tests don't
@@ -56,59 +68,6 @@ import {fateWireCode} from "./WireError.ts";
 // the same shape the bridge's isolation tests use (`effect.unit.test.ts`).
 const PLAN = undefined as never;
 const planWithArgs = (args: Record<string, unknown>) => ({args}) as never;
-
-// --- fixture rows + views ------------------------------------------------------
-
-type TermRow = {
-	slug: string;
-	title: string;
-};
-
-type DefinitionRow = {
-	id: string;
-	body: string;
-	term: string;
-	author: string;
-};
-
-class TermView extends FateDataView<TermRow>()("Term")({
-	slug: true,
-	title: true,
-}) {}
-
-class DefinitionView extends FateDataView<DefinitionRow>()("Definition")({
-	id: true,
-	body: true,
-	term: true,
-	author: true,
-}) {}
-
-// --- the in-memory database (the T1 seam: mutable state behind a service) -------
-
-class SozlukDb extends Context.Service<
-	SozlukDb,
-	{
-		readonly terms: Array<TermRow>;
-		readonly definitions: Array<DefinitionRow>;
-	}
->()("@phoenix/fate-effect/test/SozlukDb") {}
-
-/** A fresh in-memory database per layer build — no row leakage across runtimes. */
-const SozlukDbLive = Layer.sync(SozlukDb, () => ({
-	terms: [
-		{slug: "effect", title: "Effect"},
-		{slug: "fate", title: "fate"},
-	],
-	definitions: [],
-}));
-
-// --- fixture error ------------------------------------------------------------
-
-class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
-	"test/BodyRequired",
-	{message: Schema.String},
-	{[fateWireCode]: "BODY_REQUIRED"},
-) {}
 
 // --- the wire-driving harness ---------------------------------------------------
 
@@ -133,40 +92,12 @@ const resultsOf = async (res: Response): Promise<ReadonlyArray<WireResult>> => {
 	return body.results;
 };
 
-/** A recording per-request `LivePublisher` value — every call lands in `calls`. */
-const recordingPublisher = (): {
-	publisher: typeof LivePublisher.Service;
-	calls: Array<string>;
-} => {
-	const calls: Array<string> = [];
-	const push = (line: string) =>
-		Effect.sync(() => {
-			calls.push(line);
-		});
-	const publisher: typeof LivePublisher.Service = {
-		update: (type, id) => push(`update ${type}:${id}`),
-		delete: (type, id) => push(`delete ${type}:${id}`),
-		connection: (procedure, args) => ({
-			appendNode: (nodeType, id) =>
-				push(`append ${procedure}(${JSON.stringify(args ?? {})}) ${nodeType}:${id}`),
-			prependNode: (nodeType, id) =>
-				push(`prepend ${procedure}(${JSON.stringify(args ?? {})}) ${nodeType}:${id}`),
-			deleteEdge: (nodeType, id) =>
-				push(`deleteEdge ${procedure}(${JSON.stringify(args ?? {})}) ${nodeType}:${id}`),
-			invalidate: () => push(`invalidate ${procedure}(${JSON.stringify(args ?? {})})`),
-		}),
-	};
-	return {publisher, calls};
-};
-
 const makeContext = (
 	options: {user?: CurrentUserInfo; publisher?: typeof LivePublisher.Service} = {},
 ): FateRequestContext => ({
 	currentUser: {user: options.user},
 	livePublisher: options.publisher ?? recordingPublisher().publisher,
 });
-
-const user = (id: string): CurrentUserInfo => ({id, email: `${id}@kamp.us`, name: id});
 
 /** Resolve once `count` callers have arrived — holds requests concurrently in flight. */
 const makeBarrier = (count: number): {arrive: () => Promise<void>} => {
@@ -184,124 +115,7 @@ const makeBarrier = (count: number): {arrive: () => Promise<void>} => {
 	};
 };
 
-// --- span observation channel ------------------------------------------------------
-
-const currentSpan = Effect.orDie(Effect.currentSpan);
-
-/** What the probe handlers observed: span name + parent span id. */
-const spanLog: Array<{name: string; parent: string | undefined}> = [];
-
-const logSpan = Effect.gen(function* () {
-	const span = yield* currentSpan;
-	spanLog.push({
-		name: span.name,
-		parent: Option.isSome(span.parent) ? span.parent.value.spanId : undefined,
-	});
-});
-
-// --- the representative config (decode evidence, errors, live, sources) -----------
-
-const termSource = Fate.source(
-	TermView,
-	{id: "slug"},
-	{
-		byIds: function* (slugs) {
-			yield* logSpan;
-			const db = yield* SozlukDb;
-			return db.terms.filter((row) => slugs.includes(row.slug));
-		},
-	},
-);
-
-const definitionSource = Fate.source(
-	DefinitionView,
-	{id: "id"},
-	{
-		byId: function* (id) {
-			const db = yield* SozlukDb;
-			return db.definitions.find((row) => row.id === id) ?? null;
-		},
-	},
-);
-
-const queries = {
-	// Decode evidence: `take` is FiniteFromString — the wire sends a string,
-	// the handler sees a number (the Schema ran before the handler).
-	term: Fate.query(
-		{
-			args: Schema.Struct({slug: Schema.String, take: Schema.optional(Schema.FiniteFromString)}),
-			type: TermView,
-		},
-		Effect.fn("term")(function* ({args}) {
-			yield* logSpan;
-			const db = yield* SozlukDb;
-			const row = db.terms.find((term) => term.slug === args.slug) ?? null;
-			return row === null ? null : {...row, take: args.take ?? null};
-		}),
-	),
-	definitions: Fate.query(
-		{args: Schema.Struct({term: Schema.String}), type: DefinitionView},
-		Effect.fn("definitions")(function* ({args}) {
-			const db = yield* SozlukDb;
-			return db.definitions.filter((row) => row.term === args.term);
-		}),
-	),
-	// An undeclared defect: the thrown detail must NOT reach the wire.
-	boom: Fate.query({type: "Boom"}, () => Effect.die(new Error("secret-db-detail"))),
-};
-
-const lists = {
-	terms: Fate.list(
-		{args: Schema.Struct({first: Schema.optional(Schema.Number)}), type: TermView},
-		Effect.fn("terms")(function* ({args}) {
-			const db = yield* SozlukDb;
-			const take = args.first ?? 10;
-			const result: ConnectionResult<TermRow> = {
-				items: db.terms.slice(0, take).map((row) => ({cursor: row.slug, node: row})),
-				pagination: {hasNext: db.terms.length > take, hasPrevious: false},
-			};
-			return result;
-		}),
-	),
-};
-
-const mutations = {
-	"definition.add": Fate.mutation(
-		{
-			input: Schema.Struct({term: Schema.String, body: Schema.String}),
-			type: DefinitionView,
-			error: Schema.Union([Unauthorized, BodyRequired]),
-		},
-		Effect.fn("definition.add")(function* ({input}) {
-			const author = yield* CurrentUser.required;
-			if (input.body === "") {
-				return yield* new BodyRequired({message: "tanım boş olamaz"});
-			}
-			const db = yield* SozlukDb;
-			const definition: DefinitionRow = {
-				id: `def-${db.definitions.length + 1}`,
-				body: input.body,
-				term: input.term,
-				author: author.id,
-			};
-			db.definitions.push(definition);
-			const live = yield* LivePublisher;
-			yield* live
-				.connection("Term.definitions", {term: input.term})
-				.appendNode("Definition", definition.id, {node: definition});
-			return definition;
-		}),
-	),
-};
-
-const config = FateServer.config({
-	queries,
-	lists,
-	mutations,
-	sources: [termSource, definitionSource],
-});
-
-const defaultLayer = () => FateServer.layer(config).pipe(Layer.provide(SozlukDbLive));
+const defaultLayer = () => FateServer.layer(sozlukConfig).pipe(Layer.provide(SozlukDbLive));
 
 /** One harness = one runtime over a FRESH in-memory database. */
 const makeHarness = (options: {layer?: Layer.Layer<FateServer>; requestSpan?: boolean} = {}) => {
@@ -388,7 +202,7 @@ describe("FateExecutor.toFetchHandler — round-trip", () => {
 			expect(written).toEqual({
 				id: "1",
 				ok: true,
-				data: {id: "def-1", body: "bir efekt sistemi", term: "effect", author: "umut"},
+				data: {id: "def-1", body: "bir efekt sistemi", term: "effect", author: "umut", votes: 0},
 			});
 			// The live publish went through the per-request LivePublisher value.
 			expect(calls).toEqual(['append Term.definitions({"term":"effect"}) Definition:def-1']);
@@ -402,7 +216,7 @@ describe("FateExecutor.toFetchHandler — round-trip", () => {
 			const [rows] = await resultsOf(read);
 			expect(rows?.ok).toBe(true);
 			expect(rows?.data).toEqual([
-				{id: "def-1", body: "bir efekt sistemi", term: "effect", author: "umut"},
+				{id: "def-1", body: "bir efekt sistemi", term: "effect", author: "umut", votes: 0},
 			]);
 		} finally {
 			await harness.dispose();
@@ -602,7 +416,7 @@ describe("compileFateSources", () => {
 		const harness = makeHarness({
 			layer: FateServer.layer(
 				FateServer.config({
-					queries: {term: queries.term},
+					queries: {term: sozlukQueries.term},
 					sources: [termSource, definitionSource],
 				}),
 			).pipe(Layer.provide(SozlukDbLive)),
@@ -644,7 +458,7 @@ describe("compileFateSources", () => {
 		);
 		const harness = makeHarness({
 			layer: FateServer.layer(
-				FateServer.config({queries: {term: queries.term}, sources: [probeSource]}),
+				FateServer.config({queries: {term: sozlukQueries.term}, sources: [probeSource]}),
 			).pipe(Layer.provide(SozlukDbLive)),
 		});
 		try {
@@ -688,8 +502,12 @@ describe("compileFateSources", () => {
 describe("the single conversion point", () => {
 	it("no static Effect.run* in package sources; the runtime runner only in Executor.ts", async () => {
 		const srcDir = dirname(fileURLToPath(import.meta.url));
+		// Test files and test-support fixture modules sit outside the pin —
+		// the oracle harness (`Oracle.fixture.ts`) runs the interpreter on a
+		// harness-owned runtime, standing in for the platform layer's request
+		// fiber. Everything else in src/ is swept.
 		const files = (await readdir(srcDir)).filter(
-			(name) => name.endsWith(".ts") && !name.endsWith(".test.ts"),
+			(name) => name.endsWith(".ts") && !name.endsWith(".test.ts") && !name.endsWith(".fixture.ts"),
 		);
 		expect(files).toContain("Executor.ts");
 		for (const name of files) {

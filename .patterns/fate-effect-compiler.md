@@ -2,7 +2,7 @@
 
 How `@phoenix/fate-effect` turns a composed `FateServer` into fate's own server value (the v1 backend, PRD stories 8/11). **Since the v2 cutover (ADR 0043) this path serves nothing**: the `/fate` route runs the native interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)). The compile step survives with exactly two roles:
 
-- **The differential oracle's baseline** — `Interpreter.test.ts` byte-compares the interpreter against fate's real `createFateServer` over these compiled executors (including the walk-baseline rigs over `compileFateSources`). The oracle is the regression net, so the v1 side stays exactly as it served.
+- **The differential oracle's baseline** — the oracle suites (`Interpreter*.test.ts`, harness + shared sozluk world in `Oracle.fixture.ts`) byte-compare the interpreter against fate's real `createFateServer` over these compiled executors (including the walk-baseline rigs over `compileFateSources`). The oracle is the regression net, so the v1 side stays exactly as it served.
 - **The build-time codegen surface** — `toCodegenServer` (below) is what `schema.ts` exports for Vite codegen; the output is a **real fate server** value, so the client manifest and `InferFateAPI` hold by construction.
 
 The two roles are opposite lifecycles (frozen test baseline vs. production build path), so they live in separate modules that never import each other:

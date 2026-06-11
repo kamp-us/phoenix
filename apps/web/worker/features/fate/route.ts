@@ -29,7 +29,7 @@
  * Because the program runs on the request fiber, every handler/source
  * `Effect.fn` span nests under the router's request span (the
  * `HttpEffect.toHandled` tracer middleware) — observability holds with no
- * explicit runtime (pinned package-side in `Interpreter.test.ts`).
+ * explicit runtime (pinned package-side in `Interpreter.batch.test.ts`).
  *
  * The publisher rides the worker-init `LiveTopics` + per-request `waitUntil`
  * (ADR 0028/0029/0039): a mutation's `live.*` fan-out reaches the topic DO

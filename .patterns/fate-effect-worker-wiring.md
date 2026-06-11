@@ -94,7 +94,7 @@ const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort
   the platform layer (alchemy's worker bridge running the compiled router) owns the single run
   boundary for the whole HTTP surface. Handler/source `Effect.fn` spans therefore nest under
   the router's request span (the `HttpEffect.toHandled` tracer middleware) — pinned in the
-  package's `Interpreter.test.ts`.
+  package's `Interpreter.batch.test.ts`.
 - **Abort → interruption is the route's job**: alchemy's bridge wires no signal, so
   `interruptOnAbort(signal)` (exported from `route.ts`, T0-tested in `route.unit.test.ts`)
   forks the program as a child of the request fiber and interrupts it from the signal's

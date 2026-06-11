@@ -4,7 +4,7 @@
  * 14; ADR 0042 "What v2 changes").
  *
  * The loop is decode → run → encode, every stage byte-faithful to the v1
- * compiled server (the differential oracle in `Interpreter.test.ts` enforces
+ * compiled server (the differential oracle in the `Interpreter*.test.ts` suites enforces
  * it):
  *
  *   1. **Decode** — the request body parses as JSON (fate's exact
