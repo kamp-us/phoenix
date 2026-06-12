@@ -1,0 +1,316 @@
+---
+name: triage
+description: Process the GitHub triage queue — classify, enrich, prioritize, split, or close issues labeled status:needs-triage on kamp-us/phoenix. Trigger on "triage the queue", "triage issue #N", "process needs-triage", "classify these issues", "/triage", or whenever you're asked to make the backlog actionable. This is the guardrail between raw intake (the report skill) and pickable work (write-code): nothing reaches a write-code agent without passing through here.
+---
+
+# triage
+
+You are the guardrail. Raw issues land in `status:needs-triage` — filed by agents
+via the `report` skill, or free-form by humans. Your job is to turn each one into a
+single, actionable, correctly-typed, prioritized unit that a `write-code` agent can
+pick up cold and trust — or to close it with an audit trail if it can't be salvaged.
+
+You have **full rewrite authority**. Severity and priority are *your* call, not the
+reporter's. Splitting a bundle is in your mandate. But you are **salvage-first,
+kill-last**: enrich before you close, and never close a human's issue at all.
+
+## The mandate, per issue
+
+For each `status:needs-triage` issue, you produce exactly one of three outcomes:
+
+1. **Triaged** — classified, enriched, prioritized, labeled `status:triaged`. The
+   normal path. (A bundle is split first; each resulting unit is triaged.)
+2. **Needs-info** — a human-filed issue you can't act on as-is. Labeled
+   `status:needs-info` with a comment asking specific questions. **Never closed.**
+3. **Closed not-planned** — an unsalvageable *agent*-filed issue. Closed with a
+   reason comment and `closed-by-triage`. Last resort, never for human issues.
+
+## All GitHub ops via `gh api` REST — never GraphQL
+
+The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL
+issue queries. Every read and write goes through `gh api`. This is not a style
+preference; GraphQL calls error out on this org.
+
+List the queue:
+
+```bash
+gh api 'repos/kamp-us/phoenix/issues?state=open&labels=status:needs-triage&per_page=100' \
+  --jq '.[] | "#\(.number) (\(.user.login)) \(.title)"'
+```
+
+---
+
+## Step 1 — Read the issue and its context
+
+Don't classify from the title. Read the body, then read enough of the codebase to
+know what the issue is actually about — the files it names, the ADR/pattern docs it
+cites, the related issues. That context is what lets you classify correctly, write a
+faithful enrichment, and pick a real priority. A triage that skips the codebase
+produces labels nobody downstream can trust.
+
+Note **who filed it** and **what shape it's in** — you'll need both for the
+human-vs-agent judgment (Step 5) and the classification (Step 2).
+
+---
+
+## Step 2 — Classify into exactly ONE of six types
+
+Every issue gets exactly one `type:*`. The boundaries are locked — when an issue
+seems to straddle two, the distinguishing question in each definition is the
+tiebreaker. Apply the canonical label name (`type:bug`, etc.).
+
+| Type | `type:*` label | Definition — the issue is this when… |
+|---|---|---|
+| **bug** | `type:bug` | **Behavior diverges from intent.** Something already built does the wrong thing. There's a "supposed to" being violated. |
+| **feature** | `type:feature` | **A new capability, directly implementable.** It doesn't exist yet, the path to building it is clear, and it fits in a PR or a few. |
+| **chore** | `type:chore` | **No behavior change.** Refactors, renames, dependency bumps, test hygiene, dead-code removal, doc edits. The observable behavior of the system is identical before and after. |
+| **decision** | `type:decision` | **One question; the output is a recorded choice.** A fork in the road that needs settling (an ADR), not code. If the deliverable is "we decided X" rather than "we built X", it's a decision. |
+| **investigation** | `type:investigation` | **An unknown; the output is knowledge.** Root cause is not yet understood. The deliverable is a diagnosis — *then* maybe a fix, a decision, or a new report. If you can't yet say what to build because you don't yet know what's wrong, it's an investigation. |
+| **epic** | `type:epic` | **Too big for one PR; it spawns children.** Multiple questions and/or multiple implementable units under one umbrella. The deliverable is a plan plus sub-issues, not a single change. |
+
+### The boundaries that actually bite
+
+- **decision vs epic** — *one* question → decision; *many* questions, or
+  questions-plus-buildable-children → epic. A design issue carrying five open
+  questions and a v1 scope is an epic, not a decision.
+- **bug vs investigation** — if the wrong behavior is understood and the fix is
+  nameable, it's a bug. If you'd have to *investigate* to even say what's wrong (an
+  intermittent hang, an unexplained exit code), it's an investigation. "Filed to
+  investigate later" in the body is a strong tell.
+- **chore vs feature** — does observable behavior change? Splitting a 1,600-line
+  file with identical public surface is a chore. Adding a capability that wasn't
+  there is a feature. A dependency bump that *enables* nothing new is a chore.
+- **feature vs epic** — can one write-code agent finish it in a PR or two with a
+  clear path? Feature. Does it need a plan and sub-issues first? Epic.
+
+When genuinely torn, pick the type that best describes the *deliverable* (recorded
+choice / knowledge / code / plan-and-children) and note the call in the enrichment.
+
+---
+
+## Step 3 — Split bundled reports
+
+Every open issue must be a **single actionable unit**. If a report bundles two (or
+more) genuinely separate problems — two unrelated bugs, a bug plus a refactor, a
+question plus a task — split it so each unit can be typed, prioritized, and picked
+independently.
+
+How to split:
+
+1. **Decide it's really a bundle.** Two facets of *one* change are not a bundle
+   (e.g. "rename the function and update its callers"). Two problems that could be
+   worked by different agents at different times, with different types or
+   priorities, are.
+2. **Create one new issue per extra unit** via REST, each labeled
+   `status:needs-triage` so it re-enters the queue (you'll triage the new ones on a
+   later pass — or this same run — like any other). Give each a sharp single-unit
+   title and a body that states the one problem, following the report skill's
+   5-section shape where it fits (see [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
+   for the surrounding format conventions).
+3. **Cross-link.** Each new issue references the original (`split from #N`), and you
+   add a comment on the original listing the children (`split into #A, #B`). The
+   reader can always trace a unit back to where it came from.
+4. **Resolve the original.** Either keep it as one of the units (triage it normally,
+   having spun the *other* units off) or, if it was purely a container with nothing
+   left after splitting, close it not-planned with a `closed-by-triage` reason
+   comment pointing at the children. Don't leave an empty husk open.
+
+```bash
+gh api repos/kamp-us/phoenix/issues \
+  -f title="<single-unit title>" \
+  -f body="$BODY" \
+  -f "labels[]=status:needs-triage"
+# then cross-link via a comment on the original (Step 6 shows the comment call)
+```
+
+---
+
+## Step 4 — Enrich and rewrite (rewrite-on-top, original preserved)
+
+Thin issues become actionable by rewriting them from the codebase context you
+gathered in Step 1. The structure is **rewrite on top, original verbatim below**, so
+the issue is actionable *without losing provenance*:
+
+```markdown
+<your rewritten, enriched body — the actionable version a write-code agent reads first>
+
+---
+
+<details>
+<summary>Original report (verbatim)</summary>
+
+<the original body, byte-for-byte unchanged>
+
+</details>
+```
+
+What the rewrite adds:
+
+- **Sharper framing.** State the problem in terms of what's actually true in the
+  codebase — the real file paths, the function names, the ADR/pattern docs, the
+  related issues. Promote anything load-bearing the original buried.
+- **Acceptance-shaped clarity.** Make "done" legible. For a typed-and-pickable issue
+  the write-code agent shouldn't have to reverse-engineer what success looks like.
+- **No invention.** Enrich from what you *found*, not what you wish were true. If the
+  original is uncertain, keep the uncertainty — don't manufacture a false plan. Mark
+  your additions as triage's read where it helps ("Triage note: …").
+
+Preserve the original **exactly** in the `<details>` block — it's the provenance
+record and the reporter's unedited words. If the body has its own triple-backtick
+code fences, the `<details>` block still nests them fine; don't re-indent or reflow
+the original.
+
+To get the original verbatim:
+
+```bash
+gh api repos/kamp-us/phoenix/issues/<N> --jq '.body' > /tmp/triage-original-<N>.md
+```
+
+Assemble the new body in a temp file and read it into `$BODY` so multi-line markdown,
+backticks, and the nested fences survive the shell:
+
+```bash
+BODY="$(cat /tmp/triage-body-<N>.md)"
+gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f body="$BODY"
+```
+
+**Epics are the exception — do not rewrite-on-top.** An epic's original content is
+the *brief*, not superseded noise; the `plan-epic` skill appends its plan *below* the
+untouched original (append-down, not rewrite-on-top — see the formats doc). For an
+epic, classify and prioritize it, optionally add a short triage note as a comment,
+but leave the body's original brief intact at the top. Do not bury it in a
+`<details>`. (If an epic was filed truly threadbare, prefer `status:needs-info` over
+mangling it.)
+
+---
+
+## Step 5 — The human-vs-agent judgment (who never gets auto-closed)
+
+**Human-filed issues are never auto-closed.** A human capture gets grace; agent noise
+gets filtered. This is a judgment call, not a protocol — you recognize a human filer,
+you don't parse a flag.
+
+Tells that an issue is **human-filed**:
+
+- **A collaborator other than the repo owner filed it.** On this repo the owner is
+  `usirin`; an issue from any other account (e.g. `cansirin`) is trivially human —
+  treat it as human without further analysis.
+- **It reads scrappy and free-form** — a quick thought, a one-liner, a question, an
+  inconsistent shape. Humans file in passing; they don't fill in a template.
+- **It lacks the agent-report fingerprint.** The `report` skill files a recognizable
+  shape: the five sections (*What I was doing / What I observed / Why it matters /
+  Pointers / Suggested next step*) and a `<sub>Filed by an agent · session … ·
+  model … · branch …</sub>` metadata footer. An issue carrying that footer, or that
+  clean five-section structure, is an agent report — that's the shape you're allowed
+  to close when unsalvageable.
+
+When in doubt, **treat it as human.** The cost of wrongly closing a human's issue
+(they feel ignored) is worse than the cost of wrongly leaving an agent's issue open
+(it sits in needs-info, cheap to revisit). Owner-filed issues are the ambiguous
+middle — `usirin` files both as a human and via agents. Use the *shape*: a structured
+agent report from `usirin` is agent-filed; a scrappy owner one-liner is human-filed.
+
+**For a human-filed issue you can't act on as-is:** apply `status:needs-info` (not a
+type, not a priority, not triaged) and post a comment asking the *specific* questions
+that would unblock triage. Specific, not generic — "Which file? What's the expected
+behavior vs what you saw? Is this blocking anything?" beats "please add more detail".
+You may still type a human issue if it's already clear; needs-info is only for the
+ones you genuinely can't classify or act on yet.
+
+---
+
+## Step 6 — Prioritize, label, and close out
+
+### Assign a priority
+
+Every triaged issue gets exactly one of `p0` / `p1` / `p2`. Priority is *your*
+judgment of urgency-and-impact, deliberately coarse — it sets write-code's pick order
+(highest bucket first, oldest first within a bucket), so it only has to be
+*directionally* right, not a precise ranking.
+
+| Priority | Use when… |
+|---|---|
+| **`p0`** | **Highest.** Drop-everything: actively breaking something people rely on, blocking other work, a data-loss or security risk, or a release gate. If it's not really urgent, it's not p0 — reserve it so the bucket stays meaningful. |
+| **`p1`** | **Medium.** Real and worth doing soon, but nothing is on fire. The default for solid, actionable work that isn't an emergency. |
+| **`p2`** | **Lowest.** Nice-to-have, cleanup, "don't forget to reconsider" trackers, low-impact refactors, deferred investigations. Real work, no time pressure. |
+
+Most of a healthy backlog is `p1`/`p2`. When unsure between two buckets, pick the
+lower one — over-escalation erodes the signal faster than under-escalation.
+
+### Apply the labels (triaged path)
+
+A triaged issue carries: the one `type:*`, one `p*`, and `status:triaged`. Remove
+`status:needs-triage` so it leaves the queue. Do it in REST calls:
+
+```bash
+# add the type, priority, and triaged status
+gh api repos/kamp-us/phoenix/issues/<N>/labels \
+  -f "labels[]=type:chore" -f "labels[]=p2" -f "labels[]=status:triaged"
+# remove the needs-triage label (URL-encode the colon as %3A)
+gh api -X DELETE 'repos/kamp-us/phoenix/issues/<N>/labels/status%3Aneeds-triage' || true
+```
+
+A `404 "Label does not exist"` on that DELETE is harmless and expected when the
+issue never carried `status:needs-triage` — e.g. backlog issues that predate the
+pipeline, which you may triage directly by number. The label is already absent, so
+the goal (issue out of the queue) is met; don't treat it as a failure. Append
+`|| true` so a sweep doesn't abort on it.
+
+`status:triaged` is an explicit signature only *you* apply — it tells write-code the
+issue was actually reviewed. Never let a type label alone stand in for it; a
+hand-slapped `type:*` with no triaged status must not look pickable.
+
+### Close not-planned (kill, last resort, agent issues only)
+
+Close an issue **only** when it's an *agent-filed* issue that is genuinely
+unsalvageable — a duplicate of an existing issue, an observation that's no longer true
+(the code moved on), a non-actionable note with nothing to enrich into, or noise.
+Salvage first: if there's a real unit hiding in it, enrich and triage it instead.
+
+Every kill is auditable and reversible. Always:
+
+1. Post a **reason comment** — *why* it's unsalvageable, specifically (e.g. "Duplicate
+   of #33, which already tracks this hang" or "The function this references was
+   removed in #30; no longer applicable"). One sentence of real reasoning, so the
+   maintainer reviewing kills can judge it.
+2. Apply `closed-by-triage` so every kill shows up in one query.
+3. Close as **not planned** (state `closed`, reason `not_planned`).
+
+```bash
+gh api repos/kamp-us/phoenix/issues/<N>/comments -f body="Closing not-planned: <specific reason>."
+gh api repos/kamp-us/phoenix/issues/<N>/labels -f "labels[]=closed-by-triage"
+gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f state=closed -f state_reason=not_planned
+```
+
+The maintainer audits all kills with one query, so over-closing is caught and
+reopened cheaply:
+
+```bash
+gh api 'repos/kamp-us/phoenix/issues?state=closed&labels=closed-by-triage' \
+  --jq '.[] | "#\(.number) \(.title)"'
+```
+
+---
+
+## Running the queue
+
+You can triage one named issue (`triage issue #34`) or sweep the whole queue. When
+sweeping:
+
+1. List `status:needs-triage` (the snippet at the top).
+2. Triage each issue through Steps 1–6.
+3. If you split a bundle, the new children re-enter `status:needs-triage` — pick them
+   up on the same sweep or a follow-up; they're triaged like any other issue.
+4. Report a short ledger back: per issue, the outcome (type+priority+triaged /
+   needs-info / closed) in one line each. Don't narrate every REST call — the labels
+   and comments on the issues are the durable record.
+
+## Conventions
+
+This skill is one of a suite (`report` → **`triage`** → `plan-epic` → `write-code` →
+`review-code`) that turns GitHub issues into an agent-operable pipeline. The shared
+label semantics and the body/comment/dependency formats live in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). You consume exactly
+the issues the `report` skill files (recognize its 5-section + metadata-footer shape —
+Step 5), and you hand `status:triaged` issues off to `plan-epic` (epics) and
+`write-code` (everything else).
