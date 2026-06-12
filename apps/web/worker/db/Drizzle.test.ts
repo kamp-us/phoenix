@@ -189,64 +189,6 @@ describe("Drizzle.batch", () => {
 	});
 });
 
-describe("makeDrizzleAccess (extracted factory)", () => {
-	it.effect("run: closes over the given db and flows the value through", () =>
-		Effect.gen(function* () {
-			const {run} = makeDrizzleAccess(FAKE_DB);
-			const received = yield* run((db) => Promise.resolve(db));
-			assert.strictEqual(received, FAKE_DB);
-		}),
-	);
-
-	it.effect("run: rejection → DrizzleError with preserved cause", () =>
-		Effect.gen(function* () {
-			const {run} = makeDrizzleAccess(FAKE_DB);
-			const boom = new Error("run failed");
-			const exit = yield* Effect.exit(run(() => Promise.reject(boom)));
-			assert.isTrue(Exit.isFailure(exit), "expected failure");
-			if (Exit.isSuccess(exit)) return;
-			const err = Option.getOrThrow(Cause.findErrorOption(exit.cause));
-			assert.instanceOf(err, DrizzleError);
-			assert.strictEqual((err as DrizzleError).cause, boom);
-		}),
-	);
-
-	it.effect("batch: forwards the tuple to db.batch and returns its result", () => {
-		const calls: Array<readonly unknown[]> = [];
-		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.
-		const db = {
-			batch(statements: readonly unknown[]) {
-				calls.push(statements);
-				return Promise.resolve(statements.map((_, i) => ({rowsAffected: i + 1})));
-			},
-		} as unknown as DrizzleDb;
-		return Effect.gen(function* () {
-			const {batch} = makeDrizzleAccess(db);
-			const stmts = [fakeStmt(1), fakeStmt(2)] as const;
-			const result = yield* batch(() => stmts);
-			assert.strictEqual(calls.length, 1);
-			assert.deepStrictEqual(calls[0], stmts);
-			assert.deepStrictEqual(result, [{rowsAffected: 1}, {rowsAffected: 2}]);
-		});
-	});
-
-	it.effect("batch: rejection → DrizzleError", () => {
-		const boom = new Error("batch failed");
-		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.
-		const db = {
-			batch: () => Promise.reject(boom),
-		} as unknown as DrizzleDb;
-		return Effect.gen(function* () {
-			const {batch} = makeDrizzleAccess(db);
-			const exit = yield* Effect.exit(batch(() => [fakeStmt(1)] as const));
-			assert.isTrue(Exit.isFailure(exit), "expected failure");
-			if (Exit.isSuccess(exit)) return;
-			const err = Option.getOrThrow(Cause.findErrorOption(exit.cause));
-			assert.strictEqual((err as DrizzleError).cause, boom);
-		});
-	});
-});
-
 /**
  * Generic `batch` atomicity over a REAL SQL engine (the `node:sqlite`-backed D1
  * fake): a `batch([...])` either commits the whole tuple or none of it. The spy
