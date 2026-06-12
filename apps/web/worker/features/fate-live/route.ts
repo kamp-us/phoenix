@@ -8,8 +8,9 @@
  * the session check rides the worker-level `Pasaport` (the same service `/fate`
  * and `/api/auth/*` use), and the connection is reached through the
  * worker-init-resolved `LiveDO` namespace (carried by `LiveConnections`) —
- * addressed by name (`connection:${id}`) and driven by typed RPC + a forwarded
- * `fetch`, never `idFromName`/`get`/`stub.fetch(string)`.
+ * addressed by name (`makeConnectionName(id)`, `live-do.ts`'s name constructor)
+ * and driven by typed RPC + a forwarded `fetch`, never
+ * `idFromName`/`get`/`stub.fetch(string)`.
  *
  *   - `GET  /fate/live?connectionId=…` → validate cookie, forward the request to
  *     the connection DO's `fetch` to open the SSE stream. Rejected (401) without

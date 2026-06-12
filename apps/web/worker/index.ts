@@ -36,7 +36,12 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
-import {LiveDO, LiveDOLive} from "./features/fate-live/live-do.ts";
+import {
+	LiveDO,
+	LiveDOLive,
+	makeConnectionName,
+	makeTopicName,
+} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
@@ -179,13 +184,14 @@ export default Phoenix.make(
 		// ONCE in init (`live`, above) and wrapped as worker-level services. One
 		// namespace plays both roles, keyed by instance name.
 		//   - `LiveTopics.publish` fans a mutation's `live.*` out via typed RPC
-		//     (`live.getByName(\`topic:${key}\`).publish({topicKey, frame, limits})`)
+		//     (`live.getByName(makeTopicName(key)).publish({topicKey, frame, limits})`)
 		//     — no `env` lookup, no `idFromName`, no string-URL `stub.fetch`. The
 		//     route builds the per-request `LiveLimits` and the publish frame is
 		//     lifted from the `PublishMessage` by `deliverFrameOf`.
 		//   - `LiveConnections` opens the SSE stream (forwarding the request to a
 		//     connection-role `fetch`) and drives subscribe/unsubscribe RPC,
-		//     addressing connections by name (`connection:${id}`). The route resolves
+		//     addressing connections by name (`makeConnectionName(id)` — the name
+		//     grammar lives at that one seam in `live-do.ts`). The route resolves
 		//     a subscribe's topic keys + limits before calling.
 		// The cross-role fan-out (topic→connection deliver, connection→topic
 		// register) rides the DO's OWN namespace captured in its init closure
@@ -199,7 +205,7 @@ export default Phoenix.make(
 					publish: (topicKey, message, limits) =>
 						Effect.asVoid(
 							live
-								.getByName(`topic:${topicKey}`)
+								.getByName(makeTopicName(topicKey))
 								.publish({topicKey, frame: deliverFrameOf(message), limits}),
 						),
 				}),
@@ -207,11 +213,11 @@ export default Phoenix.make(
 			Layer.succeed(LiveConnections)(
 				LiveConnections.of({
 					open: (connectionId, request) =>
-						live.getByName(`connection:${connectionId}`).fetch(request),
+						live.getByName(makeConnectionName(connectionId)).fetch(request),
 					subscribe: (connectionId, input) =>
-						live.getByName(`connection:${connectionId}`).subscribe(input),
+						live.getByName(makeConnectionName(connectionId)).subscribe(input),
 					unsubscribe: (connectionId, subId) =>
-						live.getByName(`connection:${connectionId}`).unsubscribe({subId}),
+						live.getByName(makeConnectionName(connectionId)).unsubscribe({subId}),
 				}),
 			),
 		);

@@ -25,7 +25,12 @@ import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {describe, expect, it} from "vitest";
 import {makeDurableObjectStateForTest} from "./do-state.testing.ts";
-import {type LiveRpcSurface, makeLiveInstance} from "./live-do.ts";
+import {
+	type LiveRpcSurface,
+	makeConnectionName,
+	makeLiveInstance,
+	makeTopicName,
+} from "./live-do.ts";
 import type {
 	DeliverFrame,
 	LiveLimits,
@@ -95,7 +100,7 @@ function makeLiveCell(): LiveCell {
 
 /** Spin up a `connection:<id>` instance and register it on the cell. */
 function makeConnection(cell: LiveCell, connectionId: string): LiveInstance {
-	const name = `connection:${connectionId}`;
+	const name = makeConnectionName(connectionId);
 	const fake = makeDurableObjectStateForTest({id: name});
 	const instance = makeLiveInstance(fake.state, cell.live as never);
 	cell.register(name, instance);
@@ -110,7 +115,7 @@ function makeTopic(
 	readonly instance: LiveInstance;
 	readonly fake: ReturnType<typeof makeDurableObjectStateForTest>;
 } {
-	const name = `topic:${topicKey}`;
+	const name = makeTopicName(topicKey);
 	const fake = makeDurableObjectStateForTest({id: name});
 	const instance = makeLiveInstance(fake.state, cell.live as never);
 	cell.register(name, instance);
@@ -446,7 +451,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 			publish: () => Effect.die("unused"),
 			alarm: () => Effect.die("unused"),
 		};
-		cell.register("connection:hung", hung);
+		cell.register(makeConnectionName("hung"), hung);
 
 		// Register a subscriber row for the hung connection so publish has someone to
 		// (fail to) deliver to.
