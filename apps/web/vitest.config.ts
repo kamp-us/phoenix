@@ -9,8 +9,9 @@
  *           already catches them — a label, not a third project, which would
  *           re-trigger Vitest 4's distinct-`sequence.groupOrder` rule);
  *       T1  a feature service over a real `node:sqlite` D1 (`Vote.test.ts`);
- *       T2  the fate bridge through the full worker layer (`bridge-*.test.ts`,
- *           `app.test.ts`) + the DO instance factory over a DO-state fake.
+ *       T2  fate ops through the full worker layer (`sozluk.test.ts`,
+ *           `sozluk-keyset.test.ts`, `products.test.ts`, `app.test.ts`) + the
+ *           DO instance factory over a DO-state fake.
  *     T1/T2 keep the plain `*.test.ts` suffix. Tests are colocated next to the
  *     module under test under `worker/**` and `src/**`.
  *   - `integration` (this config's `integration` project) hosts T3 — the

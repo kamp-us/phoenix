@@ -1,7 +1,7 @@
 /**
- * fate data-plane parity on sozluk (ADR 0041; named for the bridge era it was
- * written in — the assertions are the migration's regression harness and
- * survive it).
+ * fate-operation integration tests (T2, ADR 0040) — sozluk through the native
+ * interpreter path (ADR 0041), asserting wire output, the mutation round-trip,
+ * and topic publishes.
  *
  * Exercises the worker-as-runtime seam end-to-end through {@link runFateOp}:
  *
@@ -23,12 +23,12 @@
  * the worker-level layers, driven through `FateInterpreter.handleRequest`
  * exactly as the `/fate` route drives them.
  *
- * Asserts wire parity with the pre-migration `/fate` surface:
+ * Asserts the `/fate` wire contract:
  *   - a sozluk query (`term`) and list (`terms`) return correct data,
  *   - a failing resolver maps to the correct wire error code (`me` anonymous →
  *     `UNAUTHORIZED`),
  *   - a sozluk mutation (`definition.add`) round-trips and the changed entity
- *     re-resolves over the same bridge.
+ *     re-resolves over the same seam.
  *
  * Per-test DB isolation: each `it` builds its own worker layer over a fresh
  * `node:sqlite` handle ({@link freshDb}) and closes it in `finally`, so no rows
@@ -46,7 +46,7 @@ import {makeFateLayer, type WorkerFateServices} from "./layers";
 import {runFateOp} from "./run-fate-op";
 
 const SESSION_USER = {id: "u-writer", name: "umut", email: "umut@example.com"};
-const SLUG = "bridge-read";
+const SLUG = "fate-read";
 
 /** The per-test in-memory D1; created in `beforeEach`, closed in `afterEach`. */
 let sqlite: SqliteD1;
@@ -89,7 +89,7 @@ async function freshDb(): Promise<void> {
 			authorId: d.authorId,
 			authorName: d.authorName,
 			termSlug: SLUG,
-			termTitle: "Bridge Read",
+			termTitle: "Fate Read",
 			body: d.body,
 			bodyExcerpt: d.body,
 			score: d.score,
@@ -101,7 +101,7 @@ async function freshDb(): Promise<void> {
 	);
 	await db.insert(schema.termSummary).values({
 		slug: SLUG,
-		title: "Bridge Read",
+		title: "Fate Read",
 		firstLetter: SLUG.charAt(0),
 		definitionCount: definitions.length,
 		totalScore: definitions.reduce((s, d) => s + d.score, 0),
@@ -122,7 +122,7 @@ afterEach(() => {
 	sqlite?.close();
 });
 
-describe("fate bridge — sozluk reads", () => {
+describe("fate ops — sozluk reads", () => {
 	it("terms(recent) returns rows with slug cursors", async () => {
 		const {result} = await runFateOp(WorkerLive, {
 			kind: "list",
@@ -138,7 +138,7 @@ describe("fate bridge — sozluk reads", () => {
 		const seeded = data.items.find((e) => e.node.slug === SLUG);
 		expect(seeded).toBeDefined();
 		expect(seeded!.cursor).toBe(SLUG);
-		expect(seeded!.node.title).toBe("Bridge Read");
+		expect(seeded!.node.title).toBe("Fate Read");
 		expect(seeded!.node.count).toBe(3);
 	});
 
@@ -153,7 +153,7 @@ describe("fate bridge — sozluk reads", () => {
 		if (!result.ok) return;
 		const data = result.data as {slug: string; title: string; count: number; totalScore: number};
 		expect(data.slug).toBe(SLUG);
-		expect(data.title).toBe("Bridge Read");
+		expect(data.title).toBe("Fate Read");
 		expect(data.count).toBe(3);
 		expect(data.totalScore).toBe(120);
 	});
@@ -178,14 +178,14 @@ describe("fate bridge — sozluk reads", () => {
 	});
 });
 
-describe("fate bridge — sozluk mutation round-trip", () => {
-	it("definition.add round-trips and the changed entity re-resolves over the bridge", async () => {
+describe("fate ops — sozluk mutation round-trip", () => {
+	it("definition.add round-trips and the changed entity re-resolves over the same seam", async () => {
 		const add = await runFateOp(
 			WorkerLive,
 			{
 				kind: "mutation",
 				name: "definition.add",
-				input: {termSlug: SLUG, body: "delta definition added via bridge"},
+				input: {termSlug: SLUG, body: "delta definition added via fate"},
 				select: ["id", "body", "score", "author", "authorId"],
 			},
 			{auth: SESSION_USER},
@@ -200,11 +200,11 @@ describe("fate bridge — sozluk mutation round-trip", () => {
 			authorId: string;
 		};
 		expect(created.id).toBeTruthy();
-		expect(created.body).toBe("delta definition added via bridge");
+		expect(created.body).toBe("delta definition added via fate");
 		expect(created.score).toBe(0);
 		expect(created.authorId).toBe(SESSION_USER.id);
 
-		// Re-resolve the changed entity (the term it joined) over the SAME bridge:
+		// Re-resolve the changed entity (the term it joined) over the SAME seam:
 		// the new definition is now in the term's definition list, and the term's
 		// count reflects it.
 		const reread = await runFateOp(WorkerLive, {
@@ -222,7 +222,7 @@ describe("fate bridge — sozluk mutation round-trip", () => {
 		expect(term.count).toBe(4);
 		const found = term.definitions.items.find((e) => e.node.id === created.id);
 		expect(found).toBeDefined();
-		expect(found!.node.body).toBe("delta definition added via bridge");
+		expect(found!.node.body).toBe("delta definition added via fate");
 	});
 
 	it("definition.add publishes to the term's args-scoped Term.definitions topic (ADR 0039)", async () => {

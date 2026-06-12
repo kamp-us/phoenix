@@ -1,5 +1,7 @@
 /**
- * fate bridge — sozluk keyset correctness (T2).
+ * fate-operation integration tests (T2, ADR 0040) — sozluk keyset correctness
+ * on the wire, driven through the {@link runFateOp} harness over the full
+ * worker layer with in-memory SQL.
  *
  * The keyset-ordering + pagination correctness for sozluk reads, migrated down
  * from the integration (T3) suite (`tests/integration/sozluk-read.test.ts`). T3
@@ -18,7 +20,7 @@
  * Each fixture deliberately plants ties straddling a page boundary so the
  * lower-priority keyset column is the only thing that orders the rows correctly.
  *
- * Idiom follows `bridge-sozluk.test.ts`: per-test fresh `node:sqlite` D1 +
+ * Idiom follows `sozluk.test.ts`: per-test fresh `node:sqlite` D1 +
  * `WorkerLive` layer, direct Drizzle INSERT seeding, `runFateOp` to drive `/fate`.
  */
 import {Layer} from "effect";
@@ -110,7 +112,7 @@ async function seedTerm(opts: {
 	});
 }
 
-describe("fate bridge — sozluk keyset (Term.definitions)", () => {
+describe("fate ops — sozluk keyset (Term.definitions)", () => {
 	// Five definitions exercising every tie the keyset (score desc, created_at
 	// asc, id asc) must break:
 	//   - def-a score 50, earliest  → rank 1
@@ -209,7 +211,7 @@ describe("fate bridge — sozluk keyset (Term.definitions)", () => {
 	});
 });
 
-describe("fate bridge — sozluk keyset (terms popular sort)", () => {
+describe("fate ops — sozluk keyset (terms popular sort)", () => {
 	// Six terms exercising the (total_score desc, slug asc) keyset, including a
 	// score tie (pop-c / pop-d both 30) straddling the page-2→3 boundary so the
 	// slug-asc tiebreak is the only thing ordering them:
@@ -291,7 +293,7 @@ describe("fate bridge — sozluk keyset (terms popular sort)", () => {
 	});
 });
 
-describe("fate bridge — sozluk keyset (terms recent sort)", () => {
+describe("fate ops — sozluk keyset (terms recent sort)", () => {
 	// Recent orders by (last_activity_at desc, slug asc). Seed explicit
 	// last_activity_at values (no clock, no sleep): rec-a is newest, rec-b and
 	// rec-c share a timestamp so the slug-asc tiebreak orders them, rec-d oldest.
