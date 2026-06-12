@@ -64,6 +64,48 @@ Rules:
 - **Use `assert`, not `expect`, inside `it.effect` blocks.** `expect`'s async behavior interacts badly with Effect's runtime. `assert.strictEqual`, `assert.deepStrictEqual`, `assert.isTrue`, etc. work as expected. Integration tests (the HTTP harness) use vitest's stock `it` + `expect` — see [alchemy-test-harness.md](./alchemy-test-harness.md).
 - **Use `it` (not `it.effect`)** for pure-function tests that don't return Effects. Both forms can coexist in the same file.
 
+## Fiber coordination: await events, never durations
+
+A test that needs "the fiber has started" (or any point-in-execution fact) must wait on an
+**event the program itself emits**, never on a timer that hopes the runtime got there. A fixed
+`setTimeout(0)` tick lost the race against fiber startup on a loaded CI runner exactly once —
+which is once per however many thousand runs, always on the runner you can't reproduce.
+
+The primitive is `Latch`: the program opens it as its first instruction; awaiting it IS the
+proof the fiber is running.
+
+```ts
+import * as Latch from "effect/Latch";
+
+it.effect("an abort mid-flight interrupts the program", () =>
+  Effect.gen(function* () {
+    const started = yield* Latch.make();
+    const program = started.open.pipe(Effect.andThen(Effect.never));
+    const fiber = yield* Effect.forkChild(program.pipe(interruptOnAbort(signal)));
+    yield* started.await; // deterministic on any runner speed
+    controller.abort();
+    const exit = yield* Fiber.await(fiber);
+    assert.isTrue(Exit.isFailure(exit) && Exit.hasInterrupts(exit));
+  }),
+);
+```
+
+(`worker/http/interrupt-on-abort.unit.test.ts` is the worked example.) `Deferred` is the same
+idea when the signal carries a value.
+
+Two scoped exceptions:
+
+- **Negative assertions** ("nothing arrives within the window") cannot await an event that must
+  not happen — a bounded timer is the only tool. Know its failure direction: on a slow runner
+  it false-PASSES (masks), it never false-fails. Acceptable for liveness checks; never use this
+  shape for positive coordination.
+- **The oracle/compile harness keeps `Effect.runPromiseExit`** (`packages/fate-effect`'s
+  Executor/oracle suites): the JS conversion boundary is the *subject under test* there, not a
+  style anachronism. Don't "migrate" it to `it.effect`.
+
+Existing plain-vitest tests that run Effects via `runPromise` convert to `it.effect`
+opportunistically — when a change next touches the file, not as a churn pass.
+
 ## Which tier to write
 
 Pick the lowest tier that exercises the behavior — the taxonomy table above is the map. In practice:
@@ -147,6 +189,7 @@ Never use `setTimeout`, `Date.now()`, or real wall-clock sleeps in tests. `TestC
 - **Stubbing a feature service's real behavior with `Layer.succeed` instead of running it.** Drive the real service over a real `Database` layer (T1/T2). `Layer.succeed` is for services whose behavior is incidental to the test, not for re-implementing the thing under test.
 - **Filing deterministic-SQL or wire-code assertions in T3.** They belong in T1/T2, where `node:sqlite` is faithful and offline. T3 pays remote-D1 flake.
 - **Setting up a unit-test layer inside `beforeEach`** when it doesn't change between tests. Module-scope it.
+- **`setTimeout`/timer ticks as fiber coordination.** Await a `Latch`/`Deferred` the program resolves — see "Fiber coordination" above. Timers are for negative liveness checks only.
 - **Snapshot tests against effect-internal shapes** (Causes, Exits) — they include implementation details that change between effect versions. Assert on the success value or the error `_tag`, not the cause structure.
 
 ## See also
