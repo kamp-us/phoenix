@@ -62,6 +62,8 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 - Biome formatting: tabs, 100 col, no bracket spacing.
 - Effect for backend control flow; feature services are isolate-level layers, with only `Auth` provided per request (ADR 0029).
 - Make invalid states unrepresentable. Domain logic in domain objects.
+- **Ground Effect API/design decisions in effect-smol's `LLMS.md`** (and its `ai-docs/` examples) **over intuition** — when the documented idiom and a "cleaner" instinct conflict, the documented idiom wins; cite it by section. Deviations from it must be justified by a real platform constraint (e.g. CF isolates have no shutdown hook), not preference.
+- **If you rely on a pattern not yet in `.patterns/`, add or extend a doc for it** (per the "When to add a new pattern doc" criteria in [.patterns/index.md](./.patterns/index.md)) — don't leave a load-bearing pattern undocumented.
 - In-repo docs: standard markdown links (`[text](relative/path.md)`), not Obsidian `[[wikilinks]]`; use real resolvable paths, no placeholders.
 - Doc surfaces: `README` = current state for builders (never carry retired or old-problem context a new reader has no frame for); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped.
 
@@ -74,6 +76,10 @@ See [.decisions/index.md](./.decisions/index.md) — read the row, open the file
 See [.patterns/index.md](./.patterns/index.md) — evergreen patterns for writing phoenix backend code (services, errors, testing, layer wiring). Read before adding a new feature or service.
 
 When the docs and `apps/web/worker/` disagree, the source is authoritative — fix the doc.
+
+## Filing follow-up work
+
+The moment you spot work you won't do right now — a bug, a refactor you're not here to make, a design question, an investigation, a missing test, a confusing convention — file it as a GitHub issue with the [`report`](.claude/skills/report/SKILL.md) skill, then return to your task. Do this **autonomously and in-the-moment**: don't ask permission, don't propose-first, don't wait until you're "done" (by then the observation is gone). The skill files a type-blind issue tagged `status:needs-triage` and nothing else — classifying and prioritizing is triage's job, not yours. This is the only sanctioned way observations leave a session; a follow-up that lives only in the conversation is a follow-up that dies there.
 
 ## Sözlük seed
 
