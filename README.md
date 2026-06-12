@@ -102,3 +102,5 @@ Two doc surfaces carry the rest: **[.decisions/](./.decisions/index.md)** holds 
 4. [.patterns/per-feature-fate-aggregators.md](./.patterns/per-feature-fate-aggregators.md) — the footprint you'll copy when adding a feature.
 
 Then open the feature folder you're working in and follow its neighbors.
+
+<!-- write-code skill validation demo (task 6) — throwaway, do not merge -->
