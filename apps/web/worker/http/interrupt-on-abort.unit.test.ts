@@ -32,16 +32,20 @@ describe("interruptOnAbort", () => {
 
 	it("an abort mid-flight interrupts the program", async () => {
 		const controller = new AbortController();
-		let started = false;
+		// The program signals its own start — awaiting that signal is the
+		// deterministic "fiber is running" proof. (A fixed timer tick raced
+		// fiber startup on loaded CI runners: one setTimeout(0) was not always
+		// enough for the forked fiber to begin.)
+		let releaseStarted!: () => void;
+		const startedPromise = new Promise<void>((resolve) => {
+			releaseStarted = resolve;
+		});
 		const program = Effect.suspend(() => {
-			started = true;
+			releaseStarted();
 			return Effect.never;
 		});
 		const exitPromise = Effect.runPromiseExit(program.pipe(interruptOnAbort(controller.signal)));
-		// Let the fiber start (fork + listener registration happen on fiber
-		// start, not at construction).
-		await new Promise((resolve) => setTimeout(resolve, 0));
-		expect(started).toBe(true);
+		await startedPromise;
 		controller.abort();
 		const exit = await exitPromise;
 		expect(Exit.isFailure(exit) && Exit.hasInterrupts(exit)).toBe(true);
