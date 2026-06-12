@@ -30,6 +30,7 @@
 import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import type {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {
 	CommentNotFound,
 	CommentValidationErrors,
@@ -152,7 +153,7 @@ export const mutations = {
 		Effect.fn("post.submit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.submitPost({
 				title: input.title,
 				...(input.url ? {url: input.url} : {}),
@@ -178,7 +179,7 @@ export const mutations = {
 		Effect.fn("post.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
 			yield* live.update("Post", post.id, {changed: ["score"], data: post});
@@ -194,7 +195,7 @@ export const mutations = {
 		Effect.fn("post.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
 			yield* live.update("Post", post.id, {changed: ["score"], data: post});
@@ -215,7 +216,7 @@ export const mutations = {
 		Effect.fn("post.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.editPost({
 				postId: input.id,
 				actorId: user.id,
@@ -241,7 +242,7 @@ export const mutations = {
 		Effect.fn("post.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
 			// Entity gone; drop its edge from the `posts` feed connection.
 			yield* live.delete("Post", r.postId);
@@ -261,7 +262,7 @@ export const mutations = {
 		Effect.fn("comment.add")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.addComment({
 				postId: input.postId,
 				authorId: user.id,
@@ -287,7 +288,7 @@ export const mutations = {
 		Effect.fn("comment.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
 			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
@@ -303,7 +304,7 @@ export const mutations = {
 		Effect.fn("comment.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
 			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
@@ -324,7 +325,7 @@ export const mutations = {
 		Effect.fn("comment.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
 			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
@@ -345,7 +346,7 @@ export const mutations = {
 		Effect.fn("comment.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			// Resolve the parent post id before the delete (the row still exists).
 			const postId = yield* pano.lookupCommentPostId(input.id);
 			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});

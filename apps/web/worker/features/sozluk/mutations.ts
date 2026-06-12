@@ -27,6 +27,7 @@
 import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import type {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -89,7 +90,7 @@ export const mutations = {
 		Effect.fn("definition.add")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const result = yield* sozluk.addDefinition({
 				termSlug: input.termSlug,
 				authorId: user.id,
@@ -119,7 +120,7 @@ export const mutations = {
 		Effect.fn("definition.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const result = yield* sozluk.voteDefinition({definitionId: input.id, voterId: user.id});
 			const definition = shapeDefinition(result);
 			// Publish the re-resolved entity inline; the DO does no DB work and each
@@ -138,7 +139,7 @@ export const mutations = {
 		Effect.fn("definition.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const result = yield* sozluk.retractDefinitionVote({
 				definitionId: input.id,
 				voterId: user.id,
@@ -163,7 +164,7 @@ export const mutations = {
 		Effect.fn("definition.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			const result = yield* sozluk.editDefinition({
 				definitionId: input.id,
 				actorId: user.id,
@@ -190,7 +191,7 @@ export const mutations = {
 		Effect.fn("definition.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* LivePublisher;
+			const live: WorkerLivePublisher = yield* LivePublisher;
 			// Resolve the parent slug before the delete (the row still exists),
 			// so we can re-resolve the parent `Term` afterward.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
