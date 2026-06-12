@@ -16,7 +16,8 @@
  *   2. subscribe → publish → deliver — a `post.submit` mutation publishes a
  *      `prependNode` connection frame that arrives on the held SSE stream.
  *   3. The same contract through the `LivePublisher` path — a sozluk
- *      `definition.add` (a `Fate.mutation` publishing via `yield* LivePublisher`)
+ *      `definition.add` (a `Fate.mutation` publishing via
+ *      `yield* WorkerLivePublisher`, the typo-gated worker accessor)
  *      lands an `appendNode` frame on an args-scoped
  *      `Term.definitions` subscription (`.patterns/fate-effect-worker-wiring.md`).
  *   4. Reconnect bumps epoch — a second connect on the same `connectionId`
