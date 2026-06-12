@@ -36,8 +36,9 @@ interface Recorded {
 
 /**
  * Build a `LivePublisher` service value over stubbed seams: `publish` defaults
- * to a recorder, `waitUntil` collects the scheduled promises so a test can
- * flush (or deliberately NOT flush) the fire-and-forget work.
+ * to a recorder, `waitUntil` collects the scheduled promises internally so a
+ * test can `flush` (or deliberately NOT flush) the fire-and-forget work —
+ * `flush` is the harness's public surface; the collector never escapes.
  */
 function makeHarness(publish?: (topicKey: string, message: PublishMessage) => Effect.Effect<void>) {
 	const recorded: Array<Recorded> = [];
@@ -54,7 +55,7 @@ function makeHarness(publish?: (topicKey: string, message: PublishMessage) => Ef
 		},
 	});
 	const flush = () => Promise.allSettled(scheduled);
-	return {live, recorded, scheduled, flush};
+	return {live, recorded, flush};
 }
 
 it("every publish method's error channel is `never` — the no-fail contract is the type", () => {

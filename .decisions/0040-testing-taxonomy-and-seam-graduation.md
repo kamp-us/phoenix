@@ -61,7 +61,7 @@ HTTP URL to a separately-deployed worker, not a layer.
 |------|-----------|-----------|----------|
 | **T0 — unit (pure)** | Pure fns / Effect logic, zero storage | none (`it.effect`) | keyset codec, hot-score arithmetic, `encodeFateError` |
 | **T1 — service-integration** | Real feature service over real SQL; only the `Database` layer swaps | `node:sqlite` `:memory:` (`sqlite-d1.testing.ts`) + real `0000_d1_baseline.sql` | `Vote.test.ts`, `Drizzle.test.ts` |
-| **T2 — bridge/app-integration** | Full `FateEnv` (minus per-request trio) through `fateServer.handleRequest`; wire codes, topic publishes, real-or-stubbed better-auth | `node:sqlite` under the worker layer, no workerd | `bridge-sozluk.test.ts`, `bridge-products.test.ts`, `app.test.ts` |
+| **T2 — bridge/app-integration** | Full `FateEnv` (minus per-request trio) through `fateServer.handleRequest`; wire codes, topic publishes, real-or-stubbed better-auth | `node:sqlite` under the worker layer, no workerd | `bridge-sozluk.test.ts`, `bridge-products.test.ts` (renamed to `sozluk.test.ts` / `products.test.ts`, PR #67), `app.test.ts` |
 | **T3 — system (stack-smoke, NOT a layer)** | Black-box HTTP over deployed workerd; no R-channel | **real remote D1** + workerd | `seam.test.ts`, `fate-live.test.ts` |
 
 T1 and T2 stay distinct because they swap *different* layers: T1 swaps only the
