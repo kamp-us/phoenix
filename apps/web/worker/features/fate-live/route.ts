@@ -8,7 +8,7 @@
  * the session check rides the worker-level `Pasaport` (the same service `/fate`
  * and `/api/auth/*` use), and the connection is reached through the
  * worker-init-resolved `LiveDO` namespace (carried by `LiveConnections`) —
- * addressed by name (`makeConnectionName(id)`, `live-do.ts`'s name constructor)
+ * addressed through `connectionOf(live, id)` (`live-do.ts`'s addressing seam)
  * and driven by typed RPC + a forwarded `fetch`, never
  * `idFromName`/`get`/`stub.fetch(string)`.
  *

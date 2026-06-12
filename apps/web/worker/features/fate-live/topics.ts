@@ -5,9 +5,9 @@
  * The `LiveDO` namespace is resolved **once in worker init** (`index.ts`),
  * wrapped here as a `Context.Service` so the per-request `/fate` route can reach
  * it without an `env`-based lookup. `publish(topicKey, message, limits)` is a
- * typed RPC — `live.getByName(makeTopicName(topicKey)).publish({topicKey, frame,
- * limits})`, the name built by `live-do.ts`'s constructor (the one seam owning
- * the instance-name grammar) — with no `idFromName`/`idFromString` and no
+ * typed RPC — `topicOf(live, topicKey).publish({topicKey, frame, limits})`,
+ * addressed through `live-do.ts`'s addressing seam (which owns the
+ * instance-name grammar) — with no `idFromName`/`idFromString` and no
  * string-URL `stub.fetch`.
  * The route builds the per-request {@link LiveLimits} and threads it through
  * (decision 2B: limits are per-call, never hardcoded in the DO). The route runs
@@ -44,8 +44,8 @@ export class LiveTopics extends Context.Service<
  * namespace is resolved once in worker init; the route opens the SSE stream by
  * forwarding the inbound request to a connection's `fetch`, and records/drops
  * subscriptions via the typed `subscribe`/`unsubscribe` RPC. Connections are
- * addressed by name (`makeConnectionName(connectionId)`, `live-do.ts`'s name
- * constructor) — no `idFromName`/`get` on the alchemy stub. The route resolves a subscribe's topic keys
+ * addressed through `connectionOf(live, connectionId)` (`live-do.ts`'s
+ * addressing seam) — no `idFromName`/`get` on the alchemy stub. The route resolves a subscribe's topic keys
  * (`topicsForSubscribe`) and builds the {@link LiveLimits} up front, threading
  * both into `subscribe` (decision 2B).
  */
