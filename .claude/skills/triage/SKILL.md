@@ -101,16 +101,32 @@ How to split:
    (e.g. "rename the function and update its callers"). Two problems that could be
    worked by different agents at different times, with different types or
    priorities, are.
-2. **Create one new issue per extra unit** via REST, each labeled
+2. **Re-query before you create.** Report agents run concurrently with your sweep
+   (several people run them, from their own accounts), so the queue you listed at
+   the start is already stale. Immediately before creating *any* new issue — a
+   split child or a follow-up you spotted while triaging — re-list
+   `status:needs-triage` and keyword-search open issues for the same observation:
+
+   ```bash
+   gh api 'repos/kamp-us/phoenix/issues?state=open&labels=status:needs-triage&per_page=100' \
+     --jq '.[] | "#\(.number) \(.title)"'
+   gh api 'search/issues?q=repo:kamp-us/phoenix+is:issue+is:open+<keywords>' \
+     --jq '.items[] | "#\(.number) \(.title)"'
+   ```
+
+   If an existing issue already covers it, enrich/triage that one instead of filing
+   a twin. (This rule exists because a triage run once filed a duplicate of an issue
+   that had landed in the queue minutes earlier.)
+3. **Create one new issue per extra unit** via REST, each labeled
    `status:needs-triage` so it re-enters the queue (you'll triage the new ones on a
    later pass — or this same run — like any other). Give each a sharp single-unit
    title and a body that states the one problem, following the report skill's
    5-section shape where it fits (see [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
    for the surrounding format conventions).
-3. **Cross-link.** Each new issue references the original (`split from #N`), and you
+4. **Cross-link.** Each new issue references the original (`split from #N`), and you
    add a comment on the original listing the children (`split into #A, #B`). The
    reader can always trace a unit back to where it came from.
-4. **Resolve the original.** Either keep it as one of the units (triage it normally,
+5. **Resolve the original.** Either keep it as one of the units (triage it normally,
    having spun the *other* units off) or, if it was purely a container with nothing
    left after splitting, close it not-planned with a `closed-by-triage` reason
    comment pointing at the children (the full close-out protocol — reason comment +
@@ -192,25 +208,28 @@ mangling it.)
 gets filtered. This is a judgment call, not a protocol — you recognize a human filer,
 you don't parse a flag.
 
+**The account is not the tell — the shape is.** Every collaborator on this repo
+(`usirin`, `cansirin`, …) files both ways: as a human in passing, and via `report`
+agents running under their own account. So never treat "who filed it" as settling
+the question; read the body.
+
+Tells that an issue is **agent-filed** (the only kind you may close):
+
+- **It carries the agent-report fingerprint.** The `report` skill files a
+  recognizable shape: the five sections (*What I was doing / What I observed / Why
+  it matters / Pointers / Suggested next step*) and a `<sub>Filed by an agent ·
+  session … · model … · branch …</sub>` metadata footer. The footer is the
+  strongest signal; the clean five-section structure backs it up.
+
 Tells that an issue is **human-filed**:
 
-- **A collaborator other than the repo owner filed it.** On this repo the owner is
-  `usirin`; an issue from any other account (e.g. `cansirin`) is trivially human —
-  treat it as human without further analysis.
 - **It reads scrappy and free-form** — a quick thought, a one-liner, a question, an
   inconsistent shape. Humans file in passing; they don't fill in a template.
-- **It lacks the agent-report fingerprint.** The `report` skill files a recognizable
-  shape: the five sections (*What I was doing / What I observed / Why it matters /
-  Pointers / Suggested next step*) and a `<sub>Filed by an agent · session … ·
-  model … · branch …</sub>` metadata footer. An issue carrying that footer, or that
-  clean five-section structure, is an agent report — that's the shape you're allowed
-  to close when unsalvageable.
+- **It lacks the agent fingerprint** — no footer, no five-section shape.
 
 When in doubt, **treat it as human.** The cost of wrongly closing a human's issue
 (they feel ignored) is worse than the cost of wrongly leaving an agent's issue open
-(it sits in needs-info, cheap to revisit). Owner-filed issues are the ambiguous
-middle — `usirin` files both as a human and via agents. Use the *shape*: a structured
-agent report from `usirin` is agent-filed; a scrappy owner one-liner is human-filed.
+(it sits in needs-info, cheap to revisit).
 
 **For a human-filed issue you can't act on as-is:** apply `status:needs-info` (not a
 type, not a priority, not triaged) and post a comment asking the *specific* questions
@@ -299,6 +318,15 @@ gh api repos/kamp-us/phoenix/issues/<N>/labels -f "labels[]=closed-by-triage"
 gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f state=closed -f state_reason=not_planned
 ```
 
+**Duplicates: preserve the loser's content on the survivor.** When the reason is
+"duplicate of #M", a bare cross-link is not enough — the closed issue often carries
+context the survivor lacks (an independent verification, extra pointers, a sharper
+acceptance idea). Before closing, copy the duplicate's full body **verbatim** into a
+comment on the surviving issue, wrapped in a `<details><summary>#N (closed
+duplicate) — full body</summary>…</details>` block, and fold anything load-bearing
+into the survivor's enrichment. Nothing a reporter wrote should require clicking
+into a closed issue to read.
+
 The maintainer audits all kills with one query, so over-closing is caught and
 reopened cheaply:
 
@@ -318,7 +346,11 @@ sweeping:
 2. Triage each issue through Steps 1–6.
 3. If you split a bundle, the new children re-enter `status:needs-triage` — pick them
    up on the same sweep or a follow-up; they're triaged like any other issue.
-4. Report a short ledger back: per issue, the outcome (type+priority+triaged /
+4. **Re-list the queue before declaring the sweep done.** Report agents file
+   concurrently, so issues land mid-sweep; a sweep that only processes the opening
+   snapshot routinely leaves fresh arrivals behind. Loop until the listing comes
+   back empty (or contains only issues you've deliberately left, e.g. needs-info).
+5. Report a short ledger back: per issue, the outcome (type+priority+triaged /
    needs-info / closed) in one line each. Don't narrate every REST call — the labels
    and comments on the issues are the durable record.
 
