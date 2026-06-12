@@ -113,7 +113,9 @@ How to split:
 4. **Resolve the original.** Either keep it as one of the units (triage it normally,
    having spun the *other* units off) or, if it was purely a container with nothing
    left after splitting, close it not-planned with a `closed-by-triage` reason
-   comment pointing at the children. Don't leave an empty husk open.
+   comment pointing at the children (the full close-out protocol — reason comment +
+   `closed-by-triage` + `state_reason=not_planned` — is in Step 6). Don't leave an
+   empty husk open.
 
 ```bash
 gh api repos/kamp-us/phoenix/issues \
@@ -239,6 +241,11 @@ lower one — over-escalation erodes the signal faster than under-escalation.
 
 ### Apply the labels (triaged path)
 
+The canonical `type:*` / `p*` / `status:*` label set is defined by the label
+bootstrap / formats contract ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)) —
+triage *applies* labels from that existing set, and must never silently auto-mint an
+off-spec label via `POST .../labels`.
+
 A triaged issue carries: the one `type:*`, one `p*`, and `status:triaged`. Remove
 `status:needs-triage` so it leaves the queue. Do it in REST calls:
 
@@ -246,15 +253,25 @@ A triaged issue carries: the one `type:*`, one `p*`, and `status:triaged`. Remov
 # add the type, priority, and triaged status
 gh api repos/kamp-us/phoenix/issues/<N>/labels \
   -f "labels[]=type:chore" -f "labels[]=p2" -f "labels[]=status:triaged"
-# remove the needs-triage label (URL-encode the colon as %3A)
-gh api -X DELETE 'repos/kamp-us/phoenix/issues/<N>/labels/status%3Aneeds-triage' || true
+# remove the needs-triage label — pass the BARE name; gh api encodes the path segment
+# (don't pre-encode the colon as %3A, or gh double-encodes it to %253A → spurious 404)
+gh api -X DELETE 'repos/kamp-us/phoenix/issues/<N>/labels/status:needs-triage'
 ```
 
-A `404 "Label does not exist"` on that DELETE is harmless and expected when the
-issue never carried `status:needs-triage` — e.g. backlog issues that predate the
-pipeline, which you may triage directly by number. The label is already absent, so
-the goal (issue out of the queue) is met; don't treat it as a failure. Append
-`|| true` so a sweep doesn't abort on it.
+A `404 "Label does not exist"` on that DELETE is harmless **only** in one known case:
+the issue never carried `status:needs-triage` to begin with — a pre-bootstrap backlog
+issue that predates the label, which you may triage directly by number. In that case
+the label is already absent, so the goal (issue out of the queue) is met. Do **not**
+blanket-`|| true` the call: a 404 on an issue that *did* carry the label means the
+removal silently failed and the issue is still in the needs-triage queue while looking
+triaged. So if you're not certain it's the pre-bootstrap case, verify the label is
+actually gone after the call rather than swallowing the error:
+
+```bash
+gh api repos/kamp-us/phoenix/issues/<N> \
+  --jq '[.labels[].name] | index("status:needs-triage") // "removed"'
+# expect "removed"; anything else means the label is still on the issue — investigate
+```
 
 `status:triaged` is an explicit signature only *you* apply — it tells write-code the
 issue was actually reviewed. Never let a type label alone stand in for it; a

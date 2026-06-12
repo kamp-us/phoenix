@@ -102,9 +102,9 @@ Verification is grounded in the diff, the tests, and — where it matters — th
 not in the PR's self-description. Pull the change:
 
 ```bash
-# the full diff
-gh api repos/kamp-us/phoenix/pulls/$PR --jq '.diff_url' | xargs gh api --jq '.' 2>/dev/null \
-  || gh pr diff $PR
+# the full diff — gh pr diff is the reliable form; the diff media type is the REST equivalent
+gh pr diff $PR \
+  || gh api repos/kamp-us/phoenix/pulls/$PR -H "Accept: application/vnd.github.v3.diff"
 # files touched, at a glance
 gh api "repos/kamp-us/phoenix/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'
 ```
@@ -116,6 +116,7 @@ running beats behavior inferred from a diff. Use the repo's commands (`pnpm type
 
 ```bash
 git fetch origin && git checkout <pr head ref>
+# for a cross-fork PR, the head ref isn't fetchable from origin — use: gh pr checkout $PR
 pnpm install  # if deps changed
 pnpm typecheck && pnpm lint   # and/or the specific test the criterion names
 ```
@@ -165,7 +166,11 @@ clause does.
 
 Every criterion passed. Land an **explicit, recognizable approval signal** on the PR so
 the next actor (human or authorized downstream step) knows it's verified and can merge.
-Two forms, either is valid — both must carry the per-criterion table as evidence:
+Two forms, either is valid — both must carry the per-criterion table as evidence.
+
+First, **write the verdict to a temp file** (`/tmp/review-code-verdict.md`) so multi-line
+markdown + backticks survive the shell — both forms below read it back via `cat`. See the
+verdict-body shape at the end of this step.
 
 **Preferred — an approving review** (the native, unambiguous GitHub signal):
 
@@ -190,8 +195,7 @@ Either way, the verdict body states plainly: every acceptance criterion verified
 merge**; merging is a separate authorized step, and merging this PR will auto-close
 issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on merge, not now).
 
-Verdict body shape (write to a temp file so multi-line markdown + backticks survive the
-shell):
+Verdict body shape (this is what you wrote to `/tmp/review-code-verdict.md` above):
 
 ```markdown
 **review-code: PASS — merge-ready**

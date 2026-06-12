@@ -160,7 +160,7 @@ and branch there if the issue carries one of those types. Everything else
 
 ## Step 4 — Implement on a branch
 
-Branch per repo conventions (see the repo's `CLAUDE.md`): a `umut/` prefix off `main`,
+Branch off `main` per your git convention (e.g. a personal prefix like `umut/`), with
 a short kebab-case slug naming the work. Read the issue's `### What to build` for
 scope and honor the `**TDD:**` flag — `yes` means write the failing test first, then
 make it pass; `no` means config/docs/scaffolding where test-first doesn't apply.
@@ -178,8 +178,7 @@ criteria; they are the literal checklist `review-code` will verify, so build to 
 every box checkable from the outside. Run `pnpm typecheck` / `pnpm lint` / the test
 suite as the repo conventions require before you open the PR.
 
-Commit per repo conventions (the `CLAUDE.md` commit-message trailer applies). Don't
-push to or PR from `main`.
+Commit per repo conventions. Don't push to or PR from `main`.
 
 ---
 
@@ -198,8 +197,6 @@ gh pr create \
 <short summary of what changed and why>
 
 Fixes #<N>
-
-🤖 Generated with [Claude Code](https://claude.com/claude-code)
 EOF
 )"
 ```
@@ -208,8 +205,13 @@ EOF
 > after creation, patch via REST: `gh api -X PATCH repos/kamp-us/phoenix/pulls/<PR>
 > -f body="…"`. Get the PR body right at `create` time and you won't need it.
 
-Confirm the linkage landed — the issue's timeline should show the PR as a connected
-"may be closed by" reference once `Fixes #N` is in the body.
+Confirm the linkage landed — once `Fixes #N` is in the body, the issue's timeline
+records a `cross-referenced` / `connected` event for the PR. Verify via REST:
+
+```bash
+gh api repos/kamp-us/phoenix/issues/<N>/timeline \
+  --jq '.[] | select(.event == "cross-referenced" or .event == "connected") | .event'
+```
 
 ---
 

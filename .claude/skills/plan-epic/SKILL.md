@@ -66,6 +66,10 @@ rationale; don't punt them downstream as unscoped ambiguity. If a question is
 genuinely unanswerable without a human decision, carve it out as its own
 `type:decision` child rather than blocking the whole plan on it.
 
+> In the bash below, `<EPIC>` / `<CHILD>` angle-bracket tokens are placeholders you
+> hand-substitute with concrete issue numbers; `$VARS` (e.g. `$CHILD_ID`, `$BODY`)
+> are live shell variables the commands set and read.
+
 ```bash
 # the epic, its current body, its labels, and any children it already has
 gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
@@ -163,6 +167,10 @@ gh api repos/kamp-us/phoenix/issues/<CHILD>/labels \
   -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:triaged"
 ```
 
+`POST .../labels` is **additive** — it appends to whatever the child already carries,
+it doesn't replace the set (relevant if you re-apply labels to an existing child during
+an amend).
+
 (Type and priority are your call as planner, the same authority triage has — you're
 the one who understands the slice.)
 
@@ -192,6 +200,12 @@ gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.sub_issues_summary'
 gh api 'repos/kamp-us/phoenix/issues/<EPIC>/sub_issues?per_page=100' \
   --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
 ```
+
+The exact-equality check holds on the fresh-plan path, where every linked child is
+still open. On the **re-plan path** — once you've closed superseded children — don't
+rely on it: `sub_issues_summary.total` is known to **undercount** when children are a
+mix of open and closed (a GitHub sub-issues caveat). There, the
+`GET .../sub_issues` list above is the source of truth for what's actually linked.
 
 To **unlink** a child (you'll need this in re-plan when a child is superseded), the
 endpoint is **singular** `sub_issue` (not `sub_issues`), and the id goes in the JSON

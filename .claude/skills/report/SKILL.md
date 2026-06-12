@@ -50,14 +50,14 @@ Gather the context with the helper, which reads it from the environment and git:
 .claude/skills/report/footer.sh
 ```
 
-It prints a ready-to-append markdown block like:
+It prints a ready-to-append markdown block. Which fields appear varies by run — the helper includes only what the environment actually exposes and silently drops the rest, so a real footer might look like this (here `session` and `model` weren't available, so they're omitted — no dangling labels, no "unknown"):
 
 ```markdown
 ---
-<sub>Filed by an agent · session `abc123…` · model `claude-opus-4-8` · branch `umut/some-branch` · 2026-06-12T08:14:01Z</sub>
+<sub>Filed by an agent · branch `umut/some-branch` · 2026-06-12T08:14:01Z</sub>
 ```
 
-Include at least **session id (when available), model, branch, and timestamp**. If the helper can't find a field it drops it from the line.
+Aim for **session id, model, branch, and timestamp** — but all are best-effort. Model and session often come from env vars that are unset, so don't be surprised when they drop; whatever the helper can resolve is what you get.
 
 ### Footer privacy — non-negotiable
 
@@ -74,16 +74,41 @@ All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-u
 
 1. Write the title: a short, specific, type-neutral summary of the observation (≤ ~70 chars). Good: "Retry helper in http worker swallows the abort reason". Bad: "Bug in worker" or "BUG: fix retry".
 2. Build the body: the five sections, then a blank line, then the footer block from `footer.sh`.
-3. File it, applying only `status:needs-triage`:
+3. File it, applying only `status:needs-triage`.
+
+Write the body to a temp file first and read it into `$BODY` so multi-line markdown and backticks survive the shell intact, then make the `gh api` call:
 
 ```bash
+# 1. Write the five sections + footer into a temp file.
+cat > /tmp/report-body.md <<'EOF'
+## What I was doing
+…
+
+## What I observed
+…
+
+## Why it matters
+…
+
+## Pointers
+…
+
+## Suggested next step (non-binding)
+…
+
+---
+<sub>Filed by an agent · session `abc123…` · branch `umut/some-branch` · 2026-06-12T08:14:01Z</sub>
+EOF
+
+# 2. Read it into $BODY so markdown/backticks survive the shell intact.
+BODY="$(cat /tmp/report-body.md)"
+
+# 3. Create the issue with only the status:needs-triage label.
 gh api repos/kamp-us/phoenix/issues \
   -f title="<title>" \
   -f body="$BODY" \
   -f "labels[]=status:needs-triage"
 ```
-
-Write the body to a temp file and read it into `$BODY` (e.g. `BODY="$(cat /tmp/report-body.md)"`) so multi-line markdown and backticks survive the shell intact.
 
 4. Report back to the user in one line: the issue number and URL (`gh api` returns them as `.number` and `.html_url`). Then return to your original task — don't expand into triaging or fixing what you just filed.
 

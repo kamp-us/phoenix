@@ -1,6 +1,6 @@
 # GH Issue Intake — formats contract
 
-The single shared contract the issue-intake skills cite. It defines the four
+The single shared contract the issue-intake skills cite. It defines the five
 markdown formats that turn GitHub issues, comments, and sub-issues into an
 agent-operable work pipeline:
 
@@ -9,9 +9,12 @@ agent-operable work pipeline:
 2. The **sub-issue body format** — one executable task, mirroring a task entry.
 3. The **progress-comment format** — a per-issue work-log entry for the next agent.
 4. The **epic handoff-note format** — distilled cross-task context posted to the epic.
+5. The **review-code pass marker** — the recognizable first line of a PR comment
+   that signals a verified, merge-ready PR for a downstream merge step to scan.
 
 `plan-epic` writes formats 1, 2, and 4. `write-code` reads 1, 2, and 4 and writes
-3 and 4. `review-code` reads 2 (the acceptance-criteria checklist is its gate).
+3 and 4. `review-code` reads 2 (the acceptance-criteria checklist is its gate) and
+writes 5 on a passing verdict.
 
 ## Reading stance: convention, not parser spec
 
@@ -231,6 +234,43 @@ assumption invalidated, a partial state left behind>
 
 ---
 
+## 5. review-code pass marker
+
+When `review-code` verifies every acceptance criterion and a native approving
+review can't be posted (e.g. org branch rules forbid reviewing your own PR), it
+falls back to a **pass comment whose first line is a recognizable marker**. That
+marker is a downstream contract: an authorized merge step scans PR comments for
+it to find verified, merge-ready PRs unambiguously.
+
+### Shape
+
+The recognizable **first line** of the PR comment is exactly:
+
+```markdown
+review-code: PASS — merge-ready
+```
+
+The rest of the comment body carries the per-criterion evidence table (the
+verdict). What's load-bearing for the scanner is only that first marker line; the
+table below it is for the human and the implementer.
+
+### Field notes
+
+- **First line, recognizable.** The marker leads the comment so a scan can match
+  it without parsing the whole body. Recognize it tolerantly by shape
+  (`review-code: PASS` … `merge-ready`), not by exact dashes or spacing.
+- **Pass only.** This marker means *every criterion verified, PR merge-ready*. A
+  fail verdict carries no such marker — there is nothing for the merge step to
+  find, which is the point.
+- **Signals, never merges.** The marker is an approval signal a separate
+  authorized step acts on. `review-code` writing it does **not** merge; merging
+  is a deliberate downstream act (see review-code/SKILL.md §"Authority limit").
+- The native approving review (`event=APPROVE`) is the preferred signal when it's
+  available; this marker is the comment-based fallback that carries the same
+  meaning where a formal review can't be posted.
+
+---
+
 ## Relationship between the formats
 
 | Format | Lives on | Written by | Read by |
@@ -239,6 +279,7 @@ assumption invalidated, a partial state left behind>
 | Sub-issue body | each sub-issue | plan-epic | write-code, review-code |
 | Progress comment | the worked issue | write-code | write-code (successor) |
 | Epic handoff note | parent epic | write-code | write-code (siblings) |
+| review-code pass marker | the PR | review-code | authorized merge step |
 
 The sub-issue's acceptance-criteria checklist (format 2) is the spine of
 verification: `review-code` checks every box before merge, and the
