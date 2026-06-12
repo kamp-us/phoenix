@@ -11,10 +11,8 @@
  */
 
 import {list} from "@nkzw/fate/server";
-import type {Comment, Post} from "../pano/views.ts";
 import {postDataView} from "../pano/views.ts";
 import {profileDataView, userDataView} from "../pasaport/views.ts";
-import type {Definition} from "../sozluk/views.ts";
 import {termDataView} from "../sozluk/views.ts";
 import {landingStatsDataView} from "../stats/views.ts";
 
@@ -30,40 +28,6 @@ export type {Definition, Term} from "../sozluk/views.ts";
 export {definitionDataView, termDataView} from "../sozluk/views.ts";
 export type {LandingStats} from "../stats/views.ts";
 export {landingStatsDataView} from "../stats/views.ts";
-
-/* -------------------------------------------------------------------------- */
-/* Live registry — entity name → entity type                                   */
-/* -------------------------------------------------------------------------- */
-
-/**
- * The entities a mutation can publish a `live.update` for, keyed by their wire
- * `__typename`. Single-sources the entity-name → entity-type relation so the
- * live bus can type `update`'s `type` discriminant (instead of a bare `string`)
- * and its `changed` field list against the entity's own field keys — a typo or
- * renamed field becomes a compile error at the mutation site. Mirrors the typed
- * `targetKind` discriminant the codebase prefers over magic strings.
- *
- * `Term` and `Profile` are intentionally omitted: their live updates flow
- * through the nested-connection path (`liveBus.connection(...)`), not
- * `update`. Add an entity here only when a resolver calls `liveBus.update` for
- * it.
- */
-export interface LiveEntities {
-	Definition: Definition;
-	Post: Post;
-	Comment: Comment;
-}
-
-/**
- * The fields a `live.update("<Name>", …)` may name in `changed` — every field
- * key of the entity except the `__typename` discriminant (which never
- * "changes"). Keying `changed` against this makes a nonexistent or renamed
- * field a compile error at the mutation site.
- */
-export type LiveChangedField<Name extends keyof LiveEntities> = Exclude<
-	keyof LiveEntities[Name],
-	"__typename"
->;
 
 /* -------------------------------------------------------------------------- */
 /* Root — client-exposed root queries                                         */
@@ -98,41 +62,29 @@ export type LiveChangedField<Name extends keyof LiveEntities> = Exclude<
  */
 export const Root: Record<string, unknown> = {
 	me: userDataView,
-	// Sözlük term detail page (`queries.term`). A view-based entry becomes a
-	// typed `query` client root; at runtime the native transport dispatches it by
-	// the request key (= root name = `term`) to `queries.term`. The `term(slug)`
-	// args ride on the `useRequest` item. The nested `definitions` connection is
-	// carried inline by the resolver (see `.patterns/fate-connections.md`).
+	// Sözlük term detail page (`queries.term`); the nested `definitions`
+	// connection is carried inline by the resolver (see
+	// `.patterns/fate-connections.md`).
 	term: termDataView,
-	// Sözlük home's two columns. Each is a `list(...)`-wrapped root → a `list`
-	// client root the plugin emits as `FateAPI['lists'][name]`; the generated
-	// root NAME must equal the server `lists` resolver name (`recentTerms` /
-	// `popularTerms`), so the home reads both in one `useRequest` without aliasing
-	// a single `terms` resolver (which the request-key→root-name mapping forbids).
+	// Sözlük home's two columns. A generated `list` root's NAME must equal the
+	// server `lists` resolver name (`recentTerms`/`popularTerms`), so the home
+	// reads both in one `useRequest` without aliasing a single `terms` resolver
+	// (which the request-key→root-name mapping forbids).
 	recentTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
 	popularTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
-	// Pano post detail page (`queries.post`). A view-based entry becomes a typed
-	// `query` client root; the native transport dispatches it by the request key
-	// (= root name = `post`) to `queries.post`. The `post(idOrSlug)` args ride on
-	// the `useRequest` item. The nested `comments` connection is carried inline by
-	// the resolver (see `.patterns/fate-connections.md`).
+	// Pano post detail page (`queries.post`); the nested `comments` connection
+	// is carried inline by the resolver.
 	post: postDataView,
-	// Pano feed (`lists.posts`). A `list(...)`-wrapped root → a `list` client root
-	// the plugin emits as `FateAPI['lists'][name]`; the generated root NAME must
-	// equal the server `lists` resolver name (`posts`). Filter args (`sort`/`host`)
-	// keep each filtered feed a distinct connection that paginates independently;
-	// the feed with no filter args is the registered root list a `post.submit`
-	// `insert` reaches (see `.patterns/fate-mutations-client.md`).
+	// Pano feed (`lists.posts`). Filter args (`sort`/`host`) keep each filtered
+	// feed a distinct connection that paginates independently; the feed with no
+	// filter args is the registered root list a `post.submit` `insert` reaches
+	// (see `.patterns/fate-mutations-client.md`).
 	posts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
-	// Public profile page (`queries.profile`). A view-based entry → a typed
-	// `query` client root; the native transport dispatches it by the request key
-	// (= root name = `profile`) to `queries.profile`. The `profile(username)` args
-	// ride on the `useRequest` item. The nested `contributions` discriminant feed
-	// is carried inline by the resolver (see `.patterns/fate-connections.md`).
+	// Public profile page (`queries.profile`); the nested `contributions`
+	// discriminant feed is carried inline by the resolver.
 	profile: profileDataView,
-	// Landing-page stats card (`queries.landingStats`). A view-based entry → a
-	// typed `query` client root; dispatched by the request key (= `landingStats`)
-	// to `queries.landingStats`. Returns the single `LandingStats` entity (stamped
-	// with a constant `id`) the SPA reads directly.
+	// Landing-page stats card (`queries.landingStats`): the single
+	// `LandingStats` entity (stamped with a constant `id`) the SPA reads
+	// directly.
 	landingStats: landingStatsDataView,
 };

@@ -1,23 +1,25 @@
 /**
- * fate bridge — data-plane parity for the remaining products (task 3, ADR 0041,
- * supersedes 0029).
+ * fate data-plane parity for the remaining products (ADR 0041; named for the
+ * bridge era it was written in — the assertions are the migration's regression
+ * harness and survive it).
  *
- * Task 2 proved the worker-as-runtime seam on sozluk (see `bridge-sozluk.test.ts`).
- * This file ports the proof to **pano** (posts, comments), **pasaport** (profile,
+ * `bridge-sozluk.test.ts` proves the worker-as-runtime seam on sozluk. This
+ * file ports the proof to **pano** (posts, comments), **pasaport** (profile,
  * `me`), **vote** (cross-product up-vote / retract), and **stats** (landingStats)
- * — every query, list, mutation, and source — driven through the SAME bridge via
+ * — every query, list, mutation, and source — driven through the SAME seam via
  * {@link runFateOp}:
  *
  *   1. `Drizzle` + the feature services are built from a bound D1 (here a
  *      `node:sqlite` stand-in) via `makeFateLayer` — the worker init layer.
  *   2. Per op, {@link runFateOp} wraps that worker layer in a per-op
  *      `ManagedRuntime` (built and disposed inside the call — see
- *      `run-fate-op.ts`), builds only the two per-request VALUES — `Auth` and the
- *      capturing `LiveBus` it owns — and hands fate a `FateContext` of
- *      `{runtime, request, auth, liveBus}`.
- *   3. The bridge runs each resolver THROUGH that runtime with
- *      `ctx.runtime.runPromiseExit(...)` — the same mechanism the deployed
- *      worker runs (`effect.ts` header + ADR 0041).
+ *      `run-fate-op.ts`), builds the per-request pair — `currentUser` and the
+ *      recording `LivePublisher` it owns — and hands
+ *      `FateInterpreter.handleRequest` one `FateRequestContext` of
+ *      `{currentUser, livePublisher}`.
+ *   3. The interpreter runs each handler THROUGH that runtime — the same
+ *      serving path the deployed worker runs (`FateServer.layer(fateConfig)`
+ *      + the interpreter; ADR 0043).
  *
  * Asserts wire parity with the pre-migration `/fate` surface for these products:
  *   - pano: `posts(sort/host)` list, `post(idOrSlug)` detail + `Post.comments`

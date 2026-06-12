@@ -71,7 +71,7 @@ For D1 specifically, prepared-statement construction (`prepare`, `bind`) is sync
 
 ## Where this leaves `CloudflareEnv`
 
-The old `CloudflareEnv` service that threaded `env.PHOENIX_DB` into layers has largely receded: bindings are resolved by `bind()` in init, and the resulting clients are passed into the services that need them. A capability service like `Drizzle` is built *from* the bound `db`, not from `env` — see [alchemy-runtime.md](./alchemy-runtime.md). Any genuinely env-shaped config (e.g. an `ENVIRONMENT` flag) is a plain resource var or a small `Layer.succeed`.
+The old `CloudflareEnv` service that threaded `env.PHOENIX_DB` into layers has largely receded: bindings are resolved by `bind()` in init, and the resulting clients are passed into the services that need them. A capability service like `Drizzle` is built *from* the bound `db`, not from `env` — see [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md). Any genuinely env-shaped config (e.g. an `ENVIRONMENT` flag) is a plain resource var or a small `Layer.succeed`.
 
 It doesn't vanish entirely, though. A few consumers still need the underlying raw `D1Database` — better-auth's Drizzle adapter most notably — and that now comes from the bound connection's `raw` rather than `env.PHOENIX_DB`. Note `raw` is itself an Effect (`Effect<D1Database, never, …>`), so you obtain it with `const raw = yield* conn.raw` in the same init phase, then thread it where it's needed.
 
@@ -80,4 +80,4 @@ It doesn't vanish entirely, though. A few consumers still need the underlying ra
 - [alchemy-worker.md](./alchemy-worker.md) — where `bind()` is called and Live layers are provided
 - [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — `D1Connection.bind` → `raw` → Drizzle
 - [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the DO namespace as a binding
-- [alchemy-runtime.md](./alchemy-runtime.md) — turning bound clients into worker-level services
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — turning bound clients into worker-level services (the init-only runtime)

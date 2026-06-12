@@ -2,45 +2,31 @@
 
 Failure in phoenix's backend is modeled as tagged errors in the `E` channel. No thrown exceptions across service boundaries. No `instanceof` chains in resolvers.
 
-## Two flavors of tagged error
+## The error constructor — `Schema.TaggedErrorClass`, annotated
 
-Effect ships two error constructors. Pick one per error type:
-
-### `Data.TaggedError` — the default
-
-Lightweight, runtime-only. Use for almost everything.
+Every phoenix error class is a `Schema.TaggedErrorClass`. The schema form is load-bearing: a
+domain error that can reach the wire carries its wire code as a **schema annotation**
+(`ErrorCode`, [fate-effect-wire-errors.md](./fate-effect-wire-errors.md)), and annotations
+ride the class's AST — `Data.TaggedError` has nowhere to put one.
 
 ```ts
-import {Data} from "effect";
+import * as Schema from "effect/Schema";
+import {ErrorCode} from "@phoenix/fate-effect";
 
-export class DefinitionNotFound extends Data.TaggedError("sozluk/DefinitionNotFound")<{
-  readonly definitionId: string;
-}> {}
-
-export class BodyTooLong extends Data.TaggedError("sozluk/BodyTooLong")<{
-  readonly max: number;
-}> {}
+export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+  "sozluk/DefinitionNotFound",
+  {definitionId: Schema.String, message: Schema.String},
+  {[ErrorCode]: "DEFINITION_NOT_FOUND"},
+) {}
 ```
 
 Notes:
 
 - Tag strings are **namespaced**: `feature/ErrorName`. Collisions between features are obvious that way.
-- The fields object is the error's runtime payload. Keep it small — just what the resolver needs to format a user-facing message.
-- A `Data.TaggedError` is a yieldable Effect — `return yield* new DefinitionNotFound({definitionId})` fails the surrounding `Effect.gen`.
-
-### `Schema.TaggedErrorClass` — when the error crosses a serialization boundary
-
-Reserve for errors that round-trip through JSON (RPC, persistent message queues, error replay logs). All errors raised inside the worker are caught and re-encoded by `encodeFateError` at the fate boundary before they leave, so `Data.TaggedError` is the right default for feature services. `Schema.TaggedErrorClass` is the right choice if and when a service starts publishing errors to a transport the recipient parses back into typed objects.
-
-```ts
-import {Schema} from "effect";
-
-export class NotFound extends Schema.TaggedErrorClass<NotFound>()("NotFound", {
-  id: Schema.Number,
-}) {}
-```
-
-`Schema.encode(NotFound)(err)` produces a structurally-validated JSON wire form. The cost is more imports and a heavier class. Don't pay it unless you need the wire form.
+- The fields object is the error's runtime payload. Keep it small — just what's needed to format a user-facing `message` (the annotated encoder puts `message` on the wire).
+- A `Schema.TaggedErrorClass` instance is a yieldable Effect — `return yield* new DefinitionNotFound({...})` fails the surrounding `Effect.gen`.
+- An infra error (or any error that must never reach the wire) simply carries **no annotation** — un-annotated failures encode as `INTERNAL_SERVER_ERROR` with a fixed message (no detail leak).
+- **One class, one code.** The annotation is class-level; an error family with several codes splits into one class per code, with a union type alias for service signatures (pano's `PostValidation`, pasaport's `UsernameInvalid`).
 
 ## Where errors live
 
@@ -55,8 +41,8 @@ worker/features/sozluk/
 
 Why one file:
 
-- `encodeFateError` imports the full error set to map `_tag` → wire code via its typed registry. Easier when they're co-located.
-- Cross-feature consumers (`Pano.voteOnPost` raising a vote error) can import from `vote/errors.ts` without pulling in the service.
+- The feature's wire-code enumeration pin (`<feature>/errors.unit.test.ts`) imports the full set to assert every class ↔ code pair. Easier when they're co-located.
+- Cross-feature consumers (`Pano.voteOnPost` catching a vote error) can import from `vote/errors.ts` without pulling in the service.
 - Tests stub the failure cases by constructing the error class directly — no service layer needed.
 
 ## Two categories per feature: domain + infra
@@ -66,45 +52,46 @@ Every feature ends up with two flavors of tagged error. Keep them distinct.
 **Domain errors** — things the user did wrong or business-rule violations:
 
 ```ts
-export class BodyRequired extends Data.TaggedError("sozluk/BodyRequired")<{}> {}
-export class BodyTooLong extends Data.TaggedError("sozluk/BodyTooLong")<{readonly max: number}> {}
-export class DefinitionNotFound extends Data.TaggedError("sozluk/DefinitionNotFound")<{
-  readonly definitionId: string;
-}> {}
-export class UnauthorizedDefinitionMutation extends Data.TaggedError("sozluk/Unauthorized")<{
-  readonly definitionId: string;
-}> {}
+export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
+  "sozluk/BodyRequired",
+  {message: Schema.String},
+  {[ErrorCode]: "BODY_REQUIRED"},
+) {}
+export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
+  "sozluk/DefinitionNotFound",
+  {definitionId: Schema.String, message: Schema.String},
+  {[ErrorCode]: "DEFINITION_NOT_FOUND"},
+) {}
 ```
 
-These map to specific wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, `UNAUTHORIZED`) and user-facing messages. The resolver pattern-matches on them.
+These carry their wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, …) as annotations and user-facing messages. Handlers declare them in the operation's `error` union and pattern-match on them.
 
 **Infrastructure errors** — things that went wrong below the domain:
 
 ```ts
-// From db/Drizzle.ts
-export class DrizzleError extends Data.TaggedError("@phoenix/Drizzle/Error")<{
-  readonly cause: unknown;
-}> {}
+// From db/Drizzle.ts — NO ErrorCode annotation, by design
+export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
+  "@phoenix/Drizzle/Error",
+  {cause: Schema.Defect()},
+) {}
 ```
 
-These map to 500s / `INTERNAL_SERVER_ERROR`. Their `cause` is preserved for logging but not surfaced to the user.
+These never appear in a declared error union — and never in a domain service's **public signature** either. The infra-failure policy is a domain-boundary decision: each feature service collapses `DrizzleError` into the defect channel at its own internal `run`/`batch` call sites (`orDieAccess(yield* Drizzle)` at layer build — `worker/db/Drizzle.ts`), so service methods expose domain errors only and the fate layer (sources/queries/lists/mutations) never names Drizzle at all. A defect encodes as `INTERNAL_SERVER_ERROR` with a fixed message; the `cause` is preserved for logging but not surfaced to the user.
+
+The trade-off is deliberate: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option that had zero consumers when the policy moved into the services. Defects remain reachable via `Effect.sandbox` / `Effect.catchAllDefect` if a caller ever genuinely needs to observe them. The rule is pinned per service in `worker/features/domain-error-boundary.unit.test.ts` (a type-level sweep: no method's `E` contains `DrizzleError`).
 
 The split matters because: domain errors are *expected* (they happen on the happy path of an invalid input), infrastructure errors are *unexpected* (they indicate a bug or outage). The wire encoding handles them differently — don't conflate them.
 
 ## Composing error unions
 
-A service method's `E` channel is the union of every error its body can raise. Be explicit — don't widen to `unknown`:
+A service method's `E` channel is the union of every DOMAIN error its body can raise (infra failures died inside the method — see above). Be explicit — don't widen to `unknown`:
 
 ```ts
 readonly editDefinition: (
   input: EditDefinitionInput,
 ) => Effect.Effect<
   EditDefinitionResult,
-  | BodyRequired
-  | BodyTooLong
-  | DefinitionNotFound
-  | UnauthorizedDefinitionMutation
-  | DrizzleError
+  BodyRequired | BodyTooLong | DefinitionNotFound | UnauthorizedDefinitionMutation
 >;
 ```
 
@@ -163,28 +150,21 @@ const ensureTermExists = Effect.fn("Sozluk.ensureTermExists")(function*(slug) {
 
 ## Mapping to wire codes (the fate boundary)
 
-The bridge runner (`worker/features/fate/effect.ts`) catches every error in the `E` channel and routes it through `encodeFateError` (`worker/features/fate/errors.ts`), which maps `_tag` → wire code via a typed registry to produce a `FateRequestError` with a stable `code`:
+The interpreter's dispatch catches every error in the `E` channel and routes it through
+`@phoenix/fate-effect`'s `encodeWireError` (the oracle-baseline compile step uses the same
+helper), which reads the `ErrorCode` annotation off the error's class to produce a
+`FateRequestError` with a stable `code` — no registry, one edit per error
+([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)):
 
-```ts
-// worker/features/fate/errors.ts — the registry is Record<FateErrorTag, WireCodeFor>,
-// so a tagged error with no entry is a compile error (no silent downgrade).
-export const WIRE_CODE_BY_TAG: Record<FateErrorTag, WireCodeFor> = {
-  "sozluk/BodyRequired": fixed("BODY_REQUIRED", "Tanım boş olamaz"),
-  "sozluk/BodyTooLong": (e) =>
-    fateError("BODY_TOO_LONG", `Tanım en fazla ${e.max} karakter olabilir`),
-  "sozluk/DefinitionNotFound": fixed("DEFINITION_NOT_FOUND", "Tanım bulunamadı"),
-  // ...
-  "@phoenix/Drizzle/Error": fixed("INTERNAL_SERVER_ERROR", "internal error"),
-};
+- **annotated error** → its annotated code + its own `message`;
+- **un-annotated error / defect** → `INTERNAL_SERVER_ERROR` with a fixed message;
+- **`FateRequestError`** → passed through verbatim.
 
-export function encodeFateError(err: unknown): FateRequestError {
-  if (err instanceof FateRequestError) return err; // already on the wire
-  // look the _tag up in WIRE_CODE_BY_TAG; default unknown/non-tagged throws to
-  // INTERNAL_SERVER_ERROR.
-}
-```
-
-Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contract — frontend clients depend on them. The `_tag` namespace (`feature/Name`) is the internal contract. Both can change independently of each other, but the typed `WIRE_CODE_BY_TAG` registry is the single, exhaustiveness-checked point where they meet.
+Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contract — frontend
+clients depend on them. The `_tag` namespace (`feature/Name`) is the internal contract. Two
+guards keep them honest: each feature's `errors.unit.test.ts` pins every class ↔ code pair, and
+`worker/features/fate/wireCodes.unit.test.ts` derives the server-emittable code set from the
+fate config's declared error unions and asserts the SPA's `MUTATION_ERROR_CODES` covers it.
 
 ## Anti-patterns
 
@@ -198,5 +178,5 @@ Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contra
 - [feature-services.md](./feature-services.md) — where errors plug into the service shape
 - [effect-error-operators.md](./effect-error-operators.md) — catching, `Exit`, `Cause`, recovering from specific tags
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema.TaggedErrorClass` for errors that cross serialization boundaries
-- `worker/features/pasaport/Auth.ts` — `Unauthorized` is the canonical phoenix tagged error
-- `worker/features/fate/errors.ts` — `encodeFateError` + the typed `WIRE_CODE_BY_TAG` registry
+- `packages/fate-effect/src/CurrentUser.ts` — `Unauthorized` is the canonical annotated tagged error
+- [fate-effect-wire-errors.md](./fate-effect-wire-errors.md) — the `ErrorCode` annotation + `encodeWireError` codec

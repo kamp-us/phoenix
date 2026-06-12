@@ -63,7 +63,7 @@ Tracer/exporter installed, so those spans are inert.
 The `Drizzle` `run`/`batch` service contract from
 [0014](0014-drizzle-run-batch-as-service-methods.md) is **unchanged** — only its
 construction moves, from a per-request `CloudflareEnv` read to a once-per-isolate
-build from the bound client. See [.patterns/alchemy-runtime.md](../.patterns/alchemy-runtime.md).
+build from the bound client. See [.patterns/fate-effect-worker-wiring.md](../.patterns/fate-effect-worker-wiring.md).
 
 ## Consequences
 

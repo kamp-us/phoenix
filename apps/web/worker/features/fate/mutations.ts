@@ -6,8 +6,9 @@
  * single `mutations` map fate expects on `createFateServer`. Mirrors the
  * sibling `queries.ts` / `lists.ts` barrels.
  *
- * Each is a thin orchestration over a service, wrapped by `fateMutation` so it
- * runs through the request runtime (see `.patterns/fate-effect-bridge.md`).
+ * Each entry is a `Fate.mutation` value — a pure-data definition (Schema
+ * input, declared error union) paired with an `Effect.fn` handler (see
+ * `.patterns/fate-effect-operations.md`).
  */
 
 import {mutations as panoMutations} from "../pano/mutations.ts";

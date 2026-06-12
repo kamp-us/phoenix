@@ -239,11 +239,10 @@ unchanged.
 
 - [alchemy-drizzle-d1.md](./alchemy-drizzle-d1.md) — `D1Connection.bind`,
   drizzle wiring.
-- [alchemy-runtime.md](./alchemy-runtime.md) — why a service whose method
-  yields `RuntimeContext` propagates `R` upward, and what
-  `Effect.context()` capture solves (the same shape this pattern uses
-  for `Auth` threading, just with a factory parameter instead of a
-  captured context).
+- [effect-layer-composition.md](./effect-layer-composition.md) — the
+  `RuntimeContext`-escape: why a service whose method yields
+  `RuntimeContext` propagates `R` upward, and why the resolved value is
+  threaded as a plain factory argument instead.
 - [feature-services.md](./feature-services.md) — one service per
   feature, methods on the service value.
 - [ADR 0031](../.decisions/0031-local-first-dev-state.md) — dev cookie /

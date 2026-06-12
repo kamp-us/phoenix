@@ -20,7 +20,7 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
+import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -171,7 +171,7 @@ export interface DeleteDefinitionResult {
 export class Sozluk extends Context.Service<
 	Sozluk,
 	{
-		readonly getTerm: (slug: string) => Effect.Effect<TermPage | null, DrizzleError>;
+		readonly getTerm: (slug: string) => Effect.Effect<TermPage | null>;
 
 		/**
 		 * DB-keyset page of a term's live definitions, ordered by the canonical
@@ -189,7 +189,7 @@ export class Sozluk extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 			},
-		) => Effect.Effect<DefinitionConnectionPage, DrizzleError>;
+		) => Effect.Effect<DefinitionConnectionPage>;
 
 		/**
 		 * Batched read of definitions by id (the fate `Definition` source's
@@ -200,7 +200,7 @@ export class Sozluk extends Context.Service<
 		readonly getDefinitionsByIds: (
 			ids: ReadonlyArray<string>,
 			opts?: {viewerId?: string | null | undefined},
-		) => Effect.Effect<DefinitionRow[], DrizzleError>;
+		) => Effect.Effect<DefinitionRow[]>;
 
 		/**
 		 * Batched read of term summaries by slug (the fate `Term` source's `byIds`
@@ -208,58 +208,49 @@ export class Sozluk extends Context.Service<
 		 */
 		readonly getTermSummariesByIds: (
 			slugs: ReadonlyArray<string>,
-		) => Effect.Effect<TermSummaryRow[], DrizzleError>;
+		) => Effect.Effect<TermSummaryRow[]>;
 
 		readonly listTermSummaries: (opts?: {
 			sort?: ListSort;
 			limit?: number;
-		}) => Effect.Effect<TermSummaryRow[], DrizzleError>;
+		}) => Effect.Effect<TermSummaryRow[]>;
 
 		readonly listTermSummariesConnection: (opts?: {
 			sort?: ListSort;
 			first?: number;
 			after?: string | null;
-		}) => Effect.Effect<TermConnectionPage, DrizzleError>;
+		}) => Effect.Effect<TermConnectionPage>;
 
 		readonly readMyVote: (input: {
 			userId: string;
 			targetKind: "definition" | "post" | "comment";
 			targetId: string;
-		}) => Effect.Effect<number | null, DrizzleError>;
+		}) => Effect.Effect<number | null>;
 
-		readonly lookupDefinitionTermSlug: (
-			definitionId: string,
-		) => Effect.Effect<string | null, DrizzleError>;
+		readonly lookupDefinitionTermSlug: (definitionId: string) => Effect.Effect<string | null>;
 
 		readonly addDefinition: (
 			input: AddDefinitionInput,
-		) => Effect.Effect<AddDefinitionResult, BodyRequired | BodyTooLong | DrizzleError>;
+		) => Effect.Effect<AddDefinitionResult, BodyRequired | BodyTooLong>;
 
 		readonly editDefinition: (
 			input: EditDefinitionInput,
 		) => Effect.Effect<
 			EditDefinitionResult,
-			| BodyRequired
-			| BodyTooLong
-			| DefinitionNotFound
-			| UnauthorizedDefinitionMutation
-			| DrizzleError
+			BodyRequired | BodyTooLong | DefinitionNotFound | UnauthorizedDefinitionMutation
 		>;
 
 		readonly deleteDefinition: (
 			input: DeleteDefinitionInput,
-		) => Effect.Effect<
-			DeleteDefinitionResult,
-			DefinitionNotFound | UnauthorizedDefinitionMutation | DrizzleError
-		>;
+		) => Effect.Effect<DeleteDefinitionResult, DefinitionNotFound | UnauthorizedDefinitionMutation>;
 
 		readonly voteDefinition: (
 			input: VoteDefinitionInput,
-		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound | DrizzleError>;
+		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
 
 		readonly retractDefinitionVote: (
 			input: VoteDefinitionInput,
-		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound | DrizzleError>;
+		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
 	}
 >()("@phoenix/sozluk/Sozluk") {}
 
@@ -270,10 +261,12 @@ export class Sozluk extends Context.Service<
 export const SozlukLive = Layer.effect(Sozluk)(
 	Effect.gen(function* () {
 		// Yield Drizzle and Vote once at layer build and destructure/close over
-		// their bound methods. Method bodies call `run` / `voteSvc` directly —
-		// the deps are owned by this layer, so every method's `R` stays `never`
-		// (the dep never reaches the caller-visible R channel).
-		const {run} = yield* Drizzle;
+		// their bound methods. Drizzle is taken through `orDieAccess`: every
+		// internal DB call site dies on `DrizzleError` (infra failures are
+		// defects — the domain-boundary rule), so public signatures carry
+		// domain errors only. The deps are owned by this layer, so every
+		// method's `R` stays `never`.
+		const {run} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
 		/* ------------------------------------------------------------------ */

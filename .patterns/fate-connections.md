@@ -9,7 +9,7 @@ How lists paginate. The short answer: a list is `list(view, {orderBy})` in the d
 | **Custom `lists` resolver** | top-level lists (`terms`, `posts`) | the service — `ConnectionResult` built from its page |
 | **Parent custom `queries` resolver** | nested relations inside a view (`Term.definitions`, `Post.comments`, `Profile.contributions`) | the service — `ConnectionResult` built inline on the parent row |
 
-Both paths build the `ConnectionResult` from a service keyset method; the difference is only where the resolver lives (a `lists` entry vs. the parent `queries` resolver). phoenix's sources carry **no** `connection` executor — see the note below for why fate never reaches one.
+Both paths build the `ConnectionResult` from a service keyset method; the difference is only where the resolver lives (a `lists` entry vs. the parent `queries` resolver). phoenix's sources carry **no** `connection` handler — see the note below for why one is never reached.
 
 ## Root lists — custom `lists` resolver
 
@@ -19,7 +19,7 @@ Services return a page (`{rows, hasNextPage, endCursor, totalCount}` — e.g. `D
 lists: {
   terms: {
     type: "Term",
-    resolve: fateList(function* ({args}) {
+    // inside the Fate.list handler — Effect.fn("terms")(function* ({args}) {
       const sozluk = yield* Sozluk;
       const page = yield* sozluk.listTermSummariesConnection({
         first: typeof args?.first === "number" ? args.first : 20,
@@ -45,7 +45,7 @@ The cursor is whatever the service uses as its keyset (a slug, an id, an encoded
 
 A connection field inside a view (`Term.definitions`, `Post.comments`, `Profile.contributions`) carries a `ConnectionResult` on the parent row. The DB keyset lives in the service; the **parent resolver invokes it inline** (see [ADR 0019](../.decisions/0019-connection-pagination-strategy.md)).
 
-> **The native path does not auto-invoke a nested relation's `connection` executor for a hand-built source.** `resolveSourceConnection` (the function that calls a source's `connection` handler) is reached from exactly two places: the **root `list` operation** (`server.mjs`) and the **Drizzle adapter's** nested-relation resolver (`server/drizzle.mjs`). phoenix bans the Drizzle adapter (ADR 0016), so for a hand-built source resolver, fate's `resolveNode` only **re-shapes** whatever the parent row already carries on a `list()` field — an `Array` or a pre-built `ConnectionResult` — via `arrayToConnection`. It never fetches the nested relation through an executor, and the cursor it uses for a connection node is the node's **`id`** (the default `getCursor`), not the view's `orderBy` field values.
+> **A nested relation is never auto-fetched through a source `connection` handler.** The serving walk only **re-shapes** whatever the parent row already carries on a list field — an `Array` or a pre-built `ConnectionResult` — and the cursor it uses for a connection node is the node's **`id`** (fate's default `getCursor`), not the view's `orderBy` field values. Why a source `connection` handler is unreachable (on the interpreter and on fate's own server alike) is pinned in [fate-effect-interpreter.md](./fate-effect-interpreter.md) "The connection plane".
 
 The phoenix shape that gives a true DB keyset:
 
@@ -59,8 +59,8 @@ Always include `id` as the final `orderBy` key — it's the stable tiebreaker th
 ## See also
 
 - [fate-data-views.md](./fate-data-views.md) — `list(view, {orderBy})` in a view
-- [fate-sources.md](./fate-sources.md) — the `byId`/`byIds` source executors
-- [fate-effect-bridge.md](./fate-effect-bridge.md) — `fateList` returning `ConnectionResult`
+- [fate-effect-sources.md](./fate-effect-sources.md) — the `byId`/`byIds` source loaders
+- [fate-effect-operations.md](./fate-effect-operations.md) — `Fate.list` handlers returning `ConnectionResult`
+- [fate-effect-interpreter.md](./fate-effect-interpreter.md) — the serving-path connection plane (windowing, scoping, what is deliberately not reimplemented)
 - [ADR 0019](../.decisions/0019-connection-pagination-strategy.md) — connection pagination strategy
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `example/void/src/fate/server.ts` (`commentSearch` custom list)
-- fate internals (`node_modules/@nkzw/fate`): `resolveConnection`/`arrayToConnection`/`resolveSourceConnection` in `sourceRouter-*.mjs`; root-list call site in `server.mjs`

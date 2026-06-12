@@ -80,7 +80,7 @@ fate's `handleRequest`, better-auth's handler, and the live SSE route all want t
 ```ts
 // worker/http/app.ts
 const routesLive = Layer.mergeAll(
-  // fate data plane — captures the service map, runs fate (alchemy-runtime.md)
+  // fate data plane — captures the service map, runs fate (fate-effect-worker-wiring.md)
   HttpRouter.add("POST", "/fate", handleFate),
 
   // better-auth — forward the raw Request to the auth handler
@@ -155,7 +155,7 @@ assets: {
 
 ## See also
 
-- [alchemy-runtime.md](./alchemy-runtime.md) — what `handleFate` does (capture + bridge)
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — what `handleFate` does (the native interpreter on the request fiber + the per-request pair; the runtime is init-only wiring)
 - [alchemy-worker.md](./alchemy-worker.md) — the `assets` prop and where `fetch` is returned
 - [alchemy-durable-objects.md](./alchemy-durable-objects.md) — the connection DO behind `/fate/live`
-- [fate-server-wiring.md](./fate-server-wiring.md) — `createFateServer` and the `adapterContext` it receives
+- [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) — the interpreter-served fate route and the request context it receives

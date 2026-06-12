@@ -2,11 +2,11 @@
  * Shared live wire types + topic helpers for the SSE fan-out (ADR 0023).
  *
  * This module is import-safe in a plain Node runner (no `cloudflare:workers`):
- * the publish-only `liveBus` (`event-bus.ts`) and the fate codegen graph
- * (`fate/schema.ts → fate/server.ts → event-bus.ts`) depend on it, while only the
- * unified `LiveDO` class (`live-do.ts`) and the worker entry pull in the Workers
- * runtime. Keeping the frame shapes + topic resolution here means the bus, the
- * DO, and the route all speak one vocabulary.
+ * the per-request live publisher (`live-publisher.ts`) and the fate codegen
+ * graph (`fate/schema.ts → fate/config.ts → event-bus.ts`) depend on it, while
+ * only the unified `LiveDO` class (`live-do.ts`) and the worker entry pull in
+ * the Workers runtime. Keeping the frame shapes + topic resolution here means
+ * the publisher, the DO, and the route all speak one vocabulary.
  *
  * The frame shapes mirror fate's native `livePayload` / `liveConnectionPayload`
  * / `sse()` exactly, so the browser's native fate SSE client parses them
@@ -25,13 +25,13 @@ import * as Schema from "effect/Schema";
 
 /**
  * The closed set of live connection procedures phoenix publishes to / subscribes
- * on — the connection analogue of {@link ../fate/views.ts#LiveEntities}'s entity
- * names. A connection publish (`liveBus.connection(<procedure>)`) and the
- * matching subscribe both key their topic off this string; a typo on either side
- * silently creates a dead topic (publish and subscribe miss each other with no
- * failure). Constraining the seam to this union makes a typo a compile error at
- * the `liveBus.connection(...)` call site, exactly as the entity seam already
- * does for `liveBus.update`.
+ * on. A connection publish (`live.connection(<procedure>)` on the per-request
+ * `LivePublisher` service) and the matching subscribe both key their topic off
+ * this string; a typo on either side silently creates a dead topic (publish and
+ * subscribe miss each other with no failure). The subscribe side is gated by
+ * {@link LiveConnectionProcedureSchema}; the publish side is plain-string typed
+ * (the package's `LivePublisher` cannot know phoenix's procedures), so a
+ * publish-site typo is caught by the live integration suite, not the compiler.
  *
  * Derived from the live root list (`posts`) and the nested-connection mutation
  * sites (`Post.comments`, `Term.definitions`). Add a member here when a resolver
@@ -65,6 +65,14 @@ export type ConnectionFrame =
  * A publish to a topic DO. The mutation side resolves the topic string and the
  * per-event payload (already inline-resolved `data`/`node`), so the topic DO
  * relays it to every subscriber's connection DO with no re-resolution.
+ *
+ * `procedure` is a plain `string` here: the envelope is wire data (the DO and
+ * `topicsForPublish` genuinely key off any string), and the publish-side typo
+ * gate lives at the CALLER surface — `TypedLiveConnection` for bridge
+ * mutations today, a worker-level narrowing over the package's `LivePublisher`
+ * (which takes plain strings by design) when features migrate. The subscribe
+ * side stays closed: {@link SubscribeControl} and the control-request schema
+ * still reject unknown procedures, so a dead topic cannot be *registered*.
  */
 export type PublishMessage =
 	| {
@@ -76,12 +84,26 @@ export type PublishMessage =
 	| {
 			readonly kind: "connection";
 			readonly match: {
-				readonly procedure: LiveConnectionProcedure;
+				readonly procedure: string;
 				readonly args?: Record<string, unknown>;
 			};
 			readonly frame: ConnectionFrame;
 			readonly eventId?: string;
 	  };
+
+/**
+ * A pre-bound per-request topic publish: hand it one resolved topic key + the
+ * publish message and it fires the typed `LiveDO.publish` RPC (on the
+ * `topic:<key>`-named instance), fired-and-forgotten via the request's
+ * `waitUntil`. `live-publisher.ts` builds this from the worker-init-resolved
+ * `LiveDO` namespace (`getByName`, typed RPC) and
+ * `Cloudflare.WorkerExecutionContext.waitUntil` — so a publish reaches the DO
+ * via the typed RPC stub, not an `env`-lookup/`idFromName`/string-URL
+ * `stub.fetch` (ADR 0028/0029). Named `PublishToTopic` — NOT `LivePublisher`,
+ * which is the package's per-request service tag this function ultimately
+ * powers (`@phoenix/fate-effect`).
+ */
+export type PublishToTopic = (topicKey: string, message: PublishMessage) => void;
 
 /** A control message a connection DO records as a subscription. */
 export type SubscribeControl =
@@ -259,7 +281,7 @@ export function topicsForSubscribe(control: SubscribeControl): ReadonlyArray<str
  * caps its own subscriptions and its queued-but-unflushed event backlog, a topic
  * caps how many subscribers it registers, and every fan-out event has a maximum
  * encoded size and a per-attempt delivery timeout. The worker/route supplies
- * these on each call (wired in a later step); the DO never invents its own.
+ * these on each call ({@link defaultLiveLimits}); the DO never invents its own.
  */
 export interface LiveLimits {
 	readonly maxSubscriptionsPerConnection: number;
@@ -268,6 +290,25 @@ export interface LiveLimits {
 	readonly maxEncodedEventSize: number;
 	readonly deliveryAttemptTimeoutMs: number;
 }
+
+/**
+ * The default per-request fan-out budgets, mirroring void's `DEFAULT_LIMITS`
+ * (`void/dist/runtime/live.mjs`). Threaded onto each `LiveDO` subscribe/publish
+ * call (decision 2B) rather than hardcoded in the DO, so a future request-scoped
+ * override has exactly one seam. Both routes that publish/subscribe consume it
+ * (`fate-live/route.ts`, `fate/route.ts`) — it lives HERE, beside the
+ * {@link LiveLimits} shape, so neither route imports config out of a sibling
+ * ROUTE module. `maxOperationsPerControlRequest` is void's
+ * control-request cap, not a `LiveLimits` field — it is not part of the DO
+ * budget and so is omitted here.
+ */
+export const defaultLiveLimits: LiveLimits = {
+	maxSubscriptionsPerConnection: 256,
+	maxSubscriptionsPerTopic: 256,
+	maxQueuedEventsPerConnection: 100,
+	maxEncodedEventSize: 64 * 1024,
+	deliveryAttemptTimeoutMs: 1500,
+};
 
 /**
  * A persisted topic-role subscriber row (the value stored under a `sub:` KV key,

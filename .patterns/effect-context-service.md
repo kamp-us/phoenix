@@ -12,7 +12,7 @@ How to define and wire services in phoenix's worker.
 > | the other service helper | `Effect.Service<S>()("S", { … })` | not used — `Context.Service` only |
 > | module imports | `from "effect"` for everything | many things moved: `effect/unstable/http/*`, `effect/Config`, etc. |
 >
-> Note the **argument order**: v4 is `Context.Service<Self, Shape>()(id)` — type args first, then `()`, then the string id. v3's `Context.Tag(id)<Self, Shape>()` puts the id first. If you typed `Context.Tag`, you're writing v3 — stop and use `Context.Service`. When muscle memory disagrees with this table, **the codebase is the spec**: see `worker/features/vote/Vote.ts`, `worker/db/Drizzle.ts`, `worker/features/pasaport/Auth.ts`.
+> Note the **argument order**: v4 is `Context.Service<Self, Shape>()(id)` — type args first, then `()`, then the string id. v3's `Context.Tag(id)<Self, Shape>()` puts the id first. If you typed `Context.Tag`, you're writing v3 — stop and use `Context.Service`. When muscle memory disagrees with this table, **the codebase is the spec**: see `worker/features/vote/Vote.ts`, `worker/db/Drizzle.ts`, `packages/fate-effect/src/CurrentUser.ts`.
 
 ## Defining a service — class form, always
 
@@ -21,27 +21,24 @@ The class form is the canonical v4 pattern. Use it for every service, even one-f
 ```ts
 import {Context} from "effect";
 
-export class Auth extends Context.Service<
-  Auth,
-  {
-    readonly user: Session["user"] | undefined;
-    readonly session: Session["session"] | undefined;
-  }
->()("@phoenix/worker/Auth") {}
+export class CurrentUser extends Context.Service<
+  CurrentUser,
+  {readonly user: CurrentUserInfo | undefined}
+>()("fate-effect/CurrentUser") {}
 ```
 
 Three pieces, in order:
 
-1. **Self type** (`Auth`) — the class itself, used as the tag.
+1. **Self type** (`CurrentUser`) — the class itself, used as the tag.
 2. **Service shape** (`{readonly ...}`) — the API.
-3. **String id** (`"@phoenix/worker/Auth"`) — must be globally unique. Namespace it `@phoenix/<package>/<Name>` so collisions are obvious.
+3. **String id** (`"fate-effect/CurrentUser"`) — must be globally unique. Namespace it `@phoenix/<package>/<Name>` (worker code) or `<package>/<Name>` so collisions are obvious.
 
 The string id is what effect uses at runtime to look services up. Renaming the class is fine; renaming the string id breaks every layer providing it.
 
 ### Why class form over `Context.Tag`/`Context.GenericTag`
 
-- The class **is** the tag — `yield* Auth` gives you the service shape directly. No separate `AuthTag` and `Auth` interface to keep in sync.
-- You can attach static helpers (`Auth.required`, see below) and they stay namespaced with the service.
+- The class **is** the tag — `yield* CurrentUser` gives you the service shape directly. No separate tag constant and interface to keep in sync.
+- You can attach static helpers (`CurrentUser.required`, see below) and they stay namespaced with the service.
 - Subclassing extends the interface without re-declaring the tag.
 
 ### Service shape rules
@@ -62,9 +59,9 @@ class UserRepo extends Context.Service<
 
 ## Static helpers on the service class
 
-Effect v4 attaches reusable derivations as static fields. Phoenix already does this on `Auth`. See `worker/features/pasaport/Auth.ts` — the smallest, cleanest example of `static readonly required`.
+Effect v4 attaches reusable derivations as static fields. Phoenix already does this on `CurrentUser`. See `packages/fate-effect/src/CurrentUser.ts` — the smallest, cleanest example of `static readonly required`.
 
-Call site: `const {user} = yield* Auth.required;`
+Call site: `const user = yield* CurrentUser.required;`
 
 Use this when the same gen-block recurs at five call sites. Don't pre-derive every possible helper — only the ones that already exist as copy-pasted blocks.
 
@@ -76,7 +73,7 @@ Use this when the same gen-block recurs at five call sites. Don't pre-derive eve
 export const layer: Layer.Layer<Path> = Layer.succeed(Path)(posixImpl);
 ```
 
-Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `Auth` (`worker/features/pasaport/Auth.ts`) is the canonical example: the `/fate` route provides it with `Effect.provideService(Auth, {user, session})` after validating the session, and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) carries the raw `Request` for free — no hand-rolled `CloudflareEnv`/`RequestContext` Tags. For worker config (`ENVIRONMENT`, secrets) read `AppConfig` (an `effect/Config` surface; `config.ts`), not a raw-env Tag.
+Use when constructing the service has zero deps and zero effects — a plain object literal of functions. Phoenix's per-request `CurrentUser` is the canonical example: the `/fate` route builds the value (`{user: session?.user}`) after validating the session, and the interpreter provides it onto each operation with `Effect.provideService(CurrentUser, context.currentUser)`. No hand-rolled `CloudflareEnv`/`RequestContext` Tags. For worker config (`ENVIRONMENT`, secrets) read `AppConfig` (an `effect/Config` surface; `config.ts`), not a raw-env Tag.
 
 ### `Layer.effect` — service built inside an Effect
 
@@ -115,7 +112,7 @@ Inside `Effect.gen`:
 
 ```ts
 Effect.gen(function*() {
-  const auth = yield* Auth;          // per-request capability
+  const user = yield* CurrentUser.required;  // per-request capability
   const environment = yield* AppConfig;  // worker config (effect/Config, not a raw-env Tag)
   // ...
 });
@@ -133,7 +130,7 @@ Prefer gen — `yield* Service` reads identically to `const service = ...`.
 
 ```ts
 const program = handler.pipe(
-  Effect.provideService(Auth, {user, session}),   // ready-made per-request value
+  Effect.provideService(CurrentUser, {user}),     // ready-made per-request value
   Effect.provide(UserRepo.layer),                 // layer, when construction is non-trivial
 );
 ```
@@ -170,43 +167,42 @@ every call site. Expose a `use` method that runs a caller-supplied function
 against the client *inside* the Effect, surfacing a typed error. This is
 effect-smol's `NodeRedis.use` / `BunRedis.use` shape, adapted per client.
 
-phoenix's first wrapper is `LiveBus` (ADR
-[0039](../.decisions/0039-livebus-context-service.md),
-`worker/features/fate-live/event-bus.ts`) — a *synchronous* publish-only client
-acquired in mutation resolvers:
+phoenix's shipped application of this pattern is the live publisher
+(`worker/features/fate-live/live-publisher.ts`, originating as the `LiveBus`
+service of ADR [0039](../.decisions/0039-livebus-context-service.md), retired
+in the fate-effect v1 cutover): the synchronous frame-building publish path
+is wrapped in `Effect.try` with a typed
+`LivePublishError`, and the swallow law is applied ONCE inside the layer —
+every `LivePublisher` method is `Effect<void>` (`E = never`), so "a publish
+can't fail the mutation" is a type, not a per-call-site convention:
 
 ```ts
-export class LiveBus extends Context.Service<
-  LiveBus,
-  {
-    readonly use: <A>(f: (bus: PhoenixLiveEventBus) => A) => Effect.Effect<A, LivePublishError>;
-    readonly useIgnore: (f: (bus: PhoenixLiveEventBus) => unknown) => Effect.Effect<void, never>;
-  }
->()("@phoenix/fate-live/LiveBus") {}
+// live-publisher.ts — the use/swallow law inside the layer
+const swallow = (publishSync: () => void): Effect.Effect<void> =>
+  Effect.try({try: publishSync, catch: (cause) => new LivePublishError({cause})}).pipe(
+    Effect.ignore({log: "Warn"}),
+  );
 ```
 
 Rules:
 
 - **`use` surfaces a typed error.** Sync client → `Effect.try`; Promise client →
-  `Effect.tryPromise`. The `catch` maps the thrown cause into a
-  `Data.TaggedError` (`LivePublishError`). This is the *only* method the
-  precedent (NodeRedis/BunRedis) keeps — swallowing is normally the caller's job
+  `Effect.tryPromise`. The `catch` maps the thrown cause into a tagged error
+  (`LivePublishError`). This is the *only* method the precedent
+  (NodeRedis/BunRedis) keeps — swallowing is normally the caller's job
   (`use(f).pipe(Effect.ignore)`).
-- **A swallow sibling is a footgun-safety exception, not the norm.** `LiveBus`
-  adds `useIgnore` because a mutation publishes *after* its DB write, so a
+- **A swallow wrapper is a footgun-safety exception, not the norm.** The live
+  publisher swallows because a mutation publishes *after* its DB write, so a
   surfaced-and-yielded publish failure would short-circuit before `return` and
-  fail a committed mutation. `useIgnore = use(f).pipe(Effect.ignore({log:
-  "Warn"}))` → `Effect<void, never>`; the empty error channel makes "a publish
-  can't fail the mutation" a type, not a convention. Only add a swallow sibling
-  when the call site genuinely must not fail on the wrapped client — and name it
-  `useIgnore` (in Effect, `Unsafe` means "synchronous / escapes the runtime", not
-  "swallows errors", so `useUnsafe` is wrong).
+  fail a committed mutation. `Effect.ignore({log: "Warn"})` over the typed
+  `use` → `Effect<void, never>`; the empty error channel makes the contract a
+  type. ADR 0039 established this as a per-call-site `useIgnore`; the v1
+  cutover moved it inside the layer (once), which is the preferred shape.
 - **Acquire the client per request via the service, not via an ambient store.**
-  `yield* LiveBus` makes provision mandatory: a missing provide fails loudly
-  instead of silently no-opping. Don't reach for `AsyncLocalStorage`,
-  `globalThis`, or `Fiber.getCurrent` to carry a client into a resolver — provide
-  it like any other per-request service (`Effect.provideService(LiveBus, …)` next
-  to `Auth`).
+  `yield* LivePublisher` makes provision mandatory: a missing provide fails
+  loudly instead of silently no-opping. Don't reach for `AsyncLocalStorage`,
+  `globalThis`, or `Fiber.getCurrent` to carry a client into a handler —
+  provide it like any other per-request service.
 
 Promote this to a standalone `effect-client-use-wrapper.md` once a second
 non-Effect client gets a `use` wrapper (the folder's 2-usages rule).

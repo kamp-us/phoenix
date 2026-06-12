@@ -12,10 +12,18 @@
  *      `Tag`, `Profile`, `Contribution`) — imported verbatim as the client's
  *      view types — and `Root`.
  *
- * `views.ts` owns 1 + 3; `server.ts` owns 2. This barrel re-exports both so the
- * plugin has one `module` to point at. Nothing else imports this file — the
- * worker entry imports `server.ts` directly.
+ * `views.ts` owns 1 + 3; `fateServer` here is the BUILD-TIME form of the one
+ * config (`config.ts`): `FateExecutor.toCodegenServer` makes a real
+ * `createFateServer` call over the same records — same keys, same `type`
+ * strings, same `roots: {}`, same `live` passthrough, so the manifest matches
+ * the served wire contract — with every resolver/source executor INERT.
+ * Importing this module constructs pure data: no handler runs, no database, no
+ * bindings (`.patterns/fate-effect-compiler.md` § "The codegen server"). The
+ * worker entry never imports this file — it serves through the native
+ * interpreter (`FateInterpreter.handleRequest`, `route.ts`; ADR 0043).
  */
+import {FateExecutor} from "@phoenix/fate-effect";
+import {fateConfig} from "./config.ts";
 
-export {fateServer} from "./server.ts";
+export const fateServer = FateExecutor.toCodegenServer(fateConfig);
 export * from "./views.ts";

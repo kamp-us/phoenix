@@ -7,10 +7,10 @@ Start with [effect-context-service.md](./effect-context-service.md) and [feature
 ## Three layers
 
 - **Effect domain layer** (the `effect-*` docs) — services, errors, layer composition, tracing, testing, validation. Transport-agnostic: domain logic lives here and knows nothing about how data reaches the client.
-- **fate protocol layer** (the server-side `fate-*` docs) — how the backend serves data. Data views are the schema, an Effect bridge runs domain services through the one worker-level `ManagedRuntime`, and hand-built sources back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol via `createFateServer` mounted on an imperative `HttpRouter.add` route (no tRPC/GraphQL adapter; no Hono).
+- **fate protocol layer** (the server-side `fate-*` docs) — how the backend serves data. Data views are the schema, `@phoenix/fate-effect` composes the `Fate.*` record config into the `FateServer` service, and `Fate.source` loaders back each view. Served by [fate](https://github.com/usirin/fate)'s native protocol: the imperative `HttpRouter.add` route yields `FateInterpreter.handleRequest` on the request fiber (ADR 0043 — no runtime and no Effect→Promise hop on the request path; the platform bridge is the one run boundary). fate's compile path (`createFateServer`) survives only as the differential oracle's baseline and the build-time codegen surface. (No tRPC/GraphQL adapter; no Hono.)
 - **fate client layer** (the client-side `fate-*` docs) — how the SPA consumes data. Components declare views, one batched `useRequest` per screen, declarative mutations, and live views over SSE. Built on `react-fate`.
 
-The protocol and client layers share one view/type model: the server's `Entity<>` types are the client's types, generated, with no schema artifact between them. The bridge ([fate-effect-bridge.md](./fate-effect-bridge.md)) is the seam between the domain and protocol layers — read it first when working server-side.
+The protocol and client layers share one view/type model: the server's `Entity<>` types are the client's types, generated, with no schema artifact between them. The `@phoenix/fate-effect` package ([fate-effect-server.md](./fate-effect-server.md) + [fate-effect-interpreter.md](./fate-effect-interpreter.md)) is the seam between the domain and protocol layers — read those first when working server-side.
 
 ## Index — Effect domain layer
 
@@ -19,7 +19,7 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 | [effect-context-service.md](./effect-context-service.md) | **Effect v4 `Context.Service` (NOT v3 `Context.Tag`)**, class-form services, layer shapes, `return yield*`, service-method shape | Defining a new service or layer |
 | [feature-services.md](./feature-services.md) | One service per feature folder, `Drizzle` capability service, `Drizzle.run`/`Drizzle.batch` callbacks | Adding a feature service, writing service methods |
 | [effect-layer-composition.md](./effect-layer-composition.md) | `Layer.mergeAll` / `Layer.provide` / `provideMerge`, parameterized Layer factories, the worker-level layer set (ADR 0029) | Wiring services into the worker, adding a new feature Layer |
-| [effect-errors.md](./effect-errors.md) | `Data.TaggedError` modeling, domain vs infra split, `_tag` → wire-code mapping | Designing a new error or feature's error set |
+| [effect-errors.md](./effect-errors.md) | `Schema.TaggedErrorClass` modeling, domain vs infra split, the `ErrorCode` annotation | Designing a new error or feature's error set |
 | [effect-error-operators.md](./effect-error-operators.md) | `Effect.catchTag`/`Tags`/`All`, `Effect.exit`, `Cause`/`Exit` inspection | Catching, recovering, or inspecting failures at a boundary |
 | [effect-fn-tracing.md](./effect-fn-tracing.md) | `Effect.fn` for service methods, span naming conventions | Writing or naming a service method |
 | [effect-testing.md](./effect-testing.md) | The **T0–T3 taxonomy** ([ADR 0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md)), the test-kit (`makeSqliteTestDb`/`Database`/`runFateOp`), the `*.unit.test.ts` (T0) + `*.testing.ts` (platform-fake) file conventions, the `layerTest`/`layerStub`/`layerNoop` test-double naming grammar, the per-test-vs-`it.layer` isolation rule, `@effect/vitest`/`it.effect`; T3 system redirects to `alchemy-test-harness.md` | First stop before writing any test — pick the tier, then the kit |
@@ -28,17 +28,21 @@ The protocol and client layers share one view/type model: the server's `Entity<>
 
 ## Index — fate protocol layer
 
-Read [fate-effect-bridge.md](./fate-effect-bridge.md) first — it's the seam everything else hangs off.
+Read [fate-effect-server.md](./fate-effect-server.md) + [fate-effect-interpreter.md](./fate-effect-interpreter.md) first — they're the seam everything else hangs off.
 
 | Doc | Topic | Read when |
 |---|---|---|
-| [fate-effect-bridge.md](./fate-effect-bridge.md) | `fateQuery`/`fateList`/`fateMutation`/`fateSource`, `FateContext<R>` carrying `{runtime, auth, liveBus}`, `ctx.runtime.runPromiseExit`, the F7 cast, `encodeFateError` | The seam between fate and Effect — read first |
-| [fate-data-views.md](./fate-data-views.md) | `dataView`/`Entity`/`computed`/`count`/`list`, selection masking, modeling conventions, raw IDs | Declaring an entity type |
-| [fate-sources.md](./fate-sources.md) | Hand-built `SourceResolver`, Effect-backed `byId`/`byIds`/`connection` executors, never the Drizzle adapter | Wiring a view's reads to a service |
-| [fate-mutations.md](./fate-mutations.md) | `mutations` map, validation in services, re-resolving the changed entity, delete returns the parent | Writing a mutation |
+| [fate-effect-wire-errors.md](./fate-effect-wire-errors.md) | The `@phoenix/fate-effect` package's error contract: the `ErrorCode` annotation on `Schema.TaggedErrorClass`, `encodeWireError`, the no-registry/one-edit rule, the enumeration pin | Declaring a domain error |
+| [fate-effect-data-views.md](./fate-effect-data-views.md) | The `@phoenix/fate-effect` package's view authoring: the `FateDataView<Row>()("Name")({fields})` class factory (static `view` IS the kernel dataView), `FateDataView.list` relations, `Entity<typeof View>`, the TS2883 nameability story | Declaring an entity view |
+| [fate-effect-sources.md](./fate-effect-sources.md) | Loader authoring + read conventions: `Fate.source(ViewClass, {id}, handlers)`, the loader contract (≥1 of `byId`/`byIds`, silent reads, `E = never`, infra failures are defects), no `connection` handlers (keyset order lives in the service, ADR 0019), the view→service map | Declaring a source / wiring a view's reads to a service |
+| [fate-effect-operations.md](./fate-effect-operations.md) | Resolver authoring + write conventions: `Fate.query`/`Fate.list`/`Fate.mutation` pairing a pure-data definition with an `Effect.fn("<wire name>")` handler; the error-union compile bound; the decode-then-run wrapper; `entity.verb` naming, return-the-shaped-row, delete returns the parent, live publishes | Declaring a query/list/mutation, or writing a mutation |
+| [fate-effect-server.md](./fate-effect-server.md) | The `@phoenix/fate-effect` package's composite: the `FateServer` tag + `config` + `layer` (R = handler/source requirements minus the per-request pair), the `CurrentUser`/`LivePublisher` per-request contract (+ the worker-side `livePublisherFor` live implementation: waitUntil scheduling, swallow-with-log), init-time validation (duplicate wire names, source completeness) | Composing the fate server / discharging domain layers |
+| [fate-effect-compiler.md](./fate-effect-compiler.md) | The compile step (`FateExecutor`) — since the v2 cutover (ADR 0043) the differential oracle's baseline (`Executor.ts`, the package's one `runPromise` site) plus the build-time codegen surface (`Codegen.ts`/`toCodegenServer`), not a serving path | Touching `Executor.ts`/`Codegen.ts`/`Compiled.ts`/`RequestContext.ts`, the oracle baseline, or `schema.ts` codegen |
+| [fate-effect-interpreter.md](./fate-effect-interpreter.md) | The v2 native plane — the serving path (ADR 0043): the protocol Schema codecs + drift pin, the `FateInterpreter.handleRequest` dispatch loop, the batched selection walk, the connection plane, and the differential-oracle harness rules | Touching `Protocol.ts`/`Interpreter.ts`/`Walk.ts`/`Connection.ts`, or extending the oracle corpus |
+| [fate-effect-worker-wiring.md](./fate-effect-worker-wiring.md) | The worker-side composition: the one import-pure `fateConfig`, `PhoenixFateLive`, the init-only `ManagedRuntime` (layer-build vehicle, lazy first-request build, never disposed), the `/fate` route + abort wiring, `schema.ts` codegen, `runFateOp` | Wiring fate in `apps/web/worker`; touching `config.ts`/`layers.ts`/`route.ts`/`schema.ts`/`run-fate-op.ts`; the fate↔domain seam |
+| [fate-data-views.md](./fate-data-views.md) | View modeling conventions: selection masking as the authorization surface, the Missing-`id` rules (scalar `tags`, stamped ids), discriminant feeds, raw per-type IDs | Modeling an entity type |
 | [fate-connections.md](./fate-connections.md) | `ConnectionResult`, custom `lists` resolvers vs source `connection`, cursor ownership | Writing a paginated list |
-| [fate-server-wiring.md](./fate-server-wiring.md) | `createFateServer` composition, the `FateContext` (runtime + per-request values) handed by the `/fate` route, codegen | Assembling/mounting the server |
-| [per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md) | Per-feature `queries.ts`/`lists.ts`/`views.ts`/`shapers.ts`/`sources.ts`/`mutations.ts`; `features/fate/*` as barrels; SPA import surface preserved | Adding/moving a fate fragment, scaffolding a new feature ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
+| [per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md) | Per-feature `queries.ts`/`lists.ts`/`views.ts`/`shapers.ts`/`sources.ts`/`mutations.ts` (what each fragment contains); `features/fate/*` as barrels; SPA import surface preserved | Adding/moving a fate fragment, scaffolding a new feature ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
 
 ## Index — fate client layer
 
@@ -60,7 +64,6 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | [alchemy-overview.md](./alchemy-overview.md) | One program = infra + runtime; the two phases; how the layers stack (domain/fate over alchemy); reading order | First — the mental model |
 | [alchemy-worker.md](./alchemy-worker.md) | `Cloudflare.Worker<T>()(...)`, init vs runtime phase, props, providing binding Live layers | Defining/editing the worker entry |
 | [alchemy-bindings.md](./alchemy-bindings.md) | `bind()` = deploy-policy + runtime-service; `yield*` DO vs `.bind` resource; the Live-layer convention | Reaching a Cloudflare resource |
-| [alchemy-runtime.md](./alchemy-runtime.md) | **Load-bearing.** No _per-request_ `ManagedRuntime` — ONE _worker-level_ runtime (built once per isolate, never disposed — CF deviation); `Layer.effectContext` context-sharing; how the fate bridge runs each resolver through `ctx.runtime` | Touching the fate↔domain seam |
 | [alchemy-http-router.md](./alchemy-http-router.md) | `HttpApiBuilder` for typed JSON + imperative `HttpRouter` for raw-Request/SSE; `toHttpEffect`; assets/worker-first | Adding/moving an HTTP route |
 | [worker-http-transport-layout.md](./worker-http-transport-layout.md) | `worker/http/` as a transport surface (not a feature); `app.ts` composition (`makeAppLive`); the lone `health.ts` typed-JSON group; per-feature route modules merged in | Moving/adding an HTTP route, sanity-checking the http/ vs features/ split ([ADR 0036](../.decisions/0036-features-as-any-named-app-grouping.md)) |
 | [worker-environment-pattern.md](./worker-environment-pattern.md) | Reading worker env at runtime via `Cloudflare.WorkerEnvironment` + one cast; why `Config`/`AppConfig` are wrong for plain policy vars; deploy-time `env:` literal vs runtime read | Reading `ENVIRONMENT` (or any plain binding) in worker code ([ADR 0031](../.decisions/0031-local-first-dev-state.md)) |
@@ -77,19 +80,11 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 |---|---|---|
 | [biome-custom-gritql-rules.md](./biome-custom-gritql-rules.md) | Authoring a project-specific lint rule as a biome GritQL plugin (`.grit` in `biome-plugins/`, registered in `biome.jsonc` `"plugins"`); the shipped `no-type-assertions` rule banning `as unknown as`/`as any`; per-line `// biome-ignore lint/plugin:` suppression | Adding/editing a custom biome lint rule, or suppressing one |
 
-## Reference notes
-
-Background research and considered-options docs that don't define current code but record why the current shape was picked. Read when revisiting a decision; skip when adding a feature.
-
-| Doc | Topic | Read when |
-|---|---|---|
-| [live-fan-out-options-considered.md](./live-fan-out-options-considered.md) | partyserver / partysub / Agents SDK / `@cloudflare/actors` / SaaS — what was surveyed for live fan-out and why we stayed on alchemy DOs + native SSE | Revisiting the live-channel build-vs-buy ([ADR 0034](../.decisions/0034-fate-native-sse-protocol.md)) |
-
 ## fate protocol conventions
 
 - **fate is pure transport; Effect services are the domain.** Reads and writes go through service methods — fate never queries the database, and `createDrizzleSourceAdapter` is never used.
-- **No `runtime.runPromise*` outside the bridge.** Resolvers and source executors are Effect generators wrapped by `fateQuery`/`fateList`/`fateMutation`/`fateSource`.
-- **Validation lives in services** (ADR 0013). fate's `input` schema is thin shape-coercion only.
+- **No `runtime.runPromise*` outside `@phoenix/fate-effect`'s compile step.** Handlers and source loaders are `Effect.fn` generators paired with pure-data definitions (`Fate.query`/`Fate.list`/`Fate.mutation`/`Fate.source`); the package's single Effect→Promise conversion lives in `Executor.ts`, oracle-baseline-only ([fate-effect-interpreter.md](./fate-effect-interpreter.md)).
+- **Validation lives in services** (ADR 0013). The definition's Schema `input`/`args` is thin shape-coercion at the trust boundary only (a rejection encodes as `VALIDATION_ERROR`).
 - **The server is the single source of truth for types.** The client imports `Entity<>` types; codegen emits the client wiring. No schema artifact.
 - **One batched request per screen.** A screen root declares its whole view tree in one `useRequest`; child `useView` calls read from cache — no waterfalls. Mutations are declarative (`optimistic`, `insert`/`delete`); no imperative cache updaters.
 - **Live views run over SSE through the unified `LiveDO` Durable Object.** The built-in in-memory bus can't fan out across Worker isolates, so a publish-only `LiveEventBus` fires the topic-role `publish` RPC; a `topic:` instance owns the subscriber registry and fans out to `connection:` instances, which hold the SSE streams. One class plays both roles, keyed by instance name (ADR 0037, reunifying the 0025 split). This is the one Durable Object in phoenix.
@@ -101,7 +96,7 @@ Background research and considered-options docs that don't define current code b
 - **House rule: `Effect.tryPromise` always uses object notation** with an explicit `catch` producing a tagged error. The single-arg form is treated like `Effect.promise`.
 - **Service methods always use `Effect.fn("Service.method")(function*(args) {...})`** — automatic spans, automatic stack frames. Reserve `Effect.fnUntraced` for genuinely hot internal helpers.
 - **One service per feature folder.** Reads + writes coexist.
-- **Testing strategy:** a **T0–T3 taxonomy** ([ADR 0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md)). T0 pure (`*.unit.test.ts`), T1 a feature service over `node:sqlite`, T2 the fate bridge through the full worker layer — all offline in the `unit` Vitest project under `@effect/vitest`. T3 is the deployed-worker stack-smoke (black-box HTTP, [alchemy-test-harness.md](./alchemy-test-harness.md)). Pick the lowest tier that exercises the behavior; domain correctness lives in T1/T2, not T3. See [effect-testing.md](./effect-testing.md).
+- **Testing strategy:** a **T0–T3 taxonomy** ([ADR 0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md)). T0 pure (`*.unit.test.ts`), T1 a feature service over `node:sqlite`, T2 a fate operation through the native interpreter (`runFateOp`) over the full worker layer — all offline in the `unit` Vitest project under `@effect/vitest`. T3 is the deployed-worker stack-smoke (black-box HTTP, [alchemy-test-harness.md](./alchemy-test-harness.md)). Pick the lowest tier that exercises the behavior; domain correctness lives in T1/T2, not T3. See [effect-testing.md](./effect-testing.md).
 
 ## When to add a new pattern doc here
 

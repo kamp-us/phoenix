@@ -3,9 +3,9 @@
  *
  * Per ADR 0019, **root lists** resolve via custom `lists` resolvers that map a
  * service keyset page onto a `ConnectionResult`. The service owns the cursor
- * and the keyset SQL; this layer only reshapes the page. Wrapped by `fateList`
- * so the generator runs through the request runtime
- * (see `.patterns/fate-effect-bridge.md`, `.patterns/fate-connections.md`).
+ * and the keyset SQL; this layer only reshapes the page. A `Fate.list` def +
+ * `Effect.fn` pair (`.patterns/fate-effect-operations.md`,
+ * `.patterns/fate-connections.md`).
  *
  * `posts(sort, host, first, after)`:
  *   - `sort` is a plain validated string (`hot | new | top | discuss`,
@@ -20,36 +20,44 @@
  * `post` query.
  */
 
-import {fateList} from "../fate/effect.ts";
-import {toConnection} from "../fate/shapers.ts";
-import type {Post} from "../fate/views.ts";
+import {Fate} from "@phoenix/fate-effect";
+import {Effect} from "effect";
+import * as Schema from "effect/Schema";
+import {toConnection} from "../fate/connection.ts";
 import {Pano, type PostSort} from "./Pano.ts";
 import {toPost} from "./shapers.ts";
+import type {Post} from "./views.ts";
+import {PostView} from "./views.ts";
 
 /** Coerce the `sort` arg to the service's `PostSort`; default `hot`. */
-const toPostSort = (value: unknown): PostSort =>
+const toPostSort = (value: string | undefined): PostSort =>
 	value === "new" || value === "top" || value === "discuss" ? value : "hot";
 
+const PostsArgs = Schema.Struct({
+	sort: Schema.optional(Schema.String),
+	host: Schema.optional(Schema.String),
+	first: Schema.optional(Schema.Number),
+	after: Schema.optional(Schema.String),
+});
+
 export const lists = {
-	posts: {
-		type: "Post",
-		resolve: fateList<{sort?: string; host?: string; first?: number; after?: string}, Post>(
-			function* ({args}) {
-				const pano = yield* Pano;
-				const page = yield* pano.listPostsConnection({
-					sort: toPostSort(args?.sort),
-					...(typeof args?.first === "number" ? {first: args.first} : {}),
-					...(typeof args?.after === "string" ? {after: args.after} : {}),
-					...(typeof args?.host === "string" && args.host.length > 0 ? {host: args.host} : {}),
-				});
-				// Summary rows carry no `updatedAt`; `toPost` owns the
-				// `updatedAt ?? createdAt` fallback.
-				return toConnection<(typeof page.rows)[number], Post>(
-					page,
-					(row) => row.id,
-					(row) => toPost(row),
-				);
-			},
-		),
-	},
+	posts: Fate.list(
+		{args: PostsArgs, type: PostView},
+		Effect.fn("posts")(function* ({args}) {
+			const pano = yield* Pano;
+			const page = yield* pano.listPostsConnection({
+				sort: toPostSort(args.sort),
+				...(args.first !== undefined ? {first: args.first} : {}),
+				...(args.after !== undefined ? {after: args.after} : {}),
+				...(args.host !== undefined && args.host.length > 0 ? {host: args.host} : {}),
+			});
+			// Summary rows carry no `updatedAt`; `toPost` owns the
+			// `updatedAt ?? createdAt` fallback.
+			return toConnection<(typeof page.rows)[number], Post>(
+				page,
+				(row) => row.id,
+				(row) => toPost(row),
+			);
+		}),
+	),
 };

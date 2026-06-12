@@ -12,13 +12,12 @@
  * to a single cache record. The four counters + the build `version` are the
  * selectable surface; the SPA reads them directly.
  *
- * See `.patterns/fate-data-views.md`.
+ * See `.patterns/fate-effect-data-views.md`.
  */
-import {dataView} from "@nkzw/fate/server";
-import type {DataViewOf, EntityOf} from "../fate/view-types.ts";
+import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import type {ViewRow} from "../fate/view-types.ts";
 
-interface LandingStatsViewRow {
-	[k: string]: unknown;
+interface LandingStatsRow {
 	id: string;
 	totalDefinitions: number;
 	totalPosts: number;
@@ -27,16 +26,23 @@ interface LandingStatsViewRow {
 	version: string;
 }
 
-const landingStatsFields = {
+/** Mapped restatement (`Record<string, unknown>`-assignable; see sozluk). */
+export type LandingStatsViewRow = ViewRow<LandingStatsRow>;
+
+export class LandingStatsView extends FateDataView<LandingStatsViewRow>()("LandingStats")({
 	id: true,
 	totalDefinitions: true,
 	totalPosts: true,
 	totalComments: true,
 	totalAuthors: true,
 	version: true,
-} as const;
+}) {}
 
-export const landingStatsDataView: DataViewOf<LandingStatsViewRow> =
-	dataView<LandingStatsViewRow>("LandingStats")(landingStatsFields);
+/**
+ * The kernel view, for the cross-feature surfaces that want fate's plain
+ * `dataView()` value (the `fate/views.ts` barrel + `Root`).
+ */
+export const landingStatsDataView = LandingStatsView.view;
 
-export type LandingStats = EntityOf<LandingStatsViewRow, typeof landingStatsFields, "LandingStats">;
+// No `Replacements`: every field is a plain scalar (no Dates, no relations).
+export type LandingStats = Entity<typeof LandingStatsView>;

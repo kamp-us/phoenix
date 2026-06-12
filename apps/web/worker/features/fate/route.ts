@@ -1,100 +1,97 @@
 /**
- * The `POST /fate` route (ADR 0041, supersedes 0029; `.patterns/alchemy-http-router.md`).
+ * The `POST /fate` route (ADR 0043; `.patterns/alchemy-http-router.md`,
+ * `.patterns/fate-effect-interpreter.md`).
  *
- * The worker builds the isolate-level `ManagedRuntime` ({@link WorkerRuntime}) in
- * init (`index.ts`) and hands it to this route as a value (mechanism — how the
- * bridge runs resolvers through it: see the `effect.ts` header + ADR 0041).
- * This route is the per-request seam:
+ * Since the v2 cutover the route serves through the NATIVE interpreter:
+ * `FateInterpreter.handleRequest(raw, ctx)` is an Effect, yielded on this
+ * route's own request fiber — there is no per-request `ManagedRuntime` and
+ * no Effect→Promise hop on the request path. The worker init still builds
+ * the one isolate-level runtime (`makeFateRuntime`, `index.ts`), but only as
+ * the layer-build vehicle: the `FateServer` service (and the worker
+ * singletons) reach this route through the runtime-derived context layer via
+ * `HttpRouter.provideRequest` (`http/app.ts`).
+ *
+ * Per request:
  *
  *   1. Read the raw `Request` (`Cloudflare.Request`) and the execution context.
- *   2. Validate the session through the worker-level `Pasaport` — no throwaway
- *      runtime (this replaces the old `validateSessionCookie`).
- *   3. Build the two genuinely per-request services as VALUES — `Auth` (the
- *      validated session) and `LiveBus` (the publish capability, ADR 0039) — and
- *      hand fate a {@link FateContext} of `{runtime, request, auth, liveBus}` as
- *      `adapterContext`.
- *   4. `LiveBus` closes over a per-request publisher so a mutation's `live.*`
- *      fan-out reaches the topic DO without blocking the response — `waitUntil`
- *      comes from `Cloudflare.WorkerExecutionContext` (ADR 0029), not a disposed
- *      runtime. There is no `AsyncLocalStorage` bridge (ADR 0039): the bus rides
- *      the `FateContext` like `Auth`, so a missing value is a type error, not a
- *      silent no-op.
+ *   2. Validate the session through the worker-level `Pasaport`.
+ *   3. Build the per-request {@link FateRequestContext}: `currentUser` (the
+ *      session user; `CurrentUserInfo` is a structural subset of the
+ *      better-auth user) and `livePublisher` (`livePublisherFor` over the
+ *      worker-init `LiveTopics` publish + the request's `waitUntil`).
+ *   4. Yield the interpreter program wrapped in {@link interruptOnAbort}:
+ *      alchemy's worker bridge runs the request fiber without abort wiring
+ *      (`Effect.runPromiseExit`, no signal), so the route edge owns it —
+ *      the same mechanism effect-smol's own platform handler uses
+ *      (`HttpEffect.toWebHandlerWith`: listen on `request.signal`, interrupt
+ *      the fiber). A disconnected client interrupts the resolver fibers.
  *
- * Because the runtime is a constructor argument (`makeHandleFate(runtime)`), the
- * route holds no module-level runtime — `index.ts` is the single construction +
- * ownership point (the runtime is never disposed; CF isolates have no shutdown
- * hook — see ADR 0041).
+ * Because the program runs on the request fiber, every handler/source
+ * `Effect.fn` span nests under the router's request span (the
+ * `HttpEffect.toHandled` tracer middleware) — observability holds with no
+ * explicit runtime (pinned package-side in `Interpreter.batch.test.ts`).
+ *
+ * The publisher rides the worker-init `LiveTopics` + per-request `waitUntil`
+ * (ADR 0028/0029/0039): a mutation's `live.*` fan-out reaches the topic DO
+ * without blocking the response, and a failed publish is swallowed loudly —
+ * the mutation response already succeeded.
  */
+import {FateInterpreter, type FateRequestContext} from "@phoenix/fate-effect";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import {liveBusFor} from "../fate-live/event-bus.ts";
-import {defaultLiveLimits} from "../fate-live/route.ts";
+import {interruptOnAbort} from "../../http/interrupt-on-abort.ts";
+import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import {defaultLiveLimits, type PublishMessage} from "../fate-live/protocol.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
-import type {FateContext} from "./context.ts";
-import type {WorkerRuntime} from "./layers.ts";
-import {fateServer} from "./server.ts";
 
 /**
- * Build the `POST /fate` handler over the isolate's worker {@link WorkerRuntime}.
- * Resolves the session through the worker-level `Pasaport`, builds the per-request
- * `Auth` + `LiveBus` VALUES, and hands fate a `FateContext` of
- * `{runtime, request, auth, liveBus}` — the bridge runs each resolver on the
- * runtime with those two services provided onto the effect.
+ * The `POST /fate` handler: resolve the session, build the one
+ * {@link FateRequestContext}, and serve through the native interpreter on
+ * this request fiber. Requires `FateServer` (discharged by the
+ * runtime-derived context layer in `http/app.ts`) alongside the other
+ * worker services.
  */
-export const makeHandleFate = (runtime: WorkerRuntime) =>
-	Effect.gen(function* () {
-		const raw = yield* Cloudflare.Request;
-		const executionCtx = yield* Cloudflare.WorkerExecutionContext;
-		const pasaport = yield* Pasaport;
-		const liveTopics = yield* LiveTopics;
+export const handleFate = Effect.gen(function* () {
+	const raw = yield* Cloudflare.Request;
+	const executionCtx = yield* Cloudflare.WorkerExecutionContext;
+	const pasaport = yield* Pasaport;
+	const liveTopics = yield* LiveTopics;
 
-		const session = yield* pasaport.validateSession(raw.headers);
+	const session = yield* pasaport.validateSession(raw.headers);
 
-		// The per-request live publisher (ADR 0028/0029/0039): a mutation's synchronous
-		// `live.*` call resolves topic keys and fires the typed `TopicDO.publish` RPC
-		// here. The topic namespace is worker-init-resolved (carried by `LiveTopics`,
-		// no `env` lookup, no `idFromName`, no string-URL `stub.fetch`); `waitUntil`
-		// comes from `Cloudflare.WorkerExecutionContext` so the best-effort fan-out
-		// doesn't block the response. A failed publish is swallowed loudly — the
-		// mutation response already succeeded.
-		const publisher = (topicKey: string, message: Parameters<typeof liveTopics.publish>[1]) => {
-			executionCtx.waitUntil(
-				// Deliberate Effect→Promise boundary: this fire-and-forget publish is
-				// handed to `waitUntil` (a Promise sink) outside the request fiber.
-				// `liveTopics.publish` is self-contained (R = never), so it needs no
-				// surrounding services — `runPromise` is correct, not `runPromiseWith`.
-				// @effect-diagnostics-next-line effect/runEffectInsideEffect:off
-				Effect.runPromise(liveTopics.publish(topicKey, message, defaultLiveLimits)).catch(
-					(error: unknown) => {
-						console.error(`live publish to topic:${topicKey} failed`, error);
-					},
-				),
-			);
-		};
+	// The per-request live publish capability (ADR 0028/0029/0039): one
+	// worker-init-resolved `LiveTopics` (typed `TopicDO.publish` RPC — no
+	// `env` lookup, no `idFromName`, no string-URL `stub.fetch`) with the
+	// route's `LiveLimits` applied, one `waitUntil` from
+	// `Cloudflare.WorkerExecutionContext` so the best-effort fan-out doesn't
+	// block the response.
+	const publishToTopic = (topicKey: string, message: PublishMessage) =>
+		liveTopics.publish(topicKey, message, defaultLiveLimits);
+	const waitUntil = (promise: Promise<unknown>) => {
+		executionCtx.waitUntil(promise);
+	};
 
-		// Hand fate a `FateContext` of `{runtime, request, auth, liveBus}` as
-		// `adapterContext`. The bridge (`effect.ts`) provides `auth`/`liveBus` onto
-		// each resolver effect and runs it on `runtime` — no per-request layer build,
-		// no `Effect.context<FateEnv>()` capture.
-		const ctx: FateContext = {
-			runtime,
-			request: raw,
-			auth: {user: session?.user, session: session?.session},
-			liveBus: liveBusFor(publisher),
-		};
+	// ONE context object for the whole request: the interpreter provides the
+	// pair as VALUES off this object to every operation — never copy or
+	// rebuild it per resolver. No `signal` field: interruption is wired at
+	// this edge (below), not inside the interpreter.
+	const ctx: FateRequestContext = {
+		currentUser: {user: session?.user},
+		livePublisher: livePublisherFor({publish: publishToTopic, waitUntil}),
+	};
 
-		const res = yield* Effect.promise(() => fateServer.handleRequest(raw, ctx));
+	const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort(raw.signal));
 
-		return HttpServerResponse.fromWeb(res);
-	});
+	return HttpServerResponse.fromWeb(res);
+});
 
 /**
- * Build the `/fate` route as a router layer over the isolate's worker runtime,
- * ready to merge into `AppLive`. Called once in `index.ts` / `makeAppLive` with
- * the single per-isolate {@link WorkerRuntime}.
+ * The `/fate` route layer, ready to merge into `AppLive` (`http/app.ts`).
+ * Its handler requirements — `FateServer` + the worker services — are
+ * discharged per request by `HttpRouter.provideRequest` over the
+ * runtime-derived context layer.
  */
-export const makeFateRoute = (runtime: WorkerRuntime) =>
-	HttpRouter.add("POST", "/fate", makeHandleFate(runtime));
+export const fateRoute = HttpRouter.add("POST", "/fate", handleFate);

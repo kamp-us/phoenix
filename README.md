@@ -46,8 +46,8 @@ apps/web/
     ├── db/                # D1 binding, Drizzle schema, migrations, keyset cursors
     ├── http/              # router composition (app.ts) + health route
     └── features/          # every named grouping, one folder each
-        ├── fate/          # the fate↔Effect bridge, layer assembly, barrels
-        ├── fate-live/     # the live SSE plane — LiveDO + LiveBus + protocol
+        ├── fate/          # the fate config + route, layer assembly, barrels
+        ├── fate-live/     # the live SSE plane — LiveDO + LivePublisher + protocol
         ├── pasaport/      # auth — better-auth fork + session capability
         ├── sozluk/        # product — dictionary
         ├── pano/          # product — link aggregator
@@ -58,9 +58,9 @@ apps/web/
 
 `features/` is the home for **any** named app-level grouping — product domains, framework concerns, and single-file utilities alike. If a concern has a coherent name worth grouping, it's a feature; the few things that aren't (entry, env, db, http) sit beside `features/` (ADR [0036](./.decisions/0036-features-as-any-named-app-grouping.md)).
 
-**The runtime.** Services are built once and live for the isolate — `Drizzle` and the feature layers are assembled in `worker/index.ts`, not per request. A request to `/fate` provides only `Auth` and the incoming `HttpServerRequest`, then runs each fate resolver against the captured service map. Resolvers carry no leftover requirements. Read [.patterns/alchemy-runtime.md](./.patterns/alchemy-runtime.md) and [.patterns/fate-effect-bridge.md](./.patterns/fate-effect-bridge.md) before touching server-side fate code.
+**The runtime.** Services are built once and live for the isolate — `Drizzle`, the feature layers, and the composed `FateServer` are assembled into one worker-level `ManagedRuntime` in `worker/index.ts` (init-only: the layer-build vehicle behind the route context layer), not per request. A request to `/fate` provides only the per-request pair (`CurrentUser`, `LivePublisher`) as values and serves through the native interpreter (`FateInterpreter.handleRequest`, `@phoenix/fate-effect`) on the request fiber — no runtime, no Effect→Promise hop on the request path. Handlers carry no leftover requirements. Read [.patterns/fate-effect-worker-wiring.md](./.patterns/fate-effect-worker-wiring.md) and [.patterns/fate-effect-interpreter.md](./.patterns/fate-effect-interpreter.md) before touching server-side fate code.
 
-**The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Mutations reach the DO through an in-isolate `LiveBus` service that publishes to the affected topics. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADRs [0037](./.decisions/0037-unified-void-aligned-live-do.md) (the DO) and [0039](./.decisions/0039-livebus-context-service.md) (the LiveBus) are the design.
+**The live plane.** A single Durable Object, `LiveDO`, fans out SSE. One class plays both roles — it holds a tab's stream (`connection:<id>`) and owns a data key's subscriber registry and fan-out (`topic:<key>`), told apart by instance-name prefix. It reaches its sibling instances through its own namespace, resolved once at init, so every RPC method stays requirement-free. State is `state.storage` KV: subscriber rows plus a per-connection counter that invalidates dead instances. Mutations reach the DO through the per-request `LivePublisher` service, whose publish methods are `Effect<void>` — a failed publish cannot fail the committed mutation. Read [.patterns/effect-sse-externally-driven.md](./.patterns/effect-sse-externally-driven.md); ADRs [0037](./.decisions/0037-unified-void-aligned-live-do.md) (the DO) and [0039](./.decisions/0039-livebus-context-service.md) (the publish-capability service, since folded into `LivePublisher`) are the design.
 
 ## Commands
 
@@ -98,7 +98,7 @@ Two doc surfaces carry the rest: **[.decisions/](./.decisions/index.md)** holds 
 
 1. This file — the shape and the rules.
 2. ADR [0032](./.decisions/0032-alchemy-beta45-and-dev-model.md) — the dev model: real Cloudflare resources, worker runs locally.
-3. [.patterns/alchemy-runtime.md](./.patterns/alchemy-runtime.md) + [.patterns/fate-effect-bridge.md](./.patterns/fate-effect-bridge.md) — how an HTTP request becomes domain code.
+3. [.patterns/fate-effect-worker-wiring.md](./.patterns/fate-effect-worker-wiring.md) + [.patterns/fate-effect-interpreter.md](./.patterns/fate-effect-interpreter.md) — how an HTTP request becomes domain code.
 4. [.patterns/per-feature-fate-aggregators.md](./.patterns/per-feature-fate-aggregators.md) — the footprint you'll copy when adding a feature.
 
 Then open the feature folder you're working in and follow its neighbors.

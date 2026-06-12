@@ -32,8 +32,8 @@
  *   - score-cache update on the target row, derived from a `COUNT(*)`
  *     subquery against the vote table in the same statement.
  *   - upsert / delete on `user_vote`.
- *   - karma counter bump / decrement on the target author's `user_profile`
- *     via {@link karmaBumpStatement}.
+ *   - karma counter bump / decrement for the target author via the
+ *     {@link KarmaBump} contract.
  *
  * If any statement in the batch fails, the whole batch rolls back — the vote
  * insert, score update, mirror, and karma bump commit together or not at all.
@@ -50,9 +50,8 @@
  */
 import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
+import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {type VoteTargetKind, VoteTargetNotFound} from "./errors.ts";
 
 /* -------------------------------------------------------------------------- */
@@ -87,15 +86,47 @@ export interface VoteResult {
 }
 
 /* -------------------------------------------------------------------------- */
+/* The KarmaBump contract (owned here, provided by pasaport)                   */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * The karma-bump capability as Vote consumes it: given the recipient and the
+ * delta (`+1` cast, `-1` retraction), the **unexecuted** statement to include
+ * in the cast batch — so the karma adjustment commits atomically with the
+ * vote insert / score update, or not at all.
+ */
+export interface KarmaBumpService {
+	readonly statement: (db: DrizzleDb, userId: string, delta: number) => Stmt;
+}
+
+/**
+ * `KarmaBump` — the contract Vote OWNS for the karma counter side-effect of a
+ * cast (dependency inversion). Vote is a shared low-level service (Sozluk
+ * and Pano both delegate to it), so it must not
+ * import a feature directory: it declares WHAT it needs — "the statement to
+ * batch when a vote lands" — and the implementation arrives at layer
+ * composition. Today pasaport provides it in `fate/layers.ts` by wrapping
+ * `pasaport/karma.ts`'s `karmaBumpStatement` (an UPDATE on
+ * `user_profile.total_karma`).
+ *
+ * Künye (future): this contract is the swap point for a DO-backed karma
+ * bump — a per-user Künye DO replaces the provided implementation at the
+ * same composition seam, and Vote's batching code never changes. (If the
+ * future implementation cannot be expressed as a D1 batch statement, the
+ * contract — not Vote's internals — is the one thing to renegotiate.)
+ */
+export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
+	"@phoenix/vote/KarmaBump",
+) {}
+
+/* -------------------------------------------------------------------------- */
 /* Service                                                                     */
 /* -------------------------------------------------------------------------- */
 
 export class Vote extends Context.Service<
 	Vote,
 	{
-		readonly cast: (
-			input: VoteInput,
-		) => Effect.Effect<VoteResult, VoteTargetNotFound | DrizzleError>;
+		readonly cast: (input: VoteInput) => Effect.Effect<VoteResult, VoteTargetNotFound>;
 		/**
 		 * Batched `myVote` presence read. Returns the subset of `targetIds` the
 		 * viewer has a `user_vote` row for, of the given `kind` — one `WHERE
@@ -107,7 +138,7 @@ export class Vote extends Context.Service<
 			viewerId: string | null | undefined,
 			kind: VoteTargetKind,
 			targetIds: ReadonlyArray<string>,
-		) => Effect.Effect<Set<string>, DrizzleError>;
+		) => Effect.Effect<Set<string>>;
 	}
 >()("@phoenix/vote/Vote") {}
 
@@ -127,12 +158,19 @@ interface TargetMeta {
 
 export const VoteLive = Layer.effect(Vote)(
 	Effect.gen(function* () {
-		// Yield Drizzle once at layer build and destructure its bound methods.
-		// Method bodies call `run` / `batch` directly so every method's `R`
-		// stays `never`. No closure-captured
-		// `db` escapes — `db` only appears inside `run((db) => ...)` /
+		// Yield Drizzle once at layer build and destructure its bound methods
+		// through `orDieAccess`: every internal DB call site dies on
+		// `DrizzleError` (infra failures are defects — the domain-boundary
+		// rule), so method bodies stay clean and public signatures carry
+		// domain errors only. `R` stays `never`. No closure-captured `db`
+		// escapes — `db` only appears inside `run((db) => ...)` /
 		// `batch((db) => ...)` callbacks.
-		const {run, batch} = yield* Drizzle;
+		const {run, batch} = orDieAccess(yield* Drizzle);
+
+		// The karma-bump capability, resolved once at layer build through the
+		// contract Vote owns (see {@link KarmaBump}) — the implementation is
+		// composition's concern (`fate/layers.ts`), never imported here.
+		const karmaBump = yield* KarmaBump;
 
 		// ── Per-target metadata lookup ────────────────────────────────────
 		// Each target kind has its own view table holding `author_id` +
@@ -312,10 +350,12 @@ export const VoteLive = Layer.effect(Vote)(
 				// score-cache update (re-counts truth via `COUNT(*)` subquery,
 				// so concurrent `ON CONFLICT DO NOTHING` collisions self-heal),
 				// the `user_vote` cross-product row, and the karma counter via
-				// `karmaBumpStatement`.
+				// the provided `KarmaBump` statement.
 				const karmaDelta = isCast ? 1 : -1;
 
-				yield* batch((db) => buildBatchStatements(db, input, meta, isCast, karmaDelta, now));
+				yield* batch((db) =>
+					buildBatchStatements(db, input, meta, isCast, karmaDelta, now, karmaBump),
+				);
 
 				const newScore = yield* readCachedScore(input.targetKind, input.targetId);
 
@@ -340,8 +380,8 @@ export const VoteLive = Layer.effect(Vote)(
  * every statement commits or none do — `db.batch([...])` is D1's native batch
  * primitive. The first element is the vote-table mutation (truth source); the
  * second is the score-cache update derived from a `COUNT(*)` subquery; the
- * third mirrors `user_vote`; the fourth bumps karma via
- * {@link karmaBumpStatement}.
+ * third mirrors `user_vote`; the fourth bumps karma via the provided
+ * {@link KarmaBump} statement.
  */
 function buildBatchStatements(
 	db: DrizzleDb,
@@ -350,6 +390,7 @@ function buildBatchStatements(
 	isCast: boolean,
 	karmaDelta: number,
 	now: Date,
+	karmaBump: KarmaBumpService,
 ) {
 	const voteRow = isCast ? buildVoteInsert(db, input, now) : buildVoteDelete(db, input);
 
@@ -375,7 +416,7 @@ function buildBatchStatements(
 					),
 				);
 
-	const karma = karmaBumpStatement(db, meta.authorId, karmaDelta);
+	const karma = karmaBump.statement(db, meta.authorId, karmaDelta);
 
 	return [voteRow, scoreUpdate, userVoteRow, karma] as const;
 }

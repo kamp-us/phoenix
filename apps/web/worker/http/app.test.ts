@@ -1,5 +1,5 @@
 /**
- * HTTP surface on `HttpRouter` + `HttpApiBuilder`, Hono-free (task 4, ADR 0027).
+ * HTTP surface on `HttpRouter` + `HttpApiBuilder`, Hono-free (ADR 0027).
  *
  * Drives the *compiled* application — `HttpRouter.toHttpEffect(makeAppLive(...))`,
  * the exact effect the worker returns as `fetch` — over a `node:sqlite`-backed
@@ -14,7 +14,8 @@
  *     issues a session cookie; that cookie makes an authenticated fate `me`
  *     request succeed end-to-end.
  *
- * Runs in the node pool (workerd harness is task 7).
+ * Runs in the node pool (the alchemy worker can't load into
+ * `@cloudflare/vitest-pool-workers` yet).
  */
 import type {BaseRuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -27,7 +28,7 @@ import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {afterAll, beforeAll, describe, expect, it} from "vitest";
 import {Database} from "../db/Database.ts";
 import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.testing.ts";
-import {makeFateLayer, makeFateRuntime} from "../features/fate/layers.ts";
+import {makeFateRuntime, PhoenixFateLive} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {layerTest, makeRealAuthForTest} from "../features/pasaport/better-auth.testing.ts";
 import {makeAppLive} from "./app.ts";
@@ -127,13 +128,16 @@ beforeAll(() => {
 	const widenedAuth = testAuthInstance as unknown as Parameters<typeof layerTest>[0];
 	const betterAuthLayer = layerTest(widenedAuth);
 
-	// Build the one worker-level runtime + its route-context layer through the same
-	// `makeFateRuntime` the deployed worker (`index.ts`) uses — `makeFateLayer`
-	// (zero-arg, `R = Database | BetterAuth`, ADR 0040/0041) with both seams provided
-	// from the test `databaseLayer` + `betterAuthLayer`. One construction point keeps
-	// the shared memoMap + never-dispose decision identical to production.
-	const {runtime: fateRuntime, contextLayer: fateLayer} = makeFateRuntime(
-		makeFateLayer.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
+	// Build the route-context layer through the same `makeFateRuntime` the
+	// deployed worker (`index.ts`) uses — `PhoenixFateLive` (zero-arg, the
+	// composed `FateServer` + worker singletons, `R = Database | BetterAuth`,
+	// ADR 0040/0041) with both seams provided from the test `databaseLayer` +
+	// `betterAuthLayer`. One construction point keeps the shared memoMap +
+	// never-dispose decision identical to production; the runtime itself is
+	// init-only wiring since the v2 cutover (ADR 0043) — the `/fate` route
+	// serves through the interpreter on the request fiber.
+	const {contextLayer: fateLayer} = makeFateRuntime(
+		PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 	);
 
 	// A minimal `BaseRuntimeContext` stub. The HTTP-surface cases here never reach
@@ -150,7 +154,6 @@ beforeAll(() => {
 
 	appLayer = makeAppLive({
 		fateLayer,
-		fateRuntime,
 		liveLayer,
 		betterAuthLayer,
 		runtimeContext,

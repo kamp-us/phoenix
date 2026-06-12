@@ -160,6 +160,9 @@ importers:
       '@nkzw/fate':
         specifier: 'catalog:'
         version: 1.0.3(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.3(@cloudflare/workers-types@4.20260509.1)(@effect/sql-pg@4.0.0-beta.78(effect@4.0.0-beta.78))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(effect@4.0.0-beta.78)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      '@phoenix/fate-effect':
+        specifier: workspace:*
+        version: link:../../packages/fate-effect
       '@usirin/forge':
         specifier: 'catalog:'
         version: 0.2.0
@@ -230,6 +233,31 @@ importers:
       vite:
         specifier: 'catalog:'
         version: 8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+
+  packages/fate-effect:
+    dependencies:
+      '@nkzw/fate':
+        specifier: 'catalog:'
+        version: 1.0.3(@trpc/client@11.17.0(@trpc/server@11.17.0(typescript@6.0.3))(typescript@6.0.3))(drizzle-orm@1.0.0-rc.3(@cloudflare/workers-types@4.20260509.1)(@effect/sql-pg@4.0.0-beta.78(effect@4.0.0-beta.78))(@libsql/client@0.17.3)(@opentelemetry/api@1.9.0)(effect@4.0.0-beta.78)(mysql2@3.22.3(@types/node@25.6.2))(pg@8.21.0)(zod@4.4.3))(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+      effect:
+        specifier: 'catalog:'
+        version: 4.0.0-beta.78
+    devDependencies:
+      '@effect/tsgo':
+        specifier: 'catalog:'
+        version: 0.5.2
+      '@types/node':
+        specifier: 'catalog:'
+        version: 25.6.2
+      '@typescript/native-preview':
+        specifier: 'catalog:'
+        version: 7.0.0-dev.20260509.2
+      typescript:
+        specifier: 'catalog:'
+        version: 6.0.3
       vitest:
         specifier: 'catalog:'
         version: 4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))

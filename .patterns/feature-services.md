@@ -41,11 +41,30 @@ export interface DrizzleAccess {
   ) => Effect.Effect<BatchResult<T>, DrizzleError>;
 }
 // The `DrizzleError` catch lives in `DrizzleLive`'s body — exactly one place.
+
+// The domain-service view — same methods, `DrizzleError` already a defect.
+export interface DrizzleAccessOrDie {
+  readonly run: <A>(fn: (db: DrizzleDb) => Promise<A>) => Effect.Effect<A>;
+  readonly batch: <T extends Readonly<[Stmt, ...Stmt[]]>>(
+    fn: (db: DrizzleDb) => T,
+  ) => Effect.Effect<BatchResult<T>>;
+}
+export const orDieAccess: (access: DrizzleAccess) => DrizzleAccessOrDie;
 ```
 
 Canonical implementation: `apps/web/worker/db/Drizzle.ts`. Read it once — the shape above is the contract, not the implementation.
 
-Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `run` (single statement) or `batch` (atomic multi-statement), destructured off the service value at layer build. The D1 binding never leaves the `Drizzle` service.
+Feature code never writes `Effect.tryPromise` directly. Every drizzle call goes through `run` (single statement) or `batch` (atomic multi-statement), destructured off the service value at layer build — through `orDieAccess`, see the boundary rule below. The D1 binding never leaves the `Drizzle` service.
+
+### The boundary rule: infra failures die inside the service
+
+Infra-failure policy is a domain-boundary decision. A feature service destructures `orDieAccess(yield* Drizzle)` at layer build, so every internal DB call site collapses `DrizzleError` into the defect channel — and the service's **public method signatures carry domain errors only** (`Effect<TermPage | null>`, not `Effect<TermPage | null, DrizzleError>`). The fate layer (sources/queries/lists/mutations) consequently never imports or names Drizzle: there is nothing to `orDie` at the transport edge.
+
+Why here and not at the call sites: the typed `DrizzleError` channel had **zero typeful consumers** — nothing caught, retried, or matched it; every one of ~64 fate-handler call sites uniformly piped `orDieDrizzle`, which meant the transport layer named the persistence tech everywhere while exercising a single policy that belongs to the domain.
+
+The trade-off, recorded: callers lose the *option* of typeful infra handling (e.g. a typed retry on `DrizzleError`) — an option nothing used. If a future caller genuinely needs to observe infra failures, defects remain reachable (`Effect.sandbox` / `Effect.catchAllDefect`), or that one method can reintroduce a typed infra error deliberately. The die happens per `run`/`batch` call (the Drizzle call sites), not as a blanket wrap around whole methods — future domain errors keep flowing through method bodies untouched.
+
+`worker/features/domain-error-boundary.unit.test.ts` pins the rule per service: a type-level sweep proves no method's `E` contains `DrizzleError`, plus one exact-domain-union pin per service.
 
 ### Why `run` / `batch` are NOT statics on the Tag class
 
@@ -67,7 +86,7 @@ Object notation forces an explicit `catch` at every async boundary. The single-a
 ### Single-query reads/writes
 
 ```ts
-const {run} = yield* Drizzle;  // at layer build, once
+const {run} = orDieAccess(yield* Drizzle);  // at layer build, once
 
 const term = yield* run((db) =>
   db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
@@ -78,12 +97,12 @@ const inserted = yield* run((db) =>
 );
 ```
 
-The callback receives the typed drizzle builder. The Effect's success type is inferred from the callback's return type. Errors flow as `DrizzleError`. Method `R` channels stay `never` because `Drizzle` was already yielded at layer build.
+The callback receives the typed drizzle builder. The Effect's success type is inferred from the callback's return type. Infra failures die right here (the boundary rule above), so `E` stays whatever the method's domain logic raises. Method `R` channels stay `never` because `Drizzle` was already yielded at layer build.
 
 ### Atomic batch
 
 ```ts
-const {batch} = yield* Drizzle;
+const {batch} = orDieAccess(yield* Drizzle);
 
 yield* batch((db) => [
   db.insert(schema.definitionVote).values({/* ... */}),
@@ -117,45 +136,42 @@ import {
 export class Sozluk extends Context.Service<
   Sozluk,
   {
-    // reads
+    // reads — infra failures are defects, so a pure read has NO error channel
     readonly getTerm: (
       slug: string,
-    ) => Effect.Effect<TermPage | null, DrizzleError>;
+    ) => Effect.Effect<TermPage | null>;
 
     readonly listDefinitionsConnection: (
       slug: string,
       opts: {first?: number; after?: string | null},
-    ) => Effect.Effect<DefinitionConnectionPage, DrizzleError>;
+    ) => Effect.Effect<DefinitionConnectionPage>;
 
     readonly listTermSummaries: (
       opts: {sort?: "recent" | "popular"; limit?: number},
-    ) => Effect.Effect<ReadonlyArray<TermSummaryRow>, DrizzleError>;
+    ) => Effect.Effect<ReadonlyArray<TermSummaryRow>>;
 
-    // writes
+    // writes — domain errors only
     readonly addDefinition: (
       input: AddDefinitionInput,
-    ) => Effect.Effect<AddDefinitionResult, BodyRequired | BodyTooLong | DrizzleError>;
+    ) => Effect.Effect<AddDefinitionResult, BodyRequired | BodyTooLong>;
 
     readonly editDefinition: (
       input: EditDefinitionInput,
     ) => Effect.Effect<
       EditDefinitionResult,
-      BodyRequired | BodyTooLong | DefinitionNotFound | UnauthorizedDefinitionMutation | DrizzleError
+      BodyRequired | BodyTooLong | DefinitionNotFound | UnauthorizedDefinitionMutation
     >;
 
     readonly deleteDefinition: (
       input: DeleteDefinitionInput,
     ) => Effect.Effect<
       DeleteDefinitionResult,
-      DefinitionNotFound | UnauthorizedDefinitionMutation | DrizzleError
+      DefinitionNotFound | UnauthorizedDefinitionMutation
     >;
 
     readonly voteDefinition: (
       input: VoteDefinitionInput,
-    ) => Effect.Effect<
-      VoteDefinitionResult,
-      DefinitionNotFound | DrizzleError
-    >;
+    ) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
   }
 >()("@phoenix/sozluk/Sozluk") {}
 ```
@@ -165,7 +181,7 @@ export class Sozluk extends Context.Service<
 - **One service per feature folder.** Even if the feature has 20 methods. Splitting buys nothing if the methods share a layer dep and a domain.
 - **Reads and writes sit together.** Read methods (`listTermSummaries`) live alongside mutation methods (`addDefinition`). They share the same drizzle builder, schema, error type, and tests.
 - **Method names are domain-shaped.** `addDefinition`, not `insertDefinitionRow`. The service is the domain layer.
-- **Errors in the `E` channel, tagged.** Per-method error unions are explicit in the type. The resolver pattern-matches on `_tag` to map to wire codes. See [effect-errors.md](./effect-errors.md).
+- **Errors in the `E` channel, tagged — and DOMAIN errors only.** Per-method error unions are explicit in the type; infra failures (`DrizzleError`) die inside the service (the boundary rule above) and never appear in a public signature. The resolver pattern-matches on `_tag` to map to wire codes. See [effect-errors.md](./effect-errors.md).
 - **No `env` or `D1Database` in method signatures.** The `Drizzle` dep is captured at layer-build time.
 
 ### The live layer
@@ -174,8 +190,8 @@ export class Sozluk extends Context.Service<
 export const SozlukLive = Layer.effect(Sozluk)(
   Effect.gen(function*() {
     // ----- Yield deps once at layer build -----
-    const {run, batch} = yield* Drizzle;   // bound methods, R = never in callers
-    const vote = yield* Vote;              // cross-service dep, see below
+    const {run, batch} = orDieAccess(yield* Drizzle); // infra failures die here; R = never in callers
+    const vote = yield* Vote;                         // cross-service dep, see below
 
     // ----- Helpers: private closures, intermediate consts -----
 
@@ -228,32 +244,35 @@ Notes:
 - **Each method gets a named span automatically via `Effect.fn`.** See [effect-fn-tracing.md](./effect-fn-tracing.md) for naming conventions and when to use `fnUntraced` instead.
 - **Validation is part of the method, not a separate concern.** `validateBody` returns either a tagged error or the cleaned body. The method's `E` channel surfaces what can fail.
 
-## Resolver call sites
+## Handler call sites
 
-Fate resolvers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, wrapped by a bridge helper (`fateMutation`/`fateQuery`/`fateList`/`fateSource`) that runs the Effect on the worker-level `ManagedRuntime` (one per isolate, with the per-request `Auth`/`LiveBus` provided onto each effect — ADR 0041). The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
+Fate handlers live per-feature (`worker/features/<feature>/mutations.ts`, `queries.ts`, `lists.ts`); each is a thin orchestration over a service, authored as a `Fate.query`/`Fate.list`/`Fate.mutation` entry — a pure-data definition paired with an `Effect.fn("<wire name>")` handler, run by the native interpreter on the request fiber (the per-request `CurrentUser`/`LivePublisher` provided onto each effect as values off the request context — ADR 0043, [fate-effect-operations.md](./fate-effect-operations.md)). The `worker/features/fate/{mutations,queries,lists,shapers,sources,views}.ts` files are barrels that compose each feature's piece into the maps fate expects:
 
 ```ts
 // worker/features/sozluk/mutations.ts
-import {Sozluk} from "./Sozluk";
-import {fateMutation} from "../fate/effect";
-
-resolve: fateMutation<AddDefinitionInput, Definition>(function*({input}) {
-  const {user} = yield* Auth.required;
-  const sozluk = yield* Sozluk;
-  return yield* sozluk.addDefinition({...input, authorId: user.id});
-}),
+"definition.add": Fate.mutation(
+  {input: AddDefinitionInput, type: DefinitionView, error: Schema.Union([Unauthorized, BodyRequired, BodyTooLong])},
+  Effect.fn("definition.add")(function* ({input}) {
+    const user = yield* CurrentUser.required;
+    const sozluk = yield* Sozluk;
+    return yield* sozluk.addDefinition({...input, authorId: user.id});
+  }),
+),
 ```
 
-Read resolvers look the same (`fateQuery`):
+Read handlers look the same (`Fate.query`):
 
 ```ts
-resolve: fateQuery<{slug: string}, Term | null>(function*({input}) {
-  const sozluk = yield* Sozluk;
-  return yield* sozluk.getTerm(input.slug, {first: 50});
-}),
+term: Fate.query(
+  {args: {slug: Schema.String}, type: TermView},
+  Effect.fn("term")(function* ({args}) {
+    const sozluk = yield* Sozluk;
+    return yield* sozluk.getTerm(args.slug, {first: 50});
+  }),
+),
 ```
 
-The bridge runner (`worker/features/fate/effect.ts`) handles `Effect.Exit`. Tagged errors in the service's `E` channel flow through `encodeFateError` to wire codes.
+The interpreter's dispatch ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) handles `Effect.Exit` (the oracle-baseline compile step maps exits the same way). Tagged errors in the handler's declared `error` union flow through `encodeWireError` (the `ErrorCode` annotation) to wire codes.
 
 ## Cross-feature dependencies
 
@@ -279,13 +298,32 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 The dep graph: `Pano → Vote → Drizzle`, `Sozluk → Vote → Drizzle`. Vote's own deps (karma rules, rate limits, audit when those land) stay encapsulated — consumers don't see them.
 
+### Shared service → feature dependency: invert it
+
+A shared low-level service (Vote sits below the feature directories — Sozluk AND Pano consume it) must not import FROM a feature directory. When Vote needs something a feature owns — the karma counter lives in pasaport's `user_profile` — Vote declares a contract IT owns and the feature provides the implementation at composition:
+
+```ts
+// vote/Vote.ts — the contract, owned by Vote (names only db primitives)
+export interface KarmaBumpService {
+  readonly statement: (db: DrizzleDb, userId: string, delta: number) => Stmt;
+}
+export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
+  "@phoenix/vote/KarmaBump",
+) {}
+
+// fate/layers.ts — the composition root provides pasaport's implementation
+const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStatement});
+```
+
+`VoteLive` yields `KarmaBump` at layer build and batches the provided statement atomically with the vote insert / score update — the batching is identical, Vote just stops knowing where the statement comes from. The `vote/ → pasaport/` arrow exists only at the composition seam (`fate/layers.ts`), and the contract is künye's swap point: a DO-backed karma bump replaces the provided value there without touching Vote. Pinned in `vote-boundary.unit.test.ts` (an import sweep over `vote/` + exact type pins on `VoteLive`'s `R` and the contract's surface). Tests that build `VoteLive` directly provide their own `KarmaBump` (see `Vote.test.ts`); tests composing through `makeFateLayer`/`PhoenixFateLive` get the production provision for free.
+
 Vote-delegating methods are the one place a method's `R` widens beyond `never`: `voteDefinition` / `retractDefinitionVote` infer as `Effect<A, E, Vote>` because they call `yield* vote.cast(...)`. That's correct — the dep is real. The Drizzle dep is satisfied by the destructured `run` and stays out of `R`.
 
 ## Wiring at the worker entry
 
 See `apps/web/worker/features/fate/layers.ts` (the `makeFateLayer` factory) for the canonical composition. The shape, summarized:
 
-`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request `Auth` and the upstream `HttpServerRequest` Tag (from `effect/unstable/http/HttpServerRequest`) are layered on top in the `/fate` route. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output. The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
+`Layer.provide` is the composition mechanism: feature services + `Drizzle` get satisfied at worker scope (alchemy provides `Cloudflare.WorkerEnvironment` and the bound D1); the per-request pair (`CurrentUser`/`LivePublisher`) is provided onto each operation by the interpreter, never at layer scope. Because `Sozluk` and `Pano` both depend on `Vote`, the runtime uses `Layer.provideMerge(VoteLive)` over their merged slice so `Vote` is shared and stays visible in the resulting layer's output — with Vote's own `KarmaBump` contract discharged right there via `Layer.provide(KarmaBumpFromPasaport)` (plain `provide`: the contract is Vote's internal seam, not a worker service routes see). The final layer has no remaining `R`, so it's runnable. See [effect-layer-composition.md](./effect-layer-composition.md#the-worker-layer-set) for why this shape avoids the `Layer.mergeAll` dependency warning.
 
 ## Testing
 
@@ -324,4 +362,4 @@ Integration tests in `tests/integration/*.test.ts` use the second form — same 
 - [effect-fn-tracing.md](./effect-fn-tracing.md) — `Effect.fn` vs `Effect.fnUntraced` for method shape
 - [effect-testing.md](./effect-testing.md) — integration via miniflare + the live runtime
 - [effect-schema-validation.md](./effect-schema-validation.md) — `Schema` for trust-boundary input validation
-- `worker/features/pasaport/Auth.ts` — canonical small-service example with a static helper
+- `packages/fate-effect/src/CurrentUser.ts` — canonical small-service example with a static helper

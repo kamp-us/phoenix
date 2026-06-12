@@ -70,7 +70,7 @@ A failure is a `FateRequestError` with a `code` (`UNAUTHORIZED`, `VALIDATION_ERR
 - **`callSite`** (4xx — validation, conflict, not-found): returned as `result.error`. Render it inline next to the form/button. The like button reads `result?.error`, a form shows the field error.
 - **`boundary`** (401/403/5xx): re-thrown, caught by the screen's error boundary ([fate-client-setup.md](./fate-client-setup.md)).
 
-UI keys off `error.code`, never the message string — the codes are the shared contract with the server's `encodeFateError` ([fate-effect-bridge.md](./fate-effect-bridge.md)).
+UI keys off `error.code`, never the message string — the codes are the shared contract with the server's `ErrorCode` annotations ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)).
 
 > **fate classifies phoenix's wider codes as `boundary` (so a mutation *throws* instead of returning `{error}`).** The client derives callSite-vs-boundary purely from the wire `code` → `statusFromErrorCode(code)`, whose `switch` knows only the 6 protocol codes (`BAD_REQUEST`/`VALIDATION_ERROR`→400, `UNAUTHORIZED`→401, `FORBIDDEN`→403, `NOT_FOUND`→404, `INTERNAL_ERROR`→500) with **no `default`**; phoenix codes (`BODY_REQUIRED`, `BODY_TOO_LONG`, `DEFINITION_NOT_FOUND`, `TAKEN`, …) resolve to `status: undefined` → `categorizeHTTPErrorStatus` falls to `boundary`. The per-op wire error drops `status` (only `{code,message,issues}`) and the client rebuilds it from `code`, so a phoenix code can't carry a 4xx through the wire. **The optimistic rollback still fires** (fate clears the optimistic write + restores snapshots *before* the throw). So phoenix mutation call sites **`try { const {error} = await fate.mutations… } catch (e) {}`**: handle both the `callSite` `{error}` return AND the `boundary` throw, read `.code` off either, and render inline (an async throw never reaches a React error boundary anyway). `UNAUTHORIZED` routes to the auth redirect. sözlük's `DefinitionCard` + term-page composer do this.
 
@@ -79,5 +79,5 @@ UI keys off `error.code`, never the message string — the codes are the shared 
 - [fate-views-and-requests.md](./fate-views-and-requests.md) — the views mutations write back through
 - [fate-client-setup.md](./fate-client-setup.md) — the client + error boundary
 - [fate-live-views.md](./fate-live-views.md) — server live events that drive connection membership
-- [fate-mutations.md](./fate-mutations.md) — the server side of these mutations
+- [fate-effect-operations.md](./fate-effect-operations.md) "Write conventions" — the server side of these mutations
 - void reference (in the [fate](https://github.com/usirin/fate) repo): `src/ui/PostCard.tsx`, `src/ui/CreatePost.tsx`

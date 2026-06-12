@@ -1,31 +1,18 @@
 /**
- * `runFateOp` — drive one fate operation through the bridge the way the `/fate`
- * route does, on a per-operation `ManagedRuntime` (ADR 0041's mechanism, the
- * harness lifecycle).
+ * `runFateOp` — drive one fate operation through the SERVING path the way
+ * the `/fate` route does since the v2 cutover (ADR 0043): the native
+ * interpreter (`FateInterpreter.handleRequest`) over `FateServer.layer(
+ * fateConfig)` composed with the caller's worker layer.
  *
- * This is the extraction of the per-file `fateOp` helper the bridge suites
- * (`bridge-sozluk.test.ts`, `bridge-products.test.ts`) each copy-pasted. It is
- * the test mirror of `route.ts`'s `makeHandleFate`:
+ * The test mirror of `route.ts`'s `handleFate`:
  *
  *   1. builds the fate request envelope from the operation,
- *   2. builds a `ManagedRuntime` for THIS operation from the caller's worker
- *      layer through `makeFateRuntime` (the same construction point `index.ts`
- *      uses) and DISPOSES it after the round-trip — the single runtime-build
- *      boundary for the op, so the whole program runs through one shared
- *      layer-memo map (a second `Effect.provide`/runtime build would trip the
- *      `multipleEffectProvide` lint). Production's never-dispose deviation (no
- *      CF shutdown hook) does not transfer here: the Node harness HAS a
- *      shutdown point, so each runtime's scope is released when its op
- *      completes instead of leaking for the suite's lifetime. The trade-off:
- *      every op runs cold — cross-request layer memoization is a production
- *      property this harness does not exercise,
- *   3. owns the capturing `LiveBus` VALUE internally (`liveBusFor` over a capture
- *      array, ADR 0039) — it records the RESOLVED topic keys each mutation's
- *      `live.*` fans out to (run through the real `topicsForPublish`),
- *   4. hands fate a {@link FateContext} of `{runtime, request, auth, liveBus}` as
- *      `adapterContext`; the bridge (`effect.ts`) provides `auth`/`liveBus` onto
- *      each resolver effect and runs it on `runtime` — no captured `Context`, no
- *      per-request layer build,
+ *   2. builds (and after the round-trip disposes) a per-op `ManagedRuntime`
+ *      over the caller's worker layer — the Node harness's run vehicle,
+ *   3. owns the per-request publish capture internally (a recording
+ *      `LivePublisher` over the real `topicsForPublish` frame builder),
+ *   4. hands `FateInterpreter.handleRequest` ONE {@link FateRequestContext} —
+ *      the route's exact per-request-pair shape,
  *   5. returns `{status, result, published}` — `published` being the resolved
  *      topic keys the operation's `live.*` fanned out to.
  *
@@ -35,17 +22,34 @@
  * rebuilt per `it` in `beforeEach`/`afterEach`, so each case runs against its own
  * in-memory D1 (no row leakage; the `it.layer`/`describe`-once form is avoided).
  */
-import type * as Layer from "effect/Layer";
-import {liveBusFor} from "../fate-live/event-bus.ts";
-import type {Auth} from "../pasaport/Auth.ts";
-import type {FateContext} from "./context.ts";
+import {
+	FateInterpreter,
+	type FateRequestContext,
+	FateServer,
+	type ProtocolOperation,
+	ProtocolResponse,
+} from "@phoenix/fate-effect";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import * as Schema from "effect/Schema";
+import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import {fateConfig} from "./config.ts";
 import {makeFateRuntime, type WorkerFateServices} from "./layers.ts";
-import {fateServer} from "./server.ts";
 
-/** A single fate operation result as it appears on the wire. */
-export type FateResult =
-	| {ok: true; data: unknown; id: string}
-	| {ok: false; error: {code: string; message?: string}; id: string};
+/**
+ * A fate operation body as a suite spells it — the package's encoded
+ * `ProtocolOperation` wire shape, minus the `id` this harness stamps. Typing
+ * the harness input off the package codec means an operation a suite can
+ * write IS an operation the protocol gate can decode.
+ */
+export type FateOperationBody = Omit<Schema.Codec.Encoded<typeof ProtocolOperation>, "id">;
+
+/**
+ * A single fate operation result as decoded from the wire through the
+ * package's `ProtocolResponse` codec — the same schemas the interpreter's
+ * protocol pins ride on, so the harness cannot drift from the wire shape.
+ */
+export type FateResult = Schema.Schema.Type<typeof ProtocolResponse>["results"][number];
 
 /** What one operation round-trip returns: HTTP status, the result, captured publishes. */
 export interface FateOpResult {
@@ -54,7 +58,7 @@ export interface FateOpResult {
 	readonly published: ReadonlyArray<string>;
 }
 
-/** A logged-in user for the per-request `Auth`; omit for anonymous. */
+/** A logged-in user for the per-request session; omit for anonymous. */
 export interface FateOpAuth {
 	readonly id: string;
 	readonly name: string;
@@ -62,17 +66,20 @@ export interface FateOpAuth {
 }
 
 /**
- * Run `operation` against `workerLayer` through `fateServer.handleRequest`.
+ * Run `operation` against `workerLayer` through the native interpreter's
+ * `handleRequest` (`FateInterpreter` — the serving path since the v2
+ * cutover, ADR 0043).
  *
  * @param workerLayer a fully-resolved worker layer (`Database`/`BetterAuth`
- *   already discharged) — wrapped in a worker-level `ManagedRuntime` here; the
- *   per-request `Auth` + capturing `LiveBus` ride on the `FateContext`.
+ *   already discharged) — `FateServer.layer(fateConfig)` is provided over it
+ *   and the whole thing wrapped in a per-op `ManagedRuntime` here; the
+ *   per-request pair rides on the one context object.
  * @param operation the fate operation body (`kind`/`name`/`args`/`input`/`select`).
  * @param opts.auth the session to provide (anonymous by default).
  */
 export async function runFateOp(
 	workerLayer: Layer.Layer<WorkerFateServices>,
-	operation: Record<string, unknown>,
+	operation: FateOperationBody,
 	opts: {auth?: FateOpAuth} = {},
 ): Promise<FateOpResult> {
 	const request = new Request("https://test.local/fate", {
@@ -81,43 +88,61 @@ export async function runFateOp(
 		body: JSON.stringify({version: 1, operations: [{id: "1", ...operation}]}),
 	});
 
-	// The runtime for THIS op, built through the same `makeFateRuntime` the
+	// The runtime for THIS op: the same `FateServer.layer(fateConfig)` +
+	// domain-layers composition as production's `PhoenixFateLive`, but over the
+	// caller's worker layer, built through the same `makeFateRuntime` the
 	// deployed worker (`index.ts`) uses. This is the single runtime-build /
-	// `provide` boundary — the bridge runs each resolver on it via
-	// `ctx.runtime.runPromiseExit`, so there is no second `Effect.provide` (which
-	// would trip the `multipleEffectProvide` lint). The op drives fate directly off
-	// the runtime, so the helper's route-context layer half is unused here.
-	// Disposed in the `finally` below — see the header on why the production
-	// never-dispose deviation does not apply to this Node harness.
-	const {runtime} = makeFateRuntime(workerLayer);
+	// `provide` boundary — the interpreter program resolves `FateServer` from
+	// it when run, so there is no second `Effect.provide` (which would trip
+	// the `multipleEffectProvide` lint). Disposed in the `finally` below —
+	// production's never-dispose deviation (no CF shutdown hook) does not
+	// transfer: the Node harness HAS a shutdown point, so each runtime's scope
+	// is released when its op completes. The trade-off: every op runs cold —
+	// cross-request layer memoization is a production property this harness
+	// does not exercise.
+	const {runtime} = makeFateRuntime(
+		FateServer.layer(fateConfig).pipe(Layer.provideMerge(workerLayer)),
+	);
 
-	// Own the capturing `LiveBus` VALUE (ADR 0039) here — the per-request form the
-	// route provides (`liveBusFor`), NOT the `Layer` form. It records the RESOLVED
-	// topic keys each mutation's `live.*` fans out to (run through the real
-	// `topicsForPublish`), so the caller can assert which topics a write published
-	// to.
+	// The publish capture records RESOLVED topic keys (run through the real
+	// frame/topic builders), so a suite asserts the exact keys a mutation's
+	// `live.*` fanned out to.
 	const published: Array<string> = [];
-	const liveBus = liveBusFor((topicKey) => {
-		published.push(topicKey);
+
+	// The recording `LivePublisher` VALUE: capturing publish, collecting
+	// `waitUntil` (a Node harness has no execution context; the scheduled
+	// promises are flushed before this op reports).
+	const scheduled: Array<Promise<unknown>> = [];
+	const livePublisher = livePublisherFor({
+		publish: (topicKey) =>
+			Effect.sync(() => {
+				published.push(topicKey);
+			}),
+		waitUntil: (promise) => {
+			scheduled.push(promise);
+		},
 	});
 
-	// Hand fate a `FateContext` of `{runtime, request, auth, liveBus}` as
-	// `adapterContext` — the same shape `route.ts` builds. The bridge provides
-	// `auth`/`liveBus` onto each resolver effect and runs it on `runtime`.
-	const ctx: FateContext = {
-		runtime,
-		request,
-		auth: {user: opts.auth as never, session: undefined} satisfies typeof Auth.Service,
-		liveBus,
+	// ONE context object, the route's exact shape: the per-request pair (no
+	// `signal` — the route wires abort→interruption at its own edge).
+	const ctx: FateRequestContext = {
+		currentUser: {user: opts.auth},
+		livePublisher,
 	};
 
 	try {
-		const res = await fateServer.handleRequest(request, ctx);
-		const body = (await res.json()) as {version: number; results: FateResult[]};
+		const res = await runtime.runPromise(FateInterpreter.handleRequest(request, ctx));
+		// Decode the wire body through the package's `ProtocolResponse` codec —
+		// no hand-rolled result type, no `as` cast; a malformed response throws
+		// the `ParseError` (a harness bug or a wire drift, either way loud).
+		const body = Schema.decodeUnknownSync(ProtocolResponse)(await res.json());
 		const [result] = body.results;
 		if (result === undefined) {
 			throw new Error(`fate response carried no result: ${JSON.stringify(body)}`);
 		}
+		// Flush the detached publishes the recording publisher handed to
+		// `waitUntil` so `published` is complete when the caller reads it.
+		await Promise.all(scheduled);
 		return {status: res.status, result, published};
 	} finally {
 		// Release the runtime's scope once the op (including body read) completes —

@@ -11,11 +11,11 @@
  * onto the wire fields stays at the call site, because each source carries
  * different field names; the shaper owns only the wire shape itself.
  *
- * See `.patterns/fate-connections.md`, `.patterns/fate-mutations.md`.
+ * See `.patterns/fate-connections.md`, `.patterns/fate-effect-operations.md`.
  */
 
-import type {Definition, Term} from "../fate/views.ts";
 import type {TermPage} from "./Sozluk.ts";
+import type {Definition, Term} from "./views.ts";
 
 export interface TermFields {
 	slug: string;

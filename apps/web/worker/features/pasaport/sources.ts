@@ -1,54 +1,64 @@
 /**
- * Pasaport fate source executors — `User` / `Profile` Effect-backed reads.
+ * Pasaport fate sources — `User` / `Profile` Effect-backed loaders.
  *
- * fate is pure transport (ADR 0016): it never queries D1. Every source executor
- * delegates to an Effect service method through {@link fateSource}, so all read
- * logic stays in the domain layer.
+ * fate is pure transport (ADR 0016): it never queries D1. Every handler
+ * delegates to a `Pasaport` method, so all read logic stays in the domain
+ * layer.
  *
  * `Profile` is fetched by its `userId` (the immutable per-user id; `username`
  * may be null until bootstrap). The root `profile(username)` / `me` resolvers
  * are custom queries that build the full `Profile` shape inline, so this `byId`
  * exists for relation/by-id callers; it re-aggregates the live counts.
  *
- * See `.patterns/fate-sources.md`.
+ * The loader contract is in the types (`.patterns/fate-effect-sources.md`):
+ * reads are silent (absence = `null`/fewer rows), `E = never` — infra
+ * failures are defects, died inside the domain service (the boundary rule in
+ * `.patterns/feature-services.md`), so they never become wire values.
  */
-import {
-	type AnyDataView,
-	type AnySourceDefinition,
-	fateSource,
-	type SourceExecutor,
-} from "../fate/effect.ts";
-import {Pasaport, type ProfileRow, type UserRow} from "./Pasaport.ts";
-import {profileDataView, userDataView} from "./views.ts";
+import {Fate} from "@phoenix/fate-effect";
+import {Pasaport} from "./Pasaport.ts";
+import {toProfile} from "./shapers.ts";
+import {ContributionView, ProfileView, UserView} from "./views.ts";
 
-type UserViewRow = {[K in keyof UserRow]: UserRow[K]};
-// The `Profile` view row adds the client normalization key `id` (=== `userId`)
-// on top of the service `ProfileRow` — mirrors `views.ts`.
-type ProfileViewRow = {[K in keyof ProfileRow]: ProfileRow[K]} & {id: string};
-
-export const userExecutor: SourceExecutor = fateSource<UserViewRow>({
-	byId: function* (id) {
-		const pasaport = yield* Pasaport;
-		return yield* pasaport.getUserById(id);
+export const userSource = Fate.source(
+	UserView,
+	{id: "id"},
+	{
+		byId: function* (id) {
+			const pasaport = yield* Pasaport;
+			return yield* pasaport.getUserById(id);
+		},
+		byIds: function* (ids) {
+			const pasaport = yield* Pasaport;
+			return yield* pasaport.getUsersByIds(ids);
+		},
 	},
-	byIds: function* (ids) {
-		const pasaport = yield* Pasaport;
-		return yield* pasaport.getUsersByIds(ids);
-	},
-});
+);
 
-export const profileExecutor: SourceExecutor = fateSource<ProfileViewRow>({
-	byId: function* (userId) {
-		const pasaport = yield* Pasaport;
-		const row = yield* pasaport.lookupProfileById(userId);
-		// Stamp the client normalization key `id` (=== `userId`); the service row
-		// carries only `userId`.
-		return row ? {...row, id: row.userId} : row;
+export const profileSource = Fate.source(
+	ProfileView,
+	{id: "userId"},
+	{
+		byId: function* (userId) {
+			const pasaport = yield* Pasaport;
+			const row = yield* pasaport.lookupProfileById(userId);
+			// `toProfile` stamps the client normalization key `id` (=== `userId`);
+			// the service row carries only `userId`.
+			return row ? toProfile(row) : row;
+		},
 	},
-});
+);
 
-export const userSource: AnySourceDefinition = {id: "id", view: userDataView as AnyDataView};
-export const profileSource: AnySourceDefinition = {
-	id: "userId",
-	view: profileDataView as AnyDataView,
-};
+/**
+ * `Contribution` has no fetch path of its own — the rows are synthetic
+ * (flattened from definitions/posts/comments by `queries.profile`'s shaper) and
+ * the `Profile.contributions` connection is delivered inline by that custom
+ * resolver (ADR 0019), so no byId/byIds/connection handler is implementable or
+ * needed. `Fate.syntheticSource` is the package's canonical spelling for this:
+ * it registers the entity so the server's source-completeness validation
+ * accepts it (`Profile.contributions` nests `ContributionView`, making it
+ * view-reachable) with ZERO capabilities — any actual capability call fails
+ * loudly inside the package, exactly as the bridge's capability-less executor
+ * did (`.patterns/fate-effect-sources.md`, the escape hatch).
+ */
+export const contributionSource = Fate.syntheticSource(ContributionView);

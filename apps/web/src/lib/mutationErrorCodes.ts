@@ -1,6 +1,7 @@
 /**
  * The wire contract for mutation-error `code` strings.
- * The worker fate error codec (`worker/features/fate/errors.ts`) produces these; the SPA
+ * The worker derives these from the `ErrorCode` annotations on its error
+ * classes (`@phoenix/fate-effect`'s `encodeWireError`); the SPA
  * `decodeMutationErrorCode` decoder narrows incoming codes to this union so
  * UI code can `switch` on a typed value instead of stringly comparing against
  * `"UNAUTHORIZED"` etc.
@@ -13,6 +14,10 @@ export const MUTATION_ERROR_CODES = [
 	"DEFINITION_NOT_FOUND",
 	"POST_NOT_FOUND",
 	"COMMENT_NOT_FOUND",
+	// Schema rejection of an operation's input/args (`InputValidationError`,
+	// the code fate's own schema validation also emits). Pre-handler, so any
+	// mutation can surface it.
+	"VALIDATION_ERROR",
 	// Validation codes (per-domain `code` string, upcased).
 	"BODY_REQUIRED",
 	"BODY_TOO_LONG",

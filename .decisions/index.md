@@ -38,10 +38,13 @@ One row per ADR. Read the file for the why.
 | [0032](0032-alchemy-beta45-and-dev-model.md) | Upgrade to alchemy@2.0.0-beta.45 + effect@4.0.0-beta.74; accept deploy-infra-to-cloud as the dev model | accepted | 2026-05-29 |
 | [0033](0033-mutual-do-layer-cycle-per-call-resolution.md) | Co-hosted mutual DOs cannot Init-bind each other — use per-call sibling resolution | retired by [0037](0037-unified-void-aligned-live-do.md) | 2026-05-29 |
 | [0034](0034-fate-native-sse-protocol.md) | Stay on fate's native SSE + POST protocol; do not redesign to WebSocket | accepted | 2026-05-29 |
+| [0034a](0034a-live-fan-out-options-considered.md) | Live fan-out — options considered (appendix to 0034) | reference | 2026-05-29 |
 | [0035](0035-cli-conventions.md) | CLI conventions — small focused tools, name mirrors bin (no catch-all `cli`) | accepted | 2026-05-31 |
 | [0036](0036-features-as-any-named-app-grouping.md) | features/ is any named app-level grouping, not just product domains | accepted | 2026-05-30 |
 | [0037](0037-unified-void-aligned-live-do.md) | Unified void-aligned LiveDO — one class, two roles, KV storage | accepted | 2026-05-30 |
 | [0038](0038-dependency-patches-local-only.md) | Dependency patches are local-only — no fork/git/unmerged-PR sources; local `pnpm patch` if unavoidable | accepted | 2026-05-31 |
-| [0039](0039-livebus-context-service.md) | LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge | accepted | 2026-05-31 |
+| [0039](0039-livebus-context-service.md) | LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge | amended-in-part by [0042](0042-fate-effect-v1-architecture.md) | 2026-05-31 |
 | [0040](0040-testing-taxonomy-and-seam-graduation.md) | Testing taxonomy and test-seam graduation | accepted | 2026-06-07 |
-| [0041](0041-fate-bridge-worker-managed-runtime.md) | fate↔Effect bridge — one worker-level ManagedRuntime (F4) | accepted | 2026-06-07 |
+| [0041](0041-fate-bridge-worker-managed-runtime.md) | fate↔Effect bridge — one worker-level ManagedRuntime (F4) | amended-in-part by [0042](0042-fate-effect-v1-architecture.md), [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | 2026-06-07 |
+| [0042](0042-fate-effect-v1-architecture.md) | fate-effect v1 — the Effect-native fate integration; the bridge is deleted | amended-in-part by [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | 2026-06-10 |
+| [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | fate-effect v2 — the native interpreter serves /fate; no runtime on the request path | accepted | 2026-06-10 |

@@ -1,13 +1,12 @@
 /**
  * Tagged errors raised by the Vote service layer.
  *
- * Wire-code contract — every tag in this file maps to a specific
- * `code` string via `worker/features/fate/errors.ts::encodeFateError`:
- *
- *   vote/VoteTargetNotFound → VOTE_TARGET_NOT_FOUND
- *
- * Replaces the pre-effect-migration `VoteTargetNotFoundError` class-form
- * error; wire code preserved verbatim so SPA pattern-matching keeps working.
+ * `VoteTargetNotFound` carries NO `ErrorCode` annotation by design: it
+ * never reaches the wire. The consuming services translate it at their own
+ * boundary (`Sozluk.vote.cast` → `DefinitionNotFound`, `Pano.post.vote` →
+ * `PostNotFound`, `Pano.comment.vote` → `CommentNotFound`, all via
+ * `Effect.catchTag`), so fate handlers only ever declare — and emit — the
+ * feature-level not-found errors.
  */
 import * as Schema from "effect/Schema";
 

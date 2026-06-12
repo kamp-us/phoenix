@@ -1,79 +1,42 @@
 /**
- * Hand-built `SourceResolver` — Effect-backed reads, composed across features.
+ * fate source entries — the features' `Fate.source` entries, composed for the
+ * fate-effect server config.
  *
- * fate is pure transport (ADR 0016): it never queries D1. Per-feature source
- * executors live in their owning feature (`features/<feature>/sources.ts`); this
- * file composes them into the registry fate expects and exposes the
- * `{getSource, registry}` surface `server.ts` hands to `createFateServer`.
+ * fate is pure transport (ADR 0016): it never queries D1. Per-feature sources
+ * live in their owning feature (`features/<feature>/sources.ts`); this file
+ * composes them into the ARRAY form `FateServer.config` takes. The serving
+ * path (the interpreter's walk, `.patterns/fate-effect-interpreter.md`)
+ * resolves byId loads from these entries directly by `typeName`; the oracle
+ * baseline (`compileFateSources`, `.patterns/fate-effect-compiler.md`) builds
+ * fate's `{getSource, registry}` from the same entries: one registry Map keyed
+ * by each entry's `definition` OBJECT (fate looks executors up by identity, so
+ * the entries hold the features' exported definition objects, never copies).
  *
- * `@nkzw/fate/server` does **not** re-export `createSourceDefinition` /
- * `getDataViewSourceConfig` / `createSourceRegistry` / `getBaseDataView` (only
- * the public `createDrizzleSourceAdapter`, which phoenix bans), so the three
- * pieces are built directly:
- *
- *   - each `SourceDefinition` is a plain object literal `{id, view, orderBy?}`,
- *   - the `registry` is a `new Map` keyed by the `SourceDefinition` *object*
- *     (fate looks executors up by object identity),
- *   - `getSource` resolves a view to its definition by `view.typeName`,
- *     returning the *same* object used as the registry key.
+ * Every feature is migrated (`.patterns/fate-effect-sources.md`), so every
+ * entry is a `Fate.source` value — except `Contribution`, the capability-less
+ * `Fate.syntheticSource` entry (the entity is view-reachable through
+ * `Profile.contributions` but has no fetch path by design — see
+ * `features/pasaport/sources.ts`).
  *
  * Sources carry **no** `connection` executor or `orderBy` contract: every
  * connection — root *and* nested — is delivered by a custom resolver in
  * `queries.ts` / `lists.ts` calling the service keyset method directly
  * (ADR 0019). The keyset `ORDER BY` lives in the service; the view
  * `list(view, {orderBy})` mirrors it. See `.patterns/fate-connections.md` and
- * `.patterns/fate-sources.md`.
+ * `.patterns/fate-effect-sources.md`.
  */
-import type {SourceDefinition, SourceRegistry} from "@nkzw/fate/server";
-import {
-	commentExecutor,
-	commentSource,
-	postExecutor,
+import {commentSource, postSource, tagSource} from "../pano/sources.ts";
+import {contributionSource, profileSource, userSource} from "../pasaport/sources.ts";
+import {definitionSource, termSource} from "../sozluk/sources.ts";
+
+/** The composed source entries (registry order preserved from the original wiring). */
+export const sources = [
+	userSource,
+	definitionSource,
+	termSource,
 	postSource,
-	tagExecutor,
+	commentSource,
 	tagSource,
-} from "../pano/sources.ts";
-import {profileExecutor, profileSource, userExecutor, userSource} from "../pasaport/sources.ts";
-import {definitionExecutor, definitionSource, termExecutor, termSource} from "../sozluk/sources.ts";
-import type {FateContext} from "./context.ts";
-import type {AnyDataView, AnySourceDefinition} from "./effect.ts";
-
-// The registry is a plain Map keyed by the SourceDefinition object (identity).
-const registry: SourceRegistry<FateContext> = new Map([
-	[userSource, userExecutor],
-	[definitionSource, definitionExecutor],
-	[termSource, termExecutor],
-	[postSource, postExecutor],
-	[commentSource, commentExecutor],
-	[tagSource, tagExecutor],
-	[profileSource, profileExecutor],
-]);
-
-// fate calls getSource with a base or list()-wrapped view; both share
-// `typeName`, so resolve by typeName. It must return the *same* SourceDefinition
-// object used as the registry key.
-const sourcesByType = new Map<string, AnySourceDefinition>(
-	[
-		userSource,
-		definitionSource,
-		termSource,
-		postSource,
-		commentSource,
-		tagSource,
-		profileSource,
-	].map((s) => [s.view.typeName, s]),
-);
-
-export const sources = {
-	getSource: <Item extends Record<string, unknown>>(
-		view: AnyDataView | SourceDefinition<Item, unknown>,
-	): SourceDefinition<Item, unknown> => {
-		const typeName = "view" in view ? view.view.typeName : view.typeName;
-		const source = sourcesByType.get(typeName);
-		if (!source) {
-			throw new Error(`No source registered for '${typeName}'.`);
-		}
-		return source as SourceDefinition<Item, unknown>;
-	},
-	registry,
-};
+	profileSource,
+	contributionSource,
+] as const;

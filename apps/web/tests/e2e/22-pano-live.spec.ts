@@ -9,7 +9,7 @@ declare global {
 }
 
 /**
- * Two-client live propagation over SSE (task 12).
+ * Two-client live propagation over SSE.
  *
  * fate's live views (`useLiveView`/`useLiveListView`) subscribe a ref to
  * server-pushed `live.*` events. Each phoenix mutation publishes the
@@ -170,8 +170,8 @@ test.describe("Pano live (two clients)", () => {
 	});
 
 	/**
-	 * Nested-connection mutations update the on-screen list LIVE — no full reload
-	 * (task 9). `definition.add`/`definition.delete`/`comment.delete` used to call
+	 * Nested-connection mutations update the on-screen list LIVE — no full
+	 * reload. `definition.add`/`definition.delete`/`comment.delete` used to call
 	 * `window.location.reload()` because nested-connection membership can't be
 	 * reached by fate's declarative `insert`/`delete`. The resolvers now publish
 	 * `appendNode`/`deleteEdge`/`live.update`, which the page's

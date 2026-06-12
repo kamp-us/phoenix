@@ -15,11 +15,12 @@
  * Ported byte-for-byte from the legacy `landingStatsReader.ts` async function —
  * same three D1 reads, same fallback shape, same author-union query — wrapped
  * in `run` so the Drizzle dep stays in the layer and method types stay
- * `R = never`.
+ * `R = never`. The `run` comes through `orDieAccess`, so infra failures die
+ * here (the domain-boundary rule) and the public signature carries no error.
  */
 import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleError} from "../../db/Drizzle.ts";
+import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                       */
@@ -39,7 +40,7 @@ export interface LandingStats {
 export class Stats extends Context.Service<
 	Stats,
 	{
-		readonly getLandingStats: () => Effect.Effect<LandingStats, DrizzleError>;
+		readonly getLandingStats: () => Effect.Effect<LandingStats>;
 	}
 >()("@phoenix/stats/Stats") {}
 
@@ -49,7 +50,7 @@ export class Stats extends Context.Service<
 
 export const StatsLive = Layer.effect(Stats)(
 	Effect.gen(function* () {
-		const {run} = yield* Drizzle;
+		const {run} = orDieAccess(yield* Drizzle);
 
 		return {
 			getLandingStats: Effect.fn("Stats.getLandingStats")(function* () {

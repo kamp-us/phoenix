@@ -1,21 +1,22 @@
 /**
- * Pasaport wire-entity shapers — `User` + `toContributionRow`.
+ * Pasaport wire-entity shapers — `User`, `Profile` + `toContributionRow`.
  *
- * Every `{__typename: "User", …}` literal is built here, once; resolvers and
- * mutations call the shaper instead of hand-restating the literal so adding or
- * renaming a field is a one-line edit and the read/write paths can never drift
- * out of byte-for-byte agreement.
+ * Every `{__typename: "User", …}` / `{__typename: "Profile", …}` literal is
+ * built here, once; resolvers, sources, and mutations call the shaper instead
+ * of hand-restating the literal so adding or renaming a field is a one-line
+ * edit and the read/write paths can never drift out of byte-for-byte
+ * agreement.
  *
  * `toContributionRow` flattens the discriminated `ContributionNode` (produced
  * by the service) into the flat `ContributionRow` the fate `Profile.contributions`
  * data view masks — same rows, same keyset, same cursor (ADR 0018; fate has no
  * union type).
  *
- * See `.patterns/fate-mutations.md`.
+ * See `.patterns/fate-effect-operations.md`.
  */
 
-import type {User} from "../fate/views.ts";
-import type {ContributionNode, ContributionRow} from "./Pasaport.ts";
+import type {ContributionNode, ContributionRow, ProfileRow} from "./Pasaport.ts";
+import type {Profile, User} from "./views.ts";
 
 export interface UserFields {
 	id: string;
@@ -33,6 +34,25 @@ export const toUser = (r: UserFields): User => ({
 	name: r.name,
 	image: r.image,
 	username: r.username,
+});
+
+/**
+ * Shape a service `ProfileRow` into the `Profile` wire entity, stamping the
+ * client normalization key `id` === `userId` (a `Profile` is one-to-one with
+ * its user; the codegen hardcodes `getId` to `record.id` — see `views.ts`).
+ * The invariant has exactly one spelling: here.
+ */
+export const toProfile = (r: ProfileRow): Profile => ({
+	__typename: "Profile",
+	id: r.userId,
+	userId: r.userId,
+	username: r.username,
+	displayName: r.displayName,
+	image: r.image,
+	totalKarma: r.totalKarma,
+	definitionCount: r.definitionCount,
+	postCount: r.postCount,
+	commentCount: r.commentCount,
 });
 
 /**

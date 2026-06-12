@@ -36,8 +36,8 @@ describe("fate seam — /fate", () => {
 	});
 
 	it("a tagged domain error serializes as {ok:false, error:{code}} — Unauthorized → UNAUTHORIZED", async () => {
-		// `me` is anonymous here (no session cookie) → Auth.required fails with the
-		// `Unauthorized` tagged error → encodeFateError → UNAUTHORIZED.
+		// `me` is anonymous here (no session cookie) → CurrentUser.required fails
+		// with the `Unauthorized` tagged error → encodeWireError → UNAUTHORIZED.
 		const result = await h.fate({
 			kind: "query",
 			name: "me",

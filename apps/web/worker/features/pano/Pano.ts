@@ -23,30 +23,39 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleDb, type DrizzleError} from "../../db/Drizzle.ts";
+import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {
+	CommentBodyRequired,
+	CommentBodyTooLong,
 	CommentNotFound,
-	CommentValidation,
+	type CommentValidation,
+	ParentCommentNotFound,
+	PostBodyTooLong,
 	PostNotFound,
-	PostValidation,
+	type PostValidation,
+	TagInvalid,
+	TagsRequired,
+	TitleRequired,
+	TitleTooLong,
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
+	UrlInvalid,
 } from "./errors.ts";
 
 /* -------------------------------------------------------------------------- */
 /* Domain constants                                                            */
 /* -------------------------------------------------------------------------- */
 
-/** Title cap (per PRD). */
+/** Title cap. */
 export const POST_TITLE_MAX = 200;
-/** Body cap on submit / edit (per PRD). */
+/** Body cap on submit / edit. */
 export const POST_BODY_MAX = 10_000;
-/** Comment body cap (per PRD). */
+/** Comment body cap. */
 export const COMMENT_BODY_MAX = 5_000;
 
 /** Pano excerpt cap (tweet-sized, matches pre-effect-migration). */
@@ -55,7 +64,7 @@ const POST_EXCERPT_LEN = 280;
 const excerpt = (body: string): string => excerptText(body, POST_EXCERPT_LEN);
 
 /**
- * Fixed tag enum for Pano posts (per PRD). Resolver-side validation enforces
+ * Fixed tag enum for Pano posts. Resolver-side validation enforces
  * the same set, but the service is the durability boundary so it re-validates.
  * Stored on `post_summary.tags` as comma-separated values.
  */
@@ -345,14 +354,14 @@ export interface DeleteCommentResult {
 export class Pano extends Context.Service<
 	Pano,
 	{
-		readonly getPost: (postId: string) => Effect.Effect<PostPage | null, DrizzleError>;
+		readonly getPost: (postId: string) => Effect.Effect<PostPage | null>;
 
 		readonly listPostsConnection: (opts?: {
 			sort?: PostSort;
 			first?: number;
 			after?: string | null;
 			host?: string | null;
-		}) => Effect.Effect<PostConnectionPage, DrizzleError>;
+		}) => Effect.Effect<PostConnectionPage>;
 
 		/**
 		 * DB-keyset page over a post's comments in chronological-asc order
@@ -367,71 +376,63 @@ export class Pano extends Context.Service<
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
 			},
-		) => Effect.Effect<CommentConnectionPage, DrizzleError>;
+		) => Effect.Effect<CommentConnectionPage>;
 
 		/** Post source `byIds` — batched read avoiding the relation N+1. */
 		readonly getPostsByIds: (
 			ids: ReadonlyArray<string>,
 			opts?: {viewerId?: string | null | undefined},
-		) => Effect.Effect<ReadonlyArray<PostSummaryRow>, DrizzleError>;
+		) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
 
 		/** Comment source `byIds` — batched read avoiding the relation N+1. */
 		readonly getCommentsByIds: (
 			ids: ReadonlyArray<string>,
 			opts?: {viewerId?: string | null | undefined},
-		) => Effect.Effect<ReadonlyArray<CommentRow>, DrizzleError>;
+		) => Effect.Effect<ReadonlyArray<CommentRow>>;
 
 		/** Resolve a comment's parent post id (for re-resolving on delete). */
-		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null, DrizzleError>;
+		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null>;
 
 		readonly submitPost: (
 			input: SubmitPostInput,
-		) => Effect.Effect<SubmitPostResult, PostValidation | DrizzleError>;
+		) => Effect.Effect<SubmitPostResult, PostValidation>;
 
 		readonly editPost: (
 			input: EditPostInput,
-		) => Effect.Effect<
-			EditPostResult,
-			PostValidation | PostNotFound | UnauthorizedPostMutation | DrizzleError
-		>;
+		) => Effect.Effect<EditPostResult, PostValidation | PostNotFound | UnauthorizedPostMutation>;
 
 		readonly deletePost: (
 			input: DeletePostInput,
-		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation | DrizzleError>;
+		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation>;
 
-		readonly voteOnPost: (
-			input: VoteOnPostInput,
-		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError>;
+		readonly voteOnPost: (input: VoteOnPostInput) => Effect.Effect<VoteOnPostResult, PostNotFound>;
 
 		readonly retractPostVote: (
 			input: VoteOnPostInput,
-		) => Effect.Effect<VoteOnPostResult, PostNotFound | DrizzleError>;
+		) => Effect.Effect<VoteOnPostResult, PostNotFound>;
 
 		readonly addComment: (
 			input: AddCommentInput,
-		) => Effect.Effect<AddCommentResult, CommentValidation | PostNotFound | DrizzleError>;
+		) => Effect.Effect<AddCommentResult, CommentValidation | PostNotFound>;
 
 		readonly editComment: (
 			input: EditCommentInput,
 		) => Effect.Effect<
 			EditCommentResult,
-			CommentValidation | CommentNotFound | UnauthorizedCommentMutation | DrizzleError
+			CommentValidation | CommentNotFound | UnauthorizedCommentMutation
 		>;
 
 		readonly deleteComment: (
 			input: DeleteCommentInput,
-		) => Effect.Effect<
-			DeleteCommentResult,
-			CommentNotFound | UnauthorizedCommentMutation | DrizzleError
-		>;
+		) => Effect.Effect<DeleteCommentResult, CommentNotFound | UnauthorizedCommentMutation>;
 
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError>;
+		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
 
 		readonly retractCommentVote: (
 			input: VoteOnCommentInput,
-		) => Effect.Effect<VoteOnCommentResult, CommentNotFound | DrizzleError>;
+		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
 	}
 >()("@phoenix/pano/Pano") {}
 
@@ -442,10 +443,12 @@ export class Pano extends Context.Service<
 export const PanoLive = Layer.effect(Pano)(
 	Effect.gen(function* () {
 		// Yield Drizzle and Vote once at layer build and destructure/close over
-		// their bound methods. Method bodies call `run` / `batch` / `voteSvc`
-		// directly — the deps are owned by this layer, so every method's `R`
-		// stays `never` (the dep never reaches the caller-visible R channel).
-		const {run, batch} = yield* Drizzle;
+		// their bound methods. Drizzle is taken through `orDieAccess`: every
+		// internal DB call site dies on `DrizzleError` (infra failures are
+		// defects — the domain-boundary rule), so public signatures carry
+		// domain errors only. The deps are owned by this layer, so every
+		// method's `R` stays `never`.
+		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
 		/* ------------------------------------------------------------------ */
@@ -566,8 +569,7 @@ export const PanoLive = Layer.effect(Pano)(
 		 */
 		const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
 			if (rawBody.length > POST_BODY_MAX) {
-				return yield* new PostValidation({
-					code: "body_too_long",
+				return yield* new PostBodyTooLong({
 					message: `metin en fazla ${POST_BODY_MAX} karakter olabilir`,
 				});
 			}
@@ -577,14 +579,12 @@ export const PanoLive = Layer.effect(Pano)(
 		const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: string) {
 			const trimmed = raw.trim();
 			if (trimmed.length === 0) {
-				return yield* new PostValidation({
-					code: "title_required",
+				return yield* new TitleRequired({
 					message: "başlık boş olamaz",
 				});
 			}
 			if (trimmed.length > POST_TITLE_MAX) {
-				return yield* new PostValidation({
-					code: "title_too_long",
+				return yield* new TitleTooLong({
 					message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
 				});
 			}
@@ -596,14 +596,12 @@ export const PanoLive = Layer.effect(Pano)(
 		) {
 			const rawBody = body ?? "";
 			if (rawBody.trim().length === 0) {
-				return yield* new CommentValidation({
-					code: "body_required",
+				return yield* new CommentBodyRequired({
 					message: "yorum boş olamaz",
 				});
 			}
 			if (rawBody.length > COMMENT_BODY_MAX) {
-				return yield* new CommentValidation({
-					code: "body_too_long",
+				return yield* new CommentBodyTooLong({
 					message: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
 				});
 			}
@@ -928,8 +926,7 @@ export const PanoLive = Layer.effect(Pano)(
 				const parsed = yield* Effect.try({
 					try: () => new URL(input.url as string),
 					catch: () =>
-						new PostValidation({
-							code: "url_invalid",
+						new UrlInvalid({
 							message: "URL geçersiz",
 						}),
 				});
@@ -938,8 +935,7 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 
 			if (!input.tags || input.tags.length === 0) {
-				return yield* new PostValidation({
-					code: "tags_required",
+				return yield* new TagsRequired({
 					message: "en az bir etiket seç",
 				});
 			}
@@ -949,8 +945,7 @@ export const PanoLive = Layer.effect(Pano)(
 			for (const t of input.tags) {
 				const kind = (t.kind ?? "").trim();
 				if (!allowed.has(kind)) {
-					return yield* new PostValidation({
-						code: "tag_invalid",
+					return yield* new TagInvalid({
 						message: `geçersiz etiket: ${kind || "(boş)"}`,
 					});
 				}
@@ -1027,8 +1022,7 @@ export const PanoLive = Layer.effect(Pano)(
 			const hasTitle = input.title !== undefined;
 			const hasBody = input.body !== undefined;
 			if (!hasTitle && !hasBody) {
-				return yield* new PostValidation({
-					code: "title_required",
+				return yield* new TitleRequired({
 					message: "başlık veya metin gerekli",
 				});
 			}
@@ -1260,8 +1254,7 @@ export const PanoLive = Layer.effect(Pano)(
 					}),
 				);
 				if (!parent) {
-					return yield* new CommentValidation({
-						code: "parent_not_found",
+					return yield* new ParentCommentNotFound({
 						message: "yanıtlanan yorum bulunamadı",
 					});
 				}
