@@ -20,7 +20,7 @@ import {
 	liveEntityTopic,
 	liveGlobalConnectionTopic,
 } from "@nkzw/fate/server";
-import type {LivePublisher} from "@phoenix/fate-effect";
+import {LivePublisher} from "@phoenix/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -31,8 +31,8 @@ import * as Schema from "effect/Schema";
  * this string; a typo on either side silently creates a dead topic (publish and
  * subscribe miss each other with no failure). The subscribe side is gated by
  * {@link LiveConnectionProcedureSchema}; the publish side is gated by
- * {@link WorkerLivePublisher}, the worker-level narrowing every mutation binds
- * the package's plain-string `LivePublisher` under.
+ * {@link WorkerLivePublisher}, the worker-level accessor every mutation binds
+ * the package's plain-string `LivePublisher` through.
  *
  * Derived from the live root list (`posts`) and the nested-connection mutation
  * sites (`Post.comments`, `Term.definitions`). Add a member here when a resolver
@@ -44,12 +44,12 @@ export type LiveConnectionProcedure = "posts" | "Post.comments" | "Term.definiti
  * The package `LivePublisher` service surface with `connection`'s procedure
  * narrowed to {@link LiveConnectionProcedure} — the publish-side typo gate.
  * The package takes a plain `string` by design (it cannot know phoenix's
- * procedures); a mutation binds its publisher under this type
- * (`const live: WorkerLivePublisher = yield* LivePublisher`) so a misspelled
- * procedure is a compile error instead of a silent dead topic. Function
- * parameters are contravariant, so the package's service value is assignable
- * here with no cast and no runtime wrapper. Everything but the narrowed
- * parameter references the package type structurally (`Omit`, `Parameters`,
+ * procedures); a mutation binds its publisher through the accessor below
+ * (`const live = yield* WorkerLivePublisher`) so a misspelled procedure is a
+ * compile error instead of a silent dead topic. Function parameters are
+ * contravariant, so the package's service value is assignable here with no
+ * cast and no runtime wrapper. Everything but the narrowed parameter
+ * references the package type structurally (`Omit`, `Parameters`,
  * `ReturnType`), so the two surfaces cannot drift.
  */
 export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "connection"> & {
@@ -58,6 +58,17 @@ export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "connection
 		args?: Parameters<(typeof LivePublisher.Service)["connection"]>[1],
 	) => ReturnType<(typeof LivePublisher.Service)["connection"]>;
 };
+
+/**
+ * The ONE seam where the package tag is narrowed to the typo-gated surface:
+ * worker mutations write `const live = yield* WorkerLivePublisher` and never
+ * import the package tag directly — the un-narrowed `yield* LivePublisher`
+ * also compiles, but silently has no gate, so "import the worker accessor,
+ * not the package tag" is the (greppable) convention. Same tag, retyped by
+ * plain assignability; TS merges the type and value namespaces.
+ */
+export const WorkerLivePublisher: Effect.Effect<WorkerLivePublisher, never, LivePublisher> =
+	LivePublisher;
 
 /** A fate live entity frame body (matches fate's native `livePayload`). */
 export type EntityFrame =
@@ -334,7 +345,7 @@ export const defaultLiveLimits: LiveLimits = {
 /**
  * A persisted topic-role subscriber row (the value stored under a `sub:` KV key,
  * void's flat-key model). `connectionId` is the human-readable connection name
- * the topic re-derives the instance name from (`makeConnectionName`,
+ * the topic re-addresses the instance from (`connectionOf`,
  * `live-do.ts`); `subId` is the
  * client's subscription id. The void-faithful stale model rides two counters:
  * `generation` captures the connection's stream lifetime at register time (a
