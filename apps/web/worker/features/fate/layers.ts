@@ -111,8 +111,10 @@ export const makeFateRuntime = (
  * `pasaport-from-tag.test.ts` resolves `Pasaport` through this very path over a
  * REAL better-auth fake with only the inert context, and asserts
  * `validateSession` works. The day the fork (or upstream alchemy better-auth)
- * starts reading `RuntimeContext` during `auth` resolution, that test fails
- * in-process instead of a prod session silently mis-resolving.
+ * starts reading `RuntimeContext` during `auth` resolution — most likely via a
+ * better-auth dep bump — that test fails in-process instead of a prod session
+ * silently mis-resolving; the fix then is to widen `makeFateLayer`'s `R` to
+ * include `RuntimeContext` (and provide the real one), not to delete the test.
  */
 const inertRuntimeContext: BaseRuntimeContext = {
 	Type: "fate-layer",
