@@ -20,6 +20,7 @@ import {
 	liveEntityTopic,
 	liveGlobalConnectionTopic,
 } from "@nkzw/fate/server";
+import {LivePublisher} from "@phoenix/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
@@ -29,15 +30,45 @@ import * as Schema from "effect/Schema";
  * `LivePublisher` service) and the matching subscribe both key their topic off
  * this string; a typo on either side silently creates a dead topic (publish and
  * subscribe miss each other with no failure). The subscribe side is gated by
- * {@link LiveConnectionProcedureSchema}; the publish side is plain-string typed
- * (the package's `LivePublisher` cannot know phoenix's procedures), so a
- * publish-site typo is caught by the live integration suite, not the compiler.
+ * {@link LiveConnectionProcedureSchema}; the publish side is gated by
+ * {@link WorkerLivePublisher}, the worker-level accessor every mutation binds
+ * the package's plain-string `LivePublisher` through.
  *
  * Derived from the live root list (`posts`) and the nested-connection mutation
  * sites (`Post.comments`, `Term.definitions`). Add a member here when a resolver
  * publishes to a new connection.
  */
 export type LiveConnectionProcedure = "posts" | "Post.comments" | "Term.definitions";
+
+/**
+ * The package `LivePublisher` service surface with `connection`'s procedure
+ * narrowed to {@link LiveConnectionProcedure} — the publish-side typo gate.
+ * The package takes a plain `string` by design (it cannot know phoenix's
+ * procedures); a mutation binds its publisher through the accessor below
+ * (`const live = yield* WorkerLivePublisher`) so a misspelled procedure is a
+ * compile error instead of a silent dead topic. Function parameters are
+ * contravariant, so the package's service value is assignable here with no
+ * cast and no runtime wrapper. Everything but the narrowed parameter
+ * references the package type structurally (`Omit`, `Parameters`,
+ * `ReturnType`), so the two surfaces cannot drift.
+ */
+export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "connection"> & {
+	readonly connection: (
+		procedure: LiveConnectionProcedure,
+		args?: Parameters<(typeof LivePublisher.Service)["connection"]>[1],
+	) => ReturnType<(typeof LivePublisher.Service)["connection"]>;
+};
+
+/**
+ * The ONE seam where the package tag is narrowed to the typo-gated surface:
+ * worker mutations write `const live = yield* WorkerLivePublisher` and never
+ * import the package tag directly — the un-narrowed `yield* LivePublisher`
+ * also compiles, but silently has no gate, so "import the worker accessor,
+ * not the package tag" is the (greppable) convention. Same tag, retyped by
+ * plain assignability; TS merges the type and value namespaces.
+ */
+export const WorkerLivePublisher: Effect.Effect<WorkerLivePublisher, never, LivePublisher> =
+	LivePublisher;
 
 /** A fate live entity frame body (matches fate's native `livePayload`). */
 export type EntityFrame =
@@ -68,11 +99,12 @@ export type ConnectionFrame =
  *
  * `procedure` is a plain `string` here: the envelope is wire data (the DO and
  * `topicsForPublish` genuinely key off any string), and the publish-side typo
- * gate lives at the CALLER surface — `TypedLiveConnection` for bridge
- * mutations today, a worker-level narrowing over the package's `LivePublisher`
- * (which takes plain strings by design) when features migrate. The subscribe
- * side stays closed: {@link SubscribeControl} and the control-request schema
- * still reject unknown procedures, so a dead topic cannot be *registered*.
+ * gate lives at the CALLER surface — {@link WorkerLivePublisher}, the
+ * worker-level narrowing over the package's `LivePublisher` (which takes
+ * plain strings by design) that every mutation binds its publisher under. The
+ * subscribe side stays closed: {@link SubscribeControl} and the
+ * control-request schema still reject unknown procedures, so a dead topic
+ * cannot be *registered*.
  */
 export type PublishMessage =
 	| {
@@ -313,7 +345,8 @@ export const defaultLiveLimits: LiveLimits = {
 /**
  * A persisted topic-role subscriber row (the value stored under a `sub:` KV key,
  * void's flat-key model). `connectionId` is the human-readable connection name
- * the topic re-derives `connection:${connectionId}` from; `subId` is the
+ * the topic re-addresses the instance from (`connectionOf`,
+ * `live-do.ts`); `subId` is the
  * client's subscription id. The void-faithful stale model rides two counters:
  * `generation` captures the connection's stream lifetime at register time (a
  * (re)connect bumps the connection's persisted generation), and `revision`

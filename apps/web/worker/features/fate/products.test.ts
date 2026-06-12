@@ -1,9 +1,9 @@
 /**
- * fate data-plane parity for the remaining products (ADR 0041; named for the
- * bridge era it was written in — the assertions are the migration's regression
- * harness and survive it).
+ * fate-operation integration tests (T2, ADR 0040) — the remaining products
+ * through the native interpreter path (ADR 0041), asserting wire output,
+ * mutation round-trips, and topic publishes.
  *
- * `bridge-sozluk.test.ts` proves the worker-as-runtime seam on sozluk. This
+ * `sozluk.test.ts` proves the worker-as-runtime seam on sozluk. This
  * file ports the proof to **pano** (posts, comments), **pasaport** (profile,
  * `me`), **vote** (cross-product up-vote / retract), and **stats** (landingStats)
  * — every query, list, mutation, and source — driven through the SAME seam via
@@ -21,7 +21,7 @@
  *      serving path the deployed worker runs (`FateServer.layer(fateConfig)`
  *      + the interpreter; ADR 0043).
  *
- * Asserts wire parity with the pre-migration `/fate` surface for these products:
+ * Asserts the `/fate` wire contract for these products:
  *   - pano: `posts(sort/host)` list, `post(idOrSlug)` detail + `Post.comments`
  *     keyset connection, post + comment mutations re-resolving the changed entity.
  *   - pasaport: `profile(username)` identity + counters + `Profile.contributions`
@@ -30,7 +30,7 @@
  *   - vote: `post.vote` / `comment.vote` move the score and re-resolve the entity.
  *   - stats: `landingStats` returns the four counters + the build version.
  *
- * Runs in the node pool (no workerd) — same constraint as `bridge-sozluk.test.ts`.
+ * Runs in the node pool (no workerd) — same constraint as `sozluk.test.ts`.
  *
  * Per-test DB isolation: each `it` builds its own worker layer over a fresh
  * `node:sqlite` handle ({@link freshDb}) seeded identically, and closes it in
@@ -96,9 +96,9 @@ async function freshDb(): Promise<void> {
 		Effect.gen(function* () {
 			const pano = yield* Pano;
 			const post = yield* pano.submitPost({
-				title: "Bridge Post",
-				url: "https://example.com/bridge",
-				body: "bridge pano body",
+				title: "Fate Post",
+				url: "https://example.com/fate",
+				body: "fate pano body",
 				tags: [{kind: "tartışma"}, {kind: "soru"}],
 				authorId: AUTHOR.id,
 				authorName: AUTHOR.name,
@@ -135,7 +135,7 @@ afterEach(() => {
 /* pano reads                                                                  */
 /* -------------------------------------------------------------------------- */
 
-describe("fate bridge — pano reads", () => {
+describe("fate ops — pano reads", () => {
 	it("posts(hot) returns rows with id cursors", async () => {
 		const {result} = await runFateOp(WorkerLive, {
 			kind: "list",
@@ -152,7 +152,7 @@ describe("fate bridge — pano reads", () => {
 		const seeded = data.items.find((e) => e.node.id === POST_ID);
 		expect(seeded).toBeDefined();
 		expect(seeded!.cursor).toBe(POST_ID);
-		expect(seeded!.node.title).toBe("Bridge Post");
+		expect(seeded!.node.title).toBe("Fate Post");
 		expect(seeded!.node.commentCount).toBe(5);
 		expect(data.pagination.hasPrevious).toBe(false);
 	});
@@ -189,7 +189,7 @@ describe("fate bridge — pano reads", () => {
 			tags: Array<{kind: string; label: string}>;
 		};
 		expect(data.id).toBe(POST_ID);
-		expect(data.title).toBe("Bridge Post");
+		expect(data.title).toBe("Fate Post");
 		expect(data.host).toBe("example.com");
 		expect(data.commentCount).toBe(5);
 		expect(data.tags.map((t) => t.kind).sort()).toEqual(["soru", "tartışma"]);
@@ -291,14 +291,14 @@ describe("fate bridge — pano reads", () => {
 /* pano mutations + vote                                                       */
 /* -------------------------------------------------------------------------- */
 
-describe("fate bridge — pano mutations + vote round-trip", () => {
-	it("post.submit round-trips and the post re-resolves over the bridge", async () => {
+describe("fate ops — pano mutations + vote round-trip", () => {
+	it("post.submit round-trips and the post re-resolves over the same seam", async () => {
 		const add = await runFateOp(
 			WorkerLive,
 			{
 				kind: "mutation",
 				name: "post.submit",
-				input: {title: "Submitted via bridge", body: "a body", tags: [{kind: "soru"}]},
+				input: {title: "Submitted via fate", body: "a body", tags: [{kind: "soru"}]},
 				select: ["id", "title", "score", "author", "authorId"],
 			},
 			{auth: AUTHOR},
@@ -307,7 +307,7 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 		if (!add.result.ok) return;
 		const created = add.result.data as {id: string; title: string; score: number; authorId: string};
 		expect(created.id).toBeTruthy();
-		expect(created.title).toBe("Submitted via bridge");
+		expect(created.title).toBe("Submitted via fate");
 		expect(created.score).toBe(0);
 		expect(created.authorId).toBe(AUTHOR.id);
 
@@ -319,16 +319,16 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 		});
 		expect(reread.result.ok).toBe(true);
 		if (!reread.result.ok) return;
-		expect((reread.result.data as {id: string; title: string}).title).toBe("Submitted via bridge");
+		expect((reread.result.data as {id: string; title: string}).title).toBe("Submitted via fate");
 	});
 
-	it("comment.add round-trips and the changed parent re-resolves over the bridge", async () => {
+	it("comment.add round-trips and the changed parent re-resolves over the same seam", async () => {
 		const add = await runFateOp(
 			WorkerLive,
 			{
 				kind: "mutation",
 				name: "comment.add",
-				input: {postId: POST_ID, body: "added via bridge — long enough"},
+				input: {postId: POST_ID, body: "added via fate — long enough"},
 				select: ["id", "body", "author", "authorId"],
 			},
 			{auth: AUTHOR},
@@ -445,7 +445,7 @@ describe("fate bridge — pano mutations + vote round-trip", () => {
 /* pasaport reads + mutations                                                  */
 /* -------------------------------------------------------------------------- */
 
-describe("fate bridge — pasaport", () => {
+describe("fate ops — pasaport", () => {
 	it("me anonymous → UNAUTHORIZED, authed → the full user row", async () => {
 		const anon = await runFateOp(WorkerLive, {kind: "query", name: "me", select: ["id"]});
 		expect(anon.result.ok).toBe(false);
@@ -556,7 +556,7 @@ describe("fate bridge — pasaport", () => {
 /* stats                                                                       */
 /* -------------------------------------------------------------------------- */
 
-describe("fate bridge — stats", () => {
+describe("fate ops — stats", () => {
 	it("landingStats returns the four counters plus the build version", async () => {
 		const {result} = await runFateOp(WorkerLive, {
 			kind: "query",

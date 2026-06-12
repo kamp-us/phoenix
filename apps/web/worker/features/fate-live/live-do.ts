@@ -10,8 +10,9 @@
  * A LiveDO instance is named either `connection:<connectionId>` (connection
  * role: owns one client's held SSE stream + its subscription list) or
  * `topic:<topicKey>` (topic role: owns that topic's durable subscriber registry
- * + the publish fan-out + the reap alarm). {@link resolveRole} reads
- * `state.id.name` to pick the role at request time.
+ * + the publish fan-out + the reap alarm). Instances are addressed ONLY via
+ * {@link connectionOf}/{@link topicOf} (here, beside the name parser);
+ * {@link resolveRole} reads `state.id.name` to pick the role at request time.
  *
  * Cross-role calls go through the DO's OWN namespace, resolved ONCE in init
  * (`const live = yield* LiveDO`) and held in the closure. Because it is the same
@@ -139,16 +140,51 @@ type Role =
 	| {readonly kind: "topic"; readonly topicKey: string}
 	| {readonly kind: "unknown"};
 
+/** The two role prefixes of the instance-name grammar (void's name convention). */
+const CONNECTION_PREFIX = "connection:";
+const TOPIC_PREFIX = "topic:";
+
+/**
+ * Build a connection-role instance name. The grammar lives at THIS seam, beside
+ * its parser ({@link resolveRole}). Production code never calls the name
+ * builders directly — addressing goes through {@link connectionOf}/{@link topicOf},
+ * so a role-prefixed name never travels as a string and hand-rolling one means
+ * also hand-rolling the `getByName` call (a greppable review convention, NOT a
+ * compiler guarantee: `getByName` itself accepts any string, and a malformed
+ * name is what {@link resolveRole} maps to `unknown` — a silently no-op RPC).
+ * The builders stay exported for `do.test.ts`'s platform fake, which mints
+ * `state.id.name` values and registry keys the way the DO platform does.
+ */
+export const makeConnectionName = (connectionId: string): `connection:${string}` =>
+	`${CONNECTION_PREFIX}${connectionId}`;
+
+/** Build a topic-role instance name — same one-seam grammar as {@link makeConnectionName}. */
+export const makeTopicName = (topicKey: string): `topic:${string}` => `${TOPIC_PREFIX}${topicKey}`;
+
+/**
+ * Address a connection-role instance: name grammar + `getByName` in one step.
+ * Generic over the namespace's structural shape, so the worker namespace, the
+ * DO's own scope handle, and the test fake all use the same addressing seam.
+ */
+export const connectionOf = <T>(
+	live: {readonly getByName: (name: string) => T},
+	connectionId: string,
+): T => live.getByName(makeConnectionName(connectionId));
+
+/** Address a topic-role instance — same one-step seam as {@link connectionOf}. */
+export const topicOf = <T>(live: {readonly getByName: (name: string) => T}, topicKey: string): T =>
+	live.getByName(makeTopicName(topicKey));
+
 /** Pick the role from the instance name's prefix (void's name convention). */
 function resolveRole(name: string | undefined): Role {
 	if (name === undefined) {
 		return {kind: "unknown"};
 	}
-	if (name.startsWith("connection:")) {
-		return {kind: "connection", connectionId: name.slice("connection:".length)};
+	if (name.startsWith(CONNECTION_PREFIX)) {
+		return {kind: "connection", connectionId: name.slice(CONNECTION_PREFIX.length)};
 	}
-	if (name.startsWith("topic:")) {
-		return {kind: "topic", topicKey: name.slice("topic:".length)};
+	if (name.startsWith(TOPIC_PREFIX)) {
+		return {kind: "topic", topicKey: name.slice(TOPIC_PREFIX.length)};
 	}
 	return {kind: "unknown"};
 }
@@ -168,9 +204,8 @@ function subscriberKey(row: SubscriberRow): string {
  *
  * `state` is the resolved `Cloudflare.DurableObjectState`. `live` is the DO's own
  * namespace (resolved once in init), used for cross-role addressing:
- * `live.getByName("topic:" + key)` / `live.getByName("connection:" + id)`. The
- * builder takes both as plain args so the same algorithm is unit-testable
- * without workerd.
+ * `topicOf(live, key)` / `connectionOf(live, id)`. The builder takes both as
+ * plain args so the same algorithm is unit-testable without workerd.
  */
 export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	const encoder = new TextEncoder();
@@ -294,7 +329,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 							revision,
 							updatedAt: Date.now(),
 						};
-						yield* live.getByName(`topic:${topicKey}`).register({row, limits: input.limits});
+						yield* topicOf(live, topicKey).register({row, limits: input.limits});
 					}),
 				{concurrency: "unbounded"},
 			);
@@ -316,8 +351,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			yield* Effect.forEach(
 				sub.topics,
 				(topicKey) =>
-					live
-						.getByName(`topic:${topicKey}`)
+					topicOf(live, topicKey)
 						.unregister({
 							row: {
 								topicKey,
@@ -455,7 +489,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				grouped,
 				([connectionId, items]) =>
 					Effect.gen(function* () {
-						const connection = live.getByName(`connection:${connectionId}`);
+						const connection = connectionOf(live, connectionId);
 						const staleKeys: Array<string> = [];
 						let reachable = true;
 						let delivered = 0;
@@ -515,8 +549,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 						// First failed probe → reap ALL that connection's rows (void-faithful:
 						// no consecutive-miss counter). A reachable connection reports which
 						// of its rows are stale; we reap exactly those.
-						const result = yield* live
-							.getByName(`connection:${connectionId}`)
+						const result = yield* connectionOf(live, connectionId)
 							.check({subscriptions: items.map((item) => item.row)})
 							.pipe(
 								Effect.timeout(probeTimeout),

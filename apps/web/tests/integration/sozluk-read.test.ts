@@ -2,7 +2,7 @@
  * sozluk reads — system smoke against the deployed worker `/fate` route (ADR 0026–0031).
  *
  * This is the SMOKE residue after the keyset/pagination CORRECTNESS was migrated
- * down to a T2 bridge test (`worker/features/fate/bridge-sozluk-keyset.test.ts`):
+ * down to a T2 fate-op test (`worker/features/fate/sozluk-keyset.test.ts`):
  * popular/recent ordering across pages, the `Term.definitions` keyset walk, the
  * `endCursor`/`hasNext` semantics, and stale-cursor collapse are all asserted at
  * T2 now, seeded by direct INSERT with explicit `score`/`createdAt`/`id` — no

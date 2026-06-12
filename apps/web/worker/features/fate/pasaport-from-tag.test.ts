@@ -1,24 +1,29 @@
 /**
- * Guard test for `PasaportFromTag`'s inert `RuntimeContext` stub (`layers.ts`).
+ * Guard test for `PasaportFromTag`'s inert `RuntimeContext` stub
+ * (`features/fate/layers.ts`, the `inertRuntimeContext` + `PasaportFromTag` block).
  *
- * `makeFateLayer`'s `PasaportFromTag` resolves the better-auth instance from the
- * `BetterAuth` Context tag while satisfying the *type-level* `RuntimeContext`
- * requirement on `betterAuth.auth` with a hand-built **inert** stub
- * (`PasaportFromTag` in `layers.ts`). That is runtime-safe **only** because
- * phoenix's better-auth
- * fork reads its secret from a binding and never touches `RuntimeContext` during
- * auth resolution. The day the fork (or upstream `@alchemy.run/better-auth`)
- * starts reading `RuntimeContext` while resolving `auth`, a deployed session
- * would silently mis-resolve.
+ * **The stub.** `betterAuth.auth`'s value type is `Effect<Auth, never, RuntimeContext>`, so
+ * resolving the instance type-requires alchemy's `RuntimeContext`. `makeFateLayer` discharges
+ * that requirement with a hand-built **inert** stub (empty env, no-op get/set) so its `R` stays
+ * exactly `Database | BetterAuth`. That is runtime-safe **only** because phoenix's better-auth
+ * fork reads its secret from a binding and never touches `RuntimeContext` during auth
+ * resolution.
  *
- * This test pins the contract so that regression fails **in-process** instead of
- * in prod: it resolves `Pasaport` through the REAL `PasaportFromTag` path — a real
- * better-auth instance (`makeRealAuthForTest`) over `node:sqlite` wrapped by
- * `layerTest`, NOT the `layerStub`
- * bypass — with only the inert `RuntimeContext` discharging the requirement, then
- * proves `Pasaport.validateSession` resolves a real session end-to-end. If the
- * inert stub ever stops being sufficient, the auth resolution inside `makeFateLayer`
- * dies and this named test points straight at `PasaportFromTag`.
+ * **The invariant pinned.** Auth resolution succeeds with ONLY the inert stub — i.e. nothing
+ * reads `RuntimeContext` during session validation. The test resolves `Pasaport` through the
+ * REAL `PasaportFromTag` path — a real better-auth instance (`makeRealAuthForTest`) over
+ * `node:sqlite` wrapped by `layerTest`, NOT the `layerStub` bypass — with only the inert
+ * `RuntimeContext` discharging the requirement, then proves `Pasaport.validateSession`
+ * resolves a real session end-to-end.
+ *
+ * **When it fails.** The fork (or upstream `@alchemy.run/better-auth`) has started reading
+ * `RuntimeContext` while resolving `auth` — most likely arriving via a better-auth dep bump.
+ * This test dies in-process pointing straight at `PasaportFromTag`, where `app.test.ts` would
+ * fail with a confusing distant error. The fix then is to widen `makeFateLayer`'s `R` to
+ * include `RuntimeContext` (and provide the real one), NOT to delete this test.
+ *
+ * Keep decision: 2026-06-12 architecture audit — the watched fragility is fork-drift, which is
+ * a live channel in this project.
  *
  * (T2 — `app.test.ts` exercises this path implicitly through the whole router;
  * this is the focused, self-diagnosing version.)
