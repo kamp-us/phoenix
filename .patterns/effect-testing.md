@@ -79,9 +79,10 @@ import * as Latch from "effect/Latch";
 
 it.effect("an abort mid-flight interrupts the program", () =>
   Effect.gen(function* () {
+    const controller = new AbortController();
     const started = yield* Latch.make();
     const program = started.open.pipe(Effect.andThen(Effect.never));
-    const fiber = yield* Effect.forkChild(program.pipe(interruptOnAbort(signal)));
+    const fiber = yield* Effect.forkChild(program.pipe(interruptOnAbort(controller.signal)));
     yield* started.await; // deterministic on any runner speed
     controller.abort();
     const exit = yield* Fiber.await(fiber);
@@ -99,9 +100,11 @@ Two scoped exceptions:
   not happen — a bounded timer is the only tool. Know its failure direction: on a slow runner
   it false-PASSES (masks), it never false-fails. Acceptable for liveness checks; never use this
   shape for positive coordination.
-- **The oracle/compile harness keeps `Effect.runPromiseExit`** (`packages/fate-effect`'s
-  Executor/oracle suites): the JS conversion boundary is the *subject under test* there, not a
-  style anachronism. Don't "migrate" it to `it.effect`.
+- **The oracle/compile harness keeps its `ManagedRuntime.runPromise` conversion point**
+  (`packages/fate-effect`'s Executor/oracle suites — `runtime.runPromise` on a harness-owned
+  runtime, the runtime-METHOD form; the static `Effect.run*` form is banned from package
+  sources by the conversion-point enumeration test): the JS conversion boundary is the
+  *subject under test* there, not a style anachronism. Don't "migrate" it to `it.effect`.
 
 Existing plain-vitest tests that run Effects via `runPromise` convert to `it.effect`
 opportunistically — when a change next touches the file, not as a churn pass.
