@@ -1,7 +1,6 @@
 /**
  * The connection plane's Schema-decoded pagination args + in-array windowing
- * (tasks.md task 16, AC "Connection args … decode via Schema with
- * fate-identical defaults").
+ * — connection args decode via Schema with fate-identical defaults.
  *
  * Parity target: fate's `paginationArgsSchema` (the ONLY runtime zod in
  * phoenix's execution path before this module replaced it) and

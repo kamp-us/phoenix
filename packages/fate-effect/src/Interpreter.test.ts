@@ -1,7 +1,6 @@
 /**
- * `FateInterpreter` — the v2 dispatch loop under the DIFFERENTIAL ORACLE
- * (tasks.md task 14; PRD story 16): the harness smoke test plus the sozluk
- * operation corpus.
+ * `FateInterpreter` — the v2 dispatch loop under the DIFFERENTIAL ORACLE:
+ * the harness smoke test plus the sozluk operation corpus.
  *
  * The oracle's contract: any protocol request runs through BOTH backends —
  * the v1 compiled server (fate's own `handleRequest` over
@@ -212,7 +211,7 @@ describe("the sozluk oracle corpus — queries and mutations", () => {
 					{id: "1", kind: "query", name: "definitions", args: {term: "fate"}, select: []},
 				],
 			},
-			// -- a list smoke case (full list/connection corpus lands in task 16) --
+			// -- a list smoke case (the full corpus: the features + walk suites) --
 			{
 				label: "list operation parity (smoke)",
 				operations: [{id: "1", kind: "list", name: "terms", args: {first: 1}, select: []}],

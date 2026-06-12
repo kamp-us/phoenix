@@ -1,6 +1,6 @@
 /**
- * `toCodegenServer` (`Codegen.ts`) — the task-8 fidelity spike (PRD story 13;
- * the PRD's FIRST open question).
+ * `toCodegenServer` (`Codegen.ts`) — codegen fidelity against the live
+ * compiled server.
  *
  * The contract under test:
  *
@@ -166,7 +166,7 @@ const config = FateServer.config({
 // What an honest hand-built live fate server declares for the same wire
 // contract: resolver args/input typed as the Schemas' Encoded side, outputs as
 // the rows the handlers produce. `InferFateAPI` over THIS value is the client
-// type the spike must reproduce from inert handlers.
+// type the codegen value must reproduce from inert handlers.
 
 const liveQueries = {
 	term: {
@@ -329,7 +329,7 @@ describe("toCodegenServer — validation", () => {
 		expect(() => toCodegenServer(invalid)).toThrow(/duplicate wire name "dup"/);
 	});
 
-	it("a typeless mutation throws at build time with the layer's wording (review B2)", () => {
+	it("a typeless mutation throws at build time with the layer-construction wording", () => {
 		// Hand-built erased entry — `Fate.mutation` makes this unrepresentable;
 		// the runtime check in `collectConfigIssues` guards non-TS callers. The
 		// asserted wording is the SAME string `FateServer.layer` dies with
@@ -347,7 +347,7 @@ describe("toCodegenServer — validation", () => {
 	});
 });
 
-// --- 4. InferFateAPI fidelity (the PRD's open question) ------------------------------
+// --- 4. InferFateAPI fidelity ---------------------------------------------------------
 
 describe("InferFateAPI fidelity — codegen ≡ live", () => {
 	it("the codegen API and the live API are assignable in BOTH directions", () => {

@@ -1,23 +1,22 @@
 /**
- * `FateServer` — the tag, `config`, and `layer` (tasks.md task 5; PRD stories
- * 7, 10).
+ * `FateServer` — the tag, `config`, and `layer`.
  *
  * The composite contract under test:
  *
  *   1. **The layer's R is the union of handler/source requirements minus the
  *      per-request pair** (`CurrentUser`, `LivePublisher`) — those two are the
- *      server's per-request contract, provided by the compiler per request
- *      (task 7), never by worker-level layers. Type-level pins below.
+ *      server's per-request contract, provided by the compiler per
+ *      request, never by worker-level layers. Type-level pins below.
  *   2. **A forgotten domain layer is a compile error at the `Layer.provide`
  *      composition site** — an undischarged layer is not a
  *      `Layer<FateServer>`. Pinned via `expectTypeOf` bounds, NOT
  *      `@ts-expect-error`: the effect LSP plugin reports the mismatch as
  *      TS377034 (`missingLayerContext`), which escapes the directive under
- *      tsgo — the task_3/_4 hazard ledger recurring in layer shape.
+ *      tsgo — the recurring tsgo hazard, here in layer shape.
  *   3. **Init-time validation fails layer construction with names attached**:
  *      duplicate wire names across the category records (both owners named)
  *      and view-reachable entities without a source (entity named). These are
- *      the layer-construction tests tasks.md tiers as T1: they build the
+ *      the layer-construction tests tiered T1: they build the
  *      layer for real (`Layer.build` through the Effect runtime) — no
  *      storage, but not pure-value T0 either.
  *   4. **Every record is constructor-built** — the raw legacy bridge-shaped
@@ -26,8 +25,8 @@
  *
  * Like the sibling suites, this module **exports** its config/layer consts on
  * purpose: the package tsconfig is `composite`, so tsgo's declaration
- * nameability checks (TS2883) run over `FateServer.config`'s inferred type —
- * the PRD's named watchpoint — with a representative multi-feature config
+ * nameability checks (TS2883) run over `FateServer.config`'s inferred type
+ * with a representative multi-feature config
  * (sozluk-shaped records + a string-typed query).
  */
 import {Cause, Context, Effect, Exit, Layer} from "effect";
@@ -118,7 +117,7 @@ export const sozlukLists = {
  * The per-request pair in action: the handler yields `CurrentUser` (via
  * `required`) and `LivePublisher` like any other service — both must be
  * EXCLUDED from the layer's R (they are provided per request by the
- * compiler, task 7).
+ * compiler).
  */
 export const sozlukMutations = {
 	"definition.add": Fate.mutation(
@@ -217,7 +216,7 @@ describe("FateServer.layer — the R channel", () => {
 		// provided composition — is a compile error. Pinned as an `expectTypeOf`
 		// bound rather than `@ts-expect-error`: the effect LSP plugin reports the
 		// mismatch as TS377034 (`missingLayerContext`), which escapes the
-		// directive under tsgo (the recurring hazard, see the task_3/_4 ledger).
+		// directive under tsgo (the recurring hazard the suite header documents).
 		expectTypeOf(phoenixLayer).not.toExtend<Layer.Layer<FateServer>>();
 
 		// Positive control: ordinary `Layer.provide` discharges it.
@@ -237,7 +236,7 @@ describe("FateServer.layer — construction", () => {
 		expect(Object.keys(service.mutations)).toEqual(["definition.add"]);
 		expect(service.sources).toHaveLength(2);
 		expect(service.live).toBe(false);
-		// The captured build-time services are what task 7's compiler provides
+		// The captured build-time services are what the compiler provides
 		// onto each handler (with the per-request pair added per request).
 		const captured = Context.getOption(service.services, TermStore);
 		expect(captured._tag).toBe("Some");
@@ -299,7 +298,7 @@ describe("FateServer.layer — construction", () => {
 		expect(Object.keys(service.queries)).toEqual(["health"]);
 	});
 
-	it("a typeless mutation dies at layer construction (review B2)", async () => {
+	it("a typeless mutation dies at layer construction with the shared wording", async () => {
 		// `Fate.mutation` makes a typeless entry unrepresentable
 		// (`MutationDefinition` requires `type:`), so this hand-built erased
 		// entry models a validation-bypassing caller — exactly what the runtime

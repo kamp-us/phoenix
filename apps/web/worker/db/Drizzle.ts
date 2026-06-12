@@ -196,7 +196,7 @@ export const makeDrizzleAccess = (db: DrizzleDb): DrizzleAccess => ({
 /**
  * Build the `Drizzle` layer from an **already-constructed** drizzle instance.
  *
- * Per ADR 0029 / `.patterns/alchemy-runtime.md`: on alchemy the D1 binding is
+ * Per ADR 0029 / `.patterns/fate-effect-worker-wiring.md`: on alchemy the D1 binding is
  * stable for the isolate's life, so `drizzle()` is built ONCE in the worker init
  * (from the bound `D1Connection.raw`) and provided as a worker-level layer. The
  * `run` / `batch` surface comes from {@link makeDrizzleAccess}; the `db` arrives

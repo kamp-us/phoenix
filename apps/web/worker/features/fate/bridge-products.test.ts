@@ -14,11 +14,12 @@
  *   2. Per op, {@link runFateOp} wraps that worker layer in a per-op
  *      `ManagedRuntime` (built and disposed inside the call — see
  *      `run-fate-op.ts`), builds the per-request pair — `currentUser` and the
- *      recording `LivePublisher` it owns — and hands the compiled server one
- *      `FateRequestContext` of `{currentUser, livePublisher}`.
- *   3. The compiled server runs each handler THROUGH that runtime — the same
- *      mechanism the deployed worker runs (`.patterns/fate-effect-compiler.md`
- *      + ADR 0041).
+ *      recording `LivePublisher` it owns — and hands
+ *      `FateInterpreter.handleRequest` one `FateRequestContext` of
+ *      `{currentUser, livePublisher}`.
+ *   3. The interpreter runs each handler THROUGH that runtime — the same
+ *      serving path the deployed worker runs (`FateServer.layer(fateConfig)`
+ *      + the interpreter; ADR 0043).
  *
  * Asserts wire parity with the pre-migration `/fate` surface for these products:
  *   - pano: `posts(sort/host)` list, `post(idOrSlug)` detail + `Post.comments`

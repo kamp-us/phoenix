@@ -101,8 +101,8 @@ export interface KarmaBumpService {
 
 /**
  * `KarmaBump` — the contract Vote OWNS for the karma counter side-effect of a
- * cast (dependency inversion). Vote is a shared
- * low-level service (Sozluk and Pano both delegate to it), so it must not
+ * cast (dependency inversion). Vote is a shared low-level service (Sozluk
+ * and Pano both delegate to it), so it must not
  * import a feature directory: it declares WHAT it needs — "the statement to
  * batch when a vote lands" — and the implementation arrives at layer
  * composition. Today pasaport provides it in `fate/layers.ts` by wrapping

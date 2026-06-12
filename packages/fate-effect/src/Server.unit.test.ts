@@ -1,6 +1,6 @@
 /**
  * T0 — `declaredWireCodes`: the canonical "every wire code this config can
- * emit" walker (review D1).
+ * emit" walker.
  *
  * The contract under test:
  *

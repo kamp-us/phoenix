@@ -1,5 +1,5 @@
 /**
- * `Protocol` — the v2 wire-protocol codecs (tasks.md task 14; PRD story 16).
+ * `Protocol` — the v2 wire-protocol codecs.
  *
  * Three contracts under test:
  *

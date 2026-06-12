@@ -12,7 +12,7 @@
  * data view masks — same rows, same keyset, same cursor (ADR 0018; fate has no
  * union type).
  *
- * See `.patterns/fate-mutations.md`.
+ * See `.patterns/fate-effect-operations.md`.
  */
 
 import type {ContributionNode, ContributionRow, ProfileRow} from "./Pasaport.ts";

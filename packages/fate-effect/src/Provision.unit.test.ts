@@ -1,6 +1,5 @@
 /**
- * T0 — `provideRequestPair`: THE per-request provision pipeline (review fix,
- * tasks.md task 19).
+ * T0 — `provideRequestPair`: THE per-request provision pipeline.
  *
  * The contract under test:
  *

@@ -1,5 +1,5 @@
 /**
- * Worker-level fate layers (ADR 0041/0043; `.patterns/alchemy-runtime.md`).
+ * Worker-level fate layers (ADR 0041/0043; `.patterns/fate-effect-worker-wiring.md`).
  *
  * There is **no per-request `ManagedRuntime`** — and since the v2 cutover
  * (ADR 0043) no runtime on the request path at all. `Drizzle` (built once

@@ -1,5 +1,5 @@
 /**
- * HTTP surface on `HttpRouter` + `HttpApiBuilder`, Hono-free (task 4, ADR 0027).
+ * HTTP surface on `HttpRouter` + `HttpApiBuilder`, Hono-free (ADR 0027).
  *
  * Drives the *compiled* application — `HttpRouter.toHttpEffect(makeAppLive(...))`,
  * the exact effect the worker returns as `fetch` — over a `node:sqlite`-backed
@@ -14,7 +14,8 @@
  *     issues a session cookie; that cookie makes an authenticated fate `me`
  *     request succeed end-to-end.
  *
- * Runs in the node pool (workerd harness is task 7).
+ * Runs in the node pool (the alchemy worker can't load into
+ * `@cloudflare/vitest-pool-workers` yet).
  */
 import type {BaseRuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";

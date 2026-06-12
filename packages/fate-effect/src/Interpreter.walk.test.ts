@@ -1,7 +1,6 @@
 /**
- * `FateInterpreter` — the WALK plane of the differential oracle (tasks.md
- * task 15, connection plane task 16): byId operations + nested ref
- * selections, byte-equal against fate's own walk.
+ * `FateInterpreter` — the WALK plane of the differential oracle: byId
+ * operations + nested ref selections, byte-equal against fate's own walk.
  *
  * The dual-stack harness (`assertParity` and friends) comes from
  * `Oracle.fixture.ts`; the walk corpus gets its OWN entity family
@@ -36,7 +35,7 @@ import {
 import type {FateRequestContext} from "./RequestContext.ts";
 import {FateServer} from "./Server.ts";
 
-// --- the walk fixtures (task 15: byId + nested refs over static tables) -----------
+// --- the walk fixtures (byId + nested refs over static tables) --------------------
 
 type WalkAuthorRow = {id: string; name: string};
 type WalkChapterRow = {id: string; title: string; pages: number};
@@ -481,7 +480,7 @@ describe("the walk oracle corpus — byId operations + nested ref selections", (
 					{id: "d", kind: "byId", type: "WalkAuthor", ids: ["a1", "a2"], select: ["shout"]},
 				],
 			},
-			// -- the connection plane (task 16): raw arrays under list-kind fields --
+			// -- the connection plane: raw arrays under list-kind fields --
 			{
 				label: "a raw array under a list field wraps without pagination args",
 				operations: [
@@ -691,7 +690,7 @@ describe("the walk oracle corpus — byId operations + nested ref selections", (
 	});
 
 	it("nested connection cursors round-trip across pages, byte-equal on every page", async () => {
-		// The keyset-lockstep AC (ADR 0019 discipline at the oracle level): page
+		// The keyset-lockstep contract (ADR 0019 discipline at the oracle level): page
 		// 1's nextCursor — read off the BASELINE's wire output, not a fixture
 		// constant — feeds page 2's `after`, and both pages byte-compare.
 		const v1 = await makeWalkV1();

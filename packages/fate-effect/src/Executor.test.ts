@@ -1,6 +1,6 @@
 /**
  * `FateExecutor` — the v1 compiler: config → pure `createFateServer` +
- * `toFetchHandler` (tasks.md task 7; PRD stories 8, 11).
+ * `toFetchHandler`.
  *
  * The contract under test, end to end over the wire (fate's own
  * `handleRequest`), driven over the shared sozluk fixture world
@@ -249,7 +249,7 @@ describe("FateExecutor.toFetchHandler — round-trip", () => {
 // --- 1b. config validation surfaces here (the layer builds on first call) ---------
 
 describe("FateExecutor.toFetchHandler — config validation", () => {
-	it("a typeless mutation fails the first request with the layer's wording (review B2)", async () => {
+	it("a typeless mutation fails the first request with the layer-construction wording", async () => {
 		// Hand-built erased entry — `Fate.mutation` makes this unrepresentable;
 		// the check lives in `collectConfigIssues`, so the oracle baseline fails
 		// through layer construction (toFetchHandler resolves the service on

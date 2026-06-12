@@ -2,7 +2,7 @@
  * T0 — `Fate.query` / `Fate.list` / `Fate.mutation` (the record-entry
  * constructors).
  *
- * The resolver contract under test (PRD stories 1, 2, 3, 6, 14):
+ * The resolver contract under test:
  *
  *   1. **Definitions are pure data** — Effect Schema input/args (replacing
  *      zod), the success view (class or wire string), the declared error
@@ -12,12 +12,12 @@
  *      at the constructor call** — failing with an undeclared error is a
  *      compile error (pinned via the `DefinitionErrors` bound below; the
  *      effect LSP plugin's TS377003 escapes `@ts-expect-error`, the
- *      task_3 finding).
+ *      recurring tsgo hazard).
  *   3. **The wrapper decodes before the handler runs**: mutation input is
  *      validated by the definition's Schema; list/query args decode wire args
  *      including absence. A decode failure is an {@link InputValidationError}
  *      — annotated, so `encodeWireError` derives the `VALIDATION_ERROR` wire
- *      code (the wrapper contract task 7's compiler builds on).
+ *      code (the wrapper contract the compiler builds on).
  *   4. **Handlers are Effect-returning functions only** — the documented
  *      authoring form is `Effect.fn("<wire name>")`; raw generators do not
  *      typecheck.
@@ -284,7 +284,7 @@ describe("Fate operations — type-level contract", () => {
 		// union (`E extends DefinitionErrors<D>`), so an undeclared failure
 		// fails the bound at the constructor call — empirically it surfaces as
 		// TS2345 on the handler argument PLUS the effect LSP plugin's TS377003,
-		// which escapes `@ts-expect-error` (the task_3 finding). The pin is
+		// which escapes `@ts-expect-error` (the recurring tsgo hazard). The pin is
 		// therefore the bound itself, with a compiling positive control.
 		type Declared = DefinitionErrors<typeof addTerm.definition>;
 		expectTypeOf<BodyRequired>().toExtend<Declared>();

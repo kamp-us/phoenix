@@ -16,7 +16,7 @@
  * (`features/<feature>/shapers.ts`); features import this module directly so no
  * feature's import graph transitively pulls another feature's shapers.
  *
- * See `.patterns/fate-connections.md`, `.patterns/fate-mutations.md`.
+ * See `.patterns/fate-connections.md`, `.patterns/fate-effect-operations.md`.
  */
 
 import type {ConnectionResult} from "@nkzw/fate/server";

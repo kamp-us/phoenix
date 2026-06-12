@@ -1,6 +1,7 @@
 /**
- * The `Fate` namespace — the record-value constructors plus the two authoring
- * type helpers, the five-export authoring surface:
+ * The `Fate` namespace — the record-value and source constructors plus the
+ * authoring type helpers: the whole authoring surface, exactly the exports
+ * below.
  *
  * ```ts
  * import {Fate} from "@phoenix/fate-effect";

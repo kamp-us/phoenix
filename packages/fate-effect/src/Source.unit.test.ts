@@ -1,7 +1,7 @@
 /**
  * T0 — `Fate.source` (the per-entity loader).
  *
- * The loader contract under test (PRD story 5 + the loader/resolver split):
+ * The loader contract under test (the loader/resolver split):
  *
  *   1. **At least one of `byId`/`byIds` is required at the type level** — an
  *      unloadable source is unrepresentable (the `@ts-expect-error` pins).

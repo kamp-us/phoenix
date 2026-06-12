@@ -1,8 +1,7 @@
 /**
- * `FateInterpreter` — the v2-only execution properties around the oracle
- * (tasks.md tasks 14–17): the RequestResolver batch window (where N+1 dies),
- * concurrent dispatch, and span nesting (the cutover observability AC,
- * task 17 / ADR 0043).
+ * `FateInterpreter` — the v2-only execution properties around the oracle:
+ * the RequestResolver batch window (where N+1 dies), concurrent dispatch,
+ * and span nesting (the cutover observability contract, ADR 0043).
  *
  * These suites pin behavior the byte-equality corpus cannot: how many times
  * a source loader runs, that operations are in flight concurrently, and
@@ -285,7 +284,7 @@ describe("FateInterpreter — concurrent dispatch", () => {
 	});
 });
 
-// --- span nesting (the cutover observability AC, task 17 / ADR 0043) ---------------
+// --- span nesting (the cutover observability contract, ADR 0043) -------------------
 //
 // v2 owns no runtime: `handleRequest` runs on the CALLER's fiber, so every
 // handler/source `Effect.fn` span must parent to the caller's ambient span —

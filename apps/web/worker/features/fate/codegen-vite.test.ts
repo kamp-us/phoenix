@@ -1,5 +1,5 @@
 /**
- * Task-8 spike, AC 4 — the REAL fate Vite plugin generates a native client
+ * The REAL fate Vite plugin generates a native client
  * from a `FateExecutor.toCodegenServer(...)` schema module, end to end through
  * its actual `runnerImport` path (a programmatic `vite build` in a temp root).
  *
@@ -25,7 +25,7 @@ const schemaModule = join(dirname(fileURLToPath(import.meta.url)), "codegen-sche
 
 describe("fate vite plugin × FateExecutor.toCodegenServer", () => {
 	it("runnerImports the codegen schema module and generates the native client", async () => {
-		const root = await mkdtemp(join(tmpdir(), "fate-codegen-spike-"));
+		const root = await mkdtemp(join(tmpdir(), "fate-codegen-"));
 		try {
 			const entry = join(root, "entry.ts");
 			await writeFile(entry, "export const ok = true;\n");
@@ -49,7 +49,7 @@ describe("fate vite plugin × FateExecutor.toCodegenServer", () => {
 
 			const generated = await readFile(join(root, "client.generated.ts"), "utf8");
 			// The generated client types itself off the EXPORTED codegen server —
-			// exactly the InferFateAPI contract the spike settles.
+			// exactly the InferFateAPI contract the codegen suite settles.
 			expect(generated).toContain("type FateAPI = InferFateAPI<typeof fateServer>;");
 			// Mutations come from the codegen manifest, typed through FateAPI.
 			expect(generated).toContain("'definition.add': mutation<");

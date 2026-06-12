@@ -23,7 +23,7 @@
  * `queries.ts` / `lists.ts` calling the service keyset method directly
  * (ADR 0019). The keyset `ORDER BY` lives in the service; the view
  * `list(view, {orderBy})` mirrors it. See `.patterns/fate-connections.md` and
- * `.patterns/fate-sources.md`.
+ * `.patterns/fate-effect-sources.md`.
  */
 import {commentSource, postSource, tagSource} from "../pano/sources.ts";
 import {contributionSource, profileSource, userSource} from "../pasaport/sources.ts";

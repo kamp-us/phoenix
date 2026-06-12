@@ -1,9 +1,9 @@
 /**
  * T0 — the `ErrorCode` annotation key and the wire-error codec.
  *
- * The contract under test (PRD: "define a domain error once with a
- * `ErrorCode` annotation on the error class and have the wire codec
- * derived from it — one edit instead of three"):
+ * The contract under test — define a domain error once with an `ErrorCode`
+ * annotation on the error class and have the wire codec derived from it,
+ * one edit instead of three:
  *
  *   1. Annotating a `Schema.TaggedErrorClass` with `ErrorCode` is
  *      *sufficient* for {@link encodeWireError} to produce the correct wire

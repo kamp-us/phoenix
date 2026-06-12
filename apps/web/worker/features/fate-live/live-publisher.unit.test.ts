@@ -1,6 +1,6 @@
 /**
  * `livePublisherFor` — the worker-side live implementation of the package's
- * `LivePublisher` per-request service (PRD story 9).
+ * `LivePublisher` per-request service.
  *
  * The contract under test, in order:
  *
@@ -10,8 +10,8 @@
  *   2. the published `(topicKey, PublishMessage)` pairs match the established
  *      wire shape — pinned against literal frame fixtures AND against the
  *      frozen byte baseline recorded from the retired bridge event-bus
- *      (`makeLiveEventBus`, deleted in the PR-30 R6 fix — the publisher now
- *      builds frames directly and these pins are the drift guard);
+ *      (`makeLiveEventBus`, deleted when the publisher took over
+ *      frame-building from the bus — these pins are the drift guard);
  *   3. a publish whose underlying topic call rejects cannot fail the calling
  *      effect, and the failure is logged (failing topic stub);
  *   4. publishes are scheduled through the request's execution context
@@ -189,7 +189,8 @@ it.effect("wire shape is identical to the retired event bus for the same mutatio
 
 		// ...and the FROZEN baseline: the exact `(topicKey, message)` pairs the
 		// bridge's `makeLiveEventBus` recorded for these same calls before its
-		// deletion (PR-30 R6) — the bus's output for this corpus, frozen as
+		// deletion (when the publisher took over frame-building) — the bus's
+		// output for this corpus, frozen as
 		// literal bytes. Note `frame: {data: undefined}`: an update without
 		// `data` still carried the `data` key (the bus spelled `{data:
 		// options?.data}`), and the publisher must keep doing so.

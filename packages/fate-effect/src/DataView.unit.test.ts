@@ -1,5 +1,6 @@
 /**
- * T0 — `FateDataView` class factory + `Entity` helper (the TS2883 spike).
+ * T0 — `FateDataView` class factory + `Entity` helper (the TS2883
+ * workaround).
  *
  * Two proofs live here:
  *

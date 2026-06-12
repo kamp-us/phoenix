@@ -10,8 +10,10 @@
  * is `never` (`Effect.Effect<void>`), which is what kills the bridge's
  * per-call-site `useIgnore` boilerplate.
  *
- * The surface mirrors the publish half of the bridge's event-bus
- * (`apps/web/worker/features/fate-live/event-bus.ts`): entity `update`/
+ * The surface mirrors the publish half of the bridge's deleted event-bus
+ * (the worker implementation of this contract is `live-publisher.ts`, the
+ * module named above; `event-bus.ts` survives only as a build-time throwing
+ * stub): entity `update`/
  * `delete` plus the connection edge operations, targeting the existing LiveDO
  * topic role unchanged. Entity/procedure names are plain strings here — the
  * package cannot know phoenix's live entities; the worker may layer its

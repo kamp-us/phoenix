@@ -1,7 +1,7 @@
 /**
- * `FateInterpreter` — the feature-shaped plane of the differential oracle
- * (tasks.md task 16). AC: "the complete oracle corpus — every operation
- * kind, every migrated feature, success and error paths". The sozluk corpus
+ * `FateInterpreter` — the feature-shaped plane of the differential oracle:
+ * the complete oracle corpus — every operation kind, every migrated
+ * feature, success and error paths. The sozluk corpus
  * (`Interpreter.test.ts`, world in `Oracle.fixture.ts`) carries the
  * query/mutation taxonomy; this file adds the OTHER migrated features'
  * distinctive shapes at the level the oracle needs (in-memory, not D1):

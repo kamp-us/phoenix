@@ -1,6 +1,6 @@
 /**
  * Vote feature-boundary pins — the shared low-level vote service depends on
- * no feature directory (architecture audit A2; the inversion sibling of
+ * no feature directory (the inversion sibling of
  * `../domain-error-boundary.unit.test.ts`).
  *
  * `Vote` is consumed by Sozluk AND Pano, so it sits below the feature

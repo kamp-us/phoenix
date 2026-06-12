@@ -11,7 +11,7 @@
  * onto the wire fields stays at the call site, because each source carries
  * different field names; the shaper owns only the wire shape itself.
  *
- * See `.patterns/fate-connections.md`, `.patterns/fate-mutations.md`.
+ * See `.patterns/fate-connections.md`, `.patterns/fate-effect-operations.md`.
  */
 
 import type {PostPage} from "./Pano.ts";
