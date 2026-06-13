@@ -1,18 +1,8 @@
 /**
- * Sözlük home page — fate.
- *
- * The home is two distinct term connections (recent + popular) rendered side by
- * side. fate keys a `useRequest` by client-root name, and the two columns map to
- * two `list` roots (`recentTerms` / `popularTerms`, fixed-sort wrappers over the
- * `terms` keyset — see `worker/features/fate/lists.ts`). So the whole page resolves in
- * **one** batched `useRequest({recentTerms, popularTerms})` (no waterfall); each
- * column is a `useListView` over its connection ref, and each row reads its slice
- * with `useView(TermRowView, node)`.
- *
- * Letter + search filtering is client-side over the already-loaded first page
- * (the home ships first-page only). The filter
- * needs each row's title, so a thin `FilterableTermRow` reads the node and
- * decides whether to render — keeping one `useView` per node.
+ * Sözlük home page — fate. Two term connections (recent + popular) resolve in one
+ * batched `useRequest({recentTerms, popularTerms})`; each maps to a fixed-sort
+ * `list` root over the `terms` keyset (see `worker/features/fate/lists.ts`).
+ * Letter + search filtering is client-side over the already-loaded first page.
  */
 import * as React from "react";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
@@ -21,22 +11,16 @@ import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {Screen} from "../fate/Screen";
 import "./SozlukHome.css";
 
-/**
- * A connection of term rows — the shape both home columns resolve to. A
- * connection "view" is a plain `{items: {node: View}}` selection (not a
- * `view<T>()`); `useRequest`'s `{list}` item and `useListView` both read it.
- */
+/** A connection "view" is a plain `{items: {node: View}}` selection, not a `view<T>()`. */
 const TermConnectionView = {items: {node: TermRowView}} as const;
 
 const HOME_PAGE_SIZE = 5;
 
-/** The request both home columns batch into one `useRequest`. */
 const homeRequest = {
 	recentTerms: {list: TermConnectionView, args: {first: HOME_PAGE_SIZE}},
 	popularTerms: {list: TermConnectionView, args: {first: HOME_PAGE_SIZE}},
 } as const;
 
-/** The connection ref `useRequest` hands each `{list}` column. */
 type TermConnection = ReturnType<typeof useRequest<typeof homeRequest>>["recentTerms"];
 
 export function SozlukHome() {
@@ -91,7 +75,6 @@ interface ContentProps {
 }
 
 function SozlukHomeContent({letter, query, setLetter, setQuery}: ContentProps) {
-	// One batched request for both columns — no waterfall.
 	const {recentTerms, popularTerms} = useRequest(homeRequest);
 
 	return (
@@ -194,8 +177,7 @@ function RecentColumn({connection, letter, query}: RecentColumnProps) {
 
 /**
  * A recent-column row that reads its own title and drops out of the DOM when the
- * active letter / search query excludes it. Keeps one `useView` per node (the
- * row's), with the filter colocated.
+ * active letter / search query excludes it, with the filter colocated.
  */
 function FilterableTermRow({
 	node,

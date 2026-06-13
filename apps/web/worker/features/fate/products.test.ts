@@ -1,27 +1,9 @@
 /**
  * fate-operation integration tests (T2, ADR 0040) — the remaining products
  * through the native interpreter path (ADR 0041), asserting wire output,
- * mutation round-trips, and topic publishes.
- *
- * `sozluk.test.ts` proves the worker-as-runtime seam on sozluk. This
- * file ports the proof to **pano** (posts, comments), **pasaport** (profile,
- * `me`), **vote** (cross-product up-vote / retract), and **stats** (landingStats)
- * — every query, list, mutation, and source — driven through the SAME seam via
- * {@link runFateOp}:
- *
- *   1. `Drizzle` + the feature services are built from a bound D1 (here a
- *      `node:sqlite` stand-in) via `makeFateLayer` — the worker init layer.
- *   2. Per op, {@link runFateOp} wraps that worker layer in a per-op
- *      `ManagedRuntime` (built and disposed inside the call — see
- *      `run-fate-op.ts`), builds the per-request pair — `currentUser` and the
- *      recording `LivePublisher` it owns — and hands
- *      `FateInterpreter.handleRequest` one `FateRequestContext` of
- *      `{currentUser, livePublisher}`.
- *   3. The interpreter runs each handler THROUGH that runtime — the same
- *      serving path the deployed worker runs (`FateServer.layer(fateConfig)`
- *      + the interpreter; ADR 0043).
- *
- * Asserts the `/fate` wire contract for these products:
+ * mutation round-trips, and topic publishes. Ports `sozluk.test.ts`'s
+ * worker-as-runtime seam proof (see that file for the {@link runFateOp}
+ * mechanics) to every query/list/mutation/source of:
  *   - pano: `posts(sort/host)` list, `post(idOrSlug)` detail + `Post.comments`
  *     keyset connection, post + comment mutations re-resolving the changed entity.
  *   - pasaport: `profile(username)` identity + counters + `Profile.contributions`
@@ -30,12 +12,9 @@
  *   - vote: `post.vote` / `comment.vote` move the score and re-resolve the entity.
  *   - stats: `landingStats` returns the four counters + the build version.
  *
- * Runs in the node pool (no workerd) — same constraint as `sozluk.test.ts`.
- *
- * Per-test DB isolation: each `it` builds its own worker layer over a fresh
- * `node:sqlite` handle ({@link freshDb}) seeded identically, and closes it in
- * `afterEach`, so no rows leak across cases. Counts are therefore exact (the
- * previous file-order `>=` accumulation is gone).
+ * Runs in the node pool (no workerd). Each `it` builds its own worker layer over
+ * a fresh `node:sqlite` handle ({@link freshDb}) seeded identically, so counts
+ * are exact (no cross-case row leakage).
  */
 import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
 import {Effect, Layer} from "effect";
@@ -52,34 +31,27 @@ const AUTHOR = {id: "u-author", name: "umut", email: "umut@example.com"};
 const VOTER = {id: "u-voter", name: "elif", email: "elif@example.com"};
 const BOOTSTRAP = {id: "u-bootstrap", name: "Ada Boot", email: "ada@example.com"};
 
-/** The per-test in-memory D1; created in `beforeEach`, closed in `afterEach`. */
 let sqlite: SqliteD1;
-/** The per-test worker layer (Drizzle + features) over {@link sqlite}'s handle. */
 let WorkerLive: Layer.Layer<WorkerFateServices>;
 /** The seeded post id + its five chronological comment ids (per-test). */
 let POST_ID = "";
 const COMMENT_IDS: string[] = [];
 
 /**
- * Build a fresh worker layer over a new `node:sqlite` handle, seed the three
- * users + one post + five comments + AUTHOR's username, and stash `POST_ID` /
- * `COMMENT_IDS`. `WorkerLive` wraps the SAME handle every `runFateOp` call hits
- * (`Layer.succeed(Database)(sqlite.d1)` over a shared object reference).
+ * Fresh worker layer over a new `node:sqlite` handle, seeding three users + one
+ * post + five comments + AUTHOR's username. `WorkerLive` wraps the SAME handle
+ * every `runFateOp` call hits (`Layer.succeed(Database)(sqlite.d1)` over a shared
+ * object reference), so features and seeding share one database.
  */
 async function freshDb(): Promise<void> {
 	sqlite = makeSqliteTestDb();
 
-	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth` (ADR
-	// 0040). Provide the seam from the SAME handle the seeding below writes to
-	// so features and seeding share one database — the one-`sqlite` invariant is
-	// type-enforced. The stub `BetterAuth` is enough: these tests never reach the
-	// session path (`Pasaport.validateSession`).
 	WorkerLive = makeFateLayer.pipe(
 		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), layerStub())),
 	);
 
-	// Seed users directly via raw SQL (better-auth owns `user` in prod; here the
-	// node pool can't forge a session, so we insert the rows the services read).
+	// Seed users via raw SQL: the node pool can't forge a session, so we insert
+	// the user rows the services read (better-auth owns `user` in prod).
 	const nowSec = Math.floor(Date.now() / 1000);
 	for (const u of [AUTHOR, VOTER, BOOTSTRAP]) {
 		sqlite.applyMigration(
@@ -88,10 +60,9 @@ async function freshDb(): Promise<void> {
 		);
 	}
 
-	// Seed one post + five chronological comments through the live Pano service —
-	// the same lifecycle a user-driven submit would take, so the view rows + stats
-	// land identically. Give AUTHOR a username so the pasaport profile feed is a
-	// mixed discriminant (post + comment).
+	// Seed through the live Pano service — the same lifecycle a user submit takes,
+	// so view rows + stats land identically. AUTHOR's username makes the pasaport
+	// profile feed a mixed discriminant (post + comment).
 	const seeded = await Effect.runPromise(
 		Effect.gen(function* () {
 			const pano = yield* Pano;
@@ -130,10 +101,6 @@ beforeEach(async () => {
 afterEach(() => {
 	sqlite?.close();
 });
-
-/* -------------------------------------------------------------------------- */
-/* pano reads                                                                  */
-/* -------------------------------------------------------------------------- */
 
 describe("fate ops — pano reads", () => {
 	it("posts(hot) returns rows with id cursors", async () => {
@@ -287,10 +254,6 @@ describe("fate ops — pano reads", () => {
 	});
 });
 
-/* -------------------------------------------------------------------------- */
-/* pano mutations + vote                                                       */
-/* -------------------------------------------------------------------------- */
-
 describe("fate ops — pano mutations + vote round-trip", () => {
 	it("post.submit round-trips and the post re-resolves over the same seam", async () => {
 		const add = await runFateOp(
@@ -339,8 +302,6 @@ describe("fate ops — pano mutations + vote round-trip", () => {
 		expect(created.id).toBeTruthy();
 		expect(created.authorId).toBe(AUTHOR.id);
 
-		// Re-resolve the parent post: commentCount now reflects the added comment,
-		// and the new comment is in the Post.comments connection.
 		const reread = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "post",
@@ -355,8 +316,7 @@ describe("fate ops — pano mutations + vote round-trip", () => {
 		};
 		expect(post.commentCount).toBe(6);
 		expect(post.comments.items.some((e) => e.node.id === created.id)).toBe(true);
-		// The append targets `Post.comments` scoped to the parent post — the publish
-		// must reach the ARGS-scoped topic, not the global wildcard (ADR 0039).
+		// Publish must reach the ARGS-scoped topic, not the global wildcard (ADR 0039).
 		expect(add.published).toContain(liveConnectionTopic("Post.comments", {id: POST_ID}));
 		expect(add.published).not.toContain("connection:Post.comments:*");
 	});
@@ -441,10 +401,6 @@ describe("fate ops — pano mutations + vote round-trip", () => {
 	});
 });
 
-/* -------------------------------------------------------------------------- */
-/* pasaport reads + mutations                                                  */
-/* -------------------------------------------------------------------------- */
-
 describe("fate ops — pasaport", () => {
 	it("me anonymous → UNAUTHORIZED, authed → the full user row", async () => {
 		const anon = await runFateOp(WorkerLive, {kind: "query", name: "me", select: ["id"]});
@@ -462,7 +418,6 @@ describe("fate ops — pasaport", () => {
 		const me = authed.result.data as {id: string; email: string; username: string | null};
 		expect(me.id).toBe(AUTHOR.id);
 		expect(me.email).toBe(AUTHOR.email);
-		// username was set during seeding.
 		expect(me.username).toBe("umut-author");
 	});
 
@@ -540,7 +495,6 @@ describe("fate ops — pasaport", () => {
 		expect(user.id).toBe(BOOTSTRAP.id);
 		expect(user.username).toBe("ada-boot");
 
-		// Re-resolve via me: the freshly-set username round-trips.
 		const me = await runFateOp(
 			WorkerLive,
 			{kind: "query", name: "me", select: ["id", "username"]},
@@ -551,10 +505,6 @@ describe("fate ops — pasaport", () => {
 		expect((me.result.data as {username: string}).username).toBe("ada-boot");
 	});
 });
-
-/* -------------------------------------------------------------------------- */
-/* stats                                                                       */
-/* -------------------------------------------------------------------------- */
 
 describe("fate ops — stats", () => {
 	it("landingStats returns the four counters plus the build version", async () => {

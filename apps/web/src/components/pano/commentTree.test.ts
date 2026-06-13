@@ -1,7 +1,6 @@
 import {describe, expect, it} from "vitest";
 import {buildCommentTree, type CommentNode} from "./commentTree";
 
-/** Build a node with sane defaults; `ref` is just the id (refs are opaque here). */
 function node(over: Partial<CommentNode<string>> & {id: string}): CommentNode<string> {
 	return {
 		parentId: null,
@@ -79,9 +78,6 @@ describe("buildCommentTree", () => {
 	});
 
 	it("promotes a child whose parent is soft-deleted-and-dropped to a root", () => {
-		// `a` is deleted with no live descendant of its own beyond `b`; `b` is live,
-		// so `a` stays visible as a tombstone and `b` nests under it. (Sanity: the
-		// inverse — a dropped parent — is covered above.)
 		const {roots} = buildCommentTree([
 			node({id: "a", deletedAt: "2026-01-01T00:00:00Z"}),
 			node({id: "b", parentId: "a"}),
@@ -99,13 +95,10 @@ describe("buildCommentTree", () => {
 	});
 
 	it("derives the full tree in one pass — no node is dropped for a missing-meta frame", () => {
-		// The whole point of the reframe: pass the nodes as they arrive (e.g. a
-		// freshly-appended live comment) and they are placed immediately, with no
-		// per-node effect having to fire first.
 		const nodes = [
 			node({id: "root"}),
 			node({id: "reply", parentId: "root"}),
-			node({id: "fresh", parentId: "root"}), // just arrived over SSE
+			node({id: "fresh", parentId: "root"}),
 		];
 		const {roots, childrenByParent} = buildCommentTree(nodes);
 		expect(roots.map((r) => r.id)).toEqual(["root"]);

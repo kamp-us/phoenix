@@ -1,18 +1,6 @@
 import * as React from "react";
 import "./Toast.css";
 
-/**
- * Minimal toast / notification primitive (T17). The session-expired flow
- * surfaces these toasts when a write mutation fails with `UNAUTHORIZED`; the
- * toast carries a link back to `/auth?returnTo=<current>` so the user can
- * recover without losing their place.
- *
- * Designed to stay tiny — no portal, no animation library, no third-party
- * dependency. Renders in a fixed-position region at the bottom-right.
- * Multi-toast support: each `show()` call appends a row; rows dismiss
- * individually via the close button or after a 7s auto-timeout.
- */
-
 export interface ToastDescriptor {
 	id: string;
 	message: React.ReactNode;
@@ -22,7 +10,6 @@ export interface ToastDescriptor {
 	 * expired toast where the user needs time to click the relogin link).
 	 */
 	durationMs?: number;
-	/** Stable testid suffix for Playwright assertions. */
 	testId?: string;
 }
 
@@ -45,16 +32,14 @@ export function ToastProvider({children}: {children: React.ReactNode}) {
 	const show = React.useCallback((input: Omit<ToastDescriptor, "id"> & {id?: string}) => {
 		const id = input.id ?? `toast-${++nextId}`;
 		setToasts((current) => {
-			// Stable id collapse — re-showing the same id replaces the row
-			// instead of stacking duplicates. The session-expired flow uses
-			// this to avoid N copies on N failed mutations in a row.
+			// Re-showing the same id replaces the row instead of stacking — the
+			// session-expired flow relies on this to avoid N copies on N failed mutations.
 			const filtered = current.filter((t) => t.id !== id);
 			return [...filtered, {id, ...input}];
 		});
 		return id;
 	}, []);
 
-	// Auto-dismiss timers — one per toast with `durationMs > 0`.
 	React.useEffect(() => {
 		const timers: ReturnType<typeof setTimeout>[] = [];
 		for (const t of toasts) {

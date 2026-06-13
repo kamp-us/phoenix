@@ -1,10 +1,6 @@
 /**
- * `definition_view` row mapping — the single source for the `DefinitionRow`
- * shape and the `definition_view` → `DefinitionRow` mapper shared by the
- * definition reads (`Sozluk.listDefinitionsKeyset`, `getDefinitionsByIds`).
- *
- * Kept beside `term-summary.ts` so the two definition/term row shapers live in
- * one place each and the read methods can't drift on field mapping.
+ * The `DefinitionRow` shape and the `definition_view` → `DefinitionRow` mapper,
+ * shared by the definition reads so they can't drift on field mapping.
  */
 import type * as schema from "../../db/drizzle/schema.ts";
 
@@ -13,18 +9,12 @@ export interface DefinitionRow {
 	score: number;
 	body: string;
 	author: string;
-	/** Pasaport user id of the author — gates edit / delete affordances. */
 	authorId: string;
 	createdAt: Date;
 	updatedAt: Date;
-	/**
-	 * `1` if the viewer has upvoted this definition, `null` otherwise. Populated
-	 * by the fate batch reads (`getDefinitionsByIds`, `listDefinitionsKeyset`)
-	 * when a `viewerId` is supplied — so a definition list resolves the
-	 * `Definition.myVote` view field for the whole batch in one `user_vote` query
-	 * instead of a per-row N+1. `undefined` when not requested (anonymous viewer
-	 * / read paths that omit it).
-	 */
+	// `1` upvoted / `null` not, stamped by the batch reads when a `viewerId` is
+	// supplied (one `user_vote` query for the whole list, not a per-row N+1).
+	// `undefined` when not requested (anonymous / read paths that omit it).
 	myVote?: number | null;
 }
 
@@ -46,11 +36,6 @@ export interface DefinitionConnectionPage {
 	totalCount: number;
 }
 
-/**
- * Shape a `definition_view` row onto a `DefinitionRow`, stamping `myVote` from
- * the batch-resolved `voted` set (`1` when the viewer upvoted, `null` otherwise;
- * always `null` for an anonymous viewer).
- */
 export const toDefinitionRow = (
 	d: typeof schema.definitionView.$inferSelect,
 	voted: Set<string>,

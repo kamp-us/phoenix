@@ -1,40 +1,25 @@
 /**
- * `LiveDO` — the unified live fan-out Durable Object, a void-aligned rewrite of
- * the split `ConnectionDO`/`TopicDO` pair onto a single class that plays BOTH
- * roles, distinguished by instance-name prefix. This mirrors void's
- * `VoidLiveStreamDurableObject` (`void/dist/runtime/live-server.mjs`): one DO
- * class, KV (not SQLite) storage, a `generation` (per-connection) +`revision`
- * (per-subscription) stale model, and a first-failed-probe reap.
+ * `LiveDO` — the unified live fan-out Durable Object (ADR 0037), a void-aligned
+ * rewrite of the split `ConnectionDO`/`TopicDO` pair onto ONE class that plays
+ * both roles, distinguished by instance-name prefix (mirrors void's
+ * `VoidLiveStreamDurableObject`).
  *
- * ## One class, two roles, ONE self-namespace
- * A LiveDO instance is named either `connection:<connectionId>` (connection
- * role: owns one client's held SSE stream + its subscription list) or
- * `topic:<topicKey>` (topic role: owns that topic's durable subscriber registry
- * + the publish fan-out + the reap alarm). Instances are addressed ONLY via
- * {@link connectionOf}/{@link topicOf} (here, beside the name parser);
- * {@link resolveRole} reads `state.id.name` to pick the role at request time.
+ * An instance is named either `connection:<connectionId>` (owns one client's
+ * held SSE stream + its subscription list) or `topic:<topicKey>` (owns that
+ * topic's durable subscriber registry + publish fan-out + reap alarm).
+ * {@link resolveRole} reads `state.id.name` to pick the role at request time;
+ * instances are addressed ONLY via {@link connectionOf}/{@link topicOf}.
  *
- * Cross-role calls go through the DO's OWN namespace, resolved ONCE in init
- * (`const live = yield* LiveDO`) and held in the closure. Because it is the same
- * class referencing its own namespace, there is no sibling cycle — so unlike the
- * split DOs there is no per-call `yield* Sibling`, and every RPC method's `R`
- * channel is `never`. The Layer requires only `Worker` (the self-namespace is a
- * `DurableObjectService`, excluded from the Layer's requirements by `.make()`).
+ * Cross-role calls go through the DO's OWN namespace, resolved once in init and
+ * held in the closure. Same class referencing its own namespace = no sibling
+ * cycle, so every RPC method's `R` is `never` and the Layer requires only
+ * `Worker`.
  *
- * ## KV storage (no SQLite)
- * Storage is `state.storage`'s KV API, mirroring void's flat keys:
- *   - subscriber rows: `sub:${topicKey}:${connectionId}:${subId}:${generation}:${revision}`
- *     → the {@link SubscriberRow} value.
- *   - the per-connection generation scalar: `connection:generation` → a number.
- * Topic-role reads use `state.storage.list({prefix: "sub:${topicKey}:"})`;
- * deletes batch `state.storage.delete(keys)`.
- *
- * ## SSE + reap
- * The connection role holds a `Queue` of frames merged with a 15s keep-alive
- * tick, returned as a streaming `HttpServerResponse` (the one thing kept as
- * `fetch`, not RPC). The topic role schedules a 60s alarm that probes each
- * subscriber's connection via `check`; the FIRST failed/410/404 probe deletes
- * ALL that connection's rows (void-faithful — no consecutive-miss counter).
+ * Storage is `state.storage`'s flat KV API (no SQLite), void-faithful. The
+ * void-faithful stale model rides two counters: per-connection `generation`
+ * (bumped on each (re)connect, survives eviction) and per-subscription
+ * `revision`. The reap alarm deletes ALL a connection's rows on the FIRST
+ * failed probe — no consecutive-miss counter.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
@@ -46,30 +31,24 @@ import {encodeFrame, SSE_HEADERS} from "./protocol.ts";
 
 const GENERATION_KEY = "connection:generation";
 
-/** Reap-alarm cadence: probe each subscriber's connection every 60s. */
 const PRUNE_ALARM_DELAY_MS = 60_000;
 
-/** The state value alchemy hands the per-instance Effect (`yield* DurableObjectState`). */
 type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 
 /**
- * The slice of `DurableObjectState` the unified instance builder actually
- * touches: the instance name (`id.name`) and the KV `storage` surface.
- * `makeLiveInstance` is typed against this slice rather than the whole
- * `DurableObjectState` so the node-pool fake (`do-state.testing.ts`) can satisfy
- * it structurally — no cast — while the real `Cloudflare.DurableObjectState`
- * value still flows in unchanged (it's a superset, so assignable).
+ * The slice of `DurableObjectState` the instance builder touches: `id.name` +
+ * the KV `storage`. Typed against this slice (not the whole `DurableObjectState`)
+ * so the node-pool fake (`do-state.testing.ts`) satisfies it structurally with no
+ * cast, while the real superset value still flows in unchanged.
  */
 export type LiveDoState = Pick<DurableObjectStateValue, "id" | "storage">;
 
-/** A frame delivered to a connection for one of its subscriber rows. */
 interface DeliverInput {
 	readonly frame: DeliverFrame;
 	readonly row: SubscriberRow;
 	readonly limits: LiveLimits;
 }
 
-/** The result a connection reports for a delivery: whether it landed + staleness. */
 interface DeliverResult {
 	readonly delivered: boolean;
 	readonly stale: boolean;
@@ -77,21 +56,8 @@ interface DeliverResult {
 
 /**
  * The unified LiveDO RPC surface — both roles' typed methods plus the SSE
- * `fetch`. Every method's `R` is `never`: cross-role calls ride the
- * self-namespace captured in init, not a per-call Tag resolution.
- *
- * Connection-role:
- *   - `subscribe` — record a subscription + register it on its topic instance.
- *   - `unsubscribe` — drop a subscription + unregister it on its topic instance.
- *   - `deliver` — enqueue one frame onto the held SSE stream; reports stale.
- *   - `check` — report which of the given rows are stale (probe, no enqueue).
- * Topic-role:
- *   - `register` — persist a subscriber row (KV), bump the reap alarm.
- *   - `unregister` — delete a subscriber row (KV).
- *   - `publish` — fan one message out to every subscriber's connection.
- *
- * A misrouted call (e.g. `register` on a `connection:` instance) hits an
- * instance whose role doesn't match and harmlessly returns an empty/no-op
+ * `fetch`. A misrouted call (e.g. `register` on a `connection:` instance) hits
+ * an instance whose role doesn't match and harmlessly returns an empty/no-op
  * result — void has no role guard either.
  */
 export interface LiveRpcSurface {
@@ -122,17 +88,8 @@ export interface LiveRpcSurface {
 	}) => Effect.Effect<{readonly delivered: number}, never, never>;
 }
 
-/**
- * `LiveDO` Tag — identity plus the {@link LiveRpcSurface} contract callers reach
- * across the stub. No inline body: the runtime is {@link LiveDOLive}.
- */
 export class LiveDO extends Cloudflare.DurableObjectNamespace<LiveDO, LiveRpcSurface>()("LiveDO") {}
 
-/**
- * The DO's own namespace handle (`yield* LiveDO`), used in the closure for
- * cross-role addressing. `getByName(name)` returns a typed {@link LiveRpcSurface}
- * stub, so connection→topic and topic→connection calls are fully typed.
- */
 type LiveNamespace = Effect.Success<typeof LiveDO>;
 
 type Role =
@@ -140,25 +97,20 @@ type Role =
 	| {readonly kind: "topic"; readonly topicKey: string}
 	| {readonly kind: "unknown"};
 
-/** The two role prefixes of the instance-name grammar (void's name convention). */
 const CONNECTION_PREFIX = "connection:";
 const TOPIC_PREFIX = "topic:";
 
 /**
- * Build a connection-role instance name. The grammar lives at THIS seam, beside
- * its parser ({@link resolveRole}). Production code never calls the name
+ * Build a connection-role instance name. Production code never calls the name
  * builders directly — addressing goes through {@link connectionOf}/{@link topicOf},
- * so a role-prefixed name never travels as a string and hand-rolling one means
- * also hand-rolling the `getByName` call (a greppable review convention, NOT a
- * compiler guarantee: `getByName` itself accepts any string, and a malformed
- * name is what {@link resolveRole} maps to `unknown` — a silently no-op RPC).
- * The builders stay exported for `do.test.ts`'s platform fake, which mints
- * `state.id.name` values and registry keys the way the DO platform does.
+ * so "always address via those, never hand-roll a name" is a greppable convention,
+ * NOT a compiler guarantee: `getByName` accepts any string, and a malformed name
+ * is what {@link resolveRole} maps to `unknown` (a silently no-op RPC). Exported
+ * for `do.test.ts`'s platform fake.
  */
 export const makeConnectionName = (connectionId: string): `connection:${string}` =>
 	`${CONNECTION_PREFIX}${connectionId}`;
 
-/** Build a topic-role instance name — same one-seam grammar as {@link makeConnectionName}. */
 export const makeTopicName = (topicKey: string): `topic:${string}` => `${TOPIC_PREFIX}${topicKey}`;
 
 /**
@@ -171,11 +123,9 @@ export const connectionOf = <T>(
 	connectionId: string,
 ): T => live.getByName(makeConnectionName(connectionId));
 
-/** Address a topic-role instance — same one-step seam as {@link connectionOf}. */
 export const topicOf = <T>(live: {readonly getByName: (name: string) => T}, topicKey: string): T =>
 	live.getByName(makeTopicName(topicKey));
 
-/** Pick the role from the instance name's prefix (void's name convention). */
 function resolveRole(name: string | undefined): Role {
 	if (name === undefined) {
 		return {kind: "unknown"};
@@ -189,23 +139,18 @@ function resolveRole(name: string | undefined): Role {
 	return {kind: "unknown"};
 }
 
-/** The flat KV key prefix for one topic's subscriber rows (void-faithful). */
 function subscriberPrefix(topicKey: string): string {
 	return `sub:${topicKey}:`;
 }
 
-/** The flat KV key for one subscriber row (void-faithful). */
 function subscriberKey(row: SubscriberRow): string {
 	return `${subscriberPrefix(row.topicKey)}${row.connectionId}:${row.subId}:${row.generation}:${row.revision}`;
 }
 
 /**
- * Build the unified LiveDO's per-instance methods.
- *
- * `state` is the resolved `Cloudflare.DurableObjectState`. `live` is the DO's own
- * namespace (resolved once in init), used for cross-role addressing:
- * `topicOf(live, key)` / `connectionOf(live, id)`. The builder takes both as
- * plain args so the same algorithm is unit-testable without workerd.
+ * Build the unified LiveDO's per-instance methods. The builder takes `state` and
+ * the DO's own namespace `live` (for cross-role addressing) as plain args so the
+ * same algorithm is unit-testable without workerd.
  */
 export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	const encoder = new TextEncoder();
@@ -214,10 +159,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 	const role = resolveRole(state.id.name);
 
-	// ── Connection-role per-instance state (closure-held; the open SSE stream
-	// pins this DO in memory). `generation` is the persisted scalar bumped on
-	// each (re)connect; `subscriptions` tracks each live subscription's revision
-	// + active flag so deliver/check can detect staleness without reaching back.
+	// Connection-role per-instance state, closure-held; the open SSE stream pins
+	// this DO in memory. `subscriptions` tracks each live subscription's revision
+	// + active flag so deliver/check detect staleness without reaching back.
 	let framesQueue: Queue.Queue<Uint8Array> | undefined;
 	let ownerId: string | undefined;
 	let generation: number | undefined;
@@ -241,8 +185,6 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		}
 	});
 
-	// ── Connection role ─────────────────────────────────────────────────────
-
 	const openStream = (input: {
 		readonly ownerId: string | undefined;
 		readonly maxQueuedEventsPerConnection: number;
@@ -259,20 +201,16 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			subscriptions.clear();
 			yield* closeStream;
 
-			// Bounded at the per-connection backpressure cap with the DROPPING
-			// strategy: the queue's own invariant IS the cap, so a stalled SSE reader
-			// can buffer at most this many frames. A dropping queue's `Queue.offer`
-			// returns false the moment it's full (a `bounded`/suspend queue would
-			// instead block the producer — wrong here). `deliver` reads that false to
-			// close the connection and report the row stale (void's 410 on queue
+			// DROPPING strategy (not bounded): `Queue.offer` returns false the moment
+			// it's full instead of blocking the producer, and `deliver` reads that
+			// false to close the connection + report the row stale (void's 410 on queue
 			// full). The connected frame counts against the cap.
 			const queue = yield* Queue.dropping<Uint8Array>(input.maxQueuedEventsPerConnection);
 			framesQueue = queue;
 			yield* Queue.offer(queue, CONNECTED_FRAME);
 
-			// `Stream.tick` emits immediately then on every interval; `drop(1)` skips
-			// the immediate tick so the first keep-alive lands at +15s (void's
-			// `keepAlive.intervalMs = 15e3`).
+			// `drop(1)` skips `Stream.tick`'s immediate tick so the first keep-alive
+			// lands at +15s, not 0.
 			const keepAlive = Stream.tick("15 seconds").pipe(
 				Stream.drop(1),
 				Stream.map(() => KEEPALIVE_FRAME),
@@ -302,11 +240,10 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				return {ok: false};
 			}
 			if (framesQueue === undefined) {
-				// No open stream — nothing to register a subscription under.
 				return {ok: false};
 			}
 			// A re-subscribe under the same id bumps its revision; the topic prunes
-			// the prior-revision row on register. Cap per-connection subscriptions.
+			// the prior-revision row on register.
 			const existing = subscriptions.get(input.subId);
 			if (
 				existing === undefined &&
@@ -344,9 +281,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			sub.active = false;
 			subscriptions.delete(input.subId);
-			// Eagerly unregister this sub's rows on each topic (void's
-			// `unregisterTopic`). Any failure is swallowed best-effort — the reap
-			// alarm catches what an unreachable topic instance misses.
+			// Failure here is swallowed best-effort — the reap alarm catches what an
+			// unreachable topic instance misses.
 			const gen = yield* loadGeneration;
 			yield* Effect.forEach(
 				sub.topics,
@@ -383,9 +319,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				// Oversized event: drop it (not stale — the subscription is fine).
 				return {delivered: false, stale: false};
 			}
-			// `offer` returns false when the dropping queue is full (a connection that
-			// has fallen too far behind): close the stream and treat the row as stale
-			// (void's 410 on queue full).
+			// `offer` returns false when the dropping queue is full: close the stream
+			// and treat the row as stale (void's 410 on queue full).
 			const accepted = yield* Queue.offer(queue, encoded);
 			if (!accepted) {
 				yield* closeStream;
@@ -398,7 +333,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		Effect.gen(function* () {
 			yield* loadGeneration;
 			if (framesQueue === undefined) {
-				// No open stream — every row this connection was probed for is stale.
+				// No open stream — every probed row is stale.
 				return {stale: input.subscriptions.map((_, index) => index)};
 			}
 			const stale: Array<number> = [];
@@ -410,14 +345,11 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			return {stale};
 		});
 
-	// ── Topic role ──────────────────────────────────────────────────────────
-
 	const loadRows = (topicKey: string) =>
 		Effect.map(state.storage.list<SubscriberRow>({prefix: subscriberPrefix(topicKey)}), (map) => [
 			...map,
 		]);
 
-	/** Group a topic's `[key, row]` entries by `connectionId` for per-connection passes. */
 	const groupByConnection = (entries: ReadonlyArray<readonly [string, SubscriberRow]>) => {
 		const grouped = new Map<string, Array<{key: string; row: SubscriberRow}>>();
 		for (const [key, row] of entries) {
@@ -480,10 +412,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				return {delivered: 0};
 			}
 			const entries = yield* loadRows(input.topicKey);
-			// Group rows by connection so each connection sees one deliver pass.
-			// Group rows by connection, then fan out the per-connection deliver passes
-			// concurrently (connections are independent). The inner per-row loop stays
-			// sequential because it short-circuits on the first unreachable item.
+			// Fan out per-connection deliver passes concurrently (connections are
+			// independent). The inner per-row loop stays sequential because it
+			// short-circuits on the first unreachable item.
 			const grouped = groupByConnection(entries);
 			const perConnection = yield* Effect.forEach(
 				grouped,
@@ -495,9 +426,8 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 						let delivered = 0;
 						for (const item of items) {
 							// Any failure/defect/timeout on the cross-role deliver = "couldn't
-							// reach"; void deletes ALL that connection's rows on a 410/404/no
-							// response. We mirror that by reaping the whole group when the call
-							// fails (the first item to fail flips `reachable`).
+							// reach" → reap the whole group (void deletes ALL a connection's
+							// rows on a 410/404/no response). First failure flips `reachable`.
 							const result = yield* connection
 								.deliver({
 									frame: {...input.frame, id: item.row.subId},
@@ -520,7 +450,6 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 							}
 						}
 						if (!reachable) {
-							// Unreachable connection: reap ALL its rows for this topic.
 							yield* state.storage.delete(items.map((item) => item.key));
 						} else if (staleKeys.length > 0) {
 							yield* state.storage.delete(staleKeys);
@@ -540,8 +469,6 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			const entries = yield* loadRows(role.topicKey);
 			const grouped = groupByConnection(entries);
 			const probeTimeout = 1_500;
-			// Probe each connection concurrently (they're independent); each returns
-			// the stale keys it owns, which we flatten and reap in one delete.
 			const perConnection = yield* Effect.forEach(
 				grouped,
 				([connectionId, items]) =>
@@ -598,55 +525,35 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 };
 
 /**
- * The `LiveDO` implementation Layer. The DO's OWN namespace is resolved once in
- * init from `Cloudflare.DurableObjectNamespaceScope` (the local, scriptName-less
- * self-binding `.make()` provides) and captured in the closure for cross-role
- * addressing — void's `this.env[binding]` pattern. Because it is the local
- * binding (not a cross-script `.from(scriptName)` reference) it works under
- * `alchemy dev`, requires only `Worker`, and every RPC method's `R` is `never`.
+ * The `LiveDO` implementation Layer (ADR 0028). The DO's OWN namespace is
+ * resolved once in init from `Cloudflare.DurableObjectNamespaceScope` (the local,
+ * scriptName-less self-binding `.make()` provides) and captured for cross-role
+ * addressing — void's `this.env[binding]` pattern. Because it's the local binding
+ * (not a cross-script `.from(scriptName)`) it works under `alchemy dev`, requires
+ * only `Worker`, and every RPC method's `R` is `never`.
  */
 export const LiveDOLive = LiveDO.make(
 	Effect.gen(function* () {
-		// ── SHARED INIT (once per namespace) ──
-		// Resolve the DO's OWN namespace here (not per call) for cross-role
-		// addressing. This is void's `this.env[bindingName]` self-reference: the
-		// `DurableObjectNamespaceScope` is the LOCAL, scriptName-less namespace that
-		// `.make()` binds and provides into this init effect (alchemy resolves it
-		// from `env[<binding>]` at runtime). It is the right handle for a DO calling
-		// its own siblings.
-		//
-		// Why NOT `LiveDO.from("phoenix")`: every `.from(...)` overload sets a
-		// `scriptName` (the string directly, or the worker's name), which declares a
-		// CROSS-SCRIPT binding. Under `alchemy dev` that routes through the
-		// dev-registry proxy and dies with `Worker "phoenix" not found` — a DO
-		// reaching its own siblings must use the local binding, not a cross-worker
-		// reference. `DurableObjectNamespaceScope` is provided by `.make()`, so it
-		// adds no requirement to the Layer (still `Layer<LiveDO, never, Worker>`);
-		// a bare `yield* LiveDO` would instead leak `LiveDO` as an unsatisfiable
-		// self-requirement (the very Tag this Layer outputs).
-		//
-		// The scope is typed generically as `DurableObjectNamespace<unknown>`
-		// (alchemy can't know each host's DO shape), so we widen it once to this
-		// DO's own statically-known `LiveRpcSurface` contract. This is a pure type
-		// widening of an infrastructure handle — there is no runtime value to decode
-		// — and it is the only `as` in this file.
+		// Resolve the DO's OWN namespace once (shared init), for cross-role
+		// addressing. NOT `LiveDO.from("phoenix")`: any `.from(...)` declares a
+		// CROSS-SCRIPT binding, which under `alchemy dev` routes through the
+		// dev-registry proxy and dies with `Worker "phoenix" not found`. The scope is
+		// typed generically (`DurableObjectNamespace<unknown>`), so we widen it once
+		// to this DO's `LiveRpcSurface` — a pure type widening, the only `as` here.
 		const live = (yield* Cloudflare.DurableObjectNamespaceScope) as LiveNamespace;
 		// The shared-init gen RETURNS the per-instance Effect (run once per instance
 		// wake). `return yield*` would run per-instance setup during shared init.
 		// @effect-diagnostics-next-line effect/returnEffectInGen:off
 		return Effect.gen(function* () {
-			// ── PER-INSTANCE (once per instance wake) ──
 			const state = yield* Cloudflare.DurableObjectState;
 			const instance = makeLiveInstance(state, live);
 			return {
-				// The SSE upgrade stays a `fetch` (request-shaped). Read `ownerId` off
-				// the inbound request and open the held stream.
+				// The SSE upgrade stays a `fetch` (request-shaped).
 				fetch: Effect.gen(function* () {
 					const raw = yield* Cloudflare.Request;
 					const url = new URL(raw.url);
-					// The route threads the per-request queue cap on the URL (alongside
-					// `ownerId`); it sizes the connection's dropping frame queue. Fall
-					// back to a safe default if the param is missing/unparseable.
+					// The route threads the per-request queue cap on the URL; fall back to
+					// a safe default if the param is missing/unparseable.
 					const capParam = Number(url.searchParams.get("maxQueuedEventsPerConnection"));
 					const maxQueuedEventsPerConnection =
 						Number.isInteger(capParam) && capParam > 0 ? capParam : 100;

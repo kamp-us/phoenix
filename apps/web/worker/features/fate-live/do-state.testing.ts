@@ -1,22 +1,12 @@
 /**
- * A node-pool fake of alchemy's `Cloudflare.DurableObjectState["Service"]` value,
- * KV-only — the slice the unified {@link makeLiveInstance} touches.
+ * A node-pool platform fake of `Cloudflare.DurableObjectState["Service"]`,
+ * KV-only — the slice {@link makeLiveInstance} touches. Backs the flat KV API
+ * with one `Map` + a single alarm slot; `state.id.name` is the instance name
+ * `resolveRole` reads. One non-obvious contract: `delete` MUST accept both a
+ * single key and an array (publish bulk-deletes rows).
  *
- * The void-aligned `LiveDO` stores everything in `state.storage`'s flat KV API
- * (no SQLite): subscriber rows under `sub:` keys, the per-connection generation
- * scalar, plus a single-slot alarm. So this fake backs the lot with one
- * `Map<string, unknown>` + a `number | null` alarm slot and implements exactly
- * the `state.storage` methods the instance builder calls. One non-obvious
- * contract: `delete` MUST accept both a single key and an array (publish
- * bulk-deletes rows).
- *
- * `state.id.name` is the instance name `resolveRole` reads to pick the
- * connection/topic role. Each call is one instance over its own backing Map.
- *
- * A **platform fake** ({@link makeDurableObjectStateForTest}, a `makeXxxForTest`
- * factory over the raw `DurableObjectState` platform type) — NOT a production
- * artifact: it's a colocated `*.testing.ts` module never imported by the worker
- * graph, and a factory, not a shared instance (`.patterns/effect-testing.md`).
+ * A factory `*.testing.ts` module never imported by the worker graph
+ * (`.patterns/effect-testing.md`).
  */
 import * as Effect from "effect/Effect";
 import type {LiveDoState} from "./live-do.ts";
@@ -27,22 +17,16 @@ export interface DurableObjectStateForTest {
 	readonly hasAlarm: () => boolean;
 }
 
-/**
- * Build a test DO state with its own KV `Map` + single alarm slot. Each call is
- * one DO instance; `id` is the instance name (`connection:<id>` / `topic:<key>`)
- * that {@link resolveRole} reads off `state.id.name`.
- */
+/** Build a test DO state with its own KV `Map` + single alarm slot. */
 export function makeDurableObjectStateForTest(options?: {
 	readonly id?: string;
 }): DurableObjectStateForTest {
 	const kv = new Map<string, unknown>();
 	let alarm: number | null = null;
 
-	// `storage` is typed as the `LiveDoState["storage"]` slice — exactly what
-	// {@link makeLiveInstance} touches. Each method is a generic `Effect` closure
-	// cast to its precise `Storage[...]` member signature (`as Storage["get"]`,
-	// etc.) — member-typed casts, never `as any`/`as unknown as`, so the fake's
-	// shape still lines up with the real DO-state signature.
+	// Each method is a generic `Effect` closure cast to its precise `Storage[...]`
+	// member signature — member-typed casts, never `as any`, so the fake's shape
+	// stays aligned with the real DO-state signature.
 	type Storage = LiveDoState["storage"];
 
 	const storage: Storage = {
@@ -59,8 +43,7 @@ export function makeDurableObjectStateForTest(options?: {
 					kv.delete(key);
 				}
 			})) as Storage["delete"],
-		// Returns `Effect<Map<string, T>>` — a prefix-filtered copy of the backing
-		// Map (not the live Map, so callers can't mutate the store through it).
+		// A prefix-filtered COPY (not the live Map, so callers can't mutate the store).
 		list: (<T>({prefix}: {readonly prefix: string}) =>
 			Effect.sync(() => {
 				const out = new Map<string, T>();

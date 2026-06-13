@@ -1,10 +1,7 @@
 /**
- * Vote service tests over the `node:sqlite`-backed D1 fake.
- *
- * Unlike `Drizzle.test.ts` (which drives the raw `run`/`batch` wrapper), these
- * exercise the REAL `Vote` service methods against an actual SQL engine: the
- * baseline migration is applied, rows are seeded straight into the canonical
- * tables, and `VoteLive` runs unmodified over `createDrizzle(sqlite.d1)`.
+ * Vote service tests over the `node:sqlite`-backed D1 fake. Unlike
+ * `Drizzle.test.ts` (the raw wrapper), these exercise the REAL `Vote` methods
+ * against an actual SQL engine with the baseline migration applied.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {and, eq, sql} from "drizzle-orm";
@@ -14,14 +11,10 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {makeSqliteTestDb, type SqliteD1} from "../../db/sqlite-d1.testing.ts";
 import {KarmaBump, Vote, VoteLive} from "./Vote.ts";
 
-/**
- * The test provision for Vote's own `KarmaBump` contract — the same
- * `UPDATE user_profile SET total_karma = total_karma + ?` pasaport provides
- * in production (`fate/layers.ts` wraps `pasaport/karma.ts`), spelled locally
- * so `vote/` imports nothing from `pasaport/` (the boundary pinned in
- * `vote-boundary.unit.test.ts`). The atomicity test below depends on the
- * statement targeting `user_profile` (it renames the table away mid-test).
- */
+// Test provision for Vote's `KarmaBump` contract, spelled locally so `vote/`
+// imports nothing from `pasaport/` (boundary pinned in vote-boundary.unit.test.ts).
+// The atomicity test below depends on this targeting `user_profile` — it renames
+// the table away mid-test.
 const KarmaBumpTest = Layer.succeed(KarmaBump, {
 	statement: (db, userId, delta) =>
 		db
@@ -30,11 +23,8 @@ const KarmaBumpTest = Layer.succeed(KarmaBump, {
 			.where(eq(schema.userProfile.userId, userId)),
 });
 
-/**
- * Build a fresh in-memory D1 with the baseline migration applied, and a layer
- * exposing both `Vote` and `Drizzle` (the tests seed/read straight through
- * `Drizzle` while driving the real `Vote` service).
- */
+// Fresh in-memory D1 (baseline migration applied) plus a layer exposing both
+// `Vote` and `Drizzle`, so tests seed/read through `Drizzle` while driving `Vote`.
 function freshDb(): {sqlite: SqliteD1; layer: Layer.Layer<Vote | Drizzle>} {
 	const sqlite = makeSqliteTestDb();
 	const db = createDrizzle(sqlite.d1);
@@ -50,9 +40,8 @@ describe("Vote.readMine", () => {
 		const {sqlite, layer} = freshDb();
 		return Effect.gen(function* () {
 			const {run} = yield* Drizzle;
-			// Seed user_vote rows: viewer u1 voted def-1 + def-3 (definition),
-			// post-x (post); viewer u2 voted def-2. Stamp a same-id different-kind
-			// row to prove the kind filter bites.
+			// u1's post-vote on "def-2" is a same-id different-kind row, proving
+			// the kind filter bites (it must not surface in the definition query).
 			yield* run((d) =>
 				d
 					.insert(schema.userVote)
@@ -96,10 +85,8 @@ describe("Vote.readMine", () => {
 
 /**
  * `Vote.cast` end-to-end atomicity over the real SQL engine: a karma `UPDATE`
- * that fails mid-batch (the `user_profile` table is renamed away) must roll back
- * the WHOLE cast — no `definition_vote` row, no `user_vote` mirror, an unchanged
- * cached score. This is the vote-specific invariant `Drizzle.test.ts` only
- * proves generically.
+ * that fails mid-batch must roll back the WHOLE cast. The vote-specific
+ * invariant `Drizzle.test.ts` only proves generically.
  */
 describe("Vote.cast atomicity (real SQLite via the D1 fake)", () => {
 	const now = new Date();
@@ -110,8 +97,7 @@ describe("Vote.cast atomicity (real SQLite via the D1 fake)", () => {
 		return Effect.gen(function* () {
 			const {run} = yield* Drizzle;
 
-			// Seed a votable definition (so loadMeta + the score-cache update find a
-			// row). Author "author-1" would receive the karma bump.
+			// A votable definition, so loadMeta + the score-cache update find a row.
 			yield* run((d) =>
 				d
 					.insert(schema.definitionView)
@@ -132,9 +118,9 @@ describe("Vote.cast atomicity (real SQLite via the D1 fake)", () => {
 					.run(),
 			);
 
-			// Rename user_profile away so the karma UPDATE in the cast batch fails
-			// mid-tuple — the vote insert + score update + user_vote mirror precede
-			// it, so this proves the whole batch rolls back, not just the last stmt.
+			// Rename user_profile away so the karma UPDATE fails mid-batch. The vote
+			// insert + score update + user_vote mirror precede it, so the assertions
+			// below prove the WHOLE batch rolls back, not just the last statement.
 			yield* run((d) => d.run(sql`ALTER TABLE user_profile RENAME TO user_profile_gone`));
 
 			const vote = yield* Vote;
@@ -143,7 +129,6 @@ describe("Vote.cast atomicity (real SQLite via the D1 fake)", () => {
 			);
 			assert.isTrue(Exit.isFailure(exit), "the cast with a broken karma table must fail");
 
-			// No definition_vote row survived.
 			const voteRows = yield* run((d) =>
 				d
 					.select()
@@ -152,7 +137,6 @@ describe("Vote.cast atomicity (real SQLite via the D1 fake)", () => {
 			);
 			assert.strictEqual(voteRows.length, 0, "no definition_vote row after rollback");
 
-			// No user_vote mirror survived.
 			const mirrorRows = yield* run((d) =>
 				d
 					.select()
@@ -167,7 +151,6 @@ describe("Vote.cast atomicity (real SQLite via the D1 fake)", () => {
 			);
 			assert.strictEqual(mirrorRows.length, 0, "no user_vote mirror after rollback");
 
-			// The cached score on the definition is unchanged (still 0).
 			const defRow = yield* run((d) =>
 				d.select().from(schema.definitionView).where(eq(schema.definitionView.id, "def-1")),
 			);

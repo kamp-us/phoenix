@@ -1,26 +1,6 @@
-/**
- * fate-shaped definition card.
- *
- * Reads its data via `useView(DefinitionView, ref)` — the term page composes
- * `DefinitionView` into the `Term.definitions` connection and hands each node
- * `ViewRef` down. The card declares the fields it needs (`DefinitionView`); fate
- * masks everything else.
- *
- * Vote / edit / delete are owned by the card and dispatched through
- * `fate.mutations.definition.*` with declarative `optimistic` updates:
- *  - vote / retractVote flip `score` + `myVote` instantly, roll back on error.
- *  - edit writes the new body back through `DefinitionView`.
- *  - delete is a `Term`-returning mutation (parent re-resolved); the row lives in
- *    the nested `Term.definitions` connection, which `insert`/`delete` can't
- *    touch, so we reload after success.
- *
- * Error routing: the client derives callSite-vs-boundary from the wire `code`,
- * and phoenix's wider codes resolve to `status: undefined` → boundary, so the
- * mutation *throws* instead of returning `{error}`; we catch at the call site.
- * The optimistic rollback already fired before the throw; we read `.code` and
- * surface it inline keyed on the code (`UNAUTHORIZED` → auth redirect). See
- * `.patterns/fate-mutations-client.md`.
- */
+// Vote/edit/delete dispatch through `fate.mutations.definition.*` with optimistic
+// updates; phoenix error codes classify as boundary, so mutations throw and we catch
+// per-call-site. See `.patterns/fate-mutations-client.md`.
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
@@ -35,7 +15,6 @@ import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
 
-/** The fields a definition card reads. Co-located with the component. */
 export const DefinitionView = view<Definition>()({
 	id: true,
 	body: true,
@@ -49,7 +28,6 @@ export const DefinitionView = view<Definition>()({
 
 const BODY_MAX = 10_000;
 
-/** Turkish copy for the validation / not-found codes a card surfaces inline. */
 const messageForCode = (code: MutationErrorCode, fallback: string): string => {
 	switch (code) {
 		case "BODY_REQUIRED":
@@ -64,7 +42,6 @@ const messageForCode = (code: MutationErrorCode, fallback: string): string => {
 };
 
 export interface DefinitionCardProps {
-	/** View ref into a Definition node from the term's definitions connection. */
 	definition: ViewRef<"Definition">;
 	rank: number;
 	top: boolean;
@@ -94,7 +71,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const cls = props.top ? "kp-sozluk-definition kp-sozluk-definition--top" : "kp-sozluk-definition";
 	const isAuthor = !!session.data?.user && session.data.user.id === definition.authorId;
 
-	/** Signed-out → bounce to auth; returns true when a redirect was issued. */
 	function redirectIfSignedOut(): boolean {
 		if (!session.data?.user) {
 			navigate(authRedirectPath(`/sozluk/${props.slug}`));
@@ -339,10 +315,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	);
 }
 
-/**
- * Definition body — split paragraphs on blank lines, fenced code as <pre>,
- * inline `code` and **strong** via the shared lib/markdown helpers.
- */
 function DefinitionBody({text}: {text: string}) {
 	const blocks = splitMarkdownBlocks(text);
 	return (

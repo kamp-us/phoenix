@@ -1,14 +1,13 @@
 /**
- * The REAL fate Vite plugin generates a native client
- * from a `FateExecutor.toCodegenServer(...)` schema module, end to end through
- * its actual `runnerImport` path (a programmatic `vite build` in a temp root).
+ * The REAL fate Vite plugin generates a native client from a
+ * `FateExecutor.toCodegenServer(...)` schema module, end to end through its
+ * actual `runnerImport` path (a programmatic `vite build` in a temp root).
  *
- * T0 in spirit (no worker, no storage), but it lives here because the plugin
- * (`react-fate/vite`) and Vite itself are this app's dependencies — the same
- * plugin instance `vite.config.ts` runs in the real build. The schema module
- * is `codegen-schema.fixture.ts`, whose handlers close over a throw-on-touch
- * Proxy database: successful generation doubles as the "no D1 at build time"
- * proof on the plugin's own import path.
+ * T0 in spirit (no worker, no storage), but lives here because the plugin
+ * (`react-fate/vite`) and Vite are this app's dependencies — the same plugin
+ * instance `vite.config.ts` runs in the real build. The schema module is
+ * `codegen-schema.fixture.ts`, whose handlers close over a throw-on-touch Proxy
+ * database, so successful generation doubles as the "no D1 at build time" proof.
  */
 import {mkdtemp, readFile, rm, writeFile} from "node:fs/promises";
 import {tmpdir} from "node:os";
@@ -48,17 +47,13 @@ describe("fate vite plugin × FateExecutor.toCodegenServer", () => {
 			});
 
 			const generated = await readFile(join(root, "client.generated.ts"), "utf8");
-			// The generated client types itself off the EXPORTED codegen server —
-			// exactly the InferFateAPI contract the codegen suite settles.
 			expect(generated).toContain("type FateAPI = InferFateAPI<typeof fateServer>;");
-			// Mutations come from the codegen manifest, typed through FateAPI.
 			expect(generated).toContain("'definition.add': mutation<");
 			expect(generated).toContain("FateAPI['mutations']['definition.add']['input']");
-			// The Root entry becomes a typed client root over the `term` query.
 			expect(generated).toContain(
 				"'term': clientRoot<FateAPI['queries']['term']['output'], 'Term'>('Term'),",
 			);
-			// The schema walk saw the kernel views (fields block in the generated types).
+			// The schema walk picked up the kernel views.
 			expect(generated).toContain("type: 'Term',");
 			expect(generated).toContain("type: 'Definition',");
 		} finally {

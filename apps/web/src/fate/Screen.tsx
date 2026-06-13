@@ -1,20 +1,12 @@
 /**
- * The fate screen rails — `Suspense` + an error boundary, paired.
+ * The fate screen rails — `Suspense` + an error boundary, paired, so a screen
+ * only declares its fallback + error UI. fate reads suspend and throw a
+ * `FateRequestError` on boundary-class failures.
  *
- * fate reads suspend (`useRequest`/`useView` throw a promise while data is in
- * flight) and throw a `FateRequestError` on boundary-class failures, so every
- * fate screen sits under both a `<Suspense>` and an error boundary. `<Screen>`
- * pairs them so a screen only declares its fallback + error UI.
- *
- * Error routing: this boundary catches **thrown** (boundary-class) errors only.
- * Mutation errors that a call site handles inline (`callSite`) never reach here
- * — that split lives in the mutation hooks (see
- * `.patterns/fate-mutations-client.md`); reads have no inline path, so a failed
- * read always lands on the boundary.
- *
- * The boundary surfaces the error's `code` (a `FateRequestError` carries one;
- * anything else falls back to a generic code) so screens can branch on it
- * (e.g. `UNAUTHORIZED` vs `NOT_FOUND`).
+ * This boundary catches **thrown** errors only; mutation errors a call site
+ * handles inline never reach here (that split lives in the mutation hooks — see
+ * `.patterns/fate-mutations-client.md`). It surfaces the error's `code` so
+ * screens can branch on it (e.g. `UNAUTHORIZED` vs `NOT_FOUND`).
  *
  * See `.patterns/fate-client-setup.md`.
  */
@@ -26,12 +18,8 @@ export type ScreenErrorCode = string;
 
 type FallbackRender = (error: {code: ScreenErrorCode; error: Error}) => ReactNode;
 
-/**
- * fate throws a `FateRequestError` (carrying a wire `code`) on boundary-class
- * failures. The class is only exported from `@nkzw/fate/server`, not the client
- * entrypoints, so we duck-type on the `code` field rather than `instanceof` —
- * any thrown value with a string `code` is treated as a fate request error.
- */
+// `FateRequestError` is only exported from `@nkzw/fate/server`, not the client
+// entrypoints, so we duck-type on the string `code` field rather than `instanceof`.
 const isFateError = (error: unknown): error is {code: string} =>
 	typeof error === "object" &&
 	error !== null &&

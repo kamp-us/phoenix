@@ -1,21 +1,11 @@
 /**
- * Sozluk — the dictionary feature service.
+ * Sozluk — the dictionary feature service: term reads + definition CRUD +
+ * connection-shaped pagination.
  *
- * Resolver-facing surface for term reads + definition CRUD + connection-shaped
- * pagination. Every method in this file replaces an async export from the
- * legacy `worker/features/sozluk/module.ts` + `termSummaryReader.ts` +
- * `userVoteReader.ts` files. Wire codes and result shapes are preserved
- * identically; the only thing that changes is the call form (Effect over
- * Promise).
- *
- * Vote mutations delegate to `Vote.cast` rather than reimplementing the
- * batch-vote/karma logic — `voteDefinition` / `retractDefinitionVote` are
- * thin wrappers that recompute `term_summary` aggregates after the shared
- * vote service does its atomic write.
- *
- * Validation lives inside the service methods as closure helpers (ADR 0013).
- * `recomputeTermSummary` and `recomputeSozlukStats` are also closure-private
- * — they're load-bearing helpers but not part of the public surface.
+ * Vote mutations delegate to the shared `Vote.cast` (atomic vote write + karma)
+ * and only recompute `term_summary` aggregates afterward, rather than
+ * reimplementing the batch-vote logic. Validation lives in the service methods
+ * as closure helpers (ADR 0013).
  */
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
@@ -48,25 +38,14 @@ import {
 export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row.ts";
 export type {TermConnectionPage, TermSummaryRow} from "./term-summary.ts";
 
-/* -------------------------------------------------------------------------- */
-/* Domain constants                                                            */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Body length cap for definitions — surfaced as `BODY_TOO_LONG` on overflow.
- * Mirrors the pre-effect-migration `DEFINITION_BODY_MAX`.
- */
+/** Body length cap for definitions — surfaced as `BODY_TOO_LONG` on overflow. */
 export const DEFINITION_BODY_MAX = 10_000;
 
-/** Excerpt cap for `definition_view.body_excerpt` and `term_summary.excerpt`. */
 const DEFINITION_EXCERPT_LEN = 140;
 
 const excerpt = (body: string): string => excerptText(body, DEFINITION_EXCERPT_LEN);
 
-/**
- * Earliest `createdAt` across a definition slice (the term's `first_at`), or
- * `null` when no row carries a timestamp. Callers supply the fallback.
- */
+/** Earliest `createdAt` across a slice (the term's `first_at`), or `null`. */
 const earliestCreatedAt = (defs: ReadonlyArray<{createdAt: Date | null}>): Date | null =>
 	defs.reduce<Date | null>((acc, d) => {
 		const c = d.createdAt;
@@ -74,11 +53,7 @@ const earliestCreatedAt = (defs: ReadonlyArray<{createdAt: Date | null}>): Date 
 		return acc && acc < c ? acc : c;
 	}, null);
 
-/**
- * Latest `updatedAt ?? createdAt` across a definition slice (the term's
- * `last_edit_at`), or `null` when no row carries a timestamp. Callers supply
- * the fallback.
- */
+/** Latest `updatedAt ?? createdAt` across a slice (the term's `last_edit_at`), or `null`. */
 const latestEditAt = (
 	defs: ReadonlyArray<{createdAt: Date | null; updatedAt: Date | null}>,
 ): Date | null =>
@@ -88,15 +63,7 @@ const latestEditAt = (
 		return acc && acc > u ? acc : u;
 	}, null);
 
-/* -------------------------------------------------------------------------- */
-/* Read shapes                                                                 */
-/* -------------------------------------------------------------------------- */
-
 export type ListSort = "recent" | "popular";
-
-/* -------------------------------------------------------------------------- */
-/* Mutation shapes                                                             */
-/* -------------------------------------------------------------------------- */
 
 export interface AddDefinitionInput {
 	termSlug: string;
@@ -164,23 +131,17 @@ export interface DeleteDefinitionResult {
 	deleted: boolean;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Service                                                                     */
-/* -------------------------------------------------------------------------- */
-
 export class Sozluk extends Context.Service<
 	Sozluk,
 	{
 		readonly getTerm: (slug: string) => Effect.Effect<TermPage | null>;
 
 		/**
-		 * DB-keyset page of a term's live definitions, ordered by the canonical
-		 * `(score desc, created_at asc, id asc)` term-page order, for the
-		 * fate `Term.definitions` connection: the cursor is a definition id, and
-		 * the keyset predicate fetches the rows that follow it in that order, so a
-		 * page is a bounded `WHERE … LIMIT` rather than loading every definition.
-		 *
-		 * `viewerId` batches `myVote` for the whole page in one `user_vote` read.
+		 * DB-keyset page of a term's live definitions in the canonical
+		 * `(score desc, created_at asc, id asc)` term-page order. The cursor is a
+		 * definition id and the keyset predicate fetches the rows after it, so a
+		 * page is a bounded `WHERE … LIMIT`, not a full load. `viewerId` batches
+		 * `myVote` for the whole page in one `user_vote` read.
 		 */
 		readonly listDefinitionsKeyset: (
 			slug: string,
@@ -192,20 +153,17 @@ export class Sozluk extends Context.Service<
 		) => Effect.Effect<DefinitionConnectionPage>;
 
 		/**
-		 * Batched read of definitions by id (the fate `Definition` source's
-		 * `byIds` workhorse — avoids the relation N+1). `viewerId` stamps `myVote`
-		 * for the whole batch in one `user_vote` query. Soft-deleted rows are
-		 * skipped; order is not guaranteed (fate re-associates by id).
+		 * Batched read of definitions by id (the `Definition` source's `byIds`
+		 * workhorse — avoids the relation N+1). `viewerId` stamps `myVote` for the
+		 * whole batch in one query. Soft-deleted rows skipped; order not guaranteed
+		 * (fate re-associates by id).
 		 */
 		readonly getDefinitionsByIds: (
 			ids: ReadonlyArray<string>,
 			opts?: {viewerId?: string | null | undefined},
 		) => Effect.Effect<DefinitionRow[]>;
 
-		/**
-		 * Batched read of term summaries by slug (the fate `Term` source's `byIds`
-		 * workhorse). Order is not guaranteed (fate re-associates by id).
-		 */
+		/** Batched read of term summaries by slug; order not guaranteed (fate re-associates by id). */
 		readonly getTermSummariesByIds: (
 			slugs: ReadonlyArray<string>,
 		) => Effect.Effect<TermSummaryRow[]>;
@@ -254,31 +212,17 @@ export class Sozluk extends Context.Service<
 	}
 >()("@phoenix/sozluk/Sozluk") {}
 
-/* -------------------------------------------------------------------------- */
-/* Live layer                                                                  */
-/* -------------------------------------------------------------------------- */
-
 export const SozlukLive = Layer.effect(Sozluk)(
 	Effect.gen(function* () {
-		// Yield Drizzle and Vote once at layer build and destructure/close over
-		// their bound methods. Drizzle is taken through `orDieAccess`: every
-		// internal DB call site dies on `DrizzleError` (infra failures are
-		// defects — the domain-boundary rule), so public signatures carry
-		// domain errors only. The deps are owned by this layer, so every
-		// method's `R` stays `never`.
+		// Drizzle is taken through `orDieAccess`: every DB call site dies on
+		// `DrizzleError` (infra failures are defects — the domain-boundary rule),
+		// so public signatures carry domain errors only and every method's `R`
+		// stays `never`.
 		const {run} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
-		/* ------------------------------------------------------------------ */
-		/* Closure-private helpers                                             */
-		/* ------------------------------------------------------------------ */
-
-		/**
-		 * Input validation for `body` fields on `addDefinition` /
-		 * `editDefinition`. Returns the trimmed raw body when valid; fails
-		 * with the appropriate tagged error otherwise. Per ADR 0013,
-		 * validation lives in service methods, not resolvers.
-		 */
+		// Per ADR 0013, body validation lives here, not in the resolver. Returns
+		// the trimmed body when valid, else fails with the tagged error.
 		const validateBody = Effect.fn("Sozluk.validateBody")(function* (
 			body: string | null | undefined,
 		) {
@@ -295,11 +239,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			return rawBody;
 		});
 
-		/**
-		 * Recompute the `term_summary` row for one slug from the live
-		 * `definition_view` slice (`WHERE term_slug = slug AND deleted_at IS NULL`).
-		 * Convergent: the row is fully derived from definitions + meta (title).
-		 */
+		// Recompute one slug's `term_summary` row from its live `definition_view`
+		// slice. Convergent: the row is fully derived from definitions + title.
 		const recomputeTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(function* (
 			slug: string,
 			title: string,
@@ -357,10 +298,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 		});
 
-		/**
-		 * Refresh `sozluk_stats` totals. Three small COUNT queries plus one
-		 * upsert. Cheap; runs after every write that could affect totals.
-		 */
+		// Refresh `sozluk_stats` totals; runs after every write that could affect them.
 		const recomputeSozlukStats = Effect.fn("Sozluk.recomputeSozlukStats")(function* (now: Date) {
 			const totalTermsRow = yield* run((db) =>
 				db
@@ -396,10 +334,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				`),
 			);
 		});
-
-		/* ------------------------------------------------------------------ */
-		/* Reads                                                               */
-		/* ------------------------------------------------------------------ */
 
 		const getTerm = Effect.fn("Sozluk.getTerm")(function* (slug: string) {
 			const meta = yield* run((db) => db.query.termSummary.findFirst({where: {slug}}));
@@ -463,10 +397,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.then((r) => r?.n ?? 0),
 			);
 
-			// Resolve the cursor row's keyset tuple (score, createdAt, id) so the
-			// predicate selects rows strictly after it in the canonical term-page
-			// order: (score desc, created_at asc, id asc). An `after` that doesn't
-			// resolve is a cursor miss → empty page (the shared semantic).
+			// Resolve the cursor row's keyset tuple so the predicate selects rows
+			// strictly after it. An `after` that doesn't resolve is a cursor miss →
+			// empty page (the shared semantic).
 			let cursorRow: {score: number; createdAt: Date | null} | null = null;
 			if (after) {
 				cursorRow =
@@ -490,8 +423,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				}
 			}
 
-			// Mixed-direction keyset (score desc, created_at asc, id asc) declared
-			// per column — `keysetAfter` builds the lexicographic predicate.
+			// Mixed-direction keyset, declared per column; `keysetAfter` builds the
+			// lexicographic predicate.
 			const cursorPredicate = keysetAfter([
 				{column: schema.definitionView.score, dir: "desc", value: cursorRow?.score ?? null},
 				{column: schema.definitionView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
@@ -628,10 +561,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				}
 			}
 
-			// Lead column by sort (popular → totalScore desc, recent →
-			// lastActivityAt desc), then the `slug` asc tiebreaker. A null
-			// lastActivityAt cursor drops the lead column → slug-only keyset, the
-			// same fallback as before.
+			// Lead column by sort, then the `slug` asc tiebreaker. A null
+			// lastActivityAt cursor drops the lead column → slug-only keyset.
 			const lead =
 				sort === "popular"
 					? {
@@ -701,10 +632,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 			return rows[0]?.termSlug ?? null;
 		});
-
-		/* ------------------------------------------------------------------ */
-		/* Mutations                                                           */
-		/* ------------------------------------------------------------------ */
 
 		const addDefinition = Effect.fn("Sozluk.addDefinition")(function* (input: AddDefinitionInput) {
 			const rawBody = yield* validateBody(input.body);
@@ -848,23 +775,16 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} satisfies DeleteDefinitionResult;
 		});
 
-		/**
-		 * Shared body for `voteDefinition` / `retractDefinitionVote`. Delegates
-		 * to the shared `Vote.cast` for the atomic batch (vote insert/delete,
-		 * score-cache update, `user_vote` mirror, karma bump), then recomputes
-		 * `term_summary` aggregates after a state change.
-		 *
-		 * Translates `VoteTargetNotFound` from the Vote service into
-		 * `DefinitionNotFound` so the resolver codec keeps producing
-		 * `DEFINITION_NOT_FOUND` for this surface.
-		 */
+		// Shared body for `voteDefinition` / `retractDefinitionVote`. Delegates to
+		// `Vote.cast` for the atomic batch, then recomputes `term_summary`
+		// aggregates after a state change. Translates `VoteTargetNotFound` into
+		// `DefinitionNotFound` so this surface keeps emitting `DEFINITION_NOT_FOUND`.
 		const applyVote = Effect.fn("Sozluk.applyVote")(function* (
 			input: VoteDefinitionInput,
 			isVote: boolean,
 		) {
-			// Load definition meta up-front so we can return the canonical
-			// resolver shape (body / author / timestamps) regardless of
-			// changed/no-op path.
+			// Load meta up-front so we can return the canonical resolver shape
+			// regardless of the changed/no-op path.
 			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
 					where: {id: input.definitionId, deletedAt: {isNull: true}},
@@ -877,9 +797,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				});
 			}
 
-			// Vote.cast may fail with VoteTargetNotFound on a race (definition
-			// soft-deleted between our read and its own existence check). Map
-			// that back to the sozluk-typed error.
+			// Vote.cast can fail with VoteTargetNotFound on a race (definition
+			// soft-deleted between our read and its existence check); map it back.
 			const voteResult = yield* voteSvc
 				.cast({
 					userId: input.voterId,
@@ -900,9 +819,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const now = new Date();
 			if (voteResult.changed) {
-				// Vote already wrote definition_view.score inside its batch;
-				// recomputeTermSummary re-reads that and refreshes the term
-				// aggregates.
+				// Vote already wrote definition_view.score in its batch; this re-reads
+				// it to refresh the term aggregates.
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 			}
 

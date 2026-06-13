@@ -1,15 +1,8 @@
 import {editedAfter, formatEditedTooltipTR} from "../../lib/datetime";
 import {Tooltip} from "./Tooltip";
 
-/**
- * Tiny "düzenlendi" label that renders next to content metadata whenever a
- * piece of content has been edited after a `EDITED_GRACE_MS` window past its
- * creation. Hover reveals the full edit timestamp.
- *
- * Rendered by definition cards, post headers, and comment headers (T17).
- * Hidden entirely when `updatedAt` is missing or within the grace window —
- * the caller doesn't have to gate the render itself.
- */
+// Returns null when `updatedAt` is missing or within the grace window, so callers
+// can render it unconditionally without gating on edit state themselves.
 export function EditedIndicator({
 	createdAt,
 	updatedAt,

@@ -1,15 +1,9 @@
 /**
- * Micro-tier: the d1 fake's `meta` envelope contract (ADR 0040 gap #1/#3).
- *
- * `run()`/`batch()` return D1's `{success, meta, results}` shape, where `meta`
- * carries `changes` (rows affected) and `last_row_id` (last INSERT rowid). The
- * fate wire protocol (asserted at T3) never serializes these fields, so this
- * contract was untested at every tier. This is the narrow binding-level
- * micro-tier the ADR called for — it asserts the `meta` fields **in-process**,
- * directly against the fake's D1 surface, no remote D1 and no fate wire.
- *
- * It exercises the raw `prepare(...).run()` / `batch([...])` D1 surface (not
- * Drizzle), because `meta` is a property of that binding contract.
+ * Micro-tier: the d1 fake's `meta` envelope contract (ADR 0040 gap #1/#3). The
+ * fate wire never serializes `meta` (`changes`/`last_row_id`), so this contract
+ * was untested at every tier; here it's asserted in-process against the raw
+ * `prepare(...).run()` / `batch([...])` D1 surface (not Drizzle), because `meta`
+ * is a property of that binding contract.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {makeSqliteTestDb} from "./sqlite-d1.testing.ts";
@@ -26,7 +20,6 @@ describe("d1 fake — meta envelope", () => {
 				.run();
 
 			assert.isTrue(result.success);
-			// The row landed; `last_row_id` is the integer rowid SQLite assigned it.
 			assert.isNumber(result.meta.last_row_id);
 			assert.isTrue(result.meta.last_row_id > 0, "last_row_id reflects the inserted rowid");
 			assert.strictEqual(result.meta.changes, 1, "one row written");

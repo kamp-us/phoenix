@@ -1,19 +1,9 @@
 /**
- * Pasaport fate sources — `User` / `Profile` Effect-backed loaders.
- *
- * fate is pure transport (ADR 0016): it never queries D1. Every handler
- * delegates to a `Pasaport` method, so all read logic stays in the domain
- * layer.
- *
- * `Profile` is fetched by its `userId` (the immutable per-user id; `username`
- * may be null until bootstrap). The root `profile(username)` / `me` resolvers
- * are custom queries that build the full `Profile` shape inline, so this `byId`
- * exists for relation/by-id callers; it re-aggregates the live counts.
- *
- * The loader contract is in the types (`.patterns/fate-effect-sources.md`):
- * reads are silent (absence = `null`/fewer rows), `E = never` — infra
- * failures are defects, died inside the domain service (the boundary rule in
- * `.patterns/feature-services.md`), so they never become wire values.
+ * Pasaport fate sources — `User` / `Profile` Effect-backed loaders. fate is pure
+ * transport (ADR 0016); every handler delegates to a `Pasaport` method, so read
+ * logic stays in the domain layer. `Profile` is fetched by `userId` (the root
+ * `profile`/`me` resolvers build the full shape inline, so this `byId` exists for
+ * relation/by-id callers). See `.patterns/fate-effect-sources.md`.
  */
 import {Fate} from "@phoenix/fate-effect";
 import {Pasaport} from "./Pasaport.ts";
@@ -49,16 +39,9 @@ export const profileSource = Fate.source(
 	},
 );
 
-/**
- * `Contribution` has no fetch path of its own — the rows are synthetic
- * (flattened from definitions/posts/comments by `queries.profile`'s shaper) and
- * the `Profile.contributions` connection is delivered inline by that custom
- * resolver (ADR 0019), so no byId/byIds/connection handler is implementable or
- * needed. `Fate.syntheticSource` is the package's canonical spelling for this:
- * it registers the entity so the server's source-completeness validation
- * accepts it (`Profile.contributions` nests `ContributionView`, making it
- * view-reachable) with ZERO capabilities — any actual capability call fails
- * loudly inside the package, exactly as the bridge's capability-less executor
- * did (`.patterns/fate-effect-sources.md`, the escape hatch).
- */
+// `Contribution` has no fetch path — rows are synthetic and the connection is
+// delivered inline by `queries.profile` (ADR 0019). `syntheticSource` registers
+// the entity so source-completeness validation accepts it (it's view-reachable
+// via `Profile.contributions`) with ZERO capabilities; any capability call fails
+// loudly (`.patterns/fate-effect-sources.md`, the escape hatch).
 export const contributionSource = Fate.syntheticSource(ContributionView);

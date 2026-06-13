@@ -1,18 +1,8 @@
 /**
- * Public user profile page — fate.
- *
- * One batched `useRequest({profile: {view: UserProfileView, args: {username,
- * contributions: {first}}}})` resolves the whole screen (header + first page of
- * contributions) with no waterfall. `profile` is the `queries.profile` client
- * root; the nested `contributions` discriminant feed rides on the `Profile`
- * view, delivered inline by the resolver (see `.patterns/fate-connections.md`).
- *
- * Masking is by view identity: the screen view **spreads**
- * `UserProfileHeaderView` (the header reads its slice off the same ref) and adds
- * the `contributions` connection whose node is `ContributionView` (the row's
- * view). The contributions feed switches on the `kind` discriminant (ADR 0018)
- * and paginates via `useListView` ("load more"). A null profile (unknown
- * username) renders the 404 page.
+ * Public user profile page — fate. One batched `useRequest` resolves header +
+ * first page of contributions; the screen view **spreads** `UserProfileHeaderView`
+ * and adds the nested `contributions` connection (node: `ContributionView`), which
+ * switches on the `kind` discriminant (ADR 0018). See `.patterns/fate-connections.md`.
  */
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useParams} from "react-router";
@@ -26,17 +16,8 @@ import "./UserProfilePage.css";
 
 const PAGE_SIZE = 20;
 
-/**
- * The connection selection for a profile's contributions — `{items: {node:
- * View}}`, the shape `useListView` reads off `profile.contributions`.
- */
 const ContributionsConnectionView = {items: {node: ContributionView}} as const;
 
-/**
- * The profile-page view: spreads `UserProfileHeaderView` (so the header masks
- * its slice off the same ref) and adds the nested `contributions` connection
- * whose node is `ContributionView`.
- */
 const UserProfileView = view<Profile>()({
 	...UserProfileHeaderView,
 	contributions: ContributionsConnectionView,

@@ -1,5 +1,3 @@
-/* Barrel export for the UI primitives. */
-
 export {Avatar} from "./Avatar";
 export type {TagKind} from "./atoms";
 export {Code, Kbd, Mark, Skeleton, Tag} from "./atoms";

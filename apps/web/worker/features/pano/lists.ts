@@ -1,23 +1,10 @@
 /**
- * Pano root list resolvers — `posts(sort, host, first, after)`.
- *
- * Per ADR 0019, **root lists** resolve via custom `lists` resolvers that map a
- * service keyset page onto a `ConnectionResult`. The service owns the cursor
- * and the keyset SQL; this layer only reshapes the page. A `Fate.list` def +
- * `Effect.fn` pair (`.patterns/fate-effect-operations.md`,
- * `.patterns/fate-connections.md`).
- *
- * `posts(sort, host, first, after)`:
- *   - `sort` is a plain validated string (`hot | new | top | discuss`,
- *     default `hot`) — fate has no enum type (ADR 0018).
- *   - `host` is an optional string filter.
- *   - the cursor is the post id (the service keyset key).
- *
- * The service (`listPostsConnection`) pages by a DB keyset — resolving the
- * cursor row once and applying the sort-specific keyset predicate — so this
- * resolver only reshapes its page onto a `ConnectionResult`. `myVote` is left
- * unstamped on the list rows; a viewer's votes surface on the post-detail
- * `post` query.
+ * Pano root list resolver — `posts(sort, host, first, after)`. Per ADR 0019,
+ * root lists map a service keyset page onto a `ConnectionResult`: the service
+ * (`listPostsConnection`) owns the cursor and keyset SQL, this layer only
+ * reshapes. `sort` is a plain validated string (no fate enum, ADR 0018).
+ * `myVote` is left unstamped on list rows; a viewer's votes surface on the
+ * post-detail `post` query. See `.patterns/fate-connections.md`.
  */
 
 import {Fate} from "@phoenix/fate-effect";
@@ -29,7 +16,6 @@ import {toPost} from "./shapers.ts";
 import type {Post} from "./views.ts";
 import {PostView} from "./views.ts";
 
-/** Coerce the `sort` arg to the service's `PostSort`; default `hot`. */
 const toPostSort = (value: string | undefined): PostSort =>
 	value === "new" || value === "top" || value === "discuss" ? value : "hot";
 
@@ -51,8 +37,6 @@ export const lists = {
 				...(args.after !== undefined ? {after: args.after} : {}),
 				...(args.host !== undefined && args.host.length > 0 ? {host: args.host} : {}),
 			});
-			// Summary rows carry no `updatedAt`; `toPost` owns the
-			// `updatedAt ?? createdAt` fallback.
 			return toConnection<(typeof page.rows)[number], Post>(
 				page,
 				(row) => row.id,

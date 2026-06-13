@@ -1,26 +1,15 @@
 /**
  * The fate codegen entry module — the single module the fate Vite plugin reads
- * (`fate({module: ".../worker/features/fate/schema.ts", transport: "native"})`).
+ * at build time (`fate({module: ".../fate/schema.ts", transport: "native"})`):
+ * the data-view objects + entity types (re-exported from `views.ts`) and the
+ * `fateServer` value (its manifest + `InferFateAPI` for the typed client).
  *
- * The plugin imports this module at build time (`runnerImport`) and needs three
- * things from one place:
- *   1. the runtime data-view objects (it filters `Object.values` for views to
- *      build the schema + manifest),
- *   2. the `fateServer` value (it reads `fateServer.manifest` and
- *      `InferFateAPI<typeof fateServer>` for the typed client roots/mutations),
- *   3. the entity *type* names (`User`, `Term`, `Definition`, `Post`, `Comment`,
- *      `Tag`, `Profile`, `Contribution`) — imported verbatim as the client's
- *      view types — and `Root`.
- *
- * `views.ts` owns 1 + 3; `fateServer` here is the BUILD-TIME form of the one
- * config (`config.ts`): `FateExecutor.toCodegenServer` makes a real
- * `createFateServer` call over the same records — same keys, same `type`
- * strings, same `roots: {}`, same `live` passthrough, so the manifest matches
- * the served wire contract — with every resolver/source executor INERT.
- * Importing this module constructs pure data: no handler runs, no database, no
- * bindings (`.patterns/fate-effect-compiler.md` § "The codegen server"). The
- * worker entry never imports this file — it serves through the native
- * interpreter (`FateInterpreter.handleRequest`, `route.ts`; ADR 0043).
+ * `fateServer` is the BUILD-TIME form of `config.ts`'s one config:
+ * `toCodegenServer` calls `createFateServer` over the same records (so the
+ * manifest matches the served wire contract) with every executor INERT —
+ * importing this module constructs pure data, no handler/database/bindings
+ * (`.patterns/fate-effect-compiler.md`). The worker entry never imports this
+ * file; it serves through the native interpreter (`route.ts`, ADR 0043).
  */
 import {FateExecutor} from "@phoenix/fate-effect";
 import {fateConfig} from "./config.ts";

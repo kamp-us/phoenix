@@ -1,12 +1,7 @@
 /**
- * fate-shaped post-detail header.
- *
- * Reads its data via `useView(PanoPostHeaderView, ref)` — the detail page spreads
- * `PanoPostHeaderView` into its `post` request item (`PostDetailView`) and hands
- * the `Post` ref down. The header declares what it needs; fate masks the rest.
- *
- * Edit / delete affordances are gated by `isAuthor`, which the page derives from
- * the session and passes in.
+ * fate-shaped post-detail header. The detail page spreads `PanoPostHeaderView`
+ * into `PostDetailView` and hands the `Post` ref down. Edit/delete affordances
+ * are gated by `isAuthor`, which the page derives and passes in.
  */
 import {useLiveView, type ViewRef, view} from "react-fate";
 import type {Post} from "../../../worker/features/fate/views";
@@ -18,10 +13,9 @@ import {EditedIndicator} from "../ui/EditedIndicator";
 import {PostVoteWidget} from "./PanoPost";
 
 /**
- * The minimal write-back view for a post vote — the shape
- * `fate.mutations.post.{vote,retractVote}` returns and normalizes into the cache
- * keyed by `id`. Co-located with `PostVoteWidget` (in `PanoPost.tsx`) but defined
- * here to keep the vote widget's import free of a back-edge to the header.
+ * Write-back view for a post vote. Defined here rather than next to
+ * `PostVoteWidget` (in `PanoPost.tsx`) to keep that module free of a back-edge
+ * import to the header.
  */
 export const PostVoteView = view<Post>()({
 	id: true,
@@ -29,7 +23,6 @@ export const PostVoteView = view<Post>()({
 	myVote: true,
 });
 
-/** The fields the post-detail header reads. Co-located with the component. */
 export const PanoPostHeaderView = view<Post>()({
 	id: true,
 	slug: true,
@@ -108,7 +101,6 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 	);
 }
 
-/** Convenience accessor — the detail page reads the score/myVote/id for the vote widget. */
 export function PanoPostHeaderVote({post}: {post: ViewRef<"Post">}) {
 	const data = useLiveView(PanoPostHeaderView, post);
 	return <PostVoteWidget postId={data.id} score={data.score} myVote={data.myVote ?? null} />;

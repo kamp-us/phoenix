@@ -12,11 +12,9 @@ import "./PanoSubmitPage.css";
 type Mode = "link" | "text";
 
 /**
- * Fixed tag enum — kind values match the producer-side `ALLOWED_POST_TAG_KINDS`
- * in `PanoPost`. The Turkish kinds (`göster`, `tartışma`, …) are stored
- * verbatim on `post_summary.tags`; the `cls` value is a CSS modifier picked
- * to match the existing Tag styling without touching the kind enum on the
- * server.
+ * Fixed tag enum — kinds match the producer-side `ALLOWED_POST_TAG_KINDS` and are
+ * stored verbatim on `post_summary.tags`. `cls` is a CSS modifier chosen to match
+ * the existing Tag styling without touching the server-side kind enum.
  */
 const TAGS: {kind: string; label: string; cls: string}[] = [
 	{kind: "göster", label: "göster", cls: "show"},
@@ -109,20 +107,15 @@ export function PanoSubmitPage() {
 		}
 		if (submitDisabled) return;
 
-		// Pre-trim/normalize so the server never sees unintended whitespace on the
-		// title; resolver-side validation surfaces typed `code`s back.
 		const trimmedUrl = url.trim();
 		const user = session.data.user;
 		const now = new Date();
 		setInFlight(true);
 		try {
-			// Declarative connection membership: `insert: "before"` prepends the new
-			// post into the registered no-filter feed root list — fate writes the
-			// returned `Post` (shaped by `PanoPostCardView`) into the normalized cache
-			// and joins it to the front of the `posts` connection. NO imperative
-			// connection-key updater.
-			// The optimistic temp record (with a temp id fate reconciles to the server
-			// id) makes the prepend show instantly during the in-flight window.
+			// `insert: "before"` declaratively prepends the new post into the
+			// registered no-filter feed root list — NO imperative connection-key
+			// updater. The optimistic temp record (temp id fate reconciles to the
+			// server id) makes the prepend show during the in-flight window.
 			const {result, error: callError} = await fate.mutations.post.submit({
 				input: {
 					title: trimmedTitle,
@@ -151,7 +144,6 @@ export function PanoSubmitPage() {
 				setError(messageForCode(codeOf(callError), callError.message));
 				return;
 			}
-			// The /pano/:id route key is the raw post id (or slug). fate ids are raw.
 			const newId = result?.slug ?? result?.id;
 			if (newId) navigate(`/pano/${newId}`);
 		} catch (caught) {

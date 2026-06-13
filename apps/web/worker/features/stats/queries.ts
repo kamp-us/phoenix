@@ -1,23 +1,11 @@
 /**
- * Stats root query resolvers — `health`, `landingStats`.
- *
- * `Fate.query` def + `Effect.fn("<wire name>")` pairs over `Stats`
+ * Stats root query resolvers — `health`, `landingStats`
  * (`.patterns/fate-effect-operations.md`).
  *
- * Roots:
- *   - `health` — the trivial seam-proof root (sanity check + total-definitions
- *     counter the smoke tests assert against). String-typed (`type: "Health"`):
- *     it has no data view by design, so it stays off `Root` (codegen-invisible)
- *     but lives in this record for the native transport to dispatch.
- *   - `landingStats` — the landing-page stats card. Reads the single-row
- *     aggregates + cross-product distinct-author union via
- *     `Stats.getLandingStats`, plus the build `version` the SPA renders. Returns
- *     the `LandingStats` entity stamped with a constant `id` so the client
- *     normalizes it to a single cache record.
- *
- * Both are plain anonymous reads (no `CurrentUser`). Infra failures never
- * reach this layer — they die inside the domain service (the boundary rule in
- * `.patterns/feature-services.md`).
+ * `health` is string-typed (no data view by design) so it stays off `Root`
+ * but still dispatches over the native transport. Both roots are anonymous
+ * reads (no `CurrentUser`); infra failures die inside `Stats`, never reaching
+ * this layer (`.patterns/feature-services.md`).
  */
 
 import {Fate} from "@phoenix/fate-effect";
@@ -29,14 +17,10 @@ export interface Health {
 	readonly definitions: number;
 }
 
-/** Build tag the landing card renders. */
 const PHOENIX_BUILD_VERSION = "v0.3";
 
-/**
- * Constant id for the singleton `LandingStats` entity. There is only ever one
- * landing-stats row; the client normalizes by `record.id`, so a stable id keeps
- * it a single cache record.
- */
+// Stable id for the singleton entity, so the client normalizes it to one cache
+// record (see views.ts).
 const LANDING_STATS_ID = "landing";
 
 export const queries = {
@@ -49,13 +33,11 @@ export const queries = {
 		}),
 	),
 	landingStats: Fate.query(
-		// The wire type-name STRING, not `LandingStatsView`: a view-typed query
-		// makes its entity view-reachable, and the server's source-completeness
-		// validation then demands a source — but `LandingStats` is a singleton
-		// synthetic entity with no fetch path (no source by design; the resolver
-		// is its only producer). The string ref is exactly the bridge-era shape;
-		// the client root still types itself off `Root`'s `landingStatsDataView`
-		// + this handler's success type, so codegen is unchanged.
+		// Wire type-name STRING, not `LandingStatsView`: a view-typed query would
+		// make the entity view-reachable and trip source-completeness validation,
+		// but `LandingStats` is a synthetic singleton with no fetch path (the
+		// resolver is its only producer). Codegen is unchanged — the client root
+		// still types off `Root`'s `landingStatsDataView` + this handler.
 		{type: "LandingStats"},
 		Effect.fn("landingStats")(function* () {
 			const stats = yield* Stats;

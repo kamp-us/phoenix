@@ -2,24 +2,17 @@ import {useCallback} from "react";
 import {useLocation, useNavigate} from "react-router";
 
 /**
- * Build a `/auth?returnTo=<encoded-path>` URL from the current browser
- * location. Used by every write affordance (vote, add definition, submit
- * post, add comment, edit, delete) when invoked by a signed-out user.
- *
- * The full path + search lives in `returnTo` so the user comes back to the
- * exact same view (e.g. a post detail with a hash fragment) after sign-in.
- * Hash is dropped because Better Auth's redirect strips it anyway.
+ * Build a `/auth?returnTo=<encoded-path>` URL so a signed-out user returns to
+ * the exact same view after sign-in. Hash is dropped — Better Auth's redirect
+ * strips it anyway.
  */
 export function authRedirectPath(returnTo: string): string {
 	return `/auth?returnTo=${encodeURIComponent(returnTo)}`;
 }
 
 /**
- * Hook that returns `{redirectToAuth}`: invoke without args to route the
- * signed-out user to the auth page carrying the current path as `returnTo`.
- * Mirrors the ad-hoc `navigate(`/auth?returnTo=…`)` snippets sprinkled
- * across the codebase (T4–T12); centralizing it means future write
- * surfaces can opt in with a single import.
+ * Returns `{redirectToAuth}`: routes the signed-out user to the auth page
+ * carrying the current path as `returnTo`.
  */
 export function useReturnToAuth(): {redirectToAuth: () => void} {
 	const navigate = useNavigate();

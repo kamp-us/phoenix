@@ -1,17 +1,12 @@
 /**
  * Shared live wire types + topic helpers for the SSE fan-out (ADR 0023).
  *
- * This module is import-safe in a plain Node runner (no `cloudflare:workers`):
- * the per-request live publisher (`live-publisher.ts`) and the fate codegen
- * graph (`fate/schema.ts → fate/config.ts → event-bus.ts`) depend on it, while
- * only the unified `LiveDO` class (`live-do.ts`) and the worker entry pull in
- * the Workers runtime. Keeping the frame shapes + topic resolution here means
- * the publisher, the DO, and the route all speak one vocabulary.
- *
- * The frame shapes mirror fate's native `livePayload` / `liveConnectionPayload`
- * / `sse()` exactly, so the browser's native fate SSE client parses them
- * unchanged — phoenix only swaps where the frames are produced (the DO, from
- * inline-published data), not their shape.
+ * Import-safe in a plain Node runner (no `cloudflare:workers`): the per-request
+ * publisher and the fate codegen graph depend on it, while only `live-do.ts` and
+ * the worker entry pull in the Workers runtime. The frame shapes mirror fate's
+ * native `livePayload` / `liveConnectionPayload` / `sse()` exactly, so the
+ * browser's native fate SSE client parses them unchanged — phoenix only swaps
+ * WHERE the frames are produced (the DO), not their shape.
  */
 
 import {
@@ -26,31 +21,22 @@ import * as Schema from "effect/Schema";
 
 /**
  * The closed set of live connection procedures phoenix publishes to / subscribes
- * on. A connection publish (`live.connection(<procedure>)` on the per-request
- * `LivePublisher` service) and the matching subscribe both key their topic off
- * this string; a typo on either side silently creates a dead topic (publish and
- * subscribe miss each other with no failure). The subscribe side is gated by
- * {@link LiveConnectionProcedureSchema}; the publish side is gated by
- * {@link WorkerLivePublisher}, the worker-level accessor every mutation binds
- * the package's plain-string `LivePublisher` through.
- *
- * Derived from the live root list (`posts`) and the nested-connection mutation
- * sites (`Post.comments`, `Term.definitions`). Add a member here when a resolver
- * publishes to a new connection.
+ * on. A typo on either side silently creates a dead topic (publish and subscribe
+ * miss each other with no failure). The subscribe side is gated by
+ * {@link LiveConnectionProcedureSchema}; the publish side by
+ * {@link WorkerLivePublisher}. Add a member when a resolver publishes to a new
+ * connection.
  */
 export type LiveConnectionProcedure = "posts" | "Post.comments" | "Term.definitions";
 
 /**
  * The package `LivePublisher` service surface with `connection`'s procedure
- * narrowed to {@link LiveConnectionProcedure} — the publish-side typo gate.
- * The package takes a plain `string` by design (it cannot know phoenix's
- * procedures); a mutation binds its publisher through the accessor below
- * (`const live = yield* WorkerLivePublisher`) so a misspelled procedure is a
- * compile error instead of a silent dead topic. Function parameters are
- * contravariant, so the package's service value is assignable here with no
- * cast and no runtime wrapper. Everything but the narrowed parameter
- * references the package type structurally (`Omit`, `Parameters`,
- * `ReturnType`), so the two surfaces cannot drift.
+ * narrowed to {@link LiveConnectionProcedure} — the publish-side typo gate. The
+ * package takes a plain `string` by design; narrowing it here makes a misspelled
+ * procedure a compile error instead of a silent dead topic. Parameters are
+ * contravariant, so the package value is assignable with no cast/wrapper, and
+ * everything but the narrowed parameter is structural (`Omit`/`Parameters`/
+ * `ReturnType`) so the two surfaces can't drift.
  */
 export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "connection"> & {
 	readonly connection: (
@@ -61,11 +47,10 @@ export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "connection
 
 /**
  * The ONE seam where the package tag is narrowed to the typo-gated surface:
- * worker mutations write `const live = yield* WorkerLivePublisher` and never
- * import the package tag directly — the un-narrowed `yield* LivePublisher`
- * also compiles, but silently has no gate, so "import the worker accessor,
- * not the package tag" is the (greppable) convention. Same tag, retyped by
- * plain assignability; TS merges the type and value namespaces.
+ * worker mutations write `const live = yield* WorkerLivePublisher` and never the
+ * package tag directly. The un-narrowed `yield* LivePublisher` also compiles but
+ * has no gate, so "import the worker accessor, not the package tag" is the
+ * greppable convention. Same tag, retyped by plain assignability.
  */
 export const WorkerLivePublisher: Effect.Effect<WorkerLivePublisher, never, LivePublisher> =
 	LivePublisher;
@@ -95,16 +80,8 @@ export type ConnectionFrame =
 /**
  * A publish to a topic DO. The mutation side resolves the topic string and the
  * per-event payload (already inline-resolved `data`/`node`), so the topic DO
- * relays it to every subscriber's connection DO with no re-resolution.
- *
- * `procedure` is a plain `string` here: the envelope is wire data (the DO and
- * `topicsForPublish` genuinely key off any string), and the publish-side typo
- * gate lives at the CALLER surface — {@link WorkerLivePublisher}, the
- * worker-level narrowing over the package's `LivePublisher` (which takes
- * plain strings by design) that every mutation binds its publisher under. The
- * subscribe side stays closed: {@link SubscribeControl} and the
- * control-request schema still reject unknown procedures, so a dead topic
- * cannot be *registered*.
+ * relays it with no re-resolution. `procedure` is a plain `string` here (wire
+ * data); the publish-side typo gate lives at the caller, {@link WorkerLivePublisher}.
  */
 export type PublishMessage =
 	| {
@@ -124,16 +101,10 @@ export type PublishMessage =
 	  };
 
 /**
- * A pre-bound per-request topic publish: hand it one resolved topic key + the
- * publish message and it fires the typed `LiveDO.publish` RPC (on the
- * `topic:<key>`-named instance), fired-and-forgotten via the request's
- * `waitUntil`. `live-publisher.ts` builds this from the worker-init-resolved
- * `LiveDO` namespace (`getByName`, typed RPC) and
- * `Cloudflare.WorkerExecutionContext.waitUntil` — so a publish reaches the DO
- * via the typed RPC stub, not an `env`-lookup/`idFromName`/string-URL
- * `stub.fetch` (ADR 0028/0029). Named `PublishToTopic` — NOT `LivePublisher`,
- * which is the package's per-request service tag this function ultimately
- * powers (`@phoenix/fate-effect`).
+ * A pre-bound per-request topic publish: one resolved topic key + message fires
+ * the typed `LiveDO.publish` RPC, fired-and-forgotten via the request's
+ * `waitUntil`. Reaches the DO via the typed RPC stub, not an
+ * `env`-lookup/`idFromName`/string-URL `stub.fetch` (ADR 0028/0029).
  */
 export type PublishToTopic = (topicKey: string, message: PublishMessage) => void;
 
@@ -152,19 +123,13 @@ export type SubscribeControl =
 			readonly args?: Record<string, unknown>;
 	  };
 
-/**
- * An optional args bag on a control operation — a JSON object (non-null, not an
- * array), mirroring fate's `isRecord`. `Schema.optional` accepts a missing key
- * or an explicit `undefined`, matching the old `isOptionalRecord` guard.
- */
 const OptionalArgs = Schema.optional(Schema.Record(Schema.String, Schema.Unknown));
 
 /**
- * The subscribe-side schema literal for {@link LiveConnectionProcedure}. A
- * control request naming an unknown procedure fails decode (→ `BAD_REQUEST`)
- * rather than registering a dead topic. The literal members are pinned to the
- * union by the `satisfies` below, so adding a `LiveConnectionProcedure` member
- * without listing it here is a compile error.
+ * The subscribe-side schema literal for {@link LiveConnectionProcedure}. An
+ * unknown procedure fails decode (→ `BAD_REQUEST`) rather than registering a dead
+ * topic. The `satisfies` pins the members to the union, so adding a
+ * `LiveConnectionProcedure` member without listing it here is a compile error.
  */
 const LiveConnectionProcedureSchema = Schema.Literals([
 	"posts",
@@ -172,7 +137,6 @@ const LiveConnectionProcedureSchema = Schema.Literals([
 	"Term.definitions",
 ] satisfies ReadonlyArray<LiveConnectionProcedure>);
 
-/** A `subscribe` (entity) control operation. */
 const SubscribeOp = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.Literal("subscribe"),
@@ -184,7 +148,6 @@ const SubscribeOp = Schema.Struct({
 	select: Schema.Array(Schema.String),
 });
 
-/** A `subscribeConnection` (connection) control operation. */
 const SubscribeConnectionOp = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.Literal("subscribeConnection"),
@@ -196,44 +159,34 @@ const SubscribeConnectionOp = Schema.Struct({
 	select: Schema.Array(Schema.String),
 });
 
-/** An `unsubscribe` control operation — just `id` + `kind`. */
 const UnsubscribeOp = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.Literal("unsubscribe"),
 });
 
-/**
- * A single operation inside a fate live control request — the discriminated
- * union of the three `kind`s. This schema is the single source of truth; the
- * `LiveControlOperation` type is derived from it so validation and type can't
- * drift.
- */
+/** The schema is the single source of truth; the types below derive from it. */
 const LiveControlOperationSchema = Schema.Union([
 	SubscribeOp,
 	SubscribeConnectionOp,
 	UnsubscribeOp,
 ]);
 
-/** The fate live control request body envelope (POST /fate/live). */
 const LiveControlRequestSchema = Schema.Struct({
 	version: Schema.Literal(1),
 	connectionId: Schema.String,
 	operations: Schema.Array(LiveControlOperationSchema),
 });
 
-/** A single operation inside a fate live control request, post-validation. */
 export type LiveControlOperation = Schema.Schema.Type<typeof LiveControlOperationSchema>;
 
-/** A validated fate live control request body (POST /fate/live). */
 export type LiveControlRequest = Schema.Schema.Type<typeof LiveControlRequestSchema>;
 
 /**
  * Decode an untrusted fate live control request body, mirroring fate's native
- * `assertLiveControlRequest` exactly (a malformed body fails with a
- * `BAD_REQUEST` `FateRequestError` rather than coercing — e.g. a missing/non-id
- * `entityId` is rejected instead of becoming a dead empty-string subscription).
- * Any `ParseError` collapses to the same `FateRequestError` the route already
- * maps to a `liveError(...)`, so the /fate/live HTTP contract is unchanged.
+ * `assertLiveControlRequest` (a malformed body fails with a `BAD_REQUEST`
+ * `FateRequestError` rather than coercing — e.g. a missing/non-id `entityId` is
+ * rejected, not turned into a dead empty-string subscription). Any `ParseError`
+ * collapses to the same `FateRequestError` the route maps to `liveError(...)`.
  */
 export const parseLiveControlRequest = (
 	value: unknown,
@@ -243,9 +196,8 @@ export const parseLiveControlRequest = (
 	);
 
 /**
- * The frame a connection DO writes to its held SSE stream. `kind` is the fate
- * SSE event name (`next` | `connection`); `event` is the frame body; `id` is the
- * operation/subscription id the client subscribed under.
+ * The frame a connection DO writes to its held SSE stream. `kind` is the fate SSE
+ * event name; `id` is the subscription id the client subscribed under.
  */
 export interface DeliverFrame {
 	readonly kind: "next" | "connection";
@@ -277,16 +229,11 @@ export function topicsForPublish(message: PublishMessage): ReadonlyArray<string>
 	if (message.kind === "entity") {
 		return [liveEntityTopic(message.match.type, message.match.entityId)];
 	}
-	// A connection publish reaches EXACTLY ONE topic, mirroring fate's native
-	// `createLiveEventBus().connection().emit` (`server/live.ts`: `if (args)
-	// emit(connectionEventName) else emit(globalConnectionEventName)`). An args
-	// publish hits only the args-scoped key (filter args kept, pagination stripped
-	// by `liveConnectionTopic`) the subscriber registered under; a no-args publish
-	// (`live.connection("posts")`) hits only the global wildcard, which every
-	// args-variant subscriber also listens on via `topicsForSubscribe`. Publishing
-	// to BOTH keys would deliver one mutation twice to a subscriber registered
-	// under both topics (the SSE double-delivery bug) — the subscribe side fans out
-	// to both keys, the publish side must not.
+	// A connection publish reaches EXACTLY ONE topic (fate's `if (args) emit(specific)
+	// else emit(global)`): an args publish hits only its args-scoped key, a no-args
+	// publish only the global wildcard. The subscribe side fans out to BOTH keys, so
+	// publishing to both here would deliver one mutation twice (the SSE
+	// double-delivery bug) — publish must not.
 	return message.match.args !== undefined
 		? [liveConnectionTopic(message.match.procedure, message.match.args)]
 		: [liveGlobalConnectionTopic(message.match.procedure)];
@@ -303,17 +250,10 @@ export function topicsForSubscribe(control: SubscribeControl): ReadonlyArray<str
 	];
 }
 
-// ---------------------------------------------------------------------------
-// Unified LiveDO wire types (KV-backed, void-aligned)
-// ---------------------------------------------------------------------------
-
 /**
- * Per-request fan-out budgets, threaded onto the LiveDO's RPC inputs rather than
- * hardcoded in the DO (decision 2B). Mirrors void's `LiveLimits`: a connection
- * caps its own subscriptions and its queued-but-unflushed event backlog, a topic
- * caps how many subscribers it registers, and every fan-out event has a maximum
- * encoded size and a per-attempt delivery timeout. The worker/route supplies
- * these on each call ({@link defaultLiveLimits}); the DO never invents its own.
+ * Per-request fan-out budgets (void's `LiveLimits`), threaded onto the LiveDO's
+ * RPC inputs rather than hardcoded in the DO (decision 2B): the worker/route
+ * supplies these on each call, the DO never invents its own.
  */
 export interface LiveLimits {
 	readonly maxSubscriptionsPerConnection: number;
@@ -324,15 +264,10 @@ export interface LiveLimits {
 }
 
 /**
- * The default per-request fan-out budgets, mirroring void's `DEFAULT_LIMITS`
- * (`void/dist/runtime/live.mjs`). Threaded onto each `LiveDO` subscribe/publish
- * call (decision 2B) rather than hardcoded in the DO, so a future request-scoped
- * override has exactly one seam. Both routes that publish/subscribe consume it
- * (`fate-live/route.ts`, `fate/route.ts`) — it lives HERE, beside the
- * {@link LiveLimits} shape, so neither route imports config out of a sibling
- * ROUTE module. `maxOperationsPerControlRequest` is void's
- * control-request cap, not a `LiveLimits` field — it is not part of the DO
- * budget and so is omitted here.
+ * The default per-request fan-out budgets (void's `DEFAULT_LIMITS`). Lives HERE,
+ * beside {@link LiveLimits}, so neither publishing/subscribing route imports
+ * config out of a sibling ROUTE module. void's `maxOperationsPerControlRequest`
+ * is a control-request cap, not a `LiveLimits` DO budget field, so it is omitted.
  */
 export const defaultLiveLimits: LiveLimits = {
 	maxSubscriptionsPerConnection: 256,
@@ -343,17 +278,13 @@ export const defaultLiveLimits: LiveLimits = {
 };
 
 /**
- * A persisted topic-role subscriber row (the value stored under a `sub:` KV key,
- * void's flat-key model). `connectionId` is the human-readable connection name
- * the topic re-addresses the instance from (`connectionOf`,
- * `live-do.ts`); `subId` is the
- * client's subscription id. The void-faithful stale model rides two counters:
- * `generation` captures the connection's stream lifetime at register time (a
- * (re)connect bumps the connection's persisted generation), and `revision`
- * captures the subscription's lifetime (a re-subscribe under the same id bumps
- * it). On deliver/check a *reachable* connection compares both against its live
- * state; a mismatch (or a gone/inactive subscription) means the row is stale and
- * the topic prunes it.
+ * A persisted topic-role subscriber row (the value under a `sub:` KV key, void's
+ * flat-key model). `connectionId` is the name the topic re-addresses the instance
+ * from (`connectionOf`); `subId` is the client's subscription id. The stale model
+ * rides two counters: `generation` (the connection's stream lifetime at register
+ * time) and `revision` (the subscription's lifetime). On deliver/check a reachable
+ * connection compares both against live state; a mismatch means the topic prunes
+ * the row. (See `live-do.ts` header.)
  */
 export interface SubscriberRow {
 	readonly topicKey: string;

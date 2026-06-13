@@ -1,52 +1,19 @@
 /**
- * Vote — the polymorphic vote service.
+ * Vote — the polymorphic vote service. One canonical write surface
+ * (`Vote.cast`) for the three vote targets: `definition`, `post`, `comment`.
  *
- * One canonical write surface for the three vote targets in the system:
- * `definition`, `post`, `comment`. Every up-vote / retract in the product
- * flows through `Vote.cast`. The discriminator is `targetKind`; the value is a
- * tri-state encoded directly (no `kind` field): `value: 1` casts an up-vote,
- * `value: null` retracts. Voting is up-only in the MVP, so a `1 | null` shape
- * makes invalid states (no down-vote semantics) unrepresentable.
+ * Voting is up-only in the MVP: `value` is a tri-state `1 | null` (1 casts,
+ * null retracts), so invalid states (down-vote semantics) are unrepresentable.
  *
- * # Layered idempotency
+ * The feature-local vote table (`definition_vote`/`post_vote`/`comment_vote`,
+ * PK `(target_id, voter_id)`) is the score-truth source; the score cached on
+ * the target row is rebuilt from `COUNT(*)` on it. The cross-product
+ * `user_vote` table (PK `(user_id, target_kind, target_id)`) powers `myVote`.
  *
- * Two PKs collaborate to keep re-casts and re-retracts no-ops:
- *
- *   1. The feature-local vote table (`definition_vote`, `post_vote`,
- *      `comment_vote`) — composite PK on `(target_id, voter_id)`. This is the
- *      SCORE TRUTH source; the cached score on the target row is rebuilt from
- *      `COUNT(*)` on this table inside the same batch.
- *   2. The cross-product `user_vote` table — composite PK on
- *      `(user_id, target_kind, target_id)`. Powers the `myVote` view field.
- *
- * `INSERT … ON CONFLICT DO NOTHING` against each PK turns a second identical
- * cast into a no-op. A pre-write existence probe short-circuits before any
- * write when the target is already in the desired terminal state, so
- * `changed: false` reflects "nothing in the world moved".
- *
- * # Atomicity
- *
- * Every state-changing call lands every mutation in one `batch((db) => [...])`:
- *
- *   - upsert / delete on the feature-local vote table (truth source).
- *   - score-cache update on the target row, derived from a `COUNT(*)`
- *     subquery against the vote table in the same statement.
- *   - upsert / delete on `user_vote`.
- *   - karma counter bump / decrement for the target author via the
- *     {@link KarmaBump} contract.
- *
- * If any statement in the batch fails, the whole batch rolls back — the vote
- * insert, score update, mirror, and karma bump commit together or not at all.
- *
- * # Surface
- *
- *   Vote.cast({ userId, targetKind, targetId, value: 1 | null }) → VoteResult
- *
- * The result carries the new (cached) score, the post-write `myVote` flag, a
- * `changed` boolean, and target identity. Feature-specific resolver shapes
- * (titles, bodies, host, etc.) stay in feature services — they re-read the
- * target row after `Vote.cast` rather than threading every column through
- * this contract.
+ * Atomicity invariant: every state-changing cast lands all four mutations —
+ * vote-table upsert/delete, score-cache update, `user_vote` mirror, and karma
+ * bump (via {@link KarmaBump}) — in one batch that commits or rolls back as a
+ * unit. See ADR 0014 (batch as service method).
  */
 import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
@@ -54,17 +21,10 @@ import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.
 import * as schema from "../../db/drizzle/schema.ts";
 import {type VoteTargetKind, VoteTargetNotFound} from "./errors.ts";
 
-/* -------------------------------------------------------------------------- */
-/* Types                                                                       */
-/* -------------------------------------------------------------------------- */
-
-// Re-export the domain kind from `errors.ts` (its source-of-truth home) so
-// downstream callers can keep importing it from `./Vote` if they prefer.
+// Re-exported from `errors.ts` (its source-of-truth home) for callers that
+// prefer importing it from `./Vote`.
 export type {VoteTargetKind};
 
-/**
- * `1` casts an up-vote; `null` retracts. The MVP is up-only.
- */
 export type VoteValue = 1 | null;
 
 export interface VoteInput {
@@ -77,62 +37,44 @@ export interface VoteInput {
 export interface VoteResult {
 	targetKind: VoteTargetKind;
 	targetId: string;
-	/** Denormalized score after the write (re-sum from truth source). */
 	score: number;
-	/** `1` if the user has a `user_vote` row for the target post-write, else `null`. */
 	myVote: number | null;
-	/** `true` when the write changed underlying state; `false` on idempotent no-op. */
+	/** `false` on idempotent no-op. */
 	changed: boolean;
 }
 
-/* -------------------------------------------------------------------------- */
-/* The KarmaBump contract (owned here, provided by pasaport)                   */
-/* -------------------------------------------------------------------------- */
-
 /**
- * The karma-bump capability as Vote consumes it: given the recipient and the
- * delta (`+1` cast, `-1` retraction), the **unexecuted** statement to include
- * in the cast batch — so the karma adjustment commits atomically with the
- * vote insert / score update, or not at all.
+ * The karma-bump capability as Vote consumes it: given recipient and delta
+ * (`+1` cast, `-1` retraction), the **unexecuted** statement to include in the
+ * cast batch — so the karma adjustment commits atomically with the vote, or
+ * not at all.
  */
 export interface KarmaBumpService {
 	readonly statement: (db: DrizzleDb, userId: string, delta: number) => Stmt;
 }
 
 /**
- * `KarmaBump` — the contract Vote OWNS for the karma counter side-effect of a
- * cast (dependency inversion). Vote is a shared low-level service (Sozluk
- * and Pano both delegate to it), so it must not
- * import a feature directory: it declares WHAT it needs — "the statement to
- * batch when a vote lands" — and the implementation arrives at layer
- * composition. Today pasaport provides it in `fate/layers.ts` by wrapping
- * `pasaport/karma.ts`'s `karmaBumpStatement` (an UPDATE on
- * `user_profile.total_karma`).
- *
- * Künye (future): this contract is the swap point for a DO-backed karma
- * bump — a per-user Künye DO replaces the provided implementation at the
- * same composition seam, and Vote's batching code never changes. (If the
- * future implementation cannot be expressed as a D1 batch statement, the
- * contract — not Vote's internals — is the one thing to renegotiate.)
+ * The contract Vote OWNS for the karma side-effect of a cast (dependency
+ * inversion). Vote is a shared low-level service (Sözlük and Pano both delegate
+ * to it), so it must not import a feature directory: it declares what it needs
+ * and the implementation arrives at layer composition (pasaport, via
+ * `fate/layers.ts`). This is also the swap point for a future DO-backed Künye
+ * karma bump — if that can't be expressed as a D1 batch statement, this
+ * contract is the thing to renegotiate, not Vote's internals.
  */
 export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
 	"@phoenix/vote/KarmaBump",
 ) {}
-
-/* -------------------------------------------------------------------------- */
-/* Service                                                                     */
-/* -------------------------------------------------------------------------- */
 
 export class Vote extends Context.Service<
 	Vote,
 	{
 		readonly cast: (input: VoteInput) => Effect.Effect<VoteResult, VoteTargetNotFound>;
 		/**
-		 * Batched `myVote` presence read. Returns the subset of `targetIds` the
-		 * viewer has a `user_vote` row for, of the given `kind` — one `WHERE
-		 * user_id = ? AND target_kind = ? AND target_id IN (...)` read so callers
-		 * stamp `myVote` without an N+1. A missing viewer or empty `targetIds`
-		 * short-circuits to an empty Set with no read.
+		 * Batched `myVote` presence read: the subset of `targetIds` the viewer has
+		 * a `user_vote` row for, of the given `kind`, in one `IN (...)` read so
+		 * callers stamp `myVote` without an N+1. Missing viewer or empty
+		 * `targetIds` short-circuits to an empty Set with no read.
 		 */
 		readonly readMine: (
 			viewerId: string | null | undefined,
@@ -142,14 +84,9 @@ export class Vote extends Context.Service<
 	}
 >()("@phoenix/vote/Vote") {}
 
-/* -------------------------------------------------------------------------- */
-/* Live layer                                                                  */
-/* -------------------------------------------------------------------------- */
-
 /**
  * Per-target metadata resolved before the write. `authorId` is the karma
- * recipient; `createdAtMs` is the target's epoch ms (used by post hot-score
- * recompute).
+ * recipient; `createdAtMs` feeds the post hot-score recompute.
  */
 interface TargetMeta {
 	authorId: string;
@@ -158,25 +95,15 @@ interface TargetMeta {
 
 export const VoteLive = Layer.effect(Vote)(
 	Effect.gen(function* () {
-		// Yield Drizzle once at layer build and destructure its bound methods
-		// through `orDieAccess`: every internal DB call site dies on
-		// `DrizzleError` (infra failures are defects — the domain-boundary
-		// rule), so method bodies stay clean and public signatures carry
-		// domain errors only. `R` stays `never`. No closure-captured `db`
-		// escapes — `db` only appears inside `run((db) => ...)` /
-		// `batch((db) => ...)` callbacks.
+		// `orDieAccess`: every internal DB call site dies on `DrizzleError`
+		// (infra failures are defects — the domain-boundary rule), so public
+		// signatures carry domain errors only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
-
-		// The karma-bump capability, resolved once at layer build through the
-		// contract Vote owns (see {@link KarmaBump}) — the implementation is
-		// composition's concern (`fate/layers.ts`), never imported here.
 		const karmaBump = yield* KarmaBump;
 
-		// ── Per-target metadata lookup ────────────────────────────────────
-		// Each target kind has its own view table holding `author_id` +
-		// `created_at` (and soft-delete). One read on the write path; if the
-		// row is missing or soft-deleted we surface `VoteTargetNotFound`
-		// rather than letting the batch fail with an FK-shaped error.
+		// Per-target metadata lookup. If the row is missing or soft-deleted we
+		// surface `VoteTargetNotFound` rather than letting the batch fail with
+		// an FK-shaped error.
 		const loadMeta = Effect.fn("Vote.loadMeta")(function* (kind: VoteTargetKind, targetId: string) {
 			switch (kind) {
 				case "definition": {
@@ -236,11 +163,9 @@ export const VoteLive = Layer.effect(Vote)(
 			}
 		});
 
-		// ── Idempotency probe ─────────────────────────────────────────────
-		// One indexed point-lookup against the feature-local vote table to
-		// decide if the write would be a no-op. Skipping the batch on the
-		// `isCast === alreadyCast` path keeps idempotent re-casts and
-		// re-retracts as cheap reads.
+		// Idempotency probe: one point-lookup against the vote table to decide
+		// if the write would be a no-op, so re-casts/re-retracts stay cheap
+		// reads (the `isCast === alreadyCast` path skips the batch).
 		const probeExisting = (kind: VoteTargetKind, targetId: string, userId: string) =>
 			run(async (db) => {
 				switch (kind) {
@@ -265,10 +190,8 @@ export const VoteLive = Layer.effect(Vote)(
 				}
 			});
 
-		// ── Cached-score readback ─────────────────────────────────────────
-		// Read truth-derived score back from the cache the batch just
-		// refreshed. One indexed point lookup; also serves the idempotent
-		// path's tail.
+		// Read the truth-derived score back from the cache the batch just
+		// refreshed; also serves the idempotent path's tail.
 		const readCachedScore = (kind: VoteTargetKind, targetId: string) =>
 			run(async (db) => {
 				switch (kind) {
@@ -296,12 +219,8 @@ export const VoteLive = Layer.effect(Vote)(
 				}
 			});
 
-		// ── Batched `myVote` presence read ────────────────────────────────
-		// One `WHERE user_id = ? AND target_kind = ? AND target_id IN (...)`
-		// read over the cross-product `user_vote` table — `Vote` owns this
-		// table, so the batched `myVote` stamp lives here rather than being
-		// hand-rolled in each consuming feature (Pano/Sözlük). A missing viewer
-		// or empty id list short-circuits without a read.
+		// Lives here (not in each consuming feature) because Vote owns the
+		// cross-product `user_vote` table. See the `readMine` interface doc.
 		const readMine = Effect.fn("Vote.readMine")(function* (
 			viewerId: string | null | undefined,
 			kind: VoteTargetKind,
@@ -333,8 +252,7 @@ export const VoteLive = Layer.effect(Vote)(
 				const alreadyCast = yield* probeExisting(input.targetKind, input.targetId, input.userId);
 
 				if (isCast === alreadyCast) {
-					// Idempotent path: state matches intent, no write. Return
-					// the cached score as-is.
+					// State matches intent: no write, return the cached score.
 					const score = yield* readCachedScore(input.targetKind, input.targetId);
 					return {
 						targetKind: input.targetKind,
@@ -345,12 +263,7 @@ export const VoteLive = Layer.effect(Vote)(
 					} satisfies VoteResult;
 				}
 
-				// State change. One batch carries every mutation: the
-				// feature-local vote row (truth source) leads, followed by the
-				// score-cache update (re-counts truth via `COUNT(*)` subquery,
-				// so concurrent `ON CONFLICT DO NOTHING` collisions self-heal),
-				// the `user_vote` cross-product row, and the karma counter via
-				// the provided `KarmaBump` statement.
+				// State change — see `buildBatchStatements` for the atomic batch.
 				const karmaDelta = isCast ? 1 : -1;
 
 				yield* batch((db) =>
@@ -371,17 +284,10 @@ export const VoteLive = Layer.effect(Vote)(
 	}),
 );
 
-/* -------------------------------------------------------------------------- */
-/* Batch statement builders                                                    */
-/* -------------------------------------------------------------------------- */
-
 /**
- * Build the tuple of statements that make up one atomic state-change. Either
- * every statement commits or none do — `db.batch([...])` is D1's native batch
- * primitive. The first element is the vote-table mutation (truth source); the
- * second is the score-cache update derived from a `COUNT(*)` subquery; the
- * third mirrors `user_vote`; the fourth bumps karma via the provided
- * {@link KarmaBump} statement.
+ * The tuple of statements making up one atomic state-change, in order:
+ * vote-table mutation (truth source), score-cache update, `user_vote` mirror,
+ * karma bump. `db.batch([...])` commits all or none. See ADR 0014.
  */
 function buildBatchStatements(
 	db: DrizzleDb,
@@ -486,13 +392,11 @@ function buildVoteDelete(db: DrizzleDb, input: VoteInput) {
 }
 
 /**
- * Build the score-cache UPDATE for the target row. The new score is derived
- * from a `COUNT(*)` subquery against the truth-source vote table inside the
- * same UPDATE, so the cache always reflects truth after the batch — concurrent
- * `ON CONFLICT DO NOTHING` collisions on the vote table self-heal.
- *
- * Posts additionally carry a precomputed `hot_score` (SQLite has no `POW`, so
- * the multiplier is computed in JS and bound in).
+ * Score-cache UPDATE for the target row. The new score is a `COUNT(*)` subquery
+ * against the truth-source vote table inside the same UPDATE, so the cache
+ * reflects truth after the batch and concurrent `ON CONFLICT DO NOTHING`
+ * collisions self-heal. Posts also carry a precomputed `hot_score` — SQLite has
+ * no `POW`, so the multiplier is computed in JS and bound in.
  */
 function buildScoreCacheStatement(
 	db: DrizzleDb,
@@ -511,9 +415,7 @@ function buildScoreCacheStatement(
 				})
 				.where(eq(schema.definitionView.id, targetId));
 		case "post": {
-			// Same hot-score formula as `Pano.ts`'s `computeHotScore`:
-			//   floor(score * 1000 / (hours+2)^1.8)
-			// Precompute the multiplier in JS so SQL only multiplies.
+			// Must match `Pano.computeHotScore`: floor(score * 1000 / (hours+2)^1.8).
 			const hoursOld = Math.max(0, (now.getTime() - meta.createdAtMs) / 3_600_000);
 			const hotMultiplier = 1000 / (hoursOld + 2) ** 1.8;
 			return db

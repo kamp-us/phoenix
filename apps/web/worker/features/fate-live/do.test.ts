@@ -1,25 +1,12 @@
 /**
  * `LiveDO` (the unified, KV-backed live fan-out DO) on the Effect DO model.
  *
- * Drives the real {@link makeLiveInstance} builder directly over the KV-only
- * `do-state` fake, wiring two (or more) instances as in-process siblings: a
- * `connection:<id>`-named instance (the held SSE stream + subscription list) and
- * a `topic:<key>`-named instance (the durable subscriber registry + publish
- * fan-out + reap alarm). The `live` namespace fake's `getByName(name)` routes by
- * the name's prefix to the matching instance's {@link LiveRpcSurface}, exactly as
- * the worker's `live.getByName(...)` cross-role RPC does — so a topic→connection
- * `deliver` and a connection→topic `register` hop between the real instances. This
- * proves the acceptance criteria without workerd:
- *
- *   - subscribe → publish → the frame arrives on the held SSE stream, stamped
- *     with the subscriber's own `subId` (the per-subscriber frame.id);
- *   - a reconnect bumps the generation and the prior subscriber row is detected
- *     stale on the next publish (nothing delivered);
- *   - the reap alarm deletes a row whose connection is unreachable on the FIRST
- *     failed probe (void-faithful, no miss counter);
- *   - one publish fans to N subscribers, each frame carrying its OWN subId.
- *
- * Runs in the node pool.
+ * Drives the real {@link makeLiveInstance} builder over the KV-only `do-state`
+ * fake, wiring `connection:`- and `topic:`-named instances as in-process
+ * siblings. The `live` fake's `getByName` routes by name prefix to the matching
+ * instance's {@link LiveRpcSurface}, exactly as the worker's cross-role RPC does —
+ * so a topic→connection `deliver` and a connection→topic `register` hop between
+ * the real instances, proving the acceptance criteria without workerd.
  */
 import {Effect} from "effect";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
@@ -54,10 +41,9 @@ const LIMITS: LiveLimits = {
 type LiveInstance = ReturnType<typeof makeLiveInstance>;
 
 /**
- * An in-process `live` namespace fake. `getByName(name)` routes by prefix to the
- * registered instance's RPC surface (mirroring the worker's `getByName`); an
- * unknown name resolves to a stub whose every method dies, so a topic probing a
- * connection that isn't registered sees "couldn't reach" (not "confirmed stale").
+ * An in-process `live` namespace fake. An unknown name resolves to a stub whose
+ * every method dies, so a topic probing an unregistered connection sees "couldn't
+ * reach" (not "confirmed stale").
  */
 interface LiveCell {
 	readonly live: {readonly getByName: (name: string) => LiveRpcSurface};
@@ -98,7 +84,6 @@ function makeLiveCell(): LiveCell {
 	};
 }
 
-/** Spin up a `connection:<id>` instance and register it on the cell. */
 function makeConnection(cell: LiveCell, connectionId: string): LiveInstance {
 	const name = makeConnectionName(connectionId);
 	const fake = makeDurableObjectStateForTest({id: name});
@@ -107,7 +92,6 @@ function makeConnection(cell: LiveCell, connectionId: string): LiveInstance {
 	return instance;
 }
 
-/** Spin up a `topic:<key>` instance and register it on the cell. */
 function makeTopic(
 	cell: LiveCell,
 	topicKey: string,
@@ -125,7 +109,6 @@ function makeTopic(
 /** A minimal entity `next` frame; `id` is `""` (the publish stamps the subId). */
 const entityFrame: DeliverFrame = {kind: "next", id: "", event: {data: {score: 7}}};
 
-/** Read the SSE stream off an `openStream` response and collect frames. */
 async function reader(response: HttpServerResponse.HttpServerResponse) {
 	const web = HttpServerResponse.toWeb(response);
 	expect(web.headers.get("content-type")).toContain("text/event-stream");
@@ -153,7 +136,6 @@ async function reader(response: HttpServerResponse.HttpServerResponse) {
 	};
 }
 
-/** Parse the JSON payload off an SSE frame's `data:` line. */
 function payloadOf(frame: string): {kind: string; id: string; event: {data: unknown}} {
 	const dataLine = frame.split("\n").find((l) => l.startsWith("data: "))!;
 	return JSON.parse(dataLine.slice("data: ".length));
@@ -213,8 +195,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		);
 		await run(connection.subscribe({subId, topics: [topicKey], ownerId, limits: LIMITS}));
 
-		// Reconnect: generation bumps and the prior subscription is dropped. The
-		// topic still holds the old-generation row.
+		// Reconnect: generation bumps; the topic still holds the old-generation row.
 		await run(
 			connection.openStream({
 				ownerId,
@@ -298,22 +279,16 @@ describe("LiveDO live fan-out (KV model)", () => {
 	});
 
 	it("connection sub under specific+global topics gets ONE frame per publish (no double-delivery)", async () => {
-		// A connection subscription registers under BOTH the args-scoped and the
-		// global wildcard connection topic (`topicsForSubscribe`), exactly as fate's
-		// native `subscribeConnection` listens on both event names. The bug was that
-		// `topicsForPublish` fanned a single connection publish out to BOTH keys, so
-		// the connection — registered in both topic DOs — was `deliver`ed twice and
-		// the client saw the same frame twice. Drive the FULL publish path
-		// (`topicsForSubscribe` → register, `topicsForPublish` → publish) so this
-		// asserts the real wiring, not a hand-picked topic key.
+		// A connection subscription registers under BOTH the args-scoped and global
+		// wildcard topic. The bug: `topicsForPublish` fanned a single publish out to
+		// both keys, so the connection (in both topic DOs) was `deliver`ed twice.
+		// Drive the FULL path (subscribe → register, publish) to assert real wiring.
 		const cell = makeLiveCell();
 		const connection = makeConnection(cell, "conn-dd");
 
 		const procedure = "posts";
 		const args = {categoryId: "fruit"};
 
-		// Realistic subscribe: ONE subId, registered under every key the subscribe
-		// side resolves (specific + global).
 		const subControl: SubscribeControl = {
 			kind: "subscribeConnection",
 			subId: "sub-dd",
@@ -322,7 +297,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		};
 		const subscribeTopics = topicsForSubscribe(subControl);
 		expect(subscribeTopics.length).toBe(2);
-		// Spin up a topic DO per key the subscribe side touches.
 		const topics = new Map(
 			subscribeTopics.map((key) => [key, makeTopic(cell, key).instance] as const),
 		);
@@ -347,8 +321,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		);
 		expect(sub.ok).toBe(true);
 
-		// A single connection mutation (matching the subscribed procedure + args)
-		// fanned through `topicsForPublish` to whichever topic DO(s) it targets.
 		const message: PublishMessage = {
 			kind: "connection",
 			match: {procedure, args},
@@ -359,8 +331,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 			},
 		};
 		const publishTopics = topicsForPublish(message);
-		// The fix: a connection publish with args resolves to EXACTLY ONE key (void's
-		// `if (args) emit(specific) else emit(global)`), not both.
+		// The fix: a connection publish with args resolves to EXACTLY ONE key, not both.
 		expect(publishTopics.length).toBe(1);
 
 		let delivered = 0;
@@ -380,14 +351,12 @@ describe("LiveDO live fan-out (KV model)", () => {
 		// The connection was reached exactly once across the whole publish.
 		expect(delivered).toBe(1);
 
-		// And the held SSE stream carries EXACTLY ONE frame for the one mutation.
 		const first = await stream.next();
 		expect(first).toContain("event: connection");
 		expect(payloadOf(first).id).toBe(subControl.subId);
 
-		// No second frame: a one-shot reader race against a short idle window. If a
-		// duplicate were enqueued (the pre-fix double-delivery), it would already be
-		// buffered and `next()` would return it immediately.
+		// No second frame: race `next()` against a short idle window. A pre-fix
+		// duplicate would already be buffered and returned immediately.
 		const second = await Promise.race([
 			stream.next(),
 			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
@@ -406,17 +375,15 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const ownerId = "owner-backpressure";
 		const subId = "sub-backpressure";
 
-		// Tiny queue cap; the connected frame already occupies the queue, and the
-		// SSE stream is NEVER read (no `reader(res)`), so nothing drains it.
+		// Tiny cap; the SSE stream is NEVER read (no `reader(res)`), so nothing drains.
 		const cap = 2;
 		const limits: LiveLimits = {...LIMITS, maxQueuedEventsPerConnection: cap};
 		await run(connection.openStream({ownerId, maxQueuedEventsPerConnection: cap}));
 		const sub = await run(connection.subscribe({subId, topics: [topicKey], ownerId, limits}));
 		expect(sub.ok).toBe(true);
 
-		// Publish more than the cap without ever reading the stream. A bounded queue
-		// fills, the next deliver is refused, the connection is closed, and the row
-		// is reported stale (void's 410 on queue full).
+		// Publish past the cap: the queue fills, the next deliver is refused, the
+		// connection closes, and the row goes stale (void's 410 on queue full).
 		let sawStale = false;
 		for (let i = 0; i < cap + 5; i++) {
 			const pub = await run(topic.publish({topicKey, frame: entityFrame, limits}));
@@ -427,7 +394,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 		}
 		expect(sawStale).toBe(true);
 
-		// The stream is closed: a subsequent deliver finds no queue → stale.
+		// Stream closed: a subsequent deliver finds no queue → stale.
 		const after = await run(topic.publish({topicKey, frame: entityFrame, limits}));
 		expect(after.delivered).toBe(0);
 	});
@@ -437,9 +404,8 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const topicKey = "Post:post-hung";
 		const {instance: topic} = makeTopic(cell, topicKey);
 
-		// A connection whose `deliver` never resolves — a wedged isolate. Built as a
-		// full `LiveInstance` (only `deliver` matters; the rest die if touched, as
-		// publish never calls them on this connection) so no cast is needed.
+		// A connection whose `deliver` never resolves — a wedged isolate. Full
+		// `LiveInstance` (the rest die if touched) so no cast is needed.
 		const hung: LiveInstance = {
 			openStream: () => Effect.die("unused"),
 			subscribe: () => Effect.die("unused"),
@@ -453,8 +419,6 @@ describe("LiveDO live fan-out (KV model)", () => {
 		};
 		cell.register(makeConnectionName("hung"), hung);
 
-		// Register a subscriber row for the hung connection so publish has someone to
-		// (fail to) deliver to.
 		const row: SubscriberRow = {
 			topicKey,
 			connectionId: "hung",
@@ -466,9 +430,9 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const reg = await run(topic.register({row, limits: LIMITS}));
 		expect(reg.ok).toBe(true);
 
-		// A tight delivery budget; the hung deliver must NOT wedge publish — the
-		// `Effect.timeout(deliveryAttemptTimeoutMs)` fires, the attempt is treated as
-		// "couldn't reach" (delivered 0), and publish settles well within the budget.
+		// A tight budget: the hung deliver must NOT wedge publish — the
+		// `Effect.timeout(deliveryAttemptTimeoutMs)` fires, the attempt is "couldn't
+		// reach" (delivered 0), and publish settles within the budget.
 		const limits: LiveLimits = {...LIMITS, deliveryAttemptTimeoutMs: 50};
 		const started = Date.now();
 		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits}));

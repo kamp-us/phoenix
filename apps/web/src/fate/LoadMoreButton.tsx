@@ -1,8 +1,4 @@
-/**
- * The connection pagination control. Drives fate's `loadNext` and shows a
- * pending label while the page is in flight. Shared by every paginated view
- * (the pano feed, a term's definitions, a post's comments, a profile).
- */
+/** The shared connection pagination control: drives fate's `loadNext`. */
 import {useState} from "react";
 import {Button} from "../components/ui/Button";
 

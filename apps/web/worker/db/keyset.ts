@@ -1,38 +1,22 @@
 /**
- * Shared keyset-pagination primitives.
- *
- * Five service methods page forward over a DB keyset — `Sozluk`'s
- * `listDefinitionsKeyset` / `listTermSummariesConnection`, `Pano`'s
- * `listPostsConnection` / `listCommentsKeyset`, and `Pasaport.listContributions`.
- * Each used to hand-roll the same two pieces: a lexicographic `or(lt, and(eq,
- * gt), …)` "rows strictly after the cursor" predicate, and a `LIMIT first+1` →
- * `slice(0, first)` → `{rows, hasNextPage, endCursor}` page envelope. The
- * mixed-direction copies (`(score desc, createdAt asc, id asc)`) are the ones
- * that silently break on a field change, so the predicate is single-sourced
- * here and unit-tested.
- *
- * Two exports:
- *   - `keysetAfter(keys)` — builds the lexicographic predicate from a list of
- *     `{column, dir, value}` so direction is declared per column.
- *   - `forwardPage(fetched, first, cursorOf)` — slices the `first+1` probe and
- *     assembles the page envelope. The only place the envelope is built.
+ * Shared keyset-pagination primitives (ADR 0019). Five service methods page
+ * forward over a DB keyset; each used to hand-roll the lexicographic
+ * "rows strictly after the cursor" predicate and the `LIMIT first+1` page
+ * envelope. The mixed-direction copies (`(score desc, createdAt asc, id asc)`)
+ * silently break on a field change, so the predicate is single-sourced here and
+ * unit-tested.
  */
 
 import {and, eq, gt, lt, or, type SQL, type SQLWrapper} from "drizzle-orm";
 
-/** Sort direction for one keyset column. */
 export type KeysetDir = "asc" | "desc";
 
 /**
- * One column of a keyset tuple: the drizzle column to compare, its sort
- * direction, and the cursor row's value for that column.
- *
- * A `null` `value` drops the column from the comparison entirely (no inequality
- * arm, no equality term in later arms) — this reproduces the term-summary
- * `recent` fallback where a null `lastActivityAt` cursor degrades to the
- * tiebreaker-only predicate. `column` is the drizzle column / SQL expression;
- * the value type is intentionally loose because keyset columns span dates,
- * numbers, and strings.
+ * One column of a keyset tuple. A `null` `value` drops the column from the
+ * comparison entirely (no inequality arm, no equality term in later arms) —
+ * reproducing the term-summary `recent` fallback where a null `lastActivityAt`
+ * cursor degrades to the tiebreaker-only predicate. The value type is loose
+ * because keyset columns span dates, numbers, and strings.
  */
 export interface KeysetKey {
 	readonly column: SQLWrapper;
@@ -42,20 +26,14 @@ export interface KeysetKey {
 
 /**
  * Build the lexicographic "strictly after the cursor" predicate for a keyset
- * tuple ordered by `keys`.
- *
- * For columns `(c1 dir1, …, cn dirn)` with cursor values `(v1, …, vn)` the
- * predicate is the disjunction
+ * tuple ordered by `keys`. For columns `(c1 dir1, …, cn dirn)` with cursor
+ * values `(v1, …, vn)` the predicate is
  *
  *   OR_i ( c1 = v1 AND … AND c_{i-1} = v_{i-1} AND cmp_i(c_i, v_i) )
  *
- * where `cmp` is `<` for a `desc` column and `>` for an `asc` column — exactly
- * the row that follows the cursor in `ORDER BY c1 dir1, …, cn dirn`. Columns
- * whose cursor `value` is `null` are skipped (both their inequality arm and
- * their equality contribution), matching the legacy null-cursor fallback.
- *
- * Returns `undefined` when there is no usable cursor column (no keys, or every
- * value is null), so callers apply only their base `WHERE`.
+ * where `cmp` is `<` for `desc` and `>` for `asc`. Columns whose cursor `value`
+ * is `null` are skipped. Returns `undefined` when no cursor column is usable (no
+ * keys, or every value null), so callers apply only their base `WHERE`.
  */
 export function keysetAfter(keys: ReadonlyArray<KeysetKey>): SQL | undefined {
 	const usable = keys.filter((k) => k.value !== null && k.value !== undefined);
@@ -75,12 +53,8 @@ export function keysetAfter(keys: ReadonlyArray<KeysetKey>): SQL | undefined {
 }
 
 /**
- * The forward page after slicing the `first + 1` probe.
- *
- * `rows` is at most `first` long; `hasNextPage` reflects whether the probe row
- * existed; `endCursor` is `cursorOf(lastRow)` or `null` for an empty page. This
- * is the single assembly point for the `{rows, hasNextPage, endCursor}`
- * envelope shared by all five keyset methods (each adds its own `totalCount`).
+ * The single assembly point for the `{rows, hasNextPage, endCursor}` envelope
+ * shared by all five keyset methods (each adds its own `totalCount`).
  */
 export interface ForwardPage<TRow> {
 	readonly rows: TRow[];
@@ -89,11 +63,8 @@ export interface ForwardPage<TRow> {
 }
 
 /**
- * Slice a `LIMIT first + 1` probe into a forward page.
- *
- * Callers fetch `first + 1` rows; this trims the probe row, sets `hasNextPage`
- * from whether it was present, and derives `endCursor` from the last surviving
- * row via `cursorOf`. `first` is clamped to at least 1 defensively.
+ * Slice a `LIMIT first + 1` probe into a forward page; `first` is clamped to at
+ * least 1 defensively.
  */
 // Identity-default overload: when no `mapRow` is given the fetched row IS the
 // page row, so `TRow` collapses to `TFetched` and the default identity is
@@ -119,10 +90,6 @@ export function forwardPage<TRow>(
 	const limit = Math.max(1, first);
 	const hasNextPage = fetched.length > limit;
 	const slicedSource = hasNextPage ? fetched.slice(0, limit) : fetched;
-	// When `mapRow` is omitted (the identity-default overload), `TFetched` IS
-	// `TRow`, so the fetched rows are already page rows — map them through as-is.
-	// When given, it converts each `TFetched` to a `TRow`. Both overloads above
-	// keep this sound; the impl signature is intentionally broad (`unknown` in).
 	const rows: TRow[] = slicedSource.map((row) => (mapRow ? mapRow(row as never) : (row as TRow)));
 	const last = rows.at(-1) ?? null;
 	return {

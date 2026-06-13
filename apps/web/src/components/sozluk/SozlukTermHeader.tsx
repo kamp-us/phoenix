@@ -1,17 +1,9 @@
-/**
- * fate-shaped term page header.
- *
- * Reads its data via `useView(TermHeaderView, ref)` — the term page composes
- * `TermHeaderView` into its `term` request item and hands the `Term` ref down.
- * The header declares the fields it needs; fate masks the rest.
- */
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Term} from "../../../worker/features/fate/views";
 import {toIsoOrNull} from "../../fate/wire";
 import {formatAgoTR, formatDateTR} from "../../lib/datetime";
 
-/** The fields the term header reads. Co-located with the component. */
 export const TermHeaderView = view<Term>()({
 	id: true,
 	slug: true,

@@ -1,31 +1,18 @@
 /**
- * Phoenix D1 schema (binding `PHOENIX_DB`).
- *
- * Canonical store for every product domain. Resolvers read + write D1
- * directly via drizzle. ADR 0009 (d1-direct) supersedes the prior
- * "view-layer + projection" framing — there is no derivation step, the D1
- * shape *is* the shape.
- *
- * The auth tables (`user`, `session`, `account`, `verification`, `apikey`)
- * are owned by better-auth via its drizzle adapter; everything below is owned
- * directly by the relevant feature module (sozluk, pano, vote, pasaport).
+ * Phoenix D1 schema (binding `PHOENIX_DB`). Canonical store for every product
+ * domain — ADR 0009 (d1-direct): there is no derivation step, the D1 shape *is*
+ * the shape. The auth tables (`user`, `session`, `account`, `verification`,
+ * `apikey`) are owned by better-auth via its drizzle adapter; everything else by
+ * the relevant feature module (sozluk, pano, vote, pasaport).
  */
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
 
-/* -------------------------------------------------------------------------- */
-/* Pasaport / better-auth tables                                               */
-/* -------------------------------------------------------------------------- */
-
 /**
- * Canonical user identity row. Owned by better-auth at write time; resolvers
- * read it directly to surface the `me` query and to look up the immutable
- * Phoenix `username` handle.
- *
- * Username is NULL until the bootstrap step completes; immutable thereafter
- * (the `setUsername` mutation enforces this).
+ * Username is NULL until the bootstrap step completes; immutable thereafter (the
+ * `setUsername` mutation enforces this).
  */
 export const user = sqliteTable("user", {
 	id: text("id").primaryKey(),
@@ -36,9 +23,8 @@ export const user = sqliteTable("user", {
 		.notNull()
 		.default("human"),
 	emailVerified: integer("email_verified", {mode: "boolean"}),
-	// Phoenix-specific public handle: 3–30 chars, lowercase ASCII + digits + `-`,
-	// no leading/trailing `-`. Routed by /u/<username> on the SPA. UNIQUE allows
-	// multiple NULLs (SQLite semantics) so unbooted accounts coexist.
+	// Public handle: 3–30 chars, lowercase ASCII + digits + `-`, no leading/
+	// trailing `-`. UNIQUE allows multiple NULLs (SQLite) so unbooted accounts coexist.
 	username: text("username").unique(),
 	createdAt: timestamp("created_at"),
 	updatedAt: timestamp("updated_at"),
@@ -110,15 +96,8 @@ export const apikey = sqliteTable("apiKey", {
 	updatedAt: timestamp("updated_at"),
 });
 
-/* -------------------------------------------------------------------------- */
-/* Sozluk view tables                                                         */
-/* -------------------------------------------------------------------------- */
-
 /**
- * One row per term. Slug is the key (also the DO name → `idFromName(slug)`).
- * Maintained by the `TermChanged` projection step. Reads:
- * - `terms(sort: 'recent' | 'popular' | 'alphabetic', limit, letter?)`
- * - landing-page recency / popularity columns.
+ * One row per term, keyed by slug. Maintained by the `TermChanged` projection step.
  */
 export const termSummary = sqliteTable(
 	"term_summary",
@@ -135,35 +114,24 @@ export const termSummary = sqliteTable(
 		firstAt: timestamp("first_at"),
 		lastActivityAt: timestamp("last_activity_at"),
 		lastEditAt: timestamp("last_edit_at"),
-		// Forge ULID of the projection event that wrote this row.
 		// Convergent-overwrite guard: `WHERE last_event_id < excluded.last_event_id`.
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
-		// "son eklenenler" column on SozlukHome.
 		index("term_summary_recent").on(t.lastActivityAt),
-		// "en çok oylananlar" column on SozlukHome.
 		index("term_summary_popular").on(t.totalScore),
-		// Alphabet pivot filter.
 		index("term_summary_letter").on(t.firstLetter),
 	],
 );
 
 /**
- * Per-definition row. Canonical store for sozluk definitions after the
- * d1-direct migration (ADR 0009) — the per-term DO is no longer the
- * source of truth. Denormalized with term slug + title for the profile
- * contribution feed (so the feed renders without joining `term_summary`).
+ * Per-definition row. Canonical store for sozluk definitions after d1-direct
+ * (ADR 0009) — the per-term DO is no longer the source of truth. Denormalized
+ * with term slug + title so the profile feed renders without joining
+ * `term_summary`; `body_excerpt` is a denormalized truncation for the feed card.
  *
- * `body` holds the full text; `body_excerpt` is a denormalized truncation
- * used by the profile feed card (kept for backwards-compat with the legacy
- * projection-era columns; new writes populate both).
- *
- * `last_event_id` is a vestigial column from the projection era: under
- * d1-direct mutations write the table inline so the convergence guard is
- * unused on new writes (left default `""`). The column survives to
- * keep the existing read-side schema stable; a later cleanup pass drops it
- * during the wrangler / view cleanup work.
+ * `last_event_id` is vestigial (projection-era convergence guard, unused under
+ * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
  */
 export const definitionView = sqliteTable(
 	"definition_view",
@@ -173,31 +141,26 @@ export const definitionView = sqliteTable(
 		authorName: text("author_name").notNull(),
 		termSlug: text("term_slug").notNull(),
 		termTitle: text("term_title").notNull(),
-		// Canonical full-text definition body.
 		body: text("body").notNull().default(""),
-		// Truncated body for the feed card.
 		bodyExcerpt: text("body_excerpt").notNull(),
 		score: integer("score").notNull().default(0),
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
-		// Soft-delete flag — deleted contributions are filtered from the feed.
 		deletedAt: timestamp("deleted_at"),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
-		// Profile contribution feed: WHERE author_id = ? ORDER BY created_at DESC.
+		// WHERE author_id = ? ORDER BY created_at DESC (profile feed).
 		index("definition_view_author_created").on(t.authorId, t.createdAt),
-		// Term page read: WHERE term_slug = ? AND deleted_at IS NULL.
+		// WHERE term_slug = ? AND deleted_at IS NULL (term page).
 		index("definition_view_term_score").on(t.termSlug, t.score),
 	],
 );
 
 /**
- * Per-(definition, voter) up-vote presence row. The cross-product `user_vote`
- * MV is denormalized off this for the `myVote` lookup; the per-target score
- * column on `definition_view.score` is denormalized off COUNT(*) under
- * `WHERE definition_id = ?`. Both are recomputed inline in the same D1 batch
- * as the vote write.
+ * Per-(definition, voter) up-vote presence row. `user_vote` and
+ * `definition_view.score` (COUNT(*) under `WHERE definition_id = ?`) are both
+ * denormalized off this, recomputed inline in the same D1 batch as the vote write.
  */
 export const definitionVote = sqliteTable(
 	"definition_vote",
@@ -213,9 +176,8 @@ export const definitionVote = sqliteTable(
 );
 
 /**
- * Single-row stats table for the landing page. id = 1 is the only row.
- * Maintained by the `SozlukStatsChanged` projection step on every event that
- * could affect totals.
+ * Single-row stats table for the landing page (id = 1 is the only row).
+ * Maintained by the `SozlukStatsChanged` projection step.
  */
 export const sozlukStats = sqliteTable("sozluk_stats", {
 	id: integer("id").primaryKey().default(1),
@@ -225,33 +187,21 @@ export const sozlukStats = sqliteTable("sozluk_stats", {
 	updatedAt: timestamp("updated_at").notNull(),
 });
 
-/* -------------------------------------------------------------------------- */
-/* Pano view tables                                                           */
-/* -------------------------------------------------------------------------- */
-
 /**
  * One row per post. Maintained by the `PostChanged` projection step.
- * Reads:
- * - `posts(sort: 'hot' | 'new' | 'top' | 'discuss', limit, host?)`
- * - landing recency / popularity.
- * - profile feed (filtered by author_id).
  */
 export const postSummary = sqliteTable(
 	"post_summary",
 	{
 		id: text("id").primaryKey(),
-		// Optional human-friendly slug; resolver may dual-key on id or slug.
 		slug: text("slug"),
 		title: text("title").notNull(),
-		// Original submission URL (when the post is a link, not a self-post).
-		// Denormalized so the feed renders without RPCing into the per-post DO.
+		// Submission URL (link posts). Denormalized so the feed renders without
+		// RPCing into the per-post DO.
 		url: text("url"),
-		// Extracted via `new URL(url).host` on submit. Powers host filter.
+		// Extracted via `new URL(url).host` on submit. Powers the host filter.
 		host: text("host"),
-		// Canonical full-text post body. Was previously
-		// held inside the per-post DO's sqlite; under D1-direct `post_summary`
-		// IS the canonical store. `body_excerpt` stays for feed cards and is
-		// denormalized on write.
+		// Canonical full-text body under D1-direct; `body_excerpt` stays for feed cards.
 		body: text("body").notNull().default(""),
 		bodyExcerpt: text("body_excerpt"),
 		authorId: text("author_id").notNull(),
@@ -265,37 +215,23 @@ export const postSummary = sqliteTable(
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
 		lastActivityAt: timestamp("last_activity_at").notNull(),
-		// Soft-deleted posts are removed entirely from this MV by `PostDeleted`.
 		deletedAt: timestamp("deleted_at"),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
-		// "sıcak" sort.
 		index("post_summary_hot").on(t.hotScore),
-		// "yeni" sort.
 		index("post_summary_new").on(t.createdAt),
-		// "en iyi" sort.
 		index("post_summary_top").on(t.score),
-		// "tartışma" sort.
 		index("post_summary_discuss").on(t.commentCount),
-		// Host filter.
 		index("post_summary_host").on(t.host),
-		// Profile contribution feed: WHERE author_id = ? ORDER BY created_at DESC.
-		// `created_at DESC` so SQLite walks the index forward for the "newest
-		// contributions first" read on `/u/<username>`. Drizzle 0.45's index
-		// DSL doesn't expose per-column ordering on columns, so the second
-		// component is a `sql` fragment.
+		// `created_at DESC` via a `sql` fragment: drizzle 0.45's index DSL can't
+		// express per-column ordering, and SQLite must walk forward for the
+		// newest-first profile feed read.
 		index("post_summary_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
 	],
 );
 
-/**
- * Per-(post, voter) up-vote presence row. The cross-product `user_vote`
- * MV is denormalized off this for the `myVote` lookup; the per-target
- * score column on `post_summary.score` is denormalized off COUNT(*) under
- * `WHERE post_id = ?`. Both are recomputed inline alongside the vote
- * write. Mirrors `definitionVote`.
- */
+/** Per-(post, voter) up-vote presence row. Mirrors `definitionVote`. */
 export const postVote = sqliteTable(
 	"post_vote",
 	{
@@ -307,25 +243,15 @@ export const postVote = sqliteTable(
 );
 
 /**
- * Per-comment row, denormalized with post id + title for the profile
- * contribution feed AND the per-post thread reader. Canonical store for
- * pano comments after the d1-direct migration (ADR 0009) — the
- * per-post DO is no longer the source of truth.
+ * Per-comment row, denormalized with post id + title for the profile feed AND
+ * the per-post thread reader. Canonical store for pano comments after d1-direct
+ * (ADR 0009) — the per-post DO is no longer the source of truth.
  *
- * `body` holds the full text; `body_excerpt` is a denormalized truncation
- * kept for the profile feed card (backwards-compat with the projection-era
- * columns; new writes populate both). `parent_id` powers the thread shape
- * (nullable; top-level comments have `parent_id IS NULL`).
+ * Deleted-with-replies surfaces as `body_excerpt = '[silindi]'` + `deleted_at`
+ * set; deleted-without-replies fully removes the row (reply-aware soft-delete).
  *
- * Deleted-with-replies surfaces as `body_excerpt = '[silindi]'` AND
- * `deleted_at` set; deleted-without-replies fully removes the row. Same
- * reply-aware behavior the legacy DO/projection exhibited.
- *
- * `last_event_id` is a vestigial column from the projection era: under
- * d1-direct mutations write the table inline so the convergence guard is
- * unused on new writes (left default `""`). The column survives
- * to keep the existing read-side schema stable; a later cleanup pass drops it
- * during the wrangler / view cleanup work.
+ * `last_event_id` is vestigial (projection-era convergence guard, unused under
+ * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
  */
 export const commentView = sqliteTable(
 	"comment_view",
@@ -335,14 +261,11 @@ export const commentView = sqliteTable(
 		authorName: text("author_name").notNull(),
 		postId: text("post_id").notNull(),
 		postTitle: text("post_title").notNull(),
-		// Optional parent comment id for nested replies.
-		// Top-level comments leave this NULL; nested replies point at an
-		// existing non-deleted comment in the same post.
+		// NULL for top-level comments; nested replies point at a non-deleted
+		// comment in the same post.
 		parentId: text("parent_id"),
-		// Canonical full-text comment body.
 		body: text("body").notNull().default(""),
-		// Truncated body for the profile feed card; rewritten to "[silindi]"
-		// for the parent-with-replies soft-delete path.
+		// Rewritten to "[silindi]" on the parent-with-replies soft-delete path.
 		bodyExcerpt: text("body_excerpt").notNull(),
 		score: integer("score").notNull().default(0),
 		createdAt: timestamp("created_at").notNull(),
@@ -351,22 +274,16 @@ export const commentView = sqliteTable(
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
-		// Profile contribution feed: WHERE author_id = ? ORDER BY created_at DESC.
+		// WHERE author_id = ? ORDER BY created_at DESC (profile feed).
 		index("comment_view_author_created").on(t.authorId, t.createdAt),
-		// Per-post thread read: WHERE post_id = ? ORDER BY created_at ASC.
+		// WHERE post_id = ? ORDER BY created_at ASC (per-post thread).
 		index("comment_view_post").on(t.postId),
-		// Parent lookups for reply-aware soft-delete (children-of-parent check).
+		// Reply-aware soft-delete children-of-parent check.
 		index("comment_view_parent").on(t.parentId),
 	],
 );
 
-/**
- * Per-(comment, voter) up-vote presence row. The cross-product `user_vote`
- * MV is denormalized off this for the `myVote` lookup; the per-target score
- * column on `comment_view.score` is denormalized off COUNT(*) under
- * `WHERE comment_id = ?`. Both are recomputed inline alongside the vote
- * write. Mirrors `postVote` and `definitionVote`.
- */
+/** Per-(comment, voter) up-vote presence row. Mirrors `postVote` and `definitionVote`. */
 export const commentVote = sqliteTable(
 	"comment_vote",
 	{
@@ -391,18 +308,11 @@ export const panoStats = sqliteTable("pano_stats", {
 	updatedAt: timestamp("updated_at").notNull(),
 });
 
-/* -------------------------------------------------------------------------- */
-/* Cross-product tables                                                       */
-/* -------------------------------------------------------------------------- */
-
 /**
- * Per-user-per-target vote presence table. Powers the `myVote` view field
- * on Definition / Post / Comment. Voting is up-only in the MVP — presence of
- * a row means the user has voted; absence means they haven't. There is no
- * `value` column.
- *
- * Maintained by the `VoteRecorded` projection step (insert on vote, delete
- * on retract).
+ * Per-user-per-target vote presence table powering the `myVote` view field.
+ * Up-only in the MVP — presence of a row means voted, absence means not; there
+ * is no `value` column. Maintained by `VoteRecorded` (insert on vote, delete on
+ * retract).
  */
 export const userVote = sqliteTable(
 	"user_vote",
@@ -414,27 +324,23 @@ export const userVote = sqliteTable(
 		createdAt: timestamp("created_at").notNull(),
 	},
 	(t) => [
-		// Composite PK: one row per (user, target).
 		primaryKey({columns: [t.userId, t.targetKind, t.targetId]}),
-		// Reverse lookup (e.g. "who voted on this target") — also useful for
-		// hydrating myVote in batch from a list of target ids.
+		// Reverse lookup; also hydrates myVote in batch from a list of target ids.
 		index("user_vote_target").on(t.targetKind, t.targetId),
 	],
 );
 
 /**
- * Per-user denormalized profile row. Username is the public identifier and
- * routes the `/u/<username>` page. `total_karma` is the running sum of
- * upvotes received across all of this user's contributions, maintained by
- * the `VoteRecorded` and `UserProfileChanged` projection steps.
+ * Per-user denormalized profile row. `total_karma` is the running sum of upvotes
+ * received across all of this user's contributions, maintained by `VoteRecorded`
+ * and `UserProfileChanged`.
  */
 export const userProfile = sqliteTable(
 	"user_profile",
 	{
 		userId: text("user_id").primaryKey(),
-		// Nullable until the user completes the bootstrap step; immutable once set.
-		// SQLite UNIQUE allows multiple NULLs, which is what we want for backfilled
-		// rows that haven't picked a username yet.
+		// Nullable until bootstrap, immutable once set. UNIQUE allows multiple NULLs
+		// (SQLite) for backfilled rows without a username yet.
 		username: text("username").unique(),
 		displayName: text("display_name"),
 		image: text("image"),
@@ -443,12 +349,9 @@ export const userProfile = sqliteTable(
 		postCount: integer("post_count").notNull().default(0),
 		commentCount: integer("comment_count").notNull().default(0),
 		updatedAt: timestamp("updated_at").notNull(),
-		// Forge ULID convergence guard. Identity events (UserProfileChanged) own
-		// this column; counter-touching steps (VoteRecorded, …) leave it alone.
+		// Convergence guard owned by identity events (UserProfileChanged);
+		// counter-touching steps (VoteRecorded, …) leave it alone.
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
-	(t) => [
-		// `/u/<username>` route lookup.
-		index("user_profile_username").on(t.username),
-	],
+	(t) => [index("user_profile_username").on(t.username)],
 );

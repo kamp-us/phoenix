@@ -1,18 +1,13 @@
 /**
- * Hook around the `me` query — served through **fate**.
+ * Reads the canonical `me` row over `/fate` and refetches when the session
+ * updates. Reads the worker's own row (not the better-auth session) because the
+ * `username` additional field doesn't reliably round-trip through Better Auth's
+ * session inference right after a setUsername write.
  *
- * Pasaport's session contains the user id/email/name/image but the `username`
- * additional field doesn't always round-trip through Better Auth's session
- * inference reliably right after a setUsername write — so we read the canonical
- * row through the worker's own Pasaport (`me`) over `/fate`. Refetches when the
- * auth client's session updates.
- *
- * This is an **imperative** read (`client.request` + `client.readView`), not the
- * suspending `useRequest`: `useMe` runs in the `Layout` shell, above any
- * `<Screen>` Suspense boundary, and must NOT query `me` while unauthenticated
- * (the fate `me` resolver throws `UNAUTHORIZED` for anonymous viewers — see
- * `progress/task_4.md`'s accepted divergence). The `!session.data`
- * short-circuit preserves that: anonymous viewers never hit the wire.
+ * Imperative (`request` + `readView`), not the suspending `useRequest`: this
+ * runs in the `Layout` shell above any `<Screen>` Suspense boundary, and must
+ * NOT query while unauthenticated — fate's `me` throws `UNAUTHORIZED` for
+ * anonymous viewers, so the `!session.data` short-circuit keeps them off the wire.
  */
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, view} from "react-fate";
@@ -27,7 +22,6 @@ export interface MeUser {
 	username: string | null;
 }
 
-/** The `me` selection — the same five fields the GraphQL `Me` query read. */
 const MeView = view<User>()({
 	id: true,
 	email: true,
@@ -47,9 +41,7 @@ export function useMe(): {
 	const [loading, setLoading] = useState(false);
 
 	const refetch = useCallback(async () => {
-		// Preserve the unauthenticated short-circuit: the fate `me` resolver throws
-		// `UNAUTHORIZED` for anonymous viewers (task 4), so never query while
-		// signed out — just clear the canonical row.
+		// fate `me` throws `UNAUTHORIZED` for anonymous viewers — never query while signed out.
 		if (!session.data) {
 			setMe(null);
 			return;
@@ -58,10 +50,8 @@ export function useMe(): {
 		try {
 			const {me: ref} = await fate.request({me: {view: MeView}});
 			const snapshot = ref ? await fate.readView(MeView, ref) : null;
-			// `readView`'s snapshot `data` only statically narrows `id` (the
-			// imperative path doesn't infer the field selection the way `useView`
-			// does); the selected scalars are present at runtime, so read them
-			// through the known `MeUser` shape at this imperative seam.
+			// `readView` only statically narrows `id`; the selected scalars are
+			// present at runtime, so we read through the known `MeUser` shape.
 			const user = (snapshot?.data ?? null) as MeUser | null;
 			setMe(
 				user

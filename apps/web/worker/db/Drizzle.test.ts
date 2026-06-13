@@ -1,20 +1,8 @@
 /**
- * Drizzle service contract tests — scope B (smoke, semantics, composition,
- * type inference, batch tuple shape).
- *
- * The `Drizzle` service is the trust boundary between every feature service
- * and D1. These tests verify the wrapper's promise → Effect conversion in
- * isolation — no workerd, no real D1. A fake `DrizzleDb` is sufficient
- * because the wrapper never inspects the builder, it just forwards it to the
- * caller's callback.
- *
- * `run` and `batch` are bound methods on the Tag's value (`DrizzleAccess`),
- * not Context-bound statics. Tests destructure them at the top of each
- * Effect.gen, mirroring the production service idiom
- * (`const {run, batch} = yield* Drizzle`).
- *
- * Integration coverage (real D1 via miniflare) lives in the per-feature
- * integration tests under `tests/integration/`.
+ * Drizzle service contract tests — the wrapper's promise → Effect conversion in
+ * isolation (no workerd, no real D1). A fake `DrizzleDb` suffices because the
+ * wrapper never inspects the builder, it just forwards it to the callback.
+ * Integration coverage (real D1 via miniflare) lives under `tests/integration/`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {eq} from "drizzle-orm";
@@ -31,36 +19,21 @@ import {
 import * as schema from "./drizzle/schema";
 import {makeSqliteTestDb} from "./sqlite-d1.testing";
 
-/**
- * A fake `DrizzleDb` instance — the wrapper passes it to the callback
- * untouched, so any sentinel value works. Tests that need to spy on the
- * builder check identity against this.
- */
 // biome-ignore lint/plugin: `DrizzleDb` is a fully-typed drizzle client that can't be structurally constructed in a fake; the wrapper passes this sentinel through untouched.
 const FAKE_DB = {__phoenix_test_db__: true} as unknown as DrizzleDb;
 
 /**
- * Build a `DrizzleAccess` value over a given fake `DrizzleDb`. Delegates to the
- * production {@link makeDrizzleAccess} so the contract tests exercise the real
- * `run` / `batch` bodies, while letting each test supply its own `db` (so
- * `batch` spy tests can intercept `db.batch(...)`).
+ * Delegates to the production {@link makeDrizzleAccess} so the tests exercise the
+ * real `run` / `batch` bodies, while letting each test supply its own `db`.
  */
 const makeAccess = (db: DrizzleDb): DrizzleAccess => makeDrizzleAccess(db);
 
-/**
- * Test layer that provides the fake builder as the `Drizzle` service. The real
- * worker-level layer (`makeDrizzleLayer`) wraps a `drizzle()` instance over a
- * workerd-bound D1 handle; the contract under test is the `run` / `batch`
- * wrapping, not the builder construction.
- */
 const TestDrizzleLayer = Layer.succeed(Drizzle, makeAccess(FAKE_DB));
 
 /**
- * Stand-in `BatchItem<"sqlite">` value. The real `BatchItem` is a
- * `RunnableQuery` — we can't construct one without a live drizzle builder, so
- * we mint sentinels with `as unknown as BatchItem<"sqlite">`. This keeps the
- * tuple shape concrete (so `T extends Readonly<[U, ...U[]]>` infers a real
- * length-typed tuple instead of collapsing to `never`).
+ * Sentinel `BatchItem<"sqlite">`: the real one is an opaque `RunnableQuery` that
+ * can't be built without a live builder. Keeps the tuple shape concrete so
+ * `T extends Readonly<[U, ...U[]]>` infers a length-typed tuple, not `never`.
  */
 const fakeStmt = (id: number) =>
 	// biome-ignore lint/plugin: `BatchItem` is an opaque `RunnableQuery` that can't be built without a live drizzle builder; this sentinel keeps the tuple shape concrete (see the doc comment above).
@@ -114,8 +87,8 @@ describe("Drizzle.run", () => {
 	);
 
 	it.effect("type inference: callback's promised type is the Effect's success type", () =>
-		// Compile-time assertion via a typed binding. If `run` widened the
-		// return to `unknown`, the assignment to `number` would fail tsc.
+		// Compile-time assertion: if `run` widened the return to `unknown`, these
+		// typed bindings would fail tsc.
 		Effect.gen(function* () {
 			const {run} = yield* Drizzle;
 			const n: number = yield* run(() => Promise.resolve(7));
@@ -127,11 +100,8 @@ describe("Drizzle.run", () => {
 });
 
 describe("Drizzle.batch", () => {
-	/**
-	 * `batch` ultimately calls `db.batch(statements)` and trusts D1 / drizzle
-	 * to execute them atomically. With a fake builder we stub `batch` to
-	 * return a sentinel so the wrapping behavior is observable.
-	 */
+	// Stubs `db.batch` to record its calls and return a sentinel, so the
+	// wrapper's forwarding behavior is observable.
 	function makeBatchSpy() {
 		const calls: Array<readonly unknown[]> = [];
 		// biome-ignore lint/plugin: spy fake — `DrizzleDb` is a fully-typed drizzle client that can't be structurally built; only `db.batch` is exercised here.
@@ -191,11 +161,9 @@ describe("Drizzle.batch", () => {
 
 /**
  * Generic `batch` atomicity over a REAL SQL engine (the `node:sqlite`-backed D1
- * fake): a `batch([...])` either commits the whole tuple or none of it. The spy
- * tests above prove error propagation; this proves there's no PARTIAL write when
- * one statement in the tuple fails. The vote-specific end-to-end invariant
- * (`Vote.cast` rolling back a real vote+score+mirror+karma tuple) has its own
- * test in `worker/features/vote/Vote.test.ts`.
+ * fake): no PARTIAL write when one statement in the tuple fails. The spy tests
+ * above prove error propagation; the vote-specific end-to-end invariant lives in
+ * `worker/features/vote/Vote.test.ts`.
  */
 describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
 	const now = new Date();
@@ -208,9 +176,8 @@ describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
 		return Effect.gen(function* () {
 			const {run, batch} = yield* Drizzle;
 
-			// A pre-existing vote row. The batch below tries to insert a DIFFERENT
-			// valid row plus a DUPLICATE of this one — the duplicate violates the
-			// `(definition_id, voter_id)` PK, failing the batch mid-tuple.
+			// A pre-existing vote row; the batch below tries a valid insert plus a
+			// duplicate of this one, violating the `(definition_id, voter_id)` PK.
 			yield* run((d) =>
 				d
 					.insert(schema.definitionVote)
@@ -223,7 +190,7 @@ describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
 					d
 						.insert(schema.definitionVote)
 						.values({definitionId: "def-1", voterId: "voter-new", createdAt: now}),
-					// PK collision with the pre-existing row → mid-batch failure.
+					// PK collision with the pre-existing row.
 					d
 						.insert(schema.definitionVote)
 						.values({definitionId: "def-1", voterId: "voter-existing", createdAt: now}),
@@ -231,8 +198,7 @@ describe("Drizzle.batch atomicity (real SQLite via the D1 fake)", () => {
 			);
 			assert.isTrue(Exit.isFailure(exit), "the duplicate-PK batch must fail");
 
-			// The first (valid) insert in the failed batch must NOT have landed:
-			// only the pre-existing `voter-existing` row remains.
+			// The valid insert must NOT have landed: only the pre-existing row remains.
 			const rows = yield* run((d) =>
 				d
 					.select()
