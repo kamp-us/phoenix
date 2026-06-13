@@ -1,24 +1,34 @@
 ---
 name: plan-epic
-description: Turn a triaged epic into an executable task ledger on kamp-us/phoenix — write a PRD-grade plan into the epic body, split it into native GitHub sub-issues, and pin a `## Dependencies` topology. Trigger on "plan the epic", "plan epic #N", "break down the epic", "/plan-epic", or whenever a `type:epic` `status:triaged` issue needs its plan and children. Re-runs reconcile an existing plan against a changed epic. Operates autonomously — no approval gate.
+description: Turn a triaged epic into an executable, PRD-grade task ledger on kamp-us/phoenix — a plan whose product layer (problem, user stories, testing strategy) leads and engineering layer follows, split into tracer-bullet sub-issues that each trace to a user story, with a pinned `## Dependencies` topology. Trigger on "plan the epic", "plan epic #N", "break down the epic", "/plan-epic", or whenever a `type:epic` `status:triaged` issue needs its plan and children. Autonomous — no interview or approval gate; re-runs reconcile.
 ---
 
 # plan-epic
 
 You take a triaged epic (`type:epic` + `status:triaged`) and turn it into something
-a fleet of `write-code` agents can execute without you in the loop: a plan written
-into the epic body, a set of native GitHub sub-issues each carrying its own
-acceptance criteria, and a pinned `## Dependencies` section that says what gates what.
+a fleet of `write-code` agents can execute without you in the loop: a **PRD-grade plan**
+written into the epic body, a set of native GitHub sub-issues each carrying its own user-story
+trace and acceptance criteria, and a pinned `## Dependencies` section that says what gates what.
 
-You operate **autonomously**. The plan you write is read by `write-code` agents, not
-presented to a human for sign-off — there is no propose-first, no approval gate. Plan,
-split, link, done. (The human already approved the *epic* at triage; your job is to
-make it executable, not to re-litigate whether it should exist.)
+"PRD-grade" is the bar this skill exists to hold. A plan that lists only architecture and a
+task split is half a plan — it says *how* without ever saying *who needs this and what changes
+for them*. Your plan **leads with the product layer** (the problem, the solution from the user's
+view, the user stories, the testing strategy) and **then** lays down the engineering layer
+(approach, split rationale). The user stories are the spine: they are what you slice the
+children from, and every child traces back to one. See ADR
+[0046](../../../.decisions/0046-plan-epic-prd-grade-plans.md) for why.
 
-The epic body is **append-down**: the triaged original brief stays untouched at the
-top, and you write *below* it. You never rewrite-on-top an epic — its original
-content is the brief that grounds your plan, not noise to bury. (This is exactly the
-exception triage carves out for epics; the formats doc spells out why.)
+You operate **autonomously**. The plan you write is read by `write-code` agents, not presented
+to a human for sign-off — there is **no interview, no propose-first, no approval gate**. You
+author the product layer from the brief + the existing product + codebase exploration + your own
+product judgment; you do not ask the user questions (the human already approved the *epic* at
+triage). When a user story hinges on a genuine product decision you can't ground from the
+codebase, carve it as a `type:decision` child — never handwave it. Plan, split, link, done.
+
+The epic body is **append-down**: the triaged original brief stays untouched at the top, and you
+write *below* it. You never rewrite-on-top an epic — its original content is the brief that
+grounds your plan, not noise to bury. (This is exactly the exception triage carves out for
+epics; the formats doc spells out why.)
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
@@ -29,19 +39,21 @@ this org.
 
 ## The formats contract
 
-You **write three of the four** shared formats; read them before you start:
+You **write three of the five** shared formats; read them before you start:
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md).
 
 - **`## Dependencies` grammar** (format 1) — the topology you pin at the bottom of
   the epic body: `### Phase N` headings as the sequential spine, the list within a
   phase as a parallel group, `requires: #N` as a cross-boundary gating edge.
   **Topology only** — no retry budgets, no concurrency caps, no code flags; those are
-  orchestrator concerns, not shared issue state.
-- **Sub-issue body** (format 2) — the shape of every child you create: optional
-  `**Stories:**`, a `**TDD:**` flag, a `### What to build` prose spec, and a
-  `### Acceptance criteria` checklist. The hard invariant: **every sub-issue body
-  carries ≥ 1 acceptance criterion.** A child you can't state a single checkable
-  criterion for is not yet specified — sharpen it or fold it into a sibling.
+  orchestrator concerns, not shared issue state. (The orchestrator itself is not this repo's
+  job — ADR [0046](../../../.decisions/0046-plan-epic-prd-grade-plans.md); the topology is the
+  only dependency artifact phoenix keeps.)
+- **Sub-issue body** (format 2) — the shape of every child you create: a **required**
+  `**Stories:**` line (the story numbers from your plan this child implements or unblocks), a
+  `**TDD:**` flag, a `### What to build` prose spec, and a `### Acceptance criteria` checklist.
+  Two hard invariants: **every child carries ≥ 1 acceptance criterion**, and **every child
+  traces to ≥ 1 user story** (see the coverage invariant in Step 3).
 - **Epic handoff note** (format 4) — you don't *post* these (that's `write-code` as
   children complete), but your plan should make the cross-task signal they'll carry
   predictable. The `## Dependencies` graph is the spine those handoffs route along.
@@ -63,8 +75,11 @@ Resolve the brief's open questions **yourself** from the codebase and project
 conventions — that is the planning work. The epic brief often ends with open
 questions (triage leaves them for you). Answer them in the plan with a stated
 rationale; don't punt them downstream as unscoped ambiguity. If a question is
-genuinely unanswerable without a human decision, carve it out as its own
-`type:decision` child rather than blocking the whole plan on it.
+genuinely a product or architecture fork that needs human-judgment — not something the
+codebase settles — carve it as its own `type:decision` child rather than blocking the
+whole plan on it. (This is the autonomous substitute for the interview a human-facing PRD
+tool would run: you resolve what you can and turn the rest into decision work, you don't
+stop to ask.)
 
 > In the bash below, `<EPIC>` / `<CHILD>` angle-bracket tokens are placeholders you
 > hand-substitute with concrete issue numbers; `$VARS` (e.g. `$CHILD_ID`, `$BODY`)
@@ -86,41 +101,105 @@ reconcile rather than blindly recreate.
 
 ## Step 2 — Write the PRD-grade plan
 
-Below the untouched brief, write the plan a `write-code` fleet needs. This is the
-"product requirements" layer the brief only gestured at — concrete enough that each
-child issue is a faithful slice of it. There's no rigid template; cover what the work
-actually needs, but a solid plan usually has:
+Below the untouched brief, write the plan a `write-code` fleet needs, as a
+`## Plan (plan-epic)` section whose subsections lead with the **product layer** and then the
+**engineering layer**. Write these exact `###` headings, in this order, under
+`## Plan (plan-epic)`:
 
-- **Goal / non-goals** — what this epic delivers, and the tempting-adjacent things
-  it deliberately doesn't (the brief's out-of-scope, sharpened).
-- **Resolved questions** — each open question from the brief, answered, with the
-  one-line rationale grounded in the codebase. This is where the planning judgment
-  shows.
-- **Approach** — the shape of the solution: the modules/files involved, the data
-  flow, the conventions it must honor (cite the ADR/pattern docs). Enough that the
-  child issues don't each have to re-derive the architecture.
-- **Task breakdown rationale** — *why* the work splits the way it does into the
-  children below. The split should fall on natural seams (a write-code agent can
-  finish one child in a PR or two), and the rationale is what makes the
-  `## Dependencies` topology legible.
+```markdown
+## Plan (plan-epic)
 
-Keep it grounded. No invented requirements, no aspirational scope the brief didn't
-ask for. The plan serves the children; if a paragraph doesn't change how a child gets
-built, cut it.
+### Problem & who has it
+### What changes
+### User stories
+### Goal / non-goals
+### Resolved questions
+### Approach
+### Testing strategy
+### Task-split rationale
+```
+
+(The `## Dependencies` topology is a separate top-level section you pin in Step 5 — not part
+of this plan block.) What each section holds:
+
+**Product layer — lead with this.**
+
+- **Problem & who has it** — the problem from the user's perspective: who is affected
+  (include automated agents — kamp.us is a human-*and*-agent surface), and why it matters
+  now. Grounded in the brief + the existing product, not invented. This is the section
+  whose absence makes a plan read as "just architecture."
+- **What changes** — the solution from the user's perspective: what is different once this
+  ships, stated as the experience, not the implementation.
+- **User stories** — the spine of the plan, written under the stable `### User stories`
+  heading so every child's `**Stories:**` line can reference them by number. A numbered list,
+  each: *As a `<actor>`, I want `<capability>`, so that `<benefit>`.* Be **extensive** — cover
+  the happy path, edge cases, error states, and admin/moderation flows; thin generic stories
+  produce thin tasks. Each story should be specific enough to demo. Actors include agents
+  where the surface is agent-facing. **These stories are what you slice the children from in
+  Step 3, and every child traces back to one** — so write them first and write them well.
+  A story that depends on an unresolved product decision becomes a `type:decision` child (Step
+  1); don't bury the fork inside a vague story.
+
+**Engineering layer — then this.**
+
+- **Goal / non-goals** — what this epic delivers, and the tempting-adjacent things it
+  deliberately doesn't (the brief's out-of-scope, sharpened).
+- **Resolved questions** — each open question from the brief, answered, with the one-line
+  rationale grounded in the codebase. This is where the planning judgment shows. Genuine
+  human-judgment forks are carved as `type:decision` children instead of answered here.
+- **Approach** — the shape of the solution: the modules/layers involved, the data flow, the
+  conventions it must honor (cite the ADR/pattern docs). Enough that the child issues don't
+  each re-derive the architecture. **No specific file paths or code snippets** — name modules
+  and layers, not `path/to/file.ts:42`; paths and snippets go stale fast and the children read
+  the live code anyway.
+- **Testing strategy** — which behaviors/modules get tested and why, and at which tier (cite
+  ADR [0040](../../../.decisions/0040-testing-taxonomy-and-seam-graduation.md)'s T0–T3
+  taxonomy and `.patterns/effect-testing.md`); what makes a good test here (behavior, not
+  implementation); prior art in the repo to follow. This is what sets each child's `**TDD:**`
+  flag honestly, instead of guessing per child.
+- **Task-split rationale** — *why* the work splits the way it does into the children below.
+  The split is tracer-bullet vertical (Step 3) and falls on natural seams; the rationale is
+  what makes the `## Dependencies` topology legible, and it names which stories each slice
+  carries.
+
+Keep it grounded. No invented requirements, no aspirational scope the brief didn't ask for.
+The plan serves the children; if a paragraph doesn't change how a child gets built or what it
+delivers to a user, cut it.
 
 ---
 
-## Step 3 — Split into sub-issues
+## Step 3 — Split into sub-issues (tracer-bullet, story-covered)
 
-Slice the plan into executable children. Each is **one task a `write-code` agent can
-pick up cold** — finishable in a PR or two, with an unambiguous "done". Good seams:
-one capability, one layer, one migration, one decision. Bad seams: "do half of
-feature X" with no checkable boundary.
+Slice the plan into executable children. Each implementation child is a **tracer-bullet
+vertical slice**: a thin path through *every layer it touches* (storage → service → fate →
+UI → tests) that delivers one narrow-but-complete piece of user-visible value, demoable on
+its own. Prefer **many thin slices over few thick ones**. A child a `write-code` agent can
+pick up cold and finish in a PR or two, with an unambiguous "done".
+
+`type:decision` and `type:investigation` children are the exception to "vertical slice" —
+they produce a *record* (an ADR via `/adr`, or a diagnosis), not a layered code change. They
+still trace to the stories or forks they unblock.
+
+### The story-coverage invariant (enforced)
+
+This is the discipline that makes the split PRD-derived rather than invented:
+
+- **Every user story is covered by ≥ 1 child.** A story with no child implementing it is an
+  unfinished plan — add the child or fold the story.
+- **Every child traces to ≥ 1 story** via its `**Stories:**` line — the stories it implements,
+  or (for decision/investigation/infra children) the stories it *unblocks*. A child that traces
+  to no story is scope creep — cut it. The rare genuinely-pure-infra child that unblocks no
+  single story carries the explicit marker `**Stories:** none (pure infra — see What to build)`
+  and justifies itself in `### What to build`; the line is never silently left blank.
+
+Before you finish, run the coverage check both directions: list each story → the child(ren)
+covering it, and each child → its story(ies). An uncovered story or an untraceable child means
+the split isn't done.
 
 Each child's body follows the **sub-issue body format** (format 2) exactly:
 
 ```markdown
-**Stories:** <story refs from the epic brief, if any — omit the line if none>
+**Stories:** <REQUIRED — story numbers this child implements or unblocks; or `none (pure infra — see What to build)`>
 **TDD:** yes | no
 
 ### What to build
@@ -132,17 +211,25 @@ modules/files. State what's out of scope if there's a tempting adjacent thing.>
 - [ ] <…>
 ```
 
+(A child's `### What to build` *may* name concrete files — it sits close to the code. Only the
+epic-level **Approach** (Step 2) stays path-free, because it ages faster and the children read
+the live code anyway.)
+
 The invariants you must hold:
 
+- **≥ 1 user story per child.** The `**Stories:**` line is required and never blank — it names
+  the stories the child implements or unblocks (or, for the rare pure-infra child, the explicit
+  `none (pure infra — see What to build)` marker). See the coverage invariant above.
 - **≥ 1 acceptance criterion per child.** Non-negotiable — `write-code` can't know
   when to stop and `review-code` can't verify without it. If you can't write one,
   the child isn't specified yet.
-- **TDD flag honestly set.** `yes` for a behavior with a verifiable contract; `no`
-  for config, docs, scaffolding, or an operational step. It's advice to write-code,
-  not a gate.
-- **Self-contained.** A child must not require reading sibling bodies to be
-  understood — cross-task context flows through the epic's handoff notes and the
-  `## Dependencies` graph, not by reference between child bodies.
+- **TDD flag honestly set** from the testing strategy (Step 2). `yes` for a behavior with a
+  verifiable contract; `no` for config, docs, scaffolding, or an operational step. It's
+  advice to write-code, not a gate.
+- **Self-contained.** A child must not require reading sibling bodies to be understood —
+  cross-task context flows through the epic's handoff notes and the `## Dependencies` graph,
+  not by reference between child bodies. (The story numbers point into the epic plan's
+  `### User stories`, which is shared context, not a sibling body.)
 
 Create each child via REST, assembling its body from a temp file so multi-line
 markdown and backticks survive the shell:
@@ -155,12 +242,14 @@ gh api repos/kamp-us/phoenix/issues \
   --jq '{number,id}'
 ```
 
-Children inherit the epic's `type:*`? **No** — a child gets its own type from triage
-semantics if it warrants one, but in practice plan-epic's children are pickable work
-units: type them as the work is (`type:feature`, `type:chore`, etc.) and apply a
-priority. Do **not** label children `status:needs-triage` — they were born from a
-triaged plan, they're already actionable. Apply `status:triaged` plus a `type:*` and
-a `p*` so `write-code` treats them as pickable:
+Capture both `number` and `id` from the create — Step 4 links by the `id`, so you won't need
+to re-fetch it.
+
+Children get their own type from the work they are (`type:feature`, `type:chore`,
+`type:bug`, `type:decision`, `type:investigation`) — **not** inherited from the epic — plus a
+priority. Do **not** label children `status:needs-triage`: they were born from a triaged plan,
+they're already actionable. Apply `status:triaged` + a `type:*` + a `p*` so `write-code` treats
+them as pickable:
 
 ```bash
 gh api repos/kamp-us/phoenix/issues/<CHILD>/labels \
@@ -185,7 +274,7 @@ is the real parent/child edge, not just a `## Dependencies` mention.
 The endpoint takes the child's **database id** (`.id`), *not* its issue number:
 
 ```bash
-# get the child's database id, then link it under the epic
+# the child's database id (reuse the .id from the Step 3 create if you captured it)
 CHILD_ID=$(gh api repos/kamp-us/phoenix/issues/<CHILD> --jq '.id')
 gh api -X POST repos/kamp-us/phoenix/issues/<EPIC>/sub_issues \
   -F sub_issue_id=$CHILD_ID \
@@ -221,17 +310,20 @@ a separate state change (the journal-note path in re-plan).
 
 ---
 
-## Step 5 — Write the `## Dependencies` topology into the epic body
+## Step 5 — Write the body (brief + plan + `## Dependencies`)
 
-Now pin the topology. Assemble the epic's new body as: **untouched brief** + **the
-plan you wrote in Step 2** + **the `## Dependencies` section** referencing the child
-numbers you just created.
+Now assemble and pin the full body: **untouched brief** + **the PRD-grade plan from Step 2**
++ **the `## Dependencies` section** referencing the child numbers you just created.
 
-The grammar (format 1): `### Phase N` headings are the sequential spine (every issue
-in a phase closes before the next phase starts); the list within a phase is a
-parallel group (no ordering between them); `requires: #N` on a child is a
-cross-boundary gating edge for a dependency that doesn't fall on a phase boundary.
-Topology only.
+The dependency grammar (format 1): `### Phase N` headings are the sequential spine (every
+issue in a phase closes before the next phase starts); the list within a phase is a parallel
+group (no ordering between them); `requires: #N` on a child is a cross-boundary gating edge
+for a dependency that doesn't fall on a phase boundary. **Topology only** — no retry budgets,
+concurrency caps, or code flags (those are the out-of-repo orchestrator's, per ADR 0046).
+
+Derive the topology from the task-split rationale: independent slices share a phase (parallel);
+a slice that needs another's output sits in a later phase, or carries a `requires:` for a
+single specific predecessor.
 
 ```markdown
 ## Dependencies
@@ -248,7 +340,7 @@ Topology only.
 Assemble and PATCH from a temp file so the whole multi-section body survives intact:
 
 ```bash
-# /tmp/plan-epic-<EPIC>-body.md = brief (verbatim) + plan + ## Dependencies
+# /tmp/plan-epic-<EPIC>-body.md = brief (verbatim) + PRD-grade plan + ## Dependencies
 BODY="$(cat /tmp/plan-epic-<EPIC>-body.md)"
 gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY"
 ```
@@ -257,8 +349,9 @@ gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY"
 `/tmp/plan-epic-<EPIC>-current.md` (Step 1) and paste it back unchanged as the top of
 the new body — don't reflow it, don't "tidy" it. Everything you add goes below it.
 
-Sanity-check the result: the brief is still on top, the plan follows, and the
-`## Dependencies` numbers match the children that exist and are linked.
+Sanity-check the result: the brief is still on top, the plan follows (product layer first),
+the `### User stories` section is present, the `## Dependencies` numbers match the children that
+exist and are linked, and every story maps to a child (the coverage invariant).
 
 ---
 
@@ -266,14 +359,18 @@ Sanity-check the result: the brief is still on top, the plan follows, and the
 
 When you're re-run on an epic that already has a plan and children (the brief changed,
 scope shifted, a child was closed), you **rewrite the plan and the task split
-together** — but you don't blow away history. Judge **each existing child
-individually**:
+together** — but you don't blow away history. Re-derive the user stories first (they may have
+grown or shifted), then judge **each existing child individually** against the new story set:
 
 | Verdict | When | Action |
 |---|---|---|
-| **Keep** | The child is still a faithful slice of the new plan. | Leave it. If only its *framing* drifted, you may amend its body, but its identity stands. |
-| **Amend** | The child's intent survives but its scope/criteria moved. | PATCH its body to the new spec (preserve its acceptance-criteria discipline). It stays linked, same number. |
+| **Keep** | The child is still a faithful slice of the new plan and still covers its story. | Leave it. If only its *framing* drifted, you may amend its body, but its identity stands. |
+| **Amend** | The child's intent survives but its scope/criteria/stories moved. | PATCH its body to the new spec (preserve its acceptance-criteria + `**Stories:**` discipline). It stays linked, same number. |
 | **Supersede** | The child no longer fits — the plan dropped it, merged it, or replaced it with a differently-shaped unit. | Close it with a **journal note** (below), unlink it, and create the replacement fresh if there is one. |
+| **Frozen** | The child is already `closed` (its work merged). | Leave it untouched — it's history; the new plan builds on it. Never reopen or supersede a closed-done child. |
+
+After reconciling, re-run the **story-coverage check** (Step 3) against the new story set:
+a newly-added story with no child needs one; an orphaned child needs a story or a cut.
 
 **Closed-done children are history — never reopen or supersede them.** A child that's
 already `closed` because its work merged is part of the record. The new plan builds on
@@ -335,12 +432,27 @@ scratch one.
 
 ---
 
+## Running it
+
+A single invocation takes one epic from triaged brief to executable ledger: read the epic +
+codebase (Step 1), write the PRD-grade plan — product layer (problem / solution / **user
+stories** / testing strategy) then engineering layer (Step 2), split into tracer-bullet
+children that each trace to a story (Step 3), link them as native sub-issues (Step 4), and pin
+the full body with its `## Dependencies` topology (Step 5). Re-runs reconcile.
+
+Report back a short ledger: the epic, the story count, the children created (with the story
+each covers), and the phase topology. Don't narrate every REST call — the epic body and the
+linked sub-issues are the durable record.
+
 ## Conventions
 
 This skill is one of a suite (`report` → `triage` → **`plan-epic`** → `write-code` →
 `review-code`) that turns GitHub issues into an agent-operable pipeline. The shared
-label semantics and the body/comment/dependency formats live in
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). Your input is a
-`type:epic` + `status:triaged` issue from `triage`; your output — the epic body's
-plan + `## Dependencies`, and the linked sub-issues with their acceptance criteria —
-is exactly what `write-code` reads to pick, sequence, and execute the work.
+label semantics and the body/comment/dependency/story formats live in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); the decision to make
+plan-epic's output PRD-grade, story-driven, coverage-enforced, and autonomous (with the
+personal PRD/orchestrator harness deliberately kept out of the repo) is ADR
+[0046](../../../.decisions/0046-plan-epic-prd-grade-plans.md). Your input is a
+`type:epic` + `status:triaged` issue from `triage`; your output — the epic body's PRD-grade
+plan + `## Dependencies`, and the linked sub-issues with their story traces and acceptance
+criteria — is exactly what `write-code` reads to pick, sequence, and execute the work.

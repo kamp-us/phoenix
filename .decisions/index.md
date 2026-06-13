@@ -50,3 +50,4 @@ One row per ADR. Read the file for the why.
 | [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | fate-effect v2 — the native interpreter serves /fate; no runtime on the request path | accepted | 2026-06-10 |
 | [0044](0044-imge-media-architecture.md) | imge Media Architecture — R2 Store, Pasaport-Auth Uploads, One Surface | accepted | 2026-06-13 |
 | [0045](0045-kampus-client-cli.md) | kampus Client CLI — One Authenticated Surface for Humans and Agents | accepted | 2026-06-13 |
+| [0046](0046-plan-epic-prd-grade-plans.md) | plan-epic emits PRD-grade epic plans — product layer + user stories, enforced story coverage, tracer-bullet children, autonomous (harness stays out) | accepted | 2026-06-13 |
