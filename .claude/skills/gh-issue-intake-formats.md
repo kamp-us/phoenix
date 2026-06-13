@@ -36,6 +36,43 @@ writing — it's the safety margin, not the target.
 
 ---
 
+## Pipeline labels
+
+Every issue carries one `type:*`, one `p*`, and one `status:*`. The `status:*`
+labels are the **pipeline state** an issue sits in — the spine the intake skills key
+on. The canonical set:
+
+| Label | Meaning | Pickable by `write-code`? |
+|---|---|---|
+| `status:needs-triage` | Raw intake; not yet classified. Filed by `report`. | No |
+| `status:needs-info` | Parked — `triage` needs an answer before it can act. | No |
+| `status:planned` | A `plan-epic` child: planned and structurally complete, **not yet verified**. | **No** |
+| `status:triaged` | Cleared the gate before it — ready for `write-code` to pick. | **Yes** |
+
+`status:triaged` is the one pickable state. It is reached two ways, and **only** these
+two: a standalone issue gets it from `triage` (the human-judgment gate at intake); a
+`plan-epic` **child** gets it from `review-plan` (the deterministic gate at the plan
+layer — ADR [0047](../../.decisions/0047-review-plan-gate.md)). Either way,
+`status:triaged` is a **post-gate** state, never the immediate output of `plan-epic`.
+
+### The `planned → triaged` flip
+
+`plan-epic` mints its children **`status:planned`**, *not* `status:triaged` — a planned
+child is unpickable by construction (`write-code`'s pick predicate selects only
+`status:triaged`). A child becomes pickable only when **`review-plan`** validates the
+epic ledger against the deterministic structural floor (an empty hard-defect set) and
+flips that one child's `status:planned → status:triaged`. `review-plan` **owns this
+flip** and nothing else does it; it is the symmetric twin of `review-code`'s
+PR → merge gate, one stage earlier (plan → `write-code`).
+
+This is why the flip *is* the enforcement: because `write-code` already keys on
+`status:triaged` and nothing else, an unverified-but-pickable child cannot exist —
+`status:planned` makes the unverified state unrepresentable to the picker, with **no
+change to `write-code`'s predicate**. See ADR
+[0047](../../.decisions/0047-review-plan-gate.md) for the full gate architecture.
+
+---
+
 ## 1. The `## Dependencies` grammar
 
 An epic body ends with a pinned `## Dependencies` section that encodes the

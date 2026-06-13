@@ -248,12 +248,17 @@ to re-fetch it.
 Children get their own type from the work they are (`type:feature`, `type:chore`,
 `type:bug`, `type:decision`, `type:investigation`) — **not** inherited from the epic — plus a
 priority. Do **not** label children `status:needs-triage`: they were born from a triaged plan,
-they're already actionable. Apply `status:triaged` + a `type:*` + a `p*` so `write-code` treats
-them as pickable:
+they don't re-enter triage. But they are **not yet pickable either** — they're born
+**`status:planned`**, the pre-gate state. `write-code` keys on `status:triaged`, so a
+`status:planned` child stays unpickable until the `review-plan` gate validates the ledger and
+flips `planned → status:triaged` (per ADR
+[0047](../../../.decisions/0047-review-plan-gate.md) — that flip *is* the whole enforcement
+mechanism: an unverified-but-pickable child is unrepresentable). Apply `status:planned` + a
+`type:*` + a `p*`:
 
 ```bash
 gh api repos/kamp-us/phoenix/issues/<CHILD>/labels \
-  -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:triaged"
+  -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:planned"
 ```
 
 `POST .../labels` is **additive** — it appends to whatever the child already carries,
@@ -455,4 +460,6 @@ personal PRD/orchestrator harness deliberately kept out of the repo) is ADR
 [0046](../../../.decisions/0046-plan-epic-prd-grade-plans.md). Your input is a
 `type:epic` + `status:triaged` issue from `triage`; your output — the epic body's PRD-grade
 plan + `## Dependencies`, and the linked sub-issues with their story traces and acceptance
-criteria — is exactly what `write-code` reads to pick, sequence, and execute the work.
+criteria — is what `write-code` reads to pick, sequence, and execute the work, once the
+`review-plan` gate has flipped each child `status:planned → status:triaged` (ADR
+[0047](../../../.decisions/0047-review-plan-gate.md)).
