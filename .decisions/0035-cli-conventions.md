@@ -1,12 +1,18 @@
 ---
 id: 0035
 title: CLI conventions — small focused tools, name mirrors bin
-status: accepted
+status: amended-in-part by [0045](0045-kampus-client-cli.md)
 date: 2026-05-31
 tags: [cli, tooling, monorepo, conventions]
 ---
 
 # 0035 — CLI conventions: small focused tools, name mirrors bin
+
+Amended in part by [0045](0045-kampus-client-cli.md): the "no catch-all `cli`" ban is
+scoped to **repo/dev tooling** (independent maintainer tools that share nothing). It does
+**not** govern **client tooling** — the `kampus` client CLI unifies its subcommands around
+one shared identity/credential, which is the very reason to unify rather than fragment. The
+decision text below is unchanged.
 
 ## Context
 

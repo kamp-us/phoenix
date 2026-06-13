@@ -80,7 +80,10 @@ cannot defer. All are settled below before `plan-epic` splits #102.
    better-auth's `apiKey` plugin, which v1 enables** (the `apiKey` table is already
    migrated; only the plugin registration is missing) — a durable, revocable credential an
    unattended `report` agent can actually hold, unlike the ~7-day browser session token. No
-   bespoke token scheme. **künye gating is a deferred overlay, not a v1 dependency:** once
+   bespoke token scheme. *How* an agent obtains and presents that `apiKey` is specified in
+   ADR [0045](0045-kampus-client-cli.md): the `kampus` client CLI's `kampus auth` issues and
+   stores the credential, and `kampus imge upload` consumes it. **künye gating is a deferred
+   overlay, not a v1 dependency:** once
    künye lands ([#41](https://github.com/kamp-us/phoenix/issues/41)) it can layer
    reputation/agent gates *on top* (e.g. only registered agents above N karma may upload),
    but imge v1 ships against the bare pasaport user.
