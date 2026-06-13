@@ -344,8 +344,8 @@ always picks the right next thing.
 ## Conventions
 
 This skill is one of a suite (`report` → `triage` → `plan-epic` → `review-plan` →
-**`write-code`** → `review-code`) that turns GitHub issues into an agent-operable pipeline.
-The shared label semantics and the body/comment/dependency formats live in
+**`write-code`** → `review-code` → `ship-it`) that turns GitHub issues into an agent-operable
+pipeline. The shared label semantics and the body/comment/dependency formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). Your input is the
 `status:triaged` issues that `triage` produced (standalone) or that `review-plan` flipped
 from `status:planned` after gating a `plan-epic` ledger (epic children — ADR
