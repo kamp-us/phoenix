@@ -39,7 +39,7 @@ test.describe("Pano editPost / deletePost", () => {
 		await page.locator('[data-testid="pano-submit-submit"]').click();
 
 		// Lands on /pano/<id> with the post title rendered.
-		await page.waitForURL(/\/pano\/[A-Za-z0-9_-]+$/, {timeout: 15_000});
+		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 		await expect(page.getByRole("heading", {level: 1})).toContainText(originalTitle, {
 			timeout: 10_000,
 		});
