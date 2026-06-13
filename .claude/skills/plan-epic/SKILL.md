@@ -452,7 +452,7 @@ linked sub-issues are the durable record.
 ## Conventions
 
 This skill is one of a suite (`report` → `triage` → **`plan-epic`** → `write-code` →
-`review-code`) that turns GitHub issues into an agent-operable pipeline. The shared
+`review-code` → `ship-it`) that turns GitHub issues into an agent-operable pipeline. The shared
 label semantics and the body/comment/dependency/story formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); the decision to make
 plan-epic's output PRD-grade, story-driven, coverage-enforced, and autonomous (with the
