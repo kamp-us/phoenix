@@ -1,0 +1,28 @@
+{
+	"name": "@phoenix/epic-ledger",
+	"version": "0.0.0",
+	"private": true,
+	"description": "The deterministic structural floor validator for an epic's task ledger — Effect v4 Schema domain, validateLedger / isPickable / ledgerSignature",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
