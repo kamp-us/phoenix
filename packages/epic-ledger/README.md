@@ -55,7 +55,7 @@ Github.epicLedger    ──►   decodeEpicLedger  ──►  EpicLedger  ──
   (#166): on a FAIL, re-invoke `plan-epic` (via the injected `RePlanner` capability) and re-gate,
   repeating **while the hard-defect set strictly shrinks**; converge to a clean PASS at zero, or
   park the epic `status:needs-info` on a repeated `ledgerSignature` (cycle) or a non-shrinking set
-  (stall). `Schedule.recurs(DEFAULT_CEILING)` is the runaway backstop, not the stop condition.
+  (stall). `DEFAULT_CEILING` is the runaway backstop, not the stop condition.
   `RePlanner` is the seam to the `plan-epic` skill/agent (a `Context.Service` the call site binds),
   since `plan-epic` is an agent, not an importable function.
 

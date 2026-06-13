@@ -9,17 +9,16 @@
  * comment naming the stuck defects — when the `ledgerSignature` repeats (a cycle:
  * the same ledger came back) or the defect set fails to shrink (a stall:
  * re-planning stopped making progress). Convergence is the stop condition; a high
- * flat ceiling exists only as a runaway backstop, expressed as a `Schedule`.
+ * flat ceiling is the runaway backstop.
  *
- * ## Schedule-based, not a fixed retry count
+ * ## Recursion, not a Schedule
  *
- * The driver is `Effect.repeat(body, Schedule.recurs(ceiling) ∩ Schedule.while(…))`:
- * `Schedule.recurs(ceiling)` is the runaway backstop (the *only* fixed-count
- * element, and not the stop condition), and `Schedule.while` carries the real
- * stop — it continues only while the last pass was a still-shrinking FAIL. The
- * cross-iteration relation the stall test needs (this pass's defect set vs. the
- * last) lives in a `Ref` the body threads, because a `Schedule` step sees only
- * the current output, not the prior one.
+ * `step` is a tail-recursive Effect: it gates the epic, and on a still-shrinking
+ * FAIL re-plans and calls itself with the carried `LoopState` (the iteration plus
+ * the previous pass's signature/count/defects, the cross-iteration facts the stall
+ * tests compare); the converged/parked/ceiling cases return the `LoopOutcome`
+ * directly, so the outcome is the recursion's return value. One piece of
+ * recursion-carried state, control flow linear top-to-bottom.
  *
  * ## Why `plan-epic` is a capability, not a call
  *
@@ -31,23 +30,31 @@
  * the binding to the real agent lives at the call site, outside this package.
  * See `.claude/skills/review-plan/SKILL.md` for the agent-side wiring.
  */
-import {Context, Effect, Ref, Schedule} from "effect";
-import type * as Schema from "effect/Schema";
+import {Context, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import type {Defect} from "./Defect.ts";
 import {type GateVerdict, runGate} from "./gate.ts";
-import {GhCommandError, type GhParseError, Github} from "./github.ts";
+import type {GhCommandError, GhParseError} from "./github.ts";
+import {Github} from "./github.ts";
 
 /** Everything the loop's effects can fail with: gate IO faults + a re-plan fault. */
 type LoopError = GhCommandError | GhParseError | Schema.SchemaError | RePlanError;
 
 /**
- * The re-plan seam. `rePlan(epicNumber)` re-invokes `plan-epic` on the epic and
- * resolves once the epic body + children have been re-written, so the next gate
- * pass reads the new ledger. `RePlanError` is its typed failure channel — a
- * caller's real re-plan mechanism surfaces its own failure as this tag without
- * this package naming the mechanism.
+ * A re-plan failed. `rePlan(epicNumber)` re-invokes `plan-epic` on the epic and
+ * resolves once the epic body + children have been re-written; if its real
+ * mechanism (a subagent spawn, a queued job, a shell-out) fails, the caller
+ * surfaces it as this tag — distinct from the gh-infra `GhCommandError` so a
+ * consumer's `catchTag` can tell a re-plan fault from a `gh` exit. Standalone
+ * tagged error per `.patterns/effect-errors.md`.
  */
-export class RePlanError extends GhCommandError {}
+export class RePlanError extends Schema.TaggedErrorClass<RePlanError>()(
+	"@phoenix/epic-ledger/RePlanError",
+	{
+		epicNumber: Schema.Number,
+		message: Schema.String,
+	},
+) {}
 
 export class RePlanner extends Context.Service<
 	RePlanner,
@@ -80,9 +87,9 @@ export type LoopOutcome =
 	  };
 
 /**
- * The runaway backstop ceiling for `Schedule.recurs`. High by design:
- * convergence or a stall should always fire first. This is the only fixed-count
- * element and it is *not* the stop condition (the stall tests are).
+ * The runaway backstop ceiling. High by design: convergence or a stall should
+ * always fire first. This is the only fixed-count element and it is *not* the
+ * stop condition (the stall tests are).
  */
 export const DEFAULT_CEILING = 12;
 
@@ -111,31 +118,31 @@ const parkComment = (
 };
 
 /**
- * One step's decision, the value the body produces and the `Schedule.while`
- * predicate reads. `continue: true` means "the last pass was a still-shrinking
- * FAIL, keep going"; `false` means the loop reached a terminal state (converged,
- * or a stall the body already recorded into `terminal`).
+ * The convergence state carried into each recursive `step`. After the first pass
+ * the previous FAIL's signature/count/defects are present; the stall tests
+ * compare this pass against them, and the ceiling park reuses `prevDefects`
+ * without re-gating.
  */
-interface StepResult {
-	readonly continue: boolean;
-	readonly terminal: LoopOutcome | undefined;
-}
-
-/** The convergence state threaded across iterations via a `Ref`. */
 interface LoopState {
 	readonly iteration: number;
 	readonly prevSignature: string | undefined;
 	readonly prevCount: number | undefined;
+	readonly prevDefects: ReadonlyArray<Defect>;
 }
 
-const INITIAL: LoopState = {iteration: 0, prevSignature: undefined, prevCount: undefined};
+const INITIAL: LoopState = {
+	iteration: 1,
+	prevSignature: undefined,
+	prevCount: undefined,
+	prevDefects: [],
+};
 
 /**
  * Drive an epic to a clean gate, re-planning on FAIL while the defect set
  * strictly shrinks, parking on a stall. The first pass gates the
- * already-`status:planned` ledger; each later pass re-plans first. The stop
- * condition is the cross-iteration shrink relation (held in a `Ref`), with
- * `Schedule.recurs(ceiling)` as the runaway backstop.
+ * already-`status:planned` ledger; each later pass re-plans first. `step` carries
+ * the cross-iteration shrink relation as its argument and returns the terminal
+ * `LoopOutcome`; `DEFAULT_CEILING` guards against a runaway.
  */
 export const runConvergenceLoop = Effect.fn("ReviewPlan.runConvergenceLoop")(function* (
 	epicNumber: number,
@@ -144,9 +151,6 @@ export const runConvergenceLoop = Effect.fn("ReviewPlan.runConvergenceLoop")(fun
 	const github = yield* Github;
 	const rePlanner = yield* RePlanner;
 	const ceiling = options?.ceiling ?? DEFAULT_CEILING;
-
-	const state = yield* Ref.make<LoopState>(INITIAL);
-	const finalRef = yield* Ref.make<LoopOutcome | undefined>(undefined);
 
 	const park = (
 		reason: StallReason,
@@ -165,66 +169,41 @@ export const runConvergenceLoop = Effect.fn("ReviewPlan.runConvergenceLoop")(fun
 			} satisfies LoopOutcome;
 		});
 
-	const decide = (
-		verdict: GateVerdict,
-		prev: LoopState,
-		iteration: number,
-	): Effect.Effect<StepResult, GhCommandError> =>
+	const step = (prev: LoopState): Effect.Effect<LoopOutcome, LoopError, Github | RePlanner> =>
 		Effect.gen(function* () {
+			if (prev.iteration > ceiling) {
+				return yield* park("ceiling", prev.prevDefects, prev.iteration - 1);
+			}
+
+			if (prev.iteration > 1) {
+				yield* rePlanner.rePlan(epicNumber);
+			}
+
+			const verdict: GateVerdict = yield* runGate(epicNumber);
 			if (verdict._tag === "pass") {
-				const terminal = {
+				return {
 					_tag: "converged",
 					epicNumber,
 					flipped: verdict.flipped,
-					iterations: iteration,
+					iterations: prev.iteration,
 				} satisfies LoopOutcome;
-				return {continue: false, terminal};
 			}
 
 			const {defects, signature} = verdict;
-
 			if (prev.prevSignature !== undefined && signature === prev.prevSignature) {
-				return {continue: false, terminal: yield* park("repeated-signature", defects, iteration)};
+				return yield* park("repeated-signature", defects, prev.iteration);
 			}
 			if (prev.prevCount !== undefined && defects.length >= prev.prevCount) {
-				return {continue: false, terminal: yield* park("non-shrinking", defects, iteration)};
+				return yield* park("non-shrinking", defects, prev.iteration);
 			}
 
-			// Still shrinking — record this pass's signature/count and keep going.
-			yield* Ref.set(state, {iteration, prevSignature: signature, prevCount: defects.length});
-			return {continue: true, terminal: undefined};
+			return yield* step({
+				iteration: prev.iteration + 1,
+				prevSignature: signature,
+				prevCount: defects.length,
+				prevDefects: defects,
+			});
 		});
 
-	// One pass: re-plan (every pass after the first), gate, then decide. On a
-	// terminal pass the body pins the outcome into `finalRef`; the `Schedule.while`
-	// predicate stops the repeat by reading `StepResult.continue`.
-	const body: Effect.Effect<StepResult, LoopError, Github | RePlanner> = Effect.gen(function* () {
-		const prev = yield* Ref.get(state);
-		const iteration = prev.iteration + 1;
-		if (iteration > 1) {
-			yield* rePlanner.rePlan(epicNumber);
-		}
-		const verdict = yield* runGate(epicNumber);
-		const result = yield* decide(verdict, prev, iteration);
-		if (result.terminal !== undefined) {
-			yield* Ref.set(finalRef, result.terminal);
-		}
-		return result;
-	});
-
-	const schedule = Schedule.recurs(ceiling).pipe(
-		Schedule.while((meta: Schedule.Metadata<number, StepResult>) => meta.input.continue),
-	);
-
-	yield* Effect.repeat(body, schedule);
-
-	const final = yield* Ref.get(finalRef);
-	if (final !== undefined) return final;
-
-	// The ceiling was exhausted while the set was still shrinking (the backstop
-	// fired before convergence/stall): park on the runaway reason.
-	const last = yield* Ref.get(state);
-	const verdict = yield* runGate(epicNumber);
-	const defects = verdict._tag === "fail" ? verdict.defects : [];
-	return yield* park("ceiling", defects, last.iteration);
+	return yield* step(INITIAL);
 });

@@ -20,7 +20,7 @@ import type {Defect} from "./Defect.ts";
 import type {GhCommandError, GhParseError} from "./github.ts";
 import {Github} from "./github.ts";
 import type {EpicLedger} from "./Ledger.ts";
-import {isPickable, ledgerSignature, validateLedger} from "./validate.ts";
+import {ledgerSignature, validateLedger} from "./validate.ts";
 
 const PLANNED_LABEL = "status:planned";
 
@@ -85,18 +85,18 @@ const failVerdict = (epicNumber: number, defects: ReadonlyArray<Defect>): string
 export const runGate = Effect.fn("ReviewPlan.runGate")(function* (epicNumber: number) {
 	const github = yield* Github;
 	const ledger = yield* github.epicLedger(epicNumber);
+	const defects = validateLedger(ledger);
 
-	if (isPickable(ledger)) {
+	if (defects.length === 0) {
 		const flipped = plannedChildren(ledger);
 		yield* Effect.forEach(flipped, (child) => github.flipChildToTriaged(child), {
-			concurrency: 1,
+			concurrency: "unbounded",
 			discard: true,
 		});
 		yield* github.postComment(epicNumber, passVerdict(epicNumber, flipped));
 		return {_tag: "pass", epicNumber, flipped} satisfies GateVerdict;
 	}
 
-	const defects = validateLedger(ledger);
 	yield* github.postComment(epicNumber, failVerdict(epicNumber, defects));
 	return {
 		_tag: "fail",
