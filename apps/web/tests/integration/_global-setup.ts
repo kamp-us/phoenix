@@ -103,13 +103,18 @@ export async function setup() {
 	let healthy = false;
 	for (let i = 0; i < 120; i++) {
 		try {
-			const res = await fetch(`${url}/api/health`);
+			// Per-attempt timeout: the deploy returns the WorkerProxy URL before workerd
+			// is serving, and the proxy parks the request on a promise with no timeout of
+			// its own (alchemy fork — deeper fix tracked in #115). Without it a single
+			// parked poll hangs forever instead of advancing the loop — the multi-hour
+			// silent stall this suite has hit.
+			const res = await fetch(`${url}/api/health`, {signal: AbortSignal.timeout(2500)});
 			if (res.status === 200) {
 				healthy = true;
 				break;
 			}
 		} catch {
-			// connection refused while the workerd sidecar warms — retry
+			// connection refused while the sidecar warms, or this attempt timed out — retry
 		}
 		await sleep(500);
 	}
