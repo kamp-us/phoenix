@@ -188,6 +188,15 @@ What the rewrite adds:
 - **Sharper framing.** State the problem in terms of what's actually true in the
   codebase — the real file paths, the function names, the ADR/pattern docs, the
   related issues. Promote anything load-bearing the original buried.
+- **Repo-relative paths only — never machine-local paths.** The body is a shared
+  artifact, like a committed file: every path in your enrichment must be
+  repo-relative (`apps/web/worker/…`, `.decisions/0044-….md`) or a dependency's
+  package-internal module, resolvable by anyone who checks out the repo. **Never**
+  write a path that only exists on the filer's machine — an absolute path
+  (`/Users/…`), a home-dir clone (`~/code/…`, `~/.vault/…`), or a sibling-repo
+  source tree. If you grepped a local dependency clone to find a seam, name the
+  module by its in-package path, not the clone location. (Same rule the repo
+  enforces for committed docs — it just extends to issue bodies and comments.)
 - **Acceptance-shaped clarity.** Make "done" legible. For a typed-and-pickable issue
   the write-code agent shouldn't have to reverse-engineer what success looks like.
 - **No invention.** Enrich from what you *found*, not what you wish were true. If the
