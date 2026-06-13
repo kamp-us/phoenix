@@ -81,7 +81,21 @@ tiebreaker. Apply the canonical label name (`type:bug`, etc.).
   file with identical public surface is a chore. Adding a capability that wasn't
   there is a feature. A dependency bump that *enables* nothing new is a chore.
 - **feature vs epic** — can one write-code agent finish it in a PR or two with a
-  clear path? Feature. Does it need a plan and sub-issues first? Epic.
+  clear path? Feature. Does it need a plan and sub-issues first? Epic. Judge the
+  *real* deliverable, not a shrunken one — **do not invent a "v1 scope" of your own
+  to make an issue fit in a PR**; if you have to carve the work down to call it a
+  feature, it's an epic and your carve-out is its first child. Tells that you're
+  looking at an epic wearing a feature's clothes:
+  - **Missing prerequisite infrastructure.** The capability depends on something
+    that doesn't exist anywhere yet (an email provider, a moderation backend, a
+    scheduled-job mechanism). "Path to building it is clear" is false by definition.
+  - **The capability implies new surfaces.** A bookmark needs a saved-items view; a
+    report button needs a review surface; a setting needs somewhere its effect shows.
+    If acting on the capability requires UI/endpoints nobody has built, count those
+    units.
+  - **Your own enrichment hedges.** If you catch yourself writing "if this balloons,
+    split the X part out" or "Y is explicitly out of scope for v1", that hedge is
+    the epic boundary talking — classify accordingly instead of scoping around it.
 
 When genuinely torn, pick the type that best describes the *deliverable* (recorded
 choice / knowledge / code / plan-and-children) and note the call in the enrichment.
@@ -101,16 +115,39 @@ How to split:
    (e.g. "rename the function and update its callers"). Two problems that could be
    worked by different agents at different times, with different types or
    priorities, are.
-2. **Create one new issue per extra unit** via REST, each labeled
+2. **Re-query before you create.** Report agents run concurrently with your sweep
+   (several people run them, from their own accounts), so the queue you listed at
+   the start is already stale. Immediately before creating *any* new issue — a
+   split child or a follow-up you spotted while triaging — re-list
+   `status:needs-triage` and keyword-search open issues for the same observation:
+
+   ```bash
+   gh api 'repos/kamp-us/phoenix/issues?state=open&labels=status:needs-triage&per_page=100' \
+     --jq '.[] | "#\(.number) \(.title)"'
+   gh api 'search/issues?q=repo:kamp-us/phoenix+is:issue+is:open+<keywords>' \
+     --jq '.items[] | "#\(.number) \(.title)"'
+   ```
+
+   The two commands guard different failure modes — don't drop either: the label
+   list is read-after-write consistent and catches an issue filed seconds ago; the
+   search runs against GitHub's eventually-consistent index but covers older open
+   issues that already left the queue. Join keywords with `+`
+   (e.g. `…+is:open+retry+abort`) — raw spaces inside the quoted URL produce a
+   malformed query.
+
+   If an existing issue already covers it, enrich/triage that one instead of filing
+   a twin. (This rule exists because a triage run once filed a duplicate of an issue
+   that had landed in the queue minutes earlier.)
+3. **Create one new issue per extra unit** via REST, each labeled
    `status:needs-triage` so it re-enters the queue (you'll triage the new ones on a
    later pass — or this same run — like any other). Give each a sharp single-unit
    title and a body that states the one problem, following the report skill's
    5-section shape where it fits (see [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
    for the surrounding format conventions).
-3. **Cross-link.** Each new issue references the original (`split from #N`), and you
+4. **Cross-link.** Each new issue references the original (`split from #N`), and you
    add a comment on the original listing the children (`split into #A, #B`). The
    reader can always trace a unit back to where it came from.
-4. **Resolve the original.** Either keep it as one of the units (triage it normally,
+5. **Resolve the original.** Either keep it as one of the units (triage it normally,
    having spun the *other* units off) or, if it was purely a container with nothing
    left after splitting, close it not-planned with a `closed-by-triage` reason
    comment pointing at the children (the full close-out protocol — reason comment +
@@ -155,7 +192,10 @@ What the rewrite adds:
   the write-code agent shouldn't have to reverse-engineer what success looks like.
 - **No invention.** Enrich from what you *found*, not what you wish were true. If the
   original is uncertain, keep the uncertainty — don't manufacture a false plan. Mark
-  your additions as triage's read where it helps ("Triage note: …").
+  your additions as triage's read where it helps ("Triage note: …"). Scope-shrinking
+  is invention too: don't write a reduced "v1 scope" into the body to make an epic
+  look feature-sized (see the feature-vs-epic tells in Step 2) — scoping decisions
+  belong to `plan-epic` and the owner, not triage.
 
 Preserve the original **exactly** in the `<details>` block — it's the provenance
 record and the reporter's unedited words. If the body has its own triple-backtick
@@ -192,25 +232,36 @@ mangling it.)
 gets filtered. This is a judgment call, not a protocol — you recognize a human filer,
 you don't parse a flag.
 
+**The account is not the tell — the shape is.** Every collaborator on this repo
+(`usirin`, `cansirin`, …) files both ways: as a human in passing, and via `report`
+agents running under their own account. So never treat "who filed it" as settling
+the question; read the body.
+
+Tells that an issue is **agent-filed** (the only kind you may close):
+
+- **It carries the agent-report fingerprint.** The `report` skill files a
+  recognizable shape: the five sections (*What I was doing / What I observed / Why
+  it matters / Pointers / Suggested next step*) and a `<sub>Filed by an agent ·
+  …</sub>` metadata footer. The literal **`Filed by an agent` marker is the
+  invariant** — the footer's session/model/branch fields are best-effort and often
+  absent (`footer.sh` silently drops what the environment doesn't expose), so don't
+  treat a sparse footer as "fingerprint missing". The clean five-section structure
+  backs the marker up.
+- **Five sections but no footer is usually pipeline-made** — a triage split child
+  (look for `split from #N` in the body or comments) or another skill's filing.
+  Judge by provenance, not just shape: a split child traced to an agent-filed
+  original is agent-filed.
+
 Tells that an issue is **human-filed**:
 
-- **A collaborator other than the repo owner filed it.** On this repo the owner is
-  `usirin`; an issue from any other account (e.g. `cansirin`) is trivially human —
-  treat it as human without further analysis.
 - **It reads scrappy and free-form** — a quick thought, a one-liner, a question, an
   inconsistent shape. Humans file in passing; they don't fill in a template.
-- **It lacks the agent-report fingerprint.** The `report` skill files a recognizable
-  shape: the five sections (*What I was doing / What I observed / Why it matters /
-  Pointers / Suggested next step*) and a `<sub>Filed by an agent · session … ·
-  model … · branch …</sub>` metadata footer. An issue carrying that footer, or that
-  clean five-section structure, is an agent report — that's the shape you're allowed
-  to close when unsalvageable.
+- **It lacks the agent fingerprint** — no `Filed by an agent` marker, no
+  five-section shape, no pipeline provenance.
 
 When in doubt, **treat it as human.** The cost of wrongly closing a human's issue
 (they feel ignored) is worse than the cost of wrongly leaving an agent's issue open
-(it sits in needs-info, cheap to revisit). Owner-filed issues are the ambiguous
-middle — `usirin` files both as a human and via agents. Use the *shape*: a structured
-agent report from `usirin` is agent-filed; a scrappy owner one-liner is human-filed.
+(it sits in needs-info, cheap to revisit).
 
 **For a human-filed issue you can't act on as-is:** apply `status:needs-info` (not a
 type, not a priority, not triaged) and post a comment asking the *specific* questions
@@ -218,6 +269,15 @@ that would unblock triage. Specific, not generic — "Which file? What's the exp
 behavior vs what you saw? Is this blocking anything?" beats "please add more detail".
 You may still type a human issue if it's already clear; needs-info is only for the
 ones you genuinely can't classify or act on yet.
+
+**Needs-info leaves the queue:** remove `status:needs-triage` when you apply
+`status:needs-info` (same DELETE call as the triaged path in Step 6). A parked
+question must not re-surface in every sweep and queue listing; it re-enters the
+queue when whoever answers swaps the labels back (`status:needs-info` →
+`status:needs-triage`). It *does* still appear in the keyword-search half of the
+pre-filing re-query, since it stays open — that's intentional, don't "fix" the
+search command to filter it out: a report agent finding a needs-info twin should
+comment there rather than file anew.
 
 ---
 
@@ -286,14 +346,26 @@ Salvage first: if there's a real unit hiding in it, enrich and triage it instead
 
 Every kill is auditable and reversible. Always:
 
-1. Post a **reason comment** — *why* it's unsalvageable, specifically (e.g. "Duplicate
+1. **If the reason is "duplicate of #M": preserve the loser's content on the
+   survivor first.** A bare cross-link is not enough — the closed issue often
+   carries context the survivor lacks (an independent verification, extra pointers,
+   a sharper acceptance idea). Copy the duplicate's full body **verbatim** into a
+   comment on #M, wrapped in a `<details><summary>#N (closed duplicate) — full
+   body</summary>…</details>` block, and fold anything load-bearing into #M's
+   enrichment. Nothing a reporter wrote should require clicking into a closed issue
+   to read.
+2. Post a **reason comment** — *why* it's unsalvageable, specifically (e.g. "Duplicate
    of #33, which already tracks this hang" or "The function this references was
    removed in #30; no longer applicable"). One sentence of real reasoning, so the
    maintainer reviewing kills can judge it.
-2. Apply `closed-by-triage` so every kill shows up in one query.
-3. Close as **not planned** (state `closed`, reason `not_planned`).
+3. Apply `closed-by-triage` so every kill shows up in one query.
+4. Close as **not planned** (state `closed`, reason `not_planned`).
 
 ```bash
+# step 1 only when closing as a duplicate of #M:
+gh api repos/kamp-us/phoenix/issues/<N> --jq '.body' > /tmp/dup-<N>.md   # then wrap in <details> and:
+gh api repos/kamp-us/phoenix/issues/<M>/comments -f body="$(cat /tmp/dup-comment-<N>.md)"
+# steps 2-4, every kill:
 gh api repos/kamp-us/phoenix/issues/<N>/comments -f body="Closing not-planned: <specific reason>."
 gh api repos/kamp-us/phoenix/issues/<N>/labels -f "labels[]=closed-by-triage"
 gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f state=closed -f state_reason=not_planned
@@ -318,7 +390,12 @@ sweeping:
 2. Triage each issue through Steps 1–6.
 3. If you split a bundle, the new children re-enter `status:needs-triage` — pick them
    up on the same sweep or a follow-up; they're triaged like any other issue.
-4. Report a short ledger back: per issue, the outcome (type+priority+triaged /
+4. **Re-list the queue before declaring the sweep done.** Report agents file
+   concurrently, so issues land mid-sweep; a sweep that only processes the opening
+   snapshot routinely leaves fresh arrivals behind. Loop until the listing comes
+   back empty — every outcome (triaged / needs-info / closed) removes
+   `status:needs-triage`, so an empty listing is the complete termination test.
+5. Report a short ledger back: per issue, the outcome (type+priority+triaged /
    needs-info / closed) in one line each. Don't narrate every REST call — the labels
    and comments on the issues are the durable record.
 
