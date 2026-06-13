@@ -15,6 +15,11 @@ You ship **exactly one PR** per invocation. You do not sweep all open PRs — th
 belongs to whatever loop drives the pipeline; keeping this stage atomic keeps it
 composable and idempotent (re-running it on an already-merged PR is a clean no-op).
 
+You ship **product-code** PRs the pipeline produced (`apps/web/**`, `packages/**`);
+skill / harness changes (`.claude/**`, `.decisions/**`, `.patterns/**`) are a maintainer's
+manual merge — the harness does not self-merge changes to itself (ADR
+[0049](../../../.decisions/0049-pipeline-ships-code-not-itself.md)).
+
 ## All GitHub ops via `gh api` REST — never GraphQL
 
 The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL issue

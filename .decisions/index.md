@@ -53,3 +53,4 @@ One row per ADR. Read the file for the why.
 | [0046](0046-plan-epic-prd-grade-plans.md) | plan-epic emits PRD-grade epic plans — product layer + user stories, enforced story coverage, tracer-bullet children, autonomous (harness stays out) | accepted | 2026-06-13 |
 | [0047](0047-review-plan-gate.md) | The review-plan gate — deterministic plan-epic verification | accepted | 2026-06-13 |
 | [0048](0048-ship-it-merge-actor.md) | ship-it — the pipeline's single merge authority closes the loop (consumes review-code's PASS marker; sole merge step) | accepted | 2026-06-13 |
+| [0049](0049-pipeline-ships-code-not-itself.md) | The pipeline ships code, not itself — product code (apps/web, packages) auto-merges via ship-it; skill/harness changes (.claude, .decisions, .patterns) merge manually | accepted | 2026-06-13 |
