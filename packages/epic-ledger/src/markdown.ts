@@ -1,15 +1,17 @@
 /**
- * Tolerant markdown parsing for the two ledger surfaces the validator reads:
- * a child body's **acceptance-criteria checklist** and an epic body's
- * **`## Dependencies` topology**. Per the formats contract, these are
- * conventions to read tolerantly, not parser specs — recognize a section by its
- * heading shape (case-insensitive, synonyms allowed), not by exact whitespace.
- * Parsing is pure and deterministic: the same text always yields the same graph,
- * with node and edge sets emitted in a fixed order so a downstream signature is
- * stable.
+ * Tolerant markdown parsing for the ledger surfaces the validator reads:
+ * a child body's **acceptance-criteria checklist** and its **`**Stories:**`
+ * refs**, plus an epic body's **`## Dependencies` topology** and its
+ * **`### User stories`** list. Per the formats contract, these are conventions
+ * to read tolerantly, not parser specs — recognize a section by its heading
+ * shape (case-insensitive, synonyms allowed), not by exact whitespace. Parsing
+ * is pure and deterministic: the same text always yields the same result, with
+ * node, edge, and story sets emitted in a fixed order so a downstream signature
+ * is stable.
  *
  * See `.claude/skills/gh-issue-intake-formats.md` §1 (the `## Dependencies`
- * grammar) and §2 (the ≥1-AC sub-issue invariant) for the source conventions.
+ * grammar) and §2 (the ≥1-AC sub-issue invariant + the required `**Stories:**`
+ * field) for the source conventions.
  */
 import type {DependencyEdge, DependencyGraph} from "./Ledger.ts";
 
@@ -23,6 +25,15 @@ const DEPS_HEADING = /^#{1,6}\s+depend(?:ency|encies|s)\b/i;
 
 /** An `### Acceptance criteria` heading, tolerant of synonyms/casing. */
 const AC_HEADING = /^#{1,6}\s+acceptance\s+criteria\b/i;
+
+/** An `### User stories` heading, tolerant of casing and the singular form. */
+const USER_STORIES_HEADING = /^#{1,6}\s+user\s+stor(?:y|ies)\b/i;
+
+/** A `**Stories:**` field line; captures the trailing ref list (group 1). */
+const STORIES_FIELD = /^\s*\**\s*stories\s*\**\s*:\s*\**\s*(.*?)\s*\**\s*$/i;
+
+/** An ordered-list item line; captures its leading number (group 1): `1.` / `2)`. */
+const ORDERED_ITEM = /^\s*(\d+)[.)]\s+\S/;
 
 /** A `### Phase N` heading inside the dependencies section. */
 const PHASE_HEADING = /^#{1,6}\s+phase\b/i;
@@ -67,6 +78,51 @@ export const countAcceptanceCriteria = (body: string): number => {
 		}
 	}
 	return count;
+};
+
+/**
+ * The declared story numbers in an epic body's `### User stories` section: the
+ * leading numbers of the ordered-list items under the first such heading, up to
+ * the next heading of the same or higher level. Stories are referenced by their
+ * list position (`1.`, `2.`, …) per the format — that number is the story's id
+ * a child's `**Stories:**` line points back to. A body with no `### User stories`
+ * heading yields the empty set (a pre-PRD-grade epic that declared none); the
+ * validator reads "declared none" as "no story to leave uncovered." Numbers are
+ * unique and ascending so the set is order-independent.
+ */
+export const parseEpicStories = (body: string): ReadonlyArray<number> => {
+	const lines = body.split("\n");
+	const start = lines.findIndex((line) => USER_STORIES_HEADING.test(line));
+	if (start === -1) return [];
+	const sectionLevel = headingLevel(lines[start] ?? "");
+
+	const stories = new Set<number>();
+	for (const line of lines.slice(start + 1)) {
+		if (ANY_HEADING.test(line) && headingLevel(line) <= sectionLevel) break;
+		const match = ORDERED_ITEM.exec(line);
+		if (match?.[1]) stories.add(Number(match[1]));
+	}
+	return uniqueSortedNumbers(stories);
+};
+
+/**
+ * The story numbers a child body's `**Stories:**` line references. The line is
+ * the format-2 required field: a comma/space-separated list of the epic story
+ * numbers this child implements or unblocks (`**Stories:** 1, 3`), or the
+ * explicit pure-infra marker (`**Stories:** none (pure infra — …)`). A body with
+ * **no** `**Stories:**` line returns `undefined` — distinct from an empty array
+ * — so the validator can tell "missing field" (`MISSING_STORY`) from "covers
+ * nothing by design" (the marker → `[]`). Refs are unique and ascending.
+ */
+export const parseChildStories = (body: string): ReadonlyArray<number> | undefined => {
+	for (const line of body.split("\n")) {
+		const match = STORIES_FIELD.exec(line);
+		if (!match) continue;
+		const value = match[1] ?? "";
+		if (/^none\b/i.test(value)) return [];
+		return uniqueSortedNumbers([...value.matchAll(/\d+/g)].map((m) => Number(m[0])));
+	}
+	return undefined;
 };
 
 const collectIssueRefs = (line: string): ReadonlyArray<number> => {

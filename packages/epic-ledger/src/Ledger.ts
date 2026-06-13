@@ -38,21 +38,34 @@ export const DependencyGraph = Schema.Struct({
 });
 export type DependencyGraph = (typeof DependencyGraph)["Type"];
 
-/** A linked child issue, reduced to the structural facts the floor checks. */
+/**
+ * A linked child issue, reduced to the structural facts the floor checks.
+ * `stories` is the child's `**Stories:**` refs (the epic story numbers it
+ * implements or unblocks), parsed off its body at the boundary. `undefined`
+ * records a child with **no** `**Stories:**` line at all (the `MISSING_STORY`
+ * case); an empty array records the explicit pure-infra marker (covers nothing
+ * by design — not a defect).
+ */
 export const ChildIssue = Schema.Struct({
 	number: Schema.Number,
 	title: Schema.String,
 	labels: Schema.Array(Schema.String),
 	acceptanceCriteriaCount: Schema.Number,
+	stories: Schema.optional(Schema.Array(Schema.Number)),
 });
 export type ChildIssue = (typeof ChildIssue)["Type"];
 
-/** The epic issue itself: its number, its labels, and its parsed topology. */
+/**
+ * The epic issue itself: its number, its labels, its parsed topology, and the
+ * story numbers it declares under `### User stories` (`stories`) — the set every
+ * child must collectively cover (`UNCOVERED_STORY` flags one no child references).
+ */
 export const EpicHeader = Schema.Struct({
 	number: Schema.Number,
 	title: Schema.String,
 	labels: Schema.Array(Schema.String),
 	dependencies: DependencyGraph,
+	stories: Schema.Array(Schema.Number),
 });
 export type EpicHeader = (typeof EpicHeader)["Type"];
 

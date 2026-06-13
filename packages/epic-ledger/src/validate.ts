@@ -87,11 +87,32 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 		}
 	}
 
+	const covered = new Set<number>();
+	for (const c of children) {
+		for (const s of c.stories ?? []) covered.add(s);
+	}
+	const uncovered = [...new Set(epic.stories)].filter((s) => !covered.has(s)).sort((a, b) => a - b);
+	for (const s of uncovered) {
+		defects.push({
+			type: "UNCOVERED_STORY",
+			message: `User story ${s} declared by epic #${epic.number} is covered by no linked child.`,
+			refs: [s],
+		});
+	}
+
 	for (const child of [...children].sort((a, b) => a.number - b.number)) {
 		if (child.acceptanceCriteriaCount < 1) {
 			defects.push({
 				type: "ZERO_AC",
 				message: `Child #${child.number} has zero acceptance criteria.`,
+				refs: [child.number],
+			});
+		}
+
+		if (child.stories === undefined) {
+			defects.push({
+				type: "MISSING_STORY",
+				message: `Child #${child.number} has no \`**Stories:**\` reference; every linked child must trace to ≥1 story.`,
 				refs: [child.number],
 			});
 		}

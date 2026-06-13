@@ -108,12 +108,51 @@ describe("validateLedger — each defect type", () => {
 		assert.deepStrictEqual(needsTriage?.refs, [101]);
 	});
 
-	it("each of the closed 7 defect types is producible", () => {
+	it("MISSING_STORY when a linked child has no `**Stories:**` reference", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {stories: undefined})],
+		});
+		const missing = validateLedger(l).find((d) => d.type === "MISSING_STORY");
+		assert.isDefined(missing);
+		assert.deepStrictEqual(missing?.refs, [101]);
+	});
+
+	it("the pure-infra marker (stories: []) is not a MISSING_STORY", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {stories: []})],
+		});
+		assert.notInclude(typesOf(l), "MISSING_STORY");
+	});
+
+	it("UNCOVERED_STORY when a declared story is covered by no child", () => {
+		const l = ledger({
+			epic: epic({stories: [1, 2], dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {stories: [1]})],
+		});
+		const uncovered = validateLedger(l).find((d) => d.type === "UNCOVERED_STORY");
+		assert.isDefined(uncovered);
+		assert.deepStrictEqual(uncovered?.refs, [2]);
+	});
+
+	it("a fully-covered story set yields zero story defects", () => {
+		const l = ledger({
+			epic: epic({stories: [1, 2], dependencies: graph({nodes: [101, 102], edges: []})}),
+			children: [child(101, {stories: [1]}), child(102, {stories: [2]})],
+		});
+		const types = typesOf(l);
+		assert.notInclude(types, "UNCOVERED_STORY");
+		assert.notInclude(types, "MISSING_STORY");
+	});
+
+	it("each of the closed defect types is producible", () => {
 		const produced = new Set<DefectType>();
 
 		produced.add("MISSING_DEPS_SECTION");
 		const cyclic = ledger({
 			epic: epic({
+				stories: [1, 7],
 				dependencies: graph({
 					nodes: [101, 102, 103],
 					edges: [
@@ -125,7 +164,11 @@ describe("validateLedger — each defect type", () => {
 			children: [
 				child(101),
 				child(102),
-				child(103, {acceptanceCriteriaCount: 0, labels: ["status:needs-triage"]}),
+				child(103, {
+					acceptanceCriteriaCount: 0,
+					labels: ["status:needs-triage"],
+					stories: undefined,
+				}),
 			],
 		});
 		for (const d of validateLedger(cyclic)) produced.add(d.type);
@@ -234,5 +277,23 @@ describe("validateLedger — determinism", () => {
 		});
 		assert.strictEqual(ledgerSignature(l), "clean");
 		assert.match(ledgerSignature(dirty), /^ZERO_AC:101/);
+	});
+
+	it("permuted story / child order yields identical story defects and signature", () => {
+		const make = (
+			declared: ReadonlyArray<number>,
+			children: ReturnType<typeof child>[],
+		): EpicLedger =>
+			ledger({
+				epic: epic({stories: declared, dependencies: graph({nodes: [101, 102], edges: []})}),
+				children,
+			});
+		const a = make([1, 2, 3], [child(101, {stories: [2, 1]}), child(102, {stories: undefined})]);
+		const b = make([3, 2, 1], [child(102, {stories: undefined}), child(101, {stories: [1, 2]})]);
+		assert.deepStrictEqual(validateLedger(a), validateLedger(b));
+		assert.strictEqual(ledgerSignature(a), ledgerSignature(b));
+		const types = validateLedger(a).map((d) => d.type);
+		assert.include(types, "UNCOVERED_STORY");
+		assert.include(types, "MISSING_STORY");
 	});
 });

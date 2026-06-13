@@ -6,12 +6,21 @@
  * `DefectType`) is `effect/Schema`; the validation surface (`validateLedger`,
  * `isPickable`, `ledgerSignature`) is a pure, deterministic function over a
  * decoded ledger; `decodeEpicLedger` is the GitHub trust boundary that lowers
- * untrusted REST JSON (and its `## Dependencies` / acceptance-criteria markdown)
- * into the domain. This package is the symmetric twin of `review-code` one stage
- * earlier — it gates `plan-epic`'s output before `write-code` picks children up.
+ * untrusted REST JSON (and its `## Dependencies` / `### User stories` /
+ * acceptance-criteria / `**Stories:**` markdown) into the domain, and `Github` is
+ * the live capability that reads one by shelling `gh api` REST. This package is
+ * the symmetric twin of `review-code` one stage earlier — it gates `plan-epic`'s
+ * output before `write-code` picks children up.
  */
 export {DEFECT_TYPES, Defect, DefectType, defectTypeRank} from "./Defect.ts";
-export {decodeEpicLedger, GithubEpicInput} from "./github.ts";
+export {
+	decodeEpicLedger,
+	GhCommandError,
+	GhParseError,
+	Github,
+	GithubEpicInput,
+	GithubLive,
+} from "./github.ts";
 export {findCycles} from "./graph.ts";
 export {
 	ChildIssue,
@@ -20,5 +29,10 @@ export {
 	EpicHeader,
 	EpicLedger,
 } from "./Ledger.ts";
-export {countAcceptanceCriteria, parseDependencyGraph} from "./markdown.ts";
+export {
+	countAcceptanceCriteria,
+	parseChildStories,
+	parseDependencyGraph,
+	parseEpicStories,
+} from "./markdown.ts";
 export {isPickable, ledgerSignature, validateLedger} from "./validate.ts";

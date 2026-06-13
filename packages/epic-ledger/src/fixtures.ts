@@ -9,6 +9,7 @@ export const child = (number: number, overrides: Partial<ChildIssue> = {}): Chil
 	title: `child #${number}`,
 	labels: ["type:feature", "p1", "status:triaged"],
 	acceptanceCriteriaCount: 1,
+	stories: [1],
 	...overrides,
 });
 
@@ -24,6 +25,7 @@ export const epic = (overrides: Partial<EpicHeader> = {}): EpicHeader => ({
 	title: "epic #100",
 	labels: ["type:epic", "p1", "status:triaged"],
 	dependencies: graph(),
+	stories: [],
 	...overrides,
 });
 
@@ -35,11 +37,13 @@ export const ledger = (overrides: Partial<EpicLedger> = {}): EpicLedger => ({
 
 /**
  * A structurally clean two-child ledger: both children referenced in the graph,
- * each with an AC and a full label set, no cycle, no dangling edge.
+ * each with an AC and a full label set, no cycle, no dangling edge, and the
+ * epic's one declared story (#1) covered by both children.
  */
 export const cleanLedger = (): EpicLedger =>
 	ledger({
 		epic: epic({
+			stories: [1],
 			dependencies: graph({
 				nodes: [101, 102],
 				edges: [{child: 102, requires: 101}],
