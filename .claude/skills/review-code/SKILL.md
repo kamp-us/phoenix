@@ -274,12 +274,15 @@ criteria that changed underneath.
 
 ## Conventions
 
-This skill is one of a suite (`report` → `triage` → `plan-epic` → `write-code` →
-**`review-code`**) that turns GitHub issues into an agent-operable pipeline. The shared
-label semantics and the body/comment/dependency formats live in
+This skill is one of a suite (`report` → `triage` → `plan-epic` → `review-plan` →
+`write-code` → **`review-code`**) that turns GitHub issues into an agent-operable pipeline.
+The shared label semantics and the body/comment/dependency formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). Your input is exactly
 what `write-code` produces — a claimed issue carrying the acceptance-criteria checklist,
 and a PR with `Fixes #N` linking it. Your output is the verdict that decides whether
 that PR is merge-ready. You are the last gate before merge, and the one stage that
 must stay detached from the implementation: verify the criteria from the outside, one
-at a time, with evidence — and never merge on your own authority.
+at a time, with evidence — and never merge on your own authority. You are the structural
+twin of [`review-plan`](../review-plan/SKILL.md), one stage later: the two gates bracket
+`write-code` — `review-plan` floor-verifies the plan going in, you AC-verify the PR going
+out, and neither does the next agent's job (`review-plan` never repairs; you never merge).

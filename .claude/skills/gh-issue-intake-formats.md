@@ -12,9 +12,17 @@ agent-operable work pipeline:
 5. The **review-code pass marker** — the recognizable first line of a PR comment
    that signals a verified, merge-ready PR for a downstream merge step to scan.
 
-`plan-epic` writes formats 1, 2, and 4. `write-code` reads 1, 2, and 4 and writes
-3 and 4. `review-code` reads 2 (the acceptance-criteria checklist is its gate) and
-writes 5 on a passing verdict.
+`plan-epic` writes formats 1, 2, and 4. `review-plan` reads 1 and 2 (they are the
+structural floor it validates) and owns the `status:planned → status:triaged` flip that
+makes a `plan-epic` child pickable. `write-code` reads 1, 2, and 4 and writes 3 and 4.
+`review-code` reads 2 (the acceptance-criteria checklist is its gate) and writes 5 on a
+passing verdict.
+
+The full pipeline order is `report` → `triage` → `plan-epic` → `review-plan` →
+`write-code` → `review-code`: `review-plan` is the deterministic gate between `plan-epic`
+and `write-code` (the plan-layer twin of `review-code`'s PR-layer gate), so an epic child
+is only pickable once `review-plan` has flipped it — see §Pipeline labels and ADR
+[0047](../../.decisions/0047-review-plan-gate.md).
 
 ## Reading stance: convention, not parser spec
 
@@ -319,11 +327,17 @@ table below it is for the human and the implementer.
 
 | Format | Lives on | Written by | Read by |
 |---|---|---|---|
-| `## Dependencies` grammar | epic body | plan-epic | write-code |
-| Sub-issue body | each sub-issue | plan-epic | write-code, review-code |
+| `## Dependencies` grammar | epic body | plan-epic | review-plan, write-code |
+| Sub-issue body | each sub-issue | plan-epic | review-plan, write-code, review-code |
 | Progress comment | the worked issue | write-code | write-code (successor) |
 | Epic handoff note | parent epic | write-code | write-code (siblings) |
 | review-code pass marker | the PR | review-code | authorized merge step |
+
+`review-plan` reads the first two formats as its structural floor (the `## Dependencies`
+topology and each sub-issue's acceptance-criteria + `**Stories:**` invariants) and, on a
+clean ledger, flips each child `status:planned → status:triaged` — the gate that makes the
+child pickable at all (§Pipeline labels, ADR
+[0047](../../.decisions/0047-review-plan-gate.md)).
 
 The sub-issue's acceptance-criteria checklist (format 2) is the spine of
 verification: `review-code` checks every box before merge, and the
