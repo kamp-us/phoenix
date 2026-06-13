@@ -105,10 +105,9 @@ export async function setup() {
 		try {
 			// Per-attempt timeout: the deploy returns the WorkerProxy URL before workerd
 			// is serving, and the proxy parks the request on a promise with no timeout of
-			// its own (alchemy fork — deeper fix tracked in #115). Without this signal a
-			// single parked poll hangs forever instead of advancing the loop, which is the
-			// multi-hour silent stall this suite has hit. AbortSignal.timeout turns a slow
-			// attempt into a bounded, retryable failure — it throws into the catch below.
+			// its own (alchemy fork — deeper fix tracked in #115). Without it a single
+			// parked poll hangs forever instead of advancing the loop — the multi-hour
+			// silent stall this suite has hit.
 			const res = await fetch(`${url}/api/health`, {signal: AbortSignal.timeout(2500)});
 			if (res.status === 200) {
 				healthy = true;
