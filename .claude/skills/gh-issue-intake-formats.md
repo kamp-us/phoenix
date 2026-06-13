@@ -124,7 +124,7 @@ A sub-issue is one executable task. Its body mirrors a task entry: enough for a
 ### Shape
 
 ```markdown
-**Stories:** <story refs this task covers, if any>
+**Stories:** <story numbers from the epic's `### User stories` this task implements or unblocks>
 **TDD:** yes | no
 
 ### What to build
@@ -140,11 +140,18 @@ tempting adjacent thing not to do.>
 
 ### Field notes
 
-- **Stories** — optional back-references to the originating epic's user stories
-  or brief. Omit the line if there are none.
+- **Stories** — **required** back-references to the originating epic's `### User stories`
+  section (by number). A child names the stories it implements, or — for a
+  `type:decision`/`type:investigation`/pure-infra child — the stories it unblocks. This is
+  one half of plan-epic's **story-coverage invariant**: every story is covered by ≥ 1 child,
+  and every child traces to ≥ 1 story. The rare child that genuinely serves no single story
+  (pure infra) carries the explicit marker `none (pure infra — see What to build)` and
+  justifies itself there — the line is never silently left blank. See ADR
+  [0046](../../.decisions/0046-plan-epic-prd-grade-plans.md).
 - **TDD** — `yes` means the task is test-first (a behavior with a verifiable
   contract); `no` means config, docs, scaffolding, or an operational step where
-  test-first doesn't apply. The flag is advice to `write-code`, not a gate.
+  test-first doesn't apply. The flag is advice to `write-code`, not a gate; plan-epic sets
+  it from the epic plan's testing strategy.
 - **What to build** — the spec. Prose, not a checklist. Acceptance criteria say
   *whether* it's done; this section says *what to do*.
 
