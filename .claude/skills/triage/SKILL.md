@@ -128,6 +128,13 @@ How to split:
      --jq '.items[] | "#\(.number) \(.title)"'
    ```
 
+   The two commands guard different failure modes — don't drop either: the label
+   list is read-after-write consistent and catches an issue filed seconds ago; the
+   search runs against GitHub's eventually-consistent index but covers older open
+   issues that already left the queue. Join keywords with `+`
+   (e.g. `…+is:open+retry+abort`) — raw spaces inside the quoted URL produce a
+   malformed query.
+
    If an existing issue already covers it, enrich/triage that one instead of filing
    a twin. (This rule exists because a triage run once filed a duplicate of an issue
    that had landed in the queue minutes earlier.)
@@ -235,14 +242,22 @@ Tells that an issue is **agent-filed** (the only kind you may close):
 - **It carries the agent-report fingerprint.** The `report` skill files a
   recognizable shape: the five sections (*What I was doing / What I observed / Why
   it matters / Pointers / Suggested next step*) and a `<sub>Filed by an agent ·
-  session … · model … · branch …</sub>` metadata footer. The footer is the
-  strongest signal; the clean five-section structure backs it up.
+  …</sub>` metadata footer. The literal **`Filed by an agent` marker is the
+  invariant** — the footer's session/model/branch fields are best-effort and often
+  absent (`footer.sh` silently drops what the environment doesn't expose), so don't
+  treat a sparse footer as "fingerprint missing". The clean five-section structure
+  backs the marker up.
+- **Five sections but no footer is usually pipeline-made** — a triage split child
+  (look for `split from #N` in the body or comments) or another skill's filing.
+  Judge by provenance, not just shape: a split child traced to an agent-filed
+  original is agent-filed.
 
 Tells that an issue is **human-filed**:
 
 - **It reads scrappy and free-form** — a quick thought, a one-liner, a question, an
   inconsistent shape. Humans file in passing; they don't fill in a template.
-- **It lacks the agent fingerprint** — no footer, no five-section shape.
+- **It lacks the agent fingerprint** — no `Filed by an agent` marker, no
+  five-section shape, no pipeline provenance.
 
 When in doubt, **treat it as human.** The cost of wrongly closing a human's issue
 (they feel ignored) is worse than the cost of wrongly leaving an agent's issue open
@@ -254,6 +269,12 @@ that would unblock triage. Specific, not generic — "Which file? What's the exp
 behavior vs what you saw? Is this blocking anything?" beats "please add more detail".
 You may still type a human issue if it's already clear; needs-info is only for the
 ones you genuinely can't classify or act on yet.
+
+**Needs-info leaves the queue:** remove `status:needs-triage` when you apply
+`status:needs-info` (same DELETE call as the triaged path in Step 6). A parked
+question must not re-surface in every sweep and every report agent's pre-filing
+re-query; it re-enters the queue when whoever answers swaps the labels back
+(`status:needs-info` → `status:needs-triage`).
 
 ---
 
@@ -322,27 +343,30 @@ Salvage first: if there's a real unit hiding in it, enrich and triage it instead
 
 Every kill is auditable and reversible. Always:
 
-1. Post a **reason comment** — *why* it's unsalvageable, specifically (e.g. "Duplicate
+1. **If the reason is "duplicate of #M": preserve the loser's content on the
+   survivor first.** A bare cross-link is not enough — the closed issue often
+   carries context the survivor lacks (an independent verification, extra pointers,
+   a sharper acceptance idea). Copy the duplicate's full body **verbatim** into a
+   comment on #M, wrapped in a `<details><summary>#N (closed duplicate) — full
+   body</summary>…</details>` block, and fold anything load-bearing into #M's
+   enrichment. Nothing a reporter wrote should require clicking into a closed issue
+   to read.
+2. Post a **reason comment** — *why* it's unsalvageable, specifically (e.g. "Duplicate
    of #33, which already tracks this hang" or "The function this references was
    removed in #30; no longer applicable"). One sentence of real reasoning, so the
    maintainer reviewing kills can judge it.
-2. Apply `closed-by-triage` so every kill shows up in one query.
-3. Close as **not planned** (state `closed`, reason `not_planned`).
+3. Apply `closed-by-triage` so every kill shows up in one query.
+4. Close as **not planned** (state `closed`, reason `not_planned`).
 
 ```bash
+# step 1 only when closing as a duplicate of #M:
+gh api repos/kamp-us/phoenix/issues/<N> --jq '.body' > /tmp/dup-<N>.md   # then wrap in <details> and:
+gh api repos/kamp-us/phoenix/issues/<M>/comments -f body="$(cat /tmp/dup-comment-<N>.md)"
+# steps 2-4, every kill:
 gh api repos/kamp-us/phoenix/issues/<N>/comments -f body="Closing not-planned: <specific reason>."
 gh api repos/kamp-us/phoenix/issues/<N>/labels -f "labels[]=closed-by-triage"
 gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f state=closed -f state_reason=not_planned
 ```
-
-**Duplicates: preserve the loser's content on the survivor.** When the reason is
-"duplicate of #M", a bare cross-link is not enough — the closed issue often carries
-context the survivor lacks (an independent verification, extra pointers, a sharper
-acceptance idea). Before closing, copy the duplicate's full body **verbatim** into a
-comment on the surviving issue, wrapped in a `<details><summary>#N (closed
-duplicate) — full body</summary>…</details>` block, and fold anything load-bearing
-into the survivor's enrichment. Nothing a reporter wrote should require clicking
-into a closed issue to read.
 
 The maintainer audits all kills with one query, so over-closing is caught and
 reopened cheaply:
@@ -366,7 +390,8 @@ sweeping:
 4. **Re-list the queue before declaring the sweep done.** Report agents file
    concurrently, so issues land mid-sweep; a sweep that only processes the opening
    snapshot routinely leaves fresh arrivals behind. Loop until the listing comes
-   back empty (or contains only issues you've deliberately left, e.g. needs-info).
+   back empty — every outcome (triaged / needs-info / closed) removes
+   `status:needs-triage`, so an empty listing is the complete termination test.
 5. Report a short ledger back: per issue, the outcome (type+priority+triaged /
    needs-info / closed) in one line each. Don't narrate every REST call — the labels
    and comments on the issues are the durable record.

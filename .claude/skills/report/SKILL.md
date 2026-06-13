@@ -72,10 +72,13 @@ If you ever assemble the footer by hand instead of via the helper, apply the sam
 
 All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-us org runs a legacy Projects-classic integration that breaks GraphQL issue queries.
 
-1. **Re-query for an existing issue first — always.** Report agents run concurrently
-   (several people run them at once), so the same observation may have been filed
-   minutes ago. Immediately before creating the issue, list the triage queue and
-   keyword-search open issues:
+1. Write the title: a short, specific, type-neutral summary of the observation (≤ ~70 chars). Good: "Retry helper in http worker swallows the abort reason". Bad: "Bug in worker" or "BUG: fix retry".
+2. Build the body: the five sections, then a blank line, then the footer block from `footer.sh`.
+3. **Re-query for an existing issue — always, and last.** Report agents run
+   concurrently (several people run them at once), so the same observation may have
+   been filed minutes ago. Run this check *after* composing the body, as the final
+   action before the create call — composing first keeps the window between check
+   and create as small as possible:
 
    ```bash
    gh api 'repos/kamp-us/phoenix/issues?state=open&labels=status:needs-triage&per_page=100' \
@@ -84,10 +87,15 @@ All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-u
      --jq '.items[] | "#\(.number) \(.title)"'
    ```
 
+   The two commands guard different failure modes — don't drop either: the label
+   list is read-after-write consistent and catches an issue filed seconds ago, while
+   the search runs against GitHub's eventually-consistent index (fresh issues can
+   lag out of it) but covers older open issues that already left the queue. Join
+   keywords with `+` (e.g. `…+is:open+retry+abort`) — raw spaces inside the quoted
+   URL produce a malformed query.
+
    If an existing issue covers the same observation, don't file a twin — add anything
    you know that it lacks as a comment there, and return to your task.
-2. Write the title: a short, specific, type-neutral summary of the observation (≤ ~70 chars). Good: "Retry helper in http worker swallows the abort reason". Bad: "Bug in worker" or "BUG: fix retry".
-3. Build the body: the five sections, then a blank line, then the footer block from `footer.sh`.
 4. File it, applying only `status:needs-triage`.
 
 Write the body to a temp file first and read it into `$BODY` so multi-line markdown and backticks survive the shell intact, then make the `gh api` call:
@@ -131,4 +139,4 @@ gh api repos/kamp-us/phoenix/issues \
 This skill is one of a suite that turns GitHub issues into an agent-operable pipeline; the shared formats and label semantics are documented in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) (the report template here is its own type-blind thing, but the label dimensions and progress/handoff formats live there).
 
 - One observation, one issue. If you noticed two genuinely separate things, file two — don't bundle. (Triage can split bundles, but clean intake saves it the work.)
-- The pre-filing re-query (step 1 above) is mandatory, but it's a search, not an oracle: when the results are genuinely ambiguous, file — a duplicate is cheap for triage to close, a lost observation is gone. (Use the REST search shown in step 1, never `gh issue list --search` — that goes through GraphQL, which this org breaks.)
+- The pre-filing re-query (step 3 above) is mandatory, but it's a search, not an oracle: when the results are genuinely ambiguous, file — a duplicate is cheap for triage to close, a lost observation is gone. (Use the REST search shown in step 3, never `gh issue list --search` — that goes through GraphQL, which this org breaks.)
