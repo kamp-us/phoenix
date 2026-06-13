@@ -39,10 +39,25 @@ Github.epicLedger    ──►   decodeEpicLedger  ──►  EpicLedger  ──
   markdown parser.
 - **`Github` / `GithubLive`** — the IO shell: a `Context.Service` on `ChildProcessSpawner` whose
   `epicLedger(epicNumber)` fetches the epic + its linked children over `gh api` REST (never GraphQL
-  — broken on this org) and decodes an `EpicLedger`. Infra failures surface as typed
-  `Schema.TaggedErrorClass` errors (`GhCommandError` for a non-zero `gh` exit, `GhParseError` for
-  malformed JSON), never a throw. Provide the platform spawner (`NodeServices.layer`) to satisfy
-  `GithubLive`'s `R`.
+  — broken on this org) and decodes an `EpicLedger`. Its three mutation methods are scoped to
+  exactly what the gate may touch: `flipChildToTriaged` (the `status:planned → triaged` flip),
+  `postComment` (a verdict/diagnostic), `parkNeedsInfo` (drop `status:planned`, add
+  `status:needs-info`). Infra failures surface as typed `Schema.TaggedErrorClass` errors
+  (`GhCommandError` for a non-zero `gh` exit, `GhParseError` for malformed JSON), never a throw.
+  Provide the platform spawner (`NodeServices.layer`) to satisfy `GithubLive`'s `R`.
+- **`runGate(epicNumber): Effect<GateVerdict, …>`** — the deterministic `review-plan` gate action
+  (#164): fetch the ledger, run `validateLedger`, and on a clean ledger flip every `status:planned`
+  child to `status:triaged` and post a PASS verdict; on ≥1 hard defect post a per-defect FAIL and
+  flip nothing. It mutates only child labels (on a pass) + its own verdict comment — never the
+  brief, the topology, or the sub-issue links. Returns a structured `GateVerdict`
+  (`{_tag:"pass",flipped}` | `{_tag:"fail",defects,signature}`).
+- **`runConvergenceLoop(epicNumber): Effect<LoopOutcome, …>`** — the stall-based re-plan loop
+  (#166): on a FAIL, re-invoke `plan-epic` (via the injected `RePlanner` capability) and re-gate,
+  repeating **while the hard-defect set strictly shrinks**; converge to a clean PASS at zero, or
+  park the epic `status:needs-info` on a repeated `ledgerSignature` (cycle) or a non-shrinking set
+  (stall). `DEFAULT_CEILING` is the runaway backstop, not the stop condition.
+  `RePlanner` is the seam to the `plan-epic` skill/agent (a `Context.Service` the call site binds),
+  since `plan-epic` is an agent, not an importable function.
 
 ## Determinism
 

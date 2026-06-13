@@ -169,15 +169,53 @@ const subIssuesArgs = (number: number): ReadonlyArray<string> => [
 	`repos/${REPO}/issues/${number}/sub_issues?per_page=100`,
 ];
 
+const PLANNED_LABEL = "status:planned";
+const TRIAGED_LABEL = "status:triaged";
+const NEEDS_INFO_LABEL = "status:needs-info";
+
+const addLabelArgs = (number: number, label: string): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"POST",
+	`repos/${REPO}/issues/${number}/labels`,
+	"-f",
+	`labels[]=${label}`,
+];
+
+const removeLabelArgs = (number: number, label: string): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"DELETE",
+	`repos/${REPO}/issues/${number}/labels/${label}`,
+];
+
+const commentArgs = (number: number, body: string): ReadonlyArray<string> => [
+	"api",
+	"-X",
+	"POST",
+	`repos/${REPO}/issues/${number}/comments`,
+	"-f",
+	`body=${body}`,
+];
+
 /** A sub-issue ref as the `sub_issues` endpoint returns it; only `number` is read. */
 const SubIssueRef = Schema.Struct({number: Schema.Number});
 const decodeSubIssueRefs = Schema.decodeUnknownEffect(Schema.Array(SubIssueRef));
 
 /**
- * `Github` — the IO shell that turns an epic number into a decoded `EpicLedger`.
- * Built by `GithubLive`, whose `R` is `ChildProcessSpawner`: provide the platform
- * spawner layer (`NodeServices.layer` in production) to satisfy it; a test
- * provides a mock spawner via `ChildProcessSpawner.make`.
+ * `Github` — the IO shell over `gh api` REST. `epicLedger` is the read half (an
+ * epic number → a decoded `EpicLedger`); the three mutation methods are what the
+ * `review-plan` gate action and the re-plan loop write through: a label flip on a
+ * child, a verdict/diagnostic comment on an issue, and parking an epic at
+ * `status:needs-info`. Built by `GithubLive`, whose `R` is `ChildProcessSpawner`:
+ * provide the platform spawner (`NodeServices.layer` in production) to satisfy it;
+ * a test provides a mock spawner via `ChildProcessSpawner.make`.
+ *
+ * Every mutation is scoped to exactly what the gate may touch (ADR 0047): a
+ * child's `status:planned → status:triaged` flip, a verdict comment, and the
+ * epic's `status:planned`-or-clean → `status:needs-info` park. It never edits a
+ * brief, a topology, or a sub-issue link — those are unreachable through this
+ * surface by construction.
  */
 export class Github extends Context.Service<
 	Github,
@@ -185,6 +223,15 @@ export class Github extends Context.Service<
 		readonly epicLedger: (
 			epicNumber: number,
 		) => Effect.Effect<EpicLedger, GhCommandError | GhParseError | Schema.SchemaError>;
+		/** Flip a child's `status:planned` label to `status:triaged` (the gate's one mutation). */
+		readonly flipChildToTriaged: (childNumber: number) => Effect.Effect<void, GhCommandError>;
+		/** Post a comment (a verdict, or a park diagnostic) on an issue. */
+		readonly postComment: (
+			issueNumber: number,
+			body: string,
+		) => Effect.Effect<void, GhCommandError>;
+		/** Park an epic: drop `status:planned`, add `status:needs-info`. */
+		readonly parkNeedsInfo: (epicNumber: number) => Effect.Effect<void, GhCommandError>;
 	}
 >()("@phoenix/epic-ledger/Github") {}
 
@@ -201,6 +248,20 @@ const loadEpicLedger = Effect.fn("Github.epicLedger")(function* (epicNumber: num
 	return yield* decodeEpicLedger({epic, children});
 });
 
+const flipChildToTriaged = Effect.fn("Github.flipChildToTriaged")(function* (childNumber: number) {
+	yield* runGh(addLabelArgs(childNumber, TRIAGED_LABEL));
+	yield* runGh(removeLabelArgs(childNumber, PLANNED_LABEL));
+});
+
+const postComment = Effect.fn("Github.postComment")(function* (issueNumber: number, body: string) {
+	yield* runGh(commentArgs(issueNumber, body));
+});
+
+const parkNeedsInfo = Effect.fn("Github.parkNeedsInfo")(function* (epicNumber: number) {
+	yield* runGh(addLabelArgs(epicNumber, NEEDS_INFO_LABEL));
+	yield* runGh(removeLabelArgs(epicNumber, PLANNED_LABEL));
+});
+
 /**
  * The live `Github` layer. The `ChildProcessSpawner` dependency is captured once
  * at construction and provided *into* each method body, so the service's public
@@ -211,11 +272,15 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 	Layer.effect(Github)(
 		Effect.gen(function* () {
 			const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+			const withSpawner = <A, E>(
+				effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
+			) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
 			return {
-				epicLedger: (epicNumber: number) =>
-					loadEpicLedger(epicNumber).pipe(
-						Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner),
-					),
+				epicLedger: (epicNumber: number) => withSpawner(loadEpicLedger(epicNumber)),
+				flipChildToTriaged: (childNumber: number) => withSpawner(flipChildToTriaged(childNumber)),
+				postComment: (issueNumber: number, body: string) =>
+					withSpawner(postComment(issueNumber, body)),
+				parkNeedsInfo: (epicNumber: number) => withSpawner(parkNeedsInfo(epicNumber)),
 			};
 		}),
 	);

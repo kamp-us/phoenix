@@ -343,11 +343,13 @@ always picks the right next thing.
 
 ## Conventions
 
-This skill is one of a suite (`report` → `triage` → `plan-epic` → **`write-code`** →
-`review-code` → `ship-it`) that turns GitHub issues into an agent-operable pipeline. The shared
-label semantics and the body/comment/dependency formats live in
+This skill is one of a suite (`report` → `triage` → `plan-epic` → `review-plan` →
+**`write-code`** → `review-code` → `ship-it`) that turns GitHub issues into an agent-operable
+pipeline. The shared label semantics and the body/comment/dependency formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). Your input is the
-`status:triaged` issues that `triage` produced and `plan-epic` sequenced; your output —
+`status:triaged` issues that `triage` produced (standalone) or that `review-plan` flipped
+from `status:planned` after gating a `plan-epic` ledger (epic children — ADR
+[0047](../../.decisions/0047-review-plan-gate.md)); your output —
 a claimed issue, a PR with `Fixes #N`, progress comments, and an epic handoff note — is
 exactly what `review-code` reads to verify the work against its acceptance criteria
 before merge. You also lean on two sibling skills inside type routing: `/adr`
