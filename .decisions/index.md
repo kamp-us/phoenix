@@ -48,4 +48,4 @@ One row per ADR. Read the file for the why.
 | [0041](0041-fate-bridge-worker-managed-runtime.md) | fate↔Effect bridge — one worker-level ManagedRuntime (F4) | amended-in-part by [0042](0042-fate-effect-v1-architecture.md), [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | 2026-06-07 |
 | [0042](0042-fate-effect-v1-architecture.md) | fate-effect v1 — the Effect-native fate integration; the bridge is deleted | amended-in-part by [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | 2026-06-10 |
 | [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | fate-effect v2 — the native interpreter serves /fate; no runtime on the request path | accepted | 2026-06-10 |
-| [0044](0044-imge-media-architecture.md) | imge Media Architecture — R2 Store, Pasaport-Bearer Uploads, One Surface | proposed | 2026-06-13 |
+| [0044](0044-imge-media-architecture.md) | imge Media Architecture — R2 Store, Pasaport-Auth Uploads, One Surface | proposed | 2026-06-13 |

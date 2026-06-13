@@ -1,12 +1,12 @@
 ---
 id: 0044
-title: imge Media Architecture — R2 Store, Pasaport-Bearer Uploads, One Surface
+title: imge Media Architecture — R2 Store, Pasaport-Auth Uploads, One Surface
 status: proposed
 date: 2026-06-13
 tags: [imge, storage, auth, infra]
 ---
 
-# 0044 — imge Media Architecture — R2 Store, Pasaport-Bearer Uploads, One Surface
+# 0044 — imge Media Architecture — R2 Store, Pasaport-Auth Uploads, One Surface
 
 ## Context
 
@@ -20,14 +20,23 @@ Constraints found on `main`:
 - **No object-storage binding exists.** No R2 / Cloudflare Images / Stream in
   `apps/web/alchemy.run.ts`; no upload / multipart / blob handling under
   `apps/web/worker/`. This is net-new infrastructure.
-- **Bindings are declared in the worker's init phase**, not the stack. `alchemy.run.ts`
-  only yields the `Phoenix` worker Tag; the worker's `bind()` calls in
-  `worker/index.ts` (where D1 and the `LiveDO` namespace already live) tell alchemy
-  what to provision (ADRs 0026–0031, 0028). An R2 bucket is added there.
-- **Auth already issues bearer tokens.** pasaport runs better-auth with the `bearer`
-  plugin enabled (`worker/features/pasaport/better-auth-live.ts:134`); the SPA itself
-  authenticates with `Authorization: Bearer <token>`. The pasaport `user` (the
-  `user_profile` row) is the real, built identity available today.
+- **Bindings are declared through the worker, not the stack.** `alchemy.run.ts` only
+  yields the `Phoenix` worker Tag; the worker's init wiring tells alchemy what to
+  provision (ADRs 0026–0031, 0028). The `LiveDO` namespace is bound in `worker/index.ts`
+  init; D1 is bound in `worker/db/Database.ts` (the `Database` seam) off a Resource in
+  `worker/db/resources.ts` — not literally in `index.ts`. An R2 bucket follows the same
+  pattern: alchemy ships `Cloudflare.R2Bucket` with a `.bind()` mirroring D1's, plus
+  native custom-domain and streaming-`put` support.
+- **Auth: a real user identity today, but only a *session* bearer for browsers.**
+  pasaport runs better-auth with the `bearer` plugin
+  (`worker/features/pasaport/better-auth-live.ts:134`); the SPA authenticates with
+  `Authorization: Bearer <token>`. Caveat — better-auth's `bearer()` does not mint a
+  separate credential: the bearer token *is* the session token, it expires (~7-day
+  default, no `session.expiresIn` override), and it's harvested from a browser login. So
+  it is **not** an agent credential — an unattended `report` agent has no browser session
+  to derive one. The pasaport `user` (`user_profile` row) is the real, built identity;
+  durable agent credentials need the better-auth `apiKey` plugin, whose table is already
+  migrated (`apiKey` in the D1 baseline) but whose plugin is not yet enabled (Decision 3).
 - **künye does not exist yet.** The reputation/identity layer — the Künye DO, invite
   gates, karma-gated privileges, and *agent registration* — is an unbuilt design epic
   ([#41](https://github.com/kamp-us/phoenix/issues/41)). Only the karma *number* exists
@@ -37,66 +46,109 @@ Constraints found on `main`:
 - **Ethos:** "never build what you can install" — back the host with Cloudflare
   primitives, not custom blob storage.
 
-Three coupled forks must be settled before `plan-epic` can split #102: (1) which
-primitive stores media, (2) how non-browser agents authenticate, (3) shared vs
-separate upload surface for agents and browsers.
+Three coupled forks triggered this ADR — (1) which primitive stores media, (2) how
+non-browser agents authenticate, (3) shared vs separate upload surface — and the design
+surfaced a fourth that must ship with them: the **safety envelope** (served-content
+security + abuse limits + a stable URL contract) an authenticated public-write media host
+cannot defer. All are settled below before `plan-epic` splits #102.
 
 ## Decision
 
 1. **R2 is the system of record for all imge objects** — images now, video later —
-   one storage substrate with S3 semantics, free egress, and full control of keys and
-   public URLs. The R2 bucket is a worker binding declared in the init phase of
-   `worker/index.ts` (alongside D1 / `LiveDO`), provisioned by alchemy. R2 holds bytes;
-   per-object metadata (owner pasaport user id, content type, dimensions, created-at) is
-   rows in the existing D1 via Drizzle.
+   one storage substrate with S3 semantics, free egress, and full control over keys and
+   public URLs. The R2 bucket is a worker binding (the `Cloudflare.R2Bucket.bind`
+   pattern, mirroring D1), provisioned by alchemy. Bytes live in R2; per-object metadata
+   (owner pasaport user id, content type, byte size, dimensions, created-at) lives in the
+   existing D1 via Drizzle. Object keys are **opaque and non-enumerable** (content-hash or
+   random id, never sequential) — see Decision 5.
 
-2. **Image variants/optimization come from Cloudflare Images *transformations* over R2
-   origins** (the documented transform-from-R2 path), layered only when needed —
-   Cloudflare Images is **not** the system of record. **Cloudflare Stream (video) is a
-   deferred child, not v1**; v1 ships images.
+2. **Cloudflare Images is a transform layer over R2 origins, not the store; Stream
+   (video) is deferred.** Variants/optimization come from Cloudflare Images
+   *transformations* over R2-origin URLs (the documented transform-from-R2 path), layered
+   when needed. We reject Cloudflare-Images-**as-system-of-record** deliberately: Images
+   gives direct-creator-upload, built-in variants, and signed delivery URLs (real
+   conveniences), but it is image-only and priced per stored image + per delivery, so it
+   loses on the axes we weight most — one substrate for video-later, predictable storage
+   cost, and owning our own URL scheme. R2-as-record + Images-as-transform keeps those and
+   still buys the optimization. Cloudflare **Stream** backs video as a deferred child;
+   v1 ships images.
 
-3. **Agents and browsers authenticate the same way: a better-auth token tied to the
-   pasaport `user` that exists today** — *not* künye. Reuse the existing `bearer`
-   plugin — an upload carries whatever better-auth resolves (a browser cookie/session,
-   or `Authorization: Bearer <token>` for an agent), and identity is the resolved
-   pasaport user id. No bespoke API-key scheme. If agents need long-lived, non-expiring
-   credentials beyond session bearer tokens, add better-auth's `apiKey` plugin (an
-   install), never a custom token system.
+3. **Identity is the pasaport user; browsers use the session bearer, non-browser agents
+   use the `apiKey` plugin — enabled in v1.** The upload endpoint authenticates whatever
+   better-auth resolves and keys the object to the resolved pasaport user id — *not*
+   künye. Browsers present the existing session bearer. **Agents authenticate via
+   better-auth's `apiKey` plugin, which v1 enables** (the `apiKey` table is already
+   migrated; only the plugin registration is missing) — a durable, revocable credential an
+   unattended `report` agent can actually hold, unlike the ~7-day browser session token. No
+   bespoke token scheme. **künye gating is a deferred overlay, not a v1 dependency:** once
+   künye lands ([#41](https://github.com/kamp-us/phoenix/issues/41)) it can layer
+   reputation/agent gates *on top* (e.g. only registered agents above N karma may upload),
+   but imge v1 ships against the bare pasaport user.
 
-   **künye gating is a deferred overlay, not a v1 dependency.** Once künye lands
-   ([#41](https://github.com/kamp-us/phoenix/issues/41)), it can layer reputation/agent
-   gates *on top* of imge uploads (e.g. only registered agents above N karma may upload,
-   per-user quotas by karma) — but imge v1 ships against the bare pasaport user and must
-   not block on the künye design epic. This keeps the originating use case (agents
-   hosting screenshot evidence) shippable now.
+4. **One upload surface for both callers, with a v1 size cap.** A single authenticated
+   endpoint (a fate mutation or `POST /api/imge/*`) accepts media, validates it
+   (Decision 6), writes to R2, records metadata in D1, and returns the stable public URL
+   (Decision 5). The surface is never forked by caller type. v1 **proxies bytes through
+   the worker** to the R2 binding, streaming `put` with `contentLength`; this is sound for
+   images under the Cloudflare Workers request-body limit (**100 MB on Free/Pro**), which
+   also sets the **v1 max upload size** (cap set well below the platform limit).
+   Presigned direct-to-R2 upload is the upgrade path for large media and video — and is
+   **non-trivial** (it needs S3-API signing credentials the worker does not hold today),
+   not a config toggle.
 
-4. **One upload surface for both callers.** A single authenticated upload endpoint
-   (a fate mutation or `POST /api/imge/*` route) accepts media, writes to R2, records
-   metadata in D1, and returns a **stable public URL** usable directly as `![](url)` in
-   GitHub / pano / sözlük markdown. The surface is never forked by caller type; identity
-   is the resolved pasaport user. v1 proxies bytes through the worker to the R2 binding (within
-   the worker request-body limit — fine for image sizes); **presigned direct-to-R2
-   upload is the documented upgrade path** for large media and video.
+5. **Stable, opaque public delivery is a v1 decision, not an implementation detail.** A
+   media host's contract is that URLs never break. v1 fixes: (a) the public-read surface —
+   a **dedicated delivery domain** (cookieless, see Decision 6), not ad-hoc `r2.dev`;
+   (b) an **opaque, non-enumerable key/URL scheme** (content-hash or random id) so URLs are
+   stable, unguessable, and don't leak a public/unlisted distinction; (c) the embedding
+   contract — the returned URL renders directly as `![](url)` through GitHub's camo proxy
+   and in pano/sözlük markdown. Content-hash keys also give free dedup + idempotent agent
+   retries.
 
-5. **imge is a feature module** `apps/web/worker/features/imge/` (ADR 0036) with a
-   frontend product + route in `apps/web/src/App.tsx`. Public delivery is via a custom
-   domain or bound public bucket on R2 (exact mechanism settled in implementation).
+6. **The served-content safety envelope ships in v1.** Hosting arbitrary bytes on our own
+   origin is the classic image-host footgun, and the upload credential is user-scoped while
+   the output is public — so these are load-bearing, not deferrable:
+   - **Content type by sniffing, allowlisted** — determine type from the actual bytes and
+     allowlist image types; never trust the client's declared type.
+   - **Neutralize active content** — serve with `X-Content-Type-Options: nosniff` and
+     appropriate `Content-Disposition`, from a **cookieless delivery domain** isolated from
+     the better-auth cookie origin; **reject or defang SVG** (serve as attachment /
+     `text/plain`, or sanitize) since inline-script SVG executes in-origin.
+   - **Per-user rate + storage quotas + a size cap** at the upload endpoint (a
+     content-length check + a D1 count-per-window — cheap; the metadata table already
+     supports it). Without these, one leaked credential is unbounded public-CDN write on our
+     R2 bill and domain reputation.
+
+   Human *content* moderation (takedown review of lawful-but-unwanted media) stays
+   deferred — it is distinct from these mechanical limits.
+
+7. **imge is a feature module** `apps/web/worker/features/imge/` (ADR 0036) with a
+   frontend product + route in `apps/web/src/App.tsx`.
 
 ## Consequences
 
-- **Easier:** one media substrate for all current and future media; agent uploads come
-  "for free" off the existing better-auth bearer + pasaport user (no dependency on the
-  unbuilt künye), so the originating use case closes (the `report`/`triage` skills can
-  gain an upload-and-embed step); pano/sözlük markdown finally has a host to point image
-  syntax at.
-- **New cost:** the first object-storage binding in the stack (R2 provisioning, a
-  public-delivery domain, object lifecycle); a per-object metadata schema in D1;
-  moderation + rate/size limits become a real owned surface.
+- **Easier:** one media substrate for all current and future media; agent uploads ride a
+  durable better-auth `apiKey` credential + the pasaport user (no dependency on the unbuilt
+  künye), so the originating use case closes (the `report`/`triage` skills can gain an
+  upload-and-embed step); pano/sözlük markdown finally has a host to point image syntax at;
+  content-hash keys give free dedup + idempotent retries.
+- **New cost, owned in v1:** the first object-storage binding (R2 provisioning + a
+  dedicated cookieless delivery domain + object lifecycle); a per-object metadata schema in
+  D1; enabling the better-auth `apiKey` plugin; content-type sniffing + size/rate/quota
+  enforcement on the upload path.
 - **Banned:** custom blob storage; a separate agent-only auth system; forking the upload
-  surface by caller type; making Cloudflare Images the system of record.
+  surface by caller type; making Cloudflare Images the system of record; trusting
+  client-declared content types; sequential/enumerable object keys; serving user content
+  from the cookie-bearing origin.
 - **Deferred to later children:** the Cloudflare Images transformation layer; the
-  Cloudflare Stream video pipeline; presigned direct-upload; moderation/abuse limits;
-  künye-based upload gating (reputation/agent-registration overlay, pending #41).
-- **Status `proposed`:** ratify forks 1–4 (R2-as-record · bearer/pasaport-user agent
-  auth · one surface · proxy-through-worker for v1) before `plan-epic` splits #102. Flip
-  to `accepted` on ratification.
+  Cloudflare Stream video pipeline; presigned direct-upload; **human content moderation**
+  (takedown review — distinct from the v1 mechanical limits); künye-based gating
+  (reputation/agent overlay, pending #41).
+- **Still to specify before build (not blocking ratification):** object **deletion / GC**
+  and D1↔R2 orphan consistency (who can delete; what happens to an embedded image when its
+  uploader is deleted); **CORS** on the upload + delivery surfaces; **EXIF/GPS stripping**
+  on ingest (low-risk for screenshots, a privacy leak for phone photos later).
+- **Status `proposed`:** ratify the forks — R2-as-record · Images-as-transform ·
+  pasaport-user identity with `apiKey` for agents · one surface (proxy-through-worker,
+  capped) · opaque stable delivery · the v1 security/limits envelope — before `plan-epic`
+  splits #102. Flip to `accepted` on ratification.
