@@ -1,7 +1,7 @@
 ---
 id: 0045
 title: kampus Client CLI — One Authenticated Surface for Humans and Agents
-status: proposed
+status: accepted
 date: 2026-06-13
 tags: [cli, auth, tooling, agents]
 ---

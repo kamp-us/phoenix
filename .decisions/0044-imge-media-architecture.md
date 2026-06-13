@@ -1,7 +1,7 @@
 ---
 id: 0044
 title: imge Media Architecture — R2 Store, Pasaport-Auth Uploads, One Surface
-status: proposed
+status: accepted
 date: 2026-06-13
 tags: [imge, storage, auth, infra]
 ---
@@ -198,7 +198,7 @@ cannot defer. All are settled below before `plan-epic` splits #102.
   policy, which is a v1 decision per Decision 5; **CORS** on the upload + delivery surfaces;
   **EXIF/GPS stripping** on ingest (low-risk for screenshots, a privacy leak for phone photos
   later).
-- **Status `proposed`:** ratify the forks — R2-as-record · Images-as-transform ·
+- **Status `accepted`:** the forks are ratified — R2-as-record · Images-as-transform ·
   pasaport-user identity with `apiKey` for agents · one surface (proxy-through-worker,
-  capped) · opaque stable delivery · the v1 security/limits envelope — before `plan-epic`
-  splits #102. Flip to `accepted` on ratification.
+  capped) · opaque stable delivery · the v1 security/limits envelope. Next: `plan-epic`
+  splits #102 into children.
