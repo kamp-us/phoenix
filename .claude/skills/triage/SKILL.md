@@ -411,7 +411,7 @@ sweeping:
 ## Conventions
 
 This skill is one of a suite (`report` → **`triage`** → `plan-epic` → `write-code` →
-`review-code`) that turns GitHub issues into an agent-operable pipeline. The shared
+`review-code` → `ship-it`) that turns GitHub issues into an agent-operable pipeline. The shared
 label semantics and the body/comment/dependency formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). You consume exactly
 the issues the `report` skill files (recognize its 5-section + metadata-footer shape —
