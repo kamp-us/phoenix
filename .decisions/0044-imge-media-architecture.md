@@ -159,6 +159,12 @@ cannot defer. All are settled below before `plan-epic` splits #102.
      content-length check + a D1 count-per-window — cheap; the metadata table already
      supports it). Without these, one leaked credential is unbounded public-CDN write on our
      R2 bill and domain reputation.
+   - **Strip EXIF / embedded metadata on ingest** *(added by the 2026-06-13 amendment —
+     see Amendments below)* — remove EXIF and other embedded metadata (GPS, camera,
+     timestamps) before storing, so the served object is pixels only. Compute the
+     content-hash key on the **post-strip** bytes and **preserve visual orientation**.
+     Screenshots carry none, but a real photo leaks its capture location to a public,
+     permanent URL.
 
    Human *content* moderation (takedown review of lawful-but-unwanted media) stays
    deferred — it is distinct from these mechanical limits.
@@ -195,10 +201,24 @@ cannot defer. All are settled below before `plan-epic` splits #102.
   (reputation/agent overlay, pending #41).
 - **Still to specify before build (not blocking ratification):** object **deletion / GC**
   and D1↔R2 orphan consistency (who can delete) — *except* the uploader-deletion→embedded-URL
-  policy, which is a v1 decision per Decision 5; **CORS** on the upload + delivery surfaces;
-  **EXIF/GPS stripping** on ingest (low-risk for screenshots, a privacy leak for phone photos
-  later).
+  policy, which is a v1 decision per Decision 5; and **CORS** on the upload + delivery surfaces.
+  (**EXIF/GPS stripping** was listed here originally; the 2026-06-13 amendment pulled it into
+  v1 — see Decision 6 and Amendments.)
 - **Status `accepted`:** the forks are ratified — R2-as-record · Images-as-transform ·
   pasaport-user identity with `apiKey` for agents · one surface (proxy-through-worker,
   capped) · opaque stable delivery · the v1 security/limits envelope. Next: `plan-epic`
   splits #102 into children.
+
+## Amendments
+
+- **2026-06-13 — EXIF/GPS stripping pulled into v1.** Originally listed under Consequences →
+  "Still to specify before build" as deferred (rationale: low-risk for screenshots, a privacy
+  leak only for phone photos later). Moved into the Decision 6 served-content safety envelope
+  and scheduled in the upload-hardening child
+  [#110](https://github.com/kamp-us/phoenix/issues/110). **Why the call changed:** the served
+  URLs are public and permanent ("URLs never break", Decision 5), so an un-stripped phone
+  photo's GPS/location leak would itself be public and un-retractable; stripping metadata we
+  never need is a cheap ingest-path addition now and an expensive retrofit once URLs are live.
+  The original screenshots-first reasoning still holds — it simply stopped outweighing the
+  asymmetric, irreversible downside. Implementation notes (hash the post-strip bytes; preserve
+  orientation) live in #110. Decided during `plan-epic` of #102.
