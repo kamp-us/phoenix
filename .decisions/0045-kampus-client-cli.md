@@ -33,9 +33,18 @@ that would be a misreading, and this ADR draws the boundary so no future agent m
 Constraints and prior art on `main`:
 
 - **pasaport is the identity.** better-auth runs in `worker/features/pasaport/` with the
-  `bearer` plugin today; the `apiKey` table is migrated but the plugin is **not yet
-  enabled** — ADR [0044](0044-imge-media-architecture.md) Decision 3 is what turns it on.
-  This CLI is a **consumer** of that decision, not a precondition for it.
+  `bearer` plugin today; the `apiKey` *table* is migrated and matches the plugin's schema. The
+  apiKey plugin ships as a separate scoped package **`@better-auth/api-key`** (a
+  `@better-auth/api-key@1.6.10` peer-matches our pins), so enabling it is a **dependency add +
+  register**, not a better-auth bump — ADR [0044](0044-imge-media-architecture.md) Decision 3
+  owns adding/registering it (verified per ADR [0038](0038-dependency-patches-local-only.md)).
+  `kampus`'s agent-upload path cannot run until that add lands and create-apiKey is reachable, so
+  the two epics share a **joint acceptance criterion** (see Decision 4); this CLI is the consumer
+  half of that loop, not an independent precondition.
+- **`magicLink` is wired but only dev-logs.** pasaport's `magicLink` plugin is registered, but
+  it currently only **logs the link in dev** — there is no real email sender. So any
+  browser-assisted login flow is **further from existing than it looks** (it needs a real send
+  path built first), which is why the headless PAT path is the v1 choice (Decision 3).
 - **künye does not exist.** Agents-as-first-class-registered-identities with their own
   keys live in the unbuilt künye epic ([#41](https://github.com/kamp-us/phoenix/issues/41)).
   Until it lands, an agent has no identity of its own — it borrows a human's. This CLI must
@@ -54,36 +63,55 @@ not extend to it.
 1. **Git-shaped subcommands, auth built in like `gh`.** Invocation is
    `kampus <product> <verb>` — e.g. `kampus imge upload ./shot.png` — mirroring git's
    product/verb structure. Identity is part of the same binary, not a sibling tool:
-   `kampus auth login`, like `gh auth login`. The bin name is `kampus` and the package name
+   `kampus auth` lives alongside the products, like `gh auth` (in v1, `kampus auth token`;
+   `kampus auth login` is the deferred human-onboarding verb — Decision 3). The bin name is
+   `kampus` and the package name
    mirrors the bin per [0035](0035-cli-conventions.md)'s name-mirrors-bin rule (the one 0035
    convention that *does* carry across the category boundary).
 
 2. **Auth is a shared core, established once; subcommands never re-implement it.**
-   `kampus auth login` authenticates against pasaport (the app's better-auth instance) and
-   persists the resulting credential under `~/.config/kampus/`. Every product subcommand
+   `kampus auth` establishes identity against pasaport (the app's better-auth instance) and
+   persists the resulting credential under `~/.config/kampus/` (in v1, the copied `apiKey` via
+   `kampus auth token` — Decision 3). Every product subcommand
    reads that one stored credential and presents it to the API; a subcommand that mints or
    stores its own credential is **banned**. This shared-identity core is the reason `kampus`
    is unified rather than fragmented — and the reason 0035's anti-graveyard argument does not
    apply: these subcommands are not independent tools sharing nothing, they share the single
    most load-bearing thing a client has.
 
-3. **The credential is a better-auth `apiKey`; the PAT is the primary headless path.**
+3. **The credential is a better-auth `apiKey`; v1 ships the PAT path only.**
    The stored credential is a better-auth `apiKey` (ADR [0044](0044-imge-media-architecture.md)
-   Decision 3) — durable and revocable. There are two ways to obtain one:
-   - **`kampus auth login`** runs a browser-assisted flow (device-code or magic-link) for an
-     interactive human, then stores the resulting `apiKey`.
-   - **A profile-settings personal-access-token (PAT)**, copy-pasted (`kampus auth token`,
-     or `KAMPUS_TOKEN` env), for headless/agent use.
+   Decision 3) — durable and revocable. The upstream apiKey plugin does not hand the key back
+   as a side effect of login: it issues one via an **authenticated `POST` create-apiKey
+   endpoint that returns the secret exactly once**. So *every* acquisition path resolves to the
+   same shape — establish a session, call create-apiKey, persist the returned key:
+   - **PAT (the v1 path).** From a session (browser login / magic-link / device-code in profile
+     settings), call create-apiKey, **copy the returned key**, and hand it to the CLI via an
+     explicit flag, the `KAMPUS_TOKEN` env var, or `kampus auth token` (which stores it under
+     `~/.config/kampus/`). This is what an unattended agent uses — a copied key in env needs no
+     browser at run time.
+   - **Browser-assisted `kampus auth login` (deferred).** A device-code/magic-link flow that
+     establishes the session, calls create-apiKey, and stores the key for the human — so the
+     human never copy-pastes. This is a *human-onboarding convenience*, **deferred to a
+     human-onboarding child** (also because pasaport's `magicLink` does not really send yet —
+     see Context).
 
-   For an **unattended agent the PAT is the primary flow**, not a fallback: `auth login`
-   assumes a browser an unattended agent does not have (see open questions). The CLI reads
-   the credential from, in order: an explicit flag, `KAMPUS_TOKEN`, then the stored
-   `~/.config/kampus/` credential.
+   **v1 decision: the PAT path is the only flow that ships.** This shrinks v1 to "read a token
+   from flag/env/file, attach it, call the API." The CLI reads the credential from, in order:
+   an explicit flag, `KAMPUS_TOKEN`, then the stored `~/.config/kampus/` credential. **Threat
+   model — borrowed identity (v1):** the agent borrows a human's pasaport user (künye does not
+   exist), so one shared key = one quota = one blast radius and all-or-nothing revocation; per
+   ADR [0044](0044-imge-media-architecture.md) Decision 3, prefer **one `apiKey` per agent
+   instance** for per-agent revocation and rate-limiting.
 
 4. **`kampus auth` answers 0044's open "how does an agent get a credential" question.**
-   The split is: `kampus auth` issues/stores the `apiKey`; `kampus imge upload` consumes it.
-   That closes the loop 0044 Decision 3 left open without imge — or any future product —
-   owning auth.
+   The split is: `kampus auth` obtains/stores the `apiKey` (in v1, by reading a key the human
+   copied from the create-apiKey endpoint into a flag/env/file — Decision 3); `kampus imge
+   upload` consumes it. That closes the loop 0044 Decision 3 left open without imge — or any
+   future product — owning auth. Note this loop only *runs* once 0044's `@better-auth/api-key` add
+   lands and create-apiKey is reachable: the end-to-end agent path (token in env → `kampus imge
+   upload` → stable URL → embed in markdown) is a **joint acceptance criterion across both
+   epics**, not deliverable by either alone.
 
 5. **Agent-owned identity defers to künye / [#41](https://github.com/kamp-us/phoenix/issues/41).**
    In v1 an agent borrows a human's login or PAT; uploads and writes are attributed to that
@@ -99,15 +127,25 @@ not extend to it.
 
 ## Consequences
 
-- **Easier:** one place a human or agent logs in and one credential every product reuses; the
-  imge agent-upload story from [0044](0044-imge-media-architecture.md) becomes runnable
-  (`kampus auth token` once, `kampus imge upload` thereafter); new products get terminal access
-  for free by adding a subcommand, with auth already solved; the `report`/`triage` skills can
-  shell out to `kampus imge upload` instead of carrying bespoke upload code.
+- **Easier:** one place a human or agent logs in and one credential every product reuses;
+  new products get terminal access for free by adding a subcommand, with auth already solved;
+  the `report`/`triage` skills can shell out to `kampus imge upload` instead of carrying bespoke
+  upload code, reading the key from the **`KAMPUS_TOKEN`** env var (the env-var contract those
+  skills depend on for the end-to-end integration).
+- **Joint acceptance with 0044 — neither epic closes the originating use case alone.** The imge
+  agent-upload story from [0044](0044-imge-media-architecture.md) only becomes runnable once
+  0044's `@better-auth/api-key` add + `apiKey()` registration + create-apiKey ship *and*
+  `kampus`'s token-read + upload path ship. The end-to-end path (token in env → `kampus imge
+  upload` → stable URL → embed in markdown) is a **joint acceptance criterion across both
+  epics**. Minimum joint slice: `@better-auth/api-key` added + `apiKey()` registered +
+  create-apiKey reachable + `kampus`'s token-read + upload path.
 - **Harder / new cost:** the first client-side credential store (file layout, refresh, logout,
-  multi-account); a browser-assisted device/magic-link flow that does not exist yet; keeping
-  the CLI's API contract in step with the worker as products evolve; deciding monorepo-vs-own-
-  package distribution (see open questions).
+  multi-account); keeping the CLI's API contract in step with the worker as products evolve;
+  deciding monorepo-vs-own-package distribution (see open questions).
+- **API-versioning / compat is a distribution prerequisite.** `kampus` is a published,
+  out-of-repo client: a worker route rename silently breaks every installed agent unless the API
+  surface is **versioned** (or a contract is pinned/bundled with the client). Decide the
+  versioning/compat contract **before distribution**, not after the first breaking rename.
 - **Banned:** a per-product auth implementation; a subcommand that stores its own credential; a
   catch-all *repo* `cli` (0035 still holds for dev tooling — `kampus` is a client tool, not a
   loophole to fold migration/scaffolder verbs into); a hard v1 dependency on künye; a dynamic
@@ -117,17 +155,20 @@ not extend to it.
   by 0045** to record that its no-catch-all ban is scoped to repo/dev tooling and that client
   tooling unifies around shared identity. (See "On annotating 0035" — the amendment is a scope
   clarification, the decision text of 0035 is unchanged.)
-- **Deferred:** künye-based agent registration and agent-owned keys (pending
-  [#41](https://github.com/kamp-us/phoenix/issues/41)); a dynamic subcommand/plugin model;
-  non-pasaport identity providers.
+- **Deferred:** the browser-assisted `kampus auth login` (device-code/magic-link) flow, to a
+  **human-onboarding child** — v1 ships the PAT path only (Decision 3), also because pasaport's
+  `magicLink` does not really send yet; künye-based agent registration and agent-owned keys
+  (pending [#41](https://github.com/kamp-us/phoenix/issues/41)); a dynamic subcommand/plugin
+  model; non-pasaport identity providers.
 
 ### Open questions (resolve before / during build, not blocking ratification)
 
-- **Headless auth is the weak seam.** `kampus auth login` via device-code/magic-link assumes a
-  browser; an unattended agent has neither browser nor inbox. If the PAT is genuinely the
-  primary agent flow (Decision 3 says it is), then `auth login` is mostly a *human* convenience,
-  and the device/magic-link flow should be scoped accordingly — possibly deferred behind the PAT
-  path for v1 rather than built first. Decide which flow ships in v1.
+- **Headless auth — decided, not open (recorded here for the why).** Which flow ships v1 is
+  resolved in Decision 3: **v1 ships the PAT path only.** `kampus auth login` via
+  device-code/magic-link assumes a browser an unattended agent does not have, and pasaport's
+  `magicLink` does not really send yet (Context) — so the browser-assisted flow is **deferred to
+  a human-onboarding child**, not built first. What remains open is only *when* that child is
+  scheduled, not whether the PAT is primary.
 - **Credential storage security.** A plaintext `apiKey`/PAT under `~/.config/kampus/` is the
   simplest store and matches agent ergonomics (an agent can read a file; it cannot unlock a
   keychain non-interactively). But plaintext-at-rest is a real exposure (backups, dotfile sync,

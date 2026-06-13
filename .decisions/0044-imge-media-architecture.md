@@ -23,8 +23,9 @@ Constraints found on `main`:
 - **Bindings are declared through the worker, not the stack.** `alchemy.run.ts` only
   yields the `Phoenix` worker Tag; the worker's init wiring tells alchemy what to
   provision (ADRs 0026–0031, 0028). The `LiveDO` namespace is bound in `worker/index.ts`
-  init; D1 is bound in `worker/db/Database.ts` (the `Database` seam) off a Resource in
-  `worker/db/resources.ts` — not literally in `index.ts`. An R2 bucket follows the same
+  init; for D1 the `.bind(PhoenixDb)` call lives in `DatabaseLive` (`worker/db/Database.ts`)
+  off a Resource in `worker/db/resources.ts`, which `index.ts` consumes via the `Database`
+  seam — the bind is not literally in `index.ts`. An R2 bucket follows the same
   pattern: alchemy ships `Cloudflare.R2Bucket` with a `.bind()` mirroring D1's, plus
   native custom-domain and streaming-`put` support.
 - **Auth: a real user identity today, but only a *session* bearer for browsers.**
@@ -35,14 +36,26 @@ Constraints found on `main`:
   default, no `session.expiresIn` override), and it's harvested from a browser login. So
   it is **not** an agent credential — an unattended `report` agent has no browser session
   to derive one. The pasaport `user` (`user_profile` row) is the real, built identity;
-  durable agent credentials need the better-auth `apiKey` plugin, whose table is already
-  migrated (`apiKey` in the D1 baseline) but whose plugin is not yet enabled (Decision 3).
+  durable agent credentials use the better-auth `apiKey` plugin, whose table is already
+  migrated (`apiKey` in the D1 baseline); the plugin ships as a separate scoped package
+  (`@better-auth/api-key`), so enabling it is a dependency add, not a better-auth bump
+  (Decision 3, and the bullet below).
 - **künye does not exist yet.** The reputation/identity layer — the Künye DO, invite
   gates, karma-gated privileges, and *agent registration* — is an unbuilt design epic
   ([#41](https://github.com/kamp-us/phoenix/issues/41)). Only the karma *number* exists
   today (a `total_karma` column in pasaport, D1-direct per ADR 0009). So imge must **not**
   take a hard dependency on künye; it authenticates against the pasaport user that exists
   now, and künye-based gating is a future overlay (see Decision 3).
+- **The `apiKey` *table* is migrated; the plugin is a separate package to install.** The
+  `apiKey` table is in the D1 baseline and matches the apiKey-plugin schema. The plugin is
+  **not** in the `better-auth/plugins` barrel (only `bearer`, `magicLink`, `jwt`, `mcp`, …
+  are) — it ships as its own scoped package **`@better-auth/api-key`**, versioned in lockstep
+  with the better-auth family. An exact **`@better-auth/api-key@1.6.10`** exists whose
+  peer-deps (`better-auth ^1.6.10`, `@better-auth/core ^1.6.10`) match our current pins, with
+  a `./client` subpath for the SPA. So enabling agent credentials is a **dependency add +
+  register** at our current version — no better-auth bump — verified against the alchemy
+  better-auth integration per the dependency policy (ADR
+  [0038](0038-dependency-patches-local-only.md)). (See Decision 3.)
 - **Ethos:** "never build what you can install" — back the host with Cloudflare
   primitives, not custom blob storage.
 
@@ -74,14 +87,25 @@ cannot defer. All are settled below before `plan-epic` splits #102.
    v1 ships images.
 
 3. **Identity is the pasaport user; browsers use the session bearer, non-browser agents
-   use the `apiKey` plugin — enabled in v1.** The upload endpoint authenticates whatever
-   better-auth resolves and keys the object to the resolved pasaport user id — *not*
-   künye. Browsers present the existing session bearer. **Agents authenticate via
-   better-auth's `apiKey` plugin, which v1 enables** (the `apiKey` table is already
-   migrated; only the plugin registration is missing) — a durable, revocable credential an
-   unattended `report` agent can actually hold, unlike the ~7-day browser session token. No
-   bespoke token scheme. *How* an agent obtains and presents that `apiKey` is specified in
-   ADR [0045](0045-kampus-client-cli.md): the `kampus` client CLI's `kampus auth` issues and
+   use the `apiKey` plugin — added as a dependency in v1.** The upload endpoint
+   authenticates whatever better-auth resolves and keys the object to the resolved pasaport
+   user id — *not* künye. Browsers present the existing session bearer. **Agents authenticate
+   via better-auth's `apiKey` plugin.** The `apiKey` *table* is already migrated and matches
+   the plugin's schema; the plugin ships as the scoped package **`@better-auth/api-key`**
+   (with a `./client` for the SPA), and **`@better-auth/api-key@1.6.10` peer-matches our
+   current `better-auth`/`@better-auth/core@1.6.10` pins** — so v1 **adds that dependency to
+   the catalog and registers `apiKey()` in pasaport's plugins array** (beside `bearer()` /
+   `magicLink()` in `better-auth-live.ts`), no better-auth bump. Verify the
+   `@alchemy.run/better-auth` wrapper passes the plugin through (light prereq, per ADR
+   [0038](0038-dependency-patches-local-only.md)). The plugin is the right primitive: a
+   durable, revocable credential an unattended `report` agent can actually hold, unlike the
+   ~7-day browser session token, and no bespoke token scheme. **Threat model — borrowed identity, v1:** because künye does not
+   exist, an agent borrows a human's pasaport user, and the quota (Decision 6) is per-user — so
+   one shared `apiKey` means one quota, one blast radius, and all-or-nothing revocation for that
+   human. The plugin supports many keys per user, so v1 should issue **one `apiKey` per agent
+   instance**, giving per-agent revocation and rate-limiting granularity even before künye.
+   *How* an agent obtains and presents that `apiKey` is specified in ADR
+   [0045](0045-kampus-client-cli.md): the `kampus` client CLI's `kampus auth` issues and
    stores the credential, and `kampus imge upload` consumes it. **künye gating is a deferred
    overlay, not a v1 dependency:** once
    künye lands ([#41](https://github.com/kamp-us/phoenix/issues/41)) it can layer
@@ -99,6 +123,15 @@ cannot defer. All are settled below before `plan-epic` splits #102.
    **non-trivial** (it needs S3-API signing credentials the worker does not hold today),
    not a config toggle.
 
+   **v1 sequencing (both halves stay v1, built incrementally):** v1 splits into a
+   **pre-public internal slice** then a **public-delivery gate**. The internal slice —
+   add `@better-auth/api-key` + register the plugin + upload-through-worker + R2 + D1 metadata,
+   gated to a private/allowlisted delivery path (or the existing authed origin) — proves the agent loop
+   end-to-end. The **public-delivery gate** then ships before *any* public read: the cookieless
+   delivery domain + content-type sniffing + SVG defang + per-user rate/size/storage quotas
+   (Decisions 5–6). Every security requirement in Decisions 5–6 stays mandatory for v1; this
+   only orders them so v1 is buildable in two steps.
+
 5. **Stable, opaque public delivery is a v1 decision, not an implementation detail.** A
    media host's contract is that URLs never break. v1 fixes: (a) the public-read surface —
    a **dedicated delivery domain** (cookieless, see Decision 6), not ad-hoc `r2.dev`;
@@ -106,7 +139,10 @@ cannot defer. All are settled below before `plan-epic` splits #102.
    stable, unguessable, and don't leak a public/unlisted distinction; (c) the embedding
    contract — the returned URL renders directly as `![](url)` through GitHub's camo proxy
    and in pano/sözlük markdown. Content-hash keys also give free dedup + idempotent agent
-   retries.
+   retries. **Because "URLs never break" is a v1 contract, the policy for what happens to an
+   embedded image when its uploader (or their `apiKey`) is deleted is a v1 decision point — not
+   deferrable** (e.g. embedded URLs survive uploader/key deletion vs. break with it). General
+   deletion/GC of the rest of the object lifecycle stays specify-before-build (Consequences).
 
 6. **The served-content safety envelope ships in v1.** Hosting arbitrary bytes on our own
    origin is the classic image-host footgun, and the upload credential is user-scoped while
@@ -132,13 +168,21 @@ cannot defer. All are settled below before `plan-epic` splits #102.
 
 - **Easier:** one media substrate for all current and future media; agent uploads ride a
   durable better-auth `apiKey` credential + the pasaport user (no dependency on the unbuilt
-  künye), so the originating use case closes (the `report`/`triage` skills can gain an
-  upload-and-embed step); pano/sözlük markdown finally has a host to point image syntax at;
+  künye); pano/sözlük markdown finally has a host to point image syntax at;
   content-hash keys give free dedup + idempotent retries.
-- **New cost, owned in v1:** the first object-storage binding (R2 provisioning + a
-  dedicated cookieless delivery domain + object lifecycle); a per-object metadata schema in
-  D1; enabling the better-auth `apiKey` plugin; content-type sniffing + size/rate/quota
-  enforcement on the upload path.
+- **Joint acceptance with 0045 — the originating use case is NOT closed by imge alone.** imge
+  v1 enables a credential no agent can *use* without ADR [0045](0045-kampus-client-cli.md)'s
+  issuance (a token in env → `kampus imge upload` → stable URL → embed in markdown). The claim
+  "imge v1 closes the originating use case" is **false** until 0045's PAT path also ships; the
+  end-to-end agent path is a **joint acceptance criterion across both epics**. The minimum
+  joint slice: `@better-auth/api-key` added + `apiKey()` registered + create-apiKey reachable +
+  `kampus`'s token-read + upload path.
+- **New cost, owned in v1:** **adding the `@better-auth/api-key` dependency (`@1.6.10`,
+  peer-matches our pins) + registering `apiKey()` in pasaport** (small — table already migrated;
+  verify the `@alchemy.run/better-auth` wrapper passes the plugin through, per ADR
+  [0038](0038-dependency-patches-local-only.md)); the first object-storage binding (R2
+  provisioning + a dedicated cookieless delivery domain + object lifecycle); a per-object
+  metadata schema in D1; content-type sniffing + size/rate/quota enforcement on the upload path.
 - **Banned:** custom blob storage; a separate agent-only auth system; forking the upload
   surface by caller type; making Cloudflare Images the system of record; trusting
   client-declared content types; sequential/enumerable object keys; serving user content
@@ -148,9 +192,10 @@ cannot defer. All are settled below before `plan-epic` splits #102.
   (takedown review — distinct from the v1 mechanical limits); künye-based gating
   (reputation/agent overlay, pending #41).
 - **Still to specify before build (not blocking ratification):** object **deletion / GC**
-  and D1↔R2 orphan consistency (who can delete; what happens to an embedded image when its
-  uploader is deleted); **CORS** on the upload + delivery surfaces; **EXIF/GPS stripping**
-  on ingest (low-risk for screenshots, a privacy leak for phone photos later).
+  and D1↔R2 orphan consistency (who can delete) — *except* the uploader-deletion→embedded-URL
+  policy, which is a v1 decision per Decision 5; **CORS** on the upload + delivery surfaces;
+  **EXIF/GPS stripping** on ingest (low-risk for screenshots, a privacy leak for phone photos
+  later).
 - **Status `proposed`:** ratify the forks — R2-as-record · Images-as-transform ·
   pasaport-user identity with `apiKey` for agents · one surface (proxy-through-worker,
   capped) · opaque stable delivery · the v1 security/limits envelope — before `plan-epic`
