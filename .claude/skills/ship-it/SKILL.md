@@ -107,8 +107,10 @@ gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
         | sort_by(.submitted_at) | last | {state, at: .submitted_at}'
 
 # latest review-code marker comment (PASS or FAIL), with its create time
+# `^` anchors at the start of the body: select only a comment whose FIRST LINE is the
+# marker, not one that merely quotes the marker string somewhere in its body.
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("review-code:\\s*(PASS|FAIL)"; "i"))]
+  --jq '[.[] | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
         | sort_by(.created_at) | last | {body, at: .created_at}'
 ```
 
