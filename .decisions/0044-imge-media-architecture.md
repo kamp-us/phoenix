@@ -95,9 +95,11 @@ cannot defer. All are settled below before `plan-epic` splits #102.
    (with a `./client` for the SPA), and **`@better-auth/api-key@1.6.10` peer-matches our
    current `better-auth`/`@better-auth/core@1.6.10` pins** — so v1 **adds that dependency to
    the catalog and registers `apiKey()` in pasaport's plugins array** (beside `bearer()` /
-   `magicLink()` in `better-auth-live.ts`), no better-auth bump. Verify the
-   `@alchemy.run/better-auth` wrapper passes the plugin through (light prereq, per ADR
-   [0038](0038-dependency-patches-local-only.md)). The plugin is the right primitive: a
+   `magicLink()` in `better-auth-live.ts:89`), no better-auth bump. **Verified:** pasaport
+   builds better-auth directly (`makeBetterAuth({…, plugins:[…]})`) and the
+   `@alchemy.run/better-auth` wrapper is only the Effect service Tag (`auth: Effect<Auth<any>>`)
+   — it never references plugins, so `apiKey()` drops straight into the existing array with no
+   wrapper passthrough involved. The plugin is the right primitive: a
    durable, revocable credential an unattended `report` agent can actually hold, unlike the
    ~7-day browser session token, and no bespoke token scheme. **Threat model — borrowed identity, v1:** because künye does not
    exist, an agent borrows a human's pasaport user, and the quota (Decision 6) is per-user — so
@@ -178,9 +180,9 @@ cannot defer. All are settled below before `plan-epic` splits #102.
   joint slice: `@better-auth/api-key` added + `apiKey()` registered + create-apiKey reachable +
   `kampus`'s token-read + upload path.
 - **New cost, owned in v1:** **adding the `@better-auth/api-key` dependency (`@1.6.10`,
-  peer-matches our pins) + registering `apiKey()` in pasaport** (small — table already migrated;
-  verify the `@alchemy.run/better-auth` wrapper passes the plugin through, per ADR
-  [0038](0038-dependency-patches-local-only.md)); the first object-storage binding (R2
+  peer-matches our pins) + registering `apiKey()` in pasaport** (small — table already migrated,
+  and verified that pasaport builds better-auth directly so the plugin drops into its existing
+  array with no `@alchemy.run/better-auth` wrapper passthrough); the first object-storage binding (R2
   provisioning + a dedicated cookieless delivery domain + object lifecycle); a per-object
   metadata schema in D1; content-type sniffing + size/rate/quota enforcement on the upload path.
 - **Banned:** custom blob storage; a separate agent-only auth system; forking the upload
