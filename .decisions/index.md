@@ -52,3 +52,4 @@ One row per ADR. Read the file for the why.
 | [0045](0045-kampus-client-cli.md) | kampus Client CLI — One Authenticated Surface for Humans and Agents | accepted | 2026-06-13 |
 | [0046](0046-plan-epic-prd-grade-plans.md) | plan-epic emits PRD-grade epic plans — product layer + user stories, enforced story coverage, tracer-bullet children, autonomous (harness stays out) | accepted | 2026-06-13 |
 | [0047](0047-review-plan-gate.md) | The review-plan gate — deterministic plan-epic verification | accepted | 2026-06-13 |
+| [0048](0048-ship-it-merge-actor.md) | ship-it — the pipeline's single merge authority closes the loop (consumes review-code's PASS marker; sole merge step) | accepted | 2026-06-13 |
