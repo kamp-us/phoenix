@@ -81,7 +81,21 @@ tiebreaker. Apply the canonical label name (`type:bug`, etc.).
   file with identical public surface is a chore. Adding a capability that wasn't
   there is a feature. A dependency bump that *enables* nothing new is a chore.
 - **feature vs epic** — can one write-code agent finish it in a PR or two with a
-  clear path? Feature. Does it need a plan and sub-issues first? Epic.
+  clear path? Feature. Does it need a plan and sub-issues first? Epic. Judge the
+  *real* deliverable, not a shrunken one — **do not invent a "v1 scope" of your own
+  to make an issue fit in a PR**; if you have to carve the work down to call it a
+  feature, it's an epic and your carve-out is its first child. Tells that you're
+  looking at an epic wearing a feature's clothes:
+  - **Missing prerequisite infrastructure.** The capability depends on something
+    that doesn't exist anywhere yet (an email provider, a moderation backend, a
+    scheduled-job mechanism). "Path to building it is clear" is false by definition.
+  - **The capability implies new surfaces.** A bookmark needs a saved-items view; a
+    report button needs a review surface; a setting needs somewhere its effect shows.
+    If acting on the capability requires UI/endpoints nobody has built, count those
+    units.
+  - **Your own enrichment hedges.** If you catch yourself writing "if this balloons,
+    split the X part out" or "Y is explicitly out of scope for v1", that hedge is
+    the epic boundary talking — classify accordingly instead of scoping around it.
 
 When genuinely torn, pick the type that best describes the *deliverable* (recorded
 choice / knowledge / code / plan-and-children) and note the call in the enrichment.
@@ -171,7 +185,10 @@ What the rewrite adds:
   the write-code agent shouldn't have to reverse-engineer what success looks like.
 - **No invention.** Enrich from what you *found*, not what you wish were true. If the
   original is uncertain, keep the uncertainty — don't manufacture a false plan. Mark
-  your additions as triage's read where it helps ("Triage note: …").
+  your additions as triage's read where it helps ("Triage note: …"). Scope-shrinking
+  is invention too: don't write a reduced "v1 scope" into the body to make an epic
+  look feature-sized (see the feature-vs-epic tells in Step 2) — scoping decisions
+  belong to `plan-epic` and the owner, not triage.
 
 Preserve the original **exactly** in the `<details>` block — it's the provenance
 record and the reporter's unedited words. If the body has its own triple-backtick
