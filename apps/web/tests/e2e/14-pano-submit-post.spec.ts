@@ -38,7 +38,7 @@ test.describe("Pano submitPost", () => {
 
 		// On success the page navigates to /pano/<new-post-id>; assert by URL
 		// pattern + the rendered title on the detail page.
-		await page.waitForURL(/\/pano\/[A-Za-z0-9_-]+$/, {timeout: 15_000});
+		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
 		// PanoPostDetail renders the new post via the `post(idOrSlug)` resolver
 		// which RPCs into the freshly-created PanoPost DO.
