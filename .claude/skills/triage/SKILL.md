@@ -272,9 +272,12 @@ ones you genuinely can't classify or act on yet.
 
 **Needs-info leaves the queue:** remove `status:needs-triage` when you apply
 `status:needs-info` (same DELETE call as the triaged path in Step 6). A parked
-question must not re-surface in every sweep and every report agent's pre-filing
-re-query; it re-enters the queue when whoever answers swaps the labels back
-(`status:needs-info` → `status:needs-triage`).
+question must not re-surface in every sweep and queue listing; it re-enters the
+queue when whoever answers swaps the labels back (`status:needs-info` →
+`status:needs-triage`). It *does* still appear in the keyword-search half of the
+pre-filing re-query, since it stays open — that's intentional, don't "fix" the
+search command to filter it out: a report agent finding a needs-info twin should
+comment there rather than file anew.
 
 ---
 
