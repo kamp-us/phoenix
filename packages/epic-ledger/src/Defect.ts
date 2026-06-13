@@ -1,7 +1,7 @@
 /**
  * The closed defect vocabulary the floor validator emits, as Effect Schema.
  *
- * `DEFECT_TYPES` is the single source of the 7-member enum; `DefectType` is its
+ * `DEFECT_TYPES` is the single source of the closed enum; `DefectType` is its
  * `Schema.Literals` mirror and `Defect` the per-finding struct. The order of
  * `DEFECT_TYPES` is load-bearing: `validateLedger` sorts its output by this
  * order first (then by issue number), so the same ledger always yields the same
@@ -11,13 +11,21 @@
  */
 import * as Schema from "effect/Schema";
 
-/** The closed 7-type defect enum, in canonical emission order. */
+/**
+ * The closed defect enum, in canonical emission order. `UNCOVERED_STORY` sits
+ * with the epic-scoped coverage defects (next to `ORPHAN_CHILD`) and
+ * `MISSING_STORY` with the child-content defects (next to `ZERO_AC`) — the two
+ * halves of the story-coverage invariant (ADR 0046/0047): every declared story
+ * is covered by ≥1 child, every linked child traces to ≥1 story.
+ */
 export const DEFECT_TYPES = [
 	"MISSING_DEPS_SECTION",
 	"DEP_CYCLE",
 	"DANGLING_DEP",
 	"ORPHAN_CHILD",
+	"UNCOVERED_STORY",
 	"ZERO_AC",
+	"MISSING_STORY",
 	"MISSING_LABEL",
 	"NEEDS_TRIAGE_LABEL",
 ] as const;

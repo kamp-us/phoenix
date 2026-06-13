@@ -1,5 +1,10 @@
 import {assert, describe, it} from "@effect/vitest";
-import {countAcceptanceCriteria, parseDependencyGraph} from "./markdown.ts";
+import {
+	countAcceptanceCriteria,
+	parseChildStories,
+	parseDependencyGraph,
+	parseEpicStories,
+} from "./markdown.ts";
 
 describe("countAcceptanceCriteria", () => {
 	it("counts checkbox items under an `### Acceptance criteria` heading", () => {
@@ -136,5 +141,61 @@ describe("parseDependencyGraph", () => {
 		);
 		assert.deepStrictEqual(a.nodes, b.nodes);
 		assert.deepStrictEqual(a.edges, b.edges);
+	});
+});
+
+describe("parseEpicStories", () => {
+	it("reads the leading numbers of the ordered list under `### User stories`", () => {
+		const body = [
+			"### User stories",
+			"1. As a planner, I want X.",
+			"2. As an agent, I want Y.",
+			"3. As a moderator, I want Z.",
+		].join("\n");
+		assert.deepStrictEqual(parseEpicStories(body), [1, 2, 3]);
+	});
+
+	it("returns [] when there is no `### User stories` section", () => {
+		assert.deepStrictEqual(parseEpicStories("### What changes\nnothing here"), []);
+	});
+
+	it("stops at the next same-or-higher-level heading", () => {
+		const body = ["### User stories", "1. counted", "### Goal", "2. not counted"].join("\n");
+		assert.deepStrictEqual(parseEpicStories(body), [1]);
+	});
+
+	it("tolerates the singular heading and `N)` item style", () => {
+		assert.deepStrictEqual(parseEpicStories("### User story\n1) only one"), [1]);
+	});
+
+	it("is order-independent: same numbers in any order yield the same sorted set", () => {
+		const a = parseEpicStories("### User stories\n1. a\n2. b\n3. c");
+		const b = parseEpicStories("### User stories\n3. c\n1. a\n2. b");
+		assert.deepStrictEqual(a, b);
+	});
+});
+
+describe("parseChildStories", () => {
+	it("reads a comma/space-separated `**Stories:**` ref list", () => {
+		assert.deepStrictEqual(parseChildStories("**Stories:** 1, 3\n### What to build"), [1, 3]);
+	});
+
+	it("returns undefined when there is no `**Stories:**` line", () => {
+		assert.strictEqual(parseChildStories("### What to build\njust prose"), undefined);
+	});
+
+	it("returns [] for the explicit pure-infra marker", () => {
+		assert.deepStrictEqual(
+			parseChildStories("**Stories:** none (pure infra — see What to build)"),
+			[],
+		);
+	});
+
+	it("tolerates a bare (unbolded) `Stories:` line", () => {
+		assert.deepStrictEqual(parseChildStories("Stories: 2 4"), [2, 4]);
+	});
+
+	it("dedupes and sorts the refs", () => {
+		assert.deepStrictEqual(parseChildStories("**Stories:** 3, 1, 3"), [1, 3]);
 	});
 });
