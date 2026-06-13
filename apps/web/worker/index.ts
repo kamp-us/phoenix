@@ -1,31 +1,12 @@
 /**
  * The single phoenix worker, on alchemy-effect (ADR 0026–0031).
  *
- * Modular `.make()` form (ADR 0028): `class Phoenix extends Cloudflare.Worker<
- * Phoenix, {}, LiveDO>()(id, props)` is the worker Tag (declaring the single
- * hosted live-fan-out DO as its `Deps` contract), and the `export default
- * Phoenix.make(body)` Layer is the implementation. Splitting the two lets the
- * worker host the DO and provide its `.make()` Layer (the inline-body form can't
- * take a `Deps` type param). The body runs in two phases: the init phase binds
- * resources (D1 + the `LiveDO` namespace) once per isolate; the runtime phase
- * returns the `fetch` handler — an `HttpRouter` compiled with
- * `HttpRouter.toHttpEffect`. The SPA is served from the `assets` prop, with
- * `runWorkerFirst` keeping the worker-owned paths (`/api/*`, `/fate`, `/fate/*`)
- * from being intercepted by the SPA shell.
- *
- * This replaces `wrangler.jsonc` (bindings/DOs/migrations/assets/vars) and the
- * Hono `export default {fetch}` entry. The full HTTP surface is wired here via
- * `makeAppLive` (`http/app.ts`): `GET /api/health`, the fate data plane
- * (`POST /fate`), better-auth (`* /api/auth/*`), and the live SSE route
- * (`* /fate/live` → LiveDO). The feature services live under
- * `worker/features/` (the fate config + route under `worker/features/fate/`).
- *
- * Dev vs prod for the SPA (ADR 0030): the `assets` + `runWorkerFirst` config
- * below is the *production* single-worker precedence — at the Cloudflare edge,
- * non-worker paths are answered by the asset server and the worker only sees the
- * `runWorkerFirst` globs. In the local dev loop `vite dev` serves the SPA (with
- * HMR) and proxies `/api` + `/fate*` to this worker; under bare
- * `alchemy dev` this worker is API-only, so a non-API path has no SPA to return.
+ * Modular `.make()` form (ADR 0028): the `Phoenix` class is the worker Tag
+ * (declaring the hosted `LiveDO` as its `Deps`), `Phoenix.make(body)` is the
+ * implementation Layer. Splitting them lets the worker host the DO and provide
+ * its `.make()` Layer (the inline-body form can't take a `Deps` type param). The
+ * body runs in two phases: init binds resources once per isolate; runtime returns
+ * the `fetch` handler.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
 import {RuntimeContext} from "alchemy";
@@ -43,13 +24,10 @@ import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {makeAppLive} from "./http/app.ts";
 
 /**
- * Lift a publish-side {@link PublishMessage} to the {@link DeliverFrame} the
- * unified `LiveDO.publish` enqueues. `kind` maps to the fate SSE event name
- * (`entity → next`, `connection → connection`); `event` is the already
- * inline-resolved frame body the mutation produced. The frame's `id` (the fate
- * subscription id) is set per-subscriber by the topic instance from each
- * subscriber row at delivery, so it is left empty here — one publish fans out to
- * many subscriptions, each with its own id.
+ * Lift a publish-side `PublishMessage` to the `DeliverFrame` `LiveDO.publish`
+ * enqueues. The frame's `id` (the fate subscription id) is left empty here — one
+ * publish fans out to many subscriptions, each stamped with its own id by the
+ * topic instance at delivery.
  */
 function deliverFrameOf(message: PublishMessage): DeliverFrame {
 	return {
@@ -62,46 +40,28 @@ function deliverFrameOf(message: PublishMessage): DeliverFrame {
 
 export class Phoenix extends Cloudflare.Worker<
 	Phoenix,
-	// The worker's own RPC shape — empty: this worker exposes no callable RPC
-	// surface, only `fetch` (which alchemy's `WorkerShape` always adds). `{}` is
-	// the empty-shape sentinel alchemy's `MakeShape` collapses to that base
-	// `{fetch}`; biome bans bare `{}` as a type, but here it is load-bearing (no
-	// other type expresses "no extra shape" without forcing every key to `never`,
-	// which `{fetch}` then fails to satisfy).
+	// `{}` is alchemy's empty-RPC-shape sentinel (this worker exposes only
+	// `fetch`); biome bans bare `{}`, but no other type expresses "no extra shape"
+	// without forcing keys to `never`, which `{fetch}` then fails to satisfy.
 	// biome-ignore lint/complexity/noBannedTypes: alchemy's empty-RPC-shape sentinel
 	{},
-	// The unified live-fan-out DO this worker hosts — declared as its public
-	// `Deps` contract (ADR 0028) so the worker can `yield*` its Tag in init and
-	// provide its `.make()` Layer below. One `LiveDO` namespace plays both the
-	// connection and topic roles, keyed by instance name (`connection:`/`topic:`).
+	// The hosted live-fan-out DO, declared as the worker's `Deps` (ADR 0028) so it
+	// can `yield*` the Tag in init and provide `.make()` below.
 	LiveDO
 >()("phoenix", {
 	main: import.meta.filename,
-	// The worker's env bindings, per-key from the `effect/Config` constants in
-	// `worker/config.ts`. Alchemy resolves each Config at deploy from the
-	// deploy-time `process.env` and binds it; runtime code reads the same value
-	// off the ConfigProvider alchemy auto-wires from this env.
-	//   - `ENVIRONMENT` — non-redacted Config → `plain_text` binding (fail-closed
-	//     to "production"). Read via `yield* AppConfig` (BetterAuthLive's dev auth
-	//     URLs + magic-link gate, the health probe).
-	//   - `BETTER_AUTH_SECRET` — `Config.redacted` → `secret_text` binding (a
-	//     Cloudflare secret). Read via `yield* betterAuthSecret` in BetterAuthLive
-	//     to sign sessions. Required at deploy (the `dev:worker` script supplies a
-	//     dev value; CI/prod supply the real one) — a missing secret fails closed.
+	// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
+	// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
+	// resolves each at deploy and runtime reads the same value off the auto-wired
+	// ConfigProvider.
 	env: {ENVIRONMENT: environment, BETTER_AUTH_SECRET: betterAuthSecret},
 	assets: {
-		// The built SPA shell. `vite build` (no `@cloudflare/vite-plugin`,
-		// ADR 0030) emits the client directly into `dist/client`; the path is
-		// relative to the alchemy CLI's working dir (`apps/web`). At the
-		// Cloudflare edge the worker serves this via `assets` + `runWorkerFirst`
-		// (below) with no proxy; the dev proxy in `vite.config.ts` exists only
-		// for the two-process dev loop.
+		// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
+		// relative to the alchemy CLI's `apps/web` cwd). At the edge the worker
+		// serves it; the `runWorkerFirst` globs keep the worker-owned paths from
+		// being shadowed by the SPA shell (a missing entry returns the shell for
+		// GET and 405 for POST).
 		directory: "./dist/client",
-		// The SPA shell answers any non-worker path; the worker-owned paths
-		// are listed in `runWorkerFirst` so the asset server doesn't shadow
-		// them (a missing entry returns the shell for GET and 405 for POST).
-		// beta.52 flattened the asset config onto `AssetsProps` (no `config`
-		// wrapper): `notFoundHandling` / `runWorkerFirst` sit beside `directory`.
 		notFoundHandling: "single-page-application",
 		runWorkerFirst: ["/api/*", "/fate", "/fate/*"],
 	},
@@ -109,91 +69,55 @@ export class Phoenix extends Cloudflare.Worker<
 	observability: {enabled: true},
 }) {}
 
-/**
- * The worker implementation Layer (modular `.make()` form, ADR 0028). Splitting
- * the class (a lightweight identity, with the hosted live-fan-out DO declared in
- * its `Deps` type param) from `.make()` lets the worker host `LiveDO` and provide
- * its `.make()` Layer without the inline-body form's `InitReq extends
- * WorkerServices | PlatformServices` constraint — the `LiveDO` Tag `yield*`-ed in
- * init is dischargeable here.
- */
 export default Phoenix.make(
 	Effect.gen(function* () {
 		// ── INIT PHASE (deploy time + once per isolate) ──
-		// Bind the resources. At deploy time each call records the binding's
-		// metadata for the Cloudflare API; at runtime it resolves the typed client.
-		// Everything bound here is in scope for the worker's whole lifetime.
+		// Bind the resources: at deploy each call records binding metadata for the
+		// Cloudflare API; at runtime it resolves the typed client, in scope for the
+		// isolate's lifetime. `live` stays load-bearing through `liveLayer`'s
+		// closures below — drop this `yield*` and the type checker fails there, so
+		// an unwired binding is a compile error, never a runtime `undefined`.
 		const live = yield* LiveDO;
 
-		// `live` stays load-bearing through the `liveLayer` closures' `getByName(...)`
-		// calls below — drop the `yield*` above and the type checker fails at that
-		// usage, so an unwired binding is a compile error, never a runtime
-		// `undefined`.
-
 		// Resolve the raw D1 handle from the `Database` seam ONCE in init (ADR
-		// 0040). `DatabaseLive` (provided in the outer `Effect.provide`)
-		// resolves the `PhoenixDb` binding; wrapping the resolved handle in a
-		// `Layer.succeed(Database)` gives the runtime build (below) a stable,
-		// dependency-free `databaseLayer` whose value `DrizzleLive` and
-		// `BetterAuthLive` both derive from — one shared handle, type-enforced.
-		// It feeds ONLY the runtime construction: `makeAppLive`'s `fateLayer` is
-		// the runtime-derived context layer (`R = never`), so the routes never
-		// rebuild the seams per request (ADR 0041).
+		// 0040) and wrap it dependency-free for the runtime build below, so the
+		// routes never rebuild the seams per request (ADR 0041). `DatabaseLive`
+		// (outer `Effect.provide`) resolves `PhoenixDb`; the shared handle feeds
+		// both `DrizzleLive` and `BetterAuthLive`.
 		const raw = yield* Database;
 		const databaseLayer = Layer.succeed(Database)(raw);
 
-		// Resolve the `BetterAuth` Context tag (`@alchemy.run/better-auth`) here in
-		// init — the layer (`BetterAuthLive`, provided below) constructs the
-		// `makeBetterAuth(...)` instance once and caches it. Yielding it here
-		// materializes the cached service, so `Pasaport.validateSession` (which runs
-		// `auth.api.getSession(...)` per request) and the `/api/auth/*` route (which
-		// runs `auth.handler(request)`) share one instance — sign + validate with
-		// the same secret.
+		// Resolve the `BetterAuth` service ONCE in init (the cached
+		// `makeBetterAuth(...)` instance from `BetterAuthLive`, provided below) so
+		// `Pasaport.validateSession` and the `/api/auth/*` handler share one
+		// instance — sign + validate with the same secret.
 		const betterAuth = yield* BetterAuth.BetterAuth;
 		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
 
-		// ── THE ONE WORKER-LEVEL RUNTIME (ADR 0041/0043 — init-only wiring) ──
-		// Build exactly one `ManagedRuntime` per isolate from `PhoenixFateLive`
-		// (its `R` is `Database | BetterAuth`, both provided here from the
-		// init-resolved `databaseLayer` + `betterAuthLayer`). The runtime story —
-		// layer-build vehicle only, no runtime on the request path, the shared
-		// memoMap, the never-dispose deviation — lives in `fate/layers.ts`
-		// (`makeFateRuntime` + the module doc); its built context reaches the
-		// routes as `fateLayer`.
+		// The one worker-level runtime (ADR 0041/0043 — init-only wiring): exactly
+		// one per isolate from `PhoenixFateLive` (`R = Database | BetterAuth`, both
+		// provided here). It is a layer-build vehicle only, no runtime on the
+		// request path; the full story (shared memoMap, never-dispose deviation)
+		// lives in `fate/layers.ts`. Its built context reaches the routes as
+		// `fateLayer`.
 		const {contextLayer: fateLayer} = makeFateRuntime(
 			PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 		);
 
-		// NO init-time warmup (`yield*`-ing the runtime's `contextEffect`) — deliberately.
-		// Workerd disallows async/timer work in the isolate's init (global) scope,
-		// so forcing the layer build here stalls the worker before it can serve
-		// (observed: with a warmup the T3 harness's `/api/health` poll never
-		// succeeds). The layer builds lazily on the first request instead.
-		// Config validation does NOT wait for that first
-		// request: the same `collectConfigIssues` walk runs at BUILD time inside
-		// `FateExecutor.toCodegenServer` (`schema.ts`), so `vite build` — which
-		// every deploy runs — fails on duplicate wire names / missing sources
-		// before the worker exists.
+		// NO init-time warmup (`yield*`-ing the runtime's `contextEffect`) —
+		// deliberately. Workerd disallows async/timer work in init (global) scope,
+		// so forcing the layer build here stalls the worker before it can serve.
+		// The layer builds lazily on the first request instead. Config validation
+		// does NOT wait for it: the same `collectConfigIssues` walk runs at BUILD
+		// time inside `FateExecutor.toCodegenServer` (`schema.ts`), so `vite build`
+		// fails on duplicate wire names / missing sources before the worker exists.
 
-		// The live path (ADR 0028/0029): the unified `LiveDO` namespace is resolved
-		// ONCE in init (`live`, above) and wrapped as worker-level services. One
-		// namespace plays both roles, keyed by instance name.
-		//   - `LiveTopics.publish` fans a mutation's `live.*` out via typed RPC
-		//     (`topicOf(live, key).publish({topicKey, frame, limits})`) — no `env`
-		//     lookup, no `idFromName`, no string-URL `stub.fetch`. The route builds
-		//     the per-request `LiveLimits` and the publish frame is lifted from the
-		//     `PublishMessage` by `deliverFrameOf`.
-		//   - `LiveConnections` opens the SSE stream (forwarding the request to a
-		//     connection-role `fetch`) and drives subscribe/unsubscribe RPC through
-		//     `connectionOf(live, id)` — addressing and the name grammar live at
-		//     that one seam in `live-do.ts`. The route resolves a subscribe's topic
-		//     keys + limits before calling.
-		// The cross-role fan-out (topic→connection deliver, connection→topic
-		// register) rides the DO's OWN namespace captured in its init closure
-		// (`live-do.ts`), so the RPC methods' `R` is `never` — no per-call sibling
-		// Tag. At THIS (worker) call seam there is nothing to discharge: every
-		// method already has `R = never`, so no `Effect.provide(workerContext)` cast
-		// is needed (the old split-DO sibling cast is gone).
+		// The live path (ADR 0028/0029): the unified `LiveDO` namespace resolved
+		// once above, wrapped as worker-level services. One namespace plays both
+		// roles, keyed by instance name. Addressing + name grammar live at the
+		// `live-do.ts` seam. Cross-role fan-out rides the DO's OWN namespace
+		// captured in its init closure, so every method's `R` is `never` — nothing
+		// to discharge at this worker call seam.
 		const liveLayer = Layer.mergeAll(
 			Layer.succeed(LiveTopics)(
 				LiveTopics.of({
@@ -213,25 +137,17 @@ export default Phoenix.make(
 			),
 		);
 
-		// Capture the worker's ambient `RuntimeContext` (the alchemy runtime-env
-		// service this isolate runs inside). better-auth's `fetch`/`auth` carry an
-		// undischarged `RuntimeContext` in their `R` (the reference type is
-		// `HttpEffect<RuntimeContext>`), lifted into the `/api/auth/*` route's
-		// per-request requirements by `HttpRouter.add`. `serve` passes `Req`
-		// through rather than auto-providing it, so the worker discharges it for
-		// its own request handler — `makeAppLive` feeds it into `provideRequest`.
+		// Capture the worker's ambient `RuntimeContext`. better-auth's `fetch`/`auth`
+		// carry it undischarged in their `R`, lifted into the `/api/auth/*` route's
+		// per-request requirements by `HttpRouter.add`; `makeAppLive` feeds this into
+		// `provideRequest` so the worker discharges it for its own handler.
 		const runtimeContext = yield* RuntimeContext;
 
-		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027):
-		//   - typed JSON via an `HttpApiBuilder` group: `GET /api/health`,
-		//   - raw `Request` via imperative `HttpRouter.add`: `POST /fate`,
-		//     `* /fate/live` (SSE → LiveDO), `* /api/auth/*` (better-auth).
-		// `makeAppLive` discharges the raw routes' worker-level requirements with
-		// `HttpRouter.provideRequest(...)` and wires the health group's platform
-		// stubs (`http/app.ts`).
-		// Provide the INIT-RESOLVED `betterAuth` service to the routes — NOT
-		// `BetterAuthLive`; the why lives on `makeAppLive`'s `betterAuthLayer`
-		// property doc (`http/app.ts`).
+		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027). `makeAppLive`
+		// discharges the raw routes' worker-level requirements via
+		// `provideRequest` and wires the health group's platform stubs
+		// (`http/app.ts`). Note this passes the INIT-RESOLVED `betterAuth` service,
+		// not `BetterAuthLive` (why: `makeAppLive`'s `betterAuthLayer` doc).
 		const AppLive = makeAppLive({
 			fateLayer,
 			liveLayer,
@@ -243,28 +159,17 @@ export default Phoenix.make(
 		return {fetch: AppLive.pipe(HttpRouter.toHttpEffect)};
 	}).pipe(
 		// One combined provide (chaining multiple `Effect.provide` can break layer
-		// lifecycle). The Layers:
-		//   - `D1ConnectionLive` satisfies `D1Connection.bind`'s `R` requirement —
-		//     `DatabaseLive` (provided into `BetterAuthLive` below) binds `PhoenixDb`
-		//     through it.
-		//   - `LiveDOLive` is the unified live-fan-out DO in `.make()` form
-		//     (ADR 0028): it registers the single DO class with the worker's exports
-		//     and resolves the `LiveDO` Tag the init phase yields. Cross-role calls
-		//     ride the DO's OWN namespace captured in its init closure (not a sibling
-		//     Tag), so the Layer requires only `Worker` — there is no circular Layer
-		//     dependency to break, unlike the old `ConnectionDOLive` ↔ `TopicDOLive`
-		//     pair this replaces.
-		//   - `BetterAuthLive` (`features/pasaport/better-auth-live.ts`) satisfies the
-		//     `BetterAuth` Context tag yielded above + provides `betterAuth.fetch` to
-		//     the `/api/auth/*` route. It derives its raw d1 from the `Database` seam
-		//     (ADR 0040), so `DatabaseLive` is provided into it here.
+		// lifecycle). `LiveDOLive` registers the unified DO and resolves the
+		// `LiveDO` Tag (no circular Layer dependency, unlike the old
+		// `ConnectionDOLive` ↔ `TopicDOLive` pair it replaces). `BetterAuthLive`
+		// satisfies the `BetterAuth` tag and derives its raw d1 from the `Database`
+		// seam (ADR 0040), so `DatabaseLive` is provided into it.
 		Effect.provide(
 			Layer.mergeAll(
 				LiveDOLive,
-				// `DatabaseLive` resolves `PhoenixDb`; `BetterAuthLive` derives its raw
-				// d1 from it. `provideMerge` keeps both `Database` (yielded in init) and
-				// `BetterAuth` in scope while satisfying the dependency in build order
-				// (a flat `mergeAll` would run them in parallel and not wire it).
+				// `provideMerge` keeps both `Database` (yielded in init) and
+				// `BetterAuth` in scope while wiring the dependency in build order (a
+				// flat `mergeAll` would run them in parallel and not wire it).
 				BetterAuthLive.pipe(Layer.provideMerge(DatabaseLive)),
 			).pipe(Layer.provideMerge(Cloudflare.D1ConnectionLive)),
 		),

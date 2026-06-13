@@ -1,17 +1,10 @@
 /**
- * Sözlük root query resolvers — `term(slug)`.
+ * Sözlük root query resolvers — `term(slug)`, the detail page.
  *
- * A `Fate.query` def + `Effect.fn("term")` pair
- * (`.patterns/fate-effect-operations.md`). Query resolvers return shaped
- * output directly — they are **not** masked through a source, so the resolver
- * builds the exact wire shape the client selected (including nested
- * connections).
- *
- * Roots:
- *   - `term(slug)` — the sozluk detail page. Returns the `Term` entity; when the
- *     selection includes `definitions`, it carries a pre-built `ConnectionResult`
- *     paged by the DB keyset (`Sozluk.listDefinitionsKeyset`) in the canonical
- *     term-page order. See the connection note in `.patterns/fate-connections.md`.
+ * Query resolvers return shaped output directly (not masked through a source),
+ * so the resolver builds the exact wire shape the client selected, including the
+ * nested `definitions` connection paged by the DB keyset (ADR 0019; see
+ * `.patterns/fate-effect-operations.md`, `.patterns/fate-connections.md`).
  */
 
 import {hasNestedSelection} from "@nkzw/fate/server";
@@ -24,13 +17,10 @@ import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
 import {TermView} from "./views.ts";
 
-/** Default page size for the nested `Term.definitions` connection. */
 const DEFINITIONS_PAGE_SIZE = 50;
 
-/**
- * `term(slug)` args. Nested connection args are scoped under the field path
- * (`args.definitions.{first,after}`), matching fate's `getScopedArgs`.
- */
+// Nested connection args are scoped under the field path
+// (`args.definitions.{first,after}`), matching fate's `getScopedArgs`.
 const TermArgs = Schema.Struct({
 	slug: Schema.String,
 	definitions: connectionArgs(),
@@ -47,16 +37,11 @@ export const queries = {
 			const {user} = yield* CurrentUser;
 			const viewerId = user?.id ?? null;
 
-			// Build the `Term` row to the view's scalar shape: the detail `TermPage`
-			// maps onto the `TermSummaryRow`-shaped view here.
 			const base = toTermFromPage(page);
 
-			// `definitions` resolves to a `ConnectionResult` only when selected,
-			// paged by the DB keyset. The native path doesn't auto-invoke a
-			// nested relation's `connection` executor for a hand-built source, so
-			// the resolver delivers the connection inline (see
-			// fate-connections.md); the keyset, cursor, and node shape match the
-			// source `connection` executor exactly.
+			// The native path won't auto-invoke a nested relation's `connection`
+			// executor for a hand-built source, so the resolver delivers the
+			// connection inline when selected (see `.patterns/fate-connections.md`).
 			if (!hasNestedSelection(select, "definitions")) {
 				return base;
 			}

@@ -12,11 +12,7 @@ export type LandingTerm = TermRow & {
 	agoLabel?: string;
 };
 
-/**
- * The landing-stats selection — the four counters + the build `version` the SPA
- * renders. `LandingStats` is a singleton entity (constant `id`) served by the
- * `queries.landingStats` client root.
- */
+/** `LandingStats` is a singleton entity (constant `id`), served by `queries.landingStats`. */
 const LandingStatsView = view<LandingStats>()({
 	id: true,
 	totalDefinitions: true,

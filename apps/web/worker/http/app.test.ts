@@ -1,21 +1,11 @@
 /**
  * HTTP surface on `HttpRouter` + `HttpApiBuilder`, Hono-free (ADR 0027).
  *
- * Drives the *compiled* application — `HttpRouter.toHttpEffect(makeAppLive(...))`,
- * the exact effect the worker returns as `fetch` — over a `node:sqlite`-backed
- * D1 (the same stand-in the fate bridge tests use). Each "request" provides the
- * worker-level services (`Cloudflare.Request`, `WorkerEnvironment`,
- * `WorkerExecutionContext`, `HttpServerRequest`, `Scope`) exactly as the alchemy
- * worker runtime does, then asserts on the `Response`.
- *
- * Covers the acceptance criteria end-to-end through the real router:
- *   - `GET /api/health` is an `HttpApiBuilder` group → 200 JSON.
- *   - `/api/auth/*` (better-auth) signs a user up against the same D1 tables and
- *     issues a session cookie; that cookie makes an authenticated fate `me`
- *     request succeed end-to-end.
- *
- * Runs in the node pool (the alchemy worker can't load into
- * `@cloudflare/vitest-pool-workers` yet).
+ * Drives the *compiled* app — `HttpRouter.toHttpEffect(makeAppLive(...))`, the
+ * exact effect the worker returns as `fetch` — over a `node:sqlite`-backed D1,
+ * providing the worker-level services exactly as the alchemy runtime does, then
+ * asserting on the `Response`. Runs in the node pool (the alchemy worker can't
+ * load into `@cloudflare/vitest-pool-workers` yet).
  */
 import type {BaseRuntimeContext} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -34,10 +24,8 @@ import {layerTest, makeRealAuthForTest} from "../features/pasaport/better-auth.t
 import {makeAppLive} from "./app.ts";
 
 /**
- * A no-op live layer for the HTTP-surface tests — these cases exercise health /
- * auth / fate, not the live SSE path (the live fan-out has its own
- * `features/fate-live/do.test.ts`). `publish` swallows; the connection RPCs are
- * never hit by these cases.
+ * A no-op live layer — these cases exercise health / auth / fate, not the live
+ * SSE path (that has its own `features/fate-live/do.test.ts`).
  */
 const liveLayer = Layer.mergeAll(
 	Layer.succeed(LiveTopics)(LiveTopics.of({publish: () => Effect.void})),
@@ -51,7 +39,6 @@ const liveLayer = Layer.mergeAll(
 );
 
 let sqlite: SqliteD1;
-/** The compiled `AppLive` driven by every case. */
 let appLayer: ReturnType<typeof makeAppLive>;
 
 const ENV = {
@@ -64,12 +51,8 @@ const ENV = {
 const EXEC_CTX = {waitUntil: () => {}, passThroughOnException: () => {}};
 
 /**
- * Drive one request through the compiled app. Compiles `appLayer` with
- * `toHttpEffect`, runs the inner app effect with the worker-level services the
- * alchemy runtime would provide (`Cloudflare.Request`/`WorkerEnvironment`/
- * `WorkerExecutionContext` + `HttpServerRequest`), and returns the web
- * `Response`. Everything runs inside one `Scope` so the built layer stays alive
- * for the inner effect.
+ * Drive one request through the compiled app. Everything runs inside one `Scope`
+ * so the built layer stays alive for the inner effect.
  */
 async function fetch(
 	appLayer: ReturnType<typeof makeAppLive>,
@@ -88,10 +71,8 @@ async function fetch(
 		Effect.provideService(Cloudflare.Request, request),
 		Effect.provideService(Cloudflare.WorkerEnvironment, ENV as never),
 		Effect.provideService(Cloudflare.WorkerExecutionContext, EXEC_CTX as never),
-		// The health handler reads `ENVIRONMENT` via `yield* AppConfig` off the
-		// `ConfigProvider` the alchemy runtime auto-wires from the bound env
-		// (`ConfigProvider.fromUnknown(env)`, `WorkerBridge`). Mirror that here so
-		// the read resolves `development` from the same `ENV` snapshot.
+		// Mirror the `ConfigProvider` alchemy auto-wires from the bound env, so the
+		// health handler's `yield* AppConfig` read resolves from the same `ENV`.
 		Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown(ENV)),
 		Effect.scoped,
 	);
@@ -102,48 +83,33 @@ beforeAll(() => {
 	sqlite = makeSqliteTestDb();
 
 	// ONE database for the whole test (ADR 0040): a single `node:sqlite` handle
-	// behind the `Database` seam. `makeFateLayer`'s `Drizzle` and the better-auth
-	// adapter below both run on this handle — the old dual-drizzle accident (a
-	// separate `createDrizzle(...)` threaded into `makeFateLayer` alongside
-	// better-auth's own drizzle) is gone.
+	// behind the `Database` seam, shared by `makeFateLayer`'s `Drizzle` and the
+	// better-auth adapter below — the old dual-drizzle accident is gone.
 	const databaseLayer = Layer.succeed(Database)(sqlite.d1);
 
-	// Build a real better-auth instance over the SAME `node:sqlite`-backed D1 via
-	// the shared `makeRealAuthForTest` helper (colocated with `better-auth.testing.ts`),
-	// which mirrors the deployed `BetterAuthLive`
-	// (`worker/features/pasaport/better-auth-live.ts`). That Layer needs the full
-	// alchemy provider stack (`RuntimeContext`, the `secret_text` binding) which
-	// doesn't exist in the node test runtime; the helper reproduces the same
-	// construction directly. Provided through a hand-rolled Layer over the same
-	// `BetterAuth` Context tag (`layerTest`), it is the test-mode
-	// equivalent. The helper's `drizzle(d1, ...)` is better-auth's own internal
-	// builder over the same handle — not a second feature `Drizzle`.
+	// A real better-auth instance over the SAME D1 via `makeRealAuthForTest`,
+	// which mirrors the deployed `BetterAuthLive` directly (its Layer needs the
+	// full alchemy provider stack — `RuntimeContext`, the `secret_text` binding —
+	// which doesn't exist in the node test runtime).
 	const testAuthInstance = makeRealAuthForTest(sqlite.d1);
 
-	// `makeBetterAuth(...)` returns `Auth<{...specific options}>`; widen to the
-	// generic `Auth` `layerTest` takes (the same type the deployed
-	// worker satisfies). The concrete and generic `Auth` types don't statically
-	// overlap (TS2345), so the widen needs the `unknown` hop.
+	// Widen the concrete `Auth<…>` to the generic `Auth` `layerTest` takes; the
+	// two don't statically overlap (TS2345), so the widen needs the `unknown` hop.
 	// biome-ignore lint/plugin: concrete `Auth<…>` vs the generic `Auth` don't overlap (TS2345), so this widen needs the hop.
 	const widenedAuth = testAuthInstance as unknown as Parameters<typeof layerTest>[0];
 	const betterAuthLayer = layerTest(widenedAuth);
 
 	// Build the route-context layer through the same `makeFateRuntime` the
-	// deployed worker (`index.ts`) uses — `PhoenixFateLive` (zero-arg, the
-	// composed `FateServer` + worker singletons, `R = Database | BetterAuth`,
-	// ADR 0040/0041) with both seams provided from the test `databaseLayer` +
-	// `betterAuthLayer`. One construction point keeps the shared memoMap +
-	// never-dispose decision identical to production; the runtime itself is
-	// init-only wiring since the v2 cutover (ADR 0043) — the `/fate` route
-	// serves through the interpreter on the request fiber.
+	// deployed worker uses, keeping the shared memoMap + never-dispose decision
+	// identical to production (ADR 0040/0041; runtime is init-only wiring since the
+	// v2 cutover, ADR 0043).
 	const {contextLayer: fateLayer} = makeFateRuntime(
 		PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
 	);
 
-	// A minimal `BaseRuntimeContext` stub. The HTTP-surface cases here never reach
-	// the `/api/auth/*` route's RuntimeContext-consuming secret resolution (sign-up
-	// runs against the hand-rolled test better-auth instance above), so a no-op
-	// key/value store satisfying the structural type is sufficient — no cast needed.
+	// A minimal `BaseRuntimeContext` stub — these cases never reach the
+	// `/api/auth/*` route's RuntimeContext-consuming secret resolution, so a no-op
+	// store satisfying the structural type suffices.
 	const runtimeContext: BaseRuntimeContext = {
 		Type: "test",
 		id: "test",
@@ -188,13 +154,10 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		);
 		expect([200, 201]).toContain(signUp.status);
 
-		// Capture the session cookie better-auth set on sign-up.
 		const setCookie = signUp.headers.get("set-cookie");
 		expect(setCookie).toBeTruthy();
 		const cookie = setCookie!.split(";")[0]!;
 
-		// An authenticated fate `me` request carries the session cookie and
-		// resolves the signed-up user end-to-end.
 		const meRes = await fetch(
 			appLayer,
 			new Request("https://test.local/fate", {
@@ -216,11 +179,8 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 	});
 
 	it("GET /fate/live is wired into AppLive and rejects 401 without a session", async () => {
-		// The live SSE transport route forwards to the unified `LiveDO` in its
-		// connection role (`LiveConnections`, ADR 0037); here we assert it is mounted
-		// in the compiled router and gated on a session cookie before any DO is
-		// reached (the cross-role behavior is proven in
-		// `features/fate-live/do.test.ts`). No cookie → 401 fate error envelope.
+		// Asserts the route is mounted in the compiled router and session-gated
+		// before any DO is reached (cross-role behavior: `features/fate-live/do.test.ts`).
 		const res = await fetch(
 			appLayer,
 			new Request("https://test.local/fate/live?connectionId=anon"),
@@ -231,9 +191,8 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 	});
 
 	it("POST /fate/live with a session drives the connection subscribe RPC", async () => {
-		// Sign up to get a session cookie, then a control POST reaches the
-		// LiveConnections RPC seam (the no-op layer returns ok). Proves the route is
-		// mounted and session-gated for the control path too.
+		// A session-bearing control POST reaches the LiveConnections RPC seam (the
+		// no-op layer returns ok) — proves the control path is mounted and gated too.
 		const signUp = await fetch(
 			appLayer,
 			new Request("https://test.local/api/auth/sign-up/email", {

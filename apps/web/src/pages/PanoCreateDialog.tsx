@@ -3,7 +3,6 @@ import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import {Field, FieldError, Form, Hint, Input, Label, Textarea} from "../components/ui/Form";
 import {Tabs} from "../components/ui/Tabs";
-/* PanoCreateDialog — modal-on-feed for /pano/yeni intercepted route. */
 
 export function PanoCreateDialog({
 	open,

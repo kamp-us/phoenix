@@ -1,14 +1,7 @@
 /**
- * View-shaped tree node for the post-detail comment thread.
- *
- * Each node declares `CommentTreeNodeView` and reads its slice via `useView` —
- * pages pass `<CommentTreeNode comment={edge.node} />` (a `ViewRef<"Comment">`)
- * instead of shaping the row into props. Replies recurse by passing the same
- * ref shape again. `useLiveView` keeps the node current as votes/edits land.
- *
- * The flat connection edges land in the page; the page assembles the
- * `parentId` → children map and hands a node + its children array down so
- * each level renders its own subtree without re-walking the whole list.
+ * View-shaped tree node for the post-detail comment thread. The page assembles
+ * the `parentId` → children map and hands each node its children array, so a
+ * level renders its subtree without re-walking the flat connection.
  */
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
@@ -23,7 +16,6 @@ import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import "./PanoComment.css";
 
-/** The fields a comment tree node reads. Co-located with the component. */
 export const CommentTreeNodeView = view<Comment>()({
 	id: true,
 	parentId: true,
@@ -38,25 +30,17 @@ export const CommentTreeNodeView = view<Comment>()({
 });
 
 /**
- * The minimal write-back view for a comment vote — the shape
- * `fate.mutations.comment.{vote,retractVote}` returns and normalizes keyed by
- * `id`. Spread into `CommentTreeNodeView` so a vote write re-renders the node in
- * place. (Vote is a same-`Comment` field mutation; masking is by view identity,
- * so a view the node ref carries must be used — `CommentTreeNodeView` already
- * selects these fields, so we reuse it as the write-back view.)
+ * Write-back view for a comment vote. Masking is by view identity, so the
+ * write-back must reuse a view the node ref carries — `CommentTreeNodeView`
+ * already selects these fields, so we reuse it.
  */
 const CommentVoteView = CommentTreeNodeView;
 
 export interface CommentTreeNodeProps {
-	/** View ref into a Comment node from the post's comments connection. */
 	comment: ViewRef<"Comment">;
-	/**
-	 * Direct children of this node — already filtered + ordered by the page.
-	 * Each child is itself an array entry in `childrenForId` so the recursion
-	 * can lookup grandchildren without re-walking.
-	 */
+	/** Direct children, already filtered + ordered by the page. */
 	children: ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
-	/** Lookup by comment id → its own children list (for grandchildren). */
+	/** comment id → its children list, for resolving grandchildren in recursion. */
 	childrenForId: (id: string) => ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
 	depth?: number;
 	hash?: string;
@@ -65,11 +49,7 @@ export interface CommentTreeNodeProps {
 	onReply?: (id: string) => void;
 	onEdit?: (id: string) => void;
 	onDelete?: (id: string) => void;
-	/**
-	 * Lookup helper — page maps comment id → its own composers. Every node
-	 * (root and child) resolves its own `replyComposer`/`editComposer` through
-	 * this, so the root is not a special case.
-	 */
+	/** comment id → its own composers, so the root node is not a special case. */
 	composerFor: (id: string) => {
 		replyComposer?: React.ReactNode;
 		editComposer?: React.ReactNode;
@@ -77,15 +57,9 @@ export interface CommentTreeNodeProps {
 }
 
 export function CommentTreeNode(props: CommentTreeNodeProps) {
-	// Live: a comment vote/edit on another client publishes
-	// `live.update("Comment", id, …)` with the re-resolved node inline, so the
-	// score/body re-render here without a refetch.
 	const data = useLiveView(CommentTreeNodeView, props.comment);
 	const fate = useFateClient();
-	// Every node derives its own composers — the root is not special-cased.
 	const {replyComposer, editComposer} = props.composerFor(data.id);
-	// Test affordances key off the raw comment id (`comm_<ulid>`) — `id` is the
-	// raw per-type id.
 	const localId = data.id;
 	const session = useSession();
 	const navigate = useNavigate();
@@ -133,9 +107,8 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 				});
 			}
 		} catch (error) {
-			// Boundary-class throw (fate classifies phoenix codes as boundary); the
-			// optimistic flip already rolled back. Surface UNAUTHORIZED as a redirect;
-			// the vote button has no inline slot, so stay silent otherwise.
+			// The vote button has no inline error slot, so we surface only
+			// UNAUTHORIZED (→ redirect) and stay silent otherwise.
 			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
 		} finally {
 			setInFlight(false);

@@ -1,24 +1,16 @@
 /**
  * Phoenix's `BetterAuth` Layer — a fork of `@alchemy.run/better-auth`'s
- * `CloudflareD1` reference Layer, adapted for phoenix's existing infrastructure.
+ * `CloudflareD1` reference Layer. Why fork instead of reuse it:
  *
- * Why fork instead of reuse `CloudflareD1`:
- *
- *   - `CloudflareD1` declares its OWN `Cloudflare.D1Database("BetterAuth")` —
- *     phoenix already has the canonical `PhoenixDb` D1 (`db/resources.ts`,
- *     ADR 0009), and the better-auth tables live on the same D1 as the rest of
- *     the product data. So this Layer derives its raw d1 from the shared
- *     `Database` seam (ADR 0040) — the same tag `DrizzleLive`
- *     derives from, so features and auth provably share one handle.
- *   - Phoenix's better-auth instance needs phoenix-specific plugins (the
- *     `magicLink` token-delivery plugin, `bearer`), an `additionalFields.username`
- *     on `user`, and explicit `baseURL`/`trustedOrigins` for the dev Vite proxy
- *     (ADR 0031). The reference Layer is minimal by design — this fork carries
- *     phoenix's configuration.
- *   - `CloudflareD1` mints the session secret via `alchemy/Random`, a deploy-time
- *     resource with no value in the workerd runtime isolate; this fork reads
- *     `BETTER_AUTH_SECRET` from a `secret_text` binding instead. Full rationale
- *     and the failure mode it fixes are on `BetterAuthLive` below.
+ *   - `CloudflareD1` declares its OWN `D1Database("BetterAuth")`; phoenix's
+ *     better-auth tables live on the shared `PhoenixDb` D1 (ADR 0009), so this
+ *     Layer derives its raw d1 from the `Database` seam (ADR 0040) — the same tag
+ *     `DrizzleLive` derives from, so features and auth provably share one handle.
+ *   - It needs phoenix-specific plugins (`magicLink`, `bearer`), an
+ *     `additionalFields.username`, and dev `baseURL`/`trustedOrigins` (ADR 0031).
+ *   - It reads `BETTER_AUTH_SECRET` from a `secret_text` binding instead of minting
+ *     via `alchemy/Random` (a deploy-time resource with no runtime value — see the
+ *     secret comment inside the Layer).
  */
 
 import * as BetterAuth from "@alchemy.run/better-auth";
@@ -41,63 +33,34 @@ import {AppConfig, betterAuthSecret} from "../../config.ts";
 import {Database} from "../../db/Database.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 
-/**
- * The phoenix `BetterAuth` Layer — fork of `@alchemy.run/better-auth`'s
- * `CloudflareD1` reference Layer. It derives its raw d1 from the shared
- * `Database` seam (not its own `D1Connection.bind`) and keeps the reference
- * layer's `Effect.cached` so the `makeBetterAuth` call happens once per isolate,
- * and adds phoenix's plugins + `baseURL`/`trustedOrigins`.
- *
- * The session-signing secret is read at runtime from the `BETTER_AUTH_SECRET`
- * `secret_text` binding via `yield* betterAuthSecret` (a `Config.redacted` in
- * `config.ts`). This deliberately replaces the reference layer's `alchemy/Random`
- * resource: `Random` is a deploy-time resource and has no value in the workerd
- * runtime isolate (`yield* Random(...)` yields no `.text` there), so the minted
- * secret could never be read back at request time — better-auth ended up signing
- * cookies with an unresolved Effect object. As a binding the secret is present in
- * the runtime env, and `Config.redacted` mints a registry-backed `Redacted` from
- * it so `Redacted.value` unwraps the plain string.
- *
- * `baseURL`/`trustedOrigins` are derived from `ENVIRONMENT` (read at layer build
- * via `yield* AppConfig`, the single `effect/Config` surface): in dev they are set explicitly to
- * `localhost` so cookie storage works behind the Vite proxy (where the worker
- * sees `Host: 127.0.0.1:<port>` rather than the browser origin); in prod they
- * are OMITTED so better-auth infers the origin from the inbound request Host.
- * This is the fix for the latent prod bug — CI never set `BETTER_AUTH_URL`, so
- * the old env-binding path shipped `http://localhost:3000` as prod's auth URL.
- */
+// Keeps the reference layer's `Effect.cached` so `makeBetterAuth` runs once per
+// isolate. The secret and `baseURL`/`trustedOrigins` rationale (and the latent
+// prod bug each fixes) live at their sites below.
 export const BetterAuthLive = Layer.effect(
 	BetterAuth.BetterAuth,
 	Effect.gen(function* () {
-		// The raw `D1Database` from the shared `Database` seam (ADR 0040).
-		// `DrizzleLive` derives its drizzle builder from this same tag,
-		// so the better-auth adapter and every feature service provably run on one
-		// underlying handle — the one-`sqlite` invariant is type-enforced.
+		// From the shared `Database` seam (ADR 0040) — the same tag `DrizzleLive`
+		// derives from, so auth and every feature service run on one handle.
 		const raw = yield* Database;
 
-		// The session-signing secret, read from the `BETTER_AUTH_SECRET`
-		// `secret_text` binding off the auto-wired ConfigProvider. `Config.redacted`
-		// mints a registry-backed `Redacted<string>` from the runtime env value, so
-		// `Redacted.value` (below, at the `makeBetterAuth` call) unwraps the plain
-		// string. `Effect.orDie`: a missing secret is an unrecoverable deploy
-		// misconfiguration, not a widening of the Layer's error channel.
+		// Read from the `BETTER_AUTH_SECRET` `secret_text` binding. Replaces the
+		// reference layer's `alchemy/Random`: `Random` is a deploy-time resource
+		// with no value in the workerd runtime isolate, so the minted secret could
+		// never be read back and better-auth signed cookies with an unresolved
+		// Effect. `orDie`: a missing secret is an unrecoverable deploy misconfig.
 		const secret = yield* betterAuthSecret.pipe(Effect.orDie);
 
-		// Read `ENVIRONMENT` through the single `effect/Config` surface (`config.ts`),
-		// resolved off the ConfigProvider alchemy auto-wires from the bound worker
-		// env. The constant is `Config.withDefault("production")` (fail-closed), so a
-		// missing var lands in prod mode and closes every dev gate below. The only
-		// residual `ConfigError` is a value outside the two literals — a malformed
-		// env, unrecoverable — so it dies rather than widening the Layer's error channel.
+		// `Config.withDefault("production")` is fail-closed: a missing `ENVIRONMENT`
+		// lands in prod mode and closes every dev gate below. `orDie`: a value
+		// outside the two literals is a malformed env, unrecoverable.
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
 		const isDev = environment === "development";
 
-		// Dev: hand better-auth the explicit browser origin so its cookie storage
-		// works behind the Vite proxy (the worker sees `Host: 127.0.0.1:<port>`,
-		// not the browser origin). `http`, not `https` — keeps the cookie host-only
-		// on `http://localhost` (no `Secure` flag). Prod: OMIT both so better-auth
-		// infers the origin from the inbound request Host (the latent-bug fix — CI
-		// never set `BETTER_AUTH_URL`, so the old path shipped localhost in prod).
+		// Dev: explicit browser origin so cookie storage works behind the Vite proxy
+		// (the worker sees `Host: 127.0.0.1:<port>`, not the browser origin). `http`
+		// keeps the cookie host-only (no `Secure`). Prod: OMIT both so better-auth
+		// infers the origin from the request Host — the latent-bug fix, CI never set
+		// `BETTER_AUTH_URL` so the old path shipped localhost in prod.
 		const authUrlConfig = isDev
 			? {
 					baseURL: "http://localhost:3000",
@@ -111,9 +74,6 @@ export const BetterAuthLive = Layer.effect(
 				emailAndPassword: {enabled: true},
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
 				secret: Redacted.value(secret),
-				// Dev sets `baseURL`/`trustedOrigins` explicitly (ADR 0031); prod omits
-				// both so better-auth infers the origin from the request Host. Derived
-				// from `ENVIRONMENT` above.
 				...authUrlConfig,
 				user: {
 					additionalFields: {
@@ -134,8 +94,6 @@ export const BetterAuthLive = Layer.effect(
 					bearer(),
 					magicLink({
 						sendMagicLink: async ({email, token, url}) => {
-							// Gate on the same `isDev` derived above from `ENVIRONMENT`
-							// (read via `AppConfig`) — captured in this closure.
 							if (isDev) {
 								console.log("[pasaport] magic link", {email, token, url});
 							}

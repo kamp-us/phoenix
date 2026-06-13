@@ -1,24 +1,15 @@
 /**
- * Pano — the link aggregator / discussion feature service.
+ * Pano — the link aggregator / discussion feature service. Resolver-facing
+ * surface for post + comment CRUD, vote delegation, and connection-shaped
+ * pagination.
  *
- * Resolver-facing surface for post + comment CRUD, vote delegation, and
- * connection-shaped pagination. Every method in this file replaces an async
- * export from the legacy `worker/features/pano/module.ts` +
- * `postSummaryReader.ts` + `commentViewReader.ts` files. Wire codes and result
- * shapes are preserved identically; the only thing that changes is the call
- * form (Effect over Promise).
+ * Vote mutations delegate to `Vote.cast` rather than reimplementing the batched
+ * vote / karma / score-cache logic; the Pano-side wrappers re-load the target
+ * row for the canonical resolver shape and translate `VoteTargetNotFound` into
+ * `PostNotFound` / `CommentNotFound` so the resolver codec keeps producing
+ * `POST_NOT_FOUND` / `COMMENT_NOT_FOUND`.
  *
- * Vote mutations (`voteOnPost`, `retractPostVote`, `voteOnComment`,
- * `retractCommentVote`) delegate to `Vote.cast` rather than reimplementing the
- * batched vote / karma / score-cache logic. Pano-side wrappers re-load the
- * target row for the canonical resolver shape and translate
- * `VoteTargetNotFound` into `PostNotFound` / `CommentNotFound` so the resolver
- * codec keeps producing `POST_NOT_FOUND` / `COMMENT_NOT_FOUND`.
- *
- * Validation lives inside the service methods as closure helpers (ADR 0013).
- * `computeHotScore`, `recomputePanoStats`, and the comment tree denormalization
- * helpers are also closure-private — they're load-bearing but not part of the
- * public surface.
+ * Validation lives in the service methods, not resolvers (ADR 0013).
  */
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
@@ -47,42 +38,29 @@ import {
 	UrlInvalid,
 } from "./errors.ts";
 
-/* -------------------------------------------------------------------------- */
-/* Domain constants                                                            */
-/* -------------------------------------------------------------------------- */
-
-/** Title cap. */
 export const POST_TITLE_MAX = 200;
-/** Body cap on submit / edit. */
 export const POST_BODY_MAX = 10_000;
-/** Comment body cap. */
 export const COMMENT_BODY_MAX = 5_000;
 
-/** Pano excerpt cap (tweet-sized, matches pre-effect-migration). */
-const POST_EXCERPT_LEN = 280;
+const POST_EXCERPT_LEN = 280; // tweet-sized
 
 const excerpt = (body: string): string => excerptText(body, POST_EXCERPT_LEN);
 
-/**
- * Fixed tag enum for Pano posts. Resolver-side validation enforces
- * the same set, but the service is the durability boundary so it re-validates.
- * Stored on `post_summary.tags` as comma-separated values.
- */
+/** Fixed tag enum, stored on `post_summary.tags` as comma-separated values. */
 export const ALLOWED_POST_TAG_KINDS = ["göster", "tartışma", "soru", "söylenme", "meta"] as const;
 
 export type AllowedPostTagKind = (typeof ALLOWED_POST_TAG_KINDS)[number];
 
 /**
- * Placeholder body rendered in place of a soft-deleted comment that still has
- * non-deleted replies (parent-with-replies path). The leaf-deleted path
- * removes the row entirely so the placeholder never appears there.
+ * Body rendered for a soft-deleted comment that still has non-deleted replies
+ * (parent-with-replies path). Leaf-deleted comments are removed entirely, so
+ * the placeholder never appears for them.
  */
 export const SILINDI_PLACEHOLDER = "[silindi]";
 
 /**
- * Static label map for the fixed tag enum. Covers the Turkish source-of-truth
- * kinds plus the legacy English aliases that may exist in seed data. Falls
- * back to the raw kind so unknown tags still render.
+ * Label map for the fixed tag enum: the Turkish source-of-truth kinds plus
+ * legacy English aliases that may exist in seed data.
  */
 const TAG_LABELS: Record<string, string> = {
 	göster: "göster",
@@ -90,17 +68,13 @@ const TAG_LABELS: Record<string, string> = {
 	soru: "soru",
 	söylenme: "söylenme",
 	meta: "meta",
-	// Legacy English aliases that may exist in seed data.
 	show: "göster",
 	discuss: "tartışma",
 	ask: "soru",
 	rant: "söylenme",
 };
 
-/**
- * Resolve a tag `kind` to its display `label` via the static label map, falling
- * back to the raw kind. Used by `parseTags` and the fate `Tag` source `byIds`.
- */
+/** Falls back to the raw kind so unknown tags still render. */
 export function tagLabel(kind: string): string {
 	return TAG_LABELS[kind] ?? kind;
 }
@@ -113,10 +87,6 @@ function parseTags(csv: string): Array<{kind: string; label: string}> {
 		.filter(Boolean)
 		.map((kind) => ({kind, label: tagLabel(kind)}));
 }
-
-/* -------------------------------------------------------------------------- */
-/* Read shapes                                                                 */
-/* -------------------------------------------------------------------------- */
 
 export interface PostTagRow {
 	kind: string;
@@ -155,12 +125,7 @@ export interface PostSummaryRow {
 	createdAt: Date;
 	updatedAt?: Date;
 	tags: PostTagRow[];
-	/**
-	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
-	 * (`getPostsByIds`, `listPostsKeyset`-shaped pages) so the `Post.myVote` view
-	 * field is a stamped scalar; `undefined` for read paths that don't request it
-	 * (leaving this unset on `PostSummaryRow`).
-	 */
+	/** Viewer's upvote flag; `undefined` (unset) for reads that don't request it. */
 	myVote?: number | null;
 }
 
@@ -181,12 +146,7 @@ export interface CommentRow {
 	createdAt: Date;
 	updatedAt: Date;
 	deletedAt?: Date | null;
-	/**
-	 * Viewer's upvote flag (`1` | `null`). Populated by the fate batch reads
-	 * (`getCommentsByIds`, `listCommentsKeyset`) so the `Comment.myVote` view
-	 * field is a stamped scalar; `undefined` for read paths that don't request it
-	 * (leaving this unset).
-	 */
+	/** Viewer's upvote flag; `undefined` (unset) for reads that don't request it. */
 	myVote?: number | null;
 }
 
@@ -196,10 +156,6 @@ export interface CommentConnectionPage {
 	endCursor: string | null;
 	totalCount: number;
 }
-
-/* -------------------------------------------------------------------------- */
-/* Mutation shapes                                                             */
-/* -------------------------------------------------------------------------- */
 
 export interface SubmitPostInput {
 	title: string;
@@ -347,10 +303,6 @@ export interface DeleteCommentResult {
 	placeholder: CommentRow | null;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Service                                                                     */
-/* -------------------------------------------------------------------------- */
-
 export class Pano extends Context.Service<
 	Pano,
 	{
@@ -364,10 +316,8 @@ export class Pano extends Context.Service<
 		}) => Effect.Effect<PostConnectionPage>;
 
 		/**
-		 * DB-keyset page over a post's comments in chronological-asc order
-		 * `(created_at asc, id asc)`, cursor = comment id. A bounded
-		 * `WHERE … LIMIT first+1` with no skips/dupes. `viewerId` stamps
-		 * `myVote` for the whole page in one `user_vote` read.
+		 * Keyset page over a post's comments, `(created_at asc, id asc)` (ADR 0019).
+		 * `viewerId` stamps `myVote` for the whole page in one `user_vote` read.
 		 */
 		readonly listCommentsKeyset: (
 			postId: string,
@@ -436,30 +386,18 @@ export class Pano extends Context.Service<
 	}
 >()("@phoenix/pano/Pano") {}
 
-/* -------------------------------------------------------------------------- */
-/* Live layer                                                                  */
-/* -------------------------------------------------------------------------- */
-
 export const PanoLive = Layer.effect(Pano)(
 	Effect.gen(function* () {
-		// Yield Drizzle and Vote once at layer build and destructure/close over
-		// their bound methods. Drizzle is taken through `orDieAccess`: every
-		// internal DB call site dies on `DrizzleError` (infra failures are
-		// defects — the domain-boundary rule), so public signatures carry
-		// domain errors only. The deps are owned by this layer, so every
-		// method's `R` stays `never`.
+		// `orDieAccess`: every internal DB call site dies on `DrizzleError`
+		// (infra failures are defects — the domain-boundary rule), so public
+		// signatures carry domain errors only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
-		/* ------------------------------------------------------------------ */
-		/* Closure-private helpers                                             */
-		/* ------------------------------------------------------------------ */
-
 		/**
-		 * HN-style hot score: `score / (hours_old + 2)^1.8`. Multiplied by 1000
-		 * and floored so the persisted column stays an integer (D1 indexes
-		 * integers cheaper than floats and the relative ordering is what
-		 * matters).
+		 * HN-style hot score: `score / (hours_old + 2)^1.8`, scaled by 1000 and
+		 * floored so the persisted column stays an integer (D1 indexes integers
+		 * cheaper than floats; only the relative ordering matters).
 		 */
 		const computeHotScore = (score: number, createdAtMs: number, nowMs: number): number => {
 			const hoursOld = Math.max(0, (nowMs - createdAtMs) / 3_600_000);
@@ -485,9 +423,8 @@ export const PanoLive = Layer.effect(Pano)(
 
 		/**
 		 * Reply-aware projection: a row with `deletedAt` set is the
-		 * parent-with-replies case. Leaf-deleted rows are removed entirely
-		 * from `comment_view`, so they never reach this branch — but if they
-		 * somehow did, we surface the placeholder shape.
+		 * parent-with-replies case, rendered as the placeholder. Leaf-deleted
+		 * rows are removed from `comment_view`, so they never reach this branch.
 		 */
 		const rowToCommentRow = (row: typeof schema.commentView.$inferSelect): CommentRow => {
 			if (row.deletedAt) {
@@ -561,12 +498,7 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 		});
 
-		/**
-		 * Body validation for `submitPost` / `editPost`. Returns the normalized
-		 * body (or `null` for empty) when valid; fails with `PostValidation`
-		 * otherwise. Per ADR 0013, validation lives in service methods, not
-		 * resolvers.
-		 */
+		/** Returns the normalized body (`null` for empty), or fails `PostValidation`. */
 		const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
 			if (rawBody.length > POST_BODY_MAX) {
 				return yield* new PostBodyTooLong({
@@ -607,10 +539,6 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 			return rawBody;
 		});
-
-		/* ------------------------------------------------------------------ */
-		/* Reads                                                               */
-		/* ------------------------------------------------------------------ */
 
 		const getPost = Effect.fn("Pano.getPost")(function* (postId: string) {
 			const meta = yield* run((db) =>
@@ -675,8 +603,8 @@ export const PanoLive = Layer.effect(Pano)(
 				}
 			}
 
-			// The sort's lead column (all descending) followed by the `id` desc
-			// tiebreaker. `new` orders by id alone.
+			// Sort's lead column (all descending) + `id` desc tiebreaker; `new`
+			// orders by id alone.
 			const leadColumn =
 				sort === "top"
 					? {column: schema.postSummary.score, value: cursorRow?.score}
@@ -751,13 +679,6 @@ export const PanoLive = Layer.effect(Pano)(
 			return {...page, totalCount} satisfies PostConnectionPage;
 		});
 
-		/**
-		 * DB-keyset page over a post's comments. Pages forward in
-		 * chronological-asc order `(created_at asc, id asc)`; cursor is the
-		 * comment id, fetched as a bounded `WHERE … LIMIT first+1`. The
-		 * reply-aware placeholder pass (`rowToCommentRow`) still applies, so the
-		 * wire shape matches the other comment reads.
-		 */
 		const listCommentsKeyset = Effect.fn("Pano.listCommentsKeyset")(function* (
 			postId: string,
 			opts: {
@@ -780,11 +701,9 @@ export const PanoLive = Layer.effect(Pano)(
 					.then((r) => r?.n ?? 0),
 			);
 
-			// Resolve the cursor row's (created_at, id) tuple so the keyset
-			// predicate selects rows strictly after it in `(created_at asc, id
-			// asc)` order. An `after` that doesn't resolve is a cursor miss →
-			// empty page (the one cursor-miss semantic shared by all five keyset
-			// methods).
+			// Resolve the cursor row's (created_at, id) tuple for the keyset
+			// predicate. An `after` that doesn't resolve is a cursor miss → empty
+			// page (the shared cursor-miss semantic; see `listPostsConnection`).
 			let cursorRow: {createdAt: Date | null} | null = null;
 			if (after) {
 				cursorRow =
@@ -911,10 +830,6 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 			return rows[0]?.postId ?? null;
 		});
-
-		/* ------------------------------------------------------------------ */
-		/* Post mutations                                                      */
-		/* ------------------------------------------------------------------ */
 
 		const submitPost = Effect.fn("Pano.submitPost")(function* (input: SubmitPostInput) {
 			const title = yield* validatePostTitle(input.title ?? "");
@@ -1076,11 +991,10 @@ export const PanoLive = Layer.effect(Pano)(
 		});
 
 		/**
-		 * HARD delete: removes the summary row, wipes the vote tables, and
-		 * reverses the author's karma. This diverges from `Sozluk.deleteDefinition`
-		 * (soft delete, karma kept) — a deliberate, known inconsistency pending
-		 * `.decisions/0024-delete-semantics-and-karma.md`. Read that ADR before
-		 * "fixing" one path to match the other.
+		 * HARD delete: removes the summary row, wipes the vote tables, reverses
+		 * karma. Deliberately diverges from `Sozluk.deleteDefinition` (soft
+		 * delete, karma kept) — see `.decisions/0024-delete-semantics-and-karma.md`
+		 * before "fixing" one path to match the other.
 		 */
 		const deletePost = Effect.fn("Pano.deletePost")(function* (input: DeletePostInput) {
 			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
@@ -1100,17 +1014,11 @@ export const PanoLive = Layer.effect(Pano)(
 			const now = new Date();
 			const priorScore = meta.score;
 
-			// One batch carries every delete-time mutation: optional karma
-			// decrement leads (only when there were votes to retract), then the
-			// vote-table wipe (`post_vote`), then the cross-product mirror wipe
-			// (`user_vote`), then the `post_summary` row removal itself.
-			// Matches the atomic-mutation contract enforced by the Vote service
-			// so a worker crash mid-delete can't leave karma debited against a
-			// surviving post or orphan vote rows.
-			//
-			// `recomputePanoStats` stays outside the batch — it's a recomputable
-			// cache refresh derived from current state, not part of the atomic
-			// mutation.
+			// One batch for every delete-time mutation (karma decrement, vote-table
+			// wipe, `user_vote` mirror wipe, `post_summary` removal) so a crash
+			// mid-delete can't leave karma debited against a surviving post or
+			// orphan vote rows. `recomputePanoStats` stays outside — it's a
+			// recomputable cache refresh, not part of the atomic mutation.
 			if (priorScore > 0) {
 				yield* batch((db) => [
 					db
@@ -1152,11 +1060,8 @@ export const PanoLive = Layer.effect(Pano)(
 		});
 
 		/**
-		 * Shared body for `voteOnPost` / `retractPostVote`. Delegates to the
-		 * shared `Vote.cast` for the atomic batch (vote insert/delete,
-		 * score-cache update, `user_vote` mirror, karma bump). Translates
-		 * `VoteTargetNotFound` from the Vote service into `PostNotFound` so the
-		 * resolver codec keeps producing `POST_NOT_FOUND`.
+		 * Shared body for `voteOnPost` / `retractPostVote`. Delegates to
+		 * `Vote.cast` and translates `VoteTargetNotFound` into `PostNotFound`.
 		 */
 		const applyPostVote = Effect.fn("Pano.applyPostVote")(function* (
 			input: VoteOnPostInput,
@@ -1193,8 +1098,8 @@ export const PanoLive = Layer.effect(Pano)(
 				);
 
 			const now = new Date();
-			// Vote.cast wrote post_summary.score + hot_score inside its batch.
-			// Re-read so the response surfaces the converged values.
+			// Vote.cast wrote score + hot_score inside its batch; re-read for the
+			// converged values.
 			const refreshed = voteResult.changed
 				? yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}))
 				: meta;
@@ -1226,10 +1131,6 @@ export const PanoLive = Layer.effect(Pano)(
 		const retractPostVote = Effect.fn("Pano.retractPostVote")(function* (input: VoteOnPostInput) {
 			return yield* applyPostVote(input, false);
 		});
-
-		/* ------------------------------------------------------------------ */
-		/* Comment mutations                                                   */
-		/* ------------------------------------------------------------------ */
 
 		const addComment = Effect.fn("Pano.addComment")(function* (input: AddCommentInput) {
 			const rawBody = yield* validateCommentBody(input.body);
@@ -1402,15 +1303,11 @@ export const PanoLive = Layer.effect(Pano)(
 			const now = new Date();
 			const priorScore = row.score;
 
-			// One batch carries every delete-time mutation: optional karma
-			// decrement leads, then the vote-table wipe (`comment_vote`), then
-			// the cross-product mirror wipe (`user_vote`), then the
-			// branch-dependent terminal — UPDATE for parent-with-replies
-			// (soft-delete) or DELETE for leaves (hard-delete).
-			//
-			// The post `commentCount` decrement and `recomputePanoStats` stay
-			// outside the batch — both are recomputable cache refreshes derived
-			// from current state, not part of the atomic mutation.
+			// One batch for every delete-time mutation: karma decrement, vote-table
+			// wipe, `user_vote` mirror wipe, then the branch-dependent terminal —
+			// UPDATE (soft-delete) for parent-with-replies, DELETE (hard) for
+			// leaves. The `commentCount` decrement and `recomputePanoStats` stay
+			// outside — recomputable cache refreshes, not the atomic mutation.
 			const commentId = input.commentId;
 			const buildTerminal = (db: DrizzleDb) =>
 				hasReplies

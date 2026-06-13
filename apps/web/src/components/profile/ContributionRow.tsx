@@ -1,22 +1,11 @@
-/**
- * Contribution row — fate.
- *
- * The contributions feed is a single **discriminant** data view (ADR 0018):
- * `Contribution` carries a `kind` (`"definition" | "post" | "comment"`) plus the
- * union of all three variants' fields (variant fields nullable, populated per
- * `kind`). So the row reads one `ContributionView` and switches on `kind`, with
- * no union type involved.
- *
- * The page (`UserProfilePage`) selects `ContributionView` as the node of the
- * `contributions` connection; each edge node is a `ViewRef<"Contribution">`
- * handed here.
- */
+// `Contribution` is a single discriminant view (ADR 0018): one node carries `kind`
+// plus the nullable union of all three variants' fields, so this row switches on
+// `kind` with no union type.
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 
-/** The full discriminant selection — every field any `kind` branch reads. */
 export const ContributionView = view<Contribution>()({
 	kind: true,
 	id: true,

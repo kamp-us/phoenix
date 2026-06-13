@@ -1,11 +1,6 @@
 /**
- * fate root list resolvers — composed across features.
- *
- * Per-feature list resolvers live in their owning feature
- * (`features/<feature>/lists.ts`); this barrel composes them into the single
- * `lists` map fate expects on `createFateServer`.
- *
- * See `.patterns/fate-connections.md`.
+ * Barrel composing per-feature root list resolvers into the single `lists` map
+ * fate expects. See `.patterns/fate-connections.md`.
  */
 
 import {lists as panoLists} from "../pano/lists.ts";

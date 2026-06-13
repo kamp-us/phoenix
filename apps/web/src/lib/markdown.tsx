@@ -1,12 +1,9 @@
 import type * as React from "react";
 
 /**
- * Bare-bones inline markdown — `code`, **strong**. Returns React children
- * (string or element). Walks left-to-right; intentionally simple. A real
- * markdown renderer (react-markdown + sanitizer) replaces this when content
- * gets richer.
- *
- * Shared by the sözlük definition body and the pano post + comment bodies.
+ * Bare-bones inline markdown — `code`, **strong** only, intentionally simple. A
+ * real markdown renderer (react-markdown + sanitizer) replaces this when content
+ * gets richer. Shared by sözlük definition bodies and pano post/comment bodies.
  */
 export function renderMarkdownInline(src: string): React.ReactNode[] {
 	const out: React.ReactNode[] = [];

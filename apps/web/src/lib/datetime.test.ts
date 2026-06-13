@@ -1,26 +1,20 @@
 import {describe, expect, it} from "vitest";
 import {EDITED_GRACE_MS, editedAfter, formatEditedTooltipTR} from "./datetime";
 
-/**
- * Code-level test for the `editedAfter` helper that backs the
- * "düzenlendi" indicator on definitions, posts, and comments (T17).
- * Pure-JS (uses `Intl`), so it runs in the node `unit` project.
- */
-
 describe("editedAfter", () => {
 	it("returns true when updatedAt is more than 60s after createdAt", () => {
 		const created = "2026-05-09T10:00:00.000Z";
-		const updated = "2026-05-09T10:02:00.000Z"; // +120s
+		const updated = "2026-05-09T10:02:00.000Z";
 		expect(editedAfter(created, updated)).toBe(true);
 	});
 
 	it("returns false when updatedAt is within the 60s grace window", () => {
 		const created = "2026-05-09T10:00:00.000Z";
-		const updatedFar = "2026-05-09T10:00:30.000Z"; // +30s
+		const updatedFar = "2026-05-09T10:00:30.000Z";
 		expect(editedAfter(created, updatedFar)).toBe(false);
 
 		// Exactly at the boundary (60s) is still inside the grace window.
-		const updatedBoundary = "2026-05-09T10:01:00.000Z"; // +60s
+		const updatedBoundary = "2026-05-09T10:01:00.000Z";
 		expect(editedAfter(created, updatedBoundary)).toBe(false);
 	});
 

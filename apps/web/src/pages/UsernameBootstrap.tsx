@@ -1,23 +1,12 @@
 /**
- * Username bootstrap form — `fate.mutations.user.setUsername`.
+ * Username bootstrap form — `fate.mutations.user.setUsername`. Mounted by the
+ * layout when the signed-in user has `username === null`. Client-side validation
+ * mirrors the worker-side validator (Pasaport.assertUsername): 3-30 chars,
+ * lowercase a-z / 0-9 / `-`, no leading/trailing dash.
  *
- * Mounted by the layout when the signed-in user has `username === null`.
- * Pre-fills the input with the email's local-part. On submit, calls
- * `fate.mutations.user.setUsername(value)` and invokes the supplied refetch hook
- * so the layout can swap to the topbar profile-link state.
- *
- * Client-side validation mirrors the worker-side validator
- * (Pasaport.assertUsername): 3-30 chars, lowercase a-z / 0-9 / `-`, no
- * leading/trailing dash. Server-side validation errors surface inline keyed on
- * the wire **code** (`TOO_SHORT`/`TOO_LONG`/`INVALID_FORMAT`/`TAKEN`/
- * `ALREADY_SET`/…) — not the message string.
- *
- * **Error routing.** The client classifies callSite-vs-boundary purely from the
- * wire `code`, and its `switch` knows only the 6 protocol codes — phoenix codes
- * resolve to `boundary`, so the mutation **throws** instead of returning
- * `{error}`. We therefore handle BOTH the `{error}` return AND the thrown error:
- * read `.code` off either and render the matching message inline. See
- * `.patterns/fate-mutations-client.md`.
+ * Error routing: phoenix codes classify as boundary, so the mutation **throws**
+ * for some failures and returns `{error}` for others — we handle BOTH, keying the
+ * inline message off the wire `code`. See `.patterns/fate-mutations-client.md`.
  */
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
@@ -105,8 +94,6 @@ export function UsernameBootstrap({
 			}
 			await onComplete();
 		} catch (caught) {
-			// phoenix codes classify as boundary → the mutation throws. Read
-			// the code off the thrown error and render inline.
 			setError(messageForCode(codeOf(caught as SetUsernameError)));
 		} finally {
 			setPending(false);

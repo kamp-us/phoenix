@@ -1,35 +1,12 @@
 /**
- * Pasaport — the user identity + profile service.
+ * Pasaport — the user identity + profile service. Validation lives inside the
+ * methods as closure helpers (ADR 0013). Infrastructure failures are NOT raised:
+ * every internal DB call dies on `DrizzleError` (`orDieAccess` at layer build —
+ * the domain-boundary rule), so the public signatures carry domain errors only.
  *
- * Surface (resolver-facing):
- *   - `validateSession(headers)` — per-request session lookup via better-auth.
- *     The auth instance is supplied by `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`,
- *     phoenix's fork of `@alchemy.run/better-auth`'s `CloudflareD1` reference Layer).
- *     The `/api/auth/*` route reads `BetterAuth.fetch` directly from the same
- *     Context tag — `Pasaport` no longer mounts the handler itself.
- *   - `getUserById(userId)`       — canonical user row by id.
- *   - `setUsername({userId, value})` — bootstrap-step username write +
- *     `user_profile` upsert in one D1 batch.
- *   - `lookupProfile(username)` / `lookupProfileById(userId)` — profile-page
- *     identity + live-aggregated counts.
- *   - `listContributions({authorId, after, first})` — interleaved feed across
- *     `definition_view` + `post_summary` + `comment_view`, paginated by
- *     `(created_at DESC, id DESC)` keyset cursor.
- *
- * Validation lives inside the service methods as closure helpers (ADR 0013).
- * Per-username constraints live in `assertUsername` — see
- * {@link UsernameInvalid} for the wire-code mapping.
- *
- * Errors raised:
- *   - `UsernameInvalid` (the `UsernameInvalidFormat | UsernameTooShort |
- *     UsernameTooLong` union — one class per wire sub-code)
- *   - `UsernameTaken`
- *   - `UsernameAlreadySet`
- *   - `UserNotFound`
- *
- * Infrastructure failures are NOT raised: every internal DB call dies on
- * `DrizzleError` (`orDieAccess` at layer build — the domain-boundary rule),
- * so the public signatures carry domain errors only.
+ * The auth instance is supplied by `BetterAuthLive` (`better-auth-live.ts`); the
+ * `/api/auth/*` route reads `BetterAuth.fetch` from the same Context tag, so
+ * `Pasaport` no longer mounts the handler itself.
  */
 import type {Auth as BetterAuth} from "better-auth";
 import {and, desc, eq, isNull, sql} from "drizzle-orm";
@@ -47,20 +24,10 @@ import {
 	UsernameTooShort,
 } from "./errors.ts";
 
-/**
- * The better-auth instance phoenix uses everywhere. Constructed by
- * `BetterAuthLive` (`worker/features/pasaport/better-auth-live.ts`) — phoenix's fork of
- * `@alchemy.run/better-auth`'s `CloudflareD1` reference Layer. Mirrors the shape
- * of the `BetterAuth` Context tag's `auth` field (`Effect.Effect<Auth<any>,
- * never, RuntimeContext>`, see `@alchemy.run/better-auth/BetterAuth.ts`) —
- * phoenix never specializes the options at the type level.
- */
+// Phoenix never specializes the better-auth options at the type level, so this
+// is the unparameterized `Auth` — matching the `BetterAuth` tag's `auth` field.
 export type Auth = BetterAuth;
 export type Session = NonNullable<Awaited<ReturnType<Auth["api"]["getSession"]>>>;
-
-/* -------------------------------------------------------------------------- */
-/* Types                                                                       */
-/* -------------------------------------------------------------------------- */
 
 export interface UserRow {
 	id: string;
@@ -137,15 +104,8 @@ export interface ContributionConnection {
 	totalCount: number;
 }
 
-/**
- * Flat **discriminant** row for the fate `Profile.contributions` view (ADR
- * 0018 — fate has no union type, so heterogeneous contributions are modeled as
- * one view with a `kind` discriminant the profile page switches on).
- * The common fields (`kind`, `id`, `score`, `createdAt`) are always present;
- * the variant fields are nullable and populated per `kind`. This is purely a
- * reshape of {@link ContributionNode} — the same rows, the same keyset, the
- * same cursor — flattened so a single data view can mask them.
- */
+// Flat **discriminant** reshape of {@link ContributionNode} (ADR 0018: fate has
+// no union type). Variant fields are nullable, populated per `kind`.
 export interface ContributionRow {
 	kind: ContributionKind;
 	id: string;
@@ -164,10 +124,6 @@ export interface ContributionRow {
 	postTitle: string | null;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Service                                                                     */
-/* -------------------------------------------------------------------------- */
-
 export class Pasaport extends Context.Service<
 	Pasaport,
 	{
@@ -175,12 +131,7 @@ export class Pasaport extends Context.Service<
 
 		readonly getUserById: (userId: string) => Effect.Effect<UserRow | null>;
 
-		/**
-		 * Batched read of user rows by id — the fate `User` source's `byIds`
-		 * workhorse. `User` is the hottest relation (authors appear across every
-		 * feed), so this is a single `WHERE id IN (...)` over the user table.
-		 * Order is not guaranteed; fate re-associates rows by id.
-		 */
+		// Single `WHERE id IN (...)`; order is not guaranteed (fate re-associates by id).
 		readonly getUsersByIds: (userIds: ReadonlyArray<string>) => Effect.Effect<UserRow[]>;
 
 		readonly setUsername: (input: {
@@ -203,16 +154,9 @@ export class Pasaport extends Context.Service<
 	}
 >()("@phoenix/pasaport/Pasaport") {}
 
-/* -------------------------------------------------------------------------- */
-/* Username validation                                                         */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Username constraints (mirrored on the SPA bootstrap form):
- * - 3 to 30 chars
- * - lowercase ASCII letters, digits, and `-` only
- * - must start with a letter or digit (no leading/trailing `-`, no `--`)
- */
+// Username constraints (mirrored on the SPA bootstrap form): 3-30 chars;
+// lowercase ASCII letters, digits, and `-`; must start/end with a letter or
+// digit (no leading/trailing `-`, no `--`).
 const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){1,28}[a-z0-9]$|^[a-z0-9]{3,30}$/;
 
 function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid> {
@@ -240,25 +184,13 @@ function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid
 	return Effect.void;
 }
 
-/* -------------------------------------------------------------------------- */
-/* Contributions cursor codec — the (created_at DESC, id DESC) keyset           */
-/* -------------------------------------------------------------------------- */
-
 /**
- * The contributions feed is paginated by a DB keyset matching the fate
- * `Profile.contributions` view `orderBy` — `(createdAt desc, id desc)` — with
- * `id` (a globally-unique ULID across all three contribution tables) as the
- * final tiebreaker. The cursor is the `(createdAt, id)` tuple of the last node
- * on a page; `decodeCursor` resolves it back so the per-table keyset predicate
- * `createdAt < c.createdAt OR (createdAt = c.createdAt AND id < c.id)` selects
- * the rows that follow it. No skips or duplicates, and the discriminant `kind`
- * is preserved across pages because the keyset key is the same global
- * `(createdAt, id)` order every kind is merged on.
+ * Cursor codec for the `(createdAt desc, id desc)` keyset (matches the fate view
+ * `orderBy`; `id` is a global ULID tiebreaker). Wire format `<epochSeconds>:<id>`.
  *
- * D1 stores `created_at` as epoch **seconds** (the `timestamp` column is
- * `integer({mode:"timestamp"})`), so encoding seconds is exact at the DB's own
- * granularity — the keyset round-trips without precision loss. The wire cursor
- * format is `<epochSeconds>:<id>`, so cursors stay stable across deploys.
+ * Encodes epoch **seconds** because D1 stores `created_at` as
+ * `integer({mode:"timestamp"})` — seconds is the DB's own granularity, so the
+ * keyset round-trips without precision loss and cursors stay stable across deploys.
  */
 function encodeCursor(node: {createdAt: Date; id: string}): string {
 	return `${Math.floor(node.createdAt.getTime() / 1000)}:${node.id}`;
@@ -274,32 +206,22 @@ function decodeCursor(cursor: string): {createdAt: Date; id: string} | null {
 	return {createdAt: new Date(ts * 1000), id};
 }
 
-/* -------------------------------------------------------------------------- */
-/* Live layer                                                                  */
-/* -------------------------------------------------------------------------- */
-
 /**
  * Build the `Pasaport` Layer over an already-resolved better-auth instance. The
- * worker resolves the `BetterAuth` Context tag (`@alchemy.run/better-auth`) once
- * in init and hands the instance here — `Pasaport` no longer constructs its own
- * auth (that lived inline as `createAuth(env.PHOENIX_DB, ...)`). Sharing the
- * single auth instance with the `/api/auth/*` route keeps session cookies
- * signed and validated by the same secret.
+ * worker resolves the `BetterAuth` tag once in init and hands the instance here;
+ * sharing the single auth instance with the `/api/auth/*` route keeps session
+ * cookies signed and validated by the same secret.
  */
 export const makePasaportLive = (auth: Auth) =>
 	Layer.effect(Pasaport)(
 		Effect.gen(function* () {
-			// Yield Drizzle once at layer build and destructure its bound methods
-			// through `orDieAccess`: every internal DB call site dies on
-			// `DrizzleError` (infra failures are defects — the domain-boundary
-			// rule), so public signatures carry domain errors only. Every
-			// method's `R` stays `never`.
+			// `orDieAccess`: every DB call site dies on `DrizzleError` (infra
+			// failures are defects — the domain-boundary rule), so public signatures
+			// carry domain errors only and every method's `R` stays `never`.
 			const {run} = orDieAccess(yield* Drizzle);
 
-			// `COUNT(*)` of a contribution table's live (non-deleted) rows for one
-			// author. Shared by `hydrateProfile`'s per-kind counts and
-			// `listContributions`'s `totalCount`. Calls `run` directly so callers
-			// keep `R = never`.
+			// `COUNT(*)` of one author's live (non-deleted) rows in a contribution
+			// table. Calls `run` directly so callers keep `R = never`.
 			const countByAuthor = (
 				table: typeof schema.definitionView | typeof schema.postSummary | typeof schema.commentView,
 				authorId: string,
@@ -365,9 +287,7 @@ export const makePasaportLive = (auth: Auth) =>
 			return {
 				validateSession: Effect.fn("Pasaport.validateSession")(function* (headers: Headers) {
 					// better-auth's `getSession` can throw on a flaky JWT, missing
-					// cookie, etc. Treat any failure as "no session" — same
-					// behavior as the legacy module function, which logged +
-					// swallowed.
+					// cookie, etc. Treat any failure as "no session" (log + swallow).
 					return yield* Effect.tryPromise({
 						try: async () => {
 							const session = await auth.api.getSession({headers});
@@ -516,14 +436,12 @@ export const makePasaportLive = (auth: Auth) =>
 					const cursor = input.after ? decodeCursor(input.after) : null;
 					const fetchSize = first + 1;
 
-					// `after` present but undecodable is a cursor miss → empty page (the
-					// one cursor-miss semantic shared by all five keyset methods).
+					// `after` present but undecodable is a cursor miss → empty page.
 					const cursorMissed = input.after !== null && cursor === null;
 
-					// Per-table keyset for the global `(created_at desc, id desc)` merge
-					// order. `keysetAfter` builds the lexicographic predicate; null
-					// cursor values (no `after`) collapse it to undefined so only the
-					// base author/deleted filter applies.
+					// Per-table keyset for the global `(created_at desc, id desc)` merge.
+					// Null cursor values (no `after`) collapse the predicate to undefined
+					// so only the base author/deleted filter applies.
 					function keysetWhere(
 						table:
 							| typeof schema.definitionView
@@ -639,11 +557,9 @@ export const makePasaportLive = (auth: Auth) =>
 						return 0;
 					});
 
-					// Each of the three tables is read with the same keyset predicate and
-					// `LIMIT first+1`, so the merged set holds every candidate that could
-					// fall in the next `first` slots of the global `(createdAt desc, id
-					// desc)` order — `forwardPage` slices the probe and assembles the
-					// shared `{rows, hasNextPage, endCursor}` envelope.
+					// Each table is read with `LIMIT first+1` under the same keyset, so
+					// the merged set holds every candidate for the next `first` slots of
+					// the global order; `forwardPage` slices the probe.
 					const page = forwardPage<ContributionNode>(merged, first, encodeCursor);
 
 					return {

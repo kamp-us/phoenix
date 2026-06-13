@@ -1,12 +1,3 @@
-/**
- * Profile header — fate.
- *
- * Reads its slice via `useView(UserProfileHeaderView, ref)`. The page
- * (`UserProfilePage`) **spreads** `UserProfileHeaderView` into the screen's
- * `Profile` view (masking is by view identity), so the header reads off the same
- * ref. Identity fields are flat scalars on the `Profile`, so the header reads
- * `username`/`displayName`/`image` directly off it.
- */
 import {useView, type ViewRef, view} from "react-fate";
 import type {Profile} from "../../../worker/features/fate/views";
 

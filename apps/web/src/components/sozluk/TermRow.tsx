@@ -1,17 +1,7 @@
-/**
- * Sözlük home term row, fate-shaped.
- *
- * Reads via `useView(TermRowView, ref)` — the home's two connections
- * (`recentTerms` / `popularTerms`) hand each node `ViewRef` to this component,
- * which stays oblivious to which column it lives in. Two render variants, one
- * view: `recent` shows title + count; `popular` shows rank + title + total
- * score. The view's field set is the union both variants need.
- */
 import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Term} from "../../../worker/features/fate/views";
 
-/** The fields a term row reads (union of both column variants). */
 export const TermRowView = view<Term>()({
 	id: true,
 	slug: true,

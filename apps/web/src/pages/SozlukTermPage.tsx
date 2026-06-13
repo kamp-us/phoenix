@@ -1,24 +1,9 @@
 /**
- * Sözlük term page — fate.
- *
- * One batched `useRequest({term: {view: TermView, args: {slug, definitions:{first}}}})`
- * resolves the whole screen (header + first page of definitions) with no
- * waterfall. `term` is the `queries.term` client root; the nested `definitions`
- * connection rides on the `Term` view (`TermView`), delivered inline by the
- * resolver (see `.patterns/fate-connections.md`). Children read their slice:
- * `SozlukTermHeader` via its own `TermHeaderView`, the definitions list via
- * `useLiveListView` (which merges "load more" pages + server-pushed live
- * appends/edge-removals), each row via `useView(DefinitionView, node)`.
- *
- * Mutations (`fate.mutations.definition.*`): add is server-driven live — the
- * `definition.add` resolver publishes `live.connection("Term.definitions",
- * {id: slug}).appendNode`, which the list's `useLiveListView` merges in place
- * (no reload), the author's own view included. The fresh-slug branch (no term
- * yet, so no list to append to) re-reads `term(slug)` once via a `network-only`
- * remount instead. vote/edit/delete live on `DefinitionCard`. Error routing is
- * the call-site catch documented on `DefinitionCard` (fate classifies phoenix
- * codes as boundary, so the mutation throws; the optimistic change rolls back
- * and we surface the code inline).
+ * Sözlük term page — fate. One batched `useRequest` resolves header + first page
+ * of definitions; `TermView` spreads `TermHeaderView` and adds the nested
+ * `definitions` connection (see `.patterns/fate-connections.md`). `definition.add`
+ * is server-driven live; the fresh-slug branch (no term yet, so no list to append
+ * to) instead re-reads `term(slug)` via a `network-only` remount.
  */
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -39,14 +24,9 @@ const PAGE_SIZE = 50;
 const BODY_MAX = 10_000;
 
 /**
- * The connection selection for a term's definitions — `{items: {node: View}}`,
- * the shape `useLiveListView` reads off `term.definitions`.
- *
  * `live: {append: "visible"}` makes a server-pushed `appendNode` (a new
- * definition from `definition.add`, including this client's own) appear at the
- * end of the list immediately — without it fate's default `"edge"` mode would
- * buffer the append in a hidden `liveAfterIds` set when the first page window is
- * full. See `.patterns/fate-live-views.md`.
+ * definition, this client's own included) appear immediately, instead of fate's
+ * default `"edge"` mode buffering it until a page load. See `.patterns/fate-live-views.md`.
  */
 const DefinitionConnectionView = {
 	items: {node: DefinitionView},
@@ -55,11 +35,8 @@ const DefinitionConnectionView = {
 
 /**
  * The term-page view. fate masks by **view identity**: a child's
- * `useView(ChildView, ref)` only works if `ChildView` was **spread**
- * into the view the ref was built from — overlapping field names is not enough.
- * So the page spreads `TermHeaderView` (the header's view) and adds the nested
- * `definitions` connection whose node is `DefinitionView` (the card's view). The
- * children then mask their slice off the same refs.
+ * `useView(ChildView, ref)` works only if `ChildView` was **spread** into the
+ * view the ref was built from — overlapping field names is not enough.
  */
 const TermView = view<Term>()({
 	...TermHeaderView,
@@ -80,9 +57,9 @@ const messageForCode = (code: MutationErrorCode, fallback: string): string => {
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
 	const safeSlug = slug ?? "";
-	// Bumped when the fresh-slug composer auto-creates the term: it remounts the
-	// content with a fresh request key so the `network-only` read picks up the
-	// now-existing term and flips to the connection branch — no full reload.
+	// Bumped when the fresh-slug composer auto-creates the term: remounts the
+	// content so the `network-only` read picks up the now-existing term and flips
+	// to the connection branch — no full reload.
 	const [reloadKey, setReloadKey] = React.useState(0);
 
 	return (
@@ -110,18 +87,16 @@ export function SozlukTermPage() {
 function SozlukTermContent({slug, onTermCreated}: {slug: string; onTermCreated: () => void}) {
 	const {term} = useRequest(
 		{term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
-		// `network-only`: a fresh-slug add auto-creates the term, then bumps the
-		// remount key; re-reading from the network (not the cached `null`) is what
-		// surfaces the new term without a full-page reload.
+		// `network-only`: re-reading from the network (not the cached `null`) is what
+		// surfaces a freshly auto-created term after the remount.
 		{mode: "network-only"},
 	);
 	const session = useSession();
 	const signedIn = !!session.data?.user;
 
 	if (!term) {
-		// Signed-out viewers can't auto-create a term — render the shared 404 so
-		// the absence is unambiguous. Signed-in viewers get the composer branch so
-		// the first definition lands and auto-creates the term (T4's contract).
+		// Signed-out viewers can't auto-create a term, so they get the 404;
+		// signed-in viewers get the composer that auto-creates it on first define.
 		if (!signedIn) {
 			return (
 				<NotFoundPage
@@ -142,11 +117,9 @@ function SozlukTermContent({slug, onTermCreated}: {slug: string; onTermCreated: 
 }
 
 /**
- * Header + composer for the slug-doesn't-exist-yet branch. The first
- * `addDefinition` on a fresh slug auto-creates the term; once it lands the
- * composer calls `onCreated`, which remounts the content so the `network-only`
- * read re-reads `term(slug)` and flips to the connection branch (no full
- * reload). Subsequent definitions on the slug never hit this branch again.
+ * Header + composer for the slug-doesn't-exist-yet branch. The first definition
+ * auto-creates the term, then `onCreated` remounts the content so the
+ * `network-only` read flips to the connection branch.
  */
 function NewTermComposer({slug, onCreated}: {slug: string; onCreated: () => void}) {
 	return (
@@ -176,9 +149,6 @@ interface DefinitionsListProps {
 
 function DefinitionsList(props: DefinitionsListProps) {
 	const term = useView(TermView, props.term);
-	// Live: `definition.add` (on this client or another) publishes
-	// `live.connection("Term.definitions", {id: slug}).appendNode`, which
-	// `useLiveListView` merges into the list without a refetch.
 	const [items, loadNext] = useLiveListView(DefinitionConnectionView, term.definitions);
 
 	return (
@@ -203,22 +173,11 @@ function DefinitionsList(props: DefinitionsListProps) {
 }
 
 /**
- * Definition composer wired to `fate.mutations.definition.add`. Auth-required:
- * signed-out users redirect to /auth?returnTo=<current>.
- *
- * **Connection membership.** A fresh definition is a new node in the *nested*
- * `Term.definitions` connection. fate's declarative `insert` only targets
- * **registered root lists** (a list op with no filter args); a nested
- * connection's membership is driven by **server live events**. `definition.add`
- * now publishes `live.connection("Term.definitions", {id: slug}).appendNode`, so
- * the list's `useLiveListView` merges the new row in place — the author's own
- * view included, exactly like `comment.add`. No optimistic temp-node (it would
- * double with the live append) and no reload.
- *
- * `onTermCreated` is only passed on the fresh-slug branch, where there is no
- * list yet to append to: the first add auto-creates the term, then this remounts
- * the content so the `network-only` read flips to the connection branch. Vote /
- * edit / delete are entity-field mutations and stay fully optimistic.
+ * Definition composer wired to `fate.mutations.definition.add`. Membership in the
+ * *nested* `Term.definitions` connection is server-driven (fate's declarative
+ * `insert` only targets registered root lists), so there is no optimistic
+ * temp-node — it would double with the live append. `onTermCreated` is passed
+ * only on the fresh-slug branch, where there's no list yet to append to.
  */
 function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => void}) {
 	const fate = useFateClient();
@@ -251,10 +210,8 @@ function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => vo
 				return;
 			}
 			setBody("");
-			// Fresh-slug branch: the term was just auto-created, so there is no live
-			// connection subscribed yet — remount to re-read `term(slug)` and flip to
-			// the list branch. The list branch passes no `onTermCreated`: the server's
-			// `appendNode` delivers the new row to this client's own `useLiveListView`.
+			// Fresh-slug branch only: remount to re-read `term(slug)` and flip to the
+			// list branch. On the list branch the server's `appendNode` delivers the row.
 			onTermCreated?.();
 		} catch (caught) {
 			const code = codeOf(caught);

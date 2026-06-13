@@ -1,38 +1,26 @@
 /**
  * fate-operation integration tests (T2, ADR 0040) — sozluk through the native
  * interpreter path (ADR 0041), asserting wire output, the mutation round-trip,
- * and topic publishes.
+ * and topic publishes. This file owns the description of the worker-as-runtime
+ * seam that the other fate-op suites reference.
  *
- * Exercises the worker-as-runtime seam end-to-end through {@link runFateOp}:
- *
+ * The seam, end-to-end through {@link runFateOp}:
  *   1. Build `Drizzle` + the feature services from a bound D1 (here a
- *      `node:sqlite`-backed stand-in) via `makeFateLayer` — the same layer the
- *      worker init builds.
- *   2. Per op, {@link runFateOp} wraps that worker layer in a per-op
- *      `ManagedRuntime` (built and disposed inside the call — see
- *      `run-fate-op.ts`), builds the per-request pair — `currentUser` and the
- *      recording `LivePublisher` it owns — and hands
- *      `FateInterpreter.handleRequest` one `FateRequestContext` of
- *      `{currentUser, livePublisher}`.
- *   3. The interpreter runs each handler THROUGH that runtime — the same
- *      serving path the deployed worker runs (`FateServer.layer(fateConfig)`
- *      + the interpreter; ADR 0043).
+ *      `node:sqlite` stand-in) via `makeFateLayer` — the worker init layer.
+ *   2. Per op, {@link runFateOp} wraps that layer in a per-op `ManagedRuntime`
+ *      (built/disposed inside the call — see `run-fate-op.ts`), builds the
+ *      per-request `{currentUser, livePublisher}` pair (the recording
+ *      `LivePublisher` it owns), and hands it to `FateInterpreter.handleRequest`.
+ *   3. The interpreter runs each handler THROUGH that runtime — the same serving
+ *      path the deployed worker runs (`FateServer.layer(fateConfig)`; ADR 0043).
  *
- * This runs in the node pool (no workerd): the alchemy worker can't load into
- * `@cloudflare/vitest-pool-workers` yet. The proof is the interpreter over
- * the worker-level layers, driven through `FateInterpreter.handleRequest`
- * exactly as the `/fate` route drives them.
+ * Runs in the node pool (no workerd): the alchemy worker can't load into
+ * `@cloudflare/vitest-pool-workers` yet. Each `it` builds its own worker layer
+ * over a fresh `node:sqlite` handle ({@link freshDb}), so no rows leak.
  *
- * Asserts the `/fate` wire contract:
- *   - a sozluk query (`term`) and list (`terms`) return correct data,
- *   - a failing resolver maps to the correct wire error code (`me` anonymous →
- *     `UNAUTHORIZED`),
- *   - a sozluk mutation (`definition.add`) round-trips and the changed entity
- *     re-resolves over the same seam.
- *
- * Per-test DB isolation: each `it` builds its own worker layer over a fresh
- * `node:sqlite` handle ({@link freshDb}) and closes it in `finally`, so no rows
- * leak across cases (the `freshDb()` idiom from `Vote.test.ts`).
+ * Asserts the `/fate` wire contract: a sozluk query (`term`) + list (`terms`), a
+ * failing resolver mapping to its wire error code (`me` anon → `UNAUTHORIZED`),
+ * and a mutation (`definition.add`) round-trip re-resolving the changed entity.
  */
 import {liveConnectionTopic, liveEntityTopic} from "@nkzw/fate/server";
 import {Layer} from "effect";
@@ -48,35 +36,28 @@ import {runFateOp} from "./run-fate-op";
 const SESSION_USER = {id: "u-writer", name: "umut", email: "umut@example.com"};
 const SLUG = "fate-read";
 
-/** The per-test in-memory D1; created in `beforeEach`, closed in `afterEach`. */
 let sqlite: SqliteD1;
-/** The per-test worker layer (Drizzle + features) over {@link sqlite}'s handle. */
 let WorkerLive: Layer.Layer<WorkerFateServices>;
 
 /**
- * Build a fresh worker layer over a new `node:sqlite` handle and seed the SLUG
- * term + three definitions. `WorkerLive` wraps the SAME handle every `runFateOp`
- * call hits (`Layer.succeed(Database)(sqlite.d1)` is a constant over a shared
- * object reference, so reuse across separate `runFateOp` runs is one database).
+ * Fresh worker layer over a new `node:sqlite` handle, seeding the SLUG term +
+ * three definitions. `WorkerLive` wraps the SAME handle every `runFateOp` call
+ * hits (`Layer.succeed(Database)(sqlite.d1)` is a constant over a shared object
+ * reference), so reuse across runs is one database.
  */
 async function freshDb(): Promise<void> {
 	sqlite = makeSqliteTestDb();
 
-	// `makeFateLayer` is a zero-arg layer with `R = Database | BetterAuth` (ADR
-	// 0040). Provide the seam from the SAME handle the seeding writes to so
-	// features and seeding share one database — the one-`sqlite` invariant is
-	// type-enforced. The stub `BetterAuth` is enough: reads never reach the
-	// session path (`Pasaport.validateSession`).
 	WorkerLive = makeFateLayer.pipe(
 		Layer.provide(Layer.merge(Layer.succeed(Database)(sqlite.d1), layerStub())),
 	);
 
 	const db = createDrizzle(sqlite.d1);
 
-	// Seed three definitions with distinct scores so the keyset order is
-	// deterministic: (score desc, created_at asc, id asc). Written straight to the
-	// canonical D1 tables — `term_summary` carries the count/total_score the
-	// `terms` list reads; the `term` page recomputes them off `definition_view`.
+	// Distinct scores so the keyset order (score desc, created_at asc, id asc) is
+	// deterministic. Written to the canonical D1 tables: `term_summary` carries
+	// the count/total_score the `terms` list reads; the `term` page recomputes
+	// them off `definition_view`.
 	const now = new Date();
 	const definitions = [
 		{id: "def-alpha", authorId: "u1", authorName: "umut", body: "alpha definition", score: 50},
@@ -204,9 +185,6 @@ describe("fate ops — sozluk mutation round-trip", () => {
 		expect(created.score).toBe(0);
 		expect(created.authorId).toBe(SESSION_USER.id);
 
-		// Re-resolve the changed entity (the term it joined) over the SAME seam:
-		// the new definition is now in the term's definition list, and the term's
-		// count reflects it.
 		const reread = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "term",
@@ -238,16 +216,14 @@ describe("fate ops — sozluk mutation round-trip", () => {
 		);
 		expect(add.result.ok).toBe(true);
 		if (!add.result.ok) return;
-		// The mutation appends to `Term.definitions` keyed by the slug — the publish
-		// must reach the ARGS-scoped topic the subscriber registered under, not the
-		// procedure-wide global wildcard (the mis-route ADR 0039 guards against).
+		// Publish must reach the ARGS-scoped topic the subscriber registered under,
+		// not the procedure-wide global wildcard (the mis-route ADR 0039 guards).
 		const expectedKey = liveConnectionTopic("Term.definitions", {id: SLUG});
 		expect(add.published).toContain(expectedKey);
 		expect(add.published).not.toContain("connection:Term.definitions:*");
 	});
 
 	it("definition.vote publishes to the Definition entity topic (ADR 0039)", async () => {
-		// Seed a definition to vote on.
 		const add = await runFateOp(
 			WorkerLive,
 			{

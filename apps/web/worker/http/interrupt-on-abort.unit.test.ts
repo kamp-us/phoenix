@@ -1,13 +1,8 @@
 /**
- * `interruptOnAbort` — the platform-edge abort wiring for the routes
- * assembled in `app.ts` (ADR 0043). alchemy's worker bridge runs the request
- * handler with `Effect.runPromiseExit` and wires no signal, so the HTTP edge
- * owns abort→interruption itself (effect-smol's `HttpEffect.toWebHandlerWith`
- * idiom: `request.signal` listener → fiber interrupt). T0: pure helper, no
- * router, no workerd. Tests run on the Effect runtime (`it.effect`) — the
- * combinator is consumed as an Effect on the request fiber in production, so
- * the tests exercise it the same way; coordination uses a `Latch`, never
- * timers (a fixed tick raced fiber startup on loaded CI runners).
+ * Tests for `interruptOnAbort` (T0: pure helper, no router, no workerd). Run on
+ * the Effect runtime (`it.effect`), exercising the combinator the same way
+ * production does. Coordination uses a `Latch`, never timers (a fixed tick raced
+ * fiber startup on loaded CI runners).
  */
 import {assert, it} from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -41,9 +36,8 @@ describe("interruptOnAbort", () => {
 	it.effect("an abort mid-flight interrupts the program", () =>
 		Effect.gen(function* () {
 			const controller = new AbortController();
-			// The program opens a latch as its first instruction; awaiting the
-			// latch IS the deterministic "fiber is running" proof — the abort
-			// below provably lands mid-flight, on any runner speed.
+			// Awaiting the latch the program opens first IS the deterministic
+			// "fiber is running" proof — the abort below provably lands mid-flight.
 			const started = yield* Latch.make();
 			const program = started.open.pipe(Effect.andThen(Effect.never));
 			const fiber = yield* Effect.forkChild(program.pipe(interruptOnAbort(controller.signal)));
@@ -58,12 +52,10 @@ describe("interruptOnAbort", () => {
 		"an abort dispatched in the pre-check→listener gap still interrupts (recheck branch)",
 		() =>
 			Effect.gen(function* () {
-				// `Effect.forkChild` is a fiber yield point between the `signal.aborted`
-				// pre-check and `addEventListener` — an abort dispatched in that gap
-				// fires no listener. A real AbortController can't hit the gap
-				// deterministically, so simulate exactly what it looks like from the
-				// helper's view: `aborted` reads false at the pre-check and true after,
-				// and the registered listener never fires (the event already dispatched).
+				// A real AbortController can't hit the pre-check→listener gap
+				// deterministically, so simulate the helper's view of it: `aborted`
+				// reads false at the pre-check then true after, and the listener never
+				// fires (event already dispatched) — only the recheck can interrupt.
 				let aborted = false;
 				const gapSignal: AbortSignalLike = {
 					get aborted() {
@@ -71,8 +63,6 @@ describe("interruptOnAbort", () => {
 						aborted = true; // flips after the first (pre-check) read
 						return value;
 					},
-					// Registered too late: the event already dispatched, so the listener
-					// is never invoked — only the recheck can interrupt.
 					addEventListener: () => {},
 					removeEventListener: () => {},
 				};

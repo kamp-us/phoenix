@@ -1,17 +1,10 @@
 /**
- * Pano wire-entity shapers — `Post` / `Comment`.
- *
- * Every `{__typename: "Post" | "Comment", …}` literal is built here, once;
- * resolvers, lists, and mutations call a shaper instead of hand-restating the
- * literal so adding or renaming a field is a one-line edit and the
- * read/list/write paths can never drift out of byte-for-byte agreement.
- *
- * Shapers take already-resolved field values, not service rows — the mapping
- * from a given source row (a `PostPage`, a `PostSummaryRow`, a vote result)
- * onto the wire fields stays at the call site, because each source carries
- * different field names; the shaper owns only the wire shape itself.
- *
- * See `.patterns/fate-connections.md`, `.patterns/fate-effect-operations.md`.
+ * Pano wire-entity shapers — `Post` / `Comment`. Every `{__typename, …}` literal
+ * is built here once so the read/list/write paths can't drift. Shapers take
+ * already-resolved field values, not service rows: each source (`PostPage`,
+ * `PostSummaryRow`, a vote result) carries different field names, so that mapping
+ * stays at the call site and the shaper owns only the wire shape. See
+ * `.patterns/fate-connections.md`, `.patterns/fate-effect-operations.md`.
  */
 
 import type {PostPage} from "./Pano.ts";
@@ -29,18 +22,13 @@ export interface PostFields {
 	score: number;
 	commentCount: number;
 	createdAt: Date;
-	/**
-	 * Summary/keyset rows and fresh writes/votes carry no `updatedAt`; the shaper
-	 * owns the fallback (`updatedAt ?? createdAt`). Detail pages pass a non-null
-	 * `updatedAt`, so the fallback is a no-op there — every path yields the same
-	 * wire shape.
-	 */
+	// Summary/keyset rows and fresh writes/votes carry no `updatedAt`; the shaper
+	// owns the `updatedAt ?? createdAt` fallback so every path yields the same shape.
 	updatedAt?: Date | null;
 	myVote?: number | null;
 	tags: ReadonlyArray<{kind: string; label: string}>;
 }
 
-/** Shape resolved post fields into the `Post` wire entity. */
 export const toPost = (r: PostFields): Post => ({
 	__typename: "Post",
 	id: r.id,
@@ -59,13 +47,8 @@ export const toPost = (r: PostFields): Post => ({
 	tags: [...r.tags],
 });
 
-/**
- * Shape a detail `PostPage` (from `Pano.getPost`) plus the viewer's stamped
- * `myVote` onto the `Post` wire entity. The `PostPage` field names already match
- * the wire fields, so this is a direct map; the single mapping shared by the read
- * resolver (`queries.post`) and the delete-refresh (`pano-mutations.comment.delete`)
- * so they can't drift.
- */
+// The single `PostPage` → `Post` mapping shared by the read resolver
+// (`queries.post`) and the delete-refresh (`comment.delete`) so they can't drift.
 export const toPostFromPage = (page: PostPage, myVote: number | null): Post =>
 	toPost({
 		id: page.id,
@@ -97,7 +80,6 @@ export interface CommentFields {
 	myVote?: number | null;
 }
 
-/** Shape resolved comment fields into the `Comment` wire entity. */
 export const toComment = (r: CommentFields): Comment => ({
 	__typename: "Comment",
 	id: r.id,

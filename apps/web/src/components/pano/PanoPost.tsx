@@ -8,8 +8,7 @@ import {Tag, type TagKind} from "../ui/atoms";
 import {PostVoteView} from "./PanoPostHeader";
 import "./PanoPost.css";
 
-/* Vote control — single triangle upvote with count below (lobsters-shape).
-   Stays presentational; the parent owns the mutation + auth gate. */
+/** Presentational vote control; the parent owns the mutation + auth gate. */
 export function VoteControl({
 	count,
 	pressed = false,
@@ -44,18 +43,12 @@ export function VoteControl({
 }
 
 /**
- * Triangle vote button for a single post — fate.
- *
- * Dispatches `fate.mutations.post.{vote,retractVote}` with a declarative
- * `optimistic` flip of `score` + `myVote`. The result is written back through
- * `PostVoteView` keyed by `id`, so every card referencing this post (feed list +
- * detail page) re-renders instantly; the optimistic write rolls back on error.
- *
- * Signed-out clicks navigate to `/auth?returnTo=<current>` rather than firing
- * the mutation. Error routing follows the call-site-catch pattern (phoenix
- * codes classify as boundary, so the mutation throws; the optimistic flip already
- * rolled back). The vote button has no inline error slot, so we surface only
- * `UNAUTHORIZED` (→ auth redirect) and stay silent otherwise.
+ * Triangle vote button for a single post. Dispatches
+ * `fate.mutations.post.{vote,retractVote}` with an optimistic `score`/`myVote`
+ * flip written back through `PostVoteView` keyed by `id`, so every card
+ * referencing this post (feed + detail) re-renders instantly. The button has no
+ * inline error slot, so we surface only `UNAUTHORIZED` (→ auth redirect) and
+ * stay silent otherwise — see `.patterns/fate-mutations-client.md`.
  */
 export function PostVoteWidget({
 	postId,
@@ -131,7 +124,6 @@ export function PanoPost({
 	onSave?: (id: string) => void;
 	onHide?: (id: string) => void;
 }) {
-	/* Site label — host in parens for external links, "yazı" for self-posts. */
 	const siteLabel = post.host ?? (post.url ? null : "yazı");
 
 	return (

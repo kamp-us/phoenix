@@ -1,21 +1,8 @@
 /**
- * Pano error-class ↔ wire-code enumeration pin (T0).
- *
- * The migrated pano records derive wire codes from the `ErrorCode`
- * annotation on each error class (`.patterns/fate-effect-wire-errors.md`) —
- * no registry. This pin is the app-side counterpart of the package's
- * `WireError.unit.test.ts` enumeration: every error class pano operations
- * can fail with, paired with the exact wire code the retired bridge's
- * `WIRE_CODE_BY_TAG` registry emitted for it (deleted in the v1 cutover), so the annotation-derived codec
- * and the SPA's `MUTATION_ERROR_CODES` vocabulary cannot drift through the
- * migration.
- *
- * The bridge's `pano/PostValidation` / `pano/CommentValidation` carried a
- * dynamic `code` field the registry upcased per instance (`title_required` →
- * `TITLE_REQUIRED`); `ErrorCode` is ONE static code per class
- * (`wireCodeOf` reads the instance's CONSTRUCTOR annotation), so each
- * sub-code is now its own class — this table pins every split class to the
- * exact upcased code the `upcased` registry arm produced for it.
+ * Pins every pano error class to the exact wire code the retired bridge's
+ * registry emitted for it, so the annotation-derived codec and the SPA's
+ * `MUTATION_ERROR_CODES` vocabulary can't drift through the migration. See
+ * `errors.ts` for why each former validation sub-code is now its own class.
  */
 import {encodeWireError, wireCodeOfClass} from "@phoenix/fate-effect";
 import {describe, expect, it} from "vitest";
@@ -35,24 +22,16 @@ import {
 	UrlInvalid,
 } from "./errors.ts";
 
-/**
- * The pinned pairs — wire codes preserved verbatim from the bridge registry
- * (`WIRE_CODE_BY_TAG`, pano section — registry deleted in the v1 cutover: the
- * `fixed` arms plus every member of the two `upcased` arms' declared sets).
- */
 const PANO_WIRE_CODES = [
-	// PostValidation sub-codes (the bridge's `upcased` arm, one class each).
 	[TitleRequired, "TITLE_REQUIRED"],
 	[TitleTooLong, "TITLE_TOO_LONG"],
 	[UrlInvalid, "URL_INVALID"],
 	[PostBodyTooLong, "BODY_TOO_LONG"],
 	[TagsRequired, "TAGS_REQUIRED"],
 	[TagInvalid, "TAG_INVALID"],
-	// CommentValidation sub-codes.
 	[CommentBodyRequired, "BODY_REQUIRED"],
 	[CommentBodyTooLong, "BODY_TOO_LONG"],
 	[ParentCommentNotFound, "PARENT_NOT_FOUND"],
-	// Fixed arms.
 	[PostNotFound, "POST_NOT_FOUND"],
 	[CommentNotFound, "COMMENT_NOT_FOUND"],
 	[UnauthorizedPostMutation, "UNAUTHORIZED"],

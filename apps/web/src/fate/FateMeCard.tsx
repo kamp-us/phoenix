@@ -1,16 +1,8 @@
 /**
- * The current user, read through fate. Exercises the whole client foundation
- * end-to-end:
- *   - a `view<User>()` selection over the generated `User` entity type,
- *   - one batched `useRequest({ me: ... })` against the generated `me` root
- *     (the `viewer` pattern — backed by the server `queries.me` resolver),
- *   - a child `useView` reading the masked record from the normalized cache,
- *   - all under `<Screen>` (Suspense + error boundary). `me` is auth-gated, so
- *     an unauthenticated read throws `UNAUTHORIZED` to the boundary — which is
- *     also the boundary's smoke test.
- *
- * It renders alongside the session-derived identity on the profile page; the
- * value here comes over `/fate` (cookie-authenticated), proving the path.
+ * The current user read through fate, on the profile page. Doubles as the
+ * end-to-end smoke test of the client foundation: `me` is auth-gated, so an
+ * unauthenticated read throws `UNAUTHORIZED` to the `<Screen>` boundary.
+ * See `.patterns/fate-views-and-requests.md`.
  */
 import {useRequest, useView, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";

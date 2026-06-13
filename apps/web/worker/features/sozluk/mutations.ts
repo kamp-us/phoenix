@@ -1,27 +1,12 @@
 /**
- * Mutation resolvers — the sozluk write path.
+ * Mutation resolvers — the sozluk write path (ADR 0020). Each mutation calls a
+ * `Sozluk` service method then returns the re-resolved affected entity shaped
+ * like a read; a delete returns the re-resolved parent (`Term`) so the client's
+ * normalized cache updates the surrounding list. Domain validation stays in the
+ * service (ADR 0013); `CurrentUser.required` gates every write.
  *
- * Per ADR 0020, mutations are `Fate.mutation` def + `Effect.fn` pairs named
- * `entity.verb` (`.patterns/fate-effect-operations.md`). Each calls a `Sozluk`
- * service method, then returns the **re-resolved affected entity** shaped
- * exactly like a read; a delete returns the re-resolved **parent** (`Term`) so
- * the client's normalized cache updates the surrounding list.
- *
- * Input Schemas carry the wire field shapes only — domain validation stays in
- * the service (ADR 0013); domain failures (`BodyRequired`, `BodyTooLong`,
- * `DefinitionNotFound`, `UnauthorizedDefinitionMutation`) are declared on each
- * definition and surface through their `ErrorCode` annotations as stable
- * wire codes (`.patterns/fate-effect-wire-errors.md`). Infra failures never
- * reach this layer — they die inside the domain service (the boundary rule in
- * `.patterns/feature-services.md`).
- *
- * `CurrentUser.required` gates every write (anonymous → `UNAUTHORIZED`). The
- * vote mutations stamp `myVote` authoritatively from the vote write so the
- * field is correct without a follow-up `user_vote` read.
- *
- * Live publishes go through the typo-gated `WorkerLivePublisher` accessor
- * (`fate-live/protocol.ts`) — every publish method's error
- * channel is `never`, so a failed publish can never fail the mutation
+ * Live publishes go through `WorkerLivePublisher`, whose publish methods have
+ * `E = never`, so a failed publish can never fail the mutation
  * (`.patterns/fate-effect-server.md`).
  */
 
@@ -55,11 +40,8 @@ const DefinitionIdInput = Schema.Struct({
 	id: Schema.String,
 });
 
-/**
- * The service definition results name the id `definitionId` and the author
- * `authorName`; the `toDefinition` shaper takes the wire field names, so map
- * those two keys here before shaping.
- */
+// Service results name the id `definitionId` / author `authorName`; the
+// `toDefinition` shaper takes wire field names, so remap those two keys first.
 const shapeDefinition = (r: {
 	definitionId: string;
 	body: string;
@@ -101,11 +83,8 @@ export const mutations = {
 			});
 			// Fresh write: not yet voted by anyone.
 			const definition = shapeDefinition({...result, myVote: null});
-			// New definition joins the term's list: append its node to the
-			// `Term.definitions` connection keyed by the term slug (the same key
-			// `definition.delete` removes from). This drives every open term page —
-			// including the author's own — without a reload. Inline node; the DO does
-			// no DB work and each client masks `data` to its own selection.
+			// Append the node to the term's `Term.definitions` connection (same key
+			// `definition.delete` removes from) so every open term page updates live.
 			yield* live
 				.connection("Term.definitions", {id: input.termSlug})
 				.appendNode("Definition", definition.id, {node: definition});
@@ -124,9 +103,7 @@ export const mutations = {
 			const live = yield* WorkerLivePublisher;
 			const result = yield* sozluk.voteDefinition({definitionId: input.id, voterId: user.id});
 			const definition = shapeDefinition(result);
-			// Publish the re-resolved entity inline; the DO does no DB work and each
-			// client masks `data` to its own selection. `myVote` is viewer-specific,
-			// so it's omitted from `changed` (clients keep their own).
+			// `myVote` is viewer-specific, so it's omitted from `changed`.
 			yield* live.update("Definition", definition.id, {changed: ["score"], data: definition});
 			return definition;
 		}),
@@ -171,12 +148,10 @@ export const mutations = {
 				actorId: user.id,
 				body: input.body,
 			});
-			// Re-read the viewer's vote so the edited entity carries an accurate
-			// `myVote` (edit doesn't change vote state, but the read shouldn't
-			// drop it). Batched single-id read.
+			// Re-read the viewer's vote so the edit doesn't drop `myVote` (edit
+			// leaves vote state untouched but must not blank it).
 			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {viewerId: user.id});
 			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
-			// `body` changed; `myVote` is viewer-specific so left out of `changed`.
 			yield* live.update("Definition", definition.id, {changed: ["body"], data: definition});
 			return definition;
 		}),
@@ -193,11 +168,9 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = yield* WorkerLivePublisher;
-			// Resolve the parent slug before the delete (the row still exists),
-			// so we can re-resolve the parent `Term` afterward.
+			// Resolve the parent slug before the delete, while the row still exists.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
-			// The entity is gone, and its edge leaves the parent term's connection.
 			yield* live.delete("Definition", input.id);
 			if (slug) {
 				yield* live.connection("Term.definitions", {id: slug}).deleteEdge("Definition", input.id);

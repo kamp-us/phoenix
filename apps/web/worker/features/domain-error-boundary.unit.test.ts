@@ -1,24 +1,16 @@
 /**
- * Domain-boundary error pins — infra failures never escape a feature service.
+ * Domain-boundary error pins — infra failures never escape a feature service
+ * (`.patterns/feature-services.md`, `.patterns/effect-errors.md`). Each service
+ * collapses `DrizzleError` into the defect channel internally (`orDieAccess`),
+ * so public method signatures carry DOMAIN errors only and the fate layer never
+ * names Drizzle.
  *
- * The boundary rule (`.patterns/feature-services.md`, `.patterns/effect-errors.md`):
- * a domain service dies on infrastructure failures INSIDE its implementation —
- * every internal Drizzle call site collapses `DrizzleError` into the defect
- * channel (`orDieAccess` over `run`/`batch` at layer build) — so the public
- * method signatures carry DOMAIN errors only. The fate layer
- * (sources/queries/lists/mutations) consequently never names Drizzle: there is
- * nothing left to `orDie` at the transport edge, and the loader contract's
- * "infra failures are defects" holds by the service type alone.
+ * Two pins per service: (1) a SWEEP proving no method's `E` channel contains
+ * `DrizzleError`, (2) an exact-union pin catching a silently widened/narrowed
+ * domain union. Type-only assertions, T0 per ADR 0040.
  *
- * Type-level pins only (expectTypeOf, not `@ts-expect-error` — the effect LSP
- * plugin's TS377003 escapes the directive, recurring finding):
- *
- *   1. a per-service SWEEP proving no method's `E` channel contains
- *      `DrizzleError` (a re-leak on any method is a compile error here);
- *   2. one exact-union pin per service, so a signature that silently widens
- *      or narrows its domain union is also a compile error.
- *
- * T0 per ADR 0040: type-only assertions, zero storage, zero layers.
+ * Uses expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's TS377003
+ * escapes the directive (recurring finding).
  */
 
 import type {Effect} from "effect";
@@ -51,17 +43,12 @@ import type {Stats} from "./stats/Stats.ts";
 import type {VoteTargetNotFound} from "./vote/errors.ts";
 import type {Vote} from "./vote/Vote.ts";
 
-/** The `E` channel of one service method. */
 type ErrorsOf<F> = F extends (...args: never[]) => Effect.Effect<infer _A, infer E, infer _R>
 	? E
 	: never;
 
-/**
- * The keys of every method whose `E` channel contains `DrizzleError` — the
- * sweep resolves to `never` exactly when the whole service is leak-free, and
- * to the offending method name(s) otherwise (so the failing pin names the
- * culprit).
- */
+// Resolves to `never` when the service is leak-free, else to the offending
+// method name(s) — so a re-leak fails the pin AND names the culprit.
 type InfraLeaks<S> = {
 	[K in keyof S]: [Extract<ErrorsOf<S[K]>, DrizzleError>] extends [never] ? never : K;
 }[keyof S];

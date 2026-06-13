@@ -1,16 +1,7 @@
 /**
- * Unit coverage for the shared keyset primitives.
- *
- * `keysetAfter` builds the lexicographic "rows strictly after the cursor"
- * predicate that five service methods depend on; the mixed-direction case
- * (`score desc, createdAt asc, id asc`) is the one that silently breaks on a
- * field change, so it gets explicit assertions. We render each predicate to its
- * SQLite text + params via `SQLiteSyncDialect` so the test reads the actual
+ * Unit coverage for the shared keyset primitives. Predicates are rendered to
+ * SQLite text + params via `SQLiteSyncDialect` so the tests assert the actual
  * comparison operators and column order, not just a structural shape.
- *
- * `forwardPage` is the single assembly point for the `{rows, hasNextPage,
- * endCursor}` envelope — its probe-slicing and cursor-miss behavior are covered
- * directly.
  */
 
 import type {SQL} from "drizzle-orm";
@@ -56,7 +47,6 @@ describe("keysetAfter", () => {
 			{column: commentView.id, dir: "asc", value: "c9"},
 		]);
 		const {sql} = render(predicate as SQL);
-		// First arm: strict on c1. Second arm: c1 equal AND strict on c2.
 		// drizzle 1.0 fully parenthesizes every comparison and and/or group
 		// (semantically identical to the sparser 0.45 output).
 		expect(sql).toBe(
@@ -73,8 +63,6 @@ describe("keysetAfter", () => {
 			{column: definitionView.id, dir: "asc", value: "d7"},
 		]);
 		const {sql} = render(predicate as SQL);
-		// desc → `<`, asc → `>`; each later arm prefixes equalities on the
-		// earlier columns. This is exactly the hand-rolled predicate it replaces.
 		expect(sql).toBe(
 			'(("definition_view"."score" < ?) or ' +
 				'((("definition_view"."score" = ?) and ("definition_view"."created_at" > ?))) or ' +
@@ -83,8 +71,6 @@ describe("keysetAfter", () => {
 	});
 
 	it("a null cursor value drops that column (term-summary `recent` fallback)", () => {
-		// When lastActivityAt is null on the cursor row, the recent-sort keyset
-		// degrades to the tiebreaker-only predicate `slug > ?`.
 		const predicate = keysetAfter([
 			{column: termSummary.lastActivityAt, dir: "desc", value: null},
 			{column: termSummary.slug, dir: "asc", value: "zebra"},

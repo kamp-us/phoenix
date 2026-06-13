@@ -1,9 +1,5 @@
-/**
- * Turkish date / relative-time helpers backed by `Intl.DateTimeFormat`
- * and `Intl.RelativeTimeFormat`. Both formatters are cached at module
- * scope — Intl constructors are cheap on call but we still create one
- * per surface use otherwise.
- */
+// Turkish date / relative-time helpers. Formatters are cached at module scope
+// to avoid reconstructing an `Intl` formatter per call site.
 
 const dateFmt = new Intl.DateTimeFormat("tr-TR", {
 	day: "numeric",
@@ -11,11 +7,6 @@ const dateFmt = new Intl.DateTimeFormat("tr-TR", {
 	year: "numeric",
 });
 
-/**
- * Full timestamp formatter used by the edited-indicator tooltip (T17).
- * Shows the user the exact moment the content was last edited so they can
- * compare against the relative "düzenlendi" label.
- */
 const dateTimeFmt = new Intl.DateTimeFormat("tr-TR", {
 	day: "numeric",
 	month: "short",
@@ -24,12 +15,8 @@ const dateTimeFmt = new Intl.DateTimeFormat("tr-TR", {
 	minute: "2-digit",
 });
 
-/**
- * Edit window in ms — anything inside this window of the createdAt is treated
- * as part of the initial submission rather than an edit. Defends against tiny
- * server-side updatedAt drift (sub-second after insert) flagging fresh content
- * as edited.
- */
+// Edits within this window of createdAt count as the initial submission, not an
+// edit — defends against sub-second server-side updatedAt drift after insert.
 export const EDITED_GRACE_MS = 60 * 1000;
 
 /* numeric: 'auto' lets the formatter say "şimdi" / "dün" instead of
@@ -68,11 +55,6 @@ export function formatAgoTR(iso: string | null | undefined): string {
 	return "";
 }
 
-/**
- * Full edit-timestamp formatter for the edited-indicator tooltip (T17).
- * Renders the iso into Turkish locale day + month + year + hour:minute so the
- * tooltip carries the precise moment of last edit.
- */
 export function formatEditedTooltipTR(iso: string | null | undefined): string {
 	if (!iso) return "";
 	const d = new Date(iso);
@@ -81,11 +63,9 @@ export function formatEditedTooltipTR(iso: string | null | undefined): string {
 }
 
 /**
- * Returns `true` when `updatedAt` is more than `EDITED_GRACE_MS` after
- * `createdAt`. Powers the "düzenlendi" indicator on definitions / posts /
- * comments (T17). Both inputs are ISO 8601 strings (matches the GraphQL
- * surface). Returns `false` defensively on missing / invalid inputs so the
- * indicator stays hidden when timestamps are unavailable.
+ * `true` when `updatedAt` is more than `EDITED_GRACE_MS` after `createdAt` —
+ * backs the "düzenlendi" indicator. Defensively `false` on missing / invalid
+ * inputs so the indicator stays hidden when timestamps are unavailable.
  */
 export function editedAfter(
 	createdAt: string | null | undefined,

@@ -1,23 +1,8 @@
 /**
- * Pasaport root query resolvers — `me`, `profile(username)`.
- *
- * `Fate.query` def + `Effect.fn("<wire name>")` pairs
- * (`.patterns/fate-effect-operations.md`). Query resolvers return shaped
- * output directly — they are **not** masked through a source, so the resolver
- * builds the exact wire shape the client selected (including nested
- * connections).
- *
- * Roots:
- *   - `me` — the "current user" root (fate's documented `viewer` pattern); reads
- *     the canonical Pasaport row so a fresh `username` round-trips right after
- *     `setUsername` (better-auth's session inference lags), falls back to the
- *     session user when the row isn't found. Anonymous → `UNAUTHORIZED` via
- *     `CurrentUser.required` (the package's `Unauthorized`, declared on the
- *     definition).
- *   - `profile(username)` — the public profile page. Returns `null` for an
- *     unknown username (the SPA renders its 404). Identity + live-aggregated
- *     counters come from `Pasaport.lookupProfile`; the `contributions` connection
- *     is delivered inline by the resolver (see `.patterns/fate-connections.md`).
+ * Pasaport root query resolvers — `me`, `profile(username)`. `Fate.query` def +
+ * `Effect.fn` pairs (`.patterns/fate-effect-operations.md`); they return shaped
+ * output directly (not masked through a source), so the resolver builds the
+ * selected wire shape including nested connections.
  */
 
 import {hasNestedSelection} from "@nkzw/fate/server";
@@ -30,13 +15,10 @@ import {toContributionRow, toProfile, toUser} from "./shapers.ts";
 import type {Contribution} from "./views.ts";
 import {ProfileView, UserView} from "./views.ts";
 
-/** Default page size for the nested `Profile.contributions` feed. */
 const CONTRIBUTIONS_PAGE_SIZE = 20;
 
-/**
- * `profile(username)` args. Nested connection args are scoped under the field
- * path (`args.contributions.{first,after}`), matching fate's `getScopedArgs`.
- */
+// Nested connection args are scoped under the field path
+// (`args.contributions.{first,after}`), matching fate's `getScopedArgs`.
 const ProfileArgs = Schema.Struct({
 	username: Schema.String,
 	contributions: connectionArgs(),
@@ -45,13 +27,11 @@ const ProfileArgs = Schema.Struct({
 export const queries = {
 	me: Fate.query(
 		{type: UserView, error: Unauthorized},
-		// Returns the full `User` row (`id, email, name, image, username`). Reads
-		// the canonical row through `Pasaport.getUserById` so a fresh `username`
-		// round-trips right after `setUsername` (better-auth's session inference
-		// lags); falls back to the session user when the row isn't found.
-		// Anonymous → `UNAUTHORIZED`.
+		// Reads the canonical row (not the session) so a fresh `username`
+		// round-trips right after `setUsername` — better-auth's session inference
+		// lags. Falls back to the session user when the row isn't found.
 		Effect.fn("me")(function* () {
-			const user = yield* CurrentUser.required; // Unauthorized → UNAUTHORIZED
+			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
 			const fresh = yield* pasaport.getUserById(user.id);
 			if (!fresh) {
@@ -66,18 +46,10 @@ export const queries = {
 			return toUser(fresh);
 		}),
 	),
-	/**
-	 * Public profile by username. Returns `null` for an unknown username (the SPA
-	 * renders its 404). Identity + live-aggregated counters come from
-	 * `Pasaport.lookupProfile`; identity fields are flat scalars on the profile.
-	 *
-	 * `contributions` resolves to a `ConnectionResult` only when selected, paged
-	 * by the DB keyset (`Pasaport.listContributions`, `(createdAt desc, id desc)`)
-	 * — the same discriminant feed a source `connection` capability would
-	 * delegate to, delivered inline here because the native path doesn't
-	 * auto-invoke a hand-built source's nested `connection` (see
-	 * fate-connections.md). The discriminant `kind` is preserved on every node.
-	 */
+	// `contributions` is delivered inline (not via a source `connection`
+	// capability) because the native path doesn't auto-invoke a hand-built
+	// source's nested `connection` (see fate-connections.md). Returns `null` for
+	// an unknown username; the SPA renders its 404.
 	profile: Fate.query(
 		{args: ProfileArgs, type: ProfileView},
 		Effect.fn("profile")(function* ({args, select}) {

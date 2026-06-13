@@ -1,16 +1,13 @@
 /**
  * fate-operation integration tests (T2, ADR 0040) — sozluk keyset correctness
- * on the wire, driven through the {@link runFateOp} harness over the full
- * worker layer with in-memory SQL.
+ * on the wire, driven through the {@link runFateOp} harness (idiom per
+ * `sozluk.test.ts`: per-test fresh `node:sqlite` D1 + `WorkerLive` layer).
  *
- * The keyset-ordering + pagination correctness for sozluk reads, migrated down
- * from the integration (T3) suite (`tests/integration/sozluk-read.test.ts`). T3
- * drove this through HTTP sign-up + real `definition.add`/`definition.vote`
- * mutations to realize scores, with a `sleep(1100)` to space `last_activity_at`
- * across its second-resolution — a flake engine. Here the fixtures are seeded by
- * **direct INSERT** with explicit `score` / `createdAt` / `id` / `lastActivityAt`
- * values, so the keyset tie-breaks are deterministic with no clock, no votes, and
- * no sleep. Same coverage, no flake.
+ * Migrated down from the T3 suite (`tests/integration/sozluk-read.test.ts`),
+ * which drove this through HTTP sign-up + real mutations with a `sleep(1100)` to
+ * space `last_activity_at` — a flake engine. Here fixtures are seeded by direct
+ * INSERT with explicit `score` / `createdAt` / `id` / `lastActivityAt`, so the
+ * tie-breaks are deterministic with no clock, no votes, no sleep.
  *
  * The three keysets under test (read off `Sozluk.ts`):
  *   - `Term.definitions` → `(score desc, created_at asc, id asc)`, cursor = def id.
@@ -18,10 +15,7 @@
  *   - `terms(sort: "recent")`  → `(last_activity_at desc, slug asc)`, cursor = slug.
  *
  * Each fixture deliberately plants ties straddling a page boundary so the
- * lower-priority keyset column is the only thing that orders the rows correctly.
- *
- * Idiom follows `sozluk.test.ts`: per-test fresh `node:sqlite` D1 +
- * `WorkerLive` layer, direct Drizzle INSERT seeding, `runFateOp` to drive `/fate`.
+ * lower-priority keyset column is the only thing ordering the rows correctly.
  */
 import {Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
@@ -113,15 +107,10 @@ async function seedTerm(opts: {
 }
 
 describe("fate ops — sozluk keyset (Term.definitions)", () => {
-	// Five definitions exercising every tie the keyset (score desc, created_at
-	// asc, id asc) must break:
-	//   - def-a score 50, earliest  → rank 1
-	//   - def-b score 40, t=2000    → score tie with def-c, broken by created_at
-	//   - def-c score 40, t=3000    → later than def-b → rank 3
-	//   - def-d score 30, t=4000    → full (score, created_at) tie with def-e,
-	//   - def-e score 30, t=4000    → broken by id asc (def-d < def-e) → rank 5
-	// page size 2 puts the score tie (b/c) at the page-1→2 boundary and the
-	// id-only tie (d/e) at the page-2→3 boundary.
+	// Five defs exercising every tie the (score desc, created_at asc, id asc)
+	// keyset must break: b/c tie on score (broken by created_at), d/e tie on
+	// (score, created_at) (broken by id asc). page size 2 puts the b/c tie on the
+	// page-1→2 boundary and the d/e id-only tie on the page-2→3 boundary.
 	const SLUG = "keyset-defs";
 	const t = (ms: number) => new Date(ms);
 	beforeEach(async () => {
@@ -141,7 +130,7 @@ describe("fate ops — sozluk keyset (Term.definitions)", () => {
 	it("paginates by the (score desc, created_at asc, id asc) keyset with no skips/dupes", async () => {
 		const order = ["def-a", "def-b", "def-c", "def-d", "def-e"];
 
-		// Page 1: a(50), b(40 @2000) — the score tie boundary lands here.
+		// Page 1: a(50), b(40 @2000) — the score-tie boundary.
 		const p1 = await runFateOp(WorkerLive, {
 			kind: "query",
 			name: "term",
@@ -153,7 +142,6 @@ describe("fate ops — sozluk keyset (Term.definitions)", () => {
 		const d1 = (p1.result.data as {definitions: Connection<DefNode>}).definitions;
 		expect(d1.items.map((e) => e.node.id)).toEqual(["def-a", "def-b"]);
 		expect(d1.pagination.hasNext).toBe(true);
-		// Cursor is the last node's id (the keyset cursor).
 		expect(d1.pagination.nextCursor).toBe("def-b");
 
 		// Page 2: c(40 @3000), d(30 @4000) — c follows b on created_at asc.
@@ -183,13 +171,11 @@ describe("fate ops — sozluk keyset (Term.definitions)", () => {
 		const d3 = (p3.result.data as {definitions: Connection<DefNode>}).definitions;
 		expect(d3.items.map((e) => e.node.id)).toEqual(["def-e"]);
 		expect(d3.pagination.hasNext).toBe(false);
-		// A final NON-empty page still carries the last row's cursor as endCursor
-		// (the connection envelope emits `nextCursor` whenever a row exists); only
-		// `hasNext: false` signals the end. A stale-cursor empty page is the case
-		// where `nextCursor` is absent (see below).
+		// A final non-empty page still carries the last row's cursor; the envelope
+		// emits `nextCursor` whenever a row exists, so only `hasNext: false` signals
+		// the end (a stale-cursor empty page is the case where it's absent — below).
 		expect(d3.pagination.nextCursor).toBe("def-e");
 
-		// No skips/dupes across pages, and the union is exactly the seeded order.
 		const all = [...d1.items, ...d2.items, ...d3.items].map((e) => e.node.id);
 		expect(all).toEqual(order);
 		expect(new Set(all).size).toBe(order.length);
@@ -212,11 +198,9 @@ describe("fate ops — sozluk keyset (Term.definitions)", () => {
 });
 
 describe("fate ops — sozluk keyset (terms popular sort)", () => {
-	// Six terms exercising the (total_score desc, slug asc) keyset, including a
-	// score tie (pop-c / pop-d both 30) straddling the page-2→3 boundary so the
-	// slug-asc tiebreak is the only thing ordering them:
-	//   pop-a 50, pop-b 40, pop-c 30, pop-d 30, pop-e 20, pop-f 10
-	// page size 2 → [a,b] [c,d] [e,f]; within the tie c precedes d by slug asc.
+	// Six terms on the (total_score desc, slug asc) keyset. pop-c/pop-d both score
+	// 30 — a tie straddling the page-2→3 boundary (page size 2 → [a,b][c,d][e,f]),
+	// so slug-asc is the only thing ordering c before d.
 	beforeEach(async () => {
 		const fixtures: Array<[string, number]> = [
 			["pop-a", 50],
@@ -251,7 +235,6 @@ describe("fate ops — sozluk keyset (terms popular sort)", () => {
 			if (!page.result.ok) return;
 			const conn = page.result.data as Connection<TermNode>;
 			for (const e of conn.items) seen.push(e.node.slug);
-			// Each item's cursor is its slug (the keyset key).
 			for (const e of conn.items) expect(e.cursor).toBe(e.node.slug);
 			if (!conn.pagination.hasNext) break;
 			after = conn.pagination.nextCursor;
@@ -294,9 +277,8 @@ describe("fate ops — sozluk keyset (terms popular sort)", () => {
 });
 
 describe("fate ops — sozluk keyset (terms recent sort)", () => {
-	// Recent orders by (last_activity_at desc, slug asc). Seed explicit
-	// last_activity_at values (no clock, no sleep): rec-a is newest, rec-b and
-	// rec-c share a timestamp so the slug-asc tiebreak orders them, rec-d oldest.
+	// (last_activity_at desc, slug asc). Explicit timestamps (no clock, no sleep):
+	// rec-b and rec-c share a timestamp so slug-asc is the only thing ordering them.
 	const at = (ms: number) => new Date(ms);
 	beforeEach(async () => {
 		const fixtures: Array<[string, number]> = [

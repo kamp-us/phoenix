@@ -14,7 +14,6 @@ const styles = bem("kp-dialog", [
 	"close",
 ]);
 
-/* Root + Trigger + Close are pass-through — consumer composes them. */
 export const Root = BaseDialog.Root;
 export const Trigger = BaseDialog.Trigger;
 export const Close = BaseDialog.Close;
@@ -73,5 +72,4 @@ export function Foot({children}: {children: React.ReactNode}) {
 	return <footer className={styles.foot}>{children}</footer>;
 }
 
-/* Default export — friendly namespace import:  import Dialog from './Dialog' */
 export const Dialog = {Root, Trigger, Close, Popup, Head, Body, Foot};

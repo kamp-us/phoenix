@@ -2,27 +2,20 @@
  * The `* /fate/live` route — the SSE transport endpoint (ADR 0023/0028,
  * `.patterns/alchemy-http-router.md`).
  *
- * Serves fate's native SSE live protocol from the unified `LiveDO`
- * (connection-role instances) rather than fate's in-Worker `handleLiveRequest`
- * (which cannot fan out across isolates). It builds **no** per-request runtime:
- * the session check rides the worker-level `Pasaport` (the same service `/fate`
- * and `/api/auth/*` use), and the connection is reached through the
- * worker-init-resolved `LiveDO` namespace (carried by `LiveConnections`) —
- * addressed through `connectionOf(live, id)` (`live-do.ts`'s addressing seam)
- * and driven by typed RPC + a forwarded `fetch`, never
+ * Serves fate's native SSE live protocol from the unified `LiveDO` rather than
+ * fate's in-Worker `handleLiveRequest` (which can't fan out across isolates). It
+ * builds NO per-request runtime: the session check rides the worker-level
+ * `Pasaport`, and the connection is reached through the worker-init `LiveDO`
+ * namespace via typed RPC + a forwarded `fetch`, never
  * `idFromName`/`get`/`stub.fetch(string)`.
  *
- *   - `GET  /fate/live?connectionId=…` → validate cookie, forward the request to
- *     the connection DO's `fetch` to open the SSE stream. Rejected (401) without
- *     a valid session cookie.
+ *   - `GET  /fate/live?connectionId=…` → validate cookie, forward to the
+ *     connection DO's `fetch` to open the SSE stream (401 without a session).
  *   - `POST /fate/live` → a `subscribe`/`subscribeConnection`/`unsubscribe`
  *     control message; validate cookie, drive the connection DO's typed RPC.
  *
- * The session cookie rides the request automatically (fate opens the
- * `EventSource` with `withCredentials: true`, same-origin), so there is no token
- * in the URL and no header. This is an imperative `HttpRouter.add` route reading
- * `Cloudflare.Request`; its `Pasaport`/`LiveConnections` requirements are
- * discharged with `HttpRouter.provideRequest` in `http/app.ts`.
+ * The session cookie rides the request automatically (fate's `EventSource` uses
+ * `withCredentials: true`, same-origin), so there's no token in the URL/header.
  */
 import {FateRequestError} from "@nkzw/fate/server";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -39,11 +32,7 @@ import {
 } from "./protocol.ts";
 import {LiveConnections} from "./topics.ts";
 
-/**
- * The fate live error envelope (`{results: [{error}], version: 1}`). The SSE
- * client parses this shape for both the GET (connect) and POST (control) paths,
- * so it lives in exactly one place.
- */
+/** The fate live error envelope (`{results: [{error}], version: 1}`). */
 function liveError(code: string, message: string, status: number) {
 	return HttpServerResponse.jsonUnsafe(
 		{results: [{error: {code, message}, id: "live", ok: false}], version: 1},
@@ -51,11 +40,6 @@ function liveError(code: string, message: string, status: number) {
 	);
 }
 
-/**
- * `* /fate/live` — validate the session cookie, then either open the SSE stream
- * (GET) or drive a control message (POST) on the connection DO. Builds no
- * request runtime.
- */
 export const handleLive = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
 	const pasaport = yield* Pasaport;
@@ -72,10 +56,8 @@ export const handleLive = Effect.gen(function* () {
 		if (!connectionId) {
 			return liveError("BAD_REQUEST", "Missing connectionId.", 400);
 		}
-		// Forward the inbound request to the connection DO's `fetch`, which opens
-		// the held SSE stream and returns it verbatim (`fromWeb` carries the
-		// stream through). `ownerId` is threaded so the DO can reject a control
-		// message that subscribes on another user's behalf.
+		// `ownerId` is threaded so the DO can reject a control message that
+		// subscribes on another user's behalf.
 		const forward = new Request(
 			`https://live/connect?connectionId=${encodeURIComponent(connectionId)}&ownerId=${encodeURIComponent(ownerId)}&maxQueuedEventsPerConnection=${defaultLiveLimits.maxQueuedEventsPerConnection}`,
 			{headers: raw.headers},
@@ -86,11 +68,8 @@ export const handleLive = Effect.gen(function* () {
 	}
 
 	if (raw.method === "POST") {
-		// Parse the JSON body, then decode it against the control-request schema.
-		// A bad-JSON body and a schema `FateRequestError` both surface as an HTTP
-		// error Response (not an Effect failure) at this request boundary, so each
-		// is mapped into a `liveError` carried in the error channel and recovered
-		// with `Effect.either` — no error is threaded onward.
+		// A bad-JSON body and a schema `FateRequestError` both become a `liveError`
+		// Response here (recovered via `Effect.result`), never threaded onward.
 		const decoded = yield* Effect.tryPromise({
 			try: () => raw.json(),
 			catch: () => new FateRequestError("BAD_REQUEST", "Body must be valid JSON."),
@@ -122,10 +101,8 @@ export const handleLive = Effect.gen(function* () {
 							procedure: operation.procedure,
 							...(operation.args ? {args: operation.args} : {}),
 						};
-			// Resolve the control's topic keys here (the same `topicsForSubscribe`
-			// the publish side mirrors) and thread the per-request limits, so the
-			// connection-role `LiveDO` records the subscription + registers each
-			// topic-role row with a budget it never invents itself (decision 2B).
+			// Resolve the control's topic keys + per-request limits here, so the DO
+			// records the subscription with a budget it never invents (decision 2B).
 			const res = yield* connections.subscribe(connectionId, {
 				subId: operation.id,
 				topics: topicsForSubscribe(control),
@@ -143,5 +120,4 @@ export const handleLive = Effect.gen(function* () {
 	return liveError("BAD_REQUEST", "Invalid live request.", 400);
 });
 
-/** The `* /fate/live` route as a router layer, ready to merge into `AppLive`. */
 export const liveRoute = HttpRouter.add("*", "/fate/live", handleLive);

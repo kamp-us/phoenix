@@ -1,15 +1,9 @@
 /**
- * Pure comment-tree derivation for the post-detail thread.
- *
- * The post's comments arrive as a flat, ordered connection of nodes (fate masks
- * each node behind `CommentTreeNodeView`). The page reads every node's masked
- * structural fields once and feeds them here to build the parent → children
- * map the thread renders from. Keeping this pure (no hooks, no refs) lets the
- * derivation run synchronously in the render that the nodes appear in — no
- * effect round-trip, so a freshly-arrived node is never dropped for a frame.
+ * Pure comment-tree derivation for the post-detail thread. Pure (no hooks/refs)
+ * so it runs synchronously in the render the nodes appear in — no effect
+ * round-trip, so a freshly-arrived live node is never dropped for a frame.
  */
 
-/** A node's structural fields plus its opaque view ref, lifted off the masked data. */
 export interface CommentNode<Ref> {
 	id: string;
 	parentId: string | null;
@@ -18,7 +12,6 @@ export interface CommentNode<Ref> {
 	ref: Ref;
 }
 
-/** A placed node in the tree — just the id and its ref, for rendering. */
 export interface PlacedComment<Ref> {
 	id: string;
 	ref: Ref;
@@ -33,7 +26,6 @@ export interface CommentTree<Ref> {
 	bodyById: Map<string, string>;
 	/** id → view ref, for the inline edit composer's write-back. */
 	refById: Map<string, Ref>;
-	/** Count of rendered (visible) comments. */
 	visibleCount: number;
 }
 

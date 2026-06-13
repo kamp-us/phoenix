@@ -1,20 +1,9 @@
 /**
- * Pano feed page — fate.
- *
- * One batched `useRequest({posts: {list, args:{sort, host, first}}})` resolves the
- * feed; `useListView` over the `posts` connection ref paginates ("daha fazla"
- * merges the next page). Each row is a `ViewRef<"Post">` handed to `PanoPostCard`
- * (which declares `PanoPostCardView`). Connection identity strips pagination args
- * (`first`/`after`) but keeps the filter args (`sort`/`host`), so each filter combo
- * is a distinct connection that paginates independently.
- *
- * Submitting a post inserts it into the no-filter feed via declarative `insert`
- * (on the submit page) — there is NO imperative connection-key updater.
- *
- * The `tartışma` chip is a client-side tag filter (the server has no tag-filter
- * arg yet). It needs each row's tags, so a thin `FilterablePostCard` reads the
- * node and drops out of the DOM when the active tag excludes it — one `useView`
- * per node, the filter colocated (mirrors sözlük's `FilterableTermRow`).
+ * Pano feed page — fate. One batched `useRequest({posts: {list, args}})` resolves
+ * the feed; `useLiveListView` paginates. Connection identity keeps the filter
+ * args (`sort`/`host`) but strips pagination, so each filter combo is a distinct
+ * connection that paginates independently. The `tartışma` chip is a client-side
+ * tag filter (the server has no tag-filter arg yet).
  */
 import * as React from "react";
 import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
@@ -27,14 +16,9 @@ import {LoadMoreButton} from "../fate/wire";
 const PAGE_SIZE = 20;
 
 /**
- * The connection selection for the feed — the shape `useListView` reads.
- *
  * `live: {prepend: "visible"}` makes a server-pushed `prependNode` (a new post
- * from another client) appear **at the top of the visible feed immediately**.
- * Without it, fate's default `"edge"` mode buffers the prepend in a hidden
- * `liveBeforeIds` set when the first page window is full (the infinite-scroll
- * default) and the row wouldn't render until a page load — see
- * `.patterns/fate-live-views.md`.
+ * from another client) appear at the top immediately, instead of fate's default
+ * `"edge"` mode buffering it until a page load. See `.patterns/fate-live-views.md`.
  */
 const PostConnectionView = {
 	items: {node: PanoPostCardView},
@@ -42,9 +26,8 @@ const PostConnectionView = {
 } as const;
 
 /**
- * UI sort labels (Turkish) → server `sort` string. The `tartışma` filter is a
- * client-side tag filter today; it pages the `hot` feed and filters to the
- * `discuss` tag client-side.
+ * UI sort labels (Turkish) → server `sort` string. `tartışma` pages the `hot`
+ * feed and filters to the `discuss` tag client-side (no server tag-filter arg).
  */
 const FILTERS = [
 	{id: "sicak", label: "sıcak", sort: "hot" as const},
@@ -132,10 +115,6 @@ function FeedRows({
 	setFilterId: (id: string) => void;
 	tagKind?: string;
 }) {
-	// Live: a `post.submit` on another client publishes
-	// `live.connection("posts").prependNode`, which `useLiveListView` merges into
-	// the open feed without a refetch (the global `posts` topic reaches every
-	// feed-sort variant). Post votes re-render via each card's `useLiveView`.
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
 	const meta = host ? `${items.length} başlık · ${host}` : `${items.length} başlık`;
@@ -158,13 +137,9 @@ function FeedRows({
 
 /**
  * A feed row that reads its own tags and drops out of the DOM when the active
- * `tartışma` tag filter excludes it. fate masks by view *identity*, so the filter
- * must read through the **same** view the node ref carries (`PanoPostCardView`,
- * the connection's node view) — a separate tags-only view would throw "Invalid
- * view reference". `PanoPostCardView` already
- * selects `tags`, so we read it here and `PanoPostCard` reads the same view again
- * (same identity, served from cache). When no tag filter is active it renders
- * unconditionally.
+ * `tartışma` filter excludes it. fate masks by view *identity*, so the filter
+ * must read through the **same** view the node ref carries (`PanoPostCardView`) —
+ * a separate tags-only view would throw "Invalid view reference".
  */
 function FilterablePostCard({
 	node,

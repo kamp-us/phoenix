@@ -1,31 +1,15 @@
 /**
- * Pano mutation resolvers — the post + comment write path.
+ * Pano mutation resolvers — the post + comment write path. Per ADR 0020, each
+ * calls a `Pano` method then returns the **re-resolved affected entity** shaped
+ * like a read: `comment.delete` returns the parent `Post` (so the cache updates
+ * the surrounding thread); `post.delete` returns the deleted post's `{id}` (a
+ * post has no parent — evict by id). Domain validation stays in the service
+ * (ADR 0013); infra failures die there, never reaching this layer.
  *
- * Per ADR 0020, mutations are `Fate.mutation` def + `Effect.fn` pairs named
- * `entity.verb` (`.patterns/fate-effect-operations.md`). Each calls a `Pano`
- * service method, then returns the **re-resolved affected entity** shaped
- * exactly like a read. A `comment.delete` returns the re-resolved **parent
- * `Post`** so the client's normalized cache updates the surrounding comment
- * thread; a `post.delete` returns the deleted post's `{id}` (a post has no
- * parent — the client evicts it by id).
- *
- * Input Schemas carry the wire field shapes only — domain validation stays in
- * the service (ADR 0013); domain failures (the `PostValidation` /
- * `CommentValidation` per-code classes, `PostNotFound`, `CommentNotFound`,
- * `UnauthorizedPostMutation`, `UnauthorizedCommentMutation`) are declared on
- * each definition and surface through their `ErrorCode` annotations as
- * stable wire codes (`.patterns/fate-effect-wire-errors.md`). Infra failures
- * never reach this layer — they die inside the domain service (the boundary
- * rule in `.patterns/feature-services.md`).
- *
- * `CurrentUser.required` gates every write (anonymous → `UNAUTHORIZED`). The
- * vote mutations stamp `myVote` authoritatively from the vote write so the
- * field is correct without a follow-up `user_vote` read.
- *
- * Live publishes go through the typo-gated `WorkerLivePublisher` accessor
- * (`fate-live/protocol.ts`) — every publish method's error
- * channel is `never`, so a failed publish can never fail the mutation
- * (`.patterns/fate-effect-server.md`).
+ * `CurrentUser.required` gates every write (anonymous → `UNAUTHORIZED`). Live
+ * publishes go through `WorkerLivePublisher`, whose every method's error channel
+ * is `never` — a failed publish can never fail the mutation
+ * (`.patterns/fate-effect-server.md`). See `.patterns/fate-effect-operations.md`.
  */
 
 import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
@@ -82,12 +66,9 @@ const EditCommentInput = Schema.Struct({
 	body: Schema.String,
 });
 
-/**
- * The `Pano` write results name the id `postId`/`commentId` and the author
- * `authorName`; the shapers take the wire field names, so map those keys here
- * before shaping. `slug` is `null` on a write result (the detail read carries
- * it); `updatedAt` falls back to `createdAt` inside `toPost`/`toComment`.
- */
+// `Pano` write results name the id `postId`/`commentId` and the author
+// `authorName`, so map those keys to the shapers' wire field names. `slug` is
+// `null` on a write result (the detail read carries it).
 const shapePost = (r: {
 	postId: string;
 	slug?: string | null;
@@ -163,10 +144,9 @@ export const mutations = {
 				authorId: user.id,
 				authorName: user.name ?? user.email,
 			});
-			// Fresh write: not yet voted by anyone.
 			const post = shapePost({...r, myVote: null});
-			// New post leads the feed: prepend its node to the `posts` connection
-			// (every feed-sort variant, via the global topic). Inline node, no DB work.
+			// New post leads the feed: prepend to the `posts` connection (every
+			// feed-sort variant, via the global topic). Inline node, no DB work.
 			yield* live.connection("posts").prependNode("Post", post.id, {node: post});
 			return post;
 		}),
@@ -225,7 +205,7 @@ export const mutations = {
 				...(input.body != null ? {body: input.body} : {}),
 			});
 			// Re-read the viewer's vote so the edited entity carries an accurate
-			// `myVote` (edit doesn't change vote state).
+			// `myVote` (edit doesn't touch vote state).
 			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
 			yield* live.update("Post", post.id, {changed: ["title", "body"], data: post});
@@ -234,8 +214,6 @@ export const mutations = {
 	),
 	"post.delete": Fate.mutation(
 		{
-			// A post has no parent entity; return the deleted post's id so the client
-			// evicts it by id.
 			input: PostIdInput,
 			type: PostView,
 			error: Schema.Union([Unauthorized, UnauthorizedPostMutation]),
@@ -245,12 +223,10 @@ export const mutations = {
 			const pano = yield* Pano;
 			const live = yield* WorkerLivePublisher;
 			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
-			// Entity gone; drop its edge from the `posts` feed connection.
 			yield* live.delete("Post", r.postId);
 			yield* live.connection("posts").deleteEdge("Post", r.postId);
-			// Not an entity shape — the post is gone; this is an id-only eviction
-			// ref (`{__typename, id}`) the client uses to drop the record. There is
-			// no row left to run through `toPost`, so it stays a bare ref.
+			// Bare id-only eviction ref: the post is gone, so there's no row to run
+			// through `toPost` and it stays a `{__typename, id}` the client drops.
 			return {__typename: "Post", id: r.postId};
 		}),
 	),
@@ -272,8 +248,7 @@ export const mutations = {
 				...(input.parentId ? {parentId: input.parentId} : {}),
 			});
 			const comment = shapeComment({...r, myVote: null});
-			// New comment joins the post's thread: append its node to the
-			// `Post.comments` connection keyed by the parent post id. Inline node.
+			// Append to the `Post.comments` connection keyed by the parent post id.
 			yield* live
 				.connection("Post.comments", {id: input.postId})
 				.appendNode("Comment", comment.id, {node: comment});
@@ -336,10 +311,6 @@ export const mutations = {
 	),
 	"comment.delete": Fate.mutation(
 		{
-			// A delete returns the re-resolved **parent `Post`** so the client's
-			// normalized cache updates the surrounding comment thread (ADR 0020).
-			// Reply-aware soft-delete vs hard-delete is handled inside the service;
-			// the parent post's `commentCount` reflects the result.
 			input: CommentIdInput,
 			type: PostView,
 			error: Schema.Union([Unauthorized, CommentNotFound, UnauthorizedCommentMutation]),
@@ -348,7 +319,7 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = yield* WorkerLivePublisher;
-			// Resolve the parent post id before the delete (the row still exists).
+			// Resolve the parent post id before the delete, while the row exists.
 			const postId = yield* pano.lookupCommentPostId(input.id);
 			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
 			if (!postId) return null;
@@ -356,14 +327,12 @@ export const mutations = {
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null);
-			// Two delete shapes, driven by the service's reply-aware decision:
-			//  - hard delete (leaf): the row is gone, so drop its edge from the
-			//    `Post.comments` connection — `deleteEdge` removes it from every open
-			//    thread, the author's own included, without a reload.
-			//  - soft delete (has replies): the row stays as a `[silindi]` tombstone so
-			//    the live replies keep their parent. The edge must NOT leave the
-			//    connection (that would orphan the subtree); instead publish the
-			//    re-resolved tombstoned comment so each thread re-renders it in place.
+			// Two delete shapes, driven by the service's reply-aware decision (ADR 0024):
+			//  - hard delete (leaf): the row is gone, so `deleteEdge` drops it from
+			//    every open `Post.comments` thread without a reload.
+			//  - soft delete (has replies): the row stays as a `[silindi]` tombstone.
+			//    The edge must NOT leave the connection — that would orphan the subtree;
+			//    instead publish the tombstoned comment so threads re-render it in place.
 			if (result.placeholder) {
 				const placeholder = toComment(result.placeholder);
 				yield* live.update("Comment", input.id, {
@@ -373,8 +342,7 @@ export const mutations = {
 			} else {
 				yield* live.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id);
 			}
-			// Either way the parent post's `commentCount` changes — publish the
-			// re-resolved parent.
+			// Either way the parent post's `commentCount` changes — publish it.
 			yield* live.update("Post", post.id, {changed: ["commentCount"], data: post});
 			return post;
 		}),

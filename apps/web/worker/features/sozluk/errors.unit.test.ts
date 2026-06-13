@@ -1,14 +1,7 @@
 /**
- * Sozluk error-class ↔ wire-code enumeration pin (T0).
- *
- * The migrated sozluk records derive wire codes from the `ErrorCode`
- * annotation on each error class (`.patterns/fate-effect-wire-errors.md`) —
- * no registry. This pin is the app-side counterpart of the package's
- * `WireError.unit.test.ts` enumeration: every error class sozluk operations
- * can fail with, paired with the exact wire code the retired bridge's
- * `WIRE_CODE_BY_TAG` registry emitted for it (deleted in the v1 cutover), so the annotation-derived codec
- * and the SPA's `MUTATION_ERROR_CODES` vocabulary cannot drift through the
- * migration. Re-annotating (or un-annotating) a class fails this test.
+ * Pins each sozluk error class to the exact wire code the retired bridge
+ * registry emitted, so the annotation-derived codec and the SPA's
+ * `MUTATION_ERROR_CODES` vocabulary can't drift. Re-annotating a class fails it.
  */
 import {encodeWireError, wireCodeOfClass} from "@phoenix/fate-effect";
 import {describe, expect, it} from "vitest";
@@ -19,10 +12,6 @@ import {
 	UnauthorizedDefinitionMutation,
 } from "./errors.ts";
 
-/**
- * The pinned pairs — wire codes preserved verbatim from the bridge registry
- * (`WIRE_CODE_BY_TAG`, sozluk section — registry deleted in the v1 cutover).
- */
 const SOZLUK_WIRE_CODES = [
 	[BodyRequired, "BODY_REQUIRED"],
 	[BodyTooLong, "BODY_TOO_LONG"],

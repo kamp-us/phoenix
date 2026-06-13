@@ -30,10 +30,9 @@ export function AuthPage() {
 				});
 				if (result.error) setError(result.error.message ?? "kayıt başarısız");
 			}
-			// The Layout's effect watches `session.data` and navigates off /auth
-			// to the `?returnTo=…` URL (or `/` when missing) once the session
-			// lands; AuthPage itself is intentionally stateless about the
-			// redirect.
+			// Redirect is intentionally not handled here: the Layout's effect
+			// watches `session.data` and navigates off /auth to `?returnTo=…`
+			// (or `/`) once the session lands.
 		} finally {
 			setPending(false);
 		}

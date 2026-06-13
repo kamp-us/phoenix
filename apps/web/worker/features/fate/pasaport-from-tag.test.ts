@@ -1,32 +1,23 @@
 /**
- * Guard test for `PasaportFromTag`'s inert `RuntimeContext` stub
- * (`features/fate/layers.ts`, the `inertRuntimeContext` + `PasaportFromTag` block).
- *
- * **The stub.** `betterAuth.auth`'s value type is `Effect<Auth, never, RuntimeContext>`, so
- * resolving the instance type-requires alchemy's `RuntimeContext`. `makeFateLayer` discharges
- * that requirement with a hand-built **inert** stub (empty env, no-op get/set) so its `R` stays
- * exactly `Database | BetterAuth`. That is runtime-safe **only** because phoenix's better-auth
- * fork reads its secret from a binding and never touches `RuntimeContext` during auth
+ * Guard test (T2) for `PasaportFromTag`'s inert `RuntimeContext` stub in
+ * `features/fate/layers.ts`. `betterAuth.auth` is `Effect<Auth, never,
+ * RuntimeContext>`, so `makeFateLayer` discharges that requirement with a
+ * hand-built inert stub (empty env, no-op get/set) to keep its `R` exactly
+ * `Database | BetterAuth`. That is safe ONLY because phoenix's better-auth fork
+ * reads its secret from a binding and never touches `RuntimeContext` during auth
  * resolution.
  *
- * **The invariant pinned.** Auth resolution succeeds with ONLY the inert stub — i.e. nothing
- * reads `RuntimeContext` during session validation. The test resolves `Pasaport` through the
- * REAL `PasaportFromTag` path — a real better-auth instance (`makeRealAuthForTest`) over
- * `node:sqlite` wrapped by `layerTest`, NOT the `layerStub` bypass — with only the inert
- * `RuntimeContext` discharging the requirement, then proves `Pasaport.validateSession`
- * resolves a real session end-to-end.
+ * Pins the invariant that auth resolution succeeds with ONLY the inert stub:
+ * resolves `Pasaport` through the REAL `PasaportFromTag` path (a real
+ * `makeRealAuthForTest` instance over `node:sqlite` via `layerTest`, NOT the
+ * `layerStub` bypass) and proves `validateSession` round-trips a real session.
  *
- * **When it fails.** The fork (or upstream `@alchemy.run/better-auth`) has started reading
- * `RuntimeContext` while resolving `auth` — most likely arriving via a better-auth dep bump.
- * This test dies in-process pointing straight at `PasaportFromTag`, where `app.test.ts` would
- * fail with a confusing distant error. The fix then is to widen `makeFateLayer`'s `R` to
- * include `RuntimeContext` (and provide the real one), NOT to delete this test.
- *
- * Keep decision: 2026-06-12 architecture audit — the watched fragility is fork-drift, which is
- * a live channel in this project.
- *
- * (T2 — `app.test.ts` exercises this path implicitly through the whole router;
- * this is the focused, self-diagnosing version.)
+ * When the fork (or upstream `@alchemy.run/better-auth`) starts reading
+ * `RuntimeContext` while resolving `auth` — most likely via a better-auth dep
+ * bump — this dies in-process pointing at `PasaportFromTag`, where `app.test.ts`
+ * would fail with a confusing distant error. The fix is to widen
+ * `makeFateLayer`'s `R` to include `RuntimeContext` (and provide the real one),
+ * NOT to delete this test.
  */
 import {Effect, Layer} from "effect";
 import {afterEach, beforeEach, describe, expect, it} from "vitest";
@@ -36,7 +27,6 @@ import {layerTest, makeRealAuthForTest} from "../pasaport/better-auth.testing";
 import {Pasaport} from "../pasaport/Pasaport";
 import {makeFateLayer} from "./layers";
 
-/** The per-test in-memory D1; created in `beforeEach`, closed in `afterEach`. */
 let sqlite: SqliteD1;
 
 beforeEach(() => {
@@ -51,8 +41,6 @@ describe("PasaportFromTag — inert RuntimeContext stub guard", () => {
 	it("resolves Pasaport through the real auth path and validateSession works", async () => {
 		const auth = makeRealAuthForTest(sqlite.d1);
 
-		// Sign a user up directly against the same auth instance to mint a real
-		// session, then capture the session cookie it sets.
 		const signUp = await auth.handler(
 			new Request("http://localhost:3000/api/auth/sign-up/email", {
 				method: "POST",
@@ -69,11 +57,10 @@ describe("PasaportFromTag — inert RuntimeContext stub guard", () => {
 		expect(setCookie).toBeTruthy();
 		const cookie = setCookie!.split(";")[0]!;
 
-		// The REAL `PasaportFromTag` path: `makeFateLayer` resolves `Pasaport`'s
-		// auth from the `BetterAuth` tag, discharging `betterAuth.auth`'s
-		// `RuntimeContext` requirement with ONLY the inert stub baked into
-		// `layers.ts`. A real (not stubbed) better-auth fake is provided over the
-		// `BetterAuth` tag so the auth resolution is the genuine one.
+		// `makeFateLayer` discharges `betterAuth.auth`'s `RuntimeContext`
+		// requirement with ONLY the inert stub baked into `layers.ts`; a real (not
+		// stubbed) better-auth fake over the `BetterAuth` tag keeps auth resolution
+		// genuine.
 		const WorkerLive = makeFateLayer.pipe(
 			Layer.provide(
 				Layer.mergeAll(
@@ -91,8 +78,7 @@ describe("PasaportFromTag — inert RuntimeContext stub guard", () => {
 			}).pipe(Effect.provide(WorkerLive)),
 		);
 
-		// A working session: the inert RuntimeContext stub was sufficient to resolve
-		// auth, and `getSession` round-trips through it to the signed-up user.
+		// The inert RuntimeContext stub was sufficient to resolve auth end-to-end.
 		expect(session).not.toBeNull();
 		expect(session!.user.email).toBe("guard@example.com");
 	});

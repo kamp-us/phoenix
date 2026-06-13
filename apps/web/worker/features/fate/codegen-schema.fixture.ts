@@ -1,17 +1,10 @@
 /**
- * Codegen fixture — the `schema.ts` shape of the fate-effect era, fed to
- * the REAL fate Vite plugin in `codegen-vite.test.ts`.
- *
- * This module mirrors `worker/features/fate/schema.ts`: data
- * views + entity types + `Root` from the views half, and `fateServer` built by
- * `FateExecutor.toCodegenServer(config)` — definitions with inert handlers, so
- * the plugin's `runnerImport` evaluates it with NO database at build time. The
- * handlers here close over a throw-on-touch Proxy standing in for D1: if the
- * codegen path executed anything, generation would fail loudly.
- *
- * Deliberately self-contained (it does not import the live feature modules):
- * it pins the module SHAPE against the plugin, not the live config's
- * content.
+ * Codegen fixture — the `schema.ts` shape of the fate-effect era, fed to the
+ * REAL fate Vite plugin in `codegen-vite.test.ts`. Mirrors `schema.ts`'s shape
+ * but is self-contained (no live feature imports), so it pins the module SHAPE
+ * against the plugin, not the live config's content. Handlers close over a
+ * throw-on-touch Proxy standing in for D1: if the codegen path executed
+ * anything, generation would fail loudly — the "no D1 at build time" proof.
  */
 import type {ConnectionResult} from "@nkzw/fate/server";
 import {type Entity, Fate, FateDataView, FateExecutor, FateServer} from "@phoenix/fate-effect";

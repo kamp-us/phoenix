@@ -28,7 +28,6 @@ export function Topbar({
 }) {
 	const navigate = useNavigate();
 
-	/* Split brand at the first "." so we can accent the dot. */
 	const dotAt = brandName.indexOf(".");
 	const before = dotAt >= 0 ? brandName.slice(0, dotAt) : brandName;
 	const after = dotAt >= 0 ? brandName.slice(dotAt + 1) : "";

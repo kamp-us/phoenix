@@ -1,39 +1,13 @@
 /**
- * Post-detail page — fate.
+ * Post-detail page — fate. One batched `useRequest` resolves the header + first
+ * page of comments; `PostDetailView` spreads `PanoPostHeaderView` and adds the
+ * nested `comments` connection (node: `CommentTreeNodeView`), so children mask
+ * their slice off the same refs. See `.patterns/fate-connections.md`.
  *
- * One batched `useRequest({post: {view: PostDetailView, args:{idOrSlug,
- * comments:{first}}}})` resolves the header + first page of comments with no
- * waterfall. `post` is the `queries.post` client root; the nested `comments`
- * connection rides on the `Post` view, delivered inline by the resolver (see
- * `.patterns/fate-connections.md`). `PostDetailView` spreads `PanoPostHeaderView`
- * (the header's view) and adds the `comments` connection whose node is
- * `CommentTreeNodeView`. Children mask their slice off the same refs.
- *
- * Mutations (`fate.mutations.{post,comment}.*`):
- *  - post vote — on `PostVoteWidget` (optimistic, in `PanoPost.tsx`).
- *  - post edit — `post.edit` writes the new title/body back through
- *    `PanoPostHeaderView` (optimistic, re-renders in place).
- *  - post delete — `post.delete` returns the deleted id; we navigate back to /pano.
- *  - comment add — `comment.add`; the server publishes
- *    `live.connection("Post.comments", {id}).appendNode`, which the thread's
- *    `useLiveListView` merges in place — no reload. (Declarative `insert` reaches
- *    root lists only; nested membership is server-driven by the live event.) Same
- *    for replies.
- *  - comment vote — on `CommentTreeNode` (optimistic).
- *  - comment edit — `comment.edit` writes the body back through `CommentTreeNodeView`.
- *  - comment delete — `comment.delete` is a **`Post`**-returning mutation (it
- *    re-resolves the parent for fresh counts + the reply-aware soft-delete
- *    placeholder), so fate's `delete: true` can't be used (it would
- *    `deleteRecord("Comment", id)` — wrong, the leaf-vs-soft-delete decision is
- *    the server's), and the comment lives in a nested connection. The resolver
- *    drives the thread live instead: a hard-deleted leaf publishes
- *    `deleteEdge` (the row drops via `useLiveListView`); a soft-deleted parent
- *    publishes `live.update` with the `[silindi]` tombstone (re-renders in place
- *    via the node's `useLiveView`, keeping its live replies). No reload.
- *
- * Error routing is the call-site catch (phoenix codes classify as boundary,
- * so the mutation throws; the optimistic change rolls back; we read `.code` and
- * surface it inline). See `.patterns/fate-mutations-client.md`.
+ * One non-obvious mutation: `comment.delete` returns the parent **`Post`** (the
+ * leaf-hard-delete vs parent-soft-delete-tombstone decision is the server's), so
+ * fate's `delete: true` can't be used and the resolver drives the thread live.
+ * Error routing is the call-site catch — see `.patterns/fate-mutations-client.md`.
  */
 import type {ViewData, ViewEntity, ViewSelection} from "@nkzw/fate";
 import * as React from "react";
@@ -63,12 +37,9 @@ const BODY_MAX = 10_000;
 const PAGE_SIZE = 50;
 
 /**
- * The connection selection for a post's comments — what `useLiveListView` reads.
- *
  * `live: {append: "visible"}` makes a server-pushed `appendNode` (a comment from
- * another client) appear in the thread immediately, even when the first comments
- * page window is full — without it fate's default `"edge"` mode would buffer the
- * append in a hidden `liveAfterIds` set. See `.patterns/fate-live-views.md`.
+ * another client) appear immediately, instead of fate's default `"edge"` mode
+ * buffering it until a page load. See `.patterns/fate-live-views.md`.
  */
 const CommentConnectionView = {
 	items: {node: CommentTreeNodeView},
@@ -76,10 +47,9 @@ const CommentConnectionView = {
 } as const;
 
 /**
- * The masked data a `CommentTreeNodeView` ref resolves to — the same shape
- * `useView(CommentTreeNodeView, ref)` returns. The page reads this off each
- * connection node ref synchronously (via `client.readView`) to build the tree,
- * so the type must match the hook's exactly.
+ * The masked data a `CommentTreeNodeView` ref resolves to. The page reads this
+ * off each node ref synchronously (`client.readView`) to build the tree, so the
+ * type must match `useView(CommentTreeNodeView, ref)` exactly.
  */
 type CommentNodeData = ViewData<
 	ViewEntity<typeof CommentTreeNodeView> & {__typename: "Comment"},
@@ -87,11 +57,9 @@ type CommentNodeData = ViewData<
 >;
 
 /**
- * The detail-page view. fate masks by view identity: the page spreads
- * `PanoPostHeaderView` (so `PanoPostHeader`/`PanoPostHeaderVote` can mask their
- * slice) and adds the nested `comments` connection whose node is
- * `CommentTreeNodeView` (so the tree nodes mask theirs). `title`/`body` ride on
- * `PanoPostHeaderView` already, which the edit form reads.
+ * The detail-page view. fate masks by view identity, so the page **spreads**
+ * `PanoPostHeaderView` and `CommentTreeNodeView` (via the connection) for the
+ * children to mask their slice off the same refs.
  */
 const PostDetailView = view<Post>()({
 	...PanoPostHeaderView,
@@ -132,16 +100,12 @@ const currentLocationPath = () => `${window.location.pathname}${window.location.
 
 /**
  * The "in-flight + error + UNAUTHORIZED-redirect" submit envelope shared by every
- * form on this page. A form validates its own fields first (sourcing messages
- * from the `*ErrorMessage` mappings), then hands the mutation to `run`: this hook
- * flips `inFlight`, maps a returned wire error, and on an `UNAUTHORIZED` throw
- * navigates to the auth redirect. Single-field composers layer `useDraft` on top;
- * the two-field post-edit form uses this directly.
+ * form on this page. `run` flips `inFlight`, maps a returned wire error, and on
+ * an `UNAUTHORIZED` throw navigates to the auth redirect. Single-field composers
+ * layer `useDraft` on top; the two-field post-edit form uses this directly.
  */
 function useDraftSubmit(options: {
-	/** Maps a `code` + fallback to the displayed message (the page's `*ErrorMessage`). */
 	errorMessage: (code: MutationErrorCode, fallback: string) => string;
-	/** Where to send the user on an `UNAUTHORIZED` throw. */
 	redirectPath: () => string;
 }) {
 	const [error, setError] = React.useState<string | null>(null);
@@ -178,24 +142,17 @@ function useDraftSubmit(options: {
 }
 
 /**
- * Shared single-body "validated textarea + in-flight + error + UNAUTHORIZED-redirect"
- * draft, used by the comment-add and comment-edit composers. Validation messages
- * are NOT restated here — `validate` returns one of the page's `*ErrorMessage`
- * strings (single source).
+ * Shared single-body draft (validated textarea + the `useDraftSubmit` envelope),
+ * used by the comment-add and comment-edit composers. `validate` returns one of
+ * the page's `*ErrorMessage` strings — messages are not restated here.
  */
 function useDraft(options: {
 	initialBody: string;
-	/** Returns an error message (sourced from the `*ErrorMessage` mapping) or null when valid. */
 	validate: (trimmed: string, body: string) => string | null;
-	/** Where to send the user on an `UNAUTHORIZED` throw. */
 	redirectPath: () => string;
-	/** Runs the mutation. Returns a wire error (or null) so `useDraft` maps it. */
 	run: (body: string) => Promise<{error?: {message: string} | null}>;
-	/** Maps a `code` + fallback to the displayed message (the page's `*ErrorMessage`). */
 	errorMessage: (code: MutationErrorCode, fallback: string) => string;
-	/** Fallback message when the mutation/throw carries no mapped code. */
 	failureFallback: string;
-	/** Called after a successful submit (reset/close). */
 	onSuccess: () => void;
 }) {
 	const [body, setBody] = React.useState(options.initialBody);
@@ -218,21 +175,14 @@ function useDraft(options: {
 	return {body, setBody, error, setError, inFlight, submit};
 }
 
-/**
- * Client-side body validation for comment composers. Messages are pulled from
- * `commentErrorMessage` (the single source) rather than restated inline, so the
- * client check and the server-code mapping can't drift.
- */
+/** Client-side comment-body validation. Messages come from `commentErrorMessage` (single source). */
 const validateCommentBody = (trimmed: string, body: string): string | null => {
 	if (trimmed.length === 0) return commentErrorMessage("BODY_REQUIRED", "");
 	if (body.length > COMMENT_BODY_MAX) return commentErrorMessage("BODY_TOO_LONG", "");
 	return null;
 };
 
-/**
- * Client-side title/body validation for the post-edit form. Messages are pulled
- * from `postErrorMessage` (the single source), not restated inline.
- */
+/** Client-side post-edit validation. Messages come from `postErrorMessage` (single source). */
 const validatePostFields = (trimmedTitle: string, body: string): string | null => {
 	if (trimmedTitle.length === 0) return postErrorMessage("TITLE_REQUIRED", "");
 	if (trimmedTitle.length > TITLE_MAX) return postErrorMessage("TITLE_TOO_LONG", "");
@@ -292,9 +242,6 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 	const [editBody, setEditBody] = React.useState("");
 	const [confirmDelete, setConfirmDelete] = React.useState(false);
 
-	// The post-edit + post-delete flows share the comment composers' submit
-	// envelope (in-flight + error + UNAUTHORIZED→auth redirect). Both redirect to
-	// the post's own slug on an auth failure.
 	const postRedirectPath = () => `/pano/${data.slug ?? data.id}`;
 	const {
 		error: editError,
@@ -325,8 +272,6 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 			setEditError(validationError);
 			return;
 		}
-		// `post.edit` returns the updated `Post`; writing it back through
-		// `PanoPostHeaderView` re-renders the header in place (no reload).
 		await runEdit(
 			() =>
 				fate.mutations.post.edit({
@@ -339,9 +284,8 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 	}
 
 	async function onDeleteConfirm() {
-		// A post has no parent; `delete: true` evicts it by id across all
-		// connections (incl. the feed root list) — declarative, no imperative
-		// updater. We navigate back to /pano on success.
+		// `delete: true` evicts the post by id across all connections (incl. the
+		// feed root list) — declarative, no imperative updater.
 		await runDelete(
 			() => fate.mutations.post.delete({input: {id: data.id}, delete: true}),
 			"başlık silinemedi",
@@ -468,21 +412,11 @@ interface CommentsProps {
 function Comments(props: CommentsProps) {
 	const post = useView(PostDetailView, props.post);
 	const fate = useFateClient();
-	// Live: a `comment.add` on another client publishes
-	// `live.connection("Post.comments", {id}).appendNode`, which `useLiveListView`
-	// merges into this thread without a refetch. Comment *delete* is also live: a
-	// hard-deleted leaf publishes `deleteEdge` (consumed here, the row drops), a
-	// soft-deleted parent publishes `live.update` with the `[silindi]` tombstone
-	// (consumed by the node's own `useLiveView`, re-rendering in place so its live
-	// replies keep their parent — the row stays in the connection). See the delete
-	// handler below.
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
 	const [confirmDeleteId, setConfirmDeleteId] = React.useState<string | null>(null);
-	// Comment-delete shares the composers' submit envelope (in-flight + error +
-	// UNAUTHORIZED→auth redirect), sourcing its messages from `commentErrorMessage`.
 	const {
 		error: deleteError,
 		setError: setDeleteError,
@@ -493,17 +427,12 @@ function Comments(props: CommentsProps) {
 		redirectPath: () => `/pano/${props.postId}`,
 	});
 
-	// fate masks comment fields behind the node view, so the bare connection refs
-	// don't carry `parentId`/`deletedAt`/`body`. But the connection just resolved
-	// every node against `CommentTreeNodeView`, so each node's masked data is
-	// already in the store — read it synchronously here (no per-node hook, no
-	// effect round-trip) and build the tree in the same render the nodes arrive in.
-	// A node still missing from the cache (no fulfilled snapshot) is skipped this
-	// frame and picked up when the connection delivers it — it never lands in
-	// `items` without its data in practice, since membership and node data arrive
-	// together. The whole tree re-derives whenever `items` changes (membership is
-	// the only thing that changes the tree shape: `parentId` is immutable and a
-	// soft-delete reloads the page).
+	// The connection resolved every node against `CommentTreeNodeView`, so each
+	// node's masked data is already in the store — read it synchronously (no
+	// per-node hook) and build the tree in the same render the nodes arrive in. A
+	// not-yet-fulfilled node is skipped this frame; membership and node data arrive
+	// together in practice. Re-derives only on `items` change: `parentId` is
+	// immutable and a soft-delete reloads the page.
 	const {roots, childrenByParent, bodyById, refById, visibleCount} = React.useMemo(() => {
 		const nodes: Array<CommentNode<ViewRef<"Comment">>> = [];
 		for (const {node} of items) {
@@ -529,14 +458,10 @@ function Comments(props: CommentsProps) {
 
 	async function onDeleteConfirm() {
 		if (!confirmDeleteId) return;
-		// `comment.delete` returns the re-resolved **parent `Post`** (reply-aware
-		// soft-delete vs hard-delete is the server's decision). It lives in the
-		// nested `Post.comments` connection, so we can't use `delete: true` (wrong
-		// entity). The resolver drives the thread live: a hard-deleted leaf
-		// publishes `deleteEdge` (consumed by `useLiveListView` — the row drops),
-		// a soft-deleted parent publishes `live.update` with the `[silindi]`
-		// tombstone (consumed by the node's own `useLiveView` — it re-renders in
-		// place, keeping its live replies). No reload either way.
+		// `comment.delete` returns the re-resolved parent `Post` (leaf-hard-delete
+		// vs parent-soft-delete-tombstone is the server's call), so we can't use
+		// `delete: true`. The resolver drives the row live: hard delete → `deleteEdge`
+		// (row drops), soft delete → `live.update` with the `[silindi]` tombstone.
 		await runDelete(
 			() => fate.mutations.comment.delete({input: {id: confirmDeleteId}}),
 			"yorum silinemedi",
@@ -643,12 +568,9 @@ function Comments(props: CommentsProps) {
 }
 
 /**
- * Top-level + nested comment composer — fate. Submits `comment.add`; the server
- * publishes `live.connection("Post.comments", {id}).appendNode` with the inline
- * node, so the thread's `useLiveListView` merges the new comment in place — no
- * reload. (Declarative `insert` reaches root lists only; nested-connection
- * membership is server-driven by the live event, which is why one publish updates
- * both the author's own view and every other client viewing the post.)
+ * Top-level + nested comment composer — fate. Submits `comment.add`; the server's
+ * `appendNode` live event merges the new comment into the thread in place (the
+ * author's own view included), since nested-connection membership is server-driven.
  */
 function CommentComposer({
 	postId,
@@ -677,10 +599,6 @@ function CommentComposer({
 		initialBody: "",
 		validate: validateCommentBody,
 		redirectPath: currentLocationPath,
-		// Live: the server publishes `live.connection("Post.comments", {id})
-		// .appendNode` for the new comment, so `useLiveListView` merges it into the
-		// thread in place — no reload (this client's own subscription delivers it
-		// the same way a second client sees it).
 		run: (value) =>
 			fate.mutations.comment.add({
 				input: {postId, body: value, ...(parentId ? {parentId} : {})},
@@ -695,7 +613,6 @@ function CommentComposer({
 		},
 	});
 
-	// Signed-out users get the auth redirect before any draft state is touched.
 	function onSubmit(e: React.FormEvent) {
 		if (!signedIn) {
 			e.preventDefault();
@@ -705,7 +622,6 @@ function CommentComposer({
 		void submit(e);
 	}
 
-	// Test affordances key off the raw parent comment id (`comm_<ulid>`).
 	const testId = parentId ? `pano-comment-reply-${parentId}` : "pano-comment-composer";
 
 	return (
@@ -766,8 +682,7 @@ function CommentComposer({
 
 /**
  * Inline comment edit composer — fate. `comment.edit` writes the new body back
- * through `CommentTreeNodeView` (the same view the node reads), so the edited
- * comment re-renders in place with no reload.
+ * through `CommentTreeNodeView` (the view the node reads), so it re-renders in place.
  */
 function CommentEditComposer({
 	commentId,
@@ -783,7 +698,6 @@ function CommentEditComposer({
 	onCancel: () => void;
 }) {
 	const fate = useFateClient();
-	// Test affordances key off the raw comment id (`comm_<ulid>`).
 	const localId = commentId;
 
 	const {body, setBody, error, inFlight, submit} = useDraft({
