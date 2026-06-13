@@ -22,11 +22,12 @@ than from the implementer's say-so.
 
 **You do not merge. Not on a pass, not ever, not on your own authority.** Your output
 is a *verdict* — an approval signal the PR is merge-ready, or a fail comment listing
-what's missing. Merging is a separate, deliberate act (a human, or whatever downstream
-step the repo later authorizes). If the repo one day decides review-code may merge on a
-clean pass, that's a change to *this* line — until then, the gate verifies and signals,
-and stops there. Conflating "verified" with "merged" is exactly the self-grading
-collapse this stage exists to prevent.
+what's missing. Merging is a separate, deliberate act performed by the **`ship-it`**
+skill (the one stage granted merge authority) — or a human. You signal merge-ready;
+`ship-it` is the consumer that asserts your PASS signal, confirms CI is green, and
+squash-merges. Your "you never merge" invariant holds precisely because `ship-it` is the
+single writer of the merge. Conflating "verified" with "merged" is exactly the
+self-grading collapse this stage exists to prevent.
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
@@ -192,8 +193,9 @@ gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
 
 Either way, the verdict body states plainly: every acceptance criterion verified
 (the table), the PR is **merge-ready**, and — explicitly — that **review-code does not
-merge**; merging is a separate authorized step, and merging this PR will auto-close
-issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on merge, not now).
+merge**; the **`ship-it`** skill is the authorized merge step, and merging this PR will
+auto-close issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on merge, not
+now).
 
 Verdict body shape (this is what you wrote to `/tmp/review-code-verdict.md` above):
 
@@ -206,8 +208,8 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 - [PASS] <criterion 2> — <evidence>
 - …
 
-All criteria pass. This PR is merge-ready. **review-code does not merge** — merging is
-a separate authorized step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
+All criteria pass. This PR is merge-ready. **review-code does not merge** — `ship-it` is
+the authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 ```
 
 ---
@@ -223,6 +225,13 @@ Post a **PR comment listing each failing criterion with its evidence**, so the
 `write-code` agent (or a successor) can fix exactly what's missing and re-request
 review. Include the passing ones too — the full table tells the implementer how close
 they are, not just where they fell short.
+
+The first line, `review-code: FAIL — not merge-ready`, is a **recognizable marker** — the
+mirror of the PASS marker (formats §5). It is the seam `write-code`'s resume-my-failed-PR
+path keys on: it scans for it to find a PR whose `Fixes #N` issue is still claimed by the
+implementer and still has failing criteria to address. Recognize it tolerantly by shape
+(`review-code: FAIL`), not by exact dashes. (And `ship-it` reads it as the mirror of PASS:
+a FAIL marker means *do not merge*.)
 
 ```bash
 BODY="$(cat /tmp/review-code-verdict.md)"
@@ -275,7 +284,7 @@ criteria that changed underneath.
 ## Conventions
 
 This skill is one of a suite (`report` → `triage` → `plan-epic` → `write-code` →
-**`review-code`**) that turns GitHub issues into an agent-operable pipeline. The shared
+**`review-code`** → `ship-it`) that turns GitHub issues into an agent-operable pipeline. The shared
 label semantics and the body/comment/dependency formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). Your input is exactly
 what `write-code` produces — a claimed issue carrying the acceptance-criteria checklist,

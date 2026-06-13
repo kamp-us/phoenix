@@ -9,12 +9,13 @@ agent-operable work pipeline:
 2. The **sub-issue body format** — one executable task, mirroring a task entry.
 3. The **progress-comment format** — a per-issue work-log entry for the next agent.
 4. The **epic handoff-note format** — distilled cross-task context posted to the epic.
-5. The **review-code pass marker** — the recognizable first line of a PR comment
-   that signals a verified, merge-ready PR for a downstream merge step to scan.
+5. The **review-code verdict markers** — the recognizable first line of a PR comment
+   signalling the verdict: `PASS — merge-ready` (read by `ship-it`, the merge step) or
+   `FAIL — not merge-ready` (read by `write-code`'s fix round-trip).
 
 `plan-epic` writes formats 1, 2, and 4. `write-code` reads 1, 2, and 4 and writes
 3 and 4. `review-code` reads 2 (the acceptance-criteria checklist is its gate) and
-writes 5 on a passing verdict.
+writes 5 (PASS or FAIL). `ship-it` reads the format-5 PASS marker as its go-ahead to merge.
 
 ## Reading stance: convention, not parser spec
 
@@ -280,18 +281,23 @@ assumption invalidated, a partial state left behind>
 
 ## 5. review-code pass marker
 
-When `review-code` verifies every acceptance criterion and a native approving
-review can't be posted (e.g. org branch rules forbid reviewing your own PR), it
-falls back to a **pass comment whose first line is a recognizable marker**. That
-marker is a downstream contract: an authorized merge step scans PR comments for
-it to find verified, merge-ready PRs unambiguously.
+When `review-code` lands its verdict and a native review can't be posted (e.g. org
+branch rules forbid reviewing your own PR), it falls back to a **comment whose first
+line is a recognizable marker**. That marker is a downstream contract: the **`ship-it`**
+skill scans PR comments for the PASS marker to find verified, merge-ready PRs
+unambiguously, and `write-code`'s fix round-trip scans for the FAIL marker to find a PR
+that came back failed.
 
 ### Shape
 
-The recognizable **first line** of the PR comment is exactly:
+The recognizable **first line** of the PR comment is one of:
 
 ```markdown
 review-code: PASS — merge-ready
+```
+
+```markdown
+review-code: FAIL — not merge-ready
 ```
 
 The rest of the comment body carries the per-criterion evidence table (the
@@ -303,12 +309,13 @@ table below it is for the human and the implementer.
 - **First line, recognizable.** The marker leads the comment so a scan can match
   it without parsing the whole body. Recognize it tolerantly by shape
   (`review-code: PASS` … `merge-ready`), not by exact dashes or spacing.
-- **Pass only.** This marker means *every criterion verified, PR merge-ready*. A
-  fail verdict carries no such marker — there is nothing for the merge step to
-  find, which is the point.
-- **Signals, never merges.** The marker is an approval signal a separate
-  authorized step acts on. `review-code` writing it does **not** merge; merging
-  is a deliberate downstream act (see review-code/SKILL.md §"Authority limit").
+- **Two markers, two consumers.** `PASS — merge-ready` (every criterion verified) is
+  read by `ship-it` as the go-ahead to merge. `FAIL — not merge-ready` (≥1 criterion
+  unmet) is read by `write-code`'s fix round-trip as "my PR came back failed"; `ship-it`
+  reads it as "do not merge." Each marker has exactly one merge-relevant meaning.
+- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on.
+  `review-code` writing it does **not** merge; merging is `ship-it`'s deliberate act
+  (see review-code/SKILL.md §"Authority limit" and ADR 0048).
 - The native approving review (`event=APPROVE`) is the preferred signal when it's
   available; this marker is the comment-based fallback that carries the same
   meaning where a formal review can't be posted.
@@ -323,7 +330,8 @@ table below it is for the human and the implementer.
 | Sub-issue body | each sub-issue | plan-epic | write-code, review-code |
 | Progress comment | the worked issue | write-code | write-code (successor) |
 | Epic handoff note | parent epic | write-code | write-code (siblings) |
-| review-code pass marker | the PR | review-code | authorized merge step |
+| review-code PASS marker | the PR | review-code | ship-it |
+| review-code FAIL marker | the PR | review-code | write-code (fix round-trip) |
 
 The sub-issue's acceptance-criteria checklist (format 2) is the spine of
 verification: `review-code` checks every box before merge, and the
