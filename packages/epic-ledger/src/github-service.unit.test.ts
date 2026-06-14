@@ -139,3 +139,74 @@ describe("Github.epicLedger — over a mock gh spawner", () => {
 		),
 	);
 });
+
+const XREF_BODY = [
+	"### User stories",
+	"1. As a planner, I want X.",
+	"",
+	"## Dependencies",
+	"### Phase 1",
+	"- #101 — a",
+	"- #102 — b (requires: #101, #108)",
+].join("\n");
+
+const xrefResponses = (epicNumber: number): Record<string, Response> => ({
+	[`repos/kamp-us/phoenix/issues/${epicNumber}`]: issue(epicNumber, XREF_BODY, [
+		"type:epic",
+		"p1",
+		"status:triaged",
+	]),
+	[`repos/kamp-us/phoenix/issues/${epicNumber}/sub_issues`]: JSON.stringify([
+		{number: 101},
+		{number: 102},
+	]),
+	"repos/kamp-us/phoenix/issues/101": issue(
+		101,
+		"**Stories:** 1\n### Acceptance criteria\n- [ ] ac",
+		["type:feature", "p1", "status:triaged"],
+	),
+	"repos/kamp-us/phoenix/issues/102": issue(
+		102,
+		"**Stories:** 1\n### Acceptance criteria\n- [ ] ac",
+		["type:feature", "p1", "status:triaged"],
+	),
+});
+
+describe("Github.epicLedger — cross-epic dependency resolution at the boundary", () => {
+	it.effect(
+		"a `requires:` ref to a real non-child issue resolves to externalRefs, not DANGLING_DEP",
+		() =>
+			Effect.gen(function* () {
+				const github = yield* Github;
+				const ledger = yield* github.epicLedger(160);
+				// #108 is referenced via `requires:` but is not a linked child; it resolves
+				// to a real issue, so it rides in externalRefs and is not flagged dangling.
+				assert.deepStrictEqual(ledger.externalRefs, [108]);
+				assert.notInclude(
+					validateLedger(ledger).map((d) => d.type),
+					"DANGLING_DEP",
+				);
+			}).pipe((effect) =>
+				provide(effect, {
+					...xrefResponses(160),
+					"repos/kamp-us/phoenix/issues/108": issue(108, "a cross-epic dependency", [
+						"type:feature",
+						"p2",
+						"status:triaged",
+					]),
+				}),
+			),
+	);
+
+	it.effect("a `requires:` ref that 404s is left out of externalRefs and still DANGLES", () =>
+		Effect.gen(function* () {
+			const github = yield* Github;
+			const ledger = yield* github.epicLedger(161);
+			// #108 is unmapped → the probe 404s → it is not resolved, so it dangles.
+			assert.deepStrictEqual(ledger.externalRefs, []);
+			const dangling = validateLedger(ledger).find((d) => d.type === "DANGLING_DEP");
+			assert.isDefined(dangling);
+			assert.deepStrictEqual(dangling?.refs, [108]);
+		}).pipe((effect) => provide(effect, xrefResponses(161))),
+	);
+});

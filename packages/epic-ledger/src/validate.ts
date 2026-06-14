@@ -45,6 +45,7 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 
 	const childNumbers = new Set(children.map((c) => c.number));
 	const referenced = new Set(graph.nodes);
+	const external = new Set(ledger.externalRefs);
 
 	if (!graph.present) {
 		defects.push({
@@ -63,12 +64,12 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 	}
 
 	const dangling = [...referenced]
-		.filter((n) => n !== epic.number && !childNumbers.has(n))
+		.filter((n) => n !== epic.number && !childNumbers.has(n) && !external.has(n))
 		.sort((a, b) => a - b);
 	for (const n of dangling) {
 		defects.push({
 			type: "DANGLING_DEP",
-			message: `\`## Dependencies\` references #${n}, which is not a linked child of epic #${epic.number}.`,
+			message: `\`## Dependencies\` references #${n}, which is neither a linked child of epic #${epic.number} nor a resolvable cross-epic issue.`,
 			refs: [n],
 		});
 	}
@@ -85,6 +86,19 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 				refs: [n],
 			});
 		}
+	}
+
+	// An epic that declares no `### User stories` at all is malformed at the epic
+	// level (the story-side mirror of MISSING_DEPS_SECTION). When this fires, the
+	// per-child MISSING_STORY below is suppressed — the children have no stories to
+	// trace to, so the single epic-level defect is the legible root cause.
+	const epicDeclaresStories = epic.stories.length > 0;
+	if (!epicDeclaresStories) {
+		defects.push({
+			type: "MISSING_STORIES_SECTION",
+			message: `Epic #${epic.number} declares no \`### User stories\`; a PRD-grade epic must (its children have no stories to trace to).`,
+			refs: [epic.number],
+		});
 	}
 
 	const covered = new Set<number>();
@@ -109,7 +123,7 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 			});
 		}
 
-		if (child.stories === undefined) {
+		if (epicDeclaresStories && child.stories === undefined) {
 			defects.push({
 				type: "MISSING_STORY",
 				message: `Child #${child.number} has no \`**Stories:**\` reference; every linked child must trace to ≥1 story.`,

@@ -69,9 +69,20 @@ export const EpicHeader = Schema.Struct({
 });
 export type EpicHeader = (typeof EpicHeader)["Type"];
 
-/** An epic's full executable task ledger — header plus its linked children. */
+/**
+ * An epic's full executable task ledger — header, linked children, and
+ * `externalRefs`: the dependency targets the `## Dependencies` topology references
+ * that are **not** linked children of this epic but **do** resolve to real issues
+ * in the repo (a legitimate cross-epic gating edge — e.g. a CLI verb that
+ * `requires:` a backend issue owned by another epic). This set is resolved at the
+ * GitHub boundary (`github.ts`), never by parsing; it is empty for a
+ * self-contained ledger. The pure floor flags a referenced non-child as
+ * `DANGLING_DEP` only when it is absent from this set — so a real cross-epic
+ * dependency is allowed through, while a typo'd or deleted ref still dangles.
+ */
 export const EpicLedger = Schema.Struct({
 	epic: EpicHeader,
 	children: Schema.Array(ChildIssue),
+	externalRefs: Schema.Array(Schema.Number),
 });
 export type EpicLedger = (typeof EpicLedger)["Type"];

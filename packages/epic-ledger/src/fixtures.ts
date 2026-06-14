@@ -25,13 +25,17 @@ export const epic = (overrides: Partial<EpicHeader> = {}): EpicHeader => ({
 	title: "epic #100",
 	labels: ["type:epic", "p1", "status:triaged"],
 	dependencies: graph(),
-	stories: [],
+	// Conformant by default (declares story 1, which the default `child` covers) so
+	// unrelated fixtures don't trip MISSING_STORIES_SECTION; tests that want a
+	// story-less epic set `stories: []` explicitly.
+	stories: [1],
 	...overrides,
 });
 
 export const ledger = (overrides: Partial<EpicLedger> = {}): EpicLedger => ({
 	epic: epic(),
 	children: [],
+	externalRefs: [],
 	...overrides,
 });
 

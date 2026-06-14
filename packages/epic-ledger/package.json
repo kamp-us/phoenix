@@ -9,9 +9,11 @@
 	},
 	"scripts": {
 		"typecheck": "tsgo -p tsconfig.json",
-		"test": "vitest run"
+		"test": "vitest run",
+		"gate": "node src/bin.ts"
 	},
 	"dependencies": {
+		"@effect/platform-node": "catalog:",
 		"effect": "catalog:"
 	},
 	"devDependencies": {

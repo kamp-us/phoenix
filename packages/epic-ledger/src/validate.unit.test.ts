@@ -57,6 +57,36 @@ describe("validateLedger — each defect type", () => {
 		assert.deepStrictEqual(dangling?.refs, [999]);
 	});
 
+	it("a non-child ref resolved as a cross-epic edge (externalRefs) is NOT a dangling dep", () => {
+		// #108 is referenced via `requires:` but is not a child of this epic; the IO
+		// boundary resolved it to a real issue, so it rides in externalRefs and the
+		// floor must let it through — a legitimate cross-epic gating edge.
+		const l = ledger({
+			epic: epic({
+				dependencies: graph({
+					nodes: [101, 108],
+					edges: [{child: 101, requires: 108}],
+				}),
+			}),
+			children: [child(101)],
+			externalRefs: [108],
+		});
+		assert.notInclude(typesOf(l), "DANGLING_DEP");
+	});
+
+	it("a non-child ref absent from externalRefs still dangles (the typo/deleted case)", () => {
+		const l = ledger({
+			epic: epic({
+				dependencies: graph({nodes: [101, 108, 999], edges: []}),
+			}),
+			children: [child(101)],
+			externalRefs: [108], // #108 resolved; #999 did not
+		});
+		const dangling = validateLedger(l).find((d) => d.type === "DANGLING_DEP");
+		assert.isDefined(dangling);
+		assert.deepStrictEqual(dangling?.refs, [999]);
+	});
+
 	it("does not flag the epic's own number as a dangling dep", () => {
 		const l = ledger({
 			epic: epic({
@@ -126,6 +156,20 @@ describe("validateLedger — each defect type", () => {
 		assert.notInclude(typesOf(l), "MISSING_STORY");
 	});
 
+	it("MISSING_STORIES_SECTION when the epic declares no stories — and per-child MISSING_STORY is suppressed", () => {
+		const l = ledger({
+			epic: epic({stories: [], dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {stories: undefined})],
+		});
+		const types = typesOf(l);
+		// the epic-level root-cause defect fires...
+		assert.include(types, "MISSING_STORIES_SECTION");
+		// ...and the noisy per-child MISSING_STORY does NOT (nothing to trace to)
+		assert.notInclude(types, "MISSING_STORY");
+		const defect = validateLedger(l).find((d) => d.type === "MISSING_STORIES_SECTION");
+		assert.deepStrictEqual(defect?.refs, [100]);
+	});
+
 	it("UNCOVERED_STORY when a declared story is covered by no child", () => {
 		const l = ledger({
 			epic: epic({stories: [1, 2], dependencies: graph({nodes: [101], edges: []})}),
@@ -182,6 +226,8 @@ describe("validateLedger — each defect type", () => {
 		)) {
 			produced.add(t);
 		}
+		// a story-less epic produces the epic-level MISSING_STORIES_SECTION
+		for (const t of typesOf(ledger({epic: epic({stories: []})}))) produced.add(t);
 
 		for (const t of DEFECT_TYPES) {
 			assert.isTrue(produced.has(t), `expected defect type ${t} to be producible`);

@@ -104,7 +104,10 @@ shared issue state. An epic that names topology and nothing else is correct.
   other issues that must close before this one is eligible. Use this for a
   dependency that does not fall cleanly on a phase boundary (e.g. a child in a
   later phase that only needs *one* specific earlier child, not the whole prior
-  phase).
+  phase). A `requires:` may name an issue **outside this epic** — a legitimate
+  cross-epic dependency (e.g. a CLI verb requiring another epic's backend). The
+  `review-plan` floor resolves such refs at the GitHub boundary and does **not**
+  flag them as `DANGLING_DEP`; only a ref that resolves to no real issue dangles.
 
 Blockedness is **derived, never stored**: an issue is unblocked when its phase
 predecessors are closed and every issue named in its `requires:` is closed.

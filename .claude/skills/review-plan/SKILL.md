@@ -32,8 +32,13 @@ that stops `review-code` from merging (ADR 0047 Decision 3).
 
 The pass/fail decision is **100% deterministic**: it is exactly the hard-defect set of
 `@phoenix/epic-ledger`'s `validateLedger` — `MISSING_DEPS_SECTION`, `DEP_CYCLE`,
-`DANGLING_DEP`, `ORPHAN_CHILD`, `UNCOVERED_STORY`, `ZERO_AC`, `MISSING_STORY`,
-`MISSING_LABEL`, `NEEDS_TRIAGE_LABEL`. An empty set flips; a non-empty set blocks. The
+`DANGLING_DEP`, `ORPHAN_CHILD`, `MISSING_STORIES_SECTION`, `UNCOVERED_STORY`, `ZERO_AC`,
+`MISSING_STORY`, `MISSING_LABEL`, `NEEDS_TRIAGE_LABEL`. An empty set flips; a non-empty set
+blocks. (`MISSING_STORIES_SECTION` is the epic-level "no `### User stories` at all" defect —
+the story-side mirror of `MISSING_DEPS_SECTION`; when it fires the per-child `MISSING_STORY`
+is suppressed, so a story-less epic reads as one root-cause defect, not N child ones.
+`DANGLING_DEP` fires only on a referenced issue that resolves to *nothing* — a real
+cross-epic `requires:` edge is resolved at the GitHub boundary and allowed through.) The
 **LLM soft-advisor** (acceptance-criteria checkability, brief-fidelity) produces *caveats
 attached to a PASS* — it **never** changes the pass/fail decision (ADR 0047 Decision 2).
 Floor-only blocks. This is the whole reason the gate exists: to replace a non-deterministic
@@ -71,13 +76,21 @@ Given an epic number it fetches the `EpicLedger` via the `Github` capability, ru
 FAIL verdict and flips **nothing**. It returns a structured `GateVerdict`
 (`{_tag: "pass", flipped}` or `{_tag: "fail", defects, signature}`).
 
-Run it through the package (the `Github` capability is provided over a `NodeServices`
-spawner — the layer wiring lives in the package; you invoke the action, you don't
-re-implement the floor in prose):
+Invoke it through the package's CLI (`packages/epic-ledger/src/bin.ts`, wired over
+`NodeRuntime.runMain` + `NodeServices.layer` — you run the binary, you don't re-implement
+the floor in prose):
 
+```bash
+# from the repo root:
+node packages/epic-ledger/src/bin.ts <EPIC>            # the live gate — flips + comments
+node packages/epic-ledger/src/bin.ts <EPIC> --dry-run  # read-only: validate + print, no mutation
+# or via the workspace script:  pnpm --filter @phoenix/epic-ledger gate <EPIC>
 ```
-runGate(<EPIC>)  // via @phoenix/epic-ledger — fetch ledger, validate, flip-or-fail
-```
+
+`runGate(<EPIC>)` is the underlying action the CLI calls (`@phoenix/epic-ledger`'s
+`runGate`, `packages/epic-ledger/src/gate.ts`). Use `--dry-run` first when you want to see
+the verdict before any label moves; the bare form is the real gate. Both fetch the *current*
+ledger live, so a re-run after a re-plan picks up the new structure.
 
 This is the **whole pass/fail decision**. Do not re-derive defects by reading the ledger
 yourself — the validator is the single source of truth, and re-judging it in prose
