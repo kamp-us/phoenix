@@ -90,6 +90,34 @@ apps/web/
 
 Data tasks (seeding, backfills) are one-off direct-D1 scripts against the bound database, not worker routes.
 
+## The pipeline
+
+phoenix extends itself through an agent-operable issue-intake pipeline in `.claude/skills/`: an agent files what it notices, triage makes it actionable, then the work is planned, executed, reviewed, and shipped. Each stage consumes the previous stage's output and produces a signal the next stage trusts — a verification gate sits at every stage. Only [`ship-it`](./.claude/skills/ship-it/SKILL.md) merges, and it refuses to merge the pipeline's own control plane (`.claude`/`.github` PRs), which a human merges by hand — ADR [0053](./.decisions/0053-control-plane-boundary.md).
+
+```mermaid
+flowchart LR
+    report --> triage --> plan-epic --> review-plan --> write-code
+    write-code --> review-code
+    write-code --> review-doc
+    review-code --> ship-it
+    review-doc --> ship-it
+    ship-it -->|red CI| heal-ci
+```
+
+| Skill | Stage | Role |
+|---|---|---|
+| [`report`](./.claude/skills/report/SKILL.md) | intake | File a follow-up issue the moment you spot tangential work; tags `status:needs-triage` and nothing else. |
+| [`triage`](./.claude/skills/triage/SKILL.md) | classify | Process the needs-triage queue: classify, enrich, prioritize, split, or close. The guardrail between raw intake and pickable work. |
+| [`plan-epic`](./.claude/skills/plan-epic/SKILL.md) | plan | Turn a triaged epic into a PRD-grade task ledger; product layer leads, split into tracer-bullet sub-issues with a pinned `## Dependencies` topology. |
+| [`review-plan`](./.claude/skills/review-plan/SKILL.md) | gate | Verify the epic ledger against a deterministic structural floor before its children become pickable. |
+| [`write-code`](./.claude/skills/write-code/SKILL.md) | execute | Pick the next actionable issue, implement it on a branch, open a PR that closes it, hand off to the parent epic. |
+| [`review-code`](./.claude/skills/review-code/SKILL.md) | gate | Fresh-eyes QA: verify a PR against its issue's acceptance criteria, one criterion at a time, evidence-based. Never merges. |
+| [`review-doc`](./.claude/skills/review-doc/SKILL.md) | gate | The doc-artifact twin of review-code, plus a doc-hygiene checklist, for `.decisions`/`.patterns`/prose PRs. |
+| [`ship-it`](./.claude/skills/ship-it/SKILL.md) | merge | The only skill with merge authority. Asserts the matching gate signalled PASS and CI is green, squash-merges, confirms the issue auto-closed. Refuses to self-merge control-plane (`.claude`/`.github`) PRs. |
+| [`heal-ci`](./.claude/skills/heal-ci/SKILL.md) | self-heal | Classify a red CI run into flake-vs-defect; rerun a known transient once, or file a defect via report. ship-it hands off here when checks come back red. |
+
+Two more skills serve the docs rather than the chain: [`adr`](./.claude/skills/adr/SKILL.md) records a decision in `.decisions/`, and [`deslop-comments`](./.claude/skills/deslop-comments/SKILL.md) cuts comments that bury the code.
+
 ## Where to read deeper
 
 Two doc surfaces carry the rest: **[.decisions/](./.decisions/index.md)** holds the ADRs — the *why* behind each choice and the history of how it got here; **[.patterns/](./.patterns/index.md)** describes *how* the current code is shaped. Read a pattern when you're about to write that kind of code; read an ADR when you want to revisit a decision. New decisions go through `/adr`. When a doc and `apps/web/worker/` disagree, the source wins — fix the doc.
