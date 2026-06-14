@@ -1,12 +1,14 @@
 ---
 id: 0049
 title: The Pipeline Ships Code, Not Itself
-status: accepted
+status: superseded by 0053
 date: 2026-06-13
 tags: [pipeline, skills, ship-it, review-code, process]
 ---
 
 # 0049 — The Pipeline Ships Code, Not Itself
+
+> **Superseded by [0053](0053-control-plane-boundary.md).** The boundary is no longer "product code vs. harness" but the control plane: `.claude/**` + `.github/**` are blocking (manual merge); everything else — including `.decisions/**` and `.patterns/**` — is non-blocking and gated (`review-code` for code, `review-doc` for docs). 0053 also closes the gap this ADR left: `.github/**` was never in 0049's blocked set, so a workflow edit could auto-merge.
 
 ## Context
 
