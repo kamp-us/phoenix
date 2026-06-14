@@ -34,21 +34,24 @@ The fork (from #226): (a) adopt crabbox as-is and have the gate consume its bund
 have (GitHub Actions CI + the `verify` skill); (c) build a phoenix-native coordinator/lease
 Durable Object.
 
-The decisive observation: the gate's trust problem has two **separable** parts —
-*execution* (where/how the suite runs) and *evidence* (what structured proof the gate
-consumes). Phoenix already has execution: CI runs the suite on every PR. crabbox's core
-value (leased boxes, multi-provider, warm reuse, browser desktop) solves an execution
-problem phoenix does not have. The actual gap is evidence. And CLAUDE.md is explicit:
-never build what you can install; custom infra is the last resort. Standing up a
-coordinator DO (c) or adopting a remote-execution control plane (a) to solve what is
-really an *evidence-contract* problem inverts that rule.
+The decisive observation: the trust problem has two **separable** layers — the
+*evidence* (what structured proof the gate consumes) and the *producer* (the run that
+generates it). The **evidence contract** is the durable decision and is independent of
+any producer. The **producer** is the open question — and crabbox is the leading
+candidate, not a thing to defer: it already emits exactly this bundle
+(`crabbox artifacts collect`), it is agent-native (our pipeline is agents), and it runs
+on phoenix's own substrate (Cloudflare Worker + Durable Object, self-hostable).
+CLAUDE.md's "never build what you can install" therefore *favors* adopting crabbox over
+hand-building a CI bundle-assembly pipeline — **provided** crabbox is mature enough to
+depend on, which is the one genuine unknown. So the producer is gated on a spike, not
+pre-judged in either direction.
 
 ## Decision
 
 The auto-merge gate trusts a **run-evidence bundle**: a structured, SHA-bound artifact
-produced by the run — not prose, not an opaque status. We commit to the **bundle
-contract**, reuse existing CI as its producer, and do **not** adopt crabbox or build a
-coordinator DO now (option **b**).
+produced by the run — not prose, not an opaque status. Two layers, decided separately:
+the **bundle contract** (§2/§3) is settled now; the **producer** (§4) is gated on a
+crabbox spike, with crabbox the leading candidate and CI-emits-the-bundle as the fallback.
 
 ### 1. The bundle is the trust unit, bound to the head SHA.
 
@@ -88,20 +91,29 @@ opaque rollup:
 - `review-code` may cite specific `tests`/`coverage` from the bundle instead of reasoning
   from a raw log scrape, making its verdict reproducible.
 
-### 4. The producer is existing CI.
+### 4. The producer is gated on a crabbox spike; crabbox is the leading candidate.
 
-GitHub Actions CI assembles and publishes the bundle as a run artifact: configure the test
-runner to emit JUnit/JSON (vitest reporter), capture logs, and write the manifest in a
-small workflow step. No new execution substrate.
+crabbox already emits this bundle, is agent-native, and runs on our substrate, so it is the
+leading producer — but we de-risk before depending on it. A spike (filed as an
+investigation, see Consequences) self-hosts crabbox on our Cloudflare account, runs one
+real PR end-to-end (dirty checkout → bundle), and assesses maturity, the credential model,
+and CF fit. Its verdict picks the producer:
 
-### 5. Remote execution is deferred, and ordered when it comes.
+- **crabbox passes** → adopt it as the producer (option **a**): an agent issues
+  `crabbox run`, and `crabbox artifacts collect` is the bundle the gate consumes.
+- **crabbox doesn't pass** → fall back to **CI emits the bundle** (option **b**): GitHub
+  Actions assembles the manifest as a run artifact (vitest JUnit/JSON reporter + captured
+  logs). No new substrate.
 
-We do not adopt crabbox or build a coordinator DO now. If a concrete need for remote
-execution appears that CI cannot serve — GPU, cross-OS desktop UI runs, suites too heavy
-or too privileged for the CI runner — the response is to add a *producer* of the **same
-bundle**, and the order is **adopt crabbox (a) before building native (c)**, per "never
-build what you can install." Because the contract (§2) is execution-agnostic, swapping the
-producer does not touch the gate (§3).
+Either way the contract (§2) and the gate (§3) are unchanged — only the producer differs.
+
+### 5. A native coordinator DO (option c) is the last resort.
+
+We do **not** build a phoenix-native coordinator/lease Durable Object now. crabbox already
+*is* that coordinator on our exact substrate; building our own duplicates installable
+infrastructure. Option (c) is reconsidered only if the crabbox spike fails **and**
+CI-emits-the-bundle proves insufficient for a concrete need — the explicit last resort,
+never the reflex.
 
 ## Consequences
 
@@ -111,18 +123,21 @@ producer does not touch the gate (§3).
   marker) and 0051 (adds run-proof to author-binding).
 - **`review-code` gets reproducible inputs** — structured test/coverage results instead of
   log archaeology.
-- **Future remote execution is a producer swap, not a gate redesign.** The
-  execution-vs-evidence split is the root-cause decision; the substrate question is
-  deliberately deferred behind a concrete trigger.
+- **The producer is a swap, not a gate redesign.** The contract-vs-producer split is the
+  root-cause decision; whichever producer the spike selects, the gate (§3) is unchanged.
+- **The producer choice is gated on a spike** — filed as an investigation issue: self-host
+  crabbox on our CF, run one real PR (dirty checkout → bundle), and assess maturity, the
+  credential model, and CF fit. This ADR stays `proposed` until the spike reports its
+  verdict (adopt crabbox vs. fall back to CI-emits-bundle).
 - **Implementation cost lands in the control plane.** Emitting the bundle touches
   `.github/**` (CI workflow) and consuming it touches `.claude/**` (`ship-it`,
   `review-code`) — both **blocking** per ADR [0053](0053-control-plane-boundary.md), so
   those implementation PRs are human-merged, not auto-shipped. This ADR itself is
   `.decisions/**` (non-blocking, `review-doc`-gated). The implementation is follow-up work,
   filed separately, not part of this decision.
-- **Banned by default:** standing up remote-execution infrastructure (crabbox adoption or
-  a coordinator/lease DO) without a documented need CI cannot serve. §5 makes that an
-  explicit, justified, ordered decision rather than a reflex.
+- **Banned by default:** building a phoenix-native coordinator/lease DO (option c) before
+  the crabbox spike has failed *and* CI-emits-the-bundle has proven insufficient. §5 makes
+  native infra the explicit last resort, never the reflex.
 - **Left to the implementation issue:** the bundle's storage/transport (CI run artifact
   vs. a comment-attached manifest vs. R2) and the manifest's schema version. This ADR fixes
   the *fields and their meaning*; the wire format is a downstream detail.
