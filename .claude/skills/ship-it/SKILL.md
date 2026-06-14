@@ -314,7 +314,7 @@ successful run — shipping the wrong PR is the only failure mode that matters.
 ## Conventions
 
 This skill is the terminal stage of a suite (`report` → `triage` → `plan-epic` →
-`write-code` → `review-code` / `review-doc` → **`ship-it`**) that turns GitHub issues into an
+`review-plan` → `write-code` → `review-code` / `review-doc` → **`ship-it`**) that turns GitHub issues into an
 agent-operable pipeline. The shared label semantics and the body/comment/dependency/marker
 formats live in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) — you are
 the merge step named as the reader of format 5; the decision to give the pipeline a single
