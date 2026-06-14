@@ -14,7 +14,18 @@
  * glob and it is never imported by the worker graph.
  */
 import {DatabaseSync, type SQLInputValue} from "node:sqlite";
-import baselineMigration from "./drizzle/migrations/0000_d1_baseline.sql?raw";
+
+// Every committed migration, eagerly inlined as raw SQL and applied in filename
+// order — so a test DB reflects the full schema, not just the baseline. A new
+// `NNNN_*.sql` is picked up with no edit here.
+const migrationSql: Record<string, string> = import.meta.glob("./drizzle/migrations/*.sql", {
+	query: "?raw",
+	import: "default",
+	eager: true,
+});
+const orderedMigrations = Object.entries(migrationSql)
+	.sort(([a], [b]) => a.localeCompare(b))
+	.map(([, sql]) => sql);
 
 type Params = ReadonlyArray<unknown>;
 
@@ -57,7 +68,7 @@ function toSqliteParam(value: unknown): SQLInputValue {
 export interface SqliteD1 {
 	/** The `D1Database`-shaped binding to hand `drizzle(d1, {schema})`. */
 	readonly d1: D1Database;
-	/** Apply the committed baseline migration SQL (`--> statement-breakpoint`-split). */
+	/** Apply a migration's SQL (`--> statement-breakpoint`-split). */
 	applyMigration: (sql: string) => void;
 	/** Tear down the in-memory database. */
 	close: () => void;
@@ -192,6 +203,6 @@ export function makeSqliteD1(): SqliteD1 {
 export function makeSqliteTestDb(): SqliteD1 {
 	const sqlite = makeSqliteD1();
 	sqlite.applyMigration("PRAGMA foreign_keys=OFF;");
-	sqlite.applyMigration(baselineMigration);
+	for (const sql of orderedMigrations) sqlite.applyMigration(sql);
 	return sqlite;
 }
