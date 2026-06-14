@@ -160,15 +160,26 @@ and branch there if the issue carries one of those types. Everything else
 
 ## Step 4 — Implement on a branch
 
-Branch off `main` per your git convention (e.g. a personal prefix like `umut/`), with
-a short kebab-case slug naming the work. Read the issue's `### What to build` for
-scope and honor the `**TDD:**` flag — `yes` means write the failing test first, then
-make it pass; `no` means config/docs/scaffolding where test-first doesn't apply.
+write-code **MUST run in an isolated git worktree** — when spawned as a subagent, via
+the Agent tool's `isolation: worktree`. The operator loop requires it so concurrent
+runs can't race or dirty the primary checkout. This constrains how you branch: `main`
+is already checked out in the primary tree, so `git checkout main` **fails** inside an
+isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch from
+latest origin `main` **without checking it out**:
 
 ```bash
-git checkout main && git pull
-git checkout -b umut/<slug-for-issue-N>
+git fetch origin main
+git switch -c umut/<slug-for-issue-N> FETCH_HEAD
 ```
+
+Use your git convention (a personal prefix like `umut/`) with a short kebab-case slug
+naming the work. Read the issue's `### What to build` for scope and honor the `**TDD:**`
+flag — `yes` means write the failing test first, then make it pass; `no` means
+config/docs/scaffolding where test-first doesn't apply.
+
+> **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
+> spin one up rather than checking out `main`:
+> `git worktree add -b umut/<slug-for-issue-N> ../wt origin/main`, then `cd ../wt`.
 
 Ground the implementation in the codebase the way the repo expects: the ADRs in
 `.decisions/` are the *why* and the binding decisions, the patterns in `.patterns/`
