@@ -169,26 +169,33 @@ Every criterion passed. Land an **explicit, recognizable approval signal** on th
 the next actor (human or authorized downstream step) knows it's verified and can merge.
 Two forms, either is valid — both must carry the per-criterion table as evidence.
 
-First, **write the verdict to a temp file** (`/tmp/review-code-verdict.md`) so multi-line
-markdown + backticks survive the shell — both forms below read it back via `cat`. See the
-verdict-body shape at the end of this step.
+First, **write the verdict to a per-PR temp file**
+(`VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"`) so multi-line markdown + backticks
+survive the shell — both forms below read it back via `cat`. The PR number is in the path
+so back-to-back runs never collide on a fixed file (a prior run's unread verdict would
+otherwise stall the write or leak into this run). See the verdict-body shape at the end of
+this step.
 
-**Preferred — an approving review** (the native, unambiguous GitHub signal):
+**Preferred — an approving review** (the native, unambiguous GitHub signal). Capture its
+result and check the exit status **explicitly**; on failure (e.g. a 422 when you can't
+review your own org's PR under branch rules) post the marker-comment fallback. The explicit
+check is load-bearing: do **not** chain APPROVE to the fallback with `||` — a shell pipe
+wrapping the APPROVE call (e.g. `… 2>&1 | head` for inspection) makes the pipeline's exit
+status mask the APPROVE failure, so the `||` fallback silently never fires and no verdict
+lands.
 
 ```bash
-BODY="$(cat /tmp/review-code-verdict.md)"   # the per-criterion table + "merge-ready" line
-gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews \
-  -f event=APPROVE -f body="$BODY"
-```
-
-**Fallback — a structured pass comment** (if a formal review can't be posted, e.g. you
-can't review your own org's PR under branch rules): a comment whose **first line is a
-recognizable marker** so a scan can find it unambiguously:
-
-```bash
-gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
-# where $BODY starts with the marker line:
-#   review-code: PASS — merge-ready
+VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"
+BODY="$(cat "$VERDICT_FILE")"   # the per-criterion table + "merge-ready" line
+if gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews \
+     -f event=APPROVE -f body="$BODY"; then
+  : # native approving review posted
+else
+  # APPROVE failed (e.g. 422 on your own PR) — post the structured pass comment instead,
+  # whose first line is a recognizable marker so a scan finds the verdict unambiguously:
+  #   review-code: PASS — merge-ready
+  gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
+fi
 ```
 
 Either way, the verdict body states plainly: every acceptance criterion verified
@@ -197,7 +204,7 @@ merge**; the **`ship-it`** skill is the authorized merge step, and merging this 
 auto-close issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on merge, not
 now).
 
-Verdict body shape (this is what you wrote to `/tmp/review-code-verdict.md` above):
+Verdict body shape (this is what you wrote to `$VERDICT_FILE` above):
 
 ```markdown
 **review-code: PASS — merge-ready**
@@ -234,7 +241,7 @@ implementer and still has failing criteria to address. Recognize it tolerantly b
 a FAIL marker means *do not merge*.)
 
 ```bash
-BODY="$(cat /tmp/review-code-verdict.md)"
+BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"
 gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
 ```
 
