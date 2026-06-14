@@ -49,7 +49,7 @@
 		"@types/react": "catalog:",
 		"@types/react-dom": "catalog:",
 		"@typescript/native-preview": "catalog:",
-		"@vitejs/plugin-react-swc": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
 		"drizzle-kit": "catalog:",
 		"typescript": "catalog:",
 		"vite": "catalog:",

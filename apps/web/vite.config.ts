@@ -1,4 +1,4 @@
-import react from "@vitejs/plugin-react-swc";
+import react from "@vitejs/plugin-react";
 import {fate} from "react-fate/vite";
 import {defineConfig} from "vite";
 
