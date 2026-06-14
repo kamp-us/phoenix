@@ -154,7 +154,10 @@ The Step 1 `already-rerun` flag is set (run `attempt` ≥ 2, or a prior `heal-ci
 queued` comment exists): the transient survived its one rerun and is now a recurring failure.
 Do **not** rerun. Route it to `report` exactly like a defect (below), but say plainly in
 "What I observed" that this signature already failed a rerun, so triage sees a real recurring
-failure rather than transient noise.
+failure rather than transient noise. When the flag came from `attempt` ≥ 2 **without** a
+`heal-ci: ... rerun queued` marker, add a one-line caveat to the report body — the prior
+attempt may have been a *human/manual* rerun, not heal-ci's, so triage shouldn't read the
+"recurring" framing as confirmed-by-this-skill.
 
 ### Defect → file via the `report` skill
 
