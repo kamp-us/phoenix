@@ -1,6 +1,6 @@
 ---
 name: heal-ci
-description: Classify a red CI run on kamp-us/phoenix into flake-vs-defect and route it — the failure triage the self-heal loop needs. Given a failed run id or a PR, fetch the failed logs, match against a small fixed signature taxonomy, and emit ONE routed action: rerun a known transient exactly once, or file a defect via report. Trigger on "heal CI for #N", "why did the run fail", "classify this failure", "/heal-ci", or from `ship-it` when checks come back red. It never merges and never auto-edits code.
+description: Classify a red CI run on kamp-us/phoenix into flake-vs-defect and route it — the failure triage the self-heal loop needs. Given a failed run id or a PR, fetch the failed logs, match against a small fixed signature taxonomy, and emit ONE routed action: rerun a known transient exactly once, or file a defect via report. Trigger on "heal CI for #N", "why did the run fail", "classify this failure", "/heal-ci", or from `ship-it` when checks come back red.
 ---
 
 # heal-ci
@@ -34,7 +34,7 @@ These are the hard guardrails. heal-ci classifies **one** red run per invocation
 - **Never re-push a branch.** The fix round-trip is `write-code`'s job, off a filed issue —
   not yours.
 - **Never merge.** That is `ship-it`'s sole authority.
-- **Never loop reruns.** A flake gets **exactly one** rerun (the inline rule in Step 3),
+- **Never loop reruns.** A flake gets **exactly one** rerun (the inline rule in Step 1),
   then you stop — you don't sit and retry.
 - **Don't re-implement `report`.** Defect- and unknown-filing delegate to the
   [`report`](../report/SKILL.md) skill, which owns the dedup re-query and the
@@ -155,6 +155,8 @@ gh run rerun $RUN --failed
 gh api repos/kamp-us/phoenix/issues/$PR/comments \
   -f body="heal-ci: <signature> — rerun queued (run $RUN). One rerun only; a recurring failure becomes a defect."
 ```
+
+This marker string and Step 1's `test("heal-ci:.*rerun queued")` grep are a paired contract — change the phrasing here and you must update the matcher there (same discipline ship-it uses for its `review-code:` / `review-doc:` anchors).
 
 One rerun, then stop — see the canonical one-rerun rule in Step 1 for why this holds across
 invocations (the `attempt` bump + the marker you just posted are what a later invocation reads).
