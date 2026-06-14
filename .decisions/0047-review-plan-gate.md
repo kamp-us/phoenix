@@ -159,3 +159,43 @@ later children:
   `review-code` verifies a PR and never merges; `review-plan` verifies a ledger and never
   repairs. The two gates bracket `write-code` on both sides: the plan it consumes is
   floor-verified going in, the PR it produces is AC-verified going out.
+
+## Amendment (2026-06-13) — first real-epic run: operable surface + two floor corrections
+
+The gate had never run against a real epic — the floor was fixture-tested only, and there
+was **no executable surface** to invoke `runGate` (the skill named it, but nothing wired it
+to a runnable entry). The first dry-run sweep over the live backlog (#41/#73/#82/#83/#89/
+#102/#113) surfaced two false positives in the floor that only real ledgers expose. This
+amendment records the three changes; all stay within the Decisions above (Effect-v4-native
+core, deterministic floor, flag-not-repair).
+
+1. **Operable surface — `epic-ledger` CLI.** `packages/epic-ledger/src/bin.ts` wires the
+   existing `runGate` over `effect/unstable/cli` + `NodeRuntime.runMain`, with the live
+   `Github` capability provided through `NodeServices.layer` (the `ChildProcessSpawner` that
+   shells `gh`). `epic-ledger <EPIC>` is the live gate; `--dry-run` validates and prints
+   without flipping a label or posting a comment. This is the entry `review-plan` Step 1
+   invokes — not a new framework, just the missing executable for the action the ADR already
+   defined.
+
+2. **`DANGLING_DEP` resolves cross-epic edges at the boundary.** A `requires:` ref to an
+   issue owned by *another* epic (e.g. #113's CLI verb requiring the imge backend #108/#109)
+   is a legitimate gating edge, but the pure floor flagged every non-child referenced node
+   as dangling. The decode boundary (`github.ts`) now probes each non-child ref: one that
+   resolves to a real issue rides in a new `EpicLedger.externalRefs` and is **not** flagged;
+   a 404 still dangles; any other `gh` fault propagates (no silent demotion of a real
+   dependency). The floor stays pure over the richer ledger — `DANGLING_DEP` fires only on a
+   ref that resolves to nothing. (The formats contract already allowed `requires:` to name
+   "other issues" generally; this aligns the floor with it.)
+
+3. **`MISSING_STORIES_SECTION` — epic-level story-coverage floor.** Widens the closed defect
+   enum by one (a deliberate contract widening, per `Defect.ts`). The story-coverage
+   invariant required every child to carry `**Stories:**` but had no check that the *epic*
+   declares a `### User stories` section — so an epic with none (legacy, pre-story-coverage:
+   #73/#83/#89) failed with N confusing per-child `MISSING_STORY` defects instead of one
+   legible root cause. `MISSING_STORIES_SECTION` is the story-side mirror of
+   `MISSING_DEPS_SECTION`; when it fires, the per-child `MISSING_STORY` is suppressed.
+
+Verified end-to-end against a throwaway scratch epic (created and torn down in one run):
+PASS flips `status:planned → status:triaged` + posts the verdict comment; a zero-AC child
+yields FAIL with nothing flipped; the gate is idempotent on re-run. 70/70 package tests
+green.

@@ -12,17 +12,22 @@
 import * as Schema from "effect/Schema";
 
 /**
- * The closed defect enum, in canonical emission order. `UNCOVERED_STORY` sits
- * with the epic-scoped coverage defects (next to `ORPHAN_CHILD`) and
- * `MISSING_STORY` with the child-content defects (next to `ZERO_AC`) — the two
- * halves of the story-coverage invariant (ADR 0046/0047): every declared story
- * is covered by ≥1 child, every linked child traces to ≥1 story.
+ * The closed defect enum, in canonical emission order. `MISSING_STORIES_SECTION`
+ * is the epic-level "no `### User stories` at all" defect — the story-side mirror
+ * of `MISSING_DEPS_SECTION`; it leads the story cluster, and when it fires the
+ * per-child `MISSING_STORY` is suppressed (the root cause is the epic, not each
+ * child). `UNCOVERED_STORY` sits with the epic-scoped coverage defects (next to
+ * `ORPHAN_CHILD`) and `MISSING_STORY` with the child-content defects (next to
+ * `ZERO_AC`) — the two halves of the story-coverage invariant (ADR 0046/0047):
+ * every declared story is covered by ≥1 child, every linked child traces to ≥1
+ * story.
  */
 export const DEFECT_TYPES = [
 	"MISSING_DEPS_SECTION",
 	"DEP_CYCLE",
 	"DANGLING_DEP",
 	"ORPHAN_CHILD",
+	"MISSING_STORIES_SECTION",
 	"UNCOVERED_STORY",
 	"ZERO_AC",
 	"MISSING_STORY",

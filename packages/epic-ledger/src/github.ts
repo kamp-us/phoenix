@@ -78,6 +78,9 @@ const toLedger = (input: GithubEpicInput): EpicLedger => ({
 		acceptanceCriteriaCount: countAcceptanceCriteria(bodyOf(child.body)),
 		stories: parseChildStories(bodyOf(child.body)),
 	})),
+	// Pure decode cannot probe GitHub, so cross-epic refs are left unresolved here;
+	// the IO boundary (`loadEpicLedger`) resolves and overrides this set.
+	externalRefs: [],
 });
 
 /**
@@ -239,13 +242,52 @@ const json = Effect.fn("Github.json")(function* (args: ReadonlyArray<string>) {
 	return yield* parseJson(args, yield* runGh(args));
 });
 
+/** A `gh` 404 — the only `gh` failure that means "this issue does not exist". */
+const is404 = (stderr: string): boolean => /404|not found/i.test(stderr);
+
+/**
+ * Does issue `#n` resolve to a real issue in the repo? A clean 404 → `false`; any
+ * other `gh` fault propagates rather than silently demoting a real dependency to a
+ * dangling one. Open or closed both count as resolved — a `requires:` on a closed
+ * (done) issue is the normal satisfied-dependency case.
+ */
+const issueExists = Effect.fn("Github.issueExists")(function* (n: number) {
+	return yield* runGh(issueArgs(n)).pipe(
+		Effect.as(true),
+		Effect.catchTag("@phoenix/epic-ledger/GhCommandError", (error) =>
+			is404(error.stderr) ? Effect.succeed(false) : Effect.fail(error),
+		),
+	);
+});
+
+/**
+ * Resolve the ledger's cross-epic gating edges: every `## Dependencies` ref that
+ * is not a linked child of this epic is probed; the ones that resolve to a real
+ * issue are the legitimate cross-epic dependencies the floor must not flag as
+ * `DANGLING_DEP` (a ref that 404s is left out, so it still dangles). A
+ * self-contained ledger has no candidates and so makes no extra `gh` calls.
+ */
+const resolveExternalRefs = Effect.fn("Github.resolveExternalRefs")(function* (ledger: EpicLedger) {
+	const childNumbers = new Set(ledger.children.map((c) => c.number));
+	const candidates = ledger.epic.dependencies.nodes.filter(
+		(n) => n !== ledger.epic.number && !childNumbers.has(n),
+	);
+	const probed = yield* Effect.forEach(
+		candidates,
+		(n) => Effect.map(issueExists(n), (exists) => ({n, exists})),
+		{concurrency: "unbounded"},
+	);
+	return probed.filter((r) => r.exists).map((r) => r.n);
+});
+
 const loadEpicLedger = Effect.fn("Github.epicLedger")(function* (epicNumber: number) {
 	const epic = yield* json(issueArgs(epicNumber));
 	const refs = yield* decodeSubIssueRefs(yield* json(subIssuesArgs(epicNumber)));
 	const children = yield* Effect.forEach(refs, (ref) => json(issueArgs(ref.number)), {
 		concurrency: "unbounded",
 	});
-	return yield* decodeEpicLedger({epic, children});
+	const ledger = yield* decodeEpicLedger({epic, children});
+	return {...ledger, externalRefs: yield* resolveExternalRefs(ledger)};
 });
 
 const flipChildToTriaged = Effect.fn("Github.flipChildToTriaged")(function* (childNumber: number) {
