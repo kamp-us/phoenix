@@ -74,6 +74,11 @@ longer a flake: skip the rerun branch entirely and route straight to `report` as
 failure (Step 3, "Flake that already had its rerun"). Carry this `already-rerun` flag into
 Step 2 — it overrides a flake match.
 
+(`attempt ≥ 2` can also be bumped by a *human* or another tool re-running the workflow, not
+just heal-ci; reading it as already-rerun then files a recurring-failure report for what was
+really a manual rerun. That bias is deliberate — it errs toward `report`, never toward
+looping — but it is why the PR-comment marker, when present, is the more precise signal.)
+
 ---
 
 ## Step 2 — Match against the signature taxonomy
@@ -122,10 +127,15 @@ job — delegate.
 ### Flake (first attempt) → rerun exactly once
 
 Only reach this branch when the Step 1 `already-rerun` flag is **not** set. Rerun the failed
-jobs **once**:
+jobs **once**, then — if this is a PR run — post the durable rerun marker the Step 1 guard
+reads back (without it, the cross-invocation one-rerun rule rests only on `attempt`, which a
+manual rerun can also bump):
 
 ```bash
 gh run rerun $RUN --failed
+# on a PR run, write the marker Step 1's already-rerun detector queries:
+gh api repos/kamp-us/phoenix/issues/<PR>/comments \
+  -f body="heal-ci: <signature> — rerun queued (run $RUN). One rerun only; a recurring failure becomes a defect."
 ```
 
 **The one-rerun rule, inline and concrete:** you rerun **exactly once**. There is no loop
