@@ -333,6 +333,58 @@ table below it is for the human and the implementer.
 
 ---
 
+## 6. review-doc verdict marker
+
+`review-doc` is the **doc-class twin of `review-code`** — it gates a doc/knowledge PR
+(`.decisions/**`, `.patterns/**`, prose `*.md` outside `.claude/`/`.github/`) against its
+linked issue's acceptance criteria *plus* a doc-hygiene checklist, and lands its verdict
+the same way: a native approving review when one can be posted, else a **comment whose
+first line is a recognizable marker**. The marker lives in its **own namespace**,
+distinct from §5's `review-code` marker.
+
+### Shape
+
+The recognizable **first line** of the PR comment is one of:
+
+```markdown
+review-doc: PASS — merge-ready
+```
+
+```markdown
+review-doc: FAIL — changes-requested
+```
+
+For a PR in the **blocking set** (touching `.claude/`/`.github/`), `review-doc` is
+advisory only and instead leads with an advisory line (`review-doc: advisory — blocking-set
+PR (manual merge)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a human
+merges those (ADR [0053](../../.decisions/0053-control-plane-boundary.md)).
+
+The rest of the body carries the per-criterion + per-hygiene-check evidence table. What's
+load-bearing for the scanner is only that first marker line.
+
+### Field notes
+
+- **Separate namespace from `review-code`.** `ship-it` matches the two markers with two
+  anchored, namespaced regexes — `^\s*review-code:\s*(PASS|FAIL)` and
+  `^\s*review-doc:\s*(PASS|FAIL)` — and resolves latest-verdict-wins **per namespace** by
+  timestamp. A `review-code` scan must never match a `review-doc` marker, nor vice versa.
+  `review-doc` therefore **never** emits a `review-code` marker, and `review-code` never
+  emits a `review-doc` one.
+- **First line, recognizable.** The marker leads the comment so a scan matches it without
+  parsing the whole body. Recognize it tolerantly by shape (`review-doc: PASS` …
+  `merge-ready`), not by exact dashes or spacing.
+- **Two markers, two consumers.** `PASS — merge-ready` (every AC + every hygiene check
+  verified) is read by `ship-it` as the go-ahead to merge a **non-blocking** doc PR.
+  `FAIL — changes-requested` (≥1 AC or hygiene check unmet) is read by `write-code`'s fix
+  round-trip as "my doc PR came back failed"; `ship-it` reads it as "do not merge."
+- **Advisory for the blocking set.** A PR touching `.claude/`/`.github/` gets the advisory
+  line, not a PASS marker — `review-doc`'s verdict does not authorize that merge; a human
+  does (ADR 0053). This keeps the control-plane manual-merge invariant intact.
+- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
+  `review-doc` writing it does **not** merge (see review-doc/SKILL.md §"Authority limit").
+
+---
+
 ## Relationship between the formats
 
 | Format | Lives on | Written by | Read by |
@@ -343,6 +395,8 @@ table below it is for the human and the implementer.
 | Epic handoff note | parent epic | write-code | write-code (siblings) |
 | review-code PASS marker | the PR | review-code | ship-it |
 | review-code FAIL marker | the PR | review-code | write-code (fix round-trip) |
+| review-doc PASS marker | the PR | review-doc | ship-it |
+| review-doc FAIL marker | the PR | review-doc | write-code (fix round-trip) |
 
 `review-plan` reads the first two formats as its structural floor (the `## Dependencies`
 topology and each sub-issue's acceptance-criteria + `**Stories:**` invariants) and, on a
