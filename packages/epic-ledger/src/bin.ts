@@ -28,18 +28,18 @@ const PLANNED_LABEL = "status:planned";
 const refList = (refs: ReadonlyArray<number>): string => refs.map((n) => `#${n}`).join(", ");
 
 const printDefects = (defects: ReadonlyArray<Defect>) =>
-	Effect.forEach(
-		defects,
-		(d) => Console.log(`  - ${d.type} (${refList(d.refs)}) — ${d.message}`),
-		{discard: true},
-	);
+	Effect.forEach(defects, (d) => Console.log(`  - ${d.type} (${refList(d.refs)}) — ${d.message}`), {
+		discard: true,
+	});
 
 const epicArg = Argument.integer("epic").pipe(
 	Argument.withDescription("the epic issue number whose ledger to gate"),
 );
 
 const dryRunFlag = Flag.boolean("dry-run").pipe(
-	Flag.withDescription("validate and print the verdict only — never flip a label or post a comment"),
+	Flag.withDescription(
+		"validate and print the verdict only — never flip a label or post a comment",
+	),
 );
 
 const gate = Command.make(
