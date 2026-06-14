@@ -1,6 +1,6 @@
 ---
 name: review-doc
-description: Verify a doc/knowledge PR against its linked issue's acceptance criteria — plus a doc-hygiene checklist — before it merges. The doc-artifact twin of review-code in the kamp-us/phoenix pipeline. Trigger on "review this doc PR", "review-doc #N", "gate the ADR PR", "verify the docs on #N before merge", "run review-doc", "does this ADR/pattern PR meet its acceptance criteria", or whenever you're asked to confirm a `.decisions`/`.patterns`/prose-doc PR actually satisfies the issue it claims to close. This is the doc-class verification stage of the issue-intake pipeline: it consumes the doc PRs `write-code` opens and verifies them one criterion at a time, evidence-based from reading the diff (no test-running). doc-artifact twin of review-code; emits a namespaced `review-doc: PASS — merge-ready` / `review-doc: FAIL — changes-requested` marker; for BLOCKING-set doc PRs (touching `.claude/`/`.github`) it is advisory only; it never merges; it never emits a `review-code` marker.
+description: Verify a doc/knowledge PR against its linked issue's acceptance criteria — plus a doc-hygiene checklist — before it merges. The doc-artifact twin of review-code in the kamp-us/phoenix pipeline. Trigger on "review this doc PR", "review-doc #N", "gate the ADR PR", "verify the docs on #N before merge", "run review-doc", "does this ADR/pattern PR meet its acceptance criteria", or whenever you're asked to confirm a `.decisions`/`.patterns`/prose-doc PR actually satisfies the issue it claims to close. This is the doc-class verification stage of the issue-intake pipeline: it consumes the doc PRs `write-code` opens and verifies them one criterion at a time, evidence-based from reading the diff (no test-running). Emits a namespaced `review-doc: PASS — merge-ready` / `review-doc: FAIL — changes-requested` marker; for BLOCKING-set doc PRs (touching `.claude/`/`.github`) it is advisory only; it never merges; it never emits a `review-code` marker.
 ---
 
 # review-doc
@@ -81,15 +81,12 @@ is not a style preference — GraphQL calls error out on this org.
 ## The formats contract
 
 Your gate is **format 2, the sub-issue body's `### Acceptance criteria` checklist** — and
-**format 5, the verdict marker** (your `review-doc` rows). Read the contract so you know
+**format 6, the review-doc verdict marker** (your namespace). Read the contract so you know
 the shapes you verify against and emit:
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2 and §5. Note that §5
-currently defines **only** the `review-code` namespace (`PASS — merge-ready` /
-`FAIL — not merge-ready`); it does **not yet** carry the `review-doc` rows or the advisory
-blocking-set line. Until it does, the `review-doc` shapes stated *here* — `PASS — merge-ready`
-/ `FAIL — changes-requested`, plus the advisory blocking-set line that deliberately stays
-out of either PASS namespace — are the consumed contract, and §5 should be extended to add
-the `review-doc` namespace when this skill lands.
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2 and §6. §6 defines the
+`review-doc` namespace (`PASS — merge-ready` / `FAIL — changes-requested`) and the advisory
+blocking-set line, in a namespace distinct from §5's `review-code` marker — emit only the §6
+shapes, never a §5 `review-code` marker.
 
 The key invariant: **every issue carries at least one acceptance criterion.** That's the
 floor that guarantees there is always something to verify. If an issue you're handed has
@@ -122,7 +119,8 @@ gh api "repos/kamp-us/phoenix/pulls/$PR/files?per_page=100" \
   `apps/web/**`, `packages/**`) → **non-blocking**. Your PASS marker binds `ship-it`.
 
 If the diff is **pure product code** with no doc/knowledge file at all, this is the wrong
-gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` and stop.
+gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` (a plain note,
+**not** a `review-doc:` marker — there's no doc to verdict) and stop.
 If the diff is **mixed code + doc** (both a `*.md` knowledge file and `apps/web`/`packages`
 code, none of it blocking), it needs *both* gates: you verify the doc class here and emit
 the `review-doc` marker; `review-code` verifies the code class and emits its own. `ship-it`
