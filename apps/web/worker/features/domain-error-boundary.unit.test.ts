@@ -32,6 +32,8 @@ import type {
 	UsernameTaken,
 } from "./pasaport/errors.ts";
 import type {Pasaport} from "./pasaport/Pasaport.ts";
+import type {ReportTargetNotFound} from "./report/errors.ts";
+import type {Report} from "./report/Report.ts";
 import type {
 	BodyRequired,
 	BodyTooLong,
@@ -93,5 +95,12 @@ it("Vote: no method leaks DrizzleError; exact domain unions hold", () => {
 	type Svc = typeof Vote.Service;
 	expectTypeOf<InfraLeaks<Svc>>().toEqualTypeOf<never>();
 	expectTypeOf<ErrorsOf<Svc["cast"]>>().toEqualTypeOf<VoteTargetNotFound>();
+	expectTypeOf<ErrorsOf<Svc["readMine"]>>().toEqualTypeOf<never>();
+});
+
+it("Report: no method leaks DrizzleError; exact domain unions hold", () => {
+	type Svc = typeof Report.Service;
+	expectTypeOf<InfraLeaks<Svc>>().toEqualTypeOf<never>();
+	expectTypeOf<ErrorsOf<Svc["submit"]>>().toEqualTypeOf<ReportTargetNotFound>();
 	expectTypeOf<ErrorsOf<Svc["readMine"]>>().toEqualTypeOf<never>();
 });

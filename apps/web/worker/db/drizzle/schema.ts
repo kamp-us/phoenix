@@ -355,3 +355,34 @@ export const userProfile = sqliteTable(
 	},
 	(t) => [index("user_profile_username").on(t.username)],
 );
+
+/**
+ * Per-(reporter, target) content-report presence row, polymorphic over the same
+ * three targets Vote spans (`post` | `comment` | `definition`). The composite PK
+ * `(reporter_id, target_kind, target_id)` makes a re-report by the same user an
+ * idempotent no-op (`onConflictDoNothing`), mirroring `user_vote`.
+ *
+ * `status` is born `'open'`; its full value-set + transitions are owned by the
+ * resolution-semantics decision child (epic #82), so this table pins only the
+ * safe initial value. No live view publishes off this — a report is private
+ * moderation state, not a client-cached entity.
+ */
+export const contentReport = sqliteTable(
+	"content_report",
+	{
+		id: text("id").notNull(),
+		reporterId: text("reporter_id").notNull(),
+		// 'post' | 'comment' | 'definition'
+		targetKind: text("target_kind").notNull(),
+		targetId: text("target_id").notNull(),
+		// Optional free-text reason supplied by the reporter.
+		reason: text("reason"),
+		status: text("status").notNull().default("open"),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.reporterId, t.targetKind, t.targetId]}),
+		// Reverse lookup: reports against a given target (moderation read path).
+		index("content_report_target").on(t.targetKind, t.targetId),
+	],
+);
