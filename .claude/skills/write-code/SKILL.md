@@ -94,14 +94,29 @@ is an unaddressed FAIL:
 
 ```bash
 ME=$(gh api user --jq '.login')
-# open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL
+# whose markers count as a verdict — same allowlist ship-it Step 2 uses (ADR 0051);
+# a forged review-(code|doc): FAIL from a non-reviewer must NOT trigger spurious repair.
+AUTHORIZED_REVIEWERS='["usirin"]'
+# open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
+# UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
+  # FAIL rounds already accrued — per fix-round, not per marker (a both-namespace round counts once)
+  ROUNDS=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+    --argjson authorized "$AUTHORIZED_REVIEWERS" \
+    --jq '[.[] | select(.user.login | IN($authorized[]))
+                | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+                | .created_at[:16]] | unique | length')
+  [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
   CODE=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-    --jq '[.[] | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+    --argjson authorized "$AUTHORIZED_REVIEWERS" \
+    --jq '[.[] | select(.user.login | IN($authorized[]))
+                | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
           | sort_by(.created_at) | last | .body // ""')
   DOC=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-    --jq '[.[] | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+    --argjson authorized "$AUTHORIZED_REVIEWERS" \
+    --jq '[.[] | select(.user.login | IN($authorized[]))
+                | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
           | sort_by(.created_at) | last | .body // ""')
   echo "$CODE" | grep -qiE '^\s*review-code:\s*FAIL' && echo "#$PR review-code FAIL"
   echo "$DOC"  | grep -qiE '^\s*review-doc:\s*FAIL'  && echo "#$PR review-doc FAIL"
@@ -114,6 +129,19 @@ number. Only once you have **no** PR with an unaddressed latest FAIL do you fall
 the normal pick below. (This scan is a *signal*; repair mode re-resolves the verdict
 authoritatively per namespace before acting, so a PR that flipped to PASS between the scan
 and the repair is a clean no-op.)
+
+Two properties make this scan terminate rather than starve:
+
+- **Author-gated verdicts (ADR [0051](../../../.decisions/0051-author-bind-pass-marker.md)).**
+  Markers count as a verdict **only from an `AUTHORIZED_REVIEWERS` author** — the same
+  allowlist gate `ship-it` Step 2 applies *before* the marker regex. A self-authored or
+  forged `review-(code|doc): FAIL` is invisible here, so write-code can't pull *itself* into
+  spurious repair (and a forged PASS can't mask a real FAIL).
+- **Cap exclusion.** A PR already at the **N=3** cap is skipped (`ROUNDS >= 3 → continue`):
+  escalation hands it to a human but leaves its latest verdict at FAIL, so without this skip
+  the scan would re-match it forever — re-enter repair, recount 3 FAILs, re-escalate — and
+  never advance to fresh work. Excluding capped PRs lets the picker step over the escalated
+  PR and pick new `status:triaged` work.
 
 List the candidate pool, priority bucket by priority bucket, stopping at the first
 bucket that has any unassigned candidate:
@@ -358,24 +386,35 @@ fixing its own PR and an independent gate re-judging it is the firewall, intact.
 Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code` and
 `review-doc` in **separate namespaces** — two anchored regexes that never cross-match —
 and take the **latest by timestamp** in each. This mirrors `ship-it` Step 2's resolution
-exactly (the reading side of the same contract):
+exactly (the reading side of the same contract), **including its author-allowlist gate**:
+a marker comment counts as a verdict only from an `AUTHORIZED_REVIEWERS` author, so a
+self-authored or forged `review-(code|doc): FAIL` is invisible (ADR
+[0051](../../../.decisions/0051-author-bind-pass-marker.md)). The native-review path needs
+no allowlist — GitHub author-attributes reviews, so it is unforgeable.
 
 ```bash
 PR=<the PR number you were handed>
+# same single-source-of-truth allowlist as ship-it Step 2 — whose markers count as a verdict
+AUTHORIZED_REVIEWERS='["usirin"]'
 
-# latest review-code marker (code namespace) — anchored, never matches review-doc
+# latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
         | sort_by(.created_at) | last | {body, at: .created_at}'
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
+# (no allowlist: GitHub author-attributes reviews, so this path is unforgeable)
 gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, at: .submitted_at}'
 
-# latest review-doc marker (doc namespace) — anchored, never matches review-code
+# latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
         | sort_by(.created_at) | last | {body, at: .created_at}'
 ```
 
@@ -404,8 +443,11 @@ work list** — fix exactly what they name, no more, no less:
 
 ```bash
 # the full body of the latest FAILing review-code marker (swap review-code→review-doc for the doc namespace)
+# author-gated to the same AUTHORIZED_REVIEWERS as Step R1 — only a real reviewer's findings are your work list
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("^\\s*review-code:\\s*FAIL"; "i"))]
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-code:\\s*FAIL"; "i"))]
         | sort_by(.created_at) | last | .body'
 ```
 
@@ -455,13 +497,19 @@ addressed and that you handed the PR back to the gate.
 
 Repair is **bounded at N = 3** fix → re-review rounds on the same PR, to avoid looping
 forever on a finding it cannot resolve. Count your rounds from the PR's history — a "round"
-is one (gate FAIL → your fix-push) pair; count the FAIL markers/`CHANGES_REQUESTED` reviews
-already on the PR:
+is one (gate FAIL → your fix-push) pair. Count **rounds, not markers**: a mixed code+doc PR
+that FAILs in *both* namespaces in the same review pass is **one** round, not two — so
+de-duplicate by review-pass timestamp (markers from one gate run share a minute) rather than
+summing FAIL markers across namespaces, which would hit the cap in ~1.5 real rounds. Same
+`AUTHORIZED_REVIEWERS` gate as Step R1 — only a real reviewer's FAIL counts toward the cap:
 
 ```bash
-# how many gate FAILs has this PR already accrued (across both namespaces)?
+# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces, deduped by review pass)?
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))] | length'
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+              | .created_at[:16]] | unique | length'
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
@@ -485,7 +533,12 @@ gh api -X POST repos/kamp-us/phoenix/issues/$N/labels -f "labels[]=status:needs-
 ```
 
 Escalation **stops the loop** — name the still-failing criteria, hand the PR back to a
-human, and surface the issue for re-triage. Do **not** push a 4th fix.
+human, and surface the issue for re-triage. Do **not** push a 4th fix. Escalation does
+**not** flip the PR's latest verdict (it stays FAIL — only an independent re-review can
+PASS it), so the loop closes on the *picker* side: the pre-pick scan (Step 1) excludes any
+PR already at the cap (`ROUNDS >= 3`), so a future write-code run steps over this escalated
+PR and picks new `status:triaged` work instead of re-entering repair and re-escalating it
+forever. The cap thus terminates **both** the fix loop *and* the re-selection loop.
 
 ### Guardrails (repair mode)
 
@@ -501,6 +554,13 @@ human, and surface the issue for re-triage. Do **not** push a 4th fix.
   a clean no-op (Step R1).
 - **Both namespaces.** Handle `review-code: FAIL` (§5) **and** `review-doc: FAIL` (§6) —
   latest-wins per namespace — not just `review-code`.
+- **Author-gated verdicts.** A marker counts only from an `AUTHORIZED_REVIEWERS` author —
+  the same allowlist gate `ship-it` Step 2 applies before the marker regex, so a forged or
+  self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor
+  mask a real verdict (ADR [0051](../../../.decisions/0051-author-bind-pass-marker.md)).
+- **Bounded *and* non-starving.** The N=3 cap stops the fix loop; the pre-pick scan's
+  cap-exclusion (`ROUNDS >= 3`) stops the re-selection loop, so an escalated PR never
+  re-pulls a future run into repair (Step 1, Bounding).
 - **`gh api` REST / porcelain only**, never GraphQL (same reason as everywhere in this
   skill — the org's Projects-classic integration breaks GraphQL).
 
