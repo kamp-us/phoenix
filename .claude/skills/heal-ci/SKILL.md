@@ -51,9 +51,20 @@ once, up front, then use the vars in every command below:
 RUN=<run id>     # the failed run
 PR=<n>           # the PR, if this is a PR run (else leave unset)
 gh run view $RUN --log-failed
-# the job/step rollup, to know which job died
+# the job/step rollup, to know which job died (and its databaseId, for the fallback below)
 gh run view $RUN --json conclusion,headBranch,jobs \
-  --jq '{conclusion, headBranch, jobs: [.jobs[] | select(.conclusion=="failure") | {name, steps: [.steps[] | select(.conclusion=="failure") | .name]}]}'
+  --jq '{conclusion, headBranch, jobs: [.jobs[] | select(.conclusion=="failure") | {name, databaseId, steps: [.steps[] | select(.conclusion=="failure") | .name]}]}'
+```
+
+If `--log-failed` returns nothing (it sometimes does — e.g. a bare `exit 1` with no
+annotated failed-step rows), fall back to the failed job's full log: take its `databaseId`
+from the rollup above and read the job log directly via the REST API, then grep/scope to the
+failed step's output. You must **always** be able to reach the actual log body to match the
+taxonomy — never stay stuck with only step names.
+
+```bash
+JOB=<failed job databaseId from the rollup above>
+gh api repos/kamp-us/phoenix/actions/jobs/$JOB/logs
 ```
 
 If you only have a PR: `gh pr checks $PR` → the red check's run id (set `RUN`), then the above.
