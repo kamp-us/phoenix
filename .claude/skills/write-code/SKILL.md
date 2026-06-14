@@ -101,12 +101,18 @@ AUTHORIZED_REVIEWERS='["usirin"]'
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
-  # FAIL rounds already accrued — per fix-round, not per marker (a both-namespace round counts once)
+  # FAIL rounds already accrued — per fix-round, not per marker (a both-namespace round counts once);
+  # cluster by timestamp gap (>120s = new round), same identity as the Bounding count, never a minute bucket
   ROUNDS=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
     --argjson authorized "$AUTHORIZED_REVIEWERS" \
     --jq '[.[] | select(.user.login | IN($authorized[]))
                 | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
-                | .created_at[:16]] | unique | length')
+                | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
+          | sort
+          | reduce .[] as $t ({n:0, prev:null};
+              if (.prev == null) or ($t - .prev) > 120
+              then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
+          | .n')
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
   CODE=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
     --argjson authorized "$AUTHORIZED_REVIEWERS" \
@@ -498,18 +504,33 @@ addressed and that you handed the PR back to the gate.
 Repair is **bounded at N = 3** fix → re-review rounds on the same PR, to avoid looping
 forever on a finding it cannot resolve. Count your rounds from the PR's history — a "round"
 is one (gate FAIL → your fix-push) pair. Count **rounds, not markers**: a mixed code+doc PR
-that FAILs in *both* namespaces in the same review pass is **one** round, not two — so
-de-duplicate by review-pass timestamp (markers from one gate run share a minute) rather than
-summing FAIL markers across namespaces, which would hit the cap in ~1.5 real rounds. Same
-`AUTHORIZED_REVIEWERS` gate as Step R1 — only a real reviewer's FAIL counts toward the cap:
+that FAILs in *both* namespaces in the same review pass is **one** round, not two. Identify
+a review pass by **timestamp adjacency, not a wall-clock bucket**: cluster the FAIL markers
+and start a new round only when the gap to the previous FAIL exceeds a threshold (`120s`
+below). The two markers of one code+doc pass land seconds apart (back-to-back `gh api`
+posts) so they cluster into one round regardless of which side of a minute boundary they
+fall on; two *genuine* rounds are always separated by your fix-push + an independent
+re-review (minutes at least), so they never collapse into one. (A fixed `created_at[:16]`
+minute bucket gets both of these wrong: it splits one pass straddling `:59`/`:00` into two
+rounds — premature escalation — and merges two real rounds that share a minute into one —
+the cap fails to bind and the loop runs past N=3.) Same `AUTHORIZED_REVIEWERS` gate as Step
+R1 — only a real reviewer's FAIL counts toward the cap:
 
 ```bash
-# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces, deduped by review pass)?
+# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
+# cluster FAIL markers by timestamp gap: a new round starts only when >120s separates two
+# FAILs, so a code+doc pass (seconds apart) is one round and two real rounds (fix-push +
+# re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
   --argjson authorized "$AUTHORIZED_REVIEWERS" \
   --jq '[.[] | select(.user.login | IN($authorized[]))
               | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
-              | .created_at[:16]] | unique | length'
+              | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
+        | sort
+        | reduce .[] as $t ({n:0, prev:null};
+            if (.prev == null) or ($t - .prev) > 120
+            then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
+        | .n'
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
