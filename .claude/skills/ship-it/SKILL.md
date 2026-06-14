@@ -105,7 +105,7 @@ gh api "repos/kamp-us/phoenix/pulls/$PR/files?per_page=300" --jq '[.[].filename]
 Classify each path:
 
 - **control plane (blocking):** matches `.claude/**` or `.github/**`.
-- **code:** under `apps/web/**` or `packages/**`, or any other source file.
+- **code:** under `apps/web/**` or `packages/**` (the `^(apps/web|packages)/` probe); a source path matching neither this nor the doc probe still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
 - **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`.
 
 ```bash
