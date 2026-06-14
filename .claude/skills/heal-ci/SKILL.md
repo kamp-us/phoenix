@@ -44,17 +44,19 @@ These are the hard guardrails. heal-ci classifies **one** red run per invocation
 
 ## Step 1 — Get the failed logs
 
-You're given a run id, or a PR (resolve its latest run). Fetch only what failed:
+You're given a run id, or a PR (resolve its latest run). Pin the identifiers you'll reuse
+once, up front, then use the vars in every command below:
 
 ```bash
-RUN=<run id>
+RUN=<run id>     # the failed run
+PR=<n>           # the PR, if this is a PR run (else leave unset)
 gh run view $RUN --log-failed
 # the job/step rollup, to know which job died
 gh run view $RUN --json conclusion,headBranch,jobs \
   --jq '{conclusion, headBranch, jobs: [.jobs[] | select(.conclusion=="failure") | {name, steps: [.steps[] | select(.conclusion=="failure") | .name]}]}'
 ```
 
-If you only have a PR: `gh pr checks <PR>` → the red check's run id, then the above.
+If you only have a PR: `gh pr checks $PR` → the red check's run id (set `RUN`), then the above.
 
 **Then detect whether this run was already rerun** — this is the stateless guard that makes
 the one-rerun rule hold across invocations (this skill is per-invocation memoryless; nothing
@@ -64,15 +66,20 @@ but the run/PR state itself remembers a prior rerun). Read two facts:
 # 1) the run's own attempt count: a rerun bumps `attempt` to 2+
 ATTEMPT=$(gh run view $RUN --json attempt --jq '.attempt')
 # 2) a prior heal-ci rerun marker on the PR (if this is a PR run)
-gh api repos/kamp-us/phoenix/issues/<PR>/comments --jq \
+gh api repos/kamp-us/phoenix/issues/$PR/comments --jq \
   '[.[] | select(.body | test("heal-ci:.*rerun queued"))] | length'
 ```
 
+**The one-rerun rule (canonical statement — every later step points here).** A flake gets
+**exactly one** rerun, then heal-ci stops; there is no loop and no retry budget to spend down.
 If `ATTEMPT` is **≥ 2**, or a `heal-ci: ... rerun queued` comment already exists for this
-PR/branch, this run **has already been rerun**. A transient that recurs after a rerun is no
-longer a flake: skip the rerun branch entirely and route straight to `report` as a recurring
-failure (Step 3, "Flake that already had its rerun"). Carry this `already-rerun` flag into
-Step 2 — it overrides a flake match.
+PR/branch, this run **has already been rerun**. A transient that recurs after its one rerun is
+no longer a flake — it is a recurring failure → a defect → `report`. So when this run is
+already-rerun, skip the rerun branch entirely and route straight to `report` (Step 3, "Flake
+that already had its rerun"). Carry this `already-rerun` flag into Step 2 — it overrides a
+flake match. The rule is enforced **across invocations** (this skill is per-invocation
+memoryless): nothing but the run/PR state itself remembers a prior rerun, which is why the
+rerun both bumps `attempt` and — on a PR — leaves the durable comment marker this guard reads.
 
 (`attempt ≥ 2` can also be bumped by a *human* or another tool re-running the workflow, not
 just heal-ci; reading it as already-rerun then files a recurring-failure report for what was
@@ -134,27 +141,22 @@ manual rerun can also bump):
 ```bash
 gh run rerun $RUN --failed
 # on a PR run, write the marker Step 1's already-rerun detector queries:
-gh api repos/kamp-us/phoenix/issues/<PR>/comments \
+gh api repos/kamp-us/phoenix/issues/$PR/comments \
   -f body="heal-ci: <signature> — rerun queued (run $RUN). One rerun only; a recurring failure becomes a defect."
 ```
 
-**The one-rerun rule, inline and concrete:** you rerun **exactly once**. There is no loop
-and no retry budget to spend down — one rerun, then stop. The rule is enforced **across
-invocations** by the Step 1 detector: the rerun bumps the run's `attempt` to 2+, and (on a
-PR) the `heal-ci: ... rerun queued` comment you post is the durable marker. A later
-invocation against the recurring failure reads those, sees `already-rerun`, and takes the
-next branch instead of rerunning again. One rerun, then it becomes a defect — that is the
-whole policy, it lives here, not in any external doc.
+One rerun, then stop — see the canonical one-rerun rule in Step 1 for why this holds across
+invocations (the `attempt` bump + the marker you just posted are what a later invocation reads).
 
 Report: `flake: <signature> — rerun queued (run <new id>); will not retry again`.
 
 ### Flake that already had its rerun → file via `report` as recurring
 
-The Step 1 `already-rerun` flag is set (run `attempt` ≥ 2, or a prior `heal-ci: ... rerun
-queued` comment exists): the transient survived its one rerun and is now a recurring failure.
-Do **not** rerun. Route it to `report` exactly like a defect (below), but say plainly in
-"What I observed" that this signature already failed a rerun, so triage sees a real recurring
-failure rather than transient noise. When the flag came from `attempt` ≥ 2 **without** a
+The Step 1 `already-rerun` flag is set: the transient survived its one rerun, so per the
+canonical rule (Step 1) it is no longer a flake — it is a recurring failure → a defect. Do
+**not** rerun. Route it to `report` exactly like a defect (below), but say plainly in "What I
+observed" that this signature already failed a rerun, so triage sees a real recurring failure
+rather than transient noise. When the flag came from `attempt` ≥ 2 **without** a
 `heal-ci: ... rerun queued` marker, add a one-line caveat to the report body — the prior
 attempt may have been a *human/manual* rerun, not heal-ci's, so triage shouldn't read the
 "recurring" framing as confirmed-by-this-skill.
@@ -172,6 +174,10 @@ pre-filing re-query, which is exactly what you want. Feed it:
 - **Pointers:** the run url, the PR (if any), the job/step that failed, the head branch.
 - **Suggested next step:** non-binding — leave it to triage to type and prioritize.
 
+These three fields are what *you* supply; they are not the whole issue body. `report` owns its
+own 5-section template and fills the remaining sections ("What I was doing", "Why it matters")
+from its own contract — so don't pre-format an issue body here, just hand it these three.
+
 If the failure is on a PR, also drop a one-line comment on that PR pointing at the filed
 issue, so `write-code`'s fix loop can pick it up. **Capture the issue number `report` returns
 first** (it hands back the new issue's `.number` / `.html_url`), then compose the comment with
@@ -179,7 +185,7 @@ that real number — never post the `Filed #<N>` line with an unresolved `<N>` p
 
 ```bash
 N=<the .number report returned>
-gh api repos/kamp-us/phoenix/issues/<PR>/comments \
+gh api repos/kamp-us/phoenix/issues/$PR/comments \
   -f body="heal-ci: CI red — <signature>. Filed #$N (needs-triage). Not merged."
 ```
 
