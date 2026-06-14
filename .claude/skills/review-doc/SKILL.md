@@ -292,8 +292,10 @@ Build the hygiene findings into the same evidence shape as the AC table:
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND
 every hygiene check must PASS. One miss anywhere → FAIL.
 
-Write the verdict to a temp file (`/tmp/review-doc-verdict.md`) so multi-line markdown +
-backticks survive the shell, then post it.
+Write the verdict to a per-PR temp file (`VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"`)
+so multi-line markdown + backticks survive the shell, then post it. The PR number is in the
+path so back-to-back runs never collide on a fixed file (a prior run's unread verdict would
+otherwise stall the write or leak into this run).
 
 ### Pass path — non-blocking PR (the binding signal)
 
@@ -302,10 +304,21 @@ Every criterion and every hygiene check passed, and Step 0 classified the PR
 native approving review; fall back to the marker comment when org branch rules forbid
 reviewing your own PR (the common path on this single-operator repo).
 
+Capture the APPROVE result and check the exit status **explicitly**; on failure (e.g. a 422
+reviewing your own PR) post the marker-comment fallback. The explicit check is load-bearing:
+do **not** chain APPROVE to the fallback with `||` — a shell pipe wrapping the APPROVE call
+(e.g. `… 2>&1 | head` for inspection) makes the pipeline's exit status mask the APPROVE
+failure, so the `||` fallback silently never fires and no verdict marker lands (the exact
+misfire of #205).
+
 ```bash
-BODY="$(cat /tmp/review-doc-verdict.md)"   # first line: review-doc: PASS — merge-ready
-gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews -f event=APPROVE -f body="$BODY" \
-  || gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
+VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"
+BODY="$(cat "$VERDICT_FILE")"   # first line: review-doc: PASS — merge-ready
+if gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews -f event=APPROVE -f body="$BODY"; then
+  : # native approving review posted
+else
+  gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
+fi
 ```
 
 Verdict body shape:
@@ -371,7 +384,7 @@ close. Post a comment whose first line is the namespaced FAIL marker (the seam
 too, so the author sees how close they are.
 
 ```bash
-BODY="$(cat /tmp/review-doc-verdict.md)"   # first line: review-doc: FAIL — changes-requested
+BODY="$(cat "/tmp/review-doc-verdict-${PR}.md")"   # first line: review-doc: FAIL — changes-requested
 gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
 ```
 
