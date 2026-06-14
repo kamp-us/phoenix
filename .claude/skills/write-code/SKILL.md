@@ -1,6 +1,6 @@
 ---
 name: write-code
-description: Pick the next actionable issue off kamp-us/phoenix and execute it end to end — claim it by self-assigning, implement on a branch, open a PR that closes it, log progress on the issue, and hand off to the parent epic. Trigger on "work the next issue", "pick up an issue", "implement issue #N", "run write-code", "do the next task", "/write-code", or whenever you're asked to turn triaged work into a PR. This is the execution stage of the issue-intake pipeline: it consumes `status:triaged` issues and produces PRs that `review-code` gates.
+description: Pick the next actionable issue off kamp-us/phoenix and execute it end to end — claim it by self-assigning, implement on a branch, open a PR that closes it, log progress on the issue, and hand off to the parent epic; OR, given a PR number, enter repair mode and consume a gate's latest FAIL verdict to fix-and-resubmit on the same branch. Trigger on "work the next issue", "pick up an issue", "implement issue #N", "run write-code", "do the next task", "/write-code", or whenever you're asked to turn triaged work into a PR; trigger repair mode on "repair PR #N", "fix the failed review on #N", "address the FAIL on PR #N". This is the execution stage of the issue-intake pipeline: it consumes `status:triaged` issues and produces PRs that `review-code`/`review-doc` gate, and it consumes those gates' FAIL markers to drive the fix round-trip.
 ---
 
 # write-code
@@ -45,6 +45,32 @@ slightly different bullet style still means what it means), write canonically.
 
 ---
 
+## Invocation — two modes, disambiguated by what you're given
+
+write-code has **two invocation shapes**, and the argument tells them apart:
+
+- **A PR number → repair mode.** "Repair PR #N" / "fix the failed review on #N" hands you
+  an *existing* PR. Go to [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit):
+  resolve the PR's latest gate verdict, and **only if** that latest verdict is FAIL, read
+  the findings, fix them on the existing branch, push so the stateless gate re-runs, and
+  stop. You do **not** pick new work, you do **not** branch, you do **not** merge.
+- **An issue number, or no argument → initial-build mode.** "Implement #N" / "work the
+  next issue" runs the normal **pick → claim → Steps 4–7** path below. This is unchanged.
+
+The two are unambiguous: a PR number routes to repair, an issue number (or nothing) routes
+to the pick-and-build path. If you're handed a bare number and genuinely can't tell which
+it is, resolve it once — `gh api repos/kamp-us/phoenix/pulls/<N>` succeeds for a PR and
+404s for a plain issue — and branch accordingly.
+
+**The ownership boundary, stated once and load-bearing throughout:** **write-code owns
+fail → fix → re-request; `ship-it` owns PASS → merge.** You own the branch and the PR, so
+driving a FAIL'd PR back through the gate is your loop — but the merge is never yours, in
+either mode (this mirrors the `gh-issue-intake-formats.md` §5/§6 relationship table, which
+names write-code the consumer of *both* FAIL markers and `ship-it` the consumer of *both*
+PASS markers).
+
+---
+
 ## Step 1 — Pick the next issue
 
 The pick rule is deterministic. Among **open** issues that are `status:triaged` **and
@@ -56,6 +82,72 @@ unassigned**:
 
 Assigned issues are someone else's claim — **skip them**. `status:needs-triage`,
 `status:needs-info`, and closed issues are not pickable (they haven't cleared triage).
+
+### Pre-pick exception — resume your own failed PR first
+
+The "skip assigned issues" rule has **exactly one exception**: a PR *you* opened that came
+back FAIL. Its `Fixes #N` issue is still assigned to you (review-code/review-doc leave it
+open and assigned on a FAIL), which would make it unpickable by the rule above — but that
+arc is **yours to drive forward, not skip**. So **before** picking new `status:triaged`
+work, scan your own open PRs for one whose **latest** gate verdict (in *either* namespace)
+is an unaddressed FAIL:
+
+```bash
+ME=$(gh api user --jq '.login')
+# whose markers count as a verdict — same allowlist ship-it Step 2 uses (ADR 0051);
+# a forged review-(code|doc): FAIL from a non-reviewer must NOT trigger spurious repair.
+AUTHORIZED_REVIEWERS='["usirin"]'
+# open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
+# UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
+gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
+  --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
+  # FAIL rounds already accrued — per fix-round, not per marker (a both-namespace round counts once);
+  # cluster by timestamp gap (>120s = new round), same identity as the Bounding count, never a minute bucket
+  ROUNDS=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+    --argjson authorized "$AUTHORIZED_REVIEWERS" \
+    --jq '[.[] | select(.user.login | IN($authorized[]))
+                | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+                | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
+          | sort
+          | reduce .[] as $t ({n:0, prev:null};
+              if (.prev == null) or ($t - .prev) > 120
+              then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
+          | .n')
+  [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
+  CODE=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+    --argjson authorized "$AUTHORIZED_REVIEWERS" \
+    --jq '[.[] | select(.user.login | IN($authorized[]))
+                | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+          | sort_by(.created_at) | last | .body // ""')
+  DOC=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+    --argjson authorized "$AUTHORIZED_REVIEWERS" \
+    --jq '[.[] | select(.user.login | IN($authorized[]))
+                | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+          | sort_by(.created_at) | last | .body // ""')
+  echo "$CODE" | grep -qiE '^\s*review-code:\s*FAIL' && echo "#$PR review-code FAIL"
+  echo "$DOC"  | grep -qiE '^\s*review-doc:\s*FAIL'  && echo "#$PR review-doc FAIL"
+done
+```
+
+If such a PR exists, **repair it instead of picking new work** — go to
+[Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit) with that PR
+number. Only once you have **no** PR with an unaddressed latest FAIL do you fall through to
+the normal pick below. (This scan is a *signal*; repair mode re-resolves the verdict
+authoritatively per namespace before acting, so a PR that flipped to PASS between the scan
+and the repair is a clean no-op.)
+
+Two properties make this scan terminate rather than starve:
+
+- **Author-gated verdicts (ADR [0051](../../../.decisions/0051-author-bind-pass-marker.md)).**
+  Markers count as a verdict **only from an `AUTHORIZED_REVIEWERS` author** — the same
+  allowlist gate `ship-it` Step 2 applies *before* the marker regex. A self-authored or
+  forged `review-(code|doc): FAIL` is invisible here, so write-code can't pull *itself* into
+  spurious repair (and a forged PASS can't mask a real FAIL).
+- **Cap exclusion.** A PR already at the **N=3** cap is skipped (`ROUNDS >= 3 → continue`):
+  escalation hands it to a human but leaves its latest verdict at FAIL, so without this skip
+  the scan would re-match it forever — re-enter repair, recount 3 FAILs, re-escalate — and
+  never advance to fresh work. Excluding capped PRs lets the picker step over the escalated
+  PR and pick new `status:triaged` work.
 
 List the candidate pool, priority bucket by priority bucket, stopping at the first
 bucket that has any unassigned candidate:
@@ -277,6 +369,224 @@ A standalone (non-sub-issue) issue has no parent epic — skip this step.
 
 ---
 
+## Repair mode — consume a gate FAIL verdict, fix-and-resubmit
+
+This is the second invocation shape: keyed off a **PR number**, it is the consumer the
+gate FAIL markers were written for (`gh-issue-intake-formats.md` §5/§6 name write-code the
+reader of both `review-code: FAIL — not merge-ready` and `review-doc: FAIL —
+changes-requested`). You take a PR that came back failed, apply exactly the enumerated
+findings on the **same branch**, push so the **stateless** gate re-runs, and stop. Steps
+1–7 above are the *initial* build; this is everything that happens *after* a gate FAIL.
+
+### Why the author may fix its own FAIL'd PR (this is not a firewall violation)
+
+The bias firewall lives at the **review step, not the fix step.** The FAIL came from an
+**independent** reviewer, and an **independent re-review re-gates** the fix statelessly.
+write-code re-editing its own branch is sound *precisely because it cannot self-approve* —
+it never writes a PASS marker, never merges, and the gate re-runs and re-judges the new
+commits with fresh eyes. So repair mode does **not** spawn a distinct fixer; the author
+fixing its own PR and an independent gate re-judging it is the firewall, intact.
+
+### Step R1 — Resolve the latest verdict per namespace (mirror `ship-it` Step 2)
+
+Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code` and
+`review-doc` in **separate namespaces** — two anchored regexes that never cross-match —
+and take the **latest by timestamp** in each. This mirrors `ship-it` Step 2's resolution
+exactly (the reading side of the same contract), **including its author-allowlist gate**:
+a marker comment counts as a verdict only from an `AUTHORIZED_REVIEWERS` author, so a
+self-authored or forged `review-(code|doc): FAIL` is invisible (ADR
+[0051](../../../.decisions/0051-author-bind-pass-marker.md)). The native-review path needs
+no allowlist — GitHub author-attributes reviews, so it is unforgeable.
+
+```bash
+PR=<the PR number you were handed>
+# same single-source-of-truth allowlist as ship-it Step 2 — whose markers count as a verdict
+AUTHORIZED_REVIEWERS='["usirin"]'
+
+# latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc
+gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+        | sort_by(.created_at) | last | {body, at: .created_at}'
+
+# latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
+# (no allowlist: GitHub author-attributes reviews, so this path is unforgeable)
+gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
+  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
+        | sort_by(.submitted_at) | last | {state, at: .submitted_at}'
+
+# latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code
+gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+        | sort_by(.created_at) | last | {body, at: .created_at}'
+```
+
+Resolve per namespace, latest-wins by timestamp:
+
+- **review-code namespace** — the verdict is the **newest of {latest decisive review,
+  latest review-code marker}**. `CHANGES_REQUESTED` or `review-code: FAIL` is FAIL;
+  `APPROVED` or `review-code: PASS` is PASS.
+- **review-doc namespace** — the verdict is the **latest `review-doc` marker** by
+  `created_at` (review-doc lands no native review). `review-doc: FAIL` is FAIL.
+
+**Act only when a namespace's latest verdict is FAIL.** A newer FAIL is acted on even if an
+older PASS exists; a PR whose latest verdict is PASS — or that has no FAIL at all — is
+**not repaired**. This makes repair mode **idempotent**: re-running it on an
+already-fixed/PASS PR (or one with no FAIL) is a clean no-op — report `nothing to repair
+(latest verdict is PASS / no FAIL)` and stop. If **both** namespaces' latest verdicts are
+FAIL (a mixed code+doc PR), address **both** in this round.
+
+### Step R2 — Read the enumerated findings, fix exactly those
+
+The FAIL marker comment (or `CHANGES_REQUESTED` review body) carries a **per-criterion
+evidence table** — each unmet `### Acceptance criterion` (and, for `review-doc`, each unmet
+hygiene check) listed as a `[FAIL]`/`[UNVERIFIABLE]` line with what's missing. Read the
+full body of the resolving comment/review and treat **those enumerated findings as your
+work list** — fix exactly what they name, no more, no less:
+
+```bash
+# the full body of the latest FAILing review-code marker (swap review-code→review-doc for the doc namespace)
+# author-gated to the same AUTHORIZED_REVIEWERS as Step R1 — only a real reviewer's findings are your work list
+gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-code:\\s*FAIL"; "i"))]
+        | sort_by(.created_at) | last | .body'
+```
+
+For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
+body's `Fixes #N` and re-read its `### Acceptance criteria` (the same checklist the gate
+verified) and the progress trail:
+
+```bash
+N=$(gh api repos/kamp-us/phoenix/pulls/$PR \
+  --jq '.body | capture("(?i)\\b(fix(es|ed)?|close[sd]?|resolve[sd]?)\\s+#(?<n>[0-9]+)") | .n')
+gh api repos/kamp-us/phoenix/issues/$N --jq '.body'
+gh api "repos/kamp-us/phoenix/issues/$N/comments?per_page=100" --jq '.[].body'
+```
+
+Check out the **existing PR branch** and fix on it — **no new branch** (a new branch would
+orphan the PR and the gate's history):
+
+```bash
+git fetch origin
+git switch <the PR's head branch>     # gh api .../pulls/$PR --jq '.head.ref'
+# apply the fixes addressing exactly the enumerated findings
+```
+
+Ground the fixes the same way the initial build does — ADRs in `.decisions/` for the *why*,
+patterns in `.patterns/` for *how the code is shaped* — and run `pnpm typecheck` /
+`pnpm lint` / the test suite before pushing, exactly as Step 4 requires.
+
+### Step R3 — Push, post a progress comment, then stop (the gate re-runs)
+
+Push the fix to the same branch and post a **format-3 progress comment** on the linked
+issue (Completed = the findings you addressed; Decisions/Gotchas; Next = "re-review
+requested"). Pushing new commits is what makes the **stateless** gate re-run — you do
+**not** re-trigger or self-approve it:
+
+```bash
+git push origin HEAD
+gh api repos/kamp-us/phoenix/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
+```
+
+Then **stop.** The independent re-review re-gates the fix and lands a fresh verdict; that
+is the firewall. write-code does **not** write a PASS marker, does **not** approve, and
+does **not** merge — merge is `ship-it`'s sole authority (and for a control-plane
+`.claude`/`.github` PR, a *human's*; see the guardrail below). Report which findings you
+addressed and that you handed the PR back to the gate.
+
+### Bounding — cap at 3 rounds, then escalate
+
+Repair is **bounded at N = 3** fix → re-review rounds on the same PR, to avoid looping
+forever on a finding it cannot resolve. Count your rounds from the PR's history — a "round"
+is one (gate FAIL → your fix-push) pair. Count **rounds, not markers**: a mixed code+doc PR
+that FAILs in *both* namespaces in the same review pass is **one** round, not two. Identify
+a review pass by **timestamp adjacency, not a wall-clock bucket**: cluster the FAIL markers
+and start a new round only when the gap to the previous FAIL exceeds a threshold (`120s`
+below). The two markers of one code+doc pass land seconds apart (back-to-back `gh api`
+posts) so they cluster into one round regardless of which side of a minute boundary they
+fall on; two *genuine* rounds are always separated by your fix-push + an independent
+re-review (minutes at least), so they never collapse into one. (A fixed `created_at[:16]`
+minute bucket gets both of these wrong: it splits one pass straddling `:59`/`:00` into two
+rounds — premature escalation — and merges two real rounds that share a minute into one —
+the cap fails to bind and the loop runs past N=3.) Same `AUTHORIZED_REVIEWERS` gate as Step
+R1 — only a real reviewer's FAIL counts toward the cap:
+
+```bash
+# how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
+# cluster FAIL markers by timestamp gap: a new round starts only when >120s separates two
+# FAILs, so a code+doc pass (seconds apart) is one round and two real rounds (fix-push +
+# re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
+gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+              | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
+        | sort
+        | reduce .[] as $t ({n:0, prev:null};
+            if (.prev == null) or ($t - .prev) > 120
+            then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
+        | .n'
+```
+
+If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
+FAIL), **stop fixing and escalate** instead of pushing again:
+
+```bash
+gh api repos/kamp-us/phoenix/issues/$N/comments -f body="$(cat <<'EOF'
+### Repair escalation — PR #<PR> still FAILing after 3 rounds
+
+This PR has reached the N=3 repair cap with the gate still requesting changes. Handing
+back to a human rather than looping. Still-failing criteria:
+
+- <criterion> — <what the gate keeps flagging>
+
+Needs a human decision (the finding may be unresolvable as scoped, or the AC needs
+revisiting).
+EOF
+)"
+# surface it for a human / re-triage rather than re-pushing
+gh api -X POST repos/kamp-us/phoenix/issues/$N/labels -f "labels[]=status:needs-triage"
+```
+
+Escalation **stops the loop** — name the still-failing criteria, hand the PR back to a
+human, and surface the issue for re-triage. Do **not** push a 4th fix. Escalation does
+**not** flip the PR's latest verdict (it stays FAIL — only an independent re-review can
+PASS it), so the loop closes on the *picker* side: the pre-pick scan (Step 1) excludes any
+PR already at the cap (`ROUNDS >= 3`), so a future write-code run steps over this escalated
+PR and picks new `status:triaged` work instead of re-entering repair and re-escalating it
+forever. The cap thus terminates **both** the fix loop *and* the re-selection loop.
+
+### Guardrails (repair mode)
+
+- **Never merge.** Repair mode pushes and hands back to the gate; the merge is `ship-it`'s
+  (PASS → merge), and for a control-plane `.claude`/`.github` PR a **human's** — `ship-it`
+  *refuses* to auto-merge blocking-set PRs and `review-doc` is advisory-only on them (ADR
+  [0053](../../../.decisions/0053-control-plane-boundary.md)). **This very edit is such a PR:
+  a `.claude/**` change `ship-it` will refuse to auto-merge, merged by hand.** Repair mode
+  never weakens that refusal.
+- **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
+  gate history stay intact.
+- **Idempotent.** Re-running on an already-fixed / PASS PR (or one with no latest FAIL) is
+  a clean no-op (Step R1).
+- **Both namespaces.** Handle `review-code: FAIL` (§5) **and** `review-doc: FAIL` (§6) —
+  latest-wins per namespace — not just `review-code`.
+- **Author-gated verdicts.** A marker counts only from an `AUTHORIZED_REVIEWERS` author —
+  the same allowlist gate `ship-it` Step 2 applies before the marker regex, so a forged or
+  self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor
+  mask a real verdict (ADR [0051](../../../.decisions/0051-author-bind-pass-marker.md)).
+- **Bounded *and* non-starving.** The N=3 cap stops the fix loop; the pre-pick scan's
+  cap-exclusion (`ROUNDS >= 3`) stops the re-selection loop, so an escalated PR never
+  re-pulls a future run into repair (Step 1, Bounding).
+- **`gh api` REST / porcelain only**, never GraphQL (same reason as everywhere in this
+  skill — the org's Projects-classic integration breaks GraphQL).
+
+---
+
 ## Type routing
 
 Three of the six types are "implement and open a PR" work: `type:feature`,
@@ -348,17 +658,26 @@ NNNN."
 
 ## Running it
 
-A single invocation does one issue end to end: pick (Step 1, +Step 2 if a sub-issue),
-claim (Step 3), then either implement→PR→progress→handoff (Steps 4–7) or the
-type-routed path. Report back a short ledger: the issue picked (and why it was the
-pick — bucket + age, or the eligibility derivation if it was a sub-issue), the branch
-and PR opened (or the ADR/diagnosis for a decision/investigation), and a one-line
-pointer to the progress comment. Don't narrate every REST call — the assignee, the
-comments, and the PR are the durable record.
+A single invocation does one unit of work end to end, in one of the two modes:
 
-To sweep, re-invoke: each run re-derives the next pick from current state (including
-sub-issue eligibility, which moves as blockers close), so the loop is stateless and
-always picks the right next thing.
+- **Initial build** (issue number / no arg): pick (Step 1 — including the pre-pick
+  resume-my-failed-PR scan — +Step 2 if a sub-issue), claim (Step 3), then either
+  implement→PR→progress→handoff (Steps 4–7) or the type-routed path. Report a short
+  ledger: the issue picked (and why — bucket + age, or the sub-issue eligibility
+  derivation), the branch and PR opened (or the ADR/diagnosis for a
+  decision/investigation), and a pointer to the progress comment.
+- **Repair** (PR number): resolve the PR's latest verdict per namespace (Step R1) and, if
+  it's FAIL, fix the enumerated findings on the same branch, push, post progress, and stop
+  (Steps R1–R3) — or escalate if the PR has hit the N=3 cap. Report which findings you
+  addressed (or `nothing to repair` for a PASS/no-FAIL PR), and that you handed the PR back
+  to the gate. **Never merge** in either mode.
+
+Don't narrate every REST call — the assignee, the comments, and the PR are the durable
+record.
+
+To sweep, re-invoke: each run re-derives state fresh — the next pick (including sub-issue
+eligibility, which moves as blockers close) *and* whether you own a FAIL'd PR to resume
+first — so the loop is stateless and always does the right next thing.
 
 ## Conventions
 
@@ -370,7 +689,11 @@ pipeline. The shared label semantics and the body/comment/dependency formats liv
 from `status:planned` after gating a `plan-epic` ledger (epic children — ADR
 [0047](../../.decisions/0047-review-plan-gate.md)); your output —
 a claimed issue, a PR with `Fixes #N`, progress comments, and an epic handoff note — is
-exactly what `review-code` reads to verify the work against its acceptance criteria
-before merge. You also lean on two sibling skills inside type routing: `/adr`
+exactly what `review-code`/`review-doc` read to verify the work against its acceptance
+criteria before merge. The loop closes back on you: when a gate lands a **FAIL** marker
+(`review-code` §5 or `review-doc` §6), *you* are its consumer — [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit)
+reads the findings, fixes, and re-submits for an independent re-gate, while `ship-it` stays
+the sole owner of PASS → merge. You also lean on two sibling skills inside type routing:
+`/adr`
 (`.claude/skills/adr/`) for `type:decision`, and [`report`](../report/SKILL.md) for an
 investigation's actionable residue.
