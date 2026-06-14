@@ -3,7 +3,10 @@
 	"files": {
 		"includes": [
 			"**",
-			"!**/.claude",
+			// Agent worktrees are nested repo checkouts (own biome root) under
+			// `.claude/worktrees/`; exclude only those, not the rest of `.claude`,
+			// so the repo's own skill/config files still get linted (#119).
+			"!**/.claude/worktrees",
 			// The GritQL plugin source: biome's `.grit` formatter drops the
 			// `language js;` terminator, which silently breaks the plugin.
 			"!biome-plugins",
