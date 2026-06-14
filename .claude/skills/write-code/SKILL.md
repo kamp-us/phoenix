@@ -169,17 +169,25 @@ latest origin `main` **without checking it out**:
 
 ```bash
 git fetch origin main
-git switch -c umut/<slug-for-issue-N> FETCH_HEAD
+git switch -c <prefix>/<slug-for-issue-N> FETCH_HEAD
 ```
 
-Use your git convention (a personal prefix like `umut/`) with a short kebab-case slug
-naming the work. Read the issue's `### What to build` for scope and honor the `**TDD:**`
-flag — `yes` means write the failing test first, then make it pass; `no` means
-config/docs/scaffolding where test-first doesn't apply.
+It's `git switch -c <branch> FETCH_HEAD` (not `git checkout main`) on purpose: in an
+isolated worktree `main` is checked out elsewhere, so branching directly off the
+freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back to a
+`main` checkout.
+
+Use your git convention — `<prefix>` is your personal branch prefix, like `umut/` — with
+a short kebab-case slug naming the work. Read the issue's `### What to build` for scope
+and honor the `**TDD:**` flag — `yes` means write the failing test first, then make it
+pass; `no` means config/docs/scaffolding where test-first doesn't apply.
 
 > **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
 > spin one up rather than checking out `main`:
-> `git worktree add -b umut/<slug-for-issue-N> ../wt origin/main`, then `cd ../wt`.
+> `git worktree add -b <prefix>/<slug-for-issue-N> ../wt-issue-<N> origin/main`, then
+> `cd ../wt-issue-<N>`. The path is parameterized by issue number so two concurrent
+> fallback runs don't collide on `git worktree add`. When you're done, remove it with
+> `git worktree remove ../wt-issue-<N>`.
 
 Ground the implementation in the codebase the way the repo expects: the ADRs in
 `.decisions/` are the *why* and the binding decisions, the patterns in `.patterns/`
@@ -200,7 +208,7 @@ the seam `review-code` relies on: pass → merge → `Fixes #N` closes it). Use 
 number you're implementing.
 
 ```bash
-git push -u origin umut/<slug-for-issue-N>
+git push -u origin <prefix>/<slug-for-issue-N>
 gh pr create \
   --base main \
   --title "<concise PR title>" \
