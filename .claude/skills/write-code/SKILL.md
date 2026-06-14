@@ -160,15 +160,34 @@ and branch there if the issue carries one of those types. Everything else
 
 ## Step 4 — Implement on a branch
 
-Branch off `main` per your git convention (e.g. a personal prefix like `umut/`), with
-a short kebab-case slug naming the work. Read the issue's `### What to build` for
-scope and honor the `**TDD:**` flag — `yes` means write the failing test first, then
-make it pass; `no` means config/docs/scaffolding where test-first doesn't apply.
+write-code **MUST run in an isolated git worktree** — when spawned as a subagent, via
+the Agent tool's `isolation: worktree`. The operator loop requires it so concurrent
+runs can't race or dirty the primary checkout. This constrains how you branch: `main`
+is already checked out in the primary tree, so `git checkout main` **fails** inside an
+isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch from
+latest origin `main` **without checking it out**:
 
 ```bash
-git checkout main && git pull
-git checkout -b umut/<slug-for-issue-N>
+git fetch origin main
+git switch -c <prefix>/<slug-for-issue-N> FETCH_HEAD
 ```
+
+It's `git switch -c <branch> FETCH_HEAD` (not `git checkout main`) on purpose: in an
+isolated worktree `main` is checked out elsewhere, so branching directly off the
+freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back to a
+`main` checkout.
+
+Use your git convention — `<prefix>` is your personal branch prefix, like `umut/` — with
+a short kebab-case slug naming the work. Read the issue's `### What to build` for scope
+and honor the `**TDD:**` flag — `yes` means write the failing test first, then make it
+pass; `no` means config/docs/scaffolding where test-first doesn't apply.
+
+> **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
+> spin one up rather than checking out `main`:
+> `git worktree add -b <prefix>/<slug-for-issue-N> ../wt-issue-<N> origin/main`, then
+> `cd ../wt-issue-<N>`. The path is parameterized by issue number so two concurrent
+> fallback runs don't collide on `git worktree add`. When you're done, remove it with
+> `git worktree remove ../wt-issue-<N>`.
 
 Ground the implementation in the codebase the way the repo expects: the ADRs in
 `.decisions/` are the *why* and the binding decisions, the patterns in `.patterns/`
@@ -189,7 +208,7 @@ the seam `review-code` relies on: pass → merge → `Fixes #N` closes it). Use 
 number you're implementing.
 
 ```bash
-git push -u origin umut/<slug-for-issue-N>
+git push -u origin <prefix>/<slug-for-issue-N>
 gh pr create \
   --base main \
   --title "<concise PR title>" \
