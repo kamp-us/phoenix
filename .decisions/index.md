@@ -54,4 +54,5 @@ One row per ADR. Read the file for the why.
 | [0047](0047-review-plan-gate.md) | The review-plan gate — deterministic plan-epic verification | accepted | 2026-06-13 |
 | [0048](0048-ship-it-merge-actor.md) | ship-it — the pipeline's single merge authority closes the loop (consumes review-code's PASS marker; sole merge step) | accepted | 2026-06-13 |
 | [0049](0049-pipeline-ships-code-not-itself.md) | The pipeline ships code, not itself — product code (apps/web, packages) auto-merges via ship-it; skill/harness changes (.claude, .decisions, .patterns) merge manually | superseded by [0053](0053-control-plane-boundary.md) | 2026-06-13 |
+| [0051](0051-author-bind-pass-marker.md) | Author-bind ship-it's PASS signal — only an allowlisted operator identity's review-code marker counts; native APPROVE inherits GitHub's author-binding; unauthorized markers are ignored (extends 0048) | proposed | 2026-06-13 |
 | [0053](0053-control-plane-boundary.md) | The control-plane boundary — blocking is .claude + .github; everything else (apps/web, packages, .decisions, .patterns) is non-blocking + gated (review-code for code, review-doc for docs) | accepted | 2026-06-13 |
