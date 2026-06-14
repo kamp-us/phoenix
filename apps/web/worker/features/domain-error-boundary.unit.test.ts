@@ -102,5 +102,5 @@ it("Report: no method leaks DrizzleError; exact domain unions hold", () => {
 	type Svc = typeof Report.Service;
 	expectTypeOf<InfraLeaks<Svc>>().toEqualTypeOf<never>();
 	expectTypeOf<ErrorsOf<Svc["submit"]>>().toEqualTypeOf<ReportTargetNotFound>();
-	expectTypeOf<ErrorsOf<Svc["readMine"]>>().toEqualTypeOf<never>();
+	expectTypeOf<ErrorsOf<Svc["readByReporter"]>>().toEqualTypeOf<never>();
 });

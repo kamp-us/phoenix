@@ -142,7 +142,7 @@ describe("Report.submit", () => {
 	});
 });
 
-describe("Report.readMine", () => {
+describe("Report.readByReporter", () => {
 	it.effect("returns exactly the matching ids for a viewer + kind", () => {
 		const {sqlite, layer} = freshDb();
 		return Effect.gen(function* () {
@@ -183,7 +183,11 @@ describe("Report.readMine", () => {
 			);
 
 			const report = yield* Report;
-			const reported = yield* report.readMine("u1", "definition", ["def-1", "def-2", "def-3"]);
+			const reported = yield* report.readByReporter("u1", "definition", [
+				"def-1",
+				"def-2",
+				"def-3",
+			]);
 			assert.deepStrictEqual([...reported].sort(), ["def-1"]);
 			sqlite.close();
 		}).pipe(Effect.provide(layer));
@@ -193,7 +197,7 @@ describe("Report.readMine", () => {
 		const {sqlite, layer} = freshDb();
 		return Effect.gen(function* () {
 			const report = yield* Report;
-			const reported = yield* report.readMine("u1", "definition", []);
+			const reported = yield* report.readByReporter("u1", "definition", []);
 			assert.strictEqual(reported.size, 0);
 			sqlite.close();
 		}).pipe(Effect.provide(layer));
@@ -203,7 +207,7 @@ describe("Report.readMine", () => {
 		const {sqlite, layer} = freshDb();
 		return Effect.gen(function* () {
 			const report = yield* Report;
-			const reported = yield* report.readMine(null, "definition", ["def-1"]);
+			const reported = yield* report.readByReporter(null, "definition", ["def-1"]);
 			assert.strictEqual(reported.size, 0);
 			sqlite.close();
 		}).pipe(Effect.provide(layer));

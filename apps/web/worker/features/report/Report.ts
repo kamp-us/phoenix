@@ -46,7 +46,7 @@ export class Report extends Context.Service<
 		 * callers stamp "already reported" without an N+1. Missing viewer or empty
 		 * `targetIds` short-circuits to an empty Set with no read.
 		 */
-		readonly readMine: (
+		readonly readByReporter: (
 			viewerId: string | null | undefined,
 			kind: ReportTargetKind,
 			targetIds: ReadonlyArray<string>,
@@ -95,7 +95,7 @@ export const ReportLive = Layer.effect(Report)(
 			}
 		});
 
-		const readMine = Effect.fn("Report.readMine")(function* (
+		const readByReporter = Effect.fn("Report.readByReporter")(function* (
 			viewerId: string | null | undefined,
 			kind: ReportTargetKind,
 			targetIds: ReadonlyArray<string>,
@@ -117,7 +117,7 @@ export const ReportLive = Layer.effect(Report)(
 		});
 
 		return {
-			readMine,
+			readByReporter,
 			submit: Effect.fn("Report.submit")(function* (input: ReportInput) {
 				yield* assertTargetLive(input.targetKind, input.targetId);
 
