@@ -239,10 +239,11 @@ non-blocking — the "no `fail` and no `pending` → green" test already folds t
 skipped or cancelled check is neither a failure nor an in-flight wait):
 
 - **All required checks green** (no `fail`, no `pending`) → proceed to Step 4.
-- **Any check red (failing)** → do **not** merge. Route the failure to the self-heal lane
-  (`/heal-ci` with this PR/run). **Until `heal-ci` exists, just report `checks red — not
-  shipped`** (no hand-off to invoke yet). A failure-classifier decides flake-vs-defect; you
-  only refuse to ship on red.
+- **Any check red (failing)** → do **not** merge. Route the failure to the self-heal lane:
+  invoke [`/heal-ci`](../heal-ci/SKILL.md) with this PR/run, then report the result (e.g.
+  `routed to heal-ci`). `heal-ci` decides flake-vs-defect (one bounded rerun of a transient,
+  or a `report`-filed defect); you only refuse to ship on red and hand off — you still do not
+  merge.
 - **Checks still pending** (none red, some unfinished) → report `checks pending — not yet
   merge-ready` and stop. If the caller (a loop or a human) wants you to wait, they re-invoke
   you after CI settles; blocking on a multi-minute poll inside this atomic stage is out of
@@ -306,8 +307,8 @@ issue closed: yes | no
 
 If you refused to merge, the reason line is the whole point: `blocking — manual merge`,
 `unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `latest verdict is
-FAIL (<gate>)`, `checks red — not shipped` (the pre-`heal-ci` reality; becomes `routed to
-heal-ci` once that lane exists), `checks pending`, or `no linked issue`. A refusal is a
+FAIL (<gate>)`, `routed to heal-ci` (a red check, handed to the self-heal lane),
+`checks pending`, or `no linked issue`. A refusal is a
 successful run — shipping the wrong PR is the only failure mode that matters.
 
 ## Conventions
