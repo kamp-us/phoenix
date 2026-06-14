@@ -173,23 +173,42 @@ that merely *quotes* a marker mid-body doesn't match):
 - code: `^\s*review-code:\s*(PASS|FAIL)`
 - doc:  `^\s*review-doc:\s*(PASS|FAIL)`
 
+A marker comment counts as a verdict **only if its author is on the allowlist below** — the
+two marker filters gate on `.user.login` *before* the marker regex, so a forged
+`review-code: PASS` / `review-doc: PASS` from any other commenter (the `write-code` agent, a
+stranger) is invisible to the resolution, treated exactly as ordinary PR chatter, never as a
+verdict and never as a FAIL (ADR [0051](../../../.decisions/0051-author-bind-pass-marker.md)).
+`AUTHORIZED_REVIEWERS` is the single source of truth for *whose* PASS counts; today it is the
+solo operator `usirin` (who can't `APPROVE` their own PR under org branch rules, so their
+marker is the load-bearing default — ADR 0048). A future dedicated review-bot identity is one
+entry away — add its `login` to the list, no re-decision needed.
+
+```bash
+AUTHORIZED_REVIEWERS='["usirin"]'
+```
+
 Read the latest of each form (sorted by timestamp, newest last — don't lean on the API's
 return order for a merge decision):
 
 ```bash
-# latest decisive native review (APPROVED / CHANGES_REQUESTED) — the review-code path only
+# latest decisive native review (APPROVED / CHANGES_REQUESTED) — the review-code path only.
+# GitHub author-attributes reviews, so this path is unforgeable and needs no allowlist check.
 gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, at: .submitted_at}'
 
-# latest review-code marker comment (code namespace) — anchored, never matches review-doc
+# latest review-code marker comment (code namespace) — author-gated, anchored, never matches review-doc
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
         | sort_by(.created_at) | last | {body, at: .created_at}'
 
-# latest review-doc marker comment (doc namespace) — anchored, never matches review-code
+# latest review-doc marker comment (doc namespace) — author-gated, anchored, never matches review-code
 gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --jq '[.[] | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+  --argjson authorized "$AUTHORIZED_REVIEWERS" \
+  --jq '[.[] | select(.user.login | IN($authorized[]))
+              | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
         | sort_by(.created_at) | last | {body, at: .created_at}'
 ```
 
