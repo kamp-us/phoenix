@@ -51,6 +51,17 @@ Every read and write goes through `gh api` REST. The deterministic action does t
 you (it shells `gh api` through the `Github` capability); when you read context by hand,
 use REST too.
 
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every hand-run
+`gh api` call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per
+the shared contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
+if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
+behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
+
 ## The formats contract
 
 Your floor is the structural shape of the ledger — read the contract so you know what the
@@ -89,12 +100,12 @@ than treat `exit 0` as "the epic was gated".
 
 ```bash
 # acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
-HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
+HELD=$(gh api repos/$REPO/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
 if [ "$HELD" != "null" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — DO NOT flip, DO NOT loop."
   exit 0   # the held lock is the holder's, not ours — do NOT release it. Re-run later.
 fi
-if ! gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
+if ! gh api repos/$REPO/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
   echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — DO NOT flip, DO NOT loop."
   exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never flip/loop unlocked.
 fi
@@ -114,7 +125,7 @@ you reach **any** terminal state (PASS-and-flipped, parked, or a fault mid-fligh
 # Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and wedges the epic, the exact
 # catastrophe this design prevents. A 404 is benign (label already gone — released, or never
 # landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
-if ! relerr=$(gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning 2>&1); then
+if ! relerr=$(gh api -X DELETE repos/$REPO/issues/<EPIC>/labels/status:planning 2>&1); then
   case "$relerr" in
     *"HTTP 404"*|*"Label does not exist"*) : ;;  # already released / never acquired — nothing to free
     *) echo "WARNING: failed to release status:planning on epic #<EPIC> — the epic-lock may be LEAKED (still held). Re-run this DELETE or clear the label by hand; until cleared, plan-epic/review-plan back off on this epic. ($relerr)" ;;

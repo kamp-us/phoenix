@@ -1,6 +1,6 @@
 ---
 name: plan-epic
-description: Turn a triaged epic into an executable, PRD-grade task ledger on kamp-us/phoenix — a plan whose product layer (problem, user stories, testing strategy) leads and engineering layer follows, split into tracer-bullet sub-issues that each trace to a user story, with a pinned `## Dependencies` topology. Trigger on "plan the epic", "plan epic #N", "break down the epic", "/plan-epic", or whenever a `type:epic` `status:triaged` issue needs its plan and children. Autonomous — no interview or approval gate; re-runs reconcile.
+description: Turn a triaged epic into an executable, PRD-grade task ledger on the configured target repo — a plan whose product layer (problem, user stories, testing strategy) leads and engineering layer follows, split into tracer-bullet sub-issues that each trace to a user story, with a pinned `## Dependencies` topology. Trigger on "plan the epic", "plan epic #N", "break down the epic", "/plan-epic", or whenever a `type:epic` `status:triaged` issue needs its plan and children. Autonomous — no interview or approval gate; re-runs reconcile.
 ---
 
 # plan-epic
@@ -36,6 +36,17 @@ The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL i
 queries. Every read and write goes through `gh api`. Native sub-issues have a REST
 surface (below); use it. This is not a style preference — GraphQL calls error out on
 this org.
+
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api`
+call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared
+contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
+if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
+behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
 
 ## The formats contract
 
@@ -84,12 +95,12 @@ than treat `exit 0` as "the epic was planned".
 
 ```bash
 # acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
-HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
+HELD=$(gh api repos/$REPO/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
 if [ "$HELD" != "null" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — BACK OFF, do not mutate."
   exit 0   # the held lock is the holder's, not ours — do NOT release it.
 fi
-if ! gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
+if ! gh api repos/$REPO/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
   echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — BACK OFF, do not mutate."
   exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never mutate unlocked.
 fi
@@ -110,7 +121,7 @@ or a failure/abort mid-mutation):
 # Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and wedges the epic, the exact
 # catastrophe this design prevents. A 404 is benign (label already gone — released, or never
 # landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
-if ! relerr=$(gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning 2>&1); then
+if ! relerr=$(gh api -X DELETE repos/$REPO/issues/<EPIC>/labels/status:planning 2>&1); then
   case "$relerr" in
     *"HTTP 404"*|*"Label does not exist"*) : ;;  # already released / never acquired — nothing to free
     *) echo "WARNING: failed to release status:planning on epic #<EPIC> — the epic-lock may be LEAKED (still held). Re-run this DELETE or clear the label by hand; until cleared, plan-epic/review-plan back off on this epic. ($relerr)" ;;
@@ -158,14 +169,14 @@ stop to ask.)
 
 ```bash
 # the epic, its current body, its labels, and any children it already has
-gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
+gh api repos/$REPO/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
 # capture the body AND its revision marker from ONE GET — reading them in two calls lets a writer
 # land between them, yielding an updated_at newer than the captured body (TOCTOU skew); the Step 5
 # recheck would then either spuriously retry or trust a marker that doesn't match the captured body.
-gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-snap.json
+gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-snap.json
 jq -r '.body'       /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-current.md
 jq -r '.updated_at' /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-updated-at.txt
-gh api 'repos/kamp-us/phoenix/issues/<EPIC>/sub_issues?per_page=100' \
+gh api 'repos/$REPO/issues/<EPIC>/sub_issues?per_page=100' \
   --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
 ```
 
@@ -312,7 +323,7 @@ markdown and backticks survive the shell:
 
 ```bash
 BODY="$(cat /tmp/plan-epic-child.md)"
-gh api repos/kamp-us/phoenix/issues \
+gh api repos/$REPO/issues \
   -f title="<sharp single-unit title>" \
   -f body="$BODY" \
   --jq '{number,id}'
@@ -333,7 +344,7 @@ mechanism: an unverified-but-pickable child is unrepresentable). Apply `status:p
 `type:*` + a `p*`:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/<CHILD>/labels \
+gh api repos/$REPO/issues/<CHILD>/labels \
   -f "labels[]=type:feature" -f "labels[]=p2" -f "labels[]=status:planned"
 ```
 
@@ -356,8 +367,8 @@ The endpoint takes the child's **database id** (`.id`), *not* its issue number:
 
 ```bash
 # the child's database id (reuse the .id from the Step 3 create if you captured it)
-CHILD_ID=$(gh api repos/kamp-us/phoenix/issues/<CHILD> --jq '.id')
-gh api -X POST repos/kamp-us/phoenix/issues/<EPIC>/sub_issues \
+CHILD_ID=$(gh api repos/$REPO/issues/<CHILD> --jq '.id')
+gh api -X POST repos/$REPO/issues/<EPIC>/sub_issues \
   -F sub_issue_id=$CHILD_ID \
   --jq '.sub_issues_summary'
 ```
@@ -365,9 +376,9 @@ gh api -X POST repos/kamp-us/phoenix/issues/<EPIC>/sub_issues \
 `-F` (not `-f`) so the id is sent as a number. Confirm the link landed:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.sub_issues_summary'
+gh api repos/$REPO/issues/<EPIC> --jq '.sub_issues_summary'
 # total should equal the number of children you linked
-gh api 'repos/kamp-us/phoenix/issues/<EPIC>/sub_issues?per_page=100' \
+gh api 'repos/$REPO/issues/<EPIC>/sub_issues?per_page=100' \
   --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
 ```
 
@@ -383,7 +394,7 @@ body via `--input` — `-X DELETE … -F` does **not** work here:
 
 ```bash
 echo "{\"sub_issue_id\": $CHILD_ID}" \
-  | gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/sub_issue --input -
+  | gh api -X DELETE repos/$REPO/issues/<EPIC>/sub_issue --input -
 ```
 
 Unlinking does not close the child; it just removes the parent/child edge. Closing is
@@ -483,7 +494,7 @@ loudly** if `deps.md` was not regenerated since the base it splices onto was rea
 landed=0; patched=0
 for attempt in 1 2 3; do
   # 1. re-read the LIVE body + its revision marker from ONE GET (coherent — no TOCTOU skew)
-  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-live.json
+  gh api repos/$REPO/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-live.json
   jq -r '.body'       /tmp/plan-epic-<EPIC>-live.json > /tmp/plan-epic-<EPIC>-live.md
   NOW=$(jq -r '.updated_at' /tmp/plan-epic-<EPIC>-live.json)
   WAS=$(cat /tmp/plan-epic-<EPIC>-updated-at.txt)
@@ -576,8 +587,8 @@ for attempt in 1 2 3; do
   #    heading or a single child line — is what tells our section from theirs. The residual window
   #    (below) means the PATCH is still last-write-wins; this is the honest after-the-fact check
   #    that retries the loser.
-  gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY" >/dev/null; patched=1
-  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' \
+  gh api -X PATCH repos/$REPO/issues/<EPIC> -f body="$BODY" >/dev/null; patched=1
+  gh api repos/$REPO/issues/<EPIC> --jq '.body' \
     | awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' > /tmp/plan-epic-<EPIC>-deps-live.md
   if diff -q /tmp/plan-epic-<EPIC>-deps-expected.md /tmp/plan-epic-<EPIC>-deps-live.md >/dev/null; then
     echo "epic body updated, our whole ## Dependencies block round-tripped"; landed=1; break
@@ -591,7 +602,7 @@ for attempt in 1 2 3; do
     echo "our ## Dependencies block is NOT the one in the post-write body — a racer clobbered it."
     echo "       Re-derive deps.md (and plan.md on a re-plan) against the refreshed"
     echo "       /tmp/plan-epic-<EPIC>-current.md, then re-invoke this block. Refusing to re-splice the stale block."
-    gh api repos/kamp-us/phoenix/issues/<EPIC> > /tmp/plan-epic-<EPIC>-snap.json   # one snapshot, no TOCTOU between body+updated_at
+    gh api repos/$REPO/issues/<EPIC> > /tmp/plan-epic-<EPIC>-snap.json   # one snapshot, no TOCTOU between body+updated_at
     jq -r '.body'       /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-current.md      # fresh base to re-derive against
     jq -r '.updated_at' /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-updated-at.txt
     break
@@ -672,12 +683,12 @@ Every supersede is auditable. Before closing a superseded child, post a comment 
 *why* and where the work went, so the trail is legible:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/<CHILD>/comments \
+gh api repos/$REPO/issues/<CHILD>/comments \
   -f body="Superseded by re-plan of #<EPIC>: <specific reason — e.g. 'scope merged into #<NEW>' or 'dropped, the brief no longer asks for X'>."
 # unlink from the epic (singular sub_issue, id in the JSON body), then close not-planned
-CHILD_ID=$(gh api repos/kamp-us/phoenix/issues/<CHILD> --jq '.id')
-echo "{\"sub_issue_id\": $CHILD_ID}" | gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/sub_issue --input -
-gh api -X PATCH repos/kamp-us/phoenix/issues/<CHILD> -f state=closed -f state_reason=not_planned
+CHILD_ID=$(gh api repos/$REPO/issues/<CHILD> --jq '.id')
+echo "{\"sub_issue_id\": $CHILD_ID}" | gh api -X DELETE repos/$REPO/issues/<EPIC>/sub_issue --input -
+gh api -X PATCH repos/$REPO/issues/<CHILD> -f state=closed -f state_reason=not_planned
 ```
 
 ### Fall back to full-supersede when reconciliation is messy
@@ -720,11 +731,11 @@ unmistakably test debris.
 
 ```bash
 # for each scratch child: unlink + close
-CHILD_ID=$(gh api repos/kamp-us/phoenix/issues/<CHILD> --jq '.id')
-echo "{\"sub_issue_id\": $CHILD_ID}" | gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/sub_issue --input -
-gh api -X PATCH repos/kamp-us/phoenix/issues/<CHILD> -f state=closed -f state_reason=not_planned
+CHILD_ID=$(gh api repos/$REPO/issues/<CHILD> --jq '.id')
+echo "{\"sub_issue_id\": $CHILD_ID}" | gh api -X DELETE repos/$REPO/issues/<EPIC>/sub_issue --input -
+gh api -X PATCH repos/$REPO/issues/<CHILD> -f state=closed -f state_reason=not_planned
 # then close the scratch epic
-gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f state=closed -f state_reason=not_planned
+gh api -X PATCH repos/$REPO/issues/<EPIC> -f state=closed -f state_reason=not_planned
 ```
 
 (If you have repo-admin and the GraphQL `deleteIssue` mutation is available to you,

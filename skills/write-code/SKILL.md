@@ -1,6 +1,6 @@
 ---
 name: write-code
-description: Pick the next actionable issue off kamp-us/phoenix and execute it end to end — claim it by self-assigning, implement on a branch, open a PR that closes it, log progress on the issue, and hand off to the parent epic; OR, given a PR number, enter repair mode and consume a gate's latest FAIL verdict to fix-and-resubmit on the same branch. Trigger on "work the next issue", "pick up an issue", "implement issue #N", "run write-code", "do the next task", "/write-code", or whenever you're asked to turn triaged work into a PR; trigger repair mode on "repair PR #N", "fix the failed review on #N", "address the FAIL on PR #N". This is the execution stage of the issue-intake pipeline: it consumes `status:triaged` issues and produces PRs that `review-code`/`review-doc` gate, and it consumes those gates' FAIL markers to drive the fix round-trip.
+description: Pick the next actionable issue off the configured target repo and execute it end to end — claim it by self-assigning, implement on a branch, open a PR that closes it, log progress on the issue, and hand off to the parent epic; OR, given a PR number, enter repair mode and consume a gate's latest FAIL verdict to fix-and-resubmit on the same branch. Trigger on "work the next issue", "pick up an issue", "implement issue #N", "run write-code", "do the next task", "/write-code", or whenever you're asked to turn triaged work into a PR; trigger repair mode on "repair PR #N", "fix the failed review on #N", "address the FAIL on PR #N". This is the execution stage of the issue-intake pipeline: it consumes `status:triaged` issues and produces PRs that `review-code`/`review-doc` gate, and it consumes those gates' FAIL markers to drive the fix round-trip.
 ---
 
 # write-code
@@ -23,6 +23,17 @@ The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL i
 queries. Every issue/PR/label read and write goes through `gh api`. Branch, commit,
 and PR-open go through `git` and `gh` per repo conventions. This is not a style
 preference — GraphQL calls error out on this org.
+
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api`
+call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared
+contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
+if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
+behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
 
 ## The formats contract
 
@@ -59,7 +70,7 @@ write-code has **two invocation shapes**, and the argument tells them apart:
 
 The two are unambiguous: a PR number routes to repair, an issue number (or nothing) routes
 to the pick-and-build path. If you're handed a bare number and genuinely can't tell which
-it is, resolve it once — `gh api repos/kamp-us/phoenix/pulls/<N>` succeeds for a PR and
+it is, resolve it once — `gh api repos/$REPO/pulls/<N>` succeeds for a PR and
 404s for a plain issue — and branch accordingly.
 
 **The ownership boundary, stated once and load-bearing throughout:** **write-code owns
@@ -100,14 +111,14 @@ is an unaddressed FAIL:
 ME=$(gh api user --jq '.login')
 # open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
-gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
+gh api "repos/$REPO/pulls?state=open&per_page=100" \
   --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
   # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2
   # uses (ADR 0055, supersedes 0051): build THIS PR's authorized set from its marker authors
   # holding write+ on the repo, so a forged review-(code|doc): FAIL from a non-reviewer can't
   # trigger spurious repair. Empty set ⇒ IN($authorized[]) matches nothing ⇒ no verdict
   # resolves ⇒ the scan safely finds nothing — fail-closed.
-  comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+  comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
   # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
   # per gh-issue-intake-formats.md §5 — the canonical matcher contract
   markerAuthors=$(jq -r '[.[]
@@ -116,7 +127,7 @@ gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   authorized='[]'
   while IFS= read -r a; do
     [ -z "$a" ] && continue
-    perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
+    perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
     case "$perm" in
       admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
     esac
@@ -173,7 +184,7 @@ bucket that has any unassigned candidate:
 ```bash
 # p0 first; only fall through to p1, then p2 if a bucket is empty of unassigned issues
 for P in p0 p1 p2; do
-  gh api "repos/kamp-us/phoenix/issues?state=open&labels=status:triaged,$P&sort=created&direction=asc&per_page=100" \
+  gh api "repos/$REPO/issues?state=open&labels=status:triaged,$P&sort=created&direction=asc&per_page=100" \
     --jq '.[] | select(.assignee == null and (.pull_request | not)) | "#\(.number)\t\(.created_at)\t\(.title)"'
 done
 ```
@@ -188,7 +199,7 @@ An issue may be a child of an epic. Check before claiming — a sub-issue carrie
 dependency constraints the bare issue doesn't show:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/<N> --jq '.parent // "no parent (standalone)"'
+gh api repos/$REPO/issues/<N> --jq '.parent // "no parent (standalone)"'
 ```
 
 If it has a `parent`, go to Step 2 to derive eligibility before claiming. If it's
@@ -206,13 +217,13 @@ eligibility is computed fresh on every pick from the epic's `## Dependencies` se
 ```bash
 EPIC=<parent number>
 # the epic body carries the plan + the ## Dependencies topology
-gh api repos/kamp-us/phoenix/issues/$EPIC --jq '.body'
+gh api repos/$REPO/issues/$EPIC --jq '.body'
 # the real child set + each child's state (the list endpoint is source of truth;
 # sub_issues_summary undercounts under mixed closed/open children)
-gh api "repos/kamp-us/phoenix/issues/$EPIC/sub_issues?per_page=100" \
+gh api "repos/$REPO/issues/$EPIC/sub_issues?per_page=100" \
   --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
 # the cross-task signal siblings left — read before assuming what's done
-gh api "repos/kamp-us/phoenix/issues/$EPIC/comments?per_page=100" --jq '.[].body'
+gh api "repos/$REPO/issues/$EPIC/comments?per_page=100" --jq '.[].body'
 ```
 
 **The derivation rule** (from the formats `## Dependencies` grammar):
@@ -269,14 +280,14 @@ ME=$(gh api user --jq '.login')
 # best-effort read — a co-racer's POST can land in the gap between this read and my own POST, so an
 # empty PRE does NOT prove I'm unraced. The sole resolver remains the checkpoint GET below; PRE
 # only spares an already-settled owner an eviction it doesn't deserve.
-PRE=$(gh api repos/kamp-us/phoenix/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+PRE=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
 if [ -n "$PRE" ]; then
   # Already owned before I touched it — never evict a pre-existing owner. Back off, re-pick.
   exit 0  # → re-run Step 1
 fi
 
 # POST self; capture the FULL assignees list the write returns (single observable write).
-ASSIGNEES=$(gh api -X POST repos/kamp-us/phoenix/issues/<N>/assignees \
+ASSIGNEES=$(gh api -X POST repos/$REPO/issues/<N>/assignees \
   -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
 
 # Provisional tiebreak among co-racers: min-login. NOTE the POST echo is NOT a snapshot both
@@ -290,7 +301,7 @@ if [ "$WINNER" = "$ME" ]; then
   # picker's "skip assigned" invariant.
   for a in $ASSIGNEES; do
     [ "$a" = "$ME" ] && continue
-    gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$a"
+    gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$a"
   done
   # CHECKPOINT — THIS is what resolves the race, not the POST echo. Re-read canonical issue state
   # (a fresh GET, not the stale POST echo) and re-confirm I am still min(assignees). Required for
@@ -298,16 +309,16 @@ if [ "$WINNER" = "$ME" ]; then
   # and entered here as a false winner; A (min) evicted B, so B's GET re-reads [A], CUR_MIN==A!=B,
   # and B aborts. The agent whose GET shows min==ME proceeds; any agent evicted out of min aborts.
   # Do NOT prune this as redundant — without it both staggered co-racers proceed (double-pick).
-  STILL=$(gh api repos/kamp-us/phoenix/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+  STILL=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
   CUR_MIN=$(printf '%s\n' $STILL | head -n1)
   # Displaced at the checkpoint → self-clean before backing off, exactly like the loser
   # branch. Every non-winner removes itself; back-off never leaves a stale self-assignment
   # for another agent's eviction loop to clean up (which would widen the transient window).
-  [ "$CUR_MIN" = "$ME" ] || { gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
+  [ "$CUR_MIN" = "$ME" ] || { gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
   # claim won and confirmed — proceed to implement
 else
   # I lost the tiebreak: remove myself and re-pick (do NOT implement — do NOT co-occupy).
-  gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"
+  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"
   # back off → re-run Step 1, pick the next issue
 fi
 ```
@@ -424,14 +435,14 @@ EOF
 ```
 
 > `gh pr edit` is unreliable in this org (Projects-classic). If you must edit a PR
-> after creation, patch via REST: `gh api -X PATCH repos/kamp-us/phoenix/pulls/<PR>
+> after creation, patch via REST: `gh api -X PATCH repos/$REPO/pulls/<PR>
 > -f body="…"`. Get the PR body right at `create` time and you won't need it.
 
 Confirm the linkage landed — once `Fixes #N` is in the body, the issue's timeline
 records a `cross-referenced` / `connected` event for the PR. Verify via REST:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/<N>/timeline \
+gh api repos/$REPO/issues/<N>/timeline \
   --jq '.[] | select(.event == "cross-referenced" or .event == "connected") | .event'
 ```
 
@@ -447,7 +458,7 @@ is the per-issue ledger for the next agent (a successor write-code run, or
 
 ```bash
 BODY="$(cat /tmp/write-code-progress.md)"   # the four-section comment
-gh api repos/kamp-us/phoenix/issues/<N>/comments -f body="$BODY"
+gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -466,7 +477,7 @@ signal a sibling reads *instead of* spelunking your child issue.
 
 ```bash
 BODY="$(cat /tmp/write-code-handoff.md)"   # ### Handoff: #N — <title> + the three fields
-gh api repos/kamp-us/phoenix/issues/<EPIC>/comments -f body="$BODY"
+gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -513,7 +524,7 @@ no ACL gate — GitHub author-attributes reviews, so it is unforgeable.
 PR=<the PR number you were handed>
 # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2 uses
 # (ADR 0055): build the authorized set from THIS PR's marker authors holding write+ on the repo.
-comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
 # per gh-issue-intake-formats.md §5 — the canonical matcher contract
 markerAuthors=$(jq -r '[.[]
@@ -522,14 +533,14 @@ markerAuthors=$(jq -r '[.[]
 authorized='[]'
 while IFS= read -r a; do
   [ -z "$a" ] && continue
-  perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
+  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
   case "$perm" in
     admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
   esac
 done <<<"$markerAuthors"
 
 # the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
-CURRENT_HEAD="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"
+CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 
 # latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc.
 # Capture the bound head SHA from the @ <sha> tail (sha=null for a pre-0058 SHA-less marker).
@@ -542,7 +553,7 @@ jq --argjson authorized "$authorized" \
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
 # (no ACL gate: GitHub author-attributes reviews, so this path is unforgeable). commit_id IS its bound SHA.
-gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
+gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}'
 
@@ -598,10 +609,10 @@ body's `Fixes #N` and re-read its `### Acceptance criteria` (the same checklist 
 verified) and the progress trail:
 
 ```bash
-N=$(gh api repos/kamp-us/phoenix/pulls/$PR \
+N=$(gh api repos/$REPO/pulls/$PR \
   --jq '.body | capture("(?i)\\b(fix(es|ed)?|close[sd]?|resolve[sd]?)\\s+#(?<n>[0-9]+)") | .n')
-gh api repos/kamp-us/phoenix/issues/$N --jq '.body'
-gh api "repos/kamp-us/phoenix/issues/$N/comments?per_page=100" --jq '.[].body'
+gh api repos/$REPO/issues/$N --jq '.body'
+gh api "repos/$REPO/issues/$N/comments?per_page=100" --jq '.[].body'
 ```
 
 Check out the **existing PR branch** and fix on it — **no new branch** (a new branch would
@@ -627,7 +638,7 @@ requested"). Pushing new commits is what makes the **stateless** gate re-run —
 
 ```bash
 git push origin HEAD
-gh api repos/kamp-us/phoenix/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
+gh api repos/$REPO/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
 ```
 
 Then **stop.** The independent re-review re-gates the fix and lands a fresh verdict; that
@@ -673,7 +684,7 @@ If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix a
 FAIL), **stop fixing and escalate** instead of pushing again:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/$N/comments -f body="$(cat <<'EOF'
+gh api repos/$REPO/issues/$N/comments -f body="$(cat <<'EOF'
 ### Repair escalation — PR #<PR> still FAILing after 3 rounds
 
 This PR has reached the N=3 repair cap with the gate still requesting changes. Handing
@@ -686,7 +697,7 @@ revisiting).
 EOF
 )"
 # surface it for a human / re-triage rather than re-pushing
-gh api -X POST repos/kamp-us/phoenix/issues/$N/labels -f "labels[]=status:needs-triage"
+gh api -X POST repos/$REPO/issues/$N/labels -f "labels[]=status:needs-triage"
 ```
 
 Escalation **stops the loop** — name the still-failing criteria, hand the PR back to a
@@ -768,8 +779,8 @@ deliverable is a **diagnosis**, and then *routing* its findings, not a feature b
    they close because the question is answered. Close it:
 
    ```bash
-   gh api repos/kamp-us/phoenix/issues/<N>/comments -f body="$DIAGNOSIS"
-   gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f state=closed -f state_reason=completed
+   gh api repos/$REPO/issues/<N>/comments -f body="$DIAGNOSIS"
+   gh api -X PATCH repos/$REPO/issues/<N> -f state=closed -f state_reason=completed
    ```
 
    (`completed`, not `not_planned` — the investigation *did its job*. Reserve

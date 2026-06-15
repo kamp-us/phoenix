@@ -411,7 +411,7 @@ that came back failed.
 
 The recognizable **first line** of the PR comment carries the **head SHA the reviewer
 inspected** (`@ <sha>`), resolved at post time from
-`gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha`:
+`gh api repos/$REPO/pulls/$PR --jq .head.sha`:
 
 ```markdown
 review-code: PASS @ <sha> — merge-ready
@@ -436,7 +436,7 @@ with no `@ <sha>` is a *pre-0058 legacy* shape and resolves to `unverified`, not
 
 `review-code` writes **exactly one** marker comment per PR in its namespace: before posting
 it scans the PR's comments for **its own** prior `review-code:` marker and, if one exists,
-`PATCH`es it (`gh api -X PATCH repos/kamp-us/phoenix/issues/comments/<id>`) with the fresh
+`PATCH`es it (`gh api -X PATCH repos/$REPO/issues/comments/<id>`) with the fresh
 verdict + fresh `@ <sha>` instead of `POST`-ing a new comment. A re-review of a new head
 overwrites the same record; the PR thread never accumulates a stale verdict stream a
 millisecond decides. See ADR 0058 rule 2.
@@ -496,7 +496,7 @@ never a native approving review. The marker lives in its **own namespace**, dist
 ### Shape — SHA-bound (ADR 0058)
 
 The recognizable **first line** of the PR comment carries the head SHA the reviewer inspected
-(`@ <sha>`, from `gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha`):
+(`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
 
 ```markdown
 review-doc: PASS @ <sha> — merge-ready

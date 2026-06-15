@@ -1,6 +1,6 @@
 ---
 name: review-code
-description: Verify a pull request against its linked issue's acceptance criteria before it merges — a fresh-eyes QA gate over the kamp-us/phoenix issue pipeline. Trigger on "review this PR", "verify PR #N", "does this PR meet the acceptance criteria", "gate this PR", "run review-code", "check the work on #N before merge", or whenever you're asked to confirm a PR actually satisfies the issue it claims to close. This is the verification stage of the issue-intake pipeline: it consumes the PRs `write-code` opens and produces a pass/fail verdict against the issue's `### Acceptance criteria` checklist — one criterion at a time, evidence-based. It never merges on its own authority.
+description: Verify a pull request against its linked issue's acceptance criteria before it merges — a fresh-eyes QA gate over the configured target repo's issue pipeline. Trigger on "review this PR", "verify PR #N", "does this PR meet the acceptance criteria", "gate this PR", "run review-code", "check the work on #N before merge", or whenever you're asked to confirm a PR actually satisfies the issue it claims to close. This is the verification stage of the issue-intake pipeline: it consumes the PRs `write-code` opens and produces a pass/fail verdict against the issue's `### Acceptance criteria` checklist — one criterion at a time, evidence-based. It never merges on its own authority.
 ---
 
 # review-code
@@ -35,6 +35,17 @@ The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL i
 and PR queries. Every issue/PR/review/comment read and write goes through `gh api`
 REST. This is not a style preference — GraphQL calls error out on this org.
 
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api`
+call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared
+contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
+if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
+behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
+
 ## The formats contract
 
 Your gate is **format 2, the sub-issue body's `### Acceptance criteria` checklist** —
@@ -63,7 +74,7 @@ PR ↔ issue pairing, because the issue is where the acceptance criteria live.
 ```bash
 PR=<pr number>
 # the PR: state, head branch, body (the Fixes #N lives here), mergeability
-gh api repos/kamp-us/phoenix/pulls/$PR \
+gh api repos/$REPO/pulls/$PR \
   --jq '{number, state, draft, merged, head: .head.ref, base: .base.ref, body}'
 ```
 
@@ -73,7 +84,7 @@ timeline if it's not obvious:
 
 ```bash
 # timeline shows "connected"/"cross-referenced" events linking PR ↔ issue
-gh api "repos/kamp-us/phoenix/issues/$PR/timeline?per_page=100" \
+gh api "repos/$REPO/issues/$PR/timeline?per_page=100" \
   --jq '.[] | select(.event=="connected" or .event=="cross-referenced") | .source.issue.number // .issue.number' 2>/dev/null
 ```
 
@@ -86,9 +97,9 @@ Now pull the issue and its acceptance criteria:
 
 ```bash
 ISSUE=<N>
-gh api repos/kamp-us/phoenix/issues/$ISSUE --jq '{number, state, assignee: .assignee.login, body}'
+gh api repos/$REPO/issues/$ISSUE --jq '{number, state, assignee: .assignee.login, body}'
 # the progress trail write-code left — context, not evidence
-gh api "repos/kamp-us/phoenix/issues/$ISSUE/comments?per_page=100" --jq '.[].body'
+gh api "repos/$REPO/issues/$ISSUE/comments?per_page=100" --jq '.[].body'
 ```
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every
@@ -105,9 +116,9 @@ not in the PR's self-description. Pull the change:
 ```bash
 # the full diff — gh pr diff is the reliable form; the diff media type is the REST equivalent
 gh pr diff $PR \
-  || gh api repos/kamp-us/phoenix/pulls/$PR -H "Accept: application/vnd.github.v3.diff"
+  || gh api repos/$REPO/pulls/$PR -H "Accept: application/vnd.github.v3.diff"
 # files touched, at a glance
-gh api "repos/kamp-us/phoenix/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'
+gh api "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'
 ```
 
 ### The trust split: head = code under test, base = the reviewer's instructions (ADR 0052)
@@ -147,7 +158,7 @@ Your own session stays in *this* worktree (the trusted base config you were laun
 
 ```bash
 # the trusted base — the PR's merge target at tip; your config already comes from here
-BASE_REF="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq '.base.ref')"   # normally main
+BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main
 
 # Fetch the PR head into a dedicated ref WITHOUT touching the session tree. pull/$PR/head
 # resolves for same-repo AND cross-fork PRs, so there is no separate cross-fork branch to
@@ -218,17 +229,17 @@ artifact, read `manifest.json`). The **head-SHA filter is load-bearing**: a bund
 stale earlier push is not evidence for this commit.
 
 ```bash
-HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq '.head.sha')"
+HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')"
 # the run-evidence workflow run for THIS exact head SHA (newest wins), never just "latest on branch"
-RUN_ID="$(gh api "repos/kamp-us/phoenix/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+RUN_ID="$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
   --jq '[.workflow_runs[] | select(.name=="run-evidence")] | sort_by(.created_at) | last | .id')"
 BUNDLE_DIR="$(mktemp -d)/run-evidence-${PR}"; MANIFEST=""
 if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
-  ART_ID="$(gh api "repos/kamp-us/phoenix/actions/runs/$RUN_ID/artifacts" \
+  ART_ID="$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
     --jq '.artifacts[] | select(.name=="run-evidence") | .id' | head -1)"
   if [ -n "$ART_ID" ]; then
     mkdir -p "$BUNDLE_DIR"
-    gh api "repos/kamp-us/phoenix/actions/artifacts/$ART_ID/zip" > "$BUNDLE_DIR/run-evidence.zip" \
+    gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > "$BUNDLE_DIR/run-evidence.zip" \
       && unzip -o -q "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR" \
       && [ -f "$BUNDLE_DIR/manifest.json" ] && MANIFEST="$BUNDLE_DIR/manifest.json"
   fi
@@ -285,7 +296,7 @@ apart:
 So the verdict's not-auto-mergeable flag matches **`.claude/**` + `.github/**` only**:
 
 ```bash
-CONTROL_PLANE_TOUCHED="$(gh api "repos/kamp-us/phoenix/pulls/$PR/files?per_page=100" \
+CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
   --jq '[.[].filename | select(test("^(\\.claude/|\\.github/)"))]')"
 # non-empty → control-plane: surface it in the verdict (Step 4) as manual-merge per ADR 0053
 ```
@@ -348,7 +359,7 @@ any verdict not bound to the PR's current head (ADR
 verdict-body shape at the end of this step.
 
 ```bash
-HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # the head you reviewed
+HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
 ```
 
 **Preferred — an approving review** (the native, unambiguous GitHub signal). Capture its
@@ -372,7 +383,7 @@ current head (Step 2b), so they can never authorize a merge.
 ```bash
 VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"
 BODY="$(cat "$VERDICT_FILE")"   # first line: review-code: PASS @ <HEAD_SHA> — merge-ready
-if gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews \
+if gh api -X POST repos/$REPO/pulls/$PR/reviews \
      -f event=APPROVE -f body="$BODY"; then
   : # native approving review posted (GitHub records its commit_id = the head you approved;
     #  ship-it reads that commit_id for the same staleness test the marker's @ <sha> drives)
@@ -382,14 +393,14 @@ else
   #   review-code: PASS @ <HEAD_SHA> — merge-ready
   ME="$(gh api user --jq .login)"
   # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
-  comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+  comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
   MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
             and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
           | last | .id // empty' <<<"$comments")
   if [ -n "$MINE" ]; then
-    gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"   # upsert
+    gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
   else
-    gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"   # first verdict
+    gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"   # first verdict
   fi
 fi
 ```
@@ -465,19 +476,19 @@ any later use are one single-sourced read, never two independent resolutions tha
 straddle a head move:
 
 ```bash
-HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # resolve ONCE, before authoring the verdict file (mirror the PASS path)
+HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before authoring the verdict file (mirror the PASS path)
 # … author /tmp/review-code-verdict-${PR}.md now, embedding `review-code: FAIL @ $HEAD_SHA — not merge-ready` as its first line …
 BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready (the SHA resolved just above)
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
-comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
           and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
         | last | .id // empty' <<<"$comments")
 if [ -n "$MINE" ]; then
-  gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"
+  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
 else
-  gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"
+  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
 fi
 ```
 
