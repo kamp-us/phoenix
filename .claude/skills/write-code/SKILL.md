@@ -373,8 +373,32 @@ Ground the implementation in the codebase the way the repo expects: the ADRs in
 are *how the current code is shaped* — read the relevant ones before writing, and
 follow them over intuition (per `CLAUDE.md`). Implement the issue's acceptance
 criteria; they are the literal checklist `review-code` will verify, so build to make
-every box checkable from the outside. Run `pnpm typecheck` / `pnpm lint` / the test
-suite as the repo conventions require before you open the PR.
+every box checkable from the outside. Run `pnpm typecheck` and the test suite as the
+repo conventions require before you open the PR.
+
+For **lint**, do **not** run `pnpm lint` (`biome check .`) from inside the worktree:
+bare `.` resolves to the worktree's own CWD, which physically sits under
+`.claude/worktrees/<id>` and so matches the retained `!**/.claude/worktrees`
+exclusion — biome reports "0 files / paths ignored" and exits **0 without linting
+anything** (a false green; #236, [ADR 0060](../../../.decisions/0060-worktree-lint-changed-paths.md)).
+Lint **explicit paths** instead — the changed files biome handles, never bare `.`.
+Filter the changed set to biome-handled extensions so a docs/markdown-only PR (no
+`.ts`/`.tsx`/`.json`/… in the diff) is a **clean skip (exit 0)**, not a false-fail:
+on biome 2.4.15 an all-unknown/ignored path set still exits **1** ("No files were
+processed"), and `--files-ignore-unknown=true` does *not* rescue an entirely-unknown
+set — so the filter, not the flag, is what keeps docs-only green (#236,
+[ADR 0060](../../../.decisions/0060-worktree-lint-changed-paths.md)):
+
+```bash
+CHANGED="$(git diff --name-only --diff-filter=ACMR origin/main...HEAD \
+  | grep -Ev '^node_modules/' \
+  | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|css|graphql)$' || true)"
+if [ -n "$CHANGED" ]; then
+  pnpm exec biome check --files-ignore-unknown=true $CHANGED
+else
+  echo "no biome-handled changed files to lint"   # docs-only / empty diff: clean skip, never bare `biome check .`
+fi
+```
 
 Commit per repo conventions. Don't push to or PR from `main`.
 
@@ -590,8 +614,9 @@ git switch <the PR's head branch>     # gh api .../pulls/$PR --jq '.head.ref'
 ```
 
 Ground the fixes the same way the initial build does — ADRs in `.decisions/` for the *why*,
-patterns in `.patterns/` for *how the code is shaped* — and run `pnpm typecheck` /
-`pnpm lint` / the test suite before pushing, exactly as Step 4 requires.
+patterns in `.patterns/` for *how the code is shaped* — and run `pnpm typecheck` / the test
+suite plus the **explicit-paths lint** from Step 4 (never `pnpm lint` / `biome check .`,
+which self-no-ops from inside a worktree — #236) before pushing, exactly as Step 4 requires.
 
 ### Step R3 — Push, post a progress comment, then stop (the gate re-runs)
 
