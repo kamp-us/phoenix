@@ -72,8 +72,13 @@ export interface PipelineEpic {
 export interface PipelineState {
 	issues: readonly PipelineIssue[];
 	epics: readonly PipelineEpic[];
-	/** Added by #254 (caching). Absent on this branch — treated as fresh. */
-	fetchedAt?: string;
+	/**
+	 * Epoch-millis the served snapshot was fetched from GitHub. The worker emits a
+	 * number (`Schema.Number` in worker/features/pipeline/schema.ts) — the SPA
+	 * consumes the exact wire type (#291). Added by #254 (caching); absent on this
+	 * branch — treated as fresh.
+	 */
+	fetchedAt?: number;
 	/** Added by #254 (caching). Absent on this branch — treated as fresh. */
 	stale?: boolean;
 }

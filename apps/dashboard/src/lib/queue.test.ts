@@ -64,13 +64,14 @@ describe("readFreshness", () => {
 		expect(readFreshness(state)).toEqual({stale: false, fetchedAt: null});
 	});
 
-	it("surfaces stale + fetchedAt when the cache child provides them", () => {
+	it("surfaces stale + fetchedAt (epoch-ms) when the cache child provides them", () => {
+		const fetchedAt = Date.parse("2026-06-14T00:00:00Z");
 		const state = {
 			issues: [],
 			epics: [],
 			stale: true,
-			fetchedAt: "2026-06-14T00:00:00Z",
+			fetchedAt,
 		} as PipelineState;
-		expect(readFreshness(state)).toEqual({stale: true, fetchedAt: "2026-06-14T00:00:00Z"});
+		expect(readFreshness(state)).toEqual({stale: true, fetchedAt});
 	});
 });
