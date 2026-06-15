@@ -125,7 +125,7 @@ export function SozlukAlphabet({
 }: {
 	value?: string;
 	emptyLetters?: string[];
-	onChange?: (l: string) => void;
+	onChange?: (l: string | undefined) => void;
 }) {
 	return (
 		<nav className="kp-sozluk-alphabet" aria-label="Harf">
@@ -152,7 +152,7 @@ export function SozlukAlphabet({
 						type="button"
 						className={cls}
 						aria-pressed={isActive}
-						onClick={() => onChange?.(l)}
+						onClick={() => onChange?.(isActive ? undefined : l)}
 					>
 						{l}
 					</button>
