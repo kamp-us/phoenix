@@ -83,6 +83,17 @@ jobs:
       # builders over a DO-state fake, pure helpers.
       - run: pnpm --filter @phoenix/web test:unit
 
+  skills:
+    name: validate skill frontmatter
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # Pure-bash guard, no toolchain: every .claude/skills/*/SKILL.md must carry
+      # valid frontmatter (name + description, name == dir) or a skill silently
+      # stops routing. Same script runs locally: `bash .claude/skills/validate-skills.sh`.
+      - run: bash .claude/skills/validate-skills.sh
+
   integration:
     name: integration tests
     needs: changes
