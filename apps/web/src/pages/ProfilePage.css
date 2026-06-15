@@ -128,6 +128,28 @@
 .kp-profile__row .edit-btn:hover {
 	color: var(--accent);
 }
+.kp-profile__row .edit-btn:disabled {
+	opacity: 0.5;
+	cursor: default;
+}
+.kp-profile__row .edit-btn:disabled:hover {
+	color: var(--text-muted);
+}
+
+.kp-profile__row .value input[aria-invalid="true"] {
+	border-color: var(--accent);
+}
+.kp-profile__feedback {
+	display: inline-block;
+	margin-left: var(--s-2);
+	font: var(--t-meta);
+}
+.kp-profile__feedback.ok {
+	color: var(--text-muted);
+}
+.kp-profile__feedback.error {
+	color: var(--accent);
+}
 
 .kp-profile__theme-toggle {
 	display: inline-flex;
