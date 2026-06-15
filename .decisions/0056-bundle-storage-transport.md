@@ -4,6 +4,7 @@ title: Run-Evidence Bundle Storage Is a CI Run Artifact, Versioned by schemaVers
 status: proposed
 date: 2026-06-14
 tags: [pipeline, ci, review-code, ship-it, auto-merge, storage]
+---
 
 # 0056 — Run-Evidence Bundle Storage Is a CI Run Artifact, Versioned by schemaVersion
 
