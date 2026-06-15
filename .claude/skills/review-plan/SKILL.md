@@ -84,10 +84,23 @@ if [ "$HELD" != "null" ]; then
 fi
 gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
 ACQUIRED=1
+# Release on EVERY exit — PASS-and-flipped, parked, OR a fault MID-flight. Arm the release as an
+# EXIT trap the INSTANT we acquire, before the gate runs or the convergence loop starts: a trailing
+# release line only fires on the success fall-through, so a gate fault, a RePlanError, a gh IO fault,
+# or an abort inside the convergence loop would skip it and LEAK the lock (wedging the epic against
+# every later plan-epic/review-plan run until a human clears it — #264). The convergence loop in
+# particular can fail mid-flight, so this is not hypothetical. The trap fires on every path out and
+# releases ONLY the lock WE acquired ($ACQUIRED=1).
+trap '[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null 2>&1' EXIT
 # ... run the gate (Step 1) / drive the convergence loop ...
-# release on EVERY exit (PASS-and-flipped, parked, or failure) — but ONLY the lock WE acquired:
-[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
 ```
+
+The release is a `trap … EXIT`, **not** a trailing line, on purpose: the gate and the convergence
+loop can raise (RePlanError, gh IO faults, an aborted agent), and a trailing release never runs on
+those paths. **The DELETE must be issued from a handler that fires on _every_ exit — including the
+gate/loop-raises path — never solely on the PASS-and-flipped-or-parked fall-through.** If you
+re-shape this into your own control flow, the lock-released-on-all-exits invariant survives only if
+that holds; a leaked lock is silent and only a human clears it.
 
 `POST .../labels` is **not** compare-and-swap (no `If-Match`), so this is
 **detect-and-serialize, not a mutex** (the §7/#260 TOCTOU over the whole child set): it

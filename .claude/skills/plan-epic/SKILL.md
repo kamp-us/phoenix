@@ -80,10 +80,22 @@ if [ "$HELD" != "null" ]; then
 fi
 gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
 ACQUIRED=1
+# Release on EVERY exit — success, park, OR a failure/abort MID-mutation. Arm the release as an
+# EXIT trap the INSTANT we acquire, before any mutating work runs: a trailing release line only
+# fires on the success fall-through, so an error/throw/abort inside the re-plan/split/body-write
+# would skip it and LEAK the lock (wedging the epic against every later plan-epic/review-plan run
+# until a human clears it — the exact catastrophe #264 warns about). The trap fires on every path
+# out and releases ONLY the lock WE acquired ($ACQUIRED=1).
+trap '[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null 2>&1' EXIT
 # ... do the re-plan / split / body write ...
-# release on EVERY exit (success, park, or failure) — but ONLY the lock WE acquired:
-[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
 ```
+
+The release is a `trap … EXIT`, **not** a trailing line, on purpose: these snippets drive an LLM
+agent, and an agent that aborts (or whose `gh` call throws) part-way through the mutation never
+reaches a fall-through release. **The DELETE must be issued from a handler that fires on _every_
+exit — including the error/abort path — never solely on the success fall-through.** If you re-shape
+this into your own control flow, the lock-released-on-all-exits invariant survives only if that
+holds; a leaked lock is silent and only a human clears it.
 
 `POST .../labels` is **not** compare-and-swap (no `If-Match`) — two runs that both read the
 lock absent in the same window both acquire (the §7/#260 TOCTOU, over the whole child set).

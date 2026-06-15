@@ -55,6 +55,14 @@ A mutator (`plan-epic` on any run, `review-plan` before its gate flip or its fir
 run. The lock is **held until PASS-or-park** and then released (`DELETE` the label) on every
 exit path, including failure.
 
+> **`status:planning` must exist in the repo before the first acquire.** GitHub's
+> add-labels-to-issue endpoint (`POST .../labels`) does **not** auto-create a label — adding
+> one the repo has never created returns **422**, not a fresh label. The repo creates labels
+> ad hoc (no bootstrap manifest), so the lock label must be created out-of-band once before
+> this lands: `gh label create status:planning` (any color/description). If it is missing, the
+> very first acquire `POST` **fails closed** — the mutator backs off — and the whole plan layer
+> silently stalls until a human creates the label. Confirm it exists before relying on the lock.
+
 - A `plan-epic` run that finds the lock held **defers** — it does not re-plan a body another
   planner is actively rewriting.
 - A `review-plan` run that finds the lock held **does not flip and does not start its
@@ -145,7 +153,10 @@ here; if that behavior is wanted it is a separate `loop.ts` change.
   ([gh-issue-intake-formats.md](../.claude/skills/gh-issue-intake-formats.md) §Pipeline
   labels). It is a **transient lock**, *not* a pipeline-state label — it does not change what
   `write-code` picks (`write-code` keys on `status:triaged`), and it is always paired with the
-  epic's real `status:*`, never replacing it. It is released on every exit path.
+  epic's real `status:*`, never replacing it. It is released on every exit path. **Setup
+  prerequisite:** the label must be created in the repo once before any acquire runs
+  (`gh label create status:planning`) — `POST .../labels` does not auto-create it and returns
+  422 if it is missing, which fails the acquire closed and stalls the whole plan layer (rule 1).
 - **New cost.** Each mutator makes one extra labels read (acquire-check) and two extra label
   writes (acquire `POST`, release `DELETE`). A transient lookup failure fails closed → back off
   → re-run resolves it, consistent with #260/#261/0058.

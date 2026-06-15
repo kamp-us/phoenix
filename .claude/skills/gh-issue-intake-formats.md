@@ -51,9 +51,10 @@ writing — it's the safety margin, not the target.
 
 ## Pipeline labels
 
-Every issue carries one `type:*`, one `p*`, and one `status:*`. The `status:*`
-labels are the **pipeline state** an issue sits in — the spine the intake skills key
-on. The canonical set:
+Every issue carries one `type:*`, one `p*`, and one `status:*` (plus, transiently, the
+`status:planning` epic-lock on a locked epic — a second `status:*` that sits *alongside* the
+real one, never replacing it; see below). The `status:*` labels are the **pipeline state** an
+issue sits in — the spine the intake skills key on. The canonical set:
 
 | Label | Meaning | Pickable by `write-code`? |
 |---|---|---|
