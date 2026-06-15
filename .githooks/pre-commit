@@ -17,7 +17,18 @@ if [ "${#staged[@]}" -eq 0 ]; then
 	exit 0
 fi
 
-if ! node packages/leak-guard/src/bin.ts scan "${staged[@]}"; then
+# Branch on the scan's exit code (issue #332): 2 = a confirmed leak (block);
+# any other non-zero = the scan could not run (warn + allow, CI is the authority);
+# 0 = clean. `|| status=$?` keeps `set -e` from aborting before we branch.
+status=0
+node packages/leak-guard/src/bin.ts scan "${staged[@]}" || status=$?
+
+if [ "$status" -eq 2 ]; then
 	echo "blocked by leak-guard (#173); fix or \`git commit --no-verify\` to bypass" >&2
 	exit 1
+elif [ "$status" -ne 0 ]; then
+	echo "leak-guard: scan could not run (e.g. run 'pnpm install'); skipping local pre-commit check — CI is the authority" >&2
+	exit 0
 fi
+
+exit 0
