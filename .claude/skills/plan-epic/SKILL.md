@@ -375,11 +375,17 @@ fresh revision, and retry** — never `PATCH` over a body you didn't just read.
 # /tmp/plan-epic-<EPIC>-deps.md = the new `## Dependencies` block. On a RE-PLAN, also
 #   /tmp/plan-epic-<EPIC>-plan.md = the new `## Plan (plan-epic)` block (set REPLAN=1).
 #   Give each block a trailing blank line so the next spliced heading stays separated.
-# Each block's FIRST line is its heading; landing is confirmed against a content-bearing line
-# (a real `- #<child>` topology line), NOT the heading — the heading alone can't tell our
-# section from a racer's clobber (see step 5). Recomputed each pass since a re-derive (step 2)
-# rewrites deps.md.
-# Loop: re-read → verify unchanged → guard → splice → PATCH → re-verify our content landed.
+# Landing is confirmed against the WHOLE `## Dependencies` block round-tripping byte-for-byte,
+# NOT a single line: two concurrent runs on the SAME epic likely both emit a given `- #<child>`
+# line (they share children), so a lone matching line can't tell our section from a racer's
+# clobber (see step 6). deps.md is recomputed each pass since a re-derive (step 2) rewrites it.
+# A first-time plan has NO `## Dependencies` heading yet (Step 2 doesn't write one) — that case
+# APPENDS the block to EOF; a re-plan has exactly one and SPLICES it in place. Zero headings on a
+# re-plan, or more than one ever, is corruption: abort loudly (step 4).
+# Loop: re-read → verify unchanged → guard → splice/append → PATCH → re-verify our block landed.
+# `landed=1` only after a pass confirms the round-trip; the terminal check after the loop turns an
+# exhausted-or-aborted run into a hard STOP rather than ambiguous output.
+landed=0
 for attempt in 1 2 3; do
   # 1. re-read the LIVE body + its revision marker from ONE GET (coherent — no TOCTOU skew)
   gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-live.json
@@ -396,20 +402,31 @@ for attempt in 1 2 3; do
     continue
   fi
 
-  # 3. anchor guard — splice keys off a SINGLE exact `## Dependencies` heading. If the live body
-  #    has zero (heading drifted, e.g. `## Dependencies (phased)`) or two of them, blind-append
-  #    would silently produce a duplicate/orphaned section. Abort loudly instead of corrupting.
+  # 3. anchor guard — the splice keys off the count of exact `## Dependencies` headings:
+  #      0 + first-time plan → no topology pinned yet (Step 2 omits it): APPEND to EOF (step 4a).
+  #      1                   → re-plan with an existing section: SPLICE it in place (step 4b).
+  #      0 + re-plan, or >1  → corruption (heading drifted to `## Dependencies (phased)`, was
+  #                            deleted, or duplicated): a blind splice/append would orphan or
+  #                            double the section. Abort loudly, leave `landed=0`.
   DEPS_HEADINGS=$(grep -c '^## Dependencies[[:space:]]*$' /tmp/plan-epic-<EPIC>-live.md)
-  if [ "$DEPS_HEADINGS" -ne 1 ]; then
-    echo "live body has $DEPS_HEADINGS exact '## Dependencies' headings (want exactly 1) — refusing to splice; inspect by hand"
+  if [ "$DEPS_HEADINGS" -gt 1 ] || { [ "$DEPS_HEADINGS" -eq 0 ] && [ "${REPLAN:-0}" = 1 ]; }; then
+    echo "ABORT: live body has $DEPS_HEADINGS exact '## Dependencies' headings (want 0 on a first-time plan, 1 on a re-plan) — refusing to splice; inspect by hand"
     break
   fi
 
-  # 4. surgical splice: replace ONLY the changed section(s) in the live body, keep every other byte.
-  #    `## Dependencies` is the pinned LAST section: cut from its heading to EOF, append fresh deps.
-  awk '/^## Dependencies[[:space:]]*$/{exit} {print}' /tmp/plan-epic-<EPIC>-live.md \
-    > /tmp/plan-epic-<EPIC>-body.md
-  cat /tmp/plan-epic-<EPIC>-deps.md >> /tmp/plan-epic-<EPIC>-body.md
+  # 4. surgical splice/append: write ONLY the changed section(s), keep every other byte verbatim.
+  if [ "$DEPS_HEADINGS" -eq 0 ]; then
+    # 4a. FIRST-TIME plan — no `## Dependencies` heading exists. Append the block to the END of a
+    #     byte-for-byte copy of the live body (the brief + plan above are preserved untouched).
+    cp /tmp/plan-epic-<EPIC>-live.md /tmp/plan-epic-<EPIC>-body.md
+    cat /tmp/plan-epic-<EPIC>-deps.md >> /tmp/plan-epic-<EPIC>-body.md
+  else
+    # 4b. RE-PLAN — `## Dependencies` is the pinned LAST section: cut from its heading to EOF,
+    #     append fresh deps. (DEPS_HEADINGS == 1 here.)
+    awk '/^## Dependencies[[:space:]]*$/{exit} {print}' /tmp/plan-epic-<EPIC>-live.md \
+      > /tmp/plan-epic-<EPIC>-body.md
+    cat /tmp/plan-epic-<EPIC>-deps.md >> /tmp/plan-epic-<EPIC>-body.md
+  fi
   # On a RE-PLAN, `## Plan (plan-epic)` ALSO changed — splice it in place too: delete the inclusive
   # `## Plan (plan-epic)`..next-`## ` range and re-insert the fresh plan block at that boundary.
   if [ "${REPLAN:-0}" = 1 ]; then
@@ -421,32 +438,54 @@ for attempt in 1 2 3; do
       && mv /tmp/plan-epic-<EPIC>-body.2.md /tmp/plan-epic-<EPIC>-body.md
   fi
   BODY="$(cat /tmp/plan-epic-<EPIC>-body.md)"
-  DEPS_PROBE="$(grep -m1 '^- #' /tmp/plan-epic-<EPIC>-deps.md)"   # a real `- #<child>` line, not the heading
 
-  # 5. write, then re-confirm OUR CONTENT landed — grep a content-bearing topology line, NOT the
-  #    `## Dependencies` heading: a racer's clobbering body also has that heading, so a heading
-  #    match can't tell our section from theirs. The residual window (below) means the PATCH is
-  #    still last-write-wins; this is the honest after-the-fact check that retries the loser.
+  # 5. extract THIS run's whole `## Dependencies` block (heading → EOF) from the body we're about
+  #    to write — that exact multi-line block is what we'll confirm round-tripped, so a racer who
+  #    happens to share a child number can't satisfy the check with one matching `- #` line.
+  awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' /tmp/plan-epic-<EPIC>-body.md \
+    > /tmp/plan-epic-<EPIC>-deps-expected.md
+
+  # 6. write, then re-confirm OUR WHOLE BLOCK landed — extract `## Dependencies`→EOF from the live
+  #    post-write body and diff it against the block we just wrote. A racer's clobber differs
+  #    somewhere in the block (different topology/labels/ordering), so an exact block match — not a
+  #    heading or a single child line — is what tells our section from theirs. The residual window
+  #    (below) means the PATCH is still last-write-wins; this is the honest after-the-fact check
+  #    that retries the loser.
   gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY" >/dev/null
-  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' | grep -qF "$DEPS_PROBE" \
-    && { echo "epic body updated, our ## Dependencies topology present"; break; } \
-    || { echo "our topology line is not in the post-write body — a racer clobbered it; retrying"; \
-         gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at' > /tmp/plan-epic-<EPIC>-updated-at.txt; }
+  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' \
+    | awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' > /tmp/plan-epic-<EPIC>-deps-live.md
+  if diff -q /tmp/plan-epic-<EPIC>-deps-expected.md /tmp/plan-epic-<EPIC>-deps-live.md >/dev/null; then
+    echo "epic body updated, our whole ## Dependencies block round-tripped"; landed=1; break
+  else
+    echo "our ## Dependencies block is NOT the one in the post-write body — a racer clobbered it; retrying"
+    gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at' > /tmp/plan-epic-<EPIC>-updated-at.txt
+  fi
 done
+
+# Terminal verdict — the loop can exit three ways; only one is success. An orchestrator (and the
+# next agent reading the transcript) must not mistake an exhausted-or-aborted run for a win.
+if [ "$landed" != 1 ]; then
+  echo "plan-epic: could NOT land the ## Dependencies block — STOP and inspect, do not proceed."
+  echo "  (Either the anchor guard aborted on a corrupt/duplicated heading, or 3 attempts all lost"
+  echo "   the race. The epic body may be half-written; the topology this run derived is NOT pinned.)"
+fi
 ```
 
-**Keep the brief byte-for-byte.** With the surgical splice this is automatic: you copy the live
-body up to the `## Dependencies` heading verbatim (the brief and the plan above it are untouched
-bytes from the live read), then append your freshly-derived `## Dependencies` block. Don't reflow
-the brief, don't "tidy" it, don't reconstruct it from memory — splice around it.
+**Keep the brief byte-for-byte.** With the surgical splice/append this is automatic: a first-time
+plan appends the `## Dependencies` block to a verbatim copy of the live body; a re-plan copies the
+live body up to the `## Dependencies` heading verbatim and re-appends the fresh block. Either way
+the brief and the plan above are untouched bytes from the live read — don't reflow the brief, don't
+"tidy" it, don't reconstruct it from memory — splice around it.
 
 **Honest residual — this narrows the window, it is not a lock.** The recheck (layer 2) only
 *detects* a race that completed before this run's read; a writer who edits **after** your
 `updated_at` read but **before** your `PATCH` lands is still lost-update territory, because the
 `PATCH` itself is last-write-wins (GitHub offers no conditional write on issue bodies). Layer 1
 shrinks the blast radius to *same-section* collisions; layer 2 narrows the same-section window;
-the re-confirm in step 5 — matching a content-bearing topology line, not the section heading —
-catches the loser *after the fact* so it retries rather than failing silently. What this is
+the re-confirm in step 6 — diffing the whole `## Dependencies` block that round-tripped, not the
+section heading or a single child line two racers might share — catches the loser *after the fact*
+so it retries rather than failing silently, and the terminal verdict turns an exhausted-or-aborted
+run into a hard STOP rather than a silent half-write. What this is
 **not** is mutual exclusion — true single-writer safety on one epic would
 need a designated single planner or a CAS the API doesn't provide (same honest framing as the
 issue-claim semantics in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 and
@@ -514,9 +553,10 @@ re-plan loop racing a fresh `plan-epic` run or a `review-plan` child-flip is the
 lost-update case in issue #261. Write the fresh `## Plan (plan-epic)` block to
 `/tmp/plan-epic-<EPIC>-plan.md`, the fresh `## Dependencies` block to
 `/tmp/plan-epic-<EPIC>-deps.md`, and run the Step 5 loop with `REPLAN=1` so it splices
-**both** sections into the freshly-read live body in place; abort+re-derive if `updated_at`
-moved since your read. (On a first-time plan, leave `REPLAN` unset — only `## Dependencies`
-is new, the plan block was just appended above the heading.)
+**both** sections into the freshly-read live body in place (the live body already has exactly one
+`## Dependencies` heading to splice against); abort+re-derive if `updated_at` moved since your
+read. (On a first-time plan, leave `REPLAN` unset — the live body has no `## Dependencies` heading
+yet, so the loop appends the new block to EOF instead of splicing.)
 
 ---
 
