@@ -31,7 +31,10 @@ export const handlePipeline = Effect.gen(function* () {
 	const result = yield* Effect.result(pipeline.getState);
 	if (result._tag === "Failure") {
 		const e = result.failure;
-		return errorResponse(502, `GitHub fetch failed (${e.path}): ${e.message}`);
+		// GitHub's response body (#292) rides along when present, so a 403's reason
+		// ("Resource not accessible…" vs a rate-limit) is readable from the error.
+		const reason = e.detail ? `${e.message} — ${e.detail}` : e.message;
+		return errorResponse(502, `GitHub fetch failed (${e.path}): ${reason}`);
 	}
 
 	const body = yield* encodePipelineResponse(result.success).pipe(Effect.orDie);
