@@ -110,6 +110,38 @@
 	background: var(--surface);
 }
 
+/* Inline post-edit form (title input + body textarea), mirrors the composer field surface */
+.kp-pano-edit-post {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+.kp-pano-edit-post__title,
+.kp-pano-edit-post__body {
+	width: 100%;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	padding: 6px 8px;
+	color: var(--text-primary);
+	outline: none;
+	box-sizing: border-box;
+}
+.kp-pano-edit-post__title {
+	font: var(--t-h-page);
+	font-weight: 600;
+	letter-spacing: -0.005em;
+}
+.kp-pano-edit-post__body {
+	min-height: 120px;
+	resize: vertical;
+	font: var(--t-mono);
+}
+.kp-pano-edit-post__title:focus,
+.kp-pano-edit-post__body:focus {
+	border-color: var(--accent);
+}
+
 /* Thread heading "N yorum" between composer and thread */
 .kp-pano-postpage__thread-heading {
 	font: var(--t-body);
