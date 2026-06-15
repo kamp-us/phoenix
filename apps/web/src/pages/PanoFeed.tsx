@@ -2,11 +2,11 @@
  * Pano feed page — fate. One batched `useRequest({posts: {list, args}})` resolves
  * the feed; `useLiveListView` paginates. Connection identity keeps the filter
  * args (`sort`/`host`) but strips pagination, so each filter combo is a distinct
- * connection that paginates independently. The `tartışma` chip is a client-side
- * tag filter (the server has no tag-filter arg yet).
+ * connection that paginates independently. Every chip maps to a server `sort`,
+ * so the feed pages and counts the result set the server returns directly.
  */
 import * as React from "react";
-import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
+import {useLiveListView, useRequest} from "react-fate";
 import {Subnav} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
@@ -25,15 +25,12 @@ const PostConnectionView = {
 	live: {prepend: "visible"},
 } as const;
 
-/**
- * UI sort labels (Turkish) → server `sort` string. `tartışma` pages the `hot`
- * feed and filters to the `discuss` tag client-side (no server tag-filter arg).
- */
+/** UI sort labels (Turkish) → server `sort` string. */
 const FILTERS = [
 	{id: "sicak", label: "sıcak", sort: "hot" as const},
 	{id: "yeni", label: "yeni", sort: "new" as const},
 	{id: "en-iyi", label: "en iyi", sort: "top" as const},
-	{id: "tartisma", label: "tartışma", sort: "hot" as const, tagKind: "discuss"},
+	{id: "tartisma", label: "tartışma", sort: "discuss" as const},
 ];
 
 export function PanoFeed({host}: {host?: string}) {
@@ -56,13 +53,7 @@ export function PanoFeed({host}: {host?: string}) {
 				</FeedChrome>
 			)}
 		>
-			<FeedContent
-				host={host}
-				filterId={filterId}
-				setFilterId={setFilterId}
-				sort={filter.sort}
-				tagKind={filter.tagKind}
-			/>
+			<FeedContent host={host} filterId={filterId} setFilterId={setFilterId} sort={filter.sort} />
 		</Screen>
 	);
 }
@@ -72,13 +63,11 @@ function FeedContent({
 	filterId,
 	setFilterId,
 	sort,
-	tagKind,
 }: {
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
 	sort: string;
-	tagKind?: string;
 }) {
 	const {posts} = useRequest({
 		posts: {
@@ -87,15 +76,7 @@ function FeedContent({
 		},
 	});
 
-	return (
-		<FeedRows
-			connection={posts}
-			host={host}
-			filterId={filterId}
-			setFilterId={setFilterId}
-			tagKind={tagKind}
-		/>
-	);
+	return <FeedRows connection={posts} host={host} filterId={filterId} setFilterId={setFilterId} />;
 }
 
 type PostConnection = ReturnType<
@@ -107,13 +88,11 @@ function FeedRows({
 	host,
 	filterId,
 	setFilterId,
-	tagKind,
 }: {
 	connection: PostConnection;
 	host?: string;
 	filterId: string;
 	setFilterId: (id: string) => void;
-	tagKind?: string;
 }) {
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
@@ -123,7 +102,7 @@ function FeedRows({
 		<FeedChrome host={host} filterId={filterId} setFilterId={setFilterId} meta={meta}>
 			<div className="kp-pano-list">
 				{items.map(({node}, i) => (
-					<FilterablePostCard key={node.id} node={node} rank={i + 1} tagKind={tagKind} />
+					<PanoPostCard key={node.id} post={node} rank={i + 1} />
 				))}
 			</div>
 			{loadNext ? (
@@ -133,26 +112,6 @@ function FeedRows({
 			) : null}
 		</FeedChrome>
 	);
-}
-
-/**
- * A feed row that reads its own tags and drops out of the DOM when the active
- * `tartışma` filter excludes it. fate masks by view *identity*, so the filter
- * must read through the **same** view the node ref carries (`PanoPostCardView`) —
- * a separate tags-only view would throw "Invalid view reference".
- */
-function FilterablePostCard({
-	node,
-	rank,
-	tagKind,
-}: {
-	node: ViewRef<"Post">;
-	rank: number;
-	tagKind?: string;
-}) {
-	const data = useLiveView(PanoPostCardView, node);
-	if (tagKind && !(data.tags ?? []).some((t) => t.kind === tagKind)) return null;
-	return <PanoPostCard post={node} rank={rank} />;
 }
 
 interface ChromeProps {
