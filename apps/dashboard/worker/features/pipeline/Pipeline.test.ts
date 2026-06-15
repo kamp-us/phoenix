@@ -16,7 +16,7 @@ import {GithubFetchError} from "./errors.ts";
 import {GithubClient, type RawIssue, type RawSubIssue} from "./github.ts";
 import {CACHE_TTL_MS, Pipeline, PipelineLive} from "./Pipeline.ts";
 import {PipelineCache} from "./PipelineCache.ts";
-import {type CachedPipelineState, PipelineState} from "./schema.ts";
+import {type CachedPipelineState, PipelineResponse} from "./schema.ts";
 
 const issues: ReadonlyArray<RawIssue> = [
 	{
@@ -99,7 +99,7 @@ describe("Pipeline.getState — assembly (#252)", () => {
 			const pipeline = yield* Pipeline.pipe(Effect.provide(TestPipeline(calls, store)));
 			const response = yield* pipeline.getState;
 
-			const api = response.state.issues.find((i) => i.number === 101)!;
+			const api = response.issues.find((i) => i.number === 101)!;
 			assert.strictEqual(api.parsed.type, "feature");
 			assert.strictEqual(api.parsed.status, "triaged");
 			assert.strictEqual(api.parsed.priority, "p2");
@@ -115,8 +115,8 @@ describe("Pipeline.getState — assembly (#252)", () => {
 			const pipeline = yield* Pipeline.pipe(Effect.provide(TestPipeline(calls, store)));
 			const response = yield* pipeline.getState;
 
-			assert.strictEqual(response.state.epics.length, 1);
-			const epic = response.state.epics[0]!;
+			assert.strictEqual(response.epics.length, 1);
+			const epic = response.epics[0]!;
 			assert.strictEqual(epic.number, 100);
 			assert.deepStrictEqual([...epic.children], [101, 102]);
 			assert.deepStrictEqual(
@@ -130,7 +130,7 @@ describe("Pipeline.getState — assembly (#252)", () => {
 				epic.dependencies.requires.map((e) => ({from: e.from, to: e.to})),
 				[{from: 102, to: 101}],
 			);
-			assert.isTrue(response.state instanceof PipelineState);
+			assert.isTrue(response instanceof PipelineResponse);
 		}).pipe(Effect.provide(TestClock.layer())),
 	);
 });
@@ -200,7 +200,7 @@ describe("Pipeline.getState — caching + freshness (#254)", () => {
 
 			assert.strictEqual(stale.stale, true, "served stale, not errored");
 			assert.strictEqual(stale.fetchedAt, fresh.fetchedAt, "stamped with the snapshot's age");
-			assert.strictEqual(stale.state.issues.length, fresh.state.issues.length);
+			assert.strictEqual(stale.issues.length, fresh.issues.length);
 		}).pipe(Effect.provide(TestClock.layer())),
 	);
 

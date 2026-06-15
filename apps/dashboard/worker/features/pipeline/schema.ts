@@ -130,17 +130,25 @@ export const encodeCachedPipelineState = Schema.encodeEffect(CachedPipelineState
 export const decodeCachedPipelineState = Schema.decodeUnknownEffect(CachedPipelineState);
 
 /**
- * The pipeline-state API response (#254): the structured state, the `fetchedAt`
- * epoch-millis the served snapshot was fetched from GitHub at, and the `stale`
- * flag the SPA renders an indicator from. `stale` is `true` when GitHub was
- * unreachable and the worker fell back to the last good cached snapshot rather
- * than erroring the whole board; `false` when the snapshot is fresh — either a
- * successful fetch or a cache hit within the TTL.
+ * The pipeline-state API response (#254). FLAT by contract: the structured
+ * state's `issues`/`epics` sit at the top level — NOT nested under `.state` —
+ * alongside the freshness fields. The board's defensive reader
+ * (`apps/dashboard/src/lib/pipeline.ts`, #274) reads `issues`/`epics` at the top
+ * level with `fetchedAt`/`stale` as top-level optionals, so freshness is purely
+ * additive over the #252 wire shape — adding the cache layer doesn't reshape the
+ * response, it only annotates it.
+ *
+ * `stale` is `true` when GitHub was unreachable and the worker fell back to the
+ * last good cached snapshot rather than erroring the whole board; `false` when
+ * the snapshot is fresh — either a successful fetch or a cache hit within the
+ * TTL. `fetchedAt` is the epoch-millis the served snapshot was fetched from
+ * GitHub at.
  */
 export class PipelineResponse extends Schema.Class<PipelineResponse>(
 	"@phoenix/dashboard/pipeline/PipelineResponse",
 )({
-	state: PipelineState,
+	issues: Schema.Array(PipelineIssue),
+	epics: Schema.Array(PipelineEpic),
 	fetchedAt: Schema.Number,
 	stale: Schema.Boolean,
 }) {}

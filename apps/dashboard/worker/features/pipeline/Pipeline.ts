@@ -96,14 +96,20 @@ export const PipelineLive = Layer.effect(Pipeline)(
 				const now = yield* Clock.currentTimeMillis;
 				const state = yield* fetchState;
 				yield* cache.write(new CachedPipelineState({state, fetchedAt: now}));
-				return new PipelineResponse({state, fetchedAt: now, stale: false});
+				return new PipelineResponse({
+					issues: state.issues,
+					epics: state.epics,
+					fetchedAt: now,
+					stale: false,
+				});
 			}).pipe(
 				Effect.catchTag("@phoenix/dashboard/pipeline/GithubFetchError", (error) =>
 					cached === null
 						? Effect.fail(error)
 						: Effect.succeed(
 								new PipelineResponse({
-									state: cached.state,
+									issues: cached.state.issues,
+									epics: cached.state.epics,
 									fetchedAt: cached.fetchedAt,
 									stale: true,
 								}),
@@ -117,7 +123,8 @@ export const PipelineLive = Layer.effect(Pipeline)(
 				const now = yield* Clock.currentTimeMillis;
 				if (now - cached.fetchedAt < CACHE_TTL_MS) {
 					return new PipelineResponse({
-						state: cached.state,
+						issues: cached.state.issues,
+						epics: cached.state.epics,
 						fetchedAt: cached.fetchedAt,
 						stale: false,
 					});
