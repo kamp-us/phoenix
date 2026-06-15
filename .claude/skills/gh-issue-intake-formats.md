@@ -1,7 +1,7 @@
 # GH Issue Intake — formats contract
 
-The single shared contract the issue-intake skills cite. It defines the five
-markdown formats that turn GitHub issues, comments, and sub-issues into an
+The single shared contract the issue-intake skills cite. It defines the shared
+formats and protocols that turn GitHub issues, comments, and sub-issues into an
 agent-operable work pipeline:
 
 1. The epic-body **`## Dependencies` grammar** — how an epic encodes its
@@ -13,6 +13,9 @@ agent-operable work pipeline:
    signalling the verdict, **SHA-bound** to the head it reviewed (ADR 0058):
    `PASS @ <sha> — merge-ready` (read by `ship-it`, the merge step) or
    `FAIL @ <sha> — not merge-ready` (read by `write-code`'s fix round-trip).
+6. The **review-doc verdict markers** — the doc-class twin of format 5, in its own namespace.
+7. The **issue-claim semantics** — self-assign as a detect-and-tiebreak (not a lock), the
+   protocol `write-code`'s pick (Step 1) and claim (Step 3) implement.
 
 `plan-epic` writes formats 1, 2, and 4. `review-plan` reads 1 and 2 (they are the
 structural floor it validates) and owns the `status:planned → status:triaged` flip that
@@ -455,6 +458,79 @@ fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mecha
 
 ---
 
+## 7. Issue-claim semantics — assignee is a detect-and-tiebreak, not a lock
+
+`write-code` claims an issue by **self-assigning** (Step 3); the picker's "skip assigned
+issues" rule (Step 1) reads that claim. This section pins what the claim does and does not
+guarantee, so the writer (`write-code` Step 3) and any future reader of an assignee agree.
+
+**Assignee is last-write-wins, not compare-and-swap.** GitHub's `POST
+/issues/{N}/assignees` is **additive** — it co-assigns, it does not displace an existing
+assignee, and there is no conditional/`If-Match` variant. So a naive read-unassigned →
+`POST` self → re-read is a **TOCTOU**, not a lock: two agents that both saw #N unassigned
+co-assign `[A, B]` and a best-effort re-read catches only whichever reads after the other's
+write (#260). A bare self-assign therefore **cannot** be relied on as mutual exclusion.
+
+**The one atomic signal detects the race; a checkpoint GET resolves it.** The `POST` returns the
+full `assignees` array — but only the assignees present **when that POST is processed**, *not* a
+snapshot the racers share. So the POST echo is the **detector** (it reveals you may be racing),
+not the **resolver**. The claim is made safe by observing your own write, then resolving the
+symmetry against canonical issue state:
+
+0. **Defer to a pre-existing owner.** Re-read the assignees just before claiming; if #N is
+   already assigned, back off without `POST`ing — a fresh arrival **never evicts an owner that
+   was there before it**. This is what stops a late picker that slipped past Step 1 from
+   evicting an already-implementing winner.
+1. `POST` self as assignee; capture the returned `assignees` list (one observable write — no
+   separate best-effort re-read).
+2. Compute the **lexicographic-min login** of that list. **This is provisional.** Because the
+   echo reflects only the assignees present at *this* POST's processing time, two staggered
+   co-racers see **different** sets and **may both** compute themselves as min: if B's POST lands
+   first it echoes `[B]` (B thinks it won) and A's later POST echoes `[A, B]` (A thinks it won
+   too). The min-login from the echo therefore does **not** decide the race — it only flags a
+   candidate. The tiebreak applies **only among co-racers** (agents that read #N unassigned and
+   `POST`ed in the same window), never against a prior owner.
+3. **The checkpoint GET resolves it.** A provisional winner evicts its co-assignees via `DELETE`,
+   then **re-confirms against a fresh read of the issue's current assignees** — a `GET`, *not* the
+   step-1 POST echo (the POST echo is exactly the stale snapshot that can show a false win) — that
+   it is still `min(assignees)`, aborting and re-picking if not. This GET is **load-bearing for
+   ordinary co-racer correctness, not merely a straggler guard**: in the staggered case A (min)
+   evicts B, so B's checkpoint GET re-reads `[A]`, sees `min == A != B`, and aborts. Every loser
+   **`DELETE`s itself and re-picks** — it does **not** implement, and a co-window claim is
+   **never silently co-occupied**.
+
+**What it guarantees vs. what it doesn't.** The full race-case derivation:
+
+- **Staggered co-racers.** Both may pass the provisional `min == me` test off their own echo;
+  the checkpoint GET breaks the tie because both re-read the *same* canonical state — exactly one
+  finds `min == me`, the other finds it was evicted out of min and aborts. The POST echo detects,
+  the GET resolves. Prune the checkpoint as "redundant" and both staggered racers proceed — the
+  exact double-pick this section closes.
+- **Straggler.** A late agent C that slipped past Step 1 and `POST`s **after** a winner already
+  owns #N sees `[winner, C]`. The naive "recompute min, lower login wins" rule is **wrong here**:
+  if C sorts below the winner it would evict-and-take while the winner keeps implementing — two
+  implementers. Rule 0 prevents it: C, re-reading the assignees and seeing #N already owned
+  **before it ever `POST`s**, backs off without self-assigning at all — there is nothing to
+  evict and nothing of its own to remove (self-`DELETE` is reserved for the co-racer loser and
+  displaced-winner paths, which do `POST` first). Rule 3's checkpoint closes it from the other side: a
+  winner somehow displaced catches it at the GET and aborts. Together these make the claim
+  **non-revocable from the loser/straggler side** once a winner is established, so "exactly one
+  implements" holds against late arrivals too, not only co-window racers.
+- **Transient window.** Because `assignees` isn't a CAS, the eviction DELETEs are themselves
+  last-write-wins, so the issue may *transiently* show 2 assignees before an eviction lands. The
+  picker tolerates exactly this — it skips on **any non-null assignee**, so a transiently
+  double-assigned issue is passed over, never double-picked (safe degradation).
+
+So: of any set of co-window racers, exactly one proceeds — deterministically, the rest back off;
+no interleaving leaves two past the claim, none backs all of them off (no livelock). It is still
+**detect-and-tiebreak, not a kernel mutex**: true single-writer exclusion (no transient
+multi-assignment, no after-the-fact eviction) would need a **designated single picker** or a
+conditional write the assignee API doesn't offer; this mechanism does not claim that, and the
+"it's the lock" framing is wrong — it's the duplicate-implementation race that's closed, by
+guaranteeing exactly one implementer.
+
+---
+
 ## Relationship between the formats
 
 | Format | Lives on | Written by | Read by |
@@ -467,6 +543,11 @@ fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mecha
 | review-code FAIL marker | the PR | review-code | write-code (fix round-trip) |
 | review-doc PASS marker | the PR | review-doc | ship-it |
 | review-doc FAIL marker | the PR | review-doc | write-code (fix round-trip) |
+| issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim) | write-code (Step 1 pick) |
+
+The issue-claim row is the one entry that is a **protocol over the assignee field**, not a
+markdown format — §7 governs *how* `write-code` writes and reads that field (detect-and-tiebreak,
+not a lock), so it has no body shape the other rows describe.
 
 `review-plan` reads the first two formats as its structural floor (the `## Dependencies`
 topology and each sub-issue's acceptance-criteria + `**Stories:**` invariants) and, on a

@@ -80,7 +80,11 @@ unassigned**:
    `p2`.
 2. **Oldest first within a bucket:** lowest issue number / earliest `created_at`.
 
-Assigned issues are someone else's claim — **skip them**. `status:needs-triage`,
+Assigned issues are someone else's claim — **skip them**. Skip on *any* non-null assignee,
+not on an exact match: under the Step 3 claim race an issue may **transiently** show two
+co-assignees for the window before the winner evicts the loser, and skipping any assigned
+issue keeps that transient state safe — a half-resolved claim is never double-picked, it's
+simply passed over until it settles to its single winner. `status:needs-triage`,
 `status:needs-info`, and closed issues are not pickable (they haven't cleared triage).
 
 ### Pre-pick exception — resume your own failed PR first
@@ -241,21 +245,85 @@ recomputation will let it through.
 
 ---
 
-## Step 3 — Claim by self-assigning
+## Step 3 — Claim by self-assigning (assign → observe-own-write → tiebreak)
 
-Claiming is self-assignment — it's the lock that makes Step 1's "skip assigned issues"
-rule work, so other write-code agents don't double-pick. Assign yourself **before** you
-start work:
+Claiming is self-assignment, and it backs Step 1's "skip assigned issues" rule so other
+write-code agents step over a claimed issue. But GitHub's `assignees` is **last-write-wins
+and additive, not compare-and-swap**: a bare `POST` self → re-read does **not** lock. Two
+agents that both saw #N unassigned in Step 1 both `POST` themselves seconds apart,
+co-assigning `[A, B]`, and a best-effort re-read only catches whichever agent happens to
+read *after* the other's write lands — the window between the two `POST`s lets both pass and
+both implement #N. That is the TOCTOU this step closes (#260).
+
+The fix uses the **one atomic signal GitHub does give us**: the assignee `POST` **returns
+the updated issue with the full `assignees` array** — your own write's observed result, not
+a separate best-effort re-read that can miss the window. So you detect a concurrent claim
+from your *own* `POST` response, and break the tie **deterministically** so exactly one of
+two co-assignees proceeds:
 
 ```bash
 ME=$(gh api user --jq '.login')
-gh api -X POST repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"
-# confirm
-gh api repos/kamp-us/phoenix/issues/<N> --jq '.assignee.login'
+
+# Best-effort fast-path, NOT the lock: a cheap re-read at claim time that lets the common case
+# (#N already owned by a prior winner) back off without needlessly evicting them. It is itself a
+# best-effort read — a co-racer's POST can land in the gap between this read and my own POST, so an
+# empty PRE does NOT prove I'm unraced. The sole resolver remains the checkpoint GET below; PRE
+# only spares an already-settled owner an eviction it doesn't deserve.
+PRE=$(gh api repos/kamp-us/phoenix/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+if [ -n "$PRE" ]; then
+  # Already owned before I touched it — never evict a pre-existing owner. Back off, re-pick.
+  exit 0  # → re-run Step 1
+fi
+
+# POST self; capture the FULL assignees list the write returns (single observable write).
+ASSIGNEES=$(gh api -X POST repos/kamp-us/phoenix/issues/<N>/assignees \
+  -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
+
+# Provisional tiebreak among co-racers: min-login. NOTE the POST echo is NOT a snapshot both
+# racers share — it returns only the assignees present when THIS POST was processed, so staggered
+# POSTs see DIFFERENT sets: if B lands first it sees [B] (B believes it won), and A's later POST
+# sees [A, B] (A also believes it won). Both can transiently compute themselves winner here. The
+# echo alone does NOT decide the race — it only flags "I may be a co-racer winner; go evict + verify".
+WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
+if [ "$WINNER" = "$ME" ]; then
+  # I am a provisional winner. Evict the co-assignees so the issue reads single-owner for the
+  # picker's "skip assigned" invariant.
+  for a in $ASSIGNEES; do
+    [ "$a" = "$ME" ] && continue
+    gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$a"
+  done
+  # CHECKPOINT — THIS is what resolves the race, not the POST echo. Re-read canonical issue state
+  # (a fresh GET, not the stale POST echo) and re-confirm I am still min(assignees). Required for
+  # ordinary co-racer correctness, not just for late stragglers: in the staggered case B saw [B]
+  # and entered here as a false winner; A (min) evicted B, so B's GET re-reads [A], CUR_MIN==A!=B,
+  # and B aborts. The agent whose GET shows min==ME proceeds; any agent evicted out of min aborts.
+  # Do NOT prune this as redundant — without it both staggered co-racers proceed (double-pick).
+  STILL=$(gh api repos/kamp-us/phoenix/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+  CUR_MIN=$(printf '%s\n' $STILL | head -n1)
+  # Displaced at the checkpoint → self-clean before backing off, exactly like the loser
+  # branch. Every non-winner removes itself; back-off never leaves a stale self-assignment
+  # for another agent's eviction loop to clean up (which would widen the transient window).
+  [ "$CUR_MIN" = "$ME" ] || { gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
+  # claim won and confirmed — proceed to implement
+else
+  # I lost the tiebreak: remove myself and re-pick (do NOT implement — do NOT co-occupy).
+  gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"
+  # back off → re-run Step 1, pick the next issue
+fi
 ```
 
-If the assign races and the issue already shows another assignee when you re-check,
-back off — someone beat you to it. Re-run Step 1 and pick the next one.
+**The operating rule.** The min-login among co-racers is **provisional** — the `POST` echo only
+*detects* that you may be racing, it does not *resolve* the race. The sole resolver is the
+post-eviction **checkpoint GET** of canonical issue state: keep it, never prune it as "redundant"
+(without it both staggered co-racers proceed — a double-pick). The residual is the transient
+2-assignee window before an eviction lands; Step 1 tolerates it by skipping on **any** non-null
+assignee, so it's passed over, never double-picked. This is a **detect-and-tiebreak, not a
+lock** — don't reintroduce the "it's the lock" framing.
+
+See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the full race-case
+derivation — the staggered-co-racer walkthrough (B echoes `[B]`, A echoes `[A, B]`, the checkpoint
+GET resolves), the straggler, the transient window, and why it's detect-and-tiebreak, not a kernel
+mutex — and the shared claim semantics this step implements.
 
 Now **route by type** before implementing — a `type:decision` or `type:investigation`
 issue is not a "write code and open a PR" issue. See [Type routing](#type-routing)
