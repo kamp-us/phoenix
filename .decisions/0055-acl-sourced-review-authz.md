@@ -101,14 +101,14 @@ trust root, externally enforced, beats a primary check plus a writable side-chan
 - **Banned:** honoring a marker without resolving its author's live repo permission; rooting
   verdict authority in any checked-in list; using org membership in place of repo collaborator
   permission; treating a `triage`/`read`/lookup-failed author as a verdict.
-- **Scope — other consumers migrate as follow-up.** This decision and its implementation cover
-  `ship-it`'s Step-2 verdict resolution. The same superseded `AUTHORIZED_REVIEWERS` literal is
-  also read by `write-code`'s FAIL-scan/repair gate and the `review-code`/`review-doc`
-  author-gates; migrating those to this ACL source (and re-pointing their 0051 citations here)
-  is tracked in #241. Until that lands the suite is transiently split — `ship-it` trusts any
-  `write+` collaborator, the others still trust only the literal — so a verdict signed by a
-  second authorized operator counts at merge but not yet in the repair loop. The split is
-  benign (it under-trusts, never over-trusts) but explicitly temporary, not a permanent design.
+- **Scope — every consumer migrates in this change.** `ship-it`'s Step-2 resolution **and**
+  `write-code`'s FAIL-scan/repair gate move to this ACL source in the same PR (closing #241,
+  which also fixed the `gh api --argjson` defect — `--argjson` is a `jq` flag, not a `gh api`
+  one, so the author gate is now run via standalone `jq … <<<"$comments"`). The
+  `review-code`/`review-doc` gates needed no change: they emit and consume their *own* verdict,
+  never resolving an other-authored marker against the allowlist, so there was nothing to
+  migrate. The suite therefore agrees on "whose verdict counts" — any `write+` repo
+  collaborator — across all gates with no transitional split.
 - **Relationship:** supersedes [0051](0051-author-bind-pass-marker.md) (keeps its author-bind
   principle, replaces its allowlist mechanism); extends [0048](0048-ship-it-merge-actor.md)
   (refines *which* markers the single merge authority consumes). As a `.claude` control-plane

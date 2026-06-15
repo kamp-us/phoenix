@@ -94,36 +94,47 @@ is an unaddressed FAIL:
 
 ```bash
 ME=$(gh api user --jq '.login')
-# whose markers count as a verdict — same allowlist ship-it Step 2 uses (ADR 0051);
-# a forged review-(code|doc): FAIL from a non-reviewer must NOT trigger spurious repair.
-AUTHORIZED_REVIEWERS='["usirin"]'
 # open PRs you authored; print each one whose latest verdict in EITHER namespace is FAIL,
 # UNLESS it has already hit the N=3 repair cap (then it's a human's, not yours to re-pick)
 gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
+  # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2
+  # uses (ADR 0055, supersedes 0051): build THIS PR's authorized set from its marker authors
+  # holding write+ on the repo, so a forged review-(code|doc): FAIL from a non-reviewer can't
+  # trigger spurious repair. Empty set ⇒ IN($authorized[]) matches nothing ⇒ no verdict
+  # resolves ⇒ the scan safely finds nothing — fail-closed.
+  comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+  markerAuthors=$(jq -r '[.[]
+      | select(.body | test("^\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+      | .user.login] | unique | .[]' <<<"$comments")
+  authorized='[]'
+  while IFS= read -r a; do
+    [ -z "$a" ] && continue
+    perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
+    case "$perm" in
+      admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
+    esac
+  done <<<"$markerAuthors"
   # FAIL rounds already accrued — per fix-round, not per marker (a both-namespace round counts once);
   # cluster by timestamp gap (>120s = new round), same identity as the Bounding count, never a minute bucket
-  ROUNDS=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-    --argjson authorized "$AUTHORIZED_REVIEWERS" \
-    --jq '[.[] | select(.user.login | IN($authorized[]))
-                | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
-                | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
-          | sort
-          | reduce .[] as $t ({n:0, prev:null};
-              if (.prev == null) or ($t - .prev) > 120
-              then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-          | .n')
+  ROUNDS=$(jq --argjson authorized "$authorized" \
+    '[.[] | select(.user.login | IN($authorized[]))
+          | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+          | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
+     | sort
+     | reduce .[] as $t ({n:0, prev:null};
+         if (.prev == null) or ($t - .prev) > 120
+         then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
+     | .n' <<<"$comments")
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
-  CODE=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-    --argjson authorized "$AUTHORIZED_REVIEWERS" \
-    --jq '[.[] | select(.user.login | IN($authorized[]))
-                | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-          | sort_by(.created_at) | last | .body // ""')
-  DOC=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-    --argjson authorized "$AUTHORIZED_REVIEWERS" \
-    --jq '[.[] | select(.user.login | IN($authorized[]))
-                | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-          | sort_by(.created_at) | last | .body // ""')
+  CODE=$(jq --argjson authorized "$authorized" \
+    '[.[] | select(.user.login | IN($authorized[]))
+          | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+     | sort_by(.created_at) | last | .body // ""' <<<"$comments")
+  DOC=$(jq --argjson authorized "$authorized" \
+    '[.[] | select(.user.login | IN($authorized[]))
+          | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+     | sort_by(.created_at) | last | .body // ""' <<<"$comments")
   echo "$CODE" | grep -qiE '^\s*review-code:\s*FAIL' && echo "#$PR review-code FAIL"
   echo "$DOC"  | grep -qiE '^\s*review-doc:\s*FAIL'  && echo "#$PR review-doc FAIL"
 done
@@ -138,9 +149,9 @@ and the repair is a clean no-op.)
 
 Two properties make this scan terminate rather than starve:
 
-- **Author-gated verdicts (ADR [0051](../../../.decisions/0051-author-bind-pass-marker.md)).**
-  Markers count as a verdict **only from an `AUTHORIZED_REVIEWERS` author** — the same
-  allowlist gate `ship-it` Step 2 applies *before* the marker regex. A self-authored or
+- **Author-gated verdicts (ADR [0055](../../../.decisions/0055-acl-sourced-review-authz.md)).**
+  Markers count as a verdict **only from a `write+` repo collaborator** — the same GitHub-ACL
+  gate `ship-it` Step 2 applies *before* the marker regex. A self-authored or
   forged `review-(code|doc): FAIL` is invisible here, so write-code can't pull *itself* into
   spurious repair (and a forged PASS can't mask a real FAIL).
 - **Cap exclusion.** A PR already at the **N=3** cap is skipped (`ROUNDS >= 3 → continue`):
@@ -392,36 +403,46 @@ fixing its own PR and an independent gate re-judging it is the firewall, intact.
 Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code` and
 `review-doc` in **separate namespaces** — two anchored regexes that never cross-match —
 and take the **latest by timestamp** in each. This mirrors `ship-it` Step 2's resolution
-exactly (the reading side of the same contract), **including its author-allowlist gate**:
-a marker comment counts as a verdict only from an `AUTHORIZED_REVIEWERS` author, so a
+exactly (the reading side of the same contract), **including its ACL author-gate**:
+a marker comment counts as a verdict only from a `write+` repo collaborator, so a
 self-authored or forged `review-(code|doc): FAIL` is invisible (ADR
-[0051](../../../.decisions/0051-author-bind-pass-marker.md)). The native-review path needs
-no allowlist — GitHub author-attributes reviews, so it is unforgeable.
+[0055](../../../.decisions/0055-acl-sourced-review-authz.md)). The native-review path needs
+no ACL gate — GitHub author-attributes reviews, so it is unforgeable.
 
 ```bash
 PR=<the PR number you were handed>
-# same single-source-of-truth allowlist as ship-it Step 2 — whose markers count as a verdict
-AUTHORIZED_REVIEWERS='["usirin"]'
+# whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2 uses
+# (ADR 0055): build the authorized set from THIS PR's marker authors holding write+ on the repo.
+comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+markerAuthors=$(jq -r '[.[]
+    | select(.body | test("^\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+    | .user.login] | unique | .[]' <<<"$comments")
+authorized='[]'
+while IFS= read -r a; do
+  [ -z "$a" ] && continue
+  perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
+  case "$perm" in
+    admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
+  esac
+done <<<"$markerAuthors"
 
 # latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc
-gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --argjson authorized "$AUTHORIZED_REVIEWERS" \
-  --jq '[.[] | select(.user.login | IN($authorized[]))
-              | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-        | sort_by(.created_at) | last | {body, at: .created_at}'
+jq --argjson authorized "$authorized" \
+   '[.[] | select(.user.login | IN($authorized[]))
+         | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+    | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
-# (no allowlist: GitHub author-attributes reviews, so this path is unforgeable)
+# (no ACL gate: GitHub author-attributes reviews, so this path is unforgeable)
 gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, at: .submitted_at}'
 
 # latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code
-gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --argjson authorized "$AUTHORIZED_REVIEWERS" \
-  --jq '[.[] | select(.user.login | IN($authorized[]))
-              | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-        | sort_by(.created_at) | last | {body, at: .created_at}'
+jq --argjson authorized "$authorized" \
+   '[.[] | select(.user.login | IN($authorized[]))
+         | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+    | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
 ```
 
 Resolve per namespace, latest-wins by timestamp:
@@ -449,12 +470,11 @@ work list** — fix exactly what they name, no more, no less:
 
 ```bash
 # the full body of the latest FAILing review-code marker (swap review-code→review-doc for the doc namespace)
-# author-gated to the same AUTHORIZED_REVIEWERS as Step R1 — only a real reviewer's findings are your work list
-gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --argjson authorized "$AUTHORIZED_REVIEWERS" \
-  --jq '[.[] | select(.user.login | IN($authorized[]))
-              | select(.body | test("^\\s*review-code:\\s*FAIL"; "i"))]
-        | sort_by(.created_at) | last | .body'
+# author-gated against the ACL-derived $authorized set R1 already built — only a real reviewer's findings are your work list
+jq --argjson authorized "$authorized" \
+   '[.[] | select(.user.login | IN($authorized[]))
+         | select(.body | test("^\\s*review-code:\\s*FAIL"; "i"))]
+    | sort_by(.created_at) | last | .body' <<<"$comments"
 ```
 
 For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
@@ -513,24 +533,23 @@ fall on; two *genuine* rounds are always separated by your fix-push + an indepen
 re-review (minutes at least), so they never collapse into one. (A fixed `created_at[:16]`
 minute bucket gets both of these wrong: it splits one pass straddling `:59`/`:00` into two
 rounds — premature escalation — and merges two real rounds that share a minute into one —
-the cap fails to bind and the loop runs past N=3.) Same `AUTHORIZED_REVIEWERS` gate as Step
-R1 — only a real reviewer's FAIL counts toward the cap:
+the cap fails to bind and the loop runs past N=3.) Same ACL author-gate as Step
+R1 (reuse its `$comments` + `$authorized`) — only a real reviewer's FAIL counts toward the cap:
 
 ```bash
 # how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
 # cluster FAIL markers by timestamp gap: a new round starts only when >120s separates two
 # FAILs, so a code+doc pass (seconds apart) is one round and two real rounds (fix-push +
 # re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
-gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100" \
-  --argjson authorized "$AUTHORIZED_REVIEWERS" \
-  --jq '[.[] | select(.user.login | IN($authorized[]))
-              | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
-              | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
-        | sort
-        | reduce .[] as $t ({n:0, prev:null};
-            if (.prev == null) or ($t - .prev) > 120
-            then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-        | .n'
+jq --argjson authorized "$authorized" \
+   '[.[] | select(.user.login | IN($authorized[]))
+         | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+         | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
+    | sort
+    | reduce .[] as $t ({n:0, prev:null};
+        if (.prev == null) or ($t - .prev) > 120
+        then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
+    | .n' <<<"$comments"
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
@@ -575,10 +594,10 @@ forever. The cap thus terminates **both** the fix loop *and* the re-selection lo
   a clean no-op (Step R1).
 - **Both namespaces.** Handle `review-code: FAIL` (§5) **and** `review-doc: FAIL` (§6) —
   latest-wins per namespace — not just `review-code`.
-- **Author-gated verdicts.** A marker counts only from an `AUTHORIZED_REVIEWERS` author —
-  the same allowlist gate `ship-it` Step 2 applies before the marker regex, so a forged or
+- **Author-gated verdicts.** A marker counts only from a `write+` repo collaborator —
+  the same GitHub-ACL gate `ship-it` Step 2 applies before the marker regex, so a forged or
   self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor
-  mask a real verdict (ADR [0051](../../../.decisions/0051-author-bind-pass-marker.md)).
+  mask a real verdict (ADR [0055](../../../.decisions/0055-acl-sourced-review-authz.md)).
 - **Bounded *and* non-starving.** The N=3 cap stops the fix loop; the pre-pick scan's
   cap-exclusion (`ROUNDS >= 3`) stops the re-selection loop, so an escalated PR never
   re-pulls a future run into repair (Step 1, Bounding).
