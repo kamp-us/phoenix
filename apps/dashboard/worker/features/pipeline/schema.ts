@@ -110,3 +110,40 @@ export class PipelineState extends Schema.Class<PipelineState>(
 
 /** Encode a `PipelineState` to its JSON wire form (validates the shape on the way out). */
 export const encodePipelineState = Schema.encodeEffect(PipelineState);
+
+/**
+ * A cached `PipelineState` with its provenance: the parsed snapshot plus the
+ * epoch-millis `fetchedAt` it was fetched from GitHub at. This is the value the
+ * cache substrate persists (#254) — the snapshot the worker serves and the
+ * timestamp the TTL/staleness decisions are made against.
+ */
+export class CachedPipelineState extends Schema.Class<CachedPipelineState>(
+	"@phoenix/dashboard/pipeline/CachedPipelineState",
+)({
+	state: PipelineState,
+	/** Epoch millis the snapshot was fetched from GitHub (the freshness anchor). */
+	fetchedAt: Schema.Number,
+}) {}
+
+/** Round-trip a `CachedPipelineState` through the DO's JSON KV storage. */
+export const encodeCachedPipelineState = Schema.encodeEffect(CachedPipelineState);
+export const decodeCachedPipelineState = Schema.decodeUnknownEffect(CachedPipelineState);
+
+/**
+ * The pipeline-state API response (#254): the structured state, the `fetchedAt`
+ * epoch-millis the served snapshot was fetched from GitHub at, and the `stale`
+ * flag the SPA renders an indicator from. `stale` is `true` when GitHub was
+ * unreachable and the worker fell back to the last good cached snapshot rather
+ * than erroring the whole board; `false` when the snapshot is fresh — either a
+ * successful fetch or a cache hit within the TTL.
+ */
+export class PipelineResponse extends Schema.Class<PipelineResponse>(
+	"@phoenix/dashboard/pipeline/PipelineResponse",
+)({
+	state: PipelineState,
+	fetchedAt: Schema.Number,
+	stale: Schema.Boolean,
+}) {}
+
+/** Encode a `PipelineResponse` to its JSON wire form (validates the shape on the way out). */
+export const encodePipelineResponse = Schema.encodeEffect(PipelineResponse);
