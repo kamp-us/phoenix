@@ -159,7 +159,12 @@ jobs:
       - name: Assemble run-evidence manifest
         run: |
           set -euo pipefail
-          mkdir -p bundle
+          # `bundle/` is at the repo root, but the adapter runs with its CWD set to
+          # `packages/crabbox-manifest` (pnpm --filter), so `--output` must be an
+          # absolute path or it lands under the package dir. The later steps
+          # (stage JUnit, upload-artifact) run at the repo root, so they read `bundle/`.
+          BUNDLE="$GITHUB_WORKSPACE/bundle"
+          mkdir -p "$BUNDLE"
           # No `--` before the flags: pnpm forwards a literal `--` into the script,
           # which effect-cli reads as "end of flags" and then rejects --run-summary.
           JUNIT_ARG=()
@@ -170,9 +175,9 @@ jobs:
             --commit "${{ github.event.pull_request.head.sha }}" \
             --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
             --environment ci \
-            --output bundle/manifest.json
+            --output "$BUNDLE/manifest.json"
           # Assert the stamped commit is the PR head sha — fail closed on drift.
-          STAMPED=$(node -e "process.stdout.write(require('./bundle/manifest.json').commit)")
+          STAMPED=$(node -e "process.stdout.write(require(process.argv[1]).commit)" "$BUNDLE/manifest.json")
           if [ "$STAMPED" != "${{ github.event.pull_request.head.sha }}" ]; then
             echo "::error::manifest.commit ($STAMPED) != PR head sha (${{ github.event.pull_request.head.sha }})" >&2
             exit 1
