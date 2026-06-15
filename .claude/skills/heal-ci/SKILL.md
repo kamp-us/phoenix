@@ -176,6 +176,114 @@ attempt may have been a *human/manual* rerun, not heal-ci's, so triage shouldn't
 
 ### Defect → file via the `report` skill
 
+**Guard first — if a repair is already in flight on this PR, route to it, don't file a twin.**
+This is the one branch in the routing decision before defect-filing, and it only applies to a
+**PR run** (`PR` is set; a non-PR run has no repair to collide with — skip straight to filing).
+`heal-ci`'s defect branch and `write-code`'s FAIL-round-trip repair (`write-code/SKILL.md`,
+Repair mode) fire off **different signals** — a red CI run here, a `review-(code|doc): FAIL`
+marker there — so neither sees the other. The `report` dedup you delegate to searches **open
+issues**; it cannot see an in-flight repair, which lives as an **open PR + a FAIL marker**, not
+an issue. So before filing, check for that repair yourself and, if present, comment-and-stop
+instead of opening a fresh `status:needs-triage` defect for a failure `write-code` is already
+fixing (issue #265).
+
+An **active repair** is detectable from PR state alone — statelessly, the same way the
+already-rerun guard (Step 1) reads the run/PR state, and the **same verdict-resolution
+`write-code` already does in its repair-mode scan** ([`write-code/SKILL.md`](../write-code/SKILL.md)
+Step R1). That contract is the floor here: the guard may suppress the twin **only** when
+`write-code` would actually pick the repair up — so it must resolve the verdict the *exact* way
+write-code does, or it would skip the defect on a FAIL write-code will no-op, dropping the
+failure on the floor. An active repair is an **open PR** whose **latest** gate verdict in
+*either* namespace is a **FAIL bound to the PR's current head** (`review-code: FAIL @ <sha>` /
+`review-doc: FAIL @ <sha>`, latest-wins per namespace), still within the N=3 repair cap. Three
+parts, each lifted from write-code's scan:
+
+- **Author-gated against the repo ACL** — a marker counts as a verdict only from a `write+`
+  collaborator, so a forged `review-(code|doc): FAIL` can't be read as an active repair (ADR
+  [0055](../../../.decisions/0055-acl-sourced-review-authz.md), the same trust root `ship-it`
+  Step 2 and `write-code`'s scan use). A native `CHANGES_REQUESTED` review folds into the code
+  namespace and needs **no** ACL gate — GitHub author-attributes reviews, so that path is
+  unforgeable.
+- **SHA-bound staleness test** (ADR [0058](../../../.decisions/0058-sha-bound-verdict-contract.md),
+  issue #258) — a FAIL whose `@ <sha>` is **not** the PR's current head, or that carries **no**
+  `@ <sha>` (a pre-0058 legacy marker), is **stale**: it judges code that has since changed, so
+  `write-code` no-ops on it — therefore it is **not** an active repair here either, and the
+  defect must fall through and file. This is the load-bearing reconciliation: without the
+  staleness test the guard would suppress a twin for a FAIL nobody is fixing.
+- **Emphasis-tolerant + SHA-capturing matcher** — the canonical shape both sides cite (leading
+  `\**` absorbs review-code's bolding; the `@\s*([0-9a-f]{7,40})` tail captures the bound head),
+  per [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5.
+
+```bash
+# is a write-code repair already in flight on this PR? (PR runs only) — mirror write-code Step R1
+# build THIS PR's authorized set from its marker authors holding write+ on the repo (ADR 0055)
+comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+markerAuthors=$(jq -r '[.[]
+    | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+    | .user.login] | unique | .[]' <<<"$comments")
+authorized='[]'
+while IFS= read -r a; do
+  [ -z "$a" ] && continue
+  perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
+  case "$perm" in
+    admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
+  esac
+done <<<"$markerAuthors"
+# the head every verdict must be bound to (ADR 0058) — a FAIL not bound to this is stale
+CURRENT_HEAD="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"
+# latest verdict per namespace, capturing the bound @ <sha> (sha=null for a SHA-less legacy marker)
+CODE=$(jq -c --argjson authorized "$authorized" \
+  '[.[] | select(.user.login | IN($authorized[]))
+        | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+   | sort_by(.created_at) | last
+   | {body: (.body // ""),
+      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments")
+DOC=$(jq -c --argjson authorized "$authorized" \
+  '[.[] | select(.user.login | IN($authorized[]))
+        | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+   | sort_by(.created_at) | last
+   | {body: (.body // ""),
+      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments")
+# latest decisive native review folds into the code namespace (commit_id IS its bound SHA, no ACL gate)
+REVIEW=$(gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
+  --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
+# repair cap: a PR already at N=3 FAIL rounds is escalated to a human, NOT an active repair —
+# route it to report like any defect (cluster FAILs by >120s gap, same identity write-code uses)
+ROUNDS=$(jq --argjson authorized "$authorized" \
+  '[.[] | select(.user.login | IN($authorized[]))
+        | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*FAIL"; "i"))
+        | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
+   | sort
+   | reduce .[] as $t ({n:0, prev:null};
+       if (.prev == null) or ($t - .prev) > 120
+       then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
+   | .n' <<<"$comments")
+```
+
+An active repair is in flight **iff** `ROUNDS < 3` **and** a namespace's latest verdict is a
+**FAIL bound to `$CURRENT_HEAD`** — exactly what write-code Step R1 acts on (latest-wins per
+namespace; a newer FAIL wins over an older PASS, but its `@ <sha>` must prefix-match the current
+head). Concretely: the latest `review-code` marker is FAIL **and** its captured `sha` is a
+non-empty prefix of `$CURRENT_HEAD` (or the latest native review is `CHANGES_REQUESTED` with a
+`commit_id` that prefix-matches); **or** likewise for the latest `review-doc` marker. A FAIL
+whose `sha` is empty/null (legacy, SHA-less) or does not match the current head is **stale** —
+write-code no-ops on it, so it is **not** an active repair. When an active repair is in flight,
+**do not file a defect.** Drop a one-line comment on the PR pointing at the red run — consistent
+with the `Filed #N` comment the no-repair path posts, but routed to the in-flight repair instead
+of a fresh issue — and stop. That comment *is* your one routed action for this invocation:
+
+```bash
+gh api repos/kamp-us/phoenix/issues/$PR/comments \
+  -f body="heal-ci: CI red — <signature>. Active write-code repair in flight (latest gate verdict FAIL); not filing a twin. Run <run url> — fold into the in-flight fix."
+```
+
+Report: `defect: <signature> — active repair on #$PR, routed (no twin filed)`. Otherwise — no
+PR run, the PR's latest verdict is PASS or has no FAIL at all, the latest FAIL is **stale**
+(its `@ <sha>` doesn't bind the current head, or it's a SHA-less legacy marker — write-code
+won't act on it), or it's already at the **N=3** cap (escalated to a human, not an active
+repair) — fall through and file the defect exactly as below, unchanged.
+
 **Invoke the existing [`report`](../report/SKILL.md) skill — do not re-implement its
 dedup / `Filed by an agent` footer / needs-triage contract.** It already files a
 type-blind `status:needs-triage` issue with the privacy-scrubbed footer and the mandatory
