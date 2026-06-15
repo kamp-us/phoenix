@@ -5,13 +5,16 @@
  *
  * Modular `.make()` form (ADR 0028): the `Dashboard` class is the worker Tag,
  * `Dashboard.make(body)` is the implementation Layer. The body runs in two phases:
- * init binds resources once per isolate; runtime returns the `fetch` handler. The
- * scaffold binds nothing yet (no D1/DO/auth) — those arrive with the API children.
+ * init builds the per-isolate `Pipeline` service once (its GitHub client + token
+ * read); runtime returns the `fetch` handler.
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import {environment} from "./config.ts";
+import {environment, githubToken} from "./config.ts";
+import {GithubClientLive} from "./features/pipeline/github.ts";
+import {Pipeline, PipelineLive} from "./features/pipeline/Pipeline.ts";
 import {makeAppLive} from "./http/app.ts";
 
 export class Dashboard extends Cloudflare.Worker<
@@ -24,9 +27,10 @@ export class Dashboard extends Cloudflare.Worker<
 >()("dashboard", {
 	main: import.meta.filename,
 	// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
-	// `ENVIRONMENT` → `plain_text`. Alchemy resolves it at deploy and runtime reads
-	// the same value off the auto-wired ConfigProvider.
-	env: {ENVIRONMENT: environment},
+	// `ENVIRONMENT` → `plain_text`, `GITHUB_TOKEN` → `secret_text`. Alchemy resolves
+	// each at deploy and runtime reads the same value off the auto-wired
+	// ConfigProvider.
+	env: {ENVIRONMENT: environment, GITHUB_TOKEN: githubToken},
 	assets: {
 		// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
 		// relative to the alchemy CLI's `apps/dashboard` cwd). At the edge the worker
@@ -42,8 +46,18 @@ export class Dashboard extends Cloudflare.Worker<
 }) {}
 
 export default Dashboard.make(
-	// INIT PHASE (deploy time + once per isolate) binds no resources yet — the
-	// scaffold serves a placeholder SPA + the health probe only, so init is a plain
-	// `Effect.sync` (no `yield*`). The RUNTIME PHASE returns the compiled `fetch`.
-	Effect.sync(() => ({fetch: makeAppLive().pipe(HttpRouter.toHttpEffect)})),
+	Effect.gen(function* () {
+		// ── INIT PHASE (deploy time + once per isolate) ──
+		// Resolve the `Pipeline` service ONCE (its `GithubClient` reads the
+		// `GITHUB_TOKEN` binding off the ConfigProvider alchemy wires at worker
+		// scope). Wrapping the resolved value dependency-free (`R = never`) keeps
+		// `provideRequest` from reconstructing the client per request (ADR 0041).
+		const pipeline = yield* Pipeline.pipe(
+			Effect.provide(PipelineLive.pipe(Layer.provide(GithubClientLive))),
+		);
+		const pipelineLayer = Layer.succeed(Pipeline)(pipeline);
+
+		// ── RUNTIME PHASE ── return the compiled `fetch`.
+		return {fetch: makeAppLive({pipelineLayer}).pipe(HttpRouter.toHttpEffect)};
+	}),
 );
