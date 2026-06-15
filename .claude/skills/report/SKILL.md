@@ -68,6 +68,8 @@ The footer is machine context, never personal context.
 
 If you ever assemble the footer by hand instead of via the helper, apply the same rule: machine/session context only, and scrub anything that could identify a person or leak a local filesystem layout.
 
+For committed doc surfaces the [`leak-guard`](../../hooks/leak-guard.py) PreToolUse hook now enforces this mechanically (issue #173): a write that puts a `/Users/…`, `~/`, `~/.claude`, `~/.usirin`, `~/code/…`, or `/vault/` path into a `*.md`/`.decisions`/`.patterns` file is blocked at write time. This prose is the cheap first line; the hook is the enforcement. The hook can't see the *body you POST to gh* (it's a Bash call, not a Write), so the body still needs your own scrub.
+
 ## Filing the issue
 
 All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-us org runs a legacy Projects-classic integration that breaks GraphQL issue queries.
