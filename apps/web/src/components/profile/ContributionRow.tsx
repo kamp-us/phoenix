@@ -5,6 +5,7 @@ import {useView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
+import {renderMarkdownInline} from "../../lib/markdown";
 
 export const ContributionView = view<Contribution>()({
 	kind: true,
@@ -49,7 +50,7 @@ export function ContributionRow({node}: ContributionRowProps) {
 					<span className="kp-user-profile__row-score">{c.score} puan</span>
 					<span className="kp-user-profile__row-date">{formatDate(c.createdAt)}</span>
 				</div>
-				<p className="kp-user-profile__row-body">{c.bodyExcerpt}</p>
+				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>
 			</li>
 		);
 	}
@@ -65,7 +66,9 @@ export function ContributionRow({node}: ContributionRowProps) {
 					<span className="kp-user-profile__row-score">{c.score} puan</span>
 					<span className="kp-user-profile__row-date">{formatDate(c.createdAt)}</span>
 				</div>
-				{c.bodyExcerpt ? <p className="kp-user-profile__row-body">{c.bodyExcerpt}</p> : null}
+				{c.bodyExcerpt ? (
+					<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt)}</p>
+				) : null}
 			</li>
 		);
 	}
@@ -81,7 +84,7 @@ export function ContributionRow({node}: ContributionRowProps) {
 					<span className="kp-user-profile__row-score">{c.score} puan</span>
 					<span className="kp-user-profile__row-date">{formatDate(c.createdAt)}</span>
 				</div>
-				<p className="kp-user-profile__row-body">{c.bodyExcerpt}</p>
+				<p className="kp-user-profile__row-body">{renderMarkdownInline(c.bodyExcerpt ?? "")}</p>
 			</li>
 		);
 	}
