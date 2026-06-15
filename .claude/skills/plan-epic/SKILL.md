@@ -61,6 +61,36 @@ You **write three of the five** shared formats; read them before you start:
 Read the formats doc tolerantly when reconciling an existing plan (re-plan, below) and
 write it canonically. Tolerant reading is the safety margin, not the target.
 
+## Acquire the epic-lock before you mutate — release it on every exit
+
+`plan-epic` and `review-plan` both mutate one epic's children (you supersede/unlink/close on
+re-plan; the gate flips `planned → triaged`). Run concurrently they interleave and corrupt
+the ledger (#264). **Before you create, amend, supersede, unlink, or close any child — and
+before the body `PATCH` in Step 5 — acquire the `status:planning` epic-lock; release it when
+you finish (PASS-or-park), on every exit path including failure.** This is the primary
+serialization (ADR [0059](../../../.decisions/0059-epic-plan-lock.md)); the Step 5
+splice+recheck (#261) is the complementary backstop for its residual, not a replacement.
+
+```bash
+# acquire: defer to a lock already held; otherwise POST it
+HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
+if [ "$HELD" != "null" ]; then
+  echo "epic #<EPIC> is being planned by another run (status:planning held) — BACK OFF, do not mutate."
+  # stop here: re-running later (after the holder releases) is the recovery path.
+else
+  gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
+fi
+# ... do the re-plan / split / body write ...
+# release on EVERY exit (success, park, or failure):
+gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
+```
+
+`POST .../labels` is **not** compare-and-swap (no `If-Match`) — two runs that both read the
+lock absent in the same window both acquire (the §7/#260 TOCTOU, over the whole child set).
+So this is **detect-and-serialize, not a mutex**: it serializes the *common* concurrent
+re-plan, and the residual co-acquire window is caught by Step 5's splice+recheck. Don't claim
+a guarantee the label API can't give.
+
 ---
 
 ## Step 1 — Read the epic and gather context
@@ -670,6 +700,11 @@ codebase (Step 1), write the PRD-grade plan — product layer (problem / solutio
 stories** / testing strategy) then engineering layer (Step 2), split into tracer-bullet
 children that each trace to a story (Step 3), link them as native sub-issues (Step 4), and pin
 the full body with its `## Dependencies` topology (Step 5). Re-runs reconcile.
+
+Acquire the `status:planning` epic-lock before you mutate (see [§Acquire the
+epic-lock](#acquire-the-epic-lock-before-you-mutate--release-it-on-every-exit)) and **release
+it when you finish — on success, park, or failure.** A lock left held wedges the epic against
+every later `plan-epic`/`review-plan` run until a human clears it.
 
 Report back a short ledger: the epic, the story count, the children created (with the story
 each covers), and the phase topology. Don't narrate every REST call — the epic body and the

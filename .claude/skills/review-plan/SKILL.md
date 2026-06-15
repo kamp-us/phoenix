@@ -65,6 +65,39 @@ The load-bearing pieces:
   floor + the soft-advisor's checkability read) and the `**Stories:**` line (the
   story-coverage floor).
 
+## Acquire the epic-lock before you flip or re-plan — release it on every exit
+
+You own the `planned → triaged` flip; `plan-epic` owns supersede/unlink/close on re-plan.
+Run concurrently on one epic they interleave: a re-plan supersedes child C at the same
+instant your gate flips C `triaged` (pickable), and `write-code` picks a story the plan just
+dropped (#264, race X3). So **before the gate's first flip and before the convergence loop's
+first `rePlan`, acquire the `status:planning` epic-lock; release it when you reach PASS or
+park, on every exit path including failure** (ADR
+[0059](../../../.decisions/0059-epic-plan-lock.md)).
+
+```bash
+# acquire: defer to a lock already held; otherwise POST it
+HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
+if [ "$HELD" != "null" ]; then
+  echo "epic #<EPIC> is being planned by another run (status:planning held) — DO NOT flip, DO NOT loop."
+  # back off: a concurrent plan-epic may be superseding the very children you'd flip. Re-run later.
+else
+  gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
+fi
+# ... run the gate (Step 1) / drive the convergence loop ...
+# release on EVERY exit (PASS-and-flipped, parked, or failure):
+gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
+```
+
+`POST .../labels` is **not** compare-and-swap (no `If-Match`), so this is
+**detect-and-serialize, not a mutex** (the §7/#260 TOCTOU over the whole child set): it
+serializes the *common* flip-vs-supersede interleaving, and the residual is backstopped by
+plan-epic's epic-body splice+recheck (#261) and the convergence loop's signature checkpoint
+(below). Don't claim a guarantee the label API can't give. **Holding the lock is also what
+makes "two convergence loops on one epic" unrepresentable** (#264, race X4): a second
+`review-plan` finds the lock held and backs off before its first `rePlan`, so only one loop
+ever drives an epic.
+
 ---
 
 ## Step 1 — Run the deterministic gate action
@@ -178,11 +211,19 @@ On a **FAIL**, the ledger has hard defects and nothing flipped. Repair is **not*
 2. **Repeat while the hard-defect set strictly shrinks.** Each pass's defect set must be
    strictly smaller than the last; convergence to zero ends in a clean PASS (children
    flipped).
-3. **Park on a stall.** If the `ledgerSignature` repeats (a cycle — the same ledger came
-   back) or the defect set fails to shrink (re-planning stopped progressing), trip the
-   circuit breaker: park the epic `status:needs-info` with a diagnostic comment naming the
-   unresolved defects. Convergence is the stop condition; a high flat ceiling
-   (`DEFAULT_CEILING`) is only a runaway backstop, expressed as a `Schedule` (ADR 0047
+3. **Park on a stall — keyed on the ledger *signature*, not the defect count.** The loop
+   compares each pass against the last by the gate's run-stable `ledgerSignature` (the
+   content hash), not just the defect *count*. If the signature **repeats** (a cycle — the
+   same ledger came back) it parks; the count check (defects fail to shrink) is a secondary
+   stop, never the primary convergence signal. This is load-bearing under concurrency: a
+   count-only check could declare convergence on a ledger a concurrent run mutated — two runs
+   landing on the same count over different content (#264, race X4). Keying on the signature
+   means the loop **aborts/parks on unexpected drift** instead of trusting a count. (The
+   epic-lock above is the primary defense — it stops two loops from running at all; the
+   signature checkpoint is the in-loop backstop for the lock's residual window. ADR
+   [0059](../../../.decisions/0059-epic-plan-lock.md).) Park the epic `status:needs-info` with
+   a diagnostic naming the unresolved defects. Convergence is the stop condition; a high flat
+   ceiling (`DEFAULT_CEILING`) is only a runaway backstop, expressed as a `Schedule` (ADR 0047
    Decision 3).
 
 The loop owns the repeat/stall control flow; you provide the two capabilities it composes:
@@ -251,10 +292,13 @@ wire a runner the repo doesn't define (the orchestrator is deliberately out-of-r
 
 ## Running it
 
-A single invocation gates one epic: run the deterministic action (Step 1) — on a PASS the
-children are flipped and you annotate with the soft-advisor (Step 2); on a FAIL nothing
-flipped and you drive the convergence loop (re-plan + re-verify while shrinking, park on
-stall). Report back a short ledger: the epic, the verdict (pass+flipped children, or
+A single invocation gates one epic: acquire the `status:planning` epic-lock (see [§Acquire
+the epic-lock](#acquire-the-epic-lock-before-you-flip-or-re-plan--release-it-on-every-exit)),
+then run the deterministic action (Step 1) — on a PASS the children are flipped and you
+annotate with the soft-advisor (Step 2); on a FAIL nothing flipped and you drive the
+convergence loop (re-plan + re-verify while shrinking, park on stall). **Release the lock on
+every exit — PASS-and-flipped, parked, or failure;** a lock left held wedges the epic against
+every later `plan-epic`/`review-plan` run. Report back a short ledger: the epic, the verdict (pass+flipped children, or
 fail+defects), any advisory caveats, and — if the loop ran — its terminal outcome
 (converged after N re-plans, or parked on which defects). Don't narrate every REST call —
 the verdict comment and the child labels are the durable record.
