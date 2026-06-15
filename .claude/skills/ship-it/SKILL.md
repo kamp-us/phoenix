@@ -44,9 +44,9 @@ The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL i
 and PR queries. Every read and write goes through `gh api` REST or the `gh pr`/`gh run`
 porcelain. This is not a style preference — GraphQL calls error out on this org.
 
-## The two hard guards
+## The hard guards
 
-These are the rules that make shipping safe; violate either and the gate above you was
+These are the rules that make shipping safe; violate any one and the gate above you was
 pointless.
 
 1. **Merge only on a PASS that is the current verdict.** You merge on the *latest* verdict
@@ -54,7 +54,12 @@ pointless.
    failure — a newer FAIL vetoes an older PASS (Step 2 resolves latest-wins per gate
    namespace). No PASS marker and no approving review → you stop and report the PR as
    unverified. A red or pending check is not a "fail you can override" — it is a "not yet."
-2. **You are the only skill that merges.** If you find yourself wanting to merge a PR a gate
+2. **Merge only on a commit-bound run-evidence bundle whose every check passed.** Beyond the
+   marker, the run-evidence bundle (Step 3.5) is the SHA-bound proof behind the green: a
+   missing bundle, an unreadable schema, a `commit` that isn't the head SHA (stale), or any
+   `checks[]` entry that isn't `pass` → you refuse. This is **additive** to the PASS-marker
+   and CI-green reads, not a replacement (ADR 0054 §3 / 0056).
+3. **You are the only skill that merges.** If you find yourself wanting to merge a PR a gate
    hasn't passed, the answer is to route it back through that gate (`review-code` /
    `review-doc`), not to merge it here.
 
@@ -360,10 +365,114 @@ always; the path-gated `integration` job when the diff touches its trigger paths
 
 ---
 
+## Step 3.5 — Assert the run-evidence bundle (guard 2)
+
+CI-green (Step 3) is an opaque rollup — it can't tell you *which* commit produced the green
+run, or *what* the suites asserted. The **run-evidence bundle** is the SHA-bound proof
+behind it: a structured manifest the CI producer (`.github/workflows/run-evidence.yml`)
+emits per PR and uploads as a GitHub Actions artifact named `run-evidence` (ADR
+[0054](../../../.decisions/0054-run-evidence-bundle.md) §2/§3, stored per ADR
+[0056](../../../.decisions/0056-bundle-storage-transport.md)). This step is **additive** —
+it does **not** replace the PASS-marker read (Step 2) or the CI-green read (Step 3); all
+three must hold. The bundle is the evidence *behind* the marker, not a substitute for it.
+
+Resolve the PR's head SHA, find the `run-evidence` workflow run for **that exact SHA**
+(never just the latest run on the branch — the `head_sha` filter is what binds the evidence
+to the commit being merged, ADR 0056 §2), download the `run-evidence` artifact, and read
+`manifest.json`. The fetch is inlined here as a short `gh api` snippet rather than a shared
+helper, on purpose: `review-code` runs the same fetch, but a shared file would couple two
+control-plane skills at the seam — minor duplication is the cheaper trade now; extract a
+helper later if a third consumer appears.
+
+```bash
+HEAD_SHA=$(gh api repos/kamp-us/phoenix/pulls/$PR --jq '.head.sha')
+
+# the run-evidence workflow run for THIS exact head SHA (not a stale earlier push)
+RUN_ID=$(gh api "repos/kamp-us/phoenix/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+  --jq '[.workflow_runs[] | select(.name=="run-evidence")]
+        | sort_by(.created_at) | last | .id // empty')
+
+# the run-evidence artifact id, then the manifest bytes
+ART_ID=$(gh api "repos/kamp-us/phoenix/actions/runs/$RUN_ID/artifacts" \
+  --jq '.artifacts[] | select(.name=="run-evidence") | .id' 2>/dev/null)
+rm -rf /tmp/ship-it-bundle && mkdir -p /tmp/ship-it-bundle
+gh api "repos/kamp-us/phoenix/actions/artifacts/$ART_ID/zip" > /tmp/ship-it-bundle/run-evidence.zip 2>/dev/null \
+  && unzip -oq /tmp/ship-it-bundle/run-evidence.zip -d /tmp/ship-it-bundle
+MANIFEST=/tmp/ship-it-bundle/manifest.json
+```
+
+Now assert the four things, **failing closed** on each — a missing bundle, an unreadable
+schema, a stale commit, or any failed check refuses the merge with a *distinct* reason
+string; never a silent pass:
+
+```bash
+# 1. The bundle must exist. No head-SHA run, no run-evidence artifact, or no manifest in it
+#    → there is no proof this commit was run → refuse (ADR 0056: the artifact is the storage).
+if [ -z "$RUN_ID" ] || [ -z "$ART_ID" ] || [ ! -s "$MANIFEST" ]; then
+  echo "unverified (no run-evidence bundle)"; exit 0   # refuse — see Running it
+fi
+
+# 2. schemaVersion the gate understands. Fail closed on an unrecognized MAJOR rather than
+#    misreading a newer shape (ADR 0056 §3 — schema skew is a visible refusal, not a trust hole).
+SCHEMA=$(jq -r '.schemaVersion // empty' "$MANIFEST")
+[ "$SCHEMA" = "1" ] || { echo "unverified (unsupported bundle schemaVersion: ${SCHEMA:-none})"; exit 0; }
+
+# 3. bundle.commit MUST equal the PR head SHA — evidence not for THIS commit is no evidence
+#    (ADR 0054 §1). A green run from an earlier push is stale → refuse.
+BUNDLE_COMMIT=$(jq -r '.commit // empty' "$MANIFEST")
+[ "$BUNDLE_COMMIT" = "$HEAD_SHA" ] || { echo "unverified (stale run-evidence bundle: commit $BUNDLE_COMMIT != head $HEAD_SHA)"; exit 0; }
+
+# 4. EVERY checks[] entry must be `pass`. Any `fail` (or an empty checks[]) → refuse.
+FAILED=$(jq -r '[.checks[]? | select(.status != "pass") | .name] | join(", ")' "$MANIFEST")
+NCHECKS=$(jq -r '.checks | length' "$MANIFEST")
+if [ "$NCHECKS" -eq 0 ] || [ -n "$FAILED" ]; then
+  echo "run-evidence checks failed (${FAILED:-no checks present})"; exit 0   # refuse
+fi
+```
+
+The four refusal reasons are **distinct and load-bearing** — each names *why* the bundle
+didn't clear, so the report (and a human reading it) knows whether it's a missing producer
+run, a producer/consumer schema skew, a stale push, or a real failing check:
+
+- `unverified (no run-evidence bundle)` — no head-SHA run / no artifact / empty manifest.
+- `unverified (unsupported bundle schemaVersion: <v>)` — a schema major the gate can't read.
+- `unverified (stale run-evidence bundle: commit <c> != head <h>)` — bundle isn't for this commit.
+- `run-evidence checks failed (<names>)` — at least one `checks[]` entry is `fail` (or none present).
+
+Only when the bundle exists, is schema-`1`, is commit-bound to the head SHA, **and** every
+`checks[]` entry is `pass` does guard 2 clear — proceed to Step 4. Like Step 2's FAIL and
+Step 3's red, a bundle refusal is a **successful run that declines to merge**, not an error.
+
+> **Verified against fixtures (AC #5).** The assertion logic is exercised against manifests
+> the producer package's fixtures fold into — `packages/crabbox-manifest/src/fixtures.ts`
+> provides `passingRunSummary` (every command `exitCode: 0` → all `checks[]` `pass`) and
+> `failingRunSummary` (the `test` command `exitCode: 1` → a `fail` check), which the adapter
+> emits as `schemaVersion: 1` manifests stamped with `--commit`. Construct the two cases and
+> run the assertions: a passing manifest stamped with `commit` == the PR head SHA clears all
+> four; the failing one trips assertion 4 (`run-evidence checks failed (test)`); the same
+> passing manifest stamped with a different `commit` trips assertion 3 (`stale`); a
+> deleted/empty `manifest.json` trips assertion 1 (`no run-evidence bundle`); a manifest with
+> `schemaVersion: 2` trips assertion 2. Each refusal is distinct — no silent pass.
+
+```bash
+# build a passing + failing manifest from the package fixtures, then run the four assertions
+# against each (commit-mismatch and missing-bundle are the same passing manifest mutated):
+cd packages/crabbox-manifest
+HEAD_SHA=deadbeef
+pnpm adapter --run-summary <(node -e 'console.log(JSON.stringify(require("./src/fixtures").passingRunSummary()))') \
+  --commit "$HEAD_SHA" --environment test --output /tmp/pass.json   # all checks pass → clears
+pnpm adapter --run-summary <(node -e 'console.log(JSON.stringify(require("./src/fixtures").failingRunSummary()))') \
+  --commit "$HEAD_SHA" --environment test --output /tmp/fail.json   # test exit 1 → assertion 4 refuses
+# /tmp/pass.json with commit != $HEAD_SHA → assertion 3 (stale); rm /tmp/pass.json → assertion 1
+```
+
+---
+
 ## Step 4 — Squash-merge
 
 Every guard cleared: not a control-plane PR (Step 0), the required gates' latest verdicts
-are a current-head PASS (Step 2/2b), and checks are green (Step 3). Ship it with a squash merge so the issue's
+are a current-head PASS (Step 2/2b), checks are green (Step 3), and the run-evidence bundle
+is present, commit-bound, and all-`pass` (Step 3.5). Ship it with a squash merge so the issue's
 whole branch collapses to one commit on `main`:
 
 ```bash
@@ -397,8 +506,9 @@ A single invocation ships one PR end to end: classify the diff against the contr
 boundary and refuse if it touches one (Step 0, guard 0), resolve the PR ↔ issue (Step 1),
 resolve the latest verdict per required gate namespace, refuse any verdict not bound to the
 PR's current head (Step 2b, ADR 0058), and merge only if every required one is a current-head
-PASS (Step 2, guard 1), confirm green checks (Step 3), squash-merge (Step 4), confirm the
-issue closed (Step 5).
+PASS (Step 2, guard 1), confirm green checks (Step 3), assert the SHA-bound run-evidence bundle
+exists / is schema-readable / is commit-bound / is all-`pass` (Step 3.5, guard 2), squash-merge
+(Step 4), confirm the issue closed (Step 5).
 
 Report back a tight terminal ledger — nothing else, because the merge itself is the
 durable record:
@@ -415,8 +525,10 @@ If you refused to merge, the reason line is the whole point: `blocking — manua
 `unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (verdict
 not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest
 verdict is FAIL (<gate>)`, `routed to heal-ci` (a red check, handed to the self-heal lane),
-`checks pending`, or `no linked issue`. A refusal is a
-successful run — shipping the wrong PR is the only failure mode that matters.
+`checks pending`, `no linked issue`, or a run-evidence refusal (Step 3.5):
+`unverified (no run-evidence bundle)`, `unverified (unsupported bundle schemaVersion: <v>)`,
+`unverified (stale run-evidence bundle: …)`, or `run-evidence checks failed (<names>)`. A
+refusal is a successful run — shipping the wrong PR is the only failure mode that matters.
 
 ## Conventions
 
