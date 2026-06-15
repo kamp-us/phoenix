@@ -277,22 +277,25 @@ fi
 ASSIGNEES=$(gh api -X POST repos/kamp-us/phoenix/issues/<N>/assignees \
   -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
 
-# Deterministic tiebreak AMONG CO-RACERS ONLY: the min-login decides between agents that both
-# raced into this same window (both read #N unassigned above, both POSTed before any eviction).
-# If the list is just [you], you trivially win. If it's co-assigned [A, B], BOTH co-racers
-# observe the same sorted set and compute the same winner — exactly one proceeds, the other
-# backs off; never both back off (no livelock), never both proceed (no double-pick).
+# Provisional tiebreak among co-racers: min-login. NOTE the POST echo is NOT a snapshot both
+# racers share — it returns only the assignees present when THIS POST was processed, so staggered
+# POSTs see DIFFERENT sets: if B lands first it sees [B] (B believes it won), and A's later POST
+# sees [A, B] (A also believes it won). Both can transiently compute themselves winner here. The
+# echo alone does NOT decide the race — it only flags "I may be a co-racer winner; go evict + verify".
 WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
 if [ "$WINNER" = "$ME" ]; then
-  # I am the deterministic winner among co-racers. Evict the co-assignees so the issue reads
-  # single-owner for the picker's "skip assigned" invariant.
+  # I am a provisional winner. Evict the co-assignees so the issue reads single-owner for the
+  # picker's "skip assigned" invariant.
   for a in $ASSIGNEES; do
     [ "$a" = "$ME" ] && continue
     gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$a"
   done
-  # CHECKPOINT — claim is revocable from the loser side until here, so re-confirm I am still the
-  # sole min before committing to work. A late arrival that deferred won't have evicted me; if
-  # somehow I am no longer min(assignees), I was displaced — abort and re-pick, do NOT implement.
+  # CHECKPOINT — THIS is what resolves the race, not the POST echo. Re-read canonical issue state
+  # (a fresh GET, not the stale POST echo) and re-confirm I am still min(assignees). Required for
+  # ordinary co-racer correctness, not just for late stragglers: in the staggered case B saw [B]
+  # and entered here as a false winner; A (min) evicted B, so B's GET re-reads [A], CUR_MIN==A!=B,
+  # and B aborts. The agent whose GET shows min==ME proceeds; any agent evicted out of min aborts.
+  # Do NOT prune this as redundant — without it both staggered co-racers proceed (double-pick).
   STILL=$(gh api repos/kamp-us/phoenix/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
   CUR_MIN=$(printf '%s\n' $STILL | head -n1)
   [ "$CUR_MIN" = "$ME" ] || exit 0  # displaced → re-run Step 1
@@ -304,57 +307,38 @@ else
 fi
 ```
 
-**What this guarantees.** Of any set of agents that **co-assign #N within the same claim
-window** — all read #N unassigned, all `POST` before any eviction lands — exactly **one**, the
-lexicographic-min login, proceeds; every other backs off (DELETE self) and re-picks. Both race
-outcomes are covered by the *same* deterministic rule, evaluated against the *same* sorted set
-both agents observe, so there is no interleaving that leaves two agents past this step and none
-that backs all of them off (no livelock). The loser learns it lost from **its own POST
-response** — one observable write — not from a best-effort re-read that can miss the window. A
-co-window claim is **never silently co-occupied**: the loser evicts itself, the winner evicts
-its co-racers, and the issue settles to a single assignee.
+**What this guarantees, and why the checkpoint — not the POST echo — enforces it.** The POST
+returns only the assignees present **when that POST was processed**, not a snapshot the racers
+share: under staggered POSTs the two co-racers observe **different** sets and **both** may
+transiently compute themselves as min/winner (B's POST lands first and echoes `[B]`, A's later
+POST echoes `[A, B]` — both pass the `WINNER == ME` test). The POST echo therefore only *flags a
+candidate*; **exactly-one-proceeds is enforced by the winner's post-eviction checkpoint** — a
+fresh **GET** of canonical issue state (not the POST echo). The agent whose GET shows
+`min(assignees) == ME` proceeds; any agent evicted out of min aborts. In the staggered case A
+(min) evicts B, so B's checkpoint GET re-reads `[A]`, `CUR_MIN == A != B`, and B aborts. **The
+checkpoint is required for ordinary co-racer correctness, not merely a guard against a late
+straggler — it is the load-bearing resolver and must never be optimized away as "redundant."**
+The result: of any set of co-window racers, exactly one proceeds and the rest back off (DELETE
+self) — no interleaving leaves two past this step, and none backs all of them off (no livelock).
+A co-window claim is **never silently co-occupied**.
 
-The harder case — an agent that slipped past Step 1 and only `POST`s *after* a winner already
-owns #N — is **not** covered by the min-login tiebreak (it would let a low-sorting late arrival
-evict the winner and double-implement). Two rules close it, and both are in the code above: a
-fresh arrival **defers to a pre-existing owner** (re-read before `POST`; if already owned, back
-off without evicting), and the winner **re-confirms it is still `min(assignees)` at a checkpoint
-after its evictions, before starting work** — so even a late writer that somehow displaced it is
-caught and the winner aborts rather than implementing alongside. Together these make the claim
-**non-revocable from the loser side once a winner is established**, which is what the "exactly
-one proceeds" guarantee needs to hold against stragglers, not just co-window racers.
+The same checkpoint, plus rule 0 (defer to a pre-existing owner — re-read before `POST`, back off
+without evicting if already owned), also closes the **straggler** case: a late arrival that
+slipped past Step 1 and `POST`s only *after* a winner owns #N never evicts-and-takes by sorting
+below, and a winner somehow displaced is caught at its checkpoint and aborts. Together these make
+the claim **non-revocable from the loser/straggler side once a winner is established**.
 
-**The honest residual window — this is detect-and-resolve, not a kernel mutex.** `assignees`
-is still not a CAS, so the symmetry must be *broken* after the fact, not *prevented*:
+**The one residual.** `assignees` is not a CAS, so the eviction DELETEs are themselves
+last-write-wins: for a brief window the issue may *transiently* show 2 assignees before an
+eviction lands. The picker (Step 1) tolerates exactly this — it skips on any **non-null**
+assignee, so a transiently double-assigned issue is passed over, never double-picked (safe
+degradation). True single-writer exclusion (no transient multi-assignment, no after-the-fact
+eviction) would need a **designated single picker** or a conditional/`If-Match` write the
+assignee API does not offer; this is a **detect-and-tiebreak, not a kernel mutex** — don't
+reintroduce the "it's the lock" framing.
 
-- A late third agent C that slipped past Step 1 (it read #N unassigned before the winner's
-  assignment was visible) and `POST`s **after** the winner already evicted its co-assignees
-  and started implementing sees `[winner, C]`. The naive "recompute min and the lower login
-  wins" rule is **wrong here**: if C sorts below the winner, C would believe it won, evict
-  the winner, and implement — while the winner, already past its one-shot claim check with no
-  recheck loop, keeps implementing. That is **two implementers on #N**, the exact race this
-  step closes. The rule that prevents it: **a fresh arrival never evicts a pre-existing
-  owner.** The min-login tiebreak decides only among co-assignees that raced into the *same*
-  claim window (both saw #N unassigned, both `POST`ed before either eviction landed); an
-  assignee that was **already present when you arrive** is an authoritative prior winner you
-  defer to, regardless of how your login sorts. So C, seeing an issue that already carried an
-  owner before its own `POST`, `DELETE`s itself and re-picks — it does **not** evict and take.
-  The winner's post-eviction min-recheck checkpoint (in the code above) closes this from the
-  other side: even if a late writer somehow displaced the winner, the winner catches it at the
-  checkpoint and aborts rather than implementing alongside.
-- The eviction DELETEs are themselves last-write-wins, so for a brief window the issue may
-  *transiently* show 2 assignees before the winner's eviction lands. The picker (Step 1)
-  tolerates this: it skips any issue with a **non-null** assignee, so a transiently
-  double-assigned issue is skipped, never double-picked — the invariant degrades safe.
-- True single-writer mutual exclusion (zero transient multi-assignment, no after-the-fact
-  eviction) would require a **designated single picker** or an expected-value/`If-Match`
-  conditional write GitHub's assignee API does not offer. This mechanism deliberately does
-  **not** claim that. What it *does* guarantee is the acceptance bar: **exactly one agent
-  proceeds to implement**, deterministically, from a single observed write — which is what
-  stops the duplicate-implementation waste. Don't reintroduce the old "it's the lock" prose;
-  it's a detect-and-tiebreak, and the API can't make it a lock.
-
-See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the shared claim
+See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the full race-case
+derivation (staggered co-racers, the straggler, and the transient window) and the shared claim
 semantics this step implements.
 
 Now **route by type** before implementing — a `type:decision` or `type:investigation`
