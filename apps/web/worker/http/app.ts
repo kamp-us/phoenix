@@ -19,6 +19,7 @@ import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {authRoute} from "../features/pasaport/route.ts";
+import {rssRoute} from "../features/rss/route.ts";
 import {healthApiLayer} from "./health.ts";
 
 /** Build the application router layer. Each option's contract is on its property. */
@@ -57,7 +58,7 @@ export const makeAppLive = (options: {
 	// `provideRequest` discharges the route-requirement markers `HttpRouter.add`
 	// lifts (plain `Layer.provide` does not). All four provided layers are
 	// dependency-free (`R = never`), so they merge flat.
-	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute).pipe(
+	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute, rssRoute).pipe(
 		HttpRouter.provideRequest(
 			Layer.mergeAll(
 				options.fateLayer,
