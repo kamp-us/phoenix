@@ -14,7 +14,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {environment, githubToken} from "./config.ts";
-import {type PipelineCacheDO, PipelineCacheDOLive} from "./features/pipeline/cache-do.ts";
+import {PipelineCacheDO, PipelineCacheDOLive} from "./features/pipeline/cache-do.ts";
 import {GithubClientLive} from "./features/pipeline/github.ts";
 import {Pipeline, PipelineLive} from "./features/pipeline/Pipeline.ts";
 import {PipelineCacheLive} from "./features/pipeline/PipelineCache.ts";
@@ -54,24 +54,37 @@ export class Dashboard extends Cloudflare.Worker<
 export default Dashboard.make(
 	Effect.gen(function* () {
 		// ── INIT PHASE (deploy time + once per isolate) ──
+		// Bind the hosted DO at the worker init level — the deploy-path equivalent of
+		// `apps/web`'s `yield* LiveDO`. At deploy this records the DO namespace +
+		// migration metadata for the Cloudflare API; at runtime it resolves the typed
+		// stub factory. Drop this `yield*` and the binding is never registered against
+		// the worker, so `alchemy deploy` walks the worker's bindings and finds it
+		// `undefined` → deploy-time `getByName` on `undefined` (#299).
+		yield* PipelineCacheDO;
+
 		// Resolve the `Pipeline` service ONCE — its `GithubClient` reads the
-		// `GITHUB_TOKEN` binding, and its `PipelineCache` fronts the GitHub fetch
-		// over the hosted `PipelineCacheDO` (#254). Wrapping the resolved value
-		// dependency-free (`R = never`) keeps `provideRequest` from reconstructing
-		// the client per request (ADR 0041). `PipelineCacheDOLive` registers the DO
-		// and resolves its Tag (a single instance, no self-addressing — `R = never`).
+		// `GITHUB_TOKEN` binding, and its `PipelineCache` fronts the GitHub fetch over
+		// the worker-bound `PipelineCacheDO` (#254). Wrapping the resolved value
+		// dependency-free (`R = never`) keeps `provideRequest` from reconstructing the
+		// client per request (ADR 0041). `PipelineCacheLive` resolves the
+		// `PipelineCacheDO` Tag, discharged by the outer `Effect.provide` below — the
+		// SAME single namespace that the worker registers, not a separately-built copy.
 		const pipeline = yield* Pipeline.pipe(
 			Effect.provide(
-				PipelineLive.pipe(
-					Layer.provide(GithubClientLive),
-					Layer.provide(PipelineCacheLive),
-					Layer.provide(PipelineCacheDOLive),
-				),
+				PipelineLive.pipe(Layer.provide(GithubClientLive), Layer.provide(PipelineCacheLive)),
 			),
 		);
 		const pipelineLayer = Layer.succeed(Pipeline)(pipeline);
 
 		// ── RUNTIME PHASE ── return the compiled `fetch`.
 		return {fetch: makeAppLive({pipelineLayer}).pipe(HttpRouter.toHttpEffect)};
-	}),
+	}).pipe(
+		// Provide the DO's `.make()` Layer at the WORKER-implementation level (mirrors
+		// `apps/web`'s outer `Effect.provide(LiveDOLive)`). This is what registers the
+		// `PipelineCacheDO` namespace + migration on the deploy path; providing it only
+		// inside the `Pipeline` resolution (the prior shape) discharged the Tag for the
+		// runtime build but left the worker's binding unregistered → deploy-time
+		// `getByName` on `undefined` (#299).
+		Effect.provide(PipelineCacheDOLive),
+	),
 );
