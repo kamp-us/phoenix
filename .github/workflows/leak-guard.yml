@@ -1,0 +1,52 @@
+name: leak-guard
+
+# The authoritative leak gate (issue #312). CI is the only surface that sees
+# every PR's diff regardless of how it was authored (agent tool, vim, cat >,
+# a human commit), so it — not a write-time hook — is the unbypassable gate for
+# the no-local-paths rule (#158/#173). It reuses @phoenix/leak-guard's `scan`
+# CLI; the deny-list lives once in the package (findLeaks), never re-grepped here.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  scan:
+    name: scan changed files for leaks
+    runs-on: ubuntu-latest
+    steps:
+      # Full history so the base...head diff resolves; the default shallow
+      # checkout has no merge-base for the comparison below.
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # base...head = files this PR adds/changes vs the merge-base with the target
+      # branch (--diff-filter=ACMR drops deletions/renames-source). The scanner
+      # self-scopes to doc surfaces, so we hand it every changed file; a diff with
+      # no changed files (or none surviving the filter) is a clean pass — we skip
+      # the invocation entirely rather than call `scan` with zero args.
+      - name: Scan PR diff for leaks
+        run: |
+          git fetch --no-tags --depth=1 origin "${{ github.base_ref }}"
+          mapfile -t changed < <(git diff --name-only --diff-filter=ACMR "origin/${{ github.base_ref }}...HEAD")
+          if [ "${#changed[@]}" -eq 0 ]; then
+            echo "No changed files — nothing to scan."
+            exit 0
+          fi
+          printf 'Scanning %d changed file(s):\n' "${#changed[@]}"
+          printf '  %s\n' "${changed[@]}"
+          node packages/leak-guard/src/bin.ts scan "${changed[@]}"
