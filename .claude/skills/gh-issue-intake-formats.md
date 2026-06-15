@@ -51,9 +51,10 @@ writing — it's the safety margin, not the target.
 
 ## Pipeline labels
 
-Every issue carries one `type:*`, one `p*`, and one `status:*`. The `status:*`
-labels are the **pipeline state** an issue sits in — the spine the intake skills key
-on. The canonical set:
+Every issue carries one `type:*`, one `p*`, and one `status:*` (plus, transiently, the
+`status:planning` epic-lock on a locked epic — a second `status:*` that sits *alongside* the
+real one, never replacing it; see below). The `status:*` labels are the **pipeline state** an
+issue sits in — the spine the intake skills key on. The canonical set:
 
 | Label | Meaning | Pickable by `write-code`? |
 |---|---|---|
@@ -61,6 +62,15 @@ on. The canonical set:
 | `status:needs-info` | Parked — `triage` needs an answer before it can act. | No |
 | `status:planned` | A `plan-epic` child: planned and structurally complete, **not yet verified**. | **No** |
 | `status:triaged` | Cleared the gate before it — ready for `write-code` to pick. | **Yes** |
+
+One label on the table is **not** a pipeline state — `status:planning` is a **transient
+epic-lock** (below), held on an *epic* while one of `{plan-epic, review-plan}` mutates its
+children. It sits *alongside* the epic's real `status:*`, never replacing it, and does not
+change what `write-code` picks.
+
+| Label | Meaning | Pickable by `write-code`? |
+|---|---|---|
+| `status:planning` | **Transient epic-lock** — a `plan-epic`/`review-plan` run is mutating this epic's children; a second mutator backs off. Released to PASS-or-park. Not a pipeline state (ADR [0059](../../.decisions/0059-epic-plan-lock.md)). | n/a (lock, not state) |
 
 `status:triaged` is the one pickable state. It is reached two ways, and **only** these
 two: a standalone issue gets it from `triage` (the human-judgment gate at intake); a
@@ -83,6 +93,29 @@ This is why the flip *is* the enforcement: because `write-code` already keys on
 `status:planned` makes the unverified state unrepresentable to the picker, with **no
 change to `write-code`'s predicate**. See ADR
 [0047](../../.decisions/0047-review-plan-gate.md) for the full gate architecture.
+
+### The `status:planning` epic-lock — one mutator at a time over an epic's children
+
+`status:planned` (the child label) and `status:planning` (the **epic-lock**) are different
+things: the first is a child's pipeline state, the second is a transient lock on the *epic*.
+
+Two stages mutate an epic's children and nothing else serializes them — `review-plan` owns
+the `planned → triaged` flip, `plan-epic` owns supersede/unlink/close on re-plan. Run
+concurrently on one epic they interleave: a re-plan supersedes child C at the same instant
+the gate flips C `triaged` (pickable), and `write-code` picks a dropped story (#264). The
+`status:planning` label serializes them:
+
+- A mutator (`plan-epic` on any run; `review-plan` before its gate flip or its first
+  `rePlan`) **acquires the lock first** — re-read the epic's labels, and if `status:planning`
+  is absent `POST` it; if **present, back off** (don't mutate — another run is planning this
+  epic). Hold it to **PASS-or-park**, then `DELETE` it on every exit path (including failure).
+- This is **detect-and-serialize, not a mutex** — `POST .../labels` is **not** compare-and-swap
+  (no `If-Match`), so two mutators that both read it absent in the same window both acquire
+  (the §7 / #260 TOCTOU, one layer up over the whole child set). The lock narrows the window;
+  the residual is backstopped by the epic-body **splice + recheck** (§1 "Updating it safely",
+  #261) and the convergence loop's signature checkpoint. Don't claim a lock guarantee the label
+  API can't give — claim "the common flip-vs-supersede / concurrent-re-plan interleaving is
+  serialized." See ADR [0059](../../.decisions/0059-epic-plan-lock.md).
 
 ---
 
