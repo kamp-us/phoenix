@@ -332,36 +332,49 @@ block, and a PASS bound to a *stale* head never ships at all.
 
 ---
 
-## Step 3 — Confirm CI is already green (one read, no polling)
+## Step 3 — Confirm the *gating* checks are green (one read, no polling)
 
 You confirm checks; you do **not** own a wait-loop. Read the current check state once. The
-human table and exit code can't cleanly separate red from pending, so read the per-check
-states as a parseable rollup rather than trusting the exit code:
+human table and exit code can't cleanly separate red from pending, and neither tells a
+*gating* check from an *informational* one — so read the per-check **names and states** and
+classify by name, not by a bare bucket count:
 
 ```bash
-gh pr checks $PR --json name,state,bucket \
-  --jq 'group_by(.bucket) | map({(.[0].bucket): length}) | add'
-# bucket buckets each check into pass / fail / pending / skipping / cancel
+gh pr checks $PR --json name,state,bucket --jq '.[] | "\(.bucket)\t\(.name)"'
+# bucket ∈ pass | fail | pending | skipping | cancel
 ```
 
-Classify from the per-check states (not the exit code). `skipping` and `cancel` checks are
-non-blocking — the "no `fail` and no `pending` → green" test already folds them in (a
-skipped or cancelled check is neither a failure nor an in-flight wait):
+Not every red check blocks a merge. **`main` carries no required-status-check branch
+protection**, so GitHub itself blocks on nothing; the SHA-bound merge gate is the
+run-evidence bundle (Step 3.5) plus the review verdicts (Step 2), neither of which depends
+on a preview deploy. So a check is **gating by default** and **informational only** when it
+is on the explicit known-informational list below. Fail safe: an *unrecognized* red check
+is treated as gating (it blocks) until it is deliberately classified — never the reverse.
 
-- **All required checks green** (no `fail`, no `pending`) → proceed to Step 4.
-- **Any check red (failing)** → do **not** merge. Route the failure to the self-heal lane:
-  invoke [`/heal-ci`](../heal-ci/SKILL.md) with this PR/run, then report the result (e.g.
-  `routed to heal-ci`). `heal-ci` decides flake-vs-defect (one bounded rerun of a transient,
-  or a `report`-filed defect); you only refuse to ship on red and hand off — you still do not
-  merge.
-- **Checks still pending** (none red, some unfinished) → report `checks pending — not yet
-  merge-ready` and stop. If the caller (a loop or a human) wants you to wait, they re-invoke
-  you after CI settles; blocking on a multi-minute poll inside this atomic stage is out of
-  scope.
+**Known-informational checks** (a red here does **not** block and is **not** routed to
+heal-ci): the `Deploy` workflow's preview deploys (`deploy (web)`). A preview-deploy infra
+flake (e.g. `Secret probe returned 502`) is orthogonal to whether the PR is correct and
+tested — see ADR [0059](../../../.decisions/0059-ship-it-gating-check-set.md).
 
-Which checks are *required* follows the repo's CI config (the `check` + `unit` jobs
-always; the path-gated `integration` job when the diff touches its trigger paths). Trust
-`gh pr checks` for the rollup rather than hard-coding the job list.
+Classify in this order (`skipping`/`cancel` are non-blocking — neither a failure nor an
+in-flight wait):
+
+1. **Any *gating* check red** (a `fail` whose name is not known-informational) → do **not**
+   merge. Route it to the self-heal lane: invoke [`/heal-ci`](../heal-ci/SKILL.md) with this
+   PR/run, then report the result (e.g. `routed to heal-ci`). `heal-ci` decides
+   flake-vs-defect; you only refuse on a gating red and hand off — you still do not merge.
+2. **Else, any check pending** (no gating red, some unfinished) → report `checks pending —
+   not yet merge-ready` and stop. The caller re-invokes you after CI settles; blocking on a
+   multi-minute poll inside this atomic stage is out of scope.
+3. **Else proceed to Step 4** — every gating check is green. If a *known-informational*
+   check is red, it does not block: note it in the ledger (`informational check red (deploy
+   (web)) — not gating`) and continue. Step 3.5 remains the SHA-bound backstop that the
+   gating suite actually passed for this commit.
+
+The gating set is, by construction, the suite the run-evidence bundle attests SHA-bound in
+Step 3.5 (lint / format / typecheck, unit tests, validate skill frontmatter, integration
+when it runs) — Step 3 is the cheap early read, Step 3.5 is the authority; if the two ever
+disagree, Step 3.5 wins.
 
 ---
 
@@ -506,7 +519,7 @@ A single invocation ships one PR end to end: classify the diff against the contr
 boundary and refuse if it touches one (Step 0, guard 0), resolve the PR ↔ issue (Step 1),
 resolve the latest verdict per required gate namespace, refuse any verdict not bound to the
 PR's current head (Step 2b, ADR 0058), and merge only if every required one is a current-head
-PASS (Step 2, guard 1), confirm green checks (Step 3), assert the SHA-bound run-evidence bundle
+PASS (Step 2, guard 1), confirm the gating checks are green (Step 3), assert the SHA-bound run-evidence bundle
 exists / is schema-readable / is commit-bound / is all-`pass` (Step 3.5, guard 2), squash-merge
 (Step 4), confirm the issue closed (Step 5).
 
@@ -524,7 +537,7 @@ issue closed: yes | no
 If you refused to merge, the reason line is the whole point: `blocking — manual merge`,
 `unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (verdict
 not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest
-verdict is FAIL (<gate>)`, `routed to heal-ci` (a red check, handed to the self-heal lane),
+verdict is FAIL (<gate>)`, `routed to heal-ci` (a gating red check, handed to the self-heal lane),
 `checks pending`, `no linked issue`, or a run-evidence refusal (Step 3.5):
 `unverified (no run-evidence bundle)`, `unverified (unsupported bundle schemaVersion: <v>)`,
 `unverified (stale run-evidence bundle: …)`, or `run-evidence checks failed (<names>)`. A
