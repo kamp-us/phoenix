@@ -290,8 +290,12 @@ bound to `X1` can never be consumed against `X2`). For each namespace's resolved
 
 ```bash
 # is verdict SHA $vsha bound to the current head? (prefix-match, either side may be abbreviated)
-is_current () { case "$CURRENT_HEAD" in "$1"*) return 0;; esac; case "$1" in "$CURRENT_HEAD"*) return 0;; esac; return 1; }
-# null/empty $vsha → not current (legacy marker) → refuse.
+# Empty/absent $vsha MUST short-circuit to refuse FIRST: a jq `sha: null` reaches the shell as
+# an empty string, and an unguarded `case "$CURRENT_HEAD" in ""*)` reduces to the glob `*` — which
+# matches any head and would falsely report a legacy SHA-less marker as current (ADR 0058 rule 3).
+is_current () { [ -n "$1" ] || return 1; case "$CURRENT_HEAD" in "$1"*) return 0;; esac; case "$1" in "$CURRENT_HEAD"*) return 0;; esac; return 1; }
+# null/empty $vsha → not current (legacy marker) → refuse. A jq `sha: null` must reach this helper
+# as an empty string (or be short-circuited to refuse before the call) — never as the literal "null".
 ```
 
 Then gate the merge on the classes present (Step 0):

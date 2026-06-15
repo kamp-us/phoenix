@@ -324,7 +324,11 @@ APPROVE-vs-comment duality #258 flagged.
 The post is an **upsert**, not an append: scan the PR for *your own* prior `review-doc:`
 marker comment and `PATCH` it with the fresh verdict instead of `POST`-ing a new one, so
 there is exactly **one** `review-doc` verdict comment per PR (ADR 0058 rule 2). A re-review of
-a new head overwrites the same record with the new `@ <sha>`.
+a new head overwrites the same record with the new `@ <sha>`. The `… | last | .id` upsert
+PATCHes only your *newest* own marker, so on a PR migrated from the pre-0058 append era a few
+older SHA-less own markers may linger — the one-per-gate invariant is **forward-looking**, and
+those legacy duplicates are tolerated because `ship-it`'s consumer SHA-refuses any marker
+without an `@ <sha>` on the current head (Step 2b), so they can never authorize a merge.
 
 ```bash
 VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"

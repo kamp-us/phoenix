@@ -442,10 +442,11 @@ fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mecha
   parsing the whole body. Recognize it tolerantly by shape (`review-doc: PASS @ <sha>` …
   `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
   dashes or spacing — but the `@ <sha>` is required.
-- **Two markers, two consumers.** `PASS — merge-ready` (every AC + every hygiene check
-  verified) is read by `ship-it` as the go-ahead to merge a **non-blocking** doc PR.
-  `FAIL — changes-requested` (≥1 AC or hygiene check unmet) is read by `write-code`'s fix
-  round-trip as "my doc PR came back failed"; `ship-it` reads it as "do not merge."
+- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every AC + every hygiene check
+  verified, bound to that head) is read by `ship-it` as the go-ahead to merge a **non-blocking**
+  doc PR **iff `<sha>` is the current head**. `FAIL @ <sha> — changes-requested` (≥1 AC or
+  hygiene check unmet) is read by `write-code`'s fix round-trip as "my doc PR came back failed";
+  `ship-it` reads it as "do not merge."
 - **Advisory for the blocking set.** A PR touching `.claude/`/`.github/` gets the advisory
   line, not a PASS marker — `review-doc`'s verdict does not authorize that merge; a human
   does (ADR 0053). This keeps the control-plane manual-merge invariant intact.
