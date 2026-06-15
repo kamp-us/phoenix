@@ -81,9 +81,9 @@ jobs:
             --timing-json \
             --shell -- \
             "set -euo pipefail
-             corepack enable
-             corepack pnpm install --frozen-lockfile --store-dir .pnpm-store
-             corepack pnpm --filter @phoenix/web test:unit"
+             npm install -g pnpm@10.27.0
+             pnpm install --frozen-lockfile --store-dir .pnpm-store
+             pnpm --filter @phoenix/web test:unit"
 
       # Locate crabbox's run-summary JSON deterministically and unpack the JUnit it
       # collected. Fail loud if either is missing — a half-formed run must not yield a
