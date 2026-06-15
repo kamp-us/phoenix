@@ -10,8 +10,9 @@ agent-operable work pipeline:
 3. The **progress-comment format** — a per-issue work-log entry for the next agent.
 4. The **epic handoff-note format** — distilled cross-task context posted to the epic.
 5. The **review-code verdict markers** — the recognizable first line of a PR comment
-   signalling the verdict: `PASS — merge-ready` (read by `ship-it`, the merge step) or
-   `FAIL — not merge-ready` (read by `write-code`'s fix round-trip).
+   signalling the verdict, **SHA-bound** to the head it reviewed (ADR 0058):
+   `PASS @ <sha> — merge-ready` (read by `ship-it`, the merge step) or
+   `FAIL @ <sha> — not merge-ready` (read by `write-code`'s fix round-trip).
 
 `plan-epic` writes formats 1, 2, and 4. `review-plan` reads 1 and 2 (they are the
 structural floor it validates) and owns the `status:planned → status:triaged` flip that
@@ -299,56 +300,80 @@ skill scans PR comments for the PASS marker to find verified, merge-ready PRs
 unambiguously, and `write-code`'s fix round-trip scans for the FAIL marker to find a PR
 that came back failed.
 
-### Shape
+### Shape — SHA-bound (ADR 0058)
 
-The recognizable **first line** of the PR comment is one of:
+The recognizable **first line** of the PR comment carries the **head SHA the reviewer
+inspected** (`@ <sha>`), resolved at post time from
+`gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha`:
 
 ```markdown
-review-code: PASS — merge-ready
+review-code: PASS @ <sha> — merge-ready
 ```
 
 ```markdown
-review-code: FAIL — not merge-ready
+review-code: FAIL @ <sha> — not merge-ready
 ```
 
-The rest of the comment body carries the per-criterion evidence table (the
-verdict). What's load-bearing for the scanner is only that first marker line; the
-table below it is for the human and the implementer.
+`<sha>` is the full or abbreviated (≥7 hex) head SHA. The rest of the comment body carries
+the per-criterion evidence table (the verdict). What's load-bearing for the scanner is only
+that first marker line — the namespace, the polarity, **and the `@ <sha>`**; the table below
+it is for the human and the implementer.
 
-### The matcher contract: emphasis-tolerant (canonical shape)
+The `@ <sha>` is **load-bearing, not decoration**: `ship-it` and `write-code`-repair refuse a
+verdict whose `@ <sha>` does not match the PR's *current* head, and refuse a SHA-less marker
+outright — this is what closes the stale-PASS-masks-a-FAIL and head-moved-under-the-verdict
+races (ADR [0058](../../.decisions/0058-sha-bound-verdict-contract.md), issue #258). A marker
+with no `@ <sha>` is a *pre-0058 legacy* shape and resolves to `unverified`, not PASS.
+
+### Upsert, not append — one verdict per (PR, gate-namespace) (ADR 0058)
+
+`review-code` writes **exactly one** marker comment per PR in its namespace: before posting
+it scans the PR's comments for **its own** prior `review-code:` marker and, if one exists,
+`PATCH`es it (`gh api -X PATCH repos/kamp-us/phoenix/issues/comments/<id>`) with the fresh
+verdict + fresh `@ <sha>` instead of `POST`-ing a new comment. A re-review of a new head
+overwrites the same record; the PR thread never accumulates a stale verdict stream a
+millisecond decides. See ADR 0058 rule 2.
+
+### The matcher contract: emphasis-tolerant + SHA-capturing (canonical shape)
 
 The marker line may carry **leading Markdown emphasis** — `review-code` historically emits
-it bolded (`**review-code: PASS — merge-ready**`), `review-doc` emits it bare. To stop the
-emitter and the matcher from drifting apart (the bolded marker once read as "no verdict" and
-stalled every code-lane merge — #219), this contract pins **one** rule both sides cite:
+it bolded (`**review-code: PASS @ <sha> — merge-ready**`), `review-doc` emits it bare. To stop
+the emitter and the matcher from drifting apart (the bolded marker once read as "no verdict"
+and stalled every code-lane merge — #219), this contract pins **one** rule both sides cite:
 
 - **Canonical emit shape** (what an emitter SHOULD write): the bare, unbolded first line —
-  `review-code: PASS — merge-ready`. New/converging emitters write this.
+  `review-code: PASS @ <sha> — merge-ready`. New/converging emitters write this.
 - **Matcher obligation** (what every scanner MUST accept): an **optional leading `**`** before
-  the namespace token, so a bolded marker resolves identically to a bare one. The anchored,
-  case-insensitive matcher is `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)` — the leading `\**`
-  absorbs the emphasis; the `^\s*` still pins it to the start of the body so a mid-body *quote*
-  of a marker never matches. This is **backward-compatible**: it resolves both the existing
-  bolded `review-code` markers already sitting on open PRs and the bare `review-doc` markers,
-  with no re-review. Every matcher site — `ship-it` (merge gate) and `write-code` (fix
-  round-trip) — cites this rule so they can't diverge again.
+  the namespace token, so a bolded marker resolves identically to a bare one, **and a captured
+  `@ <sha>`** so the consumer can apply the staleness test. The anchored, case-insensitive
+  matcher is `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` — the leading
+  `\**` absorbs the emphasis; `^\s*` still pins it to the start of the body so a mid-body
+  *quote* never matches; the trailing `@\s*([0-9a-f]{7,40})` captures the bound head SHA. A
+  SHA-less marker that matches only the looser `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)`
+  prefix but **not** the `@ <sha>` tail is a legacy verdict → the consumer treats it as
+  `unverified` (ADR 0058 rule 3). Every matcher site — `ship-it` (merge gate) and `write-code`
+  (fix round-trip) — cites this rule so they can't diverge again.
 
 ### Field notes
 
 - **First line, recognizable.** The marker leads the comment so a scan can match
   it without parsing the whole body. Recognize it tolerantly by shape
-  (`review-code: PASS` … `merge-ready`) and emphasis (optional leading `**`, per the
-  matcher contract above), not by exact dashes or spacing.
-- **Two markers, two consumers.** `PASS — merge-ready` (every criterion verified) is
-  read by `ship-it` as the go-ahead to merge. `FAIL — not merge-ready` (≥1 criterion
-  unmet) is read by `write-code`'s fix round-trip as "my PR came back failed"; `ship-it`
-  reads it as "do not merge." Each marker has exactly one merge-relevant meaning.
+  (`review-code: PASS @ <sha>` … `merge-ready`) and emphasis (optional leading `**`, per the
+  matcher contract above), not by exact dashes or spacing — but the `@ <sha>` is required.
+- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every criterion verified,
+  bound to that head) is read by `ship-it` as the go-ahead to merge **iff `<sha>` is the
+  current head**. `FAIL @ <sha> — not merge-ready` (≥1 criterion unmet) is read by
+  `write-code`'s fix round-trip as "my PR came back failed"; `ship-it` reads it as "do not
+  merge." Each marker has exactly one merge-relevant meaning.
 - **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on.
   `review-code` writing it does **not** merge; merging is `ship-it`'s deliberate act
   (see review-code/SKILL.md §"Authority limit" and ADR 0048).
 - The native approving review (`event=APPROVE`) is the preferred signal when it's
-  available; this marker is the comment-based fallback that carries the same
-  meaning where a formal review can't be posted.
+  available; GitHub records its `commit_id`, which **is** the SHA the reviewer approved, so
+  `ship-it` applies the same staleness test to a native review via its `commit_id`. This
+  marker is the comment-based fallback that carries the same meaning (with the `@ <sha>`
+  doing explicitly what `commit_id` does for a native review) where a formal review can't be
+  posted.
 
 ---
 
@@ -356,43 +381,67 @@ stalled every code-lane merge — #219), this contract pins **one** rule both si
 
 `review-doc` is the **doc-class twin of `review-code`** — it gates a doc/knowledge PR
 (`.decisions/**`, `.patterns/**`, prose `*.md` outside `.claude/`/`.github/`) against its
-linked issue's acceptance criteria *plus* a doc-hygiene checklist, and lands its verdict
-the same way: a native approving review when one can be posted, else a **comment whose
-first line is a recognizable marker**. The marker lives in its **own namespace**,
-distinct from §5's `review-code` marker.
+linked issue's acceptance criteria *plus* a doc-hygiene checklist. It lands its verdict as a
+**comment whose first line is a recognizable, SHA-bound marker** — and **only** that comment,
+never a native approving review. The marker lives in its **own namespace**, distinct from
+§5's `review-code` marker.
 
-### Shape
+### Shape — SHA-bound (ADR 0058)
 
-The recognizable **first line** of the PR comment is one of:
+The recognizable **first line** of the PR comment carries the head SHA the reviewer inspected
+(`@ <sha>`, from `gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha`):
 
 ```markdown
-review-doc: PASS — merge-ready
+review-doc: PASS @ <sha> — merge-ready
 ```
 
 ```markdown
-review-doc: FAIL — changes-requested
+review-doc: FAIL @ <sha> — changes-requested
 ```
 
 For a PR in the **blocking set** (touching `.claude/`/`.github/`), `review-doc` is
 advisory only and instead leads with an advisory line (`review-doc: advisory — blocking-set
 PR (manual merge)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a human
-merges those (ADR [0053](../../.decisions/0053-control-plane-boundary.md)).
+merges those (ADR [0053](../../.decisions/0053-control-plane-boundary.md)). The advisory line
+carries **no `@ <sha>`** by design: it authorizes nothing, so there is nothing to bind.
 
 The rest of the body carries the per-criterion + per-hygiene-check evidence table. What's
-load-bearing for the scanner is only that first marker line.
+load-bearing for the scanner is the namespace, the polarity, **and the `@ <sha>`** — the same
+staleness contract as §5: `ship-it`/`write-code`-repair refuse a `review-doc` verdict whose
+`@ <sha>` is not the PR's current head, and refuse a SHA-less one (ADR
+[0058](../../.decisions/0058-sha-bound-verdict-contract.md), issue #258).
+
+### Comment-only — the APPROVE/comment duality is resolved (ADR 0058)
+
+`review-doc` emits its verdict **only** as the SHA-bound `review-doc:` comment, **never** a
+native `APPROVE`/`REQUEST_CHANGES` review. This resolves the duality #258 flagged: a native
+GitHub review cannot carry the `@ <sha>` in the comment shape this contract controls (it
+records `commit_id` in a *different* record type), so leaving `review-doc` free to post either
+would force `ship-it` to compare a review against a comment for the doc lane — two
+incomparable records. One carrier, the comment, keeps the doc lane resolvable the same way
+the code lane is. (`review-code` keeps its native-`APPROVE` path because `ship-it` reads that
+review's `commit_id` for the staleness test; `review-doc` does not.)
+
+### Upsert, not append (ADR 0058)
+
+`review-doc` writes **exactly one** `review-doc:` marker comment per PR: before posting it
+scans for **its own** prior `review-doc:` marker and `PATCH`es it with the fresh verdict +
+fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mechanism as §5).
 
 ### Field notes
 
 - **Separate namespace from `review-code`.** `ship-it` matches the two markers with two
-  anchored, namespaced, emphasis-tolerant regexes — `^\s*\**\s*review-code:\s*(PASS|FAIL)`
-  and `^\s*\**\s*review-doc:\s*(PASS|FAIL)` (the matcher contract in §5) — and resolves
-  latest-verdict-wins **per namespace** by timestamp. A `review-code` scan must never match a
-  `review-doc` marker, nor vice versa. `review-doc` therefore **never** emits a `review-code`
-  marker, and `review-code` never emits a `review-doc` one.
+  anchored, namespaced, emphasis-tolerant, SHA-capturing regexes —
+  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` and
+  `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` (the matcher contract in §5) —
+  resolves latest-verdict-wins **per namespace** by timestamp, then applies the SHA-staleness
+  test. A `review-code` scan must never match a `review-doc` marker, nor vice versa.
+  `review-doc` therefore **never** emits a `review-code` marker, and `review-code` never emits
+  a `review-doc` one.
 - **First line, recognizable.** The marker leads the comment so a scan matches it without
-  parsing the whole body. Recognize it tolerantly by shape (`review-doc: PASS` …
+  parsing the whole body. Recognize it tolerantly by shape (`review-doc: PASS @ <sha>` …
   `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
-  dashes or spacing.
+  dashes or spacing — but the `@ <sha>` is required.
 - **Two markers, two consumers.** `PASS — merge-ready` (every AC + every hygiene check
   verified) is read by `ship-it` as the go-ahead to merge a **non-blocking** doc PR.
   `FAIL — changes-requested` (≥1 AC or hygiene check unmet) is read by `write-code`'s fix

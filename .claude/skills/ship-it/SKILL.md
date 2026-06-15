@@ -63,26 +63,29 @@ pointless.
 The pipeline runs **two gates**, one per artifact class, each landing its verdict as a
 first-line marker comment:
 
+Every verdict is **SHA-bound** — its first line carries the head it reviewed (`@ <sha>`), and
+you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
+[0058](../../../.decisions/0058-sha-bound-verdict-contract.md)):
+
 - **product code** (`apps/web`, `packages`, other code) → `review-code`, whose marker is
-  `review-code: PASS — merge-ready` or `review-code: FAIL — not merge-ready` (the canonical
-  shape is [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5, which covers
-  the `review-code` namespace only). `review-code` can also land a native **approving
-  review** (`event=APPROVE`).
+  `review-code: PASS @ <sha> — merge-ready` or `review-code: FAIL @ <sha> — not merge-ready`
+  (canonical shape: [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5).
+  `review-code` can also land a native **approving review** (`event=APPROVE`), whose
+  `commit_id` is its bound SHA.
 - **docs** (`.decisions`, `.patterns`, prose `*.md` outside `.claude`/`.github`) →
-  `review-doc`, whose marker is `review-doc: PASS — merge-ready` or
-  `review-doc: FAIL — changes-requested`. The formats contract does not yet define the
-  `review-doc` namespace, so the shapes stated here are the consumed contract: `PASS …
-  merge-ready` is read by `ship-it`, `FAIL … changes-requested` by the doc author's fix
-  round-trip. (When `review-doc` lands, extend §5 to define both namespaces and point this
-  citation there.)
+  `review-doc`, whose marker is `review-doc: PASS @ <sha> — merge-ready` or
+  `review-doc: FAIL @ <sha> — changes-requested` (canonical shape: §6). `review-doc` is
+  **comment-only** — it never lands a native review (ADR 0058), so the doc lane is a single
+  comparable record type, not a review-vs-comment mix.
 
 The marker-comment path is the **default** to expect: the single operator on this repo
 (`usirin`) cannot post an approving review on their own PR under org branch rules, so on
 the common path the gate falls back to a marker comment. **You are the consumer the markers
 were written for** — without you, they are inert verdicts nobody acts on. Recognize a marker
-tolerantly by shape (`review-code: PASS` … `merge-ready`, `review-code: FAIL` … `not
-merge-ready`, `review-doc: PASS` … `merge-ready`, `review-doc: FAIL` … `changes-requested`),
-not by exact dashes.
+tolerantly by shape (`review-code: PASS @ <sha>` … `merge-ready`, `review-code: FAIL @ <sha>`
+… `not merge-ready`, `review-doc: PASS @ <sha>` … `merge-ready`, `review-doc: FAIL @ <sha>` …
+`changes-requested`), not by exact dashes — but the `@ <sha>` is required, and a SHA-less
+legacy marker resolves to `unverified`, not PASS.
 
 Each gate is **stateless and re-runs**, so a PR can flip PASS → (new commits) → FAIL or
 FAIL → PASS, and (for code) the marker and the native-review forms interleave. So you never
@@ -159,7 +162,7 @@ absent, which is an anomaly worth stopping on.
 
 ---
 
-## Step 2 — Resolve the *latest* verdict per gate namespace, then branch on polarity (guard 1)
+## Step 2 — Resolve the *latest current-head* verdict per gate namespace, then branch on polarity (guard 1)
 
 You do **not** ship on the presence of any PASS that ever existed. Each gate is stateless and
 re-runs, so a PR can go PASS → FAIL or FAIL → PASS. Resolve **`review-code` and `review-doc`
@@ -168,12 +171,19 @@ PASS in **each namespace whose artifact class is present** (from Step 0). A revi
 must never match a review-doc marker, or vice versa.
 
 The two anchors (case-insensitive, anchored at the start of the comment body so a comment
-that merely *quotes* a marker mid-body doesn't match, and **emphasis-tolerant** — the leading
-`\**` absorbs an optional bolding `**`, since `review-code` emits its marker bolded; see the
-matcher contract in [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5):
+that merely *quotes* a marker mid-body doesn't match, **emphasis-tolerant** — the leading
+`\**` absorbs an optional bolding `**`, since `review-code` emits its marker bolded — and
+**SHA-capturing** — the trailing `@\s*([0-9a-f]{7,40})` captures the bound head SHA so Step 2b
+can apply the staleness refusal; see the matcher contract in
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6 and ADR
+[0058](../../../.decisions/0058-sha-bound-verdict-contract.md)):
 
-- code: `^\s*\**\s*review-code:\s*(PASS|FAIL)`
-- doc:  `^\s*\**\s*review-doc:\s*(PASS|FAIL)`
+- code: `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- doc:  `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+
+A marker matching the looser `…:\s*(PASS|FAIL)` prefix but **not** the `@ <sha>` tail is a
+pre-0058 legacy verdict → Step 2b resolves it to `unverified (verdict not bound to current
+head)`, never a PASS.
 
 A marker comment counts as a verdict **only if its author holds `write`-or-higher permission
 on the repo** — authorization is resolved from GitHub's ACL at merge time, not from a list
@@ -219,23 +229,33 @@ return order for a merge decision). The author gate (`IN($authorized[])`) runs *
 older verdict:
 
 ```bash
+# the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
+CURRENT_HEAD="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"
+
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — the review-code path only.
 # GitHub author-attributes reviews, so this path is unforgeable and needs no ACL check.
+# Carry .commit_id: it IS the SHA the reviewer approved, so Step 2b applies the same staleness
+# test to a native review as to a marker's @ <sha>.
 gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, at: .submitted_at}'
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}'
 
-# latest review-code marker comment (code namespace) — author-gated, anchored, never matches review-doc
+# latest review-code marker comment (code namespace) — author-gated, anchored, never matches review-doc.
+# Capture the bound head SHA from the @ <sha> tail; a SHA-less legacy marker yields sha=null → Step 2b refuses.
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
+    | sort_by(.created_at) | last
+    | {body, at: .created_at,
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
 
 # latest review-doc marker comment (doc namespace) — author-gated, anchored, never matches review-code
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
+    | sort_by(.created_at) | last
+    | {body, at: .created_at,
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
 ```
 
 Now resolve **per namespace**, latest-wins by timestamp:
@@ -243,27 +263,56 @@ Now resolve **per namespace**, latest-wins by timestamp:
 - **review-code namespace** — the verdict is the **newest of {latest decisive review, latest
   review-code marker comment}** by timestamp (review `submitted_at` vs comment `created_at`).
   An `APPROVED` review or a `review-code: PASS … merge-ready` marker is PASS; a
-  `CHANGES_REQUESTED` review or a `review-code: FAIL` marker is FAIL. (The native approving-review
-  path stays; it interleaves only with the review-code markers, never with review-doc.)
+  `CHANGES_REQUESTED` review or a `review-code: FAIL` marker is FAIL. The verdict's bound SHA
+  is the marker's `@ <sha>` (or, for a native review, its `commit_id`). (The native
+  approving-review path stays; it interleaves only with the review-code markers, never with
+  review-doc.)
 - **review-doc namespace** — the verdict is the **latest `review-doc` marker comment** by
-  `created_at`. `review-doc: PASS … merge-ready` is PASS; `review-doc: FAIL … changes-requested`
-  is FAIL. (review-doc lands no native review, so there is no review path to fold in.)
+  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-doc: PASS … merge-ready` is
+  PASS; `review-doc: FAIL … changes-requested` is FAIL. (review-doc lands no native review —
+  it is comment-only, ADR 0058 — so there is no review path to fold in, and no review-vs-comment
+  comparison to make.)
+
+### Step 2b — SHA-staleness refusal (ADR 0058)
+
+Each resolved verdict carries a bound SHA. A verdict authorizes a merge **only if it is bound
+to the PR's current head** — this is what closes the masking race (a slower PASS bound to an
+older head can never outrank a real FAIL on the live head) and the head-moved race (a PASS
+bound to `X1` can never be consumed against `X2`). For each namespace's resolved verdict:
+
+- **No bound SHA** (`sha == null` — a pre-0058 SHA-less marker) → `unverified (verdict not
+  bound to current head)` → refuse.
+- **Bound SHA ≠ current head** (neither is a prefix of the other — either may be abbreviated,
+  so compare by prefix-match against `$CURRENT_HEAD`) → `unverified (verdict not bound to
+  current head)` → refuse.
+- **Bound SHA prefix-matches `$CURRENT_HEAD`** → the verdict is current; its polarity decides
+  in the guard below.
+
+```bash
+# is verdict SHA $vsha bound to the current head? (prefix-match, either side may be abbreviated)
+is_current () { case "$CURRENT_HEAD" in "$1"*) return 0;; esac; case "$1" in "$CURRENT_HEAD"*) return 0;; esac; return 1; }
+# null/empty $vsha → not current (legacy marker) → refuse.
+```
 
 Then gate the merge on the classes present (Step 0):
 
-1. For **each class present**, its namespace must have a latest verdict and it must be PASS.
+1. For **each class present**, its namespace must have a latest verdict, it must be **bound to
+   the current head** (Step 2b), and it must be PASS.
    - code present but the review-code namespace is empty → `unverified (no review-code PASS)`.
    - docs present but the review-doc namespace is empty → `unverified (no review-doc PASS)`.
-   - a mixed code+doc PR needs **both** namespaces resolved to PASS.
-2. If **any** required namespace's latest verdict is **FAIL** → **do not merge.** The PR has
-   unaddressed failures as its *current* state, even if an older PASS exists. Report
+   - a verdict present but not bound to the current head → `unverified (verdict not bound to
+     current head)` → refuse.
+   - a mixed code+doc PR needs **both** namespaces resolved to a current-head PASS.
+2. If **any** required namespace's current-head verdict is **FAIL** → **do not merge.** The PR
+   has unaddressed failures as its *current* state, even if an older PASS exists. Report
    `latest verdict is FAIL (<which gate>)` and stop; the fix round-trip is `write-code`'s
    (code) / the doc author's job, not yours.
-3. If **every** required namespace's latest verdict is PASS → guard 1 cleared, proceed to
+3. If **every** required namespace's current-head verdict is PASS → guard 1 cleared, proceed to
    Step 3.
 
-The polarity of the **newest** event in each namespace is the only thing that decides — an
-old PASS behind a newer FAIL never ships, and an old FAIL behind a newer PASS does not block.
+The polarity of the **newest current-head** event in each namespace is the only thing that
+decides — an old PASS behind a newer FAIL never ships, an old FAIL behind a newer PASS does not
+block, and a PASS bound to a *stale* head never ships at all.
 
 ---
 
@@ -335,9 +384,10 @@ upstream.
 
 A single invocation ships one PR end to end: classify the diff against the control-plane
 boundary and refuse if it touches one (Step 0, guard 0), resolve the PR ↔ issue (Step 1),
-resolve the latest verdict per required gate namespace and merge only if every one is PASS
-(Step 2, guard 1), confirm green checks (Step 3), squash-merge (Step 4), confirm the issue
-closed (Step 5).
+resolve the latest verdict per required gate namespace, refuse any verdict not bound to the
+PR's current head (Step 2b, ADR 0058), and merge only if every required one is a current-head
+PASS (Step 2, guard 1), confirm green checks (Step 3), squash-merge (Step 4), confirm the
+issue closed (Step 5).
 
 Report back a tight terminal ledger — nothing else, because the merge itself is the
 durable record:
@@ -351,8 +401,9 @@ issue closed: yes | no
 ```
 
 If you refused to merge, the reason line is the whole point: `blocking — manual merge`,
-`unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `latest verdict is
-FAIL (<gate>)`, `routed to heal-ci` (a red check, handed to the self-heal lane),
+`unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (verdict
+not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest
+verdict is FAIL (<gate>)`, `routed to heal-ci` (a red check, handed to the self-heal lane),
 `checks pending`, or `no linked issue`. A refusal is a
 successful run — shipping the wrong PR is the only failure mode that matters.
 

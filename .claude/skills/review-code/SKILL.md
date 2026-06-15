@@ -254,12 +254,19 @@ Every criterion passed. Land an **explicit, recognizable approval signal** on th
 the next actor (human or authorized downstream step) knows it's verified and can merge.
 Two forms, either is valid — both must carry the per-criterion table as evidence.
 
-First, **write the verdict to a per-PR temp file**
-(`VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"`) so multi-line markdown + backticks
-survive the shell — both forms below read it back via `cat`. The PR number is in the path
-so back-to-back runs never collide on a fixed file (a prior run's unread verdict would
-otherwise stall the write or leak into this run). See the verdict-body shape at the end of
-this step.
+First, **resolve the head SHA you actually reviewed** and **write the verdict to a per-PR
+temp file** (`VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"`) so multi-line markdown +
+backticks survive the shell — both forms below read it back via `cat`. The PR number is in
+the path so back-to-back runs never collide on a fixed file (a prior run's unread verdict
+would otherwise stall the write or leak into this run). The SHA goes into the marker's first
+line (`review-code: PASS @ <sha> — merge-ready`) — it is **load-bearing**: `ship-it` refuses
+any verdict not bound to the PR's current head (ADR
+[0058](../../../.decisions/0058-sha-bound-verdict-contract.md), issue #258). See the
+verdict-body shape at the end of this step.
+
+```bash
+HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # the head you reviewed
+```
 
 **Preferred — an approving review** (the native, unambiguous GitHub signal). Capture its
 result and check the exit status **explicitly**; on failure (e.g. a 422 when you can't
@@ -269,17 +276,34 @@ wrapping the APPROVE call (e.g. `… 2>&1 | head` for inspection) makes the pipe
 status mask the APPROVE failure, so the `||` fallback silently never fires and no verdict
 lands.
 
+The comment fallback **upserts**, it does not append: scan the PR for *your own* prior
+`review-code:` marker comment and `PATCH` it with the fresh verdict instead of `POST`-ing a
+new one, so there is exactly **one** `review-code` verdict comment per PR (ADR 0058 rule 2).
+A re-review of a new head overwrites the same record with the new `@ <sha>`; the thread never
+accumulates a stale verdict stream.
+
 ```bash
 VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"
-BODY="$(cat "$VERDICT_FILE")"   # the per-criterion table + "merge-ready" line
+BODY="$(cat "$VERDICT_FILE")"   # first line: review-code: PASS @ <HEAD_SHA> — merge-ready
 if gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews \
      -f event=APPROVE -f body="$BODY"; then
-  : # native approving review posted
+  : # native approving review posted (GitHub records its commit_id = the head you approved;
+    #  ship-it reads that commit_id for the same staleness test the marker's @ <sha> drives)
 else
-  # APPROVE failed (e.g. 422 on your own PR) — post the structured pass comment instead,
-  # whose first line is a recognizable marker so a scan finds the verdict unambiguously:
-  #   review-code: PASS — merge-ready
-  gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
+  # APPROVE failed (e.g. 422 on your own PR) — upsert the structured pass comment instead,
+  # whose first line is the SHA-bound marker so a scan finds the verdict unambiguously:
+  #   review-code: PASS @ <HEAD_SHA> — merge-ready
+  ME="$(gh api user --jq .login)"
+  # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
+  comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+  MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+            and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
+          | last | .id // empty' <<<"$comments")
+  if [ -n "$MINE" ]; then
+    gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"   # upsert
+  else
+    gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"   # first verdict
+  fi
 fi
 ```
 
@@ -298,12 +322,13 @@ ACs are satisfied, not that the autonomous merge step may act. (A PR touching on
 `review-doc` — do not add this line for it.)
 
 Verdict body shape (this is what you wrote to `$VERDICT_FILE` above). The first line is the
-**canonical bare marker** — no leading `**` emphasis — per the matcher contract in
-[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5; matchers tolerate an optional
-leading `**` for backward compatibility, but emit the bare form:
+**canonical bare marker** — no leading `**` emphasis, **with the `@ <HEAD_SHA>` you resolved
+above** — per the matcher contract in [gh-issue-intake-formats.md](../gh-issue-intake-formats.md)
+§5; matchers tolerate an optional leading `**` for backward compatibility, but emit the bare
+form, and the `@ <sha>` is required (ADR 0058):
 
 ```markdown
-review-code: PASS — merge-ready
+review-code: PASS @ <HEAD_SHA> — merge-ready
 
 Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 
@@ -334,16 +359,31 @@ Post a **PR comment listing each failing criterion with its evidence**, so the
 review. Include the passing ones too — the full table tells the implementer how close
 they are, not just where they fell short.
 
-The first line, `review-code: FAIL — not merge-ready`, is a **recognizable marker** — the
-mirror of the PASS marker (formats §5). It is the seam `write-code`'s resume-my-failed-PR
-path keys on: it scans for it to find a PR whose `Fixes #N` issue is still claimed by the
-implementer and still has failing criteria to address. Recognize it tolerantly by shape
-(`review-code: FAIL`), not by exact dashes. (And `ship-it` reads it as the mirror of PASS:
-a FAIL marker means *do not merge*.)
+The first line, `review-code: FAIL @ <HEAD_SHA> — not merge-ready`, is a **recognizable,
+SHA-bound marker** — the mirror of the PASS marker (formats §5). It is the seam
+`write-code`'s resume-my-failed-PR path keys on: it scans for it to find a PR whose `Fixes #N`
+issue is still claimed by the implementer and still has failing criteria *against the current
+head* to address. Recognize it tolerantly by shape (`review-code: FAIL @ <sha>`), not by exact
+dashes; the `@ <sha>` is required (ADR 0058). (And `ship-it` reads it as the mirror of PASS: a
+FAIL marker means *do not merge*.)
+
+Post it as an **upsert** — `PATCH` your own prior `review-code:` marker if one exists, else
+`POST` — exactly as the PASS path (one `review-code` verdict comment per PR, ADR 0058 rule 2):
 
 ```bash
-BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"
-gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
+HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # the head you reviewed
+BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready
+ME="$(gh api user --jq .login)"
+# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
+comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+          and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
+        | last | .id // empty' <<<"$comments")
+if [ -n "$MINE" ]; then
+  gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"
+else
+  gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"
+fi
 ```
 
 You *may* additionally request changes via a formal review
@@ -353,7 +393,7 @@ per-criterion evidence is the required artifact**; the review event is a nicety 
 Verdict body shape:
 
 ```markdown
-review-code: FAIL — not merge-ready
+review-code: FAIL @ <HEAD_SHA> — not merge-ready
 
 Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 
