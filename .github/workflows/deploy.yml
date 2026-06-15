@@ -48,12 +48,19 @@ jobs:
           # only @phoenix/web has auth (config.ts reads it `Effect.orDie`); the
           # dashboard has no auth (its config.ts reads only ENVIRONMENT), so its
           # deploy/destroy must NOT require the secret (ADR 0057).
+          # `needs-github-token` says whether the worker binds GITHUB_TOKEN: only
+          # @phoenix/dashboard does (config.ts `Config.redacted("GITHUB_TOKEN")`,
+          # no default → REQUIRED at deploy). It's stored under the repo secret
+          # `DASHBOARD_GITHUB_TOKEN` (Actions forbids a secret named GITHUB_TOKEN)
+          # and mapped to the GITHUB_TOKEN env the worker reads.
           - app: web
             pnpm-name: "@phoenix/web"
             needs-auth: true
+            needs-github-token: false
           - app: dashboard
             pnpm-name: "@phoenix/dashboard"
             needs-auth: false
+            needs-github-token: true
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -104,6 +111,12 @@ jobs:
           # binding the worker reads at runtime; the value must be present at deploy
           # time. Empty for auth-less apps (dashboard) — they never read it.
           BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
+          # The GitHub token the dashboard worker binds (secret_text) for authenticated
+          # reads of kamp-us/phoenix issues — `config.ts` reads it `Config.redacted`,
+          # no default, so it must be present at deploy time. Stored under the repo
+          # secret DASHBOARD_GITHUB_TOKEN (GITHUB_TOKEN is a reserved secret name) and
+          # mapped here to the GITHUB_TOKEN env. Empty for apps that don't bind it (web).
+          GITHUB_TOKEN: ${{ matrix.needs-github-token && secrets.DASHBOARD_GITHUB_TOKEN || '' }}
 
       # Post (or update) a sticky comment carrying EVERY app's preview URL on PRs.
       # The outer `<!-- preview-deploy -->` marker makes the comment sticky; a
@@ -186,9 +199,11 @@ jobs:
           - app: web
             pnpm-name: "@phoenix/web"
             needs-auth: true
+            needs-github-token: false
           - app: dashboard
             pnpm-name: "@phoenix/dashboard"
             needs-auth: false
+            needs-github-token: true
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -224,6 +239,10 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
           BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
+          # GITHUB_TOKEN at destroy too: `destroy` loads `alchemy.run.ts` → builds the
+          # worker layer → reads the required `Config.redacted("GITHUB_TOKEN")`, same as
+          # the deploy. Empty for apps that don't bind it (web).
+          GITHUB_TOKEN: ${{ matrix.needs-github-token && secrets.DASHBOARD_GITHUB_TOKEN || '' }}
 
       # Flip the sticky preview comment to "torn down" so it never points at a
       # destroyed stage. Each matrix job rewrites only its own app line; the last

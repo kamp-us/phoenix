@@ -98,11 +98,12 @@ All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-u
    you know that it lacks as a comment there, and return to your task.
 4. File it, applying only `status:needs-triage`.
 
-Write the body to a temp file first and read it into `$BODY` so multi-line markdown and backticks survive the shell intact, then make the `gh api` call:
+Write the body to a temp file first and read it into `$BODY` so multi-line markdown and backticks survive the shell intact, then make the `gh api` call. Allocate the temp file with `mktemp` and thread it through `$BODY_FILE` — concurrent report runs share `/tmp`, so a fixed path would let two runs interleave bodies and file each other's content:
 
 ```bash
-# 1. Write the five sections + footer into a temp file.
-cat > /tmp/report-body.md <<'EOF'
+# 1. Write the five sections + footer into a per-run temp file.
+BODY_FILE="$(mktemp /tmp/report-body.XXXXXX)"
+cat > "$BODY_FILE" <<'EOF'
 ## What I was doing
 …
 
@@ -123,7 +124,7 @@ cat > /tmp/report-body.md <<'EOF'
 EOF
 
 # 2. Read it into $BODY so markdown/backticks survive the shell intact.
-BODY="$(cat /tmp/report-body.md)"
+BODY="$(cat "$BODY_FILE")"
 
 # 3. Create the issue with only the status:needs-triage label.
 gh api repos/kamp-us/phoenix/issues \

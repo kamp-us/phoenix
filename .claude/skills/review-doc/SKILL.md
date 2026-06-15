@@ -295,10 +295,11 @@ Build the hygiene findings into the same evidence shape as the AC table:
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND
 every hygiene check must PASS. One miss anywhere → FAIL.
 
-Write the verdict to a per-PR temp file (`VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"`)
-so multi-line markdown + backticks survive the shell, then post it. The PR number is in the
-path so back-to-back runs never collide on a fixed file (a prior run's unread verdict would
-otherwise stall the write or leak into this run).
+Write the verdict to a per-run temp file (`VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"`)
+so multi-line markdown + backticks survive the shell, then post it. Allocate it with `mktemp`,
+not a fixed `/tmp/review-doc-verdict-${PR}.md`: the PR number alone isn't unique — two reviews
+of the *same* PR running concurrently would collide on it, one run's unread verdict stalling
+the write or leaking into the other. A per-run `mktemp` name keeps each run's verdict its own.
 
 ### Pass path — non-blocking PR (the binding signal)
 
@@ -315,8 +316,9 @@ failure, so the `||` fallback silently never fires and no verdict marker lands (
 misfire of #205).
 
 ```bash
-VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"
-BODY="$(cat "$VERDICT_FILE")"   # first line: review-doc: PASS — merge-ready
+VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
+# write your composed PASS verdict into "$VERDICT_FILE" (first line: review-doc: PASS — merge-ready)
+BODY="$(cat "$VERDICT_FILE")"
 if gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews -f event=APPROVE -f body="$BODY"; then
   : # native approving review posted
 else
@@ -389,7 +391,9 @@ close. Post a comment whose first line is the namespaced FAIL marker (the seam
 too, so the author sees how close they are.
 
 ```bash
-BODY="$(cat "/tmp/review-doc-verdict-${PR}.md")"   # first line: review-doc: FAIL — changes-requested
+VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
+# write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-doc: FAIL — changes-requested)
+BODY="$(cat "$VERDICT_FILE")"
 gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
 ```
 
