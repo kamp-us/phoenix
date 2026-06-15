@@ -65,6 +65,81 @@ The load-bearing pieces:
   floor + the soft-advisor's checkability read) and the `**Stories:**` line (the
   story-coverage floor).
 
+## Acquire the epic-lock before you flip or re-plan — release it on every exit
+
+You own the `planned → triaged` flip; `plan-epic` owns supersede/unlink/close on re-plan.
+Run concurrently on one epic they interleave: a re-plan supersedes child C at the same
+instant your gate flips C `triaged` (pickable), and `write-code` picks a story the plan just
+dropped (#264, race X3). So **before the gate's first flip and before the convergence loop's
+first `rePlan`, acquire the `status:planning` epic-lock; release it when you reach PASS or
+park, on every exit path including failure** (ADR
+[0059](../../../.decisions/0059-epic-plan-lock.md)).
+
+**Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
+stop — don't flip, don't loop. Otherwise `POST` it — and **only treat the lock as acquired if
+that `POST` actually succeeds**. A failed acquire (the 422 returned when `status:planning` hasn't
+been created in the repo — it's a canonical lock label, see ADR
+[0059](../../../.decisions/0059-epic-plan-lock.md) §Setup and the formats doc's status-label table
+— or any transient `gh` IO fault) must **not** fall through to the gate flip: it backs off and
+exits 0, so a missing label or a flaky write never lets you flip unlocked. **The back-off `exit 0`
+is deliberate** (a held lock or a setup gap is not a review-plan *failure*) — but it shares the
+exit code of a clean PASS, so a caller keying on exit status alone cannot tell "gated" from
+"backed off, did nothing"; the echo is the signal, so a wrapper must read it (or re-run) rather
+than treat `exit 0` as "the epic was gated".
+
+```bash
+# acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
+HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
+if [ "$HELD" != "null" ]; then
+  echo "epic #<EPIC> is being planned by another run (status:planning held) — DO NOT flip, DO NOT loop."
+  exit 0   # the held lock is the holder's, not ours — do NOT release it. Re-run later.
+fi
+if ! gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
+  echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — DO NOT flip, DO NOT loop."
+  exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never flip/loop unlocked.
+fi
+# Lock held. WE acquired it, so WE must release it — on EVERY terminal path (below).
+```
+
+**Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
+*one* bash invocation; the gate flip (Step 1) and the convergence loop's `rePlan` calls run in
+*separate later* bash invocations — each its own process. A `trap … EXIT` armed in the acquire
+shell fires the instant *that* shell exits, i.e. **before the gate or loop ever runs**, releasing
+the lock immediately and giving you zero serialization. So the release can't live in the acquire
+snippet; it is an action **you** take, deliberately, on the way out — run this exact `DELETE` once
+you reach **any** terminal state (PASS-and-flipped, parked, or a fault mid-flight):
+
+```bash
+# release: run on EVERY exit path AFTER a successful acquire (PASS/flip, park, or fault mid-flight).
+# Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and wedges the epic, the exact
+# catastrophe this design prevents. A 404 is benign (label already gone — released, or never
+# landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
+if ! relerr=$(gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning 2>&1); then
+  case "$relerr" in
+    *"HTTP 404"*|*"Label does not exist"*) : ;;  # already released / never acquired — nothing to free
+    *) echo "WARNING: failed to release status:planning on epic #<EPIC> — the epic-lock may be LEAKED (still held). Re-run this DELETE or clear the label by hand; until cleared, plan-epic/review-plan back off on this epic. ($relerr)" ;;
+  esac
+fi
+```
+
+The release fires on **every** terminal path on purpose: the gate and the convergence loop can
+raise (a RePlanError, a gh IO fault, an aborted agent), and the convergence loop in particular
+can fail mid-flight, so this is not hypothetical. As an LLM agent you must still issue the
+`DELETE` before you stop on those paths — a release that fires only on the clean
+PASS-and-flipped-or-parked fall-through LEAKS the lock on the raise path (wedging the epic against
+every later plan-epic/review-plan run until a human clears it — #264). **Only release a lock YOU
+acquired** (the success branch above), never the held lock you backed off from. A leaked lock is
+silent and only a human clears it.
+
+`POST .../labels` is **not** compare-and-swap (no `If-Match`), so this is
+**detect-and-serialize, not a mutex** (the §7/#260 TOCTOU over the whole child set): it
+serializes the *common* flip-vs-supersede interleaving, and the residual is backstopped by
+plan-epic's epic-body splice+recheck (#261) and the convergence loop's signature checkpoint
+(below). Don't claim a guarantee the label API can't give. **Holding the lock is also what
+makes "two convergence loops on one epic" unrepresentable** (#264, race X4): a second
+`review-plan` finds the lock held and backs off before its first `rePlan`, so only one loop
+ever drives an epic.
+
 ---
 
 ## Step 1 — Run the deterministic gate action
@@ -178,11 +253,23 @@ On a **FAIL**, the ledger has hard defects and nothing flipped. Repair is **not*
 2. **Repeat while the hard-defect set strictly shrinks.** Each pass's defect set must be
    strictly smaller than the last; convergence to zero ends in a clean PASS (children
    flipped).
-3. **Park on a stall.** If the `ledgerSignature` repeats (a cycle — the same ledger came
-   back) or the defect set fails to shrink (re-planning stopped progressing), trip the
-   circuit breaker: park the epic `status:needs-info` with a diagnostic comment naming the
-   unresolved defects. Convergence is the stop condition; a high flat ceiling
-   (`DEFAULT_CEILING`) is only a runaway backstop, expressed as a `Schedule` (ADR 0047
+3. **Park on a stall — keyed on the ledger *signature*, not the defect count.** The loop
+   compares each pass against the last by the gate's run-stable `ledgerSignature` (the
+   content hash), not just the defect *count*. If the signature **repeats** (a cycle — the
+   same ledger came back) it parks; the count check (defects fail to shrink) is a secondary
+   stop, never the primary convergence signal. This is load-bearing under concurrency: a
+   count-only check could declare convergence on a ledger a concurrent run mutated — two runs
+   landing on the same count over different content (#264, race X4). Keying on the signature
+   means the stall test is **content-keyed, not count-keyed**: the loop parks on a *repeated*
+   signature (a cycle) rather than declaring convergence on a count two runs happened to share.
+   (It does not abort on arbitrary mid-loop drift — a *different* signature reads as progress;
+   `loop.ts` parks only on a repeat. The epic-lock above is what stops a concurrent mutator
+   from drifting the ledger out from under the loop in the first place.) (The
+   epic-lock above is the primary defense — it stops two loops from running at all; the
+   signature checkpoint is the in-loop backstop for the lock's residual window. ADR
+   [0059](../../../.decisions/0059-epic-plan-lock.md).) Park the epic `status:needs-info` with
+   a diagnostic naming the unresolved defects. Convergence is the stop condition; a high flat
+   ceiling (`DEFAULT_CEILING`) is only a runaway backstop, expressed as a `Schedule` (ADR 0047
    Decision 3).
 
 The loop owns the repeat/stall control flow; you provide the two capabilities it composes:
@@ -251,10 +338,13 @@ wire a runner the repo doesn't define (the orchestrator is deliberately out-of-r
 
 ## Running it
 
-A single invocation gates one epic: run the deterministic action (Step 1) — on a PASS the
-children are flipped and you annotate with the soft-advisor (Step 2); on a FAIL nothing
-flipped and you drive the convergence loop (re-plan + re-verify while shrinking, park on
-stall). Report back a short ledger: the epic, the verdict (pass+flipped children, or
+A single invocation gates one epic: acquire the `status:planning` epic-lock (see [§Acquire
+the epic-lock](#acquire-the-epic-lock-before-you-flip-or-re-plan--release-it-on-every-exit)),
+then run the deterministic action (Step 1) — on a PASS the children are flipped and you
+annotate with the soft-advisor (Step 2); on a FAIL nothing flipped and you drive the
+convergence loop (re-plan + re-verify while shrinking, park on stall). **Release the lock on
+every exit — PASS-and-flipped, parked, or failure;** a lock left held wedges the epic against
+every later `plan-epic`/`review-plan` run. Report back a short ledger: the epic, the verdict (pass+flipped children, or
 fail+defects), any advisory caveats, and — if the loop ran — its terminal outcome
 (converged after N re-plans, or parked on which defects). Don't narrate every REST call —
 the verdict comment and the child labels are the durable record.

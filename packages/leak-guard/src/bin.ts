@@ -2,11 +2,14 @@
  * `leak-guard scan` CLI — the CI-callable surface for issue #173.
  *
  * `node src/bin.ts scan <file>...` reads each file, runs the pure `findLeaks`
- * core, and exits NON-ZERO if any file leaks a user-local path into a shared
- * doc surface (with a human report of `<file>: <matched> — <reason>` lines);
- * exit 0 when clean. A missing/unreadable file is skipped, never a crash.
- * `findLeaks` already scopes to doc surfaces, so CI may hand it every changed
- * file — only doc-surface leaks are flagged.
+ * core, and reports `<file>: <matched> — <reason>` lines. A missing/unreadable
+ * file is skipped, never a crash. `findLeaks` already scopes to doc surfaces, so
+ * CI may hand it every changed file — only doc-surface leaks are flagged.
+ *
+ * Exit-code contract: 2 on a confirmed leak, 0 when clean, and any OTHER
+ * non-zero means the scan could not complete (e.g. node module-load failure
+ * before any Effect runs). The pre-commit hook fail-opens on can't-run (warn +
+ * allow); CI fail-closes (any non-zero fails the gate). See issue #332.
  *
  * Wired per effect-smol's CLI guidance (mirrors `@phoenix/epic-ledger`):
  * `effect/unstable/cli` for the variadic file argument, the Node platform over
@@ -18,6 +21,11 @@ import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Data, Effect} from "effect";
 import {Argument, Command} from "effect/unstable/cli";
 import {findLeaks, type Leak} from "./leak-guard.ts";
+
+// 2 = a confirmed leak; any OTHER non-zero from this process means the scan
+// could not complete, which the pre-commit hook treats as warn-and-allow while
+// CI treats as failure (issue #332).
+const LEAK_EXIT_CODE = 2;
 
 interface FileLeaks {
 	readonly file: string;
@@ -85,7 +93,7 @@ guard.pipe(
 	// LeakFound is the expected CI-fail signal, its report already on stderr — turn
 	// it into a bare non-zero exit so NodeRuntime doesn't also dump a stack trace,
 	// while genuine crashes still get the default error report.
-	Effect.catchTag("LeakFound", () => Effect.sync(() => process.exit(1))),
+	Effect.catchTag("LeakFound", () => Effect.sync(() => process.exit(LEAK_EXIT_CODE))),
 	Effect.provide(NodeServices.layer),
 	NodeRuntime.runMain,
 );

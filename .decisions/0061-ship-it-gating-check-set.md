@@ -1,12 +1,12 @@
 ---
-id: 0059
+id: 0061
 title: ship-it Gates on the Gating-Check Set, Not the Full Rollup; Preview Deploys Are Informational
 status: accepted
 date: 2026-06-15
 tags: [pipeline, skills, ship-it, heal-ci, ci, agents]
 ---
 
-# 0059 — ship-it Gates on the Gating-Check Set, Not the Full Rollup; Preview Deploys Are Informational
+# 0061 — ship-it Gates on the Gating-Check Set, Not the Full Rollup; Preview Deploys Are Informational
 
 ## Context
 

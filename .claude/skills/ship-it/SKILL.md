@@ -354,7 +354,7 @@ is treated as gating (it blocks) until it is deliberately classified — never t
 **Known-informational checks** (a red here does **not** block and is **not** routed to
 heal-ci): the `Deploy` workflow's preview deploys (`deploy (web)`). A preview-deploy infra
 flake (e.g. `Secret probe returned 502`) is orthogonal to whether the PR is correct and
-tested — see ADR [0059](../../../.decisions/0059-ship-it-gating-check-set.md).
+tested — see ADR [0061](../../../.decisions/0061-ship-it-gating-check-set.md).
 
 Classify in this order (`skipping`/`cancel` are non-blocking — neither a failure nor an
 in-flight wait):
