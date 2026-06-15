@@ -21,7 +21,8 @@ import type {EpicLedger} from "./Ledger.ts";
  * The label categories a pickable child must carry exactly one of, in the order
  * a `MISSING_LABEL` finding reports them. `type:` and a priority bucket and a
  * `status:` are the floor; `triage`/`plan-epic` mint all three (a child born
- * from a planned epic is `type:* + p? + status:triaged`).
+ * from a planned epic is `type:* + p? + status:planned`, which `review-plan`
+ * later flips to `status:triaged` — see ADR 0047).
  */
 const REQUIRED_LABEL_PREFIXES = ["type:", "status:"] as const;
 const PRIORITY_LABELS = ["p0", "p1", "p2"] as const;
