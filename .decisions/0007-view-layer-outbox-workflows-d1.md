@@ -17,8 +17,8 @@ picked Cloudflare's `Agent<Env, State>` as the DO base class. This ADR fills
 the third layer: the projection transport, the view-store shape, the trigger
 pattern, and durability.
 
-The grill (`~/.usirin/vault/grill/2026-05-09-sozluk-redesign.md` Q9–Q15)
-landed these substantive findings that this ADR locks in:
+The sözlük-redesign grill (Q9–Q15) landed these substantive findings that
+this ADR locks in:
 
 - **Workflows over Queues** for projection. CF Workflows GA April 2026; local
   dev story (Local Explorer, `wrangler workflows trigger --local`) is mature
