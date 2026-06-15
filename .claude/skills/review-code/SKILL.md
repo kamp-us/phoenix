@@ -137,7 +137,8 @@ make the isolation hold *by construction*, not by your remembering to behave:
   from disk because they are never in the allowlist. The instruction surfaces cannot be on
   your path because they are never checked out.
 - **The head reaches a ref, never your working tree.** You fetch the head into a dedicated
-  ref (`refs/pr/$PR`) and add the throwaway worktree *from that ref*. Your own session tree
+  per-run ref (`$PR_REF`, a `refs/pr/$PR-<uuid>`) and add the throwaway worktree *from that
+  ref*. Your own session tree
   is never switched, reset, or checked out to the head — so even the cross-fork path never
   materializes head-controlled config into the tree you operate from. The head's checks run
   *against* the product-only worktree via `pnpm -C`, never by switching your session into it.
@@ -152,10 +153,13 @@ BASE_REF="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq '.base.ref')"   # normal
 # resolves for same-repo AND cross-fork PRs, so there is no separate cross-fork branch to
 # check out into your own tree (the trust inversion ADR 0052 closes — never run
 # `gh pr checkout`, which would materialize the head's config into the session checkout).
-git fetch origin "pull/$PR/head:refs/pr/$PR"
+# Per-run ref: the PR number alone is shared, so a second review of the same PR would
+# overwrite the ref mid-review and you'd verify the wrong SHA — uniquify it per invocation.
+PR_REF="refs/pr/$PR-$(uuidgen)"
+git fetch origin "pull/$PR/head:$PR_REF"
 
 REVIEW_WT="$(mktemp -d)/review-head-${PR}"
-git worktree add --no-checkout "$REVIEW_WT" "refs/pr/$PR"
+git worktree add --no-checkout "$REVIEW_WT" "$PR_REF"
 # NON-cone: explicit allowlist → ONLY these paths land; root CLAUDE.md, .claude/**,
 # .decisions/**, .patterns/** are never materialized (cone mode would leak root CLAUDE.md).
 git -C "$REVIEW_WT" sparse-checkout init --no-cone
@@ -167,7 +171,7 @@ git -C "$REVIEW_WT" checkout
 
 The cross-fork case needs no special branch: `pull/$PR/head` is the GitHub-provided ref for
 the PR head whether it lives on this repo or a fork, so the single `git fetch` above covers
-both — and because it lands in `refs/pr/$PR` (not your working tree), head config never
+both — and because it lands in `$PR_REF` (not your working tree), head config never
 reaches your instruction path on any path.
 
 For criteria that assert *behavior* (a test passes, typecheck is clean, a command produces
@@ -177,7 +181,7 @@ verified by running beats behavior inferred from a diff:
 ```bash
 pnpm -C "$REVIEW_WT" install   # if deps changed
 pnpm -C "$REVIEW_WT" typecheck && pnpm -C "$REVIEW_WT" lint   # and/or the specific test the criterion names
-rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "refs/pr/$PR"   # tear the throwaway tree + ref down
+rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"   # tear the throwaway tree + ref down
 ```
 
 Don't run more than the criteria demand — you're verifying *this issue's* checklist,
