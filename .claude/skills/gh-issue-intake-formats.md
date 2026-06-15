@@ -315,11 +315,30 @@ The rest of the comment body carries the per-criterion evidence table (the
 verdict). What's load-bearing for the scanner is only that first marker line; the
 table below it is for the human and the implementer.
 
+### The matcher contract: emphasis-tolerant (canonical shape)
+
+The marker line may carry **leading Markdown emphasis** — `review-code` historically emits
+it bolded (`**review-code: PASS — merge-ready**`), `review-doc` emits it bare. To stop the
+emitter and the matcher from drifting apart (the bolded marker once read as "no verdict" and
+stalled every code-lane merge — #219), this contract pins **one** rule both sides cite:
+
+- **Canonical emit shape** (what an emitter SHOULD write): the bare, unbolded first line —
+  `review-code: PASS — merge-ready`. New/converging emitters write this.
+- **Matcher obligation** (what every scanner MUST accept): an **optional leading `**`** before
+  the namespace token, so a bolded marker resolves identically to a bare one. The anchored,
+  case-insensitive matcher is `^\s*\**\s*review-(code|doc):\s*(PASS|FAIL)` — the leading `\**`
+  absorbs the emphasis; the `^\s*` still pins it to the start of the body so a mid-body *quote*
+  of a marker never matches. This is **backward-compatible**: it resolves both the existing
+  bolded `review-code` markers already sitting on open PRs and the bare `review-doc` markers,
+  with no re-review. Every matcher site — `ship-it` (merge gate) and `write-code` (fix
+  round-trip) — cites this rule so they can't diverge again.
+
 ### Field notes
 
 - **First line, recognizable.** The marker leads the comment so a scan can match
   it without parsing the whole body. Recognize it tolerantly by shape
-  (`review-code: PASS` … `merge-ready`), not by exact dashes or spacing.
+  (`review-code: PASS` … `merge-ready`) and emphasis (optional leading `**`, per the
+  matcher contract above), not by exact dashes or spacing.
 - **Two markers, two consumers.** `PASS — merge-ready` (every criterion verified) is
   read by `ship-it` as the go-ahead to merge. `FAIL — not merge-ready` (≥1 criterion
   unmet) is read by `write-code`'s fix round-trip as "my PR came back failed"; `ship-it`
@@ -365,14 +384,15 @@ load-bearing for the scanner is only that first marker line.
 ### Field notes
 
 - **Separate namespace from `review-code`.** `ship-it` matches the two markers with two
-  anchored, namespaced regexes — `^\s*review-code:\s*(PASS|FAIL)` and
-  `^\s*review-doc:\s*(PASS|FAIL)` — and resolves latest-verdict-wins **per namespace** by
-  timestamp. A `review-code` scan must never match a `review-doc` marker, nor vice versa.
-  `review-doc` therefore **never** emits a `review-code` marker, and `review-code` never
-  emits a `review-doc` one.
+  anchored, namespaced, emphasis-tolerant regexes — `^\s*\**\s*review-code:\s*(PASS|FAIL)`
+  and `^\s*\**\s*review-doc:\s*(PASS|FAIL)` (the matcher contract in §5) — and resolves
+  latest-verdict-wins **per namespace** by timestamp. A `review-code` scan must never match a
+  `review-doc` marker, nor vice versa. `review-doc` therefore **never** emits a `review-code`
+  marker, and `review-code` never emits a `review-doc` one.
 - **First line, recognizable.** The marker leads the comment so a scan matches it without
   parsing the whole body. Recognize it tolerantly by shape (`review-doc: PASS` …
-  `merge-ready`), not by exact dashes or spacing.
+  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
+  dashes or spacing.
 - **Two markers, two consumers.** `PASS — merge-ready` (every AC + every hygiene check
   verified) is read by `ship-it` as the go-ahead to merge a **non-blocking** doc PR.
   `FAIL — changes-requested` (≥1 AC or hygiene check unmet) is read by `write-code`'s fix

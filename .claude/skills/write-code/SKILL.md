@@ -104,8 +104,10 @@ gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   # trigger spurious repair. Empty set ⇒ IN($authorized[]) matches nothing ⇒ no verdict
   # resolves ⇒ the scan safely finds nothing — fail-closed.
   comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+  # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
+  # per gh-issue-intake-formats.md §5 — the canonical matcher contract
   markerAuthors=$(jq -r '[.[]
-      | select(.body | test("^\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+      | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
       | .user.login] | unique | .[]' <<<"$comments")
   authorized='[]'
   while IFS= read -r a; do
@@ -119,7 +121,7 @@ gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   # cluster by timestamp gap (>120s = new round), same identity as the Bounding count, never a minute bucket
   ROUNDS=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+          | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*FAIL"; "i"))
           | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
      | sort
      | reduce .[] as $t ({n:0, prev:null};
@@ -129,14 +131,14 @@ gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
   CODE=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+          | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
      | sort_by(.created_at) | last | .body // ""' <<<"$comments")
   DOC=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
      | sort_by(.created_at) | last | .body // ""' <<<"$comments")
-  echo "$CODE" | grep -qiE '^\s*review-code:\s*FAIL' && echo "#$PR review-code FAIL"
-  echo "$DOC"  | grep -qiE '^\s*review-doc:\s*FAIL'  && echo "#$PR review-doc FAIL"
+  echo "$CODE" | grep -qiE '^\s*\**\s*review-code:\s*FAIL' && echo "#$PR review-code FAIL"
+  echo "$DOC"  | grep -qiE '^\s*\**\s*review-doc:\s*FAIL'  && echo "#$PR review-doc FAIL"
 done
 ```
 
@@ -414,8 +416,10 @@ PR=<the PR number you were handed>
 # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2 uses
 # (ADR 0055): build the authorized set from THIS PR's marker authors holding write+ on the repo.
 comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+# every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
+# per gh-issue-intake-formats.md §5 — the canonical matcher contract
 markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+    | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' <<<"$comments")
 authorized='[]'
 while IFS= read -r a; do
@@ -429,7 +433,7 @@ done <<<"$markerAuthors"
 # latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+         | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
@@ -441,7 +445,7 @@ gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
 # latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+         | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
 ```
 
@@ -471,9 +475,10 @@ work list** — fix exactly what they name, no more, no less:
 ```bash
 # the full body of the latest FAILing review-code marker (swap review-code→review-doc for the doc namespace)
 # author-gated against the ACL-derived $authorized set R1 already built — only a real reviewer's findings are your work list
+# marker test stays emphasis-tolerant (leading \** absorbs review-code's bolding) per gh-issue-intake-formats.md §5
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*review-code:\\s*FAIL"; "i"))]
+         | select(.body | test("^\\s*\\**\\s*review-code:\\s*FAIL"; "i"))]
     | sort_by(.created_at) | last | .body' <<<"$comments"
 ```
 
@@ -543,7 +548,7 @@ R1 (reuse its `$comments` + `$authorized`) — only a real reviewer's FAIL count
 # re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*review-(code|doc):\\s*FAIL"; "i"))
+         | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*FAIL"; "i"))
          | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
     | sort
     | reduce .[] as $t ({n:0, prev:null};

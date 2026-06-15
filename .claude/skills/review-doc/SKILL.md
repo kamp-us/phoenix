@@ -65,8 +65,11 @@ stage exists to prevent — the same invariant `review-code` holds.
 
 ## You emit a `review-doc` marker, NEVER a `review-code` one
 
-`ship-it` matches the two markers in **separate namespaces** (two anchored regexes,
-`^\s*review-code:\s*(PASS|FAIL)` and `^\s*review-doc:\s*(PASS|FAIL)`), latest-verdict-wins
+`ship-it` matches the two markers in **separate namespaces** (two anchored,
+**emphasis-tolerant** regexes — the leading `\**` absorbs an optional bolding `**`, since
+`review-code` emits its marker bolded — `^\s*\**\s*review-code:\s*(PASS|FAIL)` and
+`^\s*\**\s*review-doc:\s*(PASS|FAIL)`; see the matcher contract in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5), latest-verdict-wins
 per namespace by timestamp. Your verdict's first line is **always** `review-doc: …` —
 never `review-code: …`. Emitting a `review-code` marker on a doc PR would let a
 code-namespace scan match your verdict (and vice versa), collapsing the two gates into
@@ -321,7 +324,9 @@ else
 fi
 ```
 
-Verdict body shape:
+Verdict body shape. The first line is the **canonical bare marker** — no leading `**` emphasis
+— per the matcher contract in [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5
+(matchers tolerate an optional leading `**`, but emit bare):
 
 ```markdown
 review-doc: PASS — merge-ready

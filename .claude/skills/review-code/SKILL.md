@@ -297,10 +297,13 @@ ACs are satisfied, not that the autonomous merge step may act. (A PR touching on
 `.decisions/**`/`.patterns/**` is **not** control-plane and **does** auto-merge via
 `review-doc` — do not add this line for it.)
 
-Verdict body shape (this is what you wrote to `$VERDICT_FILE` above):
+Verdict body shape (this is what you wrote to `$VERDICT_FILE` above). The first line is the
+**canonical bare marker** — no leading `**` emphasis — per the matcher contract in
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5; matchers tolerate an optional
+leading `**` for backward compatibility, but emit the bare form:
 
 ```markdown
-**review-code: PASS — merge-ready**
+review-code: PASS — merge-ready
 
 Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 
@@ -350,7 +353,7 @@ per-criterion evidence is the required artifact**; the review event is a nicety 
 Verdict body shape:
 
 ```markdown
-**review-code: FAIL — not merge-ready**
+review-code: FAIL — not merge-ready
 
 Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 

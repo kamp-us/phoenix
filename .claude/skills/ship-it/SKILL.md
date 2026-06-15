@@ -168,10 +168,12 @@ PASS in **each namespace whose artifact class is present** (from Step 0). A revi
 must never match a review-doc marker, or vice versa.
 
 The two anchors (case-insensitive, anchored at the start of the comment body so a comment
-that merely *quotes* a marker mid-body doesn't match):
+that merely *quotes* a marker mid-body doesn't match, and **emphasis-tolerant** — the leading
+`\**` absorbs an optional bolding `**`, since `review-code` emits its marker bolded; see the
+matcher contract in [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5):
 
-- code: `^\s*review-code:\s*(PASS|FAIL)`
-- doc:  `^\s*review-doc:\s*(PASS|FAIL)`
+- code: `^\s*\**\s*review-code:\s*(PASS|FAIL)`
+- doc:  `^\s*\**\s*review-doc:\s*(PASS|FAIL)`
 
 A marker comment counts as a verdict **only if its author holds `write`-or-higher permission
 on the repo** — authorization is resolved from GitHub's ACL at merge time, not from a list
@@ -197,7 +199,7 @@ comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
 
 # distinct logins that posted any review-code/review-doc marker
 markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+    | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' <<<"$comments")
 
 # keep only those holding write+ on the repo (GitHub's ACL is the trust root, ADR 0055)
@@ -226,13 +228,13 @@ gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
 # latest review-code marker comment (code namespace) — author-gated, anchored, never matches review-doc
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
+         | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
 
 # latest review-doc marker comment (doc namespace) — author-gated, anchored, never matches review-code
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
+         | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
 ```
 
