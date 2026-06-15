@@ -1,7 +1,7 @@
 ---
 id: 0054
 title: Run-Evidence Bundle — The Gate Trusts SHA-Bound Run Proof, Not Prose
-status: proposed
+status: accepted
 date: 2026-06-14
 tags: [pipeline, ci, review-code, ship-it, auto-merge]
 ---
@@ -43,15 +43,17 @@ candidate, not a thing to defer: it already emits exactly this bundle
 on phoenix's own substrate (Cloudflare Worker + Durable Object, self-hostable).
 CLAUDE.md's "never build what you can install" therefore *favors* adopting crabbox over
 hand-building a CI bundle-assembly pipeline — **provided** crabbox is mature enough to
-depend on, which is the one genuine unknown. So the producer is gated on a spike, not
-pre-judged in either direction.
+depend on, which was the one genuine unknown. Spike **#235** resolved it: a real
+local-container run synced the dirty checkout, ran a command, and produced a bundle with
+a machine-readable run summary + JUnit, on our substrate, zero creds — so the producer is
+crabbox.
 
 ## Decision
 
 The auto-merge gate trusts a **run-evidence bundle**: a structured, SHA-bound artifact
-produced by the run — not prose, not an opaque status. Two layers, decided separately:
-the **bundle contract** (§2/§3) is settled now; the **producer** (§4) is gated on a
-crabbox spike, with crabbox the leading candidate and CI-emits-the-bundle as the fallback.
+produced by the run — not prose, not an opaque status. Two layers: the **bundle contract**
+(§2/§3) is the durable spec; the **producer** (§4) is **crabbox** (spike #235 confirmed
+viable), with CI-emits-the-bundle as the documented fallback.
 
 ### 1. The bundle is the trust unit, bound to the head SHA.
 
@@ -91,29 +93,33 @@ opaque rollup:
 - `review-code` may cite specific `tests`/`coverage` from the bundle instead of reasoning
   from a raw log scrape, making its verdict reproducible.
 
-### 4. The producer is gated on a crabbox spike; crabbox is the leading candidate.
+### 4. The producer is crabbox (spike #235 confirmed).
 
-crabbox already emits this bundle, is agent-native, and runs on our substrate, so it is the
-leading producer — but we de-risk before depending on it. A spike (filed as an
-investigation, see Consequences) self-hosts crabbox on our Cloudflare account, runs one
-real PR end-to-end (dirty checkout → bundle), and assesses maturity, the credential model,
-and CF fit. Its verdict picks the producer:
+The producer is **crabbox** (option **a**): an agent issues `crabbox run`, and the run's
+machine-readable summary + `--artifact-glob`'d JUnit + logs (or `crabbox artifacts collect`
+for richer bundles) are the evidence the gate consumes. Spike #235 validated this with a
+real `--provider local-container` run (zero creds, on our substrate): dirty-checkout sync →
+command → streamed output → a bundle, against crabbox v0.31.0 (open-source, MIT, on CF
+Worker + DO; pre-1.0, so **pin a version**).
 
-- **crabbox passes** → adopt it as the producer (option **a**): an agent issues
-  `crabbox run`, and `crabbox artifacts collect` is the bundle the gate consumes.
-- **crabbox doesn't pass** → fall back to **CI emits the bundle** (option **b**): GitHub
-  Actions assembles the manifest as a run artifact (vitest JUnit/JSON reporter + captured
-  logs). No new substrate.
+One gap the spike found: crabbox's run summary does **not** emit the git `commit`, so §1's
+`bundle.commit == head SHA` is closed by either `crabbox run --fresh-pr owner/repo#N`
+(producer pins the PR/ref) or a thin adapter that stamps `git rev-parse HEAD` and derives
+`checks[]` from per-run `exitCode`. That adapter + the gate wiring is the implementation
+epic **#238**.
 
-Either way the contract (§2) and the gate (§3) are unchanged — only the producer differs.
+**Fallback (documented, not chosen):** if crabbox ever proves untenable, **CI emits the
+bundle** (option **b**) — GitHub Actions assembles the manifest as a run artifact (vitest
+JUnit/JSON + captured logs). Because the contract (§2) and gate (§3) are producer-agnostic,
+swapping the producer never touches the gate.
 
 ### 5. A native coordinator DO (option c) is the last resort.
 
 We do **not** build a phoenix-native coordinator/lease Durable Object now. crabbox already
 *is* that coordinator on our exact substrate; building our own duplicates installable
-infrastructure. Option (c) is reconsidered only if the crabbox spike fails **and**
-CI-emits-the-bundle proves insufficient for a concrete need — the explicit last resort,
-never the reflex.
+infrastructure. Option (c) is reconsidered only if crabbox proves untenable in practice
+**and** CI-emits-the-bundle proves insufficient for a concrete need — the explicit last
+resort, never the reflex.
 
 ## Consequences
 
@@ -124,11 +130,11 @@ never the reflex.
 - **`review-code` gets reproducible inputs** — structured test/coverage results instead of
   log archaeology.
 - **The producer is a swap, not a gate redesign.** The contract-vs-producer split is the
-  root-cause decision; whichever producer the spike selects, the gate (§3) is unchanged.
-- **The producer choice is gated on a spike** — filed as an investigation issue: self-host
-  crabbox on our CF, run one real PR (dirty checkout → bundle), and assess maturity, the
-  credential model, and CF fit. This ADR stays `proposed` until the spike reports its
-  verdict (adopt crabbox vs. fall back to CI-emits-bundle).
+  root-cause decision; the gate (§3) is unchanged regardless of producer.
+- **Producer resolved to crabbox (spike #235).** A real local-container run validated the
+  loop + bundle on our substrate, zero creds. The one gap — crabbox doesn't emit the
+  `commit` SHA — is closed via `--fresh-pr` or a thin adapter (the implementation epic
+  **#238**). The CI-emits-bundle path remains the documented fallback.
 - **Implementation cost lands in the control plane.** Emitting the bundle touches
   `.github/**` (CI workflow) and consuming it touches `.claude/**` (`ship-it`,
   `review-code`) — both **blocking** per ADR [0053](0053-control-plane-boundary.md), so
