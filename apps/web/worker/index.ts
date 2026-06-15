@@ -63,7 +63,7 @@ export class Phoenix extends Cloudflare.Worker<
 		// GET and 405 for POST).
 		directory: "./dist/client",
 		notFoundHandling: "single-page-application",
-		runWorkerFirst: ["/api/*", "/fate", "/fate/*"],
+		runWorkerFirst: ["/api/*", "/fate", "/fate/*", "/rss.xml"],
 	},
 	compatibility: {flags: ["nodejs_compat"]},
 	observability: {enabled: true},

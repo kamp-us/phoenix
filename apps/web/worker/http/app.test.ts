@@ -178,6 +178,62 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		expect(me.data).not.toBeNull();
 	});
 
+	it("GET /rss.xml → 200 application/rss+xml, well-formed RSS 2.0", async () => {
+		const res = await fetch(appLayer, new Request("https://test.local/rss.xml"));
+		expect(res.status).toBe(200);
+		expect(res.headers.get("content-type")).toMatch(/application\/rss\+xml/);
+		const body = await res.text();
+		expect(body).toMatch(/^<\?xml version="1\.0" encoding="UTF-8"\?>/);
+		expect(body).toContain('<rss version="2.0"');
+		expect(body).toContain("<channel>");
+		expect(body).toContain("</channel></rss>");
+		// the atom self-link points back at the feed's own absolute URL (request origin)
+		expect(body).toContain('<atom:link href="https://test.local/rss.xml" rel="self"');
+	});
+
+	it("GET /rss.xml lists a submitted post with an absolute link + pubDate", async () => {
+		const signUp = await fetch(
+			appLayer,
+			new Request("https://test.local/api/auth/sign-up/email", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					email: "rss@example.com",
+					password: "hunter2hunter2",
+					name: "rss",
+				}),
+			}),
+		);
+		const cookie = signUp.headers.get("set-cookie")!.split(";")[0]!;
+
+		const submit = await fetch(
+			appLayer,
+			new Request("https://test.local/fate", {
+				method: "POST",
+				headers: {"content-type": "application/json", cookie},
+				body: JSON.stringify({
+					version: 1,
+					operations: [
+						{
+							id: "1",
+							kind: "mutation",
+							name: "post.submit",
+							input: {title: "rss feed test post", tags: [{kind: "meta"}]},
+							select: ["id"],
+						},
+					],
+				}),
+			}),
+		);
+		expect(submit.status).toBe(200);
+
+		const res = await fetch(appLayer, new Request("https://test.local/rss.xml"));
+		const body = await res.text();
+		expect(body).toContain("<title>rss feed test post</title>");
+		expect(body).toMatch(/<link>https:\/\/test\.local\/pano\/[^<]+<\/link>/);
+		expect(body).toMatch(/<pubDate>[^<]+GMT<\/pubDate>/);
+	});
+
 	it("GET /fate/live is wired into AppLive and rejects 401 without a session", async () => {
 		// Asserts the route is mounted in the compiled router and session-gated
 		// before any DO is reached (cross-role behavior: `features/fate-live/do.test.ts`).
