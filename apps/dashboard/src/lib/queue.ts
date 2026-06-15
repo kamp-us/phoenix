@@ -76,7 +76,8 @@ export function groupByStatus(issues: readonly PipelineIssue[]): StatusGroup[] {
 
 export interface Freshness {
 	stale: boolean;
-	fetchedAt: string | null;
+	/** Epoch-millis the snapshot was fetched from GitHub (the worker's wire type, #291), or null when absent. */
+	fetchedAt: number | null;
 }
 
 /**
@@ -87,6 +88,6 @@ export interface Freshness {
 export function readFreshness(state: PipelineState): Freshness {
 	return {
 		stale: state.stale === true,
-		fetchedAt: typeof state.fetchedAt === "string" ? state.fetchedAt : null,
+		fetchedAt: typeof state.fetchedAt === "number" ? state.fetchedAt : null,
 	};
 }
