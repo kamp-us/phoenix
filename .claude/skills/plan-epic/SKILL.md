@@ -88,10 +88,12 @@ stop to ask.)
 ```bash
 # the epic, its current body, its labels, and any children it already has
 gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
-gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' > /tmp/plan-epic-<EPIC>-current.md
-# capture the body's revision marker now — Step 5 re-reads it just before the write to
-# detect a concurrent edit and abort+retry instead of clobbering it (the lost-update guard).
-gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at' > /tmp/plan-epic-<EPIC>-updated-at.txt
+# capture the body AND its revision marker from ONE GET — reading them in two calls lets a writer
+# land between them, yielding an updated_at newer than the captured body (TOCTOU skew); the Step 5
+# recheck would then either spuriously retry or trust a marker that doesn't match the captured body.
+gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-snap.json
+jq -r '.body'       /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-current.md
+jq -r '.updated_at' /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-updated-at.txt
 gh api 'repos/kamp-us/phoenix/issues/<EPIC>/sub_issues?per_page=100' \
   --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
 ```
@@ -370,13 +372,19 @@ since you read it: **abort, re-read the body from scratch, re-derive your sectio
 fresh revision, and retry** — never `PATCH` over a body you didn't just read.
 
 ```bash
-# /tmp/plan-epic-<EPIC>-deps.md = the new `## Dependencies` block (and, when re-planning,
-#   /tmp/plan-epic-<EPIC>-plan.md = the new `## Plan (plan-epic)` block).
-# Loop: re-read → verify unchanged → splice → PATCH → re-verify it landed.
+# /tmp/plan-epic-<EPIC>-deps.md = the new `## Dependencies` block. On a RE-PLAN, also
+#   /tmp/plan-epic-<EPIC>-plan.md = the new `## Plan (plan-epic)` block (set REPLAN=1).
+#   Give each block a trailing blank line so the next spliced heading stays separated.
+# Each block's FIRST line is its heading; landing is confirmed against a content-bearing line
+# (a real `- #<child>` topology line), NOT the heading — the heading alone can't tell our
+# section from a racer's clobber (see step 5). Recomputed each pass since a re-derive (step 2)
+# rewrites deps.md.
+# Loop: re-read → verify unchanged → guard → splice → PATCH → re-verify our content landed.
 for attempt in 1 2 3; do
-  # 1. re-read the LIVE body + its current revision marker
-  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body'       > /tmp/plan-epic-<EPIC>-live.md
-  NOW=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at')
+  # 1. re-read the LIVE body + its revision marker from ONE GET (coherent — no TOCTOU skew)
+  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-live.json
+  jq -r '.body'       /tmp/plan-epic-<EPIC>-live.json > /tmp/plan-epic-<EPIC>-live.md
+  NOW=$(jq -r '.updated_at' /tmp/plan-epic-<EPIC>-live.json)
   WAS=$(cat /tmp/plan-epic-<EPIC>-updated-at.txt)
 
   # 2. optimistic recheck — if the body moved since we last read it, re-derive and retry
@@ -388,21 +396,41 @@ for attempt in 1 2 3; do
     continue
   fi
 
-  # 3. surgical splice: replace ONLY the `## Dependencies` block in the live body, keep the rest.
-  #    (Operate on /tmp/plan-epic-<EPIC>-live.md: cut from the `## Dependencies` heading to EOF —
-  #    it is the pinned last section — and append the freshly-derived block. When re-planning,
-  #    splice the `## Plan (plan-epic)` block the same way: replace heading-to-next-`## `, in place.)
+  # 3. anchor guard — splice keys off a SINGLE exact `## Dependencies` heading. If the live body
+  #    has zero (heading drifted, e.g. `## Dependencies (phased)`) or two of them, blind-append
+  #    would silently produce a duplicate/orphaned section. Abort loudly instead of corrupting.
+  DEPS_HEADINGS=$(grep -c '^## Dependencies[[:space:]]*$' /tmp/plan-epic-<EPIC>-live.md)
+  if [ "$DEPS_HEADINGS" -ne 1 ]; then
+    echo "live body has $DEPS_HEADINGS exact '## Dependencies' headings (want exactly 1) — refusing to splice; inspect by hand"
+    break
+  fi
+
+  # 4. surgical splice: replace ONLY the changed section(s) in the live body, keep every other byte.
+  #    `## Dependencies` is the pinned LAST section: cut from its heading to EOF, append fresh deps.
   awk '/^## Dependencies[[:space:]]*$/{exit} {print}' /tmp/plan-epic-<EPIC>-live.md \
     > /tmp/plan-epic-<EPIC>-body.md
   cat /tmp/plan-epic-<EPIC>-deps.md >> /tmp/plan-epic-<EPIC>-body.md
+  # On a RE-PLAN, `## Plan (plan-epic)` ALSO changed — splice it in place too: delete the inclusive
+  # `## Plan (plan-epic)`..next-`## ` range and re-insert the fresh plan block at that boundary.
+  if [ "${REPLAN:-0}" = 1 ]; then
+    awk -v plan="/tmp/plan-epic-<EPIC>-plan.md" '
+      /^## Plan \(plan-epic\)[[:space:]]*$/ { while ((getline l < plan) > 0) print l; skip=1; next }
+      skip && /^## / { skip=0 }
+      !skip { print }
+    ' /tmp/plan-epic-<EPIC>-body.md > /tmp/plan-epic-<EPIC>-body.2.md \
+      && mv /tmp/plan-epic-<EPIC>-body.2.md /tmp/plan-epic-<EPIC>-body.md
+  fi
   BODY="$(cat /tmp/plan-epic-<EPIC>-body.md)"
+  DEPS_PROBE="$(grep -m1 '^- #' /tmp/plan-epic-<EPIC>-deps.md)"   # a real `- #<child>` line, not the heading
 
-  # 4. write, then re-confirm OUR section landed — the residual window (below) means the
-  #    PATCH itself is still last-write-wins; this read is the honest after-the-fact check.
+  # 5. write, then re-confirm OUR CONTENT landed — grep a content-bearing topology line, NOT the
+  #    `## Dependencies` heading: a racer's clobbering body also has that heading, so a heading
+  #    match can't tell our section from theirs. The residual window (below) means the PATCH is
+  #    still last-write-wins; this is the honest after-the-fact check that retries the loser.
   gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY" >/dev/null
-  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' | grep -qF "$(head -1 /tmp/plan-epic-<EPIC>-deps.md)" \
-    && { echo "epic body updated, ## Dependencies present"; break; } \
-    || { echo "our section is not in the post-write body — a racer clobbered it; retrying"; \
+  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' | grep -qF "$DEPS_PROBE" \
+    && { echo "epic body updated, our ## Dependencies topology present"; break; } \
+    || { echo "our topology line is not in the post-write body — a racer clobbered it; retrying"; \
          gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at' > /tmp/plan-epic-<EPIC>-updated-at.txt; }
 done
 ```
@@ -417,8 +445,9 @@ the brief, don't "tidy" it, don't reconstruct it from memory — splice around i
 `updated_at` read but **before** your `PATCH` lands is still lost-update territory, because the
 `PATCH` itself is last-write-wins (GitHub offers no conditional write on issue bodies). Layer 1
 shrinks the blast radius to *same-section* collisions; layer 2 narrows the same-section window;
-the re-confirm in step 4 catches the loser *after the fact* so it retries rather than failing
-silently. What this is **not** is mutual exclusion — true single-writer safety on one epic would
+the re-confirm in step 5 — matching a content-bearing topology line, not the section heading —
+catches the loser *after the fact* so it retries rather than failing silently. What this is
+**not** is mutual exclusion — true single-writer safety on one epic would
 need a designated single planner or a CAS the API doesn't provide (same honest framing as the
 issue-claim semantics in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 and
 the SHA-bound verdict contract, ADR 0058). Don't claim a "lock"; claim "no silent lost-update of
@@ -482,9 +511,12 @@ top, as always. The re-plan write goes through **the same guarded read-modify-wr
 Step 5** — surgical section splice + optimistic `updated_at` recheck, never a blind
 whole-body `PATCH`. Re-plan is exactly the concurrency hot-spot the guard exists for: a
 re-plan loop racing a fresh `plan-epic` run or a `review-plan` child-flip is the
-lost-update case in issue #261. Splice the `## Plan (plan-epic)` block and the
-`## Dependencies` block into the freshly-read live body; abort+re-derive if `updated_at`
-moved since your read.
+lost-update case in issue #261. Write the fresh `## Plan (plan-epic)` block to
+`/tmp/plan-epic-<EPIC>-plan.md`, the fresh `## Dependencies` block to
+`/tmp/plan-epic-<EPIC>-deps.md`, and run the Step 5 loop with `REPLAN=1` so it splices
+**both** sections into the freshly-read live body in place; abort+re-derive if `updated_at`
+moved since your read. (On a first-time plan, leave `REPLAN` unset — only `## Dependencies`
+is new, the plan block was just appended above the heading.)
 
 ---
 
