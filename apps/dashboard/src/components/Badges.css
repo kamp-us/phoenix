@@ -56,3 +56,22 @@
 	color: #475569;
 	border-color: #e2e8f0;
 }
+
+.db-badge--verdict {
+	text-decoration: none;
+}
+.db-badge--verdict-pass {
+	background: #ecfdf5;
+	color: #065f46;
+	border-color: #a7f3d0;
+}
+.db-badge--verdict-fail {
+	background: #fef2f2;
+	color: #991b1b;
+	border-color: #fecaca;
+}
+.db-badge--verdict-awaiting {
+	background: #f1f5f9;
+	color: #475569;
+	border-color: #cbd5e1;
+}

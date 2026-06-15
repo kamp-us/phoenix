@@ -30,6 +30,22 @@ export type PipelineType = typeof PipelineType.Type;
 export const PipelinePriority = Schema.Literals(["p0", "p1", "p2"]);
 export type PipelinePriority = typeof PipelinePriority.Type;
 
+/** A single gate's verdict on a PR: PASS/FAIL, or null when that gate hasn't ruled. */
+export const ReviewOutcome = Schema.Literals(["PASS", "FAIL"]);
+export type ReviewOutcome = typeof ReviewOutcome.Type;
+
+/**
+ * The latest review verdict per namespace resolved from a PR's comments — the
+ * format-5/6 markers in `.claude/skills/gh-issue-intake-formats.md`. `null` means
+ * that gate has posted no PASS/FAIL marker yet; with an open PR present, both null
+ * is the "awaiting review" state (never a false PASS/FAIL). This is the pure parse
+ * core's output shape (`parseVerdict`).
+ */
+export interface ReviewVerdicts {
+	readonly code: ReviewOutcome | null;
+	readonly doc: ReviewOutcome | null;
+}
+
 /**
  * The typed fields lifted out of an issue's labels. Each is `NullOr` because an
  * issue may carry none of that namespace (a raw, not-yet-classified intake) — the
@@ -41,6 +57,23 @@ export class ParsedLabels extends Schema.Class<ParsedLabels>(
 	status: Schema.NullOr(PipelineStatus),
 	type: Schema.NullOr(PipelineType),
 	priority: Schema.NullOr(PipelinePriority),
+}) {}
+
+/**
+ * The merge-readiness verdict surfaced for an issue that has an open PR (#257).
+ * Present only when an open PR is linked; `null` on the issue otherwise. `code` /
+ * `doc` are the latest `review-code` / `review-doc` markers (null = that gate hasn't
+ * ruled). With a PR present and both null, the UI shows "awaiting review" — an open
+ * PR with no verdict never renders a false PASS/FAIL.
+ */
+export class IssueVerdict extends Schema.Class<IssueVerdict>(
+	"@phoenix/dashboard/pipeline/IssueVerdict",
+)({
+	/** The open PR carrying (or awaiting) the verdict. */
+	prNumber: Schema.Number,
+	prUrl: Schema.String,
+	code: Schema.NullOr(ReviewOutcome),
+	doc: Schema.NullOr(ReviewOutcome),
 }) {}
 
 /** A `requires:` edge: the issue's own number gated on another issue's number. */
@@ -79,6 +112,8 @@ export class PipelineIssue extends Schema.Class<PipelineIssue>(
 	/** The raw label names, kept so a consumer can see anything the parse didn't model. */
 	labels: Schema.Array(Schema.String),
 	parsed: ParsedLabels,
+	/** The gate verdict from a linked open PR, or null if the issue has none (#257). */
+	verdict: Schema.NullOr(IssueVerdict),
 }) {}
 
 /**
@@ -95,6 +130,8 @@ export class PipelineEpic extends Schema.Class<PipelineEpic>(
 	state: Schema.Literals(["open", "closed"]),
 	labels: Schema.Array(Schema.String),
 	parsed: ParsedLabels,
+	/** The gate verdict from a linked open PR, or null if the epic has none (#257). */
+	verdict: Schema.NullOr(IssueVerdict),
 	/** Child issue numbers from the `sub_issues` relation (the list endpoint, source of truth). */
 	children: Schema.Array(Schema.Number),
 	dependencies: DependencyTopology,

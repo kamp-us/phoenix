@@ -1,7 +1,7 @@
-/** One epic child: number, title, status/type/priority badges, pickability (story 3/5). */
+/** One epic child: number, title, status/type/priority badges, pickability (story 3/5), gate verdict (#257). */
 import type {ChildDerivation} from "../lib/epic.ts";
 import type {PipelineEpic, PipelineIssue} from "../lib/pipeline.ts";
-import {PriorityBadge, StatusBadge, TypeBadge} from "./Badges.tsx";
+import {PriorityBadge, StatusBadge, TypeBadge, VerdictBadge} from "./Badges.tsx";
 import "./ChildRow.css";
 import {PickabilityTag} from "./PickabilityTag.tsx";
 
@@ -23,6 +23,7 @@ export function ChildRow({
 				<StatusBadge status={issue.parsed.status} />
 				<TypeBadge type={issue.parsed.type} />
 				<PriorityBadge priority={issue.parsed.priority} />
+				<VerdictBadge verdict={issue.verdict} />
 				<PickabilityTag pickability={derivation.pickability} />
 			</div>
 		</li>
