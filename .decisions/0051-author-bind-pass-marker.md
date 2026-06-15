@@ -1,12 +1,16 @@
 ---
 id: 0051
 title: Author-Bind ship-it's PASS Signal — Only the Operator Identity Can Pass a PR
-status: proposed
+status: superseded
 date: 2026-06-13
 tags: [pipeline, skills, ship-it, review-code, security, agents]
 ---
 
 # 0051 — Author-Bind ship-it's PASS Signal — Only the Operator Identity Can Pass a PR
+
+Superseded by [0055](0055-acl-sourced-review-authz.md) — the author-bind principle stands,
+but the trust source moves from the checked-in `AUTHORIZED_REVIEWERS` allowlist to a runtime
+GitHub repo-ACL lookup (collaborator permission, `write+` floor).
 
 ## Context
 
