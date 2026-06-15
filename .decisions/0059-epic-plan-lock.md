@@ -75,7 +75,13 @@ lock absent in the same window both `POST` it and both proceed. The lock therefo
 - A true single-writer guarantee on one epic would need a **designated single planner** or a
   CAS the label API doesn't offer. We do **not** claim that. We claim: the *common* concurrent
   re-plan / flip-vs-supersede interleaving is serialized, and the residual co-acquire window is
-  backstopped (rule 3 + the #261 body-guard).
+  **narrowed**, not eliminated. Be precise about *which* residual each backstop covers: the
+  #261 body-guard catches the epic-body **lost-update**, and the rule-3 signature checkpoint
+  catches **false-convergence** (X4's count cycle). Neither backstops the **flip-vs-supersede
+  invariant** of X3 (a superseded child C not left `status:triaged`): that invariant holds only
+  on the serialized path — if both mutators co-acquire in the residual window, `review-plan`
+  can still flip C `triaged` while `plan-epic` supersedes it, and nothing here catches it. The
+  lock narrows that window; it does not close it, and X3 has no separate backstop.
 
 This is the same honesty the issue-claim semantics (§7) and the SHA-bound verdict contract
 ([0058](0058-sha-bound-verdict-contract.md)) state for their own last-write-wins primitives:
@@ -89,24 +95,38 @@ signature** (cycle) — the content-keyed stall test, *not* a count test (ADR
 [0047](0047-review-plan-gate.md) Decision 3; `packages/epic-ledger/src/gate.ts`,
 `loop.ts`). This ADR pins that the **convergence/stall decision is signature-keyed** as a
 plan-layer contract a future change must preserve: a count-only check could declare
-convergence on a ledger a concurrent run mutated (X4). The loop **aborts/parks on
-unexpected signature drift** rather than trusting a count.
+convergence on a ledger a concurrent run mutated (X4). The stall test is therefore
+**content-keyed, not count-keyed** — the loop parks on a *repeated* signature (a cycle),
+not on a count two runs happened to share.
 
-The lock (rule 1) is what stops **two** convergence loops from running at all — only one
-holder mutates, so only one loop drives an epic. The signature checkpoint is the
-**in-loop** guard for the residual: if the signature the loop sees doesn't match what it
-last drove the epic to (a racer slipped through the residual window and mutated the ledger),
-the loop sees the drift in the signature and parks rather than converging on corruption.
+Be precise about what the loop does and does not implement today (`loop.ts`): it compares
+the current FAIL signature to the *previous* one and parks on a **repeat**. It does **not**
+abort on arbitrary mid-loop drift — a *different* signature reads as progress and the loop
+continues. The defense against a concurrent mutator drifting the ledger out from under a
+running loop is the **lock (rule 1)**, not an in-loop drift check: the lock stops **two**
+convergence loops from running at all — only one holder mutates, so only one loop drives an
+epic. The signature checkpoint's job is narrower: it is the **cycle/false-convergence** guard
+(a count-only test could converge on a corrupted-but-equal count; a repeated signature can't
+be faked into looking like shrinking progress). A true "park on unexpected drift" checkpoint
+(compare what the loop last drove the epic to vs. what it now reads) is **not** implemented
+here; if that behavior is wanted it is a separate `loop.ts` change.
 
 ## Consequences
 
-- **X3 closed (primary path).** A re-plan that supersedes child C holds the lock, so a
-  concurrent `review-plan` finds it held and does **not** flip C `planned → triaged`. C is
-  never left `status:triaged` (pickable) after it has been superseded/unlinked — the flip and
-  the supersede are serialized, so `write-code` can't pick a dropped story.
+- **X3 closed on the serialized path (not separately backstopped).** A re-plan that supersedes
+  child C holds the lock, so a concurrent `review-plan` finds it held and does **not** flip C
+  `planned → triaged`. On the serialized path C is never left `status:triaged` (pickable) after
+  it has been superseded/unlinked — the flip and the supersede are serialized, so `write-code`
+  can't pick a dropped story. The flip-vs-supersede invariant holds **only** on that serialized
+  path: in the residual co-acquire window (rule 2) both can still proceed, and **neither**
+  backstop covers it — #261 guards the body lost-update, the signature checkpoint guards
+  false-convergence, and a superseded child *can* still be momentarily left `triaged` there.
+  The lock narrows that window; it does not eliminate X3.
 - **X4 closed (primary path).** Two convergence loops can't both run: the second finds the
-  lock held and backs off. The signature-keyed checkpoint is the backstop — a loop aborts on
-  unexpected drift instead of declaring convergence on a count two runs happened to share.
+  lock held and backs off. The signature-keyed checkpoint is the backstop for false-convergence
+  — keying the stall test on a *repeated* signature (a cycle), not a count two runs happened to
+  share, so a count cycle over corrupted-but-equal content can't masquerade as convergence. (It
+  parks on a repeat; it does not abort on arbitrary drift — see rule 3.)
 - **Layering with #261 (don't conflate them).** This lock is the **primary serialization** —
   it prevents the concurrent re-plans at the *root*, so the body-write rarely races at all.
   #261's **surgical splice + optimistic recheck** on plan-epic's epic-body `PATCH`
@@ -117,8 +137,10 @@ the loop sees the drift in the signature and parks rather than converging on cor
   = backstop (no silent lost-update if one slips through). Neither replaces the other; do not
   remove or duplicate the #261 body-guard.
 - **Honest residual, stated.** The lock is window-narrowing detect-and-serialize, not a mutex
-  (rule 2). The residual co-acquire window is real; the #261 body-guard + the signature
-  checkpoint catch the lost-update / false-convergence it could otherwise cause.
+  (rule 2). The residual co-acquire window is real, and the backstops are **partial**: the #261
+  body-guard catches the body **lost-update** and the signature checkpoint catches
+  **false-convergence**, but the X3 **flip-vs-supersede** invariant is *not* separately
+  backstopped — it holds only on the serialized path. The residual is narrowed, not closed.
 - **New label.** `status:planning` joins the `status:*` family
   ([gh-issue-intake-formats.md](../.claude/skills/gh-issue-intake-formats.md) §Pipeline
   labels). It is a **transient lock**, *not* a pipeline-state label — it does not change what
@@ -134,5 +156,3 @@ the loop sees the drift in the signature and parks rather than converging on cor
   `.claude`/`.decisions` control-plane change, this ADR and its skill edits are
   **human-merged** per ADR [0053](0053-control-plane-boundary.md); the pipeline does not
   self-merge changes to its own plan-layer contract.
-</content>
-</invoke>

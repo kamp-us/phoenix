@@ -72,17 +72,17 @@ serialization (ADR [0059](../../../.decisions/0059-epic-plan-lock.md)); the Step
 splice+recheck (#261) is the complementary backstop for its residual, not a replacement.
 
 ```bash
-# acquire: defer to a lock already held; otherwise POST it
+# acquire: defer to a lock already held; otherwise POST it and remember WE acquired it
 HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
 if [ "$HELD" != "null" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — BACK OFF, do not mutate."
-  # stop here: re-running later (after the holder releases) is the recovery path.
-else
-  gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
+  exit 0   # stop here: do NOT fall through to release — that lock is the holder's, not ours.
 fi
+gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
+ACQUIRED=1
 # ... do the re-plan / split / body write ...
-# release on EVERY exit (success, park, or failure):
-gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
+# release on EVERY exit (success, park, or failure) — but ONLY the lock WE acquired:
+[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
 ```
 
 `POST .../labels` is **not** compare-and-swap (no `If-Match`) — two runs that both read the

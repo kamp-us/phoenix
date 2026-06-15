@@ -76,17 +76,17 @@ park, on every exit path including failure** (ADR
 [0059](../../../.decisions/0059-epic-plan-lock.md)).
 
 ```bash
-# acquire: defer to a lock already held; otherwise POST it
+# acquire: defer to a lock already held; otherwise POST it and remember WE acquired it
 HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
 if [ "$HELD" != "null" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — DO NOT flip, DO NOT loop."
-  # back off: a concurrent plan-epic may be superseding the very children you'd flip. Re-run later.
-else
-  gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
+  exit 0   # back off: do NOT fall through to release — that lock is the holder's, not ours. Re-run later.
 fi
+gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
+ACQUIRED=1
 # ... run the gate (Step 1) / drive the convergence loop ...
-# release on EVERY exit (PASS-and-flipped, parked, or failure):
-gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
+# release on EVERY exit (PASS-and-flipped, parked, or failure) — but ONLY the lock WE acquired:
+[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null
 ```
 
 `POST .../labels` is **not** compare-and-swap (no `If-Match`), so this is
@@ -218,7 +218,11 @@ On a **FAIL**, the ledger has hard defects and nothing flipped. Repair is **not*
    stop, never the primary convergence signal. This is load-bearing under concurrency: a
    count-only check could declare convergence on a ledger a concurrent run mutated — two runs
    landing on the same count over different content (#264, race X4). Keying on the signature
-   means the loop **aborts/parks on unexpected drift** instead of trusting a count. (The
+   means the stall test is **content-keyed, not count-keyed**: the loop parks on a *repeated*
+   signature (a cycle) rather than declaring convergence on a count two runs happened to share.
+   (It does not abort on arbitrary mid-loop drift — a *different* signature reads as progress;
+   `loop.ts` parks only on a repeat. The epic-lock above is what stops a concurrent mutator
+   from drifting the ledger out from under the loop in the first place.) (The
    epic-lock above is the primary defense — it stops two loops from running at all; the
    signature checkpoint is the in-loop backstop for the lock's residual window. ADR
    [0059](../../../.decisions/0059-epic-plan-lock.md).) Park the epic `status:needs-info` with
