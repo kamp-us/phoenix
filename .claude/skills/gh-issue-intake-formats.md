@@ -509,8 +509,10 @@ symmetry against canonical issue state:
 - **Straggler.** A late agent C that slipped past Step 1 and `POST`s **after** a winner already
   owns #N sees `[winner, C]`. The naive "recompute min, lower login wins" rule is **wrong here**:
   if C sorts below the winner it would evict-and-take while the winner keeps implementing — two
-  implementers. Rule 0 prevents it: C, seeing an issue already owned before its own `POST`,
-  `DELETE`s itself rather than evicting. Rule 3's checkpoint closes it from the other side: a
+  implementers. Rule 0 prevents it: C, re-reading the assignees and seeing #N already owned
+  **before it ever `POST`s**, backs off without self-assigning at all — there is nothing to
+  evict and nothing of its own to remove (self-`DELETE` is reserved for the co-racer loser and
+  displaced-winner paths, which do `POST` first). Rule 3's checkpoint closes it from the other side: a
   winner somehow displaced catches it at the GET and aborts. Together these make the claim
   **non-revocable from the loser/straggler side** once a winner is established, so "exactly one
   implements" holds against late arrivals too, not only co-window racers.
