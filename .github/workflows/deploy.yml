@@ -87,7 +87,8 @@ jobs:
       # `pnpm --filter <app> deploy --stage …` makes *pnpm* eat the flags
       # ("Unknown options: 'stage', 'yes'"). `--yes` skips the interactive plan
       # approval (CI would otherwise hang); `--stage` selects the isolated copy.
-      # Creds come from the secrets `stacks/github.ts` provisions; BETTER_AUTH_SECRET
+      # Creds come from the secrets `infra/ci-credentials/github.ts` provisions
+      # (run via `pnpm --filter @phoenix/infra exec alchemy deploy github.ts`); BETTER_AUTH_SECRET
       # is passed only for apps whose worker binds it (matrix.needs-auth).
       - name: Deploy ${{ matrix.app }} (stage ${{ env.STAGE }})
         id: deploy
