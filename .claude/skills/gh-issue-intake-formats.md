@@ -167,6 +167,33 @@ Reading this:
 - `#213` is in Phase 2 with no `requires:`, so it waits on **all** of Phase 1
   (the default phase-boundary gate), then runs alongside `#212`.
 
+### Updating it safely — surgical splice + optimistic recheck, never a blind overwrite
+
+The `## Dependencies` block is **load-bearing shared state**: `write-code` reads it to decide
+what's pickable, and `plan-epic`/`review-plan`/a re-plan loop can edit the epic body
+concurrently. A whole-body `PATCH` reassembled from one writer's in-memory plan silently
+**clobbers** a racing edit — a lost update on the topology (a reverted phase, an orphaned
+`requires:`) that mis-sequences autonomous work, surfaced by no error (issue #261; same
+last-write-wins family as the issue-claim race §7 and the SHA-bound verdict contract, ADR 0058).
+
+So `plan-epic`'s body write is a **guarded read-modify-write**, not a blind overwrite (see
+plan-epic/SKILL.md Step 5):
+
+- **Surgical splice (collision avoidance).** Re-read the *live* body immediately before writing,
+  replace **only** the `## Dependencies` block (and, on re-plan, the `## Plan (plan-epic)` block),
+  and preserve every other byte verbatim — so a concurrent edit to a *different* part of the body
+  (the brief, a handoff note) cannot collide at all.
+- **Optimistic recheck (abort+retry).** GitHub's issue `PATCH` honors **no** `If-Match` — there
+  is no native compare-and-swap — so before the write, re-GET the epic's `updated_at` and compare
+  it to the value read at the start; if it moved, **abort, re-read, re-derive the section off the
+  fresh body, and retry** rather than overwrite a body you didn't just read.
+
+This is a **window-narrowing detect-and-retry, not a lock** (the same honest framing as §7): it
+removes the *silent* lost-update of the topology, but a writer that edits between the recheck and
+the `PATCH` is still last-write-wins, and a post-write re-read is the after-the-fact catch. True
+single-writer safety on one epic would need a designated single planner or a CAS the API doesn't
+offer — don't claim a "lock," claim "no silent lost-update of the topology."
+
 ---
 
 ## 2. Sub-issue body format

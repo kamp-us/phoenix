@@ -89,6 +89,9 @@ stop to ask.)
 # the epic, its current body, its labels, and any children it already has
 gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{number,title,labels:[.labels[].name],sub_issues_summary}'
 gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' > /tmp/plan-epic-<EPIC>-current.md
+# capture the body's revision marker now — Step 5 re-reads it just before the write to
+# detect a concurrent edit and abort+retry instead of clobbering it (the lost-update guard).
+gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at' > /tmp/plan-epic-<EPIC>-updated-at.txt
 gh api 'repos/kamp-us/phoenix/issues/<EPIC>/sub_issues?per_page=100' \
   --jq '.[] | "#\(.number) [\(.state)] \(.title)"'
 ```
@@ -342,17 +345,84 @@ single specific predecessor.
 - #<d> — <label>
 ```
 
-Assemble and PATCH from a temp file so the whole multi-section body survives intact:
+### The write is a guarded read-modify-write, never a blind overwrite
+
+The epic body is **load-bearing shared state** — its `## Dependencies` topology is what
+`write-code` reads to decide what's pickable. A second `plan-epic` run, or a `review-plan`
+child-flip, or a re-plan loop, can edit the same body concurrently; a blind whole-body
+`PATCH` would silently clobber that edit (the lost-update this step exists to prevent — issue
+#261, same last-write-wins family as the issue-claim race #260 and the verdict-append race
+#258). GitHub's issue `PATCH` honors **no** `If-Match`/`If-Unmodified-Since` — there is no
+native compare-and-swap — so the write is made safe by **two layers**, in order:
+
+**Layer 1 — surgical section replacement (collision avoidance).** Don't reassemble the body
+from your in-memory plan and overwrite the whole thing. Re-read the epic's **current** body
+immediately before the write, replace **only the section you changed** (the `## Dependencies`
+block, and — when re-planning — the `## Plan (plan-epic)` block), and leave every other byte of
+the live body exactly as you just read it. A concurrent edit to a *different* part of the body
+(the brief, a sibling's handoff note, a label-driven addition) then cannot collide with your
+write at all — you preserved it verbatim because you never reconstructed it.
+
+**Layer 2 — optimistic recheck (abort+retry on a same-section race).** Two writers editing the
+*same* section still race. So immediately before the `PATCH`, re-GET the epic's `updated_at` and
+compare it to the marker captured in Step 1. If it **moved**, another writer touched the body
+since you read it: **abort, re-read the body from scratch, re-derive your section against the
+fresh revision, and retry** — never `PATCH` over a body you didn't just read.
 
 ```bash
-# /tmp/plan-epic-<EPIC>-body.md = brief (verbatim) + PRD-grade plan + ## Dependencies
-BODY="$(cat /tmp/plan-epic-<EPIC>-body.md)"
-gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY"
+# /tmp/plan-epic-<EPIC>-deps.md = the new `## Dependencies` block (and, when re-planning,
+#   /tmp/plan-epic-<EPIC>-plan.md = the new `## Plan (plan-epic)` block).
+# Loop: re-read → verify unchanged → splice → PATCH → re-verify it landed.
+for attempt in 1 2 3; do
+  # 1. re-read the LIVE body + its current revision marker
+  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body'       > /tmp/plan-epic-<EPIC>-live.md
+  NOW=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at')
+  WAS=$(cat /tmp/plan-epic-<EPIC>-updated-at.txt)
+
+  # 2. optimistic recheck — if the body moved since we last read it, re-derive and retry
+  if [ "$NOW" != "$WAS" ]; then
+    echo "epic body changed since read ($WAS -> $NOW) — re-deriving the section off the fresh body"
+    cp /tmp/plan-epic-<EPIC>-live.md /tmp/plan-epic-<EPIC>-current.md   # fresh base to re-derive against
+    echo "$NOW" > /tmp/plan-epic-<EPIC>-updated-at.txt
+    # re-run Step 5's section derivation against the fresh body, then continue the loop
+    continue
+  fi
+
+  # 3. surgical splice: replace ONLY the `## Dependencies` block in the live body, keep the rest.
+  #    (Operate on /tmp/plan-epic-<EPIC>-live.md: cut from the `## Dependencies` heading to EOF —
+  #    it is the pinned last section — and append the freshly-derived block. When re-planning,
+  #    splice the `## Plan (plan-epic)` block the same way: replace heading-to-next-`## `, in place.)
+  awk '/^## Dependencies[[:space:]]*$/{exit} {print}' /tmp/plan-epic-<EPIC>-live.md \
+    > /tmp/plan-epic-<EPIC>-body.md
+  cat /tmp/plan-epic-<EPIC>-deps.md >> /tmp/plan-epic-<EPIC>-body.md
+  BODY="$(cat /tmp/plan-epic-<EPIC>-body.md)"
+
+  # 4. write, then re-confirm OUR section landed — the residual window (below) means the
+  #    PATCH itself is still last-write-wins; this read is the honest after-the-fact check.
+  gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY" >/dev/null
+  gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' | grep -qF "$(head -1 /tmp/plan-epic-<EPIC>-deps.md)" \
+    && { echo "epic body updated, ## Dependencies present"; break; } \
+    || { echo "our section is not in the post-write body — a racer clobbered it; retrying"; \
+         gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at' > /tmp/plan-epic-<EPIC>-updated-at.txt; }
+done
 ```
 
-**Keep the brief byte-for-byte.** Read the current top section out of
-`/tmp/plan-epic-<EPIC>-current.md` (Step 1) and paste it back unchanged as the top of
-the new body — don't reflow it, don't "tidy" it. Everything you add goes below it.
+**Keep the brief byte-for-byte.** With the surgical splice this is automatic: you copy the live
+body up to the `## Dependencies` heading verbatim (the brief and the plan above it are untouched
+bytes from the live read), then append your freshly-derived `## Dependencies` block. Don't reflow
+the brief, don't "tidy" it, don't reconstruct it from memory — splice around it.
+
+**Honest residual — this narrows the window, it is not a lock.** The recheck (layer 2) only
+*detects* a race that completed before this run's read; a writer who edits **after** your
+`updated_at` read but **before** your `PATCH` lands is still lost-update territory, because the
+`PATCH` itself is last-write-wins (GitHub offers no conditional write on issue bodies). Layer 1
+shrinks the blast radius to *same-section* collisions; layer 2 narrows the same-section window;
+the re-confirm in step 4 catches the loser *after the fact* so it retries rather than failing
+silently. What this is **not** is mutual exclusion — true single-writer safety on one epic would
+need a designated single planner or a CAS the API doesn't provide (same honest framing as the
+issue-claim semantics in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 and
+the SHA-bound verdict contract, ADR 0058). Don't claim a "lock"; claim "no silent lost-update of
+the topology," which is what the acceptance asks for.
 
 Sanity-check the result: the brief is still on top, the plan follows (product layer first),
 the `### User stories` section is present, the `## Dependencies` numbers match the children that
@@ -408,7 +478,13 @@ keep/amend mapping that leaves children half-describing the old plan and half th
 
 After reconciling children, rewrite the plan body and the `## Dependencies` section
 (Steps 2 and 5) to match the surviving + new children. The brief stays untouched on
-top, as always.
+top, as always. The re-plan write goes through **the same guarded read-modify-write as
+Step 5** — surgical section splice + optimistic `updated_at` recheck, never a blind
+whole-body `PATCH`. Re-plan is exactly the concurrency hot-spot the guard exists for: a
+re-plan loop racing a fresh `plan-epic` run or a `review-plan` child-flip is the
+lost-update case in issue #261. Splice the `## Plan (plan-epic)` block and the
+`## Dependencies` block into the freshly-read live body; abort+re-derive if `updated_at`
+moved since your read.
 
 ---
 
