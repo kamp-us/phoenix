@@ -11,7 +11,6 @@ export function Footer({children}: {children?: React.ReactNode}) {
 					</span>
 					<span>· 2026</span>
 					<span className="spacer" />
-					<a href="/tuzuk">tüzük</a>
 					<a href="https://github.com/kamp-us" target="_blank" rel="noreferrer">
 						github
 					</a>
