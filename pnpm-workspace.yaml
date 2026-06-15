@@ -43,7 +43,6 @@ cleanupUnusedCatalogs: true
 
 onlyBuiltDependencies:
   - '@parcel/watcher'
-  - '@swc/core'
   - core-js-pure
   - esbuild
   - workerd
