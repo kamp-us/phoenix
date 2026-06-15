@@ -98,7 +98,7 @@ export interface ContributionEdge {
 }
 
 export interface ContributionConnection {
-	edges: ContributionEdge[];
+	rows: ContributionEdge[];
 	hasNextPage: boolean;
 	endCursor: string | null;
 	totalCount: number;
@@ -148,7 +148,7 @@ export class Pasaport extends Context.Service<
 
 		readonly listContributions: (input: {
 			authorId: string;
-			after: string | null;
+			after?: string | null | undefined;
 			first: number;
 		}) => Effect.Effect<ContributionConnection>;
 	}
@@ -429,7 +429,7 @@ export const makePasaportLive = (auth: Auth) =>
 
 				listContributions: Effect.fn("Pasaport.listContributions")(function* (input: {
 					authorId: string;
-					after: string | null;
+					after?: string | null | undefined;
 					first: number;
 				}) {
 					const first = Math.max(1, Math.min(input.first, 50));
@@ -437,7 +437,7 @@ export const makePasaportLive = (auth: Auth) =>
 					const fetchSize = first + 1;
 
 					// `after` present but undecodable is a cursor miss → empty page.
-					const cursorMissed = input.after !== null && cursor === null;
+					const cursorMissed = input.after != null && cursor === null;
 
 					// Per-table keyset for the global `(created_at desc, id desc)` merge.
 					// Null cursor values (no `after`) collapse the predicate to undefined
@@ -511,7 +511,7 @@ export const makePasaportLive = (auth: Auth) =>
 
 					if (cursorMissed) {
 						return {
-							edges: [],
+							rows: [],
 							hasNextPage: false,
 							endCursor: null,
 							totalCount,
@@ -563,7 +563,7 @@ export const makePasaportLive = (auth: Auth) =>
 					const page = forwardPage<ContributionNode>(merged, first, encodeCursor);
 
 					return {
-						edges: page.rows.map((node) => ({cursor: encodeCursor(node), node})),
+						rows: page.rows.map((node) => ({cursor: encodeCursor(node), node})),
 						hasNextPage: page.hasNextPage,
 						endCursor: page.endCursor,
 						totalCount,

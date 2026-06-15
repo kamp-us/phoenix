@@ -64,20 +64,12 @@ export const queries = {
 				return base;
 			}
 
-			// `listContributions` takes a required `after: string | null`, so the
-			// keyset input's present-only `after` lands as an explicit `null`.
-			const input = keysetInput(args.contributions, CONTRIBUTIONS_PAGE_SIZE);
 			const connection = yield* pasaport.listContributions({
 				authorId: row.userId,
-				first: input.first,
-				after: input.after ?? null,
+				...keysetInput(args.contributions, CONTRIBUTIONS_PAGE_SIZE),
 			});
-			const contributions = toConnection<(typeof connection.edges)[number], Contribution>(
-				{
-					rows: connection.edges,
-					hasNextPage: connection.hasNextPage,
-					endCursor: connection.endCursor,
-				},
+			const contributions = toConnection<(typeof connection.rows)[number], Contribution>(
+				connection,
 				(edge) => edge.cursor,
 				(edge) => ({__typename: "Contribution", ...toContributionRow(edge.node)}),
 			);
