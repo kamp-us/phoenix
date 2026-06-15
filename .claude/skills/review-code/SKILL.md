@@ -372,11 +372,16 @@ dashes; the `@ <sha>` is required (ADR 0058). (And `ship-it` reads it as the mir
 FAIL marker means *do not merge*.)
 
 Post it as an **upsert** — `PATCH` your own prior `review-code:` marker if one exists, else
-`POST` — exactly as the PASS path (one `review-code` verdict comment per PR, ADR 0058 rule 2):
+`POST` — exactly as the PASS path (one `review-code` verdict comment per PR, ADR 0058 rule 2).
+As on the PASS path, **resolve `HEAD_SHA` once, before composing the verdict file**, and embed
+that same value in the marker's `@ <HEAD_SHA>` first line — so the SHA the comment carries and
+any later use are one single-sourced read, never two independent resolutions that could
+straddle a head move:
 
 ```bash
-HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # the head you reviewed
-BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready
+HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # resolve ONCE, before authoring the verdict file (mirror the PASS path)
+# … author /tmp/review-code-verdict-${PR}.md now, embedding `review-code: FAIL @ $HEAD_SHA — not merge-ready` as its first line …
+BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready (the SHA resolved just above)
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
 comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")

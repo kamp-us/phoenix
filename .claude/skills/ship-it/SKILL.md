@@ -294,6 +294,13 @@ bound to `X1` can never be consumed against `X2`). For each namespace's resolved
 # an empty string, and an unguarded `case "$CURRENT_HEAD" in ""*)` reduces to the glob `*` — which
 # matches any head and would falsely report a legacy SHA-less marker as current (ADR 0058 rule 3).
 is_current () { [ -n "$1" ] || return 1; case "$CURRENT_HEAD" in "$1"*) return 0;; esac; case "$1" in "$CURRENT_HEAD"*) return 0;; esac; return 1; }
+
+# Extract each resolved verdict's bound SHA into a shell var — the load-bearing normalization:
+# `// empty` renders a jq `sha: null` (a pre-0058 SHA-less / absent marker) as "" (NOT the literal
+# "null"), so is_current's `[ -n "$1" ] || return 1` short-circuits to refuse exactly as designed.
+# $verdict is the per-namespace resolved object emitted above ({state|body, at, sha}).
+vsha="$(jq -r '.sha // empty' <<<"$verdict")"
+is_current "$vsha" || echo "unverified (verdict not bound to current head) → refuse"
 # null/empty $vsha → not current (legacy marker) → refuse. A jq `sha: null` must reach this helper
 # as an empty string (or be short-circuited to refuse before the call) — never as the literal "null".
 ```
@@ -356,7 +363,7 @@ always; the path-gated `integration` job when the diff touches its trigger paths
 ## Step 4 — Squash-merge
 
 Every guard cleared: not a control-plane PR (Step 0), the required gates' latest verdicts
-are PASS (Step 2), and checks are green (Step 3). Ship it with a squash merge so the issue's
+are a current-head PASS (Step 2/2b), and checks are green (Step 3). Ship it with a squash merge so the issue's
 whole branch collapses to one commit on `main`:
 
 ```bash

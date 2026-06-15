@@ -157,7 +157,9 @@ the load-bearing fallback for the operator's own PR (org branch rules block self
   own prior marker to PATCH. A transient lookup failure fails closed → refuse → re-run
   resolves it, consistent with ADR 0055.
 - **Banned:** posting a verdict marker without `@ <sha>`; `POST`ing a new marker when this
-  gate already has one authored by this producer on this PR (append instead of upsert);
+  gate already has one authored by this producer on this PR (append instead of upsert) —
+  forward-looking only: lingering SHA-less own-markers left by the pre-0058 append era are
+  tolerated, since the upsert PATCHes just the newest and the consumer SHA-refuses the rest;
   consuming a verdict whose `@ <sha>` does not prefix-match the PR's current head; `review-doc`
   emitting a native `APPROVE`/`REQUEST_CHANGES`; comparing a native review against a comment in
   the doc lane.

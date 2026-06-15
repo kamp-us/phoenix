@@ -420,7 +420,7 @@ else
 fi
 ```
 
-Do **not** emit `review-doc: PASS — merge-ready` for a blocking PR — that marker is a
+Do **not** emit the `review-doc: PASS @ <sha> — merge-ready` marker for a blocking PR — that marker is a
 `ship-it` go-ahead, and `ship-it` must refuse the blocking set. The advisory line keeps
 your verdict out of `ship-it`'s PASS namespace while still recording the advisory verdict
 (as a comment, per ADR 0058 rule 4) — the advisory line carries no `@ <sha>` because no
