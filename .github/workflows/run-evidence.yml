@@ -81,6 +81,8 @@ jobs:
             --timing-json \
             --shell -- \
             "set -euo pipefail
+             export NPM_CONFIG_PREFIX=\"\$HOME/.npm-global\"
+             export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
              npm install -g pnpm@10.27.0
              pnpm install --frozen-lockfile --store-dir .pnpm-store
              pnpm --filter @phoenix/web test:unit"
