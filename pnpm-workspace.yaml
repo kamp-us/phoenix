@@ -1,6 +1,7 @@
 packages:
   - packages/*
   - apps/*
+  - infra/*
 
 catalog:
   '@alchemy.run/better-auth': 2.0.0-beta.52

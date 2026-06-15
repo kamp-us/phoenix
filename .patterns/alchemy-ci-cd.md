@@ -15,33 +15,34 @@ app is one more `include:` entry, not a second bootstrap.
 Authored by [Can Sirin](https://github.com/cansirin) in #19, landed with the framework foundation in #12.
 
 The trick — and the reason this isn't just "paste your Cloudflare key into GitHub" —
-is that alchemy **provisions its own CI credentials**: a one-shot `stacks/github.ts`
-mints a *scoped* Cloudflare API token and writes it (plus the account id and the
-state password) into the repo's Actions secrets, all from code.
+is that alchemy **provisions its own CI credentials**: a one-shot `infra/ci-credentials/github.ts`
+(the standalone `@phoenix/infra` package) mints a *scoped* Cloudflare API token and
+writes it (plus the account id and the state password) into the repo's Actions
+secrets, all from code.
 
 ## The pieces
 
 | File | Role |
 |---|---|
-| [`apps/web/stacks/github.ts`](../apps/web/stacks/github.ts) | One-shot, run from your laptop under an `admin` profile. Mints the scoped CI token + a stable `BETTER_AUTH_SECRET` and pushes the four repo secrets. |
+| [`infra/ci-credentials/github.ts`](../infra/ci-credentials/github.ts) | One-shot in the standalone `@phoenix/infra` package, run from your laptop under an `admin` profile. Mints the scoped CI token + a stable `BETTER_AUTH_SECRET` and pushes the repo secrets. Repo-level infra — owned by neither app (ADR [0057](../.decisions/0057-multi-app-multi-worker-repo.md)). |
 | [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) | `deploy` job (push→`prod`, PR→`pr-<n>`) + `cleanup` job (PR close→`destroy`), both matrixed over every app (`web`, `dashboard`). |
 
 ## The CI secret set
 
-`stacks/github.ts` provisions exactly what the workflow consumes:
+`infra/ci-credentials/github.ts` provisions exactly what the workflow consumes:
 
 | Secret | Why |
 |---|---|
 | `CLOUDFLARE_API_TOKEN` | The minted token, scoped to Workers Scripts / KV / D1 / Tail / Account-Settings-Read / **Secrets-Store-Read+Write** (the last pair is what `Cloudflare.state()` needs to adopt its state-store worker's bearer token + encryption key on every deploy — omit them and the deploy fails with Cloudflare error 10000). Never echoed to your shell — piped from `AccountApiToken.value` straight into `GitHub.Secret`. |
 | `CLOUDFLARE_ACCOUNT_ID` | Which account to deploy into. |
 | `ALCHEMY_PASSWORD` | Encrypts/decrypts secrets in the Cloudflare-hosted alchemy state store. |
-| `BETTER_AUTH_SECRET` | The session-signing secret. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `stacks/github.ts` mints a stable `Random` (persisted in its state) and pushes it. |
-| `DASHBOARD_GITHUB_TOKEN` | The GitHub token `@phoenix/dashboard`'s worker binds (`secret_text`) for authenticated reads of `kamp-us/phoenix` issues (`apps/dashboard/worker/config.ts`: `Config.redacted("GITHUB_TOKEN")`, no default → required at deploy). Provisioned by `stacks/github.ts` like the others, but **supplied**, not minted: pass a fine-grained PAT (Issues: read) as `DASHBOARD_GITHUB_TOKEN` on the one-shot's env (a GitHub PAT can't be self-issued the way the Cloudflare token is). Stored under this name because Actions forbids a secret named `GITHUB_TOKEN`; the workflow maps it to the `GITHUB_TOKEN` env for the `dashboard` matrix legs only (`matrix.needs-github-token`). |
+| `BETTER_AUTH_SECRET` | The session-signing secret. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `infra/ci-credentials/github.ts` mints a stable `Random` (persisted in its state) and pushes it. |
+| `DASHBOARD_GITHUB_TOKEN` | The GitHub token `@phoenix/dashboard`'s worker binds (`secret_text`) for authenticated reads of `kamp-us/phoenix` issues (`apps/dashboard/worker/config.ts`: `Config.redacted("GITHUB_TOKEN")`, no default → required at deploy). Provisioned by `infra/ci-credentials/github.ts` like the others, but **supplied**, not minted: pass a fine-grained PAT (Issues: read) as `DASHBOARD_GITHUB_TOKEN` on the one-shot's env (a GitHub PAT can't be self-issued the way the Cloudflare token is). Stored under this name because Actions forbids a secret named `GITHUB_TOKEN`; the workflow maps it to the `GITHUB_TOKEN` env for the `dashboard` matrix legs only (`matrix.needs-github-token`). |
 
 > **`BETTER_AUTH_SECRET` is a deploy-time binding value, not Random-in-the-app-stack.**
 > The worker reads it from the runtime env (`config.ts`); `Random` is a deploy-time
 > resource with no value in the workerd isolate, so it can't be the runtime source.
-> `stacks/github.ts` mints it once (stable across re-runs) and pushes it as a repo
+> `infra/ci-credentials/github.ts` mints it once (stable across re-runs) and pushes it as a repo
 > secret; the deploy passes it through so the worker binds it.
 
 ## Bootstrap (run once, by a human)
@@ -59,7 +60,7 @@ alchemy login --profile admin
 #    state). Required once per account before any `Cloudflare.state()` deploy.
 #    Subcommand order is `alchemy cloudflare bootstrap`, NOT `alchemy bootstrap
 #    cloudflare` (the "State store not found" error suggests the wrong form).
-pnpm --filter @phoenix/web exec alchemy cloudflare bootstrap --profile admin
+pnpm --filter @phoenix/infra exec alchemy cloudflare bootstrap --profile admin
 
 # 3. Deploy the one-shot. It mints the scoped CF token + a stable BETTER_AUTH_SECRET
 #    and pushes all repo secrets. ALCHEMY_PASSWORD is the state-encryption password
@@ -67,7 +68,7 @@ pnpm --filter @phoenix/web exec alchemy cloudflare bootstrap --profile admin
 #    fine-grained GitHub PAT (Issues: read on kamp-us/phoenix) you mint by hand —
 #    it's the one secret supplied rather than minted (a PAT can't be self-issued).
 CLOUDFLARE_ACCOUNT_ID=<account-id> ALCHEMY_PASSWORD=<password> DASHBOARD_GITHUB_TOKEN=<pat> \
-  pnpm --filter @phoenix/web exec alchemy deploy stacks/github.ts \
+  pnpm --filter @phoenix/infra exec alchemy deploy github.ts \
     --profile admin --yes
 ```
 
