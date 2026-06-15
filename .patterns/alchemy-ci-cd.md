@@ -36,6 +36,7 @@ state password) into the repo's Actions secrets, all from code.
 | `CLOUDFLARE_ACCOUNT_ID` | Which account to deploy into. |
 | `ALCHEMY_PASSWORD` | Encrypts/decrypts secrets in the Cloudflare-hosted alchemy state store. |
 | `BETTER_AUTH_SECRET` | The session-signing secret. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `stacks/github.ts` mints a stable `Random` (persisted in its state) and pushes it. |
+| `DASHBOARD_GITHUB_TOKEN` | The GitHub token `@phoenix/dashboard`'s worker binds (`secret_text`) for authenticated reads of `kamp-us/phoenix` issues (`apps/dashboard/worker/config.ts`: `Config.redacted("GITHUB_TOKEN")`, no default → required at deploy). **Manually provisioned** — a fine-grained PAT (Issues: read), *not* minted by `stacks/github.ts`, because a GitHub PAT can't be self-issued the way the Cloudflare token is. Stored under this name because Actions forbids a secret named `GITHUB_TOKEN`; the workflow maps it to the `GITHUB_TOKEN` env for the `dashboard` matrix legs only (`matrix.needs-github-token`). Set once with `gh secret set DASHBOARD_GITHUB_TOKEN --repo kamp-us/phoenix`. |
 
 > **`BETTER_AUTH_SECRET` is a deploy-time binding value, not Random-in-the-app-stack.**
 > The worker reads it from the runtime env (`config.ts`); `Random` is a deploy-time
