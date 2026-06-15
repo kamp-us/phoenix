@@ -188,6 +188,68 @@ Don't run more than the criteria demand — you're verifying *this issue's* chec
 not auditing the whole repo. But for any criterion whose truth is observable by running
 something, run it; that's the strongest evidence you can attach.
 
+### Read the run-evidence bundle — the reproducible, SHA-bound evidence source (ADR 0054 §3)
+
+CI publishes a **run-evidence bundle** for the PR's head commit: a `run-evidence` GitHub
+Actions artifact carrying a `manifest.json` whose structured `checks[]` and `tests` are the
+SHA-bound proof of what ran (ADRs [0054](../../../.decisions/0054-run-evidence-bundle.md) §3,
+[0056](../../../.decisions/0056-bundle-storage-transport.md)). When it exists, **cite its
+numbers** — concrete test counts and the names of failing suites — instead of scraping raw
+CI logs; that is what makes a criterion's evidence *reproducible* rather than a prose
+summary. The bundle is a verdict **input**, never a merge authority: you still verify each
+criterion and you still never merge.
+
+Fetch it the way the storage ADR fixed (inline `gh api` per 0056 — resolve the PR head SHA,
+find the `run-evidence` workflow run for *that exact SHA*, download its `run-evidence`
+artifact, read `manifest.json`). The **head-SHA filter is load-bearing**: a bundle from a
+stale earlier push is not evidence for this commit.
+
+```bash
+HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq '.head.sha')"
+# the run-evidence workflow run for THIS exact head SHA (newest wins), never just "latest on branch"
+RUN_ID="$(gh api "repos/kamp-us/phoenix/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+  --jq '[.workflow_runs[] | select(.name=="run-evidence")] | sort_by(.created_at) | last | .id')"
+BUNDLE_DIR="$(mktemp -d)/run-evidence-${PR}"; MANIFEST=""
+if [ -n "$RUN_ID" ] && [ "$RUN_ID" != "null" ]; then
+  ART_ID="$(gh api "repos/kamp-us/phoenix/actions/runs/$RUN_ID/artifacts" \
+    --jq '.artifacts[] | select(.name=="run-evidence") | .id' | head -1)"
+  if [ -n "$ART_ID" ]; then
+    mkdir -p "$BUNDLE_DIR"
+    gh api "repos/kamp-us/phoenix/actions/artifacts/$ART_ID/zip" > "$BUNDLE_DIR/run-evidence.zip" \
+      && unzip -o -q "$BUNDLE_DIR/run-evidence.zip" -d "$BUNDLE_DIR" \
+      && [ -f "$BUNDLE_DIR/manifest.json" ] && MANIFEST="$BUNDLE_DIR/manifest.json"
+  fi
+fi
+```
+
+When `$MANIFEST` is present, read its structured results (ADR 0054 §2 fields, `schemaVersion`
+`1`): `checks[]` is each gate step (`{name, status: pass|fail, exitCode}`), `tests` is the
+folded JUnit summary (`{total, passed, failed, skipped, failures[]}`, each failure
+`{suite, name, message}`):
+
+```bash
+[ -n "$MANIFEST" ] && jq '{
+  commit, schemaVersion,
+  checks: [.checks[] | {name, status}],
+  tests: {total: .tests.total, passed: .tests.passed, failed: .tests.failed, skipped: .tests.skipped,
+          failing_suites: [.tests.failures[] | "\(.suite) › \(.name)"]}
+}' "$MANIFEST"
+```
+
+Cite those numbers as the evidence for any criterion they speak to — "lint/typecheck/unit
+all `pass` per the bundle's `checks[]`", "`tests`: 47 passed / 0 failed (bundle for
+`<short-sha>`)", or on a miss the named failing suites — rather than re-deriving them from a
+log scrape. **Sanity-check `manifest.commit == HEAD_SHA`**; the producer stamps it, but a
+mismatch means the bundle is not for this commit — treat it as absent (below).
+
+**Degrade gracefully — a missing bundle is never an error.** If no `run-evidence` run exists
+for the head SHA, the artifact is absent/expired (GitHub expires run artifacts; 0056), the
+download fails, or `manifest.commit != HEAD_SHA`, then `$MANIFEST` is empty: **note the
+bundle's absence in the verdict and fall back to the current behavior** — verify the criteria
+from the diff, the tests you run in the product-only worktree above, and the PR's checks the
+ordinary way. Do **not** fail the gate, refuse to review, or block on the bundle: it
+*strengthens* evidence when present; its absence costs only reproducibility, not the review.
+
 ### Flag a control-plane PR (complementary signal, not the isolation)
 
 The sparse-checkout above is what *keeps you safe*. Independently, note for the verdict
@@ -228,7 +290,11 @@ For each criterion, decide one of:
 
 - **PASS** — the diff/tests/behavior demonstrably satisfy it. Evidence is concrete:
   the file + lines that implement it, the test that covers it and that you saw pass,
-  the command output that shows it.
+  the command output that shows it. **When the run-evidence bundle (Step 2) covers the
+  criterion, prefer its structured numbers** — the `checks[]` status and the `tests`
+  counts/failing-suite names — as the citation; they are SHA-bound and reproducible where
+  a log scrape is not. (When the bundle is absent, your run-in-worktree output and the diff
+  are the evidence, exactly as before.)
 - **FAIL** — it's not satisfied, or only partially. Evidence is what's missing or
   wrong: the criterion asked for X, the PR does Y (or nothing); the test it needs is
   absent; the command errors.
@@ -344,6 +410,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 - [PASS] <criterion 2> — <evidence>
 - …
 
+Run-evidence bundle: <one of — "cited for `<short-sha>`: checks all pass; tests 47/0/2
+(passed/failed/skipped)" | "absent for this head SHA — verified from diff + worktree run">.
+
 All criteria pass. This PR is merge-ready. **review-code does not merge** — `ship-it` is
 the authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 
@@ -414,6 +483,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 - [FAIL] <criterion 2> — asked <X>, but the PR <does Y / does nothing>; <pointer>
 - [UNVERIFIABLE] <criterion 3> — <why it can't be confirmed; what'd make it checkable>
 
+Run-evidence bundle: <one of — "cited for `<short-sha>`: tests 45/2/0 — failing suites:
+`<suite › name>`, …" | "absent for this head SHA — verified from diff + worktree run">.
+
 Failing criteria above must be addressed before this PR can merge. The PR stays open
 and unmerged; #<ISSUE> stays open and assigned. Re-request review once the failing
 criteria are satisfied.
@@ -428,8 +500,9 @@ issue is still claimed, still open, still in-progress; only the verdict changed.
 ## Running it
 
 A single invocation gates one PR end to end: resolve the PR ↔ issue pairing (Step 1),
-read the diff/tests (Step 2), verify each acceptance criterion with evidence (Step 3),
-then land the verdict — approving review or `review-code: PASS` comment on a full pass
+read the diff/tests and the SHA-bound run-evidence bundle when present (Step 2), verify
+each acceptance criterion with evidence — citing the bundle's structured `checks[]`/`tests`
+where they cover it (Step 3), then land the verdict — approving review or `review-code: PASS` comment on a full pass
 (Step 4a), or a per-criterion fail comment on any miss (Step 4b). **You never merge.**
 
 Report back a short ledger: the PR and its linked issue, the per-criterion verdict
