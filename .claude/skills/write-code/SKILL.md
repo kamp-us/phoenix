@@ -80,7 +80,11 @@ unassigned**:
    `p2`.
 2. **Oldest first within a bucket:** lowest issue number / earliest `created_at`.
 
-Assigned issues are someone else's claim — **skip them**. `status:needs-triage`,
+Assigned issues are someone else's claim — **skip them**. Skip on *any* non-null assignee,
+not on an exact match: under the Step 3 claim race an issue may **transiently** show two
+co-assignees for the window before the winner evicts the loser, and skipping any assigned
+issue keeps that transient state safe — a half-resolved claim is never double-picked, it's
+simply passed over until it settles to its single winner. `status:needs-triage`,
 `status:needs-info`, and closed issues are not pickable (they haven't cleared triage).
 
 ### Pre-pick exception — resume your own failed PR first
@@ -241,21 +245,78 @@ recomputation will let it through.
 
 ---
 
-## Step 3 — Claim by self-assigning
+## Step 3 — Claim by self-assigning (assign → observe-own-write → tiebreak)
 
-Claiming is self-assignment — it's the lock that makes Step 1's "skip assigned issues"
-rule work, so other write-code agents don't double-pick. Assign yourself **before** you
-start work:
+Claiming is self-assignment, and it backs Step 1's "skip assigned issues" rule so other
+write-code agents step over a claimed issue. But GitHub's `assignees` is **last-write-wins
+and additive, not compare-and-swap**: a bare `POST` self → re-read does **not** lock. Two
+agents that both saw #N unassigned in Step 1 both `POST` themselves seconds apart,
+co-assigning `[A, B]`, and a best-effort re-read only catches whichever agent happens to
+read *after* the other's write lands — the window between the two `POST`s lets both pass and
+both implement #N. That is the TOCTOU this step closes (#260).
+
+The fix uses the **one atomic signal GitHub does give us**: the assignee `POST` **returns
+the updated issue with the full `assignees` array** — your own write's observed result, not
+a separate best-effort re-read that can miss the window. So you detect a concurrent claim
+from your *own* `POST` response, and break the tie **deterministically** so exactly one of
+two co-assignees proceeds:
 
 ```bash
 ME=$(gh api user --jq '.login')
-gh api -X POST repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"
-# confirm
-gh api repos/kamp-us/phoenix/issues/<N> --jq '.assignee.login'
+# POST self; capture the FULL assignees list the write returns (single observable write).
+ASSIGNEES=$(gh api -X POST repos/kamp-us/phoenix/issues/<N>/assignees \
+  -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
+
+# Deterministic tiebreak: lexicographic-min login is the sole winner. If the list is just
+# [you], you trivially win. If it's co-assigned [A, B], BOTH agents observe the same sorted
+# set and both compute the same winner — so exactly one proceeds and the other backs off;
+# they never both back off (no livelock) and never both proceed (no double-pick).
+WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
+if [ "$WINNER" = "$ME" ]; then
+  # I am the deterministic winner. If anyone else co-assigned, evict them so the issue
+  # reads as a clean single-owner claim for the picker's "skip assigned" invariant.
+  for a in $ASSIGNEES; do
+    [ "$a" = "$ME" ] && continue
+    gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$a"
+  done
+  # claim won — proceed to implement
+else
+  # I lost the tiebreak: remove myself and re-pick (do NOT implement — do NOT co-occupy).
+  gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"
+  # back off → re-run Step 1, pick the next issue
+fi
 ```
 
-If the assign races and the issue already shows another assignee when you re-check,
-back off — someone beat you to it. Re-run Step 1 and pick the next one.
+**What this guarantees.** Of any set of agents that co-assign #N, exactly **one** — the
+lexicographic-min login — proceeds; every other backs off (DELETE self) and re-picks. Both
+race outcomes are covered by the *same* deterministic rule, evaluated against the *same*
+sorted set both agents observe, so there is no interleaving that leaves two agents past this
+step and none that backs all of them off. The loser learns it lost from **its own POST
+response** — one observable write — not from a best-effort re-read that can miss the window.
+A concurrent claim is **never silently co-occupied**: the loser evicts itself, the winner
+evicts any stragglers, and the issue settles to a single assignee.
+
+**The honest residual window — this is detect-and-resolve, not a kernel mutex.** `assignees`
+is still not a CAS, so the symmetry must be *broken* after the fact, not *prevented*:
+
+- A late third agent C that `POST`s **after** the winner already evicted the losers sees
+  `[winner, C]`, recomputes the same min, and backs off (or wins and evicts, if C sorts
+  below) — the rule converges on each fresh observation, so a straggler is self-correcting,
+  not a hole.
+- The eviction DELETEs are themselves last-write-wins, so for a brief window the issue may
+  *transiently* show 2 assignees before the winner's eviction lands. The picker (Step 1)
+  tolerates this: it skips any issue with a **non-null** assignee, so a transiently
+  double-assigned issue is skipped, never double-picked — the invariant degrades safe.
+- True single-writer mutual exclusion (zero transient multi-assignment, no after-the-fact
+  eviction) would require a **designated single picker** or an expected-value/`If-Match`
+  conditional write GitHub's assignee API does not offer. This mechanism deliberately does
+  **not** claim that. What it *does* guarantee is the acceptance bar: **exactly one agent
+  proceeds to implement**, deterministically, from a single observed write — which is what
+  stops the duplicate-implementation waste. Don't reintroduce the old "it's the lock" prose;
+  it's a detect-and-tiebreak, and the API can't make it a lock.
+
+See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the shared claim
+semantics this step implements.
 
 Now **route by type** before implementing — a `type:decision` or `type:investigation`
 issue is not a "write code and open a PR" issue. See [Type routing](#type-routing)

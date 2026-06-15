@@ -1,7 +1,7 @@
 # GH Issue Intake — formats contract
 
-The single shared contract the issue-intake skills cite. It defines the five
-markdown formats that turn GitHub issues, comments, and sub-issues into an
+The single shared contract the issue-intake skills cite. It defines the shared
+formats and protocols that turn GitHub issues, comments, and sub-issues into an
 agent-operable work pipeline:
 
 1. The epic-body **`## Dependencies` grammar** — how an epic encodes its
@@ -13,6 +13,9 @@ agent-operable work pipeline:
    signalling the verdict, **SHA-bound** to the head it reviewed (ADR 0058):
    `PASS @ <sha> — merge-ready` (read by `ship-it`, the merge step) or
    `FAIL @ <sha> — not merge-ready` (read by `write-code`'s fix round-trip).
+6. The **review-doc verdict markers** — the doc-class twin of format 5, in its own namespace.
+7. The **issue-claim semantics** — self-assign as a detect-and-tiebreak (not a lock), the
+   protocol `write-code`'s pick (Step 1) and claim (Step 3) implement.
 
 `plan-epic` writes formats 1, 2, and 4. `review-plan` reads 1 and 2 (they are the
 structural floor it validates) and owns the `status:planned → status:triaged` flip that
@@ -452,6 +455,45 @@ fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mecha
   does (ADR 0053). This keeps the control-plane manual-merge invariant intact.
 - **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
   `review-doc` writing it does **not** merge (see review-doc/SKILL.md §"Authority limit").
+
+---
+
+## 7. Issue-claim semantics — assignee is a detect-and-tiebreak, not a lock
+
+`write-code` claims an issue by **self-assigning** (Step 3); the picker's "skip assigned
+issues" rule (Step 1) reads that claim. This section pins what the claim does and does not
+guarantee, so the writer (`write-code` Step 3) and any future reader of an assignee agree.
+
+**Assignee is last-write-wins, not compare-and-swap.** GitHub's `POST
+/issues/{N}/assignees` is **additive** — it co-assigns, it does not displace an existing
+assignee, and there is no conditional/`If-Match` variant. So a naive read-unassigned →
+`POST` self → re-read is a **TOCTOU**, not a lock: two agents that both saw #N unassigned
+co-assign `[A, B]` and a best-effort re-read catches only whichever reads after the other's
+write (#260). A bare self-assign therefore **cannot** be relied on as mutual exclusion.
+
+**The one atomic signal: the `POST` returns the full `assignees` array.** The claim is made
+safe by observing your *own* write's result, then breaking the symmetry deterministically:
+
+1. `POST` self as assignee; capture the returned `assignees` list (one observable write — no
+   separate best-effort re-read).
+2. Compute the **lexicographic-min login** of that list. Both co-assignees observe the same
+   set and compute the same winner.
+3. **You are the winner iff `min(assignees) == you`.** The winner proceeds (and evicts any
+   co-assignee via `DELETE` so the issue reads single-owner); every loser **`DELETE`s itself
+   and re-picks** — it does **not** implement, and a concurrent claim is **never silently
+   co-occupied**.
+
+**What it guarantees vs. what it doesn't.** Of any set of agents that co-assign #N, exactly
+one proceeds — deterministically, from a single observed write — and the rest back off; no
+interleaving leaves two past the claim, and none backs all of them off (no livelock). It is
+**detect-and-tiebreak, not a kernel mutex**: because `assignees` isn't a CAS, the issue may
+*transiently* show 2 assignees before the winner's eviction lands, so the picker skips on
+**any non-null assignee** (a transiently double-assigned issue is passed over, never
+double-picked — safe degradation). True single-writer exclusion (no transient
+multi-assignment, no after-the-fact eviction) would need a **designated single picker** or a
+conditional write the assignee API doesn't offer; this mechanism does not claim that, and the
+"it's the lock" framing is wrong — it's the duplicate-implementation race that's closed, by
+guaranteeing exactly one implementer.
 
 ---
 
