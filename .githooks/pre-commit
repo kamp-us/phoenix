@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Local fast-fail leg of the leak-guard defense-in-depth (#158): block a commit
+# that puts a user-local path into a shared artifact. Bypassable with --no-verify
+# by design — the unbypassable gate is CI (.github/workflows/leak-guard.yml, #312).
+# Reuses the `scan` CLI so the deny-list lives once in findLeaks; nothing re-grepped here.
+set -euo pipefail
+
+# Staged adds/copies/modifies/renames (target side); deletions drop out. NUL-delimited
+# + a read loop instead of `mapfile` so the hook works on macOS's bash 3.2. The scanner
+# self-scopes to doc surfaces, so handing it every staged file is safe.
+staged=()
+while IFS= read -r -d '' file; do
+	staged+=("$file")
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+if [ "${#staged[@]}" -eq 0 ]; then
+	exit 0
+fi
+
+if ! node packages/leak-guard/src/bin.ts scan "${staged[@]}"; then
+	echo "blocked by leak-guard (#173); fix or \`git commit --no-verify\` to bypass" >&2
+	exit 1
+fi
