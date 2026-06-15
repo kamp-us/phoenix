@@ -167,7 +167,7 @@ whose FAIL is bound to a now-stale head, between the scan and the repair is a cl
 
 Two properties make this scan terminate rather than starve:
 
-- **Author-gated verdicts (ADR [0055](../../../.decisions/0055-acl-sourced-review-authz.md)).**
+- **Author-gated verdicts (ADR [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)).**
   Markers count as a verdict **only from a `write+` repo collaborator** — the same GitHub-ACL
   gate `ship-it` Step 2 applies *before* the marker regex. A self-authored or
   forged `review-(code|doc): FAIL` is invisible here, so write-code can't pull *itself* into
@@ -391,14 +391,14 @@ For **lint**, do **not** run `pnpm lint` (`biome check .`) from inside the workt
 bare `.` resolves to the worktree's own CWD, which physically sits under
 `.claude/worktrees/<id>` and so matches the retained `!**/.claude/worktrees`
 exclusion — biome reports "0 files / paths ignored" and exits **0 without linting
-anything** (a false green; #236, [ADR 0060](../../../.decisions/0060-worktree-lint-changed-paths.md)).
+anything** (a false green; #236, [ADR 0060](https://github.com/kamp-us/phoenix/blob/main/.decisions/0060-worktree-lint-changed-paths.md)).
 Lint **explicit paths** instead — the changed files biome handles, never bare `.`.
 Filter the changed set to biome-handled extensions so a docs/markdown-only PR (no
 `.ts`/`.tsx`/`.json`/… in the diff) is a **clean skip (exit 0)**, not a false-fail:
 on biome 2.4.15 an all-unknown/ignored path set still exits **1** ("No files were
 processed"), and `--files-ignore-unknown=true` does *not* rescue an entirely-unknown
 set — so the filter, not the flag, is what keeps docs-only green (#236,
-[ADR 0060](../../../.decisions/0060-worktree-lint-changed-paths.md)):
+[ADR 0060](https://github.com/kamp-us/phoenix/blob/main/.decisions/0060-worktree-lint-changed-paths.md)):
 
 ```bash
 CHANGED="$(git diff --name-only --diff-filter=ACMR origin/main...HEAD \
@@ -517,7 +517,7 @@ and take the **latest by timestamp** in each. This mirrors `ship-it` Step 2's re
 exactly (the reading side of the same contract), **including its ACL author-gate**:
 a marker comment counts as a verdict only from a `write+` repo collaborator, so a
 self-authored or forged `review-(code|doc): FAIL` is invisible (ADR
-[0055](../../../.decisions/0055-acl-sourced-review-authz.md)). The native-review path needs
+[0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)). The native-review path needs
 no ACL gate — GitHub author-attributes reviews, so it is unforgeable.
 
 ```bash
@@ -567,7 +567,7 @@ jq --argjson authorized "$authorized" \
 ```
 
 Resolve per namespace, latest-wins by timestamp, **then apply the SHA-staleness test** (ADR
-[0058](../../../.decisions/0058-sha-bound-verdict-contract.md), mirroring `ship-it` Step 2b):
+[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), mirroring `ship-it` Step 2b):
 
 - **review-code namespace** — the verdict is the **newest of {latest decisive review,
   latest review-code marker}**; its bound SHA is the marker's `@ <sha>` (or the review's
@@ -713,14 +713,14 @@ forever. The cap thus terminates **both** the fix loop *and* the re-selection lo
 - **Never merge.** Repair mode pushes and hands back to the gate; the merge is `ship-it`'s
   (PASS → merge), and for a control-plane `.claude`/`.github` PR a **human's** — `ship-it`
   *refuses* to auto-merge blocking-set PRs and `review-doc` is advisory-only on them (ADR
-  [0053](../../../.decisions/0053-control-plane-boundary.md)). **This very edit is such a PR:
+  [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). **This very edit is such a PR:
   a `.claude/**` change `ship-it` will refuse to auto-merge, merged by hand.** Repair mode
   never weakens that refusal.
 - **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
   gate history stay intact.
 - **Idempotent.** Re-running on an already-fixed / PASS PR (one with no latest FAIL, or one
   whose latest FAIL is bound to a now-stale head) is a clean no-op (Step R1).
-- **SHA-bound verdicts (ADR [0058](../../../.decisions/0058-sha-bound-verdict-contract.md)).**
+- **SHA-bound verdicts (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)).**
   Act only on a FAIL bound to the PR's **current head** — a FAIL whose `@ <sha>` is stale (or
   absent) judges code that has since changed, so repair mode ignores it. This mirrors
   `ship-it` Step 2b's staleness refusal on the reading side.
@@ -729,7 +729,7 @@ forever. The cap thus terminates **both** the fix loop *and* the re-selection lo
 - **Author-gated verdicts.** A marker counts only from a `write+` repo collaborator —
   the same GitHub-ACL gate `ship-it` Step 2 applies before the marker regex, so a forged or
   self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor
-  mask a real verdict (ADR [0055](../../../.decisions/0055-acl-sourced-review-authz.md)).
+  mask a real verdict (ADR [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)).
 - **Bounded *and* non-starving.** The N=3 cap stops the fix loop; the pre-pick scan's
   cap-exclusion (`ROUNDS >= 3`) stops the re-selection loop, so an escalated PR never
   re-pulls a future run into repair (Step 1, Bounding).
@@ -838,7 +838,7 @@ pipeline. The shared label semantics and the body/comment/dependency formats liv
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md). Your input is the
 `status:triaged` issues that `triage` produced (standalone) or that `review-plan` flipped
 from `status:planned` after gating a `plan-epic` ledger (epic children — ADR
-[0047](../../.decisions/0047-review-plan-gate.md)); your output —
+[0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md)); your output —
 a claimed issue, a PR with `Fixes #N`, progress comments, and an epic handoff note — is
 exactly what `review-code`/`review-doc` read to verify the work against its acceptance
 criteria before merge. The loop closes back on you: when a gate lands a **FAIL** marker

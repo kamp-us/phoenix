@@ -27,7 +27,7 @@ The full pipeline order is `report` → `triage` → `plan-epic` → `review-pla
 `write-code` → `review-code` → `ship-it`: `review-plan` is the deterministic gate between
 `plan-epic` and `write-code` (the plan-layer twin of `review-code`'s PR-layer gate), so an
 epic child is only pickable once `review-plan` has flipped it — see §Pipeline labels and
-ADR [0047](../../.decisions/0047-review-plan-gate.md).
+ADR [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md).
 
 ## Reading stance: convention, not parser spec
 
@@ -113,12 +113,12 @@ change what `write-code` picks.
 
 | Label | Meaning | Pickable by `write-code`? |
 |---|---|---|
-| `status:planning` | **Transient epic-lock** — a `plan-epic`/`review-plan` run is mutating this epic's children; a second mutator backs off. Released to PASS-or-park. Not a pipeline state (ADR [0059](../../.decisions/0059-epic-plan-lock.md)). | n/a (lock, not state) |
+| `status:planning` | **Transient epic-lock** — a `plan-epic`/`review-plan` run is mutating this epic's children; a second mutator backs off. Released to PASS-or-park. Not a pipeline state (ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md)). | n/a (lock, not state) |
 
 `status:triaged` is the one pickable state. It is reached two ways, and **only** these
 two: a standalone issue gets it from `triage` (the human-judgment gate at intake); a
 `plan-epic` **child** gets it from `review-plan` (the deterministic gate at the plan
-layer — ADR [0047](../../.decisions/0047-review-plan-gate.md)). Either way,
+layer — ADR [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md)). Either way,
 `status:triaged` is a **post-gate** state, never the immediate output of `plan-epic`.
 
 ### The `planned → triaged` flip
@@ -135,7 +135,7 @@ This is why the flip *is* the enforcement: because `write-code` already keys on
 `status:triaged` and nothing else, an unverified-but-pickable child cannot exist —
 `status:planned` makes the unverified state unrepresentable to the picker, with **no
 change to `write-code`'s predicate**. See ADR
-[0047](../../.decisions/0047-review-plan-gate.md) for the full gate architecture.
+[0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md) for the full gate architecture.
 
 ### The `status:planning` epic-lock — one mutator at a time over an epic's children
 
@@ -158,7 +158,7 @@ the gate flips C `triaged` (pickable), and `write-code` picks a dropped story (#
   the residual is backstopped by the epic-body **splice + recheck** (§1 "Updating it safely",
   #261) and the convergence loop's signature checkpoint. Don't claim a lock guarantee the label
   API can't give — claim "the common flip-vs-supersede / concurrent-re-plan interleaving is
-  serialized." See ADR [0059](../../.decisions/0059-epic-plan-lock.md).
+  serialized." See ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md).
 
 ---
 
@@ -304,7 +304,7 @@ tempting adjacent thing not to do.>
   and every child traces to ≥ 1 story. The rare child that genuinely serves no single story
   (pure infra) carries the explicit marker `none (pure infra — see What to build)` and
   justifies itself there — the line is never silently left blank. See ADR
-  [0046](../../.decisions/0046-plan-epic-prd-grade-plans.md).
+  [0046](https://github.com/kamp-us/phoenix/blob/main/.decisions/0046-plan-epic-prd-grade-plans.md).
 - **TDD** — `yes` means the task is test-first (a behavior with a verifiable
   contract); `no` means config, docs, scaffolding, or an operational step where
   test-first doesn't apply. The flag is advice to `write-code`, not a gate; plan-epic sets
@@ -429,7 +429,7 @@ it is for the human and the implementer.
 The `@ <sha>` is **load-bearing, not decoration**: `ship-it` and `write-code`-repair refuse a
 verdict whose `@ <sha>` does not match the PR's *current* head, and refuse a SHA-less marker
 outright — this is what closes the stale-PASS-masks-a-FAIL and head-moved-under-the-verdict
-races (ADR [0058](../../.decisions/0058-sha-bound-verdict-contract.md), issue #258). A marker
+races (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258). A marker
 with no `@ <sha>` is a *pre-0058 legacy* shape and resolves to `unverified`, not PASS.
 
 ### Upsert, not append — one verdict per (PR, gate-namespace) (ADR 0058)
@@ -509,14 +509,14 @@ review-doc: FAIL @ <sha> — changes-requested
 For a PR in the **blocking set** (touching `.claude/`/`.github/`), `review-doc` is
 advisory only and instead leads with an advisory line (`review-doc: advisory — blocking-set
 PR (manual merge)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a human
-merges those (ADR [0053](../../.decisions/0053-control-plane-boundary.md)). The advisory line
+merges those (ADR [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). The advisory line
 carries **no `@ <sha>`** by design: it authorizes nothing, so there is nothing to bind.
 
 The rest of the body carries the per-criterion + per-hygiene-check evidence table. What's
 load-bearing for the scanner is the namespace, the polarity, **and the `@ <sha>`** — the same
 staleness contract as §5: `ship-it`/`write-code`-repair refuse a `review-doc` verdict whose
 `@ <sha>` is not the PR's current head, and refuse a SHA-less one (ADR
-[0058](../../.decisions/0058-sha-bound-verdict-contract.md), issue #258).
+[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
 
 ### Comment-only — the APPROVE/comment duality is resolved (ADR 0058)
 
@@ -657,7 +657,7 @@ not a lock), so it has no body shape the other rows describe.
 topology and each sub-issue's acceptance-criteria + `**Stories:**` invariants) and, on a
 clean ledger, flips each child `status:planned → status:triaged` — the gate that makes the
 child pickable at all (§Pipeline labels, ADR
-[0047](../../.decisions/0047-review-plan-gate.md)).
+[0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md)).
 
 The sub-issue's acceptance-criteria checklist (format 2) is the spine of
 verification: `review-code` checks every box before merge, and the
