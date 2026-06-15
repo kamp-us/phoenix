@@ -399,9 +399,32 @@ Verified against #<ISSUE>'s acceptance criteria + doc hygiene — all checks pas
 - [PASS] Status sanity — <evidence>
 ```
 
+Post the advisory line **as a comment, not a native `REQUEST_CHANGES`/review** — the
+blocking-set path is comment-only too, exactly like the PASS and FAIL paths (ADR 0058
+rule 4). Upsert it the same way (`PATCH` your own prior `review-doc:` marker if one exists,
+else `POST`):
+
+```bash
+VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"
+BODY="$(cat "$VERDICT_FILE")"   # first line: review-doc: advisory — blocking-set PR (manual merge)
+ME="$(gh api user --jq .login)"
+# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
+comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+          and (.body | test("^\\s*\\**\\s*review-doc:"; "i"))))
+        | last | .id // empty' <<<"$comments")
+if [ -n "$MINE" ]; then
+  gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"
+else
+  gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"
+fi
+```
+
 Do **not** emit `review-doc: PASS — merge-ready` for a blocking PR — that marker is a
 `ship-it` go-ahead, and `ship-it` must refuse the blocking set. The advisory line keeps
-your verdict out of `ship-it`'s PASS namespace while still recording the review.
+your verdict out of `ship-it`'s PASS namespace while still recording the advisory verdict
+(as a comment, per ADR 0058 rule 4) — the advisory line carries no `@ <sha>` because no
+`ship-it` namespace consumes it; a human merges these (ADR 0053).
 
 ### Fail path — any miss (non-blocking or blocking)
 

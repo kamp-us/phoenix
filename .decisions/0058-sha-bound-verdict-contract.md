@@ -128,7 +128,12 @@ this contract controls* (it records `commit_id` separately, in a different recor
 comment), so a suite that needs `review-code` and `review-doc` to resolve identically must
 not leave `ship-it` comparing a review against a comment for the doc lane. `review-doc`
 therefore lands its verdict **only** as the SHA-bound `review-doc:` comment (upserted per
-rule 2) and never posts a native `APPROVE`/`REQUEST_CHANGES`. `review-code` keeps its native
+rule 2) and never posts a native `APPROVE`/`REQUEST_CHANGES`. This is exhaustive across
+`review-doc`'s outcomes: the blocking-set **advisory** line (the only `review-doc` output
+that carries no `@ <sha>`, since no `ship-it` namespace consumes it — a human merges those,
+ADR [0053](0053-control-plane-boundary.md)) is **also** a comment, never a native review, so
+the "never a native review" invariant holds on every `review-doc` path with no carve-out.
+`review-code` keeps its native
 approving-review path (it is the preferred, unforgeable GitHub signal where it can be posted,
 and `ship-it` reads its `commit_id` for the staleness test), with the SHA-bound comment as
 the load-bearing fallback for the operator's own PR (org branch rules block self-`APPROVE`).
