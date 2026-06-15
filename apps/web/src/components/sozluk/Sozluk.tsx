@@ -64,7 +64,7 @@ export type DefinitionData = {
 export function SozlukDefinition({d}: {d: DefinitionData}) {
 	return (
 		<article className="kp-definition" id={d.id}>
-			<div className="kp-definition__body">{d.body}</div>
+			<div className="kp-definition__body kp-prose">{d.body}</div>
 			<div className="kp-definition__meta">
 				<Link to={`/u/${d.author}`}>@{d.author}</Link>
 				<span>·</span>
@@ -125,7 +125,7 @@ export function SozlukAlphabet({
 }: {
 	value?: string;
 	emptyLetters?: string[];
-	onChange?: (l: string) => void;
+	onChange?: (l: string | undefined) => void;
 }) {
 	return (
 		<nav className="kp-sozluk-alphabet" aria-label="Harf">
@@ -152,7 +152,7 @@ export function SozlukAlphabet({
 						type="button"
 						className={cls}
 						aria-pressed={isActive}
-						onClick={() => onChange?.(l)}
+						onClick={() => onChange?.(isActive ? undefined : l)}
 					>
 						{l}
 					</button>

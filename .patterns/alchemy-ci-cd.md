@@ -5,6 +5,13 @@ get an isolated `pr-<n>` preview with its own worker + D1 + DOs; closing a PR te
 that stage down. Adapted from [alchemy tutorial Part 5](https://v2.alchemy.run/tutorial/part-5/)
 to phoenix's stack (pnpm + node, not bun).
 
+phoenix is multi-app/multi-worker (ADR [0057](../.decisions/0057-multi-app-multi-worker-repo.md)):
+each app under `apps/` is its own package + alchemy stack + per-app stage. The deploy
+workflow **fans out over every app via an `app` matrix** — one matrix leg per app, each
+building and deploying *that* app's stack to the shared `prod`/`pr-<n>` stage convention.
+All legs reuse the same four account-global CI secrets and the one state store; adding an
+app is one more `include:` entry, not a second bootstrap.
+
 Authored by [Can Sirin](https://github.com/cansirin) in #19, landed with the framework foundation in #12.
 
 The trick — and the reason this isn't just "paste your Cloudflare key into GitHub" —
@@ -17,7 +24,7 @@ state password) into the repo's Actions secrets, all from code.
 | File | Role |
 |---|---|
 | [`apps/web/stacks/github.ts`](../apps/web/stacks/github.ts) | One-shot, run from your laptop under an `admin` profile. Mints the scoped CI token + a stable `BETTER_AUTH_SECRET` and pushes the four repo secrets. |
-| [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) | `deploy` job (push→`prod`, PR→`pr-<n>`) + `cleanup` job (PR close→`destroy`). |
+| [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) | `deploy` job (push→`prod`, PR→`pr-<n>`) + `cleanup` job (PR close→`destroy`), both matrixed over every app (`web`, `dashboard`). |
 
 ## The CI secret set
 
@@ -29,6 +36,7 @@ state password) into the repo's Actions secrets, all from code.
 | `CLOUDFLARE_ACCOUNT_ID` | Which account to deploy into. |
 | `ALCHEMY_PASSWORD` | Encrypts/decrypts secrets in the Cloudflare-hosted alchemy state store. |
 | `BETTER_AUTH_SECRET` | The session-signing secret. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `stacks/github.ts` mints a stable `Random` (persisted in its state) and pushes it. |
+| `DASHBOARD_GITHUB_TOKEN` | The GitHub token `@phoenix/dashboard`'s worker binds (`secret_text`) for authenticated reads of `kamp-us/phoenix` issues (`apps/dashboard/worker/config.ts`: `Config.redacted("GITHUB_TOKEN")`, no default → required at deploy). Provisioned by `stacks/github.ts` like the others, but **supplied**, not minted: pass a fine-grained PAT (Issues: read) as `DASHBOARD_GITHUB_TOKEN` on the one-shot's env (a GitHub PAT can't be self-issued the way the Cloudflare token is). Stored under this name because Actions forbids a secret named `GITHUB_TOKEN`; the workflow maps it to the `GITHUB_TOKEN` env for the `dashboard` matrix legs only (`matrix.needs-github-token`). |
 
 > **`BETTER_AUTH_SECRET` is a deploy-time binding value, not Random-in-the-app-stack.**
 > The worker reads it from the runtime env (`config.ts`); `Random` is a deploy-time
@@ -54,18 +62,20 @@ alchemy login --profile admin
 pnpm --filter @phoenix/web exec alchemy cloudflare bootstrap --profile admin
 
 # 3. Deploy the one-shot. It mints the scoped CF token + a stable BETTER_AUTH_SECRET
-#    and pushes all four repo secrets. ALCHEMY_PASSWORD is the state-encryption
-#    password; reuse the same value the app stack deploys with.
-CLOUDFLARE_ACCOUNT_ID=<account-id> ALCHEMY_PASSWORD=<password> \
+#    and pushes all repo secrets. ALCHEMY_PASSWORD is the state-encryption password
+#    (reuse the value the app stack deploys with); DASHBOARD_GITHUB_TOKEN is a
+#    fine-grained GitHub PAT (Issues: read on kamp-us/phoenix) you mint by hand —
+#    it's the one secret supplied rather than minted (a PAT can't be self-issued).
+CLOUDFLARE_ACCOUNT_ID=<account-id> ALCHEMY_PASSWORD=<password> DASHBOARD_GITHUB_TOKEN=<pat> \
   pnpm --filter @phoenix/web exec alchemy deploy stacks/github.ts \
     --profile admin --yes
 ```
 
 Check **Settings → Secrets and variables → Actions**: `CLOUDFLARE_API_TOKEN`,
-`CLOUDFLARE_ACCOUNT_ID`, `ALCHEMY_PASSWORD`, and `BETTER_AUTH_SECRET` should be
-listed. Re-run only to rotate the token or change its scope — the remote
-`Cloudflare.state()` tracks the token's id (and the minted secret), so a rescope is
-a clean diff, not an orphaned token.
+`CLOUDFLARE_ACCOUNT_ID`, `ALCHEMY_PASSWORD`, `BETTER_AUTH_SECRET`, and
+`DASHBOARD_GITHUB_TOKEN` should be listed. Re-run only to rotate the token/scope or
+the dashboard PAT — the remote `Cloudflare.state()` tracks the token's id (and the
+minted secret), so a rescope is a clean diff, not an orphaned token.
 
 ## Gotchas baked into the files
 
@@ -87,11 +97,21 @@ a clean diff, not an orphaned token.
   change and the job hangs.
 - **`STAGE` regex.** Stage names must match `^[a-z0-9]([-_a-z0-9]*)$` — `pr-12` and
   `prod` both pass.
-- **`BETTER_AUTH_SECRET` at deploy AND destroy.** `config.ts` reads it `Effect.orDie`,
-  so both `deploy` and `destroy` (which loads `alchemy.run.ts` to build the worker
-  layer) need it in env, not just the deploy.
+- **`BETTER_AUTH_SECRET` is per-app, at deploy AND destroy.** An app that binds it
+  (`@phoenix/web`, whose `config.ts` reads it `Effect.orDie`) needs it in env for both
+  `deploy` and `destroy` (`destroy` loads `alchemy.run.ts` to build the worker layer),
+  not just the deploy. An auth-less app (`@phoenix/dashboard`, whose `config.ts` reads
+  only `ENVIRONMENT`) must **not** require it — the matrix's `needs-auth` flag passes the
+  secret only for legs that bind it (`matrix.needs-auth && secrets.BETTER_AUTH_SECRET || ''`),
+  so the dashboard deploys without ever touching auth state.
 - **Prod safety check.** The `cleanup` job refuses to `destroy` if `STAGE == prod`,
-  even though it only ever runs on closed PRs.
+  even though it only ever runs on closed PRs. It runs per matrix leg, so each app's
+  preview-stage teardown is independently guarded.
+- **One sticky comment, both URLs.** The PR preview comment is a single sticky comment
+  keyed by `<!-- preview-deploy -->`, with a per-app sub-line keyed by
+  `<!-- preview-deploy:<app> -->`. Parallel matrix legs each upsert only their own
+  app's line via an optimistic read-modify-write (re-read + retry on conflict), so both
+  apps' URLs land in the one comment without a leg clobbering the other's.
 
 ## See also
 

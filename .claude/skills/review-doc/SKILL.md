@@ -297,11 +297,12 @@ Build the hygiene findings into the same evidence shape as the AC table:
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND
 every hygiene check must PASS. One miss anywhere → FAIL.
 
-**Resolve the head SHA you reviewed** and write the verdict to a per-PR temp file
-(`VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"`) so multi-line markdown + backticks
-survive the shell, then post it. The PR number is in the path so back-to-back runs never
-collide on a fixed file (a prior run's unread verdict would otherwise stall the write or leak
-into this run). The SHA goes into the marker's first line
+**Resolve the head SHA you reviewed** and write the verdict to a per-run temp file
+(`VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"`) so multi-line markdown + backticks
+survive the shell, then post it. Allocate it with `mktemp`, not a fixed
+`/tmp/review-doc-verdict-${PR}.md`: the PR number alone isn't unique — two reviews of the *same*
+PR running concurrently would collide on it, one run's unread verdict stalling the write or
+leaking into the other. The SHA goes into the marker's first line
 (`review-doc: PASS @ <sha> — merge-ready`) and is **load-bearing**: `ship-it` refuses any
 verdict not bound to the PR's current head (ADR
 [0058](../../.decisions/0058-sha-bound-verdict-contract.md), issue #258).
@@ -331,8 +332,9 @@ those legacy duplicates are tolerated because `ship-it`'s consumer SHA-refuses a
 without an `@ <sha>` on the current head (Step 2b), so they can never authorize a merge.
 
 ```bash
-VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"
-BODY="$(cat "$VERDICT_FILE")"   # first line: review-doc: PASS @ <HEAD_SHA> — merge-ready
+VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
+# write your composed PASS verdict into "$VERDICT_FILE" (first line: review-doc: PASS @ <HEAD_SHA> — merge-ready)
+BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
 comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
@@ -438,7 +440,9 @@ verdict comment per PR (ADR 0058 rule 2):
 
 ```bash
 HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # the head you reviewed
-BODY="$(cat "/tmp/review-doc-verdict-${PR}.md")"   # first line: review-doc: FAIL @ <HEAD_SHA> — changes-requested
+VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
+# write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-doc: FAIL @ <HEAD_SHA> — changes-requested)
+BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
 comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")

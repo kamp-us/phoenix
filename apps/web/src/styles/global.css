@@ -53,6 +53,16 @@ select {
 	color: var(--text-primary);
 }
 
+/* User-generated content (bodies + titles a user typed). A single unbroken
+   token — pasted URL, hash, log line — must wrap inside its constrained column
+   instead of blowing the layout out horizontally. `overflow-wrap: anywhere`
+   breaks the token only when it has no other wrap opportunity, so normal spaced
+   prose is untouched; `word-break: break-word` is the legacy fallback. #96 */
+.kp-prose {
+	overflow-wrap: anywhere;
+	word-break: break-word;
+}
+
 /* Focus ring shared by all interactive elements.
    Components opt in via :focus-visible { outline: var(--focus-ring); }   */
 :root {

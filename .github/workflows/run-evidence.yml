@@ -1,0 +1,201 @@
+# Run-evidence producer (ADR 0054 + 0056, epic #238 Phase 2 / #245).
+#
+# On every PR, run crabbox + the @phoenix/crabbox-manifest adapter to assemble the
+# ADR 0054 §2 run-evidence manifest and publish it as a GitHub Actions run artifact
+# named `run-evidence` — the storage ADR 0056 chose. The gate consumers (#246 ship-it,
+# #247 review-code) resolve the PR head SHA, find THIS workflow's run with that
+# `head_sha`, and download the `run-evidence` artifact.
+#
+# Load-bearing invariant (ADR 0054 §1 / 0056 fetch contract): the manifest's `commit`
+# MUST equal the PR HEAD sha. On `pull_request`, `github.sha` is the synthetic merge
+# commit, NOT the head — so the adapter is stamped with `github.event.pull_request.head.sha`
+# explicitly. Getting this wrong silently unbinds the evidence from the commit the gate
+# keys on.
+#
+# crabbox output contract (verified locally against v0.31.0, spike #235): `crabbox run
+# --timing-json` prints its machine-readable run-summary JSON as the LAST line of its
+# own STDERR (NOT a `summary.json` file under `.crabbox/runs/`, and NOT stdout — stdout
+# carries the remote command's output). `--artifact-glob` is the only thing that writes
+# to disk: a tarball at `.crabbox/runs/<lease-id>/<lease-id>-artifacts.tgz`, whose path
+# is also echoed in the JSON's `artifacts[].path`. So the producer captures stderr,
+# slices off the JSON line into a summary file, and unpacks the JUnit from the tarball.
+name: run-evidence
+
+on:
+  pull_request:
+
+# One producer run per head ref; cancel superseded pushes so the latest head SHA wins.
+concurrency:
+  group: run-evidence-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  produce:
+    name: produce run-evidence bundle
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      # Check out the PR HEAD (not the merge ref) so the in-repo `git rev-parse HEAD`
+      # and the explicit head-sha stamp agree, and crabbox syncs the head tree.
+      - uses: actions/checkout@v4.2.2
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # crabbox is pre-1.0 (v0.x) — pin a specific release; expect surface churn.
+      # Linux runner ⇒ the linux_amd64 build. Verify the checksum so a tampered or
+      # truncated download fails loud rather than producing a bogus bundle.
+      - name: Install crabbox (pinned)
+        env:
+          CRABBOX_VERSION: "0.31.0"
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/crabbox"
+          cd "$RUNNER_TEMP/crabbox"
+          gh release download "v${CRABBOX_VERSION}" -R openclaw/crabbox \
+            -p "crabbox_${CRABBOX_VERSION}_linux_amd64.tar.gz" -p "checksums.txt"
+          grep "crabbox_${CRABBOX_VERSION}_linux_amd64.tar.gz" checksums.txt | sha256sum -c -
+          tar -xzf "crabbox_${CRABBOX_VERSION}_linux_amd64.tar.gz"
+          install -m 0755 crabbox "$RUNNER_TEMP/crabbox/bin-crabbox" 2>/dev/null || \
+            install -m 0755 ./crabbox*/crabbox "$RUNNER_TEMP/crabbox/bin-crabbox" 2>/dev/null || \
+            { chmod +x crabbox && cp crabbox "$RUNNER_TEMP/crabbox/bin-crabbox"; }
+          echo "CRABBOX=$RUNNER_TEMP/crabbox/bin-crabbox" >> "$GITHUB_ENV"
+          "$RUNNER_TEMP/crabbox/bin-crabbox" --version
+
+      # Run the unit suite inside crabbox's local-container provider (Docker, which GH
+      # runners ship). The in-container command mirrors ci.yml's `unit` job (the same
+      # `vitest run --project unit` over the same config) and adds vitest's JUnit
+      # reporter so `--artifact-glob` has an XML to pull back. vitest's `--outputFile`
+      # is relative to its CWD, so we `cd apps/web` and write `test-results/junit.xml`
+      # there — i.e. `apps/web/test-results/junit.xml` at the repo root, which the glob
+      # below matches. crabbox emits its run-summary JSON
+      # as the last line of STDERR — capture stderr to a file (then cat it back to the
+      # log so the run stays observable) and remember crabbox's own exit code. `set -e` plus the
+      # explicit checks downstream keep story 9 honest: a crabbox or adapter failure
+      # fails the step red, never a silent skip/green.
+      - name: Run crabbox (local-container)
+        run: |
+          set -uo pipefail
+          STDERR_LOG="$RUNNER_TEMP/crabbox-stderr.log"
+          set +e
+          "$CRABBOX" run \
+            --provider local-container \
+            --local-container-image node:26-bookworm \
+            --artifact-glob 'apps/web/test-results/*.xml' \
+            --timing-json \
+            --shell -- \
+            "set -euo pipefail
+             export NPM_CONFIG_PREFIX=\"\$HOME/.npm-global\"
+             export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
+             npm install -g pnpm@10.27.0
+             pnpm install --frozen-lockfile --store-dir .pnpm-store
+             cd apps/web
+             pnpm exec vitest run --config vitest.config.ts --project unit --reporter=junit --outputFile=test-results/junit.xml" \
+            2> "$STDERR_LOG"
+          CRABBOX_EXIT=$?
+          set -e
+          # Surface crabbox's stderr (provisioning log + the run-summary JSON line) in
+          # the step log; the file is the source of truth the next step slices.
+          cat "$STDERR_LOG" >&2
+          echo "CRABBOX_STDERR=$STDERR_LOG" >> "$GITHUB_ENV"
+          if [ "$CRABBOX_EXIT" -ne 0 ]; then
+            echo "::error::crabbox run exited $CRABBOX_EXIT" >&2
+            exit "$CRABBOX_EXIT"
+          fi
+
+      # Slice the run-summary JSON off crabbox's stderr (its last line is the
+      # --timing-json blob) and unpack the JUnit the --artifact-glob collected into the
+      # `.crabbox/runs/<id>/<id>-artifacts.tgz` tarball. Fail loud if the JSON is
+      # missing or unparseable — a half-formed run must not yield a green producer.
+      - name: Locate crabbox outputs
+        run: |
+          set -euo pipefail
+          SUMMARY="$RUNNER_TEMP/run-summary.json"
+          # Scan stderr bottom-up for the run-summary object (the --timing-json blob:
+          # one JSON line carrying `leaseId`). Robust against any trailing log line.
+          node -e '
+            const fs = require("node:fs");
+            const lines = fs.readFileSync(process.argv[1], "utf8").split("\n");
+            for (let i = lines.length - 1; i >= 0; i--) {
+              const t = lines[i].trim();
+              if (!t.startsWith("{")) continue;
+              try {
+                const o = JSON.parse(t);
+                if (o && typeof o.leaseId === "string") {
+                  fs.writeFileSync(process.argv[2], t + "\n");
+                  process.exit(0);
+                }
+              } catch {}
+            }
+            console.error("::error::crabbox run-summary JSON (--timing-json blob with leaseId) not found on stderr");
+            process.exit(1);
+          ' "$CRABBOX_STDERR" "$SUMMARY"
+          echo "RUN_SUMMARY=$SUMMARY" >> "$GITHUB_ENV"
+
+          mkdir -p "$RUNNER_TEMP/artifacts"
+          TGZ=$(find .crabbox/runs -maxdepth 2 -name '*-artifacts.tgz' | sort | tail -n1 || true)
+          if [ -n "$TGZ" ]; then
+            tar -xzf "$TGZ" -C "$RUNNER_TEMP/artifacts"
+            JUNIT=$(find "$RUNNER_TEMP/artifacts" -name '*.xml' | sort | tail -n1 || true)
+            if [ -n "$JUNIT" ]; then echo "JUNIT=$JUNIT" >> "$GITHUB_ENV"; fi
+          fi
+
+      # Map the crabbox run → ADR 0054 §2 manifest. `--commit` is the PR HEAD sha
+      # (not github.sha, the merge ref) — the binding key #246/#247 assert against.
+      # The adapter exits non-zero on malformed input / unresolvable commit, so any
+      # failure here fails the step red. `--junit` is conditional: omitted ⇒ zeroed tests.
+      - name: Assemble run-evidence manifest
+        run: |
+          set -euo pipefail
+          # `bundle/` is at the repo root, but the adapter runs with its CWD set to
+          # `packages/crabbox-manifest` (pnpm --filter), so `--output` must be an
+          # absolute path or it lands under the package dir. The later steps
+          # (stage JUnit, upload-artifact) run at the repo root, so they read `bundle/`.
+          BUNDLE="$GITHUB_WORKSPACE/bundle"
+          mkdir -p "$BUNDLE"
+          # No `--` before the flags: pnpm forwards a literal `--` into the script,
+          # which effect-cli reads as "end of flags" and then rejects --run-summary.
+          JUNIT_ARG=()
+          if [ -n "${JUNIT:-}" ]; then JUNIT_ARG=(--junit "$JUNIT"); fi
+          pnpm --filter @phoenix/crabbox-manifest adapter \
+            --run-summary "$RUN_SUMMARY" \
+            "${JUNIT_ARG[@]}" \
+            --commit "${{ github.event.pull_request.head.sha }}" \
+            --run-url "${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            --environment ci \
+            --output "$BUNDLE/manifest.json"
+          # Assert the stamped commit is the PR head sha — fail closed on drift.
+          STAMPED=$(node -e "process.stdout.write(require(process.argv[1]).commit)" "$BUNDLE/manifest.json")
+          if [ "$STAMPED" != "${{ github.event.pull_request.head.sha }}" ]; then
+            echo "::error::manifest.commit ($STAMPED) != PR head sha (${{ github.event.pull_request.head.sha }})" >&2
+            exit 1
+          fi
+
+      # Stage the JUnit alongside the manifest so a consumer can read structured
+      # results without a second fetch (ADR 0054 §2 logs/tests reference).
+      - name: Stage JUnit into bundle
+        if: ${{ env.JUNIT != '' }}
+        run: cp "$JUNIT" bundle/junit.xml
+
+      # The storage ADR 0056 chose: a GH Actions run artifact named `run-evidence`,
+      # fetched by the gate via this run's head_sha. The name is the fetch contract —
+      # do not rename without updating #246/#247 and ADR 0056.
+      - name: Publish run-evidence artifact
+        uses: actions/upload-artifact@v4.6.2
+        with:
+          name: run-evidence
+          path: bundle/
+          if-no-files-found: error
+          retention-days: 30

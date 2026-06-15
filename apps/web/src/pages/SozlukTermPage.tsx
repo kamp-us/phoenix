@@ -17,6 +17,7 @@ import {Screen} from "../fate/Screen";
 import {codeOf, LoadMoreButton} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
+import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
 
@@ -129,7 +130,7 @@ function NewTermComposer({slug, onCreated}: {slug: string; onCreated: () => void
 					<a href="/sozluk">sözlük</a> / <a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> /{" "}
 					{slug.replace(/-/g, " ")}
 				</p>
-				<h1 className="kp-sozluk-term__title">{slug.replace(/-/g, " ")}</h1>
+				<h1 className="kp-sozluk-term__title kp-prose">{slug.replace(/-/g, " ")}</h1>
 				<div className="kp-sozluk-term__meta">
 					<span>henüz tanım yok</span>
 				</div>
@@ -235,6 +236,7 @@ function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => vo
 				placeholder="markdown destekli. ```js ... ``` kod bloğu için. kişisel deneyim, örnek, hatıra; kuru sözlük tanımı zaten Wikipedia'da var."
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
+				onKeyDown={submitOnCmdEnter}
 				disabled={isInFlight}
 				data-testid="sozluk-composer-body"
 				maxLength={BODY_MAX + 100}

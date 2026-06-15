@@ -18,5 +18,15 @@ export const environment = Config.literals(["development", "production"], "ENVIR
 	Config.withDefault("production"),
 );
 
+/**
+ * The GitHub token for authenticated, higher-rate-limit reads of `kamp-us/phoenix`
+ * issues. Redacted → `secret_text` binding (a `Config.redacted` resolves to a
+ * Cloudflare secret), the same mechanism as apps/web's `BETTER_AUTH_SECRET`. Read at
+ * RUNTIME via `yield* githubToken` (`features/pipeline/github.ts`). No default —
+ * REQUIRED at deploy, so a missing token fails closed rather than silently making
+ * unauthenticated (low-rate-limit) reads.
+ */
+export const githubToken = Config.redacted("GITHUB_TOKEN");
+
 /** The single yieldable read surface. `yield* AppConfig` returns `{ environment }`. */
 export const AppConfig = Config.all({environment});

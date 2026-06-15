@@ -1,0 +1,22 @@
+.db-pick {
+	display: inline-block;
+	padding: 0.05rem 0.4rem;
+	border-radius: 0.25rem;
+	font-size: 0.75rem;
+	font-weight: 600;
+}
+
+.db-pick--pickable {
+	background: #dcfce7;
+	color: #166534;
+}
+
+.db-pick--blocked {
+	background: #fef3c7;
+	color: #92400e;
+}
+
+.db-pick--not-triaged {
+	background: #f1f5f9;
+	color: #64748b;
+}

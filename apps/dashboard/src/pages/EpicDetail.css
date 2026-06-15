@@ -1,0 +1,51 @@
+.db-epic {
+	display: block;
+}
+
+.db-epic__picker {
+	display: block;
+	margin-bottom: 1rem;
+	font-size: 0.85rem;
+	color: #475569;
+}
+
+.db-epic__picker select {
+	font-size: 0.85rem;
+	padding: 0.2rem 0.3rem;
+	max-width: 100%;
+}
+
+.db-epic__header h2 {
+	margin: 0 0 0.25rem;
+	font-size: 1.15rem;
+}
+
+.db-epic__progress {
+	margin: 0 0 1rem;
+	font-weight: 600;
+	color: #1e293b;
+}
+
+.db-epic__section {
+	font-size: 0.8rem;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: #64748b;
+	margin: 1.25rem 0 0.5rem;
+}
+
+.db-epic__children {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.db-epic__error,
+.db-epic__loading,
+.db-epic__empty {
+	color: #64748b;
+}
+
+.db-epic__error {
+	color: #b91c1c;
+}

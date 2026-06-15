@@ -70,7 +70,7 @@ export function SozlukHome() {
 interface ContentProps {
 	letter: string | undefined;
 	query: string;
-	setLetter: (l: string) => void;
+	setLetter: (l: string | undefined) => void;
 	setQuery: (q: string) => void;
 }
 

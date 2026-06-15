@@ -275,25 +275,30 @@ latest origin `main` **without checking it out**:
 
 ```bash
 git fetch origin main
-git switch -c <prefix>/<slug-for-issue-N> FETCH_HEAD
+# Per-run suffix: the deterministic <prefix>/<slug-for-issue-N> is the SAME ref for every
+# run on this issue, so two concurrent runs would both push origin/<that branch> and the
+# second push would clobber the first's commits. A per-invocation nonce keeps them distinct.
+BRANCH="<prefix>/<slug-for-issue-N>-$(uuidgen | head -c 8)"
+git switch -c "$BRANCH" FETCH_HEAD
 ```
 
-It's `git switch -c <branch> FETCH_HEAD` (not `git checkout main`) on purpose: in an
+It's `git switch -c "$BRANCH" FETCH_HEAD` (not `git checkout main`) on purpose: in an
 isolated worktree `main` is checked out elsewhere, so branching directly off the
 freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back to a
 `main` checkout.
 
 Use your git convention — `<prefix>` is your personal branch prefix, like `umut/` — with
-a short kebab-case slug naming the work. Read the issue's `### What to build` for scope
+a short kebab-case slug naming the work, and the per-run nonce appended so two concurrent
+runs on the same issue never push the same `origin/` ref. Read the issue's `### What to build` for scope
 and honor the `**TDD:**` flag — `yes` means write the failing test first, then make it
 pass; `no` means config/docs/scaffolding where test-first doesn't apply.
 
 > **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
-> spin one up rather than checking out `main`:
-> `git worktree add -b <prefix>/<slug-for-issue-N> ../wt-issue-<N> origin/main`, then
-> `cd ../wt-issue-<N>`. The path is parameterized by issue number so two concurrent
-> fallback runs don't collide on `git worktree add`. When you're done, remove it with
-> `git worktree remove ../wt-issue-<N>`.
+> spin one up rather than checking out `main`. Carry the same per-run `$BRANCH` (nonce and
+> all) and a per-run worktree path so two concurrent fallback runs collide on neither the
+> branch nor the dir: `WT="../wt-issue-<N>-$(uuidgen | head -c 8)"; git worktree add -b
+> "$BRANCH" "$WT" origin/main`, then `cd "$WT"`. When you're done, remove it with
+> `git worktree remove "$WT"`.
 
 Ground the implementation in the codebase the way the repo expects: the ADRs in
 `.decisions/` are the *why* and the binding decisions, the patterns in `.patterns/`
@@ -314,7 +319,7 @@ the seam `review-code` relies on: pass → merge → `Fixes #N` closes it). Use 
 number you're implementing.
 
 ```bash
-git push -u origin <prefix>/<slug-for-issue-N>
+git push -u origin "$BRANCH"   # the same per-run branch you created in Step 4
 gh pr create \
   --base main \
   --title "<concise PR title>" \
