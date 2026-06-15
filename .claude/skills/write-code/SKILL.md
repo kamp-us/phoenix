@@ -381,12 +381,23 @@ bare `.` resolves to the worktree's own CWD, which physically sits under
 `.claude/worktrees/<id>` and so matches the retained `!**/.claude/worktrees`
 exclusion — biome reports "0 files / paths ignored" and exits **0 without linting
 anything** (a false green; #236, [ADR 0060](../../../.decisions/0060-worktree-lint-changed-paths.md)).
-Lint **explicit paths** instead — changed files when there are any, else the source
-roots, never bare `.`:
+Lint **explicit paths** instead — the changed files biome handles, never bare `.`.
+Filter the changed set to biome-handled extensions so a docs/markdown-only PR (no
+`.ts`/`.tsx`/`.json`/… in the diff) is a **clean skip (exit 0)**, not a false-fail:
+on biome 2.4.15 an all-unknown/ignored path set still exits **1** ("No files were
+processed"), and `--files-ignore-unknown=true` does *not* rescue an entirely-unknown
+set — so the filter, not the flag, is what keeps docs-only green (#236,
+[ADR 0060](../../../.decisions/0060-worktree-lint-changed-paths.md)):
 
 ```bash
-CHANGED="$(git diff --name-only --diff-filter=ACMR origin/main...HEAD | grep -Ev '^node_modules/' || true)"
-if [ -n "$CHANGED" ]; then pnpm exec biome check $CHANGED; else pnpm exec biome check apps packages; fi
+CHANGED="$(git diff --name-only --diff-filter=ACMR origin/main...HEAD \
+  | grep -Ev '^node_modules/' \
+  | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|css|graphql)$' || true)"
+if [ -n "$CHANGED" ]; then
+  pnpm exec biome check --files-ignore-unknown=true $CHANGED
+else
+  echo "no biome-handled changed files to lint"   # docs-only / empty diff: clean skip, never bare `biome check .`
+fi
 ```
 
 Commit per repo conventions. Don't push to or PR from `main`.

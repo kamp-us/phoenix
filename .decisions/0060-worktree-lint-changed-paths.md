@@ -36,19 +36,36 @@ mechanism — so it is **out of scope here** and tracked separately.
 
 ## Decision
 
-**Lint explicit paths, never bare `.`, from inside a worktree.** `write-code` Step 4 and
-`review-code` Step 2 lint the *changed files* when there are any, else the source roots —
-never bare `.` (which self-no-ops) and never an empty path set (which biome resolves to the
-ignored CWD, the same no-op). The verified invocation:
+**Lint explicit paths, never bare `.`, from inside a worktree.** `write-code` Step 4 lints
+the *biome-handled changed files* when there are any, else a clean skip — never bare `.`
+(which self-no-ops) and never an empty path set (which biome resolves to the ignored CWD,
+the same no-op). The verified invocation:
 
 ```bash
-CHANGED="$(git diff --name-only --diff-filter=ACMR origin/main...HEAD | grep -Ev '^node_modules/' || true)"
-if [ -n "$CHANGED" ]; then pnpm exec biome check $CHANGED; else pnpm exec biome check apps packages; fi
+CHANGED="$(git diff --name-only --diff-filter=ACMR origin/main...HEAD \
+  | grep -Ev '^node_modules/' \
+  | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|json|jsonc|css|graphql)$' || true)"
+if [ -n "$CHANGED" ]; then
+  pnpm exec biome check --files-ignore-unknown=true $CHANGED
+else
+  echo "no biome-handled changed files to lint"
+fi
 ```
 
-The non-empty branch is the precise, changed-files form; the empty branch falls back to the
-CWD-robust source roots (`apps packages`), **not** to bare `.`. Both branches were verified
-to catch a planted `noRedeclare` and exit 1 from inside this worktree; bare `.` did not.
+The non-empty branch is the precise, changed-files form, filtered to biome-handled
+extensions; the empty branch is a clean skip (exit 0), **not** bare `.`. **A docs/markdown-only
+changed set is a clean skip (exit 0) by affirmatively containing zero biome-handled files —
+the extension filter empties `$CHANGED` so the `else` branch runs — not a blind no-op that
+linted the wrong path.** This closes both failure modes the gate must avoid: a false-green
+(bare `.` linting nothing) *and* a false-red (a docs-only diff hitting biome's "No files were
+processed" exit 1). The original #236 form was a false-green; an unfiltered `biome check
+$CHANGED` would be a false-red on docs-only PRs. Verified on biome 2.4.15 from inside this
+worktree: a planted `.ts` `noRedeclare` in the changed set → exit **1**; a markdown-only
+changed set → clean skip (exit **0**); an empty changed set → clean skip (exit **0**).
+`--files-ignore-unknown=true` alone does *not* rescue an entirely-unknown path set (it still
+exits 1 "No files were processed" on 2.4.15) — the **extension filter** is the load-bearing
+mechanism; the flag only suppresses per-file unknown errors inside an otherwise non-empty
+mixed set.
 `review-code` runs the source-roots form scoped to its review worktree
 (`pnpm -C "$REVIEW_WT" exec biome check apps packages`), since its changed-set lives on the
 PR head ref, not against `origin/main` in that tree.
@@ -62,8 +79,10 @@ typecheck locally; only its lint invocation changes.
 
 ## Consequences
 
-- The worktree lint gate can no longer false-green: it lints real files (changed or source
-  roots) and exits non-zero on a violation, restoring the signal #119/#236 targeted.
+- The worktree lint gate can no longer false-green *or* false-red: it lints the real
+  biome-handled changed files and exits non-zero on a violation, while a docs-only (or empty)
+  diff is a clean skip — restoring the signal #119/#236 targeted without blocking legitimate
+  docs-only changes.
 - A precise, isolation-friendly fix: no allowlist creep (which would erode ADR 0052's
   isolation) and no harness-level worktree relocation (out of band for a skill edit). Both
   alternatives were rejected here — allowlist creep defeats the isolation the sparse checkout
