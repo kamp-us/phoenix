@@ -24,9 +24,9 @@ are relative to that package dir. The stack is *of* the app, not of the repo. Tw
 account-global pieces are already shared and need no per-app duplication:
 
 - **State store.** `Cloudflare.state()` (the hosted alchemy state store) is bootstrapped
-  once per Cloudflare account and keyed by stack name; `stacks/github.ts` provisions its
+  once per Cloudflare account and keyed by stack name; `infra/ci-credentials/github.ts` provisions its
   bearer token + AES key into the account-wide Secrets Store on first deploy.
-- **CI secrets.** The four repo secrets `stacks/github.ts` mints
+- **CI secrets.** The four repo secrets `infra/ci-credentials/github.ts` mints
   (`CLOUDFLARE_API_TOKEN`, `CLOUDFLARE_ACCOUNT_ID`, `ALCHEMY_PASSWORD`,
   `BETTER_AUTH_SECRET`) are repo-level and account-scoped — a second app deploys with the
   same token, the same account, the same alchemy password, the same auth secret.
@@ -48,8 +48,8 @@ package that owns its own worker and its own infra:
   DOs, and D1.
 - **Shared account-global state store + secrets, no second bootstrap.** Every app's stack
   reuses the one `Cloudflare.state()` store and the four CI secrets that
-  `stacks/github.ts` already provisioned. Adding an app does **not** re-run the
-  `stacks/github.ts` one-shot — the store and secrets are account-global, and the alchemy
+  `infra/ci-credentials/github.ts` already provisioned. Adding an app does **not** re-run the
+  `infra/ci-credentials/github.ts` one-shot — the store and secrets are account-global, and the alchemy
   state store keys by stack name so a second stack lands beside the first without
   collision.
 - **Per-app stage isolation,** mirroring `apps/web`: `prod` on push to main, `pr-<n>`
@@ -89,6 +89,6 @@ each app's deploy independent, and still shares everything that's genuinely acco
   four secrets and the same `prod`/`pr-<n>` stage convention per app; this ADR is the spec
   the CI child implements against. Out of scope here: the actual workflow edit and the
   `apps/dashboard` scaffold are separate children.
-- **`stacks/github.ts` stays a single one-shot.** It provisions account-global,
+- **`infra/ci-credentials/github.ts` stays a single one-shot.** It provisions account-global,
   repo-level credentials; it is not re-run per app. If a future app needs a *new* secret,
   that secret is added to this one stack, not a second credential stack.

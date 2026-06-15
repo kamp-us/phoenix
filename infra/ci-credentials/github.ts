@@ -18,7 +18,7 @@
  *
  *   alchemy login --profile admin     # Cloudflare Global API Key + a GitHub creds
  *   CLOUDFLARE_ACCOUNT_ID=<id> ALCHEMY_PASSWORD=<pw> DASHBOARD_GITHUB_TOKEN=<pat> \
- *     pnpm --filter @phoenix/web exec alchemy deploy stacks/github.ts \
+ *     pnpm --filter @phoenix/infra exec alchemy deploy github.ts \
  *       --profile admin --yes
  *
  * `DASHBOARD_GITHUB_TOKEN` is the one secret you supply by hand — a fine-grained

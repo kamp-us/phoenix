@@ -1,0 +1,19 @@
+{
+	"extends": "../../tsconfig.json",
+	"compilerOptions": {
+		"composite": true,
+		"tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+		"target": "ES2022",
+		"lib": ["ES2023"],
+		"module": "ESNext",
+		"moduleResolution": "Bundler",
+		"noEmit": true,
+		// The stack (`github.ts`) is loaded directly by Node's ESM loader, which
+		// requires explicit `.ts` import specifiers; allow them here.
+		"allowImportingTsExtensions": true,
+		// The stack mints a Cloudflare-scoped token via `alchemy/Cloudflare`, whose
+		// resource types reference the workers runtime types.
+		"types": ["@cloudflare/workers-types", "node"]
+	},
+	"include": ["github.ts"]
+}
