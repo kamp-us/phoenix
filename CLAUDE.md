@@ -2,24 +2,29 @@
 
 kamp.us, reborn.
 
-A single Cloudflare Worker. React 19 + Effect + fate.
-HTTP via Effect `HttpRouter` / `HttpApiBuilder` (ADR 0027). Durable Objects
-authored on alchemy's Effect DO model (ADR 0028).
+A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
+(`web` today, `dashboard` incoming), each its own package + stack + stage (ADR
+0057). React 19 + Effect + fate. HTTP via Effect `HttpRouter` / `HttpApiBuilder`
+(ADR 0027). Durable Objects authored on alchemy's Effect DO model (ADR 0028).
 
 ## Architecture
 
-- **One worker** serves both the SPA (via `assets` binding) and the API.
+- **One worker per app.** Each `apps/<app>` is its own pnpm package owning its own
+  `alchemy.run.ts` stack + per-app stage, reusing the account-global state store and
+  the four CI secrets — no second bootstrap (ADR 0057). `apps/web` is the worker
+  today; `apps/dashboard` is the next.
+- **`apps/web`** serves both the SPA (via `assets` binding) and the API.
 - The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE. Other backend routes live under `/api/*`.
 - Frontend is React 19 + Vite, built into `dist/client`.
 - DOs are bindings on the same worker: `ConnectionDO` + `TopicDO` power the fate-live SSE fan-out (ADRs 0023/0025/0028). Add more DOs per feature.
 
 ```
 phoenix/
-├── apps/
-│   └── web/                 # the single worker
+├── apps/                    # one worker per app, each its own package + stack (ADR 0057)
+│   └── web/                 # @phoenix/web — the worker today (dashboard incoming)
 │       ├── worker/          # worker entry + backend code
 │       ├── src/             # React frontend
-│       └── alchemy.run.ts   # the alchemy stack (replaces wrangler.jsonc)
+│       └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
 ├── packages/                # shared internal packages
 └── pnpm-workspace.yaml
 ```
@@ -55,7 +60,7 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 
 - Tech is rebuilt from `~/code/github.com/kamp-us/kampus/` (worker + DO patterns).
 - Products are reborn from `~/code/github.com/kamp-us/monorepo/` (sozluk, pano, kampus).
-- The shape is `kampus`, the products are `monorepo`, collapsed into one worker.
+- The shape is `kampus`, the products are `monorepo`, collapsed into the `apps/web` worker.
 
 ## Conventions
 
