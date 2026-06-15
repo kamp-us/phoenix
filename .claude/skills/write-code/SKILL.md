@@ -104,6 +104,8 @@ gh api "repos/kamp-us/phoenix/pulls?state=open&per_page=100" \
   # trigger spurious repair. Empty set ⇒ IN($authorized[]) matches nothing ⇒ no verdict
   # resolves ⇒ the scan safely finds nothing — fail-closed.
   comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+  # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
+  # per gh-issue-intake-formats.md §5 — the canonical matcher contract
   markerAuthors=$(jq -r '[.[]
       | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
       | .user.login] | unique | .[]' <<<"$comments")
@@ -414,6 +416,8 @@ PR=<the PR number you were handed>
 # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2 uses
 # (ADR 0055): build the authorized set from THIS PR's marker authors holding write+ on the repo.
 comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+# every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
+# per gh-issue-intake-formats.md §5 — the canonical matcher contract
 markerAuthors=$(jq -r '[.[]
     | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' <<<"$comments")
@@ -471,6 +475,7 @@ work list** — fix exactly what they name, no more, no less:
 ```bash
 # the full body of the latest FAILing review-code marker (swap review-code→review-doc for the doc namespace)
 # author-gated against the ACL-derived $authorized set R1 already built — only a real reviewer's findings are your work list
+# marker test stays emphasis-tolerant (leading \** absorbs review-code's bolding) per gh-issue-intake-formats.md §5
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-code:\\s*FAIL"; "i"))]
