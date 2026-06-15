@@ -16,7 +16,7 @@ for them*. Your plan **leads with the product layer** (the problem, the solution
 view, the user stories, the testing strategy) and **then** lays down the engineering layer
 (approach, split rationale). The user stories are the spine: they are what you slice the
 children from, and every child traces back to one. See ADR
-[0046](../../../.decisions/0046-plan-epic-prd-grade-plans.md) for why.
+[0046](https://github.com/kamp-us/phoenix/blob/main/.decisions/0046-plan-epic-prd-grade-plans.md) for why.
 
 You operate **autonomously**. The plan you write is read by `write-code` agents, not presented
 to a human for sign-off — there is **no interview, no propose-first, no approval gate**. You
@@ -58,7 +58,7 @@ You **write three of the five** shared formats; read them before you start:
   phase as a parallel group, `requires: #N` as a cross-boundary gating edge.
   **Topology only** — no retry budgets, no concurrency caps, no code flags; those are
   orchestrator concerns, not shared issue state. (The orchestrator itself is not this repo's
-  job — ADR [0046](../../../.decisions/0046-plan-epic-prd-grade-plans.md); the topology is the
+  job — ADR [0046](https://github.com/kamp-us/phoenix/blob/main/.decisions/0046-plan-epic-prd-grade-plans.md); the topology is the
   only dependency artifact phoenix keeps.)
 - **Sub-issue body** (format 2) — the shape of every child you create: a **required**
   `**Stories:**` line (the story numbers from your plan this child implements or unblocks), a
@@ -79,13 +79,13 @@ re-plan; the gate flips `planned → triaged`). Run concurrently they interleave
 the ledger (#264). **Before you create, amend, supersede, unlink, or close any child — and
 before the body `PATCH` in Step 5 — acquire the `status:planning` epic-lock; release it when
 you finish (PASS-or-park), on every exit path including failure.** This is the primary
-serialization (ADR [0059](../../../.decisions/0059-epic-plan-lock.md)); the Step 5
+serialization (ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md)); the Step 5
 splice+recheck (#261) is the complementary backstop for its residual, not a replacement.
 
 **Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
 stop. Otherwise `POST` it — and **only treat the lock as acquired if that `POST` actually
 succeeds**. A failed acquire (the 422 returned when `status:planning` hasn't been created in the
-repo — it's a canonical lock label, see ADR [0059](../../../.decisions/0059-epic-plan-lock.md)
+repo — it's a canonical lock label, see ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md)
 §Setup and the formats doc's status-label table — or any transient `gh` IO fault) must **not**
 fall through to mutate: it backs off and exits 0, so a missing label or a flaky write never lets
 you mutate unlocked. **The back-off `exit 0` is deliberate** (a held lock or a setup gap is not a
@@ -240,7 +240,7 @@ of this plan block.) What each section holds:
   and layers, not `path/to/file.ts:42`; paths and snippets go stale fast and the children read
   the live code anyway.
 - **Testing strategy** — which behaviors/modules get tested and why, and at which tier (cite
-  ADR [0040](../../../.decisions/0040-testing-taxonomy-and-seam-graduation.md)'s T0–T3
+  ADR [0040](https://github.com/kamp-us/phoenix/blob/main/.decisions/0040-testing-taxonomy-and-seam-graduation.md)'s T0–T3
   taxonomy and `.patterns/effect-testing.md`); what makes a good test here (behavior, not
   implementation); prior art in the repo to follow. This is what sets each child's `**TDD:**`
   flag honestly, instead of guessing per child.
@@ -339,7 +339,7 @@ they don't re-enter triage. But they are **not yet pickable either** — they're
 **`status:planned`**, the pre-gate state. `write-code` keys on `status:triaged`, so a
 `status:planned` child stays unpickable until the `review-plan` gate validates the ledger and
 flips `planned → status:triaged` (per ADR
-[0047](../../../.decisions/0047-review-plan-gate.md) — that flip *is* the whole enforcement
+[0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md) — that flip *is* the whole enforcement
 mechanism: an unverified-but-pickable child is unrepresentable). Apply `status:planned` + a
 `type:*` + a `p*`:
 
@@ -437,7 +437,7 @@ child-flip, or a re-plan loop, can edit the same body concurrently; a blind whol
 `PATCH` would silently clobber that edit (the lost-update this step exists to prevent — issue
 #261, same last-write-wins family as the issue-claim race
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 (issue #260) and the
-SHA-bound verdict contract, ADR [0058](../../../.decisions/0058-sha-bound-verdict-contract.md)
+SHA-bound verdict contract, ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)
 (issue #258)). GitHub's issue `PATCH` honors **no** `If-Match`/`If-Unmodified-Since` — there is no
 native compare-and-swap — so the write is made safe by **two layers**, in order:
 
@@ -770,9 +770,9 @@ pipeline. The shared label semantics and the body/comment/dependency/story forma
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); the decision to make
 plan-epic's output PRD-grade, story-driven, coverage-enforced, and autonomous (with the
 personal PRD/orchestrator harness deliberately kept out of the repo) is ADR
-[0046](../../../.decisions/0046-plan-epic-prd-grade-plans.md). Your input is a
+[0046](https://github.com/kamp-us/phoenix/blob/main/.decisions/0046-plan-epic-prd-grade-plans.md). Your input is a
 `type:epic` + `status:triaged` issue from `triage`; your output — the epic body's PRD-grade
 plan + `## Dependencies`, and the linked sub-issues with their story traces and acceptance
 criteria — is what `write-code` reads to pick, sequence, and execute the work, once the
 `review-plan` gate has flipped each child `status:planned → status:triaged` (ADR
-[0047](../../../.decisions/0047-review-plan-gate.md)).
+[0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md)).

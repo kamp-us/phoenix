@@ -14,7 +14,7 @@ symmetric twin of [`review-code`](../review-code/SKILL.md), one stage earlier: w
 `review-code` gates a PR against its acceptance criteria before merge, `review-plan`
 gates an epic ledger against the floor before `write-code` starts.
 
-Read ADR [0047](../../../.decisions/0047-review-plan-gate.md) — it is the binding spec
+Read ADR [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md) — it is the binding spec
 for this skill. The whole gate architecture (the flip *is* the enforcement, the floor
 blocks and the soft-advisor never does, flag-don't-repair, converge-on-stall) is settled
 there; this skill is its operating procedure.
@@ -84,13 +84,13 @@ instant your gate flips C `triaged` (pickable), and `write-code` picks a story t
 dropped (#264, race X3). So **before the gate's first flip and before the convergence loop's
 first `rePlan`, acquire the `status:planning` epic-lock; release it when you reach PASS or
 park, on every exit path including failure** (ADR
-[0059](../../../.decisions/0059-epic-plan-lock.md)).
+[0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md)).
 
 **Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
 stop — don't flip, don't loop. Otherwise `POST` it — and **only treat the lock as acquired if
 that `POST` actually succeeds**. A failed acquire (the 422 returned when `status:planning` hasn't
 been created in the repo — it's a canonical lock label, see ADR
-[0059](../../../.decisions/0059-epic-plan-lock.md) §Setup and the formats doc's status-label table
+[0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md) §Setup and the formats doc's status-label table
 — or any transient `gh` IO fault) must **not** fall through to the gate flip: it backs off and
 exits 0, so a missing label or a flaky write never lets you flip unlocked. **The back-off `exit 0`
 is deliberate** (a held lock or a setup gap is not a review-plan *failure*) — but it shares the
@@ -298,7 +298,7 @@ On a **FAIL**, the ledger has hard defects and nothing flipped. Repair is **not*
    from drifting the ledger out from under the loop in the first place.) (The
    epic-lock above is the primary defense — it stops two loops from running at all; the
    signature checkpoint is the in-loop backstop for the lock's residual window. ADR
-   [0059](../../../.decisions/0059-epic-plan-lock.md).) Park the epic `status:needs-info` with
+   [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md).) Park the epic `status:needs-info` with
    a diagnostic naming the unresolved defects. Convergence is the stop condition; a high flat
    ceiling (`DEFAULT_CEILING`) is only a runaway backstop, expressed as a `Schedule` (ADR 0047
    Decision 3).
@@ -390,7 +390,7 @@ This skill is one of a suite (`report` → `triage` → `plan-epic` → **`revie
 `write-code` → `review-code`) that turns GitHub issues into an agent-operable pipeline. The
 shared label semantics and the body/comment/dependency/story formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); the gate architecture is
-ADR [0047](../../../.decisions/0047-review-plan-gate.md); the deterministic floor, the gate
+ADR [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md); the deterministic floor, the gate
 action, and the convergence loop are `@phoenix/epic-ledger` (`packages/epic-ledger`). Your
 input is a `plan-epic`-output epic whose children are `status:planned`; your output — the
 `planned → triaged` flip on a clean ledger (or a parked epic on an unfixable one), plus the
@@ -408,5 +408,5 @@ in any non-phoenix install `review-plan` degrades with the Step 1 preflight mess
 of running the gate. Every other skill in the suite is repo-agnostic on install. Making
 `review-plan` portable — publishing `@phoenix/epic-ledger` to npm so a foreign install can
 fetch it — is a **deferred follow-up epic**, not wired today. See ADR
-[0062](../../../.decisions/0062-repo-as-config-plugin.md) §3 and epic
+[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md) §3 and epic
 [#228](https://github.com/kamp-us/phoenix/issues/228).

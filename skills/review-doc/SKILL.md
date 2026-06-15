@@ -27,9 +27,9 @@ whichever produced the matching verdict.
 
 ## The control-plane boundary decides whether you bind or merely advise
 
-Read ADR [0053](../../../.decisions/0053-control-plane-boundary.md) — it is the binding
+Read ADR [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md) — it is the binding
 spec for this split, and it **supersedes** ADR
-[0049](../../../.decisions/0049-pipeline-ships-code-not-itself.md). Two classes of artifact:
+[0049](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md). Two classes of artifact:
 
 - **NON-BLOCKING (autonomous).** Two kinds of artifact, both non-blocking but verified by
   *different* gates:
@@ -242,16 +242,16 @@ Run each, scoped to the files the PR touches:
    - An **ADR** (`.decisions/NNNN-*.md`) has the frontmatter (`id`, `title`, `status`,
      `date`, `tags`) and the **`## Context` / `## Decision` / `## Consequences`** sections
      — the house ADR shape every existing ADR follows. Mirror an existing file (e.g.
-     [`0049`](../../../.decisions/0049-pipeline-ships-code-not-itself.md)) if unsure.
+     [`0049`](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md)) if unsure.
    - A **pattern** (`.patterns/*.md`) reads as how-the-code-is-shaped, not a why-essay
      (the why belongs in `.decisions/`).
    - **Prose** (README and friends) states current-state-for-builders, not retired
      context (CLAUDE.md "Doc surfaces").
 2. **Index row exists + status matches.** A new/changed **ADR** has a matching row in
-   [`.decisions/index.md`](../../../.decisions/index.md), and the row's **Status column
+   [`.decisions/index.md`](https://github.com/kamp-us/phoenix/blob/main/.decisions/index.md), and the row's **Status column
    matches the file's frontmatter `status`** (a file marked `accepted` whose index row
    still says `proposed` is a FAIL). A new **pattern** has its row in
-   [`.patterns/index.md`](../../../.patterns/index.md). Verify the row is in the diff (or
+   [`.patterns/index.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/index.md). Verify the row is in the diff (or
    already present and consistent), not merely assumed.
 3. **Links resolve.** Every relative link the diff adds points at a path that **exists**
    (check the target file is in the repo at the PR head). A dead in-repo link is a FAIL.
@@ -286,7 +286,7 @@ Run each, scoped to the files the PR touches:
    to point forward (its frontmatter/status and its index row reflect
    `superseded by [NNNN]`). A new ADR that obsoletes an old one without touching the old
    one's status is a FAIL — the cross-link must close both ways (see how
-   [`0049`](../../../.decisions/0049-pipeline-ships-code-not-itself.md) and the index
+   [`0049`](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md) and the index
    handle the chain).
 6. **Status sanity.** The `status` is a real value in the house vocabulary (`proposed`,
    `accepted`, `superseded`/`superseded by …`, `amended-in-part by …`, `retired`,
@@ -316,7 +316,7 @@ PR running concurrently would collide on it, one run's unread verdict stalling t
 leaking into the other. The SHA goes into the marker's first line
 (`review-doc: PASS @ <sha> — merge-ready`) and is **load-bearing**: `ship-it` refuses any
 verdict not bound to the PR's current head (ADR
-[0058](../../.decisions/0058-sha-bound-verdict-contract.md), issue #258).
+[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
 
 ```bash
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # the head you reviewed
@@ -521,8 +521,8 @@ This skill is one of a suite (`report` → `triage` → `plan-epic` → `review-
 an agent-operable pipeline. The shared label semantics and the body/comment/dependency/
 marker formats live in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md);
 the control-plane boundary that decides whether your marker binds `ship-it` or merely
-advises is ADR [0053](../../../.decisions/0053-control-plane-boundary.md) (which supersedes
-[0049](../../../.decisions/0049-pipeline-ships-code-not-itself.md)). Your input is a
+advises is ADR [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md) (which supersedes
+[0049](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md)). Your input is a
 `write-code`-produced PR whose diff is a knowledge artifact, linked by `Fixes #N`; your
 output is the verdict that decides whether that doc PR is merge-ready (non-blocking) or
 records advice for the human merger (blocking). You are the doc-artifact twin of

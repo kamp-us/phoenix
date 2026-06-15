@@ -211,11 +211,11 @@ parts, each lifted from write-code's scan:
 
 - **Author-gated against the repo ACL** — a marker counts as a verdict only from a `write+`
   collaborator, so a forged `review-(code|doc): FAIL` can't be read as an active repair (ADR
-  [0055](../../../.decisions/0055-acl-sourced-review-authz.md), the same trust root `ship-it`
+  [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md), the same trust root `ship-it`
   Step 2 and `write-code`'s scan use). A native `CHANGES_REQUESTED` review folds into the code
   namespace and needs **no** ACL gate — GitHub author-attributes reviews, so that path is
   unforgeable.
-- **SHA-bound staleness test** (ADR [0058](../../../.decisions/0058-sha-bound-verdict-contract.md),
+- **SHA-bound staleness test** (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md),
   issue #258) — a FAIL whose `@ <sha>` is **not** the PR's current head, or that carries **no**
   `@ <sha>` (a pre-0058 legacy marker), is **stale**: it judges code that has since changed, so
   `write-code` no-ops on it — therefore it is **not** an active repair here either, and the
