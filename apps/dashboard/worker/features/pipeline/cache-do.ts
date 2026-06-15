@@ -16,7 +16,6 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import {type CachedPipelineState, decodeCachedPipelineState} from "./schema.ts";
 
 /** The one KV key the snapshot lives under (single instance, single repo). */
 const SNAPSHOT_KEY = "pipeline:snapshot";
@@ -31,14 +30,24 @@ type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 export type PipelineCacheState = Pick<DurableObjectStateValue, "storage">;
 
 /**
- * The cache RPC surface: read the last snapshot (or `null` if none persisted yet)
- * and write a new one. The snapshot crosses the RPC boundary as the already-encoded
- * JSON value the DO stores verbatim; `read` decodes it back through the schema (the
- * stored bytes are a trust boundary across a DO restart / a deploy that changed the
- * shape — a stale-shaped blob fails the decode rather than corrupting the board).
+ * The cache RPC surface: read the last stored snapshot value (or `null` if none) and
+ * write a new one. Both cross the RPC boundary as PLAIN JSON the DO stores verbatim —
+ * `read` returns the raw stored value, NOT a decoded `CachedPipelineState`. Cloudflare
+ * RPC can only serialize structured-cloneable values, and a `Schema.Class` instance is
+ * not one ("Could not serialize object of type CachedPipelineState" — #323); the
+ * schema round-trip therefore lives WORKER-side in `PipelineCache` (encode before
+ * `write`, decode after `read`), where the value stays in-process. The DO is dumb
+ * storage: bytes in, bytes out.
+ *
+ * Every member is a METHOD (`read()`, `write(s)`) — never a bare-Effect property. The
+ * alchemy RPC stub proxies every member access as a callable and invokes it
+ * (`stub[member](...args)`), so a non-callable `read: Effect` resolves to the proxy
+ * function itself, never the Effect: `Effect.suspend(() => stub().read)` then dies with
+ * "Not a valid effect" at request time (#323). The nullary thunk keeps `read` callable
+ * on both ends of the boundary.
  */
 export interface PipelineCacheRpc {
-	readonly read: Effect.Effect<CachedPipelineState | null, never, never>;
+	readonly read: () => Effect.Effect<unknown, never, never>;
 	readonly write: (snapshot: unknown) => Effect.Effect<void, never, never>;
 }
 
@@ -51,16 +60,17 @@ export class PipelineCacheDO extends Cloudflare.DurableObjectNamespace<
  * The per-instance cache algorithm over a resolved state slice. Plain-arg so a
  * unit test drives it over the `do-state.testing.ts` fake.
  *
- * `read` returns `null` (cache miss) for both "nothing stored" and "stored blob
- * no longer decodes" — a non-decodable snapshot is treated as absent so a shape
- * change degrades to a fresh fetch, never to a crash.
+ * `read` returns the raw stored value verbatim — plain JSON (or `null` when nothing
+ * is stored), never a decoded class instance: the schema decode is the worker-side
+ * seam's job (`PipelineCache`), so only RPC-serializable values cross the boundary
+ * (#323). The "stale-shaped blob → cache miss" degrade also lives there.
  */
 export const makePipelineCacheInstance = (state: PipelineCacheState): PipelineCacheRpc => {
-	const read = Effect.gen(function* () {
-		const raw = yield* state.storage.get<unknown>(SNAPSHOT_KEY);
-		if (raw === undefined) return null;
-		return yield* decodeCachedPipelineState(raw).pipe(Effect.orElseSucceed(() => null));
-	});
+	const read = () =>
+		Effect.gen(function* () {
+			const raw = yield* state.storage.get<unknown>(SNAPSHOT_KEY);
+			return raw === undefined ? null : raw;
+		});
 
 	const write = (snapshot: unknown) => state.storage.put(SNAPSHOT_KEY, snapshot);
 

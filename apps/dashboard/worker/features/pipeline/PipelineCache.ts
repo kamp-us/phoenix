@@ -13,7 +13,11 @@ import * as Context from "effect/Context";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import {PipelineCacheDO} from "./cache-do.ts";
-import {type CachedPipelineState, encodeCachedPipelineState} from "./schema.ts";
+import {
+	type CachedPipelineState,
+	decodeCachedPipelineState,
+	encodeCachedPipelineState,
+} from "./schema.ts";
 
 /** The single instance name the snapshot lives under (one repo, one snapshot). */
 const INSTANCE_NAME = "pipeline:kamp-us/phoenix";
@@ -40,7 +44,19 @@ export const PipelineCacheLive = Layer.effect(PipelineCache)(
 		const stub = () => cache.getByName(INSTANCE_NAME);
 
 		return {
-			read: Effect.suspend(() => stub().read),
+			// `stub().read()` — a METHOD call, not a property read: the alchemy RPC stub
+			// exposes every member as a callable, so `stub().read` is the proxy function
+			// itself, not the Effect (#323). The DO returns the raw stored JSON; the schema
+			// decode happens HERE (worker-side, in-process) rather than in the DO, because a
+			// `CachedPipelineState` instance isn't RPC-serializable. A stale-shaped / absent
+			// blob decodes to `null` → treated as a cache miss, degrading to a fresh fetch.
+			read: Effect.suspend(() => stub().read()).pipe(
+				Effect.flatMap((raw) =>
+					raw === null
+						? Effect.succeed(null)
+						: decodeCachedPipelineState(raw).pipe(Effect.orElseSucceed(() => null)),
+				),
+			),
 			// Encode at the seam so the DO stores plain JSON (a `Schema.Class` instance
 			// would not survive the structured-clone round-trip through DO storage).
 			write: (snapshot) =>
