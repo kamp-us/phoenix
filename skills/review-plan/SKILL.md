@@ -153,7 +153,27 @@ FAIL verdict and flips **nothing**. It returns a structured `GateVerdict`
 
 Invoke it through the package's CLI (`packages/epic-ledger/src/bin.ts`, wired over
 `NodeRuntime.runMain` + `NodeServices.layer` — you run the binary, you don't re-implement
-the floor in prose):
+the floor in prose).
+
+**Preflight — the gate's `@phoenix/epic-ledger` dependency (ADR 0062 §3).** `review-plan`
+is the one **phoenix-pinned** skill in this plugin: its gate is the in-repo compiled CLI at
+`packages/epic-ledger/src/bin.ts`, which does **not** exist when the plugin is installed
+into a foreign repo. (Publishing the package to npm so a foreign `review-plan` becomes
+portable is a [deferred follow-up epic](https://github.com/kamp-us/phoenix/issues/228), per
+ADR 0062 §3 — not wired today.) So **before** invoking the CLI, check the bin exists; if it
+doesn't, stop with a clear message rather than letting a raw `ERR_MODULE_NOT_FOUND` surface:
+
+```bash
+# guard: degrade gracefully when the in-repo package is absent (foreign install) — ADR 0062 §3
+if [ ! -f packages/epic-ledger/src/bin.ts ]; then
+  echo "review-plan requires @phoenix/epic-ledger (not available in this install — see ADR 0062 §3)"
+  exit 0   # stop cleanly — do NOT proceed to the CLI; the gate cannot run outside phoenix
+fi
+```
+
+In phoenix the bin is on disk, the guard passes, and the gate runs normally; in a foreign
+install the guard short-circuits with the message above instead of a stack trace. Run the
+gate only past this guard:
 
 ```bash
 # from the repo root:
@@ -367,3 +387,15 @@ verdict and any advisory caveats — is what makes `write-code`'s existing `stat
 pick predicate enforce the gate for free. You are the symmetric twin of `review-code`: the
 two gates bracket `write-code` on both sides — the plan it consumes is floor-verified going
 in, the PR it produces is AC-verified going out.
+
+### Distribution — phoenix-pinned for v1 (ADR 0062 §3)
+
+When the suite ships as an installable plugin, `review-plan` is the **single
+phoenix-pinned** skill: its deterministic gate is the in-repo compiled CLI
+`@phoenix/epic-ledger` (`packages/epic-ledger`), which is absent from a foreign checkout, so
+in any non-phoenix install `review-plan` degrades with the Step 1 preflight message instead
+of running the gate. Every other skill in the suite is repo-agnostic on install. Making
+`review-plan` portable — publishing `@phoenix/epic-ledger` to npm so a foreign install can
+fetch it — is a **deferred follow-up epic**, not wired today. See ADR
+[0062](../../../.decisions/0062-repo-as-config-plugin.md) §3 and epic
+[#228](https://github.com/kamp-us/phoenix/issues/228).
