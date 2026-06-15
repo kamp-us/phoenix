@@ -14,16 +14,37 @@ function initialsOf(name: string) {
 		.join("");
 }
 
+type SaveState = "idle" | "saving" | "saved" | "error";
+
 export function ProfilePage() {
 	const session = useSession();
 	const [themeChoice, setThemeChoice] = useState<ThemeChoice>("dark");
 
-	if (session.isPending) return null;
-	if (!session.data) return <Navigate to="/auth" replace />;
+	const u = session.data?.user;
+	const name = u?.name ?? u?.email.split("@")[0] ?? "user";
+	const handle = u?.email.split("@")[0] ?? "user";
 
-	const u = session.data.user;
-	const name = u.name ?? u.email.split("@")[0] ?? "user";
-	const handle = u.email.split("@")[0] ?? "user";
+	const [draftName, setDraftName] = useState(name);
+	const [saveState, setSaveState] = useState<SaveState>("idle");
+
+	if (session.isPending) return null;
+	if (!session.data || !u) return <Navigate to="/auth" replace />;
+
+	const trimmed = draftName.trim();
+	const canSave = saveState !== "saving" && trimmed.length > 0 && trimmed !== name;
+
+	async function onSaveName() {
+		const next = draftName.trim();
+		if (!next || next === name) return;
+		setSaveState("saving");
+		const {error} = await authClient.updateUser({name: next});
+		if (error) {
+			setSaveState("error");
+			return;
+		}
+		await session.refetch();
+		setSaveState("saved");
+	}
 
 	async function onSignOut() {
 		await authClient.signOut();
@@ -60,10 +81,24 @@ export function ProfilePage() {
 					<div className="kp-profile__row">
 						<span className="label">görünen ad</span>
 						<span className="value">
-							<input defaultValue={name} />
+							<input
+								value={draftName}
+								onChange={(e) => {
+									setDraftName(e.target.value);
+									setSaveState("idle");
+								}}
+								aria-invalid={saveState === "error"}
+								disabled={saveState === "saving"}
+							/>
+							{saveState === "error" && (
+								<span className="kp-profile__feedback error" role="alert">
+									kaydedilemedi, tekrar dene
+								</span>
+							)}
+							{saveState === "saved" && <span className="kp-profile__feedback ok">kaydedildi</span>}
 						</span>
-						<button type="button" className="edit-btn">
-							kaydet
+						<button type="button" className="edit-btn" onClick={onSaveName} disabled={!canSave}>
+							{saveState === "saving" ? "kaydediliyor…" : "kaydet"}
 						</button>
 					</div>
 					<div className="kp-profile__row">
