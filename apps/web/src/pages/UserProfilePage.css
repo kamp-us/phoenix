@@ -14,7 +14,7 @@
 	gap: var(--s-3);
 	align-items: center;
 	padding: var(--s-3) 0;
-	border-bottom: 1px solid var(--border-subtle);
+	border-bottom: 1px solid var(--border-faint);
 	margin-bottom: var(--s-4);
 }
 
@@ -37,8 +37,8 @@
 }
 
 .kp-user-profile__name {
-	font: var(--t-h2);
-	color: var(--text);
+	font: var(--t-h-page);
+	color: var(--text-primary);
 }
 
 .kp-user-profile__handle {
@@ -57,8 +57,8 @@
 }
 
 .kp-user-profile__stat .n {
-	font: var(--t-h3);
-	color: var(--text);
+	font: var(--t-h-feed);
+	color: var(--text-primary);
 }
 
 .kp-user-profile__stat .l {
@@ -67,7 +67,7 @@
 }
 
 .kp-user-profile__feed h3 {
-	font: var(--t-h3);
+	font: var(--t-h-feed);
 	margin: 0 0 var(--s-2);
 }
 
@@ -87,9 +87,9 @@
 
 .kp-user-profile__row {
 	padding: var(--s-2);
-	border: 1px solid var(--border-subtle);
+	border: 1px solid var(--border-faint);
 	border-radius: 8px;
-	background: var(--surface-1);
+	background: var(--surface-raised);
 }
 
 .kp-user-profile__row-head {
@@ -105,25 +105,28 @@
 	font-weight: 600;
 	padding: 2px 6px;
 	border-radius: 4px;
-	background: var(--surface-2);
+	background: var(--surface-raised);
 	color: var(--text-muted);
 	text-transform: lowercase;
 }
 
 .kp-user-profile__kind--definition {
-	background: var(--accent-subtle, var(--surface-2));
+	background: var(--tag-discuss-bg);
+	color: var(--tag-discuss-fg);
 }
 
 .kp-user-profile__kind--post {
-	background: var(--ok-subtle, var(--surface-2));
+	background: var(--tag-show-bg);
+	color: var(--tag-show-fg);
 }
 
 .kp-user-profile__kind--comment {
-	background: var(--warn-subtle, var(--surface-2));
+	background: var(--tag-ask-bg);
+	color: var(--tag-ask-fg);
 }
 
 .kp-user-profile__row-title {
-	color: var(--text);
+	color: var(--text-primary);
 	text-decoration: none;
 	font-weight: 600;
 }
@@ -140,7 +143,7 @@
 
 .kp-user-profile__row-body {
 	margin: 0;
-	color: var(--text);
+	color: var(--text-primary);
 	font: var(--t-body);
 	line-height: 1.5;
 }
