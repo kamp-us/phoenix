@@ -30,17 +30,23 @@ export class PipelineCache extends Context.Service<
 
 export const PipelineCacheLive = Layer.effect(PipelineCache)(
 	Effect.gen(function* () {
+		// Resolve the namespace HANDLE in init, but defer `getByName` to request time.
+		// `alchemy deploy` runs this init to walk bindings, where the per-instance DO
+		// binding is not materialized — an init-time `getByName` throws on `undefined`
+		// (#299). `LiveDO` addresses only inside its per-request RPC methods, never in
+		// shared init (`.patterns/alchemy-durable-objects.md`, "Addressing: getByName
+		// only" — resolved at request time); the thunk mirrors that here.
 		const cache = yield* PipelineCacheDO;
-		const stub = cache.getByName(INSTANCE_NAME);
+		const stub = () => cache.getByName(INSTANCE_NAME);
 
 		return {
-			read: stub.read,
+			read: Effect.suspend(() => stub().read),
 			// Encode at the seam so the DO stores plain JSON (a `Schema.Class` instance
 			// would not survive the structured-clone round-trip through DO storage).
 			write: (snapshot) =>
 				encodeCachedPipelineState(snapshot).pipe(
 					Effect.orDie,
-					Effect.flatMap((encoded) => stub.write(encoded)),
+					Effect.flatMap((encoded) => stub().write(encoded)),
 				),
 		};
 	}),
