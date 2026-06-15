@@ -17,6 +17,7 @@ import {Screen} from "../fate/Screen";
 import {codeOf, LoadMoreButton} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
+import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
 
@@ -235,6 +236,7 @@ function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => vo
 				placeholder="markdown destekli. ```js ... ``` kod bloğu için. kişisel deneyim, örnek, hatıra; kuru sözlük tanımı zaten Wikipedia'da var."
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
+				onKeyDown={submitOnCmdEnter}
 				disabled={isInFlight}
 				data-testid="sozluk-composer-body"
 				maxLength={BODY_MAX + 100}
