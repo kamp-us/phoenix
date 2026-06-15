@@ -55,6 +55,21 @@ A mutator (`plan-epic` on any run, `review-plan` before its gate flip or its fir
 run. The lock is **held until PASS-or-park** and then released (`DELETE` the label) on every
 exit path, including failure.
 
+The acquire **fails closed**: it treats itself as holding the lock **only if the `POST`
+succeeds**. A failed acquire `POST` (the §Setup 422 when the label doesn't exist, or any
+transient `gh` IO fault) must **not** fall through to mutate — the mutator backs off and exits.
+Mutating after a non-landed `POST` would mutate *unlocked* (no label is held), defeating the
+serialization; checking the `POST` result before proceeding is what makes the back-off honest.
+
+The release is an **explicit terminal-path step the agent takes**, *not* a shell `trap … EXIT`.
+These skills drive an LLM agent across **many separate bash invocations** (acquire, gate flip,
+re-plan, body `PATCH` each run in their own process). An `EXIT` trap armed in the acquire shell
+fires when *that* shell exits — i.e. **before any mutation runs** — releasing the lock
+immediately and serializing nothing. So the `DELETE` is an action the agent issues deliberately
+on every way out (done, park, **or** a fault/abort mid-mutation): a release that only runs on the
+clean fall-through leaks the lock on the error/abort path. Release **only** a lock you acquired,
+never the held lock you backed off from.
+
 > **`status:planning` must exist in the repo before the first acquire.** GitHub's
 > add-labels-to-issue endpoint (`POST .../labels`) does **not** auto-create a label — adding
 > one the repo has never created returns **422**, not a fresh label. The repo creates labels

@@ -75,32 +75,47 @@ first `rePlan`, acquire the `status:planning` epic-lock; release it when you rea
 park, on every exit path including failure** (ADR
 [0059](../../../.decisions/0059-epic-plan-lock.md)).
 
+**Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
+stop — don't flip, don't loop. Otherwise `POST` it — and **only treat the lock as acquired if
+that `POST` actually succeeds**. A failed acquire (the §Setup 422 when `status:planning` doesn't
+exist in the repo, or any transient `gh` IO fault) must **not** fall through to the gate flip: it
+back-offs and exits 0, so a missing label or a flaky write never lets you flip unlocked.
+
 ```bash
-# acquire: defer to a lock already held; otherwise POST it and remember WE acquired it
+# acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
 HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
 if [ "$HELD" != "null" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — DO NOT flip, DO NOT loop."
-  exit 0   # back off: do NOT fall through to release — that lock is the holder's, not ours. Re-run later.
+  exit 0   # the held lock is the holder's, not ours — do NOT release it. Re-run later.
 fi
-gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
-ACQUIRED=1
-# Release on EVERY exit — PASS-and-flipped, parked, OR a fault MID-flight. Arm the release as an
-# EXIT trap the INSTANT we acquire, before the gate runs or the convergence loop starts: a trailing
-# release line only fires on the success fall-through, so a gate fault, a RePlanError, a gh IO fault,
-# or an abort inside the convergence loop would skip it and LEAK the lock (wedging the epic against
-# every later plan-epic/review-plan run until a human clears it — #264). The convergence loop in
-# particular can fail mid-flight, so this is not hypothetical. The trap fires on every path out and
-# releases ONLY the lock WE acquired ($ACQUIRED=1).
-trap '[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null 2>&1' EXIT
-# ... run the gate (Step 1) / drive the convergence loop ...
+if ! gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
+  echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — DO NOT flip, DO NOT loop."
+  exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never flip/loop unlocked.
+fi
+# Lock held. WE acquired it, so WE must release it — on EVERY terminal path (below).
 ```
 
-The release is a `trap … EXIT`, **not** a trailing line, on purpose: the gate and the convergence
-loop can raise (RePlanError, gh IO faults, an aborted agent), and a trailing release never runs on
-those paths. **The DELETE must be issued from a handler that fires on _every_ exit — including the
-gate/loop-raises path — never solely on the PASS-and-flipped-or-parked fall-through.** If you
-re-shape this into your own control flow, the lock-released-on-all-exits invariant survives only if
-that holds; a leaked lock is silent and only a human clears it.
+**Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
+*one* bash invocation; the gate flip (Step 1) and the convergence loop's `rePlan` calls run in
+*separate later* bash invocations — each its own process. A `trap … EXIT` armed in the acquire
+shell fires the instant *that* shell exits, i.e. **before the gate or loop ever runs**, releasing
+the lock immediately and giving you zero serialization. So the release can't live in the acquire
+snippet; it is an action **you** take, deliberately, on the way out — run this exact `DELETE` once
+you reach **any** terminal state (PASS-and-flipped, parked, or a fault mid-flight):
+
+```bash
+# release: run on EVERY exit path AFTER a successful acquire (PASS/flip, park, or fault mid-flight)
+gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null 2>&1
+```
+
+The release fires on **every** terminal path on purpose: the gate and the convergence loop can
+raise (a RePlanError, a gh IO fault, an aborted agent), and the convergence loop in particular
+can fail mid-flight, so this is not hypothetical. As an LLM agent you must still issue the
+`DELETE` before you stop on those paths — a release that fires only on the clean
+PASS-and-flipped-or-parked fall-through LEAKS the lock on the raise path (wedging the epic against
+every later plan-epic/review-plan run until a human clears it — #264). **Only release a lock YOU
+acquired** (the success branch above), never the held lock you backed off from. A leaked lock is
+silent and only a human clears it.
 
 `POST .../labels` is **not** compare-and-swap (no `If-Match`), so this is
 **detect-and-serialize, not a mutex** (the §7/#260 TOCTOU over the whole child set): it

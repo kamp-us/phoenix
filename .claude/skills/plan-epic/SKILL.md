@@ -71,31 +71,47 @@ you finish (PASS-or-park), on every exit path including failure.** This is the p
 serialization (ADR [0059](../../../.decisions/0059-epic-plan-lock.md)); the Step 5
 splice+recheck (#261) is the complementary backstop for its residual, not a replacement.
 
+**Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
+stop. Otherwise `POST` it — and **only treat the lock as acquired if that `POST` actually
+succeeds**. A failed acquire (the §Setup 422 when `status:planning` doesn't exist in the repo,
+or any transient `gh` IO fault) must **not** fall through to mutate: it back-offs and exits 0,
+so a missing label or a flaky write never lets you mutate unlocked.
+
 ```bash
-# acquire: defer to a lock already held; otherwise POST it and remember WE acquired it
+# acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
 HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
 if [ "$HELD" != "null" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — BACK OFF, do not mutate."
-  exit 0   # stop here: do NOT fall through to release — that lock is the holder's, not ours.
+  exit 0   # the held lock is the holder's, not ours — do NOT release it.
 fi
-gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null
-ACQUIRED=1
-# Release on EVERY exit — success, park, OR a failure/abort MID-mutation. Arm the release as an
-# EXIT trap the INSTANT we acquire, before any mutating work runs: a trailing release line only
-# fires on the success fall-through, so an error/throw/abort inside the re-plan/split/body-write
-# would skip it and LEAK the lock (wedging the epic against every later plan-epic/review-plan run
-# until a human clears it — the exact catastrophe #264 warns about). The trap fires on every path
-# out and releases ONLY the lock WE acquired ($ACQUIRED=1).
-trap '[ "$ACQUIRED" = 1 ] && gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null 2>&1' EXIT
-# ... do the re-plan / split / body write ...
+if ! gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
+  echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — BACK OFF, do not mutate."
+  exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never mutate unlocked.
+fi
+# Lock held. WE acquired it, so WE must release it — on EVERY terminal path (below).
 ```
 
-The release is a `trap … EXIT`, **not** a trailing line, on purpose: these snippets drive an LLM
-agent, and an agent that aborts (or whose `gh` call throws) part-way through the mutation never
-reaches a fall-through release. **The DELETE must be issued from a handler that fires on _every_
-exit — including the error/abort path — never solely on the success fall-through.** If you re-shape
-this into your own control flow, the lock-released-on-all-exits invariant survives only if that
-holds; a leaked lock is silent and only a human clears it.
+**Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
+*one* bash invocation; your subsequent mutations (re-plan supersede/unlink/close, the Step 3
+child creates, the Step 5 body `PATCH`) run in *separate later* bash invocations — each its own
+process. A `trap … EXIT` armed in the acquire shell fires the instant *that* shell exits, i.e.
+**before any mutation runs**, releasing the lock immediately and giving you zero serialization.
+So the release can't live in the acquire snippet; it is an action **you** take, deliberately, on
+the way out — run this exact `DELETE` once you reach **any** terminal state (PASS/done, parked,
+or a failure/abort mid-mutation):
+
+```bash
+# release: run on EVERY exit path AFTER a successful acquire (done, park, or fault mid-mutation)
+gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null 2>&1
+```
+
+The release fires on **every** terminal path on purpose: you drive this as an LLM agent across
+many bash calls, and an agent that aborts (or whose `gh` call throws) part-way through the
+mutation must still issue the `DELETE` before it stops — a release that fires only on the clean
+fall-through LEAKS the lock on the error/abort path (wedging the epic against every later
+plan-epic/review-plan run until a human clears it — the exact catastrophe #264 warns about).
+**Only release a lock YOU acquired** (the success branch above), never the held lock you backed
+off from. A leaked lock is silent and only a human clears it.
 
 `POST .../labels` is **not** compare-and-swap (no `If-Match`) — two runs that both read the
 lock absent in the same window both acquire (the §7/#260 TOCTOU, over the whole child set).
