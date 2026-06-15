@@ -58,9 +58,7 @@ describe("findLeaks — ALLOW matrix (legitimate content must NOT be flagged)", 
 	});
 
 	it("allows edits to a self-exempt skill (it names the tokens as patterns)", () => {
-		assert.isFalse(
-			hasLeak(".claude/skills/report/SKILL.md", "never cite /Users/... or ~/.usirin paths"),
-		);
+		assert.isFalse(hasLeak("skills/report/SKILL.md", "never cite /Users/... or ~/.usirin paths"));
 	});
 
 	it("allows clean prose with a bare ~ (no slash) in a .md", () => {
@@ -84,8 +82,11 @@ describe("surface predicates", () => {
 
 	it("isSelfExempt: the guard's own files and the path-hygiene skills", () => {
 		assert.isTrue(isSelfExempt("packages/leak-guard/src/leak-guard.ts"));
-		assert.isTrue(isSelfExempt(".claude/skills/review-doc/SKILL.md"));
-		assert.isTrue(isSelfExempt(".claude/skills/report/footer.sh"));
+		assert.isTrue(isSelfExempt("skills/review-doc/SKILL.md"));
+		assert.isTrue(isSelfExempt("skills/report/footer.sh"));
+		// the `.claude/skills` symlink path resolves too — its suffix still ends with
+		// the canonical `/skills/<name>/...`, so editing through either path is exempt.
+		assert.isTrue(isSelfExempt(".claude/skills/triage/SKILL.md"));
 		assert.isFalse(isSelfExempt("README.md"));
 	});
 });

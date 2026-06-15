@@ -37,10 +37,10 @@ const DOC_SELF_EXEMPT = [
 	"/packages/leak-guard/src/leak-guard.unit.test.ts",
 	"/packages/leak-guard/src/bin.ts",
 	"/packages/leak-guard/README.md",
-	"/.claude/skills/review-doc/SKILL.md",
-	"/.claude/skills/triage/SKILL.md",
-	"/.claude/skills/report/SKILL.md",
-	"/.claude/skills/report/footer.sh",
+	"/skills/review-doc/SKILL.md",
+	"/skills/triage/SKILL.md",
+	"/skills/report/SKILL.md",
+	"/skills/report/footer.sh",
 	// Its Lineage section deliberately names ~/code/... sibling-repo clones (the
 	// rebuild provenance), so routine edits to it must not trip the guard.
 	"/CLAUDE.md",
