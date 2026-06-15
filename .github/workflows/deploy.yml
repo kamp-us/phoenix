@@ -1,6 +1,9 @@
 name: Deploy
 
 # Adapted from #19 (Can Sirin / @cansirin) — alchemy-provisioned CI/CD.
+# Fans out over every app under apps/ via the `app` matrix (ADR 0057): phoenix is
+# multi-app/multi-worker, each app its own package + alchemy stack + per-app stage,
+# reusing the account-global state store + the four CI secrets (no second bootstrap).
 
 on:
   push:
@@ -12,7 +15,7 @@ concurrency:
   group: deploy-${{ github.ref }}
   cancel-in-progress: false
 
-# The stage name keys an isolated copy of the entire stack (worker + D1 + DOs).
+# The stage name keys an isolated copy of one app's stack (worker + D1 + DOs).
 # Pull requests → `pr-<n>`; pushes to main (the only push trigger) → `prod`.
 env:
   STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
@@ -34,6 +37,23 @@ jobs:
     permissions:
       contents: read
       pull-requests: write # post the preview-URL comment on PRs
+    strategy:
+      # Each app is an independent worker + stack (ADR 0057) — one app's deploy
+      # failing must not cancel the other's. `fail-fast: false` keeps both running.
+      fail-fast: false
+      matrix:
+        include:
+          # `app` is the apps/ dir; `pnpm-name` is its workspace package.
+          # `needs-auth` says whether the app's worker binds BETTER_AUTH_SECRET:
+          # only @phoenix/web has auth (config.ts reads it `Effect.orDie`); the
+          # dashboard has no auth (its config.ts reads only ENVIRONMENT), so its
+          # deploy/destroy must NOT require the secret (ADR 0057).
+          - app: web
+            pnpm-name: "@phoenix/web"
+            needs-auth: true
+          - app: dashboard
+            pnpm-name: "@phoenix/dashboard"
+            needs-auth: false
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -50,19 +70,20 @@ jobs:
 
       # The SPA is a plain Vite build; the worker uploads `dist/client` via its
       # `assets` prop. `alchemy deploy` does not drive Vite for phoenix's shape.
-      - name: Build SPA
-        run: pnpm --filter @phoenix/web build
+      - name: Build SPA (${{ matrix.app }})
+        run: pnpm --filter ${{ matrix.pnpm-name }} build
 
       # `exec alchemy` forwards `--stage`/`--yes` to the alchemy CLI. A bare
-      # `pnpm --filter @phoenix/web deploy --stage …` makes *pnpm* eat the flags
+      # `pnpm --filter <app> deploy --stage …` makes *pnpm* eat the flags
       # ("Unknown options: 'stage', 'yes'"). `--yes` skips the interactive plan
       # approval (CI would otherwise hang); `--stage` selects the isolated copy.
-      # Creds + BETTER_AUTH_SECRET come from the secrets `stacks/github.ts` provisions.
-      - name: Deploy (stage ${{ env.STAGE }})
+      # Creds come from the secrets `stacks/github.ts` provisions; BETTER_AUTH_SECRET
+      # is passed only for apps whose worker binds it (matrix.needs-auth).
+      - name: Deploy ${{ matrix.app }} (stage ${{ env.STAGE }})
         id: deploy
         run: |
           set -o pipefail
-          pnpm --filter @phoenix/web exec alchemy deploy --stage "$STAGE" --yes | tee deploy.log
+          pnpm --filter ${{ matrix.pnpm-name }} exec alchemy deploy --stage "$STAGE" --yes | tee deploy.log
           # alchemy has no structured URL output, so scrape the worker URL it
           # prints (`url: 'https://…workers.dev'`). `set -o pipefail` keeps the
           # deploy's exit code through the `tee` so a failed deploy still fails.
@@ -78,34 +99,71 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
-          # The session-signing secret. `config.ts` reads it via
-          # `Config.redacted("BETTER_AUTH_SECRET")` → a `secret_text` binding the
-          # worker reads at runtime; the value must be present at deploy time.
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          # The session-signing secret, bound only by apps with auth. `config.ts`
+          # reads it via `Config.redacted("BETTER_AUTH_SECRET")` → a `secret_text`
+          # binding the worker reads at runtime; the value must be present at deploy
+          # time. Empty for auth-less apps (dashboard) — they never read it.
+          BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
 
-      # Post (or update) a sticky comment with the preview URL on PRs. The hidden
-      # marker makes it sticky: re-deploys (each `synchronize` push) edit the same
-      # comment instead of piling new ones up. Skipped on pushes to main (`prod`).
-      - name: Comment preview URL
+      # Post (or update) a sticky comment carrying EVERY app's preview URL on PRs.
+      # The outer `<!-- preview-deploy -->` marker makes the comment sticky; a
+      # per-app `<!-- preview-deploy:<app> -->` line lets each matrix job upsert
+      # only its own URL into the shared comment. Parallel matrix jobs both edit
+      # the one comment, so the upsert is an optimistic read-modify-write retried
+      # on conflict (ETag 409 / lost update). Skipped on pushes to main (`prod`).
+      - name: Comment preview URL (${{ matrix.app }})
         if: github.event_name == 'pull_request' && steps.deploy.outputs.url != ''
         uses: actions/github-script@v7.0.1
         env:
+          APP: ${{ matrix.app }}
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
           STAGE_NAME: ${{ env.STAGE }}
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
-            const body = `${marker}\n### 🚀 Preview deployed\n`
-              + `Stage \`${process.env.STAGE_NAME}\` → ${process.env.PREVIEW_URL}\n\n`
-              + `<sub>Updated for ${context.sha.slice(0, 7)}</sub>`;
+            const app = process.env.APP;
+            const appMark = `<!-- preview-deploy:${app} -->`;
+            const sha = context.sha.slice(0, 7);
+            const appLine = `${appMark}\n`
+              + `- **${app}** — Stage \`${process.env.STAGE_NAME}\` → ${process.env.PREVIEW_URL} `
+              + `<sub>(${sha})</sub>`;
+
+            // Replace this app's block in the body (or append it), preserving any
+            // other app's block another matrix job may have already written.
+            const upsert = (body) => {
+              const header = `${marker}\n### 🚀 Preview deployed`;
+              let b = body && body.includes(marker) ? body : header;
+              const re = new RegExp(
+                `${appMark.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\n[^\\n]*`,
+              );
+              return re.test(b) ? b.replace(re, appLine) : `${b}\n${appLine}`;
+            };
+
             const {data: comments} = await github.rest.issues.listComments({
               ...context.repo, issue_number: context.issue.number, per_page: 100,
             });
             const existing = comments.find((c) => c.body?.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({...context.repo, comment_id: existing.id, body});
-            } else {
-              await github.rest.issues.createComment({...context.repo, issue_number: context.issue.number, body});
+            // Retry the read-modify-write: a sibling matrix job may update the same
+            // comment between our read and write, so re-read and re-apply on failure.
+            for (let attempt = 0; attempt < 5; attempt++) {
+              try {
+                if (existing) {
+                  const {data: fresh} = await github.rest.issues.getComment({
+                    ...context.repo, comment_id: existing.id,
+                  });
+                  await github.rest.issues.updateComment({
+                    ...context.repo, comment_id: existing.id, body: upsert(fresh.body),
+                  });
+                } else {
+                  await github.rest.issues.createComment({
+                    ...context.repo, issue_number: context.issue.number, body: upsert(""),
+                  });
+                }
+                return;
+              } catch (err) {
+                if (attempt === 4) throw err;
+                await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+              }
             }
 
   cleanup:
@@ -119,6 +177,18 @@ jobs:
     permissions:
       contents: read
       pull-requests: write # update the preview comment to "torn down"
+    strategy:
+      # Tear down every app's preview stage; one destroy failing must not skip
+      # the other (a half-torn-down PR would leak a worker + D1 + DOs).
+      fail-fast: false
+      matrix:
+        include:
+          - app: web
+            pnpm-name: "@phoenix/web"
+            needs-auth: true
+          - app: dashboard
+            pnpm-name: "@phoenix/dashboard"
+            needs-auth: false
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -142,34 +212,62 @@ jobs:
             exit 1
           fi
 
-      # Tears down the isolated preview stack (worker + D1 + DOs). `destroy` loads
-      # `alchemy.run.ts`, which builds the worker layer → needs BETTER_AUTH_SECRET
-      # (config.ts reads it `Effect.orDie`) just like the deploy.
-      - name: Destroy preview stage ${{ env.STAGE }}
-        run: pnpm --filter @phoenix/web exec alchemy destroy --stage "$STAGE" --yes
+      # Tears down one app's isolated preview stack (worker + D1 + DOs). `destroy`
+      # loads `alchemy.run.ts`, which builds the worker layer → for apps with auth
+      # that needs BETTER_AUTH_SECRET (config.ts reads it `Effect.orDie`) just like
+      # the deploy; auth-less apps (dashboard) never bind it (matrix.needs-auth).
+      - name: Destroy ${{ matrix.app }} preview stage ${{ env.STAGE }}
+        run: pnpm --filter ${{ matrix.pnpm-name }} exec alchemy destroy --stage "$STAGE" --yes
         env:
           CI: "true"
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
-          BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET }}
+          BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}
 
       # Flip the sticky preview comment to "torn down" so it never points at a
-      # destroyed stage. `always()`: update it even if the destroy step errored.
-      - name: Update preview comment (torn down)
+      # destroyed stage. Each matrix job rewrites only its own app line; the last
+      # job to run leaves the comment reading "torn down" for both apps.
+      # `always()`: update it even if the destroy step errored.
+      - name: Update preview comment (torn down, ${{ matrix.app }})
         if: always()
         uses: actions/github-script@v7.0.1
         env:
+          APP: ${{ matrix.app }}
           STAGE_NAME: ${{ env.STAGE }}
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
-            const body = `${marker}\n### 🧹 Preview torn down\n`
-              + `Stage \`${process.env.STAGE_NAME}\` was destroyed when the PR closed.`;
+            const app = process.env.APP;
+            const appMark = `<!-- preview-deploy:${app} -->`;
+            const appLine = `${appMark}\n`
+              + `- **${app}** — Stage \`${process.env.STAGE_NAME}\` torn down.`;
+
+            const upsert = (body) => {
+              const header = `${marker}\n### 🧹 Preview torn down`;
+              let b = body && body.includes(marker) ? body : header;
+              const re = new RegExp(
+                `${appMark.replace(/[.*+?^${}()|[\\]\\\\]/g, "\\\\$&")}\\n[^\\n]*`,
+              );
+              return re.test(b) ? b.replace(re, appLine) : `${b}\n${appLine}`;
+            };
+
             const {data: comments} = await github.rest.issues.listComments({
               ...context.repo, issue_number: context.issue.number, per_page: 100,
             });
             const existing = comments.find((c) => c.body?.includes(marker));
-            if (existing) {
-              await github.rest.issues.updateComment({...context.repo, comment_id: existing.id, body});
+            if (!existing) return;
+            for (let attempt = 0; attempt < 5; attempt++) {
+              try {
+                const {data: fresh} = await github.rest.issues.getComment({
+                  ...context.repo, comment_id: existing.id,
+                });
+                await github.rest.issues.updateComment({
+                  ...context.repo, comment_id: existing.id, body: upsert(fresh.body),
+                });
+                return;
+              } catch (err) {
+                if (attempt === 4) throw err;
+                await new Promise((r) => setTimeout(r, 500 * (attempt + 1)));
+              }
             }
