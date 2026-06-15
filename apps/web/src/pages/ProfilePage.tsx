@@ -1,4 +1,4 @@
-import {useState} from "react";
+import {useEffect, useRef, useState} from "react";
 import {Navigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
 import "./ProfilePage.css";
@@ -26,6 +26,20 @@ export function ProfilePage() {
 
 	const [draftName, setDraftName] = useState(name);
 	const [saveState, setSaveState] = useState<SaveState>("idle");
+
+	// better-auth's session atom starts {data:null, isPending:true} and resolves
+	// asynchronously with no synchronous hydration, so on a hard load these hooks run
+	// before the session is known and `name` is the "user" fallback — draftName would
+	// lock to it and never re-seed. Re-seed the draft when the server name changes out
+	// from under the draft we're still showing (initial resolution, or another tab's
+	// edit), so a refresh shows the saved name. A draft the user has since edited away
+	// from the old server name is left alone, and a save's own refetch doesn't fire the
+	// reset because draftName already equals the new name — preserving the "saved" note.
+	const serverName = useRef(name);
+	useEffect(() => {
+		if (draftName === serverName.current) setDraftName(name);
+		serverName.current = name;
+	}, [name, draftName]);
 
 	if (session.isPending) return null;
 	if (!session.data || !u) return <Navigate to="/auth" replace />;
