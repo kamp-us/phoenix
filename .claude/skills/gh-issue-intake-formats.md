@@ -474,22 +474,32 @@ write (#260). A bare self-assign therefore **cannot** be relied on as mutual exc
 **The one atomic signal: the `POST` returns the full `assignees` array.** The claim is made
 safe by observing your *own* write's result, then breaking the symmetry deterministically:
 
+0. **Defer to a pre-existing owner.** Re-read the assignees just before claiming; if #N is
+   already assigned, back off without `POST`ing — a fresh arrival **never evicts an owner that
+   was there before it**. This is what stops a late picker that slipped past Step 1 from
+   evicting an already-implementing winner.
 1. `POST` self as assignee; capture the returned `assignees` list (one observable write — no
    separate best-effort re-read).
-2. Compute the **lexicographic-min login** of that list. Both co-assignees observe the same
-   set and compute the same winner.
-3. **You are the winner iff `min(assignees) == you`.** The winner proceeds (and evicts any
-   co-assignee via `DELETE` so the issue reads single-owner); every loser **`DELETE`s itself
-   and re-picks** — it does **not** implement, and a concurrent claim is **never silently
-   co-occupied**.
+2. Compute the **lexicographic-min login** of that list. Both *co-racers* observe the same set
+   and compute the same winner. The min-login tiebreak decides **only among co-racers** (agents
+   that read #N unassigned and `POST`ed in the same window), never against a prior owner.
+3. **You are the winner among co-racers iff `min(assignees) == you`.** The winner evicts its
+   co-assignees via `DELETE`, then **re-confirms at a checkpoint that it is still
+   `min(assignees)`** before starting work — aborting and re-picking if it was displaced. Every
+   loser **`DELETE`s itself and re-picks** — it does **not** implement, and a co-window claim is
+   **never silently co-occupied**.
 
-**What it guarantees vs. what it doesn't.** Of any set of agents that co-assign #N, exactly
-one proceeds — deterministically, from a single observed write — and the rest back off; no
-interleaving leaves two past the claim, and none backs all of them off (no livelock). It is
-**detect-and-tiebreak, not a kernel mutex**: because `assignees` isn't a CAS, the issue may
-*transiently* show 2 assignees before the winner's eviction lands, so the picker skips on
-**any non-null assignee** (a transiently double-assigned issue is passed over, never
-double-picked — safe degradation). True single-writer exclusion (no transient
+**What it guarantees vs. what it doesn't.** Of any set of agents that co-assign #N **in the
+same claim window**, exactly one proceeds — deterministically, from a single observed write —
+and the rest back off; no interleaving leaves two past the claim, and none backs all of them off
+(no livelock). A **straggler** that arrives after a winner already owns #N does **not** get to
+evict-and-take by sorting below: rules 0 (defer to pre-existing owner) and 3 (the winner's
+post-eviction min-recheck) together make the claim **non-revocable from the loser/straggler
+side** once a winner is established, so "exactly one implements" holds against late arrivals too,
+not only co-window racers. It is still **detect-and-tiebreak, not a kernel mutex**: because
+`assignees` isn't a CAS, the issue may *transiently* show 2 assignees before an eviction lands,
+so the picker skips on **any non-null assignee** (a transiently double-assigned issue is passed
+over, never double-picked — safe degradation). True single-writer exclusion (no transient
 multi-assignment, no after-the-fact eviction) would need a **designated single picker** or a
 conditional write the assignee API doesn't offer; this mechanism does not claim that, and the
 "it's the lock" framing is wrong — it's the duplicate-implementation race that's closed, by
@@ -509,6 +519,11 @@ guaranteeing exactly one implementer.
 | review-code FAIL marker | the PR | review-code | write-code (fix round-trip) |
 | review-doc PASS marker | the PR | review-doc | ship-it |
 | review-doc FAIL marker | the PR | review-doc | write-code (fix round-trip) |
+| issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim) | write-code (Step 1 pick) |
+
+The issue-claim row is the one entry that is a **protocol over the assignee field**, not a
+markdown format — §7 governs *how* `write-code` writes and reads that field (detect-and-tiebreak,
+not a lock), so it has no body shape the other rows describe.
 
 `review-plan` reads the first two formats as its structural floor (the `## Dependencies`
 topology and each sub-issue's acceptance-criteria + `**Stories:**` invariants) and, on a

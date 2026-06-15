@@ -263,23 +263,40 @@ two co-assignees proceeds:
 
 ```bash
 ME=$(gh api user --jq '.login')
+
+# Capture the assignees as they read BEFORE my write. Step 1 only let me here because #N read
+# unassigned to ME, but re-read at claim time so a pre-existing owner I never raced with is
+# visible: anyone already present here is an authoritative prior winner I must defer to.
+PRE=$(gh api repos/kamp-us/phoenix/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+if [ -n "$PRE" ]; then
+  # Already owned before I touched it — never evict a pre-existing owner. Back off, re-pick.
+  exit 0  # → re-run Step 1
+fi
+
 # POST self; capture the FULL assignees list the write returns (single observable write).
 ASSIGNEES=$(gh api -X POST repos/kamp-us/phoenix/issues/<N>/assignees \
   -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
 
-# Deterministic tiebreak: lexicographic-min login is the sole winner. If the list is just
-# [you], you trivially win. If it's co-assigned [A, B], BOTH agents observe the same sorted
-# set and both compute the same winner — so exactly one proceeds and the other backs off;
-# they never both back off (no livelock) and never both proceed (no double-pick).
+# Deterministic tiebreak AMONG CO-RACERS ONLY: the min-login decides between agents that both
+# raced into this same window (both read #N unassigned above, both POSTed before any eviction).
+# If the list is just [you], you trivially win. If it's co-assigned [A, B], BOTH co-racers
+# observe the same sorted set and compute the same winner — exactly one proceeds, the other
+# backs off; never both back off (no livelock), never both proceed (no double-pick).
 WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
 if [ "$WINNER" = "$ME" ]; then
-  # I am the deterministic winner. If anyone else co-assigned, evict them so the issue
-  # reads as a clean single-owner claim for the picker's "skip assigned" invariant.
+  # I am the deterministic winner among co-racers. Evict the co-assignees so the issue reads
+  # single-owner for the picker's "skip assigned" invariant.
   for a in $ASSIGNEES; do
     [ "$a" = "$ME" ] && continue
     gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$a"
   done
-  # claim won — proceed to implement
+  # CHECKPOINT — claim is revocable from the loser side until here, so re-confirm I am still the
+  # sole min before committing to work. A late arrival that deferred won't have evicted me; if
+  # somehow I am no longer min(assignees), I was displaced — abort and re-pick, do NOT implement.
+  STILL=$(gh api repos/kamp-us/phoenix/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+  CUR_MIN=$(printf '%s\n' $STILL | head -n1)
+  [ "$CUR_MIN" = "$ME" ] || exit 0  # displaced → re-run Step 1
+  # claim won and confirmed — proceed to implement
 else
   # I lost the tiebreak: remove myself and re-pick (do NOT implement — do NOT co-occupy).
   gh api -X DELETE repos/kamp-us/phoenix/issues/<N>/assignees -f "assignees[]=$ME"
@@ -287,22 +304,44 @@ else
 fi
 ```
 
-**What this guarantees.** Of any set of agents that co-assign #N, exactly **one** — the
-lexicographic-min login — proceeds; every other backs off (DELETE self) and re-picks. Both
-race outcomes are covered by the *same* deterministic rule, evaluated against the *same*
-sorted set both agents observe, so there is no interleaving that leaves two agents past this
-step and none that backs all of them off. The loser learns it lost from **its own POST
-response** — one observable write — not from a best-effort re-read that can miss the window.
-A concurrent claim is **never silently co-occupied**: the loser evicts itself, the winner
-evicts any stragglers, and the issue settles to a single assignee.
+**What this guarantees.** Of any set of agents that **co-assign #N within the same claim
+window** — all read #N unassigned, all `POST` before any eviction lands — exactly **one**, the
+lexicographic-min login, proceeds; every other backs off (DELETE self) and re-picks. Both race
+outcomes are covered by the *same* deterministic rule, evaluated against the *same* sorted set
+both agents observe, so there is no interleaving that leaves two agents past this step and none
+that backs all of them off (no livelock). The loser learns it lost from **its own POST
+response** — one observable write — not from a best-effort re-read that can miss the window. A
+co-window claim is **never silently co-occupied**: the loser evicts itself, the winner evicts
+its co-racers, and the issue settles to a single assignee.
+
+The harder case — an agent that slipped past Step 1 and only `POST`s *after* a winner already
+owns #N — is **not** covered by the min-login tiebreak (it would let a low-sorting late arrival
+evict the winner and double-implement). Two rules close it, and both are in the code above: a
+fresh arrival **defers to a pre-existing owner** (re-read before `POST`; if already owned, back
+off without evicting), and the winner **re-confirms it is still `min(assignees)` at a checkpoint
+after its evictions, before starting work** — so even a late writer that somehow displaced it is
+caught and the winner aborts rather than implementing alongside. Together these make the claim
+**non-revocable from the loser side once a winner is established**, which is what the "exactly
+one proceeds" guarantee needs to hold against stragglers, not just co-window racers.
 
 **The honest residual window — this is detect-and-resolve, not a kernel mutex.** `assignees`
 is still not a CAS, so the symmetry must be *broken* after the fact, not *prevented*:
 
-- A late third agent C that `POST`s **after** the winner already evicted the losers sees
-  `[winner, C]`, recomputes the same min, and backs off (or wins and evicts, if C sorts
-  below) — the rule converges on each fresh observation, so a straggler is self-correcting,
-  not a hole.
+- A late third agent C that slipped past Step 1 (it read #N unassigned before the winner's
+  assignment was visible) and `POST`s **after** the winner already evicted its co-assignees
+  and started implementing sees `[winner, C]`. The naive "recompute min and the lower login
+  wins" rule is **wrong here**: if C sorts below the winner, C would believe it won, evict
+  the winner, and implement — while the winner, already past its one-shot claim check with no
+  recheck loop, keeps implementing. That is **two implementers on #N**, the exact race this
+  step closes. The rule that prevents it: **a fresh arrival never evicts a pre-existing
+  owner.** The min-login tiebreak decides only among co-assignees that raced into the *same*
+  claim window (both saw #N unassigned, both `POST`ed before either eviction landed); an
+  assignee that was **already present when you arrive** is an authoritative prior winner you
+  defer to, regardless of how your login sorts. So C, seeing an issue that already carried an
+  owner before its own `POST`, `DELETE`s itself and re-picks — it does **not** evict and take.
+  The winner's post-eviction min-recheck checkpoint (in the code above) closes this from the
+  other side: even if a late writer somehow displaced the winner, the winner catches it at the
+  checkpoint and aborts rather than implementing alongside.
 - The eviction DELETEs are themselves last-write-wins, so for a brief window the issue may
   *transiently* show 2 assignees before the winner's eviction lands. The picker (Step 1)
   tolerates this: it skips any issue with a **non-null** assignee, so a transiently
