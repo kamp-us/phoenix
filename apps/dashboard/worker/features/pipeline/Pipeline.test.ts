@@ -13,7 +13,13 @@ import * as Layer from "effect/Layer";
 import * as Ref from "effect/Ref";
 import * as TestClock from "effect/testing/TestClock";
 import {GithubFetchError} from "./errors.ts";
-import {GithubClient, type RawIssue, type RawSubIssue} from "./github.ts";
+import {
+	GithubClient,
+	type RawComment,
+	type RawIssue,
+	type RawPullRequest,
+	type RawSubIssue,
+} from "./github.ts";
 import {CACHE_TTL_MS, Pipeline, PipelineLive} from "./Pipeline.ts";
 import {PipelineCache} from "./PipelineCache.ts";
 import {type CachedPipelineState, PipelineResponse} from "./schema.ts";
@@ -56,6 +62,33 @@ const subIssuesByEpic: Record<number, ReadonlyArray<RawSubIssue>> = {
 	100: [{number: 101}, {number: 102}],
 };
 
+// Open PRs + their comments for the verdict-resolution path (#257): #200 fixes #102
+// and carries a review-code PASS marker; #201 fixes the epic #100 with no marker yet
+// (awaiting review). #101 has no PR — its verdict stays null.
+const pulls: ReadonlyArray<RawPullRequest> = [
+	{
+		number: 200,
+		body: "Implements the SPA.\n\nFixes #102",
+		html_url: "https://github.com/kamp-us/phoenix/pull/200",
+	},
+	{
+		number: 201,
+		body: "Epic umbrella PR.\n\nCloses #100",
+		html_url: "https://github.com/kamp-us/phoenix/pull/201",
+	},
+];
+
+const commentsByPr: Record<number, ReadonlyArray<RawComment>> = {
+	200: [
+		{body: "nice work", created_at: "2026-06-14T10:00:00Z"},
+		{
+			body: "review-code: PASS — merge-ready\n\n| AC | status |",
+			created_at: "2026-06-14T11:00:00Z",
+		},
+	],
+	201: [{body: "still working through it", created_at: "2026-06-14T10:00:00Z"}],
+};
+
 /**
  * A `GithubClient` stub counting `listIssues` calls (the cache hit/refresh AC is
  * verified by the count) and, when `fail` is set, failing the fetch (the
@@ -76,6 +109,8 @@ const stubGithub = (calls: Ref.Ref<number>, options?: {readonly fail?: boolean})
 				return issues;
 			}),
 			listSubIssues: (epic) => Effect.succeed(subIssuesByEpic[epic] ?? []),
+			listOpenPullRequests: Effect.succeed(pulls),
+			listComments: (number) => Effect.succeed(commentsByPr[number] ?? []),
 		}),
 	);
 
@@ -105,6 +140,31 @@ describe("Pipeline.getState — assembly (#252)", () => {
 			assert.strictEqual(api.parsed.priority, "p2");
 			assert.strictEqual(api.state, "closed");
 			assert.strictEqual(response.stale, false);
+		}).pipe(Effect.provide(TestClock.layer())),
+	);
+
+	it.effect("attaches the gate verdict from a linked open PR (#257)", () =>
+		Effect.gen(function* () {
+			const calls = yield* Ref.make(0);
+			const store = yield* Ref.make<CachedPipelineState | null>(null);
+			const pipeline = yield* Pipeline.pipe(Effect.provide(TestPipeline(calls, store)));
+			const response = yield* pipeline.getState;
+
+			// #102's PR carries a review-code PASS marker → PASS surfaces.
+			const withPass = response.issues.find((i) => i.number === 102)!;
+			assert.strictEqual(withPass.verdict?.prNumber, 200);
+			assert.strictEqual(withPass.verdict?.code, "PASS");
+			assert.strictEqual(withPass.verdict?.doc, null);
+
+			// The epic #100 has an open PR but no marker yet → awaiting (both null), not a false verdict.
+			const epic = response.epics.find((e) => e.number === 100)!;
+			assert.strictEqual(epic.verdict?.prNumber, 201);
+			assert.strictEqual(epic.verdict?.code, null);
+			assert.strictEqual(epic.verdict?.doc, null);
+
+			// #101 has no PR → no verdict at all.
+			const noPr = response.issues.find((i) => i.number === 101)!;
+			assert.strictEqual(noPr.verdict, null);
 		}).pipe(Effect.provide(TestClock.layer())),
 	);
 

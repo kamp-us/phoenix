@@ -19,9 +19,10 @@ import * as Layer from "effect/Layer";
 import type {GithubFetchError} from "./errors.ts";
 import {GithubClient} from "./github.ts";
 import {PipelineCache} from "./PipelineCache.ts";
-import {isEpic, parseDependencies, parseLabels} from "./parse.ts";
+import {isEpic, parseDependencies, parseLabels, parseLinkedIssue, parseVerdict} from "./parse.ts";
 import {
 	CachedPipelineState,
+	IssueVerdict,
 	PipelineEpic,
 	PipelineIssue,
 	PipelineResponse,
@@ -47,9 +48,46 @@ export const PipelineLive = Layer.effect(Pipeline)(
 		const github = yield* GithubClient;
 		const cache = yield* PipelineCache;
 
+		// Resolve the latest gate verdict per issue that has a linked open PR (#257).
+		// Each open PR maps to its `Fixes #N` issue; its comments feed the pure
+		// `parseVerdict`. A PR with no closing link is skipped; the LAST PR wins for an
+		// issue (deterministic — newest PR number resolved last) in the rare double-PR
+		// case. The map is keyed by issue number so the issue/epic assembly is a lookup.
+		const resolveVerdicts = Effect.gen(function* () {
+			const prs = yield* github.listOpenPullRequests;
+			const linked = prs
+				.map((pr) => ({pr, issue: parseLinkedIssue(pr.body)}))
+				.filter((x): x is {pr: (typeof prs)[number]; issue: number} => x.issue !== null);
+
+			const resolved = yield* Effect.forEach(
+				linked,
+				({pr, issue}) =>
+					Effect.gen(function* () {
+						const comments = yield* github.listComments(pr.number);
+						const {code, doc} = parseVerdict(
+							comments.map((c) => ({body: c.body, createdAt: c.created_at})),
+						);
+						return {
+							issue,
+							verdict: new IssueVerdict({prNumber: pr.number, prUrl: pr.html_url, code, doc}),
+						};
+					}),
+				{concurrency: 8},
+			);
+
+			const byIssue = new Map<number, IssueVerdict>();
+			for (const {issue, verdict} of resolved.sort(
+				(a, b) => a.verdict.prNumber - b.verdict.prNumber,
+			)) {
+				byIssue.set(issue, verdict);
+			}
+			return byIssue;
+		});
+
 		/** Fetch + parse the live pipeline state from GitHub (the pre-#254 path). */
 		const fetchState = Effect.gen(function* () {
 			const raw = yield* github.listIssues;
+			const verdicts = yield* resolveVerdicts;
 
 			const issues = raw.map((issue) => {
 				const labels = issue.labels.map((l) => l.name);
@@ -59,6 +97,7 @@ export const PipelineLive = Layer.effect(Pipeline)(
 					state: normalizeState(issue.state),
 					labels,
 					parsed: parseLabels(labels),
+					verdict: verdicts.get(issue.number) ?? null,
 				});
 			});
 
@@ -78,6 +117,7 @@ export const PipelineLive = Layer.effect(Pipeline)(
 							state: normalizeState(issue.state),
 							labels,
 							parsed: parseLabels(labels),
+							verdict: verdicts.get(issue.number) ?? null,
 							children: children.map((c) => c.number),
 							dependencies: parseDependencies(issue.body),
 						});

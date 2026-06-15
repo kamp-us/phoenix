@@ -15,7 +15,8 @@ type Load =
  * `status:*` so a maintainer sees where work piles up without `gh api` (#255).
  * Pickable (`status:triaged`) groups are visually distinguished; a freshness
  * indicator surfaces the API's `stale`/`fetchedAt` (read defensively — see
- * lib/queue.ts). Epic drill-down (#256) and gate verdicts (#257) are out of scope.
+ * lib/queue.ts). Each row also shows the gate verdict from a linked open PR
+ * (#257 — PASS / FAIL / awaiting review). Epic drill-down lives in #256.
  */
 export function QueueBoard() {
 	const [load, setLoad] = useState<Load>({phase: "loading"});

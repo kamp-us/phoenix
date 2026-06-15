@@ -15,6 +15,7 @@ import type {
 	PipelinePriority,
 	PipelineStatus,
 	PipelineType,
+	ReviewVerdicts,
 } from "./schema.ts";
 
 const STATUS_VALUES: ReadonlySet<string> = new Set([
@@ -129,3 +130,67 @@ export const parseDependencies = (body: string | null | undefined): DependencyTo
 
 	return {phases, requires};
 };
+
+/**
+ * The issue a PR closes, from a `Fixes #N` / `Closes #N` / `Resolves #N` annotation
+ * in its body (the seam `write-code` writes and `review-code` relies on). Tolerant of
+ * the verb's tense and the `(es|d)` suffixes; returns the first such reference, or
+ * null if the body links no closing issue. A PR with no closing link surfaces no
+ * verdict against any issue.
+ */
+export const parseLinkedIssue = (body: string | null | undefined): number | null => {
+	if (!body) return null;
+	const m = /\b(?:fix(?:e[sd])?|close[sd]?|resolve[sd]?)\s+#(\d+)/i.exec(body);
+	return m ? Number(m[1]) : null;
+};
+
+/** One PR comment reduced to what verdict resolution needs: its body + post time. */
+export interface VerdictComment {
+	readonly body: string;
+	readonly createdAt: string;
+}
+
+/**
+ * The canonical emphasis-tolerant marker matcher from
+ * `.claude/skills/gh-issue-intake-formats.md` §5: an anchored, case-insensitive
+ * first-line match with an optional leading `**` absorbing review-code's bolding.
+ * `^\s*\**\s*` pins it to the start so a mid-body *quote* of a marker never
+ * matches; only the literal `PASS`/`FAIL` tokens count, so the §6 `advisory` line
+ * (a blocking-set PR) is deliberately not a verdict. One namespace per call.
+ */
+const verdictMatcher = (namespace: "code" | "doc"): RegExp =>
+	new RegExp(`^\\s*\\**\\s*review-${namespace}:\\s*(PASS|FAIL)\\b`, "i");
+
+const latestVerdict = (
+	comments: ReadonlyArray<VerdictComment>,
+	namespace: "code" | "doc",
+): "PASS" | "FAIL" | null => {
+	const matcher = verdictMatcher(namespace);
+	let latest: {at: string; verdict: "PASS" | "FAIL"} | null = null;
+	for (const c of comments) {
+		const token = matcher.exec(c.body)?.[1];
+		if (token === undefined) continue;
+		if (latest === null || c.createdAt > latest.at) {
+			latest = {at: c.createdAt, verdict: token.toUpperCase() as "PASS" | "FAIL"};
+		}
+	}
+	return latest?.verdict ?? null;
+};
+
+/**
+ * Resolve the latest review verdict per namespace from a PR's comments, mirroring
+ * the `ship-it`/`write-code` resolution: anchored namespaced matchers that never
+ * cross-match (a `review-code` scan ignores a `review-doc` marker and vice versa),
+ * latest-wins by `createdAt`. A namespace with no marker yields `null` — the caller
+ * distinguishes "open PR, no verdict yet" (awaiting review) from a real PASS/FAIL,
+ * so an awaiting PR never shows a false verdict.
+ *
+ * Pure and total: empty input → `{code: null, doc: null}`; comment order is
+ * irrelevant (the timestamp decides, not array position). No ACL author-gate here —
+ * that is an I/O concern (it needs the repo collaborator API); this core resolves
+ * the marker shape, the seam in `github.ts` decides whose comments to feed it.
+ */
+export const parseVerdict = (comments: ReadonlyArray<VerdictComment>): ReviewVerdicts => ({
+	code: latestVerdict(comments, "code"),
+	doc: latestVerdict(comments, "doc"),
+});

@@ -39,6 +39,19 @@ export interface RawSubIssue {
 	readonly number: number;
 }
 
+/** An open PR row: its number, body (carries `Fixes #N`), and web URL for the UI link. */
+export interface RawPullRequest {
+	readonly number: number;
+	readonly body: string | null;
+	readonly html_url: string;
+}
+
+/** A PR/issue comment reduced to the fields verdict resolution reads. */
+export interface RawComment {
+	readonly body: string;
+	readonly created_at: string;
+}
+
 export class GithubClient extends Context.Service<
 	GithubClient,
 	{
@@ -51,6 +64,12 @@ export class GithubClient extends Context.Service<
 		readonly listSubIssues: (
 			epic: number,
 		) => Effect.Effect<ReadonlyArray<RawSubIssue>, GithubFetchError>;
+		/** All open PRs for `kamp-us/phoenix`, following pagination to completion. */
+		readonly listOpenPullRequests: Effect.Effect<ReadonlyArray<RawPullRequest>, GithubFetchError>;
+		/** The issue/PR comments for one number (PRs share the issue comments endpoint). */
+		readonly listComments: (
+			number: number,
+		) => Effect.Effect<ReadonlyArray<RawComment>, GithubFetchError>;
 	}
 >()("@phoenix/dashboard/pipeline/GithubClient") {}
 
@@ -109,6 +128,23 @@ export const GithubClientLive = Layer.effect(GithubClient)(
 			return (yield* getJson(path)) as ReadonlyArray<RawSubIssue>;
 		});
 
-		return {listIssues, listSubIssues};
+		const listOpenPullRequests = Effect.gen(function* () {
+			const all: RawPullRequest[] = [];
+			for (let page = 1; page <= 50; page++) {
+				const path = `/repos/${REPO}/pulls?state=open&per_page=${PER_PAGE}&page=${page}`;
+				const batch = (yield* getJson(path)) as ReadonlyArray<RawPullRequest>;
+				if (batch.length === 0) break;
+				all.push(...batch);
+				if (batch.length < PER_PAGE) break;
+			}
+			return all as ReadonlyArray<RawPullRequest>;
+		});
+
+		const listComments = Effect.fn("GithubClient.listComments")(function* (number: number) {
+			const path = `/repos/${REPO}/issues/${number}/comments?per_page=${PER_PAGE}`;
+			return (yield* getJson(path)) as ReadonlyArray<RawComment>;
+		});
+
+		return {listIssues, listSubIssues, listOpenPullRequests, listComments};
 	}),
 );

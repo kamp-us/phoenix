@@ -19,12 +19,28 @@ export interface ParsedLabels {
 	priority: PipelinePriority | null;
 }
 
+export type ReviewOutcome = "PASS" | "FAIL";
+
+/**
+ * The merge-readiness verdict from a linked open PR (#257). Present only when an
+ * open PR is linked; `null` on the issue otherwise. `code`/`doc` are the latest
+ * `review-code`/`review-doc` markers — `null` means that gate hasn't ruled. A PR
+ * present with both null is "awaiting review" (never a false PASS/FAIL).
+ */
+export interface IssueVerdict {
+	prNumber: number;
+	prUrl: string;
+	code: ReviewOutcome | null;
+	doc: ReviewOutcome | null;
+}
+
 export interface PipelineIssue {
 	number: number;
 	title: string;
 	state: "open" | "closed";
 	labels: readonly string[];
 	parsed: ParsedLabels;
+	verdict: IssueVerdict | null;
 }
 
 export interface DependencyPhase {
@@ -48,6 +64,7 @@ export interface PipelineEpic {
 	state: "open" | "closed";
 	labels: readonly string[];
 	parsed: ParsedLabels;
+	verdict: IssueVerdict | null;
 	children: readonly number[];
 	dependencies: DependencyTopology;
 }

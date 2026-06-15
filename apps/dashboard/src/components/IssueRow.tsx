@@ -1,11 +1,13 @@
 import type {PipelineIssue} from "../lib/pipeline.ts";
 import {Badge} from "./Badge.tsx";
+import {VerdictBadge} from "./Badges.tsx";
 import "./IssueRow.css";
 
 /**
  * One issue in a status group: number + title, with its `type:*` and `p*` as
- * badges. `pickable` is passed from the group (only `status:triaged` rows are
- * pickable) and drives the row's pickable affordance via a data attribute.
+ * badges, plus the gate verdict from a linked open PR (#257). `pickable` is passed
+ * from the group (only `status:triaged` rows are pickable) and drives the row's
+ * pickable affordance via a data attribute.
  */
 export function IssueRow({issue, pickable}: {issue: PipelineIssue; pickable: boolean}) {
 	const {number, title, parsed} = issue;
@@ -23,6 +25,7 @@ export function IssueRow({issue, pickable}: {issue: PipelineIssue; pickable: boo
 			<span className="qb-row__badges">
 				{parsed.type ? <Badge tone="type">{parsed.type}</Badge> : null}
 				{parsed.priority ? <Badge tone={parsed.priority}>{parsed.priority}</Badge> : null}
+				<VerdictBadge verdict={issue.verdict} />
 				{pickable ? (
 					<span className="qb-row__pick" title="Pickable now (status:triaged)">
 						pickable
