@@ -174,7 +174,8 @@ what's pickable, and `plan-epic`/`review-plan`/a re-plan loop can edit the epic 
 concurrently. A whole-body `PATCH` reassembled from one writer's in-memory plan silently
 **clobbers** a racing edit — a lost update on the topology (a reverted phase, an orphaned
 `requires:`) that mis-sequences autonomous work, surfaced by no error (issue #261; same
-last-write-wins family as the issue-claim race §7 and the SHA-bound verdict contract, ADR 0058).
+last-write-wins family as the issue-claim race §7 (issue #260) and the SHA-bound verdict
+contract, ADR 0058 (issue #258)).
 
 So `plan-epic`'s body write is a **guarded read-modify-write**, not a blind overwrite (see
 plan-epic/SKILL.md Step 5):

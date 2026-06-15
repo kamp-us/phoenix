@@ -353,8 +353,10 @@ The epic body is **load-bearing shared state** — its `## Dependencies` topolog
 `write-code` reads to decide what's pickable. A second `plan-epic` run, or a `review-plan`
 child-flip, or a re-plan loop, can edit the same body concurrently; a blind whole-body
 `PATCH` would silently clobber that edit (the lost-update this step exists to prevent — issue
-#261, same last-write-wins family as the issue-claim race #260 and the verdict-append race
-#258). GitHub's issue `PATCH` honors **no** `If-Match`/`If-Unmodified-Since` — there is no
+#261, same last-write-wins family as the issue-claim race
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 (issue #260) and the
+SHA-bound verdict contract, ADR [0058](../../../.decisions/0058-sha-bound-verdict-contract.md)
+(issue #258)). GitHub's issue `PATCH` honors **no** `If-Match`/`If-Unmodified-Since` — there is no
 native compare-and-swap — so the write is made safe by **two layers**, in order:
 
 **Layer 1 — surgical section replacement (collision avoidance).** Don't reassemble the body
@@ -371,6 +373,18 @@ compare it to the marker captured in Step 1. If it **moved**, another writer tou
 since you read it: **abort, re-read the body from scratch, re-derive your section against the
 fresh revision, and retry** — never `PATCH` over a body you didn't just read.
 
+The re-derive is the part that makes this honest, and it is **your action, not the script's**.
+The block below is a **skeleton you re-run per attempt, not a one-shot you launch once**: a
+`## Dependencies` block names concrete child numbers and phase topology, so when the recheck
+fires (a racer added/closed a child between your reads) you must **regenerate
+`/tmp/plan-epic-<EPIC>-deps.md` — and on a re-plan `/tmp/plan-epic-<EPIC>-plan.md` — against the
+freshly-read body** (re-run Step 2's split + Step 5's section derivation) *before* you re-enter
+the loop. The script cannot do this for you inside one bash invocation; it can only **refuse to
+proceed** until you have. So the recheck branch stamps the fresh base and **breaks out** (it does
+not silently `continue` onto a stale `deps.md`), and a guard at the top of each attempt **aborts
+loudly** if `deps.md` was not regenerated since the base it splices onto was read — turning the
+"re-derive" from a comment you might skip into a precondition the script enforces.
+
 ```bash
 # /tmp/plan-epic-<EPIC>-deps.md = the new `## Dependencies` block. On a RE-PLAN, also
 #   /tmp/plan-epic-<EPIC>-plan.md = the new `## Plan (plan-epic)` block (set REPLAN=1).
@@ -378,14 +392,24 @@ fresh revision, and retry** — never `PATCH` over a body you didn't just read.
 # Landing is confirmed against the WHOLE `## Dependencies` block round-tripping byte-for-byte,
 # NOT a single line: two concurrent runs on the SAME epic likely both emit a given `- #<child>`
 # line (they share children), so a lone matching line can't tell our section from a racer's
-# clobber (see step 6). deps.md is recomputed each pass since a re-derive (step 2) rewrites it.
+# clobber (see step 6). deps.md is re-derived by YOU between attempts (the recheck breaks out and
+# hands back; step 2) — the freshness guard (step 2.5) enforces it was, so each pass splices a block
+# derived against the body it's splicing onto, never a stale one.
 # A first-time plan has NO `## Dependencies` heading yet (Step 2 doesn't write one) — that case
 # APPENDS the block to EOF; a re-plan has exactly one and SPLICES it in place. Zero headings on a
 # re-plan, or more than one ever, is corruption: abort loudly (step 4).
-# Loop: re-read → verify unchanged → guard → splice/append → PATCH → re-verify our block landed.
-# `landed=1` only after a pass confirms the round-trip; the terminal check after the loop turns an
+#
+# This block is a SKELETON you re-run per attempt, not a one-shot. When the recheck (step 2) fires
+# it stamps the fresh base, BREAKS, and hands back to you to re-derive `deps.md` (+ `plan.md` on a
+# re-plan) against `/tmp/plan-epic-<EPIC>-current.md` — then you re-invoke the block. The freshness
+# guard (step 2.5) refuses to splice a `deps.md` older than the base it would splice onto, so a
+# stale block can never re-clobber a racer's legitimate topology.
+# Per attempt: re-read → recheck (verify unchanged) → freshness guard → anchor guard → splice/append → PATCH
+# → re-verify our block landed. `landed=1` only after a pass confirms the round-trip; `patched=1`
+# records that a PATCH was actually issued (so the terminal verdict can tell "raced every time,
+# never wrote" from "wrote and lost"). The terminal check after the loop turns an
 # exhausted-or-aborted run into a hard STOP rather than ambiguous output.
-landed=0
+landed=0; patched=0
 for attempt in 1 2 3; do
   # 1. re-read the LIVE body + its revision marker from ONE GET (coherent — no TOCTOU skew)
   gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '{body,updated_at}' > /tmp/plan-epic-<EPIC>-live.json
@@ -393,13 +417,31 @@ for attempt in 1 2 3; do
   NOW=$(jq -r '.updated_at' /tmp/plan-epic-<EPIC>-live.json)
   WAS=$(cat /tmp/plan-epic-<EPIC>-updated-at.txt)
 
-  # 2. optimistic recheck — if the body moved since we last read it, re-derive and retry
+  # 2. optimistic recheck — if the body moved since we last read it, stamp the fresh base and BREAK.
+  #    Re-deriving the section is YOUR action (the script can't regenerate deps.md/plan.md inside one
+  #    bash invocation): re-run Step 2's split + Step 5's derivation against the now-fresh
+  #    `-current.md`, then re-invoke this block. The freshness guard (2.5) enforces that you did.
   if [ "$NOW" != "$WAS" ]; then
-    echo "epic body changed since read ($WAS -> $NOW) — re-deriving the section off the fresh body"
+    echo "epic body changed since read ($WAS -> $NOW) — RE-DERIVE deps.md (+ plan.md on a re-plan)"
+    echo "  against the fresh base, then re-invoke this block. (Not auto-retried: the re-derive is an agent step.)"
     cp /tmp/plan-epic-<EPIC>-live.md /tmp/plan-epic-<EPIC>-current.md   # fresh base to re-derive against
     echo "$NOW" > /tmp/plan-epic-<EPIC>-updated-at.txt
-    # re-run Step 5's section derivation against the fresh body, then continue the loop
-    continue
+    break
+  fi
+
+  # 2.5. freshness guard — `deps.md` (and, on a re-plan, `plan.md`) MUST have been (re-)derived
+  #      against the base this attempt is splicing onto. That base is `-current.md` (stamped from the
+  #      live body the recheck above just confirmed unchanged), and your re-derive writes deps.md
+  #      AFTER it — so deps.md must be newer than current.md (`-nt` = "newer than"). If it isn't, the
+  #      re-derive precondition is unmet (you re-invoked without regenerating the block off the fresh
+  #      base): a stale block that references the wrong child set. Abort loudly, don't write — this is
+  #      what stops the `continue`-era footgun of re-splicing the originally-derived block (issue #261).
+  if ! [ /tmp/plan-epic-<EPIC>-deps.md -nt /tmp/plan-epic-<EPIC>-current.md ] \
+     || { [ "${REPLAN:-0}" = 1 ] && ! [ /tmp/plan-epic-<EPIC>-plan.md -nt /tmp/plan-epic-<EPIC>-current.md ]; }; then
+    echo "ABORT: deps.md (or plan.md on a re-plan) is NOT newer than the base it splices onto (-current.md) —"
+    echo "       you re-invoked without re-deriving. Re-run Step 2's split + Step 5's section derivation"
+    echo "       against /tmp/plan-epic-<EPIC>-current.md, then re-invoke this block. Refusing to splice a stale block."
+    break
   fi
 
   # 3. anchor guard — the splice keys off the count of exact `## Dependencies` headings:
@@ -412,6 +454,18 @@ for attempt in 1 2 3; do
   if [ "$DEPS_HEADINGS" -gt 1 ] || { [ "$DEPS_HEADINGS" -eq 0 ] && [ "${REPLAN:-0}" = 1 ]; }; then
     echo "ABORT: live body has $DEPS_HEADINGS exact '## Dependencies' headings (want 0 on a first-time plan, 1 on a re-plan) — refusing to splice; inspect by hand"
     break
+  fi
+
+  # 3b. on a re-plan, the Plan splice (step 4) keys off `## Plan (plan-epic)` the same way deps keys
+  #     off `## Dependencies` — and the same drift bites: 0 means the heading drifted (e.g. `## Plan`)
+  #     and the awk would splice NOTHING (the re-planned plan silently dropped); >1 means it'd double.
+  #     Want exactly 1 on a re-plan. (First-time plans don't splice the plan block, so skip the check.)
+  if [ "${REPLAN:-0}" = 1 ]; then
+    PLAN_HEADINGS=$(grep -c '^## Plan (plan-epic)[[:space:]]*$' /tmp/plan-epic-<EPIC>-live.md)
+    if [ "$PLAN_HEADINGS" -ne 1 ]; then
+      echo "ABORT: re-plan but live body has $PLAN_HEADINGS exact '## Plan (plan-epic)' headings (want exactly 1) — refusing to splice; inspect by hand"
+      break
+    fi
   fi
 
   # 4. surgical splice/append: write ONLY the changed section(s), keep every other byte verbatim.
@@ -451,7 +505,7 @@ for attempt in 1 2 3; do
   #    heading or a single child line — is what tells our section from theirs. The residual window
   #    (below) means the PATCH is still last-write-wins; this is the honest after-the-fact check
   #    that retries the loser.
-  gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY" >/dev/null
+  gh api -X PATCH repos/kamp-us/phoenix/issues/<EPIC> -f body="$BODY" >/dev/null; patched=1
   gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.body' \
     | awk '/^## Dependencies[[:space:]]*$/{f=1} f{print}' > /tmp/plan-epic-<EPIC>-deps-live.md
   if diff -q /tmp/plan-epic-<EPIC>-deps-expected.md /tmp/plan-epic-<EPIC>-deps-live.md >/dev/null; then
@@ -462,12 +516,20 @@ for attempt in 1 2 3; do
   fi
 done
 
-# Terminal verdict — the loop can exit three ways; only one is success. An orchestrator (and the
-# next agent reading the transcript) must not mistake an exhausted-or-aborted run for a win.
+# Terminal verdict — the loop can exit several ways; only one is success. An orchestrator (and the
+# next agent reading the transcript) must not mistake an exhausted-or-aborted run for a win. The two
+# non-success modes differ: a run that NEVER issued a PATCH (raced + re-derived, or a guard aborted)
+# left the body untouched; a run that DID PATCH but lost the round-trip left it possibly half-written.
 if [ "$landed" != 1 ]; then
   echo "plan-epic: could NOT land the ## Dependencies block — STOP and inspect, do not proceed."
-  echo "  (Either the anchor guard aborted on a corrupt/duplicated heading, or 3 attempts all lost"
-  echo "   the race. The epic body may be half-written; the topology this run derived is NOT pinned.)"
+  if [ "$patched" = 1 ]; then
+    echo "  (A PATCH was issued but our block didn't round-trip — a racer clobbered it. The epic body"
+    echo "   may be half-written with someone else's topology; the topology this run derived is NOT pinned.)"
+  else
+    echo "  (No PATCH was ever issued — either a guard aborted (corrupt/duplicated heading, or deps.md"
+    echo "   not re-derived against the fresh base), or every attempt raced and handed back to re-derive."
+    echo "   The epic body is untouched; the topology this run derived is NOT pinned.)"
+  fi
 fi
 ```
 
@@ -554,9 +616,12 @@ lost-update case in issue #261. Write the fresh `## Plan (plan-epic)` block to
 `/tmp/plan-epic-<EPIC>-plan.md`, the fresh `## Dependencies` block to
 `/tmp/plan-epic-<EPIC>-deps.md`, and run the Step 5 loop with `REPLAN=1` so it splices
 **both** sections into the freshly-read live body in place (the live body already has exactly one
-`## Dependencies` heading to splice against); abort+re-derive if `updated_at` moved since your
-read. (On a first-time plan, leave `REPLAN` unset — the live body has no `## Dependencies` heading
-yet, so the loop appends the new block to EOF instead of splicing.)
+`## Dependencies` heading and exactly one `## Plan (plan-epic)` heading to splice against — the
+loop's anchor guards abort if either drifted). When `updated_at` moved since your read, the loop
+breaks and hands back so you **re-derive both blocks against the fresh base** before re-invoking it
+— the re-derive is your step, not the script's, and the freshness guard enforces you did it. (On a
+first-time plan, leave `REPLAN` unset — the live body has no `## Dependencies` heading yet, so the
+loop appends the new block to EOF instead of splicing, and the Plan-heading guard is skipped.)
 
 ---
 
