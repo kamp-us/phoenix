@@ -25,9 +25,7 @@ export const handlePipeline = Effect.gen(function* () {
 	// A GitHub fetch failure with a warm cache is served as the last good snapshot
 	// flagged `stale` (#254) — it never reaches here. A 502 is left for the
 	// cold-cache case alone: GitHub failed AND there's no prior snapshot to fall
-	// back to. Recovered via `Effect.result` so it never escapes the handler. The
-	// Schema encode `orDie`s: a response that doesn't satisfy the wire schema is a
-	// worker bug, not a request-time condition.
+	// back to. Recovered via `Effect.result` so it never escapes the handler.
 	const result = yield* Effect.result(pipeline.getState);
 	if (result._tag === "Failure") {
 		const e = result.failure;
@@ -37,8 +35,16 @@ export const handlePipeline = Effect.gen(function* () {
 		return errorResponse(502, `GitHub fetch failed (${e.path}): ${reason}`);
 	}
 
-	const body = yield* encodePipelineResponse(result.success).pipe(Effect.orDie);
-	return HttpServerResponse.jsonUnsafe(body, {
+	// A response that fails the wire schema is a worker bug — but surface it as a
+	// debuggable 500 carrying the parse reason, NOT a `.orDie` defect. A die escapes
+	// the handler as an opaque CF 1101 (the failure mode #323 chased with no field
+	// to fix from); `Effect.result` over the encode turns a future shape-drift into
+	// a readable body instead.
+	const encoded = yield* Effect.result(encodePipelineResponse(result.success));
+	if (encoded._tag === "Failure") {
+		return errorResponse(500, `pipeline response failed to encode: ${encoded.failure.message}`);
+	}
+	return HttpServerResponse.jsonUnsafe(encoded.success, {
 		headers: {"content-type": "application/json; charset=utf-8"},
 	});
 });
