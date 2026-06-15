@@ -321,7 +321,9 @@ else
 fi
 ```
 
-Verdict body shape:
+Verdict body shape. The first line is the **canonical bare marker** — no leading `**` emphasis
+— per the matcher contract in [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5
+(matchers tolerate an optional leading `**`, but emit bare):
 
 ```markdown
 review-doc: PASS — merge-ready
