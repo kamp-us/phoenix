@@ -15,5 +15,14 @@ export class GithubFetchError extends Schema.TaggedErrorClass<GithubFetchError>(
 		/** HTTP status when the call completed non-2xx; null for a transport/parse failure. */
 		status: Schema.NullOr(Schema.Number),
 		message: Schema.String,
+		/**
+		 * GitHub's response body on a non-2xx (bounded/truncated), so a 403's reason
+		 * ("Resource not accessible…" vs a rate-limit) is diagnosable in one shot
+		 * (issue #292). Null when there's no body to surface — a transport/parse
+		 * failure, an empty body, or a guarded `res.text()` read that itself failed.
+		 * Only GitHub's own response text; never the bearer token (`github.ts` reads
+		 * the body, not the request, so a secret can't ride along).
+		 */
+		detail: Schema.NullOr(Schema.String),
 	},
 ) {}

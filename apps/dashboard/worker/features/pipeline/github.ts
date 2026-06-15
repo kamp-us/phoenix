@@ -20,6 +20,9 @@ const GITHUB_API = "https://api.github.com";
 const REPO = "kamp-us/phoenix";
 const PER_PAGE = 100;
 
+/** Cap the surfaced GitHub body so a pathological response can't bloat the error. */
+const MAX_DETAIL = 2000;
+
 /**
  * The raw issue shape the client returns — exactly the GitHub REST fields the
  * parse core consumes. `parent` is GitHub's sub-issue back-reference; `pull_request`
@@ -90,19 +93,40 @@ export const GithubClientLive = Layer.effect(GithubClient)(
 			const res = yield* Effect.tryPromise({
 				try: () => fetch(`${GITHUB_API}${path}`, {headers}),
 				catch: (cause) =>
-					new GithubFetchError({path, status: null, message: `transport error: ${String(cause)}`}),
+					new GithubFetchError({
+						path,
+						status: null,
+						message: `transport error: ${String(cause)}`,
+						detail: null,
+					}),
 			});
 			if (!res.ok) {
+				// Best-effort: GitHub's body carries the actual reason ("Resource not
+				// accessible…" vs a rate-limit). The read can itself fail/timeout, so it's
+				// guarded — a failed read degrades to `detail: null`, never crashing the
+				// request path (issue #292). Bounded to MAX_DETAIL.
+				const detail = yield* Effect.tryPromise(() => res.text()).pipe(
+					Effect.map(
+						(text) => (text.length > MAX_DETAIL ? text.slice(0, MAX_DETAIL) : text) || null,
+					),
+					Effect.orElseSucceed(() => null),
+				);
 				return yield* new GithubFetchError({
 					path,
 					status: res.status,
 					message: `GitHub returned ${res.status}`,
+					detail,
 				});
 			}
 			return yield* Effect.tryPromise({
 				try: () => res.json() as Promise<unknown>,
 				catch: (cause) =>
-					new GithubFetchError({path, status: res.status, message: `bad JSON: ${String(cause)}`}),
+					new GithubFetchError({
+						path,
+						status: res.status,
+						message: `bad JSON: ${String(cause)}`,
+						detail: null,
+					}),
 			});
 		});
 

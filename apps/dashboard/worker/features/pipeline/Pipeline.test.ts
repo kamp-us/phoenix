@@ -104,6 +104,7 @@ const stubGithub = (calls: Ref.Ref<number>, options?: {readonly fail?: boolean})
 						path: "/repos/kamp-us/phoenix/issues",
 						status: 503,
 						message: "GitHub returned 503",
+						detail: null,
 					});
 				}
 				return issues;
