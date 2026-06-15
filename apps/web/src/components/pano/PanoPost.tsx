@@ -143,7 +143,7 @@ export function PanoPost({
 							))}
 						</span>
 					) : null}
-					<a className="kp-pano-post__title" href={post.url ?? post.href}>
+					<a className="kp-pano-post__title kp-prose" href={post.url ?? post.href}>
 						{post.title}
 					</a>
 					{post.host ? (
