@@ -145,9 +145,10 @@ done
 If such a PR exists, **repair it instead of picking new work** — go to
 [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit) with that PR
 number. Only once you have **no** PR with an unaddressed latest FAIL do you fall through to
-the normal pick below. (This scan is a *signal*; repair mode re-resolves the verdict
-authoritatively per namespace before acting, so a PR that flipped to PASS between the scan
-and the repair is a clean no-op.)
+the normal pick below. (This scan is a coarse *signal* that deliberately matches the SHA-less
+prefix; repair mode Step R1 re-resolves the verdict authoritatively per namespace **and
+applies the SHA-staleness test** (ADR 0058) before acting, so a PR that flipped to PASS, or
+whose FAIL is bound to a now-stale head, between the scan and the repair is a clean no-op.)
 
 Two properties make this scan terminate rather than starve:
 
@@ -391,8 +392,8 @@ A standalone (non-sub-issue) issue has no parent epic — skip this step.
 
 This is the second invocation shape: keyed off a **PR number**, it is the consumer the
 gate FAIL markers were written for (`gh-issue-intake-formats.md` §5/§6 name write-code the
-reader of both `review-code: FAIL — not merge-ready` and `review-doc: FAIL —
-changes-requested`). You take a PR that came back failed, apply exactly the enumerated
+reader of both `review-code: FAIL @ <sha> — not merge-ready` and `review-doc: FAIL @ <sha> —
+changes-requested`, SHA-bound per ADR 0058). You take a PR that came back failed, apply exactly the enumerated
 findings on the **same branch**, push so the **stateless** gate re-runs, and stop. Steps
 1–7 above are the *initial* build; this is everything that happens *after* a gate FAIL.
 
@@ -435,39 +436,52 @@ while IFS= read -r a; do
   esac
 done <<<"$markerAuthors"
 
-# latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc
+# the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
+CURRENT_HEAD="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"
+
+# latest review-code marker (code namespace) — author-gated, anchored, never matches review-doc.
+# Capture the bound head SHA from the @ <sha> tail (sha=null for a pre-0058 SHA-less marker).
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
+    | sort_by(.created_at) | last
+    | {body, at: .created_at,
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
-# (no ACL gate: GitHub author-attributes reviews, so this path is unforgeable)
+# (no ACL gate: GitHub author-attributes reviews, so this path is unforgeable). commit_id IS its bound SHA.
 gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
-        | sort_by(.submitted_at) | last | {state, at: .submitted_at}'
+        | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}'
 
 # latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-    | sort_by(.created_at) | last | {body, at: .created_at}' <<<"$comments"
+    | sort_by(.created_at) | last
+    | {body, at: .created_at,
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
 ```
 
-Resolve per namespace, latest-wins by timestamp:
+Resolve per namespace, latest-wins by timestamp, **then apply the SHA-staleness test** (ADR
+[0058](../../../.decisions/0058-sha-bound-verdict-contract.md), mirroring `ship-it` Step 2b):
 
 - **review-code namespace** — the verdict is the **newest of {latest decisive review,
-  latest review-code marker}**. `CHANGES_REQUESTED` or `review-code: FAIL` is FAIL;
-  `APPROVED` or `review-code: PASS` is PASS.
+  latest review-code marker}**; its bound SHA is the marker's `@ <sha>` (or the review's
+  `commit_id`). `CHANGES_REQUESTED` or `review-code: FAIL` is FAIL; `APPROVED` or
+  `review-code: PASS` is PASS.
 - **review-doc namespace** — the verdict is the **latest `review-doc` marker** by
-  `created_at` (review-doc lands no native review). `review-doc: FAIL` is FAIL.
+  `created_at` (review-doc is comment-only — no native review). `review-doc: FAIL` is FAIL.
 
-**Act only when a namespace's latest verdict is FAIL.** A newer FAIL is acted on even if an
-older PASS exists; a PR whose latest verdict is PASS — or that has no FAIL at all — is
-**not repaired**. This makes repair mode **idempotent**: re-running it on an
-already-fixed/PASS PR (or one with no FAIL) is a clean no-op — report `nothing to repair
-(latest verdict is PASS / no FAIL)` and stop. If **both** namespaces' latest verdicts are
-FAIL (a mixed code+doc PR), address **both** in this round.
+**Act only when a namespace's latest verdict is FAIL *bound to the current head*.** A newer
+FAIL is acted on even if an older PASS exists — but a FAIL whose `@ <sha>` is **not** the PR's
+current head (`$CURRENT_HEAD`, by prefix-match either way), or that carries **no** `@ <sha>`
+(a pre-0058 legacy marker), is **stale**: it judges code that has since changed, so do **not**
+repair on it — report `nothing to repair (latest FAIL not bound to current head)` and stop.
+A PR whose latest current-head verdict is PASS — or that has no current-head FAIL at all — is
+**not repaired**. This keeps repair mode **idempotent**: re-running it on an already-fixed/PASS
+PR, a no-FAIL PR, or a stale-FAIL PR is a clean no-op. If **both** namespaces' latest
+current-head verdicts are FAIL (a mixed code+doc PR), address **both** in this round.
 
 ### Step R2 — Read the enumerated findings, fix exactly those
 
@@ -600,10 +614,14 @@ forever. The cap thus terminates **both** the fix loop *and* the re-selection lo
   never weakens that refusal.
 - **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
   gate history stay intact.
-- **Idempotent.** Re-running on an already-fixed / PASS PR (or one with no latest FAIL) is
-  a clean no-op (Step R1).
-- **Both namespaces.** Handle `review-code: FAIL` (§5) **and** `review-doc: FAIL` (§6) —
-  latest-wins per namespace — not just `review-code`.
+- **Idempotent.** Re-running on an already-fixed / PASS PR (one with no latest FAIL, or one
+  whose latest FAIL is bound to a now-stale head) is a clean no-op (Step R1).
+- **SHA-bound verdicts (ADR [0058](../../../.decisions/0058-sha-bound-verdict-contract.md)).**
+  Act only on a FAIL bound to the PR's **current head** — a FAIL whose `@ <sha>` is stale (or
+  absent) judges code that has since changed, so repair mode ignores it. This mirrors
+  `ship-it` Step 2b's staleness refusal on the reading side.
+- **Both namespaces.** Handle `review-code: FAIL @ <sha>` (§5) **and** `review-doc: FAIL @ <sha>`
+  (§6) — latest current-head verdict per namespace — not just `review-code`.
 - **Author-gated verdicts.** A marker counts only from a `write+` repo collaborator —
   the same GitHub-ACL gate `ship-it` Step 2 applies before the marker regex, so a forged or
   self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor

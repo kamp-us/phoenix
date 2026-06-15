@@ -1,6 +1,6 @@
 ---
 name: review-doc
-description: Verify a doc/knowledge PR against its linked issue's acceptance criteria — plus a doc-hygiene checklist — before it merges. The doc-artifact twin of review-code in the kamp-us/phoenix pipeline. Trigger on "review this doc PR", "review-doc #N", "gate the ADR PR", "verify the docs on #N before merge", "run review-doc", "does this ADR/pattern PR meet its acceptance criteria", or whenever you're asked to confirm a `.decisions`/`.patterns`/prose-doc PR actually satisfies the issue it claims to close. This is the doc-class verification stage of the issue-intake pipeline: it consumes the doc PRs `write-code` opens and verifies them one criterion at a time, evidence-based from reading the diff (no test-running). Emits a namespaced `review-doc: PASS — merge-ready` / `review-doc: FAIL — changes-requested` marker; for BLOCKING-set doc PRs (touching `.claude/`/`.github`) it is advisory only; it never merges; it never emits a `review-code` marker.
+description: Verify a doc/knowledge PR against its linked issue's acceptance criteria — plus a doc-hygiene checklist — before it merges. The doc-artifact twin of review-code in the kamp-us/phoenix pipeline. Trigger on "review this doc PR", "review-doc #N", "gate the ADR PR", "verify the docs on #N before merge", "run review-doc", "does this ADR/pattern PR meet its acceptance criteria", or whenever you're asked to confirm a `.decisions`/`.patterns`/prose-doc PR actually satisfies the issue it claims to close. This is the doc-class verification stage of the issue-intake pipeline: it consumes the doc PRs `write-code` opens and verifies them one criterion at a time, evidence-based from reading the diff (no test-running). Emits a namespaced, SHA-bound `review-doc: PASS @ <sha> — merge-ready` / `review-doc: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted to one-per-PR; for BLOCKING-set doc PRs (touching `.claude/`/`.github`) it is advisory only; it never merges; it never emits a `review-code` marker.
 ---
 
 # review-doc
@@ -66,14 +66,16 @@ stage exists to prevent — the same invariant `review-code` holds.
 ## You emit a `review-doc` marker, NEVER a `review-code` one
 
 `ship-it` matches the two markers in **separate namespaces** (two anchored,
-**emphasis-tolerant** regexes — the leading `\**` absorbs an optional bolding `**`, since
-`review-code` emits its marker bolded — `^\s*\**\s*review-code:\s*(PASS|FAIL)` and
-`^\s*\**\s*review-doc:\s*(PASS|FAIL)`; see the matcher contract in
-[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5), latest-verdict-wins
-per namespace by timestamp. Your verdict's first line is **always** `review-doc: …` —
-never `review-code: …`. Emitting a `review-code` marker on a doc PR would let a
-code-namespace scan match your verdict (and vice versa), collapsing the two gates into
-one. Keep the namespace clean: `review-doc:` for docs, full stop.
+**emphasis-tolerant**, **SHA-capturing** regexes — the leading `\**` absorbs an optional
+bolding `**`, the trailing `@\s*([0-9a-f]{7,40})` captures the bound head SHA —
+`^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})` and
+`^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`; see the matcher contract in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5/§6), latest-verdict-wins
+per namespace by timestamp, then a SHA-staleness refusal (ADR 0058). Your verdict's first
+line is **always** `review-doc: … @ <sha>` — never `review-code: …`. Emitting a `review-code`
+marker on a doc PR would let a code-namespace scan match your verdict (and vice versa),
+collapsing the two gates into one. Keep the namespace clean: `review-doc:` for docs, full
+stop.
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
@@ -87,9 +89,9 @@ Your gate is **format 2, the sub-issue body's `### Acceptance criteria` checklis
 **format 6, the review-doc verdict marker** (your namespace). Read the contract so you know
 the shapes you verify against and emit:
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2 and §6. §6 defines the
-`review-doc` namespace (`PASS — merge-ready` / `FAIL — changes-requested`) and the advisory
-blocking-set line, in a namespace distinct from §5's `review-code` marker — emit only the §6
-shapes, never a §5 `review-code` marker.
+`review-doc` namespace (SHA-bound `PASS @ <sha> — merge-ready` / `FAIL @ <sha> — changes-requested`)
+and the advisory blocking-set line, in a namespace distinct from §5's `review-code` marker —
+emit only the §6 shapes, never a §5 `review-code` marker.
 
 The key invariant: **every issue carries at least one acceptance criterion.** That's the
 floor that guarantees there is always something to verify. If an issue you're handed has
@@ -295,43 +297,64 @@ Build the hygiene findings into the same evidence shape as the AC table:
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND
 every hygiene check must PASS. One miss anywhere → FAIL.
 
-Write the verdict to a per-run temp file (`VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"`)
-so multi-line markdown + backticks survive the shell, then post it. Allocate it with `mktemp`,
-not a fixed `/tmp/review-doc-verdict-${PR}.md`: the PR number alone isn't unique — two reviews
-of the *same* PR running concurrently would collide on it, one run's unread verdict stalling
-the write or leaking into the other. A per-run `mktemp` name keeps each run's verdict its own.
+**Resolve the head SHA you reviewed** and write the verdict to a per-run temp file
+(`VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"`) so multi-line markdown + backticks
+survive the shell, then post it. Allocate it with `mktemp`, not a fixed
+`/tmp/review-doc-verdict-${PR}.md`: the PR number alone isn't unique — two reviews of the *same*
+PR running concurrently would collide on it, one run's unread verdict stalling the write or
+leaking into the other. The SHA goes into the marker's first line
+(`review-doc: PASS @ <sha> — merge-ready`) and is **load-bearing**: `ship-it` refuses any
+verdict not bound to the PR's current head (ADR
+[0058](../../.decisions/0058-sha-bound-verdict-contract.md), issue #258).
+
+```bash
+HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # the head you reviewed
+```
 
 ### Pass path — non-blocking PR (the binding signal)
 
 Every criterion and every hygiene check passed, and Step 0 classified the PR
-**non-blocking**. Land the namespaced marker so `ship-it` can merge on it. Prefer the
-native approving review; fall back to the marker comment when org branch rules forbid
-reviewing your own PR (the common path on this single-operator repo).
+**non-blocking**. Land the namespaced, SHA-bound marker so `ship-it` can merge on it.
 
-Capture the APPROVE result and check the exit status **explicitly**; on failure (e.g. a 422
-reviewing your own PR) post the marker-comment fallback. The explicit check is load-bearing:
-do **not** chain APPROVE to the fallback with `||` — a shell pipe wrapping the APPROVE call
-(e.g. `… 2>&1 | head` for inspection) makes the pipeline's exit status mask the APPROVE
-failure, so the `||` fallback silently never fires and no verdict marker lands (the exact
-misfire of #205).
+`review-doc` lands its verdict **only as the SHA-bound comment, never a native `APPROVE`**
+(ADR 0058 rule 4): a native review can't carry the `@ <sha>` in the shape this contract
+controls, so emitting one would leave `ship-it` comparing a review against a comment for the
+doc lane — two incomparable records. The comment is the single carrier, resolving the
+APPROVE-vs-comment duality #258 flagged.
+
+The post is an **upsert**, not an append: scan the PR for *your own* prior `review-doc:`
+marker comment and `PATCH` it with the fresh verdict instead of `POST`-ing a new one, so
+there is exactly **one** `review-doc` verdict comment per PR (ADR 0058 rule 2). A re-review of
+a new head overwrites the same record with the new `@ <sha>`. The `… | last | .id` upsert
+PATCHes only your *newest* own marker, so on a PR migrated from the pre-0058 append era a few
+older SHA-less own markers may linger — the one-per-gate invariant is **forward-looking**, and
+those legacy duplicates are tolerated because `ship-it`'s consumer SHA-refuses any marker
+without an `@ <sha>` on the current head (Step 2b), so they can never authorize a merge.
 
 ```bash
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
-# write your composed PASS verdict into "$VERDICT_FILE" (first line: review-doc: PASS — merge-ready)
+# write your composed PASS verdict into "$VERDICT_FILE" (first line: review-doc: PASS @ <HEAD_SHA> — merge-ready)
 BODY="$(cat "$VERDICT_FILE")"
-if gh api -X POST repos/kamp-us/phoenix/pulls/$PR/reviews -f event=APPROVE -f body="$BODY"; then
-  : # native approving review posted
+ME="$(gh api user --jq .login)"
+# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
+comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+          and (.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))))
+        | last | .id // empty' <<<"$comments")
+if [ -n "$MINE" ]; then
+  gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"   # upsert
 else
-  gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
+  gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"   # first verdict
 fi
 ```
 
-Verdict body shape. The first line is the **canonical bare marker** — no leading `**` emphasis
-— per the matcher contract in [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5
-(matchers tolerate an optional leading `**`, but emit bare):
+Verdict body shape. The first line is the **canonical bare marker** — no leading `**`
+emphasis, **with the `@ <HEAD_SHA>` you resolved above** — per the matcher contract in
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6 (matchers tolerate an
+optional leading `**`, but emit bare; the `@ <sha>` is required, ADR 0058):
 
 ```markdown
-review-doc: PASS — merge-ready
+review-doc: PASS @ <HEAD_SHA> — merge-ready
 
 Verified PR #<PR> against the acceptance criteria of #<ISSUE> + the doc-hygiene checklist:
 
@@ -378,29 +401,65 @@ Verified against #<ISSUE>'s acceptance criteria + doc hygiene — all checks pas
 - [PASS] Status sanity — <evidence>
 ```
 
-Do **not** emit `review-doc: PASS — merge-ready` for a blocking PR — that marker is a
+Post the advisory line **as a comment, not a native `REQUEST_CHANGES`/review** — the
+blocking-set path is comment-only too, exactly like the PASS and FAIL paths (ADR 0058
+rule 4). Upsert it the same way (`PATCH` your own prior `review-doc:` marker if one exists,
+else `POST`):
+
+```bash
+VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"
+BODY="$(cat "$VERDICT_FILE")"   # first line: review-doc: advisory — blocking-set PR (manual merge)
+ME="$(gh api user --jq .login)"
+# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
+comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+          and (.body | test("^\\s*\\**\\s*review-doc:"; "i"))))
+        | last | .id // empty' <<<"$comments")
+if [ -n "$MINE" ]; then
+  gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"
+else
+  gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"
+fi
+```
+
+Do **not** emit the `review-doc: PASS @ <sha> — merge-ready` marker for a blocking PR — that marker is a
 `ship-it` go-ahead, and `ship-it` must refuse the blocking set. The advisory line keeps
-your verdict out of `ship-it`'s PASS namespace while still recording the review.
+your verdict out of `ship-it`'s PASS namespace while still recording the advisory verdict
+(as a comment, per ADR 0058 rule 4) — the advisory line carries no `@ <sha>` because no
+`ship-it` namespace consumes it; a human merges these (ADR 0053).
 
 ### Fail path — any miss (non-blocking or blocking)
 
 One or more checks failed (or were unverifiable). **Nothing merges. The PR stays open;
 the issue stays open and assigned to whoever claimed it** — don't unassign, relabel, or
-close. Post a comment whose first line is the namespaced FAIL marker (the seam
+close. Post a comment whose first line is the namespaced, SHA-bound FAIL marker (the seam
 `write-code`'s fix round-trip keys on), with the full per-check table — the passing rows
-too, so the author sees how close they are.
+too, so the author sees how close they are. **Upsert** it (`PATCH` your own prior
+`review-doc:` marker if one exists, else `POST`) exactly as the PASS path — one `review-doc`
+verdict comment per PR (ADR 0058 rule 2):
 
 ```bash
+HEAD_SHA="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"   # the head you reviewed
 VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
-# write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-doc: FAIL — changes-requested)
+# write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-doc: FAIL @ <HEAD_SHA> — changes-requested)
 BODY="$(cat "$VERDICT_FILE")"
-gh api repos/kamp-us/phoenix/issues/$PR/comments -f body="$BODY"
+ME="$(gh api user --jq .login)"
+# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
+comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+          and (.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))))
+        | last | .id // empty' <<<"$comments")
+if [ -n "$MINE" ]; then
+  gh api -X PATCH "repos/kamp-us/phoenix/issues/comments/$MINE" -f body="$BODY"
+else
+  gh api -X POST  "repos/kamp-us/phoenix/issues/$PR/comments"   -f body="$BODY"
+fi
 ```
 
 Verdict body shape:
 
 ```markdown
-review-doc: FAIL — changes-requested
+review-doc: FAIL @ <HEAD_SHA> — changes-requested
 
 Verified PR #<PR> against #<ISSUE>'s acceptance criteria + the doc-hygiene checklist:
 
@@ -417,9 +476,9 @@ Failing items above must be addressed before this PR can merge. The PR stays ope
 unmerged; #<ISSUE> stays open and assigned. Re-request review once they're satisfied.
 ```
 
-You *may* additionally `-f event=REQUEST_CHANGES` for the native signal, but the
-**marker comment with per-item evidence is the required artifact**. Recognize the marker
-tolerantly by shape (`review-doc: FAIL`), not exact dashes. Do **not** touch the issue's
+Do **not** post a native `REQUEST_CHANGES` review — `review-doc` is comment-only (ADR 0058
+rule 4), so the SHA-bound marker comment is the **sole** verdict artifact. Recognize the
+marker tolerantly by shape (`review-doc: FAIL @ <sha>`), not exact dashes. Do **not** touch the issue's
 labels, assignee, or state on a fail — a failed gate is a no-op on the work state plus a
 comment.
 
