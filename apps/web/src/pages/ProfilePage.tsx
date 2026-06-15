@@ -17,6 +17,8 @@ function initialsOf(name: string) {
 export function ProfilePage() {
 	const session = useSession();
 	const [themeChoice, setThemeChoice] = useState<ThemeChoice>("dark");
+	const [revokingAll, setRevokingAll] = useState(false);
+	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
 
 	if (session.isPending) return null;
 	if (!session.data) return <Navigate to="/auth" replace />;
@@ -26,6 +28,23 @@ export function ProfilePage() {
 	const handle = u.email.split("@")[0] ?? "user";
 
 	async function onSignOut() {
+		await authClient.signOut();
+		clearBearerToken();
+	}
+
+	// "tüm cihazlardan çık" — the label says ALL devices, so revoke every session
+	// (current included) and clear the local bearer like onSignOut; the <Navigate>
+	// guard then lands the now-sessionless user on /auth.
+	async function onSignOutAll() {
+		setRevokingAll(true);
+		setRevokeAllError(null);
+		const {error} = await authClient.revokeSessions();
+		if (error) {
+			setRevokeAllError("oturumlar sonlandırılamadı, tekrar dene.");
+			setRevokingAll(false);
+			return;
+		}
+		clearBearerToken();
 		await authClient.signOut();
 		clearBearerToken();
 	}
@@ -111,8 +130,15 @@ export function ProfilePage() {
 						<button type="button" onClick={onSignOut}>
 							çıkış yap
 						</button>
-						<button type="button">tüm cihazlardan çık</button>
+						<button type="button" onClick={onSignOutAll} disabled={revokingAll}>
+							{revokingAll ? "çıkış yapılıyor…" : "tüm cihazlardan çık"}
+						</button>
 					</div>
+					{revokeAllError ? (
+						<p className="kp-profile__error" role="alert">
+							{revokeAllError}
+						</p>
+					) : null}
 				</section>
 
 				<section className="kp-profile__section kp-profile__section--last">

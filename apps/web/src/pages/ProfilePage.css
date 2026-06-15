@@ -176,3 +176,12 @@
 .kp-profile__danger button.danger:hover {
 	filter: brightness(1.08);
 }
+.kp-profile__danger button:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+.kp-profile__error {
+	font: var(--t-meta);
+	color: var(--danger);
+	margin: var(--s-2) 0 0;
+}
