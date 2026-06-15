@@ -80,6 +80,12 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 |---|---|---|
 | [biome-custom-gritql-rules.md](./biome-custom-gritql-rules.md) | Authoring a project-specific lint rule as a biome GritQL plugin (`.grit` in `biome-plugins/`, registered in `biome.jsonc` `"plugins"`); the shipped `no-type-assertions` rule banning `as unknown as`/`as any`; per-line `// biome-ignore lint/plugin:` suppression | Adding/editing a custom biome lint rule, or suppressing one |
 
+## CI / pipeline
+
+| Doc | Topic | Read when |
+|---|---|---|
+| [crabbox-run-evidence.md](./crabbox-run-evidence.md) | The produce → adapt → store → consume run-evidence flow: the `run-evidence.yml` producer (crabbox `local-container`, head-SHA stamp), the `@phoenix/crabbox-manifest` adapter, the ADR 0054 §2 manifest contract (`schemaVersion` is a **number**), the `run-evidence` GH-artifact transport (ADR 0056), and the `ship-it`/`review-code` consumers | Touching the run-evidence producer/adapter/manifest, or a gate that reads the bundle |
+
 ## fate protocol conventions
 
 - **fate is pure transport; Effect services are the domain.** Reads and writes go through service methods — fate never queries the database, and `createDrizzleSourceAdapter` is never used.
