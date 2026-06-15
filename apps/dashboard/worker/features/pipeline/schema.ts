@@ -110,3 +110,48 @@ export class PipelineState extends Schema.Class<PipelineState>(
 
 /** Encode a `PipelineState` to its JSON wire form (validates the shape on the way out). */
 export const encodePipelineState = Schema.encodeEffect(PipelineState);
+
+/**
+ * A cached `PipelineState` with its provenance: the parsed snapshot plus the
+ * epoch-millis `fetchedAt` it was fetched from GitHub at. This is the value the
+ * cache substrate persists (#254) — the snapshot the worker serves and the
+ * timestamp the TTL/staleness decisions are made against.
+ */
+export class CachedPipelineState extends Schema.Class<CachedPipelineState>(
+	"@phoenix/dashboard/pipeline/CachedPipelineState",
+)({
+	state: PipelineState,
+	/** Epoch millis the snapshot was fetched from GitHub (the freshness anchor). */
+	fetchedAt: Schema.Number,
+}) {}
+
+/** Round-trip a `CachedPipelineState` through the DO's JSON KV storage. */
+export const encodeCachedPipelineState = Schema.encodeEffect(CachedPipelineState);
+export const decodeCachedPipelineState = Schema.decodeUnknownEffect(CachedPipelineState);
+
+/**
+ * The pipeline-state API response (#254). FLAT by contract: the structured
+ * state's `issues`/`epics` sit at the top level — NOT nested under `.state` —
+ * alongside the freshness fields. The board's defensive reader
+ * (`apps/dashboard/src/lib/pipeline.ts`, #274) reads `issues`/`epics` at the top
+ * level with `fetchedAt`/`stale` as top-level optionals, so freshness is purely
+ * additive over the #252 wire shape — adding the cache layer doesn't reshape the
+ * response, it only annotates it.
+ *
+ * `stale` is `true` when GitHub was unreachable and the worker fell back to the
+ * last good cached snapshot rather than erroring the whole board; `false` when
+ * the snapshot is fresh — either a successful fetch or a cache hit within the
+ * TTL. `fetchedAt` is the epoch-millis the served snapshot was fetched from
+ * GitHub at.
+ */
+export class PipelineResponse extends Schema.Class<PipelineResponse>(
+	"@phoenix/dashboard/pipeline/PipelineResponse",
+)({
+	issues: Schema.Array(PipelineIssue),
+	epics: Schema.Array(PipelineEpic),
+	fetchedAt: Schema.Number,
+	stale: Schema.Boolean,
+}) {}
+
+/** Encode a `PipelineResponse` to its JSON wire form (validates the shape on the way out). */
+export const encodePipelineResponse = Schema.encodeEffect(PipelineResponse);

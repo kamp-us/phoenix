@@ -168,10 +168,13 @@ Canonical implementation: `apps/web/worker/db/Drizzle.test.ts`.
 
 ## TestClock and time-dependent tests
 
-For anything time-sensitive (TTL expiry, debouncing, scheduled work), use `TestClock` from `effect/TestContext`:
+For anything time-sensitive (TTL expiry, debouncing, scheduled work), use `TestClock`
+from `effect/testing/TestClock` and provide its `TestClock.layer()` (effect-smol/v4 —
+there is no `TestContext.TestContext` aggregate to provide; the clock layer alone
+virtualizes time):
 
 ```ts
-import {TestClock, TestContext} from "effect";
+import * as TestClock from "effect/testing/TestClock";
 
 it.effect("expires after 1 hour", () =>
   Effect.gen(function*() {
@@ -179,9 +182,14 @@ it.effect("expires after 1 hour", () =>
     yield* TestClock.adjust(Duration.hours(2));
     const expired = yield* checkStatus;
     assert.strictEqual(expired, "expired");
-  }).pipe(Effect.provide(TestContext.TestContext)),
+  }).pipe(Effect.provide(TestClock.layer())),
 );
 ```
+
+`Clock.currentTimeMillis` reads the `TestClock` once `TestClock.layer()` is provided,
+so TTL math under test is deterministic — see
+[`apps/dashboard/worker/features/pipeline/Pipeline.test.ts`](../apps/dashboard/worker/features/pipeline/Pipeline.test.ts)
+(the pipeline cache's within-TTL hit / past-TTL refresh).
 
 Never use `setTimeout`, `Date.now()`, or real wall-clock sleeps in tests. `TestClock` virtualizes time; assertions become deterministic.
 
