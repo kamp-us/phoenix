@@ -1,8 +1,8 @@
 # @phoenix/leak-guard
 
 The write-time enforcement of the repo's **no-local-paths-in-shared-artifacts**
-rule (issue #173). A user-local filesystem path (`/Users/<name>/…`, `~/`,
-`~/.claude`, `~/.usirin`, `~/code/…`, `/vault/…`) must never enter a committed
+rule (issue #173). A user-local filesystem path (`/Users/<name>/…`, `~/.claude`,
+`~/.usirin`, `~/.agent`, `~/code/…`, `/vault/…`) must never enter a committed
 doc surface. That rule used to live only in per-skill prose — a reminder every
 agent had to remember, and one didn't (a vault path shipped to `main`; see #158).
 This package makes the rule mechanical: a Claude Code **PreToolUse hook** that
@@ -32,7 +32,8 @@ convention (mechanical tooling is an Effect CLI package under `packages/`, the
 `*.markdown` anywhere, plus the `.decisions/` and `.patterns/` directories.
 Arbitrary source (a `/Users` string literal in a `.ts` fixture) is out of scope.
 
-**Leak patterns** (blocked in a shared artifact):
+**Leak patterns** — a **precise deny-list** of the specific #158 leak dirs, not a
+general bare-`~/` catch-all (blocked in a shared artifact):
 
 | pattern | reason |
 | --- | --- |
@@ -40,14 +41,22 @@ Arbitrary source (a `/Users` string literal in a `.ts` fixture) is out of scope.
 | `~/.claude`, `~/.usirin`, `~/.agent` | agent/tool home dir |
 | `~/code/…` | home-dir sibling-repo clone |
 | `/vault/…` | vault path |
-| a leading `~/` (except `~/.config`) | home-relative path |
+
+The deny-list is deliberately precise: it names ONLY the dirs that leak this
+machine's identity. Any other `~/<x>` — `~/.config`, `~/.alchemy` (a documented
+tool dir; see [.patterns/alchemy-ci-cd.md](../../.patterns/alchemy-ci-cd.md)),
+`~/Documents` — **passes**, because it carries no user identity. (This drops the
+old brittle `~/.config` carve-out on a general `~/` catch-all and its
+`~/.config-backup` boundary edge cases.)
 
 **Allowlist** (never flagged): repo-relative paths (`apps/web/…`,
-`.claude/skills/…`); bare `/tmp/…` scratch (it encodes no user identity);
-`~/.config/…` (a documented product path, e.g. the kampus CLI credential store);
+`.claude/skills/…`); bare `/tmp/…` scratch (it encodes no user identity); any
+non-deny-list `~/<x>` home dir (`~/.config/…`, `~/.alchemy/…`, `~/Documents/…`);
 `/Users` inside non-doc source; and `DOC_SELF_EXEMPT` path-hygiene files — this
-package's own source, the `review-doc` / `triage` / `report` skills, and
-`report/footer.sh` — which must spell the forbidden tokens out as patterns.
+package's own source, the `review-doc` / `triage` / `report` skills,
+`report/footer.sh`, and the root `CLAUDE.md` (whose Lineage section deliberately
+names `~/code/…` sibling-repo clones) — which must spell the forbidden tokens out
+as patterns.
 
 ## Wiring
 

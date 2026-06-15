@@ -26,12 +26,6 @@ describe("findLeaks — BLOCK matrix (a real local path in a shared artifact)", 
 		assert.isTrue(hasLeak("notes.md", "stored under /vault/secrets"));
 	});
 
-	it("blocks a bare ~/Documents home path in a .md", () => {
-		const leaks = findLeaks("notes.md", "saved to ~/Documents/report.pdf");
-		assert.isAbove(leaks.length, 0);
-		assert.strictEqual(leaks[0]?.matched, "~/");
-	});
-
 	it("blocks a leak inside a .decisions/ file (dir-scoped, any extension)", () => {
 		assert.isTrue(hasLeak(".decisions/0099-thing.md", "path /Users/foo/x"));
 	});
@@ -49,6 +43,14 @@ describe("findLeaks — ALLOW matrix (legitimate content must NOT be flagged)", 
 
 	it("allows ~/.config documented product paths in a .md", () => {
 		assert.isFalse(hasLeak("docs.md", "credentials in ~/.config/kampus/creds"));
+	});
+
+	it("allows ~/.alchemy documented tool dir in a .md (see .patterns/alchemy-ci-cd.md)", () => {
+		assert.isFalse(hasLeak("docs.md", "profiles live at ~/.alchemy/profiles.json"));
+	});
+
+	it("allows a bare ~/Documents home path in a .md (not a #158 leak dir)", () => {
+		assert.isFalse(hasLeak("notes.md", "saved to ~/Documents/report.pdf"));
 	});
 
 	it("allows /Users inside a .ts (non-doc source is out of scope)", () => {

@@ -2,11 +2,13 @@
  * `leak-guard` CLI — the PreToolUse hook backing issue #173.
  *
  * Wired on `Write|Edit|MultiEdit` in `.claude/settings.json`. Reads the Claude
- * Code PreToolUse JSON envelope from stdin, extracts (file_path, text) for the
- * supported tools, runs the pure `findLeaks` core, and on a real leak emits a
- * `hookSpecificOutput.permissionDecision: "deny"` JSON on stdout and exits 0. A
- * clean write, a non-doc target, an unsupported tool, OR a malformed envelope is
- * allowed silently (exit 0) — the guard NEVER blocks on a parse failure.
+ * Code PreToolUse JSON envelope from stdin (parsed with `Effect.try` + a `Schema`
+ * decode, the `epic-ledger`/`crabbox-manifest` idiom), extracts (file_path, text)
+ * for the supported tools, runs the pure `findLeaks` core, and on a real leak
+ * emits a `hookSpecificOutput.permissionDecision: "deny"` JSON on stdout and exits
+ * 0. A clean write, a non-doc target, an unsupported tool, a JSON syntax error, OR
+ * a valid-JSON-but-wrong-SHAPE envelope is allowed silently (exit 0) — the guard
+ * NEVER blocks on a parse/decode failure.
  *
  * Wired per effect-smol's CLI guidance (mirrors `@phoenix/epic-ledger` and
  * `@phoenix/crabbox-manifest`): `effect/unstable/cli` for the command, the Node
@@ -17,28 +19,36 @@
 import {readFileSync} from "node:fs";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect} from "effect";
+import * as Schema from "effect/Schema";
 import {Command} from "effect/unstable/cli";
 import {findLeaks, type Leak} from "./leak-guard.ts";
 
-interface ToolEnvelope {
-	readonly tool_name?: string;
-	readonly tool_input?: {
-		readonly file_path?: string;
-		readonly content?: string;
-		readonly new_string?: string;
-		readonly edits?: ReadonlyArray<{readonly new_string?: string}>;
-	};
-}
+// The Claude Code PreToolUse envelope (only the fields the guard folds; Schema
+// ignores unknown keys). All optional → a wrong-SHAPE-but-valid JSON still decodes
+// to an empty envelope, which extractTarget reads as "unsupported tool → allow".
+const ToolEnvelope = Schema.Struct({
+	tool_name: Schema.optional(Schema.String),
+	tool_input: Schema.optional(
+		Schema.Struct({
+			file_path: Schema.optional(Schema.String),
+			content: Schema.optional(Schema.String),
+			new_string: Schema.optional(Schema.String),
+			edits: Schema.optional(
+				Schema.Array(Schema.Struct({new_string: Schema.optional(Schema.String)})),
+			),
+		}),
+	),
+});
+type ToolEnvelope = (typeof ToolEnvelope)["Type"];
+
+const decodeEnvelope = Schema.decodeUnknownEffect(ToolEnvelope);
 
 /** Read all of stdin as UTF-8; an empty string when nothing is piped. */
-const readStdin = Effect.sync<string>(() => {
-	try {
-		return readFileSync(0, "utf8");
-	} catch {
-		// No stdin attached (e.g. an interactive run) — treat as empty → allow.
-		return "";
-	}
-});
+const readStdin = Effect.try({
+	try: () => readFileSync(0, "utf8"),
+	// No stdin attached (e.g. an interactive run) — treat as empty → allow.
+	catch: () => "",
+}).pipe(Effect.orElseSucceed(() => ""));
 
 /** (file_path, text-being-written) for the supported tools, else null → allow. */
 const extractTarget = (env: ToolEnvelope): {filePath: string; text: string} | null => {
@@ -87,14 +97,15 @@ const guard = Command.make(
 	Effect.fn(function* () {
 		const raw = yield* readStdin;
 
-		let env: ToolEnvelope;
-		try {
-			env = JSON.parse(raw) as ToolEnvelope;
-		} catch {
-			return; // malformed envelope: never block on parse failure
-		}
+		// Never block on a bad envelope: a JSON syntax error OR a valid-JSON-but-
+		// wrong-shape body both fall through to a silent allow (exit 0).
+		const env = yield* Effect.try({
+			try: () => JSON.parse(raw) as unknown,
+			catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
+		}).pipe(Effect.flatMap(decodeEnvelope), Effect.option);
+		if (env._tag === "None") return;
 
-		const target = extractTarget(env);
+		const target = extractTarget(env.value);
 		if (!target) return;
 
 		const leaks = findLeaks(target.filePath, target.text);
