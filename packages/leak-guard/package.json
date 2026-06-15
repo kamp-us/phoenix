@@ -2,7 +2,7 @@
 	"name": "@phoenix/leak-guard",
 	"version": "0.0.0",
 	"private": true,
-	"description": "PreToolUse leak-guard — block user-local filesystem paths from entering shared-artifact doc surfaces at write time (issue #173)",
+	"description": "leak-guard scan CLI — block user-local filesystem paths from entering shared-artifact doc surfaces (issue #173)",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"
@@ -10,7 +10,7 @@
 	"scripts": {
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",
-		"guard": "node src/bin.ts"
+		"scan": "node src/bin.ts scan"
 	},
 	"dependencies": {
 		"@effect/platform-node": "catalog:",

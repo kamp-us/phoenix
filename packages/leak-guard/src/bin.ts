@@ -1,124 +1,91 @@
 /**
- * `leak-guard` CLI — the PreToolUse hook backing issue #173.
+ * `leak-guard scan` CLI — the CI-callable surface for issue #173.
  *
- * Wired on `Write|Edit|MultiEdit` in `.claude/settings.json`. Reads the Claude
- * Code PreToolUse JSON envelope from stdin (parsed with `Effect.try` + a `Schema`
- * decode, the `epic-ledger`/`crabbox-manifest` idiom), extracts (file_path, text)
- * for the supported tools, runs the pure `findLeaks` core, and on a real leak
- * emits a `hookSpecificOutput.permissionDecision: "deny"` JSON on stdout and exits
- * 0. A clean write, a non-doc target, an unsupported tool, a JSON syntax error, OR
- * a valid-JSON-but-wrong-SHAPE envelope is allowed silently (exit 0) — the guard
- * NEVER blocks on a parse/decode failure.
+ * `node src/bin.ts scan <file>...` reads each file, runs the pure `findLeaks`
+ * core, and exits NON-ZERO if any file leaks a user-local path into a shared
+ * doc surface (with a human report of `<file>: <matched> — <reason>` lines);
+ * exit 0 when clean. A missing/unreadable file is skipped, never a crash.
+ * `findLeaks` already scopes to doc surfaces, so CI may hand it every changed
+ * file — only doc-surface leaks are flagged.
  *
- * Wired per effect-smol's CLI guidance (mirrors `@phoenix/epic-ledger` and
- * `@phoenix/crabbox-manifest`): `effect/unstable/cli` for the command, the Node
- * platform over `NodeServices.layer`, run via `NodeRuntime.runMain`. The hook
- * envelope arrives on stdin, so the command takes no args; the work is in the
- * handler, which reads fd 0 and decides allow-vs-deny.
+ * Wired per effect-smol's CLI guidance (mirrors `@phoenix/epic-ledger`):
+ * `effect/unstable/cli` for the variadic file argument, the Node platform over
+ * `NodeServices.layer`, run via `NodeRuntime.runMain` (a failed effect → a
+ * non-zero process exit).
  */
 import {readFileSync} from "node:fs";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Effect} from "effect";
-import * as Schema from "effect/Schema";
-import {Command} from "effect/unstable/cli";
+import {Console, Data, Effect} from "effect";
+import {Argument, Command} from "effect/unstable/cli";
 import {findLeaks, type Leak} from "./leak-guard.ts";
 
-// The Claude Code PreToolUse envelope (only the fields the guard folds; Schema
-// ignores unknown keys). All optional → a wrong-SHAPE-but-valid JSON still decodes
-// to an empty envelope, which extractTarget reads as "unsupported tool → allow".
-const ToolEnvelope = Schema.Struct({
-	tool_name: Schema.optional(Schema.String),
-	tool_input: Schema.optional(
-		Schema.Struct({
-			file_path: Schema.optional(Schema.String),
-			content: Schema.optional(Schema.String),
-			new_string: Schema.optional(Schema.String),
-			edits: Schema.optional(
-				Schema.Array(Schema.Struct({new_string: Schema.optional(Schema.String)})),
-			),
-		}),
-	),
-});
-type ToolEnvelope = (typeof ToolEnvelope)["Type"];
+interface FileLeaks {
+	readonly file: string;
+	readonly leaks: ReadonlyArray<Leak>;
+}
 
-const decodeEnvelope = Schema.decodeUnknownEffect(ToolEnvelope);
+// Carries a non-zero process exit (the report is already on stderr).
+class LeakFound extends Data.TaggedError("LeakFound")<{readonly count: number}> {}
 
-/** Read all of stdin as UTF-8; an empty string when nothing is piped. */
-const readStdin = Effect.try({
-	try: () => readFileSync(0, "utf8"),
-	// No stdin attached (e.g. an interactive run) — treat as empty → allow.
-	catch: () => "",
-}).pipe(Effect.orElseSucceed(() => ""));
+/** Read a file as UTF-8, or `null` when it is missing/unreadable (skip, never crash). */
+const readFileOrSkip = (file: string): Effect.Effect<string | null> =>
+	Effect.try({
+		try: () => readFileSync(file, "utf8"),
+		catch: () => null,
+	}).pipe(Effect.orElseSucceed(() => null));
 
-/** (file_path, text-being-written) for the supported tools, else null → allow. */
-const extractTarget = (env: ToolEnvelope): {filePath: string; text: string} | null => {
-	const input = env.tool_input ?? {};
-	const filePath = input.file_path ?? "";
-	switch (env.tool_name) {
-		case "Write":
-			return {filePath, text: input.content ?? ""};
-		case "Edit":
-			return {filePath, text: input.new_string ?? ""};
-		case "MultiEdit":
-			return {
-				filePath,
-				text: (input.edits ?? []).map((e) => e.new_string ?? "").join("\n"),
-			};
-		default:
-			return null;
-	}
-};
-
-const denyBody = (leaks: ReadonlyArray<Leak>): string => {
-	const lines = leaks.map((l) => `  - \`${l.matched}\` — ${l.reason}`).join("\n");
-	return [
-		"Leak-guard blocked this write (issue #173): a user-local path may not enter a shared artifact.",
-		"",
-		lines,
-		"",
-		"Use a repo-relative path instead (apps/web/..., .claude/skills/...). If this is genuinely a documented pattern, not a real path, the surface may need to be added to DOC_SELF_EXEMPT in packages/leak-guard/src/leak-guard.ts.",
-	].join("\n");
-};
-
-const emitDeny = (leaks: ReadonlyArray<Leak>): Effect.Effect<void> =>
-	Console.log(
-		JSON.stringify({
-			hookSpecificOutput: {
-				hookEventName: "PreToolUse",
-				permissionDecision: "deny",
-				permissionDecisionReason: denyBody(leaks),
-			},
-		}),
+const scanFile = (file: string): Effect.Effect<FileLeaks> =>
+	readFileOrSkip(file).pipe(
+		Effect.map((content) => ({
+			file,
+			leaks: content === null ? [] : findLeaks(file, content),
+		})),
 	);
 
-const guard = Command.make(
-	"leak-guard",
-	{},
-	Effect.fn(function* () {
-		const raw = yield* readStdin;
+const fileArg = Argument.string("file").pipe(
+	Argument.atLeast(1),
+	Argument.withDescription("one or more file paths to scan for user-local path leaks"),
+);
 
-		// Never block on a bad envelope: a JSON syntax error OR a valid-JSON-but-
-		// wrong-shape body both fall through to a silent allow (exit 0).
-		const env = yield* Effect.try({
-			try: () => JSON.parse(raw) as unknown,
-			catch: (cause) => (cause instanceof Error ? cause.message : String(cause)),
-		}).pipe(Effect.flatMap(decodeEnvelope), Effect.option);
-		if (env._tag === "None") return;
+const scan = Command.make(
+	"scan",
+	{files: fileArg},
+	Effect.fn(function* ({files}) {
+		const results = yield* Effect.forEach(files, scanFile);
+		const flagged = results.filter((r) => r.leaks.length > 0);
 
-		const target = extractTarget(env.value);
-		if (!target) return;
+		if (flagged.length === 0) {
+			yield* Console.log("leak-guard: clean — no user-local paths in any scanned doc surface");
+			return;
+		}
 
-		const leaks = findLeaks(target.filePath, target.text);
-		if (leaks.length === 0) return;
-
-		yield* emitDeny(leaks);
+		yield* Console.error(
+			"leak-guard: blocked — user-local path(s) in shared doc surface(s) (issue #173):",
+		);
+		for (const {file, leaks} of flagged) {
+			for (const leak of leaks) {
+				yield* Console.error(`  ${file}: ${leak.matched} — ${leak.reason}`);
+			}
+		}
+		yield* Console.error(
+			"Use a repo-relative path (apps/web/..., .claude/skills/...). If this is a documented pattern, not a real path, add the surface to DOC_SELF_EXEMPT in packages/leak-guard/src/leak-guard.ts.",
+		);
+		// A failed effect → NodeRuntime exits non-zero. The report is already on stderr.
+		return yield* Effect.fail(new LeakFound({count: flagged.length}));
 	}),
-).pipe(
+).pipe(Command.withDescription("Scan files for user-local paths leaking into shared doc surfaces"));
+
+const guard = Command.make("leak-guard").pipe(
+	Command.withSubcommands([scan]),
 	Command.withDescription("Block user-local paths from entering shared-artifact doc surfaces"),
 );
 
 guard.pipe(
 	Command.run({version: "0.0.0"}),
+	// LeakFound is the expected CI-fail signal, its report already on stderr — turn
+	// it into a bare non-zero exit so NodeRuntime doesn't also dump a stack trace,
+	// while genuine crashes still get the default error report.
+	Effect.catchTag("LeakFound", () => Effect.sync(() => process.exit(1))),
 	Effect.provide(NodeServices.layer),
 	NodeRuntime.runMain,
 );
