@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Ship one verified PR on kamp-us/phoenix — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs), confirm CI is already green, squash-merge, and confirm the linked issue auto-closed — and REFUSES to self-merge control-plane PRs (.claude/.github), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs), confirm CI is already green, squash-merge, and confirm the linked issue auto-closed — and REFUSES to self-merge control-plane PRs (.claude/.github), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
@@ -43,6 +43,17 @@ through `review-doc` (the boundary moved off "harness vs not" to "control plane 
 The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL issue
 and PR queries. Every read and write goes through `gh api` REST or the `gh pr`/`gh run`
 porcelain. This is not a style preference — GraphQL calls error out on this org.
+
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api`
+call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared
+contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
+if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
+behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
 
 ## The hard guards
 
@@ -107,7 +118,7 @@ Before anything else, read the PR's changed files and split them by class. This 
 
 ```bash
 PR=<pr number>
-gh api "repos/kamp-us/phoenix/pulls/$PR/files?per_page=300" --jq '[.[].filename]'
+gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '[.[].filename]'
 ```
 
 Classify each path:
@@ -117,7 +128,7 @@ Classify each path:
 - **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`.
 
 ```bash
-FILES=$(gh api "repos/kamp-us/phoenix/pulls/$PR/files?per_page=300" --jq '.[].filename')
+FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
 echo "$FILES" | grep -Eq '^(\.claude|\.github)/' && echo "BLOCKING"   # control plane present?
 echo "$FILES" | grep -Eq '^(apps/web|packages)/' && echo "has-code"   # rough code probe
 echo "$FILES" | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
@@ -144,7 +155,7 @@ unsafe merge. The control-plane check is the only one that must be exact, and it
 ## Step 1 — Resolve the PR and its linked issue
 
 ```bash
-gh api repos/kamp-us/phoenix/pulls/$PR \
+gh api repos/$REPO/pulls/$PR \
   --jq '{number, state, draft, merged, mergeable, head: .head.ref, base: .base.ref, body}'
 ```
 
@@ -210,7 +221,7 @@ and `IN($authorized[])` below matches nothing — every namespace resolves to `n
 `unverified` → refuse — so the empty set is the safe terminal state, not an open door.
 
 ```bash
-comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 
 # distinct logins that posted any review-code/review-doc marker
 markerAuthors=$(jq -r '[.[]
@@ -221,7 +232,7 @@ markerAuthors=$(jq -r '[.[]
 authorized='[]'
 while IFS= read -r a; do
   [ -z "$a" ] && continue
-  perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
+  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
   case "$perm" in
     admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
   esac
@@ -235,13 +246,13 @@ older verdict:
 
 ```bash
 # the PR's CURRENT head SHA — the head every verdict must be bound to (ADR 0058)
-CURRENT_HEAD="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"
+CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — the review-code path only.
 # GitHub author-attributes reviews, so this path is unforgeable and needs no ACL check.
 # Carry .commit_id: it IS the SHA the reviewer approved, so Step 2b applies the same staleness
 # test to a native review as to a marker's @ <sha>.
-gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
+gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}'
 
@@ -398,18 +409,18 @@ control-plane skills at the seam — minor duplication is the cheaper trade now;
 helper later if a third consumer appears.
 
 ```bash
-HEAD_SHA=$(gh api repos/kamp-us/phoenix/pulls/$PR --jq '.head.sha')
+HEAD_SHA=$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')
 
 # the run-evidence workflow run for THIS exact head SHA (not a stale earlier push)
-RUN_ID=$(gh api "repos/kamp-us/phoenix/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+RUN_ID=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
   --jq '[.workflow_runs[] | select(.name=="run-evidence")]
         | sort_by(.created_at) | last | .id // empty')
 
 # the run-evidence artifact id, then the manifest bytes
-ART_ID=$(gh api "repos/kamp-us/phoenix/actions/runs/$RUN_ID/artifacts" \
+ART_ID=$(gh api "repos/$REPO/actions/runs/$RUN_ID/artifacts" \
   --jq '.artifacts[] | select(.name=="run-evidence") | .id' 2>/dev/null)
 rm -rf /tmp/ship-it-bundle && mkdir -p /tmp/ship-it-bundle
-gh api "repos/kamp-us/phoenix/actions/artifacts/$ART_ID/zip" > /tmp/ship-it-bundle/run-evidence.zip 2>/dev/null \
+gh api "repos/$REPO/actions/artifacts/$ART_ID/zip" > /tmp/ship-it-bundle/run-evidence.zip 2>/dev/null \
   && unzip -oq /tmp/ship-it-bundle/run-evidence.zip -d /tmp/ship-it-bundle
 MANIFEST=/tmp/ship-it-bundle/manifest.json
 ```
@@ -502,8 +513,8 @@ closing. Do not separately close the issue; let the `Fixes` seam do it.
 Verify the terminal state rather than assuming the merge took:
 
 ```bash
-gh api repos/kamp-us/phoenix/pulls/$PR --jq '{merged, merged_at}'
-gh api repos/kamp-us/phoenix/issues/$ISSUE --jq '{state, state_reason}'
+gh api repos/$REPO/pulls/$PR --jq '{merged, merged_at}'
+gh api repos/$REPO/issues/$ISSUE --jq '{state, state_reason}'
 ```
 
 The issue should now read `state: closed`, `state_reason: completed`. If it didn't

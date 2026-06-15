@@ -1,6 +1,6 @@
 ---
 name: heal-ci
-description: Classify a red CI run on kamp-us/phoenix into flake-vs-defect and route it — the failure triage the self-heal loop needs. Given a failed run id or a PR, fetch the failed logs, match against a small fixed signature taxonomy, and emit ONE routed action: rerun a known transient exactly once, or file a defect via report. Trigger on "heal CI for #N", "why did the run fail", "classify this failure", "/heal-ci", or from `ship-it` when checks come back red.
+description: Classify a red CI run on the configured target repo into flake-vs-defect and route it — the failure triage the self-heal loop needs. Given a failed run id or a PR, fetch the failed logs, match against a small fixed signature taxonomy, and emit ONE routed action: rerun a known transient exactly once, or file a defect via report. Trigger on "heal CI for #N", "why did the run fail", "classify this failure", "/heal-ci", or from `ship-it` when checks come back red.
 ---
 
 # heal-ci
@@ -19,6 +19,17 @@ verdict over the failed logs, not a repair session.
 The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL queries.
 Run/check reads go through `gh run`; issue writes go through `gh api` REST (or, better,
 the `report` skill). This is not a style preference — GraphQL errors out on this org.
+
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api`
+call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared
+contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
+if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
+behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
 
 ## What you do NOT do
 
@@ -64,7 +75,7 @@ taxonomy — never stay stuck with only step names.
 
 ```bash
 JOB=<failed job databaseId from the rollup above>
-gh api repos/kamp-us/phoenix/actions/jobs/$JOB/logs
+gh api repos/$REPO/actions/jobs/$JOB/logs
 ```
 
 If you only have a PR: `gh pr checks $PR` → the red check's run id (set `RUN`), then the above.
@@ -77,7 +88,7 @@ but the run/PR state itself remembers a prior rerun). Read two facts:
 # 1) the run's own attempt count: a rerun bumps `attempt` to 2+
 ATTEMPT=$(gh run view $RUN --json attempt --jq '.attempt')
 # 2) a prior heal-ci rerun marker on the PR (if this is a PR run)
-gh api repos/kamp-us/phoenix/issues/$PR/comments --jq \
+gh api repos/$REPO/issues/$PR/comments --jq \
   '[.[] | select(.body | test("heal-ci:.*rerun queued"))] | length'
 ```
 
@@ -152,7 +163,7 @@ manual rerun can also bump):
 ```bash
 gh run rerun $RUN --failed
 # on a PR run, write the marker Step 1's already-rerun detector queries:
-gh api repos/kamp-us/phoenix/issues/$PR/comments \
+gh api repos/$REPO/issues/$PR/comments \
   -f body="heal-ci: <signature> — rerun queued (run $RUN). One rerun only; a recurring failure becomes a defect."
 ```
 
@@ -217,20 +228,20 @@ parts, each lifted from write-code's scan:
 ```bash
 # is a write-code repair already in flight on this PR? (PR runs only) — mirror write-code Step R1
 # build THIS PR's authorized set from its marker authors holding write+ on the repo (ADR 0055)
-comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
+comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 markerAuthors=$(jq -r '[.[]
     | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' <<<"$comments")
 authorized='[]'
 while IFS= read -r a; do
   [ -z "$a" ] && continue
-  perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
+  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
   case "$perm" in
     admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
   esac
 done <<<"$markerAuthors"
 # the head every verdict must be bound to (ADR 0058) — a FAIL not bound to this is stale
-CURRENT_HEAD="$(gh api repos/kamp-us/phoenix/pulls/$PR --jq .head.sha)"
+CURRENT_HEAD="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"
 # latest verdict per namespace, capturing the bound @ <sha> (sha=null for a SHA-less legacy marker)
 CODE=$(jq -c --argjson authorized "$authorized" \
   '[.[] | select(.user.login | IN($authorized[]))
@@ -245,7 +256,7 @@ DOC=$(jq -c --argjson authorized "$authorized" \
    | {body: (.body // ""),
       sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments")
 # latest decisive native review folds into the code namespace (commit_id IS its bound SHA, no ACL gate)
-REVIEW=$(gh api "repos/kamp-us/phoenix/pulls/$PR/reviews?per_page=100" \
+REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}')
 # repair cap: a PR already at N=3 FAIL rounds is escalated to a human, NOT an active repair —
@@ -274,7 +285,7 @@ with the `Filed #N` comment the no-repair path posts, but routed to the in-fligh
 of a fresh issue — and stop. That comment *is* your one routed action for this invocation:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/$PR/comments \
+gh api repos/$REPO/issues/$PR/comments \
   -f body="heal-ci: CI red — <signature>. Active write-code repair in flight (latest gate verdict FAIL); not filing a twin. Run <run url> — fold into the in-flight fix."
 ```
 
@@ -306,7 +317,7 @@ that real number — never post the `Filed #<N>` line with an unresolved `<N>` p
 
 ```bash
 N=<the .number report returned>
-gh api repos/kamp-us/phoenix/issues/$PR/comments \
+gh api repos/$REPO/issues/$PR/comments \
   -f body="heal-ci: CI red — <signature>. Filed #$N (needs-triage). Not merged."
 ```
 

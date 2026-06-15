@@ -72,6 +72,12 @@ If you ever assemble the footer by hand instead of via the helper, apply the sam
 
 All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-us org runs a legacy Projects-classic integration that breaks GraphQL issue queries.
 
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api` call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared contract's **Target repo resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO` if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
+
 1. Write the title: a short, specific, type-neutral summary of the observation (≤ ~70 chars). Good: "Retry helper in http worker swallows the abort reason". Bad: "Bug in worker" or "BUG: fix retry".
 2. Build the body: the five sections, then a blank line, then the footer block from `footer.sh`.
 3. **Re-query for an existing issue — always, and last.** Report agents run
@@ -81,9 +87,9 @@ All GitHub operations go through `gh api` REST. **Never GraphQL** — the kamp-u
    and create as small as possible:
 
    ```bash
-   gh api 'repos/kamp-us/phoenix/issues?state=open&labels=status:needs-triage&per_page=100' \
+   gh api 'repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100' \
      --jq '.[] | "#\(.number) \(.title)"'
-   gh api 'search/issues?q=repo:kamp-us/phoenix+is:issue+is:open+<keywords>' \
+   gh api 'search/issues?q=repo:$REPO+is:issue+is:open+<keywords>' \
      --jq '.items[] | "#\(.number) \(.title)"'
    ```
 
@@ -127,7 +133,7 @@ EOF
 BODY="$(cat "$BODY_FILE")"
 
 # 3. Create the issue with only the status:needs-triage label.
-gh api repos/kamp-us/phoenix/issues \
+gh api repos/$REPO/issues \
   -f title="<title>" \
   -f body="$BODY" \
   -f "labels[]=status:needs-triage"
