@@ -1,0 +1,67 @@
+.db-topo {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+}
+
+.db-topo__empty {
+	color: #64748b;
+	font-style: italic;
+}
+
+.db-topo__phase {
+	margin-bottom: 0.25rem;
+}
+
+.db-topo__phase-head {
+	font-weight: 700;
+	font-size: 0.85rem;
+	color: #475569;
+	margin-bottom: 0.35rem;
+}
+
+.db-topo__group {
+	list-style: none;
+	padding: 0;
+	margin: 0;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+}
+
+.db-topo__node {
+	display: inline-flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	padding: 0.35rem 0.55rem;
+	border: 1px solid #cbd5e1;
+	border-radius: 0.4rem;
+	background: #fff;
+}
+
+.db-topo__node--closed {
+	background: #f0fdf4;
+	border-color: #bbf7d0;
+}
+
+.db-topo__ref {
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
+}
+
+.db-topo__node--closed .db-topo__ref {
+	text-decoration: line-through;
+	color: #16a34a;
+}
+
+.db-topo__requires {
+	font-size: 0.7rem;
+	color: #92400e;
+}
+
+.db-topo__spine {
+	text-align: center;
+	color: #94a3b8;
+	font-size: 1.1rem;
+	margin: 0.15rem 0;
+}

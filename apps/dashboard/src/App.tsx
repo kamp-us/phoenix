@@ -1,3 +1,4 @@
+import {EpicDetail} from "./pages/EpicDetail.tsx";
 import {QueueBoard} from "./pages/QueueBoard.tsx";
 
 export function App() {
@@ -5,6 +6,7 @@ export function App() {
 		<main>
 			<h1>phoenix dashboard</h1>
 			<QueueBoard />
+			<EpicDetail />
 		</main>
 	);
 }
