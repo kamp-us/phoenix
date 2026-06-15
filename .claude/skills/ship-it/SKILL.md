@@ -188,7 +188,9 @@ a `write+` collaborator, with no edit to this skill.
 Resolve the authorized-author set from the ACL — every distinct marker author whose repo
 permission is `write` / `maintain` / `admin`. This fails closed: a lookup error or a
 `read`/`triage` author never enters the set, so their marker is ignored exactly as an
-off-list author was under 0051.
+off-list author was under 0051. When *no* author clears the bar, `authorized` stays `[]`
+and `IN($authorized[])` below matches nothing — every namespace resolves to `null`, i.e.
+`unverified` → refuse — so the empty set is the safe terminal state, not an open door.
 
 ```bash
 comments=$(gh api "repos/kamp-us/phoenix/issues/$PR/comments?per_page=100")
@@ -200,12 +202,13 @@ markerAuthors=$(jq -r '[.[]
 
 # keep only those holding write+ on the repo (GitHub's ACL is the trust root, ADR 0055)
 authorized='[]'
-for a in $markerAuthors; do
+while IFS= read -r a; do
+  [ -z "$a" ] && continue
   perm=$(gh api "repos/kamp-us/phoenix/collaborators/$a/permission" --jq .permission 2>/dev/null)
   case "$perm" in
     admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;;
   esac
-done
+done <<<"$markerAuthors"
 ```
 
 Read the latest of each form (sorted by timestamp, newest last — don't lean on the API's
