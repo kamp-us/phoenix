@@ -28,6 +28,7 @@ import {Screen} from "../fate/Screen";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
+import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
 import "./PanoPostDetail.css";
 
@@ -636,6 +637,7 @@ function CommentComposer({
 				}
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
+				onKeyDown={submitOnCmdEnter}
 				disabled={inFlight || !signedIn}
 				data-testid={parentId ? `pano-comment-reply-input-${parentId}` : "pano-comment-input"}
 				maxLength={COMMENT_BODY_MAX + 100}
@@ -721,6 +723,7 @@ function CommentEditComposer({
 				className="kp-pano-comment-composer__textarea"
 				value={body}
 				onChange={(e) => setBody(e.target.value)}
+				onKeyDown={submitOnCmdEnter}
 				disabled={inFlight}
 				data-testid={`pano-comment-edit-input-${localId}`}
 				maxLength={COMMENT_BODY_MAX + 100}
