@@ -61,6 +61,77 @@ You **write three of the five** shared formats; read them before you start:
 Read the formats doc tolerantly when reconciling an existing plan (re-plan, below) and
 write it canonically. Tolerant reading is the safety margin, not the target.
 
+## Acquire the epic-lock before you mutate — release it on every exit
+
+`plan-epic` and `review-plan` both mutate one epic's children (you supersede/unlink/close on
+re-plan; the gate flips `planned → triaged`). Run concurrently they interleave and corrupt
+the ledger (#264). **Before you create, amend, supersede, unlink, or close any child — and
+before the body `PATCH` in Step 5 — acquire the `status:planning` epic-lock; release it when
+you finish (PASS-or-park), on every exit path including failure.** This is the primary
+serialization (ADR [0059](../../../.decisions/0059-epic-plan-lock.md)); the Step 5
+splice+recheck (#261) is the complementary backstop for its residual, not a replacement.
+
+**Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
+stop. Otherwise `POST` it — and **only treat the lock as acquired if that `POST` actually
+succeeds**. A failed acquire (the 422 returned when `status:planning` hasn't been created in the
+repo — it's a canonical lock label, see ADR [0059](../../../.decisions/0059-epic-plan-lock.md)
+§Setup and the formats doc's status-label table — or any transient `gh` IO fault) must **not**
+fall through to mutate: it backs off and exits 0, so a missing label or a flaky write never lets
+you mutate unlocked. **The back-off `exit 0` is deliberate** (a held lock or a setup gap is not a
+plan-epic *failure*) — but it means a caller keying on exit status alone cannot tell "planned" from
+"backed off, did nothing"; the echo is the signal, so a wrapper must read it (or re-run) rather
+than treat `exit 0` as "the epic was planned".
+
+```bash
+# acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
+HELD=$(gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
+if [ "$HELD" != "null" ]; then
+  echo "epic #<EPIC> is being planned by another run (status:planning held) — BACK OFF, do not mutate."
+  exit 0   # the held lock is the holder's, not ours — do NOT release it.
+fi
+if ! gh api repos/kamp-us/phoenix/issues/<EPIC>/labels -f "labels[]=status:planning" >/dev/null; then
+  echo "could not acquire status:planning on epic #<EPIC> (422 missing label? transient gh fault?) — BACK OFF, do not mutate."
+  exit 0   # FAILS CLOSED: the POST didn't land, so we DON'T hold the lock — never mutate unlocked.
+fi
+# Lock held. WE acquired it, so WE must release it — on EVERY terminal path (below).
+```
+
+**Release is an explicit agent step, not a shell `trap … EXIT`.** The acquire above runs in
+*one* bash invocation; your subsequent mutations (re-plan supersede/unlink/close, the Step 3
+child creates, the Step 5 body `PATCH`) run in *separate later* bash invocations — each its own
+process. A `trap … EXIT` armed in the acquire shell fires the instant *that* shell exits, i.e.
+**before any mutation runs**, releasing the lock immediately and giving you zero serialization.
+So the release can't live in the acquire snippet; it is an action **you** take, deliberately, on
+the way out — run this exact `DELETE` once you reach **any** terminal state (PASS/done, parked,
+or a failure/abort mid-mutation):
+
+```bash
+# release: run on EVERY exit path AFTER a successful acquire (done, park, or fault mid-mutation).
+# Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and wedges the epic, the exact
+# catastrophe this design prevents. A 404 is benign (label already gone — released, or never
+# landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
+if ! relerr=$(gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning 2>&1); then
+  case "$relerr" in
+    *"HTTP 404"*|*"Label does not exist"*) : ;;  # already released / never acquired — nothing to free
+    *) echo "WARNING: failed to release status:planning on epic #<EPIC> — the epic-lock may be LEAKED (still held). Re-run this DELETE or clear the label by hand; until cleared, plan-epic/review-plan back off on this epic. ($relerr)" ;;
+  esac
+fi
+```
+
+The release fires on **every** terminal path on purpose: you drive this as an LLM agent across
+many bash calls, and an agent that aborts (or whose `gh` call throws) part-way through the
+mutation must still issue the `DELETE` before it stops — a release that fires only on the clean
+fall-through LEAKS the lock on the error/abort path (wedging the epic against every later
+plan-epic/review-plan run until a human clears it — the exact catastrophe #264 warns about).
+**Only release a lock YOU acquired** (the success branch above), never the held lock you backed
+off from. A leaked lock is silent and only a human clears it.
+
+`POST .../labels` is **not** compare-and-swap (no `If-Match`) — two runs that both read the
+lock absent in the same window both acquire (the §7/#260 TOCTOU, over the whole child set).
+So this is **detect-and-serialize, not a mutex**: it serializes the *common* concurrent
+re-plan, and the residual co-acquire window is caught by Step 5's splice+recheck. Don't claim
+a guarantee the label API can't give.
+
 ---
 
 ## Step 1 — Read the epic and gather context
@@ -670,6 +741,11 @@ codebase (Step 1), write the PRD-grade plan — product layer (problem / solutio
 stories** / testing strategy) then engineering layer (Step 2), split into tracer-bullet
 children that each trace to a story (Step 3), link them as native sub-issues (Step 4), and pin
 the full body with its `## Dependencies` topology (Step 5). Re-runs reconcile.
+
+Acquire the `status:planning` epic-lock before you mutate (see [§Acquire the
+epic-lock](#acquire-the-epic-lock-before-you-mutate--release-it-on-every-exit)) and **release
+it when you finish — on success, park, or failure.** A lock left held wedges the epic against
+every later `plan-epic`/`review-plan` run until a human clears it.
 
 Report back a short ledger: the epic, the story count, the children created (with the story
 each covers), and the phase topology. Don't narrate every REST call — the epic body and the

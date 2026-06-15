@@ -20,8 +20,12 @@ Effect bin.
   self-exempt; an empty list otherwise. This is where the matrix lives.
 - **`src/bin.ts`** — the `effect/unstable/cli` `scan` command. Takes one or more
   file-path arguments, reads each (a missing/unreadable file is skipped, never a
-  crash), runs the core, prints a `<file>: <matched> — <reason>` report and exits
-  non-zero on any leak, exit 0 when clean.
+  crash), runs the core, prints a `<file>: <matched> — <reason>` report. Its
+  exit-code contract: **`2`** on a confirmed leak, **`0`** when clean, any other
+  **non-zero** means the scan could not run. The two consumers fail-safe in
+  opposite directions (issue #332): the **pre-commit hook fail-opens** — it
+  blocks only on `2`, and on a can't-run it warns and allows (CI is the
+  authority); **CI fail-closes** — any non-zero fails the gate.
 - **`src/leak-guard.unit.test.ts`** — the BLOCK/ALLOW matrix, the load-bearing
   false-positive safety.
 
@@ -75,5 +79,5 @@ which is the #158 leak class.
 ```bash
 pnpm --filter @phoenix/leak-guard typecheck
 pnpm --filter @phoenix/leak-guard test
-node packages/leak-guard/src/bin.ts scan path/to/file.md another.md   # exits non-zero on a leak
+node packages/leak-guard/src/bin.ts scan path/to/file.md another.md   # exit 2 on a leak, 0 clean, other non-zero = couldn't run
 ```

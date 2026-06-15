@@ -39,10 +39,10 @@ describe("scan CLI", () => {
 		rmSync(dir, {recursive: true, force: true});
 	});
 
-	it("exits non-zero and reports a leak in a .md", async () => {
+	it("exits 2 (LEAK_EXIT_CODE) and reports a leak in a .md", async () => {
 		const file = write("leaky.md", "see /Users/foo/x for details");
 		const {code, stderr} = await runScan([file]);
-		assert.strictEqual(code, 1);
+		assert.strictEqual(code, 2);
 		assert.include(stderr, "/Users/foo");
 		assert.include(stderr, file);
 	}, 30_000);
@@ -68,7 +68,7 @@ describe("scan CLI", () => {
 		const clean = write("ok.md", "no paths here");
 		const leaky = write("bad.md", "rebuilt from ~/code/github.com/kamp-us/kampus");
 		const {code, stderr} = await runScan([clean, leaky]);
-		assert.strictEqual(code, 1);
+		assert.strictEqual(code, 2);
 		assert.include(stderr, "~/code/");
 		assert.include(stderr, leaky);
 	}, 30_000);
