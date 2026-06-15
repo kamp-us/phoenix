@@ -511,8 +511,19 @@ for attempt in 1 2 3; do
   if diff -q /tmp/plan-epic-<EPIC>-deps-expected.md /tmp/plan-epic-<EPIC>-deps-live.md >/dev/null; then
     echo "epic body updated, our whole ## Dependencies block round-tripped"; landed=1; break
   else
-    echo "our ## Dependencies block is NOT the one in the post-write body — a racer clobbered it; retrying"
-    gh api repos/kamp-us/phoenix/issues/<EPIC> --jq '.updated_at' > /tmp/plan-epic-<EPIC>-updated-at.txt
+    # A racer clobbered our write. Do NOT auto-re-splice the stale deps.md — that would
+    # silently re-clobber the racer's legitimate same-section topology change. Mirror the
+    # recheck-break (step 2): snapshot the racer's body as the FRESH base, then break to hand
+    # back to the agent to RE-DERIVE deps.md (and plan.md on a re-plan) against it before any
+    # re-splice. The freshness guard (step 2.5) then enforces the re-derive on the next invoke,
+    # so a stale block can never re-clobber.
+    echo "our ## Dependencies block is NOT the one in the post-write body — a racer clobbered it."
+    echo "       Re-derive deps.md (and plan.md on a re-plan) against the refreshed"
+    echo "       /tmp/plan-epic-<EPIC>-current.md, then re-invoke this block. Refusing to re-splice the stale block."
+    gh api repos/kamp-us/phoenix/issues/<EPIC> > /tmp/plan-epic-<EPIC>-snap.json   # one snapshot, no TOCTOU between body+updated_at
+    jq -r '.body'       /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-current.md      # fresh base to re-derive against
+    jq -r '.updated_at' /tmp/plan-epic-<EPIC>-snap.json > /tmp/plan-epic-<EPIC>-updated-at.txt
+    break
   fi
 done
 
@@ -536,8 +547,10 @@ fi
 **Keep the brief byte-for-byte.** With the surgical splice/append this is automatic: a first-time
 plan appends the `## Dependencies` block to a verbatim copy of the live body; a re-plan copies the
 live body up to the `## Dependencies` heading verbatim and re-appends the fresh block. Either way
-the brief and the plan above are untouched bytes from the live read — don't reflow the brief, don't
-"tidy" it, don't reconstruct it from memory — splice around it.
+the brief above the plan is untouched bytes from the live read; on a re-plan the `## Plan
+(plan-epic)` block is itself re-spliced in place (step 4), and everything outside the two changed
+sections is verbatim — don't reflow the brief, don't "tidy" it, don't reconstruct it from memory —
+splice around it.
 
 **Honest residual — this narrows the window, it is not a lock.** The recheck (layer 2) only
 *detects* a race that completed before this run's read; a writer who edits **after** your
