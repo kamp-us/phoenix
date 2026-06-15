@@ -180,9 +180,22 @@ verified by running beats behavior inferred from a diff:
 
 ```bash
 pnpm -C "$REVIEW_WT" install   # if deps changed
-pnpm -C "$REVIEW_WT" typecheck && pnpm -C "$REVIEW_WT" lint   # and/or the specific test the criterion names
+# Lint EXPLICIT paths, never `pnpm lint` / `biome check .`: bare `.` resolves to the review
+# worktree's CWD (sits under .claude/worktrees → matches `!**/.claude/worktrees`) and exits 0
+# WITHOUT linting (false green; #236, ADR 0060). Source roots are CWD-robust:
+pnpm -C "$REVIEW_WT" exec biome check apps packages   # and/or the specific test the criterion names
 rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"   # tear the throwaway tree + ref down
 ```
+
+**Typecheck in the sparse worktree is NOT authoritative.** The ADR-0052 product-only
+sparse checkout cannot currently bootstrap `pnpm typecheck`: `biome.jsonc` + its plugin
+files aren't in the allowlist (plugin load error), `pnpm install` dies hashing a `patches/`
+entry (ADR 0038), turbo mis-resolves, and `fate generate` (a typecheck prereq) isn't built
+in the sparse tree (#236, [ADR 0060](../../../.decisions/0060-worktree-lint-changed-paths.md),
+deep half tracked in #336). Until that bootstrap is fixed, when the in-worktree typecheck
+**cannot run**, take the **PR's own CI checks** (and the SHA-bound run-evidence bundle below)
+as the typecheck behavior signal rather than asserting an un-run typecheck — that is the
+current, recorded workaround, not a gap in your verdict.
 
 Don't run more than the criteria demand — you're verifying *this issue's* checklist,
 not auditing the whole repo. But for any criterion whose truth is observable by running
