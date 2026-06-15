@@ -56,8 +56,9 @@ run. The lock is **held until PASS-or-park** and then released (`DELETE` the lab
 exit path, including failure.
 
 The acquire **fails closed**: it treats itself as holding the lock **only if the `POST`
-succeeds**. A failed acquire `POST` (the §Setup 422 when the label doesn't exist, or any
-transient `gh` IO fault) must **not** fall through to mutate — the mutator backs off and exits.
+succeeds**. A failed acquire `POST` (the [Setup](#setup--create-the-lock-label) 422 when the
+label doesn't exist, or any transient `gh` IO fault) must **not** fall through to mutate — the
+mutator backs off and exits.
 Mutating after a non-landed `POST` would mutate *unlocked* (no label is held), defeating the
 serialization; checking the `POST` result before proceeding is what makes the back-off honest.
 
@@ -70,13 +71,23 @@ on every way out (done, park, **or** a fault/abort mid-mutation): a release that
 clean fall-through leaks the lock on the error/abort path. Release **only** a lock you acquired,
 never the held lock you backed off from.
 
-> **`status:planning` must exist in the repo before the first acquire.** GitHub's
-> add-labels-to-issue endpoint (`POST .../labels`) does **not** auto-create a label — adding
-> one the repo has never created returns **422**, not a fresh label. The repo creates labels
-> ad hoc (no bootstrap manifest), so the lock label must be created out-of-band once before
-> this lands: `gh label create status:planning` (any color/description). If it is missing, the
-> very first acquire `POST` **fails closed** — the mutator backs off — and the whole plan layer
-> silently stalls until a human creates the label. Confirm it exists before relying on the lock.
+#### Setup — create the lock label
+
+**`status:planning` must exist in the repo before the first acquire.** GitHub's
+add-labels-to-issue endpoint (`POST .../labels`) does **not** auto-create a label — adding one
+the repo has never created returns **422**, not a fresh label. This repo creates every label
+ad hoc, out-of-band (there is no bootstrap manifest for *any* label — `status:needs-triage`,
+`status:planned`, etc. were all created the same way), so the lock label is created the same
+way, once: `gh label create status:planning` (any color/description). If it were missing, the
+very first acquire `POST` would **fail closed** — the mutator backs off — and the whole plan
+layer would silently stall until a human created it; the fail-closed acquire turns a missing
+label into a safe stall, never a corrupt mutation.
+
+**Status: created.** The label already exists in `kamp-us/phoenix` (verify with
+`gh api repos/kamp-us/phoenix/labels --jq '.[].name' | grep '^status:planning$'`), so this ADR
+lands against a repo where the lock is live — there is no merge-time creation gap. It is also
+documented as a canonical lock label in the formats doc's status-label table, so a future
+re-creation (a fresh fork, a wiped label set) has a recorded source of truth.
 
 - A `plan-epic` run that finds the lock held **defers** — it does not re-plan a body another
   planner is actively rewriting.
@@ -164,14 +175,23 @@ here; if that behavior is wanted it is a separate `loop.ts` change.
   body-guard catches the body **lost-update** and the signature checkpoint catches
   **false-convergence**, but the X3 **flip-vs-supersede** invariant is *not* separately
   backstopped — it holds only on the serialized path. The residual is narrowed, not closed.
+- **Failed release is surfaced, not swallowed.** The release `DELETE` is **not** fire-and-forget:
+  a 404 is benign (the label is already gone — released or never landed), but any *other* failure
+  means the lock may still be held, so the skills print a loud `WARNING` rather than discarding the
+  error. A transient `gh` fault on release is thus a **best-effort residual** — symmetric to the
+  acquire's fail-closed residual — but a *visible* one: a leaked lock is announced (re-run the
+  `DELETE` or clear the label by hand), never a silent wedge. The acquire fails closed; the release
+  fails loud.
 - **New label.** `status:planning` joins the `status:*` family
   ([gh-issue-intake-formats.md](../.claude/skills/gh-issue-intake-formats.md) §Pipeline
   labels). It is a **transient lock**, *not* a pipeline-state label — it does not change what
   `write-code` picks (`write-code` keys on `status:triaged`), and it is always paired with the
   epic's real `status:*`, never replacing it. It is released on every exit path. **Setup
-  prerequisite:** the label must be created in the repo once before any acquire runs
+  prerequisite (satisfied):** the label is created in the repo once before any acquire runs
   (`gh label create status:planning`) — `POST .../labels` does not auto-create it and returns
   422 if it is missing, which fails the acquire closed and stalls the whole plan layer (rule 1).
+  It already exists in `kamp-us/phoenix`, so this ADR lands with the lock live (see
+  [Setup](#setup--create-the-lock-label)).
 - **New cost.** Each mutator makes one extra labels read (acquire-check) and two extra label
   writes (acquire `POST`, release `DELETE`). A transient lookup failure fails closed → back off
   → re-run resolves it, consistent with #260/#261/0058.

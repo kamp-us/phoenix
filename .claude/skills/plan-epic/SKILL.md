@@ -73,9 +73,14 @@ splice+recheck (#261) is the complementary backstop for its residual, not a repl
 
 **Acquire (one bash step, fails closed).** Re-read the lock label; if it's held, back off and
 stop. Otherwise `POST` it — and **only treat the lock as acquired if that `POST` actually
-succeeds**. A failed acquire (the §Setup 422 when `status:planning` doesn't exist in the repo,
-or any transient `gh` IO fault) must **not** fall through to mutate: it back-offs and exits 0,
-so a missing label or a flaky write never lets you mutate unlocked.
+succeeds**. A failed acquire (the 422 returned when `status:planning` hasn't been created in the
+repo — it's a canonical lock label, see ADR [0059](../../../.decisions/0059-epic-plan-lock.md)
+§Setup and the formats doc's status-label table — or any transient `gh` IO fault) must **not**
+fall through to mutate: it backs off and exits 0, so a missing label or a flaky write never lets
+you mutate unlocked. **The back-off `exit 0` is deliberate** (a held lock or a setup gap is not a
+plan-epic *failure*) — but it means a caller keying on exit status alone cannot tell "planned" from
+"backed off, did nothing"; the echo is the signal, so a wrapper must read it (or re-run) rather
+than treat `exit 0` as "the epic was planned".
 
 ```bash
 # acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
@@ -101,8 +106,16 @@ the way out — run this exact `DELETE` once you reach **any** terminal state (P
 or a failure/abort mid-mutation):
 
 ```bash
-# release: run on EVERY exit path AFTER a successful acquire (done, park, or fault mid-mutation)
-gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning >/dev/null 2>&1
+# release: run on EVERY exit path AFTER a successful acquire (done, park, or fault mid-mutation).
+# Do NOT fire-and-forget — a silently-failed DELETE LEAKS the lock and wedges the epic, the exact
+# catastrophe this design prevents. A 404 is benign (label already gone — released, or never
+# landed); ANY other failure means the lock may still be held, so surface it LOUDLY.
+if ! relerr=$(gh api -X DELETE repos/kamp-us/phoenix/issues/<EPIC>/labels/status:planning 2>&1); then
+  case "$relerr" in
+    *"HTTP 404"*|*"Label does not exist"*) : ;;  # already released / never acquired — nothing to free
+    *) echo "WARNING: failed to release status:planning on epic #<EPIC> — the epic-lock may be LEAKED (still held). Re-run this DELETE or clear the label by hand; until cleared, plan-epic/review-plan back off on this epic. ($relerr)" ;;
+  esac
+fi
 ```
 
 The release fires on **every** terminal path on purpose: you drive this as an LLM agent across
