@@ -129,7 +129,7 @@ function NewTermComposer({slug, onCreated}: {slug: string; onCreated: () => void
 					<a href="/sozluk">sözlük</a> / <a href="/sozluk">{slug.charAt(0).toLowerCase()}</a> /{" "}
 					{slug.replace(/-/g, " ")}
 				</p>
-				<h1 className="kp-sozluk-term__title">{slug.replace(/-/g, " ")}</h1>
+				<h1 className="kp-sozluk-term__title kp-prose">{slug.replace(/-/g, " ")}</h1>
 				<div className="kp-sozluk-term__meta">
 					<span>henüz tanım yok</span>
 				</div>

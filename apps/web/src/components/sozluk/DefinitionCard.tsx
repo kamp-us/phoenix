@@ -318,7 +318,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 function DefinitionBody({text}: {text: string}) {
 	const blocks = splitMarkdownBlocks(text);
 	return (
-		<div className="kp-sozluk-definition__body">
+		<div className="kp-sozluk-definition__body kp-prose">
 			{blocks.map((block, i) => {
 				if (block.kind === "code") {
 					return <pre key={i}>{block.text}</pre>;

@@ -52,7 +52,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 	const tags = post.tags ?? [];
 	return (
 		<div>
-			<h1 className="kp-pano-postpage__title">{post.title}</h1>
+			<h1 className="kp-pano-postpage__title kp-prose">{post.title}</h1>
 			{post.url ? (
 				<a
 					className="kp-pano-postpage__url"
@@ -91,7 +91,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				) : null}
 			</div>
 			{post.body ? (
-				<div className="kp-pano-postpage__body">
+				<div className="kp-pano-postpage__body kp-prose">
 					{post.body.split(/\n{2,}/).map((para, i) => (
 						<p key={i}>{renderMarkdownInline(para)}</p>
 					))}

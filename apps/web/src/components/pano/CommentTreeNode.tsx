@@ -156,7 +156,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 							{editComposer}
 						</div>
 					) : (
-						<div className="kp-comment__body">
+						<div className="kp-comment__body kp-prose">
 							{data.body.split(/\n{2,}/).map((para, i) => (
 								<p key={i}>{renderMarkdownInline(para)}</p>
 							))}
