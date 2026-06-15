@@ -40,8 +40,9 @@ test.describe("Pano submitPost", () => {
 		// pattern + the rendered title on the detail page.
 		await page.waitForURL(/\/pano\/post_[A-Za-z0-9]+$/, {timeout: 15_000});
 
-		// PanoPostDetail renders the new post via the `post(idOrSlug)` resolver
-		// which RPCs into the freshly-created PanoPost DO.
+		// PanoPostDetail renders the new post via the `post(idOrSlug)` query
+		// resolver, which reads the row the `post.submit` mutation persisted to
+		// D1 (`post_summary`) — pano has no per-post DO.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 	});
 
