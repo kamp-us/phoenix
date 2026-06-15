@@ -1,9 +1,8 @@
 import {useEffect, useRef, useState} from "react";
 import {Navigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
+import {type ThemeChoice, useTheme} from "../lib/theme";
 import "./ProfilePage.css";
-
-type ThemeChoice = "light" | "dark" | "auto";
 
 function initialsOf(name: string) {
 	return name
@@ -18,7 +17,7 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function ProfilePage() {
 	const session = useSession();
-	const [themeChoice, setThemeChoice] = useState<ThemeChoice>("dark");
+	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [revokingAll, setRevokingAll] = useState(false);
 	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
 

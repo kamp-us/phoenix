@@ -1,4 +1,4 @@
-import {useEffect, useState} from "react";
+import {useEffect} from "react";
 import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
@@ -9,6 +9,7 @@ import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {LANDING_TERMS, POSTS} from "./fixtures";
 import {safeReturnTo} from "./lib/returnTo";
+import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
@@ -21,18 +22,12 @@ import {SozlukTermPage} from "./pages/SozlukTermPage";
 import {UsernameBootstrap} from "./pages/UsernameBootstrap";
 import {UserProfilePage} from "./pages/UserProfilePage";
 
-type Mode = "dark" | "light";
-
 function Layout() {
 	const session = useSession();
 	const {me, refetch} = useMe();
 	const navigate = useNavigate();
 	const location = useLocation();
-	const [mode, setMode] = useState<Mode>("dark");
-
-	useEffect(() => {
-		document.documentElement.dataset.theme = mode;
-	}, [mode]);
+	const {toggle: toggleTheme} = useTheme();
 
 	useEffect(() => {
 		if (!session.data) return;
@@ -80,7 +75,7 @@ function Layout() {
 							{to: "/pano", label: "pano"},
 						]}
 						{...userProps}
-						onToggleTheme={() => setMode(mode === "dark" ? "light" : "dark")}
+						onToggleTheme={toggleTheme}
 						onLogout={onSignOut}
 						actions={
 							isSignedIn ? (
@@ -119,20 +114,22 @@ function PanoSiteFeedRoute() {
 
 export function App() {
 	return (
-		<Routes>
-			<Route element={<Layout />}>
-				<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
-				<Route path="/pano" element={<PanoFeed />} />
-				<Route path="/pano/yeni" element={<PanoSubmitPage />} />
-				<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
-				<Route path="/pano/:id" element={<PanoPostDetail />} />
-				<Route path="/sozluk" element={<SozlukHome />} />
-				<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
-				<Route path="/auth" element={<AuthPage />} />
-				<Route path="/profile" element={<ProfilePage />} />
-				<Route path="/u/:username" element={<UserProfilePage />} />
-				<Route path="*" element={<NotFoundPage />} />
-			</Route>
-		</Routes>
+		<ThemeProvider>
+			<Routes>
+				<Route element={<Layout />}>
+					<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
+					<Route path="/pano" element={<PanoFeed />} />
+					<Route path="/pano/yeni" element={<PanoSubmitPage />} />
+					<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
+					<Route path="/pano/:id" element={<PanoPostDetail />} />
+					<Route path="/sozluk" element={<SozlukHome />} />
+					<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
+					<Route path="/auth" element={<AuthPage />} />
+					<Route path="/profile" element={<ProfilePage />} />
+					<Route path="/u/:username" element={<UserProfilePage />} />
+					<Route path="*" element={<NotFoundPage />} />
+				</Route>
+			</Routes>
+		</ThemeProvider>
 	);
 }
