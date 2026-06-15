@@ -1,0 +1,38 @@
+{
+	"name": "@phoenix/dashboard",
+	"version": "0.0.0",
+	"private": true,
+	"type": "module",
+	"scripts": {
+		"dev": "vite",
+		"dev:worker": "alchemy dev",
+		"build": "vite build",
+		"preview": "vite preview",
+		"deploy": "pnpm build && alchemy deploy",
+		"destroy": "alchemy destroy",
+		"typecheck": "tsgo -b tsconfig.worker.json tsconfig.node.json && tsgo -p tsconfig.app.json --composite false",
+		"test": "vitest run --config vitest.config.ts"
+	},
+	"dependencies": {
+		"alchemy": "catalog:",
+		"effect": "catalog:",
+		"react": "catalog:",
+		"react-dom": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@types/react": "catalog:",
+		"@types/react-dom": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"@vitejs/plugin-react": "catalog:",
+		"typescript": "catalog:",
+		"vite": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
