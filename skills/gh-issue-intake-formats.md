@@ -49,6 +49,49 @@ writing — it's the safety margin, not the target.
 
 ---
 
+## Target repo resolution
+
+The suite is a **repo-agnostic** installable plugin: an adopter installs it into
+their own repo and the pipeline operates on *their* issues (epic #228, ADR
+[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)).
+So a skill must never hardcode `kamp-us/phoenix` in its `gh api` calls — it resolves
+the target `owner/name` once, at the top of its run, and uses it everywhere.
+
+**The one resolution snippet every parameterized skill uses:**
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
+
+The target `$REPO` resolves, in order:
+
+1. **`$CLAUDE_PIPELINE_REPO`** if set (format `owner/name`) — the explicit override, for
+   fork workflows or when the working dir's `origin` is not the target.
+2. Otherwise **the current repository**, from
+   `gh repo view --json nameWithOwner -q .nameWithOwner` (which reads the `origin` remote).
+
+Every `gh api repos/<owner>/<name>/...` call then becomes `gh api repos/$REPO/...`.
+
+This makes the common case **zero-config**: the pipeline operates on whatever repo you
+are working in. In phoenix itself, with `CLAUDE_PIPELINE_REPO` unset, `gh repo view`
+resolves to `kamp-us/phoenix`, so the behavior is unchanged with no config — the
+documented default. An env var, not a checked-in config file, is the override because a
+config file would itself be a per-repo artifact the adopter has to author and keep in
+sync, whereas the derivation needs nothing (ADR 0062 §1).
+
+A skill that names a *literal* repo in its frontmatter `description:` (so its trigger
+text reads as phoenix-only) is also de-pinned: the trigger describes the *capability*
+(processing a GitHub triage queue, picking the next issue), not a specific repo.
+
+> **Carve-outs (ADR 0062 §3/§4).** Two classes of `kamp-us/phoenix` reference are
+> **intentionally not** rewritten to `$REPO`: `review-plan`'s `@phoenix/epic-ledger`
+> invocation (the one acknowledged-pinned piece for v1, §3) and external doc-reference
+> URLs rewritten to stable `https://github.com/kamp-us/phoenix/blob/main/...` permalinks
+> (§4). Those are separate children's work; only `gh api` literals and trigger-text
+> repo names are the de-pin target here.
+
+---
+
 ## Pipeline labels
 
 Every issue carries one `type:*`, one `p*`, and one `status:*` (plus, transiently, the

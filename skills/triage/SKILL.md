@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Process the GitHub triage queue — classify, enrich, prioritize, split, or close issues labeled status:needs-triage on kamp-us/phoenix. Trigger on "triage the queue", "triage issue #N", "process needs-triage", "classify these issues", "/triage", or whenever you're asked to make the backlog actionable. This is the guardrail between raw intake (the report skill) and pickable work (write-code): nothing reaches a write-code agent without passing through here.
+description: Process the GitHub triage queue — classify, enrich, prioritize, split, or close issues labeled status:needs-triage on the configured target repo. Trigger on "triage the queue", "triage issue #N", "process needs-triage", "classify these issues", "/triage", or whenever you're asked to make the backlog actionable. This is the guardrail between raw intake (the report skill) and pickable work (write-code): nothing reaches a write-code agent without passing through here.
 ---
 
 # triage
@@ -31,10 +31,21 @@ The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL
 issue queries. Every read and write goes through `gh api`. This is not a style
 preference; GraphQL calls error out on this org.
 
+**Resolve the target repo once, up front.** This skill is repo-agnostic — every
+`gh api` call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run
+per the shared contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
+if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
+behavior is unchanged with no config (ADR 0062 §1).
+
+```bash
+REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
+```
+
 List the queue:
 
 ```bash
-gh api 'repos/kamp-us/phoenix/issues?state=open&labels=status:needs-triage&per_page=100' \
+gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
   --jq '.[] | "#\(.number) (\(.user.login)) \(.title)"'
 ```
 
@@ -122,9 +133,9 @@ How to split:
    `status:needs-triage` and keyword-search open issues for the same observation:
 
    ```bash
-   gh api 'repos/kamp-us/phoenix/issues?state=open&labels=status:needs-triage&per_page=100' \
+   gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
      --jq '.[] | "#\(.number) \(.title)"'
-   gh api 'search/issues?q=repo:kamp-us/phoenix+is:issue+is:open+<keywords>' \
+   gh api "search/issues?q=repo:$REPO+is:issue+is:open+<keywords>" \
      --jq '.items[] | "#\(.number) \(.title)"'
    ```
 
@@ -155,7 +166,7 @@ How to split:
    empty husk open.
 
 ```bash
-gh api repos/kamp-us/phoenix/issues \
+gh api "repos/$REPO/issues" \
   -f title="<single-unit title>" \
   -f body="$BODY" \
   -f "labels[]=status:needs-triage"
@@ -214,7 +225,7 @@ the original.
 To get the original verbatim:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/<N> --jq '.body' > /tmp/triage-original-<N>.md
+gh api "repos/$REPO/issues/<N>" --jq '.body' > /tmp/triage-original-<N>.md
 ```
 
 Assemble the new body in a temp file and read it into `$BODY` so multi-line markdown,
@@ -222,7 +233,7 @@ backticks, and the nested fences survive the shell:
 
 ```bash
 BODY="$(cat /tmp/triage-body-<N>.md)"
-gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f body="$BODY"
+gh api -X PATCH "repos/$REPO/issues/<N>" -f body="$BODY"
 ```
 
 **Epics are the exception — do not rewrite-on-top.** An epic's original content is
@@ -320,11 +331,11 @@ A triaged issue carries: the one `type:*`, one `p*`, and `status:triaged`. Remov
 
 ```bash
 # add the type, priority, and triaged status
-gh api repos/kamp-us/phoenix/issues/<N>/labels \
+gh api "repos/$REPO/issues/<N>/labels" \
   -f "labels[]=type:chore" -f "labels[]=p2" -f "labels[]=status:triaged"
 # remove the needs-triage label — pass the BARE name; gh api encodes the path segment
 # (don't pre-encode the colon as %3A, or gh double-encodes it to %253A → spurious 404)
-gh api -X DELETE 'repos/kamp-us/phoenix/issues/<N>/labels/status:needs-triage'
+gh api -X DELETE "repos/$REPO/issues/<N>/labels/status:needs-triage"
 ```
 
 A `404 "Label does not exist"` on that DELETE is harmless **only** in one known case:
@@ -337,7 +348,7 @@ triaged. So if you're not certain it's the pre-bootstrap case, verify the label 
 actually gone after the call rather than swallowing the error:
 
 ```bash
-gh api repos/kamp-us/phoenix/issues/<N> \
+gh api "repos/$REPO/issues/<N>" \
   --jq '[.labels[].name] | index("status:needs-triage") // "removed"'
 # expect "removed"; anything else means the label is still on the issue — investigate
 ```
@@ -372,19 +383,19 @@ Every kill is auditable and reversible. Always:
 
 ```bash
 # step 1 only when closing as a duplicate of #M:
-gh api repos/kamp-us/phoenix/issues/<N> --jq '.body' > /tmp/dup-<N>.md   # then wrap in <details> and:
-gh api repos/kamp-us/phoenix/issues/<M>/comments -f body="$(cat /tmp/dup-comment-<N>.md)"
+gh api "repos/$REPO/issues/<N>" --jq '.body' > /tmp/dup-<N>.md   # then wrap in <details> and:
+gh api "repos/$REPO/issues/<M>/comments" -f body="$(cat /tmp/dup-comment-<N>.md)"
 # steps 2-4, every kill:
-gh api repos/kamp-us/phoenix/issues/<N>/comments -f body="Closing not-planned: <specific reason>."
-gh api repos/kamp-us/phoenix/issues/<N>/labels -f "labels[]=closed-by-triage"
-gh api -X PATCH repos/kamp-us/phoenix/issues/<N> -f state=closed -f state_reason=not_planned
+gh api "repos/$REPO/issues/<N>/comments" -f body="Closing not-planned: <specific reason>."
+gh api "repos/$REPO/issues/<N>/labels" -f "labels[]=closed-by-triage"
+gh api -X PATCH "repos/$REPO/issues/<N>" -f state=closed -f state_reason=not_planned
 ```
 
 The maintainer audits all kills with one query, so over-closing is caught and
 reopened cheaply:
 
 ```bash
-gh api 'repos/kamp-us/phoenix/issues?state=closed&labels=closed-by-triage' \
+gh api "repos/$REPO/issues?state=closed&labels=closed-by-triage" \
   --jq '.[] | "#\(.number) \(.title)"'
 ```
 
