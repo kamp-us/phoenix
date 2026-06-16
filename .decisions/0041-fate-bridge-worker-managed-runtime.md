@@ -1,7 +1,7 @@
 ---
 id: 0041
-title: fate↔Effect bridge — one worker-level ManagedRuntime (F4), the LLMS-documented integration pattern
-status: accepted
+title: fate↔Effect bridge — one worker-level ManagedRuntime (F4)
+status: amended-in-part by [0042](0042-fate-effect-v1-architecture.md), [0043](0043-fate-effect-v2-native-interpreter-cutover.md)
 date: 2026-06-07
 tags: [effect, runtime, worker, fate, observability, framework]
 ---

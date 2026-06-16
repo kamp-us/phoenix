@@ -1,0 +1,31 @@
+{
+	"name": "@kampus/decisions-index",
+	"version": "0.0.0",
+	"private": true,
+	"description": "decisions-index — generate .decisions/index.md from the ADR files; CI --check fails on a stale index or a duplicate ADR id (ADR 0066)",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"generate": "node src/bin.ts generate",
+		"check": "node src/bin.ts check"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

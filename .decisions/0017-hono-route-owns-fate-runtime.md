@@ -1,7 +1,7 @@
 ---
 id: 0017
 title: The Hono route owns and disposes the per-request fate runtime
-status: superseded
+status: superseded by [0029](0029-worker-runtime-servicemap.md)
 superseded by: [0027, 0029]
 date: 2026-05-23
 tags: [fate, effect, runtime, worker]

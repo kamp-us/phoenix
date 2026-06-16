@@ -1,7 +1,7 @@
 ---
 id: 0049
-title: The Pipeline Ships Code, Not Itself
-status: superseded by 0053
+title: The pipeline ships code, not itself — product code (apps/web, packages) auto-merges via ship-it; skill/harness changes (.claude, .decisions, .patterns) merge manually
+status: superseded by [0053](0053-control-plane-boundary.md)
 date: 2026-06-13
 tags: [pipeline, skills, ship-it, review-code, process]
 ---

@@ -1,6 +1,6 @@
 ---
 id: 0068
-title: "Adopt lefthook as the git-hook manager when a 2nd hook appears"
+title: Adopt lefthook as the git-hook manager **when a 2nd git hook lands** (not now) and migrate the leak-guard pre-commit (#317) into it — lefthook over husky on monorepo fit (single Go binary, per-glob/parallel run groups, language-agnostic, idempotent + no-git-tolerant install that subsumes the #330/#332 hand-handling); promote-at-2nd-usage keeps the DIY `.githooks`/`core.hooksPath` wiring proportionate until then; CI stays the unbypassable authority (#312); impl tracked by #387
 status: accepted
 date: 2026-06-15
 tags: [git-hooks, tooling, leak-guard, monorepo, deferred]

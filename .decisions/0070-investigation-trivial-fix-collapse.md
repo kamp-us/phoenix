@@ -1,6 +1,6 @@
 ---
 id: 0070
-title: "An investigation that resolves into a trivial fix collapses into one PR (write-code), bounded"
+title: "A `type:investigation` that resolves into a trivial, bounded fix collapses into ONE write-code PR (`Fixes #N`) instead of re-entering via fresh `report` residue — bound is a hard AND of four checks (single concern · no new behavior/surface · no control-plane change · cause established + fix unambiguous); fix is still independently `review-code`-gated (only the `report → triage` intake hops are skipped); chose (a) collapse-in-write-code over (b) triage re-type (rejected: cross-stage ping-pong) and (c) status quo (rejected: predictably bypassed — #33); retroactively blesses the #33 precedent; amends write-code's `type:investigation` routing; implementation tracked in #389"
 status: accepted
 date: 2026-06-15
 tags: [pipeline, write-code, triage, investigation, intake-contract]

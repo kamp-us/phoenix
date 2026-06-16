@@ -1,6 +1,6 @@
 ---
 id: 0060
-title: Worktree-Isolated Gates Lint Explicit Paths, Not `biome check .`; In-Worktree Typecheck Is Not Authoritative
+title: Worktree-isolated write-code/review-code gates lint EXPLICIT paths (changed files, else `apps packages`), never `biome check .` — bare `.` resolves to the worktree CWD under `.claude/worktrees`, matches the retained exclusion, and exits 0 without linting (false green, #236); the sparse review worktree's in-worktree typecheck is NOT authoritative (bootstrap can't run) — CI is the typecheck authority until #336
 status: accepted
 date: 2026-06-15
 tags: [pipeline, skills, write-code, review-code, lint, typecheck, agents, worktree]

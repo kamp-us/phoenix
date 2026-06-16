@@ -1,6 +1,6 @@
 ---
 id: 0048
-title: ship-it — the Pipeline's Single Merge Authority Closes the Loop
+title: ship-it — the pipeline's single merge authority closes the loop (consumes review-code's PASS marker; sole merge step)
 status: accepted
 date: 2026-06-13
 tags: [pipeline, skills, ship-it, review-code, agents]

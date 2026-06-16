@@ -1,7 +1,7 @@
 ---
 id: 0023
 title: Live views over SSE, fanned out by the LiveDO Durable Object
-status: accepted
+status: amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md)
 date: 2026-05-23
 tags: [fate, live, durable-objects, sse]
 ---

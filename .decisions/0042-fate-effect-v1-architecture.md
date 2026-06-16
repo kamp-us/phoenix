@@ -1,7 +1,7 @@
 ---
 id: 0042
 title: fate-effect v1 — the Effect-native fate integration; the bridge is deleted
-status: accepted
+status: amended-in-part by [0043](0043-fate-effect-v2-native-interpreter-cutover.md)
 date: 2026-06-10
 tags: [fate, effect, architecture, errors, live, framework]
 ---

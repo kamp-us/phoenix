@@ -1,6 +1,6 @@
 ---
 id: 0057
-title: Multi-App, Multi-Worker Repo — Per-App Stack, Per-App Stage, Shared State Store and Secrets
+title: Multi-app, multi-worker repo — per-app package owns its own `alchemy.run.ts` stack + per-app stage, reusing the account-global state store and four CI secrets (no second bootstrap); CI must build + deploy each app
 status: accepted
 date: 2026-06-14
 tags: [infra, alchemy, ci, repo-shape]

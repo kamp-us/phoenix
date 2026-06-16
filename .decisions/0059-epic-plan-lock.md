@@ -1,6 +1,6 @@
 ---
 id: 0059
-title: The epic-plan lock — one mutator at a time over an epic's children, plus a signature-keyed convergence checkpoint
+title: The epic-plan lock — a `status:planning` label serializes plan-epic/review-plan over one epic's children (flip vs supersede), held to PASS-or-park; convergence checkpoint keys on ledger signature not defect count; detect-and-serialize not a mutex; #261 body-guard is the complementary backstop
 status: accepted
 date: 2026-06-14
 tags: [pipeline, skills, plan-epic, review-plan, write-code, concurrency, agents]

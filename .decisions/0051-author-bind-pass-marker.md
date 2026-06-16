@@ -1,7 +1,7 @@
 ---
 id: 0051
-title: Author-Bind ship-it's PASS Signal — Only the Operator Identity Can Pass a PR
-status: superseded
+title: Author-bind ship-it's PASS signal — only an allowlisted operator identity's review-code marker counts; native APPROVE inherits GitHub's author-binding; unauthorized markers are ignored (extends 0048)
+status: superseded by [0055](0055-acl-sourced-review-authz.md)
 date: 2026-06-13
 tags: [pipeline, skills, ship-it, review-code, security, agents]
 ---

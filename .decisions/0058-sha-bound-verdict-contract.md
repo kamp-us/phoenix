@@ -1,6 +1,6 @@
 ---
 id: 0058
-title: Gate Verdicts Are SHA-Bound and One-Per-Gate (Upsert), and ship-it Refuses Stale-Head Verdicts
+title: Gate verdicts are SHA-bound (`@ <sha>`) and one-per-gate (upsert, not append); ship-it + write-code-repair refuse any verdict not bound to the PR's current head; review-doc emits only the SHA-bound comment (no native APPROVE); review-plan/heal-ci out of scope
 status: accepted
 date: 2026-06-14
 tags: [pipeline, skills, ship-it, review-code, review-doc, write-code, security, agents, concurrency]

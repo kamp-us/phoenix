@@ -1,7 +1,7 @@
 ---
 id: 0039
 title: LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge
-status: accepted
+status: amended-in-part by [0042](0042-fate-effect-v1-architecture.md)
 date: 2026-05-31
 tags: [fate-live, effect, testing]
 ---

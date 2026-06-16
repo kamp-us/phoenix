@@ -1,6 +1,6 @@
 ---
 id: 0040
-title: Testing Taxonomy and Test-Seam Graduation
+title: Testing taxonomy and test-seam graduation
 status: accepted
 date: 2026-06-07
 tags: [testing, framework, architecture]
