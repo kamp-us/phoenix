@@ -101,7 +101,8 @@ than treat `exit 0` as "the epic was gated".
 ```bash
 # acquire: defer to a lock already held; otherwise POST it — and proceed ONLY if the POST succeeds
 HELD=$(gh api repos/$REPO/issues/<EPIC> --jq '[.labels[].name] | index("status:planning")')
-if [ "$HELD" != "null" ]; then
+# gh --jq prints "" (not "null") for a jq null, so test non-empty: index() is a numeric position when held, empty when absent.
+if [ -n "$HELD" ]; then
   echo "epic #<EPIC> is being planned by another run (status:planning held) — DO NOT flip, DO NOT loop."
   exit 0   # the held lock is the holder's, not ours — do NOT release it. Re-run later.
 fi
