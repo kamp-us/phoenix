@@ -1,5 +1,5 @@
 /**
- * `@phoenix/changelog-derive` — the derived-changelog projection decided in ADR 0069
+ * `@kampus/changelog-derive` — the derived-changelog projection decided in ADR 0069
  * (issue #394). The core (`deriveChangelog` and friends) is a pure, IO-free transform
  * from shipped-work entries (closed-issue title + triaged `type:*` label + merged-PR
  * backlink) to a Keep a Changelog body; `bin.ts` wires it to an `effect/unstable/cli`

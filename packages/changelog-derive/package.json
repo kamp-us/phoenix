@@ -1,5 +1,5 @@
 {
-	"name": "@phoenix/changelog-derive",
+	"name": "@kampus/changelog-derive",
 	"version": "0.0.0",
 	"private": true,
 	"description": "changelog-derive CLI — derive CHANGELOG.md as a projection of closed-issue/merged-PR pipeline metadata at release time (ADR 0069, issue #394)",

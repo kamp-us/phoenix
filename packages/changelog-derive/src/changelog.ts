@@ -1,5 +1,5 @@
 /**
- * `@phoenix/changelog-derive` core — the pure, IO-free projection that turns a set
+ * `@kampus/changelog-derive` core — the pure, IO-free projection that turns a set
  * of shipped-work entries (closed-issue title + triaged `type:*` label, with a
  * merged-PR `(#NNN)` backlink) into a Keep a Changelog release section (ADR 0069,
  * issue #394).

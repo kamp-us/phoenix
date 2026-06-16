@@ -1,4 +1,4 @@
-# @phoenix/changelog-derive
+# @kampus/changelog-derive
 
 The mechanism behind **[ADR 0069](../../.decisions/0069-derived-changelog-from-shipped-work.md)**:
 the repo's `CHANGELOG.md` is a **derived projection** of the pipeline's structured
@@ -71,8 +71,8 @@ node packages/changelog-derive/src/bin.ts derive --entries entries.json --versio
 # or write the file directly
 node packages/changelog-derive/src/bin.ts derive --entries entries.json --version 0.1.0 --out CHANGELOG.md
 
-pnpm --filter @phoenix/changelog-derive test       # unit + CLI tests
-pnpm --filter @phoenix/changelog-derive typecheck
+pnpm --filter @kampus/changelog-derive test       # unit + CLI tests
+pnpm --filter @kampus/changelog-derive typecheck
 ```
 
 ## Cadence and trigger
