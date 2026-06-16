@@ -12,7 +12,7 @@
 	"plugins": [
 		{
 			"name": "kampus-pipeline",
-			"source": { "source": "github", "repo": "kamp-us/phoenix" },
+			"source": "./",
 			"description": "The kamp.us agent pipeline: triage → plan-epic → write-code → review-code/review-doc/review-plan → ship-it, plus adr, report, heal-ci, and deslop-comments. Repo-agnostic — operates on the working git repo's issue queue (CLAUDE_PIPELINE_REPO override).",
 			"version": "0.1.0",
 			"author": {
@@ -21,22 +21,6 @@
 			},
 			"license": "MIT",
 			"keywords": ["github", "issue-pipeline", "triage", "code-review", "agent-workflow"],
-			"dependencies": {
-				"npm": {
-					"@kampus/epic-ledger": {
-						"version": "^0.1.0",
-						"usedBy": "review-plan",
-						"resolution": "in-repo-first, else `pnpm dlx @kampus/epic-ledger@<version>`",
-						"description": "review-plan's deterministic plan-gate CLI. In a foreign checkout (no packages/epic-ledger), review-plan invokes this published package; phoenix-local runs the in-repo source. See ADR 0064."
-					},
-					"@kampus/decisions-index": {
-						"version": "^0.1.0",
-						"usedBy": "adr",
-						"resolution": "in-repo-first, else `pnpm dlx @kampus/decisions-index@latest`",
-						"description": "adr's index-regeneration CLI. In a foreign checkout (no packages/decisions-index), the adr skill invokes this published package; phoenix-local runs the in-repo source. See ADR 0066/0076."
-					}
-				}
-			},
 			"skills": [
 				"./skills/adr",
 				"./skills/deslop-comments",
