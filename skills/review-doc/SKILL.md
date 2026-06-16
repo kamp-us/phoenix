@@ -398,7 +398,7 @@ ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
 comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))))
+          and (.body | test("^\\s*\\**\\s*review-doc:"; "i"))))
         | last | .id // empty' <<<"$comments")
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
@@ -468,8 +468,9 @@ rule 4). Upsert it the same way (`PATCH` your own prior `review-doc:` marker if 
 else `POST`):
 
 ```bash
-VERDICT_FILE="/tmp/review-doc-verdict-${PR}.md"
-BODY="$(cat "$VERDICT_FILE")"   # first line: review-doc: advisory — blocking-set PR (manual merge)
+VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"
+# write your composed advisory verdict into "$VERDICT_FILE" (first line: review-doc: advisory — blocking-set PR (manual merge))
+BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
 comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
@@ -508,7 +509,7 @@ ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
 comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))))
+          and (.body | test("^\\s*\\**\\s*review-doc:"; "i"))))
         | last | .id // empty' <<<"$comments")
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
