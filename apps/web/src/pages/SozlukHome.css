@@ -66,6 +66,13 @@
 	margin: 0;
 }
 
+.kp-sozluk-home__empty {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+	margin: 0;
+	padding: var(--s-3) 0;
+}
+
 .kp-sozluk-home__columns {
 	display: grid;
 	grid-template-columns: 1.4fr 1fr;

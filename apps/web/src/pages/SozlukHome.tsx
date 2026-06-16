@@ -89,7 +89,7 @@ function SozlukHomeContent({letter, query, setLetter, setQuery}: ContentProps) {
 			status="ok"
 		>
 			<RecentColumn connection={recentTerms} letter={letter} query={query} />
-			<PopularColumn connection={popularTerms} />
+			<PopularColumn connection={popularTerms} letter={letter} query={query} />
 		</SozlukHomeChrome>
 	);
 }
@@ -164,23 +164,38 @@ function SozlukHomeChrome({
 	);
 }
 
-interface RecentColumnProps {
+/**
+ * Tracks which rows survive the client-side letter/search filter. Each row reads its
+ * own fate view, so match state can only be reported up per-row via `onMatch`; this
+ * hook owns the resulting map and derives the column's display state from it.
+ *
+ * - `empty` — the connection itself has zero terms (genuine-empty).
+ * - `no-match` — terms exist but a letter/search filter excluded every loaded row.
+ * - `ok` — at least one row is visible.
+ */
+function useFilteredColumn(items: readonly {node: ViewRef<"Term">}[]) {
+	const [matches, setMatches] = React.useState<Record<string, boolean>>({});
+	const onMatch = React.useCallback((id: string, matched: boolean) => {
+		setMatches((prev) => (prev[id] === matched ? prev : {...prev, [id]: matched}));
+	}, []);
+	const hasMatch = items.some(({node}) => matches[String(node.id)]);
+	const state: "empty" | "no-match" | "ok" =
+		items.length === 0 ? "empty" : hasMatch ? "ok" : "no-match";
+	return {onMatch, state};
+}
+
+interface ColumnProps {
 	connection: TermConnection;
 	letter: string | undefined;
 	query: string;
 }
 
-function RecentColumn({connection, letter, query}: RecentColumnProps) {
+function RecentColumn({connection, letter, query}: ColumnProps) {
 	const [items] = useListView(TermConnectionView, connection);
-	// Which rows survived the client-side letter/search filter. A non-empty `query`
-	// with zero matches is the dead-end #97 fixes: offer to create the term instead.
-	const [matches, setMatches] = React.useState<Record<string, boolean>>({});
-	const onMatch = React.useCallback((id: string, matched: boolean) => {
-		setMatches((prev) => (prev[id] === matched ? prev : {...prev, [id]: matched}));
-	}, []);
-
-	const hasMatch = items.some(({node}) => matches[String(node.id)]);
-	const showCreateCta = query.trim().length > 0 && !hasMatch;
+	const {onMatch, state} = useFilteredColumn(items);
+	// A non-empty `query` that matches nothing is the create dead-end #97 fixes: the
+	// filtered-to-zero empty state offers to create the typed term instead of going blank.
+	const showCreateCta = query.trim().length > 0;
 
 	return (
 		<section>
@@ -198,10 +213,29 @@ function RecentColumn({connection, letter, query}: RecentColumnProps) {
 						onMatch={onMatch}
 					/>
 				))}
-				{showCreateCta ? <CreateTermCta query={query} /> : null}
+				{state === "empty" ? (
+					<ColumnEmptyState>henüz terim yok.</ColumnEmptyState>
+				) : state === "no-match" ? (
+					showCreateCta ? (
+						<CreateTermCta query={query} />
+					) : (
+						<ColumnEmptyState>{filterEmptyLabel(letter, query)}</ColumnEmptyState>
+					)
+				) : null}
 			</div>
 		</section>
 	);
+}
+
+/** "X harfinde terim yok" / "aramada terim yok" — the legible filtered-to-zero copy. */
+function filterEmptyLabel(letter: string | undefined, query: string) {
+	if (query.trim().length > 0) return `"${query.trim()}" aramasında terim yok.`;
+	if (letter) return `"${letter}" harfinde terim yok.`;
+	return "terim yok.";
+}
+
+function ColumnEmptyState({children}: {children: React.ReactNode}) {
+	return <p className="kp-sozluk-home__empty">{children}</p>;
 }
 
 /**
@@ -224,18 +258,23 @@ function CreateTermCta({query}: {query: string}) {
 }
 
 /**
- * A recent-column row that reads its own title and drops out of the DOM when the
- * active letter / search query excludes it, with the filter colocated.
+ * A column row that reads its own title and drops out of the DOM when the active
+ * letter / search query excludes it, with the filter colocated. Used by both columns
+ * so a letter/search filters "son eklenenler" and "en çok oylananlar" alike.
  */
 function FilterableTermRow({
 	node,
 	letter,
 	query,
+	variant = "recent",
+	rank,
 	onMatch,
 }: {
 	node: ViewRef<"Term">;
 	letter: string | undefined;
 	query: string;
+	variant?: "recent" | "popular";
+	rank?: number;
 	onMatch: (id: string, matched: boolean) => void;
 }) {
 	const data = useView(TermRowView, node);
@@ -244,15 +283,12 @@ function FilterableTermRow({
 		(!letter || title.startsWith(letter)) && (!query || title.includes(query.toLowerCase()));
 	React.useEffect(() => onMatch(String(node.id), matched), [onMatch, node.id, matched]);
 	if (!matched) return null;
-	return <TermRow term={node} variant="recent" />;
+	return <TermRow term={node} variant={variant} rank={rank} />;
 }
 
-interface PopularColumnProps {
-	connection: TermConnection;
-}
-
-function PopularColumn({connection}: PopularColumnProps) {
+function PopularColumn({connection, letter, query}: ColumnProps) {
 	const [items] = useListView(TermConnectionView, connection);
+	const {onMatch, state} = useFilteredColumn(items);
 
 	return (
 		<section>
@@ -262,9 +298,22 @@ function PopularColumn({connection}: PopularColumnProps) {
 			</header>
 			<ol className="kp-sozluk-popular">
 				{items.map(({node}, i) => (
-					<TermRow key={node.id} term={node} variant="popular" rank={i + 1} />
+					<FilterableTermRow
+						key={node.id}
+						node={node}
+						letter={letter}
+						query={query}
+						variant="popular"
+						rank={i + 1}
+						onMatch={onMatch}
+					/>
 				))}
 			</ol>
+			{state === "empty" ? (
+				<ColumnEmptyState>henüz terim yok.</ColumnEmptyState>
+			) : state === "no-match" ? (
+				<ColumnEmptyState>{filterEmptyLabel(letter, query)}</ColumnEmptyState>
+			) : null}
 		</section>
 	);
 }
