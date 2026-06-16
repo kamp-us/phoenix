@@ -1,6 +1,6 @@
 ---
 name: review-plan
-description: Verify a planned epic's ledger against the deterministic structural floor before its children become pickable — the plan-layer gate, the symmetric twin of review-code one stage earlier. Trigger on "review the plan for epic #N", "gate epic #N", "run review-plan", "verify the ledger for #N", "flip the planned children of #N", or whenever a plan-epic-output epic needs its `status:planned` children gated to `status:triaged`. This is the verification stage between plan-epic and write-code: it consumes the epic ledger plan-epic produced and produces a pass/fail verdict against `@phoenix/epic-ledger`'s hard-defect floor — flipping `status:planned → status:triaged` on a clean ledger, posting a per-defect FAIL on a dirty one. It never repairs the ledger and never blocks the flip on a judgment call.
+description: Verify a planned epic's ledger against the deterministic structural floor before its children become pickable — the plan-layer gate, the symmetric twin of review-code one stage earlier. Trigger on "review the plan for epic #N", "gate epic #N", "run review-plan", "verify the ledger for #N", "flip the planned children of #N", or whenever a plan-epic-output epic needs its `status:planned` children gated to `status:triaged`. This is the verification stage between plan-epic and write-code: it consumes the epic ledger plan-epic produced and produces a pass/fail verdict against the `epic-ledger` hard-defect floor — flipping `status:planned → status:triaged` on a clean ledger, posting a per-defect FAIL on a dirty one. The gate is portable: it resolves the in-repo `packages/epic-ledger` when present and falls back to the published `@kampus/epic-ledger` CLI otherwise (ADR 0064), so it runs in a foreign install too. It never repairs the ledger and never blocks the flip on a judgment call.
 ---
 
 # review-plan
@@ -31,7 +31,7 @@ that stops `review-code` from merging (ADR 0047 Decision 3).
 ## The deterministic floor owns the decision; the soft-advisor never blocks
 
 The pass/fail decision is **100% deterministic**: it is exactly the hard-defect set of
-`@phoenix/epic-ledger`'s `validateLedger` — `MISSING_DEPS_SECTION`, `DEP_CYCLE`,
+`epic-ledger`'s `validateLedger` — `MISSING_DEPS_SECTION`, `DEP_CYCLE`,
 `DANGLING_DEP`, `ORPHAN_CHILD`, `MISSING_STORIES_SECTION`, `UNCOVERED_STORY`, `ZERO_AC`,
 `MISSING_STORY`, `MISSING_LABEL`, `NEEDS_TRIAGE_LABEL`. An empty set flips; a non-empty set
 blocks. (`MISSING_STORIES_SECTION` is the epic-level "no `### User stories` at all" defect —
@@ -156,48 +156,56 @@ ever drives an epic.
 
 ## Step 1 — Run the deterministic gate action
 
-The gate action is built: `@phoenix/epic-ledger`'s `runGate(epicNumber)` (`packages/epic-ledger/src/gate.ts`).
+The gate action is built: `epic-ledger`'s `runGate(epicNumber)` (`packages/epic-ledger/src/gate.ts`).
 Given an epic number it fetches the `EpicLedger` via the `Github` capability, runs
 `validateLedger`, and on a **clean** ledger flips every `status:planned` child to
 `status:triaged` and posts a PASS verdict; on **≥1 hard defect** it posts a per-defect
 FAIL verdict and flips **nothing**. It returns a structured `GateVerdict`
 (`{_tag: "pass", flipped}` or `{_tag: "fail", defects, signature}`).
 
-Invoke it through the package's CLI (`packages/epic-ledger/src/bin.ts`, wired over
-`NodeRuntime.runMain` + `NodeServices.layer` — you run the binary, you don't re-implement
-the floor in prose).
+Invoke it through the package's CLI (the `bin.ts` entry, wired over `NodeRuntime.runMain` +
+`NodeServices.layer` — you run the binary, you don't re-implement the floor in prose). Which
+binary — the in-repo `packages/epic-ledger/src/bin.ts` or the published `@kampus/epic-ledger`
+CLI — is resolved by the block just below; either way the floor is identical.
 
-**Preflight — the gate's `@phoenix/epic-ledger` dependency (ADR 0062 §3).** `review-plan`
-is the one **phoenix-pinned** skill in this plugin: its gate is the in-repo compiled CLI at
-`packages/epic-ledger/src/bin.ts`, which does **not** exist when the plugin is installed
-into a foreign repo. (Publishing the package to npm so a foreign `review-plan` becomes
-portable is a [deferred follow-up epic](https://github.com/kamp-us/phoenix/issues/228), per
-ADR 0062 §3 — not wired today.) So **before** invoking the CLI, check the bin exists; if it
-doesn't, stop with a clear message rather than letting a raw `ERR_MODULE_NOT_FOUND` surface:
+**Resolve the gate binary — in-repo first, published fallback (ADR
+[0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-epic-ledger-npm-publish-automated-release.md)).**
+`review-plan` is **portable**: the same `epic-ledger` floor runs whether or not the plugin
+is installed in phoenix. The gate dependency resolves **in-repo first, published fallback** —
+prefer the on-disk `packages/epic-ledger/src/bin.ts` when it exists (phoenix-local: no
+network, no published-artifact dependency on the daily pipeline), and otherwise invoke the
+**published** `@kampus/epic-ledger` CLI via `pnpm dlx`. Build the invocation once into a
+`$GATE` command and use it everywhere below, so there is exactly one resolution site:
 
 ```bash
-# guard: degrade gracefully when the in-repo package is absent (foreign install) — ADR 0062 §3
-if [ ! -f packages/epic-ledger/src/bin.ts ]; then
-  echo "review-plan requires @phoenix/epic-ledger (not available in this install — see ADR 0062 §3)"
-  exit 0   # stop cleanly — do NOT proceed to the CLI; the gate cannot run outside phoenix
+# resolve the gate command once — in-repo-first, published-fallback (ADR 0064)
+if [ -f packages/epic-ledger/src/bin.ts ]; then
+  GATE="node packages/epic-ledger/src/bin.ts"          # phoenix-local: run the in-repo bin directly
+else
+  # foreign install: run the PUBLISHED CLI. Version tracks the in-repo package (ADR 0064 §3):
+  # the published version is authoritative-by-package.json, and a gate-logic change bumps it +
+  # cuts a matching epic-ledger-v* release in the same change, so `@latest` is the version that
+  # mirrors the current source. Pin a concrete `@<version>` only to reproduce an older verdict.
+  GATE="pnpm dlx @kampus/epic-ledger@latest"
 fi
 ```
 
-In phoenix the bin is on disk, the guard passes, and the gate runs normally; in a foreign
-install the guard short-circuits with the message above instead of a stack trace. Run the
-gate only past this guard:
+Either branch yields a runnable `$GATE`, so a foreign install **runs** the gate rather than
+degrading — and no raw `ERR_MODULE_NOT_FOUND` can surface, because the in-repo branch is only
+taken when the bin is on disk and the fallback fetches the published package before running.
+Then run the gate through `$GATE`:
 
 ```bash
 # from the repo root:
-node packages/epic-ledger/src/bin.ts <EPIC>            # the live gate — flips + comments
-node packages/epic-ledger/src/bin.ts <EPIC> --dry-run  # read-only: validate + print, no mutation
-# or via the workspace script:  pnpm --filter @phoenix/epic-ledger gate <EPIC>
+$GATE <EPIC>            # the live gate — flips + comments
+$GATE <EPIC> --dry-run  # read-only: validate + print, no mutation
+# phoenix-local equivalent via the workspace script:  pnpm --filter @kampus/epic-ledger gate <EPIC>
 ```
 
-`runGate(<EPIC>)` is the underlying action the CLI calls (`@phoenix/epic-ledger`'s
-`runGate`, `packages/epic-ledger/src/gate.ts`). Use `--dry-run` first when you want to see
-the verdict before any label moves; the bare form is the real gate. Both fetch the *current*
-ledger live, so a re-run after a re-plan picks up the new structure.
+`runGate(<EPIC>)` is the underlying action the CLI calls (`epic-ledger`'s `runGate`,
+`packages/epic-ledger/src/gate.ts`). Use `--dry-run` first when you want to see the verdict
+before any label moves; the bare form is the real gate. Both fetch the *current* ledger live,
+so a re-run after a re-plan picks up the new structure.
 
 This is the **whole pass/fail decision**. Do not re-derive defects by reading the ledger
 yourself — the validator is the single source of truth, and re-judging it in prose
@@ -278,7 +286,7 @@ built to hold.
 
 On a **FAIL**, the ledger has hard defects and nothing flipped. Repair is **not** your job
 (you don't hand-edit a ledger). Instead, drive the **re-plan convergence loop**
-(`@phoenix/epic-ledger`'s `runConvergenceLoop(epicNumber)`, `packages/epic-ledger/src/loop.ts`):
+(`epic-ledger`'s `runConvergenceLoop(epicNumber)`, `packages/epic-ledger/src/loop.ts`):
 
 1. **Re-invoke `plan-epic` on the epic** (through the `RePlanner` capability — see below),
    then **re-run the gate**.
@@ -339,7 +347,7 @@ agent inherits the rationale rather than re-deriving it.
 ### Design: the soft-advisor's form
 
 **Choice: the soft-advisor is the agent running this skill, reading the ledger in prose —
-not a second program, not an LLM call baked into `@phoenix/epic-ledger`.** Rationale: ADR
+not a second program, not an LLM call baked into `epic-ledger`.** Rationale: ADR
 0047 Decision 2 draws the line at *determinism* — the floor is code because it must be
 byte-identical every run; the soft signal is *inherently* a judgment that an LLM cannot
 render identically twice, so encoding it as a package function would falsely imply
@@ -356,7 +364,7 @@ it invites the "block on soft signal" mistake the ADR bans.
 
 **Choice: a `RePlanner` `Context.Service` seam the call site binds to a `plan-epic`
 agent-spawn, not a direct function call.** Rationale: `plan-epic` is a skill (an LLM agent
-with GitHub side effects), not an importable function — `@phoenix/epic-ledger` cannot and
+with GitHub side effects), not an importable function — `epic-ledger` cannot and
 should not depend on it. Modeling re-plan as a one-method capability (`rePlan(epicNumber)`)
 lets the package own the *convergence control flow* (the shrink/stall/park `Schedule`
 logic, fully unit-tested with a faked `RePlanner`) while the *binding to the real agent*
@@ -392,7 +400,8 @@ This skill is one of a suite (`report` → `triage` → `plan-epic` → **`revie
 shared label semantics and the body/comment/dependency/story formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); the gate architecture is
 ADR [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md); the deterministic floor, the gate
-action, and the convergence loop are `@phoenix/epic-ledger` (`packages/epic-ledger`). Your
+action, and the convergence loop are the `epic-ledger` package (`packages/epic-ledger`,
+published as `@kampus/epic-ledger` — ADR 0064). Your
 input is a `plan-epic`-output epic whose children are `status:planned`; your output — the
 `planned → triaged` flip on a clean ledger (or a parked epic on an unfixable one), plus the
 verdict and any advisory caveats — is what makes `write-code`'s existing `status:triaged`
@@ -400,14 +409,17 @@ pick predicate enforce the gate for free. You are the symmetric twin of `review-
 two gates bracket `write-code` on both sides — the plan it consumes is floor-verified going
 in, the PR it produces is AC-verified going out.
 
-### Distribution — phoenix-pinned for v1 (ADR 0062 §3)
+### Distribution — portable via the published gate (ADR 0064)
 
-When the suite ships as an installable plugin, `review-plan` is the **single
-phoenix-pinned** skill: its deterministic gate is the in-repo compiled CLI
-`@phoenix/epic-ledger` (`packages/epic-ledger`), which is absent from a foreign checkout, so
-in any non-phoenix install `review-plan` degrades with the Step 1 preflight message instead
-of running the gate. Every other skill in the suite is repo-agnostic on install. Making
-`review-plan` portable — publishing `@phoenix/epic-ledger` to npm so a foreign install can
-fetch it — is a **deferred follow-up epic**, not wired today. See ADR
-[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md) §3 and epic
-[#228](https://github.com/kamp-us/phoenix/issues/228).
+When the suite ships as an installable plugin, `review-plan` is **repo-agnostic like every
+other skill** — there is no longer a single phoenix-pinned exception. Its deterministic gate
+is the `epic-ledger` floor, resolved **in-repo first, published fallback** (Step 1): phoenix
+runs the on-disk `packages/epic-ledger` bin, and a foreign install runs the published
+`@kampus/epic-ledger` CLI via `pnpm dlx`. So a non-phoenix install **runs** the gate instead
+of degrading. The published version tracks the in-repo source (a gate-logic change bumps the
+`package.json` version and cuts a matching `epic-ledger-v*` release in the same change), so
+both worlds gate against the same floor. See ADR
+[0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-epic-ledger-npm-publish-automated-release.md),
+which **supersedes ADR [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md) §3**
+(the phoenix-pinned / degrade-with-a-message deferral) and lands the npm-publish follow-up epic
+[#362](https://github.com/kamp-us/phoenix/issues/362).
