@@ -124,14 +124,21 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '[.[].filename]'
 Classify each path:
 
 - **control plane (blocking):** matches `.claude/**` or `.github/**`.
-- **code:** under `apps/web/**` or `packages/**` (the `^(apps/web|packages)/` probe); a source path matching neither this nor the doc probe still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
-- **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`.
+- **code:** under `apps/web/**` or `packages/**`, **or under `skills/**`** (the
+  `^(apps/web|packages|skills)/` probe); a source path matching neither this nor the doc
+  probe still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
+  `skills/**` is **code, not docs** — a skill `.md` is an operational/behavioral definition
+  AC-verified by `review-code`, not prose `review-doc` hygiene-checks (ADR
+  [0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)).
+- **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`
+  **and outside `skills/**`** (ADR 0063 carves `skills/**` out of the docs class).
 
 ```bash
 FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
 echo "$FILES" | grep -Eq '^(\.claude|\.github)/' && echo "BLOCKING"   # control plane present?
-echo "$FILES" | grep -Eq '^(apps/web|packages)/' && echo "has-code"   # rough code probe
-echo "$FILES" | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+echo "$FILES" | grep -Eq '^(apps/web|packages|skills)/' && echo "has-code"   # rough code probe (skills/** is code — ADR 0063)
+# docs probe EXCLUDES skills/** first (ADR 0063), so a skills-only .md PR is NOT classed docs
+echo "$FILES" | grep -Ev '^skills/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 **Routing:**
@@ -148,7 +155,14 @@ echo "$FILES" | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 
 The `.md$` probe over-matches (it catches code-adjacent markdown too); that's fine — it only
 decides *whether to require a review-doc PASS*, and requiring one extra PASS never makes an
-unsafe merge. The control-plane check is the only one that must be exact, and it is.
+unsafe merge. The control-plane check is the only one that must be exact, and it is. The
+**one path-class the docs probe must *not* match is `skills/**`**: a skill `.md` is
+code-gated (ADR
+[0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)),
+so the `grep -Ev '^skills/'` runs *before* the `.md$` match — otherwise a `review-code`-verified
+skills-only PR would be classed docs and `ship-it` would demand a `review-doc` PASS that never
+comes (the #358 deadlock). Excluding `skills/**` here is what keeps a skills-only PR flowing
+through exactly the one gate (`review-code`) that ran it.
 
 ---
 
