@@ -1,0 +1,143 @@
+---
+id: 0064
+title: Distribute epic-ledger by automated npm publish — review-plan resolves in-repo first, falls back to the published package
+status: accepted
+date: 2026-06-15
+tags: [plugin, pipeline, packaging, epic-ledger, npm, ci, release]
+---
+
+# 0064 — Distribute epic-ledger by automated npm publish
+
+## Context
+
+`review-plan`'s deterministic plan-gate is `@phoenix/epic-ledger`
+(`packages/epic-ledger`) — an Effect CLI (`validateLedger` / `isPickable` /
+`ledgerSignature`, bin run with `node packages/epic-ledger/src/bin.ts`). Today the
+package is `private: true`, `version: 0.0.0`, `exports: "./src/index.ts"` (it runs
+`.ts` directly), and its `effect` + `@effect/platform-node` deps sit on the workspace
+`catalog:`. It exists only inside the phoenix checkout, so `review-plan` cannot run its
+gate in a foreign repo — the one skill of the eleven-skill pipeline plugin that is not
+repo-agnostic.
+
+ADR [0062](0062-repo-as-config-plugin.md) §3 weighed three distribution mechanisms only
+*directionally* — bundle the package into the markdown-skills plugin, publish it to npm
+and invoke via `pnpm dlx`, or exclude `review-plan` from the portable set — and
+**deferred** the choice: v1 shipped `review-plan` phoenix-pinned, degrading elsewhere
+with a clear message, and named npm-publish "real work, its own epic" (§3, §6). Epic
+[#362](https://github.com/kamp-us/phoenix/issues/362) is that follow-up epic, and issue
+[#365](https://github.com/kamp-us/phoenix/issues/365) is the `type:decision` child that
+must settle the mechanism before any cutover code (#366 producer, #367 consumer, #368
+foreign validation) is written.
+
+Supersedes [0062](0062-repo-as-config-plugin.md) §3 (the deferral) and updates
+[0062](0062-repo-as-config-plugin.md) §6 (which named this the deferred follow-up). The
+portability *target* — repo-agnostic — is not relitigated; 0062 already decided it. This
+ADR decides *how* the package travels.
+
+## Decision
+
+### 1. Mechanism — publish epic-ledger to npm; `review-plan` resolves in-repo first, falls back to the published package
+
+`epic-ledger` is **published to npm** as a public package. A foreign `review-plan`
+invokes the published CLI; phoenix-local `review-plan` keeps using the in-repo
+`packages/epic-ledger`. The gate-dependency resolution **prefers the in-repo package
+when present and falls back to the published package** — concretely, `review-plan`
+checks for `packages/epic-ledger/src/bin.ts` in the working tree and runs `node` against
+it when it exists, otherwise invokes the published CLI via
+`pnpm dlx <pkg>@<version> <epic>`. (#367 implements this resolution; this ADR fixes its
+contract.)
+
+Rationale: bundling drags an Effect dependency tree into a markdown-skills plugin (wrong
+shape, heavy, and it would silently drift from source); a dependency-free rewrite trades
+a maintained, tested validator for a hand-rolled re-implementation plus a perpetual
+parity-test burden. Publishing keeps **one** source of truth — the same package phoenix
+runs locally is the one foreign repos pull — and the in-repo-first resolution means
+phoenix's daily pipeline never depends on the published artifact (no dogfood regression,
+no network on the local gate path).
+
+**Package name / scope.** The package is published under a **public** scope.
+`@phoenix/epic-ledger` is *not* publishable as-is: it is `private: true` and `@phoenix`
+is an internal workspace scope, not a registered public npm org. The publish therefore
+**requires renaming to a public scope** — the recommended name is
+**`@kampus/epic-ledger`** (the org's public identity; consistent with the `@kampus/*`
+lineage). #366 flips `private` off, sets the public name, and pins the `catalog:` deps
+(`effect`, `@effect/platform-node`) to concrete versions so a published `package.json`
+resolves outside the workspace.
+
+> **Human prerequisite (an agent cannot do this):** the `@kampus` npm org/scope must
+> **exist and be owned by the maintainers**, with publish rights granted to the
+> automation. Creating the npm org and registering the scope is a one-time human action;
+> no pipeline step can self-provision it. If the org name changes, the published name in
+> #366's `package.json` and the `pnpm dlx` invocation in #367 must change with it.
+
+### 2. Fully-automated release pipeline
+
+Distribution is a **fully-automated CI/CD release**, never a manual `npm publish` from a
+laptop. A GitHub Actions workflow under `.github/workflows/` publishes
+`packages/epic-ledger` to npm on a release trigger.
+
+- **Trigger:** a published **GitHub Release** whose tag matches `epic-ledger-v*` (e.g.
+  `epic-ledger-v0.1.0`). A package-scoped tag prefix keeps this workflow from firing on
+  unrelated tags as the repo grows other publishable packages. Equivalent:
+  `on: push: tags: ['epic-ledger-v*']`. (A changesets-style flow is an acceptable
+  alternative if the repo later adopts changesets repo-wide; the release-tag trigger is
+  the chosen default because it needs no extra tooling and binds the published version to
+  a reviewable, human-cut release.)
+- **Version source:** `packages/epic-ledger/package.json`'s `version` field is
+  authoritative. The workflow publishes exactly that version; the release tag must match
+  it (a guard step fails the run if the tag's version and the `package.json` version
+  disagree, so a mistagged release never publishes a wrong version).
+- **Scope of the publish:** the workflow publishes **only** `packages/epic-ledger`
+  (`pnpm --filter @kampus/epic-ledger publish`, run from the package dir) — never the
+  whole workspace, never any other package.
+- **npm auth:** via an **`NPM_TOKEN`** repository secret (an automation/granular token
+  with publish rights to the `@kampus` scope), exposed to the publish step as
+  `NODE_AUTH_TOKEN`. **Enable npm provenance** (`npm publish --provenance`, the workflow
+  granted `id-token: write` for OIDC) so the published artifact carries a verifiable
+  link back to the building workflow and commit — preferred over a long-lived token
+  where the registry supports it, but `NPM_TOKEN` is still required for the publish
+  credential itself.
+
+> **Human prerequisites (an agent cannot do these):**
+> 1. **Create the `@kampus` npm org/scope** (per §1) and grant the publish token access.
+> 2. **Add the `NPM_TOKEN` repository secret** in GitHub settings (Settings → Secrets
+>    and variables → Actions). An agent has no access to repo secrets; a human sets this
+>    once. Without it the workflow's publish step fails closed.
+
+### 3. Version-sync between the in-repo package and the published package
+
+Because §1 resolves in-repo-first, the **published version must track the in-repo
+package** or the two gate implementations drift — a foreign repo could run an older
+published validator than phoenix runs locally, producing a different PASS/FAIL verdict
+on the same ledger. The forcing rule: a change to `packages/epic-ledger`'s gate logic
+**bumps `package.json`'s `version` and cuts a matching `epic-ledger-v*` release** in the
+same change, so the latest published version always reflects the current in-repo source.
+(#366 owns making this routine; the parity AC — "the same epic yields the same verdict
+and the same defect set through the published artifact as through the in-repo CLI" — is
+the observable check.)
+
+## Consequences
+
+- **The publish workflow is control-plane.** The `.github/workflows/` file lands under
+  `.github/**` → **CONTROL-PLANE per ADR [0053](0053-control-plane-boundary.md)**. #366's
+  implementation PR (which adds the workflow) is therefore **never auto-merged by
+  `ship-it`** — a human merges it by hand, and `review-doc`/`review-code` are advisory on
+  it. The package's own `package.json`/source changes (`packages/**`) stay non-blocking
+  and auto-merge once gated; only the workflow file forces the human merge.
+- **Supersedes ADR 0062 §3.** The "stay in-repo for v1 / `review-plan` phoenix-pinned /
+  degrade-with-a-message" deferral is replaced: `review-plan` becomes genuinely portable
+  via the published package, and the §3 degradation guard (#349) is removed by #367. ADR
+  0062's "10/11 skills repo-agnostic" framing is now "11/11" once the epic lands (#368
+  updates that framing).
+- **One-time human cost, then zero-touch.** After the two human prerequisites (npm
+  `@kampus` org + `NPM_TOKEN` secret), every release is a tag/Release away — no manual
+  `npm publish`, no laptop credentials. The cost moves from per-release toil to a single
+  setup.
+- **New maintenance obligation: version discipline.** §3 makes "bump-and-tag on every
+  gate-logic change" a standing rule; skipping it silently desyncs foreign-repo gating
+  from phoenix-local gating. The parity AC and the version-match guard step are the
+  backstops, but the discipline is the primary defense.
+- **Renaming `@phoenix/epic-ledger` → `@kampus/epic-ledger`** touches every in-repo
+  importer of the package and the `node`/`pnpm dlx` invocation in `review-plan`. #366
+  carries the rename; #367 carries the invocation. Until the rename lands, nothing
+  publishes.
