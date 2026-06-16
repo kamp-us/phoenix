@@ -80,6 +80,29 @@ either mode (this mirrors the `gh-issue-intake-formats.md` §5/§6 relationship 
 names write-code the consumer of *both* FAIL markers and `ship-it` the consumer of *both*
 PASS markers).
 
+### A rebase invalidates the PASS — rebase → re-review → ship is atomic
+
+Whenever a PR head moves after it was reviewed — most often **a rebase to catch up to
+`main`**, but any force-push — the prior `review-code`/`review-doc` PASS is bound to the *old*
+head and is **staleness-invalidated** (ADR
+[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)): the verdict attests the exact
+tree it reviewed, and the rebased head is, in principle, un-reviewed. `ship-it` will then
+correctly refuse with `unverified (verdict not bound to current head)` (its Step 2b). That
+refusal is **the system working, not a stall** — never weaken the SHA-binding to route around
+it, and never wait on a human for it.
+
+So a rebase is never the *last* step before ship. **Rebase → re-review → ship is one atomic
+sequence:** after you rebase (or force-push) a PR, the new head needs a **fresh review against
+that head** before `ship-it` can act — re-run the matching gate (`review-code` for code,
+`review-doc` for docs) against the new head, and only once its latest verdict is a current-head
+PASS hand off to `ship-it`. Never ship on a **pre-rebase PASS** — the rebase invalidated it the
+moment it landed, so "ship on the existing PASS after a rebase" is self-contradictory.
+
+The pattern that **never hits this**: **review the exact head you ship.** A flow that reviews
+and ships in one pass over a single head never orphans its verdict; the split
+review-then-rebase-then-ship flow is the only one that does, and the fresh re-review is what
+re-binds the verdict to the head being merged (#310).
+
 ---
 
 ## Step 1 — Pick the next issue

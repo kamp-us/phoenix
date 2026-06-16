@@ -389,6 +389,24 @@ The polarity of the **newest current-head** event in each namespace is the only 
 decides — an old PASS behind a newer FAIL never ships, an old FAIL behind a newer PASS does not
 block, and a PASS bound to a *stale* head never ships at all.
 
+#### A rebase/force-push staleness refusal means "re-review, then ship" — not "stuck"
+
+The most common way to hit `unverified (verdict not bound to current head)` is **a rebase
+before ship**: a PR fell behind `main`, someone rebased it (or force-pushed any new head),
+and the prior `review-code`/`review-doc` PASS was bound to the *old* head. The rebase
+staleness-invalidates that PASS — correctly, by design (ADR 0058): the verdict attests the
+exact tree it reviewed, and a new head is, in principle, un-reviewed code. So this refusal is
+**working as intended, not a fault to route around** — do **not** weaken the SHA-binding, and
+do **not** stall waiting on a human.
+
+The recovery is a **fresh review against the new head, then ship** — the verdict re-binds to
+the current head and Step 2b clears. Concretely: re-run the matching gate (`review-code` for
+code, `review-doc` for docs) against `$CURRENT_HEAD`, and once its latest verdict is a
+current-head PASS, re-invoke `ship-it`. Whoever rebases owns this: the atomic path is **rebase
+→ re-review → ship**, never *ship on a pre-rebase PASS* (which is self-contradictory — the
+rebase invalidated that PASS the moment it landed). `write-code`'s ship/handoff flow documents
+this atomic path; this refusal is its enforcement point, not a dead end (#310).
+
 ---
 
 ## Step 3 — Confirm the *gating* checks are green (one read, no polling)
