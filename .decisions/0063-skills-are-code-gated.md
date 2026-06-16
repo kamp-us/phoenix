@@ -8,6 +8,9 @@ tags: [pipeline, ship-it, review-code, gate-routing, skills]
 
 # 0063 — `skills/**` is code-gated — ship-it's doc-probe excludes it, review-code is its canonical gate
 
+**Amended by [0064](0064-skills-are-control-plane-blocking.md):** `skills/**` are
+blocking/manual-merge; this ADR's `review-code` routing is unchanged.
+
 ## Context
 
 After #231 moved the issue-intake skills out of `.claude/skills/` to a root `skills/`
