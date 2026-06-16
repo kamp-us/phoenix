@@ -139,3 +139,9 @@ does, because the operator cannot approve their own PR.
   (`review-doc`) and a pre-gate control-plane refusal. Complements
   [0047](0047-review-plan-gate.md) (the plan-layer gate) and
   [0046](0046-plan-epic-prd-grade-plans.md) (plan-epic).
+- **Enforced at the platform by [0071](0071-enforce-control-plane-at-github.md).** This ADR's
+  boundary was honor-system — `main`'s ruleset required 0 approvals + 0 checks, so nothing at
+  the GitHub level blocked a hand-merge of a control-plane PR (#382). 0071 makes it binding: a
+  `required_status_checks` rule for the gating set + a human-only `CODEOWNERS`
+  (`require_code_owner_review`) over `.claude/**`/`.github/**` and the gate-critical skills, so
+  the human merge this ADR mandates is enforced by GitHub, not just by `ship-it`'s self-restraint.
