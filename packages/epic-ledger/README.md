@@ -1,4 +1,4 @@
-# @phoenix/epic-ledger
+# @kampus/epic-ledger
 
 The deterministic structural **floor** for an epic's executable task ledger — the symmetric twin
 of `review-code`, one stage earlier. Where `review-code` gates `write-code` → merge, this package
@@ -81,6 +81,6 @@ Effect idioms follow the repo's [`.patterns/effect-schema-validation.md`](../../
 (T0 `*.unit.test.ts`).
 
 ```bash
-pnpm --filter @phoenix/epic-ledger typecheck
-pnpm --filter @phoenix/epic-ledger test
+pnpm --filter @kampus/epic-ledger typecheck
+pnpm --filter @kampus/epic-ledger test
 ```
