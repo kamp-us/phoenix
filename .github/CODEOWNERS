@@ -1,0 +1,13 @@
+# Control-plane: human-only approval required (ADR 0053, 0065, 0071).
+# Owner MUST be a human individual or a humans-only team — never an agent/bot,
+# else an ADR-0055 agent approval would defeat the human-merge property.
+#
+# This file is INERT until the `main` ruleset enables `require_code_owner_review`
+# (a human governance action — see ADR 0071 §3 and the PR that adds this file).
+/.claude/                       @usirin
+/.github/                       @usirin
+/skills/ship-it/                @usirin
+/skills/review-code/            @usirin
+/skills/review-doc/             @usirin
+/skills/review-plan/            @usirin
+/skills/gh-issue-intake-formats.md  @usirin
