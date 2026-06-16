@@ -156,6 +156,35 @@ multiple paths (the merged-stream finalizer and the reconnect path both
 hit it). The heartbeat fiber doesn't need explicit teardown — it's part
 of the merged stream, so the stream's own finalizer tears it down.
 
+## Interruption on disconnect (a benign squashed `Cause`)
+
+When the client disconnects while the stream is still open, the HTTP
+runtime **interrupts** the response-body Effect fiber. That's the normal
+teardown path — `Stream.ensuring(closeStream)` fires and the queue + the
+merged heartbeat fiber are reclaimed. But the fiber's exit is a `Failure`
+carrying an **interrupt-only** `Cause`, and `Cause.squash` of an
+interrupt-only cause is a generic `Error("All fibers interrupted without
+error")` (effect-smol `Cause.squash`). `Stream.toReadableStream`'s observer
+reports any `Failure` exit via `controller.error(...)`, so the workerd
+isolate logs this squashed error as an *uncaught exception* on every
+disconnect.
+
+It is **benign** — the client is already gone, nothing reads past it, and
+the next request is served normally. And it is **not fixable in the stream
+definition**: external fiber interruption short-circuits the whole fiber,
+so no in-stream combinator (`catchCause`, `onExit`, `orElseSucceed`, …) can
+flip the interrupt-only exit to `Success`. The interrupt is the contract,
+not a bug.
+
+The only place it bites is the **integration harness**: Vitest's
+main-process StateManager collects that uncaught exception as an unhandled
+error and flips a fully-green run's exit code to non-zero (#20). The fix
+lives there, not here — `apps/web/vitest.config.ts` registers an
+`onUnhandledError` hook that drops **exactly** this one message (and only
+it, so every other unhandled error still fails the run), narrower than a
+blanket `dangerouslyIgnoreUnhandledErrors`. Production code leaves the
+disconnect path untouched.
+
 ## A note on `Stream.repeatEffect`
 
 `effect@4.0.0-beta.74` does **not** export `Stream.repeatEffect`. The
