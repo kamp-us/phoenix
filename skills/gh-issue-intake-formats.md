@@ -178,16 +178,19 @@ This section is the **single source of truth** the three behavioral skills cite 
 `triage` (assigns it), `plan-epic` (children inherit it), and `write-code` (consumes it for
 pick-order). It defines what a milestone *is* and the mechanical surface it lives on; the
 per-skill *behavior* (the assign rules, the inherit logic, the pick-order) lives in those three
-skills and **cites this section**, exactly as the rest of this contract is cited by the labels
-and markers it defines. The *why* — what a milestone means and how the set is curated — is ADR
+skills and **cites this section**, so the dimension can't drift across them (epic
+[#406](https://github.com/kamp-us/phoenix/issues/406)) — exactly as the rest of this contract is
+cited by the labels and markers it defines. The *why* — what a milestone means and how the set is
+curated — is ADR
 [0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md);
 read it for the rationale, this section for the contract.
 
 **What a milestone encodes.** A milestone is **strategic sequencing / campaign grouping** —
-"which focused push, in what order" — **not feature breakdown** (ADR 0072 §1). Feature
-decomposition is the job of **epics + native sub-issues**; a milestone is the cross-cutting
-*commitment* an epic can't be. A GitHub issue is in **at most one** milestone, which is why a
-milestone is a commitment and not a tag.
+"which focused push, in what order" — **not feature breakdown** (ADR 0072 §1). It is a named
+bucket of issues (a product surface like *Search* / *Bookmarks*, or a strategic campaign like
+*Pipeline hardening*). Feature decomposition is the job of **epics + native sub-issues**; a
+milestone is the cross-cutting *commitment* an epic can't be. A GitHub issue is in **at most one**
+milestone, which is why a milestone is a commitment and not a tag.
 
 **Two milestone kinds.** *Surface* milestones key off an issue's product surface and are
 **mechanical** to assign (a sözlük bug → the sözlük surface milestone). *Strategic* milestones
@@ -206,70 +209,16 @@ existing open milestone leaves the issue **unmilestoned**; it does not invent a 
 **unmilestoned** cluster (e.g. a frozen new-product surface — imge / kampus-CLI / künye) is itself
 the signal that the work is **parked / deferred** (ADR 0072 §4). So a missing milestone is
 **never** "data to be backfilled": a skill must not auto-fill an empty milestone to make an issue
-"complete." Absence is meaningful; respect it. This is the inverse of the mandatory labels — for
-`status:*` a missing value *is* a defect to fix; for milestone a missing value is often the
-intended state.
+"complete." Absence carries information — treat it as a value, not a gap. This is the inverse of
+the mandatory labels: for `status:*` a missing value *is* a defect to fix; for milestone a missing
+value is often the intended state.
 
 **Orthogonal to verification and merge.** Milestone is a **backlog/planning** dimension only.
-The gates (`review-code`/`review-doc`/`review-skill`), `ship-it`, and the control-plane / merge
-machinery (§CP) **ignore it entirely** — it never gates a verdict, never blocks or enables a
-merge, and is not part of any PASS/FAIL contract. It influences only *which work gets picked when*
+The gates (`review-code` / `review-doc` / `review-skill` / `review-plan`), `ship-it`, and the
+control-plane / merge machinery (§CP) **ignore it entirely** — it never gates a verdict, never
+blocks or enables a merge, and is not part of any PASS/FAIL contract. Loading milestone onto a
+gate would couple unrelated concerns; it influences only *which work gets picked when*
 (`write-code` pick-order), nothing on the verify→merge path.
-
-### The REST surface
-
-Milestone is REST-accessible, so it fits the `gh api` path the whole pipeline already relies on
-(the org's Projects-classic breaks GraphQL; milestones sidestep it — ADR 0072). The three skills
-share **one** mechanical reference:
-
-- **The issue's `milestone` field** — `gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'`
-  reads it; `gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<n>` assigns it (and
-  `-F milestone=null` clears it).
-- **The milestone catalog** — `gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number) \(.title)"'`
-  lists the existing open milestones a skill may assign to (the *only* legal assignment targets;
-  a skill never `POST`s a new one).
-- **The filter** — `gh api "repos/$REPO/issues?milestone=<n>&state=open"` selects the issues in a
-  milestone (the read `write-code`'s pick-order and a campaign sweep share).
-
-```bash
-# read an issue's milestone (none ⇒ the well-formed default)
-gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'
-# the existing open milestones — the ONLY legal assignment targets (never create one)
-gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number)\t\(.title)"'
-# assign to an existing open milestone (triage / plan-epic inherit); clear with milestone=null
-gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<n>
-```
-
----
-
-## Milestone — the optional intake dimension
-
-`milestone` is the pipeline's **fourth, optional** dimension, alongside the mandatory
-`type:*` / `p*` / `status:*` labels above. It is a **backlog/campaign grouping** — a named
-bucket of issues a milestone represents (a product surface like *Search*/*Bookmarks*, or a
-strategic campaign like *Pipeline hardening*). This section is the **single definition** the
-behavioral skills cite; the per-skill *behavior* (assign rules, inherit logic, pick-order)
-lives in those skills and only references this section, so the dimension can't drift across
-them (epic [#406](https://github.com/kamp-us/phoenix/issues/406)).
-
-**Optional by design — absence is the default and is meaningful.** Unlike `type:*` / `p*` /
-`status:*`, which triage always sets, **most issues legitimately carry no milestone**, and
-that is the correct default. An issue is well-formed with **no** milestone. Crucially, a
-deliberately-unmilestoned issue is **not "missing data" to be backfilled** — it is the
-**freeze-by-absence** signal: an issue left unmilestoned on purpose (e.g. a frozen new-product
-surface that is not on any active campaign) reads as *not scheduled into any campaign*, and no
-skill auto-fills it. Absence carries information; treat it as a value, not a gap.
-
-**Existing open milestones only — a skill never *creates* one.** Assignment selects from the
-**already-open** milestones on the repo; **creating** a milestone is a roadmap/human act, never
-a skill's. A skill that finds no clear existing match leaves the issue unmilestoned rather than
-minting a milestone to hold it.
-
-**Orthogonal to verification and merge.** Milestone is a *backlog/ordering* concern only. The
-gates (`review-code` / `review-doc` / `review-skill` / `review-plan`) and the merge actor
-(`ship-it`) **ignore** it entirely — it never affects whether a PR is merge-ready or who merges
-it. Loading milestone onto a gate would couple unrelated concerns; it stays out of the
-verification/merge path by design.
 
 ### Who writes it, who reads it
 
@@ -303,29 +252,36 @@ each skill.
   outside the milestone. Focus must not silently de-prioritize an emergency; the priority spine
   (§Pipeline labels — all `p0` before any `p1`) wins over any campaign lean.
 
-### REST surface — the one mechanical reference
+### The REST surface — the one mechanical reference
 
-Milestone is the issue's native `milestone` field, not a label. Every skill that reads, writes,
-or inherits it shares **this** mechanical reference (all via `gh api` REST — never GraphQL, per
-the org's Projects-classic constraint):
+Milestone is the issue's native `milestone` field, not a label, so it fits the `gh api` REST path
+the whole pipeline already relies on (the org's Projects-classic breaks GraphQL; milestones
+sidestep it — ADR 0072, **never GraphQL**). Every skill that reads, writes, or inherits it shares
+**this** one mechanical reference:
+
+- **The issue's `milestone` field** — `gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'`
+  reads it (`none` is a first-class, correct answer, never a defect to repair);
+  `gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<n>` assigns it by **numeric milestone id,
+  never the title**; `-F milestone=null` clears it.
+- **The milestone catalog** — `gh api "repos/$REPO/milestones?state=open"` lists the existing
+  open milestones a skill may assign to (the *only* legal assignment targets; a skill never
+  `POST`s a new one).
+- **The filter** — `gh api "repos/$REPO/issues?milestone=<n>&state=open"` selects the issues in a
+  milestone (the read `write-code`'s pick-order / drain-this-milestone query and a campaign sweep
+  share).
 
 ```bash
-# list the repo's open milestones (number + title) — the candidate set to match against
-gh api "repos/$REPO/milestones?state=open&per_page=100" --jq '.[] | "#\(.number) \(.title)"'
-
-# assign an issue to a milestone — the numeric milestone id, never the title
+# read an issue's milestone (none ⇒ the well-formed default, never a defect to repair)
+gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'
+# the existing open milestones — the ONLY legal assignment targets (never create one)
+gh api "repos/$REPO/milestones?state=open&per_page=100" --jq '.[] | "#\(.number)\t\(.title)"'
+# assign to an existing open milestone (triage / plan-epic inherit) — numeric id, never the title
 gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<milestone-number>
-
 # clear a milestone (rare; assignment is the common write)
 gh api -X PATCH repos/$REPO/issues/<N> -F milestone=null
-
-# filter issues by milestone (write-code's drain-this-milestone query)
+# filter issues by milestone (write-code's drain-this-milestone query, a campaign sweep)
 gh api "repos/$REPO/issues?state=open&milestone=<milestone-number>&per_page=100"
 ```
-
-The `milestone=<n>` value is the **numeric milestone id**, not its title. Reading an issue's
-current milestone is `gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'` — and
-`none` is a first-class, correct answer, never a defect to repair.
 
 ---
 
