@@ -1,6 +1,6 @@
 ---
 name: write-code
-description: Pick the next actionable issue off the configured target repo and execute it end to end — claim it by self-assigning, implement on a branch, open a PR that closes it, log progress on the issue, and hand off to the parent epic; OR, given a PR number, enter repair mode and consume a gate's latest FAIL verdict to fix-and-resubmit on the same branch. Trigger on "work the next issue", "pick up an issue", "implement issue #N", "run write-code", "do the next task", "/write-code", or whenever you're asked to turn triaged work into a PR; trigger repair mode on "repair PR #N", "fix the failed review on #N", "address the FAIL on PR #N". This is the execution stage of the issue-intake pipeline: it consumes `status:triaged` issues and produces PRs that `review-code`/`review-doc` gate, and it consumes those gates' FAIL markers to drive the fix round-trip.
+description: Pick the next actionable issue off the configured target repo and execute it end to end — claim it by self-assigning, implement on a branch, open a PR that closes it, log progress on the issue, and hand off to the parent epic; OR, given a PR number, enter repair mode and consume a gate's latest FAIL verdict to fix-and-resubmit on the same branch. Trigger on "work the next issue", "pick up an issue", "implement issue #N", "run write-code", "do the next task", "/write-code", or whenever you're asked to turn triaged work into a PR; trigger repair mode on "repair PR #N", "fix the failed review on #N", "address the FAIL on PR #N". This is the execution stage of the issue-intake pipeline: it consumes `status:triaged` issues and produces PRs that `review-code`/`review-doc`/`review-skill` gate, and it consumes those gates' FAIL markers to drive the fix round-trip.
 ---
 
 # write-code
@@ -76,15 +76,15 @@ it is, resolve it once — `gh api repos/$REPO/pulls/<N>` succeeds for a PR and
 **The ownership boundary, stated once and load-bearing throughout:** **write-code owns
 fail → fix → re-request; `ship-it` owns PASS → merge.** You own the branch and the PR, so
 driving a FAIL'd PR back through the gate is your loop — but the merge is never yours, in
-either mode (this mirrors the `gh-issue-intake-formats.md` §5/§6 relationship table, which
-names write-code the consumer of *both* FAIL markers and `ship-it` the consumer of *both*
-PASS markers).
+either mode (this mirrors the `gh-issue-intake-formats.md` §5/§6/§6.5 relationship table, which
+names write-code the consumer of *all three* FAIL markers and `ship-it` the consumer of *all
+three* PASS markers).
 
 ### A rebase invalidates the PASS — rebase → re-review → ship is atomic
 
 Whenever a PR head moves after it was reviewed — most often **a rebase to catch up to
-`main`**, but any force-push — the prior `review-code`/`review-doc` PASS is bound to the *old*
-head and is **staleness-invalidated** (ADR
+`main`**, but any force-push — the prior `review-code`/`review-doc`/`review-skill` PASS is bound
+to the *old* head and is **staleness-invalidated** (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)): the verdict attests the exact
 tree it reviewed, and the rebased head is, in principle, un-reviewed. `ship-it` will then
 correctly refuse with `unverified (verdict not bound to current head)` (its Step 2b). That
@@ -94,8 +94,8 @@ it, and never wait on a human for it.
 So a rebase is never the *last* step before ship. **Rebase → re-review → ship is one atomic
 sequence:** after you rebase (or force-push) a PR, the new head needs a **fresh review against
 that head** before `ship-it` can act — re-run the matching gate (`review-code` for code,
-`review-doc` for docs) against the new head, and only once its latest verdict is a current-head
-PASS hand off to `ship-it`. Never ship on a **pre-rebase PASS** — the rebase invalidated it the
+`review-doc` for docs, `review-skill` for skills) against the new head, and only once its latest
+verdict is a current-head PASS hand off to `ship-it`. Never ship on a **pre-rebase PASS** — the rebase invalidated it the
 moment it landed, so "ship on the existing PASS after a rebase" is self-contradictory.
 
 The pattern that **never hits this**: **review the exact head you ship.** A flow that reviews
@@ -124,11 +124,11 @@ simply passed over until it settles to its single winner. `status:needs-triage`,
 ### Pre-pick exception — resume your own failed PR first
 
 The "skip assigned issues" rule has **exactly one exception**: a PR *you* opened that came
-back FAIL. Its `Fixes #N` issue is still assigned to you (review-code/review-doc leave it
-open and assigned on a FAIL), which would make it unpickable by the rule above — but that
-arc is **yours to drive forward, not skip**. So **before** picking new `status:triaged`
-work, scan your own open PRs for one whose **latest** gate verdict (in *either* namespace)
-is an unaddressed FAIL:
+back FAIL. Its `Fixes #N` issue is still assigned to you (review-code/review-doc/review-skill
+leave it open and assigned on a FAIL), which would make it unpickable by the rule above — but
+that arc is **yours to drive forward, not skip**. So **before** picking new `status:triaged`
+work, scan your own open PRs for one whose **latest** gate verdict (in *any* of the three
+namespaces) is an unaddressed FAIL:
 
 ```bash
 ME=$(gh api user --jq '.login')
@@ -138,14 +138,14 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
   --jq ".[] | select(.user.login==\"$ME\") | .number" | while read PR; do
   # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2
   # uses (ADR 0055, supersedes 0051): build THIS PR's authorized set from its marker authors
-  # holding write+ on the repo, so a forged review-(code|doc): FAIL from a non-reviewer can't
+  # holding write+ on the repo, so a forged review-(code|doc|skill): FAIL from a non-reviewer can't
   # trigger spurious repair. Empty set ⇒ IN($authorized[]) matches nothing ⇒ no verdict
   # resolves ⇒ the scan safely finds nothing — fail-closed.
   comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
   # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
   # per gh-issue-intake-formats.md §5 — the canonical matcher contract
   markerAuthors=$(jq -r '[.[]
-      | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+      | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
       | .user.login] | unique | .[]' <<<"$comments")
   authorized='[]'
   while IFS= read -r a; do
@@ -159,7 +159,7 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
   # cluster by timestamp gap (>120s = new round), same identity as the Bounding count, never a minute bucket
   ROUNDS=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
-          | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*FAIL"; "i"))
+          | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*FAIL"; "i"))
           | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
      | sort
      | reduce .[] as $t ({n:0, prev:null};
@@ -175,8 +175,13 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
     '[.[] | select(.user.login | IN($authorized[]))
           | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
      | sort_by(.created_at) | last | .body // ""' <<<"$comments")
-  echo "$CODE" | grep -qiE '^\s*\**\s*review-code:\s*FAIL' && echo "#$PR review-code FAIL"
-  echo "$DOC"  | grep -qiE '^\s*\**\s*review-doc:\s*FAIL'  && echo "#$PR review-doc FAIL"
+  SKILL=$(jq --argjson authorized "$authorized" \
+    '[.[] | select(.user.login | IN($authorized[]))
+          | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
+     | sort_by(.created_at) | last | .body // ""' <<<"$comments")
+  echo "$CODE"  | grep -qiE '^\s*\**\s*review-code:\s*FAIL'  && echo "#$PR review-code FAIL"
+  echo "$DOC"   | grep -qiE '^\s*\**\s*review-doc:\s*FAIL'   && echo "#$PR review-doc FAIL"
+  echo "$SKILL" | grep -qiE '^\s*\**\s*review-skill:\s*FAIL' && echo "#$PR review-skill FAIL"
 done
 ```
 
@@ -193,7 +198,7 @@ Two properties make this scan terminate rather than starve:
 - **Author-gated verdicts (ADR [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)).**
   Markers count as a verdict **only from a `write+` repo collaborator** — the same GitHub-ACL
   gate `ship-it` Step 2 applies *before* the marker regex. A self-authored or
-  forged `review-(code|doc): FAIL` is invisible here, so write-code can't pull *itself* into
+  forged `review-(code|doc|skill): FAIL` is invisible here, so write-code can't pull *itself* into
   spurious repair (and a forged PASS can't mask a real FAIL).
 - **Cap exclusion.** A PR already at the **N=3** cap is skipped (`ROUNDS >= 3 → continue`):
   escalation hands it to a human but leaves its latest verdict at FAIL, so without this skip
@@ -517,9 +522,10 @@ A standalone (non-sub-issue) issue has no parent epic — skip this step.
 ## Repair mode — consume a gate FAIL verdict, fix-and-resubmit
 
 This is the second invocation shape: keyed off a **PR number**, it is the consumer the
-gate FAIL markers were written for (`gh-issue-intake-formats.md` §5/§6 name write-code the
-reader of both `review-code: FAIL @ <sha> — not merge-ready` and `review-doc: FAIL @ <sha> —
-changes-requested`, SHA-bound per ADR 0058). You take a PR that came back failed, apply exactly the enumerated
+gate FAIL markers were written for (`gh-issue-intake-formats.md` §5/§6/§6.5 name write-code the
+reader of `review-code: FAIL @ <sha> — not merge-ready`, `review-doc: FAIL @ <sha> —
+changes-requested`, and `review-skill: FAIL @ <sha> — changes-requested`, SHA-bound per ADR
+0058). You take a PR that came back failed, apply exactly the enumerated
 findings on the **same branch**, push so the **stateless** gate re-runs, and stop. Steps
 1–7 above are the *initial* build; this is everything that happens *after* a gate FAIL.
 
@@ -534,12 +540,12 @@ fixing its own PR and an independent gate re-judging it is the firewall, intact.
 
 ### Step R1 — Resolve the latest verdict per namespace (mirror `ship-it` Step 2)
 
-Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code` and
-`review-doc` in **separate namespaces** — two anchored regexes that never cross-match —
-and take the **latest by timestamp** in each. This mirrors `ship-it` Step 2's resolution
-exactly (the reading side of the same contract), **including its ACL author-gate**:
+Do **not** act on the presence of any FAIL that ever existed. Resolve `review-code`,
+`review-doc`, and `review-skill` in **separate namespaces** — three anchored regexes that never
+cross-match — and take the **latest by timestamp** in each. This mirrors `ship-it` Step 2's
+resolution exactly (the reading side of the same contract), **including its ACL author-gate**:
 a marker comment counts as a verdict only from a `write+` repo collaborator, so a
-self-authored or forged `review-(code|doc): FAIL` is invisible (ADR
+self-authored or forged `review-(code|doc|skill): FAIL` is invisible (ADR
 [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)). The native-review path needs
 no ACL gate — GitHub author-attributes reviews, so it is unforgeable.
 
@@ -551,7 +557,7 @@ comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
 # per gh-issue-intake-formats.md §5 — the canonical matcher contract
 markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+    | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' <<<"$comments")
 authorized='[]'
 while IFS= read -r a; do
@@ -580,13 +586,21 @@ gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
         | sort_by(.submitted_at) | last | {state, sha: .commit_id, at: .submitted_at}'
 
-# latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code
+# latest review-doc marker (doc namespace) — author-gated, anchored, never matches review-code/review-skill
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
        sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+
+# latest review-skill marker (skill namespace) — author-gated, anchored, never matches review-code/review-doc
+jq --argjson authorized "$authorized" \
+   '[.[] | select(.user.login | IN($authorized[]))
+         | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
+    | sort_by(.created_at) | last
+    | {body, at: .created_at,
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
 ```
 
 Resolve per namespace, latest-wins by timestamp, **then apply the SHA-staleness test** (ADR
@@ -598,6 +612,10 @@ Resolve per namespace, latest-wins by timestamp, **then apply the SHA-staleness 
   `review-code: PASS` is PASS.
 - **review-doc namespace** — the verdict is the **latest `review-doc` marker** by
   `created_at` (review-doc is comment-only — no native review). `review-doc: FAIL` is FAIL.
+- **review-skill namespace** — the verdict is the **latest `review-skill` marker** by
+  `created_at` (review-skill is comment-only — no native review). `review-skill: FAIL` is FAIL.
+  A `review-skill: advisory` line (a blocking-set skill PR) carries no `@ <sha>` and is **not**
+  a FAIL — it judges nothing to repair, so it's a clean no-op like a PASS.
 
 **Act only when a namespace's latest verdict is FAIL *bound to the current head*.** A newer
 FAIL is acted on even if an older PASS exists — but a FAIL whose `@ <sha>` is **not** the PR's
@@ -606,8 +624,9 @@ current head (`$CURRENT_HEAD`, by prefix-match either way), or that carries **no
 repair on it — report `nothing to repair (latest FAIL not bound to current head)` and stop.
 A PR whose latest current-head verdict is PASS — or that has no current-head FAIL at all — is
 **not repaired**. This keeps repair mode **idempotent**: re-running it on an already-fixed/PASS
-PR, a no-FAIL PR, or a stale-FAIL PR is a clean no-op. If **both** namespaces' latest
-current-head verdicts are FAIL (a mixed code+doc PR), address **both** in this round.
+PR, a no-FAIL PR, or a stale-FAIL PR is a clean no-op. If **more than one** namespace's latest
+current-head verdict is FAIL (a mixed PR — e.g. code+doc, or skill+code), address **all** of
+them in this round.
 
 R1 resolves the **AC gate** — the marker (and the decisive native review folded into the
 code namespace) is what decides whether there's anything to repair, and its `[FAIL]` table
@@ -620,13 +639,13 @@ themselves gate — they fold into the same fix round as additional required fix
 
 The FAIL marker comment (or `CHANGES_REQUESTED` review body) carries a **per-criterion
 evidence table** — each unmet `### Acceptance criterion` (and, for `review-doc`, each unmet
-hygiene check) listed as a `[FAIL]`/`[UNVERIFIABLE]` line with what's missing. Read the
-full body of the resolving comment/review and treat **those enumerated findings as the AC
-work list** — fix exactly what they name (the inline-comment fixes below are additive to
-this list, not a substitute for it):
+hygiene check; for `review-skill`, each unmet rigor check) listed as a `[FAIL]`/`[UNVERIFIABLE]`
+line with what's missing. Read the full body of the resolving comment/review and treat **those
+enumerated findings as the AC work list** — fix exactly what they name (the inline-comment fixes
+below are additive to this list, not a substitute for it):
 
 ```bash
-# the full body of the latest FAILing review-code marker (swap review-code→review-doc for the doc namespace)
+# the full body of the latest FAILing review-code marker (swap review-code→review-doc/review-skill per namespace)
 # author-gated against the ACL-derived $authorized set R1 already built — only a real reviewer's findings are your work list
 # marker test stays emphasis-tolerant (leading \** absorbs review-code's bolding) per gh-issue-intake-formats.md §5
 jq --argjson authorized "$authorized" \
@@ -747,11 +766,11 @@ addressed and that you handed the PR back to the gate.
 
 Repair is **bounded at N = 3** fix → re-review rounds on the same PR, to avoid looping
 forever on a finding it cannot resolve. Count your rounds from the PR's history — a "round"
-is one (gate FAIL → your fix-push) pair. Count **rounds, not markers**: a mixed code+doc PR
-that FAILs in *both* namespaces in the same review pass is **one** round, not two. Identify
+is one (gate FAIL → your fix-push) pair. Count **rounds, not markers**: a mixed PR that FAILs
+in *multiple* namespaces in the same review pass is **one** round, not several. Identify
 a review pass by **timestamp adjacency, not a wall-clock bucket**: cluster the FAIL markers
 and start a new round only when the gap to the previous FAIL exceeds a threshold (`120s`
-below). The two markers of one code+doc pass land seconds apart (back-to-back `gh api`
+below). The markers of one multi-namespace pass land seconds apart (back-to-back `gh api`
 posts) so they cluster into one round regardless of which side of a minute boundary they
 fall on; two *genuine* rounds are always separated by your fix-push + an independent
 re-review (minutes at least), so they never collapse into one. (A fixed `created_at[:16]`
@@ -767,7 +786,7 @@ R1 (reuse its `$comments` + `$authorized`) — only a real reviewer's FAIL count
 # re-review apart) are two — grid-free, so no minute-boundary split or same-minute merge.
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
-         | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*FAIL"; "i"))
+         | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*FAIL"; "i"))
          | .created_at | sub("\\..*Z$";"Z") | fromdateiso8601]
     | sort
     | reduce .[] as $t ({n:0, prev:null};
@@ -820,8 +839,9 @@ forever. The cap thus terminates **both** the fix loop *and* the re-selection lo
   Act only on a FAIL bound to the PR's **current head** — a FAIL whose `@ <sha>` is stale (or
   absent) judges code that has since changed, so repair mode ignores it. This mirrors
   `ship-it` Step 2b's staleness refusal on the reading side.
-- **Both namespaces.** Handle `review-code: FAIL @ <sha>` (§5) **and** `review-doc: FAIL @ <sha>`
-  (§6) — latest current-head verdict per namespace — not just `review-code`.
+- **All three namespaces.** Handle `review-code: FAIL @ <sha>` (§5), `review-doc: FAIL @ <sha>`
+  (§6), **and** `review-skill: FAIL @ <sha>` (§6.5) — latest current-head verdict per namespace —
+  not just `review-code`. A skill PR's FAIL lands in the `review-skill` namespace (ADR 0073).
 - **Author-gated verdicts.** A marker counts only from a `write+` repo collaborator —
   the same GitHub-ACL gate `ship-it` Step 2 applies before the marker regex, so a forged or
   self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor
@@ -982,9 +1002,9 @@ pipeline. The shared label semantics and the body/comment/dependency formats liv
 from `status:planned` after gating a `plan-epic` ledger (epic children — ADR
 [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md)); your output —
 a claimed issue, a PR with `Fixes #N`, progress comments, and an epic handoff note — is
-exactly what `review-code`/`review-doc` read to verify the work against its acceptance
-criteria before merge. The loop closes back on you: when a gate lands a **FAIL** marker
-(`review-code` §5 or `review-doc` §6), *you* are its consumer — [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit)
+exactly what `review-code`/`review-doc`/`review-skill` read to verify the work against its
+acceptance criteria before merge. The loop closes back on you: when a gate lands a **FAIL** marker
+(`review-code` §5, `review-doc` §6, or `review-skill` §6.5), *you* are its consumer — [Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit)
 reads the findings, fixes, and re-submits for an independent re-gate, while `ship-it` stays
 the sole owner of PASS → merge. You also lean on two sibling skills inside type routing:
 `/adr`

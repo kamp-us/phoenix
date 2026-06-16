@@ -326,24 +326,31 @@ apart:
   `.patterns/**`) is what the reviewer must never *load* — already handled, above, by the
   cone-minus-denylist checkout that removes those paths and asserts them absent. It is an
   *isolation* set, not a merge-blocking set.
-- **The control-plane set** — `.claude/**`, `.github/**`, **plus the five gate-critical skills**
-  (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`, `skills/review-plan/**`,
+- **The control-plane set** — the **single canonical definition in §CP** of
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): `.claude/**`, `.github/**`,
+  **plus the six gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`,
+  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
   `skills/gh-issue-intake-formats.md`) — is what `ship-it` *refuses to auto-merge* (ADR
   [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md) §4,
   widened to the gate-critical skills by ADR
-  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
-  `skills/ship-it/SKILL.md` Step 0 is the authoritative source of this blocking set). `.decisions/**`
-  and `.patterns/**` — and every *non*-gate-critical `skills/**` — are **non-blocking**: they
-  auto-merge through `review-doc`/`review-code`. So the merge-blocking flag must match this exact
-  set; flagging a `.decisions`/`.patterns`-only (or non-gate-critical `skills/**`) PR as "not
-  auto-mergeable" would lie about what `ship-it` does and stall the autonomous lane.
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md),
+  with `review-skill/**` added by ADR
+  [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md)). **§CP is the
+  authoritative source — cite it, don't re-hard-code the list** (the independent copies are the
+  #375 drift class §CP closes, ADR 0073 §6). `.decisions/**` and `.patterns/**` — and every
+  *non*-gate-critical `skills/**` — are **non-blocking**: they auto-merge through their gate. So
+  the merge-blocking flag must match this exact set; flagging a `.decisions`/`.patterns`-only
+  (or non-gate-critical `skills/**`) PR as "not auto-mergeable" would lie about what `ship-it`
+  does and stall the autonomous lane.
 
-So the verdict's not-auto-mergeable flag matches **`ship-it`'s Step 0 blocking set exactly**:
+So the verdict's not-auto-mergeable flag matches the **canonical §CP set** (the same one
+`ship-it` Step 0 uses):
 
 ```bash
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
 CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '[.[].filename | select(test("^(\\.claude|\\.github)/|^skills/(ship-it|review-code|review-doc|review-plan)/|^skills/gh-issue-intake-formats\\.md$"))]')"
-# non-empty → control-plane: surface it in the verdict (Step 4) as manual-merge per ADR 0053/0065
+  --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
+# non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073
 ```
 
 ---
@@ -398,9 +405,27 @@ clause does.
 
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)
 
-Every criterion passed. Land an **explicit, recognizable approval signal** on the PR so
-the next actor (human or authorized downstream step) knows it's verified and can merge.
-Two forms, either is valid — both must carry the per-criterion table as evidence.
+Every criterion passed. **Branch on the control-plane class first** (the `CONTROL_PLANE_TOUCHED`
+flag from Step 2): a **blocking-set** PR (it touches `.claude/**`, `.github/**`, or a
+gate-critical skill — §CP) does **not** get a binding `PASS @ <sha> — merge-ready` marker. It
+gets the **canonical advisory line** instead — `review-code: advisory — blocking-set PR (manual
+merge)`, no `@ <sha>` — the one advisory shape all three gates converge on (ADR
+[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5;
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §6.6). It carries the same
+per-criterion evidence table, but it authorizes nothing — it stays *out* of `ship-it`'s PASS
+namespace (there is nothing to bind, so no `@ <sha>`), `ship-it` refuses the blocking-set PR
+regardless (its Step 0), and a human merges it. Skip to **the blocking-set advisory path** below.
+
+> **Why the advisory line, not "binding PASS + a caveat"?** The old shape — a real
+> `PASS @ <sha> — merge-ready` plus a control-plane warning — put a *binding* marker into
+> `ship-it`'s PASS namespace on a PR `ship-it` must refuse, relying on the human to read the
+> caveat. The advisory line makes the verdict non-binding *by construction* (no `@ <sha>` →
+> nothing for any consumer to act on), which is why ADR 0073 §5 retires the old shape in favor
+> of `review-doc`'s no-`@ <sha>` form. This is the review-code reconciliation #424 carries.
+
+For a **non-blocking** PR (every other class), land an **explicit, recognizable approval
+signal** so the next actor (human or authorized downstream step) knows it's verified and can
+merge. Two forms, either is valid — both must carry the per-criterion table as evidence.
 
 First, **resolve the head SHA you actually reviewed** and **write the verdict to a per-PR
 temp file** (`VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"`) so multi-line markdown +
@@ -465,22 +490,12 @@ merge**; the **`ship-it`** skill is the authorized merge step, and merging this 
 auto-close issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on merge, not
 now).
 
-**Only if** `CONTROL_PLANE_TOUCHED` (Step 2) is non-empty, add the control-plane line to the
-verdict: the PR is verified against its ACs **but is not auto-mergeable** — it touches the
-control plane (`.claude/**`, `.github/**`, or a gate-critical skill), so `ship-it` will refuse
-it and a human merges it by hand (ADR
-[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md),
-widened to the gate-critical skills by ADR
-[0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)).
-"Merge-ready" here means the ACs are satisfied, not that the autonomous merge step may act.
-(A PR touching only `.decisions/**`/`.patterns/**` or a non-gate-critical `skills/**` is **not**
-control-plane and **does** auto-merge — do not add this line for it.)
-
-Verdict body shape (this is what you wrote to `$VERDICT_FILE` above). The first line is the
-**canonical bare marker** — no leading `**` emphasis, **with the `@ <HEAD_SHA>` you resolved
-above** — per the matcher contract in [gh-issue-intake-formats.md](../gh-issue-intake-formats.md)
-§5; matchers tolerate an optional leading `**` for backward compatibility, but emit the bare
-form, and the `@ <sha>` is required (ADR 0058):
+Verdict body shape (this is what you wrote to `$VERDICT_FILE` above) for the **non-blocking**
+path. The first line is the **canonical bare marker** — no leading `**` emphasis, **with the
+`@ <HEAD_SHA>` you resolved above** — per the matcher contract in
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5; matchers tolerate an optional
+leading `**` for backward compatibility, but emit the bare form, and the `@ <sha>` is required
+(ADR 0058):
 
 ```markdown
 review-code: PASS @ <HEAD_SHA> — merge-ready
@@ -496,12 +511,32 @@ Run-evidence bundle: <one of — "cited for `<short-sha>`: checks all pass; test
 
 All criteria pass. This PR is merge-ready. **review-code does not merge** — `ship-it` is
 the authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
+```
 
-<!-- include the next block ONLY when CONTROL_PLANE_TOUCHED is non-empty -->
-> ⚠️ **Control-plane PR** — diff touches `.claude/**`, `.github/**`, or a gate-critical skill
-> (`<the matched paths>`).
-> Per ADR 0053/0065 this is **NOT auto-mergeable**: `ship-it` will refuse it; a human merges it
-> by hand. ACs are verified; the merge is the human's call.
+### Pass path — blocking-set PR (advisory only, the canonical advisory form)
+
+Every criterion passed but `CONTROL_PLANE_TOUCHED` (Step 2) is non-empty — the PR touches the
+control plane (§CP). Post the **same evidence**, but the first line is the **canonical advisory
+line** (§6.6), **not** a binding merge-ready marker. It carries **no `@ <sha>`** by design (it
+authorizes nothing, so there is nothing to bind), keeping the verdict out of `ship-it`'s PASS
+namespace; `ship-it` refuses the PR regardless (Step 0) and a human merges it (ADR 0053/0065).
+Upsert it exactly as the PASS path (one `review-code:` marker per PR), and — like the PASS
+fallback — post it as a **comment**, not a native `APPROVE` (a native APPROVE would re-enter the
+code review namespace via its `commit_id`, defeating the advisory's purpose):
+
+```markdown
+review-code: advisory — blocking-set PR (manual merge)
+
+PR #<PR> touches the control plane (`.claude/**`, `.github/**`, or a gate-critical skill — §CP):
+the agent control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it
+does **not** authorize a merge. A maintainer merges this by hand.
+
+Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time — all pass:
+
+- [PASS] <criterion 1> — <evidence>
+- [PASS] <criterion 2> — <evidence>
+
+Run-evidence bundle: <cited for `<short-sha>` | absent — verified from diff + worktree run>.
 ```
 
 ---

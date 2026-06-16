@@ -1,19 +1,20 @@
 ---
 name: ship-it
-description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs), confirm CI is already green, squash-merge, and confirm the linked issue auto-closed — and REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green, squash-merge, and confirm the linked issue auto-closed — and REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
 
 You are the merge actor — the one stage authorized to merge a PR and close the loop.
-A gate (`review-code` for product code, `review-doc` for docs) verified the PR against its
-issue's acceptance criteria (code) or doc-quality bar (docs) and signalled **merge-ready**,
-then stopped, because conflating
+A gate (`review-code` for product code, `review-doc` for docs, `review-skill` for skills)
+verified the PR against its issue's acceptance criteria (code/skills) or doc-quality bar
+(docs) and signalled **merge-ready**, then stopped, because conflating
 "verified" with "merged" is the self-grading collapse the gate exists to prevent. You are the
 separate, deliberate act it defers to. See ADR [0048](https://github.com/kamp-us/phoenix/blob/main/.decisions/0048-ship-it-merge-actor.md)
-for the why — note that gate is now one of two (`review-code`/`review-doc`) under ADR
-[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md), so 0048's prose, which predates the
-split, only discusses `review-code`.
+for the why — note that gate is now one of three (`review-code`/`review-doc`/`review-skill`)
+under ADRs [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md) and
+[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), so 0048's prose, which
+predates the split, only discusses `review-code`.
 
 You ship **exactly one PR** per invocation. You do not sweep all open PRs — that fan-out
 belongs to whatever loop drives the pipeline; keeping this stage atomic keeps it
@@ -34,19 +35,25 @@ A PR is in one of two classes by the files it touches (ADR
   **refuse** (see Step 0).
 
   The **gate-critical skills** are `skills/ship-it/**`, `skills/review-code/**`,
-  `skills/review-doc/**`, `skills/review-plan/**`, and `skills/gh-issue-intake-formats.md` —
-  the verification/merge gates plus the shared marker-namespace/regex contract they all depend
-  on. They are control plane **regardless of directory**, because the one catastrophic case
-  `review-code` can't catch is a *gate auto-merging a weakening of itself*; ADR
+  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`, and
+  `skills/gh-issue-intake-formats.md` — the verification/merge gates plus the shared
+  marker-namespace/regex contract they all depend on. The single canonical definition of this
+  set lives in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP; cite it,
+  don't re-hard-code the path list (the three independent copies are exactly the #375 drift
+  class §CP closes — ADR 0073 §6). They are control plane **regardless of directory**, because
+  the one catastrophic case the AC-gates can't catch is a *gate auto-merging a weakening of
+  itself*; ADR
   [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)
   makes exactly this subset blocking. This is a merge-authority concern only and is
-  **independent of routing**: every gate-critical skill is still verified by `review-code` (ADR
-  0063, unchanged) — the human reads that verdict, then merges by hand. **Every OTHER
-  `skills/**`** (triage, plan-epic, write-code, heal-ci, report, …) stays **non-blocking** —
-  `review-code`-routed and auto-merged on a PASS (ADR 0063 / #364), because those skills
-  neither merge nor verify, so a bad edit still has to clear the gates that do. ADR 0065 is a
-  safe-by-default **stopgap** until a dedicated per-artifact `review-skill` gate lands (issue
-  #371), after which even the gate-critical set can be revisited.
+  **independent of routing**: every gate-critical skill is still verified — now by
+  `review-skill` (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md),
+  superseding 0063's `review-code` routing) — and the human reads that verdict, then merges by
+  hand. **Every OTHER `skills/**`** (triage, plan-epic, write-code, heal-ci, report, …) stays
+  **non-blocking** — `review-skill`-routed and auto-merged on a PASS, because those skills
+  neither merge nor verify, so a bad edit still has to clear the gate that does. ADR 0065's
+  blocking rule is **unchanged** by 0073: `review-skill` is the *verdict* gate; merge-authority
+  (blocking) is the *separate* axis 0065 owns, and 0065 stands verbatim until a later decision
+  retires it against `review-skill`'s evidence (ADR 0073 §4).
 - **NON-BLOCKING — autonomous.** Everything else — `apps/web/**`, `packages/**`,
   `.decisions/**`, `.patterns/**`, and other prose docs. These are product or knowledge
   artifacts; they are gated for quality, but a human at the merge adds no security value, so
@@ -93,7 +100,7 @@ pointless.
 
 ## The merge-ready signals
 
-The pipeline runs **two gates**, one per artifact class, each landing its verdict as a
+The pipeline runs **three gates**, one per artifact class, each landing its verdict as a
 first-line marker comment:
 
 Every verdict is **SHA-bound** — its first line carries the head it reviewed (`@ <sha>`), and
@@ -105,11 +112,16 @@ you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
   (canonical shape: [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5).
   `review-code` can also land a native **approving review** (`event=APPROVE`), whose
   `commit_id` is its bound SHA.
-- **docs** (`.decisions`, `.patterns`, prose `*.md` outside `.claude`/`.github`) →
-  `review-doc`, whose marker is `review-doc: PASS @ <sha> — merge-ready` or
+- **docs** (`.decisions`, `.patterns`, prose `*.md` outside `.claude`/`.github` and outside
+  `skills/**`) → `review-doc`, whose marker is `review-doc: PASS @ <sha> — merge-ready` or
   `review-doc: FAIL @ <sha> — changes-requested` (canonical shape: §6). `review-doc` is
   **comment-only** — it never lands a native review (ADR 0058), so the doc lane is a single
   comparable record type, not a review-vs-comment mix.
+- **skills** (`skills/**`) → `review-skill`, whose marker is
+  `review-skill: PASS @ <sha> — merge-ready` or `review-skill: FAIL @ <sha> — changes-requested`
+  (canonical shape: §6.5). `review-skill` is **comment-only** like `review-doc` (ADR 0058). This
+  **supersedes ADR 0063's** `skills/**` → `review-code` routing (ADR 0073 §4): a skill is a
+  behavioral artifact, gated by the gate built for it.
 
 The marker-comment path is the **default** to expect: the single operator on this repo
 (`usirin`) cannot post an approving review on their own PR under org branch rules, so on
@@ -117,7 +129,8 @@ the common path the gate falls back to a marker comment. **You are the consumer 
 were written for** — without you, they are inert verdicts nobody acts on. Recognize a marker
 tolerantly by shape (`review-code: PASS @ <sha>` … `merge-ready`, `review-code: FAIL @ <sha>`
 … `not merge-ready`, `review-doc: PASS @ <sha>` … `merge-ready`, `review-doc: FAIL @ <sha>` …
-`changes-requested`), not by exact dashes — but the `@ <sha>` is required, and a SHA-less
+`changes-requested`, `review-skill: PASS @ <sha>` … `merge-ready`, `review-skill: FAIL @ <sha>`
+… `changes-requested`), not by exact dashes — but the `@ <sha>` is required, and a SHA-less
 legacy marker resolves to `unverified`, not PASS.
 
 Each gate is **stateless and re-runs**, so a PR can flip PASS → (new commits) → FAIL or
@@ -138,65 +151,71 @@ PR=<pr number>
 gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '[.[].filename]'
 ```
 
-Classify each path:
+Classify each path. The **control-plane / blocking set** is defined **once** in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP — cite that regex, don't
+re-hard-code the path list (the three independent copies are the #375 drift class §CP closes,
+ADR 0073 §6):
 
-- **control plane (blocking):** matches `.claude/**`, `.github/**`, or a **gate-critical
-  skill** (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
-  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`). A gate-critical skill is
-  blocking **for merge authority** (ship-it refuses → manual human merge, ADR
-  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md))
-  AND is **still routed to `review-code`** for its verdict (ADR 0063, below) — the two axes
-  are independent. The blocking refusal short-circuits in the **Routing** step below, *before*
-  the namespace check, so the `review-code` routing stays correct for the human-read verdict
-  (and for when `review-skill` lands, #371): gate-critical skills are **code-class for ROUTING,
-  blocking for MERGE**. Every OTHER `skills/**` is **non-blocking** — code-class for routing
-  and auto-merged on a `review-code` PASS (ADR 0063 / #364).
-- **code:** under `apps/web/**` or `packages/**`, **or under `skills/**`** (the
-  `^(apps/web|packages|skills)/` probe); a source path matching neither this nor the doc
-  probe still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
-  `skills/**` is **code, not docs** — a skill `.md` is an operational/behavioral definition
-  AC-verified by `review-code`, not prose `review-doc` hygiene-checks (ADR
+- **control plane (blocking):** matches the §CP set — `.claude/**`, `.github/**`, or a
+  **gate-critical skill** (`skills/ship-it/**`, `skills/review-code/**`,
+  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
+  `skills/gh-issue-intake-formats.md`). A gate-critical skill is blocking **for merge
+  authority** (ship-it refuses → manual human merge, ADR
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md),
+  **unchanged** by 0073) AND is **routed to `review-skill`** for its verdict (ADR
+  [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), superseding 0063's
+  `review-code` routing) — the two axes are independent. The blocking refusal short-circuits in
+  the **Routing** step below, *before* the namespace check, so the `review-skill` routing stays
+  correct for the human-read verdict: gate-critical skills are **skill-class for ROUTING,
+  blocking for MERGE**. Every OTHER `skills/**` is **non-blocking** — skill-class for routing
+  and auto-merged on a `review-skill` PASS.
+- **skills:** under `skills/**` (the `^skills/` probe) → **skill-class**, requiring a
+  `review-skill` PASS. A skill is a behavioral artifact, gated by `review-skill`, not the code
+  AC-gate nor the doc hygiene-gate (ADR 0073 §4, superseding ADR
   [0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)).
+- **code:** under `apps/web/**` or `packages/**` (the `^(apps/web|packages)/` probe); a source
+  path matching none of the three probes still defaults to code, requiring a `review-code`
+  PASS, so nothing under-gates.
 - **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`
-  **and outside `skills/**`** (ADR 0063 carves `skills/**` out of the docs class).
+  **and outside `skills/**`** (`skills/**` is the skill class, carved out of docs first).
 
 ```bash
 FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
-echo "$FILES" | grep -Eq '^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-plan)/|^skills/gh-issue-intake-formats\.md$' && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge (review-code, ADR 0063)
-echo "$FILES" | grep -Eq '^(apps/web|packages|skills)/' && echo "has-code"   # rough code probe (skills/** is code — ADR 0063)
-# docs probe EXCLUDES skills/** first (ADR 0063), so a skills-only .md PR is NOT classed docs
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set — one definition (ADR 0073 §6)
+echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge on a review-skill PASS (ADR 0073)
+echo "$FILES" | grep -Eq '^skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
+echo "$FILES" | grep -Eq '^(apps/web|packages)/' && echo "has-code"   # code probe (skills/** is its OWN class now — ADR 0073)
+# docs probe EXCLUDES skills/** first, so a skills-only .md PR is NOT classed docs
 echo "$FILES" | grep -Ev '^skills/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 **Routing:**
 
-- If **any** file is control plane (`.claude/**`, `.github/**`, or a gate-critical skill —
-  `skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
-  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`) → **REFUSE.** Report `blocking
-  — manual merge` and stop. A human merges the control plane by hand (ADR 0053; the
-  gate-critical skills added by ADR 0065); the pipeline never self-merges its own guardrails.
-  This holds even if the rest of the diff is clean code/docs — a mixed PR that touches the
-  control plane is still a manual merge, and should be split so the non-blocking half can
-  flow. This refusal short-circuits **before** the namespace check below, so it never
-  conflicts with the fact that a gate-critical `skills/**` PR is still `review-code`-routed
-  (ADR 0063): the routing decides *which gate's verdict the human reads*, this refusal decides
-  *who merges*. A `skills/**` PR that touches **no** gate-critical skill is **not** blocking —
-  it flows through `review-code` and auto-merges on a PASS (ADR 0063 / #364).
-- Otherwise, note which **artifact classes are present** (code, docs, or both). Step 2
-  requires the matching gate's latest verdict = PASS for **each class present**: code →
-  `review-code` PASS; docs → `review-doc` PASS; a mixed code+doc PR needs **both**. Carry the
-  class set into Step 2.
+- If **any** file is control plane (the §CP set — `.claude/**`, `.github/**`, or a
+  gate-critical skill) → **REFUSE.** Report `blocking — manual merge` and stop. A human merges
+  the control plane by hand (ADR 0053; gate-critical skills added by ADR 0065, with
+  `review-skill/**` added by ADR 0073); the pipeline never self-merges its own guardrails.
+  This holds even if the rest of the diff is clean code/docs/skills — a mixed PR that touches
+  the control plane is still a manual merge, and should be split so the non-blocking half can
+  flow. This refusal short-circuits **before** the namespace check below, so it never conflicts
+  with the fact that a gate-critical `skills/**` PR is still `review-skill`-routed (ADR 0073):
+  the routing decides *which gate's verdict the human reads*, this refusal decides *who merges*.
+  A `skills/**` PR that touches **no** gate-critical skill is **not** blocking — it flows
+  through `review-skill` and auto-merges on a PASS.
+- Otherwise, note which **artifact classes are present** (skills, code, docs, or a mix). Step 2
+  requires the matching gate's latest verdict = PASS for **each class present**: skills →
+  `review-skill` PASS; code → `review-code` PASS; docs → `review-doc` PASS; a mixed PR needs a
+  current-head PASS in **each** namespace present. Carry the class set into Step 2.
 
 The `.md$` probe over-matches (it catches code-adjacent markdown too); that's fine — it only
 decides *whether to require a review-doc PASS*, and requiring one extra PASS never makes an
-unsafe merge. The control-plane check is the only one that must be exact, and it is. The
-**one path-class the docs probe must *not* match is `skills/**`**: a skill `.md` is
-code-gated (ADR
-[0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)),
-so the `grep -Ev '^skills/'` runs *before* the `.md$` match — otherwise a `review-code`-verified
-skills-only PR would be classed docs and `ship-it` would demand a `review-doc` PASS that never
-comes (the #358 deadlock). Excluding `skills/**` here is what keeps a skills-only PR flowing
-through exactly the one gate (`review-code`) that ran it.
+unsafe merge. The control-plane check is the only one that must be exact, and it is. The **one
+path-class the docs probe must *not* match is `skills/**`**: a skill `.md` is `review-skill`-gated
+(ADR 0073), so the `grep -Ev '^skills/'` runs *before* the `.md$` match — otherwise a
+`review-skill`-verified skills-only PR would be classed docs and `ship-it` would demand a
+`review-doc` PASS that never comes (the #358 deadlock, now closed by the dedicated gate rather
+than by code-routing). Excluding `skills/**` here is what keeps a skills-only PR flowing through
+exactly the one gate (`review-skill`) that ran it.
 
 ---
 
@@ -229,21 +248,22 @@ absent, which is an anomaly worth stopping on.
 ## Step 2 — Resolve the *latest current-head* verdict per gate namespace, then branch on polarity (guard 1)
 
 You do **not** ship on the presence of any PASS that ever existed. Each gate is stateless and
-re-runs, so a PR can go PASS → FAIL or FAIL → PASS. Resolve **`review-code` and `review-doc`
-in separate namespaces** — two anchored regexes that never cross-match — and require a latest
-PASS in **each namespace whose artifact class is present** (from Step 0). A review-code scan
-must never match a review-doc marker, or vice versa.
+re-runs, so a PR can go PASS → FAIL or FAIL → PASS. Resolve **`review-code`, `review-doc`, and
+`review-skill` in separate namespaces** — three anchored regexes that never cross-match — and
+require a latest PASS in **each namespace whose artifact class is present** (from Step 0). A
+scan in one namespace must never match another's marker.
 
-The two anchors (case-insensitive, anchored at the start of the comment body so a comment
+The three anchors (case-insensitive, anchored at the start of the comment body so a comment
 that merely *quotes* a marker mid-body doesn't match, **emphasis-tolerant** — the leading
 `\**` absorbs an optional bolding `**`, since `review-code` emits its marker bolded — and
 **SHA-capturing** — the trailing `@\s*([0-9a-f]{7,40})` captures the bound head SHA so Step 2b
 can apply the staleness refusal; see the matcher contract in
-[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6 and ADR
+[gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6/§6.5 and ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)):
 
-- code: `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
-- doc:  `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- code:  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- doc:   `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- skill: `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
 
 A marker matching the looser `…:\s*(PASS|FAIL)` prefix but **not** the `@ <sha>` tail is a
 pre-0058 legacy verdict → Step 2b resolves it to `unverified (verdict not bound to current
@@ -271,9 +291,9 @@ and `IN($authorized[])` below matches nothing — every namespace resolves to `n
 ```bash
 comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 
-# distinct logins that posted any review-code/review-doc marker
+# distinct logins that posted any review-code/review-doc/review-skill marker
 markerAuthors=$(jq -r '[.[]
-    | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
+    | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
     | .user.login] | unique | .[]' <<<"$comments")
 
 # keep only those holding write+ on the repo (GitHub's ACL is the trust root, ADR 0055)
@@ -313,13 +333,21 @@ jq --argjson authorized "$authorized" \
     | {body, at: .created_at,
        sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
 
-# latest review-doc marker comment (doc namespace) — author-gated, anchored, never matches review-code
+# latest review-doc marker comment (doc namespace) — author-gated, anchored, never matches review-code/review-skill
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
        sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+
+# latest review-skill marker comment (skill namespace) — author-gated, anchored, never matches review-code/review-doc
+jq --argjson authorized "$authorized" \
+   '[.[] | select(.user.login | IN($authorized[]))
+         | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
+    | sort_by(.created_at) | last
+    | {body, at: .created_at,
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
 ```
 
 Now resolve **per namespace**, latest-wins by timestamp:
@@ -336,6 +364,13 @@ Now resolve **per namespace**, latest-wins by timestamp:
   PASS; `review-doc: FAIL … changes-requested` is FAIL. (review-doc lands no native review —
   it is comment-only, ADR 0058 — so there is no review path to fold in, and no review-vs-comment
   comparison to make.)
+- **review-skill namespace** — the verdict is the **latest `review-skill` marker comment** by
+  `created_at`; its bound SHA is the marker's `@ <sha>`. `review-skill: PASS … merge-ready` is
+  PASS; `review-skill: FAIL … changes-requested` is FAIL. (review-skill is comment-only too,
+  ADR 0058 — same single-record-type resolution as review-doc.) An **advisory** line
+  (`review-skill: advisory — blocking-set PR …`) carries no `@ <sha>` and is **not** a PASS:
+  the PR that earns it is in the §CP set, which Step 0 already refused — so it never reaches a
+  merge decision here.
 
 ### Step 2b — SHA-staleness refusal (ADR 0058)
 
@@ -375,9 +410,11 @@ Then gate the merge on the classes present (Step 0):
    the current head** (Step 2b), and it must be PASS.
    - code present but the review-code namespace is empty → `unverified (no review-code PASS)`.
    - docs present but the review-doc namespace is empty → `unverified (no review-doc PASS)`.
+   - skills present but the review-skill namespace is empty → `unverified (no review-skill PASS)`.
    - a verdict present but not bound to the current head → `unverified (verdict not bound to
      current head)` → refuse.
-   - a mixed code+doc PR needs **both** namespaces resolved to a current-head PASS.
+   - a mixed PR needs **each** present namespace resolved to a current-head PASS (e.g. a
+     skill+code PR needs both `review-skill` and `review-code`).
 2. If **any** required namespace's current-head verdict is **FAIL** → **do not merge.** The PR
    has unaddressed failures as its *current* state, even if an older PASS exists. Report
    `latest verdict is FAIL (<which gate>)` and stop; the fix round-trip is `write-code`'s
@@ -616,7 +653,8 @@ issue closed: yes | no
 ```
 
 If you refused to merge, the reason line is the whole point: `blocking — manual merge`,
-`unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (verdict
+`unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (no
+review-skill PASS)`, `unverified (verdict
 not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest
 verdict is FAIL (<gate>)`, `routed to heal-ci` (a gating red check, handed to the self-heal lane),
 `checks pending`, `no linked issue`, or a run-evidence refusal (Step 3.5):
