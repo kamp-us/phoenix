@@ -95,16 +95,21 @@ so a logged-in `gh` is the only prerequisite.
 
 ## Portability boundary (ADR 0062)
 
-**10 of the 11 skills are fully repo-agnostic** — they carry no repo literals beyond the
+**All 11 skills are fully repo-agnostic** — they carry no repo literals beyond the
 resolved `$REPO`, so they operate on your repo out of the box.
 
-The one exception is **`review-plan`**, which is **phoenix-pinned for v1**. Its
-deterministic ledger gate runs the in-repo `@kampus/epic-ledger` package, which is not
-bundled into the plugin. In a non-phoenix repo `review-plan` **degrades gracefully** —
-it prints `review-plan requires @kampus/epic-ledger (not available in this install — see
-ADR 0062 §3)` rather than a raw crash. The other 10 skills, including the rest of the
-plan→build→ship loop, work without it. (Publishing `@kampus/epic-ledger` so `review-plan`
-becomes portable is a deferred follow-up — ADR 0062 §3.)
+This includes **`review-plan`**, which is now **portable** too. Its deterministic ledger
+gate resolves **in-repo first, published fallback** (ADR
+[0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-epic-ledger-npm-publish-automated-release.md)):
+phoenix runs the on-disk `packages/epic-ledger` bin, and a foreign install runs the
+**published** [`@kampus/epic-ledger`](https://www.npmjs.com/package/@kampus/epic-ledger)
+CLI via `pnpm dlx` — so a non-phoenix install **runs** the gate (validates the ledger,
+flips `status:planned → status:triaged` on a clean one, posts a per-defect FAIL on a dirty
+one) instead of degrading. The published package resolves its target repo from
+`CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` → `gh repo view`, fail-closed (#408). This
+closed the last `10/11 → 11/11` gap — the follow-up epic
+[#362](https://github.com/kamp-us/phoenix/issues/362) that ADR 0062 §3 deferred — and was
+proven end-to-end against a real foreign repo (#368).
 
 Two more boundary notes:
 
