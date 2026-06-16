@@ -397,15 +397,16 @@ VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed PASS verdict into "$VERDICT_FILE" (first line: review-skill: PASS @ <HEAD_SHA> — merge-ready)
 BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
-# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
+# (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
 # Find filter is namespace-anchored, NOT PASS/FAIL-only: it must also match the advisory
 # marker (§6.6) so a polarity flip (blocking↔non-blocking across re-reviews) upserts the one
 # prior review-skill verdict instead of leaving a stale one beside the fresh one. It can't
 # cross-match review-code:/review-doc: — the literal `skill:` suffix excludes both.
-MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+        | jq -r --arg me "$ME" 'map(select(.user.login==$me
           and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
-        | last | .id // empty' <<<"$comments")
+        | last | .id // empty')
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
 else
@@ -478,10 +479,10 @@ VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed advisory verdict into "$VERDICT_FILE" (first line: review-skill: advisory — blocking-set PR (manual merge))
 BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
-MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+        | jq -r --arg me "$ME" 'map(select(.user.login==$me
           and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
-        | last | .id // empty' <<<"$comments")
+        | last | .id // empty')
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
 else
@@ -508,12 +509,12 @@ VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 # write your composed FAIL verdict into "$VERDICT_FILE" (first line: review-skill: FAIL @ <HEAD_SHA> — changes-requested)
 BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
 # Namespace-anchored find filter (matches advisory + PASS + FAIL), as on the pass path — so a
 # fresh FAIL upserts whatever prior review-skill marker exists, advisory included.
-MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+        | jq -r --arg me "$ME" 'map(select(.user.login==$me
           and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
-        | last | .id // empty' <<<"$comments")
+        | last | .id // empty')
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
 else
