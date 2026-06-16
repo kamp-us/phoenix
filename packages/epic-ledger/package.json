@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/epic-ledger",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "The deterministic structural floor validator for an epic's task ledger — Effect v4 Schema domain, validateLedger / isPickable / ledgerSignature",
 	"license": "MIT",
 	"repository": {
@@ -10,19 +10,26 @@
 	},
 	"type": "module",
 	"bin": {
-		"epic-ledger": "./src/bin.ts"
+		"epic-ledger": "./dist/bin.js"
 	},
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
 	},
 	"files": [
-		"src"
+		"dist"
 	],
 	"publishConfig": {
-		"access": "public",
-		"provenance": true
+		"access": "public"
 	},
 	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "tsc -p tsconfig.build.json",
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",
 		"gate": "node src/bin.ts"

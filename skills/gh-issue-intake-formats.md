@@ -647,11 +647,16 @@ guaranteeing exactly one implementer.
 | review-code FAIL marker | the PR | review-code | write-code (fix round-trip) |
 | review-doc PASS marker | the PR | review-doc | ship-it |
 | review-doc FAIL marker | the PR | review-doc | write-code (fix round-trip) |
-| issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim) | write-code (Step 1 pick) |
+| issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim), triage (Step 0 sweep-claim) | write-code (Step 1 pick), triage (Step 0 Rule-0 back-off) |
 
 The issue-claim row is the one entry that is a **protocol over the assignee field**, not a
-markdown format — §7 governs *how* `write-code` writes and reads that field (detect-and-tiebreak,
-not a lock), so it has no body shape the other rows describe.
+markdown format — §7 governs *how* an agent writes and reads that field (detect-and-tiebreak,
+not a lock), so it has no body shape the other rows describe. Two skills use the protocol with
+**different claim lifetimes**: `write-code`'s claim is **durable** (it persists across the build
+so the picker skips the in-progress issue), while `triage`'s claim is a **sweep-scoped mutex** it
+**must release** when the issue reaches its outcome (triage Step 6) — an unreleased triage claim
+would leave a `status:triaged` issue non-null-assigned, which `write-code`'s picker skips, making
+it triaged-but-unpickable. Same detect-and-tiebreak mechanism, opposite lifetimes.
 
 `review-plan` reads the first two formats as its structural floor (the `## Dependencies`
 topology and each sub-issue's acceptance-criteria + `**Stories:**` invariants) and, on a

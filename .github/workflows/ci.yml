@@ -10,18 +10,22 @@ concurrency:
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
-  # Which parts of the tree changed — gates the heavy integration job so a
-  # frontend/docs-only PR doesn't pay the slow real-D1 suite. `check` + `unit`
-  # always run (cheap). Vitest's own `--changed` can't do this: the integration
-  # tests are black-box (HTTP against the deployed worker), so a `worker/**` edit
-  # never appears in their module graph — a path filter is the right tool.
+  # Which parts of the tree changed — gates the cost-bearing jobs so a docs- or
+  # skills-only PR doesn't pay for checks that cover none of the changed files.
+  # `backend` gates the slow real-D1 `integration` suite; `code` gates `check`
+  # (lint/format/typecheck) + `unit`, which a `.claude/**`/`.decisions/**`/`*.md`
+  # PR shouldn't run (those paths are excluded by omission from `code`). Vitest's
+  # own `--changed` can't do this: the integration tests are black-box (HTTP
+  # against the deployed worker), so a `worker/**` edit never appears in their
+  # module graph — a path filter is the right tool.
   changes:
-    name: detect backend changes
+    name: detect changed areas
     runs-on: ubuntu-latest
     permissions:
       pull-requests: read
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
+      code: ${{ steps.filter.outputs.code }}
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -38,9 +42,34 @@ jobs:
               - 'apps/web/package.json'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
+            # Source the `check`/`unit` jobs actually cover: app code, configs that
+            # change lint/typecheck/test behavior, every package.json, the lockfile,
+            # and this workflow itself (so a CI edit keeps self-coverage). Doc/skill
+            # paths (.claude/**, .decisions/**, .patterns/**, *.md) are excluded by
+            # omission, so a docs-only PR leaves `code` false and both jobs skip.
+            code:
+              - 'apps/web/worker/**'
+              - 'apps/web/src/**'
+              - 'apps/web/tests/**'
+              - 'apps/web/tsconfig*.json'
+              - 'apps/web/vitest.config.ts'
+              - 'apps/web/alchemy.run.ts'
+              - 'packages/**'
+              - 'infra/**'
+              - 'biome.jsonc'
+              - 'tsconfig*.json'
+              - 'turbo.json'
+              - 'pnpm-workspace.yaml'
+              - '**/package.json'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yml'
 
   check:
     name: lint / format / typecheck
+    needs: changes
+    # Skipped → green, not blocking (no required-status-check rule on `main`, so a
+    # skipped job never wedges a docs-only PR). Runs whenever code/config changed.
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -63,6 +92,9 @@ jobs:
 
   unit:
     name: unit tests
+    needs: changes
+    # Same gate as `check`: skip (→ green, non-blocking) on a docs/skills-only PR.
+    if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2

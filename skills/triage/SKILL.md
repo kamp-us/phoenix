@@ -51,6 +51,71 @@ gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
 
 ---
 
+## Step 0 — Claim the issue before you mutate it (concurrent-sweep guard)
+
+Triage sweeps run concurrently — the same several accounts that file `report` agents
+also run triage sweeps. Two simultaneous sweeps that both picked #N off the opening
+snapshot will **both** rewrite-on-top its body (Step 4, a last-write-wins `PATCH` — one
+sweep's enrichment silently clobbers the other's, no error, the labels still read
+triaged) and **both** split the same bundle (Step 3, producing duplicate children). The
+Step 3 pre-create re-query guards against a *report agent* having filed the same
+observation; it does **not** guard against a *sibling sweep* mutating the same issue in
+the same window. So claim #N before you touch it.
+
+**Claim by self-assigning — the same detect-and-tiebreak `write-code` uses** (Step 3
+there; the shared semantics are pinned in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7). Assignee is
+last-write-wins, not compare-and-swap, so a bare `POST` self → re-read is a TOCTOU, not a
+lock; the protocol below is detect-and-tiebreak, **not** mutual exclusion. Run it
+**per issue**, immediately before any mutation (split, rewrite, or label):
+
+```bash
+ME=$(gh api user --jq '.login')
+
+# Rule 0 — defer to a pre-existing owner. If #N is already claimed (by a sibling sweep,
+# or — see the release note below — by a write-code agent that picked an already-triaged
+# issue), back off WITHOUT POSTing and move to the next issue. A fresh arrival never
+# evicts an owner that was there before it.
+PRE=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+[ -n "$PRE" ] && continue   # already claimed → skip this issue, take the next
+
+# POST self; capture the FULL assignees list the write returns (one observable write).
+ASSIGNEES=$(gh api -X POST repos/$REPO/issues/<N>/assignees \
+  -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
+
+# Provisional tiebreak among co-racers: min-login. The POST echo only DETECTS a race
+# (staggered co-racers see different sets and both may compute themselves min); the
+# checkpoint GET below RESOLVES it. See §7 for the full derivation.
+WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
+if [ "$WINNER" = "$ME" ]; then
+  for a in $ASSIGNEES; do
+    [ "$a" = "$ME" ] && continue
+    gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$a"
+  done
+  # CHECKPOINT — re-read canonical state (a fresh GET, not the stale POST echo) and
+  # re-confirm I am still min(assignees). This is what resolves the race; do not prune it.
+  STILL=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
+  [ "$(printf '%s\n' $STILL | head -n1)" = "$ME" ] || {
+    gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; continue; }
+  # claim won and confirmed → triage this issue (Steps 1–6), then RELEASE in Step 6
+else
+  # lost the tiebreak: self-clean and take the next issue (do NOT triage — do NOT co-occupy)
+  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"
+  continue
+fi
+```
+
+**You MUST release the claim when you finish triaging** (Step 6) — triage's claim is a
+*sweep-scoped mutex*, not the durable ownership `write-code`'s claim is. This is the one
+place triage's claim differs from `write-code`'s, and it's load-bearing: `write-code`'s
+picker (Step 1) **skips any issue with a non-null assignee**, so a triaged issue left
+self-assigned by triage would be invisible to every `write-code` agent — triaged but
+unpickable forever. Releasing closes that interaction: the issue leaves triage `status:triaged`
+**and unassigned**, exactly what the picker expects. (`needs-info` and `closed` outcomes
+release too — see Step 6.)
+
+---
+
 ## Step 1 — Read the issue and its context
 
 Don't classify from the title. Read the body, then read enough of the codebase to
@@ -399,6 +464,24 @@ gh api "repos/$REPO/issues?state=closed&labels=closed-by-triage" \
   --jq '.[] | "#\(.number) \(.title)"'
 ```
 
+### Release the claim (every outcome)
+
+Once the issue has reached its outcome — triaged, needs-info, or closed — **remove your
+self-assignment** so the claim doesn't outlive the sweep. This is mandatory on the
+triaged path (otherwise the issue is `status:triaged` but unpickable — `write-code`'s
+picker skips any non-null assignee, Step 0). Do it on the other two paths as well, for
+consistency: a parked `needs-info` issue or a closed one should carry no stray triage
+claim. The DELETE is idempotent — a 404 means it was already unassigned, which is fine.
+
+```bash
+ME=$(gh api user --jq '.login')
+gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" 2>/dev/null || true
+```
+
+(A `closed-by-triage` issue is closed *and* unassigned; a needs-info issue is parked with
+`status:needs-info`, no triage claim. Only a triaged issue stays open, and it must be
+unassigned to be pickable.)
+
 ---
 
 ## Running the queue
@@ -407,14 +490,22 @@ You can triage one named issue (`triage issue #34`) or sweep the whole queue. Wh
 sweeping:
 
 1. List `status:needs-triage` (the snippet at the top).
-2. Triage each issue through Steps 1–6.
+2. For each issue, **claim it first (Step 0)** — a concurrent sibling sweep may have
+   picked the same issue off the same snapshot, so claim-or-skip before you mutate it. If
+   the claim backs off (already claimed), move to the next issue. Then triage the claimed
+   issue through Steps 1–6, **releasing the claim** at the end (Step 6, Release the claim).
 3. If you split a bundle, the new children re-enter `status:needs-triage` — pick them
-   up on the same sweep or a follow-up; they're triaged like any other issue.
+   up on the same sweep or a follow-up; they're triaged (claim → Steps 1–6 → release)
+   like any other issue.
 4. **Re-list the queue before declaring the sweep done.** Report agents file
    concurrently, so issues land mid-sweep; a sweep that only processes the opening
-   snapshot routinely leaves fresh arrivals behind. Loop until the listing comes
-   back empty — every outcome (triaged / needs-info / closed) removes
-   `status:needs-triage`, so an empty listing is the complete termination test.
+   snapshot routinely leaves fresh arrivals behind. An issue currently *claimed* by a
+   sibling sweep still shows `status:needs-triage` (the claim is an assignee, not a
+   label), so it reappears in this listing; Step 0's Rule-0 back-off skips it while the
+   sibling holds it, and once that sweep releases, a later pass picks it up. Loop until
+   the listing comes back empty of issues you can claim — every *completed* outcome
+   (triaged / needs-info / closed) removes `status:needs-triage`, so a listing with
+   nothing left to claim is the complete termination test.
 5. Report a short ledger back: per issue, the outcome (type+priority+triaged /
    needs-info / closed) in one line each. Don't narrate every REST call — the labels
    and comments on the issues are the durable record.
