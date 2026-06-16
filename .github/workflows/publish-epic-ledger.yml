@@ -1,8 +1,10 @@
 # Publishes @kampus/epic-ledger to npm on a human-cut GitHub Release tagged
 # `epic-ledger-v*` (ADR 0064). Auth is OIDC Trusted Publishing — no NPM_TOKEN
-# secret: `id-token: write` mints a short-lived per-run credential, and the
-# publish runs with provenance. A guard fails the run if the tag version and the
-# package.json version disagree, so a mistagged release never publishes.
+# secret: `id-token: write` mints a short-lived per-run credential. Under trusted
+# publishing, provenance is generated automatically (the `--provenance` flag is no
+# longer needed), so the publish carries a verifiable link back to this workflow
+# without it. A guard fails the run if the tag version and the package.json version
+# disagree, so a mistagged release never publishes.
 #
 # Prerequisite (human, one-time): the @kampus npm org/scope must exist and this
 # repo + workflow must be registered as a Trusted Publisher for
@@ -61,8 +63,9 @@ jobs:
       - name: Typecheck epic-ledger
         run: pnpm --filter @kampus/epic-ledger typecheck
 
-      # Publish ONLY this package, from its own dir, with provenance. No
-      # NPM_TOKEN — OIDC Trusted Publishing supplies the credential per run.
-      - name: Publish to npm (OIDC trusted publishing + provenance)
+      # Publish ONLY this package, from its own dir. No NPM_TOKEN — OIDC Trusted
+      # Publishing supplies the credential per run and generates provenance
+      # automatically (no `--provenance` flag needed).
+      - name: Publish to npm (OIDC trusted publishing + automatic provenance)
         working-directory: packages/epic-ledger
-        run: npm publish --provenance --access public
+        run: npm publish --access public
