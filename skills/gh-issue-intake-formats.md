@@ -99,8 +99,11 @@ text reads as phoenix-only) is also de-pinned: the trigger describes the *capabi
 
 Every issue carries one `type:*`, one `p*`, and one `status:*` (plus, transiently, the
 `status:planning` epic-lock on a locked epic — a second `status:*` that sits *alongside* the
-real one, never replacing it; see below). The `status:*` labels are the **pipeline state** an
-issue sits in — the spine the intake skills key on. The canonical set:
+real one, never replacing it; see below). These three are the **mandatory** dimensions triage
+always sets. There is a fourth, **optional** dimension — `milestone` — that is *not* a label
+and not always present; it lives on its own GitHub surface and is documented in §Milestone. The
+`status:*` labels are the **pipeline state** an issue sits in — the spine the intake skills key
+on. The canonical set:
 
 | Label | Meaning | Pickable by `write-code`? |
 |---|---|---|
@@ -162,6 +165,93 @@ the gate flips C `triaged` (pickable), and `write-code` picks a dropped story (#
   #261) and the convergence loop's signature checkpoint. Don't claim a lock guarantee the label
   API can't give — claim "the common flip-vs-supersede / concurrent-re-plan interleaving is
   serialized." See ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md).
+
+---
+
+## Milestone — the optional intake dimension
+
+`milestone` is the pipeline's **fourth, optional** dimension, alongside the mandatory
+`type:*` / `p*` / `status:*` labels above. It is a **backlog/campaign grouping** — a named
+bucket of issues a milestone represents (a product surface like *Search*/*Bookmarks*, or a
+strategic campaign like *Pipeline hardening*). This section is the **single definition** the
+behavioral skills cite; the per-skill *behavior* (assign rules, inherit logic, pick-order)
+lives in those skills and only references this section, so the dimension can't drift across
+them (epic [#406](https://github.com/kamp-us/phoenix/issues/406)).
+
+**Optional by design — absence is the default and is meaningful.** Unlike `type:*` / `p*` /
+`status:*`, which triage always sets, **most issues legitimately carry no milestone**, and
+that is the correct default. An issue is well-formed with **no** milestone. Crucially, a
+deliberately-unmilestoned issue is **not "missing data" to be backfilled** — it is the
+**freeze-by-absence** signal: an issue left unmilestoned on purpose (e.g. a frozen new-product
+surface that is not on any active campaign) reads as *not scheduled into any campaign*, and no
+skill auto-fills it. Absence carries information; treat it as a value, not a gap.
+
+**Existing open milestones only — a skill never *creates* one.** Assignment selects from the
+**already-open** milestones on the repo; **creating** a milestone is a roadmap/human act, never
+a skill's. A skill that finds no clear existing match leaves the issue unmilestoned rather than
+minting a milestone to hold it.
+
+**Orthogonal to verification and merge.** Milestone is a *backlog/ordering* concern only. The
+gates (`review-code` / `review-doc` / `review-skill` / `review-plan`) and the merge actor
+(`ship-it`) **ignore** it entirely — it never affects whether a PR is merge-ready or who merges
+it. Loading milestone onto a gate would couple unrelated concerns; it stays out of the
+verification/merge path by design.
+
+### Who writes it, who reads it
+
+The dimension has a **write side** (skills that put an issue into a milestone) and a **read
+side** (a skill that consumes it for ordering). The shared rules are here; the mechanics are in
+each skill.
+
+**Write side:**
+
+- **`triage`** assigns a milestone on a **clear surface-match** — keying off the surface it
+  already reads to classify — and only then. The guardrails (this section is their source;
+  `triage` cites it): assign **only on a clear match**, default to **unmilestoned**, and **never
+  force-fit** — a wrong milestone pollutes that milestone's burndown worse than no milestone
+  does. Assign to an **existing open** milestone only; **never create** one. Preserve the
+  freeze-by-absence signal: a deliberately-unmilestoned surface stays unmilestoned.
+- **`plan-epic`** **inherits the parent epic's milestone** onto each child it creates (if the
+  epic has one). This is mechanical and high-value — it keeps a campaign's burndown complete by
+  construction, since a campaign milestone on an epic can only be "done" when its children carry
+  it too. If the epic has **no** milestone, the children stay unmilestoned (inheritance never
+  invents one).
+- **`report` stays milestone-blind.** Like its type-blindness, `report` captures raw intake and
+  applies **no** milestone — milestone is a classification/roadmap decision that belongs to
+  `triage`, not to capture.
+
+**Read side:**
+
+- **`write-code`** may **bias pick-order toward an active milestone** — either under an explicit
+  "work milestone N" invocation (drain that milestone by priority + age), or as a default lean
+  toward an active campaign. **`p0` stays sovereign**: a milestone bias is a *within-priority-
+  bucket* tiebreaker or an *explicit-invocation* scope only — it can **never** starve a `p0`
+  outside the milestone. Focus must not silently de-prioritize an emergency; the priority spine
+  (§Pipeline labels — all `p0` before any `p1`) wins over any campaign lean.
+
+### REST surface — the one mechanical reference
+
+Milestone is the issue's native `milestone` field, not a label. Every skill that reads, writes,
+or inherits it shares **this** mechanical reference (all via `gh api` REST — never GraphQL, per
+the org's Projects-classic constraint):
+
+```bash
+# list the repo's open milestones (number + title) — the candidate set to match against
+gh api "repos/$REPO/milestones?state=open&per_page=100" --jq '.[] | "#\(.number) \(.title)"'
+
+# assign an issue to a milestone — the numeric milestone id, never the title
+gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<milestone-number>
+
+# clear a milestone (rare; assignment is the common write)
+gh api -X PATCH repos/$REPO/issues/<N> -F milestone=null
+
+# filter issues by milestone (write-code's drain-this-milestone query)
+gh api "repos/$REPO/issues?state=open&milestone=<milestone-number>&per_page=100"
+```
+
+The `milestone=<n>` value is the **numeric milestone id**, not its title. Reading an issue's
+current milestone is `gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'` — and
+`none` is a first-class, correct answer, never a defect to repair.
 
 ---
 
