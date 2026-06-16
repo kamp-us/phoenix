@@ -63,6 +63,13 @@ jobs:
       - name: Typecheck epic-ledger
         run: pnpm --filter @kampus/epic-ledger typecheck
 
+      # The package ships compiled ESM JS (bin/exports point at dist/, files: [dist]),
+      # never raw .ts — Node refuses to strip types under node_modules, so a source-only
+      # tarball is dead-on-arrival for any consumer (issue #405). Build dist/ before
+      # publish; prepublishOnly also runs it, but an explicit step makes the gate visible.
+      - name: Build epic-ledger (compile src/ → dist/)
+        run: pnpm --filter @kampus/epic-ledger build
+
       # Publish ONLY this package, from its own dir. No NPM_TOKEN — OIDC Trusted
       # Publishing supplies the credential per run and generates provenance
       # automatically (no `--provenance` flag needed).
