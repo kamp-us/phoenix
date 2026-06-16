@@ -166,6 +166,80 @@ the gate flips C `triaged` (pickable), and `write-code` picks a dropped story (#
   API can't give — claim "the common flip-vs-supersede / concurrent-re-plan interleaving is
   serialized." See ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md).
 
+## Milestone — the one *optional* intake dimension
+
+`type:*`, `p*`, and `status:*` are **mandatory** dimensions: every issue carries exactly one of
+each, and an issue missing any of them is malformed. **Milestone is the exception** — it is an
+**optional** fourth intake dimension that sits alongside the three labels, and **most issues
+carry none**. An issue with no milestone is **well-formed by default**; absence is the norm, not
+a defect (contrast the `status:*` spine, where a missing label is a triage bug).
+
+This section is the **single source of truth** the three behavioral skills cite for milestone —
+`triage` (assigns it), `plan-epic` (children inherit it), and `write-code` (consumes it for
+pick-order). It defines what a milestone *is* and the mechanical surface it lives on; the
+per-skill *behavior* (the assign rules, the inherit logic, the pick-order) lives in those three
+skills and **cites this section**, exactly as the rest of this contract is cited by the labels
+and markers it defines. The *why* — what a milestone means and how the set is curated — is ADR
+[0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md);
+read it for the rationale, this section for the contract.
+
+**What a milestone encodes.** A milestone is **strategic sequencing / campaign grouping** —
+"which focused push, in what order" — **not feature breakdown** (ADR 0072 §1). Feature
+decomposition is the job of **epics + native sub-issues**; a milestone is the cross-cutting
+*commitment* an epic can't be. A GitHub issue is in **at most one** milestone, which is why a
+milestone is a commitment and not a tag.
+
+**Two milestone kinds.** *Surface* milestones key off an issue's product surface and are
+**mechanical** to assign (a sözlük bug → the sözlük surface milestone). *Strategic* milestones
+require **judgment** ("is this broken-vs-missing? pipeline-critical?"). The distinction is why
+`triage`'s milestone assignment is human-judgment-shaped for the strategic kind and near-rote for
+the surface kind (ADR 0072 §2).
+
+**Existing open milestones only — a skill never creates one.** Assignment targets a milestone
+that **already exists and is open**; a skill assigns to one, never **creates** or restructures
+the set. Creating/curating milestones is a **roadmap (human / CPO) act**, deliberately *not*
+autonomous — fragmenting the set would destroy its single-source-of-truth value, so there is no
+autonomous "create-milestones" skill (ADR 0072 §3). A skill that finds no clear match to an
+existing open milestone leaves the issue **unmilestoned**; it does not invent a home.
+
+**Freeze-by-absence — deliberate absence is a signal, never missing data.** A deliberately
+**unmilestoned** cluster (e.g. a frozen new-product surface — imge / kampus-CLI / künye) is itself
+the signal that the work is **parked / deferred** (ADR 0072 §4). So a missing milestone is
+**never** "data to be backfilled": a skill must not auto-fill an empty milestone to make an issue
+"complete." Absence is meaningful; respect it. This is the inverse of the mandatory labels — for
+`status:*` a missing value *is* a defect to fix; for milestone a missing value is often the
+intended state.
+
+**Orthogonal to verification and merge.** Milestone is a **backlog/planning** dimension only.
+The gates (`review-code`/`review-doc`/`review-skill`), `ship-it`, and the control-plane / merge
+machinery (§CP) **ignore it entirely** — it never gates a verdict, never blocks or enables a
+merge, and is not part of any PASS/FAIL contract. It influences only *which work gets picked when*
+(`write-code` pick-order), nothing on the verify→merge path.
+
+### The REST surface
+
+Milestone is REST-accessible, so it fits the `gh api` path the whole pipeline already relies on
+(the org's Projects-classic breaks GraphQL; milestones sidestep it — ADR 0072). The three skills
+share **one** mechanical reference:
+
+- **The issue's `milestone` field** — `gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'`
+  reads it; `gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<n>` assigns it (and
+  `-F milestone=null` clears it).
+- **The milestone catalog** — `gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number) \(.title)"'`
+  lists the existing open milestones a skill may assign to (the *only* legal assignment targets;
+  a skill never `POST`s a new one).
+- **The filter** — `gh api "repos/$REPO/issues?milestone=<n>&state=open"` selects the issues in a
+  milestone (the read `write-code`'s pick-order and a campaign sweep share).
+
+```bash
+# read an issue's milestone (none ⇒ the well-formed default)
+gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'
+# the existing open milestones — the ONLY legal assignment targets (never create one)
+gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number)\t\(.title)"'
+# assign to an existing open milestone (triage / plan-epic inherit); clear with milestone=null
+gh api -X PATCH repos/$REPO/issues/<N> -f milestone=<n>
+```
+
 ---
 
 ## Milestone — the optional intake dimension
