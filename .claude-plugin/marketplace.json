@@ -12,7 +12,7 @@
 	"plugins": [
 		{
 			"name": "kampus-pipeline",
-			"source": "./",
+			"source": { "source": "github", "repo": "kamp-us/phoenix" },
 			"description": "The kamp.us agent pipeline: triage → plan-epic → write-code → review-code/review-doc/review-plan → ship-it, plus adr, report, heal-ci, and deslop-comments. Repo-agnostic — operates on the working git repo's issue queue (CLAUDE_PIPELINE_REPO override).",
 			"version": "0.1.0",
 			"author": {
