@@ -79,3 +79,4 @@ One row per ADR. Read the file for the why.
 | [0072](0072-milestones-encode-strategic-sequencing.md) | Milestones Encode Strategic Sequencing, Not Feature Breakdown | accepted | 2026-06-15 |
 | [0073](0073-review-skill-gate.md) | The review-skill gate — skills are a third artifact class with their own behavioral gate | accepted | 2026-06-16 |
 | [0074](0074-adr-number-claim-lock.md) | `/adr` claims its number with an in-flight reservation lock (label akin to ADR 0059), not next-free-on-disk — detect-and-serialize against open ADR PRs, with the ADR 0066 CI dup-check as the backstop | accepted | 2026-06-16 |
+| [0075](0075-issueless-doc-pr-merge-seam.md) | A docs-only PR may merge with no linked issue — ship-it Step 1 carves out the doc lane | accepted | 2026-06-16 |
