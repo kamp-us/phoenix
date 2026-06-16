@@ -500,11 +500,12 @@ else
   # whose first line is the SHA-bound marker so a scan finds the verdict unambiguously:
   #   review-code: PASS @ <HEAD_SHA> — merge-ready
   ME="$(gh api user --jq .login)"
-  # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
-  comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
-  MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+  # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
+  # (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
+  MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+          | jq -r --arg me "$ME" 'map(select(.user.login==$me
             and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
-          | last | .id // empty' <<<"$comments")
+          | last | .id // empty')
   if [ -n "$MINE" ]; then
     gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
   else
@@ -602,11 +603,12 @@ HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, befo
 # … author /tmp/review-code-verdict-${PR}.md now, embedding `review-code: FAIL @ $HEAD_SHA — not merge-ready` as its first line …
 BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready (the SHA resolved just above)
 ME="$(gh api user --jq .login)"
-# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
-MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+# --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
+# (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
+MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+        | jq -r --arg me "$ME" 'map(select(.user.login==$me
           and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
-        | last | .id // empty' <<<"$comments")
+        | last | .id // empty')
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
 else
