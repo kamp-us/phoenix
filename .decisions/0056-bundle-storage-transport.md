@@ -75,23 +75,25 @@ the PASS-marker read (ADR [0048](0048-ship-it-merge-actor.md)) and the CI-green 
 commit-bound, closing 0054's stale-run gap; a gate must resolve the run *by `head_sha`*,
 never just "the latest run on the branch."
 
-**3. The manifest is versioned by its `schemaVersion` field; v1 is `"1"` and its fields are
-exactly ADR 0054 §2.** Evolution policy:
+**3. The manifest is versioned by its `schemaVersion` field; v1 is the JSON number `1` and its
+fields are exactly ADR 0054 §2.** Evolution policy:
 
 - **Additive changes** (a new optional field) **keep `schemaVersion` and don't break
   consumers.** Gates read only the fields they assert on and ignore unknown keys; a
   producer may add fields ahead of any consumer using them.
 - **Breaking changes** (rename/remove/retype a field, or change a field's meaning)
-  **bump `schemaVersion`** (`"1"` → `"2"`) and are recorded as a new ADR that supersedes the
+  **bump `schemaVersion`** (`1` → `2`) and are recorded as a new ADR that supersedes the
   relevant part of 0054 §2.
 - **A consumer asserts the major version it understands** — a gate reads `schemaVersion`
   first and **fails closed on an unrecognized major** rather than silently misreading a
   newer shape. This makes a producer/consumer version skew a *visible gate failure*, not a
   trust hole.
 
-The `schemaVersion` field is a plain string major version (`"1"`), not semver — the bundle
-is an internal contract between two control-plane skills and a CI step, so a single
-monotonic integer carries all the compatibility signal it needs.
+The `schemaVersion` field is a plain JSON-number major version (`1`), not semver and not a
+string — the producer emits it as `Schema.Number` (`packages/crabbox-manifest/src/Manifest.ts`,
+`SCHEMA_VERSION = 1`), so consumers compare it numerically. The bundle is an internal contract
+between two control-plane skills and a CI step, so a single monotonic integer carries all the
+compatibility signal it needs.
 
 ## Consequences
 

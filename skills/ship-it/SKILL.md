@@ -504,8 +504,12 @@ fi
 
 # 2. schemaVersion the gate understands. Fail closed on an unrecognized MAJOR rather than
 #    misreading a newer shape (ADR 0056 §3 — schema skew is a visible refusal, not a trust hole).
+#    schemaVersion is a JSON NUMBER (Manifest.ts: Schema.Number, SCHEMA_VERSION = 1); compare it
+#    numerically inside jq (== 1) so a number/string skew can't fail-close a valid bundle. `SCHEMA`
+#    is only the human-readable echo for the refusal message.
 SCHEMA=$(jq -r '.schemaVersion // empty' "$MANIFEST")
-[ "$SCHEMA" = "1" ] || { echo "unverified (unsupported bundle schemaVersion: ${SCHEMA:-none})"; exit 0; }
+jq -e '.schemaVersion == 1' "$MANIFEST" >/dev/null \
+  || { echo "unverified (unsupported bundle schemaVersion: ${SCHEMA:-none})"; exit 0; }
 
 # 3. bundle.commit MUST equal the PR head SHA — evidence not for THIS commit is no evidence
 #    (ADR 0054 §1). A green run from an earlier push is stale → refuse.

@@ -256,7 +256,8 @@ fi
 ```
 
 When `$MANIFEST` is present, read its structured results (ADR 0054 §2 fields, `schemaVersion`
-`1`): `checks[]` is each gate step (`{name, status: pass|fail, exitCode}`), `tests` is the
+the JSON number `1` — `Schema.Number`, not a string; compare numerically if you assert on it):
+`checks[]` is each gate step (`{name, status: pass|fail, exitCode}`), `tests` is the
 folded JUnit summary (`{total, passed, failed, skipped, failures[]}`, each failure
 `{suite, name, message}`):
 
