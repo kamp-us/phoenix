@@ -1,0 +1,139 @@
+# Derives CHANGELOG.md from shipped-work pipeline metadata at release time (ADR 0069,
+# issue #394). The changelog is a *projection* of closed-issue/merged-PR facts, not a
+# hand-edited doc — this workflow regenerates it on a release tag and commits the result.
+#
+# Trigger: the same `*-v*` release-tag convention ADR 0064 established for the
+# epic-ledger npm publish (a human-cut GitHub Release). The `release` event has no tag
+# filter, so the job is gated on the tag containing `-v` (e.g. `epic-ledger-v0.1.1`,
+# `phoenix-v1.0.0`). `ship-it` is NOT touched — the changelog is release-cadence,
+# decoupled from individual merges (ADR 0048).
+#
+# Source-preference contract (ADR 0069 §2): `git log` between the previous release tag
+# and this one is the RANGE SELECTOR only — it yields the merged-PR numbers in range from
+# squash-commit subjects (`(#NNN)`). The entry TEXT is the closed-issue title + triaged
+# `type:*` label, fetched via `gh` (REST, never GraphQL — broken on the kamp-us org).
+#
+# This workflow file is `.github/**` → control-plane per ADR 0053, so the PR that adds it
+# is human-merged; the workflow itself, once merged, commits the generated CHANGELOG.md
+# (repo root, non-blocking) on release.
+name: changelog
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  derive:
+    name: derive CHANGELOG.md from shipped work
+    runs-on: ubuntu-latest
+    # The `release` event carries no tag filter; gate on the `*-v*` release-tag shape.
+    if: contains(github.event.release.tag_name, '-v')
+    steps:
+      - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Range selector: the previous release tag (sorted by version, this tag excluded),
+      # or the start of history when none exists (the bootstrap case — ADR 0069
+      # consequences). git log over PREV..TAG yields the merged-PR numbers in range.
+      - name: Gather entries for the release range
+        id: gather
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          PREV="$(git tag --sort=-creatordate | grep -v -x "$TAG" | head -n1 || true)"
+          if [ -n "$PREV" ]; then
+            echo "range: $PREV..$TAG"
+            RANGE="$PREV..$TAG"
+          else
+            echo "no previous release tag — deriving from start of history (bootstrap)"
+            RANGE="$TAG"
+          fi
+
+          # PR numbers from squash-merge commit subjects (`... (#NNN)`) in range.
+          PRS="$(git log --pretty=%s "$RANGE" \
+            | grep -oE '\(#[0-9]+\)' \
+            | tr -dc '0-9\n' \
+            | sort -u || true)"
+
+          # For each merged PR, resolve its closing issue's title + triaged type:* label.
+          # The PR text is the fallback; the closed-issue metadata is primary (ADR 0069 §2).
+          echo "[]" > entries.json
+          for pr in $PRS; do
+            # The issue a PR closes, via the timeline's closed/cross-referenced events.
+            issue="$(gh api "repos/${{ github.repository }}/pulls/${pr}" \
+              --jq '.body // ""' 2>/dev/null \
+              | grep -oiE '(close[sd]?|fix(e[sd])?|resolve[sd]?)[: ]+#[0-9]+' \
+              | grep -oE '[0-9]+' | head -n1 || true)"
+            if [ -z "$issue" ]; then
+              # No linked issue → the PR itself, flagged Uncategorized by the CLI.
+              title="$(gh api "repos/${{ github.repository }}/pulls/${pr}" --jq '.title' 2>/dev/null || echo "PR #${pr}")"
+              jq --argjson pr "$pr" --arg title "$title" \
+                '. + [{issue: $pr, pr: $pr, title: $title}]' entries.json > entries.tmp
+            else
+              meta="$(gh api "repos/${{ github.repository }}/issues/${issue}" \
+                --jq '{title, type: ([.labels[].name] | map(select(startswith("type:")) | sub("type:";"")) | first)}' 2>/dev/null || echo '{}')"
+              title="$(echo "$meta" | jq -r '.title // empty')"
+              type="$(echo "$meta" | jq -r '.type // empty')"
+              [ -z "$title" ] && title="$(gh api "repos/${{ github.repository }}/pulls/${pr}" --jq '.title' 2>/dev/null || echo "PR #${pr}")"
+              if [ -n "$type" ]; then
+                jq --argjson issue "$issue" --argjson pr "$pr" --arg title "$title" --arg type "$type" \
+                  '. + [{issue: $issue, pr: $pr, title: $title, type: $type}]' entries.json > entries.tmp
+              else
+                jq --argjson issue "$issue" --argjson pr "$pr" --arg title "$title" \
+                  '. + [{issue: $issue, pr: $pr, title: $title}]' entries.json > entries.tmp
+              fi
+            fi
+            mv entries.tmp entries.json
+          done
+
+          # Newest-issue-first, deduped on issue number.
+          jq 'unique_by(.issue) | sort_by(-.issue)' entries.json > entries.sorted.json
+          mv entries.sorted.json entries.json
+          echo "entries: $(jq length entries.json)"
+
+      # Version label = the release tag with its `<prefix>-v` stripped (e.g.
+      # `epic-ledger-v0.1.1` → `0.1.1`).
+      - name: Derive and write the release section
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          set -euo pipefail
+          VERSION="${TAG##*-v}"
+          DATE="$(date -u +%Y-%m-%d)"
+          node packages/changelog-derive/src/bin.ts derive \
+            --entries entries.json \
+            --version "$VERSION" \
+            --date "$DATE" \
+            --out CHANGELOG.md
+          rm -f entries.json
+
+      - name: Commit the regenerated CHANGELOG.md
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- CHANGELOG.md; then
+            echo "CHANGELOG.md unchanged — nothing to commit"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add CHANGELOG.md
+          git commit -m "docs(changelog): derive CHANGELOG.md for ${{ github.event.release.tag_name }} (ADR 0069)"
+          git push origin "HEAD:${{ github.event.repository.default_branch }}"
