@@ -430,6 +430,59 @@ gh api "repos/$REPO/issues/<N>" \
 issue was actually reviewed. Never let a type label alone stand in for it; a
 hand-slapped `type:*` with no triaged status must not look pickable.
 
+### Assign a milestone (optional — clear surface-match only, default unmilestoned)
+
+`milestone` is a **fourth, optional** intake dimension alongside the `type:*` / `p*` /
+`status:*` you just applied — defined by the **Milestone** section of
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) (the *why* is ADR
+[0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md)).
+That section is the source of truth for what a milestone *is*; this step is triage's
+*behavior* over it and cites it rather than re-deriving it. Unlike the three mandatory
+labels, milestone is **not always present** — **most issues legitimately carry none**,
+and that is the correct default.
+
+Assign one **only on a clear surface-match**, keying off the same product surface you
+already read off the issue in Step 1 to classify it. This is conservative and additive:
+it never blocks, re-types, or re-routes an issue — a milestone or its absence changes
+nothing about whether the issue is pickable.
+
+**The guardrails (all enforced; the formats Milestone section is their source):**
+
+- **(a) Clear match or nothing — default unmilestoned, never force-fit.** Assign only
+  when the surface-match is unambiguous; when in doubt, leave the issue unmilestoned. A
+  *wrong* milestone pollutes that milestone's burndown worse than no milestone does, so
+  the bar is "obvious", not "plausible".
+- **(b) Existing open milestones only — triage NEVER creates one.** Read the repo's open
+  milestones and match against **that** set; if nothing clearly matches, assign nothing.
+  Minting a milestone is a roadmap (human / CPO) act, never a skill's (ADR 0072 §3).
+- **(c) Surface vs strategic — mechanical vs judgment.** *Surface* milestones (Search /
+  Bookmarks / Account & profile / Report) key off the issue's product surface and are
+  **near-rote** — a Search bug → the Search milestone. *Strategic* milestones (Broken
+  core loops / Pipeline hardening / Test & CI health) need **judgment** ("is this broken
+  vs missing? pipeline-critical?") — attempt them **conservatively** and default to none
+  on any doubt (ADR 0072 §2).
+- **(d) Preserve freeze-by-absence — never auto-fill a deliberately-parked surface.** A
+  cluster left unmilestoned on purpose (a frozen new-product surface — imge / kampus-CLI
+  / künye) reads as *parked / deferred*; that absence is the signal. An issue on such a
+  surface stays **unmilestoned** — do not invent a home for it (ADR 0072 §4).
+
+Discover the existing open milestones, then assign on a clear match — the value is the
+**numeric milestone id**, never the title (the one mechanical reference is the formats
+Milestone section's REST surface):
+
+```bash
+# the existing open milestones — the ONLY legal assignment targets (never create one)
+gh api "repos/$REPO/milestones?state=open&per_page=100" --jq '.[] | "#\(.number)\t\(.title)"'
+# assign on a clear surface-match (one single-field, last-write-wins PATCH — benign, #91)
+gh api -X PATCH "repos/$REPO/issues/<N>" -f milestone=<milestone-number>
+```
+
+No clear match? **Assign nothing** — leaving the issue unmilestoned is the correct,
+well-formed outcome, not an omission to backfill. (Out of scope for triage: the
+inherit logic — `plan-epic` carries an epic's milestone onto its children — and
+pick-order bias — `write-code` consumes milestone — both live in those skills, citing
+the same formats section.)
+
 ### Close not-planned (kill, last resort, agent issues only)
 
 Close an issue **only** when it's an *agent-filed* issue that is genuinely
@@ -514,9 +567,10 @@ sweeping:
    the listing comes back empty of issues you can claim — every *completed* outcome
    (triaged / needs-info / closed) removes `status:needs-triage`, so a listing with
    nothing left to claim is the complete termination test.
-5. Report a short ledger back: per issue, the outcome (type+priority+triaged /
-   needs-info / closed) in one line each. Don't narrate every REST call — the labels
-   and comments on the issues are the durable record.
+5. Report a short ledger back: per issue, the outcome (type+priority+triaged, plus the
+   milestone if you assigned one on a clear match / needs-info / closed) in one line
+   each. Don't narrate every REST call — the labels, milestone, and comments on the
+   issues are the durable record.
 
 ## Conventions
 
