@@ -30,9 +30,11 @@ named but a config-only fix could not close without dropping the required worktr
 pnpm-lock.yaml package.json turbo.json tsconfig.json`): `biome.jsonc` + its plugin files
 aren't checked out (plugin load error), `pnpm install` dies hashing a `patches/` entry
 (ADR 0038), `turbo` mis-resolves, and the `apps/web` typecheck prereq `fate generate` isn't
-built in the sparse tree (`fate: command not found`). That half is not yet nameable as a
-single fix — it needs a decision between expanding the allowlist and replacing the isolation
-mechanism — so it is **out of scope here** and tracked separately.
+built in the sparse tree (`fate: command not found`). That half was **out of scope here** and
+tracked separately — it needed a decision between expanding the allowlist and replacing the
+isolation mechanism. **That decision was made in ADR
+[0067](0067-sparse-typecheck-bootstrap.md): cone-mode-minus-instruction-denylist**, which
+restores the in-worktree typecheck (see the reversal note below).
 
 ## Decision
 
@@ -70,12 +72,18 @@ mixed set.
 (`pnpm -C "$REVIEW_WT" exec biome check apps packages`), since its changed-set lives on the
 PR head ref, not against `origin/main` in that tree.
 
-**The sparse review worktree's in-worktree typecheck is NOT authoritative.** Until the
-bootstrap is fixed, when `review-code`'s in-worktree `pnpm typecheck` cannot run, the gate
-takes the **PR's own CI checks** (and the SHA-bound run-evidence bundle, ADR 0054) as the
-typecheck behavior signal — the recorded workaround, not a gap in the verdict. `write-code`
-runs in a *full* worktree where `pnpm install` / `pnpm typecheck` work, so it keeps running
-typecheck locally; only its lint invocation changes.
+**The sparse review worktree's in-worktree typecheck is NOT authoritative.**
+**SUPERSEDED by ADR [0067](0067-sparse-typecheck-bootstrap.md) (#388):** `review-code`'s
+review worktree is now a cone-mode checkout minus a fixed instruction denylist, which carries
+the full build inputs, so the in-worktree `pnpm typecheck` bootstraps and **is authoritative
+again** — CI + the run-evidence bundle return to *corroboration*. The note below records the
+original deferred-to-CI workaround for history.
+
+Until the bootstrap was fixed, when `review-code`'s in-worktree `pnpm typecheck` could not
+run, the gate took the **PR's own CI checks** (and the SHA-bound run-evidence bundle, ADR
+0054) as the typecheck behavior signal — the recorded workaround, not a gap in the verdict.
+`write-code` runs in a *full* worktree where `pnpm install` / `pnpm typecheck` work, so it
+keeps running typecheck locally; only its lint invocation changes.
 
 ## Consequences
 
@@ -87,8 +95,11 @@ typecheck locally; only its lint invocation changes.
   isolation) and no harness-level worktree relocation (out of band for a skill edit). Both
   alternatives were rejected here — allowlist creep defeats the isolation the sparse checkout
   buys, and relocating worktrees is a harness change, not a gate-instruction change.
-- `review-code` is explicit that an un-run typecheck is deferred to CI, not silently asserted
-  — the verdict states which signal it leaned on.
-- Follow-up: the in-worktree (sparse) typecheck-bootstrap half — biome plugins, `patches/`
-  hashing, `fate generate` — is tracked in **#336** (candidate approaches: expand the
-  allowlist vs. a different isolation mechanism), to be resolved by its own decision.
+- `review-code` *was* explicit that an un-run typecheck is deferred to CI — superseded once
+  ADR [0067](0067-sparse-typecheck-bootstrap.md) (#388) restored the authoritative in-worktree
+  typecheck; the deferred-to-CI path now applies only when the in-worktree run genuinely cannot
+  execute, and the verdict still states which signal it leaned on.
+- Follow-up (RESOLVED): the in-worktree (sparse) typecheck-bootstrap half — biome plugins,
+  `patches/` hashing, `fate generate` — was tracked in **#336** and decided by ADR
+  [0067](0067-sparse-typecheck-bootstrap.md) (cone-mode-minus-instruction-denylist over
+  expanding the allowlist), wired in **#388**.
