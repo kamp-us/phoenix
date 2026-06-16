@@ -1,6 +1,6 @@
 ---
 id: 0065
-title: "Gate-critical skills are control-plane (blocking); other skills auto-merge"
+title: "Gate-critical skills (`ship-it`/`review-code`/`review-doc`/`review-plan`/`gh-issue-intake-formats.md`) are control-plane → BLOCKING (manual human merge); all other `skills/**` stay NON-blocking → auto-merge on a `review-code` PASS — narrows the all-skills-blocking stopgap to the 80/20: only the gate/merge machinery + marker contract need a human, because gate self-weakening is the one catastrophic case `review-code` can't catch; routing (review-code) unchanged for ALL skills (0063); amends 0063 (merge-authority corrected for the gate-critical subset only); extends 0053's boundary from \"by path\" toward \"by nature\"; stopgap-narrowed until the `review-skill` gate (#371)"
 status: accepted
 date: 2026-06-15
 tags: [pipeline, ship-it, skills, control-plane, security]

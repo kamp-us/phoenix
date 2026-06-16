@@ -1,10 +1,10 @@
 ---
 id: 0006
 title: Product DOs extend Cloudflare's Agent base class
-status: superseded
+status: superseded by [0009](0009-d1-direct-defer-dos-and-workflows.md)
 superseded_by: 0009
 superseded_date: 2026-05-16
-date: 2026-05-09
+date: 2026-05-16
 tags: [architecture, durable-objects, agents-sdk, sozluk, pano]
 ---
 

@@ -1,6 +1,6 @@
 ---
 id: 0050
-title: Künye v1 Karma Stays D1-Direct; KarmaBump Contract Unchanged
+title: Künye v1 karma stays D1-direct; KarmaBump contract unchanged
 status: accepted
 date: 2026-06-13
 tags: [karma, kunye, durable-objects, vote, d1]

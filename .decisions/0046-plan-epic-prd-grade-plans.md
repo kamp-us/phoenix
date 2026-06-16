@@ -1,6 +1,6 @@
 ---
 id: 0046
-title: plan-epic Emits PRD-Grade Epic Plans — Product Layer, Story-Driven, Autonomous
+title: plan-epic emits PRD-grade epic plans — product layer + user stories, enforced story coverage, tracer-bullet children, autonomous (harness stays out)
 status: accepted
 date: 2026-06-13
 tags: [pipeline, skills, plan-epic, prd, process]

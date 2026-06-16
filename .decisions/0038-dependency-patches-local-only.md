@@ -1,6 +1,6 @@
 ---
 id: 0038
-title: Dependency patches are local-only
+title: Dependency patches are local-only — no fork/git/unmerged-PR sources; local `pnpm patch` if unavoidable
 status: accepted
 date: 2026-05-31
 tags: [dependencies, build, conventions]

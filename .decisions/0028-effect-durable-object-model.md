@@ -1,7 +1,7 @@
 ---
 id: 0028
 title: Port Durable Objects to alchemy's Effect DO model
-status: accepted
+status: amended-in-part by [0032](0032-alchemy-beta45-and-dev-model.md)
 date: 2026-05-25
 tags: [durable-objects, effect, live]
 ---

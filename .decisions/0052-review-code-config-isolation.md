@@ -1,6 +1,6 @@
 ---
 id: 0052
-title: review-code Trusts the Base's Instructions, Exercises the Branch's Code
+title: review-code trusts the base's instructions, exercises the branch's code — pin reviewer config to base ref, never load PR-head CLAUDE.md/.claude/hooks; flag harness-touching PRs as a complementary signal
 status: proposed
 date: 2026-06-13
 tags: [pipeline, skills, review-code, security, trust-boundary]

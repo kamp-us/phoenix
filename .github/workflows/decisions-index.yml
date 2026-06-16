@@ -1,0 +1,36 @@
+name: decisions-index
+
+# The CI gate for ADR 0066: `.decisions/index.md` is generated output, so this
+# job fails a PR when the committed index is stale (does not match the generated
+# one) OR when two ADR files share an `id` (the sibling number-collision class).
+# It reuses @kampus/decisions-index's `check` mode — the derivation lives once in
+# the package (buildIndex), never re-grepped here.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check .decisions/index.md is fresh + no duplicate ADR id
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 on a stale index or a duplicate ADR id (reason on stderr); any
+      # other non-zero means the run could not complete. See ADR 0066.
+      - name: Check decisions index
+        run: node packages/decisions-index/src/bin.ts check

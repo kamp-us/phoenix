@@ -1,7 +1,7 @@
 ---
 id: 0012
 title: Admin operations as parallel `<Feature>Admin` services with a separate runtime
-status: retired
+status: retired (PR #12)
 date: 2026-05-17
 tags: [backend, effect, admin, architecture]
 ---

@@ -1,7 +1,7 @@
 ---
 id: 0031
 title: Local-first state for dev; remote state for CI and deploy
-status: accepted
+status: amended-in-part by [0032](0032-alchemy-beta45-and-dev-model.md)
 date: 2026-05-25
 tags: [alchemy, dev, state, ci]
 ---

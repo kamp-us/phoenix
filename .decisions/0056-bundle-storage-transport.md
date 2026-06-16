@@ -1,6 +1,6 @@
 ---
 id: 0056
-title: Run-Evidence Bundle Storage Is a CI Run Artifact, Versioned by schemaVersion
+title: Run-evidence bundle is persisted as a GitHub Actions run artifact (`run-evidence`), fetched by gates via `gh api` resolving the PR head-SHA run; versioned by a `schemaVersion` major (v1 = ADR 0054 §2, fail-closed on unknown major) — R2/PR-comment rejected as over/under-built for a transient gate-scoped input
 status: proposed
 date: 2026-06-14
 tags: [pipeline, ci, review-code, ship-it, auto-merge, storage]

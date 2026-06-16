@@ -1,6 +1,6 @@
 ---
 id: 0019
-title: Connection pagination — custom resolvers deliver every connection
+title: Connection pagination — custom list resolvers for roots, source connection for nested
 status: accepted
 date: 2026-05-23
 tags: [fate, pagination, connections]

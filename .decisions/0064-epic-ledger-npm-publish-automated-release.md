@@ -1,6 +1,6 @@
 ---
 id: 0064
-title: Distribute epic-ledger by automated npm publish — review-plan resolves in-repo first, falls back to the published package
+title: "Distribute epic-ledger by automated npm publish — rename to public `@kampus/epic-ledger`, publish from a `.github/workflows/` release pipeline on an `epic-ledger-v*` Release tag via OIDC Trusted Publishing (no stored token; npm CLI ≥ 11.5.1, `id-token: write`, provenance), publishing only `packages/epic-ledger`; `review-plan` resolves in-repo first and falls back to the published package via `pnpm dlx`; published version tracks source. Supersedes 0062 §3's deferral; the workflow file is control-plane (ADR 0053) so #366's PR is human-merged. Human prereqs: create the public `@kampus` npm org + register the repo/workflow as a Trusted Publisher for the package"
 status: accepted
 date: 2026-06-15
 tags: [plugin, pipeline, packaging, epic-ledger, npm, ci, release]

@@ -1,7 +1,7 @@
 ---
 id: 0033
 title: Co-hosted mutual DOs cannot Init-bind each other — use per-call sibling resolution
-status: retired
+status: retired by [0037](0037-unified-void-aligned-live-do.md)
 date: 2026-05-29
 tags: [durable-objects, alchemy, effect, layer, live]
 ---

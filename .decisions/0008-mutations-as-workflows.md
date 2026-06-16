@@ -1,10 +1,10 @@
 ---
 id: 0008
 title: Mutations route through workflows; DOs are pure state-keepers
-status: superseded
+status: superseded by [0009](0009-d1-direct-defer-dos-and-workflows.md)
 superseded_by: 0009
 superseded_date: 2026-05-16
-date: 2026-05-10
+date: 2026-05-16
 tags: [architecture, durable-objects, workflows, mutations, agents-sdk]
 ---
 

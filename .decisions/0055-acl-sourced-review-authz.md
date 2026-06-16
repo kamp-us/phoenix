@@ -1,6 +1,6 @@
 ---
 id: 0055
-title: ship-it Sources Reviewer Authorization from GitHub's ACL, Not a Checked-In Allowlist
+title: ship-it sources reviewer authorization from GitHub's repo ACL (collaborator permission, write+ floor) at merge time, not a checked-in AUTHORIZED_REVIEWERS list — supersedes 0051
 status: accepted
 date: 2026-06-14
 tags: [pipeline, skills, ship-it, review-code, review-doc, security, agents]

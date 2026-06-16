@@ -1,10 +1,10 @@
 ---
 id: 0003
 title: Pasaport runs as a singleton Durable Object
-status: superseded
+status: superseded by [0009](0009-d1-direct-defer-dos-and-workflows.md)
 superseded_by: 0009
 superseded_date: 2026-05-16
-date: 2026-05-09
+date: 2026-05-16
 tags: [auth, durable-objects, pasaport]
 ---
 

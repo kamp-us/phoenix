@@ -1,10 +1,10 @@
 ---
 id: 0005
 title: Product DOs shard by coordination atom from day one
-status: superseded
+status: superseded by [0009](0009-d1-direct-defer-dos-and-workflows.md)
 superseded_by: 0009
 superseded_date: 2026-05-16
-date: 2026-05-09
+date: 2026-05-16
 tags: [architecture, durable-objects, sozluk, pano]
 ---
 

@@ -1,6 +1,6 @@
 ---
 id: 0063
-title: "`skills/**` is code-gated — ship-it's doc-probe excludes it, review-code is its canonical gate"
+title: "`skills/**` is code-gated, not doc-gated — ship-it's Step 0 doc-probe excludes `skills/**` so a skills-only `.md` PR is classed code and demands a `review-code` PASS (not `review-doc`), closing the #358 namespace-mismatch deadlock; blanket subtree rule (no path nuance), matches the #355/#356/#357 precedent; marker contract (0058 SHA-binding, 0055 ACL author-gate) and 0053 control-plane refusal unchanged"
 status: accepted
 date: 2026-06-15
 tags: [pipeline, ship-it, review-code, gate-routing, skills]

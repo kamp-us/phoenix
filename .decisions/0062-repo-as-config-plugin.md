@@ -1,7 +1,7 @@
 ---
 id: 0062
-title: Repo-as-config for the distributable plugin — the target repo is resolved from the working git repo (env override), the pipeline ships repo-agnostic; epic-ledger is the one acknowledged-pinned piece for v1
-status: accepted
+title: Repo-as-config for the distributable plugin — target repo resolves from the working git repo (`CLAUDE_PIPELINE_REPO` override), 10/11 skills ship repo-agnostic, external doc-refs rewritten to stable URLs, in-repo discovery doubling accepted+documented; `@phoenix/epic-ledger` is the one acknowledged-pinned piece (review-plan), npm-publish deferred
+status: §3 superseded by [0064](0064-epic-ledger-npm-publish-automated-release.md)
 date: 2026-06-15
 tags: [plugin, pipeline, packaging, repo-agnostic, skills]
 ---

@@ -1,6 +1,6 @@
 ---
 id: 0035
-title: CLI conventions — small focused tools, name mirrors bin
+title: CLI conventions — small focused tools, name mirrors bin (no catch-all `cli`)
 status: amended-in-part by [0045](0045-kampus-client-cli.md)
 date: 2026-05-31
 tags: [cli, tooling, monorepo, conventions]

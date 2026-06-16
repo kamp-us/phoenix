@@ -1,6 +1,6 @@
 ---
 id: 0071
-title: Enforce the control-plane boundary at the GitHub level — required status checks back the gate; a human-only CODEOWNERS holds the control plane
+title: "Enforce the control-plane boundary (0053/0065) at the GitHub level, not honor-system — add a `required_status_checks` rule to `main` for the ADR-0061 gating set (lint/format/typecheck, unit, validate skill frontmatter, integration, run-evidence, leak-guard; `deploy (web)` excluded as informational) so a no-green-CI `gh pr merge` is platform-blocked, AND `require_code_owner_review` + a **human-only** `CODEOWNERS` over `.claude/**`/`.github/**`/the gate-critical skills so a control-plane merge needs a human approval. Resolves the ADR-0055 wrinkle by separating the two authz questions: ACL `write+` (agent-inclusive) decides whose *verdict marker* counts; CODEOWNERS (human-only) decides whose *approval* unblocks a control-plane merge. Required *checks* (not required *reviews*) for the general lane preserves the solo-operator autonomous lane (an operator can't self-approve). Ruleset-as-code over click-ops. Recommends the config; a human enacts the ruleset/CODEOWNERS (follow-up filed). Makes 0053/0065 binding; reconciles 0055; realizes 0061's anticipated required-checks composition"
 status: accepted
 date: 2026-06-15
 tags: [pipeline, ship-it, review-code, security, control-plane, ci, governance]

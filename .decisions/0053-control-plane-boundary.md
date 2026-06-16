@@ -1,6 +1,6 @@
 ---
 id: 0053
-title: The control-plane boundary — blocking is .claude + .github; everything else is non-blocking + gated
+title: The control-plane boundary — blocking is .claude + .github; everything else (apps/web, packages, .decisions, .patterns) is non-blocking + gated (review-code for code, review-doc for docs)
 status: accepted
 date: 2026-06-13
 tags: [pipeline, ship-it, review-code, review-doc, security, process]

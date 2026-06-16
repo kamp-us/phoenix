@@ -1,7 +1,7 @@
 ---
 id: 0029
 title: Dissolve the per-request runtime; worker-level layers and a captured ServiceMap
-status: accepted
+status: superseded-in-part by [0041](0041-fate-bridge-worker-managed-runtime.md)
 date: 2026-05-25
 tags: [effect, runtime, worker, fate]
 ---

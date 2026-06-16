@@ -1,6 +1,6 @@
 ---
 id: 0069
-title: "Derive the changelog from shipped work — a batch CLI over closed-issue/merged-PR metadata at release time, not a per-ship CHANGELOG mutation"
+title: Derive the changelog from shipped work — a generated root `CHANGELOG.md` (Keep a Changelog) is a *projection*, computed by a pure unit-tested Effect CLI `packages/changelog-derive` (the epic-ledger/leak-guard idiom) over closed-issue title + triaged `type:*` label (primary) + merged-PR title/number, with `git log` between tags only as the range selector; per-release (batch), not per-ship; triggered by a `.github/workflows/` release step keyed off ADR 0064's `*-v*` release-tag convention. Rejects the per-ship skill (breaks ship-it's atomicity, is control-plane-adjacent, hand-maintains a derived file), the bare doc convention (drifts), and a generic commit-message generator (discards the pipeline's structured-metadata advantage). `ship-it` untouched; reuses 0064's release trigger; impl tracked in #394 (workflow file is control-plane per 0053 → human-merged)
 status: accepted
 date: 2026-06-15
 tags: [pipeline, changelog, release, cli, ship-it, packaging]

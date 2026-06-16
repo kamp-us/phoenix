@@ -1,7 +1,7 @@
 ---
 id: 0011
 title: Drizzle access via `Context.Service` with `run`/`batch` callbacks
-status: superseded-in-part by 0014
+status: superseded-in-part by [0014](0014-drizzle-run-batch-as-service-methods.md)
 superseded-section-by: 0014
 date: 2026-05-17
 tags: [backend, effect, drizzle, persistence]
