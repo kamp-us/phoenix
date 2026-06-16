@@ -1,4 +1,6 @@
 import {expect, test} from "@playwright/test";
+import {slugifyTerm} from "../../src/lib/slugifyTerm";
+import {completeBootstrap, signUp} from "./_helpers/auth";
 
 test.describe("SozlukHome (/sozluk)", () => {
 	test.beforeEach(async ({page}) => {
@@ -58,5 +60,68 @@ test.describe("SozlukHome (/sozluk)", () => {
 		for (const t of titles) {
 			expect(t.toLowerCase().startsWith(letter)).toBe(true);
 		}
+	});
+});
+
+/**
+ * The create-flow #440 shipped in `SozlukHome.tsx`: both the search-Enter submit
+ * (`onSearchSubmit`) and the no-match `"<query>" terimini oluştur` CTA route to the
+ * fresh-slug composer at `/sozluk/<slugifyTerm(query)>`. A signed-in user lands on
+ * `NewTermComposer` (the `.kp-sozluk-term__head` + composer textarea), so each test
+ * signs up first to assert it genuinely reaches the create/composer view, not the
+ * signed-out 404. The query is per-run unique so it matches no loaded term — which
+ * both forces the no-match CTA to appear and keeps the slug brand-new (composer, not
+ * an existing term page).
+ */
+test.describe("SozlukHome create-flow (/sozluk → composer)", () => {
+	test.beforeEach(async ({page}) => {
+		await signUp(page);
+		await completeBootstrap(page);
+		await page.goto("/sozluk");
+		await expect(page.locator(".kp-sozluk-home__searchbar input")).toBeVisible({
+			timeout: 10_000,
+		});
+	});
+
+	test("search submit (Enter) routes to /sozluk/<slug> and lands on the composer", async ({
+		page,
+	}) => {
+		const query = `e2e create flow ${Date.now().toString(36)}`;
+		const slug = slugifyTerm(query);
+		expect(slug).not.toBe("");
+
+		const input = page.locator(".kp-sozluk-home__searchbar input");
+		await input.fill(query);
+		await input.press("Enter");
+
+		// `onSearchSubmit` navigates to the fresh-slug composer route.
+		await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`));
+		// Signed-in fresh slug → NewTermComposer: term head + composer textarea.
+		await expect(page.locator(".kp-sozluk-term__head")).toBeVisible({timeout: 10_000});
+		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible();
+	});
+
+	test("no-match CTA appears for an unknown query and navigates to /sozluk/<slug>", async ({
+		page,
+	}) => {
+		const query = `zzqq nomatch ${Date.now().toString(36)}`;
+		const slug = slugifyTerm(query);
+		expect(slug).not.toBe("");
+
+		// Typing a query that matches no loaded term flips the recent column to the
+		// no-match state, which renders the create CTA (#440).
+		await page.locator(".kp-sozluk-home__searchbar input").fill(query);
+
+		const cta = page.locator(".kp-sozluk-home__create-cta");
+		await expect(cta).toBeVisible({timeout: 5_000});
+		const ctaButton = cta.getByRole("button", {name: /terimini oluştur/i});
+		await expect(ctaButton).toBeVisible();
+
+		await ctaButton.click();
+
+		// Same fresh-slug composer route as the search-Enter path.
+		await expect(page).toHaveURL(new RegExp(`/sozluk/${slug}$`));
+		await expect(page.locator(".kp-sozluk-term__head")).toBeVisible({timeout: 10_000});
+		await expect(page.locator('[data-testid="sozluk-composer-body"]')).toBeVisible();
 	});
 });
