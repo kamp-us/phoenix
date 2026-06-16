@@ -5,7 +5,7 @@
  * deploy stage (ADR 0056). The account-global Cloudflare state store and the four
  * CI secrets are reused (no second bootstrap).
  *
- * Lives in `@phoenix/dashboard` (next to the worker it deploys) because pnpm
+ * Lives in `@kampus/dashboard` (next to the worker it deploys) because pnpm
  * isolates `node_modules` — `alchemy`/`effect` resolve from here. Paths in the
  * worker's resource declarations (`assets`) are relative to this directory, the
  * alchemy CLI's working dir.

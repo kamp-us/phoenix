@@ -6,7 +6,7 @@
  * keyset `ORDER BY` (`createdAt desc, id desc`) or the cursors stop round-tripping
  * (ADR 0019; `.patterns/fate-connections.md`).
  */
-import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import {type Entity, FateDataView} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {ContributionRow, ProfileRow, UserRow} from "./Pasaport.ts";
 

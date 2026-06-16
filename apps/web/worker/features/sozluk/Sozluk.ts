@@ -210,7 +210,7 @@ export class Sozluk extends Context.Service<
 			input: VoteDefinitionInput,
 		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
 	}
->()("@phoenix/sozluk/Sozluk") {}
+>()("@kampus/sozluk/Sozluk") {}
 
 export const SozlukLive = Layer.effect(Sozluk)(
 	Effect.gen(function* () {

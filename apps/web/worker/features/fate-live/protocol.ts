@@ -9,13 +9,13 @@
  * WHERE the frames are produced (the DO), not their shape.
  */
 
+import {LivePublisher} from "@kampus/fate-effect";
 import {
 	FateRequestError,
 	liveConnectionTopic,
 	liveEntityTopic,
 	liveGlobalConnectionTopic,
 } from "@nkzw/fate/server";
-import {LivePublisher} from "@phoenix/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 

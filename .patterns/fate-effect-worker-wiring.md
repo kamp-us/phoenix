@@ -1,6 +1,6 @@
 # fate-effect worker wiring — the server composition at the worker edge
 
-How `apps/web/worker` serves `@phoenix/fate-effect`: the one config, the composed layer, the
+How `apps/web/worker` serves `@kampus/fate-effect`: the one config, the composed layer, the
 init-only runtime, and the per-request seam. Since the v2 cutover (ADR 0043) the `/fate` route
 serves the NATIVE interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) on
 the request fiber — the compile path ([fate-effect-compiler.md](./fate-effect-compiler.md)) is

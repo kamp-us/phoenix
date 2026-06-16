@@ -14,7 +14,7 @@
  * the SPA constant directly.
  */
 
-import {declaredWireCodes} from "@phoenix/fate-effect";
+import {declaredWireCodes} from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
 import {MUTATION_ERROR_CODES} from "../../../src/lib/mutationErrorCodes.ts";
 import {fateConfig} from "./config.ts";

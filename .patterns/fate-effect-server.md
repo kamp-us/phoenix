@@ -1,11 +1,11 @@
 # fate-effect server — `FateServer` tag, `config`, `layer`, and the per-request pair
 
-How `@phoenix/fate-effect` composes a fate server. The short answer: **fate has exactly one composite — the server — so it is the one Effect service.** `FateServer` is the package-owned tag (the `HttpRouter` idiom; no user-defined class), `FateServer.config(...)` captures the records, and `FateServer.layer(config)` is the only composition construct — domain requirements are discharged with ordinary `Layer.provide`. There is no menu, fragment, group, or per-feature tag. Entries are authored per [fate-effect-operations.md](./fate-effect-operations.md) and [fate-effect-sources.md](./fate-effect-sources.md).
+How `@kampus/fate-effect` composes a fate server. The short answer: **fate has exactly one composite — the server — so it is the one Effect service.** `FateServer` is the package-owned tag (the `HttpRouter` idiom; no user-defined class), `FateServer.config(...)` captures the records, and `FateServer.layer(config)` is the only composition construct — domain requirements are discharged with ordinary `Layer.provide`. There is no menu, fragment, group, or per-feature tag. Entries are authored per [fate-effect-operations.md](./fate-effect-operations.md) and [fate-effect-sources.md](./fate-effect-sources.md).
 
 ## Declaring a server
 
 ```ts
-import {FateServer} from "@phoenix/fate-effect";
+import {FateServer} from "@kampus/fate-effect";
 import {Layer} from "effect";
 import {panoLists, panoMutations, panoQueries, panoSources} from "../pano/fate.ts";
 import {sozlukLists, sozlukMutations, sozlukQueries, sozlukSources} from "../sozluk/fate.ts";

@@ -10,7 +10,7 @@
  * worker bridge runs the request fiber without abort wiring, so a disconnected
  * client wouldn't interrupt the resolver fibers unless the edge wires it.
  */
-import {FateInterpreter, type FateRequestContext} from "@phoenix/fate-effect";
+import {FateInterpreter, type FateRequestContext} from "@kampus/fate-effect";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";

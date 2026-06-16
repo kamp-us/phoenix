@@ -3,7 +3,7 @@
  * registry emitted, so the annotation-derived codec and the SPA's
  * `MUTATION_ERROR_CODES` vocabulary can't drift. Re-annotating a class fails it.
  */
-import {encodeWireError, wireCodeOfClass} from "@phoenix/fate-effect";
+import {encodeWireError, wireCodeOfClass} from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
 import {
 	BodyRequired,

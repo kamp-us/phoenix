@@ -1,5 +1,5 @@
 /**
- * `@phoenix/crabbox-manifest` — the crabbox → ADR 0054 §2 run-evidence adapter.
+ * `@kampus/crabbox-manifest` — the crabbox → ADR 0054 §2 run-evidence adapter.
  *
  * A pure transform between a crabbox run and a SHA-bound bundle manifest. The
  * domain (`Manifest` / `Check` / `TestSummary` / `RunMeta`) is `effect/Schema`;

@@ -11,7 +11,7 @@ ride the class's AST — `Data.TaggedError` has nowhere to put one.
 
 ```ts
 import * as Schema from "effect/Schema";
-import {ErrorCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@kampus/fate-effect";
 
 export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFound>()(
   "sozluk/DefinitionNotFound",
@@ -71,7 +71,7 @@ These carry their wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, …) as a
 ```ts
 // From db/Drizzle.ts — NO ErrorCode annotation, by design
 export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
-  "@phoenix/Drizzle/Error",
+  "@kampus/Drizzle/Error",
   {cause: Schema.Defect()},
 ) {}
 ```
@@ -151,7 +151,7 @@ const ensureTermExists = Effect.fn("Sozluk.ensureTermExists")(function*(slug) {
 ## Mapping to wire codes (the fate boundary)
 
 The interpreter's dispatch catches every error in the `E` channel and routes it through
-`@phoenix/fate-effect`'s `encodeWireError` (the oracle-baseline compile step uses the same
+`@kampus/fate-effect`'s `encodeWireError` (the oracle-baseline compile step uses the same
 helper), which reads the `ErrorCode` annotation off the error's class to produce a
 `FateRequestError` with a stable `code` — no registry, one edit per error
 ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)):
@@ -170,7 +170,7 @@ fate config's declared error unions and asserts the SPA's `MUTATION_ERROR_CODES`
 
 - **Throwing inside an `Effect.fn`.** The throw becomes a defect, not a typed error — it bypasses the `E` channel. Use `return yield* new MyError(...)`.
 - **One generic `FeatureError` class with a `code` discriminator field.** Collapses the `E` channel to a single type and forces resolvers to switch on a runtime `.code` field instead of `._tag`. Define one tagged error class per failure case.
-- **Catching infra errors in domain code.** `Effect.catchTag("@phoenix/Drizzle/Error", ...)` inside a feature service usually means you're hiding a real failure. Let it propagate to the fate boundary, which encodes it as `INTERNAL_SERVER_ERROR`. Recovery from infra errors belongs in retry middleware, not in domain logic.
+- **Catching infra errors in domain code.** `Effect.catchTag("@kampus/Drizzle/Error", ...)` inside a feature service usually means you're hiding a real failure. Let it propagate to the fate boundary, which encodes it as `INTERNAL_SERVER_ERROR`. Recovery from infra errors belongs in retry middleware, not in domain logic.
 
 ## See also
 

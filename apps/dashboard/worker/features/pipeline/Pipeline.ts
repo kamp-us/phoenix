@@ -41,7 +41,7 @@ export class Pipeline extends Context.Service<
 	{
 		readonly getState: Effect.Effect<PipelineResponse, GithubFetchError>;
 	}
->()("@phoenix/dashboard/pipeline/Pipeline") {}
+>()("@kampus/dashboard/pipeline/Pipeline") {}
 
 export const PipelineLive = Layer.effect(Pipeline)(
 	Effect.gen(function* () {
@@ -143,7 +143,7 @@ export const PipelineLive = Layer.effect(Pipeline)(
 					stale: false,
 				});
 			}).pipe(
-				Effect.catchTag("@phoenix/dashboard/pipeline/GithubFetchError", (error) =>
+				Effect.catchTag("@kampus/dashboard/pipeline/GithubFetchError", (error) =>
 					cached === null
 						? Effect.fail(error)
 						: Effect.succeed(

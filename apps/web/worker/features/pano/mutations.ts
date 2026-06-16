@@ -12,7 +12,7 @@
  * (`.patterns/fate-effect-server.md`). See `.patterns/fate-effect-operations.md`.
  */
 
-import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
+import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";

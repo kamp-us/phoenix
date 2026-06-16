@@ -99,11 +99,11 @@ so a logged-in `gh` is the only prerequisite.
 resolved `$REPO`, so they operate on your repo out of the box.
 
 The one exception is **`review-plan`**, which is **phoenix-pinned for v1**. Its
-deterministic ledger gate runs the in-repo `@phoenix/epic-ledger` package, which is not
+deterministic ledger gate runs the in-repo `@kampus/epic-ledger` package, which is not
 bundled into the plugin. In a non-phoenix repo `review-plan` **degrades gracefully** —
-it prints `review-plan requires @phoenix/epic-ledger (not available in this install — see
+it prints `review-plan requires @kampus/epic-ledger (not available in this install — see
 ADR 0062 §3)` rather than a raw crash. The other 10 skills, including the rest of the
-plan→build→ship loop, work without it. (Publishing `@phoenix/epic-ledger` so `review-plan`
+plan→build→ship loop, work without it. (Publishing `@kampus/epic-ledger` so `review-plan`
 becomes portable is a deferred follow-up — ADR 0062 §3.)
 
 Two more boundary notes:

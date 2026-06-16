@@ -28,7 +28,7 @@ import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 // success / payload / error are passed in the endpoint's options object —
 // there is no `.setPayload(...)` builder. Responses are `Schema.Class`,
 // payloads are `Schema.Struct`, errors are `Schema.TaggedErrorClass`.
-export class HealthStatus extends Schema.Class<HealthStatus>("@phoenix/HealthStatus")({
+export class HealthStatus extends Schema.Class<HealthStatus>("@kampus/HealthStatus")({
   status: Schema.String,
   environment: Schema.NullOr(Schema.String),
 }) {}

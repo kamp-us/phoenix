@@ -4,7 +4,7 @@
  * below.
  *
  * ```ts
- * import {Fate} from "@phoenix/fate-effect";
+ * import {Fate} from "@kampus/fate-effect";
  *
  * export const termSource = Fate.source(TermView, {id: "slug"}, {...});
  * type Term = Fate.Entity<typeof TermView>;

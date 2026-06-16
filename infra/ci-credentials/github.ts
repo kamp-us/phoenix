@@ -18,7 +18,7 @@
  *
  *   alchemy login --profile admin     # Cloudflare Global API Key + a GitHub creds
  *   CLOUDFLARE_ACCOUNT_ID=<id> ALCHEMY_PASSWORD=<pw> DASHBOARD_GITHUB_TOKEN=<pat> \
- *     pnpm --filter @phoenix/infra exec alchemy deploy github.ts \
+ *     pnpm --filter @kampus/infra exec alchemy deploy github.ts \
  *       --profile admin --yes
  *
  * `DASHBOARD_GITHUB_TOKEN` is the one secret you supply by hand — a fine-grained
@@ -40,7 +40,7 @@
  *                              deploy needs the value. Minted here as a stable
  *                              `Random` (persisted in this stack's state) and
  *                              pushed so CI can bind it on every deploy.
- *   - DASHBOARD_GITHUB_TOKEN — the GitHub PAT @phoenix/dashboard's worker binds
+ *   - DASHBOARD_GITHUB_TOKEN — the GitHub PAT @kampus/dashboard's worker binds
  *                              (`secret_text`) for authenticated issue reads.
  *                              Supplied via env (a hand-minted fine-grained PAT),
  *                              not generated; pushed so CI binds it on dashboard
@@ -146,7 +146,7 @@ export default Alchemy.Stack(
 			value: betterAuthSecret.text,
 		});
 
-		// The GitHub token @phoenix/dashboard's worker binds as a `secret_text`
+		// The GitHub token @kampus/dashboard's worker binds as a `secret_text`
 		// (`apps/dashboard/worker/config.ts` `Config.redacted("GITHUB_TOKEN")`, no
 		// default → required at deploy) for authenticated reads of kamp-us/phoenix
 		// issues. SUPPLIED via env, not minted: unlike the Cloudflare token (minted

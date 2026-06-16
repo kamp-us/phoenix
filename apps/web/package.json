@@ -1,5 +1,5 @@
 {
-	"name": "@phoenix/web",
+	"name": "@kampus/web",
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
@@ -27,7 +27,7 @@
 		"@effect/platform-node": "catalog:",
 		"@effect/sql-pg": "catalog:",
 		"@nkzw/fate": "catalog:",
-		"@phoenix/fate-effect": "workspace:*",
+		"@kampus/fate-effect": "workspace:*",
 		"@usirin/forge": "catalog:",
 		"alchemy": "catalog:",
 		"better-auth": "catalog:",

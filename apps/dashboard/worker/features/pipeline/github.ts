@@ -74,7 +74,7 @@ export class GithubClient extends Context.Service<
 			number: number,
 		) => Effect.Effect<ReadonlyArray<RawComment>, GithubFetchError>;
 	}
->()("@phoenix/dashboard/pipeline/GithubClient") {}
+>()("@kampus/dashboard/pipeline/GithubClient") {}
 
 export const GithubClientLive = Layer.effect(GithubClient)(
 	Effect.gen(function* () {

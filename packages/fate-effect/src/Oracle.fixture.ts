@@ -86,7 +86,7 @@ export class SozlukDb extends Context.Service<
 		readonly terms: Array<TermRow>;
 		readonly definitions: Array<DefinitionRow>;
 	}
->()("@phoenix/fate-effect/test/SozlukDb") {}
+>()("@kampus/fate-effect/test/SozlukDb") {}
 
 /** A fresh in-memory database per layer build — each backend owns its own world. */
 export const SozlukDbLive = Layer.sync(SozlukDb, () => ({

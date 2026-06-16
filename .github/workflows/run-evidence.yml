@@ -1,6 +1,6 @@
 # Run-evidence producer (ADR 0054 + 0056, epic #238 Phase 2 / #245).
 #
-# On every PR, run crabbox + the @phoenix/crabbox-manifest adapter to assemble the
+# On every PR, run crabbox + the @kampus/crabbox-manifest adapter to assemble the
 # ADR 0054 §2 run-evidence manifest and publish it as a GitHub Actions run artifact
 # named `run-evidence` — the storage ADR 0056 chose. The gate consumers (#246 ship-it,
 # #247 review-code) resolve the PR head SHA, find THIS workflow's run with that
@@ -169,7 +169,7 @@ jobs:
           # which effect-cli reads as "end of flags" and then rejects --run-summary.
           JUNIT_ARG=()
           if [ -n "${JUNIT:-}" ]; then JUNIT_ARG=(--junit "$JUNIT"); fi
-          pnpm --filter @phoenix/crabbox-manifest adapter \
+          pnpm --filter @kampus/crabbox-manifest adapter \
             --run-summary "$RUN_SUMMARY" \
             "${JUNIT_ARG[@]}" \
             --commit "${{ github.event.pull_request.head.sha }}" \

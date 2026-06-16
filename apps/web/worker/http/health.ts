@@ -18,7 +18,7 @@ import * as HttpApiEndpoint from "effect/unstable/httpapi/HttpApiEndpoint";
 import * as HttpApiGroup from "effect/unstable/httpapi/HttpApiGroup";
 import {AppConfig} from "../config.ts";
 
-export class HealthStatus extends Schema.Class<HealthStatus>("@phoenix/HealthStatus")({
+export class HealthStatus extends Schema.Class<HealthStatus>("@kampus/HealthStatus")({
 	status: Schema.String,
 	environment: Schema.NullOr(Schema.String),
 }) {}

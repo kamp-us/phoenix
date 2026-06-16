@@ -1,8 +1,24 @@
-import {assert, describe, it} from "@effect/vitest";
-import {Effect, Layer, Sink, Stream} from "effect";
+import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
+import {Cause, Effect, Layer, Sink, Stream} from "effect";
 import {ChildProcessSpawner} from "effect/unstable/process";
-import {GhCommandError, GhParseError, Github, GithubLive} from "./github.ts";
+import {GhCommandError, GhParseError, Github, GithubLive, RepoResolutionError} from "./github.ts";
 import {validateLedger} from "./validate.ts";
+
+// The live `Github` layer resolves its target repo at build (ADR 0062 §1): env
+// override first, else `gh repo view`. These tests pin the env override to
+// `kamp-us/phoenix` so the fixtures keyed on `repos/kamp-us/phoenix/...` match
+// without depending on the ambient `gh repo view`. The resolution-order describe
+// below clears it to exercise the other branches explicitly.
+const PINNED_REPO = "kamp-us/phoenix";
+let savedEnv: string | undefined;
+beforeAll(() => {
+	savedEnv = process.env.CLAUDE_PIPELINE_REPO;
+	process.env.CLAUDE_PIPELINE_REPO = PINNED_REPO;
+});
+afterAll(() => {
+	if (savedEnv === undefined) delete process.env.CLAUDE_PIPELINE_REPO;
+	else process.env.CLAUDE_PIPELINE_REPO = savedEnv;
+});
 
 /** A canned `gh` response keyed by the URL path the args address. */
 interface Canned {
@@ -20,24 +36,27 @@ const normalize = (response: Response): Canned =>
 	typeof response === "string" ? {stdout: response} : response;
 
 /**
- * A `ChildProcessSpawner` that answers `gh api <path>` from a fixture map. The
- * args are flattened to the addressed REST path so a test states only the
- * responses, not the spawn mechanics. An unmapped path exits 1 (a not-found).
+ * A `ChildProcessSpawner` that answers `gh api <path>` from a fixture map, plus
+ * `gh repo view …` from the `repoView` key. The args are flattened to the
+ * addressed REST path so a test states only the responses, not the spawn
+ * mechanics. An unmapped path exits 1 (a not-found).
  */
 const mockSpawner = (
 	responses: Record<string, Response>,
+	repoView?: Response,
 ): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
 	Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
 		ChildProcessSpawner.make(
 			Effect.fnUntraced(function* (command) {
 				let cmd = command;
 				while (cmd._tag === "PipedCommand") cmd = cmd.left;
-				const rawPath =
-					cmd._tag === "StandardCommand"
-						? (cmd.args.find((a) => a.startsWith("repos/")) ?? "")
-						: "";
+				const args = cmd._tag === "StandardCommand" ? cmd.args : [];
+				const isRepoView = args[0] === "repo" && args[1] === "view";
+				const rawPath = args.find((a) => a.startsWith("repos/")) ?? "";
 				const path = rawPath.replace(/\?.*$/, "");
-				const found = responses[path];
+				const found = isRepoView
+					? (repoView ?? {stdout: "", exitCode: 1, stderr: "no repo"})
+					: responses[path];
 				const canned = found
 					? normalize(found)
 					: {stdout: "", exitCode: 1, stderr: `not found: ${path}`};
@@ -61,7 +80,7 @@ const mockSpawner = (
 const provide = <A, E>(
 	effect: Effect.Effect<A, E, Github>,
 	responses: Record<string, Response>,
-): Effect.Effect<A, E> =>
+): Effect.Effect<A, E | RepoResolutionError> =>
 	effect.pipe(Effect.provide(GithubLive.pipe(Layer.provide(mockSpawner(responses)))));
 
 const issue = (number: number, body: string, labels: string[]) =>
@@ -209,4 +228,116 @@ describe("Github.epicLedger — cross-epic dependency resolution at the boundary
 			assert.deepStrictEqual(dangling?.refs, [108]);
 		}).pipe((effect) => provide(effect, xrefResponses(161))),
 	);
+});
+
+// The repo the layer resolves to is the prefix of every `gh api repos/<repo>/...`
+// URL. A single-issue epic over a chosen repo lets a test prove which repo was
+// resolved purely from which fixture key the read hit.
+const soloResponses = (repo: string, epicNumber: number): Record<string, Response> => ({
+	[`repos/${repo}/issues/${epicNumber}`]: issue(epicNumber, EPIC_BODY, [
+		"type:epic",
+		"p1",
+		"status:triaged",
+	]),
+	[`repos/${repo}/issues/${epicNumber}/sub_issues`]: JSON.stringify([{number: 101}, {number: 102}]),
+	[`repos/${repo}/issues/101`]: issue(101, "**Stories:** 1\n### Acceptance criteria\n- [ ] ac", [
+		"type:feature",
+		"p1",
+		"status:triaged",
+	]),
+	[`repos/${repo}/issues/102`]: issue(102, "**Stories:** 2\n### Acceptance criteria\n- [ ] ac", [
+		"type:feature",
+		"p1",
+		"status:triaged",
+	]),
+});
+
+// Run an epicLedger read against a fixture map + a chosen `gh repo view` answer,
+// with the repo-resolution env set exactly as the test wants. The layer reads
+// `process.env` at build (inside `Effect.provide`), so env is set synchronously
+// around `Effect.runPromiseExit` and restored after — `it.effect` can't bracket
+// the build the way these tests need, so they run the effect by hand.
+const runResolution = (params: {
+	readonly env: {readonly CLAUDE_PIPELINE_REPO?: string; readonly GITHUB_REPOSITORY?: string};
+	readonly responses: Record<string, Response>;
+	readonly repoView?: Response;
+	readonly epicNumber: number;
+}) => {
+	const prev = {
+		CLAUDE_PIPELINE_REPO: process.env.CLAUDE_PIPELINE_REPO,
+		GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+	};
+	const restore = (
+		key: "CLAUDE_PIPELINE_REPO" | "GITHUB_REPOSITORY",
+		value: string | undefined,
+	) => {
+		if (value === undefined) delete process.env[key];
+		else process.env[key] = value;
+	};
+	delete process.env.CLAUDE_PIPELINE_REPO;
+	delete process.env.GITHUB_REPOSITORY;
+	if (params.env.CLAUDE_PIPELINE_REPO !== undefined)
+		process.env.CLAUDE_PIPELINE_REPO = params.env.CLAUDE_PIPELINE_REPO;
+	if (params.env.GITHUB_REPOSITORY !== undefined)
+		process.env.GITHUB_REPOSITORY = params.env.GITHUB_REPOSITORY;
+	const layer = GithubLive.pipe(Layer.provide(mockSpawner(params.responses, params.repoView)));
+	const program = Github.pipe(
+		Effect.flatMap((github) => github.epicLedger(params.epicNumber)),
+		Effect.provide(layer),
+	);
+	return Effect.runPromiseExit(program).finally(() => {
+		restore("CLAUDE_PIPELINE_REPO", prev.CLAUDE_PIPELINE_REPO);
+		restore("GITHUB_REPOSITORY", prev.GITHUB_REPOSITORY);
+	});
+};
+
+describe("GithubLive — target repo resolution (ADR 0062 §1)", () => {
+	// The read only succeeds if the resolved repo became the `repos/<repo>/...` URL
+	// prefix the fixture map is keyed on — a wrong repo (e.g. a phoenix default)
+	// 404s against these fixtures. So a clean ledger == "resolved to this repo".
+	it("CLAUDE_PIPELINE_REPO wins; gh repo view is never consulted", async () => {
+		const exit = await runResolution({
+			env: {CLAUDE_PIPELINE_REPO: "foo/bar"},
+			responses: soloResponses("foo/bar", 159),
+			repoView: {stdout: "kamp-us/phoenix"}, // would mis-route if ever consulted
+			epicNumber: 159,
+		});
+		assert.isTrue(exit._tag === "Success");
+		if (exit._tag === "Success") assert.strictEqual(exit.value.epic.number, 159);
+	});
+
+	it("GITHUB_REPOSITORY is used when CLAUDE_PIPELINE_REPO is unset", async () => {
+		const exit = await runResolution({
+			env: {GITHUB_REPOSITORY: "octo/cat"},
+			responses: soloResponses("octo/cat", 159),
+			repoView: {stdout: "kamp-us/phoenix"},
+			epicNumber: 159,
+		});
+		assert.isTrue(exit._tag === "Success");
+		if (exit._tag === "Success") assert.strictEqual(exit.value.epic.number, 159);
+	});
+
+	it("falls back to `gh repo view` when no env is set", async () => {
+		const exit = await runResolution({
+			env: {},
+			responses: soloResponses("from/view", 159),
+			repoView: {stdout: "from/view\n"},
+			epicNumber: 159,
+		});
+		assert.isTrue(exit._tag === "Success");
+		if (exit._tag === "Success") assert.strictEqual(exit.value.epic.number, 159);
+	});
+
+	it("fails RepoResolutionError when nothing resolves (no env, gh repo view errors)", async () => {
+		const exit = await runResolution({
+			env: {},
+			responses: {},
+			repoView: {stdout: "", exitCode: 1, stderr: "not a git repo"},
+			epicNumber: 159,
+		});
+		assert.isTrue(exit._tag === "Failure");
+		if (exit._tag === "Failure") {
+			assert.isTrue(Cause.squash(exit.cause) instanceof RepoResolutionError);
+		}
+	});
 });

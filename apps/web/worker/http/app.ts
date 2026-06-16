@@ -10,7 +10,7 @@
  * `HttpRouter.provideRequest` (ADR 0029).
  */
 import type * as BetterAuth from "@alchemy.run/better-auth";
-import type {FateServer} from "@phoenix/fate-effect";
+import type {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";

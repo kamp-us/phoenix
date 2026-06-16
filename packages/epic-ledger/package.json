@@ -1,6 +1,6 @@
 {
 	"name": "@kampus/epic-ledger",
-	"version": "0.1.1",
+	"version": "0.1.2",
 	"description": "The deterministic structural floor validator for an epic's task ledger — Effect v4 Schema domain, validateLedger / isPickable / ledgerSignature",
 	"license": "MIT",
 	"repository": {

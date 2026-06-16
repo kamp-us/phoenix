@@ -1,4 +1,4 @@
-# @phoenix/crabbox-manifest
+# @kampus/crabbox-manifest
 
 The crabbox → **ADR 0054 §2** run-evidence adapter — a pure transform that maps a crabbox run
 into a SHA-bound bundle manifest the `ship-it`/`review-code` gates consume.

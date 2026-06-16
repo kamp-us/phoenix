@@ -6,8 +6,9 @@
  * throw-on-touch Proxy standing in for D1: if the codegen path executed
  * anything, generation would fail loudly — the "no D1 at build time" proof.
  */
+
+import {type Entity, Fate, FateDataView, FateExecutor, FateServer} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
-import {type Entity, Fate, FateDataView, FateExecutor, FateServer} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 

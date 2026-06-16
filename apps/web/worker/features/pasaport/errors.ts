@@ -10,7 +10,7 @@
  * The package's `Unauthorized` (annotated `UNAUTHORIZED`) gates the writes via
  * `CurrentUser.required` and is not redeclared here.
  */
-import {ErrorCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
 export class UsernameInvalidFormat extends Schema.TaggedErrorClass<UsernameInvalidFormat>()(

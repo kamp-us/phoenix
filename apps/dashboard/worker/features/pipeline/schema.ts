@@ -52,7 +52,7 @@ export interface ReviewVerdicts {
  * parse never invents a value the labels don't assert.
  */
 export class ParsedLabels extends Schema.Class<ParsedLabels>(
-	"@phoenix/dashboard/pipeline/ParsedLabels",
+	"@kampus/dashboard/pipeline/ParsedLabels",
 )({
 	status: Schema.NullOr(PipelineStatus),
 	type: Schema.NullOr(PipelineType),
@@ -67,7 +67,7 @@ export class ParsedLabels extends Schema.Class<ParsedLabels>(
  * PR with no verdict never renders a false PASS/FAIL.
  */
 export class IssueVerdict extends Schema.Class<IssueVerdict>(
-	"@phoenix/dashboard/pipeline/IssueVerdict",
+	"@kampus/dashboard/pipeline/IssueVerdict",
 )({
 	/** The open PR carrying (or awaiting) the verdict. */
 	prNumber: Schema.Number,
@@ -78,7 +78,7 @@ export class IssueVerdict extends Schema.Class<IssueVerdict>(
 
 /** A `requires:` edge: the issue's own number gated on another issue's number. */
 export class RequiresEdge extends Schema.Class<RequiresEdge>(
-	"@phoenix/dashboard/pipeline/RequiresEdge",
+	"@kampus/dashboard/pipeline/RequiresEdge",
 )({
 	from: Schema.Number,
 	to: Schema.Number,
@@ -86,7 +86,7 @@ export class RequiresEdge extends Schema.Class<RequiresEdge>(
 
 /** One `### Phase N` of the `## Dependencies` topology — an ordered parallel group. */
 export class DependencyPhase extends Schema.Class<DependencyPhase>(
-	"@phoenix/dashboard/pipeline/DependencyPhase",
+	"@kampus/dashboard/pipeline/DependencyPhase",
 )({
 	/** Phase ordinal as written (`### Phase 2` → 2). The sequential spine. */
 	phase: Schema.Number,
@@ -96,7 +96,7 @@ export class DependencyPhase extends Schema.Class<DependencyPhase>(
 
 /** The parsed `## Dependencies` topology: ordered phases + the flat set of `requires:` edges. */
 export class DependencyTopology extends Schema.Class<DependencyTopology>(
-	"@phoenix/dashboard/pipeline/DependencyTopology",
+	"@kampus/dashboard/pipeline/DependencyTopology",
 )({
 	phases: Schema.Array(DependencyPhase),
 	requires: Schema.Array(RequiresEdge),
@@ -104,7 +104,7 @@ export class DependencyTopology extends Schema.Class<DependencyTopology>(
 
 /** A single issue in the structured view: raw GitHub facts + the parsed label fields. */
 export class PipelineIssue extends Schema.Class<PipelineIssue>(
-	"@phoenix/dashboard/pipeline/PipelineIssue",
+	"@kampus/dashboard/pipeline/PipelineIssue",
 )({
 	number: Schema.Number,
 	title: Schema.String,
@@ -123,7 +123,7 @@ export class PipelineIssue extends Schema.Class<PipelineIssue>(
  * topology" is a type, not a convention an issue might or might not satisfy.
  */
 export class PipelineEpic extends Schema.Class<PipelineEpic>(
-	"@phoenix/dashboard/pipeline/PipelineEpic",
+	"@kampus/dashboard/pipeline/PipelineEpic",
 )({
 	number: Schema.Number,
 	title: Schema.String,
@@ -139,7 +139,7 @@ export class PipelineEpic extends Schema.Class<PipelineEpic>(
 
 /** The full structured pipeline state the route returns. */
 export class PipelineState extends Schema.Class<PipelineState>(
-	"@phoenix/dashboard/pipeline/PipelineState",
+	"@kampus/dashboard/pipeline/PipelineState",
 )({
 	issues: Schema.Array(PipelineIssue),
 	epics: Schema.Array(PipelineEpic),
@@ -155,7 +155,7 @@ export const encodePipelineState = Schema.encodeEffect(PipelineState);
  * timestamp the TTL/staleness decisions are made against.
  */
 export class CachedPipelineState extends Schema.Class<CachedPipelineState>(
-	"@phoenix/dashboard/pipeline/CachedPipelineState",
+	"@kampus/dashboard/pipeline/CachedPipelineState",
 )({
 	state: PipelineState,
 	/** Epoch millis the snapshot was fetched from GitHub (the freshness anchor). */
@@ -182,7 +182,7 @@ export const decodeCachedPipelineState = Schema.decodeUnknownEffect(CachedPipeli
  * GitHub at.
  */
 export class PipelineResponse extends Schema.Class<PipelineResponse>(
-	"@phoenix/dashboard/pipeline/PipelineResponse",
+	"@kampus/dashboard/pipeline/PipelineResponse",
 )({
 	issues: Schema.Array(PipelineIssue),
 	epics: Schema.Array(PipelineEpic),

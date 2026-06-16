@@ -3,7 +3,7 @@
  * (ADR 0018): each view's static `view` is the kernel `dataView()` output and
  * `Entity<>` derives the client type. See `.patterns/fate-effect-data-views.md`.
  */
-import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import {type Entity, FateDataView} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {CommentRow, PostSummaryRow, PostTagRow} from "./Pano.ts";
 

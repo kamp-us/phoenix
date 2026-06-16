@@ -1,4 +1,4 @@
-# @phoenix/fate-effect
+# @kampus/fate-effect
 
 Effect-native [fate](https://github.com/nkzw-tech/fate) integration — fate's structure with
 Effect's semantics.
@@ -43,7 +43,7 @@ contract — `encodeWireError` reads the annotation at the boundary; there is no
 to keep in sync.
 
 ```ts
-import {ErrorCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
 export class NoteNotFound extends Schema.TaggedErrorClass<NoteNotFound>()(
@@ -60,7 +60,7 @@ own `InputValidationError` (`VALIDATION_ERROR`, fate's code for the same case).
 ### 2. Views: a class whose static `view` IS the kernel dataView
 
 ```ts
-import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import {type Entity, FateDataView} from "@kampus/fate-effect";
 
 type NoteRow = {id: string; title: string; body: string; authorId: string; createdAt: Date};
 
@@ -94,7 +94,7 @@ A source pairs a view with loader capabilities. Handlers are plain generator bod
 package wraps them in `Effect.fn` and names the spans (`Note.byIds`) for you.
 
 ```ts
-import {Fate} from "@phoenix/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {Notes} from "./Notes.ts"; // your domain service
 
 export const noteSource = Fate.source(
@@ -124,7 +124,7 @@ Queries, lists, and mutations are record entries keyed by their wire names. The 
 pure data; the handler is an `Effect.fn` whose span name is the wire name.
 
 ```ts
-import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@phoenix/fate-effect";
+import {CurrentUser, Fate, LivePublisher, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 
@@ -169,7 +169,7 @@ skipping expensive nested work (see sozluk's `term` query).
 ### 5. Compose: one config, one layer
 
 ```ts
-import {FateServer} from "@phoenix/fate-effect";
+import {FateServer} from "@kampus/fate-effect";
 
 export const fateConfig = FateServer.config({
 	queries,
@@ -201,7 +201,7 @@ at codegen, so a bad config fails `pnpm build`. The validation list is the patte
 The serving path is one Effect — run it on your request fiber:
 
 ```ts
-import {FateInterpreter, type FateRequestContext} from "@phoenix/fate-effect";
+import {FateInterpreter, type FateRequestContext} from "@kampus/fate-effect";
 
 // per request:
 const context: FateRequestContext = {
@@ -223,7 +223,7 @@ time:
 
 ```ts
 // schema.ts — the fate Vite plugin imports this via runnerImport
-import {FateExecutor} from "@phoenix/fate-effect";
+import {FateExecutor} from "@kampus/fate-effect";
 import {fateConfig} from "./config.ts";
 
 export const fateServer = FateExecutor.toCodegenServer(fateConfig);

@@ -113,7 +113,13 @@ export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
 	},
 ) {}
 
-const REPO = "kamp-us/phoenix";
+/** No `owner/name` target repo could be resolved (no env override, no current repo). */
+export class RepoResolutionError extends Schema.TaggedErrorClass<RepoResolutionError>()(
+	"@kampus/epic-ledger/RepoResolutionError",
+	{
+		message: Schema.String,
+	},
+) {}
 
 const collect = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<string> =>
 	Stream.decodeText(stream).pipe(
@@ -162,41 +168,75 @@ const parseJson = (
 			new GhParseError({args, message: cause instanceof Error ? cause.message : String(cause)}),
 	});
 
-const issueArgs = (number: number): ReadonlyArray<string> => [
+const REPO_RE = /^[^/\s]+\/[^/\s]+$/;
+
+/**
+ * Resolve the target repo (`owner/name`) once, per ADR 0062 §1, in order:
+ * `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` (CI) → `gh repo view`. Never silently
+ * defaults to a repo: with no env and no resolvable current repo it fails
+ * `RepoResolutionError`, so a foreign install can't accidentally operate on phoenix.
+ */
+const resolveRepo = Effect.fn("Github.resolveRepo")(function* () {
+	const fromEnv = process.env.CLAUDE_PIPELINE_REPO ?? process.env.GITHUB_REPOSITORY;
+	if (fromEnv && REPO_RE.test(fromEnv.trim())) {
+		return fromEnv.trim();
+	}
+	const viewed = yield* runGh([
+		"repo",
+		"view",
+		"--json",
+		"nameWithOwner",
+		"-q",
+		".nameWithOwner",
+	]).pipe(
+		Effect.map((out) => out.trim()),
+		Effect.catchTag("@kampus/epic-ledger/GhCommandError", () => Effect.succeed("")),
+	);
+	if (REPO_RE.test(viewed)) {
+		return viewed;
+	}
+	return yield* new RepoResolutionError({
+		message:
+			"could not resolve a target repo: set CLAUDE_PIPELINE_REPO (or GITHUB_REPOSITORY), " +
+			"or run inside a git repo whose origin `gh repo view` can read",
+	});
+});
+
+const issueArgs = (repo: string, number: number): ReadonlyArray<string> => [
 	"api",
-	`repos/${REPO}/issues/${number}`,
+	`repos/${repo}/issues/${number}`,
 ];
 
-const subIssuesArgs = (number: number): ReadonlyArray<string> => [
+const subIssuesArgs = (repo: string, number: number): ReadonlyArray<string> => [
 	"api",
-	`repos/${REPO}/issues/${number}/sub_issues?per_page=100`,
+	`repos/${repo}/issues/${number}/sub_issues?per_page=100`,
 ];
 
 const PLANNED_LABEL = "status:planned";
 const TRIAGED_LABEL = "status:triaged";
 const NEEDS_INFO_LABEL = "status:needs-info";
 
-const addLabelArgs = (number: number, label: string): ReadonlyArray<string> => [
+const addLabelArgs = (repo: string, number: number, label: string): ReadonlyArray<string> => [
 	"api",
 	"-X",
 	"POST",
-	`repos/${REPO}/issues/${number}/labels`,
+	`repos/${repo}/issues/${number}/labels`,
 	"-f",
 	`labels[]=${label}`,
 ];
 
-const removeLabelArgs = (number: number, label: string): ReadonlyArray<string> => [
+const removeLabelArgs = (repo: string, number: number, label: string): ReadonlyArray<string> => [
 	"api",
 	"-X",
 	"DELETE",
-	`repos/${REPO}/issues/${number}/labels/${label}`,
+	`repos/${repo}/issues/${number}/labels/${label}`,
 ];
 
-const commentArgs = (number: number, body: string): ReadonlyArray<string> => [
+const commentArgs = (repo: string, number: number, body: string): ReadonlyArray<string> => [
 	"api",
 	"-X",
 	"POST",
-	`repos/${REPO}/issues/${number}/comments`,
+	`repos/${repo}/issues/${number}/comments`,
 	"-f",
 	`body=${body}`,
 ];
@@ -251,8 +291,8 @@ const is404 = (stderr: string): boolean => /404|not found/i.test(stderr);
  * dangling one. Open or closed both count as resolved — a `requires:` on a closed
  * (done) issue is the normal satisfied-dependency case.
  */
-const issueExists = Effect.fn("Github.issueExists")(function* (n: number) {
-	return yield* runGh(issueArgs(n)).pipe(
+const issueExists = Effect.fn("Github.issueExists")(function* (repo: string, n: number) {
+	return yield* runGh(issueArgs(repo, n)).pipe(
 		Effect.as(true),
 		Effect.catchTag("@kampus/epic-ledger/GhCommandError", (error) =>
 			is404(error.stderr) ? Effect.succeed(false) : Effect.fail(error),
@@ -267,41 +307,54 @@ const issueExists = Effect.fn("Github.issueExists")(function* (n: number) {
  * `DANGLING_DEP` (a ref that 404s is left out, so it still dangles). A
  * self-contained ledger has no candidates and so makes no extra `gh` calls.
  */
-const resolveExternalRefs = Effect.fn("Github.resolveExternalRefs")(function* (ledger: EpicLedger) {
+const resolveExternalRefs = Effect.fn("Github.resolveExternalRefs")(function* (
+	repo: string,
+	ledger: EpicLedger,
+) {
 	const childNumbers = new Set(ledger.children.map((c) => c.number));
 	const candidates = ledger.epic.dependencies.nodes.filter(
 		(n) => n !== ledger.epic.number && !childNumbers.has(n),
 	);
 	const probed = yield* Effect.forEach(
 		candidates,
-		(n) => Effect.map(issueExists(n), (exists) => ({n, exists})),
+		(n) => Effect.map(issueExists(repo, n), (exists) => ({n, exists})),
 		{concurrency: "unbounded"},
 	);
 	return probed.filter((r) => r.exists).map((r) => r.n);
 });
 
-const loadEpicLedger = Effect.fn("Github.epicLedger")(function* (epicNumber: number) {
-	const epic = yield* json(issueArgs(epicNumber));
-	const refs = yield* decodeSubIssueRefs(yield* json(subIssuesArgs(epicNumber)));
-	const children = yield* Effect.forEach(refs, (ref) => json(issueArgs(ref.number)), {
+const loadEpicLedger = Effect.fn("Github.epicLedger")(function* (repo: string, epicNumber: number) {
+	const epic = yield* json(issueArgs(repo, epicNumber));
+	const refs = yield* decodeSubIssueRefs(yield* json(subIssuesArgs(repo, epicNumber)));
+	const children = yield* Effect.forEach(refs, (ref) => json(issueArgs(repo, ref.number)), {
 		concurrency: "unbounded",
 	});
 	const ledger = yield* decodeEpicLedger({epic, children});
-	return {...ledger, externalRefs: yield* resolveExternalRefs(ledger)};
+	return {...ledger, externalRefs: yield* resolveExternalRefs(repo, ledger)};
 });
 
-const flipChildToTriaged = Effect.fn("Github.flipChildToTriaged")(function* (childNumber: number) {
-	yield* runGh(addLabelArgs(childNumber, TRIAGED_LABEL));
-	yield* runGh(removeLabelArgs(childNumber, PLANNED_LABEL));
+const flipChildToTriaged = Effect.fn("Github.flipChildToTriaged")(function* (
+	repo: string,
+	childNumber: number,
+) {
+	yield* runGh(addLabelArgs(repo, childNumber, TRIAGED_LABEL));
+	yield* runGh(removeLabelArgs(repo, childNumber, PLANNED_LABEL));
 });
 
-const postComment = Effect.fn("Github.postComment")(function* (issueNumber: number, body: string) {
-	yield* runGh(commentArgs(issueNumber, body));
+const postComment = Effect.fn("Github.postComment")(function* (
+	repo: string,
+	issueNumber: number,
+	body: string,
+) {
+	yield* runGh(commentArgs(repo, issueNumber, body));
 });
 
-const parkNeedsInfo = Effect.fn("Github.parkNeedsInfo")(function* (epicNumber: number) {
-	yield* runGh(addLabelArgs(epicNumber, NEEDS_INFO_LABEL));
-	yield* runGh(removeLabelArgs(epicNumber, PLANNED_LABEL));
+const parkNeedsInfo = Effect.fn("Github.parkNeedsInfo")(function* (
+	repo: string,
+	epicNumber: number,
+) {
+	yield* runGh(addLabelArgs(repo, epicNumber, NEEDS_INFO_LABEL));
+	yield* runGh(removeLabelArgs(repo, epicNumber, PLANNED_LABEL));
 });
 
 /**
@@ -309,20 +362,30 @@ const parkNeedsInfo = Effect.fn("Github.parkNeedsInfo")(function* (epicNumber: n
  * at construction and provided *into* each method body, so the service's public
  * methods carry `R = never` — the spawner is the layer's requirement, not a
  * caller's. Provide the platform spawner (`NodeServices.layer`) to satisfy it.
+ *
+ * The target repo is resolved **once at layer build** (ADR 0062 §1:
+ * `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` → `gh repo view`) and captured in the
+ * closure for every method, so the gate operates on whatever repo it is run in — never
+ * a silent phoenix default (#408).
  */
-export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildProcessSpawner> =
-	Layer.effect(Github)(
-		Effect.gen(function* () {
-			const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-			const withSpawner = <A, E>(
-				effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
-			) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
-			return {
-				epicLedger: (epicNumber: number) => withSpawner(loadEpicLedger(epicNumber)),
-				flipChildToTriaged: (childNumber: number) => withSpawner(flipChildToTriaged(childNumber)),
-				postComment: (issueNumber: number, body: string) =>
-					withSpawner(postComment(issueNumber, body)),
-				parkNeedsInfo: (epicNumber: number) => withSpawner(parkNeedsInfo(epicNumber)),
-			};
-		}),
-	);
+export const GithubLive: Layer.Layer<
+	Github,
+	RepoResolutionError,
+	ChildProcessSpawner.ChildProcessSpawner
+> = Layer.effect(Github)(
+	Effect.gen(function* () {
+		const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+		const withSpawner = <A, E>(
+			effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
+		) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+		const repo = yield* withSpawner(resolveRepo());
+		return {
+			epicLedger: (epicNumber: number) => withSpawner(loadEpicLedger(repo, epicNumber)),
+			flipChildToTriaged: (childNumber: number) =>
+				withSpawner(flipChildToTriaged(repo, childNumber)),
+			postComment: (issueNumber: number, body: string) =>
+				withSpawner(postComment(repo, issueNumber, body)),
+			parkNeedsInfo: (epicNumber: number) => withSpawner(parkNeedsInfo(repo, epicNumber)),
+		};
+	}),
+);

@@ -7,7 +7,7 @@
  * post-detail `post` query. See `.patterns/fate-connections.md`.
  */
 
-import {Fate} from "@phoenix/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {toConnection} from "../fate/connection.ts";

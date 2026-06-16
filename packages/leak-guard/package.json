@@ -1,5 +1,5 @@
 {
-	"name": "@phoenix/leak-guard",
+	"name": "@kampus/leak-guard",
 	"version": "0.0.0",
 	"private": true,
 	"description": "leak-guard scan CLI — block user-local filesystem paths from entering shared-artifact doc surfaces (issue #173)",

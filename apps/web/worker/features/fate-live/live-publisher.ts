@@ -1,5 +1,5 @@
 /**
- * The worker-side live implementation of `@phoenix/fate-effect`'s `LivePublisher`
+ * The worker-side live implementation of `@kampus/fate-effect`'s `LivePublisher`
  * per-request service (its tag identity is load-bearing, see
  * `.patterns/fate-effect-server.md`).
  *
@@ -22,7 +22,7 @@
  * per request (from the execution context + the worker-init `LiveTopics`) and
  * hands it to the interpreter, where it hands `currentUser`.
  */
-import type {LivePublisher} from "@phoenix/fate-effect";
+import type {LivePublisher} from "@kampus/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import {
