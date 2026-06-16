@@ -1,0 +1,71 @@
+# Publishes @kampus/epic-ledger to npm on a human-cut GitHub Release tagged
+# `epic-ledger-v*` (ADR 0064). Auth is OIDC Trusted Publishing — no NPM_TOKEN
+# secret: `id-token: write` mints a short-lived per-run credential. Under trusted
+# publishing, provenance is generated automatically (the `--provenance` flag is no
+# longer needed), so the publish carries a verifiable link back to this workflow
+# without it. A guard fails the run if the tag version and the package.json version
+# disagree, so a mistagged release never publishes.
+#
+# Prerequisite (human, one-time): the @kampus npm org/scope must exist and this
+# repo + workflow must be registered as a Trusted Publisher for
+# @kampus/epic-ledger on npmjs.com. Until then this workflow fails closed.
+name: publish-epic-ledger
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: publish @kampus/epic-ledger to npm
+    runs-on: ubuntu-latest
+    # Only fire for this package's release tags; the `release` event has no tag
+    # filter, so gate the job on the tag prefix here.
+    if: startsWith(github.event.release.tag_name, 'epic-ledger-v')
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      # Trusted Publishing (OIDC) requires npm CLI >= 11.5.1; the bundled npm is
+      # older, so upgrade it explicitly before publishing.
+      - name: Ensure npm >= 11.5.1
+        run: npm install -g npm@latest
+
+      - run: pnpm install --frozen-lockfile
+
+      # Tag is `epic-ledger-v<version>`; strip the prefix and compare against the
+      # package.json version. A mismatch fails the run before any publish.
+      - name: Guard — release tag must match package.json version
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          TAG_VERSION="${TAG#epic-ledger-v}"
+          PKG_VERSION="$(node -p "require('./packages/epic-ledger/package.json').version")"
+          echo "tag version:        $TAG_VERSION"
+          echo "package.json version: $PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::release tag ($TAG_VERSION) does not match packages/epic-ledger/package.json version ($PKG_VERSION) — refusing to publish"
+            exit 1
+          fi
+
+      - name: Typecheck epic-ledger
+        run: pnpm --filter @kampus/epic-ledger typecheck
+
+      # Publish ONLY this package, from its own dir. No NPM_TOKEN — OIDC Trusted
+      # Publishing supplies the credential per run and generates provenance
+      # automatically (no `--provenance` flag needed).
+      - name: Publish to npm (OIDC trusted publishing + automatic provenance)
+        working-directory: packages/epic-ledger
+        run: npm publish --access public

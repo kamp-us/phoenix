@@ -94,11 +94,36 @@ laptop. A GitHub Actions workflow under `.github/workflows/` publishes
   authenticates to npm via **OIDC**: it requests a short-lived credential per run
   (GitHub Actions `permissions: id-token: write`), so there is **no `NPM_TOKEN` secret
   stored in the repo** — nothing to rotate, no standing credential. Trusted Publishing
-  requires **npm CLI ≥ 11.5.1**, and the publish runs **with provenance**
-  (`npm publish --provenance`) so the published artifact carries a verifiable link back
-  to the building workflow and commit. A classic Automation/granular-access token was
-  considered and rejected: it is a long-lived standing secret that must be stored and
-  rotated, whereas OIDC mints an ephemeral credential scoped to the single run.
+  requires **npm CLI ≥ 11.5.1**, and **provenance is generated automatically** under
+  trusted publishing (the published artifact carries a verifiable link back to the
+  building workflow and commit with no `--provenance` flag — the flag is no longer
+  needed, see https://docs.npmjs.com/trusted-publishers/). A classic
+  Automation/granular-access token was considered and rejected: it is a long-lived
+  standing secret that must be stored and rotated, whereas OIDC mints an ephemeral
+  credential scoped to the single run.
+
+> **OIDC-only; staged publishing explicitly rejected.** npm's **staged publishing**
+> (GA 2026-05 — `npm stage publish` followed by a maintainer 2FA approval before the
+> version goes live; https://docs.npmjs.com/staged-publishing) was considered and
+> **rejected**: it inserts a *mandatory human approval per release*, which directly
+> conflicts with this epic's **full-automation** requirement (§2 — "never a manual
+> `npm publish`", "zero-touch after setup"). **OIDC trusted publishing** (tokenless,
+> automatic provenance on a public repo; https://docs.npmjs.com/trusted-publishers) is
+> the chosen mechanism. The trade accepted is **no pre-publish human gate** — mitigated
+> because the code has already passed the review→ship pipeline before any release tag is
+> cut, the artifact carries automatic provenance, and the version-match guard step
+> refuses a mistagged release.
+
+> **Bootstrap sequence (the "package must exist first" gotcha).** Both trusted
+> publishing *and* staged publishing require the package to **already exist on the
+> registry** before they apply. The **first** publish of `@kampus/epic-ledger` is
+> therefore a one-time **manual `npm publish` (with 2FA)** to create the package; the
+> Trusted Publisher is configured **after** that first publish (per the §2 human
+> prerequisites), and **every release thereafter** is automated via OIDC on an
+> `epic-ledger-v<version>` tag. Version detail: the manual bootstrap publishes the
+> **initial** version (e.g. `0.1.0`), and the **first OIDC-automated release is the next
+> bump** (e.g. `0.1.1`) — publishing the same version twice would be rejected as a
+> duplicate.
 
 > **Human prerequisites (an agent cannot do these):**
 > 1. **Create the public `@kampus` npm org/scope** (per §1) so the package has a public
@@ -134,11 +159,21 @@ the observable check.)
   via the published package, and the §3 degradation guard (#349) is removed by #367. ADR
   0062's "10/11 skills repo-agnostic" framing is now "11/11" once the epic lands (#368
   updates that framing).
-- **One-time human cost, then zero-touch.** After the two human prerequisites (create the
-  public `@kampus` org + register the repo/workflow as a Trusted Publisher for the
-  package), every release is a tag/Release away — no manual `npm publish`, no laptop
-  credentials, and no standing token to store or rotate. The cost moves from per-release
-  toil to a single setup.
+- **One-time human cost, then zero-touch.** The human prerequisites are: create the
+  public `@kampus` org, do the **one-time manual `npm publish` (with 2FA)** that brings
+  the package into existence on the registry (trusted/staged publishing both require it
+  to exist first), then register the repo/workflow as a Trusted Publisher for the
+  package. After that, every release is a tag/Release away — no manual `npm publish`, no
+  laptop credentials, no standing token to store or rotate. The first OIDC-automated
+  release is the next version bump after the bootstrap (e.g. bootstrap `0.1.0` → first
+  automated `0.1.1`) so it never re-publishes a version that already exists. The cost
+  moves from per-release toil to a single setup.
+- **OIDC over staged publishing — no human approval gate.** Choosing OIDC trusted
+  publishing over npm staged publishing means there is **no mandatory per-release human
+  approval** between cutting the tag and the version going live. This is deliberate (the
+  epic requires full automation); the safety it trades away is recovered upstream by the
+  review→ship pipeline gating the code before the release tag, plus automatic provenance
+  and the version-match guard.
 - **New maintenance obligation: version discipline.** §3 makes "bump-and-tag on every
   gate-logic change" a standing rule; skipping it silently desyncs foreign-repo gating
   from phoenix-local gating. The parity AC and the version-match guard step are the

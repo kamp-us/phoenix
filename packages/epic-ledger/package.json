@@ -1,11 +1,26 @@
 {
-	"name": "@phoenix/epic-ledger",
-	"version": "0.0.0",
-	"private": true,
+	"name": "@kampus/epic-ledger",
+	"version": "0.1.0",
 	"description": "The deterministic structural floor validator for an epic's task ledger — Effect v4 Schema domain, validateLedger / isPickable / ledgerSignature",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/epic-ledger"
+	},
 	"type": "module",
+	"bin": {
+		"epic-ledger": "./src/bin.ts"
+	},
 	"exports": {
 		".": "./src/index.ts"
+	},
+	"files": [
+		"src"
+	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
 	},
 	"scripts": {
 		"typecheck": "tsgo -p tsconfig.json",
@@ -13,8 +28,8 @@
 		"gate": "node src/bin.ts"
 	},
 	"dependencies": {
-		"@effect/platform-node": "catalog:",
-		"effect": "catalog:"
+		"@effect/platform-node": "4.0.0-beta.78",
+		"effect": "4.0.0-beta.78"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
