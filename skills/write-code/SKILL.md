@@ -141,12 +141,13 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
   # holding write+ on the repo, so a forged review-(code|doc|skill): FAIL from a non-reviewer can't
   # trigger spurious repair. Empty set ⇒ IN($authorized[]) matches nothing ⇒ no verdict
   # resolves ⇒ the scan safely finds nothing — fail-closed.
-  comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+  comments_file=$(mktemp)
+  gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
   # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
   # per gh-issue-intake-formats.md §5 — the canonical matcher contract
   markerAuthors=$(jq -r '[.[]
       | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
-      | .user.login] | unique | .[]' <<<"$comments")
+      | .user.login] | unique | .[]' "$comments_file")
   authorized='[]'
   while IFS= read -r a; do
     [ -z "$a" ] && continue
@@ -165,20 +166,20 @@ gh api "repos/$REPO/pulls?state=open&per_page=100" \
      | reduce .[] as $t ({n:0, prev:null};
          if (.prev == null) or ($t - .prev) > 120
          then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-     | .n' <<<"$comments")
+     | .n' "$comments_file")
   [ "$ROUNDS" -ge 3 ] && continue   # at the cap → already escalated to a human, excluded from the scan
   CODE=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
           | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
-     | sort_by(.created_at) | last | .body // ""' <<<"$comments")
+     | sort_by(.created_at) | last | .body // ""' "$comments_file")
   DOC=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
           | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
-     | sort_by(.created_at) | last | .body // ""' <<<"$comments")
+     | sort_by(.created_at) | last | .body // ""' "$comments_file")
   SKILL=$(jq --argjson authorized "$authorized" \
     '[.[] | select(.user.login | IN($authorized[]))
           | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
-     | sort_by(.created_at) | last | .body // ""' <<<"$comments")
+     | sort_by(.created_at) | last | .body // ""' "$comments_file")
   echo "$CODE"  | grep -qiE '^\s*\**\s*review-code:\s*FAIL'  && echo "#$PR review-code FAIL"
   echo "$DOC"   | grep -qiE '^\s*\**\s*review-doc:\s*FAIL'   && echo "#$PR review-doc FAIL"
   echo "$SKILL" | grep -qiE '^\s*\**\s*review-skill:\s*FAIL' && echo "#$PR review-skill FAIL"
@@ -553,12 +554,13 @@ no ACL gate — GitHub author-attributes reviews, so it is unforgeable.
 PR=<the PR number you were handed>
 # whose markers count as a verdict — GitHub's repo ACL, the same trust root ship-it Step 2 uses
 # (ADR 0055): build the authorized set from THIS PR's marker authors holding write+ on the repo.
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+comments_file=$(mktemp)
+gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
 # every marker test below is emphasis-tolerant (leading \** absorbs review-code's bolding)
 # per gh-issue-intake-formats.md §5 — the canonical matcher contract
 markerAuthors=$(jq -r '[.[]
     | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
-    | .user.login] | unique | .[]' <<<"$comments")
+    | .user.login] | unique | .[]' "$comments_file")
 authorized='[]'
 while IFS= read -r a; do
   [ -z "$a" ] && continue
@@ -578,7 +580,7 @@ jq --argjson authorized "$authorized" \
          | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
 
 # latest decisive native review (APPROVED / CHANGES_REQUESTED) — folds into the code namespace
 # (no ACL gate: GitHub author-attributes reviews, so this path is unforgeable). commit_id IS its bound SHA.
@@ -592,7 +594,7 @@ jq --argjson authorized "$authorized" \
          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
 
 # latest review-skill marker (skill namespace) — author-gated, anchored, never matches review-code/review-doc
 jq --argjson authorized "$authorized" \
@@ -600,7 +602,7 @@ jq --argjson authorized "$authorized" \
          | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
 ```
 
 Resolve per namespace, latest-wins by timestamp, **then apply the SHA-staleness test** (ADR
@@ -651,7 +653,7 @@ below are additive to this list, not a substitute for it):
 jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-code:\\s*FAIL"; "i"))]
-    | sort_by(.created_at) | last | .body' <<<"$comments"
+    | sort_by(.created_at) | last | .body' "$comments_file"
 ```
 
 #### Also fold in line-anchored inline review comments (additive, not the gate)
@@ -777,7 +779,7 @@ re-review (minutes at least), so they never collapse into one. (A fixed `created
 minute bucket gets both of these wrong: it splits one pass straddling `:59`/`:00` into two
 rounds — premature escalation — and merges two real rounds that share a minute into one —
 the cap fails to bind and the loop runs past N=3.) Same ACL author-gate as Step
-R1 (reuse its `$comments` + `$authorized`) — only a real reviewer's FAIL counts toward the cap:
+R1 (reuse its `$comments_file` + `$authorized`) — only a real reviewer's FAIL counts toward the cap:
 
 ```bash
 # how many distinct gate-FAIL ROUNDS has this PR already accrued (both namespaces)?
@@ -792,7 +794,7 @@ jq --argjson authorized "$authorized" \
     | reduce .[] as $t ({n:0, prev:null};
         if (.prev == null) or ($t - .prev) > 120
         then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-    | .n' <<<"$comments"
+    | .n' "$comments_file"
 ```
 
 If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix against a 4th
