@@ -86,6 +86,12 @@ contract and referenced by each skill, replacing the inline literals.
 
 ### 3. `@phoenix/epic-ledger` — review-plan stays phoenix-pinned for v1; npm-publish is the deferred follow-up
 
+> **Superseded by [0064](0064-epic-ledger-npm-publish-automated-release.md).** The
+> deferral below is resolved: epic-ledger is published to npm (renamed
+> `@kampus/epic-ledger`) via an automated release pipeline, and `review-plan` resolves
+> the in-repo package first, falling back to the published one. The §3 degradation guard
+> is removed. The rest of this ADR (§1, §2, §4, §5) stands.
+
 `review-plan`'s deterministic gate is `@phoenix/epic-ledger` (`packages/epic-ledger`), an
 Effect CLI run with `node packages/epic-ledger/src/bin.ts`. Three options were weighed:
 bundle the package into the plugin, publish it to npm and invoke via `pnpm dlx`, or exclude
