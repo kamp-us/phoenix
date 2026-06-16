@@ -609,13 +609,21 @@ A PR whose latest current-head verdict is PASS — or that has no current-head F
 PR, a no-FAIL PR, or a stale-FAIL PR is a clean no-op. If **both** namespaces' latest
 current-head verdicts are FAIL (a mixed code+doc PR), address **both** in this round.
 
+R1 resolves the **AC gate** — the marker (and the decisive native review folded into the
+code namespace) is what decides whether there's anything to repair, and its `[FAIL]` table
+is the AC work-list (Step R2). Line-anchored **inline review comments** are a *separate,
+additive* input read in Step R2: they never substitute for the marker (a PR with no
+current-head FAIL is still a clean no-op even if inline comments exist) and they don't
+themselves gate — they fold into the same fix round as additional required fixes.
+
 ### Step R2 — Read the enumerated findings, fix exactly those
 
 The FAIL marker comment (or `CHANGES_REQUESTED` review body) carries a **per-criterion
 evidence table** — each unmet `### Acceptance criterion` (and, for `review-doc`, each unmet
 hygiene check) listed as a `[FAIL]`/`[UNVERIFIABLE]` line with what's missing. Read the
-full body of the resolving comment/review and treat **those enumerated findings as your
-work list** — fix exactly what they name, no more, no less:
+full body of the resolving comment/review and treat **those enumerated findings as the AC
+work list** — fix exactly what they name (the inline-comment fixes below are additive to
+this list, not a substitute for it):
 
 ```bash
 # the full body of the latest FAILing review-code marker (swap review-code→review-doc for the doc namespace)
@@ -625,6 +633,55 @@ jq --argjson authorized "$authorized" \
    '[.[] | select(.user.login | IN($authorized[]))
          | select(.body | test("^\\s*\\**\\s*review-code:\\s*FAIL"; "i"))]
     | sort_by(.created_at) | last | .body' <<<"$comments"
+```
+
+#### Also fold in line-anchored inline review comments (additive, not the gate)
+
+The marker's `[FAIL]` table is the **AC gate** and remains so — but humans and review bots
+leave their most concrete, fixable feedback as **inline review comments** anchored to a
+specific `path`+`line` on the diff (`GET repos/$REPO/pulls/$PR/comments`), and as
+**decisive native review bodies** (`GET .../pulls/$PR/reviews`, already resolved in R1).
+Repair mode reads these too and folds them into the **same** fix round — *in addition to*
+the marker findings, never as a replacement. **Precedence:** if the marker (R1) has no
+current-head FAIL, there is nothing to repair and inline comments alone do **not** trigger a
+repair round; once a FAIL round is open, every in-scope inline comment is a **required fix**
+alongside the `[FAIL]` table.
+
+**Reviewer scoping** — an inline comment counts as a required fix only when its author is
+**either**:
+
+- a **`write+` repo collaborator** — the same GitHub-ACL floor ADR
+  [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+  applies to marker authority (reuse the per-author `collaborators/<login>/permission`
+  check from R1); **or**
+- the **`copilot-pull-request-reviewer[bot]`** review bot, included **explicitly** by
+  login. Review bots don't hold collaborator permissions, so the `write+` floor would
+  silently drop them — and Copilot is already the bot commenting on these PRs (#383), so its
+  line-level findings are exactly the signal this path exists to action. No other bot is
+  in scope; widen the allow-list deliberately, never by default.
+
+Anything outside that set (a `read`-only human, a drive-by bot) is **advisory** — surface it
+but don't treat it as a required fix.
+
+**Head-binding (ADR 0058 staleness, applied to inline comments).** A comment whose anchor
+no longer exists at the PR's current head is **stale** and is skipped: GitHub nulls the
+comment's `line` (and `position`) once the anchored hunk is outdated, so an in-scope comment
+is actionable only when its `line` is non-null. This is the inline-comment analog of R1's
+`@ <sha>` staleness test — repair never chases feedback bound to code that has since changed.
+
+```bash
+ME=$(gh api user --jq '.login')   # don't action your own author-side replies
+# fetch into a var, then pipe to standalone jq — gh's --jq takes no --argjson, and this reuses
+# the same $authorized set R1/R2 already built (same pattern as the marker work-list above)
+inlineComments=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100")
+# in-scope, still-anchored inline review comments → your additive fix list (id+path+line+body)
+jq --argjson authorized "$authorized" --arg me "$ME" \
+  '[ .[]
+     | select(.line != null)                                  # non-null line ⇒ still anchored to current head (ADR 0058)
+     | select(.user.login != $me)                             # skip self-authored thread replies
+     | select((.user.login | IN($authorized[]))               # write+ collaborator (ADR 0055), or…
+              or .user.login == "copilot-pull-request-reviewer[bot]")  # …the explicitly-included review bot (#383)
+   ] | .[] | {id, path, line, body}' <<<"$inlineComments"
 ```
 
 For context on *what the PR was supposed to do*, resolve the **linked issue** via the PR
@@ -663,6 +720,22 @@ requested"). Pushing new commits is what makes the **stateless** gate re-run —
 git push origin HEAD
 gh api repos/$REPO/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
 ```
+
+**Acknowledge the inline threads you addressed** so the loop is visible to the reviewer who
+left them. For each in-scope inline comment you fixed, post a **threaded reply** naming what
+you changed (REST, on the same review-comment thread):
+
+```bash
+# reply on the inline comment thread you addressed ($CID = the comment id from R2)
+gh api -X POST "repos/$REPO/pulls/$PR/comments/$CID/replies" \
+  -f body="Addressed in <short-sha>: <one line on the fix>."
+```
+
+A reply is the acknowledgement this skill performs. **Resolving** the thread (collapsing it)
+is a GraphQL-only mutation (`resolveReviewThread`), and the org's Projects-classic
+integration breaks GraphQL (see the top-of-skill REST-only rule), so repair mode does **not**
+resolve threads — the reviewer (or `ship-it` on merge) resolves; the reply is what closes the
+loop on write-code's side.
 
 Then **stop.** The independent re-review re-gates the fix and lands a fresh verdict; that
 is the firewall. write-code does **not** write a PASS marker, does **not** approve, and
@@ -753,6 +826,15 @@ forever. The cap thus terminates **both** the fix loop *and* the re-selection lo
   the same GitHub-ACL gate `ship-it` Step 2 applies before the marker regex, so a forged or
   self-authored `review-(code|doc): FAIL`/`PASS` can neither trigger spurious repair nor
   mask a real verdict (ADR [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)).
+- **Inline comments are additive, never the gate (Step R2).** Repair also folds in
+  line-anchored inline review comments (`pulls/$PR/comments`) as *required fixes alongside*
+  the marker's `[FAIL]` table — never as a substitute: with no current-head marker FAIL there
+  is nothing to repair, inline comments alone don't open a round. In scope are comments from
+  a **`write+`** author (ADR 0055 floor) **or** the explicitly-named
+  `copilot-pull-request-reviewer[bot]`; out-of-scope authors are advisory only. A comment with
+  a **null `line`** is stale (its anchor no longer exists at the current head) and is skipped —
+  the ADR 0058 staleness test applied to inline anchors. Addressed threads get a REST reply
+  (resolve is GraphQL-only → out of reach here).
 - **Bounded *and* non-starving.** The N=3 cap stops the fix loop; the pre-pick scan's
   cap-exclusion (`ROUNDS >= 3`) stops the re-selection loop, so an escalated PR never
   re-pulls a future run into repair (Step 1, Bounding).
@@ -841,10 +923,11 @@ A single invocation does one unit of work end to end, in one of the two modes:
   derivation), the branch and PR opened (or the ADR/diagnosis for a
   decision/investigation), and a pointer to the progress comment.
 - **Repair** (PR number): resolve the PR's latest verdict per namespace (Step R1) and, if
-  it's FAIL, fix the enumerated findings on the same branch, push, post progress, and stop
-  (Steps R1–R3) — or escalate if the PR has hit the N=3 cap. Report which findings you
-  addressed (or `nothing to repair` for a PASS/no-FAIL PR), and that you handed the PR back
-  to the gate. **Never merge** in either mode.
+  it's FAIL, fix the enumerated marker findings **plus the in-scope line-anchored inline
+  review comments** (Step R2) on the same branch, push, reply on the threads you addressed,
+  post progress, and stop (Steps R1–R3) — or escalate if the PR has hit the N=3 cap. Report
+  which findings you addressed (or `nothing to repair` for a PASS/no-FAIL PR), and that you
+  handed the PR back to the gate. **Never merge** in either mode.
 
 Don't narrate every REST call — the assignee, the comments, and the PR are the durable
 record.
