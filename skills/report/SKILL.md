@@ -54,7 +54,7 @@ It prints a ready-to-append markdown block. Which fields appear varies by run �
 
 ```markdown
 ---
-<sub>Filed by an agent · branch `umut/some-branch` · 2026-06-12T08:14:01Z</sub>
+<sub>Filed by an agent · branch `<prefix>/some-branch` · 2026-06-12T08:14:01Z</sub>
 ```
 
 Aim for **session id, model, branch, and timestamp** — but all are best-effort. Model and session often come from env vars that are unset, so don't be surprised when they drop; whatever the helper can resolve is what you get.
@@ -126,7 +126,7 @@ cat > "$BODY_FILE" <<'EOF'
 …
 
 ---
-<sub>Filed by an agent · session `abc123…` · branch `umut/some-branch` · 2026-06-12T08:14:01Z</sub>
+<sub>Filed by an agent · session `abc123…` · branch `<prefix>/some-branch` · 2026-06-12T08:14:01Z</sub>
 EOF
 
 # 2. Read it into $BODY so markdown/backticks survive the shell intact.
