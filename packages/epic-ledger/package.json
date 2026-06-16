@@ -19,8 +19,7 @@
 		"src"
 	],
 	"publishConfig": {
-		"access": "public",
-		"provenance": true
+		"access": "public"
 	},
 	"scripts": {
 		"typecheck": "tsgo -p tsconfig.json",
