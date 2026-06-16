@@ -1,6 +1,6 @@
 ---
 name: review-doc
-description: Verify a doc/knowledge PR against its linked issue's acceptance criteria — plus a doc-hygiene checklist — before it merges. The doc-artifact twin of review-code in the configured target repo's pipeline. Trigger on "review this doc PR", "review-doc #N", "gate the ADR PR", "verify the docs on #N before merge", "run review-doc", "does this ADR/pattern PR meet its acceptance criteria", or whenever you're asked to confirm a `.decisions`/`.patterns`/prose-doc PR actually satisfies the issue it claims to close. This is the doc-class verification stage of the issue-intake pipeline: it consumes the doc PRs `write-code` opens and verifies them one criterion at a time, evidence-based from reading the diff (no test-running). Emits a namespaced, SHA-bound `review-doc: PASS @ <sha> — merge-ready` / `review-doc: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted to one-per-PR; for BLOCKING-set doc PRs (touching `.claude/`/`.github`) it is advisory only; it never merges; it never emits a `review-code` marker.
+description: Verify a doc/knowledge PR against its linked issue's acceptance criteria — plus a doc-hygiene checklist — before it merges. The doc-artifact twin of review-code in the configured target repo's pipeline. Trigger on "review this doc PR", "review-doc #N", "gate the ADR PR", "verify the docs on #N before merge", "run review-doc", "does this ADR/pattern PR meet its acceptance criteria", or whenever you're asked to confirm a `.decisions`/`.patterns`/prose-doc PR actually satisfies the issue it claims to close. This is the doc-class verification stage of the issue-intake pipeline: it consumes the doc PRs `write-code` opens and verifies them one criterion at a time, evidence-based from reading the diff (no test-running). Emits a namespaced, SHA-bound `review-doc: PASS @ <sha> — merge-ready` / `review-doc: FAIL @ <sha> — changes-requested` comment marker (never a native review — ADR 0058), upserted to one-per-PR; for BLOCKING-set doc PRs (touching `.claude/`/`.github` or a gate-critical skill) it is advisory only; it never merges; it never emits a `review-code` marker.
 ---
 
 # review-doc
@@ -43,12 +43,17 @@ spec for this split, and it **supersedes** ADR
 
   Both are product or knowledge artifacts; gated for quality, but a human at the merge
   adds no security value.
-- **BLOCKING (manual merge).** Anything touching `.claude/**` or `.github/**` — the agent
-  control plane (instructions, tools, hooks) and CI enforcement. A bad merge here is a
-  serious security concern (self-modification of guardrails; CI/secret exfiltration), so
-  a **human merges these by hand** and `ship-it` refuses them. For a doc PR that touches
-  this set, you are **advisory only**: review it, post your findings, but say plainly that
-  your verdict does **not** authorize a merge — a maintainer does.
+- **BLOCKING (manual merge).** Anything touching `.claude/**`, `.github/**`, or one of the five
+  **gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
+  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`) — the agent control plane
+  (instructions, tools, hooks), CI enforcement, and the pipeline's own gates. A bad merge here
+  is a serious security concern (self-modification of guardrails; CI/secret exfiltration), so
+  a **human merges these by hand** and `ship-it` refuses them. The gate-critical skills were
+  added to this set by ADR
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
+  `skills/ship-it/SKILL.md` Step 0 is the authoritative source of the exact blocking set. For a
+  doc PR that touches this set, you are **advisory only**: review it, post your findings, but say
+  plainly that your verdict does **not** authorize a merge — a maintainer does.
 
 So before you verify anything, classify the diff (Step 0). The classification decides
 whether your marker binds `ship-it` or is merely advice.
@@ -127,12 +132,22 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
   --jq '.[] | "\(.status)\t\(.filename)"'
 ```
 
-- **Any path under `.claude/**` or `.github/**`** → the PR is in the **blocking set**.
-  You review it and post your findings, but **advisory only** — your verdict does not
-  authorize a merge; a maintainer merges it by hand (ADR 0053). Say so explicitly in the
-  verdict (Step 5).
-- **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md`, and/or
-  `apps/web/**`, `packages/**`) → **non-blocking**. Your PASS marker binds `ship-it`.
+- **Any control-plane path** — `.claude/**`, `.github/**`, or one of the five **gate-critical
+  skills** (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
+  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`) — → the PR is in the **blocking
+  set**. You review it and post your findings, but **advisory only** — your verdict does not
+  authorize a merge; a maintainer merges it by hand (ADR 0053, widened to the gate-critical
+  skills by ADR 0065; `skills/ship-it/SKILL.md` Step 0 is the authoritative blocking set). Say
+  so explicitly in the verdict (Step 5).
+
+  ```bash
+  CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
+    --jq '[.[].filename | select(test("^(\\.claude|\\.github)/|^skills/(ship-it|review-code|review-doc|review-plan)/|^skills/gh-issue-intake-formats\\.md$"))]')"
+  # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065)
+  ```
+- **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md`, a non-gate-critical
+  `skills/**`, and/or `apps/web/**`, `packages/**`) → **non-blocking**. Your PASS marker binds
+  `ship-it`.
 
 If the diff is **pure product code** with no doc/knowledge file at all, this is the wrong
 gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` (a plain note,
@@ -387,15 +402,17 @@ authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 
 ### Pass path — blocking-set PR (advisory only)
 
-Every check passed but Step 0 classified the PR **blocking** (it touches `.claude/**` or
-`.github/**`). Post the **same evidence**, but the first line is **not** a merge-ready
-go-ahead — it is advice. `ship-it` refuses this PR regardless; a human merges it.
+Every check passed but Step 0 classified the PR **blocking** (it touches `.claude/**`,
+`.github/**`, or a gate-critical skill). Post the **same evidence**, but the first line is
+**not** a merge-ready go-ahead — it is advice. `ship-it` refuses this PR regardless; a human
+merges it.
 
 ```markdown
 review-doc: advisory — blocking-set PR (manual merge)
 
-PR #<PR> touches `.claude/`/`.github/` — the agent control plane (ADR 0053). My verdict is
-**advisory only**: it does **not** authorize a merge. A maintainer merges this by hand.
+PR #<PR> touches the control plane (`.claude/`/`.github/` or a gate-critical skill) — the agent
+control plane / pipeline gates (ADR 0053/0065). My verdict is **advisory only**: it does **not**
+authorize a merge. A maintainer merges this by hand.
 
 Verified against #<ISSUE>'s acceptance criteria + doc hygiene — all checks pass:
 

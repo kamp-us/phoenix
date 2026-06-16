@@ -277,7 +277,7 @@ ordinary way. Do **not** fail the gate, refuse to review, or block on the bundle
 ### Flag a control-plane PR (complementary signal, not the isolation)
 
 The sparse-checkout above is what *keeps you safe*. Independently, note for the verdict
-whether the PR's diff touches the **control plane** — and use **ADR 0053's blocking set
+whether the PR's diff touches the **control plane** — and use **`ship-it`'s blocking set
 exactly**, because this flag predicts the *consumer's* (`ship-it`'s) behavior, and that
 consumer refuses **only** the control plane. Two distinct sets are in play here; keep them
 apart:
@@ -286,19 +286,24 @@ apart:
   `.patterns/**`) is what the reviewer must never *load* — already handled, above, by the
   non-cone allowlist that simply never checks those paths out. It is an *isolation* set, not
   a merge-blocking set.
-- **0053's control-plane set** (`.claude/**` + `.github/**` **only**) is what `ship-it`
-  *refuses to auto-merge* (ADR [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md) §4;
-  ship-it/SKILL.md). `.decisions/**` and `.patterns/**` are **non-blocking** under 0053 —
-  they auto-merge through `review-doc`. So the merge-blocking flag must match 0053's set, not
-  0052's; flagging a `.decisions`/`.patterns`-only PR as "not auto-mergeable" would lie about
-  what `ship-it` does and stall the autonomous doc lane.
+- **The control-plane set** — `.claude/**`, `.github/**`, **plus the five gate-critical skills**
+  (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`, `skills/review-plan/**`,
+  `skills/gh-issue-intake-formats.md`) — is what `ship-it` *refuses to auto-merge* (ADR
+  [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md) §4,
+  widened to the gate-critical skills by ADR
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
+  `skills/ship-it/SKILL.md` Step 0 is the authoritative source of this blocking set). `.decisions/**`
+  and `.patterns/**` — and every *non*-gate-critical `skills/**` — are **non-blocking**: they
+  auto-merge through `review-doc`/`review-code`. So the merge-blocking flag must match this exact
+  set; flagging a `.decisions`/`.patterns`-only (or non-gate-critical `skills/**`) PR as "not
+  auto-mergeable" would lie about what `ship-it` does and stall the autonomous lane.
 
-So the verdict's not-auto-mergeable flag matches **`.claude/**` + `.github/**` only**:
+So the verdict's not-auto-mergeable flag matches **`ship-it`'s Step 0 blocking set exactly**:
 
 ```bash
 CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '[.[].filename | select(test("^(\\.claude/|\\.github/)"))]')"
-# non-empty → control-plane: surface it in the verdict (Step 4) as manual-merge per ADR 0053
+  --jq '[.[].filename | select(test("^(\\.claude|\\.github)/|^skills/(ship-it|review-code|review-doc|review-plan)/|^skills/gh-issue-intake-formats\\.md$"))]')"
+# non-empty → control-plane: surface it in the verdict (Step 4) as manual-merge per ADR 0053/0065
 ```
 
 ---
@@ -412,12 +417,15 @@ auto-close issue #N via its `Fixes #N`. Leave the issue as-is (it'll close on me
 now).
 
 **Only if** `CONTROL_PLANE_TOUCHED` (Step 2) is non-empty, add the control-plane line to the
-verdict: the PR is verified against its ACs **but is not auto-mergeable** — it touches
-`.claude/**` or `.github/**`, so `ship-it` will refuse it and a human merges it by hand (ADR
-[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). "Merge-ready" here means the
-ACs are satisfied, not that the autonomous merge step may act. (A PR touching only
-`.decisions/**`/`.patterns/**` is **not** control-plane and **does** auto-merge via
-`review-doc` — do not add this line for it.)
+verdict: the PR is verified against its ACs **but is not auto-mergeable** — it touches the
+control plane (`.claude/**`, `.github/**`, or a gate-critical skill), so `ship-it` will refuse
+it and a human merges it by hand (ADR
+[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md),
+widened to the gate-critical skills by ADR
+[0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)).
+"Merge-ready" here means the ACs are satisfied, not that the autonomous merge step may act.
+(A PR touching only `.decisions/**`/`.patterns/**` or a non-gate-critical `skills/**` is **not**
+control-plane and **does** auto-merge — do not add this line for it.)
 
 Verdict body shape (this is what you wrote to `$VERDICT_FILE` above). The first line is the
 **canonical bare marker** — no leading `**` emphasis, **with the `@ <HEAD_SHA>` you resolved
@@ -441,9 +449,10 @@ All criteria pass. This PR is merge-ready. **review-code does not merge** — `s
 the authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 
 <!-- include the next block ONLY when CONTROL_PLANE_TOUCHED is non-empty -->
-> ⚠️ **Control-plane PR** — diff touches `.claude/**` or `.github/**` (`<the matched paths>`).
-> Per ADR 0053 this is **NOT auto-mergeable**: `ship-it` will refuse it; a human merges it by
-> hand. ACs are verified; the merge is the human's call.
+> ⚠️ **Control-plane PR** — diff touches `.claude/**`, `.github/**`, or a gate-critical skill
+> (`<the matched paths>`).
+> Per ADR 0053/0065 this is **NOT auto-mergeable**: `ship-it` will refuse it; a human merges it
+> by hand. ACs are verified; the merge is the human's call.
 ```
 
 ---
