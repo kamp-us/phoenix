@@ -172,3 +172,29 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
+
+  # The one always-on context safe to mark required on `main` (#461/#402). The
+  # code gates above (`check`/`unit`/`integration`) are conditional: each skips on
+  # a PR whose changed paths it doesn't cover (docs/skills-only, non-backend,
+  # external-author). Listing a *conditional* context in a ruleset's
+  # required_status_checks wedges those PRs — GitHub's skipped-as-success handling
+  # for `if:`+`needs:` jobs is unreliable across configs. This aggregator always
+  # reports (`if: !cancelled()` keeps it from skipping when a dep skips) and
+  # passes iff every dep `success` OR `skipped`, so the ruleset requires this one
+  # context and transitively enforces the conditional checks when they do run.
+  ci-required:
+    name: ci-required
+    needs: [check, unit, integration]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require all gating checks to have passed or skipped
+        run: |
+          results='${{ needs.check.result }} ${{ needs.unit.result }} ${{ needs.integration.result }}'
+          echo "dep results: $results"
+          for r in $results; do
+            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
+              echo "::error::a required gating check did not pass (got '$r')"; exit 1
+            fi
+          done
+          echo "all gating checks passed or were legitimately skipped"
