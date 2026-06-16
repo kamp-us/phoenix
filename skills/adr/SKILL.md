@@ -25,10 +25,16 @@ Capture one decision per file in `.decisions/`. Index links them; CLAUDE.md link
    This is **detect-and-serialize, not a CAS** — it *narrows* the collision window, it does not eliminate it. Two authors who enumerate in the same window before either PR is visible both pick the same number; that residual is **backstopped by the ADR 0066 / #384 CI duplicate-`id` check** (see [Index — generated output](#index--generated-output)), which reddens the second-to-merge PR for a manual renumber. The lock turns the *common* "branch after another's ADR PR is open" case from collide-and-renumber into don't-collide; the CI check remains the safety net for the rare residual.
 2. Pick a kebab-case slug from the title (≤ 5 words).
 3. Write `.decisions/NNNN-slug.md` using the template below — the front-matter `title`/`status`/`date` are the **source of truth** for the index row, so write the exact display text you want in the table there (inline markdown and all).
-4. **Regenerate** `.decisions/index.md` — do **not** hand-append a row (ADR [0066](../../.decisions/0066-generate-decisions-index.md)): `index.md` is generated output now, and a hand-appended row at the table tail is exactly the concurrent-merge collision the generator removes.
+4. **Regenerate** `.decisions/index.md` — do **not** hand-append a row (ADR [0066](../../.decisions/0066-generate-decisions-index.md)): `index.md` is generated output now, and a hand-appended row at the table tail is exactly the concurrent-merge collision the generator removes. Resolve the generator **in-repo first, published fallback** — prefer the on-disk workspace package when it's present, else the published CLI (the same portability shape `review-plan` uses for its gate, ADR [0064](../../.decisions/0064-epic-ledger-npm-publish-automated-release.md)), so the step works in a foreign install too, not just phoenix:
    ```bash
-   pnpm --filter @kampus/decisions-index generate
+   # resolve the index generator once — in-repo-first, published-fallback
+   if [ -f packages/decisions-index/src/bin.ts ]; then
+     pnpm --filter @kampus/decisions-index generate    # phoenix-local: the workspace package
+   else
+     pnpm dlx @kampus/decisions-index@latest generate   # foreign install: the published CLI
+   fi
    ```
+   The published CLI operates on the local `.decisions/` filesystem (no GitHub target), so there is no `$REPO`/`$CLAUDE_PIPELINE_REPO` resolution here — it is purely the in-repo-vs-published invocation swap.
 5. Tell the user the path. Do not summarize the body — they just stated it.
 
 ## File template
@@ -77,4 +83,4 @@ The row's `Title`/`Status`/`Date` cells are the file's front-matter values **ver
 - Superseding an older ADR: in the new file write `Supersedes [NNNN](NNNN-slug.md).` in `## Context`, and edit the old file's front-matter `status: superseded by [NNNN](NNNN-slug.md)` plus a body line `Superseded by [NNNN](NNNN-slug.md).` Then regenerate so the index reflects both.
 - Date is today (`date` command if unsure).
 - Never edit an accepted ADR's decision text after the fact — supersede instead.
-- Never hand-edit `index.md` — edit the ADR file's front-matter and run `pnpm --filter @kampus/decisions-index generate`.
+- Never hand-edit `index.md` — edit the ADR file's front-matter and regenerate, resolving the generator in-repo-first / published-fallback (Step 4): `pnpm --filter @kampus/decisions-index generate` when the workspace package is on disk, else `pnpm dlx @kampus/decisions-index@latest generate`.

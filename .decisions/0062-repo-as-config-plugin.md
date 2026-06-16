@@ -72,7 +72,7 @@ contract and referenced by each skill, replacing the inline literals.
 
 | Skill | Disposition | Why |
 |-------|-------------|-----|
-| `adr` | **portable as-is** | zero repo literals; pure `.decisions/` authoring |
+| `adr` | **decisions-index-pinned; in-repo-first / published-fallback** (was "portable as-is") | ADR [0066](0066-generate-decisions-index.md) made `.decisions/index.md` generated output produced by `@kampus/decisions-index`, so the original "zero repo literals, pure `.decisions/` authoring" basis went stale: the index-regen step now resolves the in-repo workspace package first and falls back to `pnpm dlx @kampus/decisions-index@latest generate` when it's absent — the same in-repo-first/published-fallback shape `review-plan` uses for epic-ledger ([0064](0064-epic-ledger-npm-publish-automated-release.md) §1). Still no `gh`/repo literals (the CLI operates on the local `.decisions/` tree — no `$CLAUDE_PIPELINE_REPO`). Structurally portable; the published fallback is exercisable once `@kampus/decisions-index` is published — producer half tracked as the sibling child #430, the skill cutover as #431. |
 | `deslop-comments` | **portable as-is** | zero repo literals; operates on the working tree |
 | `report` | **parameterized** (§1) | `gh api` literals + frontmatter |
 | `triage` | **parameterized** (§1) | `gh api` literals + frontmatter |
