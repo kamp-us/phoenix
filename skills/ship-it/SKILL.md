@@ -236,12 +236,27 @@ writes and `review-code` relies on) and pin it as a shell var Step 5 reads back:
 ISSUE=<N>
 ```
 
-If there is **no** linked issue, stop and report `no linked issue`. In this pipeline
-`write-code` always writes `Fixes #N`, so a missing link is a broken seam, not a normal
-state — an unlinked PR has nothing to auto-close on merge and would leave dangling work.
-This is distinct from the *linked-but-didn't-auto-close* case Step 5 handles: there the
-seam exists but GitHub didn't fire it, which is recoverable; here the seam itself is
-absent, which is an anomaly worth stopping on.
+If there **is** a linked issue, honor it as today regardless of class — resolve it; Step 4's
+squash-merge auto-closes it via `Fixes #<ISSUE>`, with Step 5's explicit-close fallback.
+
+If there is **no** linked issue, the rule is **class-aware** — reuse the artifact classes
+Step 0 already computed (do **not** re-derive them; ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)):
+
+- **A code or skills class is present** (anything other than docs-only) → stop and report `no
+  linked issue`. In this pipeline `write-code` always writes `Fixes #N`, so a missing link on a
+  PR carrying code is a broken seam, not a normal state — an unlinked code PR has nothing to
+  auto-close on merge and would leave dangling work. (Distinct from the
+  *linked-but-didn't-auto-close* case Step 5 handles: there the seam fired but GitHub didn't,
+  which is recoverable; here the seam is absent on a code PR, an anomaly worth stopping on.)
+- **Docs-only** (Step 0 classed `docs` with **no** code and **no** skills class present) → a
+  missing `Fixes #N` is a **legitimate state, not a broken seam**. A conversation-authored
+  ADR/doc records a settled choice that was never tracked work, so there is nothing for a
+  `Fixes #N` to close. Skip the auto-close expectation, leave `ISSUE` unset, and **proceed to
+  the gate check** — the docs-only PR ships on its `review-doc: PASS` alone (Step 2). Emit
+  **no** `no linked issue` refusal; it is not an anomaly. This relaxes **only** the missing-link
+  guard: Step 0's control-plane refusal and Step 2's required current-head `review-doc: PASS`
+  are untouched — a docs-only PR still needs its gate verdict.
 
 ---
 
