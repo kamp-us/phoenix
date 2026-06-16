@@ -6,9 +6,12 @@
  */
 import * as React from "react";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
+import {useNavigate} from "react-router";
 import {SozlukAlphabet} from "../components/sozluk/index";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
+import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
+import {slugifyTerm} from "../lib/slugifyTerm";
 import "./SozlukHome.css";
 
 /** A connection "view" is a plain `{items: {node: View}}` selection, not a `view<T>()`. */
@@ -106,7 +109,17 @@ function SozlukHomeChrome({
 	errorMessage,
 	children,
 }: ChromeProps) {
+	const navigate = useNavigate();
 	const totalsLine = status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
+
+	// Submitting the search routes to the existing fresh-slug composer branch at
+	// `/sozluk/:slug` — no new creation backend (issue #97). Signed-in users land
+	// on `NewTermComposer`; signed-out users get that page's unchanged 404/sign-in.
+	function onSearchSubmit(e: React.FormEvent) {
+		e.preventDefault();
+		const slug = slugifyTerm(query);
+		if (slug) navigate(`/sozluk/${slug}`);
+	}
 
 	return (
 		<>
@@ -116,7 +129,7 @@ function SozlukHomeChrome({
 						sözlük {totalsLine ? <small>{totalsLine}</small> : null}
 					</h1>
 				</div>
-				<label className="kp-sozluk-home__searchbar">
+				<form className="kp-sozluk-home__searchbar" onSubmit={onSearchSubmit}>
 					<svg
 						width="11"
 						height="11"
@@ -135,7 +148,7 @@ function SozlukHomeChrome({
 						placeholder="terim ara: race condition, idempotent…"
 						aria-label="Terim ara"
 					/>
-				</label>
+				</form>
 			</header>
 
 			<SozlukAlphabet value={letter} onChange={setLetter} />
@@ -159,6 +172,15 @@ interface RecentColumnProps {
 
 function RecentColumn({connection, letter, query}: RecentColumnProps) {
 	const [items] = useListView(TermConnectionView, connection);
+	// Which rows survived the client-side letter/search filter. A non-empty `query`
+	// with zero matches is the dead-end #97 fixes: offer to create the term instead.
+	const [matches, setMatches] = React.useState<Record<string, boolean>>({});
+	const onMatch = React.useCallback((id: string, matched: boolean) => {
+		setMatches((prev) => (prev[id] === matched ? prev : {...prev, [id]: matched}));
+	}, []);
+
+	const hasMatch = items.some(({node}) => matches[String(node.id)]);
+	const showCreateCta = query.trim().length > 0 && !hasMatch;
 
 	return (
 		<section>
@@ -168,10 +190,36 @@ function RecentColumn({connection, letter, query}: RecentColumnProps) {
 			</header>
 			<div className="kp-sozluk-list">
 				{items.map(({node}) => (
-					<FilterableTermRow key={node.id} node={node} letter={letter} query={query} />
+					<FilterableTermRow
+						key={node.id}
+						node={node}
+						letter={letter}
+						query={query}
+						onMatch={onMatch}
+					/>
 				))}
+				{showCreateCta ? <CreateTermCta query={query} /> : null}
 			</div>
 		</section>
+	);
+}
+
+/**
+ * No-match call-to-action: routes the typed query to the existing fresh-slug
+ * composer at `/sozluk/:slug` (issue #97). Shown when a search yields no term, so
+ * a zero-match query is a create path, not a silent dead-end.
+ */
+function CreateTermCta({query}: {query: string}) {
+	const navigate = useNavigate();
+	const slug = slugifyTerm(query);
+	if (!slug) return null;
+	return (
+		<div className="kp-sozluk-home__create-cta">
+			<p>"{query.trim()}" diye bir terim yok.</p>
+			<Button variant="primary" size="sm" onClick={() => navigate(`/sozluk/${slug}`)}>
+				"{query.trim()}" terimini oluştur
+			</Button>
+		</div>
 	);
 }
 
@@ -183,15 +231,19 @@ function FilterableTermRow({
 	node,
 	letter,
 	query,
+	onMatch,
 }: {
 	node: ViewRef<"Term">;
 	letter: string | undefined;
 	query: string;
+	onMatch: (id: string, matched: boolean) => void;
 }) {
 	const data = useView(TermRowView, node);
 	const title = data.title.toLowerCase();
-	if (letter && !title.startsWith(letter)) return null;
-	if (query && !title.includes(query.toLowerCase())) return null;
+	const matched =
+		(!letter || title.startsWith(letter)) && (!query || title.includes(query.toLowerCase()));
+	React.useEffect(() => onMatch(String(node.id), matched), [onMatch, node.id, matched]);
+	if (!matched) return null;
 	return <TermRow term={node} variant="recent" />;
 }
 
