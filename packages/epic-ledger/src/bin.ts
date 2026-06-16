@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * `epic-ledger` CLI — the operable surface for the `review-plan` gate (ADR 0047).
  *
@@ -89,4 +90,4 @@ const gate = Command.make(
 // runtime itself needs (argv, stdout) — one combined layer, one `Effect.provide`.
 const AppLayer = GithubLive.pipe(Layer.provideMerge(NodeServices.layer));
 
-gate.pipe(Command.run({version: "0.0.0"}), Effect.provide(AppLayer), NodeRuntime.runMain);
+gate.pipe(Command.run({version: "0.1.0"}), Effect.provide(AppLayer), NodeRuntime.runMain);

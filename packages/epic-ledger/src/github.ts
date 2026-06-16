@@ -96,7 +96,7 @@ export const decodeEpicLedger = (input: unknown): Effect.Effect<EpicLedger, Sche
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
 export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
-	"@phoenix/epic-ledger/GhCommandError",
+	"@kampus/epic-ledger/GhCommandError",
 	{
 		args: Schema.Array(Schema.String),
 		exitCode: Schema.Number,
@@ -106,7 +106,7 @@ export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
 
 /** `gh` output was not the JSON the loader expected. */
 export class GhParseError extends Schema.TaggedErrorClass<GhParseError>()(
-	"@phoenix/epic-ledger/GhParseError",
+	"@kampus/epic-ledger/GhParseError",
 	{
 		args: Schema.Array(Schema.String),
 		message: Schema.String,
@@ -236,7 +236,7 @@ export class Github extends Context.Service<
 		/** Park an epic: drop `status:planned`, add `status:needs-info`. */
 		readonly parkNeedsInfo: (epicNumber: number) => Effect.Effect<void, GhCommandError>;
 	}
->()("@phoenix/epic-ledger/Github") {}
+>()("@kampus/epic-ledger/Github") {}
 
 const json = Effect.fn("Github.json")(function* (args: ReadonlyArray<string>) {
 	return yield* parseJson(args, yield* runGh(args));
@@ -254,7 +254,7 @@ const is404 = (stderr: string): boolean => /404|not found/i.test(stderr);
 const issueExists = Effect.fn("Github.issueExists")(function* (n: number) {
 	return yield* runGh(issueArgs(n)).pipe(
 		Effect.as(true),
-		Effect.catchTag("@phoenix/epic-ledger/GhCommandError", (error) =>
+		Effect.catchTag("@kampus/epic-ledger/GhCommandError", (error) =>
 			is404(error.stderr) ? Effect.succeed(false) : Effect.fail(error),
 		),
 	);

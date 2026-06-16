@@ -11,7 +11,7 @@
  * before any Effect runs). The pre-commit hook fail-opens on can't-run (warn +
  * allow); CI fail-closes (any non-zero fails the gate). See issue #332.
  *
- * Wired per effect-smol's CLI guidance (mirrors `@phoenix/epic-ledger`):
+ * Wired per effect-smol's CLI guidance (mirrors `@kampus/epic-ledger`):
  * `effect/unstable/cli` for the variadic file argument, the Node platform over
  * `NodeServices.layer`, run via `NodeRuntime.runMain` (a failed effect → a
  * non-zero process exit).

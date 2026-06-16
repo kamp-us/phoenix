@@ -8,7 +8,7 @@
  * unresolvable commit fails the process non-zero — the CLI never emits a
  * half-formed or commit-blank manifest.
  *
- * Wired per effect-smol's CLI guidance (mirrors `@phoenix/epic-ledger`'s bin):
+ * Wired per effect-smol's CLI guidance (mirrors `@kampus/epic-ledger`'s bin):
  * `effect/unstable/cli` for typed flags, `NodeServices.layer` for the file/process
  * platform, run via `NodeRuntime.runMain`.
  */

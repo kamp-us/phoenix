@@ -49,7 +49,7 @@ type LoopError = GhCommandError | GhParseError | Schema.SchemaError | RePlanErro
  * tagged error per `.patterns/effect-errors.md`.
  */
 export class RePlanError extends Schema.TaggedErrorClass<RePlanError>()(
-	"@phoenix/epic-ledger/RePlanError",
+	"@kampus/epic-ledger/RePlanError",
 	{
 		epicNumber: Schema.Number,
 		message: Schema.String,
@@ -61,7 +61,7 @@ export class RePlanner extends Context.Service<
 	{
 		readonly rePlan: (epicNumber: number) => Effect.Effect<void, RePlanError>;
 	}
->()("@phoenix/epic-ledger/RePlanner") {}
+>()("@kampus/epic-ledger/RePlanner") {}
 
 /** Why the loop parked, beyond a clean pass. */
 export type StallReason = "repeated-signature" | "non-shrinking" | "ceiling";

@@ -1,5 +1,5 @@
 /**
- * `@phoenix/epic-ledger` — the deterministic structural floor for an epic's
+ * `@kampus/epic-ledger` — the deterministic structural floor for an epic's
  * executable task ledger.
  *
  * The domain (`EpicLedger` / `ChildIssue` / `EpicHeader` / `Defect` /
