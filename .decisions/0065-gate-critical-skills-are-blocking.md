@@ -93,3 +93,10 @@ gate-critical set can be revisited (e.g. auto-merge on a trusted `review-skill` 
   *current* rules it is `review-code`-gated. Once this rule takes effect it would itself be
   blocking — it edits `skills/ship-it/` — so it is among the last gate-critical PRs that could
   auto-merge before the property it adds is live.
+- **Enforced at the platform by [0071](0071-enforce-control-plane-at-github.md).** This ADR's
+  gate-critical set (`skills/ship-it`/`review-code`/`review-doc`/`review-plan` +
+  `gh-issue-intake-formats.md`) is, like 0053's `.claude`/`.github`, honor-system at the GitHub
+  level (#382). 0071 adds those exact paths to a human-only `CODEOWNERS` and turns on
+  `require_code_owner_review`, so a control-plane merge of a gate-critical skill needs a human
+  approval that — per 0071's resolution of the ADR-0055 wrinkle — an agent's ACL-sourced
+  approval cannot satisfy.
