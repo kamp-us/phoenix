@@ -29,6 +29,7 @@ catalog:
   drizzle-kit: 1.0.0-rc.3
   drizzle-orm: 1.0.0-rc.3
   effect: 4.0.0-beta.78
+  lefthook: ^2.1.9
   react: 19.2.6
   react-dom: 19.2.6
   react-fate: 1.0.3
@@ -45,6 +46,7 @@ onlyBuiltDependencies:
   - '@parcel/watcher'
   - core-js-pure
   - esbuild
+  - lefthook
   - workerd
 
 # Local patch (policy: patch deps locally, don't depend on an upstream/fork

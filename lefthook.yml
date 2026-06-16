@@ -1,0 +1,24 @@
+# Git hooks, managed by lefthook (ADR 0068). The leak-guard pre-commit is the
+# local fast-fail leg of the no-local-paths defense-in-depth (#158/#173); CI
+# (.github/workflows/leak-guard.yml, #312) stays the unbypassable authority.
+# Locally bypassable with `git commit --no-verify` by design.
+pre-commit:
+  commands:
+    leak-guard:
+      # The scanner self-scopes to doc surfaces, so handing it every staged file
+      # is safe. {staged_files} is empty when nothing is staged → the guard exits 0.
+      # Exit-code contract from bin.ts (#332): 2 = confirmed leak (block); any
+      # OTHER non-zero = scan couldn't run (warn + allow, CI is the authority);
+      # 0 = clean. The deny-list lives once in findLeaks — nothing is re-grepped here.
+      run: |
+        [ -z "{staged_files}" ] && exit 0
+        status=0
+        node packages/leak-guard/src/bin.ts scan {staged_files} || status=$?
+        if [ "$status" -eq 2 ]; then
+          echo "blocked by leak-guard (#173); fix or \`git commit --no-verify\` to bypass" >&2
+          exit 1
+        elif [ "$status" -ne 0 ]; then
+          echo "leak-guard: scan could not run (e.g. run 'pnpm install'); skipping local pre-commit check — CI is the authority" >&2
+          exit 0
+        fi
+        exit 0
