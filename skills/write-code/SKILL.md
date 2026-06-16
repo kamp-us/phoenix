@@ -112,7 +112,16 @@ unassigned**:
 
 1. **Highest priority bucket first:** all `p0` before any `p1`, all `p1` before any
    `p2`.
-2. **Oldest first within a bucket:** lowest issue number / earliest `created_at`.
+2. **Milestone tiebreaker *within* a bucket:** among equal-priority candidates, prefer
+   one in the **active milestone** — *never* across buckets.
+3. **Oldest first** otherwise: lowest issue number / earliest `created_at`.
+
+**The priority spine is sovereign — p0 outranks any milestone lean.** Milestone only
+reorders *within* a single priority bucket; it never reaches across one. A p0 outside the
+active milestone is therefore always picked before a lower-priority issue inside it — the
+campaign bias is a *tiebreaker*, not a new top-level sort key. See
+[Milestone-aware ordering](#milestone-aware-ordering) for the full rule, including the
+explicit `work milestone N` mode and why p0-sovereignty holds in both modes.
 
 Assigned issues are someone else's claim — **skip them**. Skip on *any* non-null assignee,
 not on an exact match: under the Step 3 claim race an issue may **transiently** show two
@@ -219,8 +228,68 @@ done
 ```
 
 `(.pull_request | not)` filters out PRs (the issues endpoint returns both). Take the
-**first** unassigned issue in the **highest non-empty** bucket. That's your pick —
-unless it's a sub-issue, in which case run the eligibility check in Step 2 first.
+**first** unassigned issue in the **highest non-empty** bucket — applying the
+[milestone tiebreaker](#milestone-aware-ordering) below when several issues share that
+bucket. That's your pick — unless it's a sub-issue, in which case run the eligibility
+check in Step 2 first.
+
+### Milestone-aware ordering
+
+Milestone is the **optional fourth intake dimension** — strategic sequencing / campaign
+grouping, *not* feature breakdown — defined once in the formats contract's
+[`## Milestone`](../gh-issue-intake-formats.md) section (the single source of truth;
+read it for what a milestone *is* and its REST surface — ADR
+[0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md)).
+write-code is the **consumer** named there: milestone influences **pick-order only**, and
+**only as a tiebreaker that respects the priority spine** — it never gates, never blocks a
+merge, and never changes *which* issues are pickable.
+
+**The precedence rule (p0 stays sovereign — state this, never weaken it).** A milestone
+preference orders candidates **strictly within a single priority bucket** and **never
+across buckets**. The priority spine — all p0 before any p1, all p1 before any p2 — is the
+top-level sort and is never overridden by a campaign lean. Concretely: **a p0 outside the
+active milestone is always picked before any lower-priority issue inside it.** A milestone
+bias that could starve an out-of-milestone p0 is a bug, not a feature; the within-bucket
+confinement is what makes the campaign lean safe. This precedence holds in **both** modes
+below — never reintroduce a milestone-over-priority sort.
+
+Milestone shapes the pick in two modes:
+
+- **Default mode — within-bucket tiebreaker.** With no milestone named, run the normal
+  priority-then-age pick, but when a single priority bucket holds several unassigned
+  candidates, **break the tie toward the active milestone**: prefer the in-milestone
+  candidate over an equal-priority out-of-milestone one; fall back to oldest-first when
+  the milestone dimension doesn't separate them (both in, both out, or no active
+  milestone). The "active milestone" is the campaign currently being driven — the one the
+  operator names, or the obvious single open strategic milestone; if it's ambiguous,
+  there is no active milestone and this degrades cleanly to plain oldest-first. Because
+  the tiebreaker lives *inside* a bucket, it can only reorder equal-priority issues — it
+  can never pull a lower-priority in-milestone issue ahead of a higher-priority one.
+
+- **Explicit `work milestone N` mode — drain that milestone.** When invoked as "work
+  milestone N" (or "drain milestone N"), scope the pool to that milestone via the REST
+  filter and pick from it by the **same** priority-then-age order:
+
+  ```bash
+  # explicit milestone drain: same priority spine, scoped to milestone N (REST, never GraphQL)
+  for P in p0 p1 p2; do
+    gh api "repos/$REPO/issues?state=open&milestone=$N&labels=status:triaged,$P&sort=created&direction=asc&per_page=100" \
+      --jq '.[] | select(.assignee == null and (.pull_request | not)) | "#\(.number)\t\(.created_at)\t\(.title)"'
+  done
+  ```
+
+  Even here the priority spine wins **inside** the milestone (p0s in the milestone before
+  its p1s), and the **explicit scope is the operator's choice** — naming milestone N is a
+  deliberate decision to work that campaign, so confining the pool to it is intentional,
+  not starvation. If you must guarantee no global p0 is left behind while draining a
+  campaign, run the default unscoped pick first; the explicit mode is for when the
+  operator has chosen to focus N.
+
+In both modes the pickability predicate is **unchanged** — milestone only *orders* among
+issues that are already pickable (`status:triaged` + unassigned, sub-issue eligibility per
+Step 2). Read an issue's milestone with
+`gh api repos/$REPO/issues/<N> --jq '.milestone.number // "none"'` (none ⇒ the well-formed
+default — most issues carry no milestone) per the contract's REST surface.
 
 ### Is it a sub-issue?
 
@@ -977,9 +1046,10 @@ A single invocation does one unit of work end to end, in one of the two modes:
 - **Initial build** (issue number / no arg): pick (Step 1 — including the pre-pick
   resume-my-failed-PR scan — +Step 2 if a sub-issue), claim (Step 3), then either
   implement→PR→progress→handoff (Steps 4–7) or the type-routed path. Report a short
-  ledger: the issue picked (and why — bucket + age, or the sub-issue eligibility
-  derivation), the branch and PR opened (or the ADR/diagnosis for a
-  decision/investigation), and a pointer to the progress comment.
+  ledger: the issue picked (and why — bucket + age, the milestone tiebreaker or
+  `work milestone N` scope if either applied, or the sub-issue eligibility derivation), the
+  branch and PR opened (or the ADR/diagnosis for a decision/investigation), and a pointer to
+  the progress comment.
 - **Repair** (PR number): resolve the PR's latest verdict per namespace (Step R1) and, if
   it's FAIL, fix the enumerated marker findings **plus the in-scope line-anchored inline
   review comments** (Step R2) on the same branch, push, reply on the threads you addressed,
