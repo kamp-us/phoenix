@@ -90,19 +90,24 @@ laptop. A GitHub Actions workflow under `.github/workflows/` publishes
 - **Scope of the publish:** the workflow publishes **only** `packages/epic-ledger`
   (`pnpm --filter @kampus/epic-ledger publish`, run from the package dir) — never the
   whole workspace, never any other package.
-- **npm auth:** via an **`NPM_TOKEN`** repository secret (an automation/granular token
-  with publish rights to the `@kampus` scope), exposed to the publish step as
-  `NODE_AUTH_TOKEN`. **Enable npm provenance** (`npm publish --provenance`, the workflow
-  granted `id-token: write` for OIDC) so the published artifact carries a verifiable
-  link back to the building workflow and commit — preferred over a long-lived token
-  where the registry supports it, but `NPM_TOKEN` is still required for the publish
-  credential itself.
+- **npm auth — OIDC Trusted Publishing (no stored token).** The publish workflow
+  authenticates to npm via **OIDC**: it requests a short-lived credential per run
+  (GitHub Actions `permissions: id-token: write`), so there is **no `NPM_TOKEN` secret
+  stored in the repo** — nothing to rotate, no standing credential. Trusted Publishing
+  requires **npm CLI ≥ 11.5.1**, and the publish runs **with provenance**
+  (`npm publish --provenance`) so the published artifact carries a verifiable link back
+  to the building workflow and commit. A classic Automation/granular-access token was
+  considered and rejected: it is a long-lived standing secret that must be stored and
+  rotated, whereas OIDC mints an ephemeral credential scoped to the single run.
 
 > **Human prerequisites (an agent cannot do these):**
-> 1. **Create the `@kampus` npm org/scope** (per §1) and grant the publish token access.
-> 2. **Add the `NPM_TOKEN` repository secret** in GitHub settings (Settings → Secrets
->    and variables → Actions). An agent has no access to repo secrets; a human sets this
->    once. Without it the workflow's publish step fails closed.
+> 1. **Create the public `@kampus` npm org/scope** (per §1) so the package has a public
+>    home and the scope is registered on npmjs.com.
+> 2. **Register the GitHub repo + the publish workflow as a Trusted Publisher** for the
+>    `@kampus/epic-ledger` package on npmjs.com (package settings → Trusted Publishing).
+>    This is per-package config and can only be done once the package/scope exists, so it
+>    follows the first publish/scope creation. An agent cannot configure npm account
+>    settings; a human sets this once. Without it the OIDC publish step fails closed.
 
 ### 3. Version-sync between the in-repo package and the published package
 
@@ -129,10 +134,11 @@ the observable check.)
   via the published package, and the §3 degradation guard (#349) is removed by #367. ADR
   0062's "10/11 skills repo-agnostic" framing is now "11/11" once the epic lands (#368
   updates that framing).
-- **One-time human cost, then zero-touch.** After the two human prerequisites (npm
-  `@kampus` org + `NPM_TOKEN` secret), every release is a tag/Release away — no manual
-  `npm publish`, no laptop credentials. The cost moves from per-release toil to a single
-  setup.
+- **One-time human cost, then zero-touch.** After the two human prerequisites (create the
+  public `@kampus` org + register the repo/workflow as a Trusted Publisher for the
+  package), every release is a tag/Release away — no manual `npm publish`, no laptop
+  credentials, and no standing token to store or rotate. The cost moves from per-release
+  toil to a single setup.
 - **New maintenance obligation: version discipline.** §3 makes "bump-and-tag on every
   gate-logic change" a standing rule; skipping it silently desyncs foreign-repo gating
   from phoenix-local gating. The parity AC and the version-match guard step are the
