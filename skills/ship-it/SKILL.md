@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs), confirm CI is already green, squash-merge, and confirm the linked issue auto-closed — and REFUSES to self-merge control-plane PRs (.claude/.github/skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs), confirm CI is already green, squash-merge, and confirm the linked issue auto-closed — and REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
@@ -25,22 +25,28 @@ A PR is in one of two classes by the files it touches (ADR
 [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md), which supersedes
 [0049](https://github.com/kamp-us/phoenix/blob/main/.decisions/0049-pipeline-ships-code-not-itself.md)):
 
-- **BLOCKING — never auto-merged.** Any PR touching `.claude/**`, `.github/**`, or
-  `skills/**` is the agent control plane: agent instructions/tools/hooks (`.claude`), CI
-  enforcement (`.github`), and the agents' behavioral/operational definitions (`skills/**`).
-  A bad merge here is a serious security concern — self-modification of the guardrails, or
-  CI/secret exfiltration. A human merges these by hand; the pipeline NEVER self-merges them.
-  If the diff touches even one such file, you **refuse** (see Step 0).
+- **BLOCKING — never auto-merged.** Any PR touching `.claude/**`, `.github/**`, or one of the
+  **gate-critical skills** is the agent control plane: agent instructions/tools/hooks
+  (`.claude`), CI enforcement (`.github`), and the verification/merge machinery + marker
+  contract (the gate-critical skills). A bad merge here is a serious security concern —
+  self-modification of the guardrails, or CI/secret exfiltration. A human merges these by
+  hand; the pipeline NEVER self-merges them. If the diff touches even one such file, you
+  **refuse** (see Step 0).
 
-  `skills/**` is control plane **regardless of directory** — a skill is an agent behavioral
-  definition whether it lives under `.claude/skills/` or a root `skills/`. Issue #231's move
-  to `skills/` silently dropped this PATH-based blocking property; ADR
-  [0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-skills-are-control-plane-blocking.md)
-  restores it. This is a merge-authority concern only and is **independent of routing**:
-  `skills/**` is still verified by `review-code` (ADR 0063, unchanged) — the human reads that
-  verdict, then merges by hand. ADR 0064 is a safe-by-default **stopgap** until a dedicated
-  per-artifact `review-skill` gate lands (issue #371), after which blocking-vs-auto can be
-  revisited.
+  The **gate-critical skills** are `skills/ship-it/**`, `skills/review-code/**`,
+  `skills/review-doc/**`, `skills/review-plan/**`, and `skills/gh-issue-intake-formats.md` —
+  the verification/merge gates plus the shared marker-namespace/regex contract they all depend
+  on. They are control plane **regardless of directory**, because the one catastrophic case
+  `review-code` can't catch is a *gate auto-merging a weakening of itself*; ADR
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)
+  makes exactly this subset blocking. This is a merge-authority concern only and is
+  **independent of routing**: every gate-critical skill is still verified by `review-code` (ADR
+  0063, unchanged) — the human reads that verdict, then merges by hand. **Every OTHER
+  `skills/**`** (triage, plan-epic, write-code, heal-ci, report, …) stays **non-blocking** —
+  `review-code`-routed and auto-merged on a PASS (ADR 0063 / #364), because those skills
+  neither merge nor verify, so a bad edit still has to clear the gates that do. ADR 0065 is a
+  safe-by-default **stopgap** until a dedicated per-artifact `review-skill` gate lands (issue
+  #371), after which even the gate-critical set can be revisited.
 - **NON-BLOCKING — autonomous.** Everything else — `apps/web/**`, `packages/**`,
   `.decisions/**`, `.patterns/**`, and other prose docs. These are product or knowledge
   artifacts; they are gated for quality, but a human at the merge adds no security value, so
@@ -134,14 +140,17 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '[.[].filename]'
 
 Classify each path:
 
-- **control plane (blocking):** matches `.claude/**`, `.github/**`, or `skills/**`.
-  `skills/**` is blocking **for merge authority** (ship-it refuses → manual human merge, ADR
-  [0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-skills-are-control-plane-blocking.md))
+- **control plane (blocking):** matches `.claude/**`, `.github/**`, or a **gate-critical
+  skill** (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
+  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`). A gate-critical skill is
+  blocking **for merge authority** (ship-it refuses → manual human merge, ADR
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md))
   AND is **still routed to `review-code`** for its verdict (ADR 0063, below) — the two axes
   are independent. The blocking refusal short-circuits in the **Routing** step below, *before*
   the namespace check, so the `review-code` routing stays correct for the human-read verdict
-  (and for when `review-skill` lands, #371): skills are **code-class for ROUTING, blocking for
-  MERGE**.
+  (and for when `review-skill` lands, #371): gate-critical skills are **code-class for ROUTING,
+  blocking for MERGE**. Every OTHER `skills/**` is **non-blocking** — code-class for routing
+  and auto-merged on a `review-code` PASS (ADR 0063 / #364).
 - **code:** under `apps/web/**` or `packages/**`, **or under `skills/**`** (the
   `^(apps/web|packages|skills)/` probe); a source path matching neither this nor the doc
   probe still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
@@ -153,7 +162,7 @@ Classify each path:
 
 ```bash
 FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
-echo "$FILES" | grep -Eq '^(\.claude|\.github|skills)/' && echo "BLOCKING"   # control plane present (skills/** is blocking for MERGE, ADR 0064 — still review-code-routed, ADR 0063)
+echo "$FILES" | grep -Eq '^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-plan)/|^skills/gh-issue-intake-formats\.md$' && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge (review-code, ADR 0063)
 echo "$FILES" | grep -Eq '^(apps/web|packages|skills)/' && echo "has-code"   # rough code probe (skills/** is code — ADR 0063)
 # docs probe EXCLUDES skills/** first (ADR 0063), so a skills-only .md PR is NOT classed docs
 echo "$FILES" | grep -Ev '^skills/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
@@ -161,14 +170,18 @@ echo "$FILES" | grep -Ev '^skills/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$
 
 **Routing:**
 
-- If **any** file is control plane (`.claude/**`, `.github/**`, or `skills/**`) → **REFUSE.**
-  Report `blocking — manual merge` and stop. A human merges the control plane by hand (ADR
-  0053; `skills/**` added by ADR 0064); the pipeline never self-merges its own guardrails.
+- If **any** file is control plane (`.claude/**`, `.github/**`, or a gate-critical skill —
+  `skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
+  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`) → **REFUSE.** Report `blocking
+  — manual merge` and stop. A human merges the control plane by hand (ADR 0053; the
+  gate-critical skills added by ADR 0065); the pipeline never self-merges its own guardrails.
   This holds even if the rest of the diff is clean code/docs — a mixed PR that touches the
   control plane is still a manual merge, and should be split so the non-blocking half can
   flow. This refusal short-circuits **before** the namespace check below, so it never
-  conflicts with the fact that a `skills/**` PR is still `review-code`-routed (ADR 0063): the
-  routing decides *which gate's verdict the human reads*, this refusal decides *who merges*.
+  conflicts with the fact that a gate-critical `skills/**` PR is still `review-code`-routed
+  (ADR 0063): the routing decides *which gate's verdict the human reads*, this refusal decides
+  *who merges*. A `skills/**` PR that touches **no** gate-critical skill is **not** blocking —
+  it flows through `review-code` and auto-merges on a PASS (ADR 0063 / #364).
 - Otherwise, note which **artifact classes are present** (code, docs, or both). Step 2
   requires the matching gate's latest verdict = PASS for **each class present**: code →
   `review-code` PASS; docs → `review-doc` PASS; a mixed code+doc PR needs **both**. Carry the

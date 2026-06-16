@@ -8,8 +8,9 @@ tags: [pipeline, ship-it, review-code, gate-routing, skills]
 
 # 0063 — `skills/**` is code-gated — ship-it's doc-probe excludes it, review-code is its canonical gate
 
-**Amended by [0064](0064-skills-are-control-plane-blocking.md):** `skills/**` are
-blocking/manual-merge; this ADR's `review-code` routing is unchanged.
+**Amended by [0065](0065-gate-critical-skills-are-blocking.md):** the gate-critical skills
+(ship-it/review-code/review-doc/review-plan/gh-issue-intake-formats.md) are blocking/manual-merge;
+all other skills/** keep this ADR's review-code routing AND auto-merge.
 
 ## Context
 
