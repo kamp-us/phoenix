@@ -16,6 +16,9 @@ agent-operable work pipeline:
 6. The **review-doc verdict markers** — the doc-class twin of format 5, in its own namespace.
 7. The **issue-claim semantics** — self-assign as a detect-and-tiebreak (not a lock), the
    protocol `write-code`'s pick (Step 1) and claim (Step 3) implement.
+8. The **investigation→trivial-fix collapse rule** — the bounded exception (ADR 0070) that
+   lets a `type:investigation` resolving into a trivial fix collapse into one `write-code`
+   PR; `write-code` and `triage` cite this one statement.
 
 `plan-epic` writes formats 1, 2, and 4. `review-plan` reads 1 and 2 (they are the
 structural floor it validates) and owns the `status:planned → status:triaged` flip that
@@ -632,6 +635,59 @@ multi-assignment, no after-the-fact eviction) would need a **designated single p
 conditional write the assignee API doesn't offer; this mechanism does not claim that, and the
 "it's the lock" framing is wrong — it's the duplicate-implementation race that's closed, by
 guaranteeing exactly one implementer.
+
+---
+
+## 8. Investigation→trivial-fix collapse — the bounded exception (ADR 0070)
+
+The single source of the collapse rule every skill cites. A `type:investigation` issue
+normally settles as a **diagnosis** — `write-code` posts the closing comment, closes
+`completed`, and files actionable residue as fresh `report` issues (the residue path, in
+`write-code`'s `type:investigation` routing). That contract has one terminal case it does
+not serve cleanly: **an investigation whose answer *is* a known, trivial, unambiguous
+fix**, which under the letter would have to walk `report → triage → write-code` again —
+three hops and three issues for one line. ADR
+[0070](https://github.com/kamp-us/phoenix/blob/main/.decisions/0070-investigation-trivial-fix-collapse.md)
+closes that seam: such a fix **collapses** into one `write-code` PR.
+
+**The rule.** When a `type:investigation` issue resolves into a fix, `write-code` MAY
+implement it and open a PR with `Fixes #N` in the **same run** — *if and only if* the fix
+clears **every** bound below. The four bounds are a **hard, AND-ed gate**: if the fix fails
+**any one** of them, `write-code` falls back to the diagnosis-and-`report`-residue path
+(the status quo). The gate is mechanical, not taste:
+
+1. **Single concern, narrowly scoped.** One logical change in a small, reviewable diff (the
+   diagnosis already localized it to one site). Many files or many concerns → residue.
+2. **No new behavior, no new surface.** No new public API, route, config key, binding,
+   schema/migration, or dependency — the fix restores or corrects *existing* behavior the
+   investigation proved wrong.
+3. **No contract / control-plane change.** The fix does not touch a control-plane path
+   (`.claude/**`, `.github/**`, or a gate-critical skill — ADRs
+   [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)
+   / [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)).
+   Anything control-plane is never a collapse — it takes the full path and a human merge.
+4. **Cause is established, fix is unambiguous.** The diagnosis names the root cause and the
+   fix follows directly from it, with no remaining design choice. A fix that opens a design
+   question is not trivial — record/route it, don't collapse.
+
+**The collapse is explicit, not silent.** The PR body states it is a collapsed
+investigation, links the issue, and carries the diagnosis (the verdict the closing comment
+would otherwise have held) so `review-code` can verify the fix against the named cause as
+its acceptance criterion. **Verification is not collapsed** — the PR is independently gated
+by `review-code` exactly like any other PR; only the *intake* hops (`report → triage`) are
+skipped. Residue that does **not** clear the bound is still filed as fresh `report` issues,
+unchanged.
+
+**Where the rule lives.** This path is **owned by `write-code`** — the cause is discovered
+there, the agent holds the context, and keeping the rule there avoids the cross-stage
+ping-pong of routing the re-type through `triage` (ADR 0070 rejected that option). So:
+
+- `write-code`'s `type:investigation` routing carries the **collapse branch** (the
+  AND-ed gate above, with the residue fallback) and cross-references this section.
+- `triage` **does not** gain an investigation-re-type step — the investigation stays
+  `type:investigation` and the collapse happens at `write-code`. `triage`'s
+  `type:investigation` classification cross-references this section so the boundary is
+  visible at classification time, but adds no re-type behavior.
 
 ---
 
