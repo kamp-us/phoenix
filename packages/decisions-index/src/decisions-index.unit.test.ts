@@ -3,8 +3,8 @@ import {
 	type AdrFile,
 	buildIndex,
 	DuplicateIdError,
-	findDuplicateId,
 	FrontmatterError,
+	findDuplicateId,
 	parseAdrFile,
 	parseFrontmatter,
 	renderIndex,
@@ -30,17 +30,23 @@ describe("parseFrontmatter", () => {
 	});
 
 	it("strips surrounding double quotes (titles with leading backtick / colon)", () => {
-		const fm = parseFrontmatter('---\nid: 0063\ntitle: "`skills/**` is code-gated: a note"\nstatus: accepted\ndate: 2026-06-15\n---\n');
+		const fm = parseFrontmatter(
+			'---\nid: 0063\ntitle: "`skills/**` is code-gated: a note"\nstatus: accepted\ndate: 2026-06-15\n---\n',
+		);
 		assert.strictEqual(fm.title, "`skills/**` is code-gated: a note");
 	});
 
-	it("unescapes \\\" inside a double-quoted title (round-trips inner quotes)", () => {
-		const fm = parseFrontmatter('---\nid: 0065\ntitle: "extends the boundary from \\"by path\\" toward \\"by nature\\""\nstatus: accepted\ndate: 2026-06-15\n---\n');
+	it('unescapes \\" inside a double-quoted title (round-trips inner quotes)', () => {
+		const fm = parseFrontmatter(
+			'---\nid: 0065\ntitle: "extends the boundary from \\"by path\\" toward \\"by nature\\""\nstatus: accepted\ndate: 2026-06-15\n---\n',
+		);
 		assert.strictEqual(fm.title, 'extends the boundary from "by path" toward "by nature"');
 	});
 
 	it("preserves inline markdown in status verbatim", () => {
-		const fm = parseFrontmatter("---\nid: 0003\ntitle: T\nstatus: superseded by [0009](0009-x.md)\ndate: 2026-05-16\n---\n");
+		const fm = parseFrontmatter(
+			"---\nid: 0003\ntitle: T\nstatus: superseded by [0009](0009-x.md)\ndate: 2026-05-16\n---\n",
+		);
 		assert.strictEqual(fm.status, "superseded by [0009](0009-x.md)");
 	});
 
@@ -62,20 +68,31 @@ describe("parseAdrFile", () => {
 	});
 
 	it("throws FrontmatterError on a missing field", () => {
-		const bad: AdrFile = {file: "0099-x.md", text: "---\nid: 0099\ntitle: T\ndate: 2026-01-01\n---\n"};
+		const bad: AdrFile = {
+			file: "0099-x.md",
+			text: "---\nid: 0099\ntitle: T\ndate: 2026-01-01\n---\n",
+		};
 		assert.throws(() => parseAdrFile(bad), FrontmatterError);
 	});
 });
 
 describe("sortEntries — deterministic ascending by id", () => {
 	it("orders numerically, not lexically (input order irrelevant)", () => {
-		const files = [adr("0010", "ten", "accepted", "d"), adr("0002", "two", "accepted", "d"), adr("0001", "one", "accepted", "d")];
+		const files = [
+			adr("0010", "ten", "accepted", "d"),
+			adr("0002", "two", "accepted", "d"),
+			adr("0001", "one", "accepted", "d"),
+		];
 		const ids = sortEntries(files.map(parseAdrFile)).map((e) => e.id);
 		assert.deepStrictEqual(ids, ["0001", "0002", "0010"]);
 	});
 
 	it("places a lettered id (0034a) between 0034 and 0035", () => {
-		const files = [adr("0035", "c", "accepted", "d"), adr("0034a", "b", "accepted", "d"), adr("0034", "a", "accepted", "d")];
+		const files = [
+			adr("0035", "c", "accepted", "d"),
+			adr("0034a", "b", "accepted", "d"),
+			adr("0034", "a", "accepted", "d"),
+		];
 		const ids = sortEntries(files.map(parseAdrFile)).map((e) => e.id);
 		assert.deepStrictEqual(ids, ["0034", "0034a", "0035"]);
 	});
@@ -83,7 +100,9 @@ describe("sortEntries — deterministic ascending by id", () => {
 
 describe("findDuplicateId — closes the ADR-number collision", () => {
 	it("returns null when all ids are unique", () => {
-		const entries = [adr("0001", "a", "accepted", "d"), adr("0002", "b", "accepted", "d")].map(parseAdrFile);
+		const entries = [adr("0001", "a", "accepted", "d"), adr("0002", "b", "accepted", "d")].map(
+			parseAdrFile,
+		);
 		assert.strictEqual(findDuplicateId(entries), null);
 	});
 
@@ -126,14 +145,19 @@ describe("renderIndex — canonical markdown", () => {
 	});
 
 	it("renders inline-markdown status verbatim (linked supersede)", () => {
-		const md = renderIndex([parseAdrFile(adr("0003", "T", "superseded by [0009](0009-x.md)", "2026-05-16"))]);
+		const md = renderIndex([
+			parseAdrFile(adr("0003", "T", "superseded by [0009](0009-x.md)", "2026-05-16")),
+		]);
 		assert.include(md, "| superseded by [0009](0009-x.md) |");
 	});
 });
 
 describe("buildIndex — end-to-end (the stale-detection seam)", () => {
 	it("round-trips: a committed index equal to buildIndex output is fresh", () => {
-		const files = [adr("0001", "First", "accepted", "2026-05-09", "first"), adr("0002", "Second", "accepted", "2026-05-10", "second")];
+		const files = [
+			adr("0001", "First", "accepted", "2026-05-09", "first"),
+			adr("0002", "Second", "accepted", "2026-05-10", "second"),
+		];
 		const committed = buildIndex(files);
 		// idempotent: regenerating from the same files yields byte-identical output
 		assert.strictEqual(buildIndex(files), committed);

@@ -29,7 +29,10 @@ const ADR_FILE = /^\d+[A-Za-z]*-.+\.md$/;
 const GATE_FAIL_EXIT_CODE = 1;
 
 // A directory/file IO failure that should crash (non-1 exit): the run couldn't complete.
-class IoError extends Data.TaggedError("IoError")<{readonly path: string; readonly cause: unknown}> {}
+class IoError extends Data.TaggedError("IoError")<{
+	readonly path: string;
+	readonly cause: unknown;
+}> {}
 
 // Carries the non-zero gate-fail exit (the report is already on stderr). Distinct from
 // IoError so a stale index / dup id exits 1 while an unreadable dir exits differently.
@@ -98,7 +101,9 @@ const check = Command.make(
 			}),
 		);
 	}),
-).pipe(Command.withDescription("Verify the committed index.md is fresh and has no duplicate ADR id"));
+).pipe(
+	Command.withDescription("Verify the committed index.md is fresh and has no duplicate ADR id"),
+);
 
 const cli = Command.make("decisions-index").pipe(
 	Command.withSubcommands([generate, check]),

@@ -91,7 +91,9 @@ const unquote = (value: string): string => {
  * Only the top-level `id`/`title`/`status`/`date` scalars are read; everything
  * else (tags, body) is ignored. Returns the fields present; the caller validates.
  */
-export const parseFrontmatter = (text: string): Partial<Record<(typeof FRONTMATTER_FIELDS)[number], string>> => {
+export const parseFrontmatter = (
+	text: string,
+): Partial<Record<(typeof FRONTMATTER_FIELDS)[number], string>> => {
 	const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
 	if (!match || match[1] === undefined) return {};
 	const block = match[1];
