@@ -11,7 +11,7 @@
  * (`.patterns/fate-effect-compiler.md`). The worker entry never imports this
  * file; it serves through the native interpreter (`route.ts`, ADR 0043).
  */
-import {FateExecutor} from "@phoenix/fate-effect";
+import {FateExecutor} from "@kampus/fate-effect";
 import {fateConfig} from "./config.ts";
 
 export const fateServer = FateExecutor.toCodegenServer(fateConfig);

@@ -63,7 +63,7 @@ class SozlukDb extends Context.Service<
 		readonly terms: Array<TermRow>;
 		readonly definitions: Array<DefinitionRow>;
 	}
->()("@phoenix/fate-effect/test/CodegenSozlukDb") {}
+>()("@kampus/fate-effect/test/CodegenSozlukDb") {}
 
 const SozlukDbLive = Layer.sync(SozlukDb, () => ({
 	terms: [{slug: "effect", title: "Effect"}],

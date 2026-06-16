@@ -1,11 +1,11 @@
 # fate-effect sources — `Fate.source`, the per-entity loader
 
-How `@phoenix/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This replaced the bridge's `fateSource` + hand-written `SourceDefinition` literals (deleted in the v1 cutover, ADR 0042). Handlers delegate to the domain services — fate never queries the database ([ADR 0016](../.decisions/0016-fate-pure-transport-effect-services-domain.md)).
+How `@kampus/fate-effect` declares a source. The short answer: **`Fate.source(ViewClass, {id}, handlers)` builds the loader for one entity** — the kernel `SourceDefinition` plus Effect handlers, with the loader contract (at least one of `byId`/`byIds`, silent reads, `E = never`) enforced at the type level. This replaced the bridge's `fateSource` + hand-written `SourceDefinition` literals (deleted in the v1 cutover, ADR 0042). Handlers delegate to the domain services — fate never queries the database ([ADR 0016](../.decisions/0016-fate-pure-transport-effect-services-domain.md)).
 
 ## Declaring a source
 
 ```ts
-import {Fate} from "@phoenix/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {Sozluk} from "./Sozluk.ts";
 import {TermView} from "./views.ts";
 

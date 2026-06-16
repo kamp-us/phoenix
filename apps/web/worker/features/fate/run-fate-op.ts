@@ -13,7 +13,7 @@ import {
 	FateServer,
 	type ProtocolOperation,
 	ProtocolResponse,
-} from "@phoenix/fate-effect";
+} from "@kampus/fate-effect";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";

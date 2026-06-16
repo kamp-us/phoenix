@@ -52,7 +52,7 @@ export class Report extends Context.Service<
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
 	}
->()("@phoenix/report/Report") {}
+>()("@kampus/report/Report") {}
 
 export const ReportLive = Layer.effect(Report)(
 	Effect.gen(function* () {

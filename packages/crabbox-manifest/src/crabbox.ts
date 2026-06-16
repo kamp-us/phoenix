@@ -75,7 +75,7 @@ export const parseRunSummaryJson = (
 
 /** crabbox output could not be parsed at all (not JSON / not the expected shape upstream of Schema). */
 export class CrabboxParseError extends Schema.TaggedErrorClass<CrabboxParseError>()(
-	"@phoenix/crabbox-manifest/CrabboxParseError",
+	"@kampus/crabbox-manifest/CrabboxParseError",
 	{
 		message: Schema.String,
 	},

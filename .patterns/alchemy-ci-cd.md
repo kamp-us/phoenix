@@ -16,7 +16,7 @@ Authored by [Can Sirin](https://github.com/cansirin) in #19, landed with the fra
 
 The trick — and the reason this isn't just "paste your Cloudflare key into GitHub" —
 is that alchemy **provisions its own CI credentials**: a one-shot `infra/ci-credentials/github.ts`
-(the standalone `@phoenix/infra` package) mints a *scoped* Cloudflare API token and
+(the standalone `@kampus/infra` package) mints a *scoped* Cloudflare API token and
 writes it (plus the account id and the state password) into the repo's Actions
 secrets, all from code.
 
@@ -24,7 +24,7 @@ secrets, all from code.
 
 | File | Role |
 |---|---|
-| [`infra/ci-credentials/github.ts`](../infra/ci-credentials/github.ts) | One-shot in the standalone `@phoenix/infra` package, run from your laptop under an `admin` profile. Mints the scoped CI token + a stable `BETTER_AUTH_SECRET` and pushes the repo secrets. Repo-level infra — owned by neither app (ADR [0057](../.decisions/0057-multi-app-multi-worker-repo.md)). |
+| [`infra/ci-credentials/github.ts`](../infra/ci-credentials/github.ts) | One-shot in the standalone `@kampus/infra` package, run from your laptop under an `admin` profile. Mints the scoped CI token + a stable `BETTER_AUTH_SECRET` and pushes the repo secrets. Repo-level infra — owned by neither app (ADR [0057](../.decisions/0057-multi-app-multi-worker-repo.md)). |
 | [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) | `deploy` job (push→`prod`, PR→`pr-<n>`) + `cleanup` job (PR close→`destroy`), both matrixed over every app (`web`, `dashboard`). |
 
 ## The CI secret set
@@ -37,7 +37,7 @@ secrets, all from code.
 | `CLOUDFLARE_ACCOUNT_ID` | Which account to deploy into. |
 | `ALCHEMY_PASSWORD` | Encrypts/decrypts secrets in the Cloudflare-hosted alchemy state store. |
 | `BETTER_AUTH_SECRET` | The session-signing secret. The worker reads it at runtime as a `secret_text` binding (`config.ts`: `Config.redacted("BETTER_AUTH_SECRET")`), so `alchemy deploy` needs the value. `infra/ci-credentials/github.ts` mints a stable `Random` (persisted in its state) and pushes it. |
-| `DASHBOARD_GITHUB_TOKEN` | The GitHub token `@phoenix/dashboard`'s worker binds (`secret_text`) for authenticated reads of `kamp-us/phoenix` issues (`apps/dashboard/worker/config.ts`: `Config.redacted("GITHUB_TOKEN")`, no default → required at deploy). Provisioned by `infra/ci-credentials/github.ts` like the others, but **supplied**, not minted: pass a fine-grained PAT (Issues: read) as `DASHBOARD_GITHUB_TOKEN` on the one-shot's env (a GitHub PAT can't be self-issued the way the Cloudflare token is). Stored under this name because Actions forbids a secret named `GITHUB_TOKEN`; the workflow maps it to the `GITHUB_TOKEN` env for the `dashboard` matrix legs only (`matrix.needs-github-token`). |
+| `DASHBOARD_GITHUB_TOKEN` | The GitHub token `@kampus/dashboard`'s worker binds (`secret_text`) for authenticated reads of `kamp-us/phoenix` issues (`apps/dashboard/worker/config.ts`: `Config.redacted("GITHUB_TOKEN")`, no default → required at deploy). Provisioned by `infra/ci-credentials/github.ts` like the others, but **supplied**, not minted: pass a fine-grained PAT (Issues: read) as `DASHBOARD_GITHUB_TOKEN` on the one-shot's env (a GitHub PAT can't be self-issued the way the Cloudflare token is). Stored under this name because Actions forbids a secret named `GITHUB_TOKEN`; the workflow maps it to the `GITHUB_TOKEN` env for the `dashboard` matrix legs only (`matrix.needs-github-token`). |
 
 > **`BETTER_AUTH_SECRET` is a deploy-time binding value, not Random-in-the-app-stack.**
 > The worker reads it from the runtime env (`config.ts`); `Random` is a deploy-time
@@ -60,7 +60,7 @@ alchemy login --profile admin
 #    state). Required once per account before any `Cloudflare.state()` deploy.
 #    Subcommand order is `alchemy cloudflare bootstrap`, NOT `alchemy bootstrap
 #    cloudflare` (the "State store not found" error suggests the wrong form).
-pnpm --filter @phoenix/infra exec alchemy cloudflare bootstrap --profile admin
+pnpm --filter @kampus/infra exec alchemy cloudflare bootstrap --profile admin
 
 # 3. Deploy the one-shot. It mints the scoped CF token + a stable BETTER_AUTH_SECRET
 #    and pushes all repo secrets. ALCHEMY_PASSWORD is the state-encryption password
@@ -68,7 +68,7 @@ pnpm --filter @phoenix/infra exec alchemy cloudflare bootstrap --profile admin
 #    fine-grained GitHub PAT (Issues: read on kamp-us/phoenix) you mint by hand —
 #    it's the one secret supplied rather than minted (a PAT can't be self-issued).
 CLOUDFLARE_ACCOUNT_ID=<account-id> ALCHEMY_PASSWORD=<password> DASHBOARD_GITHUB_TOKEN=<pat> \
-  pnpm --filter @phoenix/infra exec alchemy deploy github.ts \
+  pnpm --filter @kampus/infra exec alchemy deploy github.ts \
     --profile admin --yes
 ```
 
@@ -90,18 +90,18 @@ minted secret), so a rescope is a clean diff, not an orphaned token.
   `beta.45` used **v6**). Re-run the `alchemy cloudflare bootstrap --profile admin` step
   above to upgrade it in place. The upgrade is **account-global and one-way**, so once you
   bump, branches still on the older alchemy can no longer deploy against that account.
-- **`exec alchemy`, not the package script.** `pnpm --filter @phoenix/web deploy --stage X`
+- **`exec alchemy`, not the package script.** `pnpm --filter @kampus/web deploy --stage X`
   makes *pnpm* swallow `--stage`/`--yes` (`Unknown options: 'stage', 'yes'`). The
-  workflow builds the SPA, then runs `pnpm --filter @phoenix/web exec alchemy deploy
+  workflow builds the SPA, then runs `pnpm --filter @kampus/web exec alchemy deploy
   --stage "$STAGE" --yes` so the flags reach the alchemy CLI.
 - **`--yes` is required in CI.** Without it, alchemy prompts for plan approval on any
   change and the job hangs.
 - **`STAGE` regex.** Stage names must match `^[a-z0-9]([-_a-z0-9]*)$` — `pr-12` and
   `prod` both pass.
 - **`BETTER_AUTH_SECRET` is per-app, at deploy AND destroy.** An app that binds it
-  (`@phoenix/web`, whose `config.ts` reads it `Effect.orDie`) needs it in env for both
+  (`@kampus/web`, whose `config.ts` reads it `Effect.orDie`) needs it in env for both
   `deploy` and `destroy` (`destroy` loads `alchemy.run.ts` to build the worker layer),
-  not just the deploy. An auth-less app (`@phoenix/dashboard`, whose `config.ts` reads
+  not just the deploy. An auth-less app (`@kampus/dashboard`, whose `config.ts` reads
   only `ENVIRONMENT`) must **not** require it — the matrix's `needs-auth` flag passes the
   secret only for legs that bind it (`matrix.needs-auth && secrets.BETTER_AUTH_SECRET || ''`),
   so the dashboard deploys without ever touching auth state.

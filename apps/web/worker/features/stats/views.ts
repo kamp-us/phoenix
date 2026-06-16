@@ -5,7 +5,7 @@
  * `queries.landingStats`) — there's only ever one row, so it collapses to a
  * single cache record. See `.patterns/fate-effect-data-views.md`.
  */
-import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import {type Entity, FateDataView} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 
 interface LandingStatsRow {

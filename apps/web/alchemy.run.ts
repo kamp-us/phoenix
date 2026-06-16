@@ -4,7 +4,7 @@
  * Cloudflare API; `alchemy dev` runs it against a local workerd. There is no
  * `wrangler.jsonc`.
  *
- * Lives in the `@phoenix/web` package (next to the worker it deploys) because
+ * Lives in the `@kampus/web` package (next to the worker it deploys) because
  * pnpm isolates `node_modules` — `alchemy`/`effect` resolve from here, not the
  * repo root. Paths in the worker's resource declarations (`migrationsDir`,
  * `assets`) are relative to this directory, the alchemy CLI's working dir.

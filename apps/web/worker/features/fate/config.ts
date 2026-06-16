@@ -13,7 +13,7 @@
  * protocol is served by the `/fate/live` route + DO, not by fate's
  * `handleLiveRequest`).
  */
-import {FateServer} from "@phoenix/fate-effect";
+import {FateServer} from "@kampus/fate-effect";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
 import {lists} from "./lists.ts";
 import {mutations} from "./mutations.ts";

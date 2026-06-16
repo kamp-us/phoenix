@@ -110,7 +110,7 @@ class FxDb extends Context.Service<
 		readonly profiles: Array<FxProfileRow>;
 		readonly contributions: Array<FxContributionRow>;
 	}
->()("@phoenix/fate-effect/test/OracleFxDb") {}
+>()("@kampus/fate-effect/test/OracleFxDb") {}
 
 /** A fresh feature world per backend (the comment mutation writes). */
 const FxDbLive = Layer.sync(FxDb, () => ({

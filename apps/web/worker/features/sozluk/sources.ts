@@ -5,7 +5,7 @@
  * connections come from custom resolvers (ADR 0019). Reads are silent and
  * `E = never` — see `.patterns/fate-effect-sources.md`.
  */
-import {CurrentUser, Fate} from "@phoenix/fate-effect";
+import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Sozluk} from "./Sozluk.ts";
 import {DefinitionView, TermView} from "./views.ts";
 

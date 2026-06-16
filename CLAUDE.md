@@ -21,7 +21,7 @@ A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
 ```
 phoenix/
 ├── apps/                    # one worker per app, each its own package + stack (ADR 0057)
-│   └── web/                 # @phoenix/web — the worker today (dashboard incoming)
+│   └── web/                 # @kampus/web — the worker today (dashboard incoming)
 │       ├── worker/          # worker entry + backend code
 │       ├── src/             # React frontend
 │       └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)

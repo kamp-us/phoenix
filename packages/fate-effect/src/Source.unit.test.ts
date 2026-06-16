@@ -47,10 +47,10 @@ export class TermView extends FateDataView<TermRow>()("Term")({
 export class TermStore extends Context.Service<
 	TermStore,
 	{readonly rows: ReadonlyArray<TermRow>}
->()("@phoenix/fate-effect/test/TermStore") {}
+>()("@kampus/fate-effect/test/TermStore") {}
 
 export class Viewer extends Context.Service<Viewer, {readonly id: string}>()(
-	"@phoenix/fate-effect/test/Viewer",
+	"@kampus/fate-effect/test/Viewer",
 ) {}
 
 // --- the realistic authoring shape (exported: nameability fixture) ----------

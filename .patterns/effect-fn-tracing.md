@@ -18,7 +18,7 @@ const addDefinition = Effect.fn("Sozluk.addDefinition")(function*(input: AddDefi
 2. **Captures a stack frame.** Failures inside the function show up in the cause's stack trace with this frame visible.
 3. **Returns an Effect-producing function.** The body is a generator that yields effects; the wrapper turns it into `(args) => Effect`.
 
-Naming convention: **`Service.method`**, exactly matching the service tag's short name and the method's property name. Don't abbreviate, don't prefix with the package — the tag string already namespaces (e.g. `@phoenix/sozluk/Sozluk`); the span name is for span readability in traces.
+Naming convention: **`Service.method`**, exactly matching the service tag's short name and the method's property name. Don't abbreviate, don't prefix with the package — the tag string already namespaces (e.g. `@kampus/sozluk/Sozluk`); the span name is for span readability in traces.
 
 ## When `Effect.fn` is the right choice
 

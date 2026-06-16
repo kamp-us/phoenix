@@ -8,7 +8,7 @@ import * as Schema from "effect/Schema";
 
 /** A GitHub REST call failed — non-2xx status or a transport/JSON error. */
 export class GithubFetchError extends Schema.TaggedErrorClass<GithubFetchError>()(
-	"@phoenix/dashboard/pipeline/GithubFetchError",
+	"@kampus/dashboard/pipeline/GithubFetchError",
 	{
 		/** The REST path that failed (e.g. `/repos/kamp-us/phoenix/issues`). */
 		path: Schema.String,

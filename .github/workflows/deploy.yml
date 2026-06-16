@@ -48,20 +48,20 @@ jobs:
         include:
           # `app` is the apps/ dir; `pnpm-name` is its workspace package.
           # `needs-auth` says whether the app's worker binds BETTER_AUTH_SECRET:
-          # only @phoenix/web has auth (config.ts reads it `Effect.orDie`); the
+          # only @kampus/web has auth (config.ts reads it `Effect.orDie`); the
           # dashboard has no auth (its config.ts reads only ENVIRONMENT), so its
           # deploy/destroy must NOT require the secret (ADR 0057).
           # `needs-github-token` says whether the worker binds GITHUB_TOKEN: only
-          # @phoenix/dashboard does (config.ts `Config.redacted("GITHUB_TOKEN")`,
+          # @kampus/dashboard does (config.ts `Config.redacted("GITHUB_TOKEN")`,
           # no default → REQUIRED at deploy). It's stored under the repo secret
           # `DASHBOARD_GITHUB_TOKEN` (Actions forbids a secret named GITHUB_TOKEN)
           # and mapped to the GITHUB_TOKEN env the worker reads.
           - app: web
-            pnpm-name: "@phoenix/web"
+            pnpm-name: "@kampus/web"
             needs-auth: true
             needs-github-token: false
           - app: dashboard
-            pnpm-name: "@phoenix/dashboard"
+            pnpm-name: "@kampus/dashboard"
             needs-auth: false
             needs-github-token: true
     steps:
@@ -88,7 +88,7 @@ jobs:
       # ("Unknown options: 'stage', 'yes'"). `--yes` skips the interactive plan
       # approval (CI would otherwise hang); `--stage` selects the isolated copy.
       # Creds come from the secrets `infra/ci-credentials/github.ts` provisions
-      # (run via `pnpm --filter @phoenix/infra exec alchemy deploy github.ts`); BETTER_AUTH_SECRET
+      # (run via `pnpm --filter @kampus/infra exec alchemy deploy github.ts`); BETTER_AUTH_SECRET
       # is passed only for apps whose worker binds it (matrix.needs-auth).
       - name: Deploy ${{ matrix.app }} (stage ${{ env.STAGE }})
         id: deploy
@@ -201,11 +201,11 @@ jobs:
       matrix:
         include:
           - app: web
-            pnpm-name: "@phoenix/web"
+            pnpm-name: "@kampus/web"
             needs-auth: true
             needs-github-token: false
           - app: dashboard
-            pnpm-name: "@phoenix/dashboard"
+            pnpm-name: "@kampus/dashboard"
             needs-auth: false
             needs-github-token: true
     steps:

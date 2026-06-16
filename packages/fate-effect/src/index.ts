@@ -1,5 +1,5 @@
 /**
- * `@phoenix/fate-effect` — phoenix's Effect-native fate integration: fate's
+ * `@kampus/fate-effect` — phoenix's Effect-native fate integration: fate's
  * record shapes with Effect semantics. Ships the views, the wire-error
  * codec, the `Fate.*` entry constructors, the `FateServer`
  * tag/config/layer, and the v2 native plane that serves `/fate` (ADR 0043);

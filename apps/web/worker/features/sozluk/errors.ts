@@ -5,7 +5,7 @@
  * verbatim from the retired bridge registry so SPA pattern-matching keeps
  * working unchanged; `errors.unit.test.ts` pins each class→code pair.
  */
-import {ErrorCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
 /** `body` was empty after trimming. */

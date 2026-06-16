@@ -32,12 +32,9 @@ export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relation
  * Raised when a drizzle promise rejects inside `run` / `batch`. The `cause` is
  * preserved for logs but never reaches the user.
  */
-export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()(
-	"@phoenix/Drizzle/Error",
-	{
-		cause: Schema.Defect(),
-	},
-) {}
+export class DrizzleError extends Schema.TaggedErrorClass<DrizzleError>()("@kampus/Drizzle/Error", {
+	cause: Schema.Defect(),
+}) {}
 
 /**
  * Collapse the `DrizzleError` channel into the defect channel — the
@@ -100,7 +97,7 @@ export const orDieAccess = (access: DrizzleAccess): DrizzleAccessOrDie => ({
  *     db.update(schema.definitionView).set({...}).where(...),
  *   ] as const);
  */
-export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@phoenix/Drizzle") {}
+export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@kampus/Drizzle") {}
 
 /** The single place `drizzle(db, {schema, relations})` is called (worker init + tests). */
 export const createDrizzle = (db: D1Database): DrizzleDb => drizzle(db, {schema, relations});

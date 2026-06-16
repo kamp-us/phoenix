@@ -1,4 +1,4 @@
-# @phoenix/leak-guard
+# @kampus/leak-guard
 
 The enforcement of the repo's **no-local-paths-in-shared-artifacts** rule
 (issue #173). A user-local filesystem path (`/Users/<name>/…`, `~/.claude`,
@@ -77,7 +77,7 @@ which is the #158 leak class.
 ## Commands
 
 ```bash
-pnpm --filter @phoenix/leak-guard typecheck
-pnpm --filter @phoenix/leak-guard test
+pnpm --filter @kampus/leak-guard typecheck
+pnpm --filter @kampus/leak-guard test
 node packages/leak-guard/src/bin.ts scan path/to/file.md another.md   # exit 2 on a leak, 0 clean, other non-zero = couldn't run
 ```

@@ -10,7 +10,7 @@
  * name. Wire codes are preserved verbatim from the bridge so SPA pattern-matching
  * keeps working; `errors.unit.test.ts` pins each pair.
  */
-import {ErrorCode} from "@phoenix/fate-effect";
+import {ErrorCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
 export class TitleRequired extends Schema.TaggedErrorClass<TitleRequired>()(

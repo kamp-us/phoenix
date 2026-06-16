@@ -6,8 +6,8 @@
  * `.patterns/fate-connections.md`.
  */
 
+import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {hasNestedSelection} from "@nkzw/fate/server";
-import {CurrentUser, Fate} from "@phoenix/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";

@@ -6,7 +6,7 @@
  * the write (anonymous → `UNAUTHORIZED`).
  */
 
-import {CurrentUser, Fate, Unauthorized} from "@phoenix/fate-effect";
+import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalidErrors, UsernameTaken} from "./errors.ts";

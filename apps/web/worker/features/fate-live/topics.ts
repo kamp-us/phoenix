@@ -26,7 +26,7 @@ export class LiveTopics extends Context.Service<
 			limits: LiveLimits,
 		) => Effect.Effect<void, never, never>;
 	}
->()("@phoenix/LiveTopics") {}
+>()("@kampus/LiveTopics") {}
 
 /**
  * `LiveConnections` — the worker-level handle the `/fate/live` route uses to
@@ -59,4 +59,4 @@ export class LiveConnections extends Context.Service<
 			subId: string,
 		) => Effect.Effect<{readonly ok: true}, never, never>;
 	}
->()("@phoenix/LiveConnections") {}
+>()("@kampus/LiveConnections") {}

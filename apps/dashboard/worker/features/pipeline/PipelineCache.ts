@@ -30,7 +30,7 @@ export class PipelineCache extends Context.Service<
 		/** Persist a freshly-fetched snapshot as the new last-good value. */
 		readonly write: (snapshot: CachedPipelineState) => Effect.Effect<void>;
 	}
->()("@phoenix/dashboard/pipeline/PipelineCache") {}
+>()("@kampus/dashboard/pipeline/PipelineCache") {}
 
 export const PipelineCacheLive = Layer.effect(PipelineCache)(
 	Effect.gen(function* () {

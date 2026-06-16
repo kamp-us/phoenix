@@ -6,7 +6,7 @@
  * term-page `ORDER BY` (`score desc, createdAt asc, id asc`) or the keyset
  * cursors stop round-tripping (ADR 0019; see `.patterns/fate-connections.md`).
  */
-import {type Entity, FateDataView} from "@phoenix/fate-effect";
+import {type Entity, FateDataView} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {DefinitionRow, TermSummaryRow} from "./Sozluk.ts";
 

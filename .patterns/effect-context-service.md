@@ -31,7 +31,7 @@ Three pieces, in order:
 
 1. **Self type** (`CurrentUser`) — the class itself, used as the tag.
 2. **Service shape** (`{readonly ...}`) — the API.
-3. **String id** (`"fate-effect/CurrentUser"`) — must be globally unique. Namespace it `@phoenix/<package>/<Name>` (worker code) or `<package>/<Name>` so collisions are obvious.
+3. **String id** (`"fate-effect/CurrentUser"`) — must be globally unique. Namespace it `@kampus/<package>/<Name>` (worker code) or `<package>/<Name>` so collisions are obvious.
 
 The string id is what effect uses at runtime to look services up. Renaming the class is fine; renaming the string id breaks every layer providing it.
 
@@ -54,7 +54,7 @@ class UserRepo extends Context.Service<
     readonly byId: (id: string) => Effect.Effect<User, UserNotFound | RepoError>;
     readonly list: Effect.Effect<ReadonlyArray<User>, RepoError>;
   }
->()("@phoenix/worker/UserRepo") {}
+>()("@kampus/worker/UserRepo") {}
 ```
 
 ## Static helpers on the service class

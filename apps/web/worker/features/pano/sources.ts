@@ -6,7 +6,7 @@
  * `E = never` — infra failures die inside the domain service (the boundary rule
  * in `.patterns/feature-services.md`). See `.patterns/fate-effect-sources.md`.
  */
-import {CurrentUser, Fate} from "@phoenix/fate-effect";
+import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Pano, tagLabel} from "./Pano.ts";
 import {CommentView, PostView, TagView} from "./views.ts";
 

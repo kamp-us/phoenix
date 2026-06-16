@@ -173,7 +173,7 @@ export class Sozluk extends Context.Service<
       input: VoteDefinitionInput,
     ) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
   }
->()("@phoenix/sozluk/Sozluk") {}
+>()("@kampus/sozluk/Sozluk") {}
 ```
 
 ### Rules
@@ -308,7 +308,7 @@ export interface KarmaBumpService {
   readonly statement: (db: DrizzleDb, userId: string, delta: number) => Stmt;
 }
 export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
-  "@phoenix/vote/KarmaBump",
+  "@kampus/vote/KarmaBump",
 ) {}
 
 // fate/layers.ts — the composition root provides pasaport's implementation

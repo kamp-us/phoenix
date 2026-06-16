@@ -87,7 +87,7 @@ text reads as phoenix-only) is also de-pinned: the trigger describes the *capabi
 (processing a GitHub triage queue, picking the next issue), not a specific repo.
 
 > **Carve-outs (ADR 0062 §3/§4).** Two classes of `kamp-us/phoenix` reference are
-> **intentionally not** rewritten to `$REPO`: `review-plan`'s `@phoenix/epic-ledger`
+> **intentionally not** rewritten to `$REPO`: `review-plan`'s `@kampus/epic-ledger`
 > invocation (the one acknowledged-pinned piece for v1, §3) and external doc-reference
 > URLs rewritten to stable `https://github.com/kamp-us/phoenix/blob/main/...` permalinks
 > (§4). Those are separate children's work; only `gh api` literals and trigger-text

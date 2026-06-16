@@ -15,8 +15,8 @@
  */
 
 import {assert, it} from "@effect/vitest";
+import type {LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveEntityTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
-import type {LivePublisher} from "@phoenix/fate-effect";
 import {Effect, Exit} from "effect";
 import {expectTypeOf, vi} from "vitest";
 import {livePublisherFor} from "./live-publisher.ts";

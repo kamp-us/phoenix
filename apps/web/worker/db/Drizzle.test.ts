@@ -68,7 +68,7 @@ describe("Drizzle.run", () => {
 			const errOpt = Cause.findErrorOption(exit.cause);
 			assert.isTrue(Option.isSome(errOpt), "expected failure carries a typed error");
 			const err = Option.getOrThrow(errOpt);
-			assert.strictEqual(err._tag, "@phoenix/Drizzle/Error");
+			assert.strictEqual(err._tag, "@kampus/Drizzle/Error");
 			assert.instanceOf(err, DrizzleError);
 			assert.strictEqual((err as DrizzleError).cause, boom);
 		}).pipe(Effect.provide(TestDrizzleLayer)),
@@ -153,7 +153,7 @@ describe("Drizzle.batch", () => {
 			assert.isTrue(Exit.isFailure(exit), "expected failure");
 			if (Exit.isSuccess(exit)) return;
 			const err = Option.getOrThrow(Cause.findErrorOption(exit.cause));
-			assert.strictEqual(err._tag, "@phoenix/Drizzle/Error");
+			assert.strictEqual(err._tag, "@kampus/Drizzle/Error");
 			assert.strictEqual((err as DrizzleError).cause, boom);
 		}).pipe(Effect.provide(layer));
 	});

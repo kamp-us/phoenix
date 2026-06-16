@@ -384,7 +384,7 @@ export class Pano extends Context.Service<
 			input: VoteOnCommentInput,
 		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
 	}
->()("@phoenix/pano/Pano") {}
+>()("@kampus/pano/Pano") {}
 
 export const PanoLive = Layer.effect(Pano)(
 	Effect.gen(function* () {

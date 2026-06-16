@@ -8,7 +8,7 @@
  * this layer (`.patterns/feature-services.md`).
  */
 
-import {Fate} from "@phoenix/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import {Stats} from "./Stats.ts";
 

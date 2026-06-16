@@ -23,7 +23,7 @@ export class Stats extends Context.Service<
 	{
 		readonly getLandingStats: () => Effect.Effect<LandingStats>;
 	}
->()("@phoenix/stats/Stats") {}
+>()("@kampus/stats/Stats") {}
 
 export const StatsLive = Layer.effect(Stats)(
 	Effect.gen(function* () {

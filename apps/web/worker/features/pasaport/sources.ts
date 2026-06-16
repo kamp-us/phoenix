@@ -5,7 +5,7 @@
  * `profile`/`me` resolvers build the full shape inline, so this `byId` exists for
  * relation/by-id callers). See `.patterns/fate-effect-sources.md`.
  */
-import {Fate} from "@phoenix/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {Pasaport} from "./Pasaport.ts";
 import {toProfile} from "./shapers.ts";
 import {ContributionView, ProfileView, UserView} from "./views.ts";

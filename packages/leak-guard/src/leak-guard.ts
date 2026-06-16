@@ -1,5 +1,5 @@
 /**
- * `@phoenix/leak-guard` core — the pure, IO-free matcher that decides whether a
+ * `@kampus/leak-guard` core — the pure, IO-free matcher that decides whether a
  * write puts a user-local filesystem path into a SHARED artifact (issue #173).
  *
  * This is the write-time enforcement of the repo's no-local-paths rule that used

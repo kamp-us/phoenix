@@ -61,7 +61,7 @@ export const queries = {
 
 ## What each fragment contains
 
-The per-feature assembly on the `@phoenix/fate-effect` constructors — sozluk
+The per-feature assembly on the `@kampus/fate-effect` constructors — sozluk
 (`apps/web/worker/features/sozluk/`) is the shipped reference; pano, pasaport,
 and stats follow the same template. The feature's domain service stays
 untouched; the fate-facing fragments are:

@@ -14,7 +14,7 @@ import {PhoenixDb} from "./resources.ts";
  *   const raw = yield* Database;
  *   const db = createDrizzle(raw);
  */
-export class Database extends Context.Service<Database, D1Database>()("@phoenix/Database") {}
+export class Database extends Context.Service<Database, D1Database>()("@kampus/Database") {}
 
 /**
  * Resolved once and provided as a worker-level layer (the binding is stable for

@@ -69,7 +69,7 @@ export class TermView extends FateDataView<TermRow>()("Term")({
 export class TermStore extends Context.Service<
 	TermStore,
 	{readonly rows: ReadonlyArray<TermRow>}
->()("@phoenix/fate-effect/test/TermStore") {}
+>()("@kampus/fate-effect/test/TermStore") {}
 
 const rows: ReadonlyArray<TermRow> = [
 	{slug: "effect", title: "Effect"},

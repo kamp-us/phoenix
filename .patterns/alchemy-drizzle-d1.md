@@ -69,7 +69,7 @@ export const PhoenixDb = Cloudflare.D1Database("phoenix_db", {
 });
 ```
 
-The `D1Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists, the worker `bind()`s it. There is no `Drizzle.Schema` resource in the alchemy stack: migration SQL is generated against `drizzle.config.ts` (`pnpm --filter @phoenix/web drizzle-kit generate`) and committed under `worker/db/drizzle/migrations/`. alchemy scans `migrationsDir` and applies new migrations on deploy — replacing the `wrangler d1 migrations apply` step, but not `drizzle-kit generate`. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
+The `D1Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists, the worker `bind()`s it. There is no `Drizzle.Schema` resource in the alchemy stack: migration SQL is generated against `drizzle.config.ts` (`pnpm --filter @kampus/web drizzle-kit generate`) and committed under `worker/db/drizzle/migrations/`. alchemy scans `migrationsDir` and applies new migrations on deploy — replacing the `wrangler d1 migrations apply` step, but not `drizzle-kit generate`. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
 
 ## better-auth on the same D1
 

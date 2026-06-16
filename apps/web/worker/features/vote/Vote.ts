@@ -63,7 +63,7 @@ export interface KarmaBumpService {
  * contract is the thing to renegotiate, not Vote's internals.
  */
 export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
-	"@phoenix/vote/KarmaBump",
+	"@kampus/vote/KarmaBump",
 ) {}
 
 export class Vote extends Context.Service<
@@ -82,7 +82,7 @@ export class Vote extends Context.Service<
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
 	}
->()("@phoenix/vote/Vote") {}
+>()("@kampus/vote/Vote") {}
 
 /**
  * Per-target metadata resolved before the write. `authorId` is the karma

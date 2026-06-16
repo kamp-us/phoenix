@@ -12,7 +12,7 @@
  * moved here, from a per-request runtime.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
-import {FateServer} from "@phoenix/fate-effect";
+import {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import * as ManagedRuntime from "effect/ManagedRuntime";

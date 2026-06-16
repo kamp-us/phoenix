@@ -1,5 +1,5 @@
 {
-	"name": "@phoenix/crabbox-manifest",
+	"name": "@kampus/crabbox-manifest",
 	"version": "0.0.0",
 	"private": true,
 	"description": "Pure transform mapping a crabbox run-summary + JUnit + logs to an ADR 0054 §2 run-evidence manifest (schemaVersion/commit/run/checks[]/tests/logs)",

@@ -26,6 +26,7 @@ export {
 	Github,
 	GithubEpicInput,
 	GithubLive,
+	RepoResolutionError,
 } from "./github.ts";
 export {findCycles} from "./graph.ts";
 export {

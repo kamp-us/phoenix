@@ -152,7 +152,7 @@ export class Pasaport extends Context.Service<
 			first: number;
 		}) => Effect.Effect<ContributionConnection>;
 	}
->()("@phoenix/pasaport/Pasaport") {}
+>()("@kampus/pasaport/Pasaport") {}
 
 // Username constraints (mirrored on the SPA bootstrap form): 3-30 chars;
 // lowercase ASCII letters, digits, and `-`; must start/end with a letter or

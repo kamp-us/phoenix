@@ -1,5 +1,5 @@
 {
-	"name": "@phoenix/fate-effect",
+	"name": "@kampus/fate-effect",
 	"version": "0.0.0",
 	"private": true,
 	"description": "phoenix's Effect-native fate integration — fate's structure with Effect's semantics",

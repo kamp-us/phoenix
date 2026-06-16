@@ -10,7 +10,7 @@
  * side) needs two resolvers to batch them in one request without a waterfall.
  */
 
-import {Fate} from "@phoenix/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {type KeysetPage, toConnection} from "../fate/connection.ts";

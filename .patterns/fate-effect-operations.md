@@ -1,13 +1,13 @@
 # fate-effect operations — `Fate.query` / `Fate.list` / `Fate.mutation`
 
-How `@phoenix/fate-effect` declares operations. The short answer: **each record entry pairs a pure-data definition with a user-authored `Effect.fn("<wire name>")` handler** — Effect Schema replaces zod at the boundary, the success view names the wire type, and the handler's error channel is checked against the declared error union at the constructor call. This replaced the bridge's `fateQuery`/`fateList`/`fateMutation` helpers (deleted in the v1 cutover, ADR 0042). Sources are the other half of the loader/resolver split ([fate-effect-sources.md](./fate-effect-sources.md)): sources LOAD, operations RESOLVE.
+How `@kampus/fate-effect` declares operations. The short answer: **each record entry pairs a pure-data definition with a user-authored `Effect.fn("<wire name>")` handler** — Effect Schema replaces zod at the boundary, the success view names the wire type, and the handler's error channel is checked against the declared error union at the constructor call. This replaced the bridge's `fateQuery`/`fateList`/`fateMutation` helpers (deleted in the v1 cutover, ADR 0042). Sources are the other half of the loader/resolver split ([fate-effect-sources.md](./fate-effect-sources.md)): sources LOAD, operations RESOLVE.
 
 ## Declaring operations
 
 Records stay exactly fate's shape — plain objects keyed by dotted wire names:
 
 ```ts
-import {Fate} from "@phoenix/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {Effect, Schema} from "effect";
 import {BodyRequired, DefinitionNotFound} from "./errors.ts";
 import {Sozluk} from "./Sozluk.ts";
