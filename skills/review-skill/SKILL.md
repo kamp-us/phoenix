@@ -399,8 +399,12 @@ BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe the fetched comments to standalone jq:
 comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+# Find filter is namespace-anchored, NOT PASS/FAIL-only: it must also match the advisory
+# marker (§6.6) so a polarity flip (blocking↔non-blocking across re-reviews) upserts the one
+# prior review-skill verdict instead of leaving a stale one beside the fresh one. It can't
+# cross-match review-code:/review-doc: — the literal `skill:` suffix excludes both.
 MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))))
+          and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
         | last | .id // empty' <<<"$comments")
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
@@ -462,9 +466,31 @@ Verified against #<ISSUE>'s acceptance criteria + the skill-rigor checklist — 
 - [PASS] Gate-invariant preservation — <evidence: invariants walked, none weakened>
 ```
 
-Upsert it the same way (`PATCH` your own prior `review-skill:` marker if one exists, else
-`POST`), and post it **as a comment, never a native review** (ADR 0058 rule 4). Do **not**
-emit the `review-skill: PASS @ <sha> — merge-ready` marker for a blocking PR — that marker is a
+Upsert it the same way as the pass/fail paths — `mktemp` the verdict file (the PR number alone
+isn't unique; a fixed `/tmp/...-${PR}.md` collides under concurrent reviews), then `PATCH` your
+own prior `review-skill:` marker if one exists, else `POST`. The namespace-anchored find filter
+matches a prior PASS/FAIL too, so a re-review that flips a PR to blocking overwrites the old
+binding verdict with this advisory line — exactly one `review-skill` verdict per PR (ADR 0058
+rule 2). There is **no `HEAD_SHA`** here: the advisory line carries no `@ <sha>` by design.
+
+```bash
+VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
+# write your composed advisory verdict into "$VERDICT_FILE" (first line: review-skill: advisory — blocking-set PR (manual merge))
+BODY="$(cat "$VERDICT_FILE")"
+ME="$(gh api user --jq .login)"
+comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
+          and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
+        | last | .id // empty' <<<"$comments")
+if [ -n "$MINE" ]; then
+  gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
+else
+  gh api -X POST  "repos/$REPO/issues/$PR/comments"   -f body="$BODY"
+fi
+```
+
+Post it **as a comment, never a native review** (ADR 0058 rule 4). Do **not** emit the
+`review-skill: PASS @ <sha> — merge-ready` marker for a blocking PR — that marker is a
 `ship-it` go-ahead, and `ship-it` must refuse the blocking set.
 
 ### Fail path — any miss (non-blocking or blocking)
@@ -483,8 +509,10 @@ VERDICT_FILE="$(mktemp /tmp/review-skill-verdict.XXXXXX)"
 BODY="$(cat "$VERDICT_FILE")"
 ME="$(gh api user --jq .login)"
 comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+# Namespace-anchored find filter (matches advisory + PASS + FAIL), as on the pass path — so a
+# fresh FAIL upserts whatever prior review-skill marker exists, advisory included.
 MINE=$(jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))))
+          and (.body | test("^\\s*\\**\\s*review-skill:"; "i"))))
         | last | .id // empty' <<<"$comments")
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
