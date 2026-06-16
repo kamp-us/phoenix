@@ -82,7 +82,7 @@ contract and referenced by each skill, replacing the inline literals.
 | `write-code` | **parameterized** (§1) | `gh api` literals + frontmatter |
 | `ship-it` | **parameterized** (§1) | `gh api` literals + frontmatter |
 | `heal-ci` | **parameterized** (§1) | `gh api` literals |
-| `review-plan` | **parameterized (§1) but epic-ledger-pinned for v1** | needs `@phoenix/epic-ledger` (see §3) |
+| `review-plan` | **parameterized (§1); epic-ledger-pinned for v1, now portable** | needed `@phoenix/epic-ledger`; the §3 deferral is resolved by [0064](0064-epic-ledger-npm-publish-automated-release.md) — the gate runs the published `@kampus/epic-ledger` in a foreign repo, so the suite is now **11/11** repo-agnostic (see §3 note + Consequences) |
 
 ### 3. `@phoenix/epic-ledger` — review-plan stays phoenix-pinned for v1; npm-publish is the deferred follow-up
 
@@ -157,6 +157,15 @@ validation.
 **Deferred to a follow-up epic:** publishing `@phoenix/epic-ledger` to npm so `review-plan`
 becomes portable (§3). Until then `review-plan` is the one phoenix-pinned skill.
 
+> **Resolved.** That follow-up epic shipped — [#362](https://github.com/kamp-us/phoenix/issues/362)
+> (ADR [0064](0064-epic-ledger-npm-publish-automated-release.md)) published
+> `@kampus/epic-ledger` and cut `review-plan` over to in-repo-first / published-fallback
+> resolution; [#408](https://github.com/kamp-us/phoenix/issues/408) made the published gate
+> resolve its target repo from `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` → `gh repo view`
+> (fail-closed). `review-plan` is **no longer phoenix-pinned** — the suite is **11/11
+> repo-agnostic**, proven end-to-end against a real non-phoenix repo in
+> [#368](https://github.com/kamp-us/phoenix/issues/368).
+
 ## Consequences
 
 - The de-pin children (#348 tracer, #351 sweep) implement §1 against a single resolution
@@ -170,6 +179,10 @@ becomes portable (§3). Until then `review-plan` is the one phoenix-pinned skill
   functional locally.
 - An adopter gets 10 of 11 skills fully repo-agnostic on install, `review-plan` degrading
   with a clear message, and a README stating the boundary and the install-into-self caveat.
+  *(Superseded by [0064](0064-epic-ledger-npm-publish-automated-release.md) / #362: the
+  adopter now gets **all 11** repo-agnostic — `review-plan` runs the published
+  `@kampus/epic-ledger` in a foreign repo instead of degrading, validated end-to-end in
+  #368. The install-into-self caveat (§5) stands.)*
 - The one residual sharp edge is the env-var override's blast radius: a stale
   `CLAUDE_PIPELINE_REPO` pointed at the wrong repo would silently operate the pipeline on
   that repo. The resolution snippet's default-to-current-repo keeps the common path safe; the
