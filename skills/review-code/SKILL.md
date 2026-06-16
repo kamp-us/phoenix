@@ -160,6 +160,15 @@ Your own session stays in *this* worktree (the trusted base config you were laun
 # the trusted base — the PR's merge target at tip; your config already comes from here
 BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main
 
+# Refresh the base BEFORE any "is-it-shipped on main" ground-truth check (below). The PR
+# head reaches its own ref, but the base is the *other* half of verification — a long-lived
+# or busy checkout's local main goes stale, so an "is X shipped?" check read off the working
+# tree is only as fresh as whoever's checkout the gate ran in. This is the freshness gap
+# complementary to ADR 0052's config-isolation: 0052 pins your *config* to the base; this
+# pins your *ground-truth* to the base too. (PR #305 false-FAILed on exactly this — a doc
+# whose consumers had merged minutes earlier was FAILed against a stale local main.)
+git fetch origin "$BASE_REF"
+
 # Fetch the PR head into a dedicated ref WITHOUT touching the session tree. pull/$PR/head
 # resolves for same-repo AND cross-fork PRs, so there is no separate cross-fork branch to
 # check out into your own tree (the trust inversion ADR 0052 closes — never run
@@ -314,6 +323,15 @@ Walk the checklist **one box at a time**. For each criterion, reach an independe
 verdict and capture the *evidence* that supports it. This per-criterion discipline is
 the heart of the gate: a blanket "looks good" is exactly the rubber-stamp the fresh
 QA pass exists to prevent. Each criterion gets its own verdict and its own evidence.
+
+For a criterion that is a **ground-truth check against the merge target** — "the
+prerequisite is shipped on `main`", "the consumer this PR depends on is present", "the
+path it references exists upstream" — verify it against the **freshly fetched**
+`origin/$BASE_REF` from Step 2, **never** the working tree or a local `main` (which can be
+stale, or even reverted — the false-PASS hazard). Use `git cat-file -e
+"origin/$BASE_REF:<path>"` to assert a path exists on fresh main and `git show
+"origin/$BASE_REF:<path>"` to read its shipped content; this is what makes the verdict's
+freshness structural rather than dependent on the runner's checkout.
 
 For each criterion, decide one of:
 
