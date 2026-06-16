@@ -1,0 +1,39 @@
+{
+	"$schema": "https://json.schemastore.org/claude-code-marketplace.json",
+	"name": "kampus",
+	"owner": {
+		"name": "kamp-us",
+		"url": "https://github.com/kamp-us"
+	},
+	"metadata": {
+		"description": "The kamp.us self-hosted marketplace — distributes the repo-agnostic agent pipeline plugin.",
+		"version": "0.1.0"
+	},
+	"plugins": [
+		{
+			"name": "kampus-pipeline",
+			"source": "./",
+			"description": "The kamp.us agent pipeline: triage → plan-epic → write-code → review-code/review-doc/review-plan → ship-it, plus adr, report, heal-ci, and deslop-comments. Repo-agnostic — operates on the working git repo's issue queue (CLAUDE_PIPELINE_REPO override).",
+			"version": "0.1.0",
+			"author": {
+				"name": "kamp-us",
+				"url": "https://github.com/kamp-us"
+			},
+			"license": "MIT",
+			"keywords": ["github", "issue-pipeline", "triage", "code-review", "agent-workflow"],
+			"skills": [
+				"./skills/adr",
+				"./skills/deslop-comments",
+				"./skills/heal-ci",
+				"./skills/plan-epic",
+				"./skills/report",
+				"./skills/review-code",
+				"./skills/review-doc",
+				"./skills/review-plan",
+				"./skills/ship-it",
+				"./skills/triage",
+				"./skills/write-code"
+			]
+		}
+	]
+}
