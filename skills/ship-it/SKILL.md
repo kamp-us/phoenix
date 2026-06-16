@@ -625,24 +625,33 @@ whole branch collapses to one commit on `main`:
 gh pr merge $PR --squash
 ```
 
-The merge auto-closes the linked issue via its `Fixes #<ISSUE>` — that is the loop
-closing. Do not separately close the issue; let the `Fixes` seam do it.
+When there **is** a linked issue, the merge auto-closes it via its `Fixes #<ISSUE>` — that
+is the loop closing. Do not separately close the issue; let the `Fixes` seam do it. On the
+docs-only no-link path (`ISSUE` unset, ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) there is no
+`Fixes #N` and nothing to auto-close — the PR simply merges.
 
 ---
 
 ## Step 5 — Confirm the loop closed
 
-Verify the terminal state rather than assuming the merge took:
+Verify the terminal state rather than assuming the merge took. Always confirm the PR
+`merged` state; the issue-close confirmation is **conditional on a linked issue** (ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)):
 
 ```bash
 gh api repos/$REPO/pulls/$PR --jq '{merged, merged_at}'
-gh api repos/$REPO/issues/$ISSUE --jq '{state, state_reason}'
+if [ -n "$ISSUE" ]; then
+  gh api repos/$REPO/issues/$ISSUE --jq '{state, state_reason}'
+fi
 ```
 
-The issue should now read `state: closed`, `state_reason: completed`. If it didn't
-auto-close (a missing/garbled `Fixes #N`), close it explicitly with a one-line note
-pointing at the merged PR — but record that the seam was broken so it can be fixed
-upstream.
+When `ISSUE` is set, it should now read `state: closed`, `state_reason: completed`. If it
+didn't auto-close (a missing/garbled `Fixes #N`), close it explicitly with a one-line note
+pointing at the merged PR — but record that the seam was broken so it can be fixed upstream.
+
+When `ISSUE` is **unset** (the docs-only no-link path, Step 1) there is no issue to confirm
+— skip the issue query entirely and report `issue: n/a (docs-only, no linked issue)`.
 
 ---
 
@@ -666,6 +675,11 @@ PR url: <html_url>
 merged: yes | no (<reason if no>)
 issue closed: yes | no
 ```
+
+When `ISSUE` is unset (the docs-only no-link path, Step 1 / ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) the two issue
+lines render `issue: n/a (docs-only, no linked issue)` instead of `issue #<ISSUE>` and
+`issue closed:`.
 
 If you refused to merge, the reason line is the whole point: `blocking — manual merge`,
 `unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (no
