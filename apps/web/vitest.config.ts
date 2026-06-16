@@ -44,6 +44,24 @@ export default defineConfig({
 		// per-project `reporters` (it's typed `never[]` in a project block — the
 		// reporter aggregates the whole run), so both projects share it.
 		reporters: ["verbose"],
+		// A held `/fate/live` SSE stream that's still open when its client
+		// disconnects has its response-body Effect fiber interrupted; the
+		// interrupt-only `Cause` squashes to a generic
+		// `Error("All fibers interrupted without error")` (effect-smol
+		// `Cause.squash`), which the workerd isolate logs as an uncaught
+		// exception and Vitest's main-process StateManager then collects as an
+		// unhandled error — flipping a fully-green run's exit code to non-zero
+		// (#20). The interrupt is benign (the client is already gone, no test
+		// observes anything after it) and unfixable in the stream definition:
+		// external fiber interruption can't be caught by any in-stream
+		// combinator. Drop EXACTLY this one message (return `false`) so the
+		// benign disconnect no longer fails the run, while every other unhandled
+		// error still does — narrower than a blanket
+		// `dangerouslyIgnoreUnhandledErrors`. See
+		// `.patterns/effect-sse-externally-driven.md` ("Interruption on
+		// disconnect").
+		onUnhandledError: (error) =>
+			error?.message === "All fibers interrupted without error" ? false : undefined,
 		projects: [
 			{
 				test: {
