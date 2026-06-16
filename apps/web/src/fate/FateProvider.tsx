@@ -18,6 +18,15 @@ export function FateProvider({children}: {children: React.ReactNode}) {
 	// anonymous viewer, so an anon client gets no-op live methods (no retry loop).
 	const client = useMemo(() => createClient({authenticated: userId != null}), [userId]);
 
+	// `useSession` resolves async ({data:null, isPending:true} → user) with no
+	// synchronous hydration. Committing the keyed client before it settles mounts
+	// the subtree under "anon", then re-keys to the real id once the session lands —
+	// remounting the whole router and wiping any controlled form mounted in the
+	// window (#438). Defer the first commit until settled so the first (and only)
+	// key is the resolved identity; the key still rebuilds the cache on a genuine
+	// login/logout identity change.
+	if (session.isPending) return null;
+
 	return (
 		<FateClient key={userId ?? "anon"} client={client}>
 			{children}
