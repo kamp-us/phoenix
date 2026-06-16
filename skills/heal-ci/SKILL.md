@@ -228,10 +228,11 @@ parts, each lifted from write-code's scan:
 ```bash
 # is a write-code repair already in flight on this PR? (PR runs only) — mirror write-code Step R1
 # build THIS PR's authorized set from its marker authors holding write+ on the repo (ADR 0055)
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+comments_file=$(mktemp)
+gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
 markerAuthors=$(jq -r '[.[]
     | select(.body | test("^\\s*\\**\\s*review-(code|doc):\\s*(PASS|FAIL)"; "i"))
-    | .user.login] | unique | .[]' <<<"$comments")
+    | .user.login] | unique | .[]' "$comments_file")
 authorized='[]'
 while IFS= read -r a; do
   [ -z "$a" ] && continue
@@ -248,13 +249,13 @@ CODE=$(jq -c --argjson authorized "$authorized" \
         | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
    | sort_by(.created_at) | last
    | {body: (.body // ""),
-      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments")
+      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file")
 DOC=$(jq -c --argjson authorized "$authorized" \
   '[.[] | select(.user.login | IN($authorized[]))
         | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
    | sort_by(.created_at) | last
    | {body: (.body // ""),
-      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments")
+      sha: ((.body // "") | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file")
 # latest decisive native review folds into the code namespace (commit_id IS its bound SHA, no ACL gate)
 REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
   --jq '[.[] | select(.state=="APPROVED" or .state=="CHANGES_REQUESTED")]
@@ -269,7 +270,7 @@ ROUNDS=$(jq --argjson authorized "$authorized" \
    | reduce .[] as $t ({n:0, prev:null};
        if (.prev == null) or ($t - .prev) > 120
        then {n:(.n+1), prev:$t} else {n:.n, prev:$t} end)
-   | .n' <<<"$comments")
+   | .n' "$comments_file")
 ```
 
 An active repair is in flight **iff** `ROUNDS < 3` **and** a namespace's latest verdict is a

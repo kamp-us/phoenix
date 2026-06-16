@@ -304,12 +304,13 @@ and `IN($authorized[])` below matches nothing — every namespace resolves to `n
 `unverified` → refuse — so the empty set is the safe terminal state, not an open door.
 
 ```bash
-comments=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100")
+comments_file=$(mktemp)
+gh api "repos/$REPO/issues/$PR/comments?per_page=100" > "$comments_file"
 
 # distinct logins that posted any review-code/review-doc/review-skill marker
 markerAuthors=$(jq -r '[.[]
     | select(.body | test("^\\s*\\**\\s*review-(code|doc|skill):\\s*(PASS|FAIL)"; "i"))
-    | .user.login] | unique | .[]' <<<"$comments")
+    | .user.login] | unique | .[]' "$comments_file")
 
 # keep only those holding write+ on the repo (GitHub's ACL is the trust root, ADR 0055)
 authorized='[]'
@@ -346,7 +347,7 @@ jq --argjson authorized "$authorized" \
          | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
 
 # latest review-doc marker comment (doc namespace) — author-gated, anchored, never matches review-code/review-skill
 jq --argjson authorized "$authorized" \
@@ -354,7 +355,7 @@ jq --argjson authorized "$authorized" \
          | select(.body | test("^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-doc:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
 
 # latest review-skill marker comment (skill namespace) — author-gated, anchored, never matches review-code/review-doc
 jq --argjson authorized "$authorized" \
@@ -362,7 +363,7 @@ jq --argjson authorized "$authorized" \
          | select(.body | test("^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)"; "i"))]
     | sort_by(.created_at) | last
     | {body, at: .created_at,
-       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' <<<"$comments"
+       sha: (.body // "" | (capture("(?i)^\\s*\\**\\s*review-skill:\\s*(PASS|FAIL)\\s*@\\s*(?<s>[0-9a-f]{7,40})") // {s:null}).s)}' "$comments_file"
 ```
 
 Now resolve **per namespace**, latest-wins by timestamp:
