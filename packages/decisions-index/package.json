@@ -1,13 +1,35 @@
 {
 	"name": "@kampus/decisions-index",
-	"version": "0.0.0",
-	"private": true,
+	"version": "0.1.0",
 	"description": "decisions-index — generate .decisions/index.md from the ADR files; CI --check fails on a stale index or a duplicate ADR id (ADR 0066)",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/decisions-index"
+	},
 	"type": "module",
+	"bin": {
+		"decisions-index": "./dist/bin.js"
+	},
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
 	"exports": {
-		".": "./src/index.ts"
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"publishConfig": {
+		"access": "public"
 	},
 	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "tsc -p tsconfig.build.json",
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",
 		"generate": "node src/bin.ts generate",

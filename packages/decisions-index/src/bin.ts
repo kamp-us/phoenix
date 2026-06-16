@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 /**
  * `decisions-index` CLI — the author + CI surface for ADR 0066.
  *
@@ -111,7 +112,7 @@ const cli = Command.make("decisions-index").pipe(
 );
 
 cli.pipe(
-	Command.run({version: "0.0.0"}),
+	Command.run({version: "0.1.0"}),
 	// CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
 	// non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the
 	// default error report (a different non-zero exit, per the exit-code contract).
