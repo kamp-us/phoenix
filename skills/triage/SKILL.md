@@ -152,7 +152,15 @@ tiebreaker. Apply the canonical label name (`type:bug`, etc.).
 - **bug vs investigation** — if the wrong behavior is understood and the fix is
   nameable, it's a bug. If you'd have to *investigate* to even say what's wrong (an
   intermittent hang, an unexplained exit code), it's an investigation. "Filed to
-  investigate later" in the body is a strong tell.
+  investigate later" in the body is a strong tell. A `type:investigation` whose answer
+  *might* turn out to be a trivial fix is **still `type:investigation`** — do **not**
+  re-type it to `bug`/`chore` in anticipation. If the diagnosis lands on a trivial,
+  bounded fix, `write-code` collapses the investigation into one PR under its
+  bounded-collapse branch (the four AND-ed bounds in
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §8, ADR
+  [0070](https://github.com/kamp-us/phoenix/blob/main/.decisions/0070-investigation-trivial-fix-collapse.md));
+  the collapse is owned by `write-code`, not a triage re-type (ADR 0070 rejected the
+  re-type path). triage classifies intake and stops there.
 - **chore vs feature** — does observable behavior change? Splitting a 1,600-line
   file with identical public surface is a chore. Adding a capability that wasn't
   there is a feature. A dependency bump that *enables* nothing new is a chore.

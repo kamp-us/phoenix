@@ -876,7 +876,43 @@ should respect," which a `type:decision` issue is by definition.
 ### `type:investigation`
 
 An investigation issue asks "what's going on / is this real / what's the cause" — the
-deliverable is a **diagnosis**, and then *routing* its findings, not a feature branch.
+deliverable is a **diagnosis**, and then *routing* its findings. Usually that routing is a
+closing comment plus `report` residue (the residue path below); the one exception is when
+the diagnosis *is* a trivial fix, which **collapses into a single PR** — check that gate
+first, then fall through to the residue path if it doesn't hold.
+
+#### Bounded collapse — when the fix is trivial, open one PR instead of residue (ADR 0070)
+
+When the investigation resolves into a **fix** (not just a finding), check the
+**bounded-collapse gate** before taking the residue path. The gate is the four AND-ed bounds
+stated once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §8 — the
+single source of this rule; cite it, don't restate the bounds. In short: ① single concern,
+narrowly scoped · ② no new behavior/surface · ③ no contract/control-plane change
+(`.claude/**`, `.github/**`, gate-critical skill) · ④ cause established + fix unambiguous.
+
+If — and **only if** — the fix clears **every** one of the four bounds, **collapse**:
+implement the fix on a branch and open a PR with `Fixes #N` in the **same run** (Steps 4–7
+as written), skipping the `report → triage` intake hops. Make the collapse **explicit, not
+silent** — the PR body states it is a collapsed investigation, links the issue, and
+**carries the diagnosis** (the verdict the closing comment would otherwise have held) so
+`review-code` verifies the fix against the named cause as its acceptance criterion.
+Verification is **not** collapsed: the PR is independently `review-code`-gated like any
+other; only the *intake* hops are skipped. Post the format-3 progress comment (Step 6)
+recording the cause and that this is a collapsed investigation, and — for a sub-issue — the
+Step 7 handoff.
+
+The gate is **hard and AND-ed**: if the fix fails **any one** bound — a multi-file change, a
+new surface, a control-plane edit, or a lingering design choice — it is **not** a collapse
+case, so **fall back to the diagnosis-and-`report`-residue path below** (file the fix as
+fresh residue, unchanged). Bound ③ means a control-plane fix is *never* collapse-eligible:
+it takes the full path and a human merge (ADRs
+[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)
+/ [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)).
+
+#### Residue path — diagnosis + routed findings (the default, and the collapse-gate fallback)
+
+When the gate above does **not** hold (no fix, or the fix fails a bound), the deliverable is
+a **diagnosis** and the *routing* of its findings, not a feature branch:
 
 1. **Post the diagnosis as the closing comment** on the issue: what you found, the
    root cause (or "could not reproduce" / "not a real problem" with the evidence), and
