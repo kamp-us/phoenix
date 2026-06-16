@@ -115,6 +115,42 @@ closed the last `10/11 → 11/11` gap — the follow-up epic
 [#362](https://github.com/kamp-us/phoenix/issues/362) that ADR 0062 §3 deferred — and was
 proven end-to-end against a real foreign repo (#368).
 
+The **`adr`** skill is portable on the same shape. Its index-regeneration step (which
+rewrites `.decisions/index.md` from each ADR's front-matter, ADR
+[0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md))
+resolves **in-repo first, published fallback**: phoenix runs the on-disk
+`packages/decisions-index` bin, and a foreign install runs the published
+[`@kampus/decisions-index`](https://www.npmjs.com/package/@kampus/decisions-index) CLI via
+`pnpm dlx @kampus/decisions-index@latest generate`. This closed the
+[#423](https://github.com/kamp-us/phoenix/issues/423) caveat (the regen previously shelled
+out to a workspace-only `pnpm --filter`, which silently no-ops outside phoenix). The CLI
+operates on the local `.decisions/` tree, so it needs no repo resolution. Validated
+end-to-end in a real non-phoenix repo (#432): `generate` regenerated a correct index and
+`check` gated a stale one — no `--filter` no-op, no `ERR_MODULE_NOT_FOUND`.
+
+### Validating portability in a foreign repo
+
+To re-prove a skill's published fallback runs outside phoenix (the repeatable procedure
+behind #368 / #432), exercise it in a throwaway non-phoenix git repo — **not** phoenix
+itself (the install-into-self caveat, §5 below, means phoenix doesn't count):
+
+1. `mkdir` a scratch dir outside phoenix, `git init`, and create the inputs the skill
+   consumes — e.g. for `adr`, a `.decisions/` with 2–3 ADR files carrying `id`/`title`/
+   `status`/`date` front-matter (optionally a deliberately-stale `index.md` to prove
+   regeneration overwrites it). Confirm no `@kampus/*` workspace package is present, so the
+   published-fallback path is what runs.
+2. Run the exact published-fallback command the skill uses (`adr`:
+   `pnpm dlx @kampus/decisions-index@latest generate`) from the scratch repo root.
+3. Confirm a correct artifact is produced (`index.md` with one row per ADR, ordered by
+   `id`, derived verbatim from front-matter) — not a `pnpm --filter` no-op and not an
+   `ERR_MODULE_NOT_FOUND` / "matches nothing" failure.
+4. Run the gate (`pnpm dlx @kampus/decisions-index@latest check`): exit `0` on the fresh
+   index, then mutate an ADR and re-run to confirm it exits non-zero — proving the gate
+   works in a foreign checkout.
+
+Capture the command output + the before/after artifact in the validating issue's progress
+comment as the durable evidence.
+
 Two more boundary notes:
 
 - **External doc references** in the skills (to phoenix's `.decisions/`, `.patterns/`,

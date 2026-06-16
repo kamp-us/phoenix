@@ -72,7 +72,7 @@ contract and referenced by each skill, replacing the inline literals.
 
 | Skill | Disposition | Why |
 |-------|-------------|-----|
-| `adr` | **decisions-index-pinned; in-repo-first / published-fallback** (was "portable as-is") | ADR [0066](0066-generate-decisions-index.md) made `.decisions/index.md` generated output produced by `@kampus/decisions-index`, so the original "zero repo literals, pure `.decisions/` authoring" basis went stale: the index-regen step now resolves the in-repo workspace package first and falls back to `pnpm dlx @kampus/decisions-index@latest generate` when it's absent — the same in-repo-first/published-fallback shape `review-plan` uses for epic-ledger ([0064](0064-epic-ledger-npm-publish-automated-release.md) §1). Still no `gh`/repo literals (the CLI operates on the local `.decisions/` tree — no `$CLAUDE_PIPELINE_REPO`). Structurally portable; the published fallback is exercisable once `@kampus/decisions-index` is published — producer half tracked as the sibling child #430, the skill cutover as #431. |
+| `adr` | **decisions-index-pinned; in-repo-first / published-fallback** (was "portable as-is") | ADR [0066](0066-generate-decisions-index.md) made `.decisions/index.md` generated output produced by `@kampus/decisions-index`, so the original "zero repo literals, pure `.decisions/` authoring" basis went stale: the index-regen step now resolves the in-repo workspace package first and falls back to `pnpm dlx @kampus/decisions-index@latest generate` when it's absent — the same in-repo-first/published-fallback shape `review-plan` uses for epic-ledger ([0064](0064-epic-ledger-npm-publish-automated-release.md) §1). Still no `gh`/repo literals (the CLI operates on the local `.decisions/` tree — no `$CLAUDE_PIPELINE_REPO`). **Now portable:** `@kampus/decisions-index` was published (#430), the skill cut over to the fallback (#431), and the `pnpm dlx @kampus/decisions-index@latest generate` path was proven end-to-end in a real non-phoenix repo (#432) — it regenerates `.decisions/index.md` from front-matter and `check` gates a stale index, no `--filter` no-op or `ERR_MODULE_NOT_FOUND`. |
 | `deslop-comments` | **portable as-is** | zero repo literals; operates on the working tree |
 | `report` | **parameterized** (§1) | `gh api` literals + frontmatter |
 | `triage` | **parameterized** (§1) | `gh api` literals + frontmatter |
@@ -182,7 +182,12 @@ becomes portable (§3). Until then `review-plan` is the one phoenix-pinned skill
   *(Superseded by [0064](0064-epic-ledger-npm-publish-automated-release.md) / #362: the
   adopter now gets **all 11** repo-agnostic — `review-plan` runs the published
   `@kampus/epic-ledger` in a foreign repo instead of degrading, validated end-to-end in
-  #368. The install-into-self caveat (§5) stands.)*
+  #368. The `adr` axis carried a parallel caveat — its index-regen shelled out to the
+  workspace-only `pnpm --filter @kampus/decisions-index generate` (#423) — closed the same
+  way: `@kampus/decisions-index` was published (#430), the skill cut over to in-repo-first /
+  published-fallback (#431), and the `pnpm dlx @kampus/decisions-index@latest generate` path
+  was proven to regenerate `.decisions/index.md` (and `check` to gate a stale index) in a
+  real non-phoenix repo (#432). The install-into-self caveat (§5) stands.)*
 - The one residual sharp edge is the env-var override's blast radius: a stale
   `CLAUDE_PIPELINE_REPO` pointed at the wrong repo would silently operate the pipeline on
   that repo. The resolution snippet's default-to-current-repo keeps the common path safe; the
