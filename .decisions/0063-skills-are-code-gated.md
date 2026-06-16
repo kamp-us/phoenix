@@ -1,3 +1,11 @@
+---
+id: 0063
+title: "`skills/**` is code-gated — ship-it's doc-probe excludes it, review-code is its canonical gate"
+status: accepted
+date: 2026-06-15
+tags: [pipeline, ship-it, review-code, gate-routing, skills]
+---
+
 # 0063 — `skills/**` is code-gated — ship-it's doc-probe excludes it, review-code is its canonical gate
 
 ## Context
