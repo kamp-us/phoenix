@@ -1,7 +1,9 @@
 import {useEffect, useRef, useState} from "react";
 import {Navigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
+import {useMe} from "../auth/useMe";
 import {type ThemeChoice, useTheme} from "../lib/theme";
+import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
 
 function initialsOf(name: string) {
@@ -17,6 +19,8 @@ type SaveState = "idle" | "saving" | "saved" | "error";
 
 export function ProfilePage() {
 	const session = useSession();
+	const {me} = useMe();
+	const stats = useProfileStats(me?.username);
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [revokingAll, setRevokingAll] = useState(false);
 	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
@@ -93,16 +97,16 @@ export function ProfilePage() {
 						<div className="kp-profile__handle">@{handle} · yeni üye</div>
 					</div>
 					<div className="kp-profile__stats-strip">
-						<div className="kp-profile__stat">
-							<div className="n">0</div>
+						<div className="kp-profile__stat" data-testid="stat-posts">
+							<div className="n">{stats?.postCount ?? 0}</div>
 							<div className="l">başlık</div>
 						</div>
-						<div className="kp-profile__stat">
-							<div className="n">0</div>
+						<div className="kp-profile__stat" data-testid="stat-comments">
+							<div className="n">{stats?.commentCount ?? 0}</div>
 							<div className="l">yorum</div>
 						</div>
-						<div className="kp-profile__stat">
-							<div className="n">0</div>
+						<div className="kp-profile__stat" data-testid="stat-definitions">
+							<div className="n">{stats?.definitionCount ?? 0}</div>
 							<div className="l">tanım</div>
 						</div>
 					</div>
