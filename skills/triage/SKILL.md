@@ -430,6 +430,57 @@ gh api "repos/$REPO/issues/<N>" \
 issue was actually reviewed. Never let a type label alone stand in for it; a
 hand-slapped `type:*` with no triaged status must not look pickable.
 
+### Assign a milestone (optional — only on a clear match)
+
+Milestone is the **one optional intake dimension** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md),
+§Milestone). Unlike the three mandatory labels above, **most triaged issues carry no
+milestone, and that is the well-formed default** — absence is the norm, not a defect. So
+this is an *additive* step: it never blocks, re-routes, or re-prioritizes an issue. You
+either find a clear home for it among the existing open milestones, or you leave it
+unmilestoned and move on.
+
+**The rules (the contract section is the dimension definition — these are triage's behavior):**
+
+- **Assign only on a clear surface-match; default = unmilestoned.** When in doubt, assign
+  nothing. A *wrong* milestone pollutes a burndown worse than a missing one does — an issue
+  filed in the wrong campaign is harder to spot than one that's simply absent. **Never
+  force-fit.**
+- **Existing open milestones only — triage NEVER creates a milestone.** Read the repo's open
+  milestones and match against *that* set; if nothing clearly fits, assign nothing. Creating
+  or curating the milestone set is a roadmap (human) act, deliberately not autonomous (ADR
+  [0072](https://github.com/kamp-us/phoenix/blob/main/.decisions/0072-milestones-encode-strategic-sequencing.md)
+  §3). Do **not** `POST` a new milestone, ever.
+- **Preserve freeze-by-absence.** A deliberately-unmilestoned surface — a frozen new-product
+  cluster (e.g. imge / kampus-CLI / künye) — stays unmilestoned. A missing milestone there is
+  a *signal* that the work is parked, never data to backfill; do not auto-fill it to make the
+  issue "complete" (contract §Milestone, ADR 0072 §4).
+
+**Surface vs strategic — how hard the match is.** The contract names two milestone kinds, and
+they differ in how much judgment the match takes:
+
+- **Surface milestones** (e.g. Search / Bookmarks / Account / Report) are **mechanical**: key
+  off the **product surface you already determined** reading the issue in Step 1 — a sözlük
+  bug → the sözlük surface milestone. If a surface milestone exists and open for the issue's
+  surface, the match is near-rote.
+- **Strategic milestones** (e.g. Broken core loops / Pipeline hardening / Test & CI) need
+  **judgment** — "is this broken-vs-missing? pipeline-critical?". Attempt these
+  **conservatively**: assign one only when the issue plainly belongs to that campaign, and
+  default to none on any doubt.
+
+Read the open milestones, then assign **only on a clear match**:
+
+```bash
+# the existing open milestones — the ONLY legal assignment targets (never create one)
+gh api "repos/$REPO/milestones?state=open" --jq '.[] | "#\(.number)\t\(.title)"'
+# on a clear match only — one single-field, last-write-wins PATCH (benign, #91)
+gh api -X PATCH "repos/$REPO/issues/<N>" -f milestone=<n>
+# no clear match → assign nothing; an unmilestoned issue is well-formed (do NOT clear-then-set)
+```
+
+This step is **out of scope** for: creating milestones, the inherit logic (that is
+`plan-epic`'s job for an epic's children), and the pick-order (`write-code` consumes
+milestone, it doesn't assign it).
+
 ### Close not-planned (kill, last resort, agent issues only)
 
 Close an issue **only** when it's an *agent-filed* issue that is genuinely
@@ -514,9 +565,10 @@ sweeping:
    the listing comes back empty of issues you can claim — every *completed* outcome
    (triaged / needs-info / closed) removes `status:needs-triage`, so a listing with
    nothing left to claim is the complete termination test.
-5. Report a short ledger back: per issue, the outcome (type+priority+triaged /
-   needs-info / closed) in one line each. Don't narrate every REST call — the labels
-   and comments on the issues are the durable record.
+5. Report a short ledger back: per issue, the outcome (type+priority+triaged, plus the
+   milestone if one was a clear match / needs-info / closed) in one line each. Don't
+   narrate every REST call — the labels, milestone, and comments on the issues are the
+   durable record.
 
 ## Conventions
 
