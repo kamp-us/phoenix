@@ -356,6 +356,34 @@ an amend).
 (Type and priority are your call as planner, the same authority triage has — you're
 the one who understands the slice.)
 
+### Inherit the epic's milestone (when it has one)
+
+Milestone is one more attribute applied at child creation, alongside the labels above —
+but unlike `type:*`/`p*`/`status:planned` it is **conditional and inherited, not your call
+as planner**. A child **inherits the parent epic's milestone when the epic has one**, so a
+campaign milestone's burndown is **complete by construction**: if a "Search" epic is in the
+"Search" milestone, every child it spawns belongs to "Search" too, and the milestone can
+actually reach 100%. The milestone is the **one optional intake dimension** — read its
+definition and the REST surface from the formats contract's milestone section
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), *Milestone — the one
+optional intake dimension*); this is the inherit-logic that section says lives here and cites it.
+
+Read the epic's milestone once, and **only if it has one** PATCH each created child onto it:
+
+```bash
+EPIC_MILESTONE=$(gh api repos/$REPO/issues/<EPIC> --jq '.milestone.number // empty')
+if [ -n "$EPIC_MILESTONE" ]; then
+  gh api -X PATCH repos/$REPO/issues/<CHILD> -f milestone="$EPIC_MILESTONE"
+fi
+```
+
+**If the epic has no milestone, children stay unmilestoned** — inheritance *copies* the
+epic's state, it never invents one. This skill **never creates** a milestone (creating/curating
+the set is a human roadmap act, ADR 0072 §3) and assigns a child only to the epic's existing
+milestone — never a guessed or fresh one. An unmilestoned epic yielding unmilestoned children is
+correct, not a gap to backfill (freeze-by-absence: deliberate absence is a signal, per the
+contract section).
+
 ---
 
 ## Step 4 — Link children as native sub-issues
@@ -672,6 +700,10 @@ grown or shifted), then judge **each existing child individually** against the n
 
 After reconciling, re-run the **story-coverage check** (Step 3) against the new story set:
 a newly-added story with no child needs one; an orphaned child needs a story or a cut.
+
+A child **created fresh during a re-plan** — a Supersede replacement, or one filling a newly-added
+story — is born exactly like a first-plan child: it inherits the epic's milestone the same way
+(Step 3, *Inherit the epic's milestone*), conditional on the epic having one.
 
 **Closed-done children are history — never reopen or supersede them.** A child that's
 already `closed` because its work merged is part of the record. The new plan builds on
