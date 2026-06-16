@@ -200,8 +200,30 @@ the hunk alone:
 git fetch origin && git checkout <pr head ref>   # or: gh pr checkout $PR for a cross-fork PR
 ```
 
-You're reading, not building — no `pnpm install`, no typecheck, no test suite. The diff
-and the files it touches are your whole evidence base.
+### Fetch the base fresh before any "is-it-shipped on main" check
+
+Some criteria are **ground-truth** checks against the merge target, not the PR head:
+"the consumer this doc describes is shipped on `main`", "the ADR it supersedes is
+present", "the path it links to exists upstream." Verify those against a **freshly
+fetched** `origin/$BASE_REF` — never the working tree or a local `main`, which may be
+stale (a long-lived or busy checkout silently grounds the check against an old `main`).
+A stale local `main` is exactly what produced the false FAIL on PR #305: a doc whose
+consumers *had* merged minutes earlier was FAILed because the gate read a local `main`
+that predated them. Make the freshness structural — a fetch you run, not a property of
+whoever's checkout the gate happens to run in:
+
+```bash
+BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main
+git fetch origin "$BASE_REF"                                  # refresh the merge target
+
+# Verify shipped-state against the FETCHED remote ref, not the working tree / local main:
+git cat-file -e "origin/$BASE_REF:<path>"          # does this path exist on fresh main?
+git show "origin/$BASE_REF:<path>"                 # read its shipped content to confirm
+```
+
+You're reading, not building — no `pnpm install`, no typecheck, no test suite. The diff,
+the files it touches, and the freshly-fetched `origin/$BASE_REF` for any shipped-state
+check are your whole evidence base.
 
 ---
 
