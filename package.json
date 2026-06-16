@@ -14,7 +14,7 @@
 		"test": "turbo run test",
 		"lint": "biome check .",
 		"format": "biome check --write .",
-		"prepare": "git rev-parse --git-dir > /dev/null 2>&1 && git config core.hooksPath .githooks || true",
+		"prepare": "lefthook install || true",
 		"postinstall": "effect-tsgo patch"
 	},
 	"devDependencies": {
@@ -22,6 +22,7 @@
 		"@effect/language-service": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@typescript/native-preview": "catalog:",
+		"lefthook": "catalog:",
 		"turbo": "catalog:",
 		"typescript": "catalog:"
 	},
