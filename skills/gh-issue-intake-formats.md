@@ -401,6 +401,72 @@ assumption invalidated, a partial state left behind>
 
 ---
 
+## CP. The control-plane / blocking set — one canonical definition
+
+Three gates and the merge actor all need to answer the *same* question — **does this PR
+touch the control plane?** — and they answered it with **three independently hard-coded
+copies** of the path set (`ship-it` Step 0's `grep -Eq`, `review-code`/`review-doc`'s jq
+`test(...)`). They agreed by luck, but the set has grown before (ADR 0065 added the
+gate-critical skills) and will again — and the #371 → #375 thread *is* that drift story: the
+copies were primed to diverge the next time the set changed. This section is the **single
+source of the set**, so every consumer cites *one* definition and the copies can't drift
+again (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §6,
+closing the #375 drift class).
+
+**The control-plane / blocking set is, exactly:**
+
+- `.claude/**` — the agent control plane (instructions, tools, hooks).
+- `.github/**` — CI enforcement.
+- the **gate-critical skills** — the verification/merge machinery plus the shared marker
+  contract they all depend on:
+  - `skills/ship-it/**`
+  - `skills/review-code/**`
+  - `skills/review-doc/**`
+  - `skills/review-skill/**`
+  - `skills/review-plan/**`
+  - `skills/gh-issue-intake-formats.md` (this file)
+
+A PR touching **any** path in this set is **control plane**: `ship-it` refuses to auto-merge
+it and a human merges it by hand (ADR
+[0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md),
+widened to the gate-critical skills by ADR
+[0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
+`review-skill/**` added to the gate-critical set by ADR
+[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), since the gate
+that reviews the gates is itself a gate). Everything else — `apps/web/**`, `packages/**`,
+`.decisions/**`, `.patterns/**`, every prose `*.md`, and every **non**-gate-critical
+`skills/**` — is **non-blocking** and auto-merges through its matching gate on a PASS.
+
+> **Merge-authority is the only axis this set governs.** It decides *who merges*
+> (auto-merge vs. human), **not** *which gate verifies*. Routing is a separate axis: a
+> gate-critical skill is **blocking for merge** yet still **`review-skill`-routed for its
+> verdict** (ADR 0073 §4). Don't conflate the two — the blocking refusal short-circuits in
+> `ship-it` Step 0 *before* the namespace/routing check, so both hold at once.
+
+### The canonical matcher
+
+Every consumer matches the set with this **one** anchored regex (POSIX ERE; the jq/`grep`
+form below). Cite this regex; do **not** re-hard-code the path list:
+
+```
+^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$
+```
+
+```bash
+# the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
+# Step 0 all use — one definition, no fourth copy:
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'
+gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename' \
+  | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING — control plane (manual merge)"
+```
+
+The **0052 instruction-trust set** (root `CLAUDE.md`, `.claude/**`, `.decisions/**`,
+`.patterns/**`) is a *different* set — what a reviewer must never *load*, an isolation
+concern, not a merge-blocking one. Keep them apart (review-code Step 2 spells out the
+distinction). This section governs **only** the merge-blocking / control-plane set above.
+
+---
+
 ## 5. review-code pass marker
 
 When `review-code` lands its verdict and a native review can't be posted (e.g. org
@@ -509,10 +575,10 @@ review-doc: PASS @ <sha> — merge-ready
 review-doc: FAIL @ <sha> — changes-requested
 ```
 
-For a PR in the **blocking set** (touching `.claude/`/`.github/`), `review-doc` is
-advisory only and instead leads with an advisory line (`review-doc: advisory — blocking-set
-PR (manual merge)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a human
-merges those (ADR [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). The advisory line
+For a PR in the **control-plane / blocking set** (§CP), `review-doc` is advisory only and
+instead leads with the **canonical advisory line** (§6.6 — `review-doc: advisory — blocking-set
+PR (manual merge)`) so its verdict stays *out* of `ship-it`'s PASS namespace — a human merges
+those (ADR [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). The advisory line
 carries **no `@ <sha>`** by design: it authorizes nothing, so there is nothing to bind.
 
 The rest of the body carries the per-criterion + per-hygiene-check evidence table. What's
@@ -557,11 +623,140 @@ fresh `@ <sha>` rather than appending a new comment (ADR 0058 rule 2; same mecha
   doc PR **iff `<sha>` is the current head**. `FAIL @ <sha> — changes-requested` (≥1 AC or
   hygiene check unmet) is read by `write-code`'s fix round-trip as "my doc PR came back failed";
   `ship-it` reads it as "do not merge."
-- **Advisory for the blocking set.** A PR touching `.claude/`/`.github/` gets the advisory
-  line, not a PASS marker — `review-doc`'s verdict does not authorize that merge; a human
+- **Advisory for the blocking set.** A PR in the §CP set gets the canonical advisory line
+  (§6.6), not a PASS marker — `review-doc`'s verdict does not authorize that merge; a human
   does (ADR 0053). This keeps the control-plane manual-merge invariant intact.
 - **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
   `review-doc` writing it does **not** merge (see review-doc/SKILL.md §"Authority limit").
+
+---
+
+## 6.5. review-skill verdict marker
+
+`review-skill` is the **behavioral-artifact gate** — the third sibling of `review-code`
+(§5) and `review-doc` (§6). It gates a **skill PR** (`skills/**`, superseding ADR 0063's
+`skills/**` → `review-code` routing) against its linked issue's acceptance criteria *plus*
+a skill-specific rigor checklist (behavioral correctness, trigger/`description` quality,
+cross-skill conflict/shadowing, gate-invariant preservation — ADR
+[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §1). It lands its
+verdict as a **comment whose first line is a recognizable, SHA-bound marker** — and **only**
+that comment, never a native review (like `review-doc`, ADR 0058 rule 4). The marker lives
+in its **own namespace**, distinct from §5's `review-code` and §6's `review-doc`.
+
+### Shape — SHA-bound (ADR 0058)
+
+The recognizable **first line** of the PR comment carries the head SHA the reviewer
+inspected (`@ <sha>`, from `gh api repos/$REPO/pulls/$PR --jq .head.sha`):
+
+```markdown
+review-skill: PASS @ <sha> — merge-ready
+```
+
+```markdown
+review-skill: FAIL @ <sha> — changes-requested
+```
+
+For a PR in the **control-plane / blocking set** (§CP — every gate-critical skill is in it,
+so most skill PRs that touch a gate land here), `review-skill` is **advisory only** and
+instead leads with the **canonical advisory line** (§6.6):
+
+```markdown
+review-skill: advisory — blocking-set PR (manual merge)
+```
+
+so its verdict stays *out* of `ship-it`'s PASS namespace — a human merges those (ADR 0053).
+The advisory line carries **no `@ <sha>`** by design: it authorizes nothing, so there is
+nothing to bind.
+
+The rest of the body carries the per-criterion + per-rigor-check evidence table. What's
+load-bearing for the scanner is the namespace, the polarity, **and the `@ <sha>`** — the
+same staleness contract as §5/§6: `ship-it`/`write-code`-repair refuse a `review-skill`
+verdict whose `@ <sha>` is not the PR's current head, and refuse a SHA-less one (ADR
+[0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258).
+
+### Comment-only (ADR 0058)
+
+`review-skill` emits its verdict **only** as the SHA-bound `review-skill:` comment, **never**
+a native `APPROVE`/`REQUEST_CHANGES` review — for the same reason `review-doc` is comment-only
+(§6): a native review cannot carry the `@ <sha>` in the shape this contract controls, so one
+comparable record type per lane keeps the lane resolvable.
+
+### Upsert, not append (ADR 0058)
+
+`review-skill` writes **exactly one** `review-skill:` marker comment per PR: before posting
+it scans for **its own** prior `review-skill:` marker and `PATCH`es it with the fresh verdict
++ fresh `@ <sha>` rather than appending (ADR 0058 rule 2; same mechanism as §5/§6).
+
+### The matcher contract — anchored, never cross-matching (canonical shape)
+
+`review-skill` adds a **third** namespace to the §5 matcher family, on the same
+emphasis-tolerant + SHA-capturing rule. The three matchers are mutually exclusive by
+construction — anchored at `^\s*` so a mid-body quote never matches, and each names its
+own token so a scan in one namespace can **never** cross-match another:
+
+- code:  `^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- doc:   `^\s*\**\s*review-doc:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+- skill: `^\s*\**\s*review-skill:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`
+
+A `review-code` or `review-doc` scan must **never** match a `review-skill` marker, and vice
+versa. The tokens are distinct literals (`review-code` / `review-doc` / `review-skill`), and
+because `review-code:` ends in `code:` while `review-skill:` ends in `skill:`, the anchored
+`review-code:` literal cannot prefix-match `review-skill:` — the three are disjoint. Every
+matcher site (`ship-it` merge gate, `write-code` fix round-trip, `review-skill` upsert) cites
+this one rule so they can't diverge (the same discipline §5 pins for code/doc).
+
+### Field notes
+
+- **Separate namespace.** `ship-it` resolves each gate's verdict in its **own** namespace,
+  latest-verdict-wins by timestamp, then the SHA-staleness test (§5/§6). `review-skill`
+  never emits a `review-code` or `review-doc` marker, and they never emit a `review-skill` one.
+- **First line, recognizable.** The marker leads the comment so a scan matches it without
+  parsing the whole body. Recognize it tolerantly by shape (`review-skill: PASS @ <sha>` …
+  `merge-ready`) and emphasis (optional leading `**`, §5 matcher contract), not by exact
+  dashes — but the `@ <sha>` is required.
+- **Two markers, two consumers.** `PASS @ <sha> — merge-ready` (every AC + every rigor check
+  verified, bound to that head) is read by `ship-it` as the go-ahead to merge a **non-blocking**
+  skill PR **iff `<sha>` is the current head**. `FAIL @ <sha> — changes-requested` (≥1 AC or
+  rigor check unmet) is read by `write-code`'s fix round-trip as "my skill PR came back failed";
+  `ship-it` reads it as "do not merge."
+- **Advisory for the blocking set.** A skill PR touching a gate-critical skill (or any §CP
+  path) gets the **canonical advisory line** (§6.6), not a PASS marker — its verdict does not
+  authorize that merge; a human does (ADR 0053/0065). This keeps the control-plane manual-merge
+  invariant intact, and is exactly the common case for a skill PR (every gate skill is
+  gate-critical).
+- **Signals, never merges.** The PASS marker is an approval signal `ship-it` acts on;
+  `review-skill` writing it does **not** merge (see review-skill/SKILL.md §"Authority limit").
+
+---
+
+## 6.6. The canonical advisory line — one form for all three gates
+
+The three gates once expressed "advisory" two ways: `review-code` emitted a binding
+`PASS @ <sha> — merge-ready` line *plus* a control-plane caveat, while `review-doc`
+suppressed the binding PASS and led with a **no-`@ <sha>`** advisory line. ADR
+[0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md) §5 picks
+`review-doc`'s form as the **single canonical advisory shape** and converges all three on it.
+
+For a PR in the **control-plane / blocking set** (§CP), the gate emits a comment whose first
+line is the **no-`@ <sha>`** advisory marker in its own namespace:
+
+```markdown
+review-code:  advisory — blocking-set PR (manual merge)
+review-doc:   advisory — blocking-set PR (manual merge)
+review-skill: advisory — blocking-set PR (manual merge)
+```
+
+The rest of the body carries the same per-check evidence table the PASS/FAIL paths carry —
+the verdict is *recorded* (for the human merger to read), it just **authorizes nothing**.
+The advisory line **carries no `@ <sha>`** on purpose: it does not enter any `ship-it` PASS
+namespace, so there is nothing to bind, and `ship-it` refuses the blocking-set PR regardless
+(§CP). A human merges it (ADR 0053/0065).
+
+This is why the advisory form is namespace-uniform but binding-free: it keeps each gate's
+verdict **out** of `ship-it`'s merge path for the control plane while still leaving a
+visible, evidence-bearing verdict on the PR. (`review-code`'s historical binding-PASS +
+caveat shape is the one being retired in favor of this; the reconciliation is part of #424's
+build.)
 
 ---
 
@@ -661,8 +856,9 @@ clears **every** bound below. The four bounds are a **hard, AND-ed gate**: if th
 2. **No new behavior, no new surface.** No new public API, route, config key, binding,
    schema/migration, or dependency — the fix restores or corrects *existing* behavior the
    investigation proved wrong.
-3. **No contract / control-plane change.** The fix does not touch a control-plane path
-   (`.claude/**`, `.github/**`, or a gate-critical skill — ADRs
+3. **No contract / control-plane change.** The fix does not touch a path in the
+   **control-plane / blocking set** (§CP — `.claude/**`, `.github/**`, or a gate-critical
+   skill; ADRs
    [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)
    / [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)).
    Anything control-plane is never a collapse — it takes the full path and a human merge.
@@ -703,6 +899,8 @@ ping-pong of routing the re-type through `triage` (ADR 0070 rejected that option
 | review-code FAIL marker | the PR | review-code | write-code (fix round-trip) |
 | review-doc PASS marker | the PR | review-doc | ship-it |
 | review-doc FAIL marker | the PR | review-doc | write-code (fix round-trip) |
+| review-skill PASS marker | the PR | review-skill | ship-it |
+| review-skill FAIL marker | the PR | review-skill | write-code (fix round-trip) |
 | issue-claim (assignee) | the issue's assignees | write-code (Step 3 claim), triage (Step 0 sweep-claim) | write-code (Step 1 pick), triage (Step 0 Rule-0 back-off) |
 
 The issue-claim row is the one entry that is a **protocol over the assignee field**, not a

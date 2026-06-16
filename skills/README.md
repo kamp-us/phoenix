@@ -20,7 +20,7 @@ body/comment/dependency formats every skill reads and writes).
 The core flow runs left to right; each stage consumes the previous stage's output:
 
 ```
-report → triage → plan-epic → review-plan → write-code → review-code / review-doc → ship-it
+report → triage → plan-epic → review-plan → write-code → review-code / review-doc / review-skill → ship-it
 ```
 
 - **`report`** files raw intake (`status:needs-triage`).
@@ -29,9 +29,12 @@ report → triage → plan-epic → review-plan → write-code → review-code /
 - **`plan-epic`** turns a triaged epic into a child-issue ledger with a `## Dependencies`
   topology; **`review-plan`** gates that ledger and flips its children to `status:triaged`.
 - **`write-code`** picks the next triaged issue, implements it on a branch, and opens a PR.
-- **`review-code`** (code PRs) / **`review-doc`** (doc PRs) verify the PR against its
-  issue's acceptance criteria and emit a PASS/FAIL verdict — `write-code` consumes a FAIL
-  and re-submits; the loop is bounded.
+- **`review-code`** (code PRs) / **`review-doc`** (doc PRs) / **`review-skill`** (skill PRs)
+  verify the PR against its issue's acceptance criteria — `review-doc` adds a doc-hygiene
+  checklist, `review-skill` adds a behavioral-rigor checklist — and emit a PASS/FAIL verdict;
+  `write-code` consumes a FAIL and re-submits; the loop is bounded. The three split on
+  artifact class (code / docs / skills — ADR 0073, superseding 0063's `skills/**` →
+  `review-code` routing).
 - **`ship-it`** is the only skill with merge authority: on a PASS verdict + green CI it
   squash-merges, closing the linked issue.
 
@@ -41,7 +44,7 @@ Three skills run **standalone**, outside the linear flow:
 - **`adr`** records an architecture decision into `.decisions/`.
 - **`deslop-comments`** strips noise comments from the working tree.
 
-## The 11 skills
+## The 12 skills
 
 | Skill | One-line |
 |-------|----------|
@@ -52,6 +55,7 @@ Three skills run **standalone**, outside the linear flow:
 | `write-code` | Pick the next triaged issue, claim it, implement on a branch, open a PR that closes it — or, given a PR number, repair a gate's FAIL on the same branch. |
 | `review-code` | Verify a code PR against its linked issue's acceptance criteria, one criterion at a time, evidence-based — a fresh-eyes QA gate that never self-merges. |
 | `review-doc` | The doc-artifact twin of `review-code`: verify a `.decisions`/`.patterns`/prose PR against its criteria plus a doc-hygiene checklist. |
+| `review-skill` | The behavioral-artifact sibling: verify a `skills/**` PR against its criteria plus a rigor checklist (behavioral correctness, trigger quality, cross-skill shadowing, gate-invariant preservation); config-pinned to the base (ADR 0073). |
 | `ship-it` | The terminal stage: on a PASS verdict + green CI, squash-merge one PR and confirm the issue auto-closed — the only skill with merge authority. |
 | `heal-ci` | Classify a red CI run into flake-vs-defect and emit one routed action — rerun a known transient once, or file a defect via `report`. |
 | `adr` | Record an architecture decision (Context / Decision / Consequences) into `.decisions/NNNN-slug.md` and the index, following supersede rules. |

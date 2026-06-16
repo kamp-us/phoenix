@@ -9,7 +9,20 @@ Capture one decision per file in `.decisions/`. Index links them; CLAUDE.md link
 
 ## Steps
 
-1. Read `.decisions/index.md` to find the next number. Numbers are 4-digit zero-padded, monotonic.
+1. **Claim the next number with an in-flight reservation lock** (ADR [0074](../../.decisions/0074-adr-number-claim-lock.md)) — not next-free-on-disk. Numbers are 4-digit zero-padded, monotonic. Compute the next number from the **union of two sets** and take `max(union) + 1`:
+   - **Merged set** — the `NNNN` on the base ref, read from the `.decisions/NNNN-*.md` *filenames* (the authority; `index.md` is generated output per ADR [0066](../../.decisions/0066-generate-decisions-index.md) and merely mirrors them).
+   - **In-flight set** — the `NNNN` **claimed by open ADR PRs**. An open PR that adds a `.decisions/NNNN-*.md` file *is* the reservation for `NNNN` (no separate artifact, exactly as ADR 0059's `status:planning` label *is* the epic lock — opening the PR reserves, merging/closing releases). Enumerate via **`gh api` REST, never GraphQL** (the org's Projects-classic integration breaks GraphQL):
+     ```bash
+     # NNNN claimed by any open PR that ADDS a .decisions/00NN-*.md file (REST, per-PR files endpoint)
+     for PR in $(gh api "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].number'); do
+       gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
+         --jq '.[] | select(.status=="added") | .filename
+               | capture("^\\.decisions/(?<n>[0-9]{4})-") | .n'
+     done
+     ```
+     (`$REPO` resolves the same way write-code's does: `${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}`.) **Fail closed** (ADR 0074, ADR 0059's fail-closed acquire): if the in-flight query errors, **surface it and re-run** — never silently fall back to the on-disk-only number. That stale-on-disk fall-back is the bug this step removes.
+
+   This is **detect-and-serialize, not a CAS** — it *narrows* the collision window, it does not eliminate it. Two authors who enumerate in the same window before either PR is visible both pick the same number; that residual is **backstopped by the ADR 0066 / #384 CI duplicate-`id` check** (see [Index — generated output](#index--generated-output)), which reddens the second-to-merge PR for a manual renumber. The lock turns the *common* "branch after another's ADR PR is open" case from collide-and-renumber into don't-collide; the CI check remains the safety net for the rare residual.
 2. Pick a kebab-case slug from the title (≤ 5 words).
 3. Write `.decisions/NNNN-slug.md` using the template below — the front-matter `title`/`status`/`date` are the **source of truth** for the index row, so write the exact display text you want in the table there (inline markdown and all).
 4. **Regenerate** `.decisions/index.md` — do **not** hand-append a row (ADR [0066](../../.decisions/0066-generate-decisions-index.md)): `index.md` is generated output now, and a hand-appended row at the table tail is exactly the concurrent-merge collision the generator removes.

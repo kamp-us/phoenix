@@ -1,5 +1,5 @@
 # Publishes @kampus/decisions-index to npm on a human-cut GitHub Release tagged
-# `decisions-index-v*` (ADR 0075, following 0064's epic-ledger pattern). Auth is
+# `decisions-index-v*` (ADR 0076, following 0064's epic-ledger pattern). Auth is
 # OIDC Trusted Publishing — no NPM_TOKEN secret: `id-token: write` mints a
 # short-lived per-run credential, and provenance is generated automatically. A
 # guard fails the run if the tag version and the package.json version disagree, so

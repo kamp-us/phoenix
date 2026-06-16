@@ -43,16 +43,19 @@ spec for this split, and it **supersedes** ADR
 
   Both are product or knowledge artifacts; gated for quality, but a human at the merge
   adds no security value.
-- **BLOCKING (manual merge).** Anything touching `.claude/**`, `.github/**`, or one of the five
-  **gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
-  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`) — the agent control plane
-  (instructions, tools, hooks), CI enforcement, and the pipeline's own gates. A bad merge here
-  is a serious security concern (self-modification of guardrails; CI/secret exfiltration), so
-  a **human merges these by hand** and `ship-it` refuses them. The gate-critical skills were
-  added to this set by ADR
-  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
-  `skills/ship-it/SKILL.md` Step 0 is the authoritative source of the exact blocking set. For a
-  doc PR that touches this set, you are **advisory only**: review it, post your findings, but say
+- **BLOCKING (manual merge).** Anything in the **canonical §CP set** (the single source in
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `.claude/**`, `.github/**`,
+  or one of the six **gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`,
+  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
+  `skills/gh-issue-intake-formats.md`) — the agent control plane (instructions, tools, hooks),
+  CI enforcement, and the pipeline's own gates. A bad merge here is a serious security concern
+  (self-modification of guardrails; CI/secret exfiltration), so a **human merges these by hand**
+  and `ship-it` refuses them. The gate-critical skills were added to this set by ADR
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md),
+  with `review-skill/**` added by ADR
+  [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md); **§CP is the
+  authoritative source of the exact blocking set** (cite it, don't re-hard-code). For a doc PR
+  that touches this set, you are **advisory only**: review it, post your findings, but say
   plainly that your verdict does **not** authorize a merge — a maintainer does.
 
 So before you verify anything, classify the diff (Step 0). The classification decides
@@ -132,22 +135,30 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
   --jq '.[] | "\(.status)\t\(.filename)"'
 ```
 
-- **Any control-plane path** — `.claude/**`, `.github/**`, or one of the five **gate-critical
-  skills** (`skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`,
-  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`) — → the PR is in the **blocking
-  set**. You review it and post your findings, but **advisory only** — your verdict does not
-  authorize a merge; a maintainer merges it by hand (ADR 0053, widened to the gate-critical
-  skills by ADR 0065; `skills/ship-it/SKILL.md` Step 0 is the authoritative blocking set). Say
-  so explicitly in the verdict (Step 5).
+- **Any control-plane path** — the **canonical §CP set** in
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): `.claude/**`, `.github/**`,
+  or one of the six **gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`,
+  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
+  `skills/gh-issue-intake-formats.md`) — → the PR is in the **blocking set**. You review it and
+  post your findings, but **advisory only** — your verdict does not authorize a merge; a
+  maintainer merges it by hand (ADR 0053, widened to the gate-critical skills by ADR 0065, with
+  `review-skill/**` added by ADR 0073). **§CP is the authoritative source — cite it, don't
+  re-hard-code the list** (the #375 drift class §CP closes). Say so explicitly in the verdict
+  (Step 5).
 
   ```bash
+  CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
   CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
-    --jq '[.[].filename | select(test("^(\\.claude|\\.github)/|^skills/(ship-it|review-code|review-doc|review-plan)/|^skills/gh-issue-intake-formats\\.md$"))]')"
-  # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065)
+    --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
+  # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073)
   ```
-- **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md`, a non-gate-critical
-  `skills/**`, and/or `apps/web/**`, `packages/**`) → **non-blocking**. Your PASS marker binds
-  `ship-it`.
+- **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md` *outside* `skills/**`,
+  and/or `apps/web/**`, `packages/**`) → **non-blocking**. Your PASS marker binds `ship-it`.
+
+`skills/**` is **not your class** — a skill is a behavioral artifact gated by `review-skill`
+(ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), superseding
+0063's `review-code` routing), not a prose doc. If the diff is a **skills-only** PR, report
+`not a doc PR — route to review-skill` (a plain note, **not** a `review-doc:` marker) and stop.
 
 If the diff is **pure product code** with no doc/knowledge file at all, this is the wrong
 gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` (a plain note,
