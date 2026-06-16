@@ -376,10 +376,10 @@ importers:
   packages/decisions-index:
     dependencies:
       '@effect/platform-node':
-        specifier: 'catalog:'
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.10.1)
       effect:
-        specifier: 'catalog:'
+        specifier: 4.0.0-beta.78
         version: 4.0.0-beta.78
     devDependencies:
       '@effect/tsgo':
