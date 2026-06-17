@@ -192,7 +192,7 @@ function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => vo
 	const tooLong = body.length > BODY_MAX;
 	const disabled = isInFlight || trimmed.length === 0 || tooLong;
 
-	async function onSubmit(e: React.FormEvent) {
+	async function onSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();
 		if (!session.data?.user) {
 			navigate(authRedirectPath(`/sozluk/${slug}`));
