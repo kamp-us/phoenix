@@ -9,6 +9,7 @@ import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {LANDING_TERMS, POSTS} from "./fixtures";
 import {safeReturnTo} from "./lib/returnTo";
+import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
 import {LandingPage} from "./pages/LandingPage";
@@ -76,6 +77,10 @@ function Layout() {
 							{to: "/pano", label: "pano"},
 						]}
 						{...userProps}
+						onSearchSubmit={(query) => {
+							const target = searchTarget(query);
+							if (target) navigate(target);
+						}}
 						onToggleTheme={toggleTheme}
 						onLogout={onSignOut}
 						actions={
