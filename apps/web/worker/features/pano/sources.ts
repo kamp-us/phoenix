@@ -14,12 +14,6 @@ export const postSource = Fate.source(
 	PostView,
 	{id: "id"},
 	{
-		byId: function* (id) {
-			const pano = yield* Pano;
-			const {user} = yield* CurrentUser;
-			const rows = yield* pano.getPostsByIds([id], {viewerId: user?.id ?? null});
-			return rows[0] ?? null;
-		},
 		byIds: function* (ids) {
 			const pano = yield* Pano;
 			const {user} = yield* CurrentUser;
