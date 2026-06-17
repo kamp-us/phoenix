@@ -1,0 +1,70 @@
+/* Search-results page — masthead with the query, then per-type sections
+   (sözlük terms + pano posts), each paginating independently. Mirrors the
+   dense .sozluk-home__* / .pano-* tokens. */
+
+.kp-search__masthead {
+	padding: var(--s-2) 0 var(--s-3);
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-search__title {
+	font-size: 14px;
+	font-weight: 700;
+	margin: 0;
+	color: var(--text-primary);
+}
+.kp-search__title small {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin-left: 8px;
+	font-weight: 400;
+}
+
+.kp-search__rail {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	padding: var(--s-3) 0;
+}
+.kp-search__rail--error {
+	color: var(--danger);
+}
+.kp-search__empty {
+	color: var(--text-muted);
+}
+
+.kp-search__results {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-4);
+	padding-top: var(--s-3);
+}
+
+.kp-search__section-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	padding: var(--s-2) 0;
+	border-bottom: 1px solid var(--border);
+	margin-bottom: var(--s-2);
+}
+.kp-search__section-head .title {
+	font-size: 12px;
+	font-weight: 700;
+	color: var(--text-primary);
+}
+.kp-search__section-head span:last-child {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-search__section-empty {
+	font: var(--t-meta);
+	color: var(--text-faint);
+	padding: var(--s-2) 0;
+}
+
+.kp-search__more {
+	margin-top: var(--s-3);
+	display: flex;
+	justify-content: center;
+}

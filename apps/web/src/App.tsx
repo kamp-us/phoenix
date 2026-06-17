@@ -17,6 +17,7 @@ import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {PanoSubmitPage} from "./pages/PanoSubmitPage";
 import {ProfilePage} from "./pages/ProfilePage";
+import {SearchPage} from "./pages/SearchPage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
 import {UsernameBootstrap} from "./pages/UsernameBootstrap";
@@ -124,6 +125,7 @@ export function App() {
 					<Route path="/pano/:id" element={<PanoPostDetail />} />
 					<Route path="/sozluk" element={<SozlukHome />} />
 					<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
+					<Route path="/search" element={<SearchPage />} />
 					<Route path="/auth" element={<AuthPage />} />
 					<Route path="/profile" element={<ProfilePage />} />
 					<Route path="/u/:username" element={<UserProfilePage />} />
