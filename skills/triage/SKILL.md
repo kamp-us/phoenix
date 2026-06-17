@@ -282,7 +282,15 @@ What the rewrite adds:
   module by its in-package path, not the clone location. (Same rule the repo
   enforces for committed docs — it just extends to issue bodies and comments.)
 - **Acceptance-shaped clarity.** Make "done" legible. For a typed-and-pickable issue
-  the write-code agent shouldn't have to reverse-engineer what success looks like.
+  the write-code agent shouldn't have to reverse-engineer what success looks like. The
+  acceptance criteria you author here are the **seed of the list, not a closed set you
+  own**: a `review-*` gate may later **append** an in-scope criterion through the
+  reviewer-append surface ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
+  §2, ADR [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md)). Write
+  each criterion in §2's checkbox-bullet shape; your criteria are the **un-tagged upstream
+  baseline** — a triage-authored criterion needs no provenance tag, its absence *is* the
+  signal it's upstream-authored, against which a later `ac:review-*` append stays auditable.
+  §2 is the single source of the tag and its fences — cite it, don't restate them here.
 - **No invention.** Enrich from what you *found*, not what you wish were true. If the
   original is uncertain, keep the uncertainty — don't manufacture a false plan. Mark
   your additions as triage's read where it helps ("Triage note: …"). Scope-shrinking
