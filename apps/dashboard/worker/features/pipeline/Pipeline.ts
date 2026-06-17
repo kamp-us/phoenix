@@ -19,7 +19,14 @@ import * as Layer from "effect/Layer";
 import type {GithubFetchError} from "./errors.ts";
 import {GithubClient} from "./github.ts";
 import {PipelineCache} from "./PipelineCache.ts";
-import {isEpic, parseDependencies, parseLabels, parseLinkedIssue, parseVerdict} from "./parse.ts";
+import {
+	isEpic,
+	parseDependencies,
+	parseLabels,
+	parseLinkedIssue,
+	parseMilestone,
+	parseVerdict,
+} from "./parse.ts";
 import {
 	CachedPipelineState,
 	IssueVerdict,
@@ -98,6 +105,7 @@ export const PipelineLive = Layer.effect(Pipeline)(
 					labels,
 					parsed: parseLabels(labels),
 					verdict: verdicts.get(issue.number) ?? null,
+					milestone: parseMilestone(issue.milestone),
 				});
 			});
 
@@ -118,6 +126,7 @@ export const PipelineLive = Layer.effect(Pipeline)(
 							labels,
 							parsed: parseLabels(labels),
 							verdict: verdicts.get(issue.number) ?? null,
+							milestone: parseMilestone(issue.milestone),
 							children: children.map((c) => c.number),
 							dependencies: parseDependencies(issue.body),
 						});

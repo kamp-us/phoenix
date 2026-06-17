@@ -60,6 +60,23 @@ export class ParsedLabels extends Schema.Class<ParsedLabels>(
 }) {}
 
 /**
+ * A GitHub milestone as it rides along on an issue row (#379). GitHub returns this
+ * object inline on each issue, carrying its own `open_issues`/`closed_issues`
+ * rollup — so a milestone-grouped progress view needs no second fetch, only the
+ * inline object lifted here. `state` is the milestone's own open/closed.
+ */
+export class PipelineMilestone extends Schema.Class<PipelineMilestone>(
+	"@kampus/dashboard/pipeline/PipelineMilestone",
+)({
+	number: Schema.Number,
+	title: Schema.String,
+	state: Schema.Literals(["open", "closed"]),
+	/** GitHub's own rollup of how many issues in this milestone are open / closed. */
+	openIssues: Schema.Number,
+	closedIssues: Schema.Number,
+}) {}
+
+/**
  * The merge-readiness verdict surfaced for an issue that has an open PR (#257).
  * Present only when an open PR is linked; `null` on the issue otherwise. `code` /
  * `doc` are the latest `review-code` / `review-doc` markers (null = that gate hasn't
@@ -114,6 +131,8 @@ export class PipelineIssue extends Schema.Class<PipelineIssue>(
 	parsed: ParsedLabels,
 	/** The gate verdict from a linked open PR, or null if the issue has none (#257). */
 	verdict: Schema.NullOr(IssueVerdict),
+	/** The milestone this issue is assigned to, or null if unassigned (#379). */
+	milestone: Schema.NullOr(PipelineMilestone),
 }) {}
 
 /**
@@ -132,6 +151,8 @@ export class PipelineEpic extends Schema.Class<PipelineEpic>(
 	parsed: ParsedLabels,
 	/** The gate verdict from a linked open PR, or null if the epic has none (#257). */
 	verdict: Schema.NullOr(IssueVerdict),
+	/** The milestone this epic is assigned to, or null if unassigned (#379). */
+	milestone: Schema.NullOr(PipelineMilestone),
 	/** Child issue numbers from the `sub_issues` relation (the list endpoint, source of truth). */
 	children: Schema.Array(Schema.Number),
 	dependencies: DependencyTopology,

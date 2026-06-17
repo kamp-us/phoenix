@@ -1,6 +1,7 @@
 import {useEffect, useState} from "react";
 import {FreshnessIndicator} from "../components/FreshnessIndicator.tsx";
 import {IssueRow} from "../components/IssueRow.tsx";
+import {MilestoneSection} from "../components/MilestoneSection.tsx";
 import {fetchPipeline, type PipelineState} from "../lib/pipeline.ts";
 import {groupByStatus, readFreshness} from "../lib/queue.ts";
 import "./QueueBoard.css";
@@ -16,7 +17,9 @@ type Load =
  * Pickable (`status:triaged`) groups are visually distinguished; a freshness
  * indicator surfaces the API's `stale`/`fetchedAt` (read defensively — see
  * lib/queue.ts). Each row also shows the gate verdict from a linked open PR
- * (#257 — PASS / FAIL / awaiting review). Epic drill-down lives in #256.
+ * (#257 — PASS / FAIL / awaiting review). A milestones section (#379) groups
+ * issues under their milestone with an open/closed progress bar. Epic drill-down
+ * lives in #256.
  */
 export function QueueBoard() {
 	const [load, setLoad] = useState<Load>({phase: "loading"});
@@ -48,6 +51,8 @@ export function QueueBoard() {
 				<h2 className="qb-board__title">Queue</h2>
 				<FreshnessIndicator freshness={freshness} />
 			</header>
+
+			<MilestoneSection state={load.state} />
 
 			{groups.length === 0 ? (
 				<p className="qb-status">No open issues in the queue.</p>

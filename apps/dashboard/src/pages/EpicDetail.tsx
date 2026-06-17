@@ -118,6 +118,19 @@ function EpicBody({epic, state}: {epic: PipelineEpic; state: PipelineState}) {
 					#{epic.number} {epic.title}
 				</h2>
 				<p className="db-epic__progress">{progress.label}</p>
+				{epic.milestone ? (
+					<p className="db-epic__milestone" data-testid="epic-milestone">
+						Milestone{" "}
+						<a
+							href={`https://github.com/kamp-us/phoenix/milestone/${epic.milestone.number}`}
+							target="_blank"
+							rel="noreferrer"
+						>
+							{epic.milestone.title}
+						</a>{" "}
+						— {epic.milestone.closedIssues} closed / {epic.milestone.openIssues} open
+					</p>
+				) : null}
 			</header>
 
 			<h3 className="db-epic__section">Dependency topology</h3>

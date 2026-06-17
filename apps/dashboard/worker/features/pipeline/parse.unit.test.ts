@@ -4,7 +4,14 @@
  * representative fixtures drawn from `.claude/skills/gh-issue-intake-formats.md`.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {isEpic, parseDependencies, parseLabels, parseLinkedIssue, parseVerdict} from "./parse.ts";
+import {
+	isEpic,
+	parseDependencies,
+	parseLabels,
+	parseLinkedIssue,
+	parseMilestone,
+	parseVerdict,
+} from "./parse.ts";
 
 describe("parseLabels", () => {
 	it("lifts status / type / priority out of the label set", () => {
@@ -37,6 +44,48 @@ describe("parseLabels", () => {
 	it("returns all-null for an empty label set", () => {
 		const parsed = parseLabels([]);
 		assert.deepStrictEqual(parsed, {status: null, type: null, priority: null});
+	});
+});
+
+describe("parseMilestone", () => {
+	it("lifts GitHub's inline milestone object into the typed milestone (#379)", () => {
+		const m = parseMilestone({
+			number: 1,
+			title: "Pipeline hardening",
+			state: "open",
+			open_issues: 14,
+			closed_issues: 7,
+		});
+		assert.isNotNull(m);
+		assert.strictEqual(m?.number, 1);
+		assert.strictEqual(m?.title, "Pipeline hardening");
+		assert.strictEqual(m?.state, "open");
+		assert.strictEqual(m?.openIssues, 14);
+		assert.strictEqual(m?.closedIssues, 7);
+	});
+
+	it("yields null for an unassigned issue (raw null/undefined)", () => {
+		assert.isNull(parseMilestone(null));
+		assert.isNull(parseMilestone(undefined));
+	});
+
+	it("normalizes an unexpected state to open, never an invalid literal", () => {
+		const m = parseMilestone({
+			number: 2,
+			title: "Done",
+			state: "closed",
+			open_issues: 0,
+			closed_issues: 5,
+		});
+		assert.strictEqual(m?.state, "closed");
+		const weird = parseMilestone({
+			number: 3,
+			title: "Weird",
+			state: "frozen",
+			open_issues: 1,
+			closed_issues: 0,
+		});
+		assert.strictEqual(weird?.state, "open");
 	});
 });
 

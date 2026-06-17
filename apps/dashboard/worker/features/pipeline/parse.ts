@@ -8,14 +8,16 @@
  * recognize a section by shape, not exact whitespace; ignore what isn't modelled
  * rather than failing.
  */
-import type {
-	DependencyPhase,
-	DependencyTopology,
-	ParsedLabels,
-	PipelinePriority,
-	PipelineStatus,
-	PipelineType,
-	ReviewVerdicts,
+import type {RawMilestone} from "./github.ts";
+import {
+	type DependencyPhase,
+	type DependencyTopology,
+	type ParsedLabels,
+	PipelineMilestone,
+	type PipelinePriority,
+	type PipelineStatus,
+	type PipelineType,
+	type ReviewVerdicts,
 } from "./schema.ts";
 
 const STATUS_VALUES: ReadonlySet<string> = new Set([
@@ -64,6 +66,23 @@ export const parseLabels = (labels: ReadonlyArray<string>): ParsedLabels => {
 /** Is this issue an epic? Carries the `type:epic` label. */
 export const isEpic = (labels: ReadonlyArray<string>): boolean =>
 	parseLabels(labels).type === "epic";
+
+/**
+ * Lift GitHub's inline milestone object into the typed `PipelineMilestone` (#379).
+ * An unassigned issue (raw `null`/`undefined`) yields `null` — the parse never
+ * invents a milestone. GitHub's milestone `state` is already `open`/`closed`;
+ * anything else normalizes to `open` (mirrors `normalizeState` in `Pipeline.ts`).
+ */
+export const parseMilestone = (raw: RawMilestone | null | undefined): PipelineMilestone | null =>
+	raw == null
+		? null
+		: new PipelineMilestone({
+				number: raw.number,
+				title: raw.title,
+				state: raw.state === "closed" ? "closed" : "open",
+				openIssues: raw.open_issues,
+				closedIssues: raw.closed_issues,
+			});
 
 const PHASE_HEADING = /^#{2,4}\s*phase\s+(\d+)\b/i;
 const REQUIRES_BLOCK = /requires:\s*([^)\n]*)/i;

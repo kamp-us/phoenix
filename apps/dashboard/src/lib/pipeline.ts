@@ -34,6 +34,19 @@ export interface IssueVerdict {
 	doc: ReviewOutcome | null;
 }
 
+/**
+ * A GitHub milestone an issue is assigned to (#379), carrying GitHub's own
+ * open/closed rollup so the board can show milestone progress without a second
+ * fetch. `null` on an issue means unassigned.
+ */
+export interface PipelineMilestone {
+	number: number;
+	title: string;
+	state: "open" | "closed";
+	openIssues: number;
+	closedIssues: number;
+}
+
 export interface PipelineIssue {
 	number: number;
 	title: string;
@@ -41,6 +54,7 @@ export interface PipelineIssue {
 	labels: readonly string[];
 	parsed: ParsedLabels;
 	verdict: IssueVerdict | null;
+	milestone: PipelineMilestone | null;
 }
 
 export interface DependencyPhase {
@@ -65,6 +79,7 @@ export interface PipelineEpic {
 	labels: readonly string[];
 	parsed: ParsedLabels;
 	verdict: IssueVerdict | null;
+	milestone: PipelineMilestone | null;
 	children: readonly number[];
 	dependencies: DependencyTopology;
 }
