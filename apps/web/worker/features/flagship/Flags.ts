@@ -20,10 +20,10 @@
  * Scope is the boolean read only; typed variations (string/number/object) are
  * #509, the React hook is #510, targeting/percentage is #511.
  */
-import {RuntimeContext} from "alchemy";
+import type {RuntimeContext} from "alchemy";
 import {Context, Effect, Layer} from "effect";
-import {Flagship} from "./Flagship.ts";
 import {FlagsContext, toEvaluationContext} from "./FlagsContext.ts";
+import {Flagship} from "./Flagship.ts";
 
 /** The domain-facing flag service value — provider-agnostic by construction. */
 export interface FlagsAccess {

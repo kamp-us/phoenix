@@ -16,8 +16,8 @@ import * as Effect from "effect/Effect";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {Pasaport} from "../pasaport/Pasaport.ts";
-import {anonymousFlagsContext, FlagsContext} from "./FlagsContext.ts";
 import {Flags} from "./Flags.ts";
+import {anonymousFlagsContext, FlagsContext} from "./FlagsContext.ts";
 
 /** The dark-ship flag this probe gates on — undeclared, so it reads its default. */
 const PROBE_FLAG = "phoenix-flags-probe";
