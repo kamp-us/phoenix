@@ -291,7 +291,11 @@ nor appends. Two adaptations the plan layer forces:
 Route each soft finding:
 - **In-scope** — traces to the child's stated story/goal → **append a new AC to that child**
   via the §2 surface (tag `ac:review-plan`), *and* keep the prose caveat. Subject to all four
-  §2 fences (append-only · in-scope-only · ACL-gated/fail-closed · frozen-after-round-K).
+  §2 fences (append-only · in-scope-only · ACL-gated/fail-closed · frozen-after-round-K),
+  enforced by the reference's
+  [four-fences-enforced procedure](../review-code/SKILL.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
+  — fail-closed ACL self-check, round-K freeze, append-only body reconstruction — with the append
+  target being the **child issue** (`$ISSUE` = the child), never a PR.
 - **Out-of-scope** — a real defect that doesn't trace to any child's story (a gap the brief
   itself has, an adjacent concern) → file it via [`report`](../report/SKILL.md); it does
   **not** append to a child and does **not** affect the flip.

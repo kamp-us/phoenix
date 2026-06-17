@@ -507,6 +507,14 @@ a missing tag as upstream-authored.
    (`K = N = 3`, the existing repair cap — §5/Bounding) **escalates to a human** instead of
    looping again, so append-rate can never outrun fix-rate and the loop still terminates.
 
+This section **defines** the four fences; they are **enforced mechanically at the append site**
+by the `review-*` gates' shared
+[four-fences-enforced append procedure](review-code/SKILL.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
+(ADR 0079) — fail-closed ACL self-check, round-K freeze-then-escalate, and append-only body
+reconstruction — so an invalid append is unrepresentable, not merely discouraged. The drain
+side of fence 4 (a frozen `ac:review-*` row escalating instead of looping) is enforced
+symmetrically in `write-code`'s repair Bounding.
+
 **The AC contract is time-varying, not fixed at triage.** Because a gate may append mid-life,
 the AC list a worker is graded against is **no longer frozen at pickup** — a `write-code` agent
 may be measured against a criterion that did not exist when it claimed the issue. This is by
