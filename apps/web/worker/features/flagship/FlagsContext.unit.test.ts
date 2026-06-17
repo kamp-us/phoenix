@@ -80,9 +80,7 @@ describe("makeRequestFlagsContext — environment sourced from the deploy stage"
 		Effect.gen(function* () {
 			const context = yield* makeRequestFlagsContext(anonymousFlagsContext);
 			assert.strictEqual(context.environment, "production");
-		}).pipe(
-			Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({})),
-		),
+		}).pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))),
 	);
 });
 
