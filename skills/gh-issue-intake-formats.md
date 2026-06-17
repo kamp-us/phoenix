@@ -24,7 +24,10 @@ agent-operable work pipeline:
 structural floor it validates) and owns the `status:planned → status:triaged` flip that
 makes a `plan-epic` child pickable. `write-code` reads 1, 2, and 4 and writes 3 and 4.
 `review-code` reads 2 (the acceptance-criteria checklist is its gate) and writes 5
-(PASS or FAIL). `ship-it` reads the format-5 PASS marker as its go-ahead to merge.
+(PASS or FAIL). The `review-*` gates also **write** format 2 — but only its **reviewer-append
+surface** (§2): an in-scope specialist finding is appended as a new, provenance-tagged
+acceptance criterion, fenced append-only / in-scope-only / ACL-gated / frozen-after-round-K
+(ADR 0079). `ship-it` reads the format-5 PASS marker as its go-ahead to merge.
 
 The full pipeline order is `report` → `triage` → `plan-epic` → `review-plan` →
 `write-code` → `review-code` → `ship-it`: `review-plan` is the deterministic gate between
@@ -447,6 +450,69 @@ floor: **≥ 1 acceptance criterion, always.**
 The checklist is the contract `review-code` verifies one box at a time before a
 PR may merge. Write each criterion so a separate agent with no attachment to the
 implementation can confirm or deny it from the outside.
+
+### The reviewer-append surface — a gate may add an AC, fenced four ways (ADR 0079)
+
+The AC list is **seeded** by `triage`/`plan-epic` at intake, but it is **not owned** by them
+for the issue's whole life. A `review-*` gate that spots a real, in-scope defect the issue's
+AC never named MAY **append a new acceptance criterion** to the linked issue's `### Acceptance
+criteria` list, routing the finding into the single converging work-list the loop already
+drains — instead of letting an in-scope omission sail through a green gate. The next
+`write-code` repair round fixes the appended criterion like any other `[FAIL]` row, and the
+next review verifies it. This is the **single source** of the append surface, its tag, and its
+fences — every gate and worker cites *this* definition; none re-derives it. See ADR
+[0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md).
+
+**The append shape — no new parser.** An appended criterion is written in the **exact
+checkbox-bullet shape** the existing list uses, with a trailing **provenance tag**, so
+`write-code` and `review-code` read it with no parser change:
+
+```markdown
+- [ ] <criterion — observable, checkable from the outside> <!-- ac:review-code pr:#NNN round:K -->
+```
+
+The provenance tag is an HTML comment so it renders invisibly yet stays machine-legible. Its
+fields are load-bearing:
+
+- **`ac:<gate>`** — the authoring gate (`review-code` / `review-doc` / `review-skill` /
+  `review-plan`), making **review-authored vs triage/plan-epic-authored distinguishable from
+  the criterion text alone** — a criterion with no `ac:` tag (or `ac:triage` / `ac:plan-epic`)
+  is upstream-authored; an `ac:review-*` tag marks the reviewer-append path.
+- **`pr:#NNN`** — the originating PR the finding was raised against.
+- **`round:K`** — the repair round (the `write-code` round-cluster index, §5/Bounding) it was
+  appended in, so the **frozen-after-round-K** fence is recoverable from the tag itself.
+
+The gate + originating PR + round are thus all reconstructable from the tag, keeping the two
+authoring paths auditable when the AC list is time-varying within a PR's lifecycle. A
+triage-authored criterion needs no tag (its absence *is* the signal); a tolerant reader treats
+a missing tag as upstream-authored.
+
+**The four fences** — contract invariants every consumer **cites, never re-derives**:
+
+1. **Append-only.** A reviewer may **add** a criterion, **never edit or remove** an existing
+   one. Removing a criterion weakens the conjunctive gate — the exact catastrophe
+   `review-skill`'s gate-invariant-preservation check exists to catch (ADR
+   [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md)).
+2. **In-scope-only.** An appended criterion **MUST trace to the issue's stated goal/user-story**
+   — the same trace-to-stated-goal test `plan-epic` already enforces for story coverage (ADR
+   [0046](https://github.com/kamp-us/phoenix/blob/main/.decisions/0046-plan-epic-prd-grade-plans.md)).
+   A tangential finding goes to [`report`](report/SKILL.md), **never** the AC list; this is what
+   keeps the list finite and the bounded repair loop converging.
+3. **ACL-gated.** Only a **`write+` reviewer's** appended AC counts — resolved at the GitHub
+   ACL, **fails closed**, exactly as ADR
+   [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+   gates verdict-marker authority (never a checked-in allowlist). An append from a non-`write+`
+   author is not an authoritative criterion.
+4. **Frozen after round K.** An AC appended **in or after** `write-code`'s final repair round
+   (`K = N = 3`, the existing repair cap — §5/Bounding) **escalates to a human** instead of
+   looping again, so append-rate can never outrun fix-rate and the loop still terminates.
+
+**The AC contract is time-varying, not fixed at triage.** Because a gate may append mid-life,
+the AC list a worker is graded against is **no longer frozen at pickup** — a `write-code` agent
+may be measured against a criterion that did not exist when it claimed the issue. This is by
+design and **self-corrects within the loop**: the next repair round sees the appended criterion
+and drains it (ADR 0079 Consequences). Downstream readers MUST NOT treat the AC list as
+immutable; re-read it each round.
 
 ---
 
@@ -1013,6 +1079,7 @@ ping-pong of routing the re-type through `triage` (ADR 0070 rejected that option
 |---|---|---|---|
 | `## Dependencies` grammar | epic body | plan-epic | review-plan, write-code |
 | Sub-issue body | each sub-issue | plan-epic | review-plan, write-code, review-code |
+| Sub-issue AC — reviewer-append surface (§2) | each sub-issue's `### Acceptance criteria` | review-code, review-doc, review-skill, review-plan (append-only, ACL-gated, ADR 0079) | write-code (drains), review-* (verifies) |
 | Progress comment | the worked issue | write-code | write-code (successor) |
 | Epic handoff note | parent epic | write-code | write-code (siblings) |
 | review-code PASS marker | the PR | review-code | ship-it |
@@ -1040,4 +1107,8 @@ child pickable at all (§Pipeline labels, ADR
 
 The sub-issue's acceptance-criteria checklist (format 2) is the spine of
 verification: `review-code` checks every box before merge, and the
-≥ 1-criterion invariant guarantees there is always something to check.
+≥ 1-criterion invariant guarantees there is always something to check. The list
+is **seeded** at triage but **time-varying within a PR's lifecycle** — a `review-*`
+gate may append an in-scope, provenance-tagged criterion through the fenced
+reviewer-append surface (§2, ADR 0079), so readers re-read it each round rather
+than treating it as fixed at pickup.
