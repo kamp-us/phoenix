@@ -19,12 +19,15 @@ describe("toProfileStatsState", () => {
 	});
 
 	it("only projects the count scalars, dropping extra snapshot fields", () => {
-		const data = {
+		// A snapshot carrying more than the count scalars (here the selected `userId`)
+		// is a structural ProfileStats supertype, so it passes to the helper with no
+		// cast — and the assertion below proves the extra field is dropped.
+		const data: ProfileStats & {userId: string} = {
 			postCount: 2,
 			commentCount: 4,
 			definitionCount: 6,
 			userId: "u_1",
-		} as unknown as ProfileStats;
+		};
 		expect(toProfileStatsState(data)).toEqual({
 			status: "ok",
 			stats: {postCount: 2, commentCount: 4, definitionCount: 6},
