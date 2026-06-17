@@ -77,6 +77,7 @@ reviewable in the repo.
 | `phoenix-flags-targeting-demo` | **IaC** (`demoTargetingFlag`) | The #511 demonstrator: internal-role targeting + 25% consistent-hash rollout, declared in-stack so the rule is reviewable. |
 | `phoenix-flags-probe` | Neither (undeclared) | The #508 dark-ship probe reads its safe default; intentionally undeclared. |
 
-The flag schema / naming + lifecycle convention (when a flag graduates IaC↔dashboard, retirement) is
-[#513](https://github.com/kamp-us/phoenix/issues/513); this doc fixes only the targeting/rollout
-mechanics and the per-flag IaC-vs-dashboard record.
+The flag schema / naming + lifecycle convention (the flag-key naming grammar, value-type discipline,
+the default-=-safe-state invariant, and when a flag graduates IaC↔dashboard / is retired) lives in
+[feature-flags-schema-lifecycle.md](./feature-flags-schema-lifecycle.md) ([#513](https://github.com/kamp-us/phoenix/issues/513));
+this doc fixes only the targeting/rollout mechanics and the per-flag IaC-vs-dashboard record.
