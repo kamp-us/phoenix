@@ -49,6 +49,11 @@ export const Root: Record<string, unknown> = {
 	// `insert` reaches (filtered feeds are distinct, independently-paginated
 	// connections). See `.patterns/fate-mutations-client.md`.
 	posts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
+	// Search roots (ADR 0080) — per-type, reusing the Term/Post views. The orderBy
+	// is nominal: the search service ranks by bm25 and owns the keyset, so this
+	// declares the root as a `list` but never drives the order (the resolver does).
+	searchTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
+	searchPosts: list(postDataView, {orderBy: [{id: "asc"}]}),
 	profile: profileDataView,
 	landingStats: landingStatsDataView,
 };

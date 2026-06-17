@@ -15,6 +15,13 @@
       "when": 1781469752872,
       "tag": "0001_content_report",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1782000000000,
+      "tag": "0002_search_fts",
+      "breakpoints": true
     }
   ]
 }

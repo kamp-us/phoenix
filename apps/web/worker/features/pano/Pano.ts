@@ -17,6 +17,7 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -898,6 +899,11 @@ export const PanoLive = Layer.effect(Pano)(
 				}),
 			);
 
+			// Dual-write the post's FTS row alongside the summary insert (ADR 0080).
+			for (const stmt of syncPostSearch(postId, title)) {
+				yield* run((db) => db.run(stmt));
+			}
+
 			yield* recomputePanoStats(now);
 
 			return {
@@ -972,6 +978,14 @@ export const PanoLive = Layer.effect(Pano)(
 					})
 					.where(eq(schema.postSummary.id, input.postId)),
 			);
+
+			// Re-sync the post's FTS row when the title changed (ADR 0080). The body
+			// is out of v1 scope, so a body-only edit leaves the FTS row untouched.
+			if (hasTitle) {
+				for (const stmt of syncPostSearch(input.postId, nextTitle)) {
+					yield* run((db) => db.run(stmt));
+				}
+			}
 
 			return {
 				postId: input.postId,
@@ -1053,6 +1067,9 @@ export const PanoLive = Layer.effect(Pano)(
 					db.delete(schema.postSummary).where(eq(schema.postSummary.id, input.postId)),
 				]);
 			}
+
+			// Drop the post's FTS row — a hard-deleted post must leave search (ADR 0080).
+			yield* run((db) => db.run(removePostSearch(input.postId)));
 
 			yield* recomputePanoStats(now);
 
