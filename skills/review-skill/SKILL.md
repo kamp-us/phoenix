@@ -399,7 +399,10 @@ verdict.
 - **In-scope** — the finding **traces to the linked issue's stated goal/user-story** (the
   same trace test the reference and `plan-epic` use) → **append a new acceptance criterion**
   to the linked issue via the **§2 reviewer-append surface**, provenance-tagged
-  `<!-- ac:review-skill pr:#<PR> round:K -->`. It lands as a fresh `[ ]` row the next
+  `<!-- ac:review-skill pr:#<PR> round:K -->`. Perform the append by the reference's
+  [four-fences-enforced procedure](../review-code/SKILL.md#performing-the-append--the-four-fences-enforced-at-this-site-adr-0079)
+  — fail-closed ACL self-check, round-K freeze, append-only body reconstruction — so every fence
+  is enforced at the site, not merely cited. It lands as a fresh `[ ]` row the next
   `write-code` repair round drains and the next review verifies; it shows in *this* verdict's
   AC table as a new `[FAIL]` row.
 - **Out-of-scope** — the finding is real but doesn't trace to *this* issue's goal → file it

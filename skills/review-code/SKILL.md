@@ -473,6 +473,89 @@ or weaken it.** The append is the route's *output*, not a new gate:
 - **Out-of-scope findings never touch the AC list or this PR's verdict** — they are `report`
   residue only.
 
+### Performing the append — the four fences, enforced at this site (ADR 0079)
+
+§2 **defines** the four fences; this is where they are **enforced**, so an invalid append is
+unrepresentable rather than merely discouraged. §2 stays the single source of *what* each fence
+is — cite it, don't restate the definitions; the steps below are *how* the append step obeys
+them. The other three gates run **this same procedure** (one logic, four call sites). Append by
+**reconstructing the issue body** — read it, gate, append the one new row, write it back — never
+by a blind edit:
+
+```bash
+# the §2 in-scope-only fence (fence 2) gates whether you may append AT ALL:
+# only an in-scope finding (traces to the issue's stated goal — Route, don't grade above)
+# reaches here. A finding that fails the trace test was already routed to `report`; it must
+# NOT arrive at this append step. If it did, route it to `report` and stop — never append it.
+
+# ── Fence 3: ACL-gated, FAILS CLOSED ──────────────────────────────────────────────────────
+# resolve your OWN authority at the GitHub ACL — the same write+ floor ADR 0055 applies to
+# verdict-marker authority — BEFORE writing anything. No checked-in allowlist; the repo ACL is
+# the trust root. Any non-write+/lookup-failure result fails closed: skip the append, route the
+# finding to `report` instead (the PR is not blocked — it still gets your normal verdict).
+ME="$(gh api user --jq .login)"
+PERM="$(gh api "repos/$REPO/collaborators/$ME/permission" --jq .permission 2>/dev/null)"
+case "$PERM" in
+  admin|maintain|write) : ;;                       # authorized — proceed
+  *) echo "below write+ floor (or ACL lookup failed) — fail closed: do NOT append, route to report"; exit 0 ;;
+esac
+
+# ── Fence 4: frozen-after-round-K (K = N = 3) ─────────────────────────────────────────────
+# resolve the round K you would tag this append with — the §5/Bounding round-cluster index for
+# THIS PR (the same count write-code's cap uses). An append in/after the final repair round has
+# no round left to drain-and-re-verify it within the bound, so it ESCALATES to a human instead
+# of appending-and-looping (the append-side of write-code's drain-side freeze — §2 fence 4).
+ROUND_K=<the §5/Bounding round-cluster index for this PR>   # 1-based; a first review is round 1
+if [ "$ROUND_K" -ge 3 ]; then
+  # frozen: append-rate must not outrun fix-rate. Escalate, never append — name the finding,
+  # hand the PR to a human, surface for re-triage (mirrors write-code's N=3 escalation path).
+  gh api repos/$REPO/issues/$ISSUE/comments -f body="$(cat <<EOF
+### Append escalation — in-scope finding raised at/after the final repair round (round $ROUND_K)
+
+A reviewer specialist surfaced an in-scope finding, but it arrives in/after \`write-code\`'s
+final repair round (K = N = 3), so there is no round left to drain-and-re-verify a fresh AC
+within the bound. Per ADR 0079 §2 fence 4 the append is **frozen** — escalating to a human
+instead of appending-and-looping:
+
+- <finding> — <the in-scope defect; what an AC would have required>
+
+Needs a human decision (accept as-is, extend the AC's life by a fresh triage, or drop it).
+EOF
+)"
+  gh api -X POST repos/$REPO/issues/$ISSUE/labels -f "labels[]=status:needs-triage"
+  exit 0   # frozen → escalated, NOT appended
+fi
+
+# ── Fence 1: append-only — add the one new row, never edit/remove a pre-existing one ───────
+# read the CURRENT body, append exactly one §2-shaped row (provenance-tagged), write it back.
+# Reconstructing the body this way makes removal/edit unrepresentable: every pre-existing line
+# is carried through byte-for-byte; only a trailing criterion is added.
+BODY="$(gh api repos/$REPO/issues/$ISSUE --jq .body)"
+NEW_AC="- [ ] <criterion — observable, checkable from the outside> <!-- ac:review-code pr:#$PR round:$ROUND_K -->"
+# append the row under the ### Acceptance criteria list; do not touch any existing row
+UPDATED="$(printf '%s\n%s\n' "$BODY" "$NEW_AC")"   # illustrative — insert under the AC heading, preserving every prior line
+# fail-closed integrity guard: refuse to write back a body that DROPPED or ALTERED any prior
+# line — append-only means every prior line survives verbatim in the new body. If a pre-existing
+# line would change, abort (never write a body that lost a criterion — the gate-weakening
+# catastrophe fence 1 forbids):
+diff <(printf '%s' "$BODY") <(printf '%s' "$UPDATED") | grep -qE '^< ' && { echo "append-only violation: a pre-existing line would change — ABORT, do not write"; exit 1; }
+gh api -X PATCH repos/$REPO/issues/$ISSUE -f body="$UPDATED"
+```
+
+The append is **append-only by construction** (fence 1): the body is rebuilt from the existing
+one with a single row added, and a `diff` guard refuses any write that would drop or mutate a
+prior line — so a reviewer flow *cannot* edit or remove an existing AC (the catastrophe
+`review-skill`'s gate-invariant check exists to catch). It is **in-scope-only** (fence 2): only
+a finding that passed the trace-to-stated-goal test (Route, don't grade) reaches this step; a
+tangential one was routed to `report` and never arrives. It is **ACL-gated and fails closed**
+(fence 3): a below-`write+` author — or any ACL lookup failure — skips the append entirely, so
+an unauthorized identity's "append" never lands on the issue and never counts toward the gate.
+And it is **frozen after round K = N = 3** (fence 4): an in-scope finding raised in/after the
+final repair round escalates to a human rather than appending-and-looping, so append-rate stays
+bounded by fix-rate. None of this changes the verdict computation — the conjunctive AC verdict,
+the SHA-bound marker, the ACL author-gate on *verdicts*, the control-plane boundary, and
+single-merge-authority are all untouched; the enforcement only makes the *append* safer.
+
 ---
 
 ## Step 3 — Verify one criterion at a time
