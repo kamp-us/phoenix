@@ -1,9 +1,11 @@
 // E2E config for the phoenix SPA + worker.
 //
-// We do NOT spawn a webServer here. The user's `pnpm dev` (the single
-// Cloudflare Worker via wrangler + the Vite SPA) is assumed to be running
-// on http://localhost:3000. Boot time is ~10s and DO state is seeded once
-// per dev session — re-spawning per test run would throw away that warmth.
+// We do NOT spawn a webServer here — the target is an already-running/remote
+// server, never a CI-booted workerd. `baseURL` is read from `E2E_BASE_URL` so
+// CI can point the whole suite at the per-PR preview deployment; it falls back
+// to the locally-running `pnpm dev` (http://localhost:3000) when the var is
+// unset, so local dev is unchanged. Boot time is ~10s and DO state is seeded
+// once per dev session — re-spawning per test run would throw away that warmth.
 //
 // `.cjs` + `module.exports` because ADR 0001 bans `export default` in the
 // codebase, and Playwright's CLI requires a default export from the config
@@ -21,7 +23,7 @@ module.exports = defineConfig({
 	workers: 1,
 	reporter: "list",
 	use: {
-		baseURL: "http://localhost:3000",
+		baseURL: process.env.E2E_BASE_URL || "http://localhost:3000",
 		trace: "on-first-retry",
 		screenshot: "only-on-failure",
 		actionTimeout: 5_000,
