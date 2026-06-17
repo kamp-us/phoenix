@@ -73,6 +73,7 @@ The infra layer beneath the domain and fate layers. phoenix runs on [alchemy-eff
 | [alchemy-ci-cd.md](./alchemy-ci-cd.md) | The deploy workflow (push→prod, PR→`pr-<n>` preview, close→destroy); `infra/ci-credentials/github.ts` self-provisioning a scoped CI token + repo secrets; the pnpm `exec` flag-forwarding gotcha | Wiring or debugging CI deploys, rotating the CI token |
 | [alchemy-test-harness.md](./alchemy-test-harness.md) | `alchemy/Test/Core` deploy in `globalSetup` (main-process workaround for the pool-worker LoopbackServer race) + a black-box HTTP harness in the pool | Writing integration tests against the deployed worker |
 | [better-auth-with-plugins-on-d1.md](./better-auth-with-plugins-on-d1.md) | Forked `CloudflareD1` Layer on phoenix's existing D1; `Random` for the session secret; threading the resolved `Auth` instance to consumers without leaking `RuntimeContext` | Adding/editing better-auth plugins or wiring an auth consumer |
+| [feature-flags-targeting.md](./feature-flags-targeting.md) | The `FlagsContext`→`FlagshipEvaluationContext` mapping (`userId`→`targetingKey` bucketing key, role-list flattening); the sanctioned operator/grouping taxonomy; percentage rollout on `targetingKey`; the `FlagshipFlag` IaC-vs-dashboard-managed split | Adding a targeting/rollout flag, extending the flag eval context, or deciding IaC vs dashboard ([ADR 0081](../.decisions/0081-feature-flag-substrate-cloudflare-flagship.md)) |
 
 ## Lint tooling
 

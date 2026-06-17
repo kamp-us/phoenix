@@ -35,6 +35,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import {demoTargetingFlag, Flagship} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
 
@@ -47,6 +48,11 @@ export default Alchemy.Stack(
 	},
 	Effect.gen(function* () {
 		const worker = yield* Phoenix;
+		// Declare the demo targeting/rollout flag as IaC (epic #488, #511): yield the
+		// Flagship app for its server-generated `appId`, then ensure the flag exists.
+		// Yielding the same app resource the worker `bind()`s is idempotent.
+		const flagship = yield* Flagship;
+		yield* demoTargetingFlag(flagship.appId);
 		return {url: worker.url};
 	}).pipe(Effect.provide(PhoenixLive)),
 );
