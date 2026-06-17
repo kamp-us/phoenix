@@ -4,7 +4,7 @@ packages:
   - infra/*
 
 catalog:
-  '@alchemy.run/better-auth': 2.0.0-beta.52
+  '@alchemy.run/better-auth': 2.0.0-beta.56
   '@base-ui/react': ^1.4.1
   '@better-auth/core': 1.6.10
   '@biomejs/biome': ^2.4.15
@@ -23,7 +23,7 @@ catalog:
   '@typescript/native-preview': ^7.0.0-dev.20260509.2
   '@usirin/forge': ^0.2.0
   '@vitejs/plugin-react': ^6.0.2
-  alchemy: 2.0.0-beta.52
+  alchemy: 2.0.0-beta.56
   better-auth: ^1.6.10
   better-call: 1.3.5
   drizzle-kit: 1.0.0-rc.3
@@ -52,9 +52,9 @@ onlyBuiltDependencies:
 # Local patch (policy: patch deps locally, don't depend on an upstream/fork
 # release). Adds `DurableObjectNamespaceScope` to alchemy's `DurableObjectServices`
 # union so the `.make()` DO scope no longer leaks into the Stack's requirements
-# (alchemy.run.ts TS2375). NOT upstreamed — verified still absent from beta.52,
-# in BOTH the npm published types AND the usirin/alchemy-effect fork source
-# (the union in DurableObjectNamespace.ts never adds the Scope; 2026-06-06).
-# Re-keyed beta.45 → beta.52 with the alchemy pin bump; re-target again on the next bump.
+# (alchemy.run.ts TS2375). NOT upstreamed — verified still absent from beta.56:
+# beta.56 defines `DurableObjectNamespaceScope` but never adds it to the
+# `DurableObjectServices` union in DurableObjectNamespace.d.ts (2026-06-16).
+# Re-keyed beta.52 → beta.56 with the alchemy pin bump; re-target again on the next bump.
 patchedDependencies:
-  alchemy@2.0.0-beta.52: patches/alchemy@2.0.0-beta.52.patch
+  alchemy@2.0.0-beta.56: patches/alchemy@2.0.0-beta.56.patch
