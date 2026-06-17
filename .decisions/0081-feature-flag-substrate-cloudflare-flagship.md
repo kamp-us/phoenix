@@ -116,6 +116,9 @@ not a bespoke KV/D1/DO flag store and not a third-party provider.
 - **Banned (once adopted):** standing up a parallel bespoke KV/D1/DO flag service for the same job;
   introducing a third-party flag provider that requires an outbound edge round-trip; and continuing to
   add ad-hoc `ENVIRONMENT`-var / hardcoded-conditional gating for runtime feature toggles in new work.
-- **Proposed, not accepted:** this is a directional build-vs-buy on a public-beta dependency; it is
-  recorded `proposed` for a human to weigh in before it is locked and before the #488 plan-epic builds on
-  it.
+- **Accepted with open risks (deferred to the #488 plan-epic):** the directional build-vs-buy is locked,
+  but two risks ride on a public-beta dependency. Flagship is **in public beta** (2026-05-26), so its
+  production-viability for the autonomous-shipping containment layer must be confirmed by an early de-risk
+  spike before the framework API is built on it; and the alchemy binding-declaration path remains the
+  chief open integration unknown. Both are carried into the [#488](https://github.com/kamp-us/phoenix/issues/488)
+  plan-epic, not blockers on this decision.
