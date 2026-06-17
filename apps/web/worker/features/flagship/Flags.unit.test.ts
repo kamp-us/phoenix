@@ -217,7 +217,13 @@ describe("Flags.getObject", () => {
 				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
 			assert.deepStrictEqual(value, {theme: "dark"});
 		}).pipe(
-			Effect.provide(typedFlagsOver({getObjectValue: () => Effect.succeed({theme: "dark"})})),
+			Effect.provide(
+				// `getObjectValue` is generic (`<T extends object>`), so the stub returns the
+				// evaluated object cast to the call-site `T` — the contract this read surfaces.
+				typedFlagsOver({
+					getObjectValue: <T extends object>() => Effect.succeed({theme: "dark"} as T),
+				}),
+			),
 		),
 	);
 
