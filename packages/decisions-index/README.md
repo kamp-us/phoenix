@@ -32,9 +32,15 @@ pnpm --filter @kampus/decisions-index generate
 # CI gate — exit 1 on a stale index OR a duplicate ADR id:
 pnpm --filter @kampus/decisions-index check
 
-# Point at a different directory:
+# Point at a specific directory (relative to cwd):
 node packages/decisions-index/src/bin.ts check --dir path/to/.decisions
 ```
+
+With no `--dir`, the `.decisions` directory is resolved against the **repo root**
+(walk up from cwd for a `.decisions`/workspace marker), not the cwd — so the
+`pnpm --filter @kampus/decisions-index generate` form above works from anywhere in
+the repo even though pnpm runs it with the cwd set to the package directory (#447).
+A passed `--dir` is honored verbatim, relative to cwd.
 
 Exit codes: `0` clean, any non-zero = failure — both a gate failure (stale index
 or duplicate id; reason on stderr) and an IO failure (e.g. unreadable dir) exit

@@ -161,6 +161,30 @@ export const findDuplicateId = (entries: ReadonlyArray<AdrEntry>): DuplicateIdEr
 	return new DuplicateIdError(id, files);
 };
 
+/**
+ * Walk up from `start` for the first ancestor for which `hasMarker(dir)` holds,
+ * returning that directory; or `null` if the filesystem root is reached without a
+ * hit. Pure (the IO — "does this dir carry a marker?" — is the injected predicate),
+ * so the upward-walk logic is unit-testable without touching disk. The caller
+ * resolves `.decisions` against the returned root.
+ *
+ * `dirname` is the only path op: `dirname("/") === "/"` is the fixpoint that ends
+ * the walk. The caller passes already-resolved (absolute) directories.
+ */
+export const findRootDir = (
+	start: string,
+	hasMarker: (dir: string) => boolean,
+	dirname: (p: string) => string,
+): string | null => {
+	let dir = start;
+	for (;;) {
+		if (hasMarker(dir)) return dir;
+		const parent = dirname(dir);
+		if (parent === dir) return null;
+		dir = parent;
+	}
+};
+
 const renderRow = (e: AdrEntry): string =>
 	`| [${e.id}](${e.file}) | ${e.title} | ${e.status} | ${e.date} |`;
 

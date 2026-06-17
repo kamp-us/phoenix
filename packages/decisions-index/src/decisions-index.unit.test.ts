@@ -5,6 +5,7 @@ import {
 	DuplicateIdError,
 	FrontmatterError,
 	findDuplicateId,
+	findRootDir,
 	parseAdrFile,
 	parseFrontmatter,
 	renderIndex,
@@ -149,6 +150,45 @@ describe("renderIndex — canonical markdown", () => {
 			parseAdrFile(adr("0003", "T", "superseded by [0009](0009-x.md)", "2026-05-16")),
 		]);
 		assert.include(md, "| superseded by [0009](0009-x.md) |");
+	});
+});
+
+describe("findRootDir — cwd-independent repo-root resolution (#447)", () => {
+	// POSIX dirname for the walk: drops the last segment, "/" is the fixpoint.
+	const dirname = (p: string): string => {
+		const i = p.lastIndexOf("/");
+		if (i <= 0) return "/";
+		return p.slice(0, i);
+	};
+
+	it("walks up from a package dir to the ancestor carrying the marker", () => {
+		// The #447 case: run from packages/decisions-index, marker lives at the root.
+		const root = "/repo";
+		const hasMarker = (dir: string) => dir === root;
+		assert.strictEqual(findRootDir("/repo/packages/decisions-index", hasMarker, dirname), "/repo");
+	});
+
+	it("returns the start dir when the marker is already there", () => {
+		// The CI case: invoked from the repo root, where cwd === root.
+		assert.strictEqual(
+			findRootDir("/repo", (dir) => dir === "/repo", dirname),
+			"/repo",
+		);
+	});
+
+	it("returns null when no ancestor carries a marker (foreign-repo fallback to cwd)", () => {
+		assert.strictEqual(
+			findRootDir("/a/b/c", () => false, dirname),
+			null,
+		);
+	});
+
+	it("stops at the nearest ancestor when several carry the marker", () => {
+		const hasMarker = (dir: string) => dir === "/repo" || dir === "/repo/packages";
+		assert.strictEqual(
+			findRootDir("/repo/packages/decisions-index", hasMarker, dirname),
+			"/repo/packages",
+		);
 	});
 });
 
