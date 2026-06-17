@@ -19,6 +19,8 @@ import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import type {Flagship} from "../features/flagship/Flagship.ts";
+import {FlagsLive} from "../features/flagship/Flags.ts";
+import {flagsProbeRoute} from "../features/flagship/route.ts";
 import {authRoute} from "../features/pasaport/route.ts";
 import {rssRoute} from "../features/rss/route.ts";
 import {healthApiLayer} from "./health.ts";
@@ -65,15 +67,22 @@ export const makeAppLive = (options: {
 	// (its `ConfigProvider` is auto-wired at worker scope); discharge it here.
 	const typedJson = healthApiLayer.pipe(Layer.provide(options.flagshipLayer));
 
+	// The `Flags` domain service over the init-resolved `Flagship` client (#508):
+	// isolate-level, so it's built once here from `flagshipLayer` and provided into
+	// the per-request set. The probe route reads it; `getBoolean`'s `FlagsContext`
+	// is supplied inline by the handler from the session, so it isn't wired here.
+	const flagsLayer = FlagsLive.pipe(Layer.provide(options.flagshipLayer));
+
 	// `provideRequest` discharges the route-requirement markers `HttpRouter.add`
-	// lifts (plain `Layer.provide` does not). All four provided layers are
+	// lifts (plain `Layer.provide` does not). All provided layers are
 	// dependency-free (`R = never`), so they merge flat.
-	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute, rssRoute).pipe(
+	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute, rssRoute, flagsProbeRoute).pipe(
 		HttpRouter.provideRequest(
 			Layer.mergeAll(
 				options.fateLayer,
 				options.liveLayer,
 				options.betterAuthLayer,
+				flagsLayer,
 				Layer.succeed(RuntimeContext)(options.runtimeContext),
 			),
 		),
