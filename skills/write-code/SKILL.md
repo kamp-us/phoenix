@@ -725,6 +725,29 @@ jq --argjson authorized "$authorized" \
     | sort_by(.created_at) | last | .body' "$comments_file"
 ```
 
+#### A review-appended AC is an ordinary `[FAIL]` row — no special parser (ADR 0079)
+
+A `review-*` gate may **append** a new acceptance criterion to the linked issue when it spots
+an in-scope defect the issue's AC never named (the reviewer-append surface — its shape, its
+provenance tag, and its four fences live in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2, the single source; cite
+it, don't re-derive it). On the **drain** side that AC needs **no new machinery**: it is
+written in the exact checkbox-bullet shape the rest of the list uses, so when the next review
+verifies the issue against its (now-longer) AC list, an unmet appended criterion surfaces in
+the resolving FAIL marker's `[FAIL]` table **identically** to any triage-authored one. You
+already fixed that table above — a review-appended `[FAIL]` row is fixed by the **same**
+repair, with **no parallel path**.
+
+The one thing you *do* honor is the criterion's **provenance tag** — the trailing
+`<!-- ac:<gate> pr:#NNN round:K -->` comment §2 defines. It is not a parser hook (the row is
+the same checkbox shape with or without it); you read it only for two things: the audit trail
+(Step R3 records *that a fix addressed a review-authored AC* — `ac:review-*`, as opposed to an
+upstream `ac:triage`/`ac:plan-epic`/untagged one) and the **frozen-after-round-K** fence
+(Bounding below reads the tag's `round:K` to decide escalate-vs-loop). A criterion with **no**
+`ac:` tag, or an `ac:triage`/`ac:plan-epic` tag, is upstream-authored and drains exactly as it
+always has — the tag changes nothing about *how* you fix the row, only how you log it and when
+the freeze fence trips.
+
 #### Also fold in line-anchored inline review comments (additive, not the gate)
 
 The marker's `[FAIL]` table is the **AC gate** and remains so — but humans and review bots
@@ -803,8 +826,15 @@ which self-no-ops from inside a worktree — #236) before pushing, exactly as St
 
 Push the fix to the same branch and post a **format-3 progress comment** on the linked
 issue (Completed = the findings you addressed; Decisions/Gotchas; Next = "re-review
-requested"). Pushing new commits is what makes the **stateless** gate re-run — you do
-**not** re-trigger or self-approve it:
+requested"). **Where a fixed `[FAIL]` row was a review-appended AC** (an `ac:review-*`
+provenance tag, §2) rather than an upstream triage/plan-epic criterion, **say so in
+Completed** — name it as a review-authored AC and cite the originating PR/round from its tag.
+This keeps the audit trail of the time-varying AC contract complete (ADR 0079 Consequences):
+the next reader can see which criteria the *reviewer* added and that the loop drained them,
+not just that boxes were checked. The same note carries into the Step 7 epic handoff
+("Affects siblings") for a sub-issue, since a reviewer-added criterion is exactly the kind of
+cross-task signal a sibling should know the gate now enforces. Pushing new commits is what
+makes the **stateless** gate re-run — you do **not** re-trigger or self-approve it:
 
 ```bash
 git push origin HEAD
@@ -894,6 +924,51 @@ PR already at the cap (`ROUNDS >= 3`), so a future write-code run steps over thi
 PR and picks new `status:triaged` work instead of re-entering repair and re-escalating it
 forever. The cap thus terminates **both** the fix loop *and* the re-selection loop.
 
+### Freeze-after-round-K — a review-appended AC at the cap escalates, never loops (ADR 0079)
+
+The reviewer-append surface (§2) lets a gate add an AC mid-life, so the AC list a worker
+drains is **time-varying** — and an AC appended *late enough* could keep the loop alive past
+its bound (append a fresh criterion every round, fixer never catches up). §2's **fourth fence**
+closes that on the drain side, and binds **K to the same N=3 round cap above** — there is no
+second tunable: `K = N = 3`. Cite §2 fence 4 as the single source; this is its drain-side
+enforcement.
+
+The fence triggers off the appended AC's **`round:K` provenance tag** (§2), which records the
+round-cluster index the gate appended it in. An appended criterion (an `ac:review-*` `[FAIL]`
+row in this round's table) is **frozen — not drainable — when it was appended in or after the
+final repair round**, i.e. its tagged `round` ≥ `N` (= 3). Concretely, for each
+`ac:review-*` `[FAIL]` row you are about to fix, read its `round:K`:
+
+- **`round < 3`** — it was appended with a repair round still left to drain it: fix it in this
+  round like any other `[FAIL]` row (the Step R2 drain), no freeze.
+- **`round >= 3`** — it was appended **in or after** the final round, so there is **no round
+  left to drain-and-re-verify it within the bound**. Do **not** fix-and-push it (that push
+  would be the out-of-budget loop iteration the cap exists to forbid). **Escalate to a human**
+  via the **same escalation path** as the N=3 cap above — name the frozen appended criterion,
+  hand the PR back, surface for re-triage:
+
+```bash
+# does this round's resolving FAIL table carry a review-appended AC tagged at/after the final round?
+# the row is the ordinary checkbox shape; the tag is the only thing read here (no new parser)
+# $FAILBODY = the resolving FAIL marker body from R2; grep the provenance tags it carries
+echo "$FAILBODY" | grep -oE '<!-- *ac:review-[a-z]+ +pr:#[0-9]+ +round:[0-9]+ *-->' | while read -r tag; do
+  K=$(printf '%s' "$tag" | grep -oE 'round:[0-9]+' | cut -d: -f2)
+  [ "$K" -ge 3 ] && echo "FROZEN appended AC ($tag) — appended in/after final round; escalate, do not loop"
+done
+```
+
+If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the
+**escalation path** (the same `### Repair escalation` comment + `status:needs-triage` label as
+the N=3 block), naming the frozen appended criterion as the still-open finding and noting it
+was appended in/after the final round — then **stop, do not push**. The escalation comment's
+"Needs a human decision" framing fits exactly: a criterion that arrived with no budget left to
+drain it is the human's call (accept the PR as-is, extend the AC's life by a fresh triage, or
+drop the criterion). This keeps **append-rate bounded by fix-rate** — a gate cannot keep a
+bounded loop alive forever by appending fresh criteria, because the last-round append escalates
+instead of re-looping. A non-frozen appended AC (`round < 3`) drains normally; a frozen one is
+indistinguishable from "still FAILing after the cap" to the picker, so the same Step-1
+`ROUNDS >= 3` cap-exclusion steps a future run over the PR — no silent re-pick, no re-loop.
+
 ### Guardrails (repair mode)
 
 - **Never merge.** Repair mode pushes and hands back to the gate; the merge is `ship-it`'s
@@ -926,6 +1001,17 @@ forever. The cap thus terminates **both** the fix loop *and* the re-selection lo
   a **null `line`** is stale (its anchor no longer exists at the current head) and is skipped —
   the ADR 0058 staleness test applied to inline anchors. Addressed threads get a REST reply
   (resolve is GraphQL-only → out of reach here).
+- **Review-appended ACs drain like any `[FAIL]` row — no new parser (ADR
+  [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md),
+  §2).** A gate-appended criterion (`ac:review-*` provenance tag) surfaces in the resolving
+  FAIL table in the **same checkbox shape** as a triage-authored one and is fixed by the
+  **same** Step R2 repair — the tag is read only for the audit trail (Step R3 logs that a fix
+  addressed a review-authored AC) and the freeze fence (below).
+- **Freeze-after-round-K (§2 fence 4, `K = N = 3`).** A review-appended AC tagged
+  `round >= 3` was added in/after the final repair round, so there is no budget left to
+  drain-and-re-verify it within the bound — **escalate it via the same N=3 escalation path,
+  never fix-and-push**. Binding K to the existing N=3 cap (no second tunable) keeps
+  append-rate bounded by fix-rate so the loop still terminates (Bounding, Freeze-after-round-K).
 - **Bounded *and* non-starving.** The N=3 cap stops the fix loop; the pre-pick scan's
   cap-exclusion (`ROUNDS >= 3`) stops the re-selection loop, so an escalated PR never
   re-pulls a future run into repair (Step 1, Bounding).
@@ -1051,11 +1137,13 @@ A single invocation does one unit of work end to end, in one of the two modes:
   branch and PR opened (or the ADR/diagnosis for a decision/investigation), and a pointer to
   the progress comment.
 - **Repair** (PR number): resolve the PR's latest verdict per namespace (Step R1) and, if
-  it's FAIL, fix the enumerated marker findings **plus the in-scope line-anchored inline
+  it's FAIL, fix the enumerated marker findings — **including any review-appended AC, drained
+  as an ordinary `[FAIL]` row (ADR 0079, §2)** — **plus the in-scope line-anchored inline
   review comments** (Step R2) on the same branch, push, reply on the threads you addressed,
-  post progress, and stop (Steps R1–R3) — or escalate if the PR has hit the N=3 cap. Report
-  which findings you addressed (or `nothing to repair` for a PASS/no-FAIL PR), and that you
-  handed the PR back to the gate. **Never merge** in either mode.
+  post progress (noting any review-authored AC you drained), and stop (Steps R1–R3) — or
+  escalate if the PR has hit the N=3 cap **or carries an AC appended in/after the final round
+  (freeze-after-K)**. Report which findings you addressed (or `nothing to repair` for a
+  PASS/no-FAIL PR), and that you handed the PR back to the gate. **Never merge** in either mode.
 
 Don't narrate every REST call — the assignee, the comments, and the PR are the durable
 record.
