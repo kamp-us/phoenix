@@ -127,8 +127,10 @@ jobs:
       # database id; alchemy's per-stage D1 carries a random 16-char suffix
       # (`createPhysicalName`), so the id is NOT reconstructable from the stage
       # name alone and must be looked up here, where the creds + stage are in hand.
-      # Alchemy names the D1 `${stack}-${id}-${stage}-${suffix}` = `phoenix-phoenix_db-<stage>-…`
-      # (alchemy.run.ts stack "phoenix"; resources.ts D1 id "phoenix_db"); the CF
+      # Alchemy names the D1 `${stack}-${id}-${stage}-${suffix}` then sanitizes it
+      # (`_`→`-`), so the id "phoenix_db" becomes "phoenix-db" in the physical name:
+      # `phoenix-phoenix-db-<stage>-…` (alchemy.run.ts stack "phoenix"; resources.ts
+      # D1 id "phoenix_db"). Do NOT "fix" the prefix back to `phoenix_db` — the CF
       # `/d1/database?name=` filter is a substring match, so this prefix uniquely
       # selects this stage's database. web-only (`@kampus/web` is the app the e2e
       # specs target) and PR-only (no preview seed on prod).
@@ -138,7 +140,7 @@ jobs:
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-          DB_NAME_PREFIX: phoenix-phoenix_db-${{ env.STAGE }}-
+          DB_NAME_PREFIX: phoenix-phoenix-db-${{ env.STAGE }}-
         run: |
           set -euo pipefail
           resp="$(curl -sf -G \
