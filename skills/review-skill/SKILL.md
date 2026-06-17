@@ -360,7 +360,63 @@ Build the rigor findings into the same evidence shape as the AC table:
 
 ---
 
+## Step 4b — Specialist fan-out + route-don't-grade (ADR 0079)
+
+The AC checklist (Step 3) and the four rigor checks (Step 4) catch what the issue *named*
+and the four behavioral failures ADR 0073 enumerated; together they are still blind to a
+real, in-scope behavioral defect the issue's AC never named — a path through the changed
+instruction that misbehaves yet trips none of the four named rigor checks. This gate fans out
+skill-class specialists to surface such a finding and **routes** it into the converging AC
+work-list, exactly as `review-code` does for code. **The fan-out is additive — it feeds
+*additional* findings into the route step; the four-check rigor checklist (Step 4), including
+gate-invariant-preservation, is preserved in full, not replaced.**
+
+**This is one logic with four call sites — `review-code` is its citable home.** The fan-out
+mechanism, the binary in/out-of-scope route decision, and the append surface are defined once
+in [`review-code`'s shared reference](../review-code/SKILL.md#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
+(ADR [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md)
+§1–§2) and the append shape + provenance tag + four fences in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2. **Cite them; do not
+re-derive the route decision, the tag fields, or the fences here.** Only the *class* differs
+— `review-skill` runs **skill-class** dimensions over the head's skill text in
+`$REVIEW_WT/skills/` (Step 2's config-pinned read — no second checkout, no spawned agent):
+
+- **unreachable-step** — a branch, guard, or step the changed instruction adds that no
+  execution path can reach (a condition that can't fire, an exit with no entry), so an agent
+  following the skill silently never runs it.
+- **contradictory-instruction** — two steps the diff introduces (or one new step against an
+  existing one) that direct the executing agent toward conflicting actions, where the rigor
+  "behavioral correctness" check verified each step in isolation but not the *pair*.
+- **uncovered-procedure-path** — a procedural path the issue's goal implies the skill must
+  handle that the changed instruction leaves unspecified (an error branch with no described
+  handling, a mode the description admits but no step covers).
+
+These extend, never replace, the four rigor checks. Each yields zero or more **findings** (a
+concrete defect with its skill-text site) that feed the route step; the fan-out emits no
+verdict.
+
+**Route each finding (ADR 0079 §2, per the shared reference):**
+- **In-scope** — the finding **traces to the linked issue's stated goal/user-story** (the
+  same trace test the reference and `plan-epic` use) → **append a new acceptance criterion**
+  to the linked issue via the **§2 reviewer-append surface**, provenance-tagged
+  `<!-- ac:review-skill pr:#<PR> round:K -->`. It lands as a fresh `[ ]` row the next
+  `write-code` repair round drains and the next review verifies; it shows in *this* verdict's
+  AC table as a new `[FAIL]` row.
+- **Out-of-scope** — the finding is real but doesn't trace to *this* issue's goal → file it
+  via [`report`](../report/SKILL.md). **The PR is not blocked by it.**
+
+**Additive, not a new gate.** The conjunctive verdict across AC + rigor (Step 5), the
+SHA-bound `review-skill:` marker, the advisory-for-blocking-set behavior, and "never merge"
+are **unchanged** — the append is the route's output, governed by §2's four fences
+(append-only · in-scope-only · ACL-gated/fail-closed · frozen-after-round-K). **Run this step
+before composing the Step 5 verdict** so the appended row appears in the table.
+
+---
+
 ## Step 5 — Land the verdict
+
+**Run the specialist fan-out + route step (Step 4b) before composing the verdict** so any
+in-scope appended AC already shows as a fresh `[FAIL]` row in the table below.
 
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND every
 rigor check must PASS. One miss anywhere → FAIL.
@@ -556,9 +612,11 @@ A single invocation gates one skill PR end to end: config-pin yourself to the ba
 ADR 0052), classify blocking vs non-blocking via the canonical §CP set (Step 0), resolve the
 PR ↔ issue (Step 1), read the diff + the head's skill text from the isolated worktree (Step 2),
 verify each acceptance criterion (Step 3) and run the four-check skill-rigor checklist
-(Step 4), then land the verdict — namespaced `review-skill: PASS` (non-blocking) or the
-canonical advisory line (blocking) on a full pass, or `review-skill: FAIL` on any miss
-(Step 5). **You never merge, and you never emit a `review-code`/`review-doc` marker.**
+(Step 4), fan out the skill-class specialists and route their findings (Step 4b — in-scope
+appends an AC, out-of-scope to `report`, ADR 0079), then land the verdict — namespaced
+`review-skill: PASS` (non-blocking) or the canonical advisory line (blocking) on a full pass,
+or `review-skill: FAIL` on any miss (Step 5). **You never merge, and you never emit a
+`review-code`/`review-doc` marker.**
 
 Report back a short ledger: the PR and its linked issue, its class (blocking/non-blocking), the
 per-item verdict (N pass / M fail across AC + rigor), the overall result, and the link to the

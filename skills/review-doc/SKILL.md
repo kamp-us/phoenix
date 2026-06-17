@@ -375,7 +375,64 @@ Build the hygiene findings into the same evidence shape as the AC table:
 
 ---
 
+## Step 4b — Specialist fan-out + route-don't-grade (ADR 0079)
+
+The AC checklist (Step 3) and the hygiene checklist (Step 4) catch what the issue *named*
+and what the doc surface *demands*; together they are still blind to a real, in-scope
+doc-defect the issue's AC never named — a claim the prose makes that the codebase
+contradicts, a load-bearing cross-reference left dangling, an enumerated case the doc
+silently omits. This gate fans out doc-class specialists to surface such a finding and
+**routes** it back into the converging AC work-list, exactly as `review-code` does for code.
+
+**This is one logic with four call sites — `review-code` is its citable home.** The fan-out
+mechanism, the binary in/out-of-scope route decision, and the append surface are defined once
+in [`review-code`'s shared reference](../review-code/SKILL.md#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
+(ADR [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md)
+§1–§2) and the append shape + provenance tag + four fences in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2. **Cite them; do not
+re-derive the route decision, the tag fields, or the fences here.** Only the *class* differs
+— `review-doc` runs **doc-class** dimensions over the diff Step 2 already loaded, each a
+checklist line within this pass (no second checkout, no spawned agent):
+
+- **claim-vs-ground-truth** — a factual assertion the doc makes (a shipped consumer, an API
+  shape, a path, a count) that the codebase or the freshly-fetched `origin/$BASE_REF`
+  (Step 2) contradicts — a doc that reads clean but tells the reader something false.
+- **dangling-reference** — a cross-doc link, an ADR/pattern pointer, or an index row the
+  prose relies on that resolves to nothing (the hygiene "links resolve" check covers *added*
+  links; this is the broader "the doc's argument leans on a reference that isn't there").
+- **omitted-case** — a case the doc's own framing implies it should cover but silently drops:
+  a supersession chain left one-directional, an enumerated set missing a member the issue's
+  goal needs, a "for each X" that skips an X the diff introduces.
+
+Each dimension yields zero or more **findings** (a concrete defect with its diff site), which
+feed the route step; the fan-out itself emits no verdict.
+
+**Route each finding (ADR 0079 §2, per the shared reference):**
+- **In-scope** — the finding **traces to the linked issue's stated goal/user-story** (the
+  same trace test the reference and `plan-epic` use) → **append a new acceptance criterion**
+  to the linked issue via the **§2 reviewer-append surface**, provenance-tagged
+  `<!-- ac:review-doc pr:#<PR> round:K -->`. It lands as a fresh `[ ]` row the next
+  `write-code` repair round drains and the next review verifies; it shows in *this* verdict's
+  AC table as a new `[FAIL]` row.
+- **Out-of-scope** — the finding is real but doesn't trace to *this* issue's goal → file it
+  via [`report`](../report/SKILL.md). **The PR is not blocked by it.**
+
+**Additive, not a new gate.** The conjunctive verdict (Step 5), the SHA-bound `review-doc:`
+marker, the advisory-for-blocking-set behavior, and "never merge" are **unchanged** — the
+append is the route's output, governed by §2's four fences (append-only · in-scope-only ·
+ACL-gated/fail-closed · frozen-after-round-K). **Run this step before composing the Step 5
+verdict** so the appended row appears in the table. **When `ISSUE` is unset** (the docs-only
+no-link carve-out, Step 1 / ADR 0075) there is no linked issue to append to, so an in-scope
+finding has no AC home — route **every** fan-out finding to [`report`](../report/SKILL.md)
+instead, exactly as an out-of-scope one (the fan-out still runs; only its in-scope sink
+changes).
+
+---
+
 ## Step 5 — Land the verdict
+
+**Run the specialist fan-out + route step (Step 4b) before composing the verdict** so any
+in-scope appended AC already shows as a fresh `[FAIL]` row in the table below.
 
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND
 every hygiene check must PASS. One miss anywhere → FAIL. **For the docs-only no-link PR
@@ -587,9 +644,11 @@ A single invocation gates one doc PR end to end: classify blocking vs non-blocki
 recognize that legitimate no-link state and mark the acceptance-criteria half N/A (ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) — read
 the diff (Step 2), verify each acceptance criterion (Step 3, skipped when AC is N/A) and run
-the doc-hygiene checklist (Step 4), then land the verdict — namespaced `review-doc: PASS`
-(non-blocking) or advisory (blocking) on a full pass, or `review-doc: FAIL` on any miss
-(Step 5). **You never merge, and you never emit a `review-code` marker.**
+the doc-hygiene checklist (Step 4), fan out the doc-class specialists and route their findings
+(Step 4b — in-scope appends an AC, out-of-scope to `report`, ADR 0079), then land the verdict —
+namespaced `review-doc: PASS` (non-blocking) or advisory (blocking) on a full pass, or
+`review-doc: FAIL` on any miss (Step 5). **You never merge, and you never emit a `review-code`
+marker.**
 
 Report back a short ledger: the PR and its linked issue, its class (blocking/non-blocking),
 the per-item verdict (N pass / M fail across AC + hygiene), the overall result, and the
