@@ -217,6 +217,45 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		expect(body.branch).toBe("off");
 	});
 
+	it("POST /api/flags/evaluate returns server-evaluated values per requested key (#510)", async () => {
+		// The SPA's delivery seam: the browser names keys + defaults, the Worker
+		// evaluates each through `Flags` server-side and returns resolved booleans.
+		// The fake Flagship returns each call's default (undeclared flags), so the
+		// safe default is what comes back — the client never re-implements eval.
+		const res = await fetch(
+			appLayer,
+			new Request("https://test.local/api/flags/evaluate", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: JSON.stringify({
+					keys: [
+						{key: "new-ui", default: false},
+						{key: "legacy-on", default: true},
+					],
+				}),
+			}),
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {flags: Record<string, boolean>};
+		// Each key resolves to its own supplied default — the safe-default contract.
+		expect(body.flags).toEqual({"new-ui": false, "legacy-on": true});
+	});
+
+	it("POST /api/flags/evaluate degrades safe on a malformed body — {flags:{}} (#510)", async () => {
+		const res = await fetch(
+			appLayer,
+			new Request("https://test.local/api/flags/evaluate", {
+				method: "POST",
+				headers: {"content-type": "application/json"},
+				body: "not json",
+			}),
+		);
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {flags: Record<string, boolean>};
+		// No keys parsed → empty result → the client stays at its in-code defaults.
+		expect(body.flags).toEqual({});
+	});
+
 	it("GET /rss.xml → 200 application/rss+xml, well-formed RSS 2.0", async () => {
 		const res = await fetch(appLayer, new Request("https://test.local/rss.xml"));
 		expect(res.status).toBe(200);
