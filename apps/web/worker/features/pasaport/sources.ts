@@ -14,10 +14,6 @@ export const userSource = Fate.source(
 	UserView,
 	{id: "id"},
 	{
-		byId: function* (id) {
-			const pasaport = yield* Pasaport;
-			return yield* pasaport.getUserById(id);
-		},
 		byIds: function* (ids) {
 			const pasaport = yield* Pasaport;
 			return yield* pasaport.getUsersByIds(ids);

@@ -25,11 +25,6 @@ export const termSource = Fate.source(
 	TermView,
 	{id: "slug"},
 	{
-		byId: function* (slug) {
-			const sozluk = yield* Sozluk;
-			const rows = yield* sozluk.getTermSummariesByIds([slug]);
-			return rows[0] ?? null;
-		},
 		byIds: function* (slugs) {
 			const sozluk = yield* Sozluk;
 			return yield* sozluk.getTermSummariesByIds(slugs);
