@@ -115,7 +115,7 @@ function SozlukHomeChrome({
 	// Submitting the search routes to the existing fresh-slug composer branch at
 	// `/sozluk/:slug` — no new creation backend (issue #97). Signed-in users land
 	// on `NewTermComposer`; signed-out users get that page's unchanged 404/sign-in.
-	function onSearchSubmit(e: React.FormEvent) {
+	function onSearchSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();
 		const slug = slugifyTerm(query);
 		if (slug) navigate(`/sozluk/${slug}`);
