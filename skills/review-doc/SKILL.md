@@ -190,11 +190,28 @@ gh api "repos/$REPO/issues/$PR/timeline?per_page=100" \
 The `issues/$PR/timeline` endpoint accepts the PR number, and the
 `connected`/`cross-referenced` events resolve PR→issue — so `.source.issue.number` is the
 linked *issue*, not a bug. This is the same idiom `review-code` uses. Pin down `ISSUE=<N>`.
-If you genuinely can't find a linked issue, that's a fail you can't even start — comment on
-the PR that there's no linked issue to verify against (the `Fixes #N` seam is missing), and
-stop.
 
-Now pull the issue and its acceptance criteria:
+If there is **no** linked issue, the rule is **class-aware** — reuse the artifact class Step 0
+already computed (do **not** re-derive it; ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)). This
+mirrors `ship-it` Step 1's docs-only carve-out, scoped to the doc lane this gate serves:
+
+- **A code class is present** (the mixed code+doc routing of Step 0) → stop and report `no
+  linked issue`. In this pipeline `write-code` always writes `Fixes #N`, so a missing link on a
+  PR carrying code is a broken seam, not a normal state — there is dangling code work with no AC
+  to verify against. (Skills-only and pure-code PRs never reach here — Step 0 already routed them
+  to `review-skill`/`review-code` and stopped.)
+- **Docs-only** (Step 0 classed the diff as docs with **no** code class present) → a missing
+  `Fixes #N` is a **legitimate state, not a broken seam**. A conversation-authored ADR/doc (the
+  [`/adr`](../adr/SKILL.md) path) records a settled choice that was never tracked work, so there
+  is nothing for a `Fixes #N` to close and **no acceptance criteria to verify against**. Leave
+  `ISSUE` unset, treat the acceptance-criteria half as **N/A** (skip Step 3 — there is no
+  checklist), and **proceed to the doc-hygiene checklist (Step 4) as the sole gate**. Emit **no**
+  no-linked-issue refusal; it is not an anomaly. This relaxes **only** the linked-issue half — the
+  Step 4 hygiene checklist is AC-independent and still applies in full, and the verdict for such a
+  PR rests on it alone (Step 5).
+
+When `ISSUE` **is** set, honor it as today: pull the issue and its acceptance criteria:
 
 ```bash
 ISSUE=<N>
@@ -203,7 +220,9 @@ gh api "repos/$REPO/issues/$ISSUE/comments?per_page=100" --jq '.[].body'
 ```
 
 Extract the `### Acceptance criteria` checklist from the issue body. That list — every
-box — is half the contract you verify; the doc-hygiene checklist (Step 3) is the other.
+box — is half the contract you verify; the doc-hygiene checklist (Step 4) is the other. (When
+`ISSUE` is unset per the docs-only carve-out above, the acceptance-criteria half is N/A and the
+hygiene checklist is the whole gate.)
 
 ---
 
@@ -254,6 +273,11 @@ check are your whole evidence base.
 ---
 
 ## Step 3 — Verify the acceptance criteria one box at a time
+
+**Skip this step when `ISSUE` is unset** (the docs-only no-link carve-out, Step 1 / ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)): there is
+no checklist to walk, the acceptance-criteria half is **N/A**, and the gate rests on Step 4's
+doc-hygiene checklist alone. Otherwise:
 
 Walk the issue's checklist **one box at a time**. For each criterion, reach an
 independent verdict and capture the *evidence* from the diff that supports it. This
@@ -354,7 +378,14 @@ Build the hygiene findings into the same evidence shape as the AC table:
 ## Step 5 — Land the verdict
 
 The overall verdict is **conjunctive across both lists**: every acceptance criterion AND
-every hygiene check must PASS. One miss anywhere → FAIL.
+every hygiene check must PASS. One miss anywhere → FAIL. **For the docs-only no-link PR
+(`ISSUE` unset, ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) the
+acceptance-criteria list is N/A** — the verdict rests on the doc-hygiene checklist alone: PASS
+when every hygiene check passes, FAIL on any hygiene miss. In the verdict body, render the
+acceptance-criteria section as a single `- [N/A] Acceptance criteria — no linked issue
+(docs-only, ADR 0075)` line in place of the per-criterion table, and drop the `#<ISSUE>`
+reference from the summary line (there is no issue to auto-close on merge).
 
 **Resolve the head SHA you reviewed** and write the verdict to a per-run temp file
 (`VERDICT_FILE="$(mktemp /tmp/review-doc-verdict.XXXXXX)"`) so multi-line markdown + backticks
@@ -552,11 +583,13 @@ comment.
 ## Running it
 
 A single invocation gates one doc PR end to end: classify blocking vs non-blocking
-(Step 0), resolve the PR ↔ issue (Step 1), read the diff (Step 2), verify each acceptance
-criterion (Step 3) and run the doc-hygiene checklist (Step 4), then land the verdict —
-namespaced `review-doc: PASS` (non-blocking) or advisory (blocking) on a full pass, or
-`review-doc: FAIL` on any miss (Step 5). **You never merge, and you never emit a
-`review-code` marker.**
+(Step 0), resolve the PR ↔ issue (Step 1) — or, for a docs-only PR with no `Fixes #N`,
+recognize that legitimate no-link state and mark the acceptance-criteria half N/A (ADR
+[0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) — read
+the diff (Step 2), verify each acceptance criterion (Step 3, skipped when AC is N/A) and run
+the doc-hygiene checklist (Step 4), then land the verdict — namespaced `review-doc: PASS`
+(non-blocking) or advisory (blocking) on a full pass, or `review-doc: FAIL` on any miss
+(Step 5). **You never merge, and you never emit a `review-code` marker.**
 
 Report back a short ledger: the PR and its linked issue, its class (blocking/non-blocking),
 the per-item verdict (N pass / M fail across AC + hygiene), the overall result, and the
