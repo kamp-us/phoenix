@@ -4,6 +4,7 @@
  * deploy, the worker `bind()`s it at runtime. Replaces the `wrangler.jsonc`
  * `d1_databases` / `migrations_dir` keys (ADR 0026).
  */
+import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 
 /**
@@ -41,13 +42,14 @@ export const Flagship = Cloudflare.FlagshipApp("phoenix_flags", {});
  * Everyone else falls through to `defaultVariation: "off"`.
  *
  * `appId` is the app's server-generated id, available only once the app resource
- * is yielded in the stack — hence a factory the stack calls with `app.appId`,
- * not a module-scope constant (the app attribute isn't resolved at import).
+ * is yielded in the stack — hence a factory the stack calls with `app.appId`
+ * (an alchemy `Input<string>`/`Output`, resolved at deploy), not a module-scope
+ * constant (the app attribute isn't resolved at import).
  */
 export const DEMO_TARGETING_FLAG_KEY = "phoenix-flags-targeting-demo";
 export const DEMO_TARGETING_INTERNAL_ROLE = "internal";
 
-export const demoTargetingFlag = (appId: string) =>
+export const demoTargetingFlag = (appId: Input<string>) =>
 	Cloudflare.FlagshipFlag("phoenix_flags_targeting_demo", {
 		appId,
 		key: DEMO_TARGETING_FLAG_KEY,

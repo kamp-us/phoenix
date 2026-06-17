@@ -136,7 +136,7 @@ describe("Flags — attribute targeting (#511)", () => {
 		Effect.gen(function* () {
 			const flags = yield* Flags;
 			// pick a userId whose bucket is >= 25 (outside the rollout) and no role.
-			const outside = "user-bucket-92"; // bucketOf asserted below
+			const outside = "user-2"; // bucketOf asserted below
 			assert.isAtLeast(bucketOf(outside), 25);
 			const enabled = yield* flags
 				.getBoolean("targeting-demo", false)
@@ -167,7 +167,7 @@ describe("Flags — percentage rollout, stable bucketing (#511)", () => {
 	it.effect("two different userIds bucket independently (the rollout actually splits)", () =>
 		Effect.gen(function* () {
 			const flags = yield* Flags;
-			const inside = "user-bucket-3"; // asserted in-rollout below
+			const inside = "user-0"; // asserted in-rollout below
 			assert.isBelow(bucketOf(inside), 25);
 			const enabled = yield* flags
 				.getBoolean("targeting-demo", false)
