@@ -67,7 +67,8 @@ describe("landing stats — /fate", () => {
 		expect(stats.version).toBe("v0.3");
 	});
 
-	it("each counter increases by AT LEAST the amount added under a fresh author", async () => {
+	// QUARANTINED (flaky): workerd "All fibers interrupted" timeout under CI load reds ci-required. Re-enable after the root-cause fix — see #547.
+	it.skip("each counter increases by AT LEAST the amount added under a fresh author", async () => {
 		const before = await landingStats();
 
 		// 2 definitions on distinct slugs.
@@ -123,7 +124,8 @@ describe("landing stats — /fate", () => {
 		expect(after.totalAuthors).toBeGreaterThanOrEqual(before.totalAuthors + 1);
 	});
 
-	it("add-then-delete nets to a smaller delta than add alone (decrement is observable)", async () => {
+	// QUARANTINED (flaky): workerd "All fibers interrupted" timeout under CI load reds ci-required. Re-enable after the root-cause fix — see #547.
+	it.skip("add-then-delete nets to a smaller delta than add alone (decrement is observable)", async () => {
 		// On shared D1 the absolute count is nondeterministic, but an add and its
 		// matching delete cancel: the net contribution of an add+delete pair to
 		// `totalDefinitions` is 0, whereas a bare add contributes +1. We assert the
