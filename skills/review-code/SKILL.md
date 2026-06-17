@@ -256,10 +256,13 @@ running beats behavior inferred from a diff:
 
 ```bash
 pnpm -C "$REVIEW_WT" install   # the catalog/lockfile + patches/ are present, so this succeeds
-# Lint EXPLICIT paths, never `pnpm lint` / `biome check .`: bare `.` resolves to the review
-# worktree's CWD (sits under .claude/worktrees → matches `!**/.claude/worktrees`) and exits 0
-# WITHOUT linting (false green; #236, ADR 0060). Source roots are CWD-robust:
-pnpm -C "$REVIEW_WT" exec biome check apps packages   # and/or the specific test the criterion names
+# Lint via `pnpm lint:worktree`, never `pnpm lint` / `biome check .`: bare `.` resolves to the
+# review worktree's CWD (sits under .claude/worktrees → matches `!**/.claude/worktrees`) and exits
+# 0 WITHOUT linting (false green; #236, ADR 0060). `lint:worktree` lints the EXPLICIT changed files
+# vs origin/main (committed + working-tree, biome-extension-filtered; docs-only/empty = clean skip),
+# so it catches root + `.claude/**` violations a bare `biome check apps packages` would miss and
+# reliably predicts the CI lint job (#553/#559):
+pnpm -C "$REVIEW_WT" lint:worktree   # and/or the specific test the criterion names
 rm -rf "$REVIEW_WT" && git worktree prune && git update-ref -d "$PR_REF"   # tear the throwaway tree + ref down
 ```
 
