@@ -31,7 +31,7 @@ Reviewers route findings back into the single converging mechanism — the AC ch
 3. **Four invariants fence the new write surface:**
    - **Append-only.** Reviewers may *add* criteria, never edit or remove existing ones. Removing a criterion weakens the gate — the catastrophic case `review-skill`'s gate-invariant-preservation check exists to catch.
    - **In-scope-only.** The boundary is the trace-to-stated-goal test. Tangential findings go to `report`, never the AC list — this is what keeps the list from ballooning and the loop converging.
-   - **ACL-gated.** Only a write+ reviewer's appended AC counts (ADR [0055](0055-author-bound-pass-marker.md) author-gate, resolved at the GitHub ACL, fails closed). Each appended AC is provenance-tagged so triage-authored vs review-authored stays auditable.
+   - **ACL-gated.** Only a write+ reviewer's appended AC counts (ADR [0055](0055-acl-sourced-review-authz.md) author-gate, resolved at the GitHub ACL, fails closed). Each appended AC is provenance-tagged so triage-authored vs review-authored stays auditable.
    - **Frozen after round K.** An AC appended in the final repair round escalates to a human instead of looping again, so append-rate can never outrun fix-rate.
 
 ## Consequences
