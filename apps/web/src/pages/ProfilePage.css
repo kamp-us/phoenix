@@ -60,6 +60,11 @@
 	font: var(--t-meta);
 	color: var(--text-muted);
 }
+.kp-profile__stats-strip--error {
+	align-items: center;
+	font: var(--t-meta);
+	color: var(--danger);
+}
 
 .kp-profile__section {
 	display: grid;
