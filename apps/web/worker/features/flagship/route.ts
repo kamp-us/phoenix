@@ -23,6 +23,9 @@ import {anonymousFlagsContext, FlagsContext, makeRequestFlagsContext} from "./Fl
 /** The dark-ship flag this probe gates on — undeclared, so it reads its default. */
 const PROBE_FLAG = "phoenix-flags-probe";
 
+/** A typed (string) variation the probe reads to demonstrate the non-boolean reads (#509). */
+const PROBE_VARIANT_FLAG = "phoenix-flags-probe-variant";
+
 export const handleFlagsProbe = Effect.gen(function* () {
 	const raw = yield* Cloudflare.Request;
 	const pasaport = yield* Pasaport;
@@ -41,8 +44,19 @@ export const handleFlagsProbe = Effect.gen(function* () {
 		.getBoolean(PROBE_FLAG, false)
 		.pipe(Effect.provideService(FlagsContext, context));
 
+	// A typed (non-boolean) read through the same service — the safe default is the
+	// fallback variant; a server with the flag declared would return its value (#509).
+	const variant = yield* flags
+		.getString(PROBE_VARIANT_FLAG, "control")
+		.pipe(Effect.provideService(FlagsContext, context));
+
 	// Branch on the flag — the whole point of the primitive.
-	return HttpServerResponse.jsonUnsafe({flag: PROBE_FLAG, enabled, branch: enabled ? "on" : "off"});
+	return HttpServerResponse.jsonUnsafe({
+		flag: PROBE_FLAG,
+		enabled,
+		branch: enabled ? "on" : "off",
+		variant,
+	});
 });
 
 export const flagsProbeRoute = HttpRouter.add("GET", "/api/flags/probe", handleFlagsProbe);
