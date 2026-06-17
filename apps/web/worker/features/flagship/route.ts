@@ -93,16 +93,18 @@ export const handleFlagsEvaluate = Effect.gen(function* () {
 	// Evaluate every requested flag server-side under the session-derived context.
 	// Each `getBoolean` honors its own supplied default and never throws.
 	const entries = yield* Effect.forEach(keys, ({key, default: defaultValue}) =>
-		flags
-			.getBoolean(key, defaultValue)
-			.pipe(
-				Effect.provideService(FlagsContext, context),
-				Effect.map((value) => [key, value] as const),
-			),
+		flags.getBoolean(key, defaultValue).pipe(
+			Effect.provideService(FlagsContext, context),
+			Effect.map((value) => [key, value] as const),
+		),
 	);
 
 	const result: FlagEvaluateResult = {flags: Object.fromEntries(entries)};
 	return HttpServerResponse.jsonUnsafe(result);
 });
 
-export const flagsEvaluateRoute = HttpRouter.add("POST", "/api/flags/evaluate", handleFlagsEvaluate);
+export const flagsEvaluateRoute = HttpRouter.add(
+	"POST",
+	"/api/flags/evaluate",
+	handleFlagsEvaluate,
+);

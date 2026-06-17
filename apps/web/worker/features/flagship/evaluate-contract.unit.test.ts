@@ -33,9 +33,9 @@ describe("resolveFlag", () => {
 	});
 
 	it("falls back to the default when the server value is not a boolean", () => {
-		// A malformed server payload must not flip the gate — only a genuine boolean does.
-		const malformed = {flags: {"new-ui": "yes" as unknown as boolean}};
-		expect(resolveFlag(malformed, "new-ui", false)).toBe(false);
+		// `resolveFlag` takes untrusted JSON (`unknown`), so a runtime-malformed
+		// value needs no cast — the structural guard must reject the non-boolean.
+		expect(resolveFlag({flags: {"new-ui": "yes"}}, "new-ui", false)).toBe(false);
 	});
 });
 

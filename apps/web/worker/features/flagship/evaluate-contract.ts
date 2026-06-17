@@ -47,16 +47,17 @@ export function parseFlagEvaluateRequest(body: unknown): ReadonlyArray<FlagReque
 }
 
 /**
- * Resolve one flag's value from a (possibly partial / null) server response,
- * falling back to `defaultValue` when the server didn't return the key or
- * returned a non-boolean. This is the client's safe-default guarantee: until the
- * server says otherwise — and only with a genuine boolean — the default holds.
+ * Resolve one flag's value from a server response, falling back to `defaultValue`
+ * when the response didn't return the key or returned a non-boolean. The input is
+ * `unknown` on purpose — it is parsed from untrusted JSON (`res.json()`), so the
+ * structural guard here, not a cast at the call site, is what enforces the
+ * client's safe-default guarantee: until the server says otherwise — and only
+ * with a genuine boolean — the default holds.
  */
-export function resolveFlag(
-	result: FlagEvaluateResult | null | undefined,
-	key: string,
-	defaultValue: boolean,
-): boolean {
-	const value = result?.flags?.[key];
+export function resolveFlag(result: unknown, key: string, defaultValue: boolean): boolean {
+	if (typeof result !== "object" || result === null) return defaultValue;
+	const flags = (result as {flags?: unknown}).flags;
+	if (typeof flags !== "object" || flags === null) return defaultValue;
+	const value = (flags as Record<string, unknown>)[key];
 	return typeof value === "boolean" ? value : defaultValue;
 }

@@ -25,7 +25,6 @@
 import {useEffect, useState} from "react";
 import {
 	type FlagEvaluateRequest,
-	type FlagEvaluateResult,
 	resolveFlag,
 } from "../../worker/features/flagship/evaluate-contract";
 
@@ -48,8 +47,8 @@ async function fetchFlag(key: string, defaultValue: boolean): Promise<boolean> {
 		body: JSON.stringify(requestBody),
 	});
 	if (!res.ok) return defaultValue;
-	const result = (await res.json()) as FlagEvaluateResult;
-	return resolveFlag(result, key, defaultValue);
+	// `resolveFlag` takes the untrusted JSON directly and guards it structurally.
+	return resolveFlag(await res.json(), key, defaultValue);
 }
 
 export function useFlag(key: string, defaultValue: boolean): FlagState {
