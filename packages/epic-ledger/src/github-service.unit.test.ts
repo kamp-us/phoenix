@@ -4,11 +4,12 @@ import {ChildProcessSpawner} from "effect/unstable/process";
 import {GhCommandError, GhParseError, Github, GithubLive, RepoResolutionError} from "./github.ts";
 import {validateLedger} from "./validate.ts";
 
-// The live `Github` layer resolves its target repo at build (ADR 0062 §1): env
-// override first, else `gh repo view`. These tests pin the env override to
-// `kamp-us/phoenix` so the fixtures keyed on `repos/kamp-us/phoenix/...` match
-// without depending on the ambient `gh repo view`. The resolution-order describe
-// below clears it to exercise the other branches explicitly.
+// The live `Github` layer resolves its target repo lazily on first method call
+// (ADR 0062 §1, deferred per #422): env override first, else `gh repo view`. These
+// tests pin the env override to `kamp-us/phoenix` so the fixtures keyed on
+// `repos/kamp-us/phoenix/...` match without depending on the ambient `gh repo
+// view`. The resolution-order describe below clears it to exercise the other
+// branches explicitly.
 const PINNED_REPO = "kamp-us/phoenix";
 let savedEnv: string | undefined;
 beforeAll(() => {
@@ -253,10 +254,10 @@ const soloResponses = (repo: string, epicNumber: number): Record<string, Respons
 });
 
 // Run an epicLedger read against a fixture map + a chosen `gh repo view` answer,
-// with the repo-resolution env set exactly as the test wants. The layer reads
-// `process.env` at build (inside `Effect.provide`), so env is set synchronously
-// around `Effect.runPromiseExit` and restored after — `it.effect` can't bracket
-// the build the way these tests need, so they run the effect by hand.
+// with the repo-resolution env set exactly as the test wants. Resolution reads
+// `process.env` on the first method call (deferred — #422), so env is set
+// synchronously around `Effect.runPromiseExit` and restored after — `it.effect`
+// can't bracket the run the way these tests need, so they run the effect by hand.
 const runResolution = (params: {
 	readonly env: {readonly CLAUDE_PIPELINE_REPO?: string; readonly GITHUB_REPOSITORY?: string};
 	readonly responses: Record<string, Response>;
@@ -290,6 +291,116 @@ const runResolution = (params: {
 		restore("GITHUB_REPOSITORY", prev.GITHUB_REPOSITORY);
 	});
 };
+
+// A spy spawner that counts `gh` invocations and answers `repo view` from
+// `repoView`. It lets a test assert that building the layer spawns nothing — the
+// proof that repo resolution is deferred out of the layer build (#422).
+const countingSpawner = (
+	counter: {count: number; repoView: number},
+	repoView: Response,
+	responses: Record<string, Response> = {},
+): Layer.Layer<ChildProcessSpawner.ChildProcessSpawner> =>
+	Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
+		ChildProcessSpawner.make(
+			Effect.fnUntraced(function* (command) {
+				counter.count += 1;
+				let cmd = command;
+				while (cmd._tag === "PipedCommand") cmd = cmd.left;
+				const args = cmd._tag === "StandardCommand" ? cmd.args : [];
+				const isRepoView = args[0] === "repo" && args[1] === "view";
+				if (isRepoView) counter.repoView += 1;
+				const rawPath = args.find((a) => a.startsWith("repos/")) ?? "";
+				const path = rawPath.replace(/\?.*$/, "");
+				const canned = normalize(
+					isRepoView ? repoView : (responses[path] ?? {stdout: "", exitCode: 1, stderr: "nf"}),
+				);
+				return ChildProcessSpawner.makeHandle({
+					pid: ChildProcessSpawner.ProcessId(1),
+					stdin: Sink.drain,
+					stdout: Stream.fromIterable([enc.encode(canned.stdout)]),
+					stderr: Stream.fromIterable([enc.encode(canned.stderr ?? "")]),
+					all: Stream.fromIterable([enc.encode(canned.stdout)]),
+					exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(canned.exitCode ?? 0)),
+					isRunning: Effect.succeed(false),
+					kill: () => Effect.void,
+					getInputFd: () => Sink.drain,
+					getOutputFd: () => Stream.empty,
+					unref: Effect.succeed(Effect.void),
+				});
+			}),
+		),
+	);
+
+describe("GithubLive — repo resolution is deferred to first use (#422)", () => {
+	// `--help`/`--version` build the layer but call no method; the bug was that the
+	// layer build itself resolved the repo and so ERRORed with no repo context. The
+	// fix defers resolution into the methods — so merely acquiring the service (the
+	// help/version path) must spawn nothing, even with no env and an unreadable repo.
+	it("building the service resolves NO repo (help/version path spawns no gh)", async () => {
+		const prev = {
+			CLAUDE_PIPELINE_REPO: process.env.CLAUDE_PIPELINE_REPO,
+			GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+		};
+		delete process.env.CLAUDE_PIPELINE_REPO;
+		delete process.env.GITHUB_REPOSITORY;
+		const counter = {count: 0, repoView: 0};
+		const program = Github.pipe(
+			// acquire the service but call nothing — the shape of a --help/--version run
+			Effect.as(undefined),
+			Effect.provide(
+				GithubLive.pipe(
+					Layer.provide(
+						countingSpawner(counter, {stdout: "", exitCode: 1, stderr: "not a git repo"}),
+					),
+				),
+			),
+		);
+		const exit = await Effect.runPromiseExit(program).finally(() => {
+			if (prev.CLAUDE_PIPELINE_REPO === undefined) delete process.env.CLAUDE_PIPELINE_REPO;
+			else process.env.CLAUDE_PIPELINE_REPO = prev.CLAUDE_PIPELINE_REPO;
+			if (prev.GITHUB_REPOSITORY === undefined) delete process.env.GITHUB_REPOSITORY;
+			else process.env.GITHUB_REPOSITORY = prev.GITHUB_REPOSITORY;
+		});
+		assert.isTrue(exit._tag === "Success");
+		assert.strictEqual(counter.count, 0);
+		assert.strictEqual(counter.repoView, 0);
+	});
+
+	// The complement: a real method call DOES resolve (and reuse) the repo — proving
+	// the deferral didn't break resolution, only moved it to where it is needed.
+	it("a real method call resolves the repo lazily and reuses it (cached, once)", async () => {
+		const prev = {
+			CLAUDE_PIPELINE_REPO: process.env.CLAUDE_PIPELINE_REPO,
+			GITHUB_REPOSITORY: process.env.GITHUB_REPOSITORY,
+		};
+		delete process.env.CLAUDE_PIPELINE_REPO;
+		delete process.env.GITHUB_REPOSITORY;
+		const counter = {count: 0, repoView: 0};
+		const program = Effect.gen(function* () {
+			const github = yield* Github;
+			yield* github.epicLedger(159);
+			yield* github.epicLedger(159);
+		}).pipe(
+			Effect.provide(
+				GithubLive.pipe(
+					Layer.provide(
+						countingSpawner(counter, {stdout: "from/view\n"}, soloResponses("from/view", 159)),
+					),
+				),
+			),
+		);
+		const exit = await Effect.runPromiseExit(program).finally(() => {
+			if (prev.CLAUDE_PIPELINE_REPO === undefined) delete process.env.CLAUDE_PIPELINE_REPO;
+			else process.env.CLAUDE_PIPELINE_REPO = prev.CLAUDE_PIPELINE_REPO;
+			if (prev.GITHUB_REPOSITORY === undefined) delete process.env.GITHUB_REPOSITORY;
+			else process.env.GITHUB_REPOSITORY = prev.GITHUB_REPOSITORY;
+		});
+		assert.isTrue(exit._tag === "Success");
+		// `gh repo view` runs exactly once despite two epicLedger calls — the cached
+		// resolution proves the repo is resolved lazily AND only once per process.
+		assert.strictEqual(counter.repoView, 1);
+	});
+});
 
 describe("GithubLive — target repo resolution (ADR 0062 §1)", () => {
 	// The read only succeeds if the resolved repo became the `repos/<repo>/...` URL

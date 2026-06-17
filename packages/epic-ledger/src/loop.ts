@@ -34,11 +34,16 @@ import {Context, Effect} from "effect";
 import * as Schema from "effect/Schema";
 import type {Defect} from "./Defect.ts";
 import {type GateVerdict, runGate} from "./gate.ts";
-import type {GhCommandError, GhParseError} from "./github.ts";
+import type {GhCommandError, GhParseError, RepoResolutionError} from "./github.ts";
 import {Github} from "./github.ts";
 
 /** Everything the loop's effects can fail with: gate IO faults + a re-plan fault. */
-type LoopError = GhCommandError | GhParseError | Schema.SchemaError | RePlanError;
+type LoopError =
+	| RepoResolutionError
+	| GhCommandError
+	| GhParseError
+	| Schema.SchemaError
+	| RePlanError;
 
 /**
  * A re-plan failed. `rePlan(epicNumber)` re-invokes `plan-epic` on the epic and
@@ -156,7 +161,7 @@ export const runConvergenceLoop = Effect.fn("ReviewPlan.runConvergenceLoop")(fun
 		reason: StallReason,
 		defects: ReadonlyArray<Defect>,
 		iteration: number,
-	): Effect.Effect<LoopOutcome, GhCommandError> =>
+	): Effect.Effect<LoopOutcome, RepoResolutionError | GhCommandError> =>
 		Effect.gen(function* () {
 			yield* github.postComment(epicNumber, parkComment(epicNumber, reason, defects));
 			yield* github.parkNeedsInfo(epicNumber);
