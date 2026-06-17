@@ -4,7 +4,11 @@
  *
  *   node src/bin.ts generate          # rewrite .decisions/index.md from the ADR files
  *   node src/bin.ts check             # CI gate: exit non-zero on a stale index or a dup id
- *   node src/bin.ts <mode> --dir <d>  # point at a different .decisions dir (default: ./.decisions)
+ *   node src/bin.ts <mode> --dir <d>  # point at a specific .decisions dir (else: repo-root .decisions)
+ *
+ * With no --dir the dir is resolved against the REPO ROOT (walk up for a
+ * `.decisions`/workspace marker), not the cwd — so `pnpm --filter <pkg> generate`,
+ * whose cwd is the package dir, finds the root `.decisions` instead of ENOENT (#447).
  *
  * `generate` is what the `/adr` skill (and an author) runs instead of hand-editing
  * the table; `check` is the CI gate that fails on (a) a committed `index.md` that
@@ -18,16 +22,40 @@
  * `@kampus/leak-guard` / `changelog-derive`): `effect/unstable/cli`, the Node
  * platform over `NodeServices.layer`, run via `NodeRuntime.runMain`.
  */
-import {readdirSync, readFileSync, writeFileSync} from "node:fs";
-import {join} from "node:path";
+import {existsSync, readdirSync, readFileSync, writeFileSync} from "node:fs";
+import {dirname, join, resolve} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Data, Effect} from "effect";
+import {Console, Data, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {type AdrFile, buildIndex, DuplicateIdError} from "./decisions-index.ts";
+import {type AdrFile, buildIndex, DuplicateIdError, findRootDir} from "./decisions-index.ts";
 
 const INDEX_FILE = "index.md";
 const ADR_FILE = /^\d+[A-Za-z]*-.+\.md$/;
 const GATE_FAIL_EXIT_CODE = 1;
+const DECISIONS_DIR = ".decisions";
+// Repo-root markers, in priority order. `.decisions` itself is the strongest
+// signal (the dir we'll read); a workspace/VCS marker is the fallback.
+const ROOT_MARKERS = [DECISIONS_DIR, "pnpm-workspace.yaml", ".git"] as const;
+
+/**
+ * Resolve the default `.decisions` directory against the REPO ROOT, not the cwd.
+ *
+ * `pnpm --filter <pkg> <script>` runs with cwd = the package dir, so a bare
+ * `.decisions` default resolves to `packages/decisions-index/.decisions` and
+ * ENOENTs (#447). Walk up from cwd for the first ancestor carrying a repo-root
+ * marker and read `.decisions` there; this is foreign-repo-safe (no phoenix path
+ * hardcoded) and keeps CI working (it runs from the root, where cwd === root).
+ * If no marker is found we fall back to cwd's `.decisions` — the pre-fix behavior.
+ */
+const defaultDecisionsDir = (from: string = process.cwd()): string => {
+	const start = resolve(from);
+	const root = findRootDir(
+		start,
+		(dir) => ROOT_MARKERS.some((marker) => existsSync(join(dir, marker))),
+		dirname,
+	);
+	return join(root ?? start, DECISIONS_DIR);
+};
 
 // A directory/file IO failure: the run couldn't complete. Uncaught — it falls through
 // to NodeRuntime's default handler (stack trace + non-zero exit).
@@ -60,15 +88,23 @@ const build = (files: ReadonlyArray<AdrFile>): Effect.Effect<string, CheckFailed
 				: new CheckFailed({reason: String((cause as Error)?.message ?? cause)}),
 	});
 
+// Optional, not defaulted: an absent --dir resolves to the repo-root `.decisions`
+// (see `defaultDecisionsDir`); a passed --dir is honored verbatim, relative to cwd.
 const dirFlag = Flag.string("dir").pipe(
-	Flag.withDefault(".decisions"),
-	Flag.withDescription("the .decisions directory to read ADR files from (default: .decisions)"),
+	Flag.optional,
+	Flag.withDescription(
+		"the .decisions directory to read ADR files from (default: the repo-root .decisions)",
+	),
 );
+
+const resolveDir = (dir: Option.Option<string>): string =>
+	Option.getOrElse(dir, () => defaultDecisionsDir());
 
 const generate = Command.make(
 	"generate",
 	{dir: dirFlag},
-	Effect.fn(function* ({dir}) {
+	Effect.fn(function* ({dir: dirOpt}) {
+		const dir = resolveDir(dirOpt);
 		const markdown = yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
 		const target = join(dir, INDEX_FILE);
 		yield* Effect.try({
@@ -82,7 +118,8 @@ const generate = Command.make(
 const check = Command.make(
 	"check",
 	{dir: dirFlag},
-	Effect.fn(function* ({dir}) {
+	Effect.fn(function* ({dir: dirOpt}) {
+		const dir = resolveDir(dirOpt);
 		const expected = yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
 		const target = join(dir, INDEX_FILE);
 		const committed = yield* Effect.try({

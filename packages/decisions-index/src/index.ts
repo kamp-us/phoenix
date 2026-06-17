@@ -12,6 +12,7 @@ export {
 	DuplicateIdError,
 	FrontmatterError,
 	findDuplicateId,
+	findRootDir,
 	parseAdrFile,
 	parseFrontmatter,
 	renderIndex,
