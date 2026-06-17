@@ -44,7 +44,7 @@ One row per ADR. Read the file for the why.
 | [0037](0037-unified-void-aligned-live-do.md) | Unified void-aligned LiveDO — one class, two roles, KV storage | accepted | 2026-05-30 |
 | [0038](0038-dependency-patches-local-only.md) | Dependency patches are local-only — no fork/git/unmerged-PR sources; local `pnpm patch` if unavoidable | accepted | 2026-05-31 |
 | [0039](0039-livebus-context-service.md) | LiveBus Context.Service replaces the AsyncLocalStorage publisher bridge | amended-in-part by [0042](0042-fate-effect-v1-architecture.md) | 2026-05-31 |
-| [0040](0040-testing-taxonomy-and-seam-graduation.md) | Testing taxonomy and test-seam graduation | accepted | 2026-06-07 |
+| [0040](0040-testing-taxonomy-and-seam-graduation.md) | Testing taxonomy and test-seam graduation | superseded by [0082](0082-two-test-tiers-unit-integration.md) | 2026-06-07 |
 | [0041](0041-fate-bridge-worker-managed-runtime.md) | fate↔Effect bridge — one worker-level ManagedRuntime (F4) | amended-in-part by [0042](0042-fate-effect-v1-architecture.md), [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | 2026-06-07 |
 | [0042](0042-fate-effect-v1-architecture.md) | fate-effect v1 — the Effect-native fate integration; the bridge is deleted | amended-in-part by [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | 2026-06-10 |
 | [0043](0043-fate-effect-v2-native-interpreter-cutover.md) | fate-effect v2 — the native interpreter serves /fate; no runtime on the request path | accepted | 2026-06-10 |
@@ -86,3 +86,4 @@ One row per ADR. Read the file for the why.
 | [0079](0079-reviewer-authored-acceptance-criteria.md) | Reviewer-Authored Acceptance Criteria | proposed | 2026-06-16 |
 | [0080](0080-site-search-lexical-bar-semantic-discovery.md) | Site search v1 is a lexical search bar; semantic discovery is a separate product | accepted | 2026-06-16 |
 | [0081](0081-feature-flag-substrate-cloudflare-flagship.md) | The feature-flag substrate is Cloudflare Flagship (managed, edge-native), not a bespoke KV/D1/DO flag store | accepted | 2026-06-16 |
+| [0082](0082-two-test-tiers-unit-integration.md) | Two Test Tiers — Unit (No DB) and Integration (Real D1 via alchemy `Test.make`) | accepted | 2026-06-17 |
