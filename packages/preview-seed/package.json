@@ -1,0 +1,33 @@
+{
+	"name": "@kampus/preview-seed",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Direct-D1 seed CLI — populate a preview stage's D1 with the minimal sözlük + pano fixtures the unauthenticated read e2e specs sample (issue #521)",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"seed": "node src/bin.ts run"
+	},
+	"dependencies": {
+		"@distilled.cloud/cloudflare": "catalog:",
+		"@effect/platform-node": "catalog:",
+		"drizzle-orm": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
