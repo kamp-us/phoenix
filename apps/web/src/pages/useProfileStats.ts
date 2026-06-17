@@ -8,7 +8,12 @@
  * same reason as `useMe`: `ProfilePage` renders directly under the `Layout`
  * shell, above any `<Screen>` Suspense boundary, so it must drive fate itself
  * rather than suspend. A null/empty username (user not yet bootstrapped) short-
- * circuits off the wire and leaves the counts null.
+ * circuits off the wire and leaves the state idle.
+ *
+ * Returns a discriminated `idle | loading | ok | error` state so a failed fetch
+ * is distinguishable from a genuine zero-activity user — the consumer renders an
+ * honest error instead of a misleading `0` (#448), mirroring the `SozlukHome`
+ * `loading | ok | error` status convention.
  */
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, view} from "react-fate";
@@ -20,6 +25,12 @@ export interface ProfileStats {
 	definitionCount: number;
 }
 
+export type ProfileStatsState =
+	| {status: "idle"}
+	| {status: "loading"}
+	| {status: "ok"; stats: ProfileStats}
+	| {status: "error"};
+
 const ProfileStatsView = view<Profile>()({
 	userId: true,
 	postCount: true,
@@ -27,15 +38,35 @@ const ProfileStatsView = view<Profile>()({
 	definitionCount: true,
 });
 
-export function useProfileStats(username: string | null | undefined): ProfileStats | null {
+/**
+ * Pure snapshot → `ok` mapping, factored out so the count-projection contract is
+ * unit-testable without a DOM/React runtime — the swallow this fixes lived in
+ * exactly this un-asserted path. A `null` snapshot (user not found / empty view)
+ * is a real, successful zero result, NOT an error: it maps to all-zero counts.
+ */
+export function toProfileStatsState(data: ProfileStats | null): ProfileStatsState {
+	return {
+		status: "ok",
+		stats: data
+			? {
+					postCount: data.postCount,
+					commentCount: data.commentCount,
+					definitionCount: data.definitionCount,
+				}
+			: {postCount: 0, commentCount: 0, definitionCount: 0},
+	};
+}
+
+export function useProfileStats(username: string | null | undefined): ProfileStatsState {
 	const fate = useFateClient();
-	const [stats, setStats] = useState<ProfileStats | null>(null);
+	const [state, setState] = useState<ProfileStatsState>({status: "idle"});
 
 	const refetch = useCallback(async () => {
 		if (!username) {
-			setStats(null);
+			setState({status: "idle"});
 			return;
 		}
+		setState({status: "loading"});
 		try {
 			const {profile: ref} = await fate.request({
 				profile: {view: ProfileStatsView, args: {username}},
@@ -44,17 +75,10 @@ export function useProfileStats(username: string | null | undefined): ProfileSta
 			// `readView` statically narrows only `userId`; the selected count
 			// scalars are present at runtime, read through the known shape.
 			const data = (snapshot?.data ?? null) as ProfileStats | null;
-			setStats(
-				data
-					? {
-							postCount: data.postCount,
-							commentCount: data.commentCount,
-							definitionCount: data.definitionCount,
-						}
-					: null,
-			);
+			setState(toProfileStatsState(data));
 		} catch (err) {
 			console.error("[useProfileStats]", err);
+			setState({status: "error"});
 		}
 	}, [username, fate]);
 
@@ -62,5 +86,5 @@ export function useProfileStats(username: string | null | undefined): ProfileSta
 		void refetch();
 	}, [refetch]);
 
-	return stats;
+	return state;
 }

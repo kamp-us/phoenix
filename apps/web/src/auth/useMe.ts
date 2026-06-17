@@ -8,6 +8,11 @@
  * runs in the `Layout` shell above any `<Screen>` Suspense boundary, and must
  * NOT query while unauthenticated — fate's `me` throws `UNAUTHORIZED` for
  * anonymous viewers, so the `!session.data` short-circuit keeps them off the wire.
+ *
+ * Returns a discriminated `idle | loading | ok | error` `status` so a failed
+ * fetch is distinguishable from a signed-out / not-yet-loaded `me` — both are
+ * `null`, but only one is an error (#448). `loading` is retained as a derived
+ * convenience for existing consumers.
  */
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, view} from "react-fate";
@@ -22,6 +27,8 @@ export interface MeUser {
 	username: string | null;
 }
 
+export type MeStatus = "idle" | "loading" | "ok" | "error";
+
 const MeView = view<User>()({
 	id: true,
 	email: true,
@@ -32,21 +39,23 @@ const MeView = view<User>()({
 
 export function useMe(): {
 	me: MeUser | null;
+	status: MeStatus;
 	loading: boolean;
 	refetch: () => Promise<void>;
 } {
 	const session = useSession();
 	const fate = useFateClient();
 	const [me, setMe] = useState<MeUser | null>(null);
-	const [loading, setLoading] = useState(false);
+	const [status, setStatus] = useState<MeStatus>("idle");
 
 	const refetch = useCallback(async () => {
 		// fate `me` throws `UNAUTHORIZED` for anonymous viewers — never query while signed out.
 		if (!session.data) {
 			setMe(null);
+			setStatus("idle");
 			return;
 		}
-		setLoading(true);
+		setStatus("loading");
 		try {
 			const {me: ref} = await fate.request({me: {view: MeView}});
 			const snapshot = ref ? await fate.readView(MeView, ref) : null;
@@ -64,10 +73,11 @@ export function useMe(): {
 						}
 					: null,
 			);
+			setStatus("ok");
 		} catch (err) {
 			console.error("[useMe]", err);
-		} finally {
-			setLoading(false);
+			setMe(null);
+			setStatus("error");
 		}
 	}, [session.data, fate]);
 
@@ -75,5 +85,5 @@ export function useMe(): {
 		void refetch();
 	}, [refetch]);
 
-	return {me, loading, refetch};
+	return {me, status, loading: status === "loading", refetch};
 }
