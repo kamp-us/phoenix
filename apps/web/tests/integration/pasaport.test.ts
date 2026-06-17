@@ -36,9 +36,9 @@
  * `Date`) — re-expressed via the keyset cursor order + id-union assertions.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {harness} from "./_harness.ts";
+import {integrationStack} from "./_integration.ts";
 
-const h = harness();
+const h = integrationStack(import.meta.url);
 
 const STAMP = Date.now().toString(36);
 let counter = 0;

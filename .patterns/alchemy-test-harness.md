@@ -1,217 +1,197 @@
-# Integration test harness — alchemy/Test deploy + black-box HTTP
+# Integration test harness — alchemy `Test.make`, per-file isolated stages
 
-Phoenix's integration tests deploy the **real alchemy stack** to a local
-workerd (offline, file-based state) and assert **black-box over HTTP**
-against the deployed worker URL. No miniflare, no `@cloudflare/vitest-pool-workers`,
-no `SELF.fetch`, no `env.PHOENIX_DB`, no `runInDurableObject`. The harness
-is the path every integration test takes.
+Phoenix's integration tests deploy the **real alchemy stack to real remote
+Cloudflare** — one **isolated stage per test file** — and assert **black-box
+over HTTP** against the deployed worker URL. No miniflare, no
+`@cloudflare/vitest-pool-workers`, no `SELF.fetch`, no `env.PHOENIX_DB`, no
+`runInDurableObject`, and no single shared deploy. This is the path every
+integration test takes.
 
-This pattern supersedes the miniflare-based integration recipe in
-[effect-testing.md](./effect-testing.md) (which is the legacy reference
-and is being retired). The new path is the only path for product code that
-touches D1, the DOs, or the fate seam.
+This is the ADR [0082](../.decisions/0082-two-test-tiers-unit-integration.md)
+substrate. It supersedes both the miniflare-based recipe in
+[effect-testing.md](./effect-testing.md) (the legacy reference, retired) **and**
+the prior single-shared-deploy-on-local-workerd harness (a hand-rolled
+`globalSetup` that deployed once to a local workerd and published a
+`PHOENIX_TEST_URL` — it raced itself and is the root cause of #547 / #220 /
+#560). The new path is the only path for product code that touches D1, the DOs,
+or the fate seam.
 
-## The two shapes alchemy offers
+## The shape
 
-Alchemy's `alchemy/Test/Vitest` module provides `Test.make(options)` →
-`{test, beforeAll, afterAll, deploy, destroy, ...}` — the stock alchemy
-test API. The typical shape is:
-
-```ts
-import * as Test from "alchemy/Test/Vitest";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Alchemy from "alchemy";
-import Stack from "../../alchemy.run.ts";
-
-const {test, beforeAll, afterAll, deploy, destroy} = Test.make({
-  providers: Cloudflare.providers(),
-  state: Alchemy.localState(),
-  dev: true,
-});
-
-const stack = beforeAll(deploy(Stack));        // returns a lazy accessor
-afterAll.skipIf(!process.env.CI)(destroy(Stack)); // standard cleanup gate
-
-test("hits the deployed worker", () =>
-  Effect.gen(function* () {
-    const out = yield* stack;
-    const client = yield* HttpClient.HttpClient;
-    const res = yield* client.get(`${out.url}/api/health`);
-    // ...
-  }),
-);
-```
-
-In this form, every test Effect has `HttpClient.HttpClient` in scope
-automatically; you hit the deployed worker URL with the stock effect HTTP
-client.
-
-**Phoenix doesn't use this form, and it's worth knowing why.** The
-alchemy dev sidecar (`@distilled.cloud/cloudflare-runtime`) brings up a
-Node-side LoopbackServer that the worker calls back into for D1/storage.
-Inside a Vitest **pool worker** (forks or threads), that loopback loses a
-`net.Server` address race and the whole worker becomes unreachable — and
-the failure is an uninterruptible hang, so `beforeAll`'s retry can't
-recover. The sidecar comes up cleanly only in Vitest's **main process**
-(the same context the `alchemy` CLI runs in). `Test.make` runs
-`beforeAll(deploy(Stack))` inside the pool, so it hits the race.
-
-Phoenix's shape:
-
-- **`tests/integration/_global-setup.ts`** runs in the Vitest main
-  process and uses `alchemy/Test/Core` (`Core.deploy` + `Core.run`) to
-  deploy the stack once. The deployed URL is published via
-  `process.env.PHOENIX_TEST_URL`. Teardown calls `Core.destroy` + closes
-  the scope. See the file header for the full LoopbackServer rationale.
-- **`tests/integration/_harness.ts`** runs inside the pool. `harness()`
-  reads `PHOENIX_TEST_URL` and exposes a thin HTTP client (`fate`,
-  `fateBatch`, `signUp`, `seedTerm`, `openSse`, `liveControl`) that hits
-  the deployed worker. The harness does **not** deploy; it just reads the
-  URL the global setup published.
-- **The vitest project** runs `pool: "forks"`, `maxWorkers: 1`,
-  `isolate: false`, `fileParallelism: false`. One long-lived fork, no
-  per-file isolation, the workerd sidecar lives in the main process.
-
-The two-process split is the workaround. The contract that matters at the
-test-author seam — "deploy a real stack, hit it over HTTP, tear it down"
-— is the same as `Test.make`. Future maintainers can collapse this to
-`Test.make` if the LoopbackServer race is fixed upstream.
-
-## The harness contract
-
-Test files start with:
+Each test file calls `integrationStack(import.meta.url)` once at module top
+level. That factory (`tests/integration/_integration.ts`) stands up a per-file
+`Test.make`, deploys the phoenix `Stack` under its own isolated stage, retries
+the first request, and returns the black-box `harness`:
 
 ```ts
 import {describe, expect, it} from "vitest";
-import {harness} from "./_harness.ts";
+import {integrationStack} from "./_integration.ts";
 
-const h = harness(); // reads PHOENIX_TEST_URL — does NOT deploy
+const h = integrationStack(import.meta.url); // per-file deploy + HTTP harness
 
 describe("fate seam — /fate", () => {
   it("health resolves data produced by an Effect service method", async () => {
-    const result = await h.fate({
-      kind: "query",
-      name: "health",
-      select: ["status", "definitions"],
-    });
+    const result = await h.fate({kind: "query", name: "health", select: ["status"]});
     expect(result.ok).toBe(true);
-    // ...
   });
 });
 ```
 
-Vitest's stock `it` + `expect` (not `it.effect` + `assert`) is the right
-shape: tests are HTTP-only and run as plain async functions; no Effect
-runtime, no `Effect.runPromise`. The `Effect`-aware path inside the worker
-is exercised through its observable HTTP behavior, not by yielding to
-Effects in the test body.
+Vitest's stock `it` + `expect` (not `it.effect`) is the right shape: test
+bodies are HTTP-only plain async functions. The `Effect`-aware path inside the
+worker is exercised through its observable HTTP behavior, not by yielding to
+Effects in the test body — the only Effect lives in the `beforeAll(deploy)`
+lifecycle, hidden inside `integrationStack`.
 
-The harness API (`apps/web/tests/integration/_harness.ts`):
+## How `integrationStack` works (`tests/integration/_integration.ts`)
+
+It mirrors the canonical alchemy `Test.make` idiom (the alchemy-effect fork's
+`AGENTS.md` test section + `examples/cloudflare-worker-async/test/integ.test.ts`):
+
+```ts
+const {beforeAll, afterAll, deploy, destroy} = Test.make({
+  providers: Cloudflare.providers(),
+  state: Cloudflare.state(),          // real remote state — NOT localState()
+});
+
+const stack = beforeAll(deploy<StackOutput>(Stack, {stage}).pipe(/* capture url + retry */));
+afterAll.skipIf(!!process.env.NO_DESTROY)(destroy<StackOutput>(Stack, {stage}));
+```
+
+- **Per-file isolated stage.** `stage` is derived from the test file's basename
+  (`it-<slug>`), so each file deploys its own worker + D1 under a distinct
+  Cloudflare stage. Files no longer share one deploy, so they run **in
+  parallel** (`fileParallelism: true` in `vitest.config.ts`) — the parallelism
+  that replaces the prior forced single fork.
+- **Real remote D1, one migration path.** `Cloudflare.state()` + `dev: false`
+  (the default, since `ALCHEMY_DEV` is unset under the integration run) deploys
+  the real worker. D1 is migrated by the **existing**
+  `D1Database({migrationsDir, migrationsTable: "drizzle_migrations"})` resource
+  in `worker/db/resources.ts` that `deploy` applies — there is no second
+  migration path to keep in sync. (alchemy never emulates D1 — even `alchemy
+  dev` binds real remote D1; ADR 0032/0082.)
+- **Retry-first-request.** A freshly-deployed `workers.dev` URL 404s for a few
+  seconds while the route propagates, so the `beforeAll` hook probes
+  `GET /api/health` with `Effect.repeat` on a bounded exponential→spaced
+  `Schedule` (never a `Date.now()` polling loop — the alchemy idiom) before the
+  suite asserts. The resolved URL is stashed in a holder the synchronous
+  `harness(getUrl)` reads.
+- **`NO_DESTROY`.** Set it locally to keep a file's deploy alive between runs
+  while iterating (`afterAll.skipIf(NO_DESTROY)(destroy(...))`).
+
+## The state-mode selector (`worker/env.ts`)
+
+`resolveStateMode` (called by `alchemy.run.ts` at module-eval) selects
+`Cloudflare.state()` vs `Alchemy.localState()` from the **dev-vs-deploy** signal
+alone — **not** `CI`, and (since ADR 0082) **not** `VITEST`. Only `alchemy dev`
+(its `ALCHEMY_EXEC_OPTIONS.dev` flag, or the coarser `ALCHEMY_DEV` override)
+resolves to offline `localState()`. A Vitest integration run resolves to the
+shared Cloudflare store exactly like a real deploy, because it now deploys to
+real remote Cloudflare. The Stack's baked state and `Test.make`'s `state` option
+therefore agree on `Cloudflare.state()`.
+
+## The harness contract (`tests/integration/_harness.ts`)
+
+`harness(getUrl)` is the black-box HTTP client. The test-author API is unchanged
+from the prior harness — only its URL source changed (a per-file accessor
+instead of `PHOENIX_TEST_URL`):
 
 | Method | What it does |
 |---|---|
-| `h.url()` | Read `PHOENIX_TEST_URL`. Throws with a clear message if unset. |
-| `h.req(path, init?)` | `fetch(url + path, init)`; retries transient connection failures. |
+| `h.url()` | The deployed worker URL for this file's stage. |
+| `h.req(path, init?, opts?)` | `fetch(url + path, init)`; retries transient connection failures; `opts.timeoutMs` bounds one attempt. |
 | `h.json(path, body, cookie?)` | POST JSON (sets `content-type`, dev `origin`, optional `cookie`). |
-| `h.fate(op, opts?)` | POST one fate operation; return its single result. |
+| `h.fate(op, opts?)` | POST one fate operation; return its single result (reads auto-retry; mutations only with `retry: true`). |
 | `h.fateBatch(ops, opts?)` | POST several fate operations; return all results in order. |
-| `h.signUp(email, password, name)` | Sign up via `/api/auth/sign-up/email`; return `{userId, cookie}`. |
-| `h.seedTerm(...)` | Seed a sözlük term + definitions. Seeding is out-of-band (a direct-D1 script), not a runtime route. |
+| `h.signUp(email, password, name)` | Sign up via `/api/auth/sign-up/email`; return `{userId, cookie}` (falls back to sign-in on `USER_ALREADY_EXISTS`). |
+| `h.seedTerm(...)` | Seed a sözlük term + definitions through the PUBLIC `definition.add` fate mutation (+ votes for scores). |
 | `h.openSse(connectionId, cookie)` | Open the live SSE stream. |
 | `h.liveControl(connectionId, ops, cookie)` | POST control messages (subscribe / unsubscribe). |
 
-`readFrame`/`readEvent`/`frameData` (also exported) parse the SSE wire on
-the test side.
+`readFrame`/`readEvent`/`frameData` (also exported from `_harness.ts`) parse the
+SSE wire on the test side.
 
 ## What lives where
 
-- **The deploy** — `tests/integration/_global-setup.ts`. Uses
-  `Core.deploy` + `Core.run` over a `Scope` that survives the run; calls
-  `installLocalhostDns()` so `*.localhost` resolves (macOS doesn't
-  resolve `*.localhost` by default, and `alchemy dev` exposes the worker
-  vhost-routed). Forces `Alchemy.localState()` even under CI — the test
-  stack is ephemeral and must not touch the shared Cloudflare-hosted
-  store. Injects placeholder `CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN`
-  when absent so the suite is self-contained (no `alchemy login`, no
-  profile, no network).
-- **The DNS shim** — `tests/integration/_localhost-dns.ts`. A small
-  `node:dns` patch so `fetch("http://phoenix.localhost:<port>/…")`
-  resolves. **Not** a network emulator — alchemy's bundled
-  `LocalhostDns` was retired in ADR 0032; this shim replaces it.
-- **The harness** — `tests/integration/_harness.ts`. The HTTP client
-  surface above. Runs in the test pool fork.
-- **The test files** — `tests/integration/*.test.ts`. Black-box only:
-  call `h.fate(...)`, `h.json(...)`, etc.; assert on the response.
+- **The per-file lifecycle** — `tests/integration/_integration.ts`. `Test.make`
+  + `beforeAll(deploy(Stack, {stage}))` + `afterAll.skipIf(NO_DESTROY)(destroy)`
+  + retry-first-request. Self-supplies `BETTER_AUTH_SECRET` / `ENVIRONMENT` when
+  absent so the suite is self-contained on a clean runner.
+- **The HTTP harness** — `tests/integration/_harness.ts`. The client surface
+  above. Pure HTTP; deploys nothing.
+- **The DNS shim** — `tests/integration/_localhost-dns.ts`. A small `node:dns`
+  patch so `*.localhost` resolves; retained for the dev/local path (orthogonal
+  to the harness swap).
+- **The test files** — `tests/integration/*.test.ts`. Black-box only: call
+  `h.fate(...)`, `h.json(...)`, etc.; assert on the response.
+
+## Per-file isolation removes the shared-deploy race
+
+The prior harness deployed **once** and shared one worker + D1 across every test
+file, forced into a single fork to dodge a flake. That shared deploy raced
+itself: overlapping writes against one D1, one long-lived workerd↔D1 connection
+whose latency crept up over the run, and a single lifecycle teardown that could
+interrupt held-open SSE streams. ADR 0082 traces #547 (all-fibers-interrupted
+timeout), #560 (deterministic-looking redness), and #220 (shared-deploy timing
+assertion) to that **one** root cause. Per-file isolated stages give each file
+its own worker + D1, so there is no cross-file contention to race — the class is
+gone, and the files parallelize instead of serializing.
 
 ## `test.provider` for provider-lifecycle tests
 
-`alchemy/Test/Vitest`'s `test.provider(name, fn)` runs a test against a
-scratch in-memory stack — useful for testing a provider implementation in
-isolation (does `create`/`update`/`delete` round-trip? does the diff
-work?). Phoenix doesn't author providers today, so this isn't used in the
-suite. If a future phoenix-owned provider lands, `test.provider` is the
-right shape for its tests.
+`alchemy/Test/Vitest`'s `test.provider(name, fn)` runs a test against a scratch
+in-memory stack — useful for testing a provider implementation in isolation.
+Phoenix doesn't author providers today, so this isn't used; if a future
+phoenix-owned provider lands, `test.provider` is the right shape for its tests.
 
 ## Bun vs Vitest
 
-`alchemy/Test/Bun` ships the same `make(...)` → `{test, beforeAll, ...}`
-API over `bun:test`. Phoenix uses Vitest (`apps/web/vitest.config.ts`)
-because the project already has Vitest projects (integration + unit) and
-the unit project drives `@effect/vitest`'s `it.effect`. There's no reason
-to mix runners.
+`alchemy/Test/Bun` ships the same `make(...)` API over `bun:test`. Phoenix uses
+Vitest (`apps/web/vitest.config.ts`) because the project already has Vitest
+projects (integration + unit) and the unit project drives `@effect/vitest`'s
+`it.effect`. No reason to mix runners.
 
 ## The unit-test project
 
-The same `vitest.config.ts` defines a `unit` project for tests that
-**don't** need a deployed worker — pure helpers, the `Drizzle` service
-contract, the fate bridge over a `node:sqlite` D1, the Effect-DO instance
-builders over a DO-state fake. Unit tests are colocated as
-`<module>.test.ts` under `worker/**` and `src/**`. The `live-instance.ts`
-factory pair is the load-bearing example: it's a pure factory that takes
-a `DurableObjectState["Service"]` + a sibling resolver, so
-`live-instance.test.ts` drives it with fakes for both and never touches
-workerd.
+The same `vitest.config.ts` defines a `unit` project for tests that **don't**
+need a deployed worker — pure logic and in-process service contracts, all
+offline in the node pool. Pure-logic files carry the `*.unit.test.ts` infix.
+Per ADR 0082, the unit tier boots no SQL engine at all (the `node:sqlite`
+stand-in is banned); a test that needs real database behavior belongs in
+`integration`.
 
 ## Gotchas
 
-- **The integration suite owns the box — don't run it alongside `pnpm dev`.**
-  `_global-setup.ts` deploys its *own* full workerd stack (worker + DOs + D1
-  binding) for the run. A live `pnpm dev` / `pnpm dev:worker` is a *second*
-  alchemy sidecar + workerd already running. Two workerd processes contending
-  for memory trips the test sidecar's allocator at startup —
-  `workerd … ExternalEntityTable::AllocateEntry: out of memory` (signal 6),
-  which is workerd's internal pointer-table cap, *not* machine RAM (it OOMs with
-  the box mostly free). The probe then reports `worker never became reachable at
-  http://localhost:<port>` and Vitest exits with `No test files found`. The fix
-  is operational, not code: stop the dev server before running the suite. If a
-  prior run leaked a sidecar, `pkill -f 'Cloudflare/Local.js'; pkill -f workerd`
-  clears it.
 - **A fully-green run can still exit non-zero.** Workerd logs an uncaught
-  `All fibers interrupted without error` when a held-open `/fate/live` SSE stream
-  is torn down between tests; this can surface a non-zero exit even though all
-  tests pass and the stack tears down cleanly. Tracked in
-  [kamp-us/phoenix#20](https://github.com/kamp-us/phoenix/issues/20) — a green
-  summary with a `✗` exit is that, not a real failure.
+  `All fibers interrupted without error` when a held-open `/fate/live` SSE
+  stream is torn down between tests; this can surface a non-zero exit even when
+  all tests pass. `vitest.config.ts`'s `onUnhandledError` drops exactly that one
+  message. Tracked in [#20](https://github.com/kamp-us/phoenix/issues/20) — a
+  green summary with a `✗` exit is that, not a real failure.
+- **D1 create/destroy rate limits.** Per-file stages provision real D1 per run.
+  If Cloudflare's D1 create/destroy rate limits bite at scale, the mitigation
+  (deferred, not built — ADR 0082 Consequences) is a bounded per-fork stage pool
+  (D1 created once and kept, idempotent re-migrate, data reset per file). Start
+  with max parallelism; revisit only if it becomes a problem.
 
 ## Citations
 
-- `apps/web/tests/integration/_global-setup.ts` — the deploy/teardown,
-  the LoopbackServer rationale, the local-state forcing.
+- `apps/web/tests/integration/_integration.ts` — the per-file `Test.make`
+  lifecycle, the isolated-stage derivation, retry-first-request.
 - `apps/web/tests/integration/_harness.ts` — the HTTP harness API.
-- `apps/web/tests/integration/seam.test.ts` — a minimal black-box test
-  (health + an unauthorized error).
+- `apps/web/worker/env.ts` — `resolveStateMode`, the dev-vs-deploy state-store
+  selector (VITEST is no longer offline; ADR 0082).
+- `apps/web/tests/integration/seam.test.ts` — a minimal black-box test.
 - `apps/web/tests/integration/fate-live.test.ts` — SSE black-box.
-- `apps/web/vitest.config.ts` — projects, pool, isolate, sequence.
+- `apps/web/vitest.config.ts` — projects, pool, file parallelism.
 
 ## See also
 
-- [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — what the stack
-  the harness deploys actually declares.
-- [ADR 0031](../.decisions/0031-local-first-dev-state.md) — local-first
-  state for dev/test.
-- [ADR 0032](../.decisions/0032-alchemy-beta45-and-dev-model.md) — the
-  upgrade that retired `LocalhostDns` (replaced by the `_localhost-dns.ts`
-  shim).
-- [effect-testing.md](./effect-testing.md) — the legacy miniflare recipe
-  (kept for the unit-test guidance; the integration path there is
-  retired).
+- [ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md) — the two
+  test tiers + the `Test.make` integration substrate this doc describes.
+- [alchemy-stack-deploy.md](./alchemy-stack-deploy.md) — what the stack the
+  harness deploys actually declares.
+- [ADR 0032](../.decisions/0032-alchemy-beta45-and-dev-model.md) — the dev model
+  (real remote D1 even in dev; retired `LocalhostDns`).
+- [effect-testing.md](./effect-testing.md) — the legacy miniflare recipe (kept
+  for unit-test guidance; the integration path there is retired).

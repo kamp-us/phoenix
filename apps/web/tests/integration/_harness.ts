@@ -1,31 +1,26 @@
 /**
- * Integration-test harness — alchemy/Test deploy + black-box HTTP (ADR 0026–0031,
- * `.patterns/alchemy-stack-deploy.md`).
+ * Integration-test HTTP harness — the black-box client surface every integration
+ * test drives (ADR 0026–0031, ADR 0082, `.patterns/alchemy-test-harness.md`).
  *
- * The old harness ran tests *inside* workerd via `@cloudflare/vitest-pool-workers`.
- * That pool cannot load the alchemy `Cloudflare.Worker` — it transitively imports
- * alchemy's bundler (rolldown's native `.node` binding + Node-only modules) and
- * workerd can't load it. The new harness instead **deploys the real stack to a
- * local workerd** (`dev: true` + `Alchemy.localState()`, fully offline) and asserts
- * **black-box over HTTP** against the deployed URL. No `cloudflare:test`, no
- * `SELF.fetch`, no `env.PHOENIX_DB`, no `runInDurableObject`.
+ * The harness owns no deploy lifecycle. `integrationStack()` (in `_integration.ts`)
+ * deploys the real phoenix stack to **real remote Cloudflare** with a **per-file
+ * isolated stage** (`Test.make` + `beforeAll(deploy(Stack, {stage}))` +
+ * `afterAll.skipIf(...)(destroy(Stack, {stage}))` + retry-first-request) and hands
+ * this factory a `getUrl` accessor resolving to that stage's deployed worker URL.
+ * Tests assert **black-box over HTTP** against it. No `cloudflare:test`, no
+ * `SELF.fetch`, no `env.PHOENIX_DB`, no `runInDurableObject`, no shared single
+ * deploy.
  *
- * WHERE THE DEPLOY HAPPENS — and why it's `globalSetup`, not `beforeAll`:
- * the alchemy dev sidecar (`@distilled.cloud/cloudflare-runtime`) brings up a
- * Node-side LoopbackServer that the worker calls back into for D1/storage. Inside
- * a Vitest *pool worker* (forks/threads) that loopback loses a `net.Server`
- * address race and the whole worker becomes unreachable (and the failure is an
- * uninterruptible hang, so a `beforeAll` retry can't recover). In Vitest's **main
- * process** — same context the `alchemy` CLI runs in — the sidecar comes up
- * cleanly every time. So the stack is deployed once in `tests/integration/_global-setup.ts`
- * (main process), which publishes the URL via `PHOENIX_TEST_URL`; the test files
- * run in the pool and only make HTTP requests against that URL. `installLocalhostDns()`
- * is called in both places so `fetch("http://phoenix.localhost:<port>/…")` resolves
- * (`*.localhost` is not resolvable by default on macOS).
+ * D1 is real remote Cloudflare D1, migrated by the existing
+ * `D1Database({migrationsDir, migrationsTable: "drizzle_migrations"})` resource
+ * (`worker/db/resources.ts`) that `deploy` applies — one migration path, nothing to
+ * keep in sync. Per-file isolated stages give every file its own worker + D1, so
+ * files run in parallel instead of the prior forced single fork that raced itself
+ * (#547 / #220 / #560 — one root cause, ADR 0082).
  *
- * Each test file calls `harness()` at module top level (NOT a deploy — just reads
- * the published URL) and uses:
- *   - `h.url()`              — the deployed worker URL
+ * The test-author contract is unchanged from the prior single-shared-deploy harness
+ * — `harness(getUrl)` exposes the same surface, only sourced from a per-file URL:
+ *   - `h.url()`              — the deployed worker URL for this file's stage
  *   - `h.fate(op, opts)`     — POST one fate operation, return its single result
  *   - `h.fateBatch(...)`     — POST several fate operations at once
  *   - `h.signUp(...)`        — sign up a user through `/api/auth/*`, return cookie
@@ -34,9 +29,6 @@
  *   - `h.json(...)` / `h.req(...)` — raw HTTP helpers
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
-import {installLocalhostDns} from "./_localhost-dns.ts";
-
-installLocalhostDns();
 
 /** A fate wire result for a single operation. */
 export type FateResult =
@@ -114,22 +106,17 @@ const isAbort = (e: unknown): boolean =>
 	e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
 
 // One HTTP request that stalls past this is aborted and (for idempotent ops)
-// retried against a fresh connection. The integration deploy talks to real
-// Cloudflare D1 over the dev-sidecar loopback (no offline D1); a request can
-// occasionally hang outright — without this bound the whole test waits out the
-// Vitest timeout and dies with "All fibers interrupted".
-//
-// Sizing is a balance: too low and it chops *legitimately slow* requests rather
-// than just hung ones. The long single-fork run holds one workerd↔remote-D1
-// connection whose latency creeps up over ~10 min, so single round-trips late in
-// the run genuinely take many seconds (an early 12s bound aborted them and
-// reddened whole files). 30s clears that degraded tail while still catching a
-// true hang and leaving room to retry inside the 120s test budget.
+// retried against a fresh connection. The worker talks to real remote Cloudflare
+// D1; a request can occasionally hang outright — without this bound the whole test
+// waits out the Vitest timeout and dies with "All fibers interrupted". 30s is high
+// enough not to chop a legitimately slow round-trip to remote D1, while still
+// catching a true hang and leaving room to retry inside the 120s test budget.
 const REQUEST_TIMEOUT_MS = 30_000;
 
-// Unique per-process stamp for seeded author/voter emails. D1 is shared across
-// the whole integration deploy, so seed identities must never collide with
-// another file's (or a re-run's) users.
+// Unique per-process stamp for seeded author/voter emails. Each file owns its own
+// isolated stage + D1, but a `NO_DESTROY` re-run reuses the same stage's D1, so a
+// fresh stamp per process keeps re-run seed identities from colliding with users a
+// prior run left behind.
 const STAMP_SEED = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 /**
@@ -182,16 +169,18 @@ export function frameData<T = unknown>(frame: string): T {
 }
 
 /**
- * Read the deployed worker URL published by the global setup. The harness does
- * NOT deploy — `_global-setup.ts` (main process) owns the stack lifecycle.
+ * Build the HTTP harness over a deployed-worker URL accessor. The harness does NOT
+ * deploy — `integrationStack()` (`_integration.ts`) owns the per-file `Test.make`
+ * lifecycle and supplies `getUrl`, which resolves to this file's stage's worker URL
+ * (populated by the `beforeAll(deploy(Stack))` hook before any `it` body runs).
  */
-export function harness(): Harness {
+export function harness(getUrl: () => string): Harness {
 	const url = () => {
-		const u = process.env.PHOENIX_TEST_URL;
+		const u = getUrl();
 		if (!u) {
 			throw new Error(
-				"PHOENIX_TEST_URL is not set — the integration global setup did not run. " +
-					"Run via `pnpm test` (vitest config wires tests/integration/_global-setup.ts).",
+				"integration worker URL is not set — beforeAll(deploy(Stack)) has not resolved. " +
+					"Build the harness via integrationStack() so the per-file deploy runs first.",
 			);
 		}
 		return u;
@@ -315,10 +304,10 @@ export function harness(): Harness {
 	const signUp: Harness["signUp"] = async (email, password, name) => {
 		const res = await postIdempotent("/api/auth/sign-up/email", {email, password, name});
 		if (res.ok) return sessionFrom(res, "sign-up");
-		// Idempotent against the PERSISTENT D1 — under the integration harness only
-		// state + DO storage are offline; D1 is the real Cloudflare DB (ADR 0031),
-		// so a seed user left by a prior run makes sign-up 422 USER_ALREADY_EXISTS.
-		// Fall back to sign-in so re-seeding a fixture is a no-op, not a hard fail.
+		// Idempotent against the real remote D1 this file's stage deploys: a
+		// `NO_DESTROY` re-run reuses the same D1, so a seed user left by a prior run
+		// makes sign-up 422 USER_ALREADY_EXISTS. Fall back to sign-in so re-seeding a
+		// fixture is a no-op, not a hard fail.
 		const body = await res.text();
 		if (res.status === 422 && body.includes("USER_ALREADY_EXISTS")) {
 			const signIn = await postIdempotent("/api/auth/sign-in/email", {email, password});

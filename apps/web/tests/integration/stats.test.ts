@@ -28,9 +28,9 @@
  * (the seam test already asserts `health.definitions` flows from this service).
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {harness} from "./_harness.ts";
+import {integrationStack} from "./_integration.ts";
 
-const h = harness();
+const h = integrationStack(import.meta.url);
 
 const STAMP = Date.now().toString(36);
 

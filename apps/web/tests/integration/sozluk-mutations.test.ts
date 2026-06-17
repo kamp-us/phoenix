@@ -24,9 +24,9 @@
  * (`szmut-${Date.now()}-…`); never reuse a slug another test may touch.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {harness} from "./_harness.ts";
+import {integrationStack} from "./_integration.ts";
 
-const h = harness();
+const h = integrationStack(import.meta.url);
 
 const STAMP = Date.now();
 
