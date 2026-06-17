@@ -24,15 +24,25 @@ export type D1RestServices = Credentials | HttpClient;
 type Params = ReadonlyArray<unknown>;
 
 /**
- * REST `params` is typed `string[]`, but D1 binds a literal `null` as SQL NULL —
- * so a nullable drizzle column's `null` must reach the wire unstringified (else
- * it would bind the text "null"). The upstream type can't express that, so this
- * boundary widens to the runtime-accurate `(string | null)[]`.
+ * Stringify bound params for the REST wire. `@distilled.cloud/cloudflare`'s
+ * `queryDatabase` validates `params` as a strict `string[]` and **rejects a `null`
+ * element** (`SchemaError: Expected string, got null`), so a SQL NULL must be
+ * rendered *inline* in the statement text — never bound as a `null` param. The
+ * seed achieves that by leaving nullable columns unset in its fixtures, so drizzle
+ * emits a literal `NULL` and no `null` ever reaches here (#569). A `null`/`undefined`
+ * at this boundary is therefore a caller bug (a nullable column bound instead of
+ * omitted); throw with the offending index rather than ship an opaque wire error.
  */
-const toRestParams = (params: Params): string[] => {
-	const out: Array<string | null> = params.map((p) => (p == null ? null : String(p)));
-	return out as string[];
-};
+export const toRestParams = (params: Params): string[] =>
+	params.map((p, i) => {
+		if (p == null) {
+			throw new Error(
+				`toRestParams: param[${i}] is ${p}; D1 REST params is strict string[] and rejects null. ` +
+					`Render SQL NULL inline (omit the nullable column from the insert), never bind null.`,
+			);
+		}
+		return String(p);
+	});
 
 interface BoundStub {
 	readonly sql: string;
