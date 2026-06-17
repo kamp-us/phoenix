@@ -26,6 +26,7 @@ jobs:
     outputs:
       backend: ${{ steps.filter.outputs.backend }}
       code: ${{ steps.filter.outputs.code }}
+      e2e: ${{ steps.filter.outputs.e2e }}
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -42,6 +43,23 @@ jobs:
               - 'apps/web/package.json'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
+            # Paths the unauth e2e specs (#522) actually exercise: the SPA, the
+            # worker that serves it, the alchemy stack/D1 the preview deploys, the
+            # specs + playwright config, and the seed tool. A docs/skills-only PR
+            # touches none of these, so `e2e` stays false → the e2e job skips
+            # (→ green, non-blocking). Includes both workflows so a CI/deploy edit
+            # keeps the gate self-covering.
+            e2e:
+              - 'apps/web/src/**'
+              - 'apps/web/worker/**'
+              - 'apps/web/alchemy.run.ts'
+              - 'apps/web/tests/e2e/**'
+              - 'apps/web/playwright.config.cjs'
+              - 'apps/web/package.json'
+              - 'packages/preview-seed/**'
+              - 'pnpm-lock.yaml'
+              - '.github/workflows/ci.yml'
+              - '.github/workflows/deploy.yml'
             # Source the `check`/`unit` jobs actually cover: app code, configs that
             # change lint/typecheck/test behavior, every package.json, the lockfile,
             # and this workflow itself (so a CI edit keeps self-coverage). Doc/skill
@@ -185,10 +203,120 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
 
+  # The v1 blocking e2e gate (#522, epic #462): run the four UNAUTHENTICATED read
+  # specs against the per-PR preview deploy so "CI green" means the public frontend
+  # renders + core read flows work end-to-end, not just that unit/integration pass.
+  # The 20 auth-gated specs are Phase 3 (#523/#524); v1 covers only the no-login set.
+  #
+  # Target is the DEPLOYED preview, never a CI-booted workerd (the deploy already
+  # runs in deploy.yml; #452's `spawn EBADF` is agent-sandbox-only, not Actions).
+  # The preview URL + the stage's D1 id are produced by deploy.yml and surfaced in
+  # the sticky `<!-- preview-deploy -->` PR comment — this job polls that comment
+  # for the web line, seeds the D1, then points Playwright at the URL via
+  # E2E_BASE_URL (#520's env-driven baseURL).
+  #
+  # Author/fork gate mirrors `integration` + deploy.yml: the seed injects real
+  # Cloudflare creds, so it never runs for an outside contributor's PR. Path-gated
+  # on `e2e` so a docs/skills-only PR skips → green (the `ci-required` aggregator
+  # treats a skip as a pass).
+  e2e:
+    name: e2e (unauth specs vs preview)
+    needs: changes
+    if: >-
+      needs.changes.outputs.e2e == 'true' &&
+      github.event_name == 'pull_request' &&
+      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # read the sticky preview-deploy comment for URL + D1 id
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # deploy.yml runs as a SEPARATE workflow on the same PR event; there's no
+      # cross-workflow `needs`, so synchronize on its artifact — the sticky
+      # comment. Poll until the web app's line carries both the preview URL and the
+      # `<!-- d1:<uuid> -->` token deploy.yml writes once its deploy + D1 resolve
+      # land. ~10 min budget covers a cold alchemy deploy; a stuck/failed deploy
+      # times out and fails this job (red `ci-required`), never hangs forever.
+      - name: Await preview URL + D1 id from deploy.yml
+        id: preview
+        uses: actions/github-script@v7.0.1
+        with:
+          script: |
+            const marker = "<!-- preview-deploy -->";
+            const deadline = Date.now() + 10 * 60 * 1000;
+            // Match the web app's block in the sticky comment, capturing the URL
+            // and the hidden d1 token deploy.yml emits for web only.
+            const webRe = /<!-- preview-deploy:web -->\n[^\n]*?(https:\/\/[A-Za-z0-9.-]+\.workers\.dev)[^\n]*?<!-- d1:([0-9a-f-]+) -->/;
+            while (Date.now() < deadline) {
+              const {data: comments} = await github.rest.issues.listComments({
+                ...context.repo, issue_number: context.issue.number, per_page: 100,
+              });
+              const c = comments.find((x) => x.body?.includes(marker));
+              const m = c && c.body.match(webRe);
+              if (m) {
+                core.setOutput("url", m[1]);
+                core.setOutput("db", m[2]);
+                core.info(`preview ready: ${m[1]} (D1 ${m[2]})`);
+                return;
+              }
+              core.info("waiting for deploy.yml to post the web preview URL + D1 id…");
+              await new Promise((r) => setTimeout(r, 15000));
+            }
+            core.setFailed("timed out waiting for the preview deploy (URL + D1 id) from deploy.yml");
+
+      # Seed the preview's (empty) D1 with the minimal sözlük + pano fixtures the
+      # unauth read specs assert on (#521). Idempotent upsert, so a re-run is safe.
+      - name: Seed preview D1
+        run: node packages/preview-seed/src/bin.ts run --database-id "${{ steps.preview.outputs.db }}"
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+      - name: Install Playwright chromium
+        run: pnpm --filter @kampus/web test:e2e:install --with-deps
+
+      # The four non-auth specs only (auth specs are Phase 3). E2E_BASE_URL points
+      # the whole run at the preview (#520); the suite uses relative `page.goto`.
+      # `--reporter=html,list` overrides the config's `list` reporter so a failure
+      # leaves a browsable HTML report for the artifact below (traces come from the
+      # config's `trace: on-first-retry` + CI's one retry).
+      - name: Run unauth e2e specs
+        run: >-
+          pnpm --filter @kampus/web exec playwright test
+          --reporter=html,list
+          00-smoke 01-landing 03-pano-feed 07-sozluk-term
+        env:
+          E2E_BASE_URL: ${{ steps.preview.outputs.url }}
+          PLAYWRIGHT_HTML_OPEN: never
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4.4.3
+        with:
+          name: playwright-report
+          path: |
+            apps/web/playwright-report/
+            apps/web/test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
   # The one always-on context safe to mark required on `main` (#461/#402). The
-  # code gates above (`check`/`unit`/`integration`) are conditional: each skips on
-  # a PR whose changed paths it doesn't cover (docs/skills-only, non-backend,
-  # external-author). Listing a *conditional* context in a ruleset's
+  # code gates above (`check`/`unit`/`integration`/`e2e`) are conditional: each
+  # skips on a PR whose changed paths it doesn't cover (docs/skills-only,
+  # non-backend, external-author). Listing a *conditional* context in a ruleset's
   # required_status_checks wedges those PRs — GitHub's skipped-as-success handling
   # for `if:`+`needs:` jobs is unreliable across configs. This aggregator always
   # reports (`if: !cancelled()` keeps it from skipping when a dep skips) and
@@ -196,13 +324,13 @@ jobs:
   # context and transitively enforces the conditional checks when they do run.
   ci-required:
     name: ci-required
-    needs: [check, unit, integration]
+    needs: [check, unit, integration, e2e]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Require all gating checks to have passed or skipped
         run: |
-          results='${{ needs.check.result }} ${{ needs.unit.result }} ${{ needs.integration.result }}'
+          results='${{ needs.check.result }} ${{ needs.unit.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}'
           echo "dep results: $results"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then

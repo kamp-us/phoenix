@@ -122,6 +122,37 @@ jobs:
           # mapped here to the GITHUB_TOKEN env. Empty for apps that don't bind it (web).
           GITHUB_TOKEN: ${{ matrix.needs-github-token && secrets.DASHBOARD_GITHUB_TOKEN || '' }}
 
+      # Resolve the deployed web stage's D1 UUID so the e2e job (ci.yml, #522) can
+      # seed it before running the unauth read specs. The seed needs the physical
+      # database id; alchemy's per-stage D1 carries a random 16-char suffix
+      # (`createPhysicalName`), so the id is NOT reconstructable from the stage
+      # name alone and must be looked up here, where the creds + stage are in hand.
+      # Alchemy names the D1 `${stack}-${id}-${stage}-${suffix}` = `phoenix-phoenix_db-<stage>-…`
+      # (alchemy.run.ts stack "phoenix"; resources.ts D1 id "phoenix_db"); the CF
+      # `/d1/database?name=` filter is a substring match, so this prefix uniquely
+      # selects this stage's database. web-only (`@kampus/web` is the app the e2e
+      # specs target) and PR-only (no preview seed on prod).
+      - name: Resolve web preview D1 id (${{ matrix.app }})
+        id: d1
+        if: github.event_name == 'pull_request' && matrix.app == 'web'
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          DB_NAME_PREFIX: phoenix-phoenix_db-${{ env.STAGE }}-
+        run: |
+          set -euo pipefail
+          resp="$(curl -sf -G \
+            "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}/d1/database" \
+            -H "Authorization: Bearer ${CLOUDFLARE_API_TOKEN}" \
+            --data-urlencode "name=${DB_NAME_PREFIX}")"
+          # The prefix-filtered list should hold exactly one match for this stage.
+          uuid="$(echo "$resp" | jq -r --arg p "$DB_NAME_PREFIX" \
+            '[.result[] | select(.name | startswith($p))] | (.[0].uuid // "")')"
+          if [ -z "$uuid" ] || [ "$uuid" = "null" ]; then
+            echo "::error::could not resolve D1 uuid for prefix '${DB_NAME_PREFIX}'"; exit 1
+          fi
+          echo "uuid=$uuid" >> "$GITHUB_OUTPUT"
+
       # Post (or update) a sticky comment carrying EVERY app's preview URL on PRs.
       # The outer `<!-- preview-deploy -->` marker makes the comment sticky; a
       # per-app `<!-- preview-deploy:<app> -->` line lets each matrix job upsert
@@ -135,15 +166,22 @@ jobs:
           APP: ${{ matrix.app }}
           PREVIEW_URL: ${{ steps.deploy.outputs.url }}
           STAGE_NAME: ${{ env.STAGE }}
+          # web-only: the e2e job (ci.yml, #522) parses this token to seed the D1.
+          DB_ID: ${{ steps.d1.outputs.uuid }}
         with:
           script: |
             const marker = "<!-- preview-deploy -->";
             const app = process.env.APP;
             const appMark = `<!-- preview-deploy:${app} -->`;
             const sha = context.sha.slice(0, 7);
+            // A hidden, machine-parseable token the e2e job reads (#522). Only web
+            // resolves a D1 id; other apps omit it. Kept in an HTML comment so it
+            // doesn't clutter the human-facing line.
+            const dbId = process.env.DB_ID || "";
+            const dbToken = dbId ? ` <!-- d1:${dbId} -->` : "";
             const appLine = `${appMark}\n`
               + `- **${app}** — Stage \`${process.env.STAGE_NAME}\` → ${process.env.PREVIEW_URL} `
-              + `<sub>(${sha})</sub>`;
+              + `<sub>(${sha})</sub>${dbToken}`;
 
             // Replace this app's block in the body (or append it), preserving any
             // other app's block another matrix job may have already written.
