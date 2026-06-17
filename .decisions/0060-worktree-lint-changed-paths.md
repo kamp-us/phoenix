@@ -54,6 +54,19 @@ else
 fi
 ```
 
+**UPDATE (#553): this is now packaged as the `pnpm lint:worktree` script** (root
+`package.json`), so the skill points at one command instead of a copy-pasted block —
+the inline form was documented but still skipped in favour of the false-clean `pnpm
+lint` (PRs #540/#550 failed CI lint despite this ADR). The script also widens the
+diff base from `origin/main...HEAD` (committed only) to `origin/main` **plus**
+`git ls-files --others --exclude-standard`, so it lints **working-tree** changes too —
+an agent that runs lint *before* committing now gets the real result, not a no-op.
+The semantics are otherwise unchanged: explicit changed paths, extension-filtered,
+docs-only/empty diff is a clean skip. Verified from inside a `.claude/worktrees/agent-*`
+checkout on biome 2.4.15: a planted uncommitted `.ts` `noRedeclare` → exit 1; a planted
+`.claude/**` `.json` error (which `biome check apps packages` would miss but CI catches)
+→ exit 1; a markdown-only working change → clean skip (exit 0).
+
 The non-empty branch is the precise, changed-files form, filtered to biome-handled
 extensions; the empty branch is a clean skip (exit 0), **not** bare `.`. **A docs/markdown-only
 changed set is a clean skip (exit 0) by affirmatively containing zero biome-handled files —
