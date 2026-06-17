@@ -36,8 +36,9 @@ pnpm --filter @kampus/decisions-index check
 node packages/decisions-index/src/bin.ts check --dir path/to/.decisions
 ```
 
-Exit codes: `0` clean, `1` gate failure (stale index or duplicate id; reason on
-stderr), any other non-zero = the run could not complete (e.g. unreadable dir).
+Exit codes: `0` clean, any non-zero = failure — both a gate failure (stale index
+or duplicate id; reason on stderr) and an IO failure (e.g. unreadable dir) exit
+non-zero, undistinguished.
 
 CI runs `check` on every PR via
 [`.github/workflows/decisions-index.yml`](../../.github/workflows/decisions-index.yml).

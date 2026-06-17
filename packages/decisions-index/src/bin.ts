@@ -11,12 +11,12 @@
  * differs from the generated one (stale) and (b) a duplicate ADR `id` — closing the
  * number-collision class in the same step (ADR 0066).
  *
- * Exit-code contract: 0 = clean (check passed / generate wrote), 1 = the gate
- * failed (stale index or duplicate id; report on stderr); any OTHER non-zero means
- * the run could not complete (e.g. the dir is unreadable). Wired per effect-smol's
- * CLI guidance (mirrors `@kampus/epic-ledger` / `@kampus/leak-guard` /
- * `changelog-derive`): `effect/unstable/cli`, the Node platform over
- * `NodeServices.layer`, run via `NodeRuntime.runMain`.
+ * Exit-code contract: 0 = clean (check passed / generate wrote), any non-zero =
+ * failure — both a gate failure (stale index or duplicate id; report on stderr)
+ * and an IO failure (e.g. the dir is unreadable) exit non-zero, undistinguished.
+ * Wired per effect-smol's CLI guidance (mirrors `@kampus/epic-ledger` /
+ * `@kampus/leak-guard` / `changelog-derive`): `effect/unstable/cli`, the Node
+ * platform over `NodeServices.layer`, run via `NodeRuntime.runMain`.
  */
 import {readdirSync, readFileSync, writeFileSync} from "node:fs";
 import {join} from "node:path";
@@ -29,14 +29,14 @@ const INDEX_FILE = "index.md";
 const ADR_FILE = /^\d+[A-Za-z]*-.+\.md$/;
 const GATE_FAIL_EXIT_CODE = 1;
 
-// A directory/file IO failure that should crash (non-1 exit): the run couldn't complete.
+// A directory/file IO failure: the run couldn't complete. Uncaught — it falls through
+// to NodeRuntime's default handler (stack trace + non-zero exit).
 class IoError extends Data.TaggedError("IoError")<{
 	readonly path: string;
 	readonly cause: unknown;
 }> {}
 
-// Carries the non-zero gate-fail exit (the report is already on stderr). Distinct from
-// IoError so a stale index / dup id exits 1 while an unreadable dir exits differently.
+// Carries the non-zero gate-fail exit (the report is already on stderr).
 class CheckFailed extends Data.TaggedError("CheckFailed")<{readonly reason: string}> {}
 
 /** Read every ADR file (NNNN[a]-slug.md) in `dir`, excluding the generated index. */
@@ -115,7 +115,7 @@ cli.pipe(
 	Command.run({version: "0.1.0"}),
 	// CheckFailed is the expected gate-fail signal — print its reason on stderr and exit
 	// non-zero WITHOUT a stack trace; genuine crashes (IoError, etc.) still get the
-	// default error report (a different non-zero exit, per the exit-code contract).
+	// default error report (also a non-zero exit — both are failures, undistinguished).
 	Effect.catchTag("CheckFailed", (e) =>
 		Effect.sync(() => {
 			process.stderr.write(`decisions-index: ${e.reason}\n`);
