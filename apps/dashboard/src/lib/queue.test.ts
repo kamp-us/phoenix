@@ -9,6 +9,7 @@ const issue = (n: number, over: Partial<PipelineIssue> = {}): PipelineIssue => (
 	labels: [],
 	parsed: {status: null, type: null, priority: null},
 	verdict: null,
+	milestone: null,
 	...over,
 });
 

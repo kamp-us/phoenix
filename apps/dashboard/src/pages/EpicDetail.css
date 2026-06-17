@@ -26,6 +26,12 @@
 	color: #1e293b;
 }
 
+.db-epic__milestone {
+	margin: 0 0 1rem;
+	font-size: 0.875rem;
+	color: #475569;
+}
+
 .db-epic__section {
 	font-size: 0.8rem;
 	text-transform: uppercase;

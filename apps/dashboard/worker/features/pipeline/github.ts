@@ -24,6 +24,19 @@ const PER_PAGE = 100;
 const MAX_DETAIL = 2000;
 
 /**
+ * The milestone object GitHub returns inline on each issue row (#379), carrying
+ * its own open/closed rollup — read inline so a milestone-grouped view needs no
+ * second `/milestones` fetch. `null` when the issue is unassigned.
+ */
+export interface RawMilestone {
+	readonly number: number;
+	readonly title: string;
+	readonly state: string;
+	readonly open_issues: number;
+	readonly closed_issues: number;
+}
+
+/**
  * The raw issue shape the client returns — exactly the GitHub REST fields the
  * parse core consumes. `parent` is GitHub's sub-issue back-reference; `pull_request`
  * marks a row the issues endpoint returns that is actually a PR (filtered out).
@@ -34,6 +47,7 @@ export interface RawIssue {
 	readonly state: string;
 	readonly body: string | null;
 	readonly labels: ReadonlyArray<{readonly name: string}>;
+	readonly milestone?: RawMilestone | null;
 	readonly pull_request?: unknown;
 }
 
