@@ -13,6 +13,7 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -296,6 +297,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						last_edit_at      = excluded.last_edit_at
 				`),
 			);
+
+			// Dual-write the term's FTS row in lockstep with its summary (ADR 0080).
+			// `recomputeTermSummary` is the single convergent point every term write
+			// funnels through, so syncing here keeps `term_search` current across
+			// add/edit/delete/vote with one wiring.
+			for (const stmt of syncTermSearch(slug, title)) {
+				yield* run((db) => db.run(stmt));
+			}
 		});
 
 		// Refresh `sozluk_stats` totals; runs after every write that could affect them.
