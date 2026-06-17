@@ -205,6 +205,18 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 		expect(me.data).not.toBeNull();
 	});
 
+	it("GET /api/flags/probe reads a flag through the Flags service and branches", async () => {
+		// End-to-end through the compiled app: the probe route reads one boolean
+		// flag via the `Flags` domain service and branches on it. The fake Flagship
+		// client returns the default (`false`), so the dark-ship read takes the
+		// safe/off branch — proving the infra→service→request slice serves.
+		const res = await fetch(appLayer, new Request("https://test.local/api/flags/probe"));
+		expect(res.status).toBe(200);
+		const body = (await res.json()) as {flag: string; enabled: boolean; branch: string};
+		expect(body.enabled).toBe(false);
+		expect(body.branch).toBe("off");
+	});
+
 	it("GET /rss.xml → 200 application/rss+xml, well-formed RSS 2.0", async () => {
 		const res = await fetch(appLayer, new Request("https://test.local/rss.xml"));
 		expect(res.status).toBe(200);
