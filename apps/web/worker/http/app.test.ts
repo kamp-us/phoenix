@@ -20,6 +20,7 @@ import {Database} from "../db/Database.ts";
 import {makeSqliteTestDb, type SqliteD1} from "../db/sqlite-d1.testing.ts";
 import {makeFateRuntime, PhoenixFateLive} from "../features/fate/layers.ts";
 import {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
+import {Flagship} from "../features/flagship/Flagship.ts";
 import {layerTest, makeRealAuthForTest} from "../features/pasaport/better-auth.testing.ts";
 import {makeAppLive} from "./app.ts";
 
@@ -118,10 +119,30 @@ beforeAll(() => {
 		set: (id) => Effect.succeed(id),
 	};
 
+	// A minimal `Flagship` client fake: the health route only reads one boolean,
+	// so unread methods die. `getBooleanValue` returns the default — the same
+	// fall-back the real binding gives for an undeclared flag — with `R = never`,
+	// so the test path needs no `RuntimeContext` for the typed-JSON group.
+	const flagshipLayer = Layer.succeed(Flagship)(
+		Flagship.of({
+			raw: Effect.die("Flagship.raw not exercised in app.test"),
+			get: () => Effect.die("Flagship.get not exercised in app.test"),
+			getBooleanValue: (_key, defaultValue) => Effect.succeed(defaultValue),
+			getStringValue: (_key, defaultValue) => Effect.succeed(defaultValue),
+			getNumberValue: (_key, defaultValue) => Effect.succeed(defaultValue),
+			getObjectValue: (_key, defaultValue) => Effect.succeed(defaultValue),
+			getBooleanDetails: () => Effect.die("Flagship.getBooleanDetails not exercised in app.test"),
+			getStringDetails: () => Effect.die("Flagship.getStringDetails not exercised in app.test"),
+			getNumberDetails: () => Effect.die("Flagship.getNumberDetails not exercised in app.test"),
+			getObjectDetails: () => Effect.die("Flagship.getObjectDetails not exercised in app.test"),
+		}),
+	);
+
 	appLayer = makeAppLive({
 		fateLayer,
 		liveLayer,
 		betterAuthLayer,
+		flagshipLayer,
 		runtimeContext,
 	});
 });
@@ -134,9 +155,15 @@ describe("HTTP surface — HttpApiBuilder + HttpRouter (Hono-free)", () => {
 	it("GET /api/health → 200 JSON", async () => {
 		const res = await fetch(appLayer, new Request("https://test.local/api/health"));
 		expect(res.status).toBe(200);
-		const body = (await res.json()) as {status: string; environment: string | null};
+		const body = (await res.json()) as {
+			status: string;
+			environment: string | null;
+			flagshipBound: boolean;
+		};
 		expect(body.status).toBe("ok");
 		expect(body.environment).toBe("development");
+		// the boolean read through the Flagship binding surfaced (default fallback)
+		expect(body.flagshipBound).toBe(false);
 	});
 
 	it("/api/auth/* signs up a user and an authenticated fate request succeeds", async () => {

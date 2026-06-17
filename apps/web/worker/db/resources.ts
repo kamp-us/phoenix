@@ -16,3 +16,12 @@ export const PhoenixDb = Cloudflare.D1Database("phoenix_db", {
 	migrationsDir: "./worker/db/drizzle/migrations",
 	migrationsTable: "drizzle_migrations",
 });
+
+/**
+ * The Cloudflare Flagship app — the container the worker's feature flags live in
+ * (epic #488). Alchemy provisions it on deploy and assigns the `appId`; there is
+ * no dashboard step. The worker `bind()`s it in init (see `features/flagship/`)
+ * to resolve a typed Effect-native `FlagshipClient`. Individual flags are not
+ * declared here — they land in later children of the epic.
+ */
+export const Flagship = Cloudflare.FlagshipApp("phoenix_flags", {});

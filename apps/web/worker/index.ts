@@ -16,10 +16,12 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
+import {Flagship as FlagshipResource} from "./db/resources.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
 import {connectionOf, LiveDO, LiveDOLive, topicOf} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
+import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {makeAppLive} from "./http/app.ts";
 
@@ -54,7 +56,13 @@ export class Phoenix extends Cloudflare.Worker<
 	// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
 	// resolves each at deploy and runtime reads the same value off the auto-wired
 	// ConfigProvider.
-	env: {ENVIRONMENT: environment, BETTER_AUTH_SECRET: betterAuthSecret},
+	env: {
+		ENVIRONMENT: environment,
+		BETTER_AUTH_SECRET: betterAuthSecret,
+		// The Flagship app resource maps to the native `Flagship` runtime binding
+		// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
+		FLAGS: FlagshipResource,
+	},
 	assets: {
 		// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
 		// relative to the alchemy CLI's `apps/web` cwd). At the edge the worker
@@ -93,6 +101,12 @@ export default Phoenix.make(
 		// instance — sign + validate with the same secret.
 		const betterAuth = yield* BetterAuth.BetterAuth;
 		const betterAuthLayer = Layer.succeed(BetterAuth.BetterAuth)(betterAuth);
+
+		// Resolve the Effect-native `FlagshipClient` ONCE in init (epic #488) via the
+		// `Flagship` seam (`Cloudflare.FlagshipApp.bind(...)`, provided below) and wrap
+		// it dependency-free for the routes — same shape as `Database` above.
+		const flagshipClient = yield* Flagship;
+		const flagshipLayer = Layer.succeed(Flagship)(flagshipClient);
 
 		// The one worker-level runtime (ADR 0041/0043 — init-only wiring): exactly
 		// one per isolate from `PhoenixFateLive` (`R = Database | BetterAuth`, both
@@ -152,6 +166,7 @@ export default Phoenix.make(
 			fateLayer,
 			liveLayer,
 			betterAuthLayer,
+			flagshipLayer,
 			runtimeContext,
 		});
 
@@ -171,6 +186,14 @@ export default Phoenix.make(
 				// `BetterAuth` in scope while wiring the dependency in build order (a
 				// flat `mergeAll` would run them in parallel and not wire it).
 				BetterAuthLive.pipe(Layer.provideMerge(DatabaseLive)),
+				// The `Flagship` seam (`bind()`-in-init) resolves through alchemy's
+				// Flagship binding graph: `FlagshipBindingLive` turns the app resource
+				// into the `FlagshipClient`, `FlagshipBindingPolicyLive` registers the
+				// policy it needs (epic #488). `WorkerEnvironment` is ambient.
+				FlagshipLive.pipe(
+					Layer.provide(Cloudflare.FlagshipBindingLive),
+					Layer.provide(Cloudflare.FlagshipBindingPolicyLive),
+				),
 			).pipe(Layer.provideMerge(Cloudflare.D1ConnectionLive)),
 		),
 	),

@@ -18,6 +18,7 @@ import type {WorkerFateServices} from "../features/fate/layers.ts";
 import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
+import type {Flagship} from "../features/flagship/Flagship.ts";
 import {authRoute} from "../features/pasaport/route.ts";
 import {rssRoute} from "../features/rss/route.ts";
 import {healthApiLayer} from "./health.ts";
@@ -52,8 +53,17 @@ export const makeAppLive = (options: {
 	 * `/api/auth/*` route's per-request markers and we discharge it here.
 	 */
 	readonly runtimeContext: BaseRuntimeContext;
+	/**
+	 * The init-resolved Effect-native `FlagshipClient`, dependency-free
+	 * (`R = never`) — `Layer.succeed(Flagship)(client)` from `index.ts` (epic
+	 * #488). The health route reads one flag through it so a system-tier test can
+	 * prove the binding resolves end-to-end; the flag Effect service lands in #508.
+	 */
+	readonly flagshipLayer: Layer.Layer<Flagship>;
 }) => {
-	const typedJson = healthApiLayer;
+	// The health route's only worker-level requirement is the `Flagship` client
+	// (its `ConfigProvider` is auto-wired at worker scope); discharge it here.
+	const typedJson = healthApiLayer.pipe(Layer.provide(options.flagshipLayer));
 
 	// `provideRequest` discharges the route-requirement markers `HttpRouter.add`
 	// lifts (plain `Layer.provide` does not). All four provided layers are
