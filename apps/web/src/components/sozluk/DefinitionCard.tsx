@@ -106,7 +106,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		}
 	}
 
-	async function onEditSubmit(e: React.FormEvent) {
+	async function onEditSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();
 		const trimmed = editBody.trim();
 		if (trimmed.length === 0) {

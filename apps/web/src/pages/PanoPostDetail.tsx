@@ -162,7 +162,7 @@ function useDraft(options: {
 		redirectPath: options.redirectPath,
 	});
 
-	const submit = async (e: React.FormEvent) => {
+	const submit = async (e: React.SyntheticEvent) => {
 		e.preventDefault();
 		const trimmed = body.trim();
 		const validationError = options.validate(trimmed, body);
@@ -265,7 +265,7 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 		setEditing(true);
 	}
 
-	async function onEditSubmit(e: React.FormEvent) {
+	async function onEditSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();
 		const trimmedTitle = editTitle.trim();
 		const validationError = validatePostFields(trimmedTitle, editBody);
@@ -614,7 +614,7 @@ function CommentComposer({
 		},
 	});
 
-	function onSubmit(e: React.FormEvent) {
+	function onSubmit(e: React.SyntheticEvent) {
 		if (!signedIn) {
 			e.preventDefault();
 			navigate(authRedirectPath(currentLocationPath()));
