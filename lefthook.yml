@@ -22,3 +22,15 @@ pre-commit:
           exit 0
         fi
         exit 0
+
+# `git worktree add` fires post-checkout, so this auto-installs deps into every
+# fresh worktree — node_modules is gitignored and lives only in the main checkout,
+# so agent-spawned `isolation: worktree` trees were otherwise dead-on-arrival for
+# typechecks (#504). Install runs UNCONDITIONALLY (no `[ -d node_modules ]` guard):
+# pnpm no-ops when already in sync, and an unconditional install also resyncs deps
+# to the checked-out branch's lockfile on a branch switch — a guard would skip that
+# and leave deps stale.
+post-checkout:
+  commands:
+    bootstrap-deps:
+      run: pnpm install --prefer-offline
