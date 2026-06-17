@@ -20,7 +20,7 @@ import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {FlagsLive} from "../features/flagship/Flags.ts";
 import type {Flagship} from "../features/flagship/Flagship.ts";
-import {flagsProbeRoute} from "../features/flagship/route.ts";
+import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
 import {authRoute} from "../features/pasaport/route.ts";
 import {rssRoute} from "../features/rss/route.ts";
 import {healthApiLayer} from "./health.ts";
@@ -76,7 +76,14 @@ export const makeAppLive = (options: {
 	// `provideRequest` discharges the route-requirement markers `HttpRouter.add`
 	// lifts (plain `Layer.provide` does not). All provided layers are
 	// dependency-free (`R = never`), so they merge flat.
-	const rawRoutes = Layer.mergeAll(fateRoute, authRoute, liveRoute, rssRoute, flagsProbeRoute).pipe(
+	const rawRoutes = Layer.mergeAll(
+		fateRoute,
+		authRoute,
+		liveRoute,
+		rssRoute,
+		flagsProbeRoute,
+		flagsEvaluateRoute,
+	).pipe(
 		HttpRouter.provideRequest(
 			Layer.mergeAll(
 				options.fateLayer,
