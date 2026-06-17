@@ -1,7 +1,7 @@
 ---
 id: 0081
 title: The feature-flag substrate is Cloudflare Flagship (managed, edge-native), not a bespoke KV/D1/DO flag store
-status: proposed
+status: accepted
 date: 2026-06-16
 tags: [infrastructure, release-engineering]
 ---
