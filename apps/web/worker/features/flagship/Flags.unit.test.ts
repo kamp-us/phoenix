@@ -128,3 +128,107 @@ describe("Flags.getBoolean", () => {
 		),
 	);
 });
+
+const flagshipError = () =>
+	Effect.fail(new FlagshipError({message: "binding unavailable", cause: undefined}));
+
+/**
+ * The typed-read analog of `stubFlagship`: the boolean read dies (these suites
+ * exercise only the typed surface) and the supplied typed reads override the
+ * unexercised defaults. Each surfaces a value or fails with a `FlagshipError`.
+ */
+const stubTypedFlagship = (overrides: {
+	getStringValue?: Flagship["Service"]["getStringValue"];
+	getNumberValue?: Flagship["Service"]["getNumberValue"];
+	getObjectValue?: Flagship["Service"]["getObjectValue"];
+}): Layer.Layer<Flagship> =>
+	Layer.succeed(Flagship)(
+		Flagship.of({
+			raw: Effect.die("Flagship.raw not exercised in Flags.unit.test"),
+			get: unexercised("get"),
+			getBooleanValue: unexercised("getBooleanValue"),
+			getStringValue: overrides.getStringValue ?? unexercised("getStringValue"),
+			getNumberValue: overrides.getNumberValue ?? unexercised("getNumberValue"),
+			getObjectValue: overrides.getObjectValue ?? unexercised("getObjectValue"),
+			getBooleanDetails: unexercised("getBooleanDetails"),
+			getStringDetails: unexercised("getStringDetails"),
+			getNumberDetails: unexercised("getNumberDetails"),
+			getObjectDetails: unexercised("getObjectDetails"),
+		}),
+	);
+
+const typedFlagsOver = (overrides: {
+	getStringValue?: Flagship["Service"]["getStringValue"];
+	getNumberValue?: Flagship["Service"]["getNumberValue"];
+	getObjectValue?: Flagship["Service"]["getObjectValue"];
+}): Layer.Layer<Flags | RuntimeContext> =>
+	Layer.mergeAll(FlagsLive.pipe(Layer.provide(stubTypedFlagship(overrides))), RuntimeContextStub);
+
+describe("Flags.getString", () => {
+	it.effect("an evaluated string surfaces that value (happy path)", () =>
+		Effect.gen(function* () {
+			const flags = yield* Flags;
+			const value = yield* flags
+				.getString("copy", "fallback")
+				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
+			assert.strictEqual(value, "live-copy");
+		}).pipe(Effect.provide(typedFlagsOver({getStringValue: () => Effect.succeed("live-copy")}))),
+	);
+
+	it.effect("a FlagshipError collapses to the supplied string default (degrade safe)", () =>
+		Effect.gen(function* () {
+			const flags = yield* Flags;
+			const value = yield* flags
+				.getString("copy", "fallback")
+				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
+			assert.strictEqual(value, "fallback");
+		}).pipe(Effect.provide(typedFlagsOver({getStringValue: flagshipError}))),
+	);
+});
+
+describe("Flags.getNumber", () => {
+	it.effect("an evaluated number surfaces that value (happy path)", () =>
+		Effect.gen(function* () {
+			const flags = yield* Flags;
+			const value = yield* flags
+				.getNumber("limit", 10)
+				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
+			assert.strictEqual(value, 42);
+		}).pipe(Effect.provide(typedFlagsOver({getNumberValue: () => Effect.succeed(42)}))),
+	);
+
+	it.effect("a FlagshipError collapses to the supplied number default (degrade safe)", () =>
+		Effect.gen(function* () {
+			const flags = yield* Flags;
+			const value = yield* flags
+				.getNumber("limit", 10)
+				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
+			assert.strictEqual(value, 10);
+		}).pipe(Effect.provide(typedFlagsOver({getNumberValue: flagshipError}))),
+	);
+});
+
+describe("Flags.getObject", () => {
+	it.effect("an evaluated object surfaces that value (happy path)", () =>
+		Effect.gen(function* () {
+			const flags = yield* Flags;
+			const value = yield* flags
+				.getObject("config", {theme: "default"})
+				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
+			assert.deepStrictEqual(value, {theme: "dark"});
+		}).pipe(
+			Effect.provide(typedFlagsOver({getObjectValue: () => Effect.succeed({theme: "dark"})})),
+		),
+	);
+
+	it.effect("a FlagshipError collapses to the supplied object default (degrade safe)", () =>
+		Effect.gen(function* () {
+			const flags = yield* Flags;
+			const fallback = {theme: "default"};
+			const value = yield* flags
+				.getObject("config", fallback)
+				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
+			assert.deepStrictEqual(value, fallback);
+		}).pipe(Effect.provide(typedFlagsOver({getObjectValue: flagshipError}))),
+	);
+});

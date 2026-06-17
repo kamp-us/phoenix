@@ -17,8 +17,9 @@
  *    call-sites. The alchemy `FlagshipClient` stays an implementation detail
  *    consumed under the `Flagship` Tag (the #507 seam — this never re-binds it).
  *
- * Scope is the boolean read only; typed variations (string/number/object) are
- * #509, the React hook is #510, targeting/percentage is #511.
+ * Scope is the read surface — the boolean dark-ship primitive plus the typed
+ * variations (string/number/object, #509). The React hook is #510,
+ * targeting/percentage is #511.
  */
 import type {RuntimeContext} from "alchemy";
 import {Context, Effect, Layer} from "effect";
@@ -39,6 +40,35 @@ export interface FlagsAccess {
 		key: string,
 		defaultValue: boolean,
 	) => Effect.Effect<boolean, never, FlagsContext | RuntimeContext>;
+
+	/**
+	 * Read a string flag for the current request. Same safe-default/never-throws
+	 * contract as {@link getBoolean}: any evaluation error collapses to
+	 * `defaultValue`, so the error channel is `never`.
+	 */
+	readonly getString: (
+		key: string,
+		defaultValue: string,
+	) => Effect.Effect<string, never, FlagsContext | RuntimeContext>;
+
+	/**
+	 * Read a number flag for the current request. Same safe-default/never-throws
+	 * contract as {@link getBoolean}.
+	 */
+	readonly getNumber: (
+		key: string,
+		defaultValue: number,
+	) => Effect.Effect<number, never, FlagsContext | RuntimeContext>;
+
+	/**
+	 * Read a JSON-object flag for the current request. `T` is constrained to
+	 * `object` to match the provider's typed read; same safe-default/never-throws
+	 * contract as {@link getBoolean}.
+	 */
+	readonly getObject: <T extends object>(
+		key: string,
+		defaultValue: T,
+	) => Effect.Effect<T, never, FlagsContext | RuntimeContext>;
 }
 
 export class Flags extends Context.Service<Flags, FlagsAccess>()("@kampus/Flags") {}
@@ -61,6 +91,27 @@ export const FlagsLive = Layer.effect(
 						// Any `FlagshipError` (misconfigured/unreachable binding) collapses to
 						// the supplied default — the safe-default contract that makes a
 						// Flagship outage degrade safe (contract 1 above).
+						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+				}),
+			getString: (key, defaultValue) =>
+				Effect.gen(function* () {
+					const context = yield* FlagsContext;
+					return yield* flagship
+						.getStringValue(key, defaultValue, toEvaluationContext(context))
+						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+				}),
+			getNumber: (key, defaultValue) =>
+				Effect.gen(function* () {
+					const context = yield* FlagsContext;
+					return yield* flagship
+						.getNumberValue(key, defaultValue, toEvaluationContext(context))
+						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+				}),
+			getObject: (key, defaultValue) =>
+				Effect.gen(function* () {
+					const context = yield* FlagsContext;
+					return yield* flagship
+						.getObjectValue(key, defaultValue, toEvaluationContext(context))
 						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
 				}),
 		});
