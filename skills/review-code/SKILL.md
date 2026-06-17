@@ -121,6 +121,10 @@ gh pr diff $PR \
 gh api "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'
 ```
 
+This same loaded diff (and the review worktree below) is what the **specialist fan-out** runs
+over — see [Specialist fan-out + route-don't-grade](#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
+after this step; it reuses this context, it does not re-load the diff.
+
 ### Route a mis-classed PR away first (skills-only → review-skill)
 
 Before any verification, check artifact class. A skill under `skills/**` is **not your
@@ -384,6 +388,93 @@ CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
 
 ---
 
+## Specialist fan-out + route-don't-grade (ADR 0079) — the shared reference
+
+This is the **reference implementation** of the ADR
+[0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md)
+mechanism. The AC checklist (Step 3) catches what the issue *named*; it is blind to a real,
+in-scope defect the issue's AC never named — a swallowed fault, a missing invariant, an
+untested behavioral path that is genuinely part of "make this work" sails through a green gate
+because there is no open-ended correctness sweep (by design — focus over a nitpick firehose).
+The fan-out closes that blind spot by routing such a finding back into the **single converging
+mechanism the loop already drains — the AC checklist** — instead of onto a parallel
+severity/advisory track.
+
+**This section is the citable home for the other three gates.** `review-doc`, `review-skill`,
+and `review-plan` wire the *same* fan-out + route behavior into their own classes by citing
+this section (ADR 0079 §1–§2) — not by re-deriving the dimensions, the route decision, or the
+append mechanism. Read it as one logic with four call sites: only the *diff each gate already
+loads* and the *class it verifies* differ.
+
+### Fan out over the already-loaded diff (don't re-load it)
+
+Run the specialists **over the diff Step 2 already pulled** (and the review worktree it already
+materialized) — the fan-out adds no second checkout, no extra `gh`/worktree cost. The starting
+dimensions, per ADR 0079 §1 and **pinned in epic #493's Resolved questions**, are three —
+and each is a **checklist line within this single review pass, not a separately spawned agent**
+(epic #493's resolved split: a checklist line reuses the loaded context with zero added
+orchestration; a dimension *graduates* to a dedicated agent only on evidence it can't hold the
+rigor as a line, filed via `report` if/when that happens — the same seam-graduation discipline
+as ADR 0040's testing tiers):
+
+- **silent-failure** — a swallowed error, an empty `catch`, a dropped `Effect` failure channel,
+  a result whose error path is discarded — a fault the diff makes *unobservable* at runtime.
+- **type-design** — a representable invalid state, a widened type that admits what the domain
+  forbids, an invariant the types stop enforcing (the "make invalid states unrepresentable"
+  bar this repo holds).
+- **test-gap** — a behavioral path the diff adds or changes that no test exercises — coverage
+  the AC checklist didn't name but "make this work" implies.
+
+Each dimension produces zero or more **findings**: a concrete defect with its diff site. The
+fan-out **feeds** findings into the route step below; it does **not** itself emit a verdict.
+
+### Route, don't grade — a finding is a binary in/out-of-scope decision
+
+A finding is **routed, not graded** (ADR 0079 §2). There is **no severity tier and no
+confidence score** — the decision is the single binary the `plan-epic` story-trace test already
+draws:
+
+- **In-scope** — the finding **traces to the linked issue's stated goal / user story**, the
+  **same trace-to-stated-goal test `plan-epic` enforces** for story coverage (ADR
+  [0046](https://github.com/kamp-us/phoenix/blob/main/.decisions/0046-plan-epic-prd-grade-plans.md)).
+  Route it by **appending a new acceptance criterion** to the linked issue, using the
+  **reviewer-append surface defined in
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2** — its exact checkbox
+  shape, its canonical provenance tag (`<!-- ac:review-code pr:#<PR> round:K -->`), and its four
+  fences (append-only · in-scope-only · ACL-gated/fail-closed · frozen-after-round-K).
+  **§2 is the single source — cite it; do not restate the tag fields or the fences here**, so
+  this reference and the contract cannot drift.
+- **Out-of-scope** — the finding is real but does **not** trace to *this* issue's stated goal
+  (a tangential defect, an adjacent refactor, a pre-existing bug the diff merely surfaces).
+  File it via [`report`](../report/SKILL.md) as a fresh `status:needs-triage` issue; it
+  re-enters the pipeline at intake on its own merits. **The current PR is not blocked by it** —
+  routing a tangential finding to `report` is exactly what keeps the AC list finite and the
+  bounded repair loop converging (§2 fence 2).
+
+### What the append does (and does not) change in *this* review
+
+The fan-out + route is **additive to the existing AC-verification verdict — it does not replace
+or weaken it.** The append is the route's *output*, not a new gate:
+
+- The **conjunctive AC verdict (Step 3), the SHA-bound `review-code:` marker (§5), and the
+  single-merge-authority invariant are unchanged.** An appended criterion does **not** change
+  *this* PR's pass/fail computation beyond the existing rules: it lands as a new unchecked
+  `[ ]` row on the issue, so on the *next* review cycle it is an ordinary criterion the
+  conjunctive verdict already covers (an unmet new row is a `[FAIL]` like any other). It enters
+  the **next** cycle's work-list; `write-code`'s repair round drains it like any other `[FAIL]`
+  row (the existing converging loop), and the next review verifies it.
+- **Append the AC before composing the Step 3 / Step 4 verdict**, so the verdict you post
+  already reflects the appended row (it shows as a fresh `[FAIL]` in the table, telling
+  `write-code` exactly what to drain next round). The append is gated by §2 fence 3 (only a
+  `write+` reviewer's append counts, fail-closed — the same ACL author-gate ADR
+  [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+  applies to the verdict marker) and fence 4 (an append in/after round K = N = 3 escalates to a
+  human instead of looping — §2's freeze, bound to `write-code`'s existing N=3 repair cap).
+- **Out-of-scope findings never touch the AC list or this PR's verdict** — they are `report`
+  residue only.
+
+---
+
 ## Step 3 — Verify one criterion at a time
 
 Walk the checklist **one box at a time**. For each criterion, reach an independent
@@ -429,6 +520,14 @@ Build a per-criterion table as you go — this becomes the verdict you post:
 One FAIL or UNVERIFIABLE → the PR fails the gate. This mirrors the ≥1-AC invariant from
 the other side: the checklist is the contract, and the contract holds only when every
 clause does.
+
+**Run the specialist fan-out + route step before you compose the verdict.** Having verified
+the named criteria above, route each specialist finding per
+[Specialist fan-out + route-don't-grade](#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference):
+an in-scope finding appends a new AC to the linked issue (§2 surface), so it shows in this
+verdict's table as a fresh `[FAIL]` row for `write-code` to drain next cycle; an out-of-scope
+finding goes to `report` and does **not** affect this verdict. The conjunctive computation is
+unchanged — an appended-then-unmet row is a `[FAIL]` like any other, by the existing rule.
 
 ---
 
