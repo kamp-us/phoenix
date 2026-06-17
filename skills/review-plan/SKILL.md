@@ -261,6 +261,46 @@ or post a follow-up comment on the epic):
 If the soft-advisor finds nothing, say so (`No advisory caveats — the plan reads clean.`)
 — a clean soft read is a real signal, not an omission.
 
+### Route an in-scope soft-advisor finding by appending a child AC (ADR 0079)
+
+The soft-advisor's reads are the plan-layer call site of the **specialist fan-out +
+route-don't-grade** mechanism — defined once in
+[`review-code`'s shared reference](../review-code/SKILL.md#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
+(ADR [0079](https://github.com/kamp-us/phoenix/blob/main/.decisions/0079-reviewer-authored-acceptance-criteria.md)
+§1–§2), with the append shape + provenance tag + four fences in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §2. **Cite them; do not
+re-derive the route decision, the tag fields, or the fences here.** But `review-plan` fits
+the mechanism **only in this soft-advisor lane**, never in the deterministic floor — the floor
+is byte-identical code whose pass/fail must stay non-derived (Step 1), so it neither fans out
+nor appends. Two adaptations the plan layer forces:
+
+- **The append target is the *child* sub-issue, not the gated artifact.** `review-plan` gates
+  an epic ledger, but the AC list lives on each **child** — and the children are exactly what
+  the flip makes pickable. So an appended criterion lands on the **specific child** the finding
+  traces to (its `### Acceptance criteria` list), provenance-tagged
+  `<!-- ac:review-plan pr:#<child> round:K -->` (here `pr:#<child>` names the child issue the
+  AC was added to — `review-plan` has no PR). `write-code` drains it on that child like any
+  other `[FAIL]` row.
+- **It never blocks — the soft-advisor invariant is sovereign.** Appending a child AC is a
+  *route*, not a verdict: it can no more un-flip a child or turn the PASS into a FAIL than any
+  other caveat (the children already flipped on the clean floor in Step 1). The route is the
+  caveat's *machine-actionable* form — instead of only a prose "sharpen this AC" note, an
+  **in-scope** finding (one that traces to the child's stated story/goal — the §2 in-scope-only
+  fence, the same trace test) is written as a concrete new criterion the loop drains.
+
+Route each soft finding:
+- **In-scope** — traces to the child's stated story/goal → **append a new AC to that child**
+  via the §2 surface (tag `ac:review-plan`), *and* keep the prose caveat. Subject to all four
+  §2 fences (append-only · in-scope-only · ACL-gated/fail-closed · frozen-after-round-K).
+- **Out-of-scope** — a real defect that doesn't trace to any child's story (a gap the brief
+  itself has, an adjacent concern) → file it via [`report`](../report/SKILL.md); it does
+  **not** append to a child and does **not** affect the flip.
+
+**Floor untouched:** this routing runs only on a Step-1 PASS, only in the soft-advisor lane,
+and changes nothing about the deterministic decision, the `planned → triaged` flip, or the
+"caveats never block" invariant — it is additive, exactly as the fan-out is additive in the
+other three gates.
+
 ### Worked example — PASS with caveats
 
 Epic #240's ledger is structurally clean: deps present, no cycle, every child has ≥1 AC, a
@@ -381,7 +421,9 @@ wire a runner the repo doesn't define (the orchestrator is deliberately out-of-r
 A single invocation gates one epic: acquire the `status:planning` epic-lock (see [§Acquire
 the epic-lock](#acquire-the-epic-lock-before-you-flip-or-re-plan--release-it-on-every-exit)),
 then run the deterministic action (Step 1) — on a PASS the children are flipped and you
-annotate with the soft-advisor (Step 2); on a FAIL nothing flipped and you drive the
+annotate with the soft-advisor (Step 2), routing each in-scope soft finding by appending an AC
+to the child it traces to (out-of-scope → `report`, ADR 0079 — soft-advisor lane only, the
+floor and the never-block invariant untouched); on a FAIL nothing flipped and you drive the
 convergence loop (re-plan + re-verify while shrinking, park on stall). **Release the lock on
 every exit — PASS-and-flipped, parked, or failure;** a lock left held wedges the epic against
 every later `plan-epic`/`review-plan` run. Report back a short ledger: the epic, the verdict (pass+flipped children, or
