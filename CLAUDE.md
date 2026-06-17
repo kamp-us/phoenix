@@ -73,6 +73,7 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 - **If you rely on a pattern not yet in `.patterns/`, add or extend a doc for it** (per the "When to add a new pattern doc" criteria in [.patterns/index.md](./.patterns/index.md)) — don't leave a load-bearing pattern undocumented.
 - In-repo docs: standard markdown links (`[text](relative/path.md)`), not Obsidian `[[wikilinks]]`; use real resolvable paths, no placeholders.
 - Doc surfaces: `README` = current state for builders (never carry retired or old-problem context a new reader has no frame for); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped.
+- Decisions are product-driven by default; engineering leads only on platform/infra (the pipeline, fate/DO substrate, infra primitives) — see ADR [0078](.decisions/0078-product-driven-decisions-by-default.md).
 
 ## Decisions
 
