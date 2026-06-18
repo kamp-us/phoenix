@@ -16,7 +16,7 @@ worker/features/fate/
 ├── layers.ts      # PhoenixFateLive = FateServer.layer(fateConfig) ⊕ makeFateLayer; makeFateRuntime
 ├── route.ts       # POST /fate: FateInterpreter.handleRequest on the request fiber + abort wiring
 ├── schema.ts      # fateServer = FateExecutor.toCodegenServer(fateConfig)  (Vite codegen, inert)
-└── run-fate-op.ts # runFateOp — the T2 harness mirror of route.ts
+└── run-fate-op.ts # runFateOp — the in-process mirror of route.ts
 ```
 
 - **`config.ts`** is the single declaration both edges consume. Record values are the features'
@@ -74,7 +74,7 @@ const {contextLayer: fateLayer} = makeFateRuntime(
     the layer build in init (`yield*`-ing the runtime's `contextEffect` / awaiting
     `runtime.context()` inside `Phoenix.make`'s init phase) stalls the worker before it can
     serve a single request —
-    observed as the T3 harness's `/api/health` readiness poll never succeeding after a successful
+    observed as the `integration` harness's `/api/health` readiness poll never succeeding after a successful
     deploy. Build lazily; never block init on the runtime.
   - **Config validation does not wait for the first request.** The same `collectConfigIssues`
     walk `FateServer.layer` runs is executed at BUILD time by `FateExecutor.toCodegenServer`
@@ -119,7 +119,7 @@ const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort
   package's `Interpreter.batch.test.ts`.
 - **Abort → interruption is the route's job**: alchemy's bridge wires no signal, so
   `interruptOnAbort(signal)` (`worker/http/interrupt-on-abort.ts`, beside the router assembly
-  it serves; T0-tested in `interrupt-on-abort.unit.test.ts`)
+  it serves; unit-tested in `interrupt-on-abort.unit.test.ts`)
   forks the program as a child of the request fiber and interrupts it from the signal's
   `abort` listener — effect-smol's own platform idiom (`HttpEffect.toWebHandlerWith`).
 - **One ctx object per request**: the interpreter provides the pair as VALUES off this object
@@ -139,9 +139,9 @@ same `roots: {}`/`live` passthrough as the live config, every handler inert — 
 throws the same `FateServerConfigError` the layer dies with. The worker entry never imports
 `schema.ts`; the serving path is `route.ts` → `FateInterpreter.handleRequest`.
 
-## `runFateOp` (the T2 harness)
+## `runFateOp` (the in-process route mirror)
 
-The test mirror of the route, same composition over the caller's worker layer, serving through
+The in-process mirror of the route, same composition over the caller's worker layer, serving through
 the SAME interpreter the route serves:
 
 ```ts

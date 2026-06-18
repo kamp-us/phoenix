@@ -44,7 +44,7 @@ Two more pieces live in `WireError.ts` beside the codec — anything that spells
 
 ## Keeping the codec honest
 
-Two test layers (both T0, [effect-testing.md](./effect-testing.md)):
+Two test layers (both `unit`, [effect-testing.md](./effect-testing.md)):
 
 - **In the package** (`packages/fate-effect/src/WireError.unit.test.ts`): the round-trip ("annotation alone is sufficient"), the defect/no-leak fallbacks, and an enumeration pin — discovery scans the package barrel for annotated error classes and compares against a literal table, so the package shipping (or re-coding) an error class without updating the pin is a test failure.
 - **In the app** (arrives with the feature migrations): the same enumeration shape over phoenix's feature errors — every error-class ↔ wire-code pair the worker can emit, pinned in one place.

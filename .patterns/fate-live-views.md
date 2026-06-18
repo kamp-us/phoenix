@@ -37,7 +37,7 @@ yield* live.connection("Post.comments", {id: postId}).deleteEdge("Comment", comm
 
 This is why connection membership is server-driven ([fate-mutations-client.md](./fate-mutations-client.md)): one publish updates every subscribed client, instead of each client patching its own cache.
 
-**Testing a publishing mutation end-to-end:** one T3 case in `tests/integration/fate-live.test.ts` subscribes to a topic the mutation publishes to and asserts the frame arrives — the sozluk `definition.add` → args-scoped `Term.definitions` `appendNode` case is the reference.
+**Testing a publishing mutation end-to-end:** one `integration` case in `tests/integration/fate-live.test.ts` subscribes to a topic the mutation publishes to and asserts the frame arrives — the sozluk `definition.add` → args-scoped `Term.definitions` `appendNode` case is the reference.
 
 ## Transport — SSE
 
