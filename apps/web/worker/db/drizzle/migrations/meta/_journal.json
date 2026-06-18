@@ -22,6 +22,13 @@
       "when": 1782000000000,
       "tag": "0002_search_fts",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1782500000000,
+      "tag": "0003_post_bookmark",
+      "breakpoints": true
     }
   ]
 }
