@@ -8,6 +8,17 @@ tags: [plugin, pipeline, packaging, epic-ledger, npm, ci, release]
 
 # 0064 — Distribute epic-ledger by automated npm publish
 
+> **Amendment (2026-06-16, ADR [0076](0076-decisions-index-npm-publish-automated-release.md) is now the canonical pattern).**
+> This ADR's §1 originally pinned the `catalog:` deps (`effect`, `@effect/platform-node`)
+> to concrete versions in `package.json` and published via `npm publish` (with an
+> `npm install -g npm@latest` step). ADR [0076](0076-decisions-index-npm-publish-automated-release.md)
+> corrected that pattern for decisions-index: `pnpm publish` resolves `catalog:`/`workspace:`
+> specifiers into the tarball at pack time, so the source `package.json` keeps the pnpm
+> catalog as the single source of truth — no dep pinning, no npm-upgrade step. **epic-ledger
+> was retrofitted to match** (#456): its runtime deps are back on `catalog:` and its workflow
+> publishes via `pnpm publish --access public`. Treat ADR 0076 as the canonical publish
+> pattern; the dep-pinning prescription in §1/§2 below is superseded.
+
 ## Context
 
 `review-plan`'s deterministic plan-gate is `@phoenix/epic-ledger`

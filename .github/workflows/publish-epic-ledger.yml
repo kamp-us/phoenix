@@ -1,10 +1,14 @@
 # Publishes @kampus/epic-ledger to npm on a human-cut GitHub Release tagged
-# `epic-ledger-v*` (ADR 0064). Auth is OIDC Trusted Publishing — no NPM_TOKEN
-# secret: `id-token: write` mints a short-lived per-run credential. Under trusted
-# publishing, provenance is generated automatically (the `--provenance` flag is no
-# longer needed), so the publish carries a verifiable link back to this workflow
-# without it. A guard fails the run if the tag version and the package.json version
-# disagree, so a mistagged release never publishes.
+# `epic-ledger-v*` (ADR 0064; retrofitted to the corrected pattern in ADR 0076).
+# Auth is OIDC Trusted Publishing — no NPM_TOKEN secret: `id-token: write` mints a
+# short-lived per-run credential, and provenance is generated automatically. A
+# guard fails the run if the tag version and the package.json version disagree, so
+# a mistagged release never publishes.
+#
+# Publish is `pnpm publish` (not `npm publish`): pnpm has native OIDC
+# trusted-publishing support and resolves `catalog:`/`workspace:` specifiers into
+# the tarball at pack time, so the source package.json keeps the pnpm catalog as
+# the single source of truth. No `npm install -g npm@latest` step is needed.
 #
 # Prerequisite (human, one-time): the @kampus npm org/scope must exist and this
 # repo + workflow must be registered as a Trusted Publisher for
@@ -29,6 +33,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4.2.2
 
+      # Pin pnpm to 10.27.0 — pnpm 11 must NOT be used: it has a known OIDC
+      # trusted-publishing 404 regression (pnpm#11513).
       - uses: pnpm/action-setup@v4.1.0
         with:
           version: 10.27.0
@@ -38,11 +44,6 @@ jobs:
           node-version: 26.2.0
           registry-url: https://registry.npmjs.org
           cache: pnpm
-
-      # Trusted Publishing (OIDC) requires npm CLI >= 11.5.1; the bundled npm is
-      # older, so upgrade it explicitly before publishing.
-      - name: Ensure npm >= 11.5.1
-        run: npm install -g npm@latest
 
       - run: pnpm install --frozen-lockfile
 
@@ -70,9 +71,10 @@ jobs:
       - name: Build epic-ledger (compile src/ → dist/)
         run: pnpm --filter @kampus/epic-ledger build
 
-      # Publish ONLY this package, from its own dir. No NPM_TOKEN — OIDC Trusted
-      # Publishing supplies the credential per run and generates provenance
-      # automatically (no `--provenance` flag needed).
-      - name: Publish to npm (OIDC trusted publishing + automatic provenance)
+      # Publish ONLY this package, from its own dir. No NPM_TOKEN — pnpm's native
+      # OIDC trusted publishing supplies the credential per run and generates
+      # provenance automatically. pnpm resolves catalog:/workspace: specifiers into
+      # the tarball at pack time, so the source package.json keeps catalog: deps.
+      - name: Publish to npm (pnpm OIDC trusted publishing + automatic provenance)
         working-directory: packages/epic-ledger
-        run: npm publish --access public
+        run: pnpm publish --access public --no-git-checks

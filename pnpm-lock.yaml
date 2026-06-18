@@ -407,10 +407,10 @@ importers:
   packages/epic-ledger:
     dependencies:
       '@effect/platform-node':
-        specifier: 4.0.0-beta.78
+        specifier: 'catalog:'
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.10.1)
       effect:
-        specifier: 4.0.0-beta.78
+        specifier: 'catalog:'
         version: 4.0.0-beta.78
     devDependencies:
       '@effect/tsgo':
