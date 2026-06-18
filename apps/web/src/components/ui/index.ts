@@ -7,6 +7,8 @@ export {Collapsible} from "./Collapsible";
 export {Dialog} from "./Dialog";
 export {Field, FieldError, Form, Hint, Input, Label, Textarea} from "./Form";
 export {Menu} from "./Menu";
+export type {ReportButtonProps, ReportOutcome} from "./ReportButton";
+export {ReportButton} from "./ReportButton";
 export {Switch} from "./Switch";
 export {Tabs} from "./Tabs";
 export {ToggleGroup} from "./ToggleGroup";
