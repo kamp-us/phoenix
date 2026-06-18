@@ -13,6 +13,7 @@
 		"build": "vite build",
 		"preview": "vite preview",
 		"deploy": "pnpm build && alchemy deploy",
+		"db:migrate": "drizzle-kit migrate --config=worker/db/drizzle.config.ts",
 		"destroy": "alchemy destroy",
 		"typecheck": "pnpm fate:generate && tsgo -b tsconfig.worker.json tsconfig.node.json && tsgo -p tsconfig.app.json --composite false",
 		"test": "vitest run --config vitest.config.ts",
