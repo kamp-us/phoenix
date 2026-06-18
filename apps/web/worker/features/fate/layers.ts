@@ -19,6 +19,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
 import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
+import {type Bookmark, BookmarkLive} from "../pano/Bookmark.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {makePasaportLive, type Pasaport} from "../pasaport/Pasaport.ts";
@@ -37,7 +38,8 @@ export type WorkerFateServices =
 	| Pano
 	| Stats
 	| Search
-	| Report;
+	| Report
+	| Bookmark;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -127,11 +129,12 @@ export const makeFateLayer: Layer.Layer<
 		Layer.provide(KarmaBumpFromPasaport),
 	),
 	StatsLive,
-	// SearchLive and ReportLive depend only on Drizzle (the FTS read / the report
-	// write path), so they merge flat alongside the other domain layers and are
-	// discharged by `provideMerge(DrizzleLive)`.
+	// SearchLive, ReportLive and BookmarkLive depend only on Drizzle (the FTS read /
+	// the report write / the bookmark presence path), so they merge flat alongside the
+	// other domain layers and are discharged by `provideMerge(DrizzleLive)`.
 	SearchLive,
 	ReportLive,
+	BookmarkLive,
 ).pipe(Layer.provideMerge(DrizzleLive));
 
 /**
