@@ -35,8 +35,8 @@
 		"gate": "node src/bin.ts"
 	},
 	"dependencies": {
-		"@effect/platform-node": "4.0.0-beta.78",
-		"effect": "4.0.0-beta.78"
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
 	},
 	"devDependencies": {
 		"@effect/tsgo": "catalog:",
