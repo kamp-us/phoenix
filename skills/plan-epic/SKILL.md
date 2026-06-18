@@ -62,9 +62,16 @@ You **write three of the five** shared formats; read them before you start:
   only dependency artifact phoenix keeps.)
 - **Sub-issue body** (format 2) — the shape of every child you create: a **required**
   `**Stories:**` line (the story numbers from your plan this child implements or unblocks), a
-  `**TDD:**` flag, a `### What to build` prose spec, and a `### Acceptance criteria` checklist.
-  Two hard invariants: **every child carries ≥ 1 acceptance criterion**, and **every child
-  traces to ≥ 1 user story** (see the coverage invariant in Step 3).
+  `**TDD:**` flag, an optional `**Containment:**` marker, a `### What to build` prose spec, and a
+  `### Acceptance criteria` checklist. Two hard invariants: **every child carries ≥ 1 acceptance
+  criterion**, and **every child traces to ≥ 1 user story** (see the coverage invariant in Step 3).
+- **The product-development cycle hook** — the cycle-doc consult hook and the per-child
+  `**Containment:**` marker, defined once in the formats contract's
+  [§The product-development cycle hook](../gh-issue-intake-formats.md#the-product-development-cycle-hook).
+  plan-epic is the **only writer** of the marker: when the repo carries a
+  `product-development-cycle.md` you stamp each child's containment from the cycle's policy; when
+  it's absent the step no-ops (graceful absence, ADR 0062). See Step 3's *Stamp the containment
+  marker*.
 - **Epic handoff note** (format 4) — you don't *post* these (that's `write-code` as
   children complete), but your plan should make the cross-task signal they'll carry
   predictable. The `## Dependencies` graph is the spine those handoffs route along.
@@ -289,6 +296,7 @@ Each child's body follows the **sub-issue body format** (format 2) exactly:
 ```markdown
 **Stories:** <REQUIRED — story numbers this child implements or unblocks; or `none (pure infra — see What to build)`>
 **TDD:** yes | no
+**Containment:** flag (default-off) | exempt (<reason>) | none (no cycle doc)   ← stamped per the cycle-doc hook below; omit (or `none`) when there's no cycle doc
 
 ### What to build
 <One or two paragraphs of concrete scope: what changes, where, why. Name the
@@ -314,6 +322,11 @@ The invariants you must hold:
 - **TDD flag honestly set** from the testing strategy (Step 2). `yes` for a behavior with a
   verifiable contract; `no` for config, docs, scaffolding, or an operational step. It's
   advice to write-code, not a gate.
+- **Containment marker stamped from the cycle-doc hook** (see *Stamp the containment marker*
+  below). When the repo has a `product-development-cycle.md`, every child carries a
+  `**Containment:**` line; when it's absent the step no-ops and children carry `none` (or no
+  line). The marker's grammar is defined once in the formats contract — you stamp it, you don't
+  re-derive it.
 - **Self-contained.** A child must not require reading sibling bodies to be understood —
   cross-task context flows through the epic's handoff notes and the `## Dependencies` graph,
   not by reference between child bodies. (The story numbers point into the epic plan's
@@ -383,6 +396,48 @@ the set is a human roadmap act, ADR 0072 §3) and assigns a child only to the ep
 milestone — never a guessed or fresh one. An unmilestoned epic yielding unmilestoned children is
 correct, not a gap to backfill (freeze-by-absence: deliberate absence is a signal, per the
 contract section).
+
+### Stamp the containment marker (when the repo runs a product-development cycle)
+
+The containment marker is the per-child cycle decision — the same kind of attribute you apply
+at child creation alongside the labels and milestone above, but one you derive from the repo's
+cycle policy rather than from the slice itself. Its grammar (the canonical values, the
+tolerant-read rule, who writes vs reads it) is defined **once** in the formats contract's
+[§The product-development cycle hook](../gh-issue-intake-formats.md#the-product-development-cycle-hook) —
+plan-epic is the **only writer** named there; **read that section for the contract, don't
+re-derive it here.** The *why* is ADR
+[0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md)
+(agents own deployment / humans own release).
+
+Consult the cycle-doc hook using the contract's **one canonical probe** — a content read of
+the well-known repo-root `product-development-cycle.md`. Run it once per plan; absent ⇒ this
+whole step no-ops (graceful absence, ADR
+[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)):
+
+```bash
+# the formats-contract canonical probe — absent ⇒ no marker stamped (children carry `none`)
+if gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
+  CYCLE_DOC=present
+else
+  CYCLE_DOC=absent
+fi
+```
+
+- **Cycle doc present.** For each child, consult the cycle's policy and decide the child's
+  containment **as the planner** — the same authority you already exercise for the child's
+  `type:*` and `p*`. Phoenix's cycle (per its `product-development-cycle.md`): a **user-facing**
+  child ships dark, so it carries `**Containment:** flag (default-off)`; an
+  **internal / refactor / infra / docs** child has no user-facing surface to contain, so it
+  carries `**Containment:** exempt (<reason>)` with the reason naming which (e.g. `exempt (docs)`,
+  `exempt (internal refactor)`). Stamp the line into the child body (the `**Containment:**` field
+  in the format-2 template above), alongside `**Stories:**` / `**TDD:**`.
+- **Cycle doc absent.** The step no-ops: stamp **`none (no cycle doc)`** (or, equivalently, omit
+  the line — a missing line reads as `none` per the contract's tolerant-read rule). No other
+  behavior changes; the plan is well-formed exactly as it was before this dimension existed.
+
+The judgment of user-facing-vs-exempt is **yours** — it's the same slice-level understanding
+that set the child's type and priority. write-code (ship dark) and review-code (verify the
+gating) *read* this marker downstream; they never write it.
 
 ---
 
