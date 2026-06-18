@@ -1,7 +1,7 @@
 ---
 id: 0040
 title: Testing taxonomy and test-seam graduation
-status: accepted
+status: superseded by [0082](0082-two-test-tiers-unit-integration.md)
 date: 2026-06-07
 tags: [testing, framework, architecture]
 ---
@@ -157,3 +157,8 @@ Builds on [0011](0011-drizzle-context-service.md),
 [0029](0029-worker-runtime-servicemap.md),
 [0032](0032-alchemy-beta45-and-dev-model.md), and
 [0038](0038-dependency-patches-local-only.md).
+
+Superseded by [0082](0082-two-test-tiers-unit-integration.md): the `node:sqlite`
+fidelity premise that this taxonomy rests on was overturned, the four-tier model
+collapses to two (`unit` / `integration`), and `node:sqlite` is banned as a test
+backing.
