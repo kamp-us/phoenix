@@ -1,5 +1,7 @@
 import type * as React from "react";
+import {useEffect, useRef} from "react";
 import {Link, NavLink, useNavigate} from "react-router";
+import {isSearchShortcut} from "../../lib/searchShortcut";
 import {Avatar} from "../ui/Avatar";
 import {Menu} from "../ui/Menu";
 import "./Topbar.css";
@@ -27,6 +29,19 @@ export function Topbar({
 	onLogout?: () => void;
 }) {
 	const navigate = useNavigate();
+	const searchInputRef = useRef<HTMLInputElement>(null);
+
+	// ⌘K (mac) / Ctrl+K (other) focuses search, backing the <kbd>⌘K</kbd> hint below.
+	// preventDefault overrides the browser's own ⌘/Ctrl+K (address-bar) binding.
+	useEffect(() => {
+		const onKeyDown = (e: KeyboardEvent) => {
+			if (!isSearchShortcut(e)) return;
+			e.preventDefault();
+			searchInputRef.current?.focus();
+		};
+		document.addEventListener("keydown", onKeyDown);
+		return () => document.removeEventListener("keydown", onKeyDown);
+	}, []);
 
 	const dotAt = brandName.indexOf(".");
 	const before = dotAt >= 0 ? brandName.slice(0, dotAt) : brandName;
@@ -69,7 +84,7 @@ export function Topbar({
 					<circle cx="11" cy="11" r="7" />
 					<path d="m20 20-3.5-3.5" />
 				</svg>
-				<input name="q" placeholder="ara…" aria-label="Ara" />
+				<input ref={searchInputRef} name="q" placeholder="ara…" aria-label="Ara" />
 				<kbd>⌘K</kbd>
 			</form>
 			{onToggleTheme ? (
