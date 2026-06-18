@@ -71,6 +71,21 @@ export const PhoenixDb = Cloudflare.D1Database("phoenix_db", {
 
 The `D1Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists, the worker `bind()`s it. There is no `Drizzle.Schema` resource in the alchemy stack: migration SQL is generated against `drizzle.config.ts` (`pnpm --filter @kampus/web drizzle-kit generate`) and committed under `worker/db/drizzle/migrations/`. alchemy scans `migrationsDir` and applies new migrations on deploy — replacing the `wrangler d1 migrations apply` step, but not `drizzle-kit generate`. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
 
+### Dev binds D1 *remote* and applies *no* migrations
+
+The load-bearing dev-vs-deploy fact: **`alchemy dev` applies no migrations, and there is no local D1.** Under this alchemy + `@distilled.cloud/cloudflare-runtime` version the dev worker binds D1 as `D1.remote(...)` — the runtime exports only `remote`, so even in dev the binding points at the real Cloudflare `phoenix_db`. Migrations apply **only** on `alchemy deploy` (over the D1 HTTP API, tracked in `drizzle_migrations`), or via the `pnpm db:migrate` escape hatch below. A developer reasonably expects a local D1 that `dev` migrates — there isn't one, so a freshly-generated migration is *unapplied* until one of those two paths runs.
+
+To apply pending migrations short of a full `pnpm deploy`, run **`pnpm --filter @kampus/web db:migrate`** (`drizzle-kit migrate` against the `d1-http` driver). It reuses alchemy's own Cloudflare credentials plus the D1 UUID:
+
+```bash
+CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… D1_DATABASE_ID=… \
+  pnpm --filter @kampus/web db:migrate
+```
+
+`CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` are the same pair `alchemy deploy` uses (see `.github/workflows/deploy.yml`); `D1_DATABASE_ID` is the `phoenix_db` UUID from the Cloudflare dashboard or `wrangler d1 list`. The credential block lives in `worker/db/drizzle/drizzle.config.ts`'s `dbCredentials` — alchemy itself resolves the DB by name and ignores it; only `drizzle-kit migrate` reads it.
+
+> **The orphaned `apps/web/.wrangler/state` sqlite is a footgun, not the dev DB.** `apps/web/.wrangler/state/v3/d1/…/<hash>.sqlite` is dead pre-alchemy-cutover wrangler-era state (`.wrangler/` is gitignored). Its journal table is `d1_migrations` — **wrangler's** name, not the `drizzle_migrations` `resources.ts` configures — which proves alchemy never wrote to it. But it *looks* like the dev DB (it even shows `0000_d1_baseline`), so reading it leads to the wrong conclusion "local D1 is stuck at 0000 / search is broken locally" (this is exactly the false premise #546 was filed on). It is **not** the `alchemy dev` binding (which is remote, above). Safe to delete; if present, ignore it.
+
 ## better-auth on the same D1
 
 `Pasaport` keeps using better-auth's Drizzle adapter — it wraps the same `raw` binding in a `drizzle` instance and hands that to `drizzleAdapter`:
