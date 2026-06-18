@@ -88,3 +88,4 @@ One row per ADR. Read the file for the why.
 | [0081](0081-feature-flag-substrate-cloudflare-flagship.md) | The feature-flag substrate is Cloudflare Flagship (managed, edge-native), not a bespoke KV/D1/DO flag store | accepted | 2026-06-16 |
 | [0082](0082-two-test-tiers-unit-integration.md) | Two Test Tiers — Unit (No DB) and Integration (Real D1 via alchemy `Test.make`) | accepted | 2026-06-17 |
 | [0083](0083-agents-deploy-humans-release.md) | Agents Own Deployment, Humans Own Release — Pipeline Consults `product-development-cycle.md` | accepted | 2026-06-18 |
+| [0084](0084-investigation-discipline.md) | Investigation Discipline — Source-Grounded, Right-Scoped, Reconciled | accepted | 2026-06-18 |
