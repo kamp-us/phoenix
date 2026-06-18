@@ -98,18 +98,19 @@ export interface Harness {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
-// Cloudflare serves an HTML placeholder 404 ("There is nothing here yet" /
-// "Powered by Cloudflare") from an edge PoP that has NOT yet propagated a freshly
-// deployed `*.workers.dev` route. The per-file-stage model stands up ~11 brand-new
-// hostnames per run, so any test's FIRST request can draw a cold edge and get this
-// page (#575). It is a propagation transient, not a real application 404 — the
-// worker's own 404s are structured JSON, never this HTML — so it is bounded-retryable
-// where a genuine 404 is not. The `_integration.ts` health probe only warms one route
-// at one PoP; this is the general backstop for the first request on every path.
+// Cloudflare serves an HTML placeholder 404 (an `<h1>` reading "There is nothing
+// here yet", with the Cloudflare branding rendered as an inline SVG logo — the
+// literal string "Powered by Cloudflare" is NOT in the body) from an edge PoP that
+// has NOT yet propagated a freshly deployed `*.workers.dev` route. The per-file-stage
+// model stands up ~11 brand-new hostnames per run, so any test's FIRST request can
+// draw a cold edge and get this page (#575). It is a propagation transient, not a
+// real application 404 — the worker's own 404s are structured JSON
+// (`{ok:false,error:{code}}`), never this HTML — so it is bounded-retryable where a
+// genuine 404 is not. The `_integration.ts` health probe only warms one route at one
+// PoP; this is the general backstop for the first request on every path.
 const isCloudflarePlaceholder404 = (status: number, body: string): boolean =>
 	status === 404 &&
-	body.includes("There is nothing here yet") &&
-	body.includes("Powered by Cloudflare");
+	(body.includes("There is nothing here yet") || body.startsWith("<!DOCTYPE html>"));
 
 // A per-request timeout fires an `AbortSignal.timeout` → the fetch rejects with a
 // `TimeoutError`/`AbortError`. We treat that as "the request STALLED" (distinct
