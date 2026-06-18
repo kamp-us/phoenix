@@ -295,13 +295,30 @@ jobs:
           key: ${{ runner.os }}-playwright-${{ hashFiles('pnpm-lock.yaml') }}
 
       # No `--with-deps`: the hosted ubuntu runner already ships chromium's system
-      # libs, and `--with-deps` shells out to `sudo apt-get`, which hung the job
-      # indefinitely (no progress for ~23 min). timeout-minutes is the fail-fast
-      # guard — a future hang here fails in minutes, never burns the whole job.
+      # libs, and `--with-deps` shells out to `sudo apt-get`, which hung the job.
+      # Retry + per-attempt `timeout`: the CDN browser download silently stalls a
+      # socket after the archive completes (no error, no progress), so a bare retry
+      # never fires — each attempt is bounded so a stall is killed and re-tried.
+      # `succeeded` tracking keeps the step fail-closed when all attempts fail.
+      # Step `timeout-minutes` is the outer fail-safe; one good download populates
+      # the cache above and every later run skips this step entirely.
       - name: Install Playwright chromium
         if: steps.playwright-cache.outputs.cache-hit != 'true'
-        timeout-minutes: 10
-        run: pnpm --filter @kampus/web test:e2e:install
+        timeout-minutes: 20
+        run: |
+          succeeded=
+          for attempt in 1 2 3; do
+            if timeout 6m pnpm --filter @kampus/web test:e2e:install; then
+              succeeded=1
+              break
+            fi
+            echo "playwright install attempt $attempt failed; retrying" >&2
+            sleep 10
+          done
+          if [ -z "$succeeded" ]; then
+            echo "playwright install failed after 3 attempts" >&2
+            exit 1
+          fi
 
       # The four non-auth specs only (auth specs are Phase 3). E2E_BASE_URL points
       # the whole run at the preview (#520); the suite uses relative `page.goto`.
