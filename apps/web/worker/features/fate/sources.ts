@@ -3,8 +3,9 @@
  * `FateServer.config` takes (fate is pure transport, ADR 0016; it never queries
  * D1). The registry is keyed by each entry's `definition` OBJECT — fate looks
  * executors up by identity, so entries hold the features' exported definition
- * objects, never copies. `Contribution` is the one capability-less
- * `Fate.syntheticSource` (view-reachable via `Profile.contributions`, no fetch
+ * objects, never copies. `Contribution` and `ReportReceipt` are the
+ * capability-less `Fate.syntheticSource` entries (view-reachable — the former via
+ * `Profile.contributions`, the latter as `report.submit`'s result — with no fetch
  * path by design).
  *
  * Sources carry NO `connection` executor or `orderBy` contract: every connection
@@ -14,6 +15,7 @@
  */
 import {commentSource, postSource, tagSource} from "../pano/sources.ts";
 import {contributionSource, profileSource, userSource} from "../pasaport/sources.ts";
+import {reportReceiptSource} from "../report/sources.ts";
 import {definitionSource, termSource} from "../sozluk/sources.ts";
 
 export const sources = [
@@ -25,4 +27,5 @@ export const sources = [
 	tagSource,
 	profileSource,
 	contributionSource,
+	reportReceiptSource,
 ] as const;

@@ -3,8 +3,16 @@
  * three content targets, so it sits below the feature directories and must import
  * none of them. Unlike `Vote`, it owns no inverted contract (no `KarmaBump`), so
  * `ReportLive` requires exactly the `Drizzle` seam. These pins enforce both via
- * (1) an import sweep over every `report/` module and (2) a type-level pin on
- * `ReportLive`'s requirements.
+ * (1) an import sweep over the `report/` SERVICE modules and (2) a type-level pin
+ * on `ReportLive`'s requirements.
+ *
+ * The sweep excludes the wire-layer modules (`mutations.ts`, `views.ts`): the
+ * `report.submit` mutation is the wire boundary that translates the service's
+ * `ReportTargetNotFound` into the per-feature not-found errors (`PostNotFound` /
+ * `CommentNotFound` / `DefinitionNotFound`), so it MUST reach the sibling
+ * features' `errors.ts` — exactly as `pano/`/`sozluk/` own their vote mutation
+ * files. The boundary that matters is the SERVICE staying feature-clean; the
+ * wire layer composing over the features is the point of the layer.
  *
  * Type pins use expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's
  * TS377003 escapes the directive (recurring finding; the `vote/` precedent).
@@ -24,8 +32,12 @@ const reportDir = dirname(fileURLToPath(import.meta.url));
 // fate/` edge would be a cycle — it stays forbidden too.
 const FORBIDDEN_SEGMENTS = ["pasaport", "sozluk", "pano", "stats", "fate", "fate-live", "vote"];
 
-describe("report/ module imports are feature-clean", () => {
-	const files = readdirSync(reportDir).filter((f) => f.endsWith(".ts"));
+// The wire layer composes OVER the features by design (see the file docblock),
+// so it is exempt from the service-clean sweep.
+const WIRE_LAYER = new Set(["mutations.ts", "views.ts"]);
+
+describe("report/ service module imports are feature-clean", () => {
+	const files = readdirSync(reportDir).filter((f) => f.endsWith(".ts") && !WIRE_LAYER.has(f));
 
 	it.each(files)("%s imports no sibling feature directory", (file) => {
 		const source = readFileSync(join(reportDir, file), "utf8");
