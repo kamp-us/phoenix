@@ -89,3 +89,4 @@ One row per ADR. Read the file for the why.
 | [0082](0082-two-test-tiers-unit-integration.md) | Two Test Tiers — Unit (No DB) and Integration (Real D1 via alchemy `Test.make`) | accepted | 2026-06-17 |
 | [0083](0083-agents-deploy-humans-release.md) | Agents Own Deployment, Humans Own Release — Pipeline Consults `product-development-cycle.md` | accepted | 2026-06-18 |
 | [0084](0084-investigation-discipline.md) | Investigation Discipline — Source-Grounded, Right-Scoped, Reconciled | accepted | 2026-06-18 |
+| [0085](0085-auth-in-ci-storagestate-reuse.md) | Authenticated e2e in CI uses Playwright `storageState` reuse — one real sign-up, amortized | accepted | 2026-06-18 |
