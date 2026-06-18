@@ -10,6 +10,7 @@ import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {Tag, type TagKind} from "../ui/atoms";
 import {EditedIndicator} from "../ui/EditedIndicator";
+import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {PostVoteWidget} from "./PanoPost";
 
 /**
@@ -45,6 +46,8 @@ export interface PanoPostHeaderProps {
 	isAuthor: boolean;
 	onEdit?: () => void;
 	onDelete?: () => void;
+	/** Reports this post; the page owns `report.submit` + the signed-out redirect. */
+	onReport?: () => Promise<ReportOutcome>;
 }
 
 export function PanoPostHeader(props: PanoPostHeaderProps) {
@@ -78,7 +81,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				<span>·</span>
 				<button type="button">paylaş</button>
 				<button type="button">kaydet</button>
-				<button type="button">bildir</button>
+				{props.onReport ? <ReportButton onReport={props.onReport} testId="post-report" /> : null}
 				{props.isAuthor ? (
 					<>
 						<button type="button" data-testid="post-edit" onClick={props.onEdit}>

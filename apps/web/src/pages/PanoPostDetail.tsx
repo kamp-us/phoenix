@@ -13,7 +13,7 @@ import type {ViewData, ViewEntity, ViewSelection} from "@nkzw/fate";
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {Link, useNavigate, useParams} from "react-router";
-import type {Post} from "../../worker/features/fate/views";
+import type {Post, ReportReceipt} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
 import {buildCommentTree, type CommentNode} from "../components/pano/commentTree";
@@ -24,6 +24,7 @@ import {
 } from "../components/pano/PanoPostHeader";
 import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
+import type {ReportOutcome} from "../components/ui/ReportButton";
 import {Screen} from "../fate/Screen";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
@@ -66,6 +67,58 @@ const PostDetailView = view<Post>()({
 	...PanoPostHeaderView,
 	comments: CommentConnectionView,
 });
+
+/**
+ * Client view for the `report.submit` ack (ADR 0082 — a report has no read view, so
+ * the mutation returns this small receipt). `created` is `false` on the idempotent
+ * re-report no-op, which the button surfaces as "zaten bildirildi".
+ */
+const ReportReceiptView = view<ReportReceipt>()({
+	id: true,
+	created: true,
+});
+
+/**
+ * The page's `bildir` handler factory: submits a report for one target, mapping the
+ * outcome to the `ReportButton`'s feedback states and routing a signed-out click to
+ * auth. The shared content components stay report-logic-free — they only render the
+ * button and forward this handler.
+ */
+function useReportHandler() {
+	const fate = useFateClient();
+	const navigate = useNavigate();
+	const session = useSession();
+
+	return React.useCallback(
+		async (targetKind: "post" | "comment", targetId: string): Promise<ReportOutcome> => {
+			if (!session.data?.user) {
+				navigate(authRedirectPath(currentLocationPath()));
+				return "redirected";
+			}
+			try {
+				const {result, error} = await fate.mutations.report.submit({
+					input: {targetKind, targetId},
+					view: ReportReceiptView,
+				});
+				if (error) {
+					if (codeOf(error) === "UNAUTHORIZED") {
+						navigate(authRedirectPath(currentLocationPath()));
+						return "redirected";
+					}
+					return "error";
+				}
+				return result?.created === false ? "already" : "reported";
+			} catch (caught) {
+				if (codeOf(caught) === "UNAUTHORIZED") {
+					navigate(authRedirectPath(currentLocationPath()));
+					return "redirected";
+				}
+				return "error";
+			}
+		},
+		[fate, navigate, session.data?.user],
+	);
+}
 
 const postErrorMessage = (code: MutationErrorCode, fallback: string): string => {
 	switch (code) {
@@ -237,6 +290,7 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
+	const report = useReportHandler();
 
 	const [editing, setEditing] = React.useState(false);
 	const [editTitle, setEditTitle] = React.useState("");
@@ -359,6 +413,7 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 						isAuthor={isAuthor}
 						onEdit={onEditClick}
 						onDelete={() => setConfirmDelete(true)}
+						onReport={() => report("post", data.id)}
 					/>
 				)}
 			</header>
@@ -413,6 +468,7 @@ interface CommentsProps {
 function Comments(props: CommentsProps) {
 	const post = useView(PostDetailView, props.post);
 	const fate = useFateClient();
+	const report = useReportHandler();
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
@@ -520,6 +576,7 @@ function Comments(props: CommentsProps) {
 							setDeleteError(null);
 							setConfirmDeleteId(id);
 						}}
+						onReport={(id) => report("comment", id)}
 						composerFor={composerFor}
 					/>
 				))}

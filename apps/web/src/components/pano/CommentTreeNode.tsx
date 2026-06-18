@@ -14,6 +14,7 @@ import {renderMarkdownInline} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
+import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import "./PanoComment.css";
 
 export const CommentTreeNodeView = view<Comment>()({
@@ -49,6 +50,8 @@ export interface CommentTreeNodeProps {
 	onReply?: (id: string) => void;
 	onEdit?: (id: string) => void;
 	onDelete?: (id: string) => void;
+	/** Reports this comment; the page owns `report.submit` + the signed-out redirect. */
+	onReport?: (id: string) => Promise<ReportOutcome>;
 	/** comment id → its own composers, so the root node is not a special case. */
 	composerFor: (id: string) => {
 		replyComposer?: React.ReactNode;
@@ -59,6 +62,7 @@ export interface CommentTreeNodeProps {
 export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const data = useLiveView(CommentTreeNodeView, props.comment);
 	const fate = useFateClient();
+	const {onReport} = props;
 	const {replyComposer, editComposer} = props.composerFor(data.id);
 	const localId = data.id;
 	const session = useSession();
@@ -172,7 +176,12 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 								yanıtla
 							</button>
 							<button type="button">paylaş</button>
-							<button type="button">bildir</button>
+							{onReport ? (
+								<ReportButton
+									onReport={() => onReport(data.id)}
+									testId={`pano-comment-report-${localId}`}
+								/>
+							) : null}
 							{isOwner ? (
 								<Menu.Root>
 									<Menu.Trigger
@@ -221,6 +230,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 									onReply={props.onReply}
 									onEdit={props.onEdit}
 									onDelete={props.onDelete}
+									onReport={props.onReport}
 									composerFor={props.composerFor}
 								/>
 							))}
