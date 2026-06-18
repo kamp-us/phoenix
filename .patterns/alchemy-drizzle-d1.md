@@ -82,7 +82,7 @@ CLOUDFLARE_ACCOUNT_ID=… CLOUDFLARE_API_TOKEN=… D1_DATABASE_ID=… \
   pnpm --filter @kampus/web db:migrate
 ```
 
-`CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` are the same pair `alchemy deploy` uses (see `.github/workflows/deploy.yml`); `D1_DATABASE_ID` is the `phoenix_db` UUID from the Cloudflare dashboard or `wrangler d1 list`. The credential block lives in `worker/db/drizzle/drizzle.config.ts`'s `dbCredentials` — alchemy itself resolves the DB by name and ignores it; only `drizzle-kit migrate` reads it.
+`CLOUDFLARE_ACCOUNT_ID` / `CLOUDFLARE_API_TOKEN` are the same pair `alchemy deploy` uses (see `.github/workflows/deploy.yml`); `D1_DATABASE_ID` is the `phoenix_db` UUID from the Cloudflare dashboard or `wrangler d1 list`. The credential block lives in `worker/db/drizzle.config.ts`'s `dbCredentials` — alchemy itself resolves the DB by name and ignores it; only `drizzle-kit migrate` reads it.
 
 > **The orphaned `apps/web/.wrangler/state` sqlite is a footgun, not the dev DB.** `apps/web/.wrangler/state/v3/d1/…/<hash>.sqlite` is dead pre-alchemy-cutover wrangler-era state (`.wrangler/` is gitignored). Its journal table is `d1_migrations` — **wrangler's** name, not the `drizzle_migrations` `resources.ts` configures — which proves alchemy never wrote to it. But it *looks* like the dev DB (it even shows `0000_d1_baseline`), so reading it leads to the wrong conclusion "local D1 is stuck at 0000 / search is broken locally" (this is exactly the false premise #546 was filed on). It is **not** the `alchemy dev` binding (which is remote, above). Safe to delete; if present, ignore it.
 
