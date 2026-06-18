@@ -54,7 +54,7 @@ A PR is in one of two classes by the files it touches (ADR
   blocking rule is **unchanged** by 0073: `review-skill` is the *verdict* gate; merge-authority
   (blocking) is the *separate* axis 0065 owns, and 0065 stands verbatim until a later decision
   retires it against `review-skill`'s evidence (ADR 0073 §4).
-- **NON-BLOCKING — autonomous.** Everything else — `apps/web/**`, `packages/**`,
+- **NON-BLOCKING — autonomous.** Everything else — `apps/**` (every app worker), `packages/**`,
   `.decisions/**`, `.patterns/**`, and other prose docs. These are product or knowledge
   artifacts; they are gated for quality, but a human at the merge adds no security value, so
   you ship them once the matching gate PASSes.
@@ -107,7 +107,7 @@ Every verdict is **SHA-bound** — its first line carries the head it reviewed (
 you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)):
 
-- **product code** (`apps/web`, `packages`, other code) → `review-code`, whose marker is
+- **product code** (`apps/**` — every app worker, not just `apps/web` — `packages`, other code) → `review-code`, whose marker is
   `review-code: PASS @ <sha> — merge-ready` or `review-code: FAIL @ <sha> — not merge-ready`
   (canonical shape: [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5).
   `review-code` can also land a native **approving review** (`event=APPROVE`), whose
@@ -175,9 +175,13 @@ ADR 0073 §6):
   `review-skill` PASS. A skill is a behavioral artifact, gated by `review-skill`, not the code
   AC-gate nor the doc hygiene-gate (ADR 0073 §4, superseding ADR
   [0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)).
-- **code:** under `apps/web/**` or `packages/**` (the `^(apps/web|packages)/` probe); a source
-  path matching none of the three probes still defaults to code, requiring a `review-code`
-  PASS, so nothing under-gates.
+- **code:** under any app worker or a package (`apps/**` or `packages/**` — the `^(apps|packages)/`
+  probe, covering **every** `apps/<app>` worker, not just `apps/web`); a source path matching none
+  of the three probes still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
+  The probe spans `apps/**` (not `apps/web/**`) so a second worker like `apps/dashboard/**` — code
+  **or** README — is `review-code`-gated like `apps/web`, and agrees exactly with the docs probe's
+  `apps/**` exclusion below (the two must name the same code roots, or an `apps/dashboard` path would
+  class as neither code nor docs and slip through ungated — #663).
 - **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`,
   **outside `skills/**`**, **and outside the code roots `apps/**`/`packages/**`** — exactly
   `review-doc`'s verification scope. `skills/**` is the skill class, and an `*.md` under
@@ -191,7 +195,7 @@ FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set — one definition (ADR 0073 §6)
 echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge on a review-skill PASS (ADR 0073)
 echo "$FILES" | grep -Eq '^skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
-echo "$FILES" | grep -Eq '^(apps/web|packages)/' && echo "has-code"   # code probe (skills/** is its OWN class now — ADR 0073)
+echo "$FILES" | grep -Eq '^(apps|packages)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages — agrees with the docs-probe exclusion below (#663); skills/** is its OWN class (ADR 0073)
 # docs probe EXCLUDES the code roots AND skills/** first, so a code/app-internal README (apps/**, packages/**)
 # or a skills-only .md is NOT classed docs — only a prose .md on review-doc's own surface is (#542/#650)
 echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
@@ -227,11 +231,22 @@ so the docs probe may only class as docs a path a `review-doc` PASS can actually
 - **`apps/**` / `packages/**`** — a package/app-internal `*.md` (a README, CHANGELOG) ships
   with its code artifact and is **`review-code`'s** scope: `review-code` reviews the whole
   `apps/**`/`packages/**` tree, README included, and `review-doc` explicitly disclaims that tree
-  (its Step 0 routes `apps/web/**`, `packages/**` to `review-code`). Classing such a `.md` docs
-  demanded a `review-doc` PASS no gate ever produces — review-code gates and PASSes the tree,
-  but no doc gate runs on it — so a clean, fully-gated product PR that merely *includes* a
-  package README **deadlocked** (`unverified — no review-doc PASS`), the exact defect on PR #644
-  (#542/#650). Carving the code roots out makes the present class always have a reachable gate.
+  (its Step 0 routes the `apps/**` workers — `apps/web`, `apps/dashboard`, … — and `packages/**`
+  to `review-code`). Classing such a `.md` docs demanded a `review-doc` PASS no gate ever produces —
+  review-code gates and PASSes the tree, but no doc gate runs on it — so a clean, fully-gated
+  product PR that merely *includes* a package README **deadlocked** (`unverified — no review-doc
+  PASS`), the exact defect on PR #644 (#542/#650). Carving the code roots out makes the present
+  class always have a reachable gate.
+
+**The has-code probe and this docs-exclusion name the same code roots — they MUST agree.** The
+docs probe carves out `^(skills|apps|packages)/` and the has-code probe is `^(apps|packages)/`:
+both span the **full `apps/**` tree** (every app worker — `apps/web`, `apps/dashboard`, …), not
+just `apps/web`. That agreement is the invariant — if the two diverged (e.g. has-code stayed
+`apps/web` while docs excluded all `apps/**`), an `apps/dashboard/**` path — code `.ts` **or**
+`README.md` — would class as **neither** has-code (the narrow probe misses it) **nor** has-docs
+(the docs exclusion drops it), and ship-it would demand **no** gate at all and merge it **ungated**.
+Widening has-code to `apps/**` closes that hole (#663): every `apps/<app>` path now classes
+has-code and rides its `review-code` PASS, exactly as `apps/web` always has.
 
 So `.decisions/**`/`.patterns/**` always class docs, and a prose `*.md` classes docs **only when
 it lives outside the code roots, `skills/**`, and the control plane** — i.e. exactly the surface
