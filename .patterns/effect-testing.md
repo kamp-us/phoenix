@@ -144,7 +144,7 @@ The full service record is required — `Layer.succeed` is identity on the Tag's
 
 Tests build a `Drizzle` layer over a test-supplied `db` via the production factories (`makeDrizzleAccess` / `makeDrizzleLayer` in `worker/db/Drizzle.ts`) — the test layer is exactly the production wiring with a fake `DrizzleDb`, so the `run` / `batch` bodies under test are the ones that ship.
 
-Canonical implementation: `apps/web/worker/db/Drizzle.test.ts`.
+Canonical implementation: `apps/web/worker/db/Drizzle.unit.test.ts`.
 
 ## Helpers in test files
 
