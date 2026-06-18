@@ -164,7 +164,9 @@ const STAMP_SEED = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 // D1 resource id (`Cloudflare.D1Database("phoenix_db", …)`, `worker/db/resources.ts`)
 // — the two stable halves of the deployed D1's physical name (the third is the stage,
 // the fourth a random suffix). `setLastActivityAt` resolves the database by this
-// prefix. Kept in lockstep with those two declarations.
+// prefix, sanitized to alchemy's physical-name form (non-`[a-zA-Z0-9-]` → `-`, so
+// `phoenix_db` → `phoenix-db`). Kept as the canonical ids in lockstep with those two
+// declarations; the sanitization is applied where the prefix is assembled.
 const STACK_NAME = "phoenix";
 const D1_RESOURCE_ID = "phoenix_db";
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
@@ -589,15 +591,18 @@ export function harness(getUrl: () => string, stage: string): Harness {
 	};
 
 	// Resolve this stage's real D1 UUID once, then cache it. The deploy names the D1
-	// by alchemy's physical-name scheme `${stack}-${id}-${stage}-${random16}` —
-	// `phoenix-phoenix_db-${stage}-…` — so only the random suffix is unknown; the
-	// prefix is deterministic and unique to this stage. The CF `?name=` filter is a
-	// substring match, so the prefix selects exactly this stage's database.
+	// by alchemy's physical-name scheme `${stack}-${id}-${stage}-${random16}`, with
+	// every component sanitized (alchemy maps any non-`[a-zA-Z0-9-]` char to `-`) —
+	// so `phoenix_db` becomes `phoenix-db`, yielding `phoenix-phoenix-db-${stage}-…`
+	// (PR #567). Only the random suffix is unknown; the prefix is deterministic and
+	// unique to this stage. The CF `?name=` filter is a substring match, so the prefix
+	// selects exactly this stage's database.
 	let d1DatabaseId: string | undefined;
 	const resolveD1DatabaseId = async (): Promise<string> => {
 		if (d1DatabaseId) return d1DatabaseId;
 		const acct = cloudflare.accountId();
-		const namePrefix = `${STACK_NAME}-${D1_RESOURCE_ID}-${stage}-`;
+		const physical = (s: string) => s.replace(/[^a-zA-Z0-9-]/g, "-");
+		const namePrefix = `${physical(STACK_NAME)}-${physical(D1_RESOURCE_ID)}-${physical(stage)}-`;
 		const res = await cloudflareApi(
 			`/accounts/${acct}/d1/database?name=${encodeURIComponent(namePrefix)}&per_page=100`,
 		);
