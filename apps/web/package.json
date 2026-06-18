@@ -3,6 +3,10 @@
 	"version": "0.0.0",
 	"private": true,
 	"type": "module",
+	"exports": {
+		"./features/search/normalize": "./worker/features/search/normalize.ts",
+		"./features/search/fts-sync": "./worker/features/search/fts-sync.ts"
+	},
 	"scripts": {
 		"dev": "vite",
 		"dev:worker": "alchemy dev",
