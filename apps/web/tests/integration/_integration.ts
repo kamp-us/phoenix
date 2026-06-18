@@ -134,5 +134,5 @@ export function integrationStack(metaUrl: string): Harness {
 
 	afterAll.skipIf(NO_DESTROY)(destroy(Stack, {stage}));
 
-	return harness(() => workerUrl);
+	return harness(() => workerUrl, stage);
 }
