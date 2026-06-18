@@ -72,10 +72,25 @@ afterAll.skipIf(!!process.env.NO_DESTROY)(destroy<StackOutput>(Stack, {stage}));
   dev` binds real remote D1; ADR 0032/0082.)
 - **Retry-first-request.** A freshly-deployed `workers.dev` URL 404s for a few
   seconds while the route propagates, so the `beforeAll` hook probes
-  `GET /api/health` with `Effect.repeat` on a bounded exponential→spaced
-  `Schedule` (never a `Date.now()` polling loop — the alchemy idiom) before the
-  suite asserts. The resolved URL is stashed in a holder the synchronous
-  `harness(getUrl)` reads.
+  `GET /api/health` with `Effect.retry` on `Schedule.spaced("2 seconds")` capped
+  at `times: 30` — a pure *spaced* schedule (fixed 2s gap, no exponential phase),
+  never a `Date.now()` polling loop. The `times` cap fails fast inside the hook
+  timeout if a worker never goes ready, instead of hanging. The resolved URL is
+  stashed in a holder the synchronous `harness(getUrl)` reads.
+- **Per-request placeholder-404 backstop (the general cold-edge handling).** The
+  health probe above only warms **one** route at **one** PoP; the per-file model
+  stands up ~11 brand-new `*.workers.dev` hostnames per run, so any test's
+  *first* request can still draw a cold edge that hasn't propagated and get
+  Cloudflare's HTML placeholder 404. So the harness `req` loop itself
+  (`_harness.ts`) re-issues on that placeholder, on **every** path
+  (`fate`/`fateBatch`/`signUp`/`json`), not just `/api/health`. `req` peeks a
+  404's body (clone-and-read, only on a 404, so the hot path is untouched) and,
+  when `isCloudflarePlaceholder404` matches — a 404 whose body contains
+  `There is nothing here yet` **or** starts with `<!DOCTYPE html>` — treats it
+  like a connection error and retries on the same bounded loop (`sleep(250)`,
+  capped at 20 tries); a fresh edge settles within a few seconds. A real
+  application 404 is structured JSON (`{ok:false,error:{code}}`), never this
+  HTML, so it never matches and is returned unretried.
 - **`NO_DESTROY`.** Set it locally to keep a file's deploy alive between runs
   while iterating (`afterAll.skipIf(NO_DESTROY)(destroy(...))`).
 
@@ -99,7 +114,7 @@ instead of `PHOENIX_TEST_URL`):
 | Method | What it does |
 |---|---|
 | `h.url()` | The deployed worker URL for this file's stage. |
-| `h.req(path, init?, opts?)` | `fetch(url + path, init)`; retries transient connection failures; `opts.timeoutMs` bounds one attempt. |
+| `h.req(path, init?, opts?)` | `fetch(url + path, init)`; retries transient connection failures **and Cloudflare placeholder-404s** (`isCloudflarePlaceholder404`) on the bounded loop; `opts.timeoutMs` bounds one attempt. |
 | `h.json(path, body, cookie?)` | POST JSON (sets `content-type`, dev `origin`, optional `cookie`). |
 | `h.fate(op, opts?)` | POST one fate operation; return its single result (reads auto-retry; mutations only with `retry: true`). |
 | `h.fateBatch(ops, opts?)` | POST several fate operations; return all results in order. |
