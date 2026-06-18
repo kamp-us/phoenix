@@ -186,16 +186,18 @@ A flag is a **temporary** decoupling of deploy from release; left to accumulate,
 untested conditionals. Once the new path has been on and stable long enough that reverting is no longer
 realistic, **retire** the flag — the lifecycle's third stage (per
 [#513](./feature-flags-schema-lifecycle.md)), and per ADR
-[0083 §2](../.decisions/0083-agents-deploy-humans-release.md) the stage that **"returns to agents as a
-drainable chore."** Retirement is the mirror of the flip: the flip is a deliberate *human* release act,
+[0083](../.decisions/0083-agents-deploy-humans-release.md) (Decision item 4, Pipeline touchpoints) the
+stage that **"returns to agents as a drainable chore."** Retirement is the mirror of the flip: the flip is a deliberate *human* release act,
 but retirement is mechanical cleanup with no user-visible effect, so it goes back to the autonomous
 pipeline as a `type:chore` the same way any other chore does.
 
 **Retirement is a filed, drainable chore — never auto-flipped or auto-detected.** There is **no
-auto-retirement detector**: nothing watches a flag's rollout and removes it on its own. That is an
-explicit ADR [0083](../.decisions/0083-agents-deploy-humans-release.md) non-goal (alongside automating
-the *flip*) — automating removal would race the very stability window that makes retirement safe, and
-add a code mechanism the lifecycle deliberately doesn't need. The trigger is a **human (or agent)
+auto-retirement detector**: nothing watches a flag's rollout and removes it on its own. ADR
+[0083](../.decisions/0083-agents-deploy-humans-release.md) frames retirement *positively* — it
+"returns to agents as a drainable chore" (Decision item 4), not as a watcher that auto-removes —
+so an auto-detector is the thing the ADR's framing rules out, not a mechanism it ever calls for.
+Automating removal would race the very stability window that makes retirement safe, and add a code
+mechanism the lifecycle deliberately doesn't need. The trigger is a **human (or agent)
 noticing the removal trigger has fired** and filing a chore; the pipeline then drains it like any other.
 No new code mechanism is introduced here beyond what #513/#514 already prescribe — this is purely the
 **wiring of retirement into the pipeline-as-chore loop.**
