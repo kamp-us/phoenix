@@ -329,6 +329,14 @@ describe("pasaport — profile reads", () => {
 		// Restores the old 0→1→0 karma read-back the pre-alchemy suites had: a vote
 		// on the author's content bumps the author's `user_profile.total_karma`
 		// atomically (see `pasaport/karma.ts` + `Vote.cast`); retracting reverses it.
+		//
+		// Real-D1 POSITIVE batch-atomicity proof: one cast lands the vote-table write
+		// (score), the `user_vote` mirror (myVote), the score-cache update, and the
+		// karma bump as one unit. The NEGATIVE half (mid-batch rollback / no-partial-
+		// write) has no fate-reachable fault — every `Vote.cast` batch statement is
+		// collision-tolerant by construction — so it stays the generic `db.batch`
+		// property in `db/Drizzle.test.ts`, tracked for real-D1 migration under #582
+		// (see #614; #581 AC3).
 		const authorUsername = uname("karma");
 		const author = await h.signUp(
 			`pasa-${STAMP}-karma@test.local`,
