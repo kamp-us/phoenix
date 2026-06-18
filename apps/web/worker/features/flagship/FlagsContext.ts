@@ -21,10 +21,12 @@ export interface FlagsContextValue {
 	/** Stable identity for per-user bucketing; absent for an anonymous request. */
 	readonly userId?: string;
 	/**
-	 * Roles the request's identity holds (e.g. `["internal", "beta"]`). Feeds
-	 * attribute targeting via the `in`/`not_in` operators against a sanctioned
-	 * role; absent or empty for a request with no roles. The targeting taxonomy
-	 * is in [.patterns/feature-flags-targeting.md](../../../../../.patterns/feature-flags-targeting.md).
+	 * Roles the request's identity holds (e.g. `["internal", "beta"]`). Flattened
+	 * by `encodeRoles` into a pipe-framed wire string (`["internal"]` →
+	 * `"|internal|"`) and targeted with the `contains` operator against a framed
+	 * needle (`"|internal|"`) — see the `demoTargetingFlag` rule; absent or empty
+	 * for a request with no roles. The targeting taxonomy is in
+	 * [.patterns/feature-flags-targeting.md](../../../../../.patterns/feature-flags-targeting.md).
 	 */
 	readonly roles?: readonly string[];
 	/**
