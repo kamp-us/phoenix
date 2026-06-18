@@ -9,6 +9,7 @@ import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {Tag, type TagKind} from "../ui/atoms";
+import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 import {PostVoteWidget} from "./PanoPost";
@@ -79,7 +80,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				<span>·</span>
 				<span>{post.commentCount} yorum</span>
 				<span>·</span>
-				<button type="button">paylaş</button>
+				<CopyLinkButton path={`/pano/${post.slug ?? post.id}`} testId="post-share" />
 				<button type="button">kaydet</button>
 				{props.onReport ? <ReportButton onReport={props.onReport} testId="post-report" /> : null}
 				{props.isAuthor ? (

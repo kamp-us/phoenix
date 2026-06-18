@@ -12,7 +12,7 @@
 import type {ViewData, ViewEntity, ViewSelection} from "@nkzw/fate";
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
-import {Link, useNavigate, useParams} from "react-router";
+import {Link, useLocation, useNavigate, useParams} from "react-router";
 import type {Post, ReportReceipt} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
 import {CommentTreeNode, CommentTreeNodeView} from "../components/pano/CommentTreeNode";
@@ -451,6 +451,7 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 			<Comments
 				post={post}
 				postId={data.id}
+				postPath={`/pano/${data.slug ?? data.id}`}
 				signedIn={!!session.data?.user}
 				currentUserId={session.data?.user?.id ?? null}
 			/>
@@ -461,8 +462,32 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 interface CommentsProps {
 	post: ViewRef<"Post">;
 	postId: string;
+	/** Parent post's canonical path; threaded into each node for its comment-anchor share URL. */
+	postPath: string;
 	signedIn: boolean;
 	currentUserId: string | null;
+}
+
+/**
+ * Resolves the `#comment-<id>` permalink anchor: returns the targeted comment id and
+ * scrolls its node into view once it's rendered. Comments arrive async (fate connection),
+ * so the native browser hash-jump misses — this re-tries on each thread change until the
+ * `#comment-<id>` element exists, then scrolls it once.
+ */
+function useCommentAnchor(threadKey: number): string | null {
+	const {hash} = useLocation();
+	const activeId = hash.startsWith("#comment-") ? hash.slice("#comment-".length) : null;
+	const scrolledFor = React.useRef<string | null>(null);
+
+	React.useEffect(() => {
+		if (!activeId || scrolledFor.current === activeId) return;
+		const el = document.getElementById(`comment-${activeId}`);
+		if (!el) return;
+		el.scrollIntoView({behavior: "smooth", block: "center"});
+		scrolledFor.current = activeId;
+	}, [activeId, threadKey]);
+
+	return activeId;
 }
 
 function Comments(props: CommentsProps) {
@@ -470,6 +495,7 @@ function Comments(props: CommentsProps) {
 	const fate = useFateClient();
 	const report = useReportHandler();
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
+	const activeCommentId = useCommentAnchor(items.length);
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
@@ -567,6 +593,8 @@ function Comments(props: CommentsProps) {
 					<CommentTreeNode
 						key={r.id}
 						comment={r.ref}
+						postPath={props.postPath}
+						activeCommentId={activeCommentId}
 						children={childrenForId(r.id)}
 						childrenForId={childrenForId}
 						currentUserId={props.currentUserId}

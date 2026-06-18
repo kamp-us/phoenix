@@ -12,6 +12,7 @@ import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import type {MutationErrorCode} from "../../lib/mutationErrorCodes";
 import {authRedirectPath} from "../../lib/returnTo";
 import {Button} from "../ui/Button";
+import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
@@ -286,8 +287,10 @@ export function DefinitionCard(props: DefinitionCardProps) {
 						updatedAt={toIso(definition.updatedAt)}
 					/>
 					<span className="actions">
-						<button type="button">paylaş</button>
-						<button type="button">kalıcı bağlantı</button>
+						<CopyLinkButton
+							path={`/sozluk/${props.slug}`}
+							testId={`definition-share-${definition.id}`}
+						/>
 						<ReportButton onReport={onReport} testId={`definition-report-${definition.id}`} />
 						{isAuthor && !editing ? (
 							<>

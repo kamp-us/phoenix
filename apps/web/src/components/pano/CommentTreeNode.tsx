@@ -12,6 +12,7 @@ import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
+import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
@@ -39,13 +40,15 @@ const CommentVoteView = CommentTreeNodeView;
 
 export interface CommentTreeNodeProps {
 	comment: ViewRef<"Comment">;
+	/** Parent post's canonical path (`/pano/:slug`); the node appends the `#comment-<id>` anchor. */
+	postPath: string;
 	/** Direct children, already filtered + ordered by the page. */
 	children: ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
 	/** comment id → its children list, for resolving grandchildren in recursion. */
 	childrenForId: (id: string) => ReadonlyArray<{id: string; ref: ViewRef<"Comment">}>;
 	depth?: number;
-	hash?: string;
-	highlight?: boolean;
+	/** Comment id the URL hash currently targets — that node renders highlighted. */
+	activeCommentId?: string | null;
 	currentUserId: string | null;
 	onReply?: (id: string) => void;
 	onEdit?: (id: string) => void;
@@ -77,11 +80,12 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const score = data.score;
 	const editing = editComposer != null;
 
+	const highlight = props.activeCommentId === data.id;
 	const cls = [
 		"kp-comment",
 		props.depth === 1 ? "kp-comment--depth-1" : "",
 		(props.depth ?? 0) >= 2 ? "kp-comment--depth-2" : "",
-		props.highlight ? "kp-comment--highlighted" : "",
+		highlight ? "kp-comment--highlighted" : "",
 	]
 		.filter(Boolean)
 		.join(" ");
@@ -120,7 +124,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	};
 
 	return (
-		<article className={cls} id={props.hash}>
+		<article className={cls} id={`comment-${data.id}`}>
 			<header className="kp-comment__head">
 				{isDeleted ? (
 					<span className="kp-comment__author kp-comment__author--deleted">[silindi]</span>
@@ -175,7 +179,10 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 							>
 								yanıtla
 							</button>
-							<button type="button">paylaş</button>
+							<CopyLinkButton
+								path={`${props.postPath}#comment-${data.id}`}
+								testId={`pano-comment-share-${localId}`}
+							/>
 							{onReport ? (
 								<ReportButton
 									onReport={() => onReport(data.id)}
@@ -198,7 +205,6 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 										>
 											düzenle
 										</Menu.Item>
-										<Menu.Item>kalıcı bağlantı</Menu.Item>
 										<Menu.Separator />
 										<Menu.Item
 											danger
@@ -223,9 +229,11 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 								<CommentTreeNode
 									key={child.id}
 									comment={child.ref}
+									postPath={props.postPath}
 									children={props.childrenForId(child.id)}
 									childrenForId={props.childrenForId}
 									depth={(props.depth ?? 0) + 1}
+									activeCommentId={props.activeCommentId}
 									currentUserId={props.currentUserId}
 									onReply={props.onReply}
 									onEdit={props.onEdit}
