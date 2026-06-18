@@ -136,9 +136,6 @@ SSE wire on the test side.
   absent so the suite is self-contained on a clean runner.
 - **The HTTP harness** — `tests/integration/_harness.ts`. The client surface
   above. Pure HTTP; deploys nothing.
-- **The DNS shim** — `tests/integration/_localhost-dns.ts`. A small `node:dns`
-  patch so `*.localhost` resolves; retained for the dev/local path (orthogonal
-  to the harness swap).
 - **The test files** — `tests/integration/*.test.ts`. Assertions are black-box
   only: call `h.fate(...)`, `h.json(...)`, etc.; assert on the response. The one
   sanctioned exception is **fixture setup that the public seam genuinely cannot
