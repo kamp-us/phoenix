@@ -615,6 +615,81 @@ verdict's table as a fresh `[FAIL]` row for `write-code` to drain next cycle; an
 finding goes to `report` and does **not** affect this verdict. The conjunctive computation is
 unchanged — an appended-then-unmet row is a `[FAIL]` like any other, by the existing rule.
 
+### Step 3b — Verify the flag-gating on a containment-marked PR
+
+On a PR whose linked issue is marked **`**Containment:** flag (default-off)`**, the gate carries
+one extra obligation: **verify the change actually ships dark.** The product-development cycle
+makes agents own deployment and humans own release (ADR
+[0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md)),
+and that contract is only real if a *mis-gated* dark-ship can't slip past the gate live. This
+step is the enforcement point: `plan-epic` stamps the marker, `write-code` ships dark, and
+review-code verifies the gating before the PR may pass. The marker contract — its values, its
+tolerant-read rule, who writes vs reads it — is defined once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md#the-product-development-cycle-hook)
+(§The product-development cycle hook); read it there, this step is the *reader's behavior*.
+
+**Read the marker off the linked issue** (the `ISSUE` body already loaded in Step 1), tolerantly
+per the formats §Reading stance — a `**Containment:**` line, with a leading bold-marker, anywhere
+in the body:
+
+```bash
+# the linked issue's containment marker; a missing line reads as `none` (formats §2 tolerant-read rule)
+CONTAINMENT=$(gh api repos/$REPO/issues/$ISSUE --jq '.body' \
+  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
+  | grep -ioE '(flag|exempt|none)' || echo none)
+```
+
+**Graceful absence — skip cleanly, never false-FAIL.** The gating check runs **only** when the
+marker resolves to `flag` *and* the repo has a cycle doc. On `exempt`, `none`, a missing line, or
+an **absent `product-development-cycle.md`** (the canonical probe, formats §1 — a foreign install
+has no cycle and no flag substrate), this step is a **no-op**: there is nothing to contain, so it
+contributes **no** criterion to the conjunctive verdict and **never** emits a FAIL. Mis-firing the
+flag check on an exempt/foreign PR is the failure mode this guard exists to prevent — absence is a
+correct, first-class state (ADR 0062 portability), exactly as a missing milestone is.
+
+```bash
+# the one canonical cycle-doc probe (formats §1); absent ⇒ no cycle ⇒ skip the gating check
+gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
+  && CYCLE_DOC=present || CYCLE_DOC=absent
+# run the gating verification below ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
+```
+
+When it **does** fire, verify all three facets of the **default = safe-state** invariant — the
+load-bearing flag contract grounded in
+[`.patterns/feature-flags.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags.md)
+(§The one invariant) and the dark-ship procedure in
+[`.patterns/feature-flags-agent-workflow.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags-agent-workflow.md).
+Each facet is its own pass/fail line in the verdict table; **any one unmet → FAIL** (a flag-marked
+PR that ships the new path live, or with an unsafe/inverted default, is not merge-ready):
+
+- **Default-off declaration.** The flag's IaC declaration sets the **off / old / safe** variation
+  as its default — a `FlagshipFlag(..., { defaultVariation: "off", … })` in
+  `apps/web/worker/db/resources.ts` (or the dashboard-declared equivalent for a non-IaC flag). A
+  declaration that defaults the flag **on** is a FAIL: a default-on flag is live the instant it
+  merges, which defeats containment.
+- **Safe value as the read default.** Every read site — server `flags.get*(key, default)` and
+  client `useFlag(key, default)` / `<FlagGate>` — passes the **safe (old-path)** value as the read
+  default, so the new path is unreachable until the flip and a Flagship outage degrades to the old
+  path. A read that defaults to the **new** path (or omits the default) is a FAIL.
+- **No leak — the new path is unreachable with the flag off.** Trace every entry into the new
+  behavior on the diff and confirm it sits **behind** the gate: no default-on, no **inverted gate**
+  (rendering the new path when the flag reads false), and **no ungated client path** that renders
+  the new surface without consulting the flag. If any route reaches the new code with the flag off,
+  it leaks → FAIL.
+
+Cite the concrete evidence per facet, exactly as Step 3 demands — the `defaultVariation` line, the
+read-site `key, default` arguments, the gate expression wrapping the new path. Fold the result into
+the per-criterion table as one combined entry (or three), so the conjunctive verdict accounts for it
+like any other criterion:
+
+```
+- [PASS] flag-gating (default-off) — resources.ts:NN defaultVariation:"off"; reads pass old-path default (worker/...:NN, src/...:NN); new path gated behind FlagGate, no ungated entry
+- [FAIL] flag-gating (default-off) — <which facet failed: e.g. useFlag(key, true) defaults to the NEW path → ships live>
+```
+
+When the marker is `exempt`/`none`/absent or no cycle doc exists, **omit this row entirely** — a
+skipped check is not an `UNVERIFIABLE` (which is a soft fail); it contributes nothing, by design.
+
 ---
 
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)
