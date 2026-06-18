@@ -18,6 +18,8 @@ export {
 	profileDataView,
 	userDataView,
 } from "../pasaport/views.ts";
+export type {ReportReceipt} from "../report/views.ts";
+export {reportReceiptDataView} from "../report/views.ts";
 export type {Definition, Term} from "../sozluk/views.ts";
 export {definitionDataView, termDataView} from "../sozluk/views.ts";
 export type {LandingStats} from "../stats/views.ts";

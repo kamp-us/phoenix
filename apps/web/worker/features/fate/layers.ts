@@ -22,13 +22,22 @@ import {DrizzleLive} from "../../db/Drizzle.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
 import {makePasaportLive, type Pasaport} from "../pasaport/Pasaport.ts";
+import {type Report, ReportLive} from "../report/Report.ts";
 import {type Search, SearchLive} from "../search/Search.ts";
 import {type Sozluk, SozlukLive} from "../sozluk/Sozluk.ts";
 import {type Stats, StatsLive} from "../stats/Stats.ts";
 import {KarmaBump, type Vote, VoteLive} from "../vote/Vote.ts";
 import {fateConfig} from "./config.ts";
 
-export type WorkerFateServices = Drizzle | Pasaport | Vote | Sozluk | Pano | Stats | Search;
+export type WorkerFateServices =
+	| Drizzle
+	| Pasaport
+	| Vote
+	| Sozluk
+	| Pano
+	| Stats
+	| Search
+	| Report;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -118,9 +127,11 @@ export const makeFateLayer: Layer.Layer<
 		Layer.provide(KarmaBumpFromPasaport),
 	),
 	StatsLive,
-	// SearchLive depends only on Drizzle (the FTS read path), so it merges flat
-	// alongside the other domain layers and is discharged by `provideMerge(DrizzleLive)`.
+	// SearchLive and ReportLive depend only on Drizzle (the FTS read / the report
+	// write path), so they merge flat alongside the other domain layers and are
+	// discharged by `provideMerge(DrizzleLive)`.
 	SearchLive,
+	ReportLive,
 ).pipe(Layer.provideMerge(DrizzleLive));
 
 /**
