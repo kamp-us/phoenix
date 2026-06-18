@@ -127,6 +127,13 @@ jobs:
       # stops routing. Same script runs locally: `bash .claude/skills/validate-skills.sh`.
       - run: bash .claude/skills/validate-skills.sh
 
+      # Portability safety net (ADR 0062 / 0083): assert every cycle-aware skill
+      # (plan-epic/write-code/review-code/ship-it) no-ops gracefully with no
+      # product-development-cycle.md — each cites the one canonical absence-probe
+      # and an absent⇒no-op branch, and a hermetic doc-absent walkthrough holds.
+      # Same script runs locally: `bash .claude/skills/validate-cycle-absence.sh`.
+      - run: bash .claude/skills/validate-cycle-absence.sh
+
   integration:
     name: integration tests
     needs: changes
