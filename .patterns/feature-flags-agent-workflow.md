@@ -180,21 +180,85 @@ says belongs **dashboard-managed**, not IaC — so the flip isn't overwritten by
 `alchemy deploy` reconciling the declared state. **Never declare the same flag both IaC and
 dashboard** (the deploy would silently revert a live flip).
 
-### Step 7 — Retire once stable (flags are not forever)
+### Step 7 — Retire once stable: a drainable chore, not an automated step
 
 A flag is a **temporary** decoupling of deploy from release; left to accumulate, flags rot into dead,
 untested conditionals. Once the new path has been on and stable long enough that reverting is no longer
-realistic, **retire** the flag (the lifecycle's third stage, per
-[#513](./feature-flags-schema-lifecycle.md)):
+realistic, **retire** the flag — the lifecycle's third stage (per
+[#513](./feature-flags-schema-lifecycle.md)), and per ADR
+[0083 §2](../.decisions/0083-agents-deploy-humans-release.md) the stage that **"returns to agents as a
+drainable chore."** Retirement is the mirror of the flip: the flip is a deliberate *human* release act,
+but retirement is mechanical cleanup with no user-visible effect, so it goes back to the autonomous
+pipeline as a `type:chore` the same way any other chore does.
 
-1. Delete the `FlagshipFlag` declaration (or the dashboard flag).
-2. Delete the `flags.getBoolean` read and its dead `else` branch.
+**Retirement is a filed, drainable chore — never auto-flipped or auto-detected.** There is **no
+auto-retirement detector**: nothing watches a flag's rollout and removes it on its own. That is an
+explicit ADR [0083](../.decisions/0083-agents-deploy-humans-release.md) non-goal (alongside automating
+the *flip*) — automating removal would race the very stability window that makes retirement safe, and
+add a code mechanism the lifecycle deliberately doesn't need. The trigger is a **human (or agent)
+noticing the removal trigger has fired** and filing a chore; the pipeline then drains it like any other.
+No new code mechanism is introduced here beyond what #513/#514 already prescribe — this is purely the
+**wiring of retirement into the pipeline-as-chore loop.**
+
+#### The removal trigger and where it's defined
+
+The condition that says a flag is *ready* to retire is its **removal trigger** — the per-flag metadata
+recorded **at declaration** (Step 1): "remove once `<feature>` is at 100% and stable for one release",
+"remove when the kill-switch is no longer needed", etc. (the home for that metadata, IaC `description`
+vs dashboard description, is fixed in
+[feature-flags-schema-lifecycle.md](./feature-flags-schema-lifecycle.md) §*Per-flag metadata*). The
+**single documented home** for the trigger convention is phoenix's `product-development-cycle.md` (the
+cycle doc authored by [#603](https://github.com/kamp-us/phoenix/issues/603)): it states the
+default-off-for-user-facing rule and routes the retirement stage here. This doc owns the chore *shape*,
+the cycle doc owns *where the trigger lives in the process* and back-links to this section once it
+lands. The per-flag metadata recorded at Step 1
+(owner, originating issue, removal trigger) is what makes a later agent able to retire the flag at all:
+a flag with no recorded removal trigger is a flag that lives forever.
+
+#### Filing the retirement chore (via `report`)
+
+When a flag's removal trigger has fired and the retirement isn't being done in the current session,
+**file a `type:chore` retirement issue** with the [`report`](../.claude/skills/report/SKILL.md) skill
+(per CLAUDE.md's "Filing follow-up work"), so an agent picks it up and `write-code` drains it like any
+other chore. `report` files the issue `status:needs-triage` and type-blind; triage classifies it
+`type:chore` (the standard retirement-chore shape below is what makes that classification obvious) and
+it then flows through the normal `status:triaged` → `write-code` → `review-code` → `ship-it` pipeline.
+
+#### The standard retirement-chore issue shape
+
+A retirement chore is drainable precisely because its body is **mechanical and self-contained** — a
+`write-code` agent can execute it from the issue alone, with no design left open. State the flag, link
+its originating issue/PR (the metadata from Step 1), and enumerate the three deletions as the
+acceptance criteria:
+
+```markdown
+### What to build
+Retire the `<flag-key>` feature flag — its new path is at 100% and stable for one release
+(removal trigger from the declaration, originating #NNN). The path is now permanent; the flag is
+dead-conditional debt. Retire it per the lifecycle's third stage
+(.patterns/feature-flags-schema-lifecycle.md #513).
+
+### Acceptance criteria
+- [ ] The `FlagshipFlag` declaration for `<flag-key>` is deleted (the factory in
+      `apps/web/worker/db/resources.ts` + its yield in `apps/web/alchemy.run.ts`; or the dashboard flag).
+- [ ] The exported key `const` (`<FLAG>_KEY`) and every `flags.get*(<key>, …)` read site are deleted.
+- [ ] The dead `else` / fallback branch (the old path) is removed and the now-permanent new path is
+      inlined at each read site (server `Flags` reads and any `useFlag` / `FlagGate` usage).
+- [ ] No dangling references to the flag key remain (grep the key string returns nothing).
+
+**TDD:** no
+```
+
+The three deletions are the literal lifecycle steps:
+
+1. Delete the `FlagshipFlag` declaration (or the dashboard flag) and its exported key `const`.
+2. Delete the `flags.getBoolean` read(s) and the dead `else` branch (server and client `useFlag` /
+   `FlagGate`).
 3. Inline the now-permanent new path.
 
-If the removal trigger fires and the retirement isn't being done in the current session, **file a
-follow-up issue** (the `report` skill, per CLAUDE.md) so it's tracked rather than forgotten. The
-per-flag metadata recorded at Step 1 (owner, originating issue, removal trigger) is what makes a
-later agent able to retire the flag at all.
+Because the new path has been live at 100% and the old branch is dead, this is a behavior-preserving
+cleanup — `review-code` verifies the deletions are complete and nothing still references the flag key,
+not a behavior change.
 
 ## The loop, end to end
 
@@ -202,7 +266,7 @@ later agent able to retire the flag at all.
 declare (default off) ─▶ gate code path ─▶ ship dark (auto-merge on green gate)
         ─▶ validate in prod (internal → staged rollout) ─▶ flip on (release)
         ─▶ [regression?] kill in seconds (dashboard disable, no redeploy)
-        ─▶ stable ─▶ retire (delete flag + read + dead branch)
+        ─▶ stable ─▶ retire (file type:chore → write-code drains: delete flag + read + dead branch)
 ```
 
 At every step before the flip, the worst case of a bad autonomous merge is a feature sitting **dark**
