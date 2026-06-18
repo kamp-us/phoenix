@@ -48,6 +48,27 @@ export default defineConfig({
 		// disconnect").
 		onUnhandledError: (error) =>
 			error?.message === "All fibers interrupted without error" ? false : undefined,
+		// `vitest --changed`/`related` narrows by the resolved import graph (ADR
+		// 0082) — sound for the `unit` tier (its tests import disjoint modules, so a
+		// change selects only the touched tests) and ideal for the inner dev loop.
+		// But the graph can't see three out-of-band edges: migrations are SQL read
+		// at runtime (no import edge), and `alchemy.run.ts` + the integration harness
+		// substrate (`tests/integration/_*.ts`) are the deploy/black-box surface the
+		// unit graph never reaches. `forceRerunTriggers` forces the FULL run when any
+		// of them changes, so change-scoped selection never under-selects on an edge
+		// the import graph misses. Root-level on purpose: Vitest reads this off the
+		// global config, not per-project (it gates the `--changed` spec filter once
+		// for the whole run). It does NOT narrow `integration` — that tier runs full,
+		// parallelized via per-file isolated stages, never `--changed`-selected (ADR
+		// 0082, "Change-scoped selection"). Keep the two built-in defaults
+		// (`package.json`, the vitest/vite config) since setting this replaces them.
+		forceRerunTriggers: [
+			"**/package.json/**",
+			"**/{vitest,vite}.config.*/**",
+			"**/worker/db/drizzle/migrations/**",
+			"**/alchemy.run.ts",
+			"**/tests/integration/_*.ts",
+		],
 		projects: [
 			{
 				test: {
