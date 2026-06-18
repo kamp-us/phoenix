@@ -24,23 +24,31 @@ export type D1RestServices = Credentials | HttpClient;
 type Params = ReadonlyArray<unknown>;
 
 /**
- * Stringify bound params for the REST wire. `@distilled.cloud/cloudflare`'s
- * `queryDatabase` validates `params` as a strict `string[]` and **rejects a `null`
- * element** (`SchemaError: Expected string, got null`), so a SQL NULL must be
- * rendered *inline* in the statement text — never bound as a `null` param. The
- * seed achieves that by leaving nullable columns unset in its fixtures, so drizzle
- * emits a literal `NULL` and no `null` ever reaches here (#569). A `null`/`undefined`
- * at this boundary is therefore a caller bug (a nullable column bound instead of
- * omitted); throw with the offending index rather than ship an opaque wire error.
+ * Assert one bound param satisfies D1's REST `params` contract.
+ * `@distilled.cloud/cloudflare`'s `queryDatabase` validates `params` as a strict
+ * `string[]` and **rejects a `null`/`undefined` element** (`SchemaError: Expected
+ * string, got null`), so a SQL NULL must be rendered *inline* in the statement text
+ * — never bound as a `null` param. The seed achieves that by leaving nullable
+ * columns unset in its fixtures, so drizzle emits a literal `NULL` and no `null`
+ * ever reaches the wire (#569). A `null`/`undefined` here is a caller bug (a
+ * nullable column bound instead of omitted); throw with the offending index. Shared
+ * with the in-memory test fake so the fake rejects exactly what real D1 rejects
+ * (#571) — the fake's `node:sqlite` engine would otherwise bind a `null` happily
+ * and let a REST-incompatible param shape pass the unit suite yet die live.
  */
+export const assertRestParam = (param: unknown, index: number): void => {
+	if (param == null) {
+		throw new Error(
+			`D1 REST param[${index}] is ${param}; D1 REST params is strict string[] and rejects null. ` +
+				`Render SQL NULL inline (omit the nullable column from the insert), never bind null.`,
+		);
+	}
+};
+
+/** Stringify bound params for the REST wire, asserting each against {@link assertRestParam}. */
 export const toRestParams = (params: Params): string[] =>
 	params.map((p, i) => {
-		if (p == null) {
-			throw new Error(
-				`toRestParams: param[${i}] is ${p}; D1 REST params is strict string[] and rejects null. ` +
-					`Render SQL NULL inline (omit the nullable column from the insert), never bind null.`,
-			);
-		}
+		assertRestParam(p, i);
 		return String(p);
 	});
 

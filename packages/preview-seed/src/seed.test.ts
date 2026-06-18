@@ -68,7 +68,6 @@ describe("seed — writes the rows the unauth specs read", () => {
 });
 
 describe("seed — REST-wire-valid params (D1 REST rejects null params)", () => {
-	// The in-memory node:sqlite fake binds a null param fine, so the unit suite missed that
 	// @distilled.cloud/cloudflare's queryDatabase validates `params` as strict string[] and
 	// rejects a null element (`SchemaError: Expected string, got null`) — the seed died on a
 	// real D1 before writing anything (#569). Pin the wire contract: no statement may bind a
@@ -95,6 +94,37 @@ describe("seed — REST-wire-valid params (D1 REST rejects null params)", () => 
 					assert.typeOf(w, "string", `batch[${i}] wire param[${j}] must be a string`);
 				});
 			});
+		} finally {
+			close();
+		}
+	});
+
+	// #571: the fake must reject what real D1 rejects. Before this, the node:sqlite engine
+	// bound a null param happily — strictly more permissive than the REST client — so a
+	// REST-incompatible param shape passed the unit suite yet died live. Now the fake's bind
+	// path runs assertRestParam, so binding a null/undefined param throws in-process exactly
+	// as `queryDatabase` would on the wire. This is the fidelity regression guard: a future
+	// code path that binds a non-string param can no longer pass unit tests while failing D1.
+	it("the fake rejects a null bound param the same way the live REST client does", async () => {
+		const {d1, close} = makeSeedTestDb();
+		const rejection = async (run: () => Promise<unknown>): Promise<unknown> => {
+			try {
+				await run();
+			} catch (err) {
+				return err;
+			}
+			return undefined;
+		};
+		try {
+			const stmt = d1.prepare("SELECT ? AS x");
+			for (const bad of [null, undefined]) {
+				const err = await rejection(() => stmt.bind(bad).all());
+				assert.instanceOf(err, Error, `binding ${bad} must throw`);
+				assert.match((err as Error).message, /strict string\[\] and rejects null/);
+			}
+			// A non-null param the REST client stringifies (e.g. a number) is accepted by both.
+			const ok = await stmt.bind(42).first<{x: number}>();
+			assert.strictEqual(ok?.x, 42);
 		} finally {
 			close();
 		}
