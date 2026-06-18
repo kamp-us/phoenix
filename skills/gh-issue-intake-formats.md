@@ -288,6 +288,104 @@ gh api "repos/$REPO/issues?state=open&milestone=<milestone-number>&per_page=100"
 
 ---
 
+## The product-development cycle hook
+
+The pipeline skills ship as a **portable plugin** (ADR 0062): an adopter installs them into
+*their* repo, which may have no feature-flag substrate and no notion of a containment cycle.
+Yet phoenix wants the autonomous pipeline to **ship user-facing changes dark by default** — a
+bad auto-merge stays contained behind a default-off flag until a human deliberately releases
+it (**agents own deployment, humans own release** — ADR
+[0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md)).
+Reconciling the two means the pipeline skills become **cycle-interpreters**: they consult a
+repo-owned cycle doc for the containment policy, and when it is absent they **no-op
+gracefully**, staying flag-agnostic and portable (ADR 0062).
+
+This section is the **single source of truth** for the two generic primitives every cycle-aware
+skill depends on — the cycle-doc **consult hook** and the per-child **`**Containment:**`
+marker** — so the dimension can't drift across skills (the exact single-source discipline the
+§CP control-plane set and the §Milestone section already enforce). The per-skill *behavior*
+(plan-epic stamps, write-code ships dark, review-code verifies the gating) lives in those
+skills and **cites this section**. The phoenix-specific cycle *content* — what the cycle
+actually mandates — lives in the repo-root `product-development-cycle.md`, **not** here: this
+section defines the generic hook and marker, that doc fills them in.
+
+### 1. The cycle-doc consult hook + graceful-absence contract
+
+The well-known repo path the cycle-aware skills consult is **`product-development-cycle.md`
+at the repo root** (alongside `README.md` / `CLAUDE.md`, for the same discoverability). A
+cycle-step **probes for the doc first**; if it is **absent**, the step **no-ops** — it stamps
+no marker, enforces no dark-ship, surfaces no release queue. This is the **graceful-absence
+contract** that keeps the plugin portable (ADR 0062): a foreign install with no cycle doc runs
+the pipeline exactly as it did before this dimension existed.
+
+Every consumer cites **this one canonical probe** — a content read against `$REPO`'s default
+branch (no second copy in any skill):
+
+```bash
+# probe the well-known cycle doc; absent ⇒ the cycle-step no-ops (graceful absence, ADR 0062)
+if gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
+  CYCLE_DOC=present   # consult it for the containment policy
+else
+  CYCLE_DOC=absent    # no-op: no marker, no dark-ship, no release queue
+fi
+```
+
+A skill operating on a **local working tree** rather than the GitHub API (e.g. an offline
+build step) may substitute the equivalent working-tree check — `test -f
+product-development-cycle.md` at the repo root — for the `gh api` content read; the two are
+the same probe against the same well-known path, and both must treat **absent ⇒ no-op**.
+
+The probe is the **only** gate on every cycle-step: a step never assumes the doc exists, never
+hard-codes phoenix's policy, and never fails because the doc is missing. Absence is a
+first-class, correct state (exactly as a missing `milestone` is in §Milestone), not a defect to
+repair.
+
+### 2. The per-child `**Containment:**` marker
+
+The cycle's per-child decision is carried as a **`**Containment:**` line** in the
+[§2 sub-issue body format](#2-sub-issue-body-format), alongside `**Stories:**` / `**TDD:**` —
+reusing the existing `**Key:**` field idiom so no new parser is needed. Its **canonical
+values**:
+
+| Value | Meaning |
+|---|---|
+| `flag (default-off)` | A **user-facing** change → it must **ship dark** behind a default-off flag (the agent-workflow pattern, `.patterns/feature-flags-agent-workflow.md`). |
+| `exempt (<reason>)` | An **internal / refactor / infra / docs** change with no user-facing surface to contain — the `<reason>` names which (e.g. `exempt (internal refactor)`, `exempt (docs)`). |
+| `none (no cycle doc)` | The **graceful-absence** value: the repo has no `product-development-cycle.md`, so no containment is required. This is what a foreign install's children carry. |
+
+**The tolerant-read rule:** a **missing `**Containment:**` line reads as `none`** — treated as
+"no containment required," identical to `none (no cycle doc)`. This is the [§Reading stance](#reading-stance-convention-not-parser-spec)
+tolerant-reading stance applied to this field: a child filed before the dimension existed, or in a repo with no
+cycle doc, is well-formed and unblocked, not malformed. (Contrast `**Stories:**`, which is
+required — `**Containment:**` is optional, and its absence is a valid value, not a defect.)
+
+### Who writes it, who reads it
+
+Mirroring the §1 / §2 / §Milestone "who writes, who reads" convention, the marker has one
+writer and two readers:
+
+- **`plan-epic` writes it.** When it mints a child, plan-epic runs the consult-hook probe; if
+  the cycle doc is **present**, it consults the cycle's policy and stamps the child's
+  `**Containment:**` accordingly (`flag (default-off)` for a user-facing child, `exempt
+  (<reason>)` otherwise). If the doc is **absent**, the step no-ops and the child carries
+  `none (no cycle doc)` (or, equivalently, no line at all). plan-epic is the **only** writer.
+- **`write-code` reads it.** When it picks a child marked `flag (default-off)`, write-code
+  ships the change **dark** behind a default-off flag per the agent-workflow pattern; an
+  `exempt`/`none` child ships normally. write-code never writes the marker.
+- **`review-code` reads it.** On a `flag (default-off)` PR, review-code verifies the gating
+  (default-off declaration, safe read default, no leak) as part of its gate; an `exempt`/`none`
+  PR needs no gating check. review-code never writes the marker.
+
+The per-skill mechanics of each of those (how plan-epic decides user-facing-ness, how
+write-code ships dark, what review-code checks) live in those skills and cite this section, so
+the field's grammar stays defined exactly once. See ADR
+[0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md)
+for the why (agents deploy / humans release) and ADR
+[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)
+for the portability guarantee the graceful-absence contract delivers.
+
+---
+
 ## 1. The `## Dependencies` grammar
 
 An epic body ends with a pinned `## Dependencies` section that encodes the
@@ -409,6 +507,7 @@ A sub-issue is one executable task. Its body mirrors a task entry: enough for a
 ```markdown
 **Stories:** <story numbers from the epic's `### User stories` this task implements or unblocks>
 **TDD:** yes | no
+**Containment:** flag (default-off) | exempt (<reason>) | none (no cycle doc)
 
 ### What to build
 <One or two paragraphs. Concrete scope: what changes, where, and why. Name the
@@ -435,6 +534,14 @@ tempting adjacent thing not to do.>
   contract); `no` means config, docs, scaffolding, or an operational step where
   test-first doesn't apply. The flag is advice to `write-code`, not a gate; plan-epic sets
   it from the epic plan's testing strategy.
+- **Containment** — the **per-child containment marker**: which cycle-step containment a
+  user-facing change must carry on merge. It is the field the cycle-aware skills read off a
+  child; its canonical values, its tolerant-read rule, and who writes vs reads it are defined
+  once in [§The product-development cycle hook](#the-product-development-cycle-hook) (the same
+  single-source discipline §Milestone uses) — read that section for the contract, not this
+  bullet. The short of it: `flag (default-off)` for a user-facing change (→ ship dark),
+  `exempt (<reason>)` for internal/refactor/infra/docs, `none (no cycle doc)` for a foreign
+  install with no cycle doc; a **missing line reads as `none`** (no containment required).
 - **What to build** — the spec. Prose, not a checklist. Acceptance criteria say
   *whether* it's done; this section says *what to do*.
 
