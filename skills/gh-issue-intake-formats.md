@@ -734,9 +734,11 @@ widened to the gate-critical skills by ADR
 [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
 `review-skill/**` added to the gate-critical set by ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), since the gate
-that reviews the gates is itself a gate). Everything else — `apps/web/**`, `packages/**`,
-`.decisions/**`, `.patterns/**`, every prose `*.md`, and every **non**-gate-critical
-`skills/**` — is **non-blocking** and auto-merges through its matching gate on a PASS.
+that reviews the gates is itself a gate). Everything else — `apps/**`, `packages/**`,
+`.decisions/**`, `.patterns/**`, every prose doc `*.md` (the §DOC class), and every
+**non**-gate-critical `skills/**` — is **non-blocking** and auto-merges through its
+matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
+code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`, per §DOC.)
 
 > **Merge-authority is the only axis this set governs.** It decides *who merges*
 > (auto-merge vs. human), **not** *which gate verifies*. Routing is a separate axis: a
@@ -765,6 +767,56 @@ The **0052 instruction-trust set** (root `CLAUDE.md`, `.claude/**`, `.decisions/
 `.patterns/**`) is a *different* set — what a reviewer must never *load*, an isolation
 concern, not a merge-blocking one. Keep them apart (review-code Step 2 spells out the
 distinction). This section governs **only** the merge-blocking / control-plane set above.
+
+---
+
+## DOC. The doc-class / review-doc surface — one canonical definition
+
+`review-doc` and the actors that cite it (`ship-it` Step 0, `write-code`, this file's §6
+marker prose) all need the *same* answer to a second question — **is this `*.md` a doc
+artifact, or code-adjacent markdown that rides `review-code`?** The doc class was once
+described loosely as "prose `*.md` outside `.claude/`/`.github/`", which over-matched a
+**code-root** `*.md` (a `packages/**`/`apps/**` README) into the doc class even though no
+doc gate ever runs on it — the #542/#650 deadlock, where `ship-it` demanded a
+`review-doc: PASS` that can never exist because `review-doc` routes the whole `apps/**`/
+`packages/**` tree (README included) to `review-code` (PR #655). This section is the
+**single source of the doc class**, so every consumer cites *one* definition and the
+loose phrasing can't re-seed that over-match (mirroring §CP's single-sourcing of the
+control-plane set).
+
+**The doc class is, exactly — a `*.md` (or `.decisions`/`.patterns` knowledge file)
+that is:**
+
+- under `.decisions/**`, `.patterns/**`, or `docs/**`; **or**
+- a **root / top-level** prose doc — `README.md`, `CLAUDE.md`, a top-level `*.md`;
+
+**and is NOT** under any of the carved-out roots, in this precedence order:
+
+- **control plane** (`.claude/**`, `.github/**`, a gate-critical skill — the §CP set);
+- **`skills/**`** — a behavioral artifact, `review-skill`'s class, carved out *before* the
+  `.md` test (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md));
+- the **code roots `apps/**` and `packages/**`** — a code/app-internal `*.md` (a package or
+  app README, CHANGELOG, …) rides the `review-code` PASS its tree already needs, and is
+  **never** the doc class.
+
+This is **exactly `review-doc`'s verification surface**: a present doc class therefore
+always has a *reachable* gate. The code-root carve-out names the roots **`apps`,
+`packages`** — the same literals `ship-it` Step 0's has-code probe (`^(apps|packages)/`)
+and docs-exclusion (`grep -Ev '^(skills|apps|packages)/'`) use, so prose and probe name
+one boundary and can't drift (the #663 has-code/docs-exclusion agreement invariant).
+
+The canonical probe both `ship-it` Step 0 and `review-doc` Step 0 run — carve out
+control-plane, then `skills/**`, then the code roots, *then* test for a doc path:
+
+```bash
+# docs class = review-doc's surface: a .md/knowledge file outside control-plane, skills/**,
+# AND the code roots apps/**/packages/** (#542/#650/#663). Cite this; don't re-derive it loosely.
+echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+```
+
+A code-root `*.md` is **not** weakened by this carve-out — it is gated harder, by
+`review-code` over its whole tree, not skipped. Only the *class label* moves: from a
+phantom doc class with no reachable gate to the code class that already gates it.
 
 ---
 
@@ -857,7 +909,9 @@ and stalled every code-lane merge — #219), this contract pins **one** rule bot
 ## 6. review-doc verdict marker
 
 `review-doc` is the **doc-class twin of `review-code`** — it gates a doc/knowledge PR
-(`.decisions/**`, `.patterns/**`, prose `*.md` outside `.claude/`/`.github/`) against its
+(the **§DOC doc class**: `.decisions/**`, `.patterns/**`, `docs/**`, or a root/top-level
+prose `*.md` — explicitly **not** a code-root `*.md` under `apps/**`/`packages/**`, which
+rides `review-code`) against its
 linked issue's acceptance criteria *plus* a doc-hygiene checklist. It lands its verdict as a
 **comment whose first line is a recognizable, SHA-bound marker** — and **only** that comment,
 never a native approving review. The marker lives in its **own namespace**, distinct from
