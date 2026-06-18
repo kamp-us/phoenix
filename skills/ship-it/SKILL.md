@@ -1,6 +1,6 @@
 ---
 name: ship-it
-description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green, squash-merge, and confirm the linked issue auto-closed — and REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
+description: Ship one verified PR on the configured target repo — the authorized merge step the rest of the pipeline defers to. Given a PR number, assert the matching gate has signalled PASS (review-code for code, review-doc for docs, review-skill for skills), confirm CI is already green, squash-merge, confirm the linked issue auto-closed, and — when the merge was a dark feature ship — surface a release queue for the humans (deploy is the agent's boundary, release is human; ADR 0083). It REFUSES to self-merge control-plane PRs (.claude/.github + the gate-critical skills), which a human merges by hand (ADR 0053). Trigger on "ship #N", "ship it", "it's merge-ready, ship it", "close the loop on #N", "merge #N", "/ship-it". This is the terminal stage of the issue-intake pipeline: it consumes the merge-ready signal the gates produce and is the ONLY skill granted merge authority.
 ---
 
 # ship-it
@@ -634,7 +634,7 @@ docs-only no-link path (`ISSUE` unset, ADR
 
 ---
 
-## Step 5 — Confirm the loop closed
+## Step 5 — Confirm the loop closed, then surface the release queue on a dark merge
 
 Verify the terminal state rather than assuming the merge took. Always confirm the PR
 `merged` state; the issue-close confirmation is **conditional on a linked issue** (ADR
@@ -654,6 +654,66 @@ pointing at the merged PR — but record that the seam was broken so it can be f
 When `ISSUE` is **unset** (the docs-only no-link path, Step 1) there is no issue to confirm
 — skip the issue query entirely and report `issue: n/a (docs-only, no linked issue)`.
 
+### Step 5b — Surface the release queue (a dark merge is deployed, not released)
+
+The merge above is **deployment complete** — the agent's boundary (ADR
+[0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md)
+§1: *agents own deployment, humans own release*). When the merged change was a **user-facing
+feature shipped dark** behind a default-off flag, deployment is **not** release: the feature is
+on `main`, contained, invisible to users until a human flips the flag. ship-it's last act is to
+**surface that change to the humans** by adding it to the release queue — the
+`status:awaiting-release` label on the linked issue (the queue mechanism defined in
+[#602](https://github.com/kamp-us/phoenix/issues/602)). The **issue** is the durable carrier:
+the PR is closed by the merge above, but the linked issue survives (it auto-closed, but the
+label persists on it and is queryable by infra-admins), so the release queue rides the existing
+label spine and adds no new artifact.
+
+**ship-it NEVER flips the flag.** Release — the flag flip that makes the feature visible — is a
+deliberate **human** act (infra-admins, the Cloudflare dashboard), never an agent step (ADR
+0083 §1 and its Non-goals: *automating the flip is explicitly out of scope*). ship-it's role
+ends at queueing; the human consumes the queue and flips. Applying the label is the **whole**
+of the release-queue step — no flip, no notification, no second action.
+
+This step keys off the **`**Containment:**` marker on the linked issue** — the per-child field
+defined once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
+§The-product-development-cycle-hook (the single source; cite it, don't re-derive the grammar).
+It runs **only** when the cycle doc is present *and* the linked issue's marker is
+`flag (default-off)`. On `exempt`, `none (no cycle doc)`, a **missing** marker (which reads as
+`none` per the contract's tolerant-read rule), an **absent** cycle doc (the graceful-absence
+contract, ADR 0062), or **no linked issue** (the docs-only path) → there is **nothing dark to
+release**, so this step **no-ops** and the merge behavior is exactly as it was before this
+dimension existed:
+
+```bash
+RELEASE_QUEUE="n/a (not a dark ship)"   # default: the no-op state
+
+# Only a dark feature ship has anything to queue: a linked issue + the cycle doc present + the
+# issue's Containment marker == flag (default-off). All three or it's a no-op (graceful absence).
+if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
+  # the per-child marker (gh-issue-intake-formats.md §The-product-development-cycle-hook).
+  # Missing line ⇒ "" ⇒ reads as none ⇒ no-op (tolerant-read rule).
+  # `// {v:null}` is required: jq's capture ERRORS on no match (it doesn't return null), so a
+  # missing line falls through to "" — the same defensive idiom Step 2's @ <sha> capture uses.
+  CONTAINMENT=$(gh api repos/$REPO/issues/$ISSUE \
+    --jq '.body // "" | (capture("(?i)\\*\\*Containment:\\*\\*\\s*(?<v>[^\\n]*)") // {v:null}) | .v // ""')
+  case "$CONTAINMENT" in
+    flag\ \(default-off\)*)
+      # deployed-dark → add the linked issue to the release queue for a human to flip (#602)
+      gh api -X POST "repos/$REPO/issues/$ISSUE/labels" -f "labels[]=status:awaiting-release"
+      RELEASE_QUEUE="queued (awaiting human flip)"
+      ;;
+  esac
+fi
+```
+
+The `status:awaiting-release` label is **orthogonal to the `status:*` pickability spine** — it
+is a post-merge *release* state, never a thing `write-code` keys on (#602). Applying it to an
+already-closed issue is fine: an infra-admin lists the queue with a one-line filter
+(`gh api "repos/$REPO/issues?state=all&labels=status:awaiting-release"`), flips the flag in the
+dashboard, then clears the label as the release completes (#602's consume flow). This step is
+**idempotent** — re-running ship-it on an already-merged dark PR re-adds a label the issue
+already carries, a GitHub no-op.
+
 ---
 
 ## Running it
@@ -664,7 +724,7 @@ resolve the latest verdict per required gate namespace, refuse any verdict not b
 PR's current head (Step 2b, ADR 0058), and merge only if every required one is a current-head
 PASS (Step 2, guard 1), confirm the gating checks are green (Step 3), assert the SHA-bound run-evidence bundle
 exists / is schema-readable / is commit-bound / is all-`pass` (Step 3.5, guard 2), squash-merge
-(Step 4), confirm the issue closed (Step 5).
+(Step 4), confirm the issue closed and surface the release queue on a dark merge (Step 5/5b).
 
 Report back a tight terminal ledger — nothing else, because the merge itself is the
 durable record:
@@ -675,12 +735,19 @@ branch: <head ref>
 PR url: <html_url>
 merged: yes | no (<reason if no>)
 issue closed: yes | no
+release: queued (awaiting human flip) | n/a (not a dark ship)
 ```
+
+The `release:` line is the deployment/release boundary made visible (ADR 0083): `queued
+(awaiting human flip)` when Step 5b applied `status:awaiting-release` to a dark feature ship,
+`n/a (not a dark ship)` on an `exempt`/`none`/missing marker, an absent cycle doc, or a docs-only
+PR. ship-it never flips the flag — the queued line hands the release to a human, it does not
+perform it.
 
 When `ISSUE` is unset (the docs-only no-link path, Step 1 / ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) the two issue
 lines render `issue: n/a (docs-only, no linked issue)` instead of `issue #<ISSUE>` and
-`issue closed:`.
+`issue closed:`, and `release:` renders `n/a (not a dark ship)` (no linked issue ⇒ nothing to queue).
 
 If you refused to merge, the reason line is the whole point: `blocking — manual merge`,
 `unverified (no review-code PASS)`, `unverified (no review-doc PASS)`, `unverified (no
