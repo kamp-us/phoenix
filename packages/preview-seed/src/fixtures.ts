@@ -30,6 +30,9 @@ export interface Fixtures {
 /** Stable identity of the single seeded fixture set — also the public surface the specs lean on. */
 export const SEED_TERM_SLUG = "merhaba-dunya";
 export const SEED_POST_ID = "seed-post-tanitim";
+/** A link-post (url+host set) so 03-pano-feed can exercise host routing instead of skipping. */
+export const SEED_LINK_POST_ID = "seed-post-baglanti";
+export const SEED_LINK_POST_HOST = "example.com";
 
 const SEED_AUTHOR_ID = "seed-author";
 const SEED_AUTHOR_NAME = "kampüs";
@@ -97,6 +100,8 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 
 	const postBody =
 		"önizleme ortamı için tohum gönderisi — pano akışının en az bir gönderi listelediğini doğrular.";
+	const linkPostBody =
+		"dış bağlantılı tohum gönderisi — pano akışının host bağlantısını ve /pano/site/<host> yönlendirmesini doğrular.";
 
 	const posts: ReadonlyArray<PostSummaryInsert> = [
 		{
@@ -115,6 +120,24 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 			commentCount: 0,
 			// Lead the "sıcak" (hot) tab — ordered by hot_score DESC.
 			hotScore: 1_000_000,
+			createdAt: now,
+			updatedAt: now,
+			lastActivityAt: now,
+		},
+		{
+			id: SEED_LINK_POST_ID,
+			slug: SEED_LINK_POST_ID,
+			title: "dış bağlantı tohumu",
+			url: `https://${SEED_LINK_POST_HOST}/kampus`,
+			host: SEED_LINK_POST_HOST,
+			body: linkPostBody,
+			bodyExcerpt: excerptOf(linkPostBody),
+			authorId: SEED_AUTHOR_ID,
+			authorName: SEED_AUTHOR_NAME,
+			tags: "meta",
+			score: 8,
+			commentCount: 0,
+			hotScore: 999_999,
 			createdAt: now,
 			updatedAt: now,
 			lastActivityAt: now,

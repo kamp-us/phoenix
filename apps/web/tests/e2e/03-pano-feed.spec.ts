@@ -37,7 +37,10 @@ test.describe("PanoFeed (/pano)", () => {
 	});
 
 	test("(host) link routes to /pano/site/<host> + breadcrumb appears", async ({page}) => {
-		const siteLink = page.locator(".kp-pano-post__site").first();
+		// Only a link-post renders an <a.kp-pano-post__site>; a self-post renders a
+		// non-navigating <span> with the same class. Target the anchor so the
+		// skip-guard skips on self-only feeds and the click hits a real link.
+		const siteLink = page.locator("a.kp-pano-post__site").first();
 		// Some seed posts are self-posts (no host) — only run if a host link exists.
 		if (!(await siteLink.isVisible().catch(() => false))) {
 			test.skip(true, "no host links on the current page (all self-posts)");

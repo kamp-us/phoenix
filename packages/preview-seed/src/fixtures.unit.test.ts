@@ -4,7 +4,13 @@
  * would break a spec breaks a test here first).
  */
 import {assert, describe, it} from "@effect/vitest";
-import {buildFixtures, SEED_POST_ID, SEED_TERM_SLUG} from "./fixtures.ts";
+import {
+	buildFixtures,
+	SEED_LINK_POST_HOST,
+	SEED_LINK_POST_ID,
+	SEED_POST_ID,
+	SEED_TERM_SLUG,
+} from "./fixtures.ts";
 
 describe("buildFixtures — sözlük content (07-sozluk-term, 00-smoke)", () => {
 	it("seeds at least one term with the stable slug", () => {
@@ -52,6 +58,13 @@ describe("buildFixtures — pano content (03-pano-feed, 00-smoke)", () => {
 		const post = posts.find((p) => p.id === SEED_POST_ID);
 		assert.isDefined(post);
 		assert.isTrue(post?.deletedAt == null);
+	});
+
+	it("seeds a link-post (url+host set) so the host-routing spec runs instead of skipping", () => {
+		const post = buildFixtures().posts.find((p) => p.id === SEED_LINK_POST_ID);
+		assert.isDefined(post);
+		assert.strictEqual(post?.host, SEED_LINK_POST_HOST);
+		assert.isTrue(typeof post?.url === "string" && post.url.includes(SEED_LINK_POST_HOST));
 	});
 
 	it("post rows carry the NOT NULL columns the hot feed reads", () => {
