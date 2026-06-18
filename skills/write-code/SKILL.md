@@ -507,6 +507,77 @@ Commit per repo conventions. Don't push to or PR from `main`.
 
 ---
 
+## Step 4b — Ship dark behind a default-off flag on a containment-marked child
+
+When the child you picked carries **`**Containment:** flag (default-off)`**, the implementation
+above isn't done until the new user-facing path **ships dark**: behind a boolean flag that is
+**off by default**, so the feature reaches `main` and production deployed-but-not-live until a
+human deliberately flips it. This is the product-development cycle's **agents-deploy / humans-release**
+contract (ADR
+[0083](https://github.com/kamp-us/phoenix/blob/main/.decisions/0083-agents-deploy-humans-release.md)):
+your autonomous merge is the *deploy*, the flip is the human *release*, and a default-off flag is
+what makes the no-eyeball auto-ship safe — a bad merge sits dark, contained, never seen by a user.
+`plan-epic` stamps the marker, you ship dark on it, and `review-code` Step 3b verifies the gating.
+
+The marker contract — its values, its tolerant-read rule, who writes vs reads it — is defined once
+in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md#the-product-development-cycle-hook)
+(§The product-development cycle hook); read it there, this step is the *reader's behavior* on the
+ship side.
+
+**Read the marker off the child you're implementing**, tolerantly per the formats §Reading stance —
+a `**Containment:**` line, with a leading bold-marker, anywhere in the body; a **missing line reads
+as `none`**:
+
+```bash
+# the child's containment marker; a missing line reads as `none` (formats §2 tolerant-read rule)
+CONTAINMENT=$(gh api repos/$REPO/issues/<N> --jq '.body' \
+  | grep -ioE '\**\s*Containment:\**\s*(flag|exempt|none)' | head -n1 \
+  | grep -ioE '(flag|exempt|none)' || echo none)
+```
+
+**Graceful absence — the dark-ship behavior applies only when there's a cycle.** It fires **only**
+when the marker resolves to `flag` *and* the repo has a `product-development-cycle.md` (the one
+canonical probe, formats §1). On `exempt`, `none`, a missing line, or an **absent** cycle doc (a
+foreign install with no cycle and no flag substrate — ADR
+[0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)), this
+step is a **no-op**: you implement and ship the change exactly as Steps 4/5 already describe, with
+**no flag introduced**. Absence is a first-class, correct state, not a defect — the same
+graceful-absence contract `plan-epic` (stamp) and `review-code` (verify) honor:
+
+```bash
+# the canonical cycle-doc probe (formats §1); absent ⇒ no cycle ⇒ ship normally, no flag
+gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1 \
+  && CYCLE_DOC=present || CYCLE_DOC=absent
+# ship dark ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
+```
+
+When it **does** fire, ship dark per the dark-ship procedure — **don't re-derive the mechanics**:
+declare the default-off flag and gate the new path following
+[`.patterns/feature-flags-agent-workflow.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags-agent-workflow.md)
+(the ship-behind-flag workflow, #514), naming the flag by the grammar in
+[`.patterns/feature-flags-schema-lifecycle.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags-schema-lifecycle.md)
+(`<product>-<feature>-<purpose>`, kebab-case, #513). The load-bearing invariant those patterns own
+is **default = safe-state**, the three facets `review-code` Step 3b will verify, so build to make
+each checkable from the outside:
+
+- **Declare it default-off** — a `FlagshipFlag(..., { defaultVariation: "off", … })` in
+  `apps/web/worker/db/resources.ts` (workflow Step 1), with the per-flag metadata (owner,
+  originating issue, removal trigger) that lets it be retired later.
+- **Gate the new path with the safe read default** — server `flags.get*(key, false)` and client
+  `useFlag(key, false)` / `<FlagGate fallback={…}>`, so the new path is unreachable until the flip
+  and any Flagship outage degrades to the **old** path (workflow Step 2).
+- **No leak** — every entry into the new behavior sits behind the gate: no default-on, no inverted
+  gate, no ungated client path.
+
+The PR then ships dark the normal way (Step 5): the diff is `apps/web/**`, **not** control-plane, so
+`review-code`'s PASS auto-ships it on green CI — and it reaches production **off** because both the
+declared default and the read default are off. Note this in your Step 6 progress comment (the flag
+key + that it ships dark) so `review-code` and a later releaser can find it. **Out of scope here:**
+validating, flipping, or retiring the flag — those are the human release act and the retirement
+chore (workflow Steps 4–7), never a `write-code` step.
+
+---
+
 ## Step 5 — Open a PR that closes the issue
 
 Open the PR with **`Fixes #N` in the body** so merging auto-closes the issue (this is
