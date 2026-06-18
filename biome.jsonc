@@ -35,7 +35,10 @@
 		"lineWidth": 100,
 		"indentStyle": "tab"
 	},
-	"plugins": ["./biome-plugins/no-type-assertions.grit"],
+	"plugins": [
+		"./biome-plugins/no-type-assertions.grit",
+		"./biome-plugins/no-node-sqlite-test-backing.grit"
+	],
 	"linter": {
 		"enabled": true,
 		"rules": {

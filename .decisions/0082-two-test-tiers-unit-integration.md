@@ -67,6 +67,24 @@ mis-layered tests on a faked engine.
 `apps/web/worker/db/sqlite-d1.testing.ts` and its self-test are deleted. The
 T0/T1/T2/T3 numbering is dropped — `unit` and `integration` are the only names.
 
+**The ban is enforced, not prose** (#631). A GritQL biome plugin
+(`biome-plugins/no-node-sqlite-test-backing.grit`, wired into `biome.jsonc`
+`"plugins"`) reds the existing `check` CI job when any non-allowlisted file
+imports `node:sqlite` (`import … from "node:sqlite"` in any clause shape, or
+`require("node:sqlite")`). A deliberate carve-out is an explicit, reason-bearing
+`// biome-ignore lint/plugin: <reason>` on the import — never a blanket directory
+exemption — so the next un-blessed re-introduction can't merge silently.
+
+**One temporary carve-out exists** (#633's recorded decision):
+`packages/preview-seed/src/sqlite-d1.testing.ts` (`makeSeedTestDb()`, the fast
+unit suite's backing). It is permitted because the seed's writes are plain inserts
+— no FTS5, no collation, none of the engine-divergence above — and
+`packages/preview-seed/src/d1-rest.ts` already exercises a **real** D1 on the
+production path, so real-D1 fidelity exists elsewhere. This carve-out is
+**temporary**: it is removed when #672 re-tiers the unit suite onto real D1 via the
+alchemy `Test.make` harness (#571, closed, was the prior REST-fidelity work, not this re-tier). The allowlist entry's inline comment names #672 as
+its removal trigger.
+
 **Principle — no domain decision welded to SQL execution.** Cursor resolution is
 a *port* (a thin DB read); the keyset / cursor-miss *decision* and the page
 envelope are *pure* and unit-testable. Domain logic that today executes inline
