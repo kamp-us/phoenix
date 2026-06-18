@@ -4,6 +4,8 @@ export {Code, Kbd, Mark, Skeleton, Tag} from "./atoms";
 export type {ButtonSize, ButtonVariant} from "./Button";
 export {Button} from "./Button";
 export {Collapsible} from "./Collapsible";
+export type {CopyLinkButtonProps} from "./CopyLinkButton";
+export {CopyLinkButton} from "./CopyLinkButton";
 export {Dialog} from "./Dialog";
 export {Field, FieldError, Form, Hint, Input, Label, Textarea} from "./Form";
 export {Menu} from "./Menu";
