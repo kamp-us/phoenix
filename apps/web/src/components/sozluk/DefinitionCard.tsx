@@ -4,7 +4,7 @@
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
-import type {Definition} from "../../../worker/features/fate/views";
+import type {Definition, ReportReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
 import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
@@ -14,6 +14,7 @@ import {authRedirectPath} from "../../lib/returnTo";
 import {Button} from "../ui/Button";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
+import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
 
 export const DefinitionView = view<Definition>()({
 	id: true,
@@ -27,6 +28,13 @@ export const DefinitionView = view<Definition>()({
 });
 
 const BODY_MAX = 10_000;
+
+// `report.submit` ack (ADR 0082 — a report has no read view). `created: false` is the
+// idempotent re-report no-op, which `ReportButton` surfaces as "zaten bildirildi".
+const ReportReceiptView = view<ReportReceipt>()({
+	id: true,
+	created: true,
+});
 
 const messageForCode = (code: MutationErrorCode, fallback: string): string => {
 	switch (code) {
@@ -173,6 +181,30 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		}
 	}
 
+	async function onReport(): Promise<ReportOutcome> {
+		if (redirectIfSignedOut()) return "redirected";
+		try {
+			const {result, error} = await fate.mutations.report.submit({
+				input: {targetKind: "definition", targetId: definition.id},
+				view: ReportReceiptView,
+			});
+			if (error) {
+				if (codeOf(error) === "UNAUTHORIZED") {
+					redirectIfSignedOut();
+					return "redirected";
+				}
+				return "error";
+			}
+			return result?.created === false ? "already" : "reported";
+		} catch (error) {
+			if (codeOf(error) === "UNAUTHORIZED") {
+				redirectIfSignedOut();
+				return "redirected";
+			}
+			return "error";
+		}
+	}
+
 	return (
 		<article className={cls} data-testid={`definition-card-${definition.id}`}>
 			<div className="kp-sozluk-definition__vote">
@@ -256,7 +288,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					<span className="actions">
 						<button type="button">paylaş</button>
 						<button type="button">kalıcı bağlantı</button>
-						<button type="button">bildir</button>
+						<ReportButton onReport={onReport} testId={`definition-report-${definition.id}`} />
 						{isAuthor && !editing ? (
 							<>
 								<button
