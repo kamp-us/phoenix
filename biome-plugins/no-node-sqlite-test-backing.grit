@@ -1,0 +1,44 @@
+// Forbid `node:sqlite` as a test backing — enforce ADR 0082's ban as a lint.
+//
+// ADR 0082 (.decisions/0082-two-test-tiers-unit-integration.md) bans `node:sqlite`
+// as a test backing outright: an in-process SQLite engine is NOT Cloudflare D1
+// (its FTS5 build, tokenizer, and collation diverge), so a faked-D1 engine is
+// strictly more permissive than real D1 and "tests green" stops meaning "works
+// against real D1". The ban was prose-only until this plugin; #563 cleaned the
+// fake out of `apps/web` but a copy survived in `packages/preview-seed` with no
+// gate to flag it. This plugin makes re-introduction red CI.
+//
+// Match by the module specifier `"node:sqlite"`, not by import shape: a
+// `JsImport` whose source is that module (named / namespace / default /
+// side-effect — all four import clauses, the snippet patterns each miss some) and
+// the CJS `require("node:sqlite")`. Scoped to the import node, so a prose string
+// like `"do not import node:sqlite"` and a different module like `"node:test"`
+// don't false-positive.
+//
+// Allowlist: a deliberate carve-out is an ordinary biome suppression on the
+// import line — `// biome-ignore lint/plugin: <reason>`. There is exactly one
+// today (`packages/preview-seed/src/sqlite-d1.testing.ts`, a TEMPORARY fast-unit
+// carve-out removed when #571 re-tiers the seed onto real D1; #633 is the recorded
+// decision). No blanket directory exemption — the suppression is per-import and
+// must name a reason, so the next un-blessed re-introduction reds CI.
+//
+// Registered via biome.jsonc `"plugins"`, run by the existing `check` CI job.
+// Excluded from biome's own formatter in biome.jsonc — its formatter drops
+// `language js;`'s terminating `;`.
+language js;
+
+or {
+	JsImport() as $imp where {
+		$imp <: contains `"node:sqlite"`,
+		register_diagnostic(
+			span = $imp,
+			message = "`node:sqlite` is banned as a test backing (ADR 0082) — an in-process SQLite engine is more permissive than real Cloudflare D1, so a faked-D1 unit suite can pass while the real D1 rejects it. Test against real D1 via the alchemy `Test.make` harness instead. Deliberate carve-out: `// biome-ignore lint/plugin: <reason>` on this line."
+		)
+	},
+	`require("node:sqlite")` as $req where {
+		register_diagnostic(
+			span = $req,
+			message = "`node:sqlite` is banned as a test backing (ADR 0082) — an in-process SQLite engine is more permissive than real Cloudflare D1, so a faked-D1 unit suite can pass while the real D1 rejects it. Test against real D1 via the alchemy `Test.make` harness instead. Deliberate carve-out: `// biome-ignore lint/plugin: <reason>` on this line."
+		)
+	}
+}
