@@ -14,14 +14,16 @@
  * `definition.vote`), so `score` (vote-derived) and `slug` (caller-chosen) are
  * the deterministically-controllable keyset columns here; the tie-breaks asserted
  * across boundaries are exactly the ones that seam can realize without a direct
- * INSERT. The `recent` keyset's lead column (`last_activity_at`) is stamped from
- * the real write clock, never from caller input — so the recent vertical controls
- * relative activity by the ORDER + SPACING of `h.touchTerm` calls (a `sleep` gap
- * to force a strict step, a back-to-back pair to force a same-second tie) and then
- * asserts the engine's `(last_activity_at desc, slug asc)` ordering against the
- * timestamps D1 actually recorded — a clock-robust invariant, not a fixed-string
- * equality that a second-boundary could flake. Per-file isolated stage owns its
- * own D1, so files run in parallel; slugs are still process-stamped so a
+ * INSERT. The `recent` keyset's lead column (`last_activity_at`) is server-stamped
+ * (`floor(now/1000)`), never settable through the public seam — so the recent
+ * vertical CONSTRUCTS its activity order by stamping each row's `last_activity_at`
+ * to a fixed whole-second epoch directly (`h.setLastActivityAt`, a controlled D1
+ * write), giving the 2/3 pair an identical injected second the engine can only order
+ * by slug-asc. The assertions then check the engine honored `(last_activity_at desc,
+ * slug asc)` over those injected seconds. No `touchTerm`/`sleep` race remains: against
+ * real remote D1 the prior "two adjacent touches share a second" assumption lost on
+ * round-trip latency and reddened unrelated PRs (#643). Per-file isolated stage owns
+ * its own D1, so files run in parallel; slugs are still process-stamped so a
  * `NO_DESTROY` re-run never collides with a prior run's rows.
  */
 import {beforeAll, describe, expect, it} from "vitest";
@@ -71,16 +73,28 @@ const POP: Array<[slug: string, score: number]> = [
 const DEFS_SLUG = `kx${STAMP}defs`;
 
 // `terms(recent)` keyset is `(last_activity_at desc, slug asc)`. `last_activity_at`
-// is the real write clock (truncated to the second), so we seed four terms then
-// re-stamp their activity in a controlled sequence (`beforeAll` below): a `sleep`
-// gap forces a strict activity step; a back-to-back touch pair forces a same-second
-// tie that ONLY slug-asc can order. The assertions read back the timestamps D1
-// recorded and check the engine honored `(last_activity_at desc, slug asc)` —
-// clock-robust, never an exact-timestamp equality.
+// is server-stamped (`recomputeTermSummary` writes `floor(now/1000)`) and never
+// settable through the public seam — so the prior fixture seeded four terms and then
+// raced two back-to-back touches hoping they'd land in the SAME wall-clock second to
+// build the date tie. Against real remote D1 the round-trip latency separates those
+// two writes' seconds far more often than not, so that race lost ~deterministically
+// and reddened unrelated PRs (#643). Instead, seed the four terms and stamp each row's
+// `last_activity_at` to an EXACT whole-second epoch directly (`h.setLastActivityAt`):
+// the activity order is CONSTRUCTED, the 2/3 tie is an identical injected second, and
+// nothing depends on wall-clock alignment.
 const R = `kr${STAMP}`; // recent-fixture slug prefix
 const REC_SLUGS = [`${R}1`, `${R}2`, `${R}3`, `${R}4`] as const;
 
-const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+// Fixed activity seconds: 4 newest, 2 == 3 (the injected tie slug-asc must order), 1
+// oldest. Anchored to the process stamp so a `NO_DESTROY` re-run's seconds don't alias
+// a prior run's rows, and spaced by 10s so the strict steps can't collapse.
+const REC_BASE_SEC = Math.floor(STAMP / 1000);
+const REC_ACTIVITY_SEC: Record<string, number> = {
+	[`${R}1`]: REC_BASE_SEC, // oldest
+	[`${R}2`]: REC_BASE_SEC + 10, // tie with 3
+	[`${R}3`]: REC_BASE_SEC + 10, // tie with 2
+	[`${R}4`]: REC_BASE_SEC + 20, // newest
+};
 
 beforeAll(async () => {
 	for (const [slug, score] of POP) {
@@ -100,70 +114,20 @@ beforeAll(async () => {
 		],
 	});
 
-	// Seed the four recent-fixture terms; capture each term's definition id so we
-	// can re-stamp its activity through the public vote seam.
-	const recDefId: Record<string, string> = {};
+	// Seed the four recent-fixture terms, then stamp each one's `last_activity_at` to
+	// its fixed second — no touch, no clock, no race. The 2/3 pair gets an IDENTICAL
+	// second, so the only thing that can order them is the engine's slug-asc tiebreak.
 	for (const slug of REC_SLUGS) {
-		const seeded = await h.seedTerm({
+		await h.seedTerm({
 			slug,
 			title: slug.toUpperCase(),
 			definitions: [{authorName: "umut", body: `body ${slug}`}],
 		});
-		recDefId[slug] = seeded.definitions[0]!.id;
 	}
-
-	// Drive a deterministic activity ORDER over the public clock:
-	//   most-recent → least-recent activity:  4, then (2 == 3 tie), then 1.
-	// Sequence (oldest activity first so the last touch wins): touch 1, gap, touch
-	// the 2/3 tie pair, gap, touch 4 last. The 1100ms gaps straddle
-	// `last_activity_at`'s one-second resolution → strict steps between {1}, {2,3},
-	// {4}. `last_activity_at` is clock-derived, so the 2/3 SAME-SECOND tie can't be
-	// injected — `touchTie` re-touches the pair until D1 records an identical second
-	// for both (a back-to-back pair only straddles a second boundary rarely), making
-	// the date tie deterministic-by-construction rather than clock-lucky.
-	await h.touchTerm(recDefId[`${R}1`]!);
-	await sleep(1100);
-	await touchTie(recDefId[`${R}2`]!, recDefId[`${R}3`]!, REC_SLUGS[1], REC_SLUGS[2]);
-	await sleep(1100);
-	await h.touchTerm(recDefId[`${R}4`]!);
+	for (const slug of REC_SLUGS) {
+		await h.setLastActivityAt(slug, REC_ACTIVITY_SEC[slug]!);
+	}
 });
-
-// Re-touch two terms back-to-back until the engine records the SAME
-// `last_activity_at` second for both (so the only thing ordering them is slug
-// asc). `last_activity_at` is wall-clock truncated to the second; two adjacent
-// touches share a second unless they straddle a boundary, so a bounded retry
-// converges immediately in the common case. Reads the recorded seconds back
-// through the public `term(slug)` view — no clock injection exists.
-async function touchTie(defA: string, defB: string, slugA: string, slugB: string): Promise<void> {
-	for (let attempt = 0; attempt < 8; attempt++) {
-		await h.touchTerm(defA);
-		await h.touchTerm(defB);
-		const [a, b] = await Promise.all([recordedSecond(slugA), recordedSecond(slugB)]);
-		if (a === b) return;
-		await sleep(1100); // landed across a second boundary — let the clock settle, retry
-	}
-	throw new Error(`touchTie: ${slugA}/${slugB} never shared a last_activity_at second`);
-}
-
-// Read a term's recorded `term_summary.last_activity_at`, as a whole-second epoch.
-// Sourced from the `terms` LIST view (not `term(slug)`): the detail resolver maps
-// `lastActivityAt` to `lastEdit` (`shapers.ts`), so only the list surfaces the real
-// keyset column — and a vote re-stamps `last_activity_at` without touching
-// `lastEdit`, so the detail would not even move.
-async function recordedSecond(slug: string): Promise<number> {
-	const res = await h.fate({
-		kind: "list",
-		name: "terms",
-		args: {sort: "recent", first: 100},
-		select: ["slug", "lastActivityAt"],
-	});
-	if (!res.ok) throw new Error(`recordedSecond(${slug}) list failed`);
-	const conn = res.data as Connection<TermNode>;
-	const node = conn.items.find((e) => e.node.slug === slug)?.node;
-	if (!node) throw new Error(`recordedSecond(${slug}): not in recent list`);
-	if (node.lastActivityAt == null) throw new Error(`recordedSecond(${slug}): null lastActivityAt`);
-	return Math.floor(new Date(node.lastActivityAt).getTime() / 1000);
-}
 
 describe("sözlük keyset execution — real D1 (terms popular)", () => {
 	it("orders popular by (total_score desc, slug asc) across pages with no skips/dupes", async () => {
@@ -256,9 +220,9 @@ describe("sözlük keyset execution — real D1 (terms recent)", () => {
 			}
 		}
 
-		// The constructed activity sequence (1 | 2,3 tie | 4, last-touch-wins) pins a
-		// concrete expected order on top of the invariant: 4 (newest) → 2 → 3 (the
-		// same-second pair, slug asc) → 1 (oldest).
+		// The injected activity seconds (1 oldest | 2 == 3 tie | 4 newest) pin a concrete
+		// expected order on top of the invariant: 4 (newest) → 2 → 3 (the same-second
+		// pair, slug asc) → 1 (oldest).
 		expect(slugs).toEqual([`${R}4`, `${R}2`, `${R}3`, `${R}1`]);
 
 		// The 2/3 pair is the date TIE — assert it really shares a second (so the

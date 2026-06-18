@@ -26,6 +26,8 @@
  *   - `h.signUp(...)`        — sign up a user through `/api/auth/*`, return cookie
  *   - `h.seedTerm(...)`      — seed a sözlük term+definitions via the PUBLIC fate
  *                             `definition.add` mutation (+ votes for scores)
+ *   - `h.setLastActivityAt(...)` — controlled D1 write of a term's `last_activity_at`
+ *                             (setup-only, real-D1 REST; the clock the seam can't set)
  *   - `h.json(...)` / `h.req(...)` — raw HTTP helpers
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
@@ -97,6 +99,20 @@ export interface Harness {
 	 * injecting a timestamp. Returns the score the vote landed.
 	 */
 	touchTerm(definitionId: string): Promise<number>;
+	/**
+	 * Stamp a term's `term_summary.last_activity_at` to an EXACT whole-second epoch,
+	 * by-passing the server write clock — the deterministic handle the public seam
+	 * cannot give. `last_activity_at` is server-stamped (`recomputeTermSummary` writes
+	 * `floor(now/1000)`, `Sozluk.ts`) and never settable by caller input, so two
+	 * touches tie on a second only when they happen to land in the same wall-clock
+	 * second — a race that real remote D1's round-trip latency loses far more often
+	 * than not (#643). This issues a controlled `UPDATE` against the per-stage real D1
+	 * over the Cloudflare D1 REST API (NOT the worker binding — the black-box contract
+	 * holds for assertions; this is setup-only), so a keyset tie is CONSTRUCTED, not
+	 * raced. `epochSeconds` is the whole-second value the column stores. Only valid for
+	 * a term that already has a `term_summary` row (seed it first).
+	 */
+	setLastActivityAt(slug: string, epochSeconds: number): Promise<void>;
 	/** Open a live SSE stream on a connection id (cookie required). */
 	openSse(connectionId: string, cookie: string): Promise<Response>;
 	/** Drive a `/fate/live` control message (subscribe / unsubscribe). */
@@ -143,6 +159,52 @@ const REQUEST_TIMEOUT_MS = 30_000;
 // fresh stamp per process keeps re-run seed identities from colliding with users a
 // prior run left behind.
 const STAMP_SEED = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+// The alchemy stack name (`Alchemy.Stack("phoenix", …)`, `alchemy.run.ts`) and the
+// D1 resource id (`Cloudflare.D1Database("phoenix_db", …)`, `worker/db/resources.ts`)
+// — the two stable halves of the deployed D1's physical name (the third is the stage,
+// the fourth a random suffix). `setLastActivityAt` resolves the database by this
+// prefix, sanitized to alchemy's physical-name form (non-`[a-zA-Z0-9-]` → `-`, so
+// `phoenix_db` → `phoenix-db`). Kept as the canonical ids in lockstep with those two
+// declarations; the sanitization is applied where the prefix is assembled.
+const STACK_NAME = "phoenix";
+const D1_RESOURCE_ID = "phoenix_db";
+const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
+
+// Cloudflare REST credentials — the SAME ones the integration deploy uses
+// (`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`, `_integration.ts`). Resolved
+// lazily so a file that never calls `setLastActivityAt` needs neither.
+const cloudflare = {
+	accountId(): string {
+		const id = process.env.CLOUDFLARE_ACCOUNT_ID;
+		if (!id) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set (needed for setLastActivityAt)");
+		return id;
+	},
+	apiToken(): string {
+		const token = process.env.CLOUDFLARE_API_TOKEN;
+		if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set (needed for setLastActivityAt)");
+		return token;
+	},
+};
+
+// One authenticated request to the Cloudflare REST API; throws on a non-2xx with the
+// response body for diagnosis. Setup-only — never on a test's black-box assertion path.
+async function cloudflareApi(path: string, init?: RequestInit): Promise<Response> {
+	const res = await fetch(`${CLOUDFLARE_API_BASE}${path}`, {
+		...init,
+		headers: {
+			authorization: `Bearer ${cloudflare.apiToken()}`,
+			"content-type": "application/json",
+			...init?.headers,
+		},
+	});
+	if (!res.ok) {
+		throw new Error(
+			`Cloudflare API ${init?.method ?? "GET"} ${path} failed: ${res.status} ${await res.text()}`,
+		);
+	}
+	return res;
+}
 
 /**
  * Read one SSE event (frames are delimited by a blank line) off a stream reader,
@@ -198,8 +260,12 @@ export function frameData<T = unknown>(frame: string): T {
  * deploy — `integrationStack()` (`_integration.ts`) owns the per-file `Test.make`
  * lifecycle and supplies `getUrl`, which resolves to this file's stage's worker URL
  * (populated by the `beforeAll(deploy(Stack))` hook before any `it` body runs).
+ *
+ * `stage` is this file's isolated-stage name (`it-<slug>`), needed only by
+ * `setLastActivityAt` to resolve the per-stage D1 by its alchemy physical-name
+ * prefix over the Cloudflare REST API — see that method.
  */
-export function harness(getUrl: () => string): Harness {
+export function harness(getUrl: () => string, stage: string): Harness {
 	const url = () => {
 		const u = getUrl();
 		if (!u) {
@@ -524,6 +590,56 @@ export function harness(getUrl: () => string): Harness {
 		return (voted.data as {score: number}).score;
 	};
 
+	// Resolve this stage's real D1 UUID once, then cache it. The deploy names the D1
+	// by alchemy's physical-name scheme `${stack}-${id}-${stage}-${random16}`, with
+	// every component sanitized (alchemy maps any non-`[a-zA-Z0-9-]` char to `-`) —
+	// so `phoenix_db` becomes `phoenix-db`, yielding `phoenix-phoenix-db-${stage}-…`
+	// (PR #567). Only the random suffix is unknown; the prefix is deterministic and
+	// unique to this stage. The CF `?name=` filter is a substring match, so the prefix
+	// selects exactly this stage's database.
+	let d1DatabaseId: string | undefined;
+	const resolveD1DatabaseId = async (): Promise<string> => {
+		if (d1DatabaseId) return d1DatabaseId;
+		const acct = cloudflare.accountId();
+		const physical = (s: string) => s.replace(/[^a-zA-Z0-9-]/g, "-");
+		const namePrefix = `${physical(STACK_NAME)}-${physical(D1_RESOURCE_ID)}-${physical(stage)}-`;
+		const res = await cloudflareApi(
+			`/accounts/${acct}/d1/database?name=${encodeURIComponent(namePrefix)}&per_page=100`,
+		);
+		const body = (await res.json()) as {result?: Array<{uuid: string; name: string}>};
+		const match = body.result?.find((db) => db.name.startsWith(namePrefix));
+		if (!match) {
+			throw new Error(
+				`setLastActivityAt: no D1 database matched prefix "${namePrefix}" for stage ${stage}`,
+			);
+		}
+		d1DatabaseId = match.uuid;
+		return d1DatabaseId;
+	};
+
+	const setLastActivityAt: Harness["setLastActivityAt"] = async (slug, epochSeconds) => {
+		const acct = cloudflare.accountId();
+		const databaseId = await resolveD1DatabaseId();
+		const res = await cloudflareApi(`/accounts/${acct}/d1/database/${databaseId}/query`, {
+			method: "POST",
+			body: JSON.stringify({
+				sql: "UPDATE term_summary SET last_activity_at = ? WHERE slug = ?",
+				params: [epochSeconds, slug],
+			}),
+		});
+		const body = (await res.json()) as {
+			result?: Array<{meta?: {changes?: number}}>;
+			errors?: Array<{message: string}>;
+		};
+		const changes = body.result?.[0]?.meta?.changes ?? 0;
+		if (changes !== 1) {
+			throw new Error(
+				`setLastActivityAt(${slug}): expected 1 row updated, got ${changes}` +
+					(body.errors?.length ? ` — ${body.errors.map((e) => e.message).join("; ")}` : ""),
+			);
+		}
+	};
+
 	const openSse: Harness["openSse"] = (connectionId, cookie) =>
 		req(`/fate/live?connectionId=${encodeURIComponent(connectionId)}`, {
 			headers: {accept: "text/event-stream", cookie},
@@ -532,5 +648,17 @@ export function harness(getUrl: () => string): Harness {
 	const liveControl: Harness["liveControl"] = (connectionId, operations, cookie) =>
 		json("/fate/live", {version: 1, connectionId, operations}, cookie);
 
-	return {url, req, json, fate, fateBatch, signUp, seedTerm, touchTerm, openSse, liveControl};
+	return {
+		url,
+		req,
+		json,
+		fate,
+		fateBatch,
+		signUp,
+		seedTerm,
+		touchTerm,
+		setLastActivityAt,
+		openSse,
+		liveControl,
+	};
 }

@@ -120,7 +120,8 @@ instead of `PHOENIX_TEST_URL`):
 | `h.fateBatch(ops, opts?)` | POST several fate operations; return all results in order. |
 | `h.signUp(email, password, name)` | Sign up via `/api/auth/sign-up/email`; return `{userId, cookie}` (falls back to sign-in on `USER_ALREADY_EXISTS`). |
 | `h.seedTerm(...)` | Seed a sözlük term + definitions through the PUBLIC `definition.add` fate mutation (+ votes for scores). |
-| `h.touchTerm(definitionId)` | Re-stamp a term's `last_activity_at` to "now" via a fresh voter's up-vote (the only HTTP-realizable handle on the clock-derived `recent` keyset lead column — control activity by touch order/spacing, never by injecting a timestamp). |
+| `h.touchTerm(definitionId)` | Re-stamp a term's `last_activity_at` to "now" via a fresh voter's up-vote — moves the clock forward but can't pin a specific second. |
+| `h.setLastActivityAt(slug, epochSeconds)` | **Setup-only controlled write:** stamp a term's `term_summary.last_activity_at` to an EXACT whole-second epoch via the Cloudflare D1 REST API (resolving the per-stage D1 by its alchemy physical-name prefix). The deterministic handle on the `recent` keyset's server-stamped lead column the public seam can't give — so a keyset tie is **constructed**, never raced on wall-clock coincidence (#643). NOT the worker binding and never on an assertion path; the black-box contract is for what a test *asserts*, not its fixture. |
 | `h.openSse(connectionId, cookie)` | Open the live SSE stream. |
 | `h.liveControl(connectionId, ops, cookie)` | POST control messages (subscribe / unsubscribe). |
 
@@ -138,8 +139,13 @@ SSE wire on the test side.
 - **The DNS shim** — `tests/integration/_localhost-dns.ts`. A small `node:dns`
   patch so `*.localhost` resolves; retained for the dev/local path (orthogonal
   to the harness swap).
-- **The test files** — `tests/integration/*.test.ts`. Black-box only: call
-  `h.fate(...)`, `h.json(...)`, etc.; assert on the response.
+- **The test files** — `tests/integration/*.test.ts`. Assertions are black-box
+  only: call `h.fate(...)`, `h.json(...)`, etc.; assert on the response. The one
+  sanctioned exception is **fixture setup that the public seam genuinely cannot
+  express** — e.g. `h.setLastActivityAt` writing a controlled timestamp into real
+  D1 over the REST API to construct a keyset tie a server-stamped clock would only
+  reach by racing (#643). The contract governs what a test *proves*, not how it
+  arranges the rows it proves against.
 
 ## Per-file isolation removes the shared-deploy race
 
