@@ -7,9 +7,10 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {desc, eq, isNull, sql} from "drizzle-orm";
+import {toRestParams} from "./d1-rest.ts";
 import {SEED_POST_ID, SEED_TERM_SLUG} from "./fixtures.ts";
 import {definitionView, postSummary, termSummary} from "./schema.ts";
-import {makeSeedDb, seed} from "./seed.ts";
+import {buildSeedStatements, makeSeedDb, seed} from "./seed.ts";
 import {makeSeedTestDb} from "./sqlite-d1.testing.ts";
 
 describe("seed — writes the rows the unauth specs read", () => {
@@ -60,6 +61,40 @@ describe("seed — writes the rows the unauth specs read", () => {
 			const byId = await db.select().from(postSummary).where(eq(postSummary.id, SEED_POST_ID));
 			assert.strictEqual(byId.length, 1);
 			assert.isTrue((byId[0]?.title.length ?? 0) > 0);
+		} finally {
+			close();
+		}
+	});
+});
+
+describe("seed — REST-wire-valid params (D1 REST rejects null params)", () => {
+	// The in-memory node:sqlite fake binds a null param fine, so the unit suite missed that
+	// @distilled.cloud/cloudflare's queryDatabase validates `params` as strict string[] and
+	// rejects a null element (`SchemaError: Expected string, got null`) — the seed died on a
+	// real D1 before writing anything (#569). Pin the wire contract: no statement may bind a
+	// null/undefined param (numbers are fine — toRestParams stringifies them). This fails on
+	// the old fixtures (post bound url:null/host:null) and passes once they're omitted so
+	// drizzle inlines a literal NULL instead of binding one.
+	it("no statement binds a null/undefined param, and each batch survives toRestParams", () => {
+		const {d1, close} = makeSeedTestDb();
+		try {
+			const {statements} = buildSeedStatements(makeSeedDb(d1));
+			assert.isAtLeast(statements.length, 1);
+			statements.forEach((stmt, i) => {
+				const {params} = stmt.toSQL();
+				params.forEach((p, j) => {
+					assert.isNotNull(
+						p,
+						`batch[${i}].params[${j}] is null — D1 REST params is strict string[]`,
+					);
+					assert.notTypeOf(p, "undefined", `batch[${i}].params[${j}] is undefined`);
+				});
+				// toRestParams is the exact REST-wire transform; it must yield a clean string[].
+				const wire = toRestParams(params);
+				wire.forEach((w, j) => {
+					assert.typeOf(w, "string", `batch[${i}] wire param[${j}] must be a string`);
+				});
+			});
 		} finally {
 			close();
 		}

@@ -103,8 +103,9 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 			id: SEED_POST_ID,
 			slug: SEED_POST_ID,
 			title: "kampüs önizleme tohumu",
-			url: null,
-			host: null,
+			// url/host are nullable and deliberately left unset: drizzle then renders a literal
+			// NULL in the INSERT text instead of binding `null` as a param. D1's REST `params` is
+			// strict string[] and rejects a null element — see d1-rest.ts toRestParams (#569).
 			body: postBody,
 			bodyExcerpt: excerptOf(postBody),
 			authorId: SEED_AUTHOR_ID,
