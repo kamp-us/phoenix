@@ -56,9 +56,12 @@ Collapse the three deprecated surfaces:
   read at the boundary that needs it (e.g. the worker's session secret in
   `apps/web/worker/index.ts`).
 - `WorkerProps.bindings` + `WorkerProps.env` → unified `WorkerProps.env`.
-- bundled `alchemy/Util/LocalhostDns` → a small local `node:dns` shim in
-  `apps/web/tests/integration/_localhost-dns.ts` for the integration harness,
-  installed once in `_global-setup.ts`.
+- bundled `alchemy/Util/LocalhostDns` → at the time, a small local `node:dns`
+  shim in `apps/web/tests/integration/_localhost-dns.ts` for the integration
+  harness, installed once in `_global-setup.ts`. (That shim was later removed
+  when the harness moved to `Test.make` over real remote D1 — see
+  [0082](0082-two-test-tiers-unit-integration.md); the deprecated-surface
+  swap recorded here is what matters, not the shim that carried it.)
 
 **Accept the dev model: `alchemy dev` deploys the infrastructure to real
 Cloudflare and runs the worker locally in `workerd`.** There is no offline
@@ -93,9 +96,11 @@ from a test run.
 - **Integration tests deploy a `test` stage.** The harness in
   `apps/web/tests/integration/_global-setup.ts` deploys a stage via `alchemy`,
   runs every test against the deployed worker URL, and tears it down on exit.
-  No miniflare. The `_localhost-dns.ts` shim exists only because the harness
-  resolves stage URLs that occasionally route through `*.localhost` for the
-  local proxy; it is a `node:dns` patch, not a network emulator.
+  No miniflare. (At the time, a `_localhost-dns.ts` shim existed only because
+  the harness resolved stage URLs that occasionally routed through `*.localhost`
+  for the local proxy — a `node:dns` patch, not a network emulator. It was
+  removed when the harness later moved to `Test.make` over real remote D1; see
+  [0082](0082-two-test-tiers-unit-integration.md).)
 - **The companion ADR** ([0033](0033-mutual-do-layer-cycle-per-call-resolution.md))
   captures the one constraint the `.make()` form does **not** lift: co-hosted
   mutual DOs still cannot Init-bind each other; the sibling resolution stays
