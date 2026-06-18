@@ -13,10 +13,16 @@
  * Seeded through the PUBLIC fate seam (`h.seedTerm` → `definition.add` +
  * `definition.vote`), so `score` (vote-derived) and `slug` (caller-chosen) are
  * the deterministically-controllable keyset columns here; the tie-breaks asserted
- * across boundaries are exactly the ones that seam can realize without a clock or
- * a direct INSERT. Per-file isolated stage owns its own D1, so files run in
- * parallel; slugs are still process-stamped so a `NO_DESTROY` re-run never
- * collides with a prior run's rows.
+ * across boundaries are exactly the ones that seam can realize without a direct
+ * INSERT. The `recent` keyset's lead column (`last_activity_at`) is stamped from
+ * the real write clock, never from caller input — so the recent vertical controls
+ * relative activity by the ORDER + SPACING of `h.touchTerm` calls (a `sleep` gap
+ * to force a strict step, a back-to-back pair to force a same-second tie) and then
+ * asserts the engine's `(last_activity_at desc, slug asc)` ordering against the
+ * timestamps D1 actually recorded — a clock-robust invariant, not a fixed-string
+ * equality that a second-boundary could flake. Per-file isolated stage owns its
+ * own D1, so files run in parallel; slugs are still process-stamped so a
+ * `NO_DESTROY` re-run never collides with a prior run's rows.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {integrationStack} from "./_integration.ts";
@@ -30,6 +36,7 @@ interface TermNode {
 	title: string;
 	count: number;
 	totalScore: number;
+	lastActivityAt: string | null;
 }
 interface DefNode {
 	id: string;
@@ -63,6 +70,18 @@ const POP: Array<[slug: string, score: number]> = [
 // `keysetAfter` shape, unit-tested).
 const DEFS_SLUG = `kx${STAMP}defs`;
 
+// `terms(recent)` keyset is `(last_activity_at desc, slug asc)`. `last_activity_at`
+// is the real write clock (truncated to the second), so we seed four terms then
+// re-stamp their activity in a controlled sequence (`beforeAll` below): a `sleep`
+// gap forces a strict activity step; a back-to-back touch pair forces a same-second
+// tie that ONLY slug-asc can order. The assertions read back the timestamps D1
+// recorded and check the engine honored `(last_activity_at desc, slug asc)` —
+// clock-robust, never an exact-timestamp equality.
+const R = `kr${STAMP}`; // recent-fixture slug prefix
+const REC_SLUGS = [`${R}1`, `${R}2`, `${R}3`, `${R}4`] as const;
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
 beforeAll(async () => {
 	for (const [slug, score] of POP) {
 		await h.seedTerm({
@@ -80,7 +99,71 @@ beforeAll(async () => {
 			{authorName: "ada", body: "low", score: 1},
 		],
 	});
+
+	// Seed the four recent-fixture terms; capture each term's definition id so we
+	// can re-stamp its activity through the public vote seam.
+	const recDefId: Record<string, string> = {};
+	for (const slug of REC_SLUGS) {
+		const seeded = await h.seedTerm({
+			slug,
+			title: slug.toUpperCase(),
+			definitions: [{authorName: "umut", body: `body ${slug}`}],
+		});
+		recDefId[slug] = seeded.definitions[0]!.id;
+	}
+
+	// Drive a deterministic activity ORDER over the public clock:
+	//   most-recent → least-recent activity:  4, then (2 == 3 tie), then 1.
+	// Sequence (oldest activity first so the last touch wins): touch 1, gap, touch
+	// the 2/3 tie pair, gap, touch 4 last. The 1100ms gaps straddle
+	// `last_activity_at`'s one-second resolution → strict steps between {1}, {2,3},
+	// {4}. `last_activity_at` is clock-derived, so the 2/3 SAME-SECOND tie can't be
+	// injected — `touchTie` re-touches the pair until D1 records an identical second
+	// for both (a back-to-back pair only straddles a second boundary rarely), making
+	// the date tie deterministic-by-construction rather than clock-lucky.
+	await h.touchTerm(recDefId[`${R}1`]!);
+	await sleep(1100);
+	await touchTie(recDefId[`${R}2`]!, recDefId[`${R}3`]!, REC_SLUGS[1], REC_SLUGS[2]);
+	await sleep(1100);
+	await h.touchTerm(recDefId[`${R}4`]!);
 });
+
+// Re-touch two terms back-to-back until the engine records the SAME
+// `last_activity_at` second for both (so the only thing ordering them is slug
+// asc). `last_activity_at` is wall-clock truncated to the second; two adjacent
+// touches share a second unless they straddle a boundary, so a bounded retry
+// converges immediately in the common case. Reads the recorded seconds back
+// through the public `term(slug)` view — no clock injection exists.
+async function touchTie(defA: string, defB: string, slugA: string, slugB: string): Promise<void> {
+	for (let attempt = 0; attempt < 8; attempt++) {
+		await h.touchTerm(defA);
+		await h.touchTerm(defB);
+		const [a, b] = await Promise.all([recordedSecond(slugA), recordedSecond(slugB)]);
+		if (a === b) return;
+		await sleep(1100); // landed across a second boundary — let the clock settle, retry
+	}
+	throw new Error(`touchTie: ${slugA}/${slugB} never shared a last_activity_at second`);
+}
+
+// Read a term's recorded `term_summary.last_activity_at`, as a whole-second epoch.
+// Sourced from the `terms` LIST view (not `term(slug)`): the detail resolver maps
+// `lastActivityAt` to `lastEdit` (`shapers.ts`), so only the list surfaces the real
+// keyset column — and a vote re-stamps `last_activity_at` without touching
+// `lastEdit`, so the detail would not even move.
+async function recordedSecond(slug: string): Promise<number> {
+	const res = await h.fate({
+		kind: "list",
+		name: "terms",
+		args: {sort: "recent", first: 100},
+		select: ["slug", "lastActivityAt"],
+	});
+	if (!res.ok) throw new Error(`recordedSecond(${slug}) list failed`);
+	const conn = res.data as Connection<TermNode>;
+	const node = conn.items.find((e) => e.node.slug === slug)?.node;
+	if (!node) throw new Error(`recordedSecond(${slug}): not in recent list`);
+	if (node.lastActivityAt == null) throw new Error(`recordedSecond(${slug}): null lastActivityAt`);
+	return Math.floor(new Date(node.lastActivityAt).getTime() / 1000);
+}
 
 describe("sözlük keyset execution — real D1 (terms popular)", () => {
 	it("orders popular by (total_score desc, slug asc) across pages with no skips/dupes", async () => {
@@ -130,6 +213,82 @@ describe("sözlük keyset execution — real D1 (terms popular)", () => {
 		const d = ours.indexOf(`${P}d`);
 		expect(c).toBeGreaterThanOrEqual(0);
 		expect(d).toBe(c + 1); // the score-3 tie resolves c (slug asc) immediately before d
+	});
+});
+
+describe("sözlük keyset execution — real D1 (terms recent)", () => {
+	// Pull THIS fixture's rows (prefix-scoped) from a recent page, preserving the
+	// engine's order, with the `last_activity_at` D1 recorded.
+	const recentOurs = async (
+		args: {first: number; after?: string} = {first: 100},
+	): Promise<{slugs: string[]; rows: TermNode[]; conn: Connection<TermNode>}> => {
+		const page = await h.fate({
+			kind: "list",
+			name: "terms",
+			args: {sort: "recent", ...args},
+			select: ["slug", "lastActivityAt"],
+		});
+		expect(page.ok).toBe(true);
+		if (!page.ok) throw new Error("recent list failed");
+		const conn = page.data as Connection<TermNode>;
+		const rows = conn.items.map((e) => e.node).filter((n) => n.slug.startsWith(R));
+		return {slugs: rows.map((n) => n.slug), rows, conn};
+	};
+
+	it("orders recent by (last_activity_at desc, slug asc) — strict steps + a same-second tie", async () => {
+		const {slugs, rows} = await recentOurs();
+		expect(new Set(slugs)).toEqual(new Set(REC_SLUGS)); // all four present
+		expect(new Set(slugs).size).toBe(REC_SLUGS.length); // no dupes
+
+		// The engine's order must honor the keyset over whatever timestamps D1
+		// recorded: `last_activity_at` non-increasing, and any same-second run broken
+		// by slug asc. Asserting the INVARIANT (not fixed strings) is clock-robust.
+		const sec = (n: TermNode): number => {
+			expect(n.lastActivityAt).not.toBeNull();
+			return Math.floor(new Date(n.lastActivityAt!).getTime() / 1000);
+		};
+		for (let i = 1; i < rows.length; i++) {
+			const prev = rows[i - 1]!;
+			const cur = rows[i]!;
+			expect(sec(prev)).toBeGreaterThanOrEqual(sec(cur)); // last_activity_at desc
+			if (sec(prev) === sec(cur)) {
+				expect(prev.slug < cur.slug).toBe(true); // tie → slug asc
+			}
+		}
+
+		// The constructed activity sequence (1 | 2,3 tie | 4, last-touch-wins) pins a
+		// concrete expected order on top of the invariant: 4 (newest) → 2 → 3 (the
+		// same-second pair, slug asc) → 1 (oldest).
+		expect(slugs).toEqual([`${R}4`, `${R}2`, `${R}3`, `${R}1`]);
+
+		// The 2/3 pair is the date TIE — assert it really shares a second (so the
+		// slug-asc ordering above was the engine breaking a genuine tie, not a step).
+		const r2 = rows.find((n) => n.slug === `${R}2`)!;
+		const r3 = rows.find((n) => n.slug === `${R}3`)!;
+		expect(sec(r2)).toBe(sec(r3));
+	});
+
+	it("walks recent across the tie boundary with no skips/dupes (cursor = slug)", async () => {
+		// Walk the whole recent list in pages of 2, collecting THIS fixture's rows in
+		// engine order. Page-prefix-scoped (other terms in D1 may interleave on a
+		// NO_DESTROY re-run); the claim is these four rows' relative order + that the
+		// 2/3 same-second tie survives whatever page boundary it lands on, resolved
+		// slug-asc across the cursor round-trip.
+		const seen: string[] = [];
+		let after: string | undefined;
+		let safety = 0;
+		while (safety++ < 50) {
+			const {conn} = await recentOurs(after ? {first: 2, after} : {first: 2});
+			for (const e of conn.items.filter((x) => x.node.slug.startsWith(R))) {
+				seen.push(e.node.slug);
+				expect(e.cursor).toBe(e.node.slug); // cursor IS the slug keyset
+			}
+			if (seen.length >= REC_SLUGS.length || !conn.pagination.hasNext) break;
+			after = conn.pagination.nextCursor;
+			expect(after).toBeDefined();
+		}
+		expect(seen).toEqual([`${R}4`, `${R}2`, `${R}3`, `${R}1`]);
+		expect(new Set(seen).size).toBe(REC_SLUGS.length); // no skips/dupes across boundaries
 	});
 });
 
