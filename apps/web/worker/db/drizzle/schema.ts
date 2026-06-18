@@ -243,6 +243,26 @@ export const postVote = sqliteTable(
 );
 
 /**
+ * Per-(post, user) bookmark ("kaydet") presence row. Pure presence — a row
+ * means saved, its absence means not; no score or value column (the structural
+ * difference from `postVote`, which the score cache reads). The `(user_id,
+ * created_at DESC)` index serves a future newest-first saved-posts list, the
+ * same `sql` DESC-fragment idiom as `post_summary_author_created`.
+ */
+export const postBookmark = sqliteTable(
+	"post_bookmark",
+	{
+		postId: text("post_id").notNull(),
+		userId: text("user_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.postId, t.userId]}),
+		index("post_bookmark_user_created").on(t.userId, sql`${t.createdAt} DESC`),
+	],
+);
+
+/**
  * Per-comment row, denormalized with post id + title for the profile feed AND
  * the per-post thread reader. Canonical store for pano comments after d1-direct
  * (ADR 0009) — the per-post DO is no longer the source of truth.
