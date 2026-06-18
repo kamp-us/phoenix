@@ -131,12 +131,12 @@ out-of-band edges the import graph cannot see.
 - **Irreducible `integration` core (stays on real D1):** batch atomicity
   rollback; idempotency via `meta.changes` on composite-PK conflict; keyset
   *execution* verticals (collation / NULL / date / string tiebreaks); FTS5 bm25 /
-  prefix / MATCH and the write→sync→read dual-write loop ([0080](0080-site-search-fts5.md));
+  prefix / MATCH and the write→sync→read dual-write loop ([0080](0080-site-search-lexical-bar-semantic-discovery.md));
   read-row shaping and aggregate counters; the better-auth session round-trip.
 - The `vitest.config.ts` projects, `package.json` scripts, and CI job re-tier from
   the 0040 four-tier model to the two-tier model atomically (epic execution).
 
 Builds on [0029](0029-worker-runtime-servicemap.md),
 [0011](0011-drizzle-context-service.md), [0032](0032-alchemy-beta45-and-dev-model.md),
-[0080](0080-site-search-fts5.md), and the alchemy `Test.make` testing model.
+[0080](0080-site-search-lexical-bar-semantic-discovery.md), and the alchemy `Test.make` testing model.
 Supersedes [0040](0040-testing-taxonomy-and-seam-graduation.md).
