@@ -92,8 +92,8 @@ runtime lives for the isolate's lifetime, and Drizzle/D1 holds no poolable socke
 there is nothing leaked by not disposing. Recorded in
 [ADR 0041](../.decisions/0041-fate-bridge-worker-managed-runtime.md). If a service genuinely
 needs per-request acquire/release (none do today), wrap *that* service in a `Scope`, not the
-runtime. (The Node test harness `runFateOp`, below, HAS a shutdown point, so it builds and
-disposes a runtime per operation.) This is strictly about runtime teardown — mutations still
+runtime. (The in-process route mirror `runFateOp`, below, runs in Node and HAS a shutdown point,
+so it builds and disposes a runtime per operation.) This is strictly about runtime teardown — mutations still
 fan out to the topic DO via `executionCtx.waitUntil(...)` so the live fan-out doesn't block the
 response.
 
@@ -149,15 +149,19 @@ const {runtime} = makeFateRuntime(FateServer.layer(fateConfig).pipe(Layer.provid
 const res = await runtime.runPromise(FateInterpreter.handleRequest(request, ctx));
 // ctx: FateRequestContext with a recording livePublisherFor (capturing publish + collected
 // waitUntil promises, flushed before returning) — `published` is the array of resolved topic
-// keys the operation's live.* fanned out to. The per-op runtime is the Node harness's RUN
-// vehicle (production's conversion point is the platform layer's).
-// finally: await runtime.dispose()  — the Node harness HAS a shutdown point (per-op lifecycle)
+// keys the operation's live.* fanned out to. The per-op runtime is this in-process mirror's
+// RUN vehicle (production's conversion point is the platform layer's).
+// finally: await runtime.dispose()  — the in-process mirror HAS a shutdown point (per-op lifecycle)
 ```
 
-Returns `{status, result, published}`. The signature is unchanged from the bridge-era harness,
-so suites written against the bridge ran unchanged against the fate-effect server — that
-unchanged-suite property WAS the migration's behavioral evidence, and the suites remain the
-data-plane regression harness.
+Returns `{status, result, published}`. `runFateOp` is a **wiring/composition artifact, not a test
+backing** — it has **zero test consumers today** (its only importer is its own definition). It once
+backed the fate-op suites over the `node:sqlite` fake, but that engine is banned and those suites
+moved to the `integration` tier on **real remote D1** ([ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md));
+data-plane regression coverage now lives in [`apps/web/tests/integration/`](../apps/web/tests/integration/),
+black-box over the deployed worker, **not** here. Authoring a new fate-op regression test against
+`runFateOp` (in-process, no DB) instead of at `integration` is the mistake this note exists to
+prevent. See [effect-testing.md](./effect-testing.md), which records the same.
 
 ## What not to do
 
