@@ -86,3 +86,4 @@ One row per ADR. Read the file for the why.
 | [0079](0079-reviewer-authored-acceptance-criteria.md) | Reviewer-Authored Acceptance Criteria | proposed | 2026-06-16 |
 | [0080](0080-site-search-lexical-bar-semantic-discovery.md) | Site search v1 is a lexical search bar; semantic discovery is a separate product | accepted | 2026-06-16 |
 | [0081](0081-feature-flag-substrate-cloudflare-flagship.md) | The feature-flag substrate is Cloudflare Flagship (managed, edge-native), not a bespoke KV/D1/DO flag store | accepted | 2026-06-16 |
+| [0083](0083-agents-deploy-humans-release.md) | Agents Own Deployment, Humans Own Release — Pipeline Consults `product-development-cycle.md` | accepted | 2026-06-18 |
