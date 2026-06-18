@@ -54,7 +54,7 @@ A PR is in one of two classes by the files it touches (ADR
   blocking rule is **unchanged** by 0073: `review-skill` is the *verdict* gate; merge-authority
   (blocking) is the *separate* axis 0065 owns, and 0065 stands verbatim until a later decision
   retires it against `review-skill`'s evidence (ADR 0073 §4).
-- **NON-BLOCKING — autonomous.** Everything else — `apps/web/**`, `packages/**`,
+- **NON-BLOCKING — autonomous.** Everything else — `apps/**` (every app worker), `packages/**`,
   `.decisions/**`, `.patterns/**`, and other prose docs. These are product or knowledge
   artifacts; they are gated for quality, but a human at the merge adds no security value, so
   you ship them once the matching gate PASSes.
@@ -107,13 +107,15 @@ Every verdict is **SHA-bound** — its first line carries the head it reviewed (
 you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)):
 
-- **product code** (`apps/web`, `packages`, other code) → `review-code`, whose marker is
+- **product code** (`apps/**` — every app worker, not just `apps/web` — `packages`, other code) → `review-code`, whose marker is
   `review-code: PASS @ <sha> — merge-ready` or `review-code: FAIL @ <sha> — not merge-ready`
   (canonical shape: [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5).
   `review-code` can also land a native **approving review** (`event=APPROVE`), whose
   `commit_id` is its bound SHA.
-- **docs** (`.decisions`, `.patterns`, prose `*.md` outside `.claude`/`.github` and outside
-  `skills/**`) → `review-doc`, whose marker is `review-doc: PASS @ <sha> — merge-ready` or
+- **docs** (`.decisions`, `.patterns`, prose `*.md` outside `.claude`/`.github`, outside
+  `skills/**`, and outside the code roots `apps/**`/`packages/**` — a package/app-internal README
+  is `review-code`'s scope, not this class; see Step 0) → `review-doc`, whose marker is
+  `review-doc: PASS @ <sha> — merge-ready` or
   `review-doc: FAIL @ <sha> — changes-requested` (canonical shape: §6). `review-doc` is
   **comment-only** — it never lands a native review (ADR 0058), so the doc lane is a single
   comparable record type, not a review-vs-comment mix.
@@ -173,20 +175,30 @@ ADR 0073 §6):
   `review-skill` PASS. A skill is a behavioral artifact, gated by `review-skill`, not the code
   AC-gate nor the doc hygiene-gate (ADR 0073 §4, superseding ADR
   [0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)).
-- **code:** under `apps/web/**` or `packages/**` (the `^(apps/web|packages)/` probe); a source
-  path matching none of the three probes still defaults to code, requiring a `review-code`
-  PASS, so nothing under-gates.
-- **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`
-  **and outside `skills/**`** (`skills/**` is the skill class, carved out of docs first).
+- **code:** under any app worker or a package (`apps/**` or `packages/**` — the `^(apps|packages)/`
+  probe, covering **every** `apps/<app>` worker, not just `apps/web`); a source path matching none
+  of the three probes still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
+  The probe spans `apps/**` (not `apps/web/**`) so a second worker like `apps/dashboard/**` — code
+  **or** README — is `review-code`-gated like `apps/web`, and agrees exactly with the docs probe's
+  `apps/**` exclusion below (the two must name the same code roots, or an `apps/dashboard` path would
+  class as neither code nor docs and slip through ungated — #663).
+- **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`,
+  **outside `skills/**`**, **and outside the code roots `apps/**`/`packages/**`** — exactly
+  `review-doc`'s verification scope. `skills/**` is the skill class, and an `*.md` under
+  `apps/**`/`packages/**` (a package/app-internal README, CHANGELOG, etc.) ships with its code
+  artifact and is **`review-code`'s** scope, so both are carved out of docs *before* the `.md$`
+  match. The docs class is thus the surface a `review-doc` PASS can actually gate — see the
+  scope-consistency note after the routing.
 
 ```bash
 FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set — one definition (ADR 0073 §6)
 echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge on a review-skill PASS (ADR 0073)
 echo "$FILES" | grep -Eq '^skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
-echo "$FILES" | grep -Eq '^(apps/web|packages)/' && echo "has-code"   # code probe (skills/** is its OWN class now — ADR 0073)
-# docs probe EXCLUDES skills/** first, so a skills-only .md PR is NOT classed docs
-echo "$FILES" | grep -Ev '^skills/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+echo "$FILES" | grep -Eq '^(apps|packages)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages — agrees with the docs-probe exclusion below (#663); skills/** is its OWN class (ADR 0073)
+# docs probe EXCLUDES the code roots AND skills/** first, so a code/app-internal README (apps/**, packages/**)
+# or a skills-only .md is NOT classed docs — only a prose .md on review-doc's own surface is (#542/#650)
+echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 **Routing:**
@@ -207,15 +219,43 @@ echo "$FILES" | grep -Ev '^skills/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$
   `review-skill` PASS; code → `review-code` PASS; docs → `review-doc` PASS; a mixed PR needs a
   current-head PASS in **each** namespace present. Carry the class set into Step 2.
 
-The `.md$` probe over-matches (it catches code-adjacent markdown too); that's fine — it only
-decides *whether to require a review-doc PASS*, and requiring one extra PASS never makes an
-unsafe merge. The control-plane check is the only one that must be exact, and it is. The **one
-path-class the docs probe must *not* match is `skills/**`**: a skill `.md` is `review-skill`-gated
-(ADR 0073), so the `grep -Ev '^skills/'` runs *before* the `.md$` match — otherwise a
-`review-skill`-verified skills-only PR would be classed docs and `ship-it` would demand a
-`review-doc` PASS that never comes (the #358 deadlock, now closed by the dedicated gate rather
-than by code-routing). Excluding `skills/**` here is what keeps a skills-only PR flowing through
-exactly the one gate (`review-skill`) that ran it.
+**The docs class must equal `review-doc`'s verification scope, or the gate it demands is
+unreachable.** ship-it requires a class's gate PASS *because that gate runs on that class* —
+so the docs probe may only class as docs a path a `review-doc` PASS can actually gate. The
+`.md$` match is therefore **scoped, not over-matching**: it runs only after `grep -Ev
+'^(skills|apps|packages)/'` carves out the three path-classes whose `.md` is **not** review-doc's:
+
+- **`skills/**`** — a skill `.md` is `review-skill`-gated (ADR 0073). Classing it docs would
+  demand a `review-doc` PASS that never comes (the original #358 deadlock, closed by the
+  dedicated gate).
+- **`apps/**` / `packages/**`** — a package/app-internal `*.md` (a README, CHANGELOG) ships
+  with its code artifact and is **`review-code`'s** scope: `review-code` reviews the whole
+  `apps/**`/`packages/**` tree, README included, and `review-doc` explicitly disclaims that tree
+  (its Step 0 routes the `apps/**` workers — `apps/web`, `apps/dashboard`, … — and `packages/**`
+  to `review-code`). Classing such a `.md` docs demanded a `review-doc` PASS no gate ever produces —
+  review-code gates and PASSes the tree, but no doc gate runs on it — so a clean, fully-gated
+  product PR that merely *includes* a package README **deadlocked** (`unverified — no review-doc
+  PASS`), the exact defect on PR #644 (#542/#650). Carving the code roots out makes the present
+  class always have a reachable gate.
+
+**The has-code probe and this docs-exclusion name the same code roots — they MUST agree.** The
+docs probe carves out `^(skills|apps|packages)/` and the has-code probe is `^(apps|packages)/`:
+both span the **full `apps/**` tree** (every app worker — `apps/web`, `apps/dashboard`, …), not
+just `apps/web`. That agreement is the invariant — if the two diverged (e.g. has-code stayed
+`apps/web` while docs excluded all `apps/**`), an `apps/dashboard/**` path — code `.ts` **or**
+`README.md` — would class as **neither** has-code (the narrow probe misses it) **nor** has-docs
+(the docs exclusion drops it), and ship-it would demand **no** gate at all and merge it **ungated**.
+Widening has-code to `apps/**` closes that hole (#663): every `apps/<app>` path now classes
+has-code and rides its `review-code` PASS, exactly as `apps/web` always has.
+
+So `.decisions/**`/`.patterns/**` always class docs, and a prose `*.md` classes docs **only when
+it lives outside the code roots, `skills/**`, and the control plane** — i.e. exactly the surface
+`review-doc` verifies. This keeps the docs class and the doc gate consistent: a present docs class
+implies a `review-doc` PASS is *obtainable*, never a phantom requirement. The control-plane check
+remains the only **exact** probe and is unchanged; this carve-out narrows **only** the docs class,
+weakening no other guard — control-plane refusal, SHA-binding, and the green-CI requirement all
+still hold, and a `packages/**`-internal `.md` simply rides the `review-code` PASS its tree already
+needs.
 
 ---
 
