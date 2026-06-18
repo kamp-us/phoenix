@@ -10,6 +10,7 @@
  * and it is imported only by the unit tests.
  */
 import {DatabaseSync, type SQLInputValue} from "node:sqlite";
+import {assertRestParam} from "./d1-rest.ts";
 
 /**
  * DDL for the three seeded read-model tables, copied verbatim from the canonical
@@ -83,9 +84,17 @@ interface PreparedStub extends BoundStub {
 	bind: (...params: Params) => BoundStub;
 }
 
-/** Normalize JS values to ones `node:sqlite` accepts as bound params. */
-function toSqliteParam(value: unknown): SQLInputValue {
-	if (value === undefined) return null;
+/**
+ * Normalize a JS value to a `node:sqlite` bound param, **first** asserting it
+ * against the same REST `params` contract the live D1 REST client enforces
+ * ({@link assertRestParam}). Without this the `node:sqlite` engine binds a `null`
+ * happily — strictly more permissive than real D1 — so a REST-incompatible param
+ * shape (e.g. a nullable column bound instead of omitted) would pass the unit suite
+ * yet die against the live seed (#569/#571). Validating here closes that fidelity
+ * gap: the fake rejects exactly what real D1 rejects.
+ */
+function toSqliteParam(value: unknown, index: number): SQLInputValue {
+	assertRestParam(value, index);
 	if (typeof value === "boolean") return value ? 1 : 0;
 	return value as SQLInputValue;
 }
@@ -102,7 +111,7 @@ export function makeSeedTestDb(): SqliteD1 {
 	db.exec("PRAGMA foreign_keys=OFF;");
 	db.exec(SEED_TABLES_DDL);
 
-	const bind = (params: Params): SQLInputValue[] => params.map(toSqliteParam);
+	const bind = (params: Params): SQLInputValue[] => params.map((p, i) => toSqliteParam(p, i));
 
 	const metaFrom = (result: {changes: number | bigint; lastInsertRowid: number | bigint}) => ({
 		changes: Number(result.changes),
