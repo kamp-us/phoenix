@@ -69,11 +69,7 @@ describe("landing stats — /fate", () => {
 		expect(stats.version).toBe("v0.3");
 	});
 
-	// SKIPPED: the original quarantine reason (workerd "All fibers interrupted" under the
-	// shared single-fork deploy, #547) is obsolete under per-file isolated stages, but this
-	// test has not yet been re-validated green on the new substrate. Un-skip once a CI
-	// integration run confirms it passes against this file's isolated D1.
-	it.skip("each counter increases by AT LEAST the amount added under a fresh author", async () => {
+	it("each counter increases by AT LEAST the amount added under a fresh author", async () => {
 		const before = await landingStats();
 
 		// 2 definitions on distinct slugs.
@@ -131,11 +127,7 @@ describe("landing stats — /fate", () => {
 		expect(after.totalAuthors).toBeGreaterThanOrEqual(before.totalAuthors + 1);
 	});
 
-	// SKIPPED: the original quarantine reason (workerd "All fibers interrupted" under the
-	// shared single-fork deploy, #547) is obsolete under per-file isolated stages, but this
-	// test has not yet been re-validated green on the new substrate. Un-skip once a CI
-	// integration run confirms it passes against this file's isolated D1.
-	it.skip("add-then-delete nets to a smaller delta than add alone (decrement is observable)", async () => {
+	it("add-then-delete nets to a smaller delta than add alone (decrement is observable)", async () => {
 		// An add and its matching delete cancel: the net contribution of an add+delete
 		// pair to `totalDefinitions` is 0, whereas a bare add contributes +1. This file's
 		// D1 is isolated (per-file stage), so we can bound by our own deterministic
