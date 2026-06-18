@@ -20,6 +20,7 @@ import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, resolveCursor} from "../../db/keyset.ts";
 import type {PostSummaryRow} from "../pano/Pano.ts";
 import {type TermSummaryRow, termSummaryColumns, toTermSummaryRow} from "../sozluk/term-summary.ts";
 import {toMatchExpression} from "./normalize.ts";
@@ -113,13 +114,16 @@ const ftsKeysetKeys = async (
 		)
 		.then((r) => Number((r.results[0] as {n: number} | undefined)?.n ?? 0));
 
-	let cursorRank: number | null = null;
-	if (after) {
-		cursorRank = await resolveCursorRank(db, ftsTable, keyColumn, match, after);
-		if (cursorRank === null) {
-			return {keys: [], hasNextPage: false, endCursor: null, totalCount};
-		}
+	// The DB read (resolveCursorRank) is the port; `resolveCursor` is the pure
+	// cursor-miss decision (ADR 0082). bm25 rank `0` is a valid hit, not a miss.
+	const cursor = resolveCursor<number>(
+		after,
+		after ? await resolveCursorRank(db, ftsTable, keyColumn, match, after) : null,
+	);
+	if (cursor.kind === "miss") {
+		return {keys: [], hasNextPage: false, endCursor: null, totalCount};
 	}
+	const cursorRank = cursor.kind === "hit" ? cursor.row : null;
 
 	// `(rank asc, key asc)` strictly-after predicate. bm25() can't be referenced by
 	// its SELECT alias in WHERE, so it's re-spelled inline.
@@ -135,9 +139,8 @@ const ftsKeysetKeys = async (
 		)
 		.then((r) => (r.results as Array<{key: string}>).map((row) => row.key));
 
-	const hasNextPage = fetched.length > first;
-	const keys = hasNextPage ? fetched.slice(0, first) : fetched;
-	return {keys, hasNextPage, endCursor: keys.at(-1) ?? null, totalCount};
+	const page = forwardPage(fetched, first, (key: string) => key);
+	return {keys: page.rows, hasNextPage: page.hasNextPage, endCursor: page.endCursor, totalCount};
 };
 
 export const SearchLive = Layer.effect(Search)(
