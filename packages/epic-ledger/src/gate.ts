@@ -17,7 +17,7 @@
 import {Effect} from "effect";
 import type * as Schema from "effect/Schema";
 import type {Defect} from "./Defect.ts";
-import type {GhCommandError, GhParseError} from "./github.ts";
+import type {GhCommandError, GhParseError, RepoResolutionError} from "./github.ts";
 import {Github} from "./github.ts";
 import type {EpicLedger} from "./Ledger.ts";
 import {ledgerSignature, validateLedger} from "./validate.ts";
@@ -109,5 +109,5 @@ export const runGate = Effect.fn("ReviewPlan.runGate")(function* (epicNumber: nu
 /** The markers a verdict comment leads with — the skill and the loop key on these. */
 export const VERDICT_MARKERS = {pass: PASS_MARKER, fail: FAIL_MARKER} as const;
 
-/** The gate's failure surface: a `gh` infra fault, malformed JSON, or a bad REST shape. */
-export type GateError = GhCommandError | GhParseError | Schema.SchemaError;
+/** The gate's failure surface: unresolved repo, a `gh` infra fault, malformed JSON, or a bad REST shape. */
+export type GateError = RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError;

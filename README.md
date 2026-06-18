@@ -86,6 +86,7 @@ apps/web/
 - **No type assertions.** `as any` and `as unknown as` are banned in source (enforced by a Biome GritQL rule); decode at runtime boundaries with `Schema` instead.
 - **Make invalid states unrepresentable.** Domain logic lives in domain objects.
 - **No `export default`** (ADR [0001](./.decisions/0001-no-export-default.md)) except where the framework demands it (`alchemy.run.ts`, the worker entry, Vite config).
+- **Feature flags ship dark, default-off.** Gate a new path behind a flag and read it with the safe value as default — the read never throws, so an outage degrades to the old path. Declaring, reading (server or React), and flipping a flag are all in [.patterns/feature-flags.md](./.patterns/feature-flags.md) (ADR [0081](./.decisions/0081-feature-flag-substrate-cloudflare-flagship.md)).
 - **pnpm, not npm.** Biome formatting: tabs, 100 col, no bracket spacing.
 
 Data tasks (seeding, backfills) are one-off direct-D1 scripts against the bound database, not worker routes.

@@ -30,6 +30,13 @@ const issues: ReadonlyArray<RawIssue> = [
 		title: "Pipeline dashboard epic",
 		state: "open",
 		labels: [{name: "type:epic"}, {name: "status:triaged"}, {name: "p1"}],
+		milestone: {
+			number: 1,
+			title: "Pipeline hardening",
+			state: "open",
+			open_issues: 14,
+			closed_issues: 7,
+		},
 		body: [
 			"An epic.",
 			"",
@@ -54,6 +61,13 @@ const issues: ReadonlyArray<RawIssue> = [
 		title: "the SPA",
 		state: "open",
 		labels: [{name: "type:feature"}, {name: "status:planned"}, {name: "p2"}],
+		milestone: {
+			number: 1,
+			title: "Pipeline hardening",
+			state: "open",
+			open_issues: 14,
+			closed_issues: 7,
+		},
 		body: null,
 	},
 ];
@@ -166,6 +180,31 @@ describe("Pipeline.getState — assembly (#252)", () => {
 			// #101 has no PR → no verdict at all.
 			const noPr = response.issues.find((i) => i.number === 101)!;
 			assert.strictEqual(noPr.verdict, null);
+		}).pipe(Effect.provide(TestClock.layer())),
+	);
+
+	it.effect("threads the inline milestone (with its rollup) onto issues and epics (#379)", () =>
+		Effect.gen(function* () {
+			const calls = yield* Ref.make(0);
+			const store = yield* Ref.make<CachedPipelineState | null>(null);
+			const pipeline = yield* Pipeline.pipe(Effect.provide(TestPipeline(calls, store)));
+			const response = yield* pipeline.getState;
+
+			// #102 is assigned to milestone #1 with GitHub's open/closed rollup.
+			const assigned = response.issues.find((i) => i.number === 102)!;
+			assert.strictEqual(assigned.milestone?.number, 1);
+			assert.strictEqual(assigned.milestone?.title, "Pipeline hardening");
+			assert.strictEqual(assigned.milestone?.state, "open");
+			assert.strictEqual(assigned.milestone?.openIssues, 14);
+			assert.strictEqual(assigned.milestone?.closedIssues, 7);
+
+			// #101 carries no milestone → null, never an invented one.
+			const unassigned = response.issues.find((i) => i.number === 101)!;
+			assert.isNull(unassigned.milestone);
+
+			// The epic carries its milestone too.
+			const epic = response.epics.find((e) => e.number === 100)!;
+			assert.strictEqual(epic.milestone?.number, 1);
 		}).pipe(Effect.provide(TestClock.layer())),
 	);
 

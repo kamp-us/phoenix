@@ -11,9 +11,9 @@
  *     `{ok:false, error:{code:"UNAUTHORIZED"}}` — the wire code the SPA keys off.
  */
 import {describe, expect, it} from "vitest";
-import {harness} from "./_harness.ts";
+import {integrationStack} from "./_integration.ts";
 
-const h = harness();
+const h = integrationStack(import.meta.url);
 
 describe("fate seam — /fate", () => {
 	it("health resolves data produced by an Effect service method", async () => {

@@ -20,7 +20,6 @@ const decodeExecOptions = Schema.decodeUnknownOption(ExecOptions);
 export interface DeployEnvInput {
 	readonly ENVIRONMENT?: string | undefined;
 	readonly CI?: string | undefined;
-	readonly VITEST?: string | undefined;
 	/**
 	 * The alchemy `dev` flag, set only by `alchemy dev` (the offline workerd loop)
 	 * in its exec subprocess; `deploy`/`plan`/`destroy` run inline and never set
@@ -43,19 +42,19 @@ export interface DeployEnvInput {
 export type StateMode = "local" | "cloudflare";
 
 /**
- * Is this an offline alchemy path (`alchemy dev` or the Vitest harness) where
- * file-based `localState()` is required?
+ * Is this an offline alchemy path (`alchemy dev`) where file-based `localState()`
+ * is required?
  *
- * Keyed off the real dev-vs-deploy signal, NOT `CI`: `CI` is set for both the
- * deploy workflow and the test job, so the old `CI && !VITEST` heuristic made a
- * laptop `alchemy deploy` (no `CI`) silently fall to local state, diverging from
- * the shared store. The genuine signals (all readable synchronously at
- * module-eval): `VITEST`, and alchemy's `dev` flag in `ALCHEMY_EXEC_OPTIONS`
- * (`deploy` runs inline and never sets it) / the coarser `ALCHEMY_DEV` override.
+ * Keyed off the genuine dev signal alone, NOT `CI` and NOT `VITEST`. `CI` is set
+ * for both the deploy workflow and the integration-test job, so it can't tell a
+ * real deploy from a test run. `VITEST` is no longer an offline signal either:
+ * since ADR 0082 the integration suite deploys to **real remote Cloudflare** via
+ * `Test.make` (real D1, real state), so a Vitest run must resolve to the shared
+ * Cloudflare store, exactly like a real deploy. Only `alchemy dev` — its `dev`
+ * flag in `ALCHEMY_EXEC_OPTIONS` (`deploy` runs inline and never sets it), or the
+ * coarser `ALCHEMY_DEV` override `Test.make` honors — is the offline path.
  */
 const isOfflinePath = (env: DeployEnvInput): boolean => {
-	if (env.VITEST) return true;
-
 	const devOverride = env.ALCHEMY_DEV?.toLowerCase();
 	if (devOverride === "1" || devOverride === "true") return true;
 

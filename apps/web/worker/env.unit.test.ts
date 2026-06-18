@@ -28,8 +28,16 @@ describe("resolveStateMode", () => {
 		expect(resolveStateMode({ALCHEMY_DEV: "true"})).toBe("local");
 	});
 
-	it("the VITEST harness uses local state even when CI is set", () => {
-		expect(resolveStateMode({CI: "true", VITEST: "true"})).toBe("local");
+	it("the integration harness (CI, no dev flag) uses the Cloudflare store — real remote D1 (ADR 0082)", () => {
+		// ADR 0082: integration deploys to real remote Cloudflare via Test.make, so a
+		// Vitest run resolves to the shared store like a real deploy. `VITEST` is no
+		// longer an offline signal (it isn't even read), so a CI test run with no dev
+		// flag resolves to cloudflare exactly like a real deploy.
+		expect(resolveStateMode({CI: "true"})).toBe("cloudflare");
+	});
+
+	it("alchemy dev still uses local state under the integration run's ALCHEMY_DEV", () => {
+		expect(resolveStateMode({CI: "true", ALCHEMY_DEV: "1"})).toBe("local");
 	});
 
 	it('does not treat CI="false" as remote (explicit signal, not bare truthiness)', () => {

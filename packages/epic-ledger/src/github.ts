@@ -265,16 +265,23 @@ export class Github extends Context.Service<
 	{
 		readonly epicLedger: (
 			epicNumber: number,
-		) => Effect.Effect<EpicLedger, GhCommandError | GhParseError | Schema.SchemaError>;
+		) => Effect.Effect<
+			EpicLedger,
+			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
+		>;
 		/** Flip a child's `status:planned` label to `status:triaged` (the gate's one mutation). */
-		readonly flipChildToTriaged: (childNumber: number) => Effect.Effect<void, GhCommandError>;
+		readonly flipChildToTriaged: (
+			childNumber: number,
+		) => Effect.Effect<void, RepoResolutionError | GhCommandError>;
 		/** Post a comment (a verdict, or a park diagnostic) on an issue. */
 		readonly postComment: (
 			issueNumber: number,
 			body: string,
-		) => Effect.Effect<void, GhCommandError>;
+		) => Effect.Effect<void, RepoResolutionError | GhCommandError>;
 		/** Park an epic: drop `status:planned`, add `status:needs-info`. */
-		readonly parkNeedsInfo: (epicNumber: number) => Effect.Effect<void, GhCommandError>;
+		readonly parkNeedsInfo: (
+			epicNumber: number,
+		) => Effect.Effect<void, RepoResolutionError | GhCommandError>;
 	}
 >()("@kampus/epic-ledger/Github") {}
 
@@ -363,29 +370,34 @@ const parkNeedsInfo = Effect.fn("Github.parkNeedsInfo")(function* (
  * methods carry `R = never` — the spawner is the layer's requirement, not a
  * caller's. Provide the platform spawner (`NodeServices.layer`) to satisfy it.
  *
- * The target repo is resolved **once at layer build** (ADR 0062 §1:
- * `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` → `gh repo view`) and captured in the
- * closure for every method, so the gate operates on whatever repo it is run in — never
- * a silent phoenix default (#408).
+ * Repo resolution is **deferred to first use, not run at layer build** (#422). The
+ * resolution (ADR 0062 §1: `CLAUDE_PIPELINE_REPO` → `GITHUB_REPOSITORY` →
+ * `gh repo view`) is `Effect.cached`, so the layer build is side-effect-free and a
+ * command that needs no repo (`--help`, `--version`) never triggers it; a real
+ * subcommand resolves it on first method call and reuses the memoized result
+ * (still once per process, never a silent phoenix default — #408).
+ *
+ * `RepoResolutionError` therefore moves out of the layer's build error channel
+ * into each method's `E` channel — it is a per-call IO failure, alongside
+ * `GhCommandError`, raised only when a command actually reads or mutates.
  */
-export const GithubLive: Layer.Layer<
-	Github,
-	RepoResolutionError,
-	ChildProcessSpawner.ChildProcessSpawner
-> = Layer.effect(Github)(
-	Effect.gen(function* () {
-		const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
-		const withSpawner = <A, E>(
-			effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
-		) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
-		const repo = yield* withSpawner(resolveRepo());
-		return {
-			epicLedger: (epicNumber: number) => withSpawner(loadEpicLedger(repo, epicNumber)),
-			flipChildToTriaged: (childNumber: number) =>
-				withSpawner(flipChildToTriaged(repo, childNumber)),
-			postComment: (issueNumber: number, body: string) =>
-				withSpawner(postComment(repo, issueNumber, body)),
-			parkNeedsInfo: (epicNumber: number) => withSpawner(parkNeedsInfo(repo, epicNumber)),
-		};
-	}),
-);
+export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildProcessSpawner> =
+	Layer.effect(Github)(
+		Effect.gen(function* () {
+			const spawner = yield* ChildProcessSpawner.ChildProcessSpawner;
+			const withSpawner = <A, E>(
+				effect: Effect.Effect<A, E, ChildProcessSpawner.ChildProcessSpawner>,
+			) => effect.pipe(Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner));
+			const repo = yield* Effect.cached(withSpawner(resolveRepo()));
+			return {
+				epicLedger: (epicNumber: number) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(loadEpicLedger(r, epicNumber)))),
+				flipChildToTriaged: (childNumber: number) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(flipChildToTriaged(r, childNumber)))),
+				postComment: (issueNumber: number, body: string) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(postComment(r, issueNumber, body)))),
+				parkNeedsInfo: (epicNumber: number) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(parkNeedsInfo(r, epicNumber)))),
+			};
+		}),
+	);

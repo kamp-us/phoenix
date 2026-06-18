@@ -74,6 +74,8 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 - In-repo docs: standard markdown links (`[text](relative/path.md)`), not Obsidian `[[wikilinks]]`; use real resolvable paths, no placeholders.
 - Doc surfaces: `README` = current state for builders (never carry retired or old-problem context a new reader has no frame for); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped.
 - Decisions are product-driven by default; engineering leads only on platform/infra (the pipeline, fate/DO substrate, infra primitives) — see ADR [0078](.decisions/0078-product-driven-decisions-by-default.md).
+- **Turkish for product/brand, English for technical.** Product/brand names (sözlük, pano, bildir, künye, imge) and user-facing copy stay Turkish; everything technical is English — URL routes/paths, code identifiers, D1 table/column names, file names. Canonical example: the route is `/search?q=`, not `/ara`.
+- **Every dependency via `catalog:`.** Each dep in any `package.json` is sourced from the pnpm workspace `catalog:` (declared once in `pnpm-workspace.yaml`), never a hardcoded version string — one shared version per dep across the repo. When a dep is also a transitive dep of something already in the tree, catalog it at the EXACT version that parent links (don't introduce a second version). Incident: PR #535 hardcoded `@distilled.cloud/cloudflare` and broke frozen-lockfile CI.
 
 ## Decisions
 

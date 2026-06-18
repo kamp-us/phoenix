@@ -13,7 +13,8 @@
  * OpenFeature seam, #506).
  */
 import type {FlagshipEvaluationContext} from "alchemy/Cloudflare";
-import {Context} from "effect";
+import {Context, Effect} from "effect";
+import {AppConfig} from "../../config.ts";
 
 /** The domain-facing per-request evaluation context. */
 export interface FlagsContextValue {
@@ -28,8 +29,10 @@ export interface FlagsContextValue {
 	readonly roles?: readonly string[];
 	/**
 	 * Deployment environment the request runs in (e.g. `"production"`,
-	 * `"preview"`). Feeds environment-scoped targeting rules; #512 owns wiring
-	 * the actual per-app-stage value, this child only carries the attribute.
+	 * `"development"`). Feeds environment-scoped targeting rules so one flag can
+	 * resolve differently per stage with no code change at the call-site. Sourced
+	 * from the `ENVIRONMENT` config var — the per-app deploy stage (ADR 0057) — by
+	 * {@link makeRequestFlagsContext}, never hand-passed (#512).
 	 */
 	readonly environment?: string;
 }
@@ -40,6 +43,28 @@ export class FlagsContext extends Context.Service<FlagsContext, FlagsContextValu
 
 /** The anonymous request context — no identity to bucket on. */
 export const anonymousFlagsContext: FlagsContextValue = {};
+
+/**
+ * Build the per-request {@link FlagsContextValue}, sourcing the `environment`
+ * attribute from the deploy stage rather than letting a call-site hand-pass it
+ * (#512). The environment comes from `ENVIRONMENT` via `yield* AppConfig` — the
+ * same per-app-stage signal (`alchemy deploy --stage <name>`, ADR 0057) the
+ * health route reads — resolved off the `ConfigProvider` alchemy auto-wires at
+ * worker scope. So a flag with an environment-targeting rule resolves per stage
+ * (development vs production) with no code change at any call-site.
+ *
+ * `identity` carries the request's session-derived attributes (user id for
+ * bucketing, roles for attribute targeting); pass `anonymousFlagsContext` for an
+ * unauthenticated request. The environment is always populated from the stage —
+ * it is a deploy-time fact about the request, not a per-user one.
+ */
+export const makeRequestFlagsContext = (identity: FlagsContextValue) =>
+	Effect.gen(function* () {
+		// `orDie`: a `ConfigError` (value outside the two literals) is a malformed
+		// env, unrecoverable — match the health route's read of the same var.
+		const {environment} = yield* AppConfig.pipe(Effect.orDie);
+		return {...identity, environment} satisfies FlagsContextValue;
+	});
 
 /**
  * Delimiter framing each role in the flattened `roles` wire attribute. The
