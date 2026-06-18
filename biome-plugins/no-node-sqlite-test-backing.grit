@@ -18,7 +18,8 @@
 // Allowlist: a deliberate carve-out is an ordinary biome suppression on the
 // import line — `// biome-ignore lint/plugin: <reason>`. There is exactly one
 // today (`packages/preview-seed/src/sqlite-d1.testing.ts`, a TEMPORARY fast-unit
-// carve-out removed when #571 re-tiers the seed onto real D1; #633 is the recorded
+// carve-out removed when #672 re-tiers the seed onto real D1 (#571 was the prior
+// REST-fidelity work, not this re-tier); #633 is the recorded
 // decision). No blanket directory exemption — the suppression is per-import and
 // must name a reason, so the next un-blessed re-introduction reds CI.
 //
