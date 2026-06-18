@@ -175,6 +175,20 @@ Per ADR 0082, the unit tier boots no SQL engine at all (the `node:sqlite`
 stand-in is banned); a test that needs real database behavior belongs in
 `integration`.
 
+**Change-scoped selection is a unit-tier + local-loop accelerator only.**
+`vitest --changed` / `related` narrows by the resolved import graph — sound for
+`unit` (its tests import disjoint modules, so a change selects only the touched
+tests) and ideal for the inner dev loop. It does **not** narrow `integration`:
+every integration test deploys the whole worker (one worker = one `Stack`), so
+any worker change is in all of their graphs, and the black-box harness has no
+import edge to worker source — so the gate runs `integration` **full**,
+parallelized via per-file isolated stages, never `--changed`-selected (ADR 0082,
+"Change-scoped selection"). The unit project's `forceRerunTriggers` backstops the
+three out-of-band edges the import graph can't see — the migrations dir (SQL read
+at runtime, no import edge), `alchemy.run.ts`, and the integration harness
+substrate (`tests/integration/_*.ts`) — so a change to any of them rebuilds the
+full unit run instead of under-selecting.
+
 ## Gotchas
 
 - **A fully-green run can still exit non-zero.** Workerd logs an uncaught

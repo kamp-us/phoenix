@@ -110,9 +110,10 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # The `unit` vitest project: node pool, no worker deploy, no creds. Fast
-      # signal — Drizzle contracts, the fate bridge over node:sqlite, Effect-DO
-      # builders over a DO-state fake, pure helpers.
+      # The `unit` vitest project (ADR 0082): node pool, no worker deploy, no
+      # creds, no SQL engine. Fast signal over pure logic substituted directly at
+      # the Drizzle seam — keyset/cursor-miss decisions, envelope shaping,
+      # normalization, auth gates, Effect-DO builders over a DO-state fake.
       - run: pnpm --filter @kampus/web test:unit
 
   skills:
@@ -160,12 +161,16 @@ jobs:
       - name: Build SPA
         run: pnpm --filter @kampus/web build
 
-      # The `integration` vitest project deploys the alchemy stack to a local
-      # workerd, but D1 is ALWAYS provisioned against real Cloudflare (no offline
-      # D1) — so it needs real creds. On a dev machine these resolve from a
-      # wrangler/alchemy profile; a clean runner has none, so inject them from
-      # secrets. ALCHEMY_PASSWORD encrypts the worker's secret_text bindings in
-      # localState; BETTER_AUTH_SECRET is self-supplied by the harness when unset.
+      # The `integration` vitest project (ADR 0082): each file deploys the alchemy
+      # stack to real remote Cloudflare under its own per-file isolated stage via
+      # `Test.make`, so D1 is ALWAYS real (no offline D1) and the suite needs real
+      # creds. It runs FULL on every push — change-scoped `--changed` does not
+      # narrow it (one worker = one Stack, so any worker change is in every
+      # integration test's graph); its speed comes from per-file-stage parallelism,
+      # not selection. On a dev machine creds resolve from a wrangler/alchemy
+      # profile; a clean runner has none, so inject them from secrets.
+      # ALCHEMY_PASSWORD encrypts the worker's secret_text bindings in localState;
+      # BETTER_AUTH_SECRET is self-supplied by the harness when unset.
       - name: Integration tests
         run: pnpm --filter @kampus/web test:integration
         env:
