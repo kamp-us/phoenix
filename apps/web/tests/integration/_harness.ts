@@ -98,6 +98,19 @@ export interface Harness {
 
 const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
 
+// Cloudflare serves an HTML placeholder 404 ("There is nothing here yet" /
+// "Powered by Cloudflare") from an edge PoP that has NOT yet propagated a freshly
+// deployed `*.workers.dev` route. The per-file-stage model stands up ~11 brand-new
+// hostnames per run, so any test's FIRST request can draw a cold edge and get this
+// page (#575). It is a propagation transient, not a real application 404 — the
+// worker's own 404s are structured JSON, never this HTML — so it is bounded-retryable
+// where a genuine 404 is not. The `_integration.ts` health probe only warms one route
+// at one PoP; this is the general backstop for the first request on every path.
+const isCloudflarePlaceholder404 = (status: number, body: string): boolean =>
+	status === 404 &&
+	body.includes("There is nothing here yet") &&
+	body.includes("Powered by Cloudflare");
+
 // A per-request timeout fires an `AbortSignal.timeout` → the fetch rejects with a
 // `TimeoutError`/`AbortError`. We treat that as "the request STALLED" (distinct
 // from a connection error, which means it never reached the worker). A stall may
@@ -192,7 +205,22 @@ export function harness(getUrl: () => string): Harness {
 		for (let i = 0; i < 20; i++) {
 			try {
 				const signal = timeoutMs > 0 ? AbortSignal.timeout(timeoutMs) : init?.signal;
-				return await fetch(`${url()}${path}`, signal ? {...init, signal} : init);
+				const res = await fetch(`${url()}${path}`, signal ? {...init, signal} : init);
+				// A 404 might be Cloudflare's not-yet-propagated edge placeholder rather
+				// than a real worker 404. Peek a clone's body (only on a 404, so the hot
+				// path is untouched) and, if it is the placeholder, treat it like a
+				// connection error and retry on the same bounded loop — a fresh edge
+				// settles within a few seconds. A real application 404 (structured JSON)
+				// never matches, so it is returned unretried.
+				if (res.status === 404) {
+					const peek = await res.clone().text();
+					if (isCloudflarePlaceholder404(res.status, peek)) {
+						lastErr = new Error(`cloudflare placeholder 404 at ${path} (edge not propagated)`);
+						await sleep(250);
+						continue;
+					}
+				}
+				return res;
 			} catch (err) {
 				// A stall (abort/timeout) may have partially applied a write, so it is
 				// NOT safe to silently retry here — surface it and let the idempotency-

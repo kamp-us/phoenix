@@ -8,21 +8,23 @@
  * only observable surface is the `landingStats` query (four counters + the
  * build `version`).
  *
- * D1 is SHARED across the whole suite (one deploy), so absolute counts are
- * nondeterministic — other test files write definitions / posts / comments
- * concurrently against the same worker. We therefore assert by DELTA: snapshot
- * `landingStats`, create N definitions + M posts + K comments under a fresh
- * cookie, snapshot again, and assert each counter increased by AT LEAST the
- * amount we added (`>=`, never exact equality).
+ * D1 is per-file isolated (ADR 0082): this file deploys its own worker + D1 under
+ * its own stage, so the only writer against this D1 is this file. Absolute counts
+ * are therefore deterministic here — no concurrent cross-file drift. We still assert
+ * by DELTA (snapshot `landingStats`, create N definitions + M posts + K comments
+ * under a fresh cookie, snapshot again, assert each counter rose by AT LEAST the
+ * amount we added) because the harness seeds its own author/voter users for sign-up
+ * and seeding, so a counter's absolute baseline isn't fixed; the `>=` delta is robust
+ * to that without depending on an exact starting count.
  *
  * not portable black-box: the `landing-stats.test.ts` direct-D1 COUNT parity
  * assertions (`total_definitions === COUNT(*) FROM definition_view`, distinct
  * `total_authors` across view tables, `pano_stats` post/comment parity) — the
  * raw view tables aren't on the wire; re-expressed as observable deltas.
  * not portable black-box: the soft-delete decrement probe (`deleteDefinition`
- * → `total_definitions` ticks down) read the `sozluk_stats` row directly; an
- * exact decrement assertion would race concurrent adds on the shared deploy, so
- * here we only assert the delete is accepted and re-resolves its parent Term.
+ * → `total_definitions` ticks down) read the `sozluk_stats` row directly; the
+ * raw `sozluk_stats` row isn't on the wire, so here we only assert the delete is
+ * accepted and re-resolves its parent Term.
  * not portable black-box: `Stats.getLandingStats` service-method call + its
  * cross-product `COUNT` parity — covered by the `landingStats` fate query delta
  * (the seam test already asserts `health.definitions` flows from this service).
@@ -67,7 +69,10 @@ describe("landing stats — /fate", () => {
 		expect(stats.version).toBe("v0.3");
 	});
 
-	// QUARANTINED (flaky): workerd "All fibers interrupted" timeout under CI load reds ci-required. Re-enable after the root-cause fix — see #547.
+	// SKIPPED: the original quarantine reason (workerd "All fibers interrupted" under the
+	// shared single-fork deploy, #547) is obsolete under per-file isolated stages, but this
+	// test has not yet been re-validated green on the new substrate. Un-skip once a CI
+	// integration run confirms it passes against this file's isolated D1.
 	it.skip("each counter increases by AT LEAST the amount added under a fresh author", async () => {
 		const before = await landingStats();
 
@@ -115,7 +120,9 @@ describe("landing stats — /fate", () => {
 
 		const after = await landingStats();
 
-		// Deltas: at least what we added (other files may add more concurrently).
+		// Deltas: at least what we added. This file's D1 is isolated (per-file stage),
+		// so nothing else writes to it concurrently — `>=` is robust to the harness's
+		// own seeded users without depending on an exact baseline.
 		expect(after.totalDefinitions).toBeGreaterThanOrEqual(before.totalDefinitions + 2);
 		expect(after.totalPosts).toBeGreaterThanOrEqual(before.totalPosts + 1);
 		expect(after.totalComments).toBeGreaterThanOrEqual(before.totalComments + 3);
@@ -124,15 +131,15 @@ describe("landing stats — /fate", () => {
 		expect(after.totalAuthors).toBeGreaterThanOrEqual(before.totalAuthors + 1);
 	});
 
-	// QUARANTINED (flaky): workerd "All fibers interrupted" timeout under CI load reds ci-required. Re-enable after the root-cause fix — see #547.
+	// SKIPPED: the original quarantine reason (workerd "All fibers interrupted" under the
+	// shared single-fork deploy, #547) is obsolete under per-file isolated stages, but this
+	// test has not yet been re-validated green on the new substrate. Un-skip once a CI
+	// integration run confirms it passes against this file's isolated D1.
 	it.skip("add-then-delete nets to a smaller delta than add alone (decrement is observable)", async () => {
-		// On shared D1 the absolute count is nondeterministic, but an add and its
-		// matching delete cancel: the net contribution of an add+delete pair to
-		// `totalDefinitions` is 0, whereas a bare add contributes +1. We assert the
-		// two paired writes net below a bare add's +1 floor by comparing each path's
-		// own before/after, isolating our own rows (concurrent writers only add, so
-		// both snapshots are inflated by the SAME background drift between calls is
-		// not guaranteed — so we bound only by our own deterministic contribution).
+		// An add and its matching delete cancel: the net contribution of an add+delete
+		// pair to `totalDefinitions` is 0, whereas a bare add contributes +1. This file's
+		// D1 is isolated (per-file stage), so we can bound by our own deterministic
+		// contribution via each path's own before/after.
 		const baseline = await landingStats();
 		const added = await h.fate(
 			{
@@ -159,10 +166,10 @@ describe("landing stats — /fate", () => {
 		if (!deleted.ok) return;
 		expect((deleted.data as {__typename: string}).__typename).toBe("Term");
 
-		// not portable black-box: an exact `totalDefinitions` decrement assertion
-		// would race concurrent adds from other suites on the shared deploy. The
-		// delete's effect on the aggregate is exercised by the worker; here we only
-		// assert the delete is accepted and re-resolves its parent Term. The own-row
-		// decrement is verified at the unit layer, not over this shared HTTP seam.
+		// not portable black-box: the raw `sozluk_stats` aggregate row isn't on the
+		// wire, so the delete's effect on the count is exercised by the worker but not
+		// directly asserted here; we only assert the delete is accepted and re-resolves
+		// its parent Term. The own-row decrement is verified at the unit layer, not over
+		// this HTTP seam.
 	});
 });
