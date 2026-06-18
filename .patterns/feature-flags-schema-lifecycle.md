@@ -177,4 +177,8 @@ declaration's docblock in `resources.ts` (the demo flag uses both). For a **dash
 in the flag's dashboard description. When a flag's removal trigger fires and the work isn't being done
 in the current session, **file a follow-up issue** (the `report` skill, per CLAUDE.md) so the
 retirement is tracked rather than forgotten — that is the mechanism that keeps flags from accumulating
-forever.
+forever. Retirement is a **drainable `type:chore`**, not an auto-detected step (ADR
+[0083](../.decisions/0083-agents-deploy-humans-release.md), Decision item 4: retirement "returns to
+agents as a drainable chore"): the standard retirement-chore issue
+shape an agent drains is specified in
+[feature-flags-agent-workflow.md §Step 7](./feature-flags-agent-workflow.md#step-7--retire-once-stable-a-drainable-chore-not-an-automated-step).
