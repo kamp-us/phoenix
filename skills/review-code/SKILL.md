@@ -684,9 +684,12 @@ else
   ME="$(gh api user --jq .login)"
   # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
   # (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
+  # Find filter is namespace-anchored, NOT PASS/FAIL-only: it must also match the advisory
+  # marker (§6.6) so a polarity flip (non-blocking↔blocking across re-reviews) upserts the one
+  # prior review-code verdict instead of leaving a stale one beside the fresh one.
   MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
           | jq -r --arg me "$ME" 'map(select(.user.login==$me
-            and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
+            and (.body | test("^\\s*\\**\\s*review-code:"; "i"))))
           | last | .id // empty')
   if [ -n "$MINE" ]; then
     gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"   # upsert
@@ -787,9 +790,11 @@ BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"   # first line: review-code: F
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
 # (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
+# Namespace-anchored find filter (matches advisory + PASS + FAIL), as on the pass path — so a
+# fresh FAIL upserts whatever prior review-code marker exists, advisory included.
 MINE=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
         | jq -r --arg me "$ME" 'map(select(.user.login==$me
-          and (.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)"; "i"))))
+          and (.body | test("^\\s*\\**\\s*review-code:"; "i"))))
         | last | .id // empty')
 if [ -n "$MINE" ]; then
   gh api -X PATCH "repos/$REPO/issues/comments/$MINE" -f body="$BODY"
