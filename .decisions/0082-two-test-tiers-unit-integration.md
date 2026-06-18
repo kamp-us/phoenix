@@ -81,8 +81,8 @@ unit suite's backing). It is permitted because the seed's writes are plain inser
 — no FTS5, no collation, none of the engine-divergence above — and
 `packages/preview-seed/src/d1-rest.ts` already exercises a **real** D1 on the
 production path, so real-D1 fidelity exists elsewhere. This carve-out is
-**temporary**: it is removed when #571 re-tiers `seed.test.ts` onto real D1 via the
-alchemy `Test.make` harness. The allowlist entry's inline comment names #571 as
+**temporary**: it is removed when #672 re-tiers the unit suite onto real D1 via the
+alchemy `Test.make` harness (#571, closed, was the prior REST-fidelity work, not this re-tier). The allowlist entry's inline comment names #672 as
 its removal trigger.
 
 **Principle — no domain decision welded to SQL execution.** Cursor resolution is

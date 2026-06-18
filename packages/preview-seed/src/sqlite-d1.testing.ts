@@ -9,7 +9,7 @@
  * NOT a production artifact — the `*.testing.ts` suffix keeps it out of any build
  * and it is imported only by the unit tests.
  */
-// biome-ignore lint/plugin: TEMPORARY ADR-0082 carve-out — the seed's writes are plain inserts (no FTS5/collation, none of the engine-divergence the ban guards against) and `d1-rest.ts` already seeds a real D1, so the fake only backs the fast unit suite. Removed when #571 re-tiers `seed.test.ts` onto real D1 via the alchemy `Test.make` harness; see #633 (the recorded decision) and ADR 0082.
+// biome-ignore lint/plugin: TEMPORARY ADR-0082 carve-out — the seed's writes are plain inserts (no FTS5/collation, none of the engine-divergence the ban guards against) and `d1-rest.ts` already seeds a real D1, so the fake only backs the fast unit suite. Removed when #672 re-tiers the unit suite onto real D1 via the alchemy `Test.make` harness (#571 was the prior REST-fidelity work, not this); see #633 (the recorded decision) and ADR 0082.
 import {DatabaseSync, type SQLInputValue} from "node:sqlite";
 import {assertRestParam} from "./d1-rest.ts";
 
