@@ -117,6 +117,11 @@ const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStat
  * `provideMerge(VoteLive)` once — with Vote's `KarmaBump` discharged by
  * {@link KarmaBumpFromPasaport} via `Layer.provide` (not `provideMerge`: the
  * contract is Vote's internal seam, not a worker service the routes see).
+ *
+ * `PanoLive` also depends on `Bookmark` (it stamps the `isSaved` viewer scalar
+ * from `Bookmark.readMine` alongside `myVote`), so `BookmarkLive` joins the same
+ * group via `provideMerge` — discharging Pano's requirement while keeping
+ * `Bookmark` in {@link WorkerFateServices} for the routes that resolve it directly.
  */
 export const makeFateLayer: Layer.Layer<
 	WorkerFateServices,
@@ -126,15 +131,15 @@ export const makeFateLayer: Layer.Layer<
 	PasaportFromTag,
 	Layer.mergeAll(SozlukLive, PanoLive).pipe(
 		Layer.provideMerge(VoteLive),
+		Layer.provideMerge(BookmarkLive),
 		Layer.provide(KarmaBumpFromPasaport),
 	),
 	StatsLive,
-	// SearchLive, ReportLive and BookmarkLive depend only on Drizzle (the FTS read /
-	// the report write / the bookmark presence path), so they merge flat alongside the
-	// other domain layers and are discharged by `provideMerge(DrizzleLive)`.
+	// SearchLive and ReportLive depend only on Drizzle (the FTS read / the report
+	// write), so they merge flat alongside the other domain layers and are
+	// discharged by `provideMerge(DrizzleLive)`.
 	SearchLive,
 	ReportLive,
-	BookmarkLive,
 ).pipe(Layer.provideMerge(DrizzleLive));
 
 /**

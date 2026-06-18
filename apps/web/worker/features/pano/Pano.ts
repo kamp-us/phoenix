@@ -21,6 +21,7 @@ import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
+import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -128,6 +129,8 @@ export interface PostSummaryRow {
 	tags: PostTagRow[];
 	/** Viewer's upvote flag; `undefined` (unset) for reads that don't request it. */
 	myVote?: number | null;
+	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
+	isSaved?: boolean | null;
 }
 
 export interface PostConnectionPage {
@@ -394,6 +397,7 @@ export const PanoLive = Layer.effect(Pano)(
 		// signatures carry domain errors only and `R` stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
+		const bookmarkSvc = yield* Bookmark;
 
 		/**
 		 * HN-style hot score: `score / (hours_old + 2)^1.8`, scaled by 1000 and
@@ -760,11 +764,11 @@ export const PanoLive = Layer.effect(Pano)(
 						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.deletedAt)),
 					),
 			);
-			const voted = yield* voteSvc.readMine(
-				viewerId,
-				"post",
-				fetched.map((p) => p.id),
-			);
+			const ids2 = fetched.map((p) => p.id);
+			const voted = yield* voteSvc.readMine(viewerId, "post", ids2);
+			// `isSaved` rides the same batch as `myVote` — one `post_bookmark` read for
+			// the whole page, stamped here as a scalar (no per-row resolver, no N+1).
+			const saved = yield* bookmarkSvc.readMine(viewerId, ids2);
 			return fetched.map(
 				(row): PostSummaryRow => ({
 					id: row.id,
@@ -781,6 +785,7 @@ export const PanoLive = Layer.effect(Pano)(
 					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
 					tags: parseTags(row.tags),
 					myVote: viewerId ? (voted.has(row.id) ? 1 : null) : null,
+					isSaved: viewerId ? saved.has(row.id) : null,
 				}),
 			);
 		});

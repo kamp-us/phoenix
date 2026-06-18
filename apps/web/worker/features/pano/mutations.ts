@@ -16,6 +16,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
 	CommentValidationErrors,
@@ -84,6 +85,7 @@ const shapePost = (r: {
 	createdAt: Date;
 	updatedAt?: Date;
 	myVote?: number | null;
+	isSaved?: boolean | null;
 }): Post =>
 	toPost({
 		id: r.postId,
@@ -99,6 +101,7 @@ const shapePost = (r: {
 		createdAt: r.createdAt,
 		updatedAt: r.updatedAt ?? null,
 		myVote: r.myVote ?? null,
+		isSaved: r.isSaved ?? null,
 		tags: r.tags,
 	});
 
@@ -180,6 +183,54 @@ export const mutations = {
 			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
 			yield* live.update("Post", post.id, {changed: ["score"], data: post});
+			return post;
+		}),
+	),
+	// `post.save` / `post.unsave` mirror `post.vote` / `post.retractVote`: gate on a
+	// signed-in viewer, toggle the bookmark (idempotent in the service), then
+	// re-resolve the post via the same batched `getPostsByIds` read so the returned
+	// entity carries an accurate, freshly-stamped `isSaved`. `live.update` flips
+	// every open card. Both reject a missing/deleted post with `POST_NOT_FOUND`
+	// (raised by `Bookmark.toggle`).
+	"post.save": Fate.mutation(
+		{
+			input: PostIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, PostNotFound]),
+		},
+		Effect.fn("post.save")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const pano = yield* Pano;
+			const bookmark = yield* Bookmark;
+			const live = yield* WorkerLivePublisher;
+			yield* bookmark.toggle({userId: user.id, postId: input.id, saved: true});
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			if (!row) {
+				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
+			}
+			const post = toPost(row);
+			yield* live.update("Post", post.id, {changed: ["isSaved"], data: post});
+			return post;
+		}),
+	),
+	"post.unsave": Fate.mutation(
+		{
+			input: PostIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, PostNotFound]),
+		},
+		Effect.fn("post.unsave")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const pano = yield* Pano;
+			const bookmark = yield* Bookmark;
+			const live = yield* WorkerLivePublisher;
+			yield* bookmark.toggle({userId: user.id, postId: input.id, saved: false});
+			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
+			if (!row) {
+				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
+			}
+			const post = toPost(row);
+			yield* live.update("Post", post.id, {changed: ["isSaved"], data: post});
 			return post;
 		}),
 	),
@@ -326,7 +377,7 @@ export const mutations = {
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
-			const post = toPostFromPage(page, stamped?.myVote ?? null);
+			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
 			// Two delete shapes, driven by the service's reply-aware decision (ADR 0024):
 			//  - hard delete (leaf): the row is gone, so `deleteEdge` drops it from
 			//    every open `Post.comments` thread without a reload.
