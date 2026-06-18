@@ -26,6 +26,7 @@ export interface PostFields {
 	// owns the `updatedAt ?? createdAt` fallback so every path yields the same shape.
 	updatedAt?: Date | null;
 	myVote?: number | null;
+	isSaved?: boolean | null;
 	tags: ReadonlyArray<{kind: string; label: string}>;
 }
 
@@ -44,12 +45,19 @@ export const toPost = (r: PostFields): Post => ({
 	createdAt: r.createdAt,
 	updatedAt: r.updatedAt ?? r.createdAt,
 	myVote: r.myVote ?? null,
+	isSaved: r.isSaved ?? null,
 	tags: [...r.tags],
 });
 
 // The single `PostPage` → `Post` mapping shared by the read resolver
 // (`queries.post`) and the delete-refresh (`comment.delete`) so they can't drift.
-export const toPostFromPage = (page: PostPage, myVote: number | null): Post =>
+// `myVote`/`isSaved` are stamped separately (the page row carries neither viewer
+// scalar) so the caller threads each in.
+export const toPostFromPage = (
+	page: PostPage,
+	myVote: number | null,
+	isSaved: boolean | null = null,
+): Post =>
 	toPost({
 		id: page.id,
 		slug: page.slug,
@@ -64,6 +72,7 @@ export const toPostFromPage = (page: PostPage, myVote: number | null): Post =>
 		createdAt: page.createdAt,
 		updatedAt: page.updatedAt,
 		myVote,
+		isSaved,
 		tags: page.tags,
 	});
 

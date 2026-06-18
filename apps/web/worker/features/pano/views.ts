@@ -62,6 +62,10 @@ export class PostView extends FateDataView<PostViewRow>()("Post")({
 	createdAt: true,
 	updatedAt: true,
 	myVote: true,
+	// `isSaved` is the viewer's bookmark presence, batched in one `post_bookmark`
+	// read (`Pano.getPostsByIds` / `queries.post`) and stamped here as a scalar —
+	// the `myVote` twin, no per-row resolver, no N+1.
+	isSaved: true,
 	tags: true,
 	comments: FateDataView.list(CommentView, {orderBy: [{createdAt: "asc"}, {id: "asc"}]}),
 }) {}
