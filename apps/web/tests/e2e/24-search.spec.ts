@@ -1,16 +1,20 @@
 import {expect, test} from "@playwright/test";
-import {completeBootstrap, signUp} from "./_helpers/auth";
 
 /**
  * Search end-to-end (epic #89: resolver #121 + `/search` page #122 + topbar
  * wiring #123, ADR 0080).
  *
+ * Runs in the `authed` Playwright project: the `setup` project signs up ONCE and
+ * captures the session into storageState (ADR 0085), so each test here starts
+ * already logged in — no per-test sign-up. The create steps below act as that
+ * shared storageState user.
+ *
  * The FTS index is populated ONLY by the app dual-write path on new writes —
  * there is no backfill (#534) and the runner's D1 starts with an EMPTY index.
- * So every spec here **creates content, then searches it**: it signs up, adds a
- * sözlük definition to a fresh slug (which auto-creates the term AND syncs its
- * FTS row, `Sozluk.addDefinition` → `syncTermSearch`), then drives the topbar
- * search to query that just-indexed term.
+ * So every spec here **creates content, then searches it**: it adds a sözlük
+ * definition to a fresh slug (which auto-creates the term AND syncs its FTS row,
+ * `Sozluk.addDefinition` → `syncTermSearch`), then drives the topbar search to
+ * query that just-indexed term.
  *
  * A fresh term's title is `slug.replace(/-/g, " ")` — ASCII, since `slugifyTerm`
  * folds Turkish letters away. The ADR-0080 Turkish crux this suite exercises is
@@ -21,12 +25,6 @@ import {completeBootstrap, signUp} from "./_helpers/auth";
 
 /** Per-run unique token so each spec's term is brand-new in the (empty) index. */
 const nonce = () => `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-
-/** Sign up + clear the username-bootstrap gate, leaving a fully-authed session. */
-async function authedUser(page: import("@playwright/test").Page): Promise<void> {
-	await signUp(page);
-	await completeBootstrap(page);
-}
 
 /**
  * Create a sözlük term by adding a first definition to a brand-new slug. Returns
@@ -56,7 +54,6 @@ test.describe("Search (/search)", () => {
 	test("create-then-search: a freshly-created term appears in topbar search results", async ({
 		page,
 	}) => {
-		await authedUser(page);
 		const slug = `gizli-${nonce()}`;
 		const title = await createTerm(page, slug);
 
@@ -74,7 +71,6 @@ test.describe("Search (/search)", () => {
 	test("Turkish matching: a dotted/dotless-İ casing variant still matches (ADR 0080)", async ({
 		page,
 	}) => {
-		await authedUser(page);
 		// Title indexes as ASCII "gizli ..." (slug-with-spaces). The crux: a query
 		// that differs only by Turkish casing/diacritics must normalize to the same
 		// token the index holds.
@@ -100,7 +96,6 @@ test.describe("Search (/search)", () => {
 	});
 
 	test("prefix match: a short prefix of the term matches (prefix indexing)", async ({page}) => {
-		await authedUser(page);
 		const slug = `prefiks-${nonce()}`;
 		const title = await createTerm(page, slug); // "prefiks <nonce>"
 
@@ -123,8 +118,9 @@ test.describe("Search (/search)", () => {
 		const errors: string[] = [];
 		page.on("pageerror", (err) => errors.push(err.message));
 
-		// No auth needed — the results page is public; we just need a query that
-		// can't match anything in the (empty-seeded) index.
+		// The results page is public; this just needs a query that can't match
+		// anything in the (empty-seeded) index. (Runs authed harmlessly — the
+		// storageState session doesn't change the empty-results path.)
 		const miss = `zzqqxx-${nonce()}`;
 		await page.goto(`/search?q=${encodeURIComponent(miss)}`);
 
