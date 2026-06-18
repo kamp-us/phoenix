@@ -120,6 +120,7 @@ instead of `PHOENIX_TEST_URL`):
 | `h.fateBatch(ops, opts?)` | POST several fate operations; return all results in order. |
 | `h.signUp(email, password, name)` | Sign up via `/api/auth/sign-up/email`; return `{userId, cookie}` (falls back to sign-in on `USER_ALREADY_EXISTS`). |
 | `h.seedTerm(...)` | Seed a sözlük term + definitions through the PUBLIC `definition.add` fate mutation (+ votes for scores). |
+| `h.touchTerm(definitionId)` | Re-stamp a term's `last_activity_at` to "now" via a fresh voter's up-vote (the only HTTP-realizable handle on the clock-derived `recent` keyset lead column — control activity by touch order/spacing, never by injecting a timestamp). |
 | `h.openSse(connectionId, cookie)` | Open the live SSE stream. |
 | `h.liveControl(connectionId, ops, cookie)` | POST control messages (subscribe / unsubscribe). |
 

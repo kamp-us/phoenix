@@ -318,3 +318,45 @@ it.effect("a synchronously-throwing execution context is swallowed too", () =>
 		assert.isTrue(Exit.isSuccess(exit)); // yet the calling effect succeeded
 	}),
 );
+
+// The sözlük mutation topic-routing key-math (ADR 0039 mis-route guard), proven
+// here with no SQL engine — the routing is pure over `(procedure, args, id)`, so
+// it is wrong-or-right independent of the database. Re-homed from the deleted
+// `node:sqlite` fate-op suite (`features/fate/sozluk.test.ts`), whose two publish
+// assertions booted a faked engine only to read back the topic key the publisher
+// already computes here. `Sozluk.ts` routes `definition.add` to
+// `connection("Term.definitions", {id: termSlug}).appendNode(...)` and
+// `definition.vote` to `update("Definition", id, ...)`; this pins the keys those
+// calls land on.
+it.effect("definition.add routes to the args-scoped Term.definitions topic, not the wildcard", () =>
+	Effect.gen(function* () {
+		const {live, recorded, flush} = makeHarness();
+		const slug = "fate-read";
+
+		yield* live
+			.connection("Term.definitions", {id: slug})
+			.appendNode("Definition", "d1", {node: {id: "d1"}, cursor: "d1"});
+		yield* Effect.promise(flush);
+
+		const keys = recorded.map((r) => r.topicKey);
+		assert.deepStrictEqual(keys, [liveConnectionTopic("Term.definitions", {id: slug})]);
+		// The mis-route ADR 0039 guards: the publish must NOT hit the procedure-wide
+		// global wildcard the no-args connection would target.
+		assert.isFalse(keys.includes(liveGlobalConnectionTopic("Term.definitions")));
+		assert.isFalse(keys.includes("connection:Term.definitions:*"));
+	}),
+);
+
+it.effect("definition.vote routes to the Definition entity topic", () =>
+	Effect.gen(function* () {
+		const {live, recorded, flush} = makeHarness();
+
+		yield* live.update("Definition", "d1", {changed: ["score"], data: {id: "d1", score: 1}});
+		yield* Effect.promise(flush);
+
+		assert.deepStrictEqual(
+			recorded.map((r) => r.topicKey),
+			[liveEntityTopic("Definition", "d1")],
+		);
+	}),
+);

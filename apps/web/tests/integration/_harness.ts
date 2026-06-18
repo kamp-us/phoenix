@@ -86,6 +86,17 @@ export interface Harness {
 		skippedDefinitions: number;
 		definitions: Array<{id: string; authorId: string; authorName: string; score: number}>;
 	}>;
+	/**
+	 * Re-stamp a term's `last_activity_at` to "now" through the PUBLIC seam — a
+	 * fresh voter casts a single up-vote on `definitionId`, which the worker counts
+	 * as activity and funnels through `recomputeTermSummary(now)` (`Sozluk.ts`).
+	 * This is the only HTTP-realizable handle on the `recent` keyset's lead column:
+	 * the worker stamps `last_activity_at` from the real write clock (truncated to
+	 * the second), never from caller input, so the integration `recent`-ordering
+	 * vertical controls relative activity by the ORDER + SPACING of touches, not by
+	 * injecting a timestamp. Returns the score the vote landed.
+	 */
+	touchTerm(definitionId: string): Promise<number>;
 	/** Open a live SSE stream on a connection id (cookie required). */
 	openSse(connectionId: string, cookie: string): Promise<Response>;
 	/** Drive a `/fate/live` control message (subscribe / unsubscribe). */
@@ -495,6 +506,24 @@ export function harness(getUrl: () => string): Harness {
 		return {slug: input.slug, created, insertedDefinitions, skippedDefinitions, definitions};
 	};
 
+	// Each touch is a NEW voter's first up-vote, so `voteResult.changed` is true and
+	// the worker re-runs `recomputeTermSummary(now)` (a duplicate vote is a no-op and
+	// would NOT re-stamp activity). `definition.vote` is idempotent, so the stalled-
+	// request replay is safe.
+	const touchTerm: Harness["touchTerm"] = async (definitionId) => {
+		// Grow the pool by one and take the NEW voter (last slot): an already-pooled
+		// voter may have up-voted this definition before, making the re-cast a no-op
+		// that would NOT re-stamp activity. A never-seen voter guarantees `changed`.
+		const pool = await voters(voterPool.length + 1);
+		const voterCookie = pool[pool.length - 1]!;
+		const voted = await fate(
+			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
+			{cookie: voterCookie, retry: true},
+		);
+		if (!voted.ok) throw new Error(`touchTerm vote failed (${definitionId}): ${voted.error.code}`);
+		return (voted.data as {score: number}).score;
+	};
+
 	const openSse: Harness["openSse"] = (connectionId, cookie) =>
 		req(`/fate/live?connectionId=${encodeURIComponent(connectionId)}`, {
 			headers: {accept: "text/event-stream", cookie},
@@ -503,5 +532,5 @@ export function harness(getUrl: () => string): Harness {
 	const liveControl: Harness["liveControl"] = (connectionId, operations, cookie) =>
 		json("/fate/live", {version: 1, connectionId, operations}, cookie);
 
-	return {url, req, json, fate, fateBatch, signUp, seedTerm, openSse, liveControl};
+	return {url, req, json, fate, fateBatch, signUp, seedTerm, touchTerm, openSse, liveControl};
 }
