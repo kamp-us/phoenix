@@ -1,38 +1,24 @@
 /**
- * Vitest config — two projects mapping onto the T0–T3 taxonomy (ADR 0040,
- * `.patterns/effect-testing.md`). A tier is *which layer satisfies a fixed
- * R-channel*, not a folder; the project boundary is the workerd process boundary.
+ * Vitest config — the two test tiers of ADR 0082 (`unit` + `integration`, no
+ * middle, no faked engine), `.patterns/alchemy-test-harness.md`.
  *
- *   - `unit` (this config's `unit` project) hosts T0–T2 — everything reachable
- *     in-process by `Effect.provide`, all offline in the default node pool:
- *       T0  pure logic, zero storage, tagged `*.unit.test.ts` (the glob below
- *           already catches them — a label, not a third project, which would
- *           re-trigger Vitest 4's distinct-`sequence.groupOrder` rule);
- *       T1  a feature service over a real `node:sqlite` D1 (`Vote.test.ts`);
- *       T2  fate ops through the full worker layer (`sozluk.test.ts`,
- *           `sozluk-keyset.test.ts`, `products.test.ts`, `app.test.ts`) + the
- *           DO instance factory over a DO-state fake.
- *     T1/T2 keep the plain `*.test.ts` suffix. Tests are colocated next to the
- *     module under test under `worker/**` and `src/**`.
- *   - `integration` (this config's `integration` project) hosts T3 — the
- *     deployed alchemy stack on local workerd, asserted black-box over HTTP. NOT
- *     a layer: there is no R-channel to provide to. Reserve it for what the
- *     in-process algebra can't reach (deployed-worker smoke, DO+SSE+D1); domain
- *     correctness belongs down in T1/T2 where `node:sqlite` is faithful & offline.
+ *   - `unit` — pure logic + in-process service contracts: no deployed worker, all
+ *     offline in the default node pool. Pure-logic files carry the `*.unit.test.ts`
+ *     infix; the glob below catches both that and the plain `*.test.ts` service
+ *     tests, colocated next to the module under test under `worker/**` and `src/**`.
+ *   - `integration` — real behavior against **real remote Cloudflare D1** via the
+ *     alchemy `Test.make` idiom: each file calls `integrationStack(import.meta.url)`
+ *     (`tests/integration/_integration.ts`), which deploys the phoenix stack under
+ *     its own **per-file isolated stage**, retries the first request through edge
+ *     propagation, and asserts **black-box over HTTP**. No
+ *     `@cloudflare/vitest-pool-workers`, no shared single deploy.
  *
- * `integration` (T3) deploys the real alchemy stack to a local workerd — offline,
- * `dev: true` + `Alchemy.localState()` — once per run in `tests/integration/_global-setup.ts`
- * (the Vitest **main process**, the only context where the alchemy dev sidecar's
- * Node-side LoopbackServer comes up reliably; see `tests/integration/_harness.ts`).
- * The deployed URL is published via `PHOENIX_TEST_URL`; the suites under
- * `tests/integration/` then assert **black-box over HTTP** against it — no
- * `@cloudflare/vitest-pool-workers` (which cannot load the alchemy worker).
- *
- * The integration project runs in a single long-lived fork with no isolation and
- * with console-intercept disabled: the workerd sidecar (spawned by the main
- * process) inherits stdout, and Vitest's console wrapper otherwise breaks that
- * inherited pipe (EPIPE). `_global-setup.ts` (where the sidecar actually lives) is
- * the main process, so this only affects how the HTTP-only test fork is run.
+ * Per-file isolated stages are the parallelism lever: each file owns its own worker
+ * + D1, so files run in parallel rather than the prior forced single fork that
+ * raced itself (#547 / #220 / #560 — one root cause, ADR 0082). The integration
+ * project therefore enables `fileParallelism` (the inverse of the retired
+ * single-fork model). `forks` + `disableConsoleIntercept` are retained for
+ * stability against the alchemy deploy's child-process logging.
  */
 import {defineConfig} from "vitest/config";
 
@@ -67,38 +53,34 @@ export default defineConfig({
 				test: {
 					name: "integration",
 					include: ["tests/integration/**/*.test.ts"],
-					globalSetup: ["./tests/integration/_global-setup.ts"],
-					// Seed-heavy tests (`sozluk-read` seeds + paginates) make dozens of
-					// sequential round-trips to real Cloudflare D1 — no offline D1 — and
-					// the harness retries the occasional stalled request (see `_harness.ts`
-					// `REQUEST_TIMEOUT_MS`), so a slow test needs headroom above the raw
-					// work. NO Vitest `retry`: the harness owns per-request retries at the
-					// right layer, and a test-level retry would re-enter `seedTerm` whose
-					// process-level (slug, body) dedup then reports created:false /
-					// inserted:0 — breaking the very seed assertions it would be retrying.
+					// Each file's beforeAll(deploy(Stack)) provisions a real worker + D1
+					// under an isolated stage and seeds over the network, then asserts over
+					// HTTP — so a file's wall-clock is deploy + migrate + seed + assert.
+					// Generous timeouts cover that. NO Vitest `retry`: the harness owns
+					// per-request retries at the right layer, and a test-level retry would
+					// re-enter `seedTerm` whose process-level (slug, body) dedup then reports
+					// created:false / inserted:0 — breaking the seed assertions it retries.
 					testTimeout: 120_000,
-					hookTimeout: 120_000,
+					hookTimeout: 180_000,
 					pool: "forks",
-					// Vitest 4: `singleFork: true` → `maxWorkers: 1, isolate: false`. One
-					// long-lived fork, no per-file isolation — the HTTP-only test fork
-					// stays cheap and stable while the workerd sidecar lives in the main
-					// process (see `_global-setup.ts`).
-					maxWorkers: 1,
-					isolate: false,
-					fileParallelism: false,
+					// Per-file isolated stages (ADR 0082): each file deploys its own
+					// worker + D1, so files run in parallel — the inverse of the retired
+					// single-fork model. `disableConsoleIntercept` keeps the alchemy
+					// deploy's child-process logging from tripping Vitest's console wrapper
+					// (EPIPE on the inherited pipe).
+					fileParallelism: true,
 					disableConsoleIntercept: true,
-					// Vitest 4 requires a distinct `sequence.groupOrder` when projects
-					// differ in `maxWorkers`; ordering integration before unit also keeps
-					// the single-fork integration run from overlapping the unit pool.
+					// Vitest 4 requires a distinct `sequence.groupOrder` per project;
+					// ordering integration before unit keeps the projects from interleaving.
 					sequence: {groupOrder: 0},
 				},
 			},
 			{
 				test: {
-					// T0–T2 (see the header). The glob ends in `*.test.ts`, so it
-					// catches both the plain `*.test.ts` (T1/T2) and the T0
-					// `*.unit.test.ts` files — the `.unit` infix is a label, no
-					// separate `include` entry needed.
+					// The glob ends in `*.test.ts`, so it catches both the pure-logic
+					// `*.unit.test.ts` files and the plain `*.test.ts` service-contract
+					// tests — the `.unit` infix is a label, no separate `include` entry
+					// needed.
 					name: "unit",
 					include: ["worker/**/*.test.ts", "src/**/*.test.ts"],
 					exclude: ["tests/**", "node_modules/**", "dist/**"],

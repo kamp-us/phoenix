@@ -23,14 +23,14 @@
  * the Cloudflare-hosted store for reproducible shared state.
  *
  * The store is selected from the **dev-vs-deploy** signal, not `CI` (see
- * `resolveStateMode` in `worker/env.ts`): `CI` is set for BOTH the
- * deploy workflow and the integration-test job, so it can't tell a real deploy
- * from a test run. Only `alchemy dev` and the Vitest harness resolve to
- * `localState()` (offline); a real `alchemy deploy` always uses the shared store
- * whether or not `CI` is set. The selector runs synchronously at module-eval, so
- * it reads the dev signal off `process.env` (`ALCHEMY_EXEC_OPTIONS.dev` /
- * `ALCHEMY_DEV` / `VITEST`) rather than the runtime `AlchemyContext.dev` /
- * `ALCHEMY_PHASE`, which are not yet in scope here.
+ * `resolveStateMode` in `worker/env.ts`): `CI` is set for BOTH the deploy workflow
+ * and the integration-test job, so it can't tell a real deploy from a test run.
+ * Only `alchemy dev` resolves to `localState()` (offline); a real `alchemy deploy`
+ * — and the `Test.make` integration suite, which deploys to real remote Cloudflare
+ * per ADR 0082 — uses the shared Cloudflare store. The selector runs synchronously
+ * at module-eval, so it reads the dev signal off `process.env`
+ * (`ALCHEMY_EXEC_OPTIONS.dev` / `ALCHEMY_DEV`) rather than the runtime
+ * `AlchemyContext.dev` / `ALCHEMY_PHASE`, which are not yet in scope here.
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";

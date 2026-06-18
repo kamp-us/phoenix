@@ -9,9 +9,9 @@
  * No flag is declared yet, so the read falls back to its `false` default.
  */
 import {describe, expect, it} from "vitest";
-import {harness} from "./_harness.ts";
+import {integrationStack} from "./_integration.ts";
 
-const h = harness();
+const h = integrationStack(import.meta.url);
 
 describe("Flagship binding — /api/health", () => {
 	it("reads a flag value through the resolved FlagshipClient binding", async () => {

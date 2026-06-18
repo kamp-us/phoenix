@@ -25,9 +25,10 @@
  *      reconnected stream, not the original.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {frameData, harness, readEvent, readFrame} from "./_harness.ts";
+import {frameData, readEvent, readFrame} from "./_harness.ts";
+import {integrationStack} from "./_integration.ts";
 
-const h = harness();
+const h = integrationStack(import.meta.url);
 
 let user: {userId: string; cookie: string};
 
