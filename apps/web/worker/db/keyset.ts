@@ -53,6 +53,55 @@ export function keysetAfter(keys: ReadonlyArray<KeysetKey>): SQL | undefined {
 }
 
 /**
+ * The cursor-resolution decision, lifted above the DB read so it is pure and
+ * unit-testable with no SQL engine (ADR 0082: cursor resolution is a *port*, the
+ * keyset/cursor-miss decision is pure). A keyset page first resolves an opaque
+ * `after` cursor to the row's keyset tuple via a thin DB-read port; this type is
+ * the *outcome* of that resolution, and `resolveCursor` is the pure decision over
+ * `(after, resolved-row-or-null)`:
+ *
+ *   - no cursor — `after` was absent: page from the head, no predicate.
+ *   - miss      — `after` was present but resolved to no row: the shared
+ *                 cursor-miss-empty-page semantic (the cursor no longer points at
+ *                 a live row / matching doc).
+ *   - hit       — `after` resolved to `row`: page strictly after it.
+ */
+export type CursorResolution<TRow> =
+	| {readonly kind: "no-cursor"}
+	| {readonly kind: "miss"}
+	| {readonly kind: "hit"; readonly row: TRow};
+
+/**
+ * The pure cursor-miss decision. Given the requested `after` and the row the port
+ * read for it (`null`/`undefined` when the port found none), decide the branch:
+ * absent `after` → `no-cursor` (head page); present `after` + no row → `miss`
+ * (caller returns the empty page); present `after` + row → `hit` (caller builds
+ * the keyset predicate). The DB read that produces `resolvedRow` stays below the
+ * seam as the port; this is the decision, callable with no database.
+ */
+export function resolveCursor<TRow>(
+	after: string | null | undefined,
+	resolvedRow: TRow | null | undefined,
+): CursorResolution<TRow> {
+	if (!after) return {kind: "no-cursor"};
+	if (resolvedRow == null) return {kind: "miss"};
+	return {kind: "hit", row: resolvedRow};
+}
+
+/** The page returned on a cursor miss — pure, so the miss branch carries no DB read. */
+export interface EmptyKeysetPage {
+	readonly rows: never[];
+	readonly hasNextPage: false;
+	readonly endCursor: null;
+}
+
+export const emptyKeysetPage: EmptyKeysetPage = {
+	rows: [],
+	hasNextPage: false,
+	endCursor: null,
+};
+
+/**
  * The single assembly point for the `{rows, hasNextPage, endCursor}` envelope
  * shared by all five keyset methods (each adds its own `totalCount`).
  */

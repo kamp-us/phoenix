@@ -16,7 +16,7 @@ import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
@@ -571,16 +571,15 @@ export const PanoLive = Layer.effect(Pano)(
 					.then((r) => r?.n ?? 0),
 			);
 
-			let cursorRow: {
+			type CursorRow = {
 				id: string;
 				score: number;
 				hotScore: number;
 				commentCount: number;
 				createdAt: Date | null;
-			} | null = null;
-			if (after) {
-				cursorRow =
-					(yield* run((db) =>
+			};
+			const resolvedRow = after
+				? ((yield* run((db) =>
 						db
 							.select({
 								id: schema.postSummary.id,
@@ -592,17 +591,13 @@ export const PanoLive = Layer.effect(Pano)(
 							.from(schema.postSummary)
 							.where(eq(schema.postSummary.id, after))
 							.get(),
-					)) ?? null;
-				// Cursor miss → empty page (the one shared cursor-miss semantic).
-				if (!cursorRow) {
-					return {
-						rows: [],
-						hasNextPage: false,
-						endCursor: null,
-						totalCount,
-					} satisfies PostConnectionPage;
-				}
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor<CursorRow>(after, resolvedRow);
+			if (cursor.kind === "miss") {
+				return {...emptyKeysetPage, totalCount} satisfies PostConnectionPage;
 			}
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
 			// Sort's lead column (all descending) + `id` desc tiebreaker; `new`
 			// orders by id alone.
@@ -702,28 +697,22 @@ export const PanoLive = Layer.effect(Pano)(
 					.then((r) => r?.n ?? 0),
 			);
 
-			// Resolve the cursor row's (created_at, id) tuple for the keyset
-			// predicate. An `after` that doesn't resolve is a cursor miss → empty
-			// page (the shared cursor-miss semantic; see `listPostsConnection`).
-			let cursorRow: {createdAt: Date | null} | null = null;
-			if (after) {
-				cursorRow =
-					(yield* run((db) =>
+			// Resolve the (created_at) cursor tuple. The DB read is the port;
+			// `resolveCursor` is the pure cursor-miss decision (see `listPostsConnection`).
+			const resolvedRow = after
+				? ((yield* run((db) =>
 						db
 							.select({createdAt: schema.commentView.createdAt})
 							.from(schema.commentView)
 							.where(eq(schema.commentView.id, after))
 							.get(),
-					)) ?? null;
-				if (!cursorRow) {
-					return {
-						rows: [],
-						hasNextPage: false,
-						endCursor: null,
-						totalCount,
-					} satisfies CommentConnectionPage;
-				}
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor(after, resolvedRow);
+			if (cursor.kind === "miss") {
+				return {...emptyKeysetPage, totalCount} satisfies CommentConnectionPage;
 			}
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
 			const cursorPredicate = keysetAfter([
 				{column: schema.commentView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},

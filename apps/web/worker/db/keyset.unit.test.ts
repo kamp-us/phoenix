@@ -8,7 +8,7 @@ import type {SQL} from "drizzle-orm";
 import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
 import {commentView, definitionView, postSummary, termSummary} from "./drizzle/schema";
-import {forwardPage, keysetAfter} from "./keyset";
+import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "./keyset";
 
 const dialect = new SQLiteSyncDialect();
 const render = (sql: SQL) => dialect.sqlToQuery(sql);
@@ -78,6 +78,37 @@ describe("keysetAfter", () => {
 		const {sql, params} = render(predicate as SQL);
 		expect(sql).toBe('"term_summary"."slug" > ?');
 		expect(params).toEqual(["zebra"]);
+	});
+});
+
+describe("resolveCursor", () => {
+	it("no `after` → no-cursor (head page), regardless of resolved row", () => {
+		expect(resolveCursor(null, null)).toEqual({kind: "no-cursor"});
+		expect(resolveCursor(undefined, {score: 5})).toEqual({kind: "no-cursor"});
+		expect(resolveCursor("", {score: 5})).toEqual({kind: "no-cursor"});
+	});
+
+	it("`after` present but row unresolved → miss (the cursor-miss-empty-page decision)", () => {
+		expect(resolveCursor("d7", null)).toEqual({kind: "miss"});
+		expect(resolveCursor("d7", undefined)).toEqual({kind: "miss"});
+	});
+
+	it("`after` present and row resolved → hit carrying the resolved tuple", () => {
+		const row = {score: 5, createdAt: new Date("2026-01-01T00:00:00.000Z")};
+		expect(resolveCursor("d7", row)).toEqual({kind: "hit", row});
+	});
+
+	it("a resolved row whose keyset values are null is still a hit, not a miss", () => {
+		// the port found the row; a null lead value degrades the predicate (keysetAfter
+		// drops it), it does NOT collapse to the cursor-miss branch.
+		const row = {createdAt: null};
+		expect(resolveCursor("c1", row)).toEqual({kind: "hit", row});
+	});
+});
+
+describe("emptyKeysetPage", () => {
+	it("is the canonical empty forward page (no rows, no next, no cursor)", () => {
+		expect(emptyKeysetPage).toEqual({rows: [], hasNextPage: false, endCursor: null});
 	});
 });
 

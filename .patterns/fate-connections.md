@@ -56,6 +56,28 @@ The phoenix shape that gives a true DB keyset:
 
 Always include `id` as the final `orderBy` key — it's the stable tiebreaker that makes the keyset deterministic.
 
+## The cursor-resolution port — keep the decision pure, the DB read thin
+
+A keyset method resolves the opaque `after` cursor to its keyset tuple, then **decides**: a cursor that resolves to no row is the shared *cursor-miss → empty-page* semantic; a resolved cursor builds the `keysetAfter(...)` predicate; an absent cursor pages from the head. Only the *read* of the cursor row needs a database — the **decision** (miss vs. hit vs. no-cursor) and the page-envelope shaping (`forwardPage`) are pure (ADR 0082: cursor resolution is a port, the keyset/cursor-miss decision is pure). So lift the decision above the `run((db) => …)` seam:
+
+```ts
+// the port — the only piece that needs a DB
+const resolvedRow = after
+  ? (yield* run((db) => db.select({…keyset cols…}).from(view).where(eq(view.id, after)).get())) ?? null
+  : null;
+// the pure decision (db/keyset.ts) — unit-testable with no SQL engine
+const cursor = resolveCursor<CursorRow>(after, resolvedRow);
+if (cursor.kind === "miss") return {...emptyKeysetPage, totalCount} satisfies …ConnectionPage;
+const cursorRow = cursor.kind === "hit" ? cursor.row : null;
+
+const cursorPredicate = keysetAfter([/* tuple from cursorRow */]);
+const fetched = yield* run((db) => db.select()….where(cursorPredicate ? and(base, cursorPredicate) : base).orderBy(…).limit(first + 1));
+const page = forwardPage(fetched, first, (r) => r.id, mapRow);   // pure envelope
+return {...page, totalCount} satisfies …ConnectionPage;
+```
+
+`resolveCursor(after, resolvedRow)` returns a `CursorResolution<TRow>` (`no-cursor` | `miss` | `hit`), `emptyKeysetPage` is the canonical empty forward page, and `forwardPage` slices the `first + 1` probe into `{rows, hasNextPage, endCursor}`. All three live in [`apps/web/worker/db/keyset.ts`](../apps/web/worker/db/keyset.ts) and are covered by `keyset.unit.test.ts` with **no DB** — the DB read stays a thin port exercised only by the `integration` keyset verticals. The litmus (ADR 0082): "could this be wrong even if the DB behaved perfectly?" — the miss/envelope decision could, so it's pure/unit; the cursor read only-differs-if-the-DB-differs, so it stays integration. Search's FTS keyset (`Search.ts`) routes its bm25-rank cursor through the **same** `resolveCursor`/`forwardPage` pair (a `0` rank is a valid hit, not a miss).
+
 ## See also
 
 - [fate-data-views.md](./fate-data-views.md) — `list(view, {orderBy})` in a view

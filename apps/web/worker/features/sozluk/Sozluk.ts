@@ -12,7 +12,7 @@ import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
@@ -406,13 +406,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.then((r) => r?.n ?? 0),
 			);
 
-			// Resolve the cursor row's keyset tuple so the predicate selects rows
-			// strictly after it. An `after` that doesn't resolve is a cursor miss →
-			// empty page (the shared semantic).
-			let cursorRow: {score: number; createdAt: Date | null} | null = null;
-			if (after) {
-				cursorRow =
-					(yield* run((db) =>
+			// Resolve the opaque `after` to its keyset tuple. The DB read is the port;
+			// `resolveCursor` is the pure cursor-miss decision (ADR 0082).
+			const resolvedRow = after
+				? ((yield* run((db) =>
 						db
 							.select({
 								score: schema.definitionView.score,
@@ -421,16 +418,13 @@ export const SozlukLive = Layer.effect(Sozluk)(
 							.from(schema.definitionView)
 							.where(eq(schema.definitionView.id, after))
 							.get(),
-					)) ?? null;
-				if (!cursorRow) {
-					return {
-						rows: [],
-						hasNextPage: false,
-						endCursor: null,
-						totalCount,
-					} satisfies DefinitionConnectionPage;
-				}
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor(after, resolvedRow);
+			if (cursor.kind === "miss") {
+				return {...emptyKeysetPage, totalCount} satisfies DefinitionConnectionPage;
 			}
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
 			// Mixed-direction keyset, declared per column; `keysetAfter` builds the
 			// lexicographic predicate.
@@ -542,14 +536,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.then((r) => r?.n ?? 0),
 			);
 
-			let cursorRow: {
-				slug: string;
-				totalScore: number;
-				lastActivityAt: Date | null;
-			} | null = null;
-			if (after) {
-				cursorRow =
-					(yield* run((db) =>
+			type CursorRow = {slug: string; totalScore: number; lastActivityAt: Date | null};
+			const resolvedRow = after
+				? ((yield* run((db) =>
 						db
 							.select({
 								slug: schema.termSummary.slug,
@@ -559,16 +548,13 @@ export const SozlukLive = Layer.effect(Sozluk)(
 							.from(schema.termSummary)
 							.where(eq(schema.termSummary.slug, after))
 							.get(),
-					)) ?? null;
-				if (!cursorRow) {
-					return {
-						rows: [],
-						hasNextPage: false,
-						endCursor: null,
-						totalCount,
-					} satisfies TermConnectionPage;
-				}
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor<CursorRow>(after, resolvedRow);
+			if (cursor.kind === "miss") {
+				return {...emptyKeysetPage, totalCount} satisfies TermConnectionPage;
 			}
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
 			// Lead column by sort, then the `slug` asc tiebreaker. A null
 			// lastActivityAt cursor drops the lead column → slug-only keyset.
