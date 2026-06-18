@@ -133,6 +133,49 @@ production off** — both because its declared default is off *and* because the 
 default until the flag is flipped. Deploy has happened; release has not. There is no separate human
 merge gate for the feature (that's the autonomous model); the flag is what makes that safe.
 
+### Step 3.5 — Surface it on the release queue (`status:awaiting-release`)
+
+A feature merged dark is **deployed but not released** — it sits in production, off, waiting for a
+human to flip it (Step 5). The bridge between the agent's dark-merge and that human flip is the
+**release queue**: the queryable list of what is deployed-dark and awaiting a release. The surface is
+a single **`status:awaiting-release` label on the linked issue** — not a separate tracking issue and
+not a saved view. It reuses the existing label spine, survives the PR's merge-close (it lives on the
+*issue*, which the merge auto-closes but does not delete), is filterable with a one-line `gh` query,
+and adds no new artifact (ADR [0083](../.decisions/0083-agents-deploy-humans-release.md)).
+
+**Apply** — when `ship-it` merges a dark feature PR, it applies `status:awaiting-release` to the
+linked issue. That is the deployment boundary: the agent's work is done at merge, and the label is the
+hand-off signal to the human releaser ([#601](https://github.com/kamp-us/phoenix/issues/601) owns
+ship-it's application logic). The merge auto-closes the issue, so the label rides on a **closed**
+issue — include `state=all` (or `state=closed`) when you query the queue.
+
+**Consume** — an **infra-admin** (the human releaser; release authority equals infra-admins per ADR
+0083) drains the queue:
+
+1. **Filter** for the release queue — every issue carrying the label:
+
+   ```bash
+   gh api "repos/$(gh repo view --json nameWithOwner -q .nameWithOwner)/issues?labels=status:awaiting-release&state=all&per_page=100" \
+     --jq '.[] | "#\(.number)\t\(.title)"'
+   ```
+
+   (Or in the GitHub UI: filter `label:status:awaiting-release`.)
+
+2. **Flip** the flag — the deliberate human release act, on the **Cloudflare dashboard**, never an
+   agent step (ADR 0083; the flip paths and the validate-first discipline are Steps 4–5 below).
+
+3. **Clear** the label once the release completes (`gh api -X DELETE
+   repos/<owner/repo>/issues/<N>/labels/status:awaiting-release`), so the queue reflects only what is
+   still awaiting a flip.
+
+**Orthogonal to the `status:*` pickability spine.** Despite sharing the `status:` prefix,
+`status:awaiting-release` is **not** a pickability state — it is a **post-merge release state**. The
+pipeline pickability labels (`status:triaged` / `status:planned` / …) drive which *open* issues
+`write-code` may pick; `status:awaiting-release` lives on a *closed* issue and means "deployed, awaiting
+a human flip." **`write-code` never keys on it** — it has no bearing on what work is pickable, and a
+cycle-aware skill must not treat it as one of the pickability states. It is consumed only by the human
+releaser, off the autonomous pipeline entirely.
+
 ### Step 4 — Validate post-merge
 
 With the feature live in code but dark to users, validate the new path **in production** without
@@ -200,7 +243,8 @@ later agent able to retire the flag at all.
 
 ```
 declare (default off) ─▶ gate code path ─▶ ship dark (auto-merge on green gate)
-        ─▶ validate in prod (internal → staged rollout) ─▶ flip on (release)
+        ─▶ status:awaiting-release on the issue (the release queue; ship-it applies it)
+        ─▶ [human releaser drains the queue] validate in prod (internal → staged rollout) ─▶ flip on (release) ─▶ clear the label
         ─▶ [regression?] kill in seconds (dashboard disable, no redeploy)
         ─▶ stable ─▶ retire (delete flag + read + dead branch)
 ```
