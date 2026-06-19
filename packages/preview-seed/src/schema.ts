@@ -64,5 +64,26 @@ export const postSummary = sqliteTable("post_summary", {
 	lastEventId: text("last_event_id").notNull().default(""),
 });
 
-export const seedSchema = {termSummary, definitionView, postSummary};
+/**
+ * The FTS5 search tables (`term_search` / `post_search`, ADR 0080), modeled as
+ * plain drizzle tables over their two columns. The migration declares them as
+ * `CREATE VIRTUAL TABLE … USING fts5(…)`; drizzle-kit can't express that, but the
+ * seed only needs to delete+insert two columns, which a plain `sqliteTable` maps
+ * cleanly. Modeled here (rather than reusing the worker's raw-`sql` `syncTermSearch`
+ * builders) so the seed's FTS writes are real drizzle `insert`/`delete` builders —
+ * batch-compatible (`SQLiteRaw` from `db.run(sql)` has no `.stmt`, so it can't ride
+ * the D1 `batch`). The indexed `norm` is still the worker's OWN `normalizeSearchText`
+ * (imported in seed.ts), so the value is byte-identical to the dual-write's.
+ */
+export const termSearch = sqliteTable("term_search", {
+	slug: text("slug").notNull(),
+	norm: text("norm").notNull(),
+});
+
+export const postSearch = sqliteTable("post_search", {
+	id: text("id").notNull(),
+	norm: text("norm").notNull(),
+});
+
+export const seedSchema = {termSummary, definitionView, postSummary, termSearch, postSearch};
 export type SeedSchema = typeof seedSchema;

@@ -42,6 +42,10 @@ apps/web/scripts/**/*.js
 test-results
 playwright-report
 
+# Authed-e2e storageState — captured fresh per run from one real sign-up
+# (ADR 0085); a real session, never committed.
+apps/web/tests/e2e/.auth
+
 # Local scratch (uncommitted explorations)
 /.scratch/
 

@@ -11,6 +11,10 @@
  *     /sozluk/<slug>, and the first (top-scoring) definition carries `--top`.
  *   - ≥1 pano post → 00-smoke, 03-pano-feed: a `.kp-pano-post` on /pano whose
  *     "N yorum" permalink lands on /pano/<id> and renders `.kp-pano-postpage__title`.
+ *   - searchable seeded terms → 24-search: the seed FTS-indexes each term's title
+ *     (ADR 0080), so a topbar search over a seeded title finds its row. The
+ *     SEARCH_* term's İ/ı-bearing title is the Turkish-fold crux ("ışık" matched
+ *     by "IŞIK"); `merhaba dünya` carries the exact-title + prefix assertions.
  *
  * IDs/slugs are stable string literals (not random) so a re-run upserts the same
  * rows — the idempotency contract lives here, in the fixed identity.
@@ -29,6 +33,18 @@ export interface Fixtures {
 
 /** Stable identity of the single seeded fixture set — also the public surface the specs lean on. */
 export const SEED_TERM_SLUG = "merhaba-dunya";
+/** The seeded term `merhaba dünya`'s exact title (24-search: exact-title + `mer` prefix). */
+export const SEED_TERM_TITLE = "merhaba dünya";
+
+/**
+ * A second seeded term whose title carries the Turkish dotless-ı / dotted-i the
+ * 24-search Turkish-fold assertion needs: `normalizeSearchText("ışık")` and
+ * `normalizeSearchText("IŞIK")` both fold to `isik`, so the uppercase query finds
+ * the lowercase-titled term. Slug is the ASCII fold (the route value the row links to).
+ */
+export const SEARCH_TERM_SLUG = "isik";
+export const SEARCH_TERM_TITLE = "ışık";
+
 export const SEED_POST_ID = "seed-post-tanitim";
 /** A link-post (url+host set) so 03-pano-feed can exercise host routing instead of skipping. */
 export const SEED_LINK_POST_ID = "seed-post-baglanti";
@@ -39,6 +55,7 @@ const SEED_AUTHOR_NAME = "kampüs";
 
 /** First non-deleted definition by (score DESC, created_at ASC, id ASC) gets `--top`. */
 const TOP_DEFINITION_ID = "seed-def-merhaba-1";
+const SEARCH_DEFINITION_ID = "seed-def-isik-1";
 
 const lowerFirstLetter = (title: string): string => (title[0] ?? "").toLocaleLowerCase("tr");
 
@@ -50,11 +67,13 @@ const excerptOf = (body: string, max = 160): string =>
  * wall clock) so the output is deterministic and the unit tests pin exact rows.
  */
 export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fixtures => {
-	const termTitle = "merhaba dünya";
+	const termTitle = SEED_TERM_TITLE;
 	const topBody =
 		"kampüs'e hoş geldin. bu, önizleme ortamının okuma akışlarını besleyen tohum tanımıdır.";
 	const secondBody =
 		"ikinci bir tanım — terim sayfasının birden fazla kartı listelediğini doğrular.";
+	const searchBody =
+		"ışık üzerine tohum tanımı — site aramasının türkçe İ/ı kıvrımını doğrular (ADR 0080).";
 
 	const terms: ReadonlyArray<TermSummaryInsert> = [
 		{
@@ -65,6 +84,18 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 			totalScore: 7,
 			excerpt: excerptOf(topBody),
 			topDefinitionId: TOP_DEFINITION_ID,
+			firstAt: now,
+			lastActivityAt: now,
+			lastEditAt: now,
+		},
+		{
+			slug: SEARCH_TERM_SLUG,
+			title: SEARCH_TERM_TITLE,
+			firstLetter: lowerFirstLetter(SEARCH_TERM_TITLE),
+			definitionCount: 1,
+			totalScore: 3,
+			excerpt: excerptOf(searchBody),
+			topDefinitionId: SEARCH_DEFINITION_ID,
 			firstAt: now,
 			lastActivityAt: now,
 			lastEditAt: now,
@@ -93,6 +124,18 @@ export const buildFixtures = (now: Date = new Date("2026-01-01T00:00:00Z")): Fix
 			body: secondBody,
 			bodyExcerpt: excerptOf(secondBody),
 			score: 2,
+			createdAt: now,
+			updatedAt: now,
+		},
+		{
+			id: SEARCH_DEFINITION_ID,
+			authorId: SEED_AUTHOR_ID,
+			authorName: SEED_AUTHOR_NAME,
+			termSlug: SEARCH_TERM_SLUG,
+			termTitle: SEARCH_TERM_TITLE,
+			body: searchBody,
+			bodyExcerpt: excerptOf(searchBody),
+			score: 3,
 			createdAt: now,
 			updatedAt: now,
 		},

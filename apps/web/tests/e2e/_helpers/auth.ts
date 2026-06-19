@@ -17,11 +17,43 @@ export interface Credentials {
  * Each call gets a unique email so tests don't collide on Better Auth's
  * unique-email constraint when re-run.
  */
-export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<Credentials> {
+function freshCredentials(opts?: Partial<Credentials>): Credentials {
 	const suffix = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-	const email = opts?.email ?? `e2e-${suffix}@kamp.us`;
-	const password = opts?.password ?? "hunter222!";
-	const name = opts?.name ?? "e2e tester";
+	return {
+		email: opts?.email ?? `e2e-${suffix}@kamp.us`,
+		password: opts?.password ?? "hunter222!",
+		name: opts?.name ?? "e2e tester",
+	};
+}
+
+/**
+ * Sign up a fresh user by POSTing better-auth's `/api/auth/sign-up/email`
+ * directly, instead of driving the AuthPage UI. With auto-sign-in on, the
+ * response lands a session `Set-Cookie`; using `page.request` shares the page's
+ * context, so the cookie is captured by a subsequent `storageState()` (the
+ * setup's robust pattern — no nav, no form, no redirect race). This is the
+ * SETUP's auth path (ADR 0085); the UI `signUp` above is kept for local specs.
+ *
+ * Fails loudly with the status + a trimmed body on a non-ok response: if sign-up
+ * genuinely fails on the target, we see exactly why instead of a nav timeout.
+ */
+export async function signUpViaApi(page: Page, opts?: Partial<Credentials>): Promise<Credentials> {
+	const creds = freshCredentials(opts);
+
+	const res = await page.request.post("/api/auth/sign-up/email", {
+		data: {name: creds.name, email: creds.email, password: creds.password},
+	});
+
+	if (!res.ok()) {
+		const body = (await res.text().catch(() => "")).slice(0, 500);
+		throw new Error(`sign-up/email failed: ${res.status()} ${res.statusText()} — ${body}`);
+	}
+
+	return creds;
+}
+
+export async function signUp(page: Page, opts?: Partial<Credentials>): Promise<Credentials> {
+	const {email, password, name} = freshCredentials(opts);
 
 	await page.goto("/auth");
 

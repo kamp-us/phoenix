@@ -203,10 +203,13 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
 
-  # The v1 blocking e2e gate (#522, epic #462): run the four UNAUTHENTICATED read
-  # specs against the per-PR preview deploy so "CI green" means the public frontend
-  # renders + core read flows work end-to-end, not just that unit/integration pass.
-  # The 20 auth-gated specs are Phase 3 (#523/#524); v1 covers only the no-login set.
+  # The blocking e2e gate (#522, epic #462): run both lanes against the per-PR
+  # preview deploy so "CI green" means the frontend renders + core flows work
+  # end-to-end, not just that unit/integration pass. Two Playwright projects:
+  #   - `unauth` — the four public read specs (no login).
+  #   - `setup` + `authed` — one real Better Auth sign-up captured into a
+  #     storageState file the authed specs reuse (ADR 0085, #524), so the
+  #     login-gated search spec runs without re-signing-up per test.
   #
   # Target is the DEPLOYED preview, never a CI-booted workerd (the deploy already
   # runs in deploy.yml; #452's `spawn EBADF` is agent-sandbox-only, not Actions).
@@ -220,7 +223,7 @@ jobs:
   # on `e2e` so a docs/skills-only PR skips → green (the `ci-required` aggregator
   # treats a skip as a pass).
   e2e:
-    name: e2e (unauth specs vs preview)
+    name: e2e (unauth + authed specs vs preview)
     needs: changes
     if: >-
       needs.changes.outputs.e2e == 'true' &&
@@ -288,16 +291,18 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # The four non-auth specs only (auth specs are Phase 3). E2E_BASE_URL points
-      # the whole run at the preview (#520); the suite uses relative `page.goto`.
-      # `--reporter=html,list` overrides the config's `list` reporter so a failure
-      # leaves a browsable HTML report for the artifact below (traces come from the
-      # config's `trace: on-first-retry` + CI's one retry).
-      - name: Run unauth e2e specs
+      # Both lanes: `unauth` (the four public read specs) plus `authed`, whose
+      # `setup` dependency does one real sign-up against the preview and captures
+      # the session into storageState the authed search spec reuses (ADR 0085).
+      # E2E_BASE_URL points the whole run at the preview (#520); the suite uses
+      # relative `page.goto`. `--reporter=html,list` overrides the config's `list`
+      # reporter so a failure leaves a browsable HTML report for the artifact below
+      # (traces come from the config's `trace: on-first-retry` + CI's one retry).
+      - name: Run e2e specs (unauth + authed)
         run: >-
           pnpm --filter @kampus/web exec playwright test
           --reporter=html,list
-          00-smoke 01-landing 03-pano-feed 07-sozluk-term
+          --project unauth --project authed
         env:
           E2E_BASE_URL: ${{ steps.preview.outputs.url }}
           PLAYWRIGHT_HTML_OPEN: never
