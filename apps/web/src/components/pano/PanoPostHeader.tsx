@@ -12,17 +12,22 @@ import {Tag, type TagKind} from "../ui/atoms";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {PostVoteWidget} from "./PanoPost";
+import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 
 /**
- * Write-back view for a post vote. Defined here rather than next to
- * `PostVoteWidget` (in `PanoPost.tsx`) to keep that module free of a back-edge
- * import to the header.
+ * Write-back views for the post vote / save toggles. Defined here rather than
+ * next to their widgets (in `PanoPost.tsx`) to keep that module free of a
+ * back-edge import to the header.
  */
 export const PostVoteView = view<Post>()({
 	id: true,
 	score: true,
 	myVote: true,
+});
+
+export const PostSaveView = view<Post>()({
+	id: true,
+	isSaved: true,
 });
 
 export const PanoPostHeaderView = view<Post>()({
@@ -36,6 +41,7 @@ export const PanoPostHeaderView = view<Post>()({
 	authorId: true,
 	score: true,
 	myVote: true,
+	isSaved: true,
 	commentCount: true,
 	createdAt: true,
 	updatedAt: true,
@@ -81,7 +87,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 				<span>{post.commentCount} yorum</span>
 				<span>·</span>
 				<CopyLinkButton path={`/pano/${post.slug ?? post.id}`} testId="post-share" />
-				<button type="button">kaydet</button>
+				<PostSaveButton postId={post.id} isSaved={post.isSaved ?? null} />
 				{props.onReport ? <ReportButton onReport={props.onReport} testId="post-report" /> : null}
 				{props.isAuthor ? (
 					<>

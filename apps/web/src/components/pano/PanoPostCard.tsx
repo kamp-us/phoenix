@@ -1,7 +1,8 @@
 /**
  * fate-shaped card for the pano feed. Reads its slice via
- * `useLiveView(PanoPostCardView, ref)`. Side affordances (rank, save/hide) stay
- * with the parent because they're list-position state, not Post state.
+ * `useLiveView(PanoPostCardView, ref)`. Rank and hide stay with the parent
+ * because they're list-position state, not Post state; save reads `isSaved` off
+ * the post itself, so the card owns the bookmark toggle (`PostSaveButton`).
  */
 import {useLiveView, type ViewRef, view} from "react-fate";
 import {Link} from "react-router";
@@ -9,7 +10,7 @@ import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {Tag, type TagKind} from "../ui/atoms";
-import {PostVoteWidget} from "./PanoPost";
+import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
 
 export const PanoPostCardView = view<Post>()({
@@ -19,6 +20,7 @@ export const PanoPostCardView = view<Post>()({
 	host: true,
 	score: true,
 	myVote: true,
+	isSaved: true,
 	commentCount: true,
 	createdAt: true,
 	author: true,
@@ -30,12 +32,10 @@ export const PanoPostCardView = view<Post>()({
 export function PanoPostCard({
 	post,
 	rank,
-	onSave,
 	onHide,
 }: {
 	post: ViewRef<"Post">;
 	rank?: number;
-	onSave?: (id: string) => void;
 	onHide?: (id: string) => void;
 }) {
 	const data = useLiveView(PanoPostCardView, post);
@@ -78,14 +78,8 @@ export function PanoPostCard({
 					<span>{agoLabel}</span>
 					<span className="dot">·</span>
 					<a href={`${href}#comments`}>{data.commentCount} yorum</a>
-					{onSave ? (
-						<>
-							<span className="dot">·</span>
-							<button type="button" onClick={() => onSave(data.id)}>
-								kaydet
-							</button>
-						</>
-					) : null}
+					<span className="dot">·</span>
+					<PostSaveButton postId={data.id} isSaved={data.isSaved ?? null} />
 					{onHide ? (
 						<>
 							<span className="dot">·</span>
