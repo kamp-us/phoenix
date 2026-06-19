@@ -26,10 +26,13 @@ import * as Effect from "effect/Effect";
 import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
-import type {DeliverFrame, LiveLimits, SubscriberRow} from "./protocol.ts";
+import type {BufferedFrame, DeliverFrame, LiveLimits, SubscriberRow} from "./protocol.ts";
 import {encodeFrame, SSE_HEADERS} from "./protocol.ts";
 
 const GENERATION_KEY = "connection:generation";
+
+/** Topic-role: the monotonic per-topic publish ordinal backing the replay buffer. */
+const BUFFER_SEQ_KEY = "topic:buffer:seq";
 
 const PRUNE_ALARM_DELAY_MS = 60_000;
 
@@ -66,6 +69,7 @@ export interface LiveRpcSurface {
 		readonly topics: ReadonlyArray<string>;
 		readonly ownerId: string | undefined;
 		readonly limits: LiveLimits;
+		readonly lastEventId?: string;
 	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
 	readonly unsubscribe: (input: {
 		readonly subId: string;
@@ -77,6 +81,7 @@ export interface LiveRpcSurface {
 	readonly register: (input: {
 		readonly row: SubscriberRow;
 		readonly limits: LiveLimits;
+		readonly lastEventId?: string;
 	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
 	readonly unregister: (input: {
 		readonly row: SubscriberRow;
@@ -145,6 +150,20 @@ function subscriberPrefix(topicKey: string): string {
 
 function subscriberKey(row: SubscriberRow): string {
 	return `${subscriberPrefix(row.topicKey)}${row.connectionId}:${row.subId}:${row.generation}:${row.revision}`;
+}
+
+function bufferPrefix(topicKey: string): string {
+	return `frame:${topicKey}:`;
+}
+
+/**
+ * The replay-buffer key for one published frame. `seq` is zero-padded so the KV
+ * `list({prefix})` lexical order matches publish order (the store sorts by key
+ * string, not by the numeric `seq` field) — replay must hand frames back in the
+ * order they were published.
+ */
+function bufferKey(topicKey: string, seq: number): string {
+	return `${bufferPrefix(topicKey)}${seq.toString().padStart(20, "0")}`;
 }
 
 /**
@@ -266,7 +285,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 							revision,
 							updatedAt: Date.now(),
 						};
-						yield* topicOf(live, topicKey).register({row, limits: input.limits});
+						// Thread `lastEventId` so the topic replays only frames newer than the
+						// last one this subscription already saw (#714 catch-up).
+						yield* topicOf(live, topicKey).register({
+							row,
+							limits: input.limits,
+							...(input.lastEventId !== undefined ? {lastEventId: input.lastEventId} : {}),
+						});
 					}),
 				{concurrency: "unbounded"},
 			);
@@ -367,6 +392,94 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		}
 	});
 
+	const loadBuffer = (topicKey: string) =>
+		Effect.map(state.storage.list<BufferedFrame>({prefix: bufferPrefix(topicKey)}), (map) => [
+			...map,
+		]);
+
+	/**
+	 * Drop buffer entries past the TTL or beyond the count cap, returning the
+	 * surviving window (newest-last). Called on every publish and register so the ring
+	 * stays bounded by both dimensions with no background sweep. `now` is passed so a
+	 * caller's clock reading is the single source of truth across prune+append.
+	 */
+	const pruneBuffer = (
+		entries: ReadonlyArray<readonly [string, BufferedFrame]>,
+		limits: LiveLimits,
+		now: number,
+	) =>
+		Effect.gen(function* () {
+			const unexpired = entries.filter(([, value]) => now - value.at <= limits.bufferedFrameTtlMs);
+			// `entries` is lexically ordered (zero-padded seq), so the newest are the
+			// tail; drop the oldest overflow past the count cap.
+			const overCap = Math.max(0, unexpired.length - limits.maxBufferedFramesPerTopic);
+			const expired = entries.filter(([, value]) => now - value.at > limits.bufferedFrameTtlMs);
+			const dropKeys = [
+				...expired.map(([key]) => key),
+				...unexpired.slice(0, overCap).map(([key]) => key),
+			];
+			if (dropKeys.length > 0) {
+				yield* state.storage.delete(dropKeys);
+			}
+			return unexpired.slice(overCap);
+		});
+
+	/** Append the just-published frame to the ring buffer (after a prune). */
+	const appendToBuffer = (topicKey: string, frame: DeliverFrame, limits: LiveLimits, now: number) =>
+		Effect.gen(function* () {
+			const entries = yield* loadBuffer(topicKey);
+			yield* pruneBuffer(entries, limits, now);
+			const seq = ((yield* state.storage.get<number>(BUFFER_SEQ_KEY)) ?? 0) + 1;
+			yield* state.storage.put(BUFFER_SEQ_KEY, seq);
+			const buffered: BufferedFrame = {seq, eventId: frame.eventId, at: now, frame};
+			yield* state.storage.put(bufferKey(topicKey, seq), buffered);
+		});
+
+	/**
+	 * Replay the catch-up window to a connection whose `register` lost the race with
+	 * a just-fired publish (#714).
+	 *
+	 * Dedup guarantee — at-most-once, exclusive-by-construction: fan-out (`publish`)
+	 * delivers ONLY to connections already in the registry; replay delivers ONLY to
+	 * the connection that is registering NOW — which fan-out could not have reached,
+	 * because its row was not yet persisted when that publish listed the registry. So
+	 * the two delivery paths are disjoint by the order of the race itself; a frame is
+	 * never sent to one connection by both. `lastEventId` tightens the window further
+	 * (skip frames at/under the id the subscriber already saw on a resubscribe). The
+	 * fate native client is *also* idempotent under node id — `insertConnectionEdge`
+	 * strips any prior occurrence before each insert — so even an unforeseen overlap
+	 * collapses to a single edge, never a duplicate (verified in fate's `client.ts`).
+	 */
+	const replayBuffer = (row: SubscriberRow, limits: LiveLimits, lastEventId: string | undefined) =>
+		Effect.gen(function* () {
+			const now = Date.now();
+			const entries = yield* loadBuffer(row.topicKey);
+			const window = yield* pruneBuffer(entries, limits, now);
+			// Skip everything up to and including the subscriber's lastEventId; a fresh
+			// subscriber (no lastEventId) gets the whole TTL-bounded window.
+			let seen = lastEventId === undefined;
+			const connection = connectionOf(live, row.connectionId);
+			for (const [, buffered] of window) {
+				if (!seen) {
+					if (buffered.eventId === lastEventId) {
+						seen = true;
+					}
+					continue;
+				}
+				yield* connection
+					.deliver({
+						frame: {...buffered.frame, id: row.subId},
+						row,
+						limits,
+					})
+					.pipe(
+						Effect.timeout(limits.deliveryAttemptTimeoutMs),
+						// @effect-diagnostics-next-line effect/effectSucceedWithVoid:off
+						Effect.catchCause(() => Effect.succeed<DeliverResult | undefined>(undefined)),
+					);
+			}
+		});
+
 	const register: LiveRpcSurface["register"] = (input) =>
 		Effect.gen(function* () {
 			if (role.kind !== "topic") {
@@ -397,6 +510,10 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			yield* state.storage.put(subscriberKey(row), row);
 			yield* ensureAlarm;
+			// Catch up the just-registered connection on frames a publish that beat this
+			// register would have missed it on (#714). Replay reaches ONLY this
+			// connection, which fan-out could not have — see {@link replayBuffer}.
+			yield* replayBuffer(row, input.limits, input.lastEventId);
 			return {ok: true};
 		});
 
@@ -458,6 +575,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 					}),
 				{concurrency: "unbounded"},
 			);
+			// Retain the frame for a subscriber whose register lands after this publish
+			// (#714). After fan-out, so the ring reflects what already went out live.
+			yield* appendToBuffer(input.topicKey, input.frame, input.limits, Date.now());
 			return {delivered: perConnection.reduce((sum, n) => sum + n, 0)};
 		});
 
