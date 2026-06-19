@@ -171,6 +171,16 @@ jobs:
       # Same script runs locally: `bash .claude/skills/validate-gate-path-drift.sh`.
       - run: bash .claude/skills/validate-gate-path-drift.sh
 
+      # Flows-gate precondition guard (issue #751, epic #738): the authed write-flow
+      # `flows` e2e lane stays NON-BLOCKING until #713 (write-flow state-isolation)
+      # lands — flipping it blocking sooner trades a silent-no-op for a flaky block.
+      # This asserts `flows non-blocking ⟺ FLOWS_GATE_PRECONDITION: pending` in
+      # ci.yml, so a premature flip fails the build instead of shipping a flaky gate;
+      # the #713 dependency is a fired gate, not a TODO comment. Deterministic/static
+      # (no Playwright, no network) so it can't itself flake. Runs locally too:
+      # `bash .claude/skills/validate-flows-gate-precondition.sh`.
+      - run: bash .claude/skills/validate-flows-gate-precondition.sh
+
   integration:
     name: integration tests
     needs: changes
@@ -234,6 +244,10 @@ jobs:
   #     bug (#77/#438), but fail late under serial load on the shared preview (#713) —
   #     so they RUN for signal but don't wedge merge until #713's state-isolation
   #     lands and flips them blocking. The race fixes #707/#708 came out of this lane.
+  #     The flip is GATED on #713 by a machine-checked precondition marker on the flows
+  #     step (FLOWS_GATE_PRECONDITION) enforced by the `skills` job's
+  #     validate-flows-gate-precondition.sh guard, so it can't be flipped to a flaky
+  #     block early and can't silently stall after #713 closes (issue #751, epic #738).
   #
   # Target is the DEPLOYED preview, never a CI-booted workerd (the deploy already
   # runs in deploy.yml; #452's `spawn EBADF` is agent-sandbox-only, not Actions).
@@ -344,7 +358,20 @@ jobs:
       # `continue-on-error` keeps its (currently load-flaky, #713) result from failing
       # the job, so it never wedges merge. Separate `--output` dir so its artifacts
       # don't clobber the blocking tier's; `list` reporter surfaces pass/fail in the
-      # job log. Flip this into the blocking step above once #713 makes it green.
+      # job log.
+      #
+      # FLIP-TO-BLOCKING is gated on #713 (write-flow state-isolation): until that
+      # preview load wall is fixed the lane fails late under serial load, so flipping
+      # it blocking now would trade a silent-no-op for a FLAKY hard-block. The flip is
+      # therefore encoded as a machine-checked precondition rather than a TODO comment:
+      # the marker below is the single source the `validate-flows-gate-precondition.sh`
+      # CI guard reads to enforce `flows non-blocking ⟺ #713 open`. To flip blocking
+      # (only once #713 has closed): set FLOWS_GATE_PRECONDITION to `met`, fold the
+      # `--project flows` run into the BLOCKING step above (drop this step's
+      # `continue-on-error`), and the guard re-checks the new invariant. Do NOT flip
+      # while the marker reads `pending` — the guard will fail the build (issue #751).
+      #
+      # FLOWS_GATE_PRECONDITION: pending  (requires: #713 — write-flow state-isolation)
       - name: Run e2e specs (non-blocking — flows, #713)
         continue-on-error: true
         run: >-
