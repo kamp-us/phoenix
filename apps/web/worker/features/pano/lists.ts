@@ -4,8 +4,10 @@
  * layer only reshapes. `sort` is a plain validated string (no fate enum, ADR
  * 0018). See `.patterns/fate-connections.md`.
  *
- * - `posts` — the public feed; `myVote`/`isSaved` are left unstamped on list
- *   rows (they surface on the post-detail `post` query).
+ * - `posts` — the public feed. For a signed-in viewer the keyset page is
+ *   re-hydrated through `Pano.getPostsByIds`, so `myVote`/`isSaved` ride the same
+ *   batch as `savedPosts` and feed rows reflect the viewer's real vote/save state;
+ *   signed-out skips the extra read and resolves to neutral state.
  * - `savedPosts` — the viewer's bookmarks, ordered by save time, `CurrentUser`-
  *   scoped; signed-out resolves to an empty connection (the read-path "viewer
  *   scalar degrades, never throws" convention). Hydrated through
@@ -42,6 +44,8 @@ export const lists = {
 	posts: Fate.list(
 		{args: PostsArgs, type: PostView},
 		Effect.fn("posts")(function* ({args}) {
+			const {user} = yield* CurrentUser;
+			const viewerId = user?.id ?? null;
 			const pano = yield* Pano;
 			const page = yield* pano.listPostsConnection({
 				sort: toPostSort(args.sort),
@@ -49,8 +53,29 @@ export const lists = {
 				...(args.after !== undefined ? {after: args.after} : {}),
 				...(args.host !== undefined && args.host.length > 0 ? {host: args.host} : {}),
 			});
-			return toConnection<(typeof page.rows)[number], Post>(
-				page,
+
+			// Signed-out: serve the keyset page as-is (neutral `myVote`/`isSaved`).
+			if (!viewerId) {
+				return toConnection<PostSummaryRow, Post>(
+					page,
+					(row) => row.id,
+					(row) => toPost(row),
+				);
+			}
+
+			// Signed-in: re-hydrate the page ids through `getPostsByIds` to batch-stamp
+			// the viewer's `myVote`/`isSaved`, then re-order to the keyset (the `inArray`
+			// fetch loses the sort), mirroring `savedPosts`.
+			const ids = page.rows.map((row) => row.id);
+			const hydrated = yield* pano.getPostsByIds(ids, {viewerId});
+			const byId = new Map(hydrated.map((row) => [row.id, row]));
+			const rows = page.rows.flatMap((row) => {
+				const stamped = byId.get(row.id);
+				return stamped ? [stamped] : [];
+			});
+
+			return toConnection<PostSummaryRow, Post>(
+				{rows, hasNextPage: page.hasNextPage, endCursor: page.endCursor},
 				(row) => row.id,
 				(row) => toPost(row),
 			);
