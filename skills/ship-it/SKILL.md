@@ -89,11 +89,14 @@ pointless.
    failure — a newer FAIL vetoes an older PASS (Step 2 resolves latest-wins per gate
    namespace). No PASS marker and no approving review → you stop and report the PR as
    unverified. A red or pending check is not a "fail you can override" — it is a "not yet."
-2. **Merge only on a commit-bound run-evidence bundle whose every check passed.** Beyond the
-   marker, the run-evidence bundle (Step 3.5) is the SHA-bound proof behind the green: a
-   missing bundle, an unreadable schema, a `commit` that isn't the head SHA (stale), or any
-   `checks[]` entry that isn't `pass` → you refuse. This is **additive** to the PASS-marker
-   and CI-green reads, not a replacement (ADR 0054 §3 / 0056).
+2. **Merge only on a commit-bound run-evidence bundle whose every check passed —** *when the
+   repo produces one.* Beyond the marker, the run-evidence bundle (Step 3.5) is the SHA-bound
+   proof behind the green: a missing bundle, an unreadable schema, a `commit` that isn't the
+   head SHA (stale), or any `checks[]` entry that isn't `pass` → you refuse. This is
+   **additive** to the PASS-marker and CI-green reads, not a replacement (ADR 0054 §3 / 0056).
+   In a foreign repo that ships no `run-evidence` producer, guard 2 is N/A and the gate falls
+   back to checks-green (Step 3) — a producer-presence degradation, not a per-PR override
+   (ADR 0086).
 3. **You are the only skill that merges.** If you find yourself wanting to merge a PR a gate
    hasn't passed, the answer is to route it back through that gate (`review-code` /
    `review-doc`), not to merge it here.
@@ -559,6 +562,32 @@ emits per PR and uploads as a GitHub Actions artifact named `run-evidence` (ADR
 it does **not** replace the PASS-marker read (Step 2) or the CI-green read (Step 3); all
 three must hold. The bundle is the evidence *behind* the marker, not a substitute for it.
 
+**Portability preflight (ADR [0086](https://github.com/kamp-us/phoenix/blob/main/.decisions/0086-ship-it-foreign-repo-degradation.md)).** The bundle is produced by phoenix CI
+(`.github/workflows/run-evidence.yml` + `packages/crabbox-manifest`), which the plugin does
+**not** ship. A foreign repo that installed the pipeline therefore produces *no* bundle ever,
+and a hard guard would make ship-it decline every merge there. So guard 2 is **conditional on
+the repo producing run-evidence at all**: if this repo defines no `run-evidence` workflow, the
+SHA-bound bundle is N/A and the gate falls back to the checks-green read (Step 3) — the bundle
+degrades from a hard gate to a phoenix optimization, mirroring review-code's "a missing bundle
+is never an error." This is a producer-presence test, **not** a per-PR escape: a repo that
+*has* the producer but whose bundle is missing/stale/failing for this commit still refuses
+below (that's a real gap, not portability).
+
+```bash
+# Does THIS repo produce run-evidence at all? (a workflow named "run-evidence" defined on the
+# default branch). Absent → foreign repo → guard 2 N/A, gated on Step 3. Present → strict path.
+HAS_PRODUCER=$(gh api "repos/$REPO/actions/workflows" --paginate \
+  --jq '[.workflows[] | select(.name=="run-evidence")] | length' 2>/dev/null || echo 0)
+if [ "${HAS_PRODUCER:-0}" -eq 0 ]; then
+  echo "guard 2 N/A (no run-evidence producer in this repo) — gated on checks (Step 3)"
+  # Degraded: guard 2 clears here. Skip the bundle fetch + the four assertions below and
+  # proceed to Step 4 on the strength of Step 2 (PASS) + Step 3 (gating checks green).
+fi
+```
+
+When a producer **is** present (the phoenix home repo, or any adopter that ships the
+run-evidence workflow), run the strict path unchanged:
+
 Resolve the PR's head SHA, find the `run-evidence` workflow run for **that exact SHA**
 (never just the latest run on the branch — the `head_sha` filter is what binds the evidence
 to the commit being merged, ADR 0056 §2), download the `run-evidence` artifact, and read
@@ -626,9 +655,14 @@ run, a producer/consumer schema skew, a stale push, or a real failing check:
 - `unverified (stale run-evidence bundle: commit <c> != head <h>)` — bundle isn't for this commit.
 - `run-evidence checks failed (<names>)` — at least one `checks[]` entry is `fail` (or none present).
 
+These four apply only when the repo **has** a run-evidence producer. When it does not, guard 2
+is reported `guard 2 N/A (no run-evidence producer in this repo) — gated on checks (Step 3)`
+and clears by degradation (ADR 0086) — a distinct, non-refusing outcome, not one of the four.
+
 Only when the bundle exists, is schema-`1`, is commit-bound to the head SHA, **and** every
-`checks[]` entry is `pass` does guard 2 clear — proceed to Step 4. Like Step 2's FAIL and
-Step 3's red, a bundle refusal is a **successful run that declines to merge**, not an error.
+`checks[]` entry is `pass` (or the repo ships no producer and guard 2 degraded) does guard 2
+clear — proceed to Step 4. Like Step 2's FAIL and Step 3's red, a bundle refusal is a
+**successful run that declines to merge**, not an error.
 
 > **Verified against fixtures (AC #5).** The assertion logic is exercised against manifests
 > the producer package's fixtures fold into — `packages/crabbox-manifest/src/fixtures.ts`
