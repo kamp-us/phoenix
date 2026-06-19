@@ -89,6 +89,12 @@ module.exports = defineConfig({
 		{
 			name: "flows",
 			testIgnore: [...UNAUTH_SPECS, AUTHED_SPECS],
+			// The write-flow specs do a full per-test sign-up + bootstrap + create +
+			// assert chain against the remote preview; the global 15s per-test cap is
+			// for the lean read specs and is too tight for these end-to-end flows late
+			// in the serial run (#708). Give this lane a wider per-test budget — the
+			// individual in-spec waits stay bounded (≤15s), this only lifts the total.
+			timeout: 45_000,
 			use: {...devices["Desktop Chrome"]},
 		},
 	],
