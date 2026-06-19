@@ -101,12 +101,13 @@ jobs:
           echo "url=$(grep -oE 'https://[A-Za-z0-9.-]+\.workers\.dev' deploy.log | tail -1)" >> "$GITHUB_OUTPUT"
         env:
           CI: "true"
-          # `prod` closes the dev gates in `worker/config.ts` (magic-link token
-          # logging); ephemeral `pr-<n>` previews stay `development` for better-auth's
-          # dev-origin leniency and easier auth testing. (The old admin seed/importer
-          # routes are gone — see CLAUDE.md "Sözlük seed" — so dev mode no longer
-          # exposes those.)
-          ENVIRONMENT: ${{ env.STAGE == 'prod' && 'production' || 'development' }}
+          # Three deploy classes (ADR 0088): `prod` → `production`; every ephemeral
+          # `pr-<n>` preview → `preview`, which trusts its OWN `*.kampusinfra.workers.dev`
+          # served origin for better-auth (fixes #704 — a preview labelled `development`
+          # hardcoded localhost origins and rejected real browser sign-up as "Invalid
+          # origin"). `development` is local `alchemy dev` only (set in `.env`), never a
+          # deployed stage.
+          ENVIRONMENT: ${{ env.STAGE == 'prod' && 'production' || 'preview' }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}

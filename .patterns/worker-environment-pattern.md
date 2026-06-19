@@ -14,9 +14,11 @@ aggregates them into the single yieldable read:
 import * as Config from "effect/Config";
 
 // One constant per var. Non-redacted → plain_text binding, fail-closed default.
-export const environment = Config.literals(["development", "production"], "ENVIRONMENT").pipe(
-	Config.withDefault("production"),
-);
+// Three deploy classes (ADR 0088): local `development`, deployed `preview`, `production`.
+export const environment = Config.literals(
+	["development", "preview", "production"],
+	"ENVIRONMENT",
+).pipe(Config.withDefault("production"));
 
 // The single read surface. Add a var: a const above + a key here.
 export const AppConfig = Config.all({environment});
@@ -33,8 +35,9 @@ env: {ENVIRONMENT: environment},
 Per-key — not `env: AppConfig` — because alchemy's binding model maps each `env`
 key to one native binding; a `Config.all` aggregate has no single binding name.
 At deploy time alchemy resolves the `Config` from the deploy-time `process.env`
-(CI sets `ENVIRONMENT=production`, the `dev:worker` script sets `development`,
-default `production`) and binds it.
+(`deploy.yml` sets `production` for the prod stage and `preview` for every
+per-PR stage, the `dev:worker` script sets `development`, default `production`)
+and binds it.
 
 **A non-redacted `Config` binds `plain_text`, not `secret_text`.** Source fact:
 `alchemy/lib/Cloudflare/Workers/WorkerAsyncBindings.js` `toBinding` resolves a
@@ -54,7 +57,7 @@ resolves off the same values the `env:` block bound.
 
 ```ts
 const {environment} = yield* AppConfig.pipe(Effect.orDie);
-const isDev = environment === "development";
+const isLocalDev = environment === "development";
 ```
 
 `Effect.orDie` because the only residual `ConfigError` is a value outside the
@@ -64,9 +67,11 @@ covers the missing-var case (lands in `production`, closing every dev gate).
 
 `ENVIRONMENT` is the only var phoenix reads this way today. `BetterAuthLive`
 (`features/pasaport/better-auth-live.ts`) reads it to derive better-auth's
-`baseURL` / `trustedOrigins` (dev explicit, prod infer-from-Host) and gate the
-magic-link `console.log`; the health route (`http/health.ts`) reads it to report
-which deploy answered.
+`baseURL` / `trustedOrigins` per deploy class (ADR 0088: `development` explicit
+localhost, `preview` dynamic `allowedHosts` for its workers.dev origin,
+`production` infer-from-Host) and gate the magic-link `console.log` to local
+`development` only; the health route (`http/health.ts`) reads it to report which
+deploy answered.
 
 ## The route requirement
 
