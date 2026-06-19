@@ -5,7 +5,7 @@ import {useSession} from "../../auth/client";
 import {codeOf} from "../../fate/wire";
 import {authRedirectPath} from "../../lib/returnTo";
 import {Tag, type TagKind} from "../ui/atoms";
-import {PostVoteView} from "./PanoPostHeader";
+import {PostSaveView, PostVoteView} from "./PanoPostHeader";
 import "./PanoPost.css";
 
 /** Presentational vote control; the parent owns the mutation + auth gate. */
@@ -100,6 +100,68 @@ export function PostVoteWidget({
 	return <VoteControl count={score} pressed={voted} onToggle={onToggle} testIdSuffix={postId} />;
 }
 
+/**
+ * Bookmark toggle for a single post — the save twin of `PostVoteWidget`.
+ * Dispatches `fate.mutations.post.{save,unsave}` with an optimistic `isSaved`
+ * flip written back through `PostSaveView` keyed by `id`, so every card and the
+ * detail header referencing this post re-render instantly (and the server's
+ * `live.update("Post", id, {changed:["isSaved"]})` reconciles every other open
+ * view). Like the vote widget it has no inline error slot, so it surfaces only
+ * `UNAUTHORIZED` (→ auth redirect) and stays silent otherwise — see
+ * `.patterns/fate-mutations-client.md`.
+ */
+export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: boolean | null}) {
+	const fate = useFateClient();
+	const session = useSession();
+	const navigate = useNavigate();
+	const [inFlight, setInFlight] = useState(false);
+
+	const saved = isSaved === true;
+
+	const redirectToAuth = () =>
+		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
+
+	const onToggle = async () => {
+		if (!session.data?.user) {
+			redirectToAuth();
+			return;
+		}
+		if (inFlight) return;
+		setInFlight(true);
+		try {
+			if (saved) {
+				await fate.mutations.post.unsave({
+					input: {id: postId},
+					optimistic: {isSaved: false},
+					view: PostSaveView,
+				});
+			} else {
+				await fate.mutations.post.save({
+					input: {id: postId},
+					optimistic: {isSaved: true},
+					view: PostSaveView,
+				});
+			}
+		} catch (error) {
+			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+		} finally {
+			setInFlight(false);
+		}
+	};
+
+	return (
+		<button
+			type="button"
+			className="kp-pano-post__save"
+			aria-pressed={saved}
+			data-testid={`post-save-${postId}`}
+			onClick={onToggle}
+		>
+			{saved ? "kaydedildi" : "kaydet"}
+		</button>
+	);
+}
+
 export type PanoPostData = {
 	id: string;
 	rank?: number;
@@ -113,17 +175,10 @@ export type PanoPostData = {
 	commentCount: number;
 	score: number;
 	myVote?: -1 | 0 | 1;
+	isSaved?: boolean | null;
 };
 
-export function PanoPost({
-	post,
-	onSave,
-	onHide,
-}: {
-	post: PanoPostData;
-	onSave?: (id: string) => void;
-	onHide?: (id: string) => void;
-}) {
+export function PanoPost({post, onHide}: {post: PanoPostData; onHide?: (id: string) => void}) {
 	const siteLabel = post.host ?? (post.url ? null : "yazı");
 
 	return (
@@ -160,14 +215,8 @@ export function PanoPost({
 					<span>{post.agoLabel}</span>
 					<span className="dot">·</span>
 					<a href={`${post.href}#comments`}>{post.commentCount} yorum</a>
-					{onSave ? (
-						<>
-							<span className="dot">·</span>
-							<button type="button" onClick={() => onSave(post.id)}>
-								kaydet
-							</button>
-						</>
-					) : null}
+					<span className="dot">·</span>
+					<PostSaveButton postId={post.id} isSaved={post.isSaved ?? null} />
 					{onHide ? (
 						<>
 							<span className="dot">·</span>
@@ -184,17 +233,15 @@ export function PanoPost({
 
 export function PanoPostList({
 	posts,
-	onSave,
 	onHide,
 }: {
 	posts: PanoPostData[];
-	onSave?: (id: string) => void;
 	onHide?: (id: string) => void;
 }) {
 	return (
 		<div className="kp-pano-list">
 			{posts.map((p) => (
-				<PanoPost key={p.id} post={p} onSave={onSave} onHide={onHide} />
+				<PanoPost key={p.id} post={p} onHide={onHide} />
 			))}
 		</div>
 	);

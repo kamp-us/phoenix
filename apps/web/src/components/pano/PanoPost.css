@@ -147,3 +147,15 @@
 .kp-pano-post__meta button:hover {
 	color: var(--accent);
 }
+
+/* Bookmark toggle — `aria-pressed` is the pressed state; the accent carries it
+   visually (the meta row has no room for a fill), with a visible focus ring. */
+.kp-pano-post__save[aria-pressed="true"] {
+	color: var(--accent);
+	font-weight: 600;
+}
+.kp-pano-post__save:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 1px;
+	border-radius: var(--r-sm);
+}
