@@ -53,6 +53,13 @@ test.describe("Pano voteOnComment", () => {
 			timeout: 10_000,
 		});
 
+		// Wait for the comments boundary to resolve (the "0 yorum" thread heading)
+		// before submitting — otherwise the first fetchKey refetch races the initial
+		// fetch and the loading fallback can hide the new comment. Mirrors 17/19/20.
+		await expect(page.locator(".kp-pano-postpage__thread-heading")).toHaveText("0 yorum", {
+			timeout: 10_000,
+		});
+
 		// Add a top-level comment.
 		const commentBody = `vote target yorum ${Date.now().toString(36)}`;
 		await page.locator('[data-testid="pano-comment-input"]').fill(commentBody);
@@ -63,14 +70,14 @@ test.describe("Pano voteOnComment", () => {
 		// the mutation lands, so both the meta `<span>N yorum</span>` and the
 		// thread `<h2>N yorum</h2>` end up rendering "1 yorum" simultaneously.
 		await expect(page.locator(".kp-pano-postpage__thread-heading")).toHaveText("1 yorum", {
-			timeout: 10_000,
+			timeout: 15_000,
 		});
 
 		const voteBtn = page.locator('[data-testid^="comment-vote-"]').first();
 		const score = page.locator('[data-testid^="comment-score-"]').first();
 
 		await expect(voteBtn).toBeVisible({timeout: 5_000});
-		await expect(score).toHaveText("0");
+		await expect(score).toHaveText("0", {timeout: 5_000});
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
 		// Cast vote — optimistic flip lands first.

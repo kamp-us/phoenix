@@ -15,11 +15,20 @@
 //   - `setup`  — one real Better Auth sign-up against the preview, captured into
 //                the gitignored storageState file (`.auth/user.json`), per run.
 //   - `unauth` — the public read specs; NO storageState (the #567 gate's lane).
-//   - `authed` — the login-gated specs; `dependencies: ['setup']` + the captured
-//                storageState, so each starts already logged in (no per-test
-//                sign-up). `retries: 1` in CI with trace-on-first-retry is the
-//                flake policy the larger suite needs (#524); `workers: 1` keeps
-//                the single shared session from racing across specs.
+//   - `authed` — the shared-session specs; `dependencies: ['setup']` + the
+//                captured storageState, so each starts logged in as the SAME
+//                "any authed user" (no per-test sign-up). For specs that tolerate
+//                a shared, possibly-mutated session (ADR 0085).
+//   - `flows`  — the catch-all lane: every spec NOT claimed by `unauth`/`authed`/
+//                `setup`. These drive their OWN `signUp` (a pristine user per test)
+//                or assert signed-out states, so they take NO storageState and do
+//                NOT depend on `setup`. Defined by exclusion (`testIgnore`) rather
+//                than an explicit list so a newly-added spec can never silently
+//                orphan out of CI — the bug #525 closed (20 write specs matched no
+//                project and so ran nowhere). `retries: 1` in CI with
+//                trace-on-first-retry is the flake policy the full suite needs;
+//                `workers: 1` + `fullyParallel: false` keep the shared `authed`
+//                session from racing across specs.
 
 const path = require("node:path");
 const {defineConfig, devices} = require("@playwright/test");
@@ -38,6 +47,11 @@ const UNAUTH_SPECS = [
 	"**/07-sozluk-term.spec.ts",
 	"**/24-search.spec.ts",
 ];
+
+// The one spec that reuses the shared storageState session (ADR 0085). Kept as a
+// named constant so the `authed` project claims it and the `flows` catch-all
+// ignores it — the two lanes can't drift into double-running or dropping it.
+const AUTHED_SPECS = /25-authed-smoke\.spec\.ts$/;
 
 module.exports = defineConfig({
 	testDir: "./tests/e2e",
@@ -68,9 +82,20 @@ module.exports = defineConfig({
 		},
 		{
 			name: "authed",
-			testMatch: /25-authed-smoke\.spec\.ts$/,
+			testMatch: AUTHED_SPECS,
 			dependencies: ["setup"],
 			use: {...devices["Desktop Chrome"], storageState: STORAGE_STATE},
+		},
+		{
+			name: "flows",
+			testIgnore: [...UNAUTH_SPECS, AUTHED_SPECS],
+			// The write-flow specs do a full per-test sign-up + bootstrap + create +
+			// assert chain against the remote preview; the global 15s per-test cap is
+			// for the lean read specs and is too tight for these end-to-end flows late
+			// in the serial run (#708). Give this lane a wider per-test budget — the
+			// individual in-spec waits stay bounded (≤15s), this only lifts the total.
+			timeout: 45_000,
+			use: {...devices["Desktop Chrome"]},
 		},
 	],
 });
