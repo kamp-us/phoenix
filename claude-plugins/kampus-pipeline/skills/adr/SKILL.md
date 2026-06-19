@@ -9,8 +9,8 @@ Capture one decision per file in `.decisions/`. Index links them; CLAUDE.md link
 
 ## Steps
 
-1. **Claim the next number with an in-flight reservation lock** (ADR [0074](../../.decisions/0074-adr-number-claim-lock.md)) — not next-free-on-disk. Numbers are 4-digit zero-padded, monotonic. Compute the next number from the **union of two sets** and take `max(union) + 1`:
-   - **Merged set** — the `NNNN` on the base ref, read from the `.decisions/NNNN-*.md` *filenames* (the authority; `index.md` is generated output per ADR [0066](../../.decisions/0066-generate-decisions-index.md) and merely mirrors them).
+1. **Claim the next number with an in-flight reservation lock** (ADR [0074](https://github.com/kamp-us/phoenix/blob/main/.decisions/0074-adr-number-claim-lock.md)) — not next-free-on-disk. Numbers are 4-digit zero-padded, monotonic. Compute the next number from the **union of two sets** and take `max(union) + 1`:
+   - **Merged set** — the `NNNN` on the base ref, read from the `.decisions/NNNN-*.md` *filenames* (the authority; `index.md` is generated output per ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md) and merely mirrors them).
    - **In-flight set** — the `NNNN` **claimed by open ADR PRs**. An open PR that adds a `.decisions/NNNN-*.md` file *is* the reservation for `NNNN` (no separate artifact, exactly as ADR 0059's `status:planning` label *is* the epic lock — opening the PR reserves, merging/closing releases). Enumerate via **`gh api` REST, never GraphQL** (the org's Projects-classic integration breaks GraphQL):
      ```bash
      # NNNN claimed by any open PR that ADDS a .decisions/00NN-*.md file (REST, per-PR files endpoint)
@@ -25,7 +25,7 @@ Capture one decision per file in `.decisions/`. Index links them; CLAUDE.md link
    This is **detect-and-serialize, not a CAS** — it *narrows* the collision window, it does not eliminate it. Two authors who enumerate in the same window before either PR is visible both pick the same number; that residual is **backstopped by the ADR 0066 / #384 CI duplicate-`id` check** (see [Index — generated output](#index--generated-output)), which reddens the second-to-merge PR for a manual renumber. The lock turns the *common* "branch after another's ADR PR is open" case from collide-and-renumber into don't-collide; the CI check remains the safety net for the rare residual.
 2. Pick a kebab-case slug from the title (≤ 5 words).
 3. Write `.decisions/NNNN-slug.md` using the template below — the front-matter `title`/`status`/`date` are the **source of truth** for the index row, so write the exact display text you want in the table there (inline markdown and all).
-4. **Regenerate** `.decisions/index.md` — do **not** hand-append a row (ADR [0066](../../.decisions/0066-generate-decisions-index.md)): `index.md` is generated output now, and a hand-appended row at the table tail is exactly the concurrent-merge collision the generator removes. Resolve the generator **in-repo first, published fallback** — prefer the on-disk workspace package when it's present, else the published CLI (the same portability shape `review-plan` uses for its gate, ADR [0064](../../.decisions/0064-epic-ledger-npm-publish-automated-release.md)), so the step works in a foreign install too, not just phoenix:
+4. **Regenerate** `.decisions/index.md` — do **not** hand-append a row (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md)): `index.md` is generated output now, and a hand-appended row at the table tail is exactly the concurrent-merge collision the generator removes. Resolve the generator **in-repo first, published fallback** — prefer the on-disk workspace package when it's present, else the published CLI (the same portability shape `review-plan` uses for its gate, ADR [0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-epic-ledger-npm-publish-automated-release.md)), so the step works in a foreign install too, not just phoenix:
    ```bash
    # resolve the index generator once — in-repo-first, published-fallback
    if [ -f packages/decisions-index/src/bin.ts ]; then
@@ -62,7 +62,7 @@ tags: [<area>, <area>]
 
 ## Index — generated output
 
-`.decisions/index.md` is a heading + a markdown table, **regenerated** from the ADR files by `@kampus/decisions-index` (ADR [0066](../../.decisions/0066-generate-decisions-index.md)) — never hand-edited. Each row is derived from one file's front-matter (`id` → linked `title` → `status` → `date`), ordered ascending by `id`:
+`.decisions/index.md` is a heading + a markdown table, **regenerated** from the ADR files by `@kampus/decisions-index` (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md)) — never hand-edited. Each row is derived from one file's front-matter (`id` → linked `title` → `status` → `date`), ordered ascending by `id`:
 
 ```markdown
 # Decisions
