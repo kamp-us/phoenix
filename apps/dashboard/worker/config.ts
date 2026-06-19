@@ -11,12 +11,15 @@
 import * as Config from "effect/Config";
 
 /**
- * The deploy environment. Non-redacted (→ `plain_text` binding), fail-closed:
- * defaults to "production" when unset, so a missing var closes every dev gate.
+ * The deploy environment — three classes (ADR 0088). Non-redacted (→ `plain_text`
+ * binding), fail-closed: defaults to "production" when unset, so a missing var
+ * closes every dev gate. The dashboard only reports this (in `/health`); it does
+ * not branch on it, so `preview` needs no handling here beyond the literal.
  */
-export const environment = Config.literals(["development", "production"], "ENVIRONMENT").pipe(
-	Config.withDefault("production"),
-);
+export const environment = Config.literals(
+	["development", "preview", "production"],
+	"ENVIRONMENT",
+).pipe(Config.withDefault("production"));
 
 /**
  * The GitHub token for authenticated, higher-rate-limit reads of `kamp-us/phoenix`

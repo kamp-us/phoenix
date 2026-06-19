@@ -52,21 +52,36 @@ export const BetterAuthLive = Layer.effect(
 
 		// `Config.withDefault("production")` is fail-closed: a missing `ENVIRONMENT`
 		// lands in prod mode and closes every dev gate below. `orDie`: a value
-		// outside the two literals is a malformed env, unrecoverable.
+		// outside the three literals is a malformed env, unrecoverable.
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
-		const isDev = environment === "development";
+		const isLocalDev = environment === "development";
 
-		// Dev: explicit browser origin so cookie storage works behind the Vite proxy
-		// (the worker sees `Host: 127.0.0.1:<port>`, not the browser origin). `http`
-		// keeps the cookie host-only (no `Secure`). Prod: OMIT both so better-auth
-		// infers the origin from the request Host — the latent-bug fix, CI never set
-		// `BETTER_AUTH_URL` so the old path shipped localhost in prod.
-		const authUrlConfig = isDev
-			? {
-					baseURL: "http://localhost:3000",
-					trustedOrigins: ["http://localhost:3000", "http://localhost:5173"],
-				}
-			: {};
+		// One tight auth-origin config per deploy class (ADR 0088). The bug this
+		// settles (#704): a deployed PR preview used to run as `development` and so
+		// hardcoded localhost origins, which rejected a real browser sign-up there with
+		// "Invalid origin" (the `signUpViaApi` setup path slipped past only because it
+		// sends no browser Origin header). Splitting `preview` out gives each class the
+		// origin it actually serves from:
+		//   - development → local `alchemy dev` behind the Vite proxy: the worker sees
+		//     `Host: 127.0.0.1:<port>`, NOT the browser origin, so the browser origin
+		//     must be named explicitly (`localhost:3000` + Vite's `:5173`).
+		//   - preview → a deployed ephemeral stage on `*.kampusinfra.workers.dev`: a
+		//     dynamic `baseURL.allowedHosts` (better-auth's documented preview-deploy
+		//     mechanism) resolves per request to the stage's own served origin and trusts
+		//     it. Scoped to OUR account's workers.dev subdomain, so it matches only our
+		//     own previews. No localhost — a preview is never hit from localhost.
+		//   - production → OMIT both: better-auth infers + self-trusts its own request
+		//     origin. Prod never trusts a preview/localhost origin (no CSRF widening —
+		//     ADR 0085).
+		const authUrlConfig =
+			environment === "development"
+				? {
+						baseURL: "http://localhost:3000",
+						trustedOrigins: ["http://localhost:3000", "http://localhost:5173"],
+					}
+				: environment === "preview"
+					? {baseURL: {allowedHosts: ["*.kampusinfra.workers.dev"]}}
+					: {};
 
 		const auth = yield* Effect.gen(function* () {
 			const db = drizzle(raw, {schema});
@@ -94,7 +109,7 @@ export const BetterAuthLive = Layer.effect(
 					bearer(),
 					magicLink({
 						sendMagicLink: async ({email, token, url}) => {
-							if (isDev) {
+							if (isLocalDev) {
 								console.log("[pasaport] magic link", {email, token, url});
 							}
 						},
