@@ -1,0 +1,30 @@
+{
+	"name": "@kampus/flake-rate",
+	"version": "0.0.0",
+	"private": true,
+	"description": "flake-rate metric + zero-flake budget CLI — track CI rerun-to-green (laundered flake) rate over a trailing window (issue #770)",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"report": "node src/bin.ts report"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
