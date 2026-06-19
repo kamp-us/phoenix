@@ -12,9 +12,14 @@
 import * as Schema from "effect/Schema";
 
 /**
- * The closed defect enum, in canonical emission order. `MISSING_STORIES_SECTION`
- * is the epic-level "no `### User stories` at all" defect — the story-side mirror
- * of `MISSING_DEPS_SECTION`; it leads the story cluster, and when it fires the
+ * The closed defect enum, in canonical emission order. `ZERO_SCOPE` leads: it is
+ * the floor's zero-scope=fail self-assertion (formats §ZS / ADR 0092) — an epic
+ * that declares no linked children gave the validator *nothing to scan*, so the
+ * floor fails closed instead of reading a silent clean PASS, and when it fires
+ * every per-child defect below is moot (there are no children) so it is the
+ * single legible root cause. `MISSING_STORIES_SECTION` is the epic-level "no
+ * `### User stories` at all" defect — the story-side mirror of
+ * `MISSING_DEPS_SECTION`; it leads the story cluster, and when it fires the
  * per-child `MISSING_STORY` is suppressed (the root cause is the epic, not each
  * child). `UNCOVERED_STORY` sits with the epic-scoped coverage defects (next to
  * `ORPHAN_CHILD`) and `MISSING_STORY` with the child-content defects (next to
@@ -23,6 +28,7 @@ import * as Schema from "effect/Schema";
  * story.
  */
 export const DEFECT_TYPES = [
+	"ZERO_SCOPE",
 	"MISSING_DEPS_SECTION",
 	"DEP_CYCLE",
 	"DANGLING_DEP",

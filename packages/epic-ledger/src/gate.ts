@@ -47,13 +47,32 @@ export type GateVerdict =
 const PASS_MARKER = "review-plan: PASS — children flipped to status:triaged";
 const FAIL_MARKER = "review-plan: FAIL — ledger has hard defects";
 
-const passVerdict = (epicNumber: number, flipped: ReadonlyArray<number>): string => {
+/**
+ * The scanned-scope line every verdict (PASS and FAIL) leads with — the formats §ZS
+ * emit-scope facet (ADR 0092): the gate states *what it looked at* (the children it
+ * scanned, by count and number) so a run that quietly matched nothing is visible from its
+ * own output rather than reading green. `validateLedger` already fails closed on zero
+ * children (`ZERO_SCOPE`), so a PASS here always carries a non-empty scope line.
+ */
+const scopeLine = (ledger: EpicLedger): string => {
+	const scanned = ledger.children.map((c) => c.number).sort((a, b) => a - b);
+	const matched = scanned.length === 0 ? "—" : scanned.map((n) => `#${n}`).join(", ");
+	return `_Scanned scope: ${scanned.length} child(ren) — ${matched}._`;
+};
+
+const passVerdict = (
+	epicNumber: number,
+	ledger: EpicLedger,
+	flipped: ReadonlyArray<number>,
+): string => {
 	const list =
 		flipped.length === 0
 			? "_No `status:planned` child remained to flip (already triaged)._"
 			: flipped.map((n) => `- #${n} \`status:planned\` → \`status:triaged\``).join("\n");
 	return [
 		`**${PASS_MARKER}**`,
+		"",
+		scopeLine(ledger),
 		"",
 		`Epic #${epicNumber}'s ledger passed the deterministic structural floor (zero hard defects).`,
 		"The following children are now pickable by `write-code`:",
@@ -62,12 +81,18 @@ const passVerdict = (epicNumber: number, flipped: ReadonlyArray<number>): string
 	].join("\n");
 };
 
-const failVerdict = (epicNumber: number, defects: ReadonlyArray<Defect>): string => {
+const failVerdict = (
+	epicNumber: number,
+	ledger: EpicLedger,
+	defects: ReadonlyArray<Defect>,
+): string => {
 	const rows = defects
 		.map((d) => `- \`${d.type}\` (${d.refs.map((n) => `#${n}`).join(", ")}) — ${d.message}`)
 		.join("\n");
 	return [
 		`**${FAIL_MARKER}**`,
+		"",
+		scopeLine(ledger),
 		"",
 		`Epic #${epicNumber}'s ledger has ${defects.length} hard defect(s); no child was flipped.`,
 		"Each must be resolved before the gate can flip `status:planned → status:triaged`:",
@@ -93,11 +118,11 @@ export const runGate = Effect.fn("ReviewPlan.runGate")(function* (epicNumber: nu
 			concurrency: "unbounded",
 			discard: true,
 		});
-		yield* github.postComment(epicNumber, passVerdict(epicNumber, flipped));
+		yield* github.postComment(epicNumber, passVerdict(epicNumber, ledger, flipped));
 		return {_tag: "pass", epicNumber, flipped} satisfies GateVerdict;
 	}
 
-	yield* github.postComment(epicNumber, failVerdict(epicNumber, defects));
+	yield* github.postComment(epicNumber, failVerdict(epicNumber, ledger, defects));
 	return {
 		_tag: "fail",
 		epicNumber,

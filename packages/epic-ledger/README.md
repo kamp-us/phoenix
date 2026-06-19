@@ -25,11 +25,14 @@ Github.epicLedger    ──►   decodeEpicLedger  ──►  EpicLedger  ──
   `ChildIssue.stories` is that child's `**Stories:**` refs (`undefined` = no line → `MISSING_STORY`;
   `[]` = the explicit pure-infra marker, covers nothing by design).
 - **`validateLedger(EpicLedger): readonly Defect[]`** — the canonical, deterministically-ordered
-  hard-defect set over the closed enum: `MISSING_DEPS_SECTION`, `DEP_CYCLE`, `DANGLING_DEP`,
-  `ORPHAN_CHILD`, `UNCOVERED_STORY`, `ZERO_AC`, `MISSING_STORY`, `MISSING_LABEL`,
-  `NEEDS_TRIAGE_LABEL`. The two story defects enforce the story-coverage invariant (ADR 0046/0047):
-  every declared story is covered by ≥1 child (`UNCOVERED_STORY`), every linked child traces to ≥1
-  story (`MISSING_STORY`).
+  hard-defect set over the closed enum: `ZERO_SCOPE`, `MISSING_DEPS_SECTION`, `DEP_CYCLE`,
+  `DANGLING_DEP`, `ORPHAN_CHILD`, `UNCOVERED_STORY`, `ZERO_AC`, `MISSING_STORY`, `MISSING_LABEL`,
+  `NEEDS_TRIAGE_LABEL`. `ZERO_SCOPE` leads and is the floor's **zero-scope=fail self-assertion**
+  (formats §ZS / ADR 0092): an epic that declares no linked children gave the floor nothing to
+  scan, so it fails closed with a single root-cause finding instead of reading a silent clean PASS
+  — and the `review-plan` gate verdict emits its scanned child count on every run (emit-scope). The
+  two story defects enforce the story-coverage invariant (ADR 0046/0047): every declared story is
+  covered by ≥1 child (`UNCOVERED_STORY`), every linked child traces to ≥1 story (`MISSING_STORY`).
 - **`isPickable(EpicLedger): boolean`** — the flip predicate: no hard defect.
 - **`ledgerSignature(EpicLedger): string`** — a run-stable fingerprint of the defect set (type +
   refs, messages omitted) the re-plan loop compares across iterations to detect a stall.
