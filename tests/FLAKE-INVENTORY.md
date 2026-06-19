@@ -68,6 +68,25 @@ must be able to tell a **bounded** flake (`root-cause-filed`, `fixed`) from an
   is exercised, making the assertion deterministic. Kept as a record so a
   regression is recognized, not rediscovered.
 
+### report.submit D1 read-after-write staleness
+
+- **Signature:** `report.test.ts > report.submit persists created=true` —
+  assertion got `false` (expected the created record to persist)
+- **Suite / file:** integration — `apps/web/tests/integration/report.test.ts`
+  (`report.submit persists created=true`)
+- **Reddened CI check:** `integration tests` → `ci-required` (workflow
+  [`ci.yml`](../.github/workflows/ci.yml))
+- **First observed:** on the `main` push of commit `cf80e7e` (the
+  [#779](https://github.com/kamp-us/phoenix/pull/779) merge). A D1
+  **read-after-write staleness** flake — a write not yet visible to an
+  immediately-following read — distinct from the #613 SSE/DO cold-start 500
+  above (fixed by #769).
+- **Status:** `root-cause-filed` →
+  [#713](https://github.com/kamp-us/phoenix/issues/713) (the D1
+  read-after-write determinism family; #708 is the sibling signature). The
+  determinism fix belongs to #713's lane — this entry inventories it under epic
+  [#765](https://github.com/kamp-us/phoenix/issues/765) but does not own the fix.
+
 ## Scope notes
 
 - **This list is not the fix.** Making any flake deterministic is the job of the
