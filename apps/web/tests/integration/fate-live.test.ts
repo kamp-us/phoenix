@@ -36,6 +36,25 @@ beforeAll(async () => {
 	user = await h.signUp(`live-${Date.now()}@test.local`, "hunter2hunter2", "canlı");
 });
 
+// `/api/health` passing (the `_integration.ts` readiness probe) warms ONE route at
+// ONE edge PoP — it does NOT warm the `/fate/live` Durable Object path, which cold-
+// starts the ConnectionDO/TopicDO on the first SSE connect and 500s before the DO is
+// up (#613). The placeholder-404/connection retries in `_harness.ts` don't cover a
+// 5xx, so retry the FIRST SSE connect on a cold-start 5xx until the stream is
+// established (200) — then the held stream proves the DO is warm for the rest of the
+// case. A persistent 5xx still surfaces (the assertion after this fails clearly).
+const openSseWarm = async (connectionId: string, cookie: string): Promise<Response> => {
+	// ~6s worst case (8 × ~750ms) — bounded well under each case's 30s budget, where a
+	// real persistent 5xx returns and the status assertion after the call fails clearly.
+	for (let i = 0; i < 8; i++) {
+		const res = await h.openSse(connectionId, cookie);
+		if (res.status < 500) return res;
+		await res.body?.cancel();
+		await new Promise<void>((r) => setTimeout(r, 750));
+	}
+	return h.openSse(connectionId, cookie);
+};
+
 describe("live views — /fate/live", () => {
 	it("rejects a connect with no session cookie (401)", async () => {
 		const res = await h.req("/fate/live?connectionId=no-cookie", {
@@ -47,7 +66,7 @@ describe("live views — /fate/live", () => {
 
 	it("subscribe → post.submit → prependNode frame arrives on the held SSE stream", async () => {
 		const connectionId = `live-conn-${Date.now()}`;
-		const connect = await h.openSse(connectionId, user.cookie);
+		const connect = await openSseWarm(connectionId, user.cookie);
 		expect(connect.status).toBe(200);
 		expect(connect.headers.get("content-type")).toContain("text/event-stream");
 
@@ -104,7 +123,7 @@ describe("live views — /fate/live", () => {
 		// DO fan-out.
 		const slug = `live-term-${Date.now()}`;
 		const connectionId = `live-sozluk-${Date.now()}`;
-		const connect = await h.openSse(connectionId, user.cookie);
+		const connect = await openSseWarm(connectionId, user.cookie);
 		expect(connect.status).toBe(200);
 
 		const reader = connect.body!.getReader();
@@ -158,7 +177,7 @@ describe("live views — /fate/live", () => {
 		const connectionId = `live-regen-${Date.now()}`;
 
 		// First stream + subscription.
-		const first = await h.openSse(connectionId, user.cookie);
+		const first = await openSseWarm(connectionId, user.cookie);
 		const firstReader = first.body!.getReader();
 		const decoder = new TextDecoder();
 		const firstBuf = {value: ""};
@@ -171,7 +190,7 @@ describe("live views — /fate/live", () => {
 
 		// Reconnect: a second stream on the SAME connectionId bumps the epoch,
 		// staling the first stream's subscriber rows.
-		const second = await h.openSse(connectionId, user.cookie);
+		const second = await openSseWarm(connectionId, user.cookie);
 		const secondReader = second.body!.getReader();
 		const secondBuf = {value: ""};
 		await readFrame(secondReader, decoder, secondBuf); // : connected
