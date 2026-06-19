@@ -1,5 +1,18 @@
 {
 	"enabledPlugins": {
 		"kampus-pipeline@kampus": false
+	},
+	"hooks": {
+		"PreToolUse": [
+			{
+				"matcher": "Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$CLAUDE_PROJECT_DIR/packages/read-guard/src/bin.ts\""
+					}
+				]
+			}
+		]
 	}
 }
