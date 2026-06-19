@@ -32,6 +32,10 @@ export class Dashboard extends Cloudflare.Worker<
 	PipelineCacheDO
 >()("dashboard", {
 	main: import.meta.filename,
+	// Pin a distinct dev port (web pins 1337). The default 1337 with silent
+	// next-free-port fallback let these two apps race for one socket and misroute
+	// the proxy; `strictPort` fails loudly instead. Keep in sync with the proxy below.
+	dev: {port: 1338, strictPort: true},
 	// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
 	// `ENVIRONMENT` → `plain_text`, `GITHUB_TOKEN` → `secret_text`. Alchemy resolves
 	// each at deploy and runtime reads the same value off the auto-wired

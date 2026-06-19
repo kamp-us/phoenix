@@ -7,12 +7,13 @@ import {defineConfig} from "vite";
 // used — alchemy ships its own Cloudflare integration and is incompatible with
 // it (see .patterns/alchemy-worker.md).
 //
-// `alchemy dev` serves the worker vhost-routed at `http://dashboard.localhost:1337`.
-// Node can't resolve `*.localhost`, so the proxy targets the IP and FORCES the
-// `Host` header; `changeOrigin: false` keeps that forced `Host` (changeOrigin
-// would rewrite it to `127.0.0.1`, which the worker's vhost routing rejects).
+// `alchemy dev` serves the worker vhost-routed at `http://dashboard.localhost:1338`
+// (the worker pins dev port 1338; web pins 1337 — see worker/index.ts). Node can't
+// resolve `*.localhost`, so the proxy targets the IP and FORCES the `Host` header;
+// `changeOrigin: false` keeps that forced `Host` (changeOrigin would rewrite it to
+// `127.0.0.1`, which the worker's vhost routing rejects).
 const worker = {
-	target: "http://127.0.0.1:1337",
+	target: "http://127.0.0.1:1338",
 	changeOrigin: false,
 	headers: {host: "dashboard.localhost"},
 };
