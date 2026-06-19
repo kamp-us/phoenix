@@ -155,6 +155,14 @@ jobs:
       # Same script runs locally: `bash .claude/skills/validate-cycle-absence.sh`.
       - run: bash .claude/skills/validate-cycle-absence.sh
 
+      # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
+      # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
+      # byte-identical to the §CP canonical line, and that .claude/skills resolves to
+      # marketplace.json's source + /skills. A rename of the plugin path otherwise
+      # silently breaks all gate checks with no build-time failure.
+      # Same script runs locally: `bash .claude/skills/validate-gate-path-drift.sh`.
+      - run: bash .claude/skills/validate-gate-path-drift.sh
+
   integration:
     name: integration tests
     needs: changes
