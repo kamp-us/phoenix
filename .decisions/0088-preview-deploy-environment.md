@@ -8,6 +8,10 @@ tags: [infra, deploy, auth, environment]
 
 # 0088 — A third deploy environment — `preview` — distinct from `development` and `production`
 
+**Note ([0090](0090-remove-dashboard-app.md)):** `apps/dashboard` is removed, so this
+ADR's dashboard deploy leg is gone. The `preview` environment decision is unchanged and
+fully stands; only the second-app leg it described no longer exists.
+
 ## Context
 
 `ENVIRONMENT` was a two-value `Config.literals(["development", "production"])`

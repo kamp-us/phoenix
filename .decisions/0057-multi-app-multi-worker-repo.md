@@ -8,6 +8,11 @@ tags: [infra, alchemy, ci, repo-shape]
 
 # 0057 — Multi-App, Multi-Worker Repo — Per-App Stack, Per-App Stage, Shared State Store and Secrets
 
+**Note ([0090](0090-remove-dashboard-app.md)):** `apps/dashboard` — used throughout this
+ADR as the example second app — was removed as unused pipeline-viz meta-tooling. This
+ADR's principle is unchanged and stands: the repo is still one-worker-per-app under
+`apps/`; `web` is simply the only app for now, and the next genuine app reuses this shape.
+
 ## Context
 
 phoenix shipped as a single Cloudflare Worker: `apps/web` is the only app, and its

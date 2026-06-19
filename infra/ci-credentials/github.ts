@@ -17,13 +17,9 @@
  * Run it once, under the elevated profile (see `.patterns/alchemy-ci-cd.md`):
  *
  *   alchemy login --profile admin     # Cloudflare Global API Key + a GitHub creds
- *   CLOUDFLARE_ACCOUNT_ID=<id> ALCHEMY_PASSWORD=<pw> DASHBOARD_GITHUB_TOKEN=<pat> \
+ *   CLOUDFLARE_ACCOUNT_ID=<id> ALCHEMY_PASSWORD=<pw> \
  *     pnpm --filter @kampus/infra exec alchemy deploy github.ts \
  *       --profile admin --yes
- *
- * `DASHBOARD_GITHUB_TOKEN` is the one secret you supply by hand — a fine-grained
- * GitHub PAT (Issues: read on kamp-us/phoenix) — because a PAT can't be minted
- * from code the way the Cloudflare token is. Everything else is generated/minted.
  *
  * Re-run only to rotate the token or change its scope. Reusing the remote
  * `Cloudflare.state()` means the token's ID is tracked, so a rescope is a clean
@@ -40,12 +36,6 @@
  *                              deploy needs the value. Minted here as a stable
  *                              `Random` (persisted in this stack's state) and
  *                              pushed so CI can bind it on every deploy.
- *   - DASHBOARD_GITHUB_TOKEN — the GitHub PAT @kampus/dashboard's worker binds
- *                              (`secret_text`) for authenticated issue reads.
- *                              Supplied via env (a hand-minted fine-grained PAT),
- *                              not generated; pushed so CI binds it on dashboard
- *                              deploys. (`GITHUB_TOKEN` env name reserved → stored
- *                              under this name, mapped back in the workflow.)
  */
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -144,24 +134,6 @@ export default Alchemy.Stack(
 			repository: REPOSITORY,
 			name: "BETTER_AUTH_SECRET",
 			value: betterAuthSecret.text,
-		});
-
-		// The GitHub token @kampus/dashboard's worker binds as a `secret_text`
-		// (`apps/dashboard/worker/config.ts` `Config.redacted("GITHUB_TOKEN")`, no
-		// default → required at deploy) for authenticated reads of kamp-us/phoenix
-		// issues. SUPPLIED via env, not minted: unlike the Cloudflare token (minted
-		// here) and BETTER_AUTH_SECRET (a `Random`), a GitHub PAT can't be issued from
-		// code — mint a fine-grained PAT (Issues: read) by hand once and pass it as
-		// `DASHBOARD_GITHUB_TOKEN` on this one-shot's env, exactly like ALCHEMY_PASSWORD
-		// is supplied. Named DASHBOARD_GITHUB_TOKEN because Actions reserves the
-		// `GITHUB_` secret-name prefix; the deploy workflow maps it to the GITHUB_TOKEN
-		// env for the dashboard matrix legs.
-		const dashboardGithubToken = yield* Effect.orDie(Config.redacted("DASHBOARD_GITHUB_TOKEN"));
-		yield* GitHub.Secret("dashboard-github-token", {
-			owner: OWNER,
-			repository: REPOSITORY,
-			name: "DASHBOARD_GITHUB_TOKEN",
-			value: dashboardGithubToken,
 		});
 	}),
 );
