@@ -18,6 +18,17 @@ const [comments, loadNext] = useLiveListView(CommentConnectionView, post.comment
 - A connection view can opt into eager insertion: `live: {append: "visible"}` on the connection selection.
 - Live failures never throw into the tree; they go to `onLiveError` on the client ([fate-client-setup.md](./fate-client-setup.md)). On reconnect the client resubscribes every active operation with its `lastEventId`.
 
+### Pin the connection while a churning list view is mounted {#keep-alive}
+
+A page whose only live subscription is a `useLiveListView` loses a just-published `appendNode`/`prependNode` after a write mutation. The native client refcounts the one shared `EventSource`: `remove()` runs `if (operations.size === 0) { source.close(); nativeLiveClient = undefined }`, and the next subscribe rebuilds a fresh stream with a new random `connectionId`. `useLiveListView`'s subscribe effect re-keys on the connection's `metadata.key`, which goes transiently null during the in-flight refetch a mutation triggers (`useRequest` hands the connection back as a bare array, no `ConnectionTag`). In that window the lone subscription unsubscribes → refcount hits 0 → the stream closes → the mutation's fire-and-forget publish ([below](#the-publish-only-event-bus)) targets the now-dead `connectionId` and is dropped (v1 live is best-effort, no replay). The live event is **lost, not late**, so the new row never appears until a manual refresh (the durable transport fix — don't tear down on a transient 0-refcount — is tracked upstream as a fork change).
+
+The in-repo mitigation: hold one **stable keep-alive subscription** for the view's mount lifetime, keyed on an identity that doesn't change across mutation churn, so `operations.size` never reaches 0. `apps/web/src/fate/useLiveKeepAlive.ts` exposes two pins:
+
+- `useLiveKeepAlive(view, ref)` — pins a `subscribeLiveView` on a **stable parent entity ref** (the `Post` of a comment thread, the `Term` of a definition list). The parent id is in the URL and resolves before the child list mounts, so it survives the list's churn.
+- `useLiveListKeepAlive(selection, connection)` — for a root feed with no parent entity (pano feed, saved page), pins a `subscribeLiveListView` on the connection's own `listKey`, **latching** the first non-null metadata so the pin holds through the transient-null refetch window.
+
+Mount the matching pin right next to each churning `useLiveListView`. Both release on unmount (the stream tears down cleanly when the page leaves — leaking the connection is the opposite failure).
+
 ## Server — publishing from mutations
 
 A mutation handler publishes events after the write, through the per-request `LivePublisher` service ([fate-effect-operations.md](./fate-effect-operations.md) "Write conventions"):

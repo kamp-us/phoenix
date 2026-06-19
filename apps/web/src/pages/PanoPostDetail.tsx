@@ -26,6 +26,7 @@ import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import type {ReportOutcome} from "../components/ui/ReportButton";
 import {Screen} from "../fate/Screen";
+import {useLiveKeepAlive} from "../fate/useLiveKeepAlive";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
@@ -494,6 +495,11 @@ function Comments(props: CommentsProps) {
 	const post = useView(PostDetailView, props.post);
 	const fate = useFateClient();
 	const report = useReportHandler();
+	// Pin the SSE connection on the stable parent `Post` for the thread's mount
+	// lifetime, so the comment list's per-mutation re-subscribe churn never drops
+	// the refcount to 0 and drops the live `appendNode` (#708; #711 is the durable
+	// transport fix). See `apps/web/src/fate/useLiveKeepAlive.ts`.
+	useLiveKeepAlive(PostDetailView, props.post);
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 	const activeCommentId = useCommentAnchor(items.length);
 
