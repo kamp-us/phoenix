@@ -93,3 +93,4 @@ One row per ADR. Read the file for the why.
 | [0086](0086-ship-it-foreign-repo-degradation.md) | ship-it degrades its run-evidence guard in a foreign repo (producer-presence, not per-PR escape) | accepted | 2026-06-18 |
 | [0087](0087-plugin-dedicated-subdir-source.md) | A multi-plugin marketplace: each plugin in its own `claude-plugins/<name>` subdir source | accepted | 2026-06-18 |
 | [0088](0088-preview-deploy-environment.md) | A third deploy environment — `preview` — distinct from `development` and `production` | accepted | 2026-06-18 |
+| [0089](0089-pin-per-app-dev-ports.md) | Pin a distinct `alchemy dev` port per app, with `strictPort` | accepted | 2026-06-19 |
