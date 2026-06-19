@@ -1,0 +1,31 @@
+{
+	"name": "@kampus/structured-output-guard",
+	"version": "0.0.0",
+	"private": true,
+	"description": "StructuredOutput conformance — schema-in-spawn-prompt + 2-retry cap + rich missing/present field diff (issue #742)",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"prompt": "node src/bin.ts prompt",
+		"decide": "node src/bin.ts decide"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
