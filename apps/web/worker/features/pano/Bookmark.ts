@@ -8,10 +8,11 @@
  * nothing and returns `changed: false`. `readMine` is the batched presence read
  * `#128` will stamp `isSaved` from without an N+1.
  */
-import {and, eq, inArray} from "drizzle-orm";
+import {and, desc, eq, inArray, isNull} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {PostNotFound} from "./errors.ts";
 
 export interface BookmarkToggleInput {
@@ -25,6 +26,19 @@ export interface BookmarkToggleResult {
 	saved: boolean;
 	/** `false` on an idempotent no-op (state already matched intent). */
 	changed: boolean;
+}
+
+/**
+ * A keyset page of the viewer's saved post ids, newest save first. Carries the
+ * ordered ids only — hydration (the `isSaved`/`myVote` batch stamp + post shape)
+ * stays in `Pano.getPostsByIds`, so `Bookmark` owns the `post_bookmark` keyset
+ * and `Pano` owns the post row. The cursor is the bookmark's `post_id` (unique
+ * per user, the `(post_id, user_id)` PK).
+ */
+export interface SavedPostsPage {
+	ids: string[];
+	hasNextPage: boolean;
+	endCursor: string | null;
 }
 
 export class Bookmark extends Context.Service<
@@ -42,6 +56,16 @@ export class Bookmark extends Context.Service<
 			viewerId: string | null | undefined,
 			postIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
+		/**
+		 * Keyset page of the viewer's saved post ids, ordered by save time
+		 * (`post_bookmark.created_at DESC, post_id DESC`) over the
+		 * `(user_id, created_at DESC)` index (#127). Inner-joins `post_summary` so
+		 * a soft-deleted post never appears. Missing viewer → empty page, no read.
+		 */
+		readonly listSavedConnection: (
+			viewerId: string | null | undefined,
+			opts?: {first?: number | undefined; after?: string | null | undefined},
+		) => Effect.Effect<SavedPostsPage>;
 	}
 >()("@kampus/pano/Bookmark") {}
 
@@ -70,8 +94,70 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 			return new Set(rows.map((r) => r.postId));
 		});
 
+		const listSavedConnection = Effect.fn("Bookmark.listSavedConnection")(function* (
+			viewerId: string | null | undefined,
+			opts: {first?: number | undefined; after?: string | null | undefined} = {},
+		) {
+			if (!viewerId) return {ids: [], hasNextPage: false, endCursor: null} satisfies SavedPostsPage;
+
+			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
+			const after = opts.after ?? null;
+
+			// The DB read is the port; `resolveCursor` is the pure cursor-miss
+			// decision (see `Pano.listPostsConnection`). `after` is a bookmark
+			// `post_id`; resolve it to its `created_at` for the keyset tuple.
+			const resolvedRow = after
+				? ((yield* run((db) =>
+						db
+							.select({createdAt: schema.postBookmark.createdAt})
+							.from(schema.postBookmark)
+							.where(
+								and(
+									eq(schema.postBookmark.userId, viewerId),
+									eq(schema.postBookmark.postId, after),
+								),
+							)
+							.get(),
+					)) ?? null)
+				: null;
+			const cursor = resolveCursor(after, resolvedRow);
+			if (cursor.kind === "miss") {
+				return {ids: [], hasNextPage: false, endCursor: null} satisfies SavedPostsPage;
+			}
+			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
+
+			const cursorPredicate = keysetAfter([
+				{column: schema.postBookmark.createdAt, dir: "desc", value: cursorRow?.createdAt ?? null},
+				{column: schema.postBookmark.postId, dir: "desc", value: after},
+			]);
+
+			const baseWhere = and(
+				eq(schema.postBookmark.userId, viewerId),
+				isNull(schema.postSummary.deletedAt),
+			);
+
+			const fetched = yield* run((db) =>
+				db
+					.select({postId: schema.postBookmark.postId})
+					.from(schema.postBookmark)
+					.innerJoin(schema.postSummary, eq(schema.postSummary.id, schema.postBookmark.postId))
+					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
+					.orderBy(desc(schema.postBookmark.createdAt), desc(schema.postBookmark.postId))
+					.limit(first + 1),
+			);
+
+			const page = forwardPage<{postId: string}, string>(
+				fetched,
+				first,
+				(id) => id,
+				(r) => r.postId,
+			);
+			return {ids: page.rows, hasNextPage: page.hasNextPage, endCursor: page.endCursor};
+		});
+
 		return {
 			readMine,
+			listSavedConnection,
 			toggle: Effect.fn("Bookmark.toggle")(function* (input: BookmarkToggleInput) {
 				const post = yield* run((db) =>
 					db.query.postSummary.findFirst({

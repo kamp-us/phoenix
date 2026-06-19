@@ -18,6 +18,7 @@ import {PanoFeed} from "./pages/PanoFeed";
 import {PanoPostDetail} from "./pages/PanoPostDetail";
 import {PanoSubmitPage} from "./pages/PanoSubmitPage";
 import {ProfilePage} from "./pages/ProfilePage";
+import {SavedPostsPage} from "./pages/SavedPostsPage";
 import {SearchPage} from "./pages/SearchPage";
 import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
@@ -127,6 +128,7 @@ export function App() {
 					<Route path="/pano" element={<PanoFeed />} />
 					<Route path="/pano/yeni" element={<PanoSubmitPage />} />
 					<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />
+					<Route path="/pano/kaydedilenler" element={<SavedPostsPage />} />
 					<Route path="/pano/:id" element={<PanoPostDetail />} />
 					<Route path="/sozluk" element={<SozlukHome />} />
 					<Route path="/sozluk/:slug" element={<SozlukTermPage />} />

@@ -51,6 +51,11 @@ export const Root: Record<string, unknown> = {
 	// `insert` reaches (filtered feeds are distinct, independently-paginated
 	// connections). See `.patterns/fate-mutations-client.md`.
 	posts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
+	// The viewer's saved posts, newest-save-first. The orderBy mirrors the
+	// `post_bookmark` keyset (created_at desc, post_id desc) the `savedPosts`
+	// resolver owns — nominal here, but kept in lockstep with the service ORDER BY
+	// (ADR 0019). Reuses `postDataView` so `isSaved`/`myVote` come for free.
+	savedPosts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
 	// Search roots (ADR 0080) — per-type, reusing the Term/Post views. The orderBy
 	// is nominal: the search service ranks by bm25 and owns the keyset, so this
 	// declares the root as a `list` but never drives the order (the resolver does).
