@@ -29,6 +29,25 @@ The in-repo mitigation: hold one **stable keep-alive subscription** for the view
 
 Mount the matching pin right next to each churning `useLiveListView`. Both release on unmount (the stream tears down cleanly when the page leaves — leaking the connection is the opposite failure).
 
+### The mutator's own view never waits on a push {#read-back}
+
+The keep-alive above keeps the stream alive across churn, but a second, load-driven loss remains: the create-mutation's fire-and-forget publish ([below](#the-publish-only-event-bus)) fans out to the topic `LiveDO`, which lists its subscriber rows **once** — if the subscriber's `register` RPC hasn't persisted yet, the fan-out set is empty and the `appendNode` delivers to nobody (no v1 replay). Under load the subscribe `register` slows from ~200ms to seconds, so the publish loses the race on nearly every late write and the mutator's own view waits on a push that never arrives — the new node never appears until a manual refresh (#714 diagnosis on epic #713; #711 is the durable transport-side fix).
+
+So a view must **not** depend on the live round-trip to reflect its *own* create. After the mutator's own create succeeds, a bounded read-back self-heals the loss:
+
+```tsx
+const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
+
+const confirm = useReadbackRefetch({
+	presentIds: items.map(({node}) => String(node.id)),
+	refetch: () => fate.request({post: {view: PostDetailView, args}}, {mode: "network-only"}),
+});
+// in the composer's onSuccess, with the mutation result's id:
+if (result?.id) confirm(String(result.id));
+```
+
+`useReadbackRefetch` (`apps/web/src/fate/useReadbackRefetch.ts`) watches the connection for the created id. Live push lands it first → it does nothing; still absent after a short grace window (a few 1s probes) → it fires **one** `fate.request(..., {mode: "network-only"})`, re-running the *same* request the page already holds so the node merges into the same live-subscribed connection. The wait-vs-refetch decision is the pure, unit-tested `decideReadback` core (`apps/web/src/fate/readback.ts`); the hook is only the timer + the single request. The live subscription and the published `appendNode` are untouched — **other** clients still update over the push; this frees only the *mutator's own* view from the race. The fresh-slug sözlük branch (no list yet) is already deterministic via its `network-only` remount, so it needs no read-back.
+
 ## Server — publishing from mutations
 
 A mutation handler publishes events after the write, through the per-request `LivePublisher` service ([fate-effect-operations.md](./fate-effect-operations.md) "Write conventions"):
