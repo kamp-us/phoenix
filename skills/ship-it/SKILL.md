@@ -576,9 +576,15 @@ below (that's a real gap, not portability).
 ```bash
 # Does THIS repo produce run-evidence at all? (a workflow named "run-evidence" defined on the
 # default branch). Absent → foreign repo → guard 2 N/A, gated on Step 3. Present → strict path.
+# FAIL SAFE: degrade ONLY on a confirmed-empty result. A successful query returns a count
+# ("0", "1", …); an empty capture means the query itself FAILED (network / auth / rate-limit),
+# which must NOT silently skip guard 2 — least of all in the home repo, where the strict path
+# is invariant. So an unconfirmed lookup falls through to the strict path (HAS_PRODUCER=1), not
+# to degradation: a transient API blip costs strictness, never a skipped bundle assertion.
 HAS_PRODUCER=$(gh api "repos/$REPO/actions/workflows" --paginate \
-  --jq '[.workflows[] | select(.name=="run-evidence")] | length' 2>/dev/null || echo 0)
-if [ "${HAS_PRODUCER:-0}" -eq 0 ]; then
+  --jq '[.workflows[] | select(.name=="run-evidence")] | length' 2>/dev/null)
+[ -z "$HAS_PRODUCER" ] && HAS_PRODUCER=1   # lookup failed → can't confirm absence → strict
+if [ "$HAS_PRODUCER" -eq 0 ]; then
   echo "guard 2 N/A (no run-evidence producer in this repo) — gated on checks (Step 3)"
   # Degraded: guard 2 clears here. Skip the bundle fetch + the four assertions below and
   # proceed to Step 4 on the strength of Step 2 (PASS) + Step 3 (gating checks green).

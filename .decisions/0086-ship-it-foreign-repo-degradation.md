@@ -28,6 +28,8 @@ The disposition was the open fork in #425: (a) **degrade like review-code**, (b)
 
 2. **A present-but-failing bundle still refuses.** A repo that *has* the producer but whose bundle is missing/stale/schema-skewed/failing for this commit is a **real gap, not portability** — it refuses below as today. Degradation is keyed only to "the repo is not set up to produce run-evidence," distinguishable from "it is, but this PR lacks it."
 
+3. **The presence check fails *safe*, not open.** Degradation fires only on a *confirmed* empty producer set. If the workflows lookup itself fails (network / auth / rate-limit) the result is unconfirmed, so the gate takes the **strict** path, never the degraded one — a transient API error can never silently skip guard 2, least of all in the home repo where the strict path is invariant. (The first cut used `… || echo 0`, which degraded on any lookup failure — an fail-open bug caught in review and corrected to fail-closed.)
+
 3. **Safe because Step 3 still gates.** The degrade path is reached only after Step 2 (current-head PASS) and Step 3 (every *gating* check green; an unrecognized red is gating by default, ADR [0061](0061-ship-it-gating-check-set.md)) have held. A foreign repo without a producer still blocks on its own red checks; degradation removes only the SHA-bound corroboration, not the merge gate.
 
 ## Consequences
