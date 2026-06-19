@@ -12,6 +12,44 @@
 						"command": "node \"$CLAUDE_PROJECT_DIR/packages/read-guard/src/bin.ts\""
 					}
 				]
+			},
+			{
+				"matcher": "Read|Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts pre-file"
+					}
+				]
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts pre-bash"
+					}
+				]
+			},
+			{
+				"matcher": "EnterWorktree",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts pre-enter"
+					}
+				]
+			}
+		],
+		"SubagentStop": [
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts reap"
+					}
+				]
 			}
 		]
 	}
