@@ -155,6 +155,14 @@ jobs:
       # Same script runs locally: `bash .claude/skills/validate-cycle-absence.sh`.
       - run: bash .claude/skills/validate-cycle-absence.sh
 
+      # Present-path twin (issue #750, ADR 0091/0092): the absence script only ever
+      # exercises the foreign-repo absent branch. This asserts phoenix's PRESENT path —
+      # the cycle doc resolves `present` and each skill's present-branch action is wired
+      # (plan-epic stamps, write-code ships dark, review-code gates, ship-it queues) — and
+      # FAILS CLOSED on zero scope (missing doc ⇒ FAIL, never a silent no-op; ADR 0092).
+      # Same script runs locally: `bash .claude/skills/validate-cycle-presence.sh`.
+      - run: bash .claude/skills/validate-cycle-presence.sh
+
       # Gate-path drift guard (issue #720): assert the five CONTROL_PLANE_RE= copies
       # in ship-it/review-code/review-doc/review-skill/gh-issue-intake-formats are
       # byte-identical to the §CP canonical line, and that .claude/skills resolves to
