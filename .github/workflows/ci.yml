@@ -43,7 +43,8 @@ jobs:
               - 'apps/web/package.json'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
-            # Paths the unauth e2e specs (#522) actually exercise: the SPA, the
+            # Paths the full e2e suite (#525) actually exercises: the SPA and its
+            # build inputs (src, vite config, the served index.html shell), the
             # worker that serves it, the alchemy stack/D1 the preview deploys, the
             # specs + playwright config, and the seed tool. A docs/skills-only PR
             # touches none of these, so `e2e` stays false → the e2e job skips
@@ -51,6 +52,8 @@ jobs:
             # keeps the gate self-covering.
             e2e:
               - 'apps/web/src/**'
+              - 'apps/web/index.html'
+              - 'apps/web/vite.config.ts'
               - 'apps/web/worker/**'
               - 'apps/web/alchemy.run.ts'
               - 'apps/web/tests/e2e/**'
@@ -203,13 +206,17 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
 
-  # The blocking e2e gate (#522, epic #462): run both lanes against the per-PR
-  # preview deploy so "CI green" means the frontend renders + core flows work
-  # end-to-end, not just that unit/integration pass. Two Playwright projects:
-  #   - `unauth` — the four public read specs (no login).
+  # The blocking e2e gate (epic #462): run the FULL Playwright suite against the
+  # per-PR preview deploy so "CI green" means the frontend renders + every core
+  # flow works end-to-end, not just that unit/integration pass. #525 flipped this
+  # from the non-auth subset to the whole suite. Four Playwright projects (see
+  # playwright.config.cjs), all run here by passing NO `--project` filter:
+  #   - `unauth` — the public read specs (no login).
   #   - `setup` + `authed` — one real Better Auth sign-up captured into a
-  #     storageState file the authed specs reuse (ADR 0085, #524), so the
-  #     login-gated search spec runs without re-signing-up per test.
+  #     storageState file the shared-session specs reuse (ADR 0085, #524).
+  #   - `flows` — every remaining spec; each drives its OWN sign-up (a pristine
+  #     user per test) or asserts signed-out states. These are the authed WRITE
+  #     flows that catch behavioral races like the form-wipe bug (#77/#438).
   #
   # Target is the DEPLOYED preview, never a CI-booted workerd (the deploy already
   # runs in deploy.yml; #452's `spawn EBADF` is agent-sandbox-only, not Actions).
@@ -223,7 +230,7 @@ jobs:
   # on `e2e` so a docs/skills-only PR skips → green (the `ci-required` aggregator
   # treats a skip as a pass).
   e2e:
-    name: e2e (unauth + authed specs vs preview)
+    name: e2e (full suite vs preview)
     needs: changes
     if: >-
       needs.changes.outputs.e2e == 'true' &&
@@ -293,25 +300,26 @@ jobs:
             core.setFailed("timed out waiting for the preview deploy (URL + D1 id) from deploy.yml");
 
       # Seed the preview's (empty) D1 with the minimal sözlük + pano fixtures the
-      # unauth read specs assert on (#521). Idempotent upsert, so a re-run is safe.
+      # read specs assert on and the write/flow specs navigate from — e.g. the
+      # `flows` specs that open "the first post/term" (#521). Idempotent upsert, so
+      # a re-run is safe.
       - name: Seed preview D1
         run: node packages/preview-seed/src/bin.ts run --database-id "${{ steps.preview.outputs.db }}"
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # Both lanes: `unauth` (the four public read specs) plus `authed`, whose
-      # `setup` dependency does one real sign-up against the preview and captures
-      # the session into storageState the authed search spec reuses (ADR 0085).
-      # E2E_BASE_URL points the whole run at the preview (#520); the suite uses
-      # relative `page.goto`. `--reporter=html,list` overrides the config's `list`
-      # reporter so a failure leaves a browsable HTML report for the artifact below
-      # (traces come from the config's `trace: on-first-retry` + CI's one retry).
-      - name: Run e2e specs (unauth + authed)
+      # The whole suite: NO `--project` filter, so Playwright runs every project
+      # (`unauth`, `setup`+`authed`, and the `flows` catch-all). `setup` runs once
+      # — both as a standalone project and as `authed`'s dependency. E2E_BASE_URL
+      # points the whole run at the preview (#520); the suite uses relative
+      # `page.goto`. `--reporter=html,list` overrides the config's `list` reporter
+      # so a failure leaves a browsable HTML report for the artifact below (traces
+      # come from the config's `trace: on-first-retry` + CI's one retry).
+      - name: Run e2e specs (full suite)
         run: >-
           pnpm --filter @kampus/web exec playwright test
           --reporter=html,list
-          --project unauth --project authed
         env:
           E2E_BASE_URL: ${{ steps.preview.outputs.url }}
           PLAYWRIGHT_HTML_OPEN: never
