@@ -3,7 +3,7 @@
 kamp.us, reborn.
 
 A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
-(`web` today, `dashboard` incoming), each its own package + stack + stage (ADR
+(`web` is the only app today), each its own package + stack + stage (ADR
 0057). React 19 + Effect + fate. HTTP via Effect `HttpRouter` / `HttpApiBuilder`
 (ADR 0027). Durable Objects authored on alchemy's Effect DO model (ADR 0028).
 
@@ -11,8 +11,8 @@ A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
 
 - **One worker per app.** Each `apps/<app>` is its own pnpm package owning its own
   `alchemy.run.ts` stack + per-app stage, reusing the account-global state store and
-  the four CI secrets — no second bootstrap (ADR 0057). `apps/web` is the worker
-  today; `apps/dashboard` is the next.
+  the four CI secrets — no second bootstrap (ADR 0057). `apps/web` is the only worker
+  today; the structure fans out as apps are added.
 - **`apps/web`** serves both the SPA (via `assets` binding) and the API.
 - The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE. Other backend routes live under `/api/*`.
 - Frontend is React 19 + Vite, built into `dist/client`.
@@ -21,7 +21,7 @@ A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
 ```
 phoenix/
 ├── apps/                    # one worker per app, each its own package + stack (ADR 0057)
-│   └── web/                 # @kampus/web — the worker today (dashboard incoming)
+│   └── web/                 # @kampus/web — the only worker today
 │       ├── worker/          # worker entry + backend code
 │       ├── src/             # React frontend
 │       └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)

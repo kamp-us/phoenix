@@ -181,9 +181,9 @@ ADR 0073 §6):
 - **code:** under any app worker or a package (`apps/**` or `packages/**` — the `^(apps|packages)/`
   probe, covering **every** `apps/<app>` worker, not just `apps/web`); a source path matching none
   of the three probes still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
-  The probe spans `apps/**` (not `apps/web/**`) so a second worker like `apps/dashboard/**` — code
+  The probe spans `apps/**` (not `apps/web/**`) so a future second worker like `apps/<other>/**` — code
   **or** README — is `review-code`-gated like `apps/web`, and agrees exactly with the docs probe's
-  `apps/**` exclusion below (the two must name the same code roots, or an `apps/dashboard` path would
+  `apps/**` exclusion below (the two must name the same code roots, or an `apps/<other>` path would
   class as neither code nor docs and slip through ungated — #663).
 - **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`,
   **outside `claude-plugins/kampus-pipeline/skills/**`**, **and outside the code roots `apps/**`/`packages/**`** — exactly
@@ -234,7 +234,7 @@ so the docs probe may only class as docs a path a `review-doc` PASS can actually
 - **`apps/**` / `packages/**`** — a package/app-internal `*.md` (a README, CHANGELOG) ships
   with its code artifact and is **`review-code`'s** scope: `review-code` reviews the whole
   `apps/**`/`packages/**` tree, README included, and `review-doc` explicitly disclaims that tree
-  (its Step 0 routes the `apps/**` workers — `apps/web`, `apps/dashboard`, … — and `packages/**`
+  (its Step 0 routes the `apps/**` workers — `apps/web`, … — and `packages/**`
   to `review-code`). Classing such a `.md` docs demanded a `review-doc` PASS no gate ever produces —
   review-code gates and PASSes the tree, but no doc gate runs on it — so a clean, fully-gated
   product PR that merely *includes* a package README **deadlocked** (`unverified — no review-doc
@@ -243,9 +243,9 @@ so the docs probe may only class as docs a path a `review-doc` PASS can actually
 
 **The has-code probe and this docs-exclusion name the same code roots — they MUST agree.** The
 docs probe carves out `^(claude-plugins|apps|packages)/` and the has-code probe is `^(apps|packages)/`:
-both span the **full `apps/**` tree** (every app worker — `apps/web`, `apps/dashboard`, …), not
+both span the **full `apps/**` tree** (every app worker — `apps/web`, and any future app), not
 just `apps/web`. That agreement is the invariant — if the two diverged (e.g. has-code stayed
-`apps/web` while docs excluded all `apps/**`), an `apps/dashboard/**` path — code `.ts` **or**
+`apps/web` while docs excluded all `apps/**`), an `apps/<other>/**` path — code `.ts` **or**
 `README.md` — would class as **neither** has-code (the narrow probe misses it) **nor** has-docs
 (the docs exclusion drops it), and ship-it would demand **no** gate at all and merge it **ungated**.
 Widening has-code to `apps/**` closes that hole (#663): every `apps/<app>` path now classes

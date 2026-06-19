@@ -1,12 +1,17 @@
 ---
 id: 0089
 title: Pin a distinct `alchemy dev` port per app, with `strictPort`
-status: accepted
+status: moot
 date: 2026-06-19
 tags: [dev, alchemy, multi-app]
 ---
 
 # 0089 — Pin a distinct `alchemy dev` port per app, with `strictPort`
+
+**Made moot by [0090](0090-remove-dashboard-app.md):** the web/dashboard `alchemy dev`
+port race this ADR defended against cannot occur with a single app. `apps/dashboard` is
+removed; `apps/web`'s pin (`dev.port: 1337, strictPort: true`) is kept as the assignment
+the next app would build on, but the multi-app race is dormant until a second app returns.
 
 ## Context
 

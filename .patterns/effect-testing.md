@@ -184,9 +184,8 @@ it.effect("expires after 1 hour", () =>
 ```
 
 `Clock.currentTimeMillis` reads the `TestClock` once `TestClock.layer()` is provided,
-so TTL math under test is deterministic — see
-[`apps/dashboard/worker/features/pipeline/Pipeline.test.ts`](../apps/dashboard/worker/features/pipeline/Pipeline.test.ts)
-(the pipeline cache's within-TTL hit / past-TTL refresh).
+so TTL math under test is deterministic: `TestClock.adjust` advances virtual time to
+cross a TTL boundary (within-TTL hit vs past-TTL refresh) without a real sleep.
 
 Never use `setTimeout`, `Date.now()`, or real wall-clock sleeps in tests. `TestClock` virtualizes time; assertions become deterministic.
 
