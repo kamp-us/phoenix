@@ -47,7 +47,12 @@ test.describe("Sözlük editDefinition / deleteDefinition", () => {
 		// First-add on a fresh slug — the app self-reloads once to materialize
 		// the Term record. Subsequent edits / deletes stay in-place.
 		await expect(page.getByText(originalBody)).toBeVisible({timeout: 15_000});
-		await expect(page.getByText(originalBody)).toBeVisible({timeout: 10_000});
+		// Wait for the *persisted* card (real `def_<ulid>` id) so the edit/delete
+		// affordances below bind to the server-backed row, not the optimistic
+		// `optimistic:`-id node the fresh-slug reload is about to replace. Mirrors 20.
+		await expect(page.locator('[data-testid^="definition-card-def_"]').first()).toBeVisible({
+			timeout: 10_000,
+		});
 
 		// Edit affordance is visible to the author.
 		const editBtn = page.locator('[data-testid^="definition-edit-"]').first();

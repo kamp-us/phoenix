@@ -77,15 +77,18 @@ test.describe("Profile page", () => {
 		await expect(page.getByTestId("user-profile-page")).toBeVisible({timeout: 15_000});
 		await expect(page.getByTestId("user-profile-handle")).toContainText(`@${handle}`);
 
-		// Header counters: 1 definition, 1 post, 1 comment.
-		await expect(page.getByTestId("stat-definitions")).toContainText("1");
-		await expect(page.getByTestId("stat-posts")).toContainText("1");
-		await expect(page.getByTestId("stat-comments")).toContainText("1");
+		// Header counters: 1 definition, 1 post, 1 comment. The `profile(username)`
+		// aggregation joins across the pano + sozluk projections, which can lag the
+		// just-completed mutations, so poll each counter rather than reading it
+		// point-in-time.
+		await expect(page.getByTestId("stat-definitions")).toContainText("1", {timeout: 10_000});
+		await expect(page.getByTestId("stat-posts")).toContainText("1", {timeout: 10_000});
+		await expect(page.getByTestId("stat-comments")).toContainText("1", {timeout: 10_000});
 
-		// Feed: three rows, one of each kind.
+		// Feed: three rows, one of each kind. Same aggregation lag — poll each row.
 		await expect(page.getByTestId("contribution-definition")).toHaveCount(1, {timeout: 10_000});
-		await expect(page.getByTestId("contribution-post")).toHaveCount(1);
-		await expect(page.getByTestId("contribution-comment")).toHaveCount(1);
+		await expect(page.getByTestId("contribution-post")).toHaveCount(1, {timeout: 10_000});
+		await expect(page.getByTestId("contribution-comment")).toHaveCount(1, {timeout: 10_000});
 
 		// Each row links to its source.
 		await expect(
