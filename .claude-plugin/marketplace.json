@@ -13,27 +13,14 @@
 		{
 			"name": "kampus-pipeline",
 			"source": "./",
-			"description": "The kamp.us agent pipeline: triage → plan-epic → write-code → review-code/review-doc/review-plan → ship-it, plus adr, report, heal-ci, and deslop-comments. Repo-agnostic — operates on the working git repo's issue queue (CLAUDE_PIPELINE_REPO override).",
+			"description": "The kamp.us agent pipeline: report → triage → plan-epic → write-code → review → ship-it, with artifact-class review gates (code/doc/skill/plan) plus adr, heal-ci, and deslop-comments. Repo-agnostic — operates on the working git repo's issue queue (CLAUDE_PIPELINE_REPO override).",
 			"version": "0.1.0",
 			"author": {
 				"name": "kamp-us",
 				"url": "https://github.com/kamp-us"
 			},
 			"license": "MIT",
-			"keywords": ["github", "issue-pipeline", "triage", "code-review", "agent-workflow"],
-			"skills": [
-				"./skills/adr",
-				"./skills/deslop-comments",
-				"./skills/heal-ci",
-				"./skills/plan-epic",
-				"./skills/report",
-				"./skills/review-code",
-				"./skills/review-doc",
-				"./skills/review-plan",
-				"./skills/ship-it",
-				"./skills/triage",
-				"./skills/write-code"
-			]
+			"keywords": ["github", "issue-pipeline", "triage", "code-review", "agent-workflow"]
 		}
 	]
 }
