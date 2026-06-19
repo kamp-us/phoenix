@@ -21,8 +21,12 @@
 # substitution with mapfile. Same self-locating idiom as validate-skills.sh.
 set -euo pipefail
 
-skills_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(cd "$skills_dir/../../.." && pwd)"
+# `pwd -P` (physical) is load-bearing: this script is invoked via the `.claude/skills`
+# symlink (CI runs `bash .claude/skills/validate-gate-path-drift.sh`), so a logical `pwd`
+# would resolve skills_dir to the 2-level symlink path `.claude/skills` and `../../..` would
+# overshoot past the repo root. Physical resolution lands on the real 3-level plugin path.
+skills_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(cd "$skills_dir/../../.." && pwd -P)"
 
 errors=0
 checks=0
@@ -42,7 +46,10 @@ if [ ! -f "$FORMATS_MD" ]; then
 	exit 1
 fi
 
-CANONICAL=$(grep "^CONTROL_PLANE_RE=" "$FORMATS_MD" | head -n1 | sed 's/^CONTROL_PLANE_RE=//')
+# `|| true`: under `set -euo pipefail` a no-match `grep` (exit 1) would abort the script here,
+# before the explicit empty-check + `fail` below ever runs — losing the diagnostic. Let the
+# substitution yield empty so the intended fail-with-message path handles it.
+CANONICAL=$(grep "^CONTROL_PLANE_RE=" "$FORMATS_MD" | head -n1 | sed 's/^CONTROL_PLANE_RE=//' || true)
 if [ -z "$CANONICAL" ]; then
 	fail "§CP canonical CONTROL_PLANE_RE= not found in $FORMATS_MD — line must start with CONTROL_PLANE_RE="
 	echo "validate-gate-path-drift: FAILED — $errors error(s)"
@@ -70,7 +77,7 @@ for rel in $CONSUMERS; do
 	fi
 
 	# Extract the first CONTROL_PLANE_RE= line (with or without leading whitespace)
-	LINE=$(grep "CONTROL_PLANE_RE=" "$md" | head -n1)
+	LINE=$(grep "CONTROL_PLANE_RE=" "$md" | head -n1 || true)   # || true: no-match must hit the fail below, not abort under set -e
 	if [ -z "$LINE" ]; then
 		fail "$rel: no CONTROL_PLANE_RE= line found — consumer must carry a copy matching §CP"
 		continue
@@ -107,14 +114,14 @@ else
 	ok ".claude/skills is a symlink"
 
 	# Resolve the symlink to an absolute path
-	SYMLINK_RESOLVED=$(cd "$(dirname "$SYMLINK")" && cd "$(readlink "$SYMLINK")" && pwd)
+	SYMLINK_RESOLVED=$(cd "$(dirname "$SYMLINK")" && cd "$(readlink "$SYMLINK")" && pwd || true)   # || true: a broken target yields empty → drift-fail below, never a set -e abort
 
 	if [ ! -f "$MARKETPLACE" ]; then
 		fail ".claude-plugin/marketplace.json not found — cannot verify symlink ↔ marketplace agreement"
 	else
 		# Extract source field (bash 3.2: grep + sed, no python/jq required)
 		MP_SOURCE=$(grep '"source"' "$MARKETPLACE" | head -n1 \
-			| sed 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/')
+			| sed 's/.*"source"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/' || true)   # || true: no-match → empty → fail below, not a set -e abort
 		if [ -z "$MP_SOURCE" ]; then
 			fail "marketplace.json: no \"source\" field found in plugins entry"
 		else
