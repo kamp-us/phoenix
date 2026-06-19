@@ -61,11 +61,36 @@ process.env.ENVIRONMENT ??= "development";
 type StackOutput =
 	typeof Stack extends Effect.Effect<CompiledStack<infer A>, infer _E, infer _R> ? A : never;
 
+// `afterAll(destroy(...))` is skipped when `NO_DESTROY` is set, so a local iteration
+// loop can keep the per-file deploy alive between runs (matching the alchemy idiom).
+const NO_DESTROY = !!process.env.NO_DESTROY;
+
+// Per-PROCESS token for local default (destroy-on) runs: stable for one vitest
+// process, distinct across concurrent local processes. The stage is destroyed in
+// afterAll, so this name never outlives the run — pid + hrtime base36, not
+// Date.now()/Math.random() (the stage is single-use; this is deterministic-enough, short).
+const LOCAL_TOKEN = `${process.pid.toString(36)}${process.hrtime.bigint().toString(36)}`.replace(
+	/[^a-z0-9]/g,
+	"",
+);
+
 /**
- * A per-file isolated stage name. Real remote D1 + workers are keyed by stage, so
- * two files deploying concurrently must never collide; the file's basename is
- * stable across a run (so a re-deploy of the same file adopts the same stage) and
- * unique across files. Sanitized to the `[a-z0-9-]` Cloudflare resource-name set.
+ * A run-unique per-file stage name. Real remote D1 + workers are keyed by stage
+ * against ONE shared Cloudflare account, so two CI runs (different PRs, or a rerun)
+ * executing the integration job concurrently must never collide — the file basename
+ * alone repeats across runs, deploying the SAME stage names → `DatabaseAlreadyExists`
+ * (the dominant integration flake, #689). The slug disambiguates files WITHIN a run;
+ * a per-run token disambiguates runs:
+ *
+ *   - CI (`GITHUB_RUN_ID` set): token = `<run-id>-<run-attempt>` — unique per CI run,
+ *     shared across that run's files (the slug keeps files distinct). This is what
+ *     stops the cross-PR collision.
+ *   - Local + `NO_DESTROY`: NO token (`it-<slug>`) — NO_DESTROY explicitly keeps a
+ *     file's deploy alive between local runs to re-adopt it, which REQUIRES a stable name.
+ *   - Local, default (destroy-on): a per-process token (`LOCAL_TOKEN`), distinct across
+ *     concurrent local processes; the stage is torn down in afterAll, so no orphan.
+ *
+ * Sanitized to the `[a-z0-9-]` Cloudflare resource-name set.
  */
 const stageFor = (metaUrl: string): string => {
 	const base = (metaUrl.split("/").pop() ?? "integration").replace(/\.test\.ts$/, "");
@@ -73,12 +98,17 @@ const stageFor = (metaUrl: string): string => {
 		.toLowerCase()
 		.replaceAll(/[^a-z0-9]+/g, "-")
 		.replace(/(^-|-$)/g, "");
-	return `it-${slug}`;
+	const runToken = process.env.GITHUB_RUN_ID
+		? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}`
+		: NO_DESTROY
+			? ""
+			: LOCAL_TOKEN;
+	const token = runToken
+		.toLowerCase()
+		.replaceAll(/[^a-z0-9]+/g, "-")
+		.replace(/(^-|-$)/g, "");
+	return token ? `it-${slug}-${token}` : `it-${slug}`;
 };
-
-// `afterAll(destroy(...))` is skipped when `NO_DESTROY` is set, so a local iteration
-// loop can keep the per-file deploy alive between runs (matching the alchemy idiom).
-const NO_DESTROY = !!process.env.NO_DESTROY;
 
 /**
  * Stand up this file's per-file `Test.make` lifecycle and return the black-box
@@ -132,6 +162,10 @@ export function integrationStack(metaUrl: string): Harness {
 	// the hook registered. (The harness body itself is HTTP-only and never yields.)
 	void stack;
 
+	// Run-unique stages (stageFor) mean a deploy that throws mid-way can't be
+	// overwritten by the next run's same-named deploy — orphan D1s accumulate instead.
+	// A partial-deploy teardown that reliably cleans those up is out of scope here
+	// (hard within alchemy's model); tracked as a follow-up sweep. See #690.
 	afterAll.skipIf(NO_DESTROY)(destroy(Stack, {stage}));
 
 	return harness(() => workerUrl, stage);
