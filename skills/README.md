@@ -44,7 +44,7 @@ Three skills run **standalone**, outside the linear flow:
 - **`adr`** records an architecture decision into `.decisions/`.
 - **`deslop-comments`** strips noise comments from the working tree.
 
-## The 12 skills
+## The 13 skills
 
 | Skill | One-line |
 |-------|----------|
@@ -60,6 +60,7 @@ Three skills run **standalone**, outside the linear flow:
 | `heal-ci` | Classify a red CI run into flake-vs-defect and emit one routed action — rerun a known transient once, or file a defect via `report`. |
 | `adr` | Record an architecture decision (Context / Decision / Consequences) into `.decisions/NNNN-slug.md` and the index, following supersede rules. |
 | `deslop-comments` | Ruthlessly cut comments that bury the code without earning their place — keeping load-bearing notes, collapsing duplicated "why" to ADR pointers. |
+| `doctor` | Preflight a repo against the pipeline prerequisites (gh auth + scope, the 15 required labels, repo resolution, a CI signal, npm deps) and print a tiered pass/fail checklist with the exact fix command for each gap. |
 
 ## Install
 
@@ -129,6 +130,14 @@ end-to-end in a real non-phoenix repo (#432): `generate` regenerated a correct i
 `check` gated a stale one — no `--filter` no-op, no `ERR_MODULE_NOT_FOUND`.
 
 ### Validating portability in a foreign repo
+
+**Start with `doctor`.** Before the first run in a freshly-adopted repo, run the `doctor`
+skill (`.claude/skills/doctor/doctor.sh`) — it asserts the prerequisites in one pass (gh
+auth + the `project` scope, the 15 required `status:*`/`type:*`/`p*` labels, repo
+resolution, a CI signal, and the `@kampus/*` npm deps) and prints a tiered pass/fail
+checklist with the exact `gh label create …` / `gh auth refresh …` fix command for each
+gap. It turns "did I wire this up right?" into one checkable command instead of a first run
+that fails deep inside a `gh api` call.
 
 To re-prove a skill's published fallback runs outside phoenix (the repeatable procedure
 behind #368 / #432), exercise it in a throwaway non-phoenix git repo — **not** phoenix
