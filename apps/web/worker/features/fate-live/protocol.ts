@@ -108,19 +108,27 @@ export type PublishMessage =
  */
 export type PublishToTopic = (topicKey: string, message: PublishMessage) => void;
 
-/** A control message a connection DO records as a subscription. */
+/**
+ * A control message a connection DO records as a subscription. `lastEventId` is
+ * the last SSE `id:` the client saw on this subscription before this (re)subscribe
+ * — threaded through to `register` as an extra tightening on top of the primary
+ * `subscribedAt` replay bound (the topic replays only frames from the subscriber's
+ * intent forward, never the topic's prior history; see `live-do.ts` `replayBuffer`).
+ */
 export type SubscribeControl =
 	| {
 			readonly kind: "subscribe";
 			readonly subId: string;
 			readonly type: string;
 			readonly entityId: string;
+			readonly lastEventId?: string;
 	  }
 	| {
 			readonly kind: "subscribeConnection";
 			readonly subId: string;
 			readonly procedure: LiveConnectionProcedure;
 			readonly args?: Record<string, unknown>;
+			readonly lastEventId?: string;
 	  };
 
 const OptionalArgs = Schema.optional(Schema.Record(Schema.String, Schema.Unknown));
@@ -261,6 +269,10 @@ export interface LiveLimits {
 	readonly maxQueuedEventsPerConnection: number;
 	readonly maxEncodedEventSize: number;
 	readonly deliveryAttemptTimeoutMs: number;
+	/** Ring-buffer depth for the topic catch-up replay (count bound). */
+	readonly maxBufferedFramesPerTopic: number;
+	/** Ring-buffer age for the topic catch-up replay (TTL bound, ms). */
+	readonly bufferedFrameTtlMs: number;
 }
 
 /**
@@ -275,6 +287,10 @@ export const defaultLiveLimits: LiveLimits = {
 	maxQueuedEventsPerConnection: 100,
 	maxEncodedEventSize: 64 * 1024,
 	deliveryAttemptTimeoutMs: 1500,
+	// The catch-up window closes the publish-vs-register race (#714): a few seconds
+	// is the observed register-RPC tail under load (~1.7–2.5s), small N caps storage.
+	maxBufferedFramesPerTopic: 32,
+	bufferedFrameTtlMs: 10_000,
 };
 
 /**
@@ -293,4 +309,24 @@ export interface SubscriberRow {
 	readonly generation: number;
 	readonly revision: number;
 	readonly updatedAt: number;
+}
+
+/**
+ * A frame the topic role retains in its storage-backed ring buffer (under a
+ * `frame:<topicKey>:<seq>` key) so a subscriber whose `register` lands AFTER the
+ * publish can still catch up — the publish-vs-register race fix (#714). The buffer
+ * is storage-backed, not in-memory: a topic DO is not pinned by any open stream
+ * (only connection DOs are), so it evicts between a publish and a later register,
+ * and an in-memory buffer would be gone exactly when replay needs it. `seq` is the
+ * monotonic per-topic publish ordinal (replay order, and dedup when frames carry no
+ * `eventId`); `eventId` is the optional wire id that tightens replay by the
+ * subscriber's `lastEventId`; `at` is the publish timestamp — both the TTL bound
+ * and the primary `subscribedAt` replay bound (only frames at/after the
+ * subscriber's intent replay; see `live-do.ts` `replayBuffer`).
+ */
+export interface BufferedFrame {
+	readonly seq: number;
+	readonly eventId: string | undefined;
+	readonly at: number;
+	readonly frame: DeliverFrame;
 }

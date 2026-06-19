@@ -51,6 +51,7 @@ export class LiveConnections extends Context.Service<
 				readonly topics: ReadonlyArray<string>;
 				readonly ownerId: string | undefined;
 				readonly limits: LiveLimits;
+				readonly lastEventId?: string;
 			},
 		) => Effect.Effect<{readonly ok: boolean}, never, never>;
 		/** Drop a subscription on a connection (typed RPC). */

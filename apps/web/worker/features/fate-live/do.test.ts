@@ -36,6 +36,8 @@ const LIMITS: LiveLimits = {
 	maxQueuedEventsPerConnection: 100,
 	maxEncodedEventSize: 64 * 1024,
 	deliveryAttemptTimeoutMs: 1500,
+	maxBufferedFramesPerTopic: 32,
+	bufferedFrameTtlMs: 10_000,
 };
 
 type LiveInstance = ReturnType<typeof makeLiveInstance>;
@@ -222,7 +224,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 			revision: 1,
 			updatedAt: Date.now(),
 		};
-		const reg = await run(topic.register({row, limits: LIMITS}));
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now()}));
 		expect(reg.ok).toBe(true);
 		expect(fake.hasAlarm()).toBe(true);
 
@@ -427,7 +429,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 			revision: 1,
 			updatedAt: Date.now(),
 		};
-		const reg = await run(topic.register({row, limits: LIMITS}));
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now()}));
 		expect(reg.ok).toBe(true);
 
 		// A tight budget: the hung deliver must NOT wedge publish — the
@@ -442,5 +444,304 @@ describe("LiveDO live fan-out (KV model)", () => {
 		// Settled near the budget, not hung forever (generous ceiling for CI jitter).
 		expect(elapsed).toBeLessThan(2000);
 		expect(elapsed).toBeGreaterThanOrEqual(40);
+	});
+
+	// The #714 race: a publish fires before the subscriber's `register` commits, so
+	// fan-out delivers to an empty registry. The storage-backed catch-up buffer must
+	// replay the missed frame to the connection when its register finally lands.
+	it("register after publish replays the buffered frame (the #714 catch-up)", async () => {
+		const cell = makeLiveCell();
+		const connection = makeConnection(cell, "conn-late");
+		const topicKey = "Post:post-late";
+		const {instance: topic} = makeTopic(cell, topicKey);
+
+		const ownerId = "owner-late";
+		const subId = "sub-late";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Publish BEFORE the subscriber registers — fan-out finds an empty registry.
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		expect(pub.delivered).toBe(0);
+
+		// Now the subscribe→register lands (the slow RPC of #714). Replay must deliver
+		// the buffered frame to this just-registered connection.
+		const sub = await run(
+			connection.subscribe({subId, topics: [topicKey], ownerId, limits: LIMITS}),
+		);
+		expect(sub.ok).toBe(true);
+
+		const frame = await stream.next();
+		expect(frame).toContain("event: next");
+		expect(payloadOf(frame).id).toBe(subId);
+
+		await stream.cancel();
+	});
+
+	// The dedup boundary: an already-registered connection receives a publish via
+	// fan-out; a SECOND connection registering afterward gets the same frame via
+	// replay. Neither connection ever sees the frame twice — fan-out reaches only the
+	// already-registered, replay only the just-registering.
+	it("no double-apply: fan-out and replay deliver each frame to a connection at most once", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-dedup";
+		const {instance: topic} = makeTopic(cell, topicKey);
+
+		const connEarly = makeConnection(cell, "conn-early");
+		const connLate = makeConnection(cell, "conn-late-dedup");
+
+		const resEarly = await run(
+			connEarly.openStream({
+				ownerId: "owner-early",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const resLate = await run(
+			connLate.openStream({
+				ownerId: "owner-late",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const streamEarly = await reader(resEarly);
+		const streamLate = await reader(resLate);
+		expect(await streamEarly.next()).toContain("connected");
+		expect(await streamLate.next()).toContain("connected");
+
+		// Only the early connection is registered when the publish fires.
+		await run(
+			connEarly.subscribe({
+				subId: "sub-early",
+				topics: [topicKey],
+				ownerId: "owner-early",
+				limits: LIMITS,
+			}),
+		);
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		expect(pub.delivered).toBe(1); // fan-out reached ONLY the early connection
+
+		// The early connection got it via fan-out — exactly one frame, no replay echo.
+		expect(payloadOf(await streamEarly.next()).id).toBe("sub-early");
+		const earlyEcho = await Promise.race([
+			streamEarly.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(earlyEcho).toBe("idle");
+
+		// The late connection registers AFTER the publish → gets the frame via replay,
+		// exactly once (fan-out could not have reached it).
+		await run(
+			connLate.subscribe({
+				subId: "sub-late",
+				topics: [topicKey],
+				ownerId: "owner-late",
+				limits: LIMITS,
+			}),
+		);
+		expect(payloadOf(await streamLate.next()).id).toBe("sub-late");
+		const lateEcho = await Promise.race([
+			streamLate.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(lateEcho).toBe("idle");
+
+		await streamEarly.cancel();
+		await streamLate.cancel();
+	});
+
+	// `lastEventId` bounds the replay: a resubscribe carrying the id of a frame it
+	// already saw replays ONLY the frames published after it, not the whole window.
+	it("lastEventId bounds replay to frames newer than the last one the subscriber saw", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-lei";
+		const {instance: topic} = makeTopic(cell, topicKey);
+
+		const connection = makeConnection(cell, "conn-lei");
+		const res = await run(
+			connection.openStream({
+				ownerId: "owner-lei",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Two frames published before any register, each carrying an eventId.
+		const frameOld: DeliverFrame = {kind: "next", id: "", event: {data: {n: 1}}, eventId: "e1"};
+		const frameNew: DeliverFrame = {kind: "next", id: "", event: {data: {n: 2}}, eventId: "e2"};
+		await run(topic.publish({topicKey, frame: frameOld, limits: LIMITS}));
+		await run(topic.publish({topicKey, frame: frameNew, limits: LIMITS}));
+
+		// Resubscribe declaring it already saw `e1` → replay must skip e1, deliver e2.
+		const sub = await run(
+			connection.subscribe({
+				subId: "sub-lei",
+				topics: [topicKey],
+				ownerId: "owner-lei",
+				limits: LIMITS,
+				lastEventId: "e1",
+			}),
+		);
+		expect(sub.ok).toBe(true);
+
+		const frame = await stream.next();
+		// Only the newer frame replays — its SSE `id:` header carries e2.
+		expect(frame).toContain("id: e2");
+		expect(frame).not.toContain("id: e1");
+
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+
+	// The PRIMARY replay bound is `subscribedAt`: replay delivers ONLY frames
+	// published at/after the subscriber's intent instant. These two tests drive
+	// `register` directly with an explicit `subscribedAt` so the window edge is
+	// deterministic (no wall-clock race). To isolate the REPLAY path from fan-out,
+	// the connection subscribes to a DECOY topic (activating the subId on the
+	// connection so the replayed deliver isn't stale) while the frame is published to
+	// a SEPARATE topic with NO registered row — so fan-out reaches nothing and the
+	// only way the frame can arrive is replay on the manual `register`.
+	it("a frame published at/after subscribedAt replays (the #714 catch-up window)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-after";
+		const decoyKey = "Post:decoy-after";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-after");
+		const ownerId = "owner-after";
+		const subId = "sub-after";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Activate `subId` on the connection via the decoy (revision 1, generation 1).
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// Publish to the REAL topic (no registered row → fan-out delivers nothing),
+		// then register a row with `subscribedAt` set BEFORE the frame's publish time:
+		// the frame is at/after intent → replay must deliver it.
+		const beforePublish = Date.now();
+		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-after",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: beforePublish}));
+		expect(reg.ok).toBe(true);
+
+		const frame = await stream.next();
+		expect(frame).toContain("event: next");
+		expect(payloadOf(frame).id).toBe(subId);
+
+		await stream.cancel();
+	});
+
+	it("a frame published before subscribedAt does NOT replay (no stale history)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-before";
+		const decoyKey = "Post:decoy-before";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-before");
+		const ownerId = "owner-before";
+		const subId = "sub-before";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// Publish to the REAL topic, then register with `subscribedAt` set WELL AFTER
+		// the frame's publish time (past the clock grace) — the frame predates the
+		// subscriber's intent, the regression's stale-history case. It must NOT replay.
+		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-before",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now() + 60_000}));
+		expect(reg.ok).toBe(true);
+
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+
+	// The buffer is bounded by TTL: a register that lands past the window gets no
+	// replay — the race window is a few seconds, not unbounded retention.
+	it("a register past the TTL window replays nothing (bounded buffer)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-ttl";
+		const {instance: topic} = makeTopic(cell, topicKey);
+
+		const connection = makeConnection(cell, "conn-ttl");
+		const res = await run(
+			connection.openStream({
+				ownerId: "owner-ttl",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// A 1ms TTL + a real gap before register: the buffered frame is past its
+		// window by the time replay runs, so nothing replays. (A 0ms TTL would race
+		// the clock — a same-millisecond publish+register is `now - at === 0`, still
+		// inside the `<= ttl` window.)
+		const limits: LiveLimits = {...LIMITS, bufferedFrameTtlMs: 1};
+		await run(topic.publish({topicKey, frame: entityFrame, limits}));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		const sub = await run(
+			connection.subscribe({
+				subId: "sub-ttl",
+				topics: [topicKey],
+				ownerId: "owner-ttl",
+				limits,
+			}),
+		);
+		expect(sub.ok).toBe(true);
+
+		// No replay frame — only the idle timeout resolves.
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
 	});
 });

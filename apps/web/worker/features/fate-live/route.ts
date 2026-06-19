@@ -94,20 +94,25 @@ export const handleLive = Effect.gen(function* () {
 							subId: operation.id,
 							type: operation.type,
 							entityId: String(operation.entityId),
+							...(operation.lastEventId !== undefined ? {lastEventId: operation.lastEventId} : {}),
 						}
 					: {
 							kind: "subscribeConnection",
 							subId: operation.id,
 							procedure: operation.procedure,
 							...(operation.args ? {args: operation.args} : {}),
+							...(operation.lastEventId !== undefined ? {lastEventId: operation.lastEventId} : {}),
 						};
 			// Resolve the control's topic keys + per-request limits here, so the DO
 			// records the subscription with a budget it never invents (decision 2B).
+			// `lastEventId` rides through so the topic replays only frames newer than
+			// the last one this subscription saw (#714 catch-up).
 			const res = yield* connections.subscribe(connectionId, {
 				subId: operation.id,
 				topics: topicsForSubscribe(control),
 				ownerId,
 				limits: defaultLiveLimits,
+				...(control.lastEventId !== undefined ? {lastEventId: control.lastEventId} : {}),
 			});
 			results.push({id: operation.id, ok: res.ok, data: null});
 		}
