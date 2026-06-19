@@ -2,6 +2,10 @@
 	"enabledPlugins": {
 		"kampus-pipeline@kampus": false
 	},
+	"statusLine": {
+		"type": "command",
+		"command": "node packages/spawn-guard/src/bin.ts statusline"
+	},
 	"hooks": {
 		"PreToolUse": [
 			{
@@ -37,6 +41,15 @@
 					{
 						"type": "command",
 						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts pre-enter"
+					}
+				]
+			},
+			{
+				"matcher": "Task|Workflow",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node packages/spawn-guard/src/bin.ts guard"
 					}
 				]
 			}
