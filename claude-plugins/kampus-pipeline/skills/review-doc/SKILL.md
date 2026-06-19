@@ -147,7 +147,7 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
   (Step 5).
 
   ```bash
-  CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
+  CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
   CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
     --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
   # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073)

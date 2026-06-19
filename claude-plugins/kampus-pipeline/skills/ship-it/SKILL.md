@@ -48,7 +48,7 @@ A PR is in one of two classes by the files it touches (ADR
   **independent of routing**: every gate-critical skill is still verified — now by
   `review-skill` (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md),
   superseding 0063's `review-code` routing) — and the human reads that verdict, then merges by
-  hand. **Every OTHER `skills/**`** (triage, plan-epic, write-code, heal-ci, report, …) stays
+  hand. **Every OTHER `claude-plugins/kampus-pipeline/skills/**`** (triage, plan-epic, write-code, heal-ci, report, …) stays
   **non-blocking** — `review-skill`-routed and auto-merged on a PASS, because those skills
   neither merge nor verify, so a bad edit still has to clear the gate that does. ADR 0065's
   blocking rule is **unchanged** by 0073: `review-skill` is the *verdict* gate; merge-authority
@@ -116,16 +116,16 @@ you refuse any verdict not bound to the PR's *current* head (Step 2b, ADR
   `review-code` can also land a native **approving review** (`event=APPROVE`), whose
   `commit_id` is its bound SHA.
 - **docs** (`.decisions`, `.patterns`, prose `*.md` outside `.claude`/`.github`, outside
-  `skills/**`, and outside the code roots `apps/**`/`packages/**` — a package/app-internal README
+  `claude-plugins/kampus-pipeline/skills/**`, and outside the code roots `apps/**`/`packages/**` — a package/app-internal README
   is `review-code`'s scope, not this class; see Step 0) → `review-doc`, whose marker is
   `review-doc: PASS @ <sha> — merge-ready` or
   `review-doc: FAIL @ <sha> — changes-requested` (canonical shape: §6). `review-doc` is
   **comment-only** — it never lands a native review (ADR 0058), so the doc lane is a single
   comparable record type, not a review-vs-comment mix.
-- **skills** (`skills/**`) → `review-skill`, whose marker is
+- **skills** (`claude-plugins/kampus-pipeline/skills/**`) → `review-skill`, whose marker is
   `review-skill: PASS @ <sha> — merge-ready` or `review-skill: FAIL @ <sha> — changes-requested`
   (canonical shape: §6.5). `review-skill` is **comment-only** like `review-doc` (ADR 0058). This
-  **supersedes ADR 0063's** `skills/**` → `review-code` routing (ADR 0073 §4): a skill is a
+  **supersedes ADR 0063's** `claude-plugins/kampus-pipeline/skills/**` → `review-code` routing (ADR 0073 §4): a skill is a
   behavioral artifact, gated by the gate built for it.
 
 The marker-comment path is the **default** to expect: the single operator on this repo
@@ -172,9 +172,9 @@ ADR 0073 §6):
   `review-code` routing) — the two axes are independent. The blocking refusal short-circuits in
   the **Routing** step below, *before* the namespace check, so the `review-skill` routing stays
   correct for the human-read verdict: gate-critical skills are **skill-class for ROUTING,
-  blocking for MERGE**. Every OTHER `skills/**` is **non-blocking** — skill-class for routing
+  blocking for MERGE**. Every OTHER `claude-plugins/kampus-pipeline/skills/**` is **non-blocking** — skill-class for routing
   and auto-merged on a `review-skill` PASS.
-- **skills:** under `skills/**` (the `^skills/` probe) → **skill-class**, requiring a
+- **skills:** under `claude-plugins/kampus-pipeline/skills/**` (the `^claude-plugins/kampus-pipeline/skills/` probe) → **skill-class**, requiring a
   `review-skill` PASS. A skill is a behavioral artifact, gated by `review-skill`, not the code
   AC-gate nor the doc hygiene-gate (ADR 0073 §4, superseding ADR
   [0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)).
@@ -186,8 +186,8 @@ ADR 0073 §6):
   `apps/**` exclusion below (the two must name the same code roots, or an `apps/dashboard` path would
   class as neither code nor docs and slip through ungated — #663).
 - **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`,
-  **outside `skills/**`**, **and outside the code roots `apps/**`/`packages/**`** — exactly
-  `review-doc`'s verification scope. `skills/**` is the skill class, and an `*.md` under
+  **outside `claude-plugins/kampus-pipeline/skills/**`**, **and outside the code roots `apps/**`/`packages/**`** — exactly
+  `review-doc`'s verification scope. `claude-plugins/kampus-pipeline/skills/**` is the skill class, and an `*.md` under
   `apps/**`/`packages/**` (a package/app-internal README, CHANGELOG, etc.) ships with its code
   artifact and is **`review-code`'s** scope, so both are carved out of docs *before* the `.md$`
   match. The docs class is thus the surface a `review-doc` PASS can actually gate — see the
@@ -195,9 +195,9 @@ ADR 0073 §6):
 
 ```bash
 FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set — one definition (ADR 0073 §6)
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set — one definition (ADR 0073 §6)
 echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge on a review-skill PASS (ADR 0073)
-echo "$FILES" | grep -Eq '^skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
+echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
 echo "$FILES" | grep -Eq '^(apps|packages)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages — agrees with the docs-probe exclusion below (#663); skills/** is its OWN class (ADR 0073)
 # docs probe EXCLUDES the code roots AND skills/** first, so a code/app-internal README (apps/**, packages/**)
 # or a skills-only .md is NOT classed docs — only a prose .md on review-doc's own surface is (#542/#650)
@@ -213,9 +213,9 @@ echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.
   This holds even if the rest of the diff is clean code/docs/skills — a mixed PR that touches
   the control plane is still a manual merge, and should be split so the non-blocking half can
   flow. This refusal short-circuits **before** the namespace check below, so it never conflicts
-  with the fact that a gate-critical `skills/**` PR is still `review-skill`-routed (ADR 0073):
+  with the fact that a gate-critical `claude-plugins/kampus-pipeline/skills/**` PR is still `review-skill`-routed (ADR 0073):
   the routing decides *which gate's verdict the human reads*, this refusal decides *who merges*.
-  A `skills/**` PR that touches **no** gate-critical skill is **not** blocking — it flows
+  A `claude-plugins/kampus-pipeline/skills/**` PR that touches **no** gate-critical skill is **not** blocking — it flows
   through `review-skill` and auto-merges on a PASS.
 - Otherwise, note which **artifact classes are present** (skills, code, docs, or a mix). Step 2
   requires the matching gate's latest verdict = PASS for **each class present**: skills →
@@ -228,7 +228,7 @@ so the docs probe may only class as docs a path a `review-doc` PASS can actually
 `.md$` match is therefore **scoped, not over-matching**: it runs only after `grep -Ev
 '^(skills|apps|packages)/'` carves out the three path-classes whose `.md` is **not** review-doc's:
 
-- **`skills/**`** — a skill `.md` is `review-skill`-gated (ADR 0073). Classing it docs would
+- **`claude-plugins/kampus-pipeline/skills/**`** — a skill `.md` is `review-skill`-gated (ADR 0073). Classing it docs would
   demand a `review-doc` PASS that never comes (the original #358 deadlock, closed by the
   dedicated gate).
 - **`apps/**` / `packages/**`** — a package/app-internal `*.md` (a README, CHANGELOG) ships
@@ -252,7 +252,7 @@ Widening has-code to `apps/**` closes that hole (#663): every `apps/<app>` path 
 has-code and rides its `review-code` PASS, exactly as `apps/web` always has.
 
 So `.decisions/**`/`.patterns/**` always class docs, and a prose `*.md` classes docs **only when
-it lives outside the code roots, `skills/**`, and the control plane** — i.e. exactly the surface
+it lives outside the code roots, `claude-plugins/kampus-pipeline/skills/**`, and the control plane** — i.e. exactly the surface
 `review-doc` verifies. This keeps the docs class and the doc gate consistent: a present docs class
 implies a `review-doc` PASS is *obtainable*, never a phantom requirement. The control-plane check
 remains the only **exact** probe and is unchanged; this carve-out narrows **only** the docs class,

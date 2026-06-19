@@ -141,7 +141,7 @@ each gate hands a mis-classed PR to the gate that owns its class:
 # the file set drives the class decision (same list pulled above)
 FILES="$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')"
 # skills-only ⇒ every changed path is under skills/ — review-skill's class, not yours
-if [ -n "$FILES" ] && ! grep -qvE '^skills/' <<<"$FILES"; then
+if [ -n "$FILES" ] && ! grep -qvE '^claude-plugins/kampus-pipeline/skills/' <<<"$FILES"; then
   echo "not a code PR — route to review-skill"   # plain note, no review-code: marker; stop
   exit 0
 fi
@@ -383,7 +383,7 @@ So the verdict's not-auto-mergeable flag matches the **canonical §CP set** (the
 `ship-it` Step 0 uses):
 
 ```bash
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
 CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
   --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
 # non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073

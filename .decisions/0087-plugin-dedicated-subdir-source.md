@@ -65,6 +65,16 @@ one subdir per plugin, each distributed from its own subdir source.**
    refs are rewritten to stable phoenix GitHub permalinks (the ADR 0062 §4 convention), which
    is also what makes them resolve from an adopter's install where those trees don't exist.
 
+4. **The gate-path anchors re-home with the skills.** The control-plane / blocking set (§CP)
+   and the skill-class routing probes are matched against a PR's changed-file *paths*, which a
+   move silently invalidates: a `CONTROL_PLANE_RE` anchored on `^skills/(ship-it|…)` stops
+   matching the relocated gate-critical skills, so `ship-it` would no longer refuse to
+   auto-merge an edit to its own merge machinery — a gate-integrity regression. So the move
+   **must** re-anchor every path-coupled gate rule to `claude-plugins/kampus-pipeline/skills/`:
+   the §CP canonical list, the five hard-coded `CONTROL_PLANE_RE` copies, and the
+   `^…/skills/` skill-class probes. (Caught in review of this PR; the path coupling is the
+   #375 drift class §CP exists to bound — the canonical list and its copies move together.)
+
 ## Consequences
 
 - **Installs carry only the plugin's own subtree** — no monorepo source, no stray `CLAUDE.md`,

@@ -160,7 +160,7 @@ the path list here (that fourth copy is exactly the #375 drift class §CP closes
 ```bash
 PR=<pr number>
 # the canonical §CP probe — one definition all four gates cite
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'
 CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" \
   --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
 # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073, §CP)
