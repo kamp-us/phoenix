@@ -230,6 +230,15 @@ jobs:
       github.event_name == 'pull_request' &&
       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
     runs-on: ubuntu-latest
+    # Hang backstop (#660): the old `playwright install` hang stalled this job ~80min
+    # with zero output before a human cancelled it. That install step is gone (the
+    # container below prebakes the browsers), but cap the job anyway so ANY future
+    # hang fails fast instead of burning the GH 6h default. Budget: container pull
+    # (~3) + checkout/corepack/install (~3) + await-preview poll (10, its own
+    # `core.setFailed` deadline) + seed (~1) + specs ~72s with one retry (~4) +
+    # report upload (~1) ≈ 22min worst legit run; 25 leaves slack for a cold deploy
+    # yet trips ~3× faster than the old stall.
+    timeout-minutes: 25
     # Run in the Playwright-maintained image: chromium + headless-shell + ffmpeg
     # and all system deps are PREBAKED at /ms-playwright (PLAYWRIGHT_BROWSERS_PATH
     # is set in the image), so there's no `playwright install` download — which
