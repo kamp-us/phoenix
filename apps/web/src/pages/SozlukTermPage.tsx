@@ -14,6 +14,7 @@ import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCar
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
+import {useLiveKeepAlive} from "../fate/useLiveKeepAlive";
 import {codeOf, LoadMoreButton} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
@@ -150,6 +151,11 @@ interface DefinitionsListProps {
 
 function DefinitionsList(props: DefinitionsListProps) {
 	const term = useView(TermView, props.term);
+	// Pin the SSE connection on the stable parent `Term` for the list's mount
+	// lifetime, so the definition list's per-mutation re-subscribe churn never
+	// drops the refcount to 0 and drops the live `appendNode` (#708; #711 is the
+	// durable transport fix). See `apps/web/src/fate/useLiveKeepAlive.ts`.
+	useLiveKeepAlive(TermView, props.term);
 	const [items, loadNext] = useLiveListView(DefinitionConnectionView, term.definitions);
 
 	return (

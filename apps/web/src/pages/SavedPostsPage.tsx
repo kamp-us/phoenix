@@ -19,6 +19,7 @@ import {useSession} from "../auth/client";
 import {Subnav} from "../components/layout/Subnav";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Screen} from "../fate/Screen";
+import {useLiveListKeepAlive} from "../fate/useLiveKeepAlive";
 import {LoadMoreButton} from "../fate/wire";
 import {authRedirectPath} from "../lib/returnTo";
 
@@ -67,6 +68,11 @@ type SavedConnection = ReturnType<
 >["savedPosts"];
 
 function SavedRows({connection}: {connection: SavedConnection}) {
+	// Pin the SSE connection on the saved-list's stable `listKey` for the list's
+	// mount lifetime, so a save/unsave mutation's re-subscribe churn never drops
+	// the refcount to 0 and drops a live update (#708; #711 is the durable
+	// transport fix). See `apps/web/src/fate/useLiveKeepAlive.ts`.
+	useLiveListKeepAlive(SavedConnectionView, connection);
 	const [items, loadNext] = useLiveListView(SavedConnectionView, connection);
 
 	// `items.length` counts edges still in the connection; an un-saved row stays
