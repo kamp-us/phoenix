@@ -76,7 +76,7 @@ test.describe("Pano editComment / deleteComment", () => {
 		await expect(page.getByText(editedBody, {exact: false}).first()).toBeVisible({
 			timeout: 10_000,
 		});
-		await expect(page.getByText(originalBody, {exact: true})).toHaveCount(0);
+		await expect(page.getByText(originalBody, {exact: true})).toHaveCount(0, {timeout: 10_000});
 
 		// Reply to the (now edited) parent comment.
 		await page.locator(`[data-testid="pano-comment-reply-trigger-${parentCommentId}"]`).click();
@@ -112,7 +112,7 @@ test.describe("Pano editComment / deleteComment", () => {
 		await expect(page.getByText("[silindi]").first()).toBeVisible({timeout: 10_000});
 		await expect(page.getByText(replyBody, {exact: false})).toBeVisible({timeout: 10_000});
 		// The original (edited) body is gone.
-		await expect(page.getByText(editedBody, {exact: false})).toHaveCount(0);
+		await expect(page.getByText(editedBody, {exact: false})).toHaveCount(0, {timeout: 10_000});
 
 		// Delete the leaf reply → fully removed (and the [silindi] parent
 		// disappears too once it has no live children).
@@ -162,7 +162,9 @@ test.describe("Pano editComment / deleteComment", () => {
 		const voteBtn = page.locator('[data-testid^="comment-vote-comm_"]').first();
 		await expect(voteBtn).toBeVisible({timeout: 10_000});
 		const aCommentId = (await voteBtn.getAttribute("data-testid"))!.replace("comment-vote-", "");
-		await expect(page.locator(`[data-testid="pano-comment-menu-${aCommentId}"]`)).toHaveCount(1);
+		await expect(page.locator(`[data-testid="pano-comment-menu-${aCommentId}"]`)).toHaveCount(1, {
+			timeout: 10_000,
+		});
 
 		// Sign A out, sign B up.
 		await signOut(page);

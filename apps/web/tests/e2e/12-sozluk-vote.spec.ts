@@ -57,15 +57,23 @@ test.describe("Sözlük voteDefinition", () => {
 		await expect(composerBodyAgain).toBeVisible({timeout: 10_000});
 		await expect(page.getByText(definitionBody)).toBeVisible({timeout: 10_000});
 
+		// Wait for the *persisted* definition card (a real `def_<ulid>` id) — after
+		// the fresh-slug reload re-reads `term(slug)` the optimistic `optimistic:`-id
+		// node is gone, so binding the vote button to the persisted row avoids voting
+		// against a node that's about to be replaced. Mirrors 20's persisted-card guard.
+		await expect(page.locator('[data-testid^="definition-card-def_"]').first()).toBeVisible({
+			timeout: 10_000,
+		});
+
 		const voteBtn = page.locator('[data-testid^="definition-vote-"]').first();
 		const score = page.locator('[data-testid^="definition-score-"]').first();
 		await expect(voteBtn).toBeVisible({timeout: 5_000});
-		await expect(score).toHaveText("0");
+		await expect(score).toHaveText("0", {timeout: 5_000});
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "false");
 
 		// Cast vote — optimistic flip lands first.
 		await voteBtn.click();
-		await expect(score).toHaveText("1");
+		await expect(score).toHaveText("1", {timeout: 5_000});
 		await expect(voteBtn).toHaveAttribute("aria-pressed", "true", {timeout: 5_000});
 
 		// Retract vote.

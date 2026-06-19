@@ -200,6 +200,13 @@ test.describe("Pano live (two clients)", () => {
 		await page.locator('[data-testid="sozluk-composer-body"]').fill(firstDef);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 		await expect(page.getByText(firstDef, {exact: false})).toBeVisible({timeout: 15_000});
+		// Wait for the *persisted* card (real `def_<ulid>` id) so the fresh-slug
+		// term-materialization remount has fully landed before we drop the sentinel —
+		// otherwise that remount fires AFTER the sentinel and wipes it, failing the
+		// no-reload check below for the wrong reason. Mirrors 20's persisted-card guard.
+		await expect(page.locator('[data-testid^="definition-card-def_"]').first()).toBeVisible({
+			timeout: 10_000,
+		});
 
 		// Drop a sentinel; a full reload would clear it. The term now exists, so a
 		// SECOND add must arrive via the live `appendNode` (no reload).
