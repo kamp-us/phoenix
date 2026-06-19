@@ -26,6 +26,12 @@ import * as Schema from "effect/Schema";
  * `ZERO_AC`) — the two halves of the story-coverage invariant (ADR 0046/0047):
  * every declared story is covered by ≥1 child, every linked child traces to ≥1
  * story.
+ *
+ * `MISSING_CONTAINMENT` is a per-child content defect — a `type:feature` child
+ * carrying no `flag (default-off)` | `exempt (<reason>)` containment marker in a
+ * repo that has a cycle doc (ADR 0091, formats §2). It sits in the child-content
+ * cluster next to its marker-shaped sibling `MISSING_LABEL`, after the
+ * story-coverage defects.
  */
 export const DEFECT_TYPES = [
 	"ZERO_SCOPE",
@@ -38,6 +44,7 @@ export const DEFECT_TYPES = [
 	"ZERO_AC",
 	"MISSING_STORY",
 	"MISSING_LABEL",
+	"MISSING_CONTAINMENT",
 	"NEEDS_TRIAGE_LABEL",
 ] as const;
 

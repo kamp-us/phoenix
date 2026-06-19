@@ -1,6 +1,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {
 	countAcceptanceCriteria,
+	parseChildContainment,
 	parseChildStories,
 	parseDependencyGraph,
 	parseEpicStories,
@@ -197,5 +198,34 @@ describe("parseChildStories", () => {
 
 	it("dedupes and sorts the refs", () => {
 		assert.deepStrictEqual(parseChildStories("**Stories:** 3, 1, 3"), [1, 3]);
+	});
+});
+
+describe("parseChildContainment", () => {
+	it("reads `flag (default-off)` as flag", () => {
+		assert.strictEqual(parseChildContainment("**Containment:** flag (default-off)"), "flag");
+	});
+
+	it("reads `exempt (<reason>)` as exempt", () => {
+		assert.strictEqual(
+			parseChildContainment("**Containment:** exempt (internal — validator)"),
+			"exempt",
+		);
+	});
+
+	it("reads the explicit `none (no cycle doc)` as none", () => {
+		assert.strictEqual(parseChildContainment("**Containment:** none (no cycle doc)"), "none");
+	});
+
+	it("returns undefined when there is no `**Containment:**` line", () => {
+		assert.strictEqual(parseChildContainment("### What to build\njust prose"), undefined);
+	});
+
+	it("tolerates a bare (unbolded) `Containment:` line and trailing fields", () => {
+		assert.strictEqual(parseChildContainment("Containment: flag\n**TDD:** yes"), "flag");
+	});
+
+	it("returns undefined for an unrecognized value (treated as unset, not malformed)", () => {
+		assert.strictEqual(parseChildContainment("**Containment:** maybe later"), undefined);
 	});
 });

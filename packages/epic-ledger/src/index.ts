@@ -31,6 +31,7 @@ export {
 export {findCycles} from "./graph.ts";
 export {
 	ChildIssue,
+	Containment,
 	DependencyEdge,
 	DependencyGraph,
 	EpicHeader,
@@ -46,6 +47,7 @@ export {
 } from "./loop.ts";
 export {
 	countAcceptanceCriteria,
+	parseChildContainment,
 	parseChildStories,
 	parseDependencyGraph,
 	parseEpicStories,

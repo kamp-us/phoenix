@@ -138,6 +138,61 @@ describe("validateLedger — each defect type", () => {
 		assert.deepStrictEqual(needsTriage?.refs, [101]);
 	});
 
+	it("MISSING_CONTAINMENT when a type:feature child carries no containment marker (cycle doc present)", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {containment: undefined})],
+		});
+		const missing = validateLedger(l).find((d) => d.type === "MISSING_CONTAINMENT");
+		assert.isDefined(missing);
+		assert.deepStrictEqual(missing?.refs, [101]);
+	});
+
+	it("a type:feature child with `flag` containment is NOT a MISSING_CONTAINMENT", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {containment: "flag"})],
+		});
+		assert.notInclude(typesOf(l), "MISSING_CONTAINMENT");
+	});
+
+	it("a type:feature child with `exempt` containment is NOT a MISSING_CONTAINMENT", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {containment: "exempt"})],
+		});
+		assert.notInclude(typesOf(l), "MISSING_CONTAINMENT");
+	});
+
+	it("an explicit `none` containment on a type:feature child IS a MISSING_CONTAINMENT (cycle doc present)", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {containment: "none"})],
+		});
+		const missing = validateLedger(l).find((d) => d.type === "MISSING_CONTAINMENT");
+		assert.isDefined(missing);
+		assert.deepStrictEqual(missing?.refs, [101]);
+	});
+
+	it("a non-feature child with no containment marker is NOT gated — only type:feature is", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [
+				child(101, {labels: ["type:chore", "p1", "status:triaged"], containment: undefined}),
+			],
+		});
+		assert.notInclude(typesOf(l), "MISSING_CONTAINMENT");
+	});
+
+	it("MISSING_CONTAINMENT is a no-op when the repo has no cycle doc (graceful absence)", () => {
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {containment: undefined})],
+			cycleDocPresent: false,
+		});
+		assert.notInclude(typesOf(l), "MISSING_CONTAINMENT");
+	});
+
 	it("MISSING_STORY when a linked child has no `**Stories:**` reference", () => {
 		const l = ledger({
 			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
@@ -231,6 +286,15 @@ describe("validateLedger — each defect type", () => {
 			ledger({
 				epic: epic({stories: [], dependencies: graph({nodes: [101], edges: []})}),
 				children: [child(101, {stories: undefined})],
+			}),
+		)) {
+			produced.add(t);
+		}
+		// a type:feature child with no containment marker (cycle doc present) produces MISSING_CONTAINMENT
+		for (const t of typesOf(
+			ledger({
+				epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+				children: [child(101, {containment: undefined})],
 			}),
 		)) {
 			produced.add(t);
@@ -350,6 +414,19 @@ describe("validateLedger — determinism", () => {
 		const types = validateLedger(a).map((d) => d.type);
 		assert.include(types, "UNCOVERED_STORY");
 		assert.include(types, "MISSING_STORY");
+	});
+
+	it("permuted child order yields identical MISSING_CONTAINMENT defects and signature", () => {
+		const make = (children: ReturnType<typeof child>[]): EpicLedger =>
+			ledger({
+				epic: epic({dependencies: graph({present: true, nodes: [101, 102], edges: []})}),
+				children,
+			});
+		const a = make([child(101, {containment: undefined}), child(102, {containment: undefined})]);
+		const b = make([child(102, {containment: undefined}), child(101, {containment: undefined})]);
+		assert.deepStrictEqual(validateLedger(a), validateLedger(b));
+		assert.strictEqual(ledgerSignature(a), ledgerSignature(b));
+		assert.strictEqual(validateLedger(a).filter((d) => d.type === "MISSING_CONTAINMENT").length, 2);
 	});
 });
 
