@@ -36,6 +36,15 @@ const BUFFER_SEQ_KEY = "topic:buffer:seq";
 
 const PRUNE_ALARM_DELAY_MS = 60_000;
 
+/**
+ * Defensive margin on the cross-DO replay bound: `subscribedAt` is the connection
+ * DO's clock, `buffered.at` the topic DO's. CF colocated-DO `Date.now()` skew is
+ * sub-second while the register race is 0.2–2.5s, so the bound is robust; this
+ * grace just keeps a frame published a hair before the subscribe (within skew)
+ * from being wrongly excluded. See {@link replayBuffer}.
+ */
+const REPLAY_CLOCK_GRACE_MS = 1_000;
+
 type DurableObjectStateValue = Cloudflare.DurableObjectState["Service"];
 
 /**
@@ -81,6 +90,7 @@ export interface LiveRpcSurface {
 	readonly register: (input: {
 		readonly row: SubscriberRow;
 		readonly limits: LiveLimits;
+		readonly subscribedAt: number;
 		readonly lastEventId?: string;
 	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
 	readonly unregister: (input: {
@@ -251,6 +261,11 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 	const subscribe: LiveRpcSurface["subscribe"] = (input) =>
 		Effect.gen(function* () {
+			// The intent timestamp that bounds replay: only frames published at/after
+			// this instant catch up (the register-race window of #714), never the
+			// topic's prior history. One reading for the whole call, shared across all
+			// its topics. See {@link replayBuffer}.
+			const subscribedAt = Date.now();
 			// A control message cannot subscribe on another user's behalf.
 			if (ownerId !== input.ownerId) {
 				return {ok: false};
@@ -285,11 +300,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 							revision,
 							updatedAt: Date.now(),
 						};
-						// Thread `lastEventId` so the topic replays only frames newer than the
-						// last one this subscription already saw (#714 catch-up).
+						// Thread `subscribedAt` (the primary replay bound) plus `lastEventId`
+						// (an additional tightening on a cursored resubscribe) so the topic
+						// replays only frames from this subscriber's intent forward (#714).
 						yield* topicOf(live, topicKey).register({
 							row,
 							limits: input.limits,
+							subscribedAt,
 							...(input.lastEventId !== undefined ? {lastEventId: input.lastEventId} : {}),
 						});
 					}),
@@ -439,27 +456,44 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	 * Replay the catch-up window to a connection whose `register` lost the race with
 	 * a just-fired publish (#714).
 	 *
+	 * Bounded to the register-race window, NOT the whole TTL buffer: replay delivers
+	 * only frames published at/after `subscribedAt` (the subscriber's intent instant).
+	 * A frame published before this subscription existed was already in the client's
+	 * initial query result — replaying it would duplicate a "live" edge. `lastEventId`
+	 * tightens further on a cursored resubscribe (skip frames at/under the id already
+	 * seen), but `subscribedAt` is the primary bound and applies even when no cursor.
+	 *
 	 * Dedup guarantee — at-most-once, exclusive-by-construction: fan-out (`publish`)
 	 * delivers ONLY to connections already in the registry; replay delivers ONLY to
 	 * the connection that is registering NOW — which fan-out could not have reached,
 	 * because its row was not yet persisted when that publish listed the registry. So
 	 * the two delivery paths are disjoint by the order of the race itself; a frame is
-	 * never sent to one connection by both. `lastEventId` tightens the window further
-	 * (skip frames at/under the id the subscriber already saw on a resubscribe). The
-	 * fate native client is *also* idempotent under node id — `insertConnectionEdge`
-	 * strips any prior occurrence before each insert — so even an unforeseen overlap
-	 * collapses to a single edge, never a duplicate (verified in fate's `client.ts`).
+	 * never sent to one connection by both. The fate native client is *also*
+	 * idempotent under node id — `insertConnectionEdge` strips any prior occurrence
+	 * before each insert — so even an unforeseen overlap collapses to a single edge,
+	 * never a duplicate (verified in fate's `client.ts`).
 	 */
-	const replayBuffer = (row: SubscriberRow, limits: LiveLimits, lastEventId: string | undefined) =>
+	const replayBuffer = (
+		row: SubscriberRow,
+		limits: LiveLimits,
+		subscribedAt: number,
+		lastEventId: string | undefined,
+	) =>
 		Effect.gen(function* () {
 			const now = Date.now();
 			const entries = yield* loadBuffer(row.topicKey);
 			const window = yield* pruneBuffer(entries, limits, now);
-			// Skip everything up to and including the subscriber's lastEventId; a fresh
-			// subscriber (no lastEventId) gets the whole TTL-bounded window.
+			// `subscribedAt` is the connection-DO clock, `buffered.at` the topic-DO's;
+			// the grace absorbs sub-second cross-DO skew (see REPLAY_CLOCK_GRACE_MS).
+			const floor = subscribedAt - REPLAY_CLOCK_GRACE_MS;
+			// Skip everything up to and including the subscriber's lastEventId; with no
+			// cursor every frame at/after the intent floor is eligible.
 			let seen = lastEventId === undefined;
 			const connection = connectionOf(live, row.connectionId);
 			for (const [, buffered] of window) {
+				if (buffered.at < floor) {
+					continue;
+				}
 				if (!seen) {
 					if (buffered.eventId === lastEventId) {
 						seen = true;
@@ -513,7 +547,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			// Catch up the just-registered connection on frames a publish that beat this
 			// register would have missed it on (#714). Replay reaches ONLY this
 			// connection, which fan-out could not have — see {@link replayBuffer}.
-			yield* replayBuffer(row, input.limits, input.lastEventId);
+			yield* replayBuffer(row, input.limits, input.subscribedAt, input.lastEventId);
 			return {ok: true};
 		});
 

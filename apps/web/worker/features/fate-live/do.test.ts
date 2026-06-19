@@ -224,7 +224,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 			revision: 1,
 			updatedAt: Date.now(),
 		};
-		const reg = await run(topic.register({row, limits: LIMITS}));
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now()}));
 		expect(reg.ok).toBe(true);
 		expect(fake.hasAlarm()).toBe(true);
 
@@ -429,7 +429,7 @@ describe("LiveDO live fan-out (KV model)", () => {
 			revision: 1,
 			updatedAt: Date.now(),
 		};
-		const reg = await run(topic.register({row, limits: LIMITS}));
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now()}));
 		expect(reg.ok).toBe(true);
 
 		// A tight budget: the hung deliver must NOT wedge publish — the
@@ -593,6 +593,104 @@ describe("LiveDO live fan-out (KV model)", () => {
 		// Only the newer frame replays — its SSE `id:` header carries e2.
 		expect(frame).toContain("id: e2");
 		expect(frame).not.toContain("id: e1");
+
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+
+	// The PRIMARY replay bound is `subscribedAt`: replay delivers ONLY frames
+	// published at/after the subscriber's intent instant. These two tests drive
+	// `register` directly with an explicit `subscribedAt` so the window edge is
+	// deterministic (no wall-clock race). To isolate the REPLAY path from fan-out,
+	// the connection subscribes to a DECOY topic (activating the subId on the
+	// connection so the replayed deliver isn't stale) while the frame is published to
+	// a SEPARATE topic with NO registered row — so fan-out reaches nothing and the
+	// only way the frame can arrive is replay on the manual `register`.
+	it("a frame published at/after subscribedAt replays (the #714 catch-up window)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-after";
+		const decoyKey = "Post:decoy-after";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-after");
+		const ownerId = "owner-after";
+		const subId = "sub-after";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Activate `subId` on the connection via the decoy (revision 1, generation 1).
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// Publish to the REAL topic (no registered row → fan-out delivers nothing),
+		// then register a row with `subscribedAt` set BEFORE the frame's publish time:
+		// the frame is at/after intent → replay must deliver it.
+		const beforePublish = Date.now();
+		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-after",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: beforePublish}));
+		expect(reg.ok).toBe(true);
+
+		const frame = await stream.next();
+		expect(frame).toContain("event: next");
+		expect(payloadOf(frame).id).toBe(subId);
+
+		await stream.cancel();
+	});
+
+	it("a frame published before subscribedAt does NOT replay (no stale history)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-before";
+		const decoyKey = "Post:decoy-before";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-before");
+		const ownerId = "owner-before";
+		const subId = "sub-before";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// Publish to the REAL topic, then register with `subscribedAt` set WELL AFTER
+		// the frame's publish time (past the clock grace) — the frame predates the
+		// subscriber's intent, the regression's stale-history case. It must NOT replay.
+		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-before",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now() + 60_000}));
+		expect(reg.ok).toBe(true);
 
 		const echo = await Promise.race([
 			stream.next(),
