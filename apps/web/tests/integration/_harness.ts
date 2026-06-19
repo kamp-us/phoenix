@@ -368,7 +368,12 @@ export function harness(getUrl: () => string, stage: string): Harness {
 	};
 
 	// A sign-up/sign-in POST is idempotent end-to-end (a 422 USER_ALREADY_EXISTS
-	// falls back to sign-in), so a stalled attempt is safe to replay.
+	// falls back to sign-in), so a stalled attempt is safe to replay. better-auth
+	// also intermittently returns a transient 5xx on a cold worker's first D1 write
+	// (a flake that killed a whole suite's beforeAll, #32), so a 5xx is retried like
+	// a stall — bounded, never a 4xx (a real client error, e.g. the 422 the caller
+	// handles). The final attempt's response is returned as-is, so a persistent 5xx
+	// still surfaces clearly through signUp's `sign-up failed: <status>` throw.
 	const postIdempotent = async (
 		path: string,
 		body: unknown,
@@ -377,7 +382,9 @@ export function harness(getUrl: () => string, stage: string): Harness {
 		let lastErr: unknown;
 		for (let i = 0; i < 3; i++) {
 			try {
-				return await json(path, body, cookie);
+				const res = await json(path, body, cookie);
+				if (res.status < 500 || i === 2) return res;
+				await sleep(300 * (i + 1));
 			} catch (err) {
 				lastErr = err;
 				if (!isAbort(err)) throw err;
