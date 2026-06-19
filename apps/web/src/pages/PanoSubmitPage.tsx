@@ -133,8 +133,13 @@ export function PanoSubmitPage() {
 					host: mode === "link" && trimmedUrl ? hostOf(trimmedUrl) : null,
 					author: user.name ?? user.email,
 					authorId: user.id,
-					score: 1,
-					myVote: 1,
+					// Submitting a post is NOT a self-upvote: the server inserts it at
+					// score 0 with no viewer vote (Pano.submitPost). The optimistic record
+					// must mirror that, else its score:1/myVote:1 reconciles onto the
+					// server-id'd Post and bleeds a phantom self-upvote into the
+					// freshly-navigated detail page (#707).
+					score: 0,
+					myVote: null,
 					commentCount: 0,
 					createdAt: now,
 					tags: Array.from(selectedTags).map((kind) => ({kind, label: kind})),
