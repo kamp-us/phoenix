@@ -52,11 +52,11 @@ export class Phoenix extends Cloudflare.Worker<
 	LiveDO
 >()("phoenix", {
 	main: import.meta.filename,
-	// Pin the local dev port. The default is 1337 with SILENT fallback to the next
-	// free port, so when `apps/dashboard`'s `alchemy dev` also boots it can win
-	// 1337 and shove this worker to 1338 — while the Vite proxy below still targets
-	// 1337, sending every /api + /fate request to the wrong app's worker. `strictPort`
-	// makes a collision fail loudly instead of misrouting. Dashboard pins 1338.
+	// Pin the local dev port. `alchemy dev` defaults to 1337 but can silently fall back
+	// to the next free port; when both `apps/web` and `apps/dashboard` run, that can
+	// make the Vite proxy in `apps/web/vite.config.ts` point at the wrong worker.
+	// `strictPort: true` makes collisions fail loudly instead of misrouting.
+	// (Dashboard pins 1338 in `apps/dashboard/worker/index.ts`.)
 	dev: {port: 1337, strictPort: true},
 	// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
 	// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
