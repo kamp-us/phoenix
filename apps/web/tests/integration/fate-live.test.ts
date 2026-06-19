@@ -55,6 +55,32 @@ const openSseWarm = async (connectionId: string, cookie: string): Promise<Respon
 	return h.openSse(connectionId, cookie);
 };
 
+// `openSseWarm` warms only the CONNECTION-role DO (`connection:<id>`) — the GET SSE
+// connect. The asserted subscribe drives `connections.subscribe` →
+// `topicOf(live, topicKey).register(...)`, which addresses a DIFFERENT, still-cold
+// TOPIC-role DO (`topic:<topicKey>`); its first `register` RPC cold-starts on a
+// freshly-deployed per-file stage and can 5xx (#769 — the #613/#755 cold-start flake).
+// So the FIRST subscribe of each case warms the topic role with the same bounded 5xx
+// retry, symmetric to `openSseWarm`. Steady-state subscribes still assert a real 200
+// (this is only applied where the DO is being warmed). A persistent 5xx surfaces: the
+// final attempt's response is returned and the status assertion after the call fails.
+// Scope: ONLY the SSE/DO cold-start readiness race in this integration tier. The
+// flows-lane determinism class (D1 read-after-write + scalar `live.update` reconcile
+// under serial load) is the separate, non-absorbed epic #713 — not folded in here.
+const liveControlWarm = async (
+	connectionId: string,
+	operations: Array<Record<string, unknown>>,
+	cookie: string,
+): Promise<Response> => {
+	for (let i = 0; i < 8; i++) {
+		const res = await h.liveControl(connectionId, operations, cookie);
+		if (res.status < 500) return res;
+		await res.body?.cancel();
+		await new Promise<void>((r) => setTimeout(r, 750));
+	}
+	return h.liveControl(connectionId, operations, cookie);
+};
+
 describe("live views — /fate/live", () => {
 	it("rejects a connect with no session cookie (401)", async () => {
 		const res = await h.req("/fate/live?connectionId=no-cookie", {
@@ -76,8 +102,9 @@ describe("live views — /fate/live", () => {
 		const connected = await readFrame(reader, decoder, buffer);
 		expect(connected).toContain("connected");
 
-		// Subscribe the connection to the global `posts` connection feed.
-		const sub = await h.liveControl(
+		// Subscribe the connection to the global `posts` connection feed. First subscribe
+		// of the case → warm the cold topic-role DO (#769).
+		const sub = await liveControlWarm(
 			connectionId,
 			[
 				{
@@ -134,7 +161,8 @@ describe("live views — /fate/live", () => {
 
 		// Subscribe to the ARGS-scoped `Term.definitions` connection for this slug —
 		// the exact topic the mutation's `live.connection(..., {id: slug})` publishes to.
-		const sub = await h.liveControl(
+		// First subscribe of the case → warm the cold topic-role DO (#769).
+		const sub = await liveControlWarm(
 			connectionId,
 			[
 				{
@@ -182,7 +210,8 @@ describe("live views — /fate/live", () => {
 		const decoder = new TextDecoder();
 		const firstBuf = {value: ""};
 		await readFrame(firstReader, decoder, firstBuf); // : connected
-		await h.liveControl(
+		// First subscribe of the case → warm the cold topic-role DO (#769).
+		await liveControlWarm(
 			connectionId,
 			[{kind: "subscribeConnection", id: "sub-a", type: "Post", procedure: "posts", select: []}],
 			user.cookie,
