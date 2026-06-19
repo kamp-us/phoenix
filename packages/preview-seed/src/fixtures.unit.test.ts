@@ -4,12 +4,16 @@
  * would break a spec breaks a test here first).
  */
 import {assert, describe, it} from "@effect/vitest";
+import {normalizeSearchText} from "@kampus/web/features/search/normalize";
 import {
 	buildFixtures,
+	SEARCH_TERM_SLUG,
+	SEARCH_TERM_TITLE,
 	SEED_LINK_POST_HOST,
 	SEED_LINK_POST_ID,
 	SEED_POST_ID,
 	SEED_TERM_SLUG,
+	SEED_TERM_TITLE,
 } from "./fixtures.ts";
 
 describe("buildFixtures — sözlük content (07-sozluk-term, 00-smoke)", () => {
@@ -48,6 +52,39 @@ describe("buildFixtures — sözlük content (07-sozluk-term, 00-smoke)", () => 
 			assert.isTrue(typeof d.bodyExcerpt === "string" && d.bodyExcerpt.length > 0);
 			assert.isTrue(typeof d.authorName === "string" && d.authorName.length > 0);
 		}
+	});
+});
+
+describe("buildFixtures — searchable terms (24-search, ADR 0080)", () => {
+	it("seeds the exact-title/prefix term and the İ/ı Turkish-fold term", () => {
+		const slugs = buildFixtures().terms.map((t) => t.slug);
+		assert.include(slugs, SEED_TERM_SLUG);
+		assert.include(slugs, SEARCH_TERM_SLUG);
+	});
+
+	it("the seeded titles match the pinned constants (the spec's source of truth)", () => {
+		const {terms} = buildFixtures();
+		const exact = terms.find((t) => t.slug === SEED_TERM_SLUG);
+		const search = terms.find((t) => t.slug === SEARCH_TERM_SLUG);
+		assert.strictEqual(exact?.title, SEED_TERM_TITLE);
+		assert.strictEqual(search?.title, SEARCH_TERM_TITLE);
+	});
+
+	it("the İ/ı term's title folds to the same norm as its uppercase casing variant", () => {
+		// The crux the Turkish-İ spec exercises: "ışık" and "IŞIK" must normalize to
+		// the one token the FTS row holds, or the casing-variant query won't match.
+		assert.strictEqual(
+			normalizeSearchText(SEARCH_TERM_TITLE),
+			normalizeSearchText(SEARCH_TERM_TITLE.toLocaleUpperCase("tr")),
+		);
+	});
+
+	it("a 3-char prefix of the exact-title term folds to a prefix of its norm (prefix match)", () => {
+		// The prefix spec searches a short prefix of the title; the FTS `prefix='2 3 4'`
+		// index + the query's `*` suffix make it hit. Pin that the prefix is a real
+		// prefix of the indexed norm.
+		const norm = normalizeSearchText(SEED_TERM_TITLE);
+		assert.isTrue(norm.startsWith("mer"));
 	});
 });
 

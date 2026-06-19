@@ -6,9 +6,10 @@
  * idempotency AC).
  */
 import {assert, describe, it} from "@effect/vitest";
+import {normalizeSearchText, toMatchExpression} from "@kampus/web/features/search/normalize";
 import {desc, eq, isNull, sql} from "drizzle-orm";
 import {toRestParams} from "./d1-rest.ts";
-import {SEED_POST_ID, SEED_TERM_SLUG} from "./fixtures.ts";
+import {SEARCH_TERM_SLUG, SEARCH_TERM_TITLE, SEED_POST_ID, SEED_TERM_SLUG} from "./fixtures.ts";
 import {definitionView, postSummary, termSummary} from "./schema.ts";
 import {buildSeedStatements, makeSeedDb, seed} from "./seed.ts";
 import {makeSeedTestDb} from "./sqlite-d1.testing.ts";
@@ -61,6 +62,68 @@ describe("seed — writes the rows the unauth specs read", () => {
 			const byId = await db.select().from(postSummary).where(eq(postSummary.id, SEED_POST_ID));
 			assert.strictEqual(byId.length, 1);
 			assert.isTrue((byId[0]?.title.length ?? 0) > 0);
+		} finally {
+			close();
+		}
+	});
+});
+
+describe("seed — FTS index (24-search is deterministic; ADR 0080)", () => {
+	// The exact MATCH the search resolver runs: bm25 over term_search, joined back
+	// to term_summary by slug. Asserting the seeded term is FOUND this way proves
+	// the seed's dual-write produced a `norm` that a real query matches (#534).
+	const matchTermSlugs = async (db: ReturnType<typeof makeSeedDb>, query: string) => {
+		const match = toMatchExpression(query);
+		assert.isNotNull(match);
+		const rows = await db.all<{slug: string}>(
+			sql`SELECT slug FROM term_search WHERE term_search MATCH ${match}`,
+		);
+		return rows.map((r) => r.slug);
+	};
+
+	it("a seeded term's exact title finds its row (appears)", async () => {
+		const {d1, close} = makeSeedTestDb();
+		try {
+			await seed(d1);
+			const slugs = await matchTermSlugs(makeSeedDb(d1), SEED_TERM_SLUG.replace(/-/g, " "));
+			assert.include(slugs, SEED_TERM_SLUG);
+		} finally {
+			close();
+		}
+	});
+
+	it("the İ/ı term matches its uppercase Turkish casing variant (the fold crux)", async () => {
+		const {d1, close} = makeSeedTestDb();
+		try {
+			await seed(d1);
+			const db = makeSeedDb(d1);
+			const variant = SEARCH_TERM_TITLE.toLocaleUpperCase("tr"); // "ışık" → "IŞIK"
+			assert.notStrictEqual(variant, SEARCH_TERM_TITLE);
+			assert.strictEqual(normalizeSearchText(variant), normalizeSearchText(SEARCH_TERM_TITLE));
+			assert.include(await matchTermSlugs(db, variant), SEARCH_TERM_SLUG);
+		} finally {
+			close();
+		}
+	});
+
+	it("a short prefix of a seeded title matches (prefix indexing)", async () => {
+		const {d1, close} = makeSeedTestDb();
+		try {
+			await seed(d1);
+			assert.include(await matchTermSlugs(makeSeedDb(d1), "mer"), SEED_TERM_SLUG);
+		} finally {
+			close();
+		}
+	});
+
+	it("re-seeding does not duplicate FTS rows (idempotent dual-write)", async () => {
+		const {d1, close} = makeSeedTestDb();
+		try {
+			await seed(d1);
+			await seed(d1);
+			const db = makeSeedDb(d1);
+			const slugs = await matchTermSlugs(db, SEED_TERM_SLUG.replace(/-/g, " "));
+			assert.strictEqual(slugs.filter((s) => s === SEED_TERM_SLUG).length, 1);
 		} finally {
 			close();
 		}

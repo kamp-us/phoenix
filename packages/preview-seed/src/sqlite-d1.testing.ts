@@ -14,9 +14,11 @@ import {DatabaseSync, type SQLInputValue} from "node:sqlite";
 import {assertRestParam} from "./d1-rest.ts";
 
 /**
- * DDL for the three seeded read-model tables, copied verbatim from the canonical
- * migration `apps/web/worker/db/drizzle/migrations/0000_d1_baseline.sql` (the
- * column set the local `schema.ts` mirrors). Only the tables the seed touches.
+ * DDL for the seeded tables: the three read-model tables copied verbatim from the
+ * canonical migration `apps/web/worker/db/drizzle/migrations/0000_d1_baseline.sql`
+ * (the column set the local `schema.ts` mirrors), plus the two FTS5 virtual tables
+ * from `0002_search_fts.sql` that the seed dual-writes into (ADR 0080). Only the
+ * tables the seed touches.
  */
 const SEED_TABLES_DDL = `
 CREATE TABLE term_summary (
@@ -65,6 +67,18 @@ CREATE TABLE post_summary (
 	last_activity_at integer NOT NULL,
 	deleted_at integer,
 	last_event_id text DEFAULT '' NOT NULL
+);
+CREATE VIRTUAL TABLE term_search USING fts5(
+	slug UNINDEXED,
+	norm,
+	tokenize = "unicode61 remove_diacritics 2",
+	prefix = "2 3 4"
+);
+CREATE VIRTUAL TABLE post_search USING fts5(
+	id UNINDEXED,
+	norm,
+	tokenize = "unicode61 remove_diacritics 2",
+	prefix = "2 3 4"
 );
 `;
 

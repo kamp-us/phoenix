@@ -28,13 +28,15 @@ const {defineConfig, devices} = require("@playwright/test");
 // config can't import the `.ts` helper, so the path is mirrored here).
 const STORAGE_STATE = path.join(__dirname, "tests", "e2e", ".auth", "user.json");
 
-// The four public read specs the #567 gate runs — matched by filename so they
-// stay in the no-storageState lane as the suite grows.
+// The public read specs the #567 gate runs — matched by filename so they stay in
+// the no-storageState lane as the suite grows. 24-search is here too: it searches
+// preview-seeded terms (public reads), no session needed (ADR 0085).
 const UNAUTH_SPECS = [
 	"**/00-smoke.spec.ts",
 	"**/01-landing.spec.ts",
 	"**/03-pano-feed.spec.ts",
 	"**/07-sozluk-term.spec.ts",
+	"**/24-search.spec.ts",
 ];
 
 module.exports = defineConfig({
@@ -66,7 +68,7 @@ module.exports = defineConfig({
 		},
 		{
 			name: "authed",
-			testMatch: /24-search\.spec\.ts$/,
+			testMatch: /25-authed-smoke\.spec\.ts$/,
 			dependencies: ["setup"],
 			use: {...devices["Desktop Chrome"], storageState: STORAGE_STATE},
 		},

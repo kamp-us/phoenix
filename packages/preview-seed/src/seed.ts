@@ -8,10 +8,26 @@
  * `onConflictDoUpdate` keyed on the row's primary key, so a second run overwrites
  * the same fixed-identity rows rather than duplicate-key-crashing. The whole set
  * is one D1 `batch` — all rows land or none do.
+ *
+ * The seed ALSO indexes its terms/posts into the FTS5 `term_search` /
+ * `post_search` tables (ADR 0080) as a delete-then-insert keyed on slug/id — the
+ * same upsert shape the worker's dual-write produces — with the `norm` computed by
+ * the worker's OWN `normalizeSearchText` (no fold duplicated). So a seeded term's
+ * index value byte-matches what a real query normalizes to, and the search e2e can
+ * deterministically query seeded titles (read-model rows alone aren't searchable, #534).
  */
+import {normalizeSearchText} from "@kampus/web/features/search/normalize";
+import {eq} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
 import {buildFixtures} from "./fixtures.ts";
-import {definitionView, postSummary, seedSchema, termSummary} from "./schema.ts";
+import {
+	definitionView,
+	postSearch,
+	postSummary,
+	seedSchema,
+	termSearch,
+	termSummary,
+} from "./schema.ts";
 
 export type SeedDb = ReturnType<typeof drizzle<typeof seedSchema>>;
 
@@ -42,7 +58,21 @@ export const buildSeedStatements = (db: SeedDb, now?: Date) => {
 		db.insert(postSummary).values(row).onConflictDoUpdate({target: postSummary.id, set: row}),
 	);
 
-	const statements = [...termStmts, ...defStmts, ...postStmts];
+	// FTS dual-write (ADR 0080): index each seeded title into term_search / post_search
+	// as a delete-then-insert keyed on slug/id — the same upsert shape the worker's
+	// `syncTermSearch`/`syncPostSearch` produce (FTS5 has no ON CONFLICT). The `norm`
+	// is the worker's OWN `normalizeSearchText`, so a seeded term's index value
+	// byte-matches what a real query normalizes to and is searchable (#534).
+	const termFtsStmts = terms.flatMap((row) => [
+		db.delete(termSearch).where(eq(termSearch.slug, row.slug)),
+		db.insert(termSearch).values({slug: row.slug, norm: normalizeSearchText(row.title)}),
+	]);
+	const postFtsStmts = posts.flatMap((row) => [
+		db.delete(postSearch).where(eq(postSearch.id, row.id)),
+		db.insert(postSearch).values({id: row.id, norm: normalizeSearchText(row.title)}),
+	]);
+
+	const statements = [...termStmts, ...defStmts, ...postStmts, ...termFtsStmts, ...postFtsStmts];
 	return {
 		statements,
 		report: {terms: terms.length, definitions: definitions.length, posts: posts.length},
