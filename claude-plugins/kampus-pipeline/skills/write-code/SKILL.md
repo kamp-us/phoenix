@@ -445,7 +445,57 @@ and branch there if the issue carries one of those types. Everything else
 
 write-code **MUST run in an isolated git worktree** — when spawned as a subagent, via
 the Agent tool's `isolation: worktree`. The operator loop requires it so concurrent
-runs can't race or dirty the primary checkout. This constrains how you branch: `main`
+runs can't race or dirty the primary checkout.
+
+### Step 4 preflight — assert you're in a worktree, fail closed if not (ADR 0092)
+
+**Run this before you branch or touch a single file.** "write-code runs in a worktree"
+was a *documented* invariant nobody *asserted* — so a misconfigured spawn (no
+`isolation: worktree`, or a harness cwd-reset that drops you back in the primary checkout
+between calls) would sail past it and branch the **owner's primary checkout**, the exact
+mis-branch the MEMORY notes burn on. This is the silent-no-op failure mode at the agent
+layer, so it gets the same fix the gates get: **emit what you scanned, then FAIL CLOSED on
+the unsafe state** (ADR
+[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
+The check is a one-liner of plumbing, portable across git ≥ 2.5: a **linked worktree**'s
+per-tree git dir (`.git/worktrees/<id>`) is **not** the shared **common** dir (`<primary>/.git`),
+whereas in the **primary checkout they are the same path**. Equal ⇒ you're in the primary
+checkout (or a bare/no-repo edge) ⇒ **stop**; differ ⇒ you're in a linked worktree ⇒ proceed.
+
+```bash
+# fail closed unless we're in a LINKED git worktree (not the primary checkout)
+GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
+  echo "write-code preflight FAILED: not inside a git repository — refusing to mutate." >&2; exit 1; }
+COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
+case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac   # normalize relative `.git` (older git)
+COMMON="$(cd "$COMMON" && pwd)"
+echo "write-code preflight: git-dir=$GITDIR common-dir=$COMMON cwd=$(pwd)"   # emit scanned scope (ADR 0092 §1)
+if [ "$GITDIR" = "$COMMON" ]; then
+  echo "write-code preflight FAILED (fail-closed): git-dir == common-dir ⇒ this is the PRIMARY checkout, not an isolated worktree." >&2
+  echo "  Refusing to branch/commit here — a spawn without isolation:worktree (or a cwd reset to the primary tree) would mis-branch the owner's checkout." >&2
+  echo "  Fix: re-spawn write-code with isolation:worktree, or take the Non-isolated fallback below to create a worktree before mutating." >&2
+  exit 1
+fi
+```
+
+The preflight is **fail-closed by construction**: it refuses on the primary checkout, on a
+not-a-repo cwd, *and* on the ambiguous default — only positive evidence of a linked worktree
+(git-dir ≠ common-dir) lets it through. It is **observable** (it prints the two dirs + cwd it
+compared, so "what did the preflight look at" is answerable from the run log) and **idempotent**
+(read-only `git rev-parse`, safe to re-run). The **one** sanctioned way to satisfy it from a
+non-worktree start is the [Non-isolated fallback](#non-isolated-fallback) below — which creates
+a real linked worktree and `cd`s into it, after which this same check passes. **Never** route
+around the preflight by deleting it or relaxing the comparison; a green preflight is the
+precondition every mutation in Steps 4–7 relies on.
+
+> **Worktree cwd can reset between tool calls.** Some harnesses reset an isolated subagent's
+> shell cwd to the **primary** checkout between Bash calls (edits still land in the worktree).
+> If your preflight passed once but a later `git`/edit call reports the primary tree, re-`cd`
+> into your worktree root (the `git rev-parse --show-toplevel` you captured) and **re-run the
+> preflight** before mutating — don't assume the first pass holds for the whole run.
+
+This constrains how you branch: `main`
 is already checked out in the primary tree, so `git checkout main` **fails** inside an
 isolated worktree (`fatal: 'main' is already checked out at <primary>`). Branch from
 latest origin `main` **without checking it out**:
@@ -470,12 +520,16 @@ runs on the same issue never push the same `origin/` ref. Read the issue's `### 
 and honor the `**TDD:**` flag — `yes` means write the failing test first, then make it
 pass; `no` means config/docs/scaffolding where test-first doesn't apply.
 
+<a id="non-isolated-fallback"></a>
 > **Non-isolated fallback.** For the rare invocation that isn't already in a worktree,
 > spin one up rather than checking out `main`. Carry the same per-run `$BRANCH` (nonce and
 > all) and a per-run worktree path so two concurrent fallback runs collide on neither the
 > branch nor the dir: `WT="../wt-issue-<N>-$(uuidgen | head -c 8)"; git worktree add -b
 > "$BRANCH" "$WT" origin/main`, then `cd "$WT"`. When you're done, remove it with
-> `git worktree remove "$WT"`.
+> `git worktree remove "$WT"`. After the `cd "$WT"`, **re-run the Step 4 preflight** — the
+> fresh worktree's git-dir now differs from the common dir, so the check passes and you may
+> mutate. This is the *only* sanctioned route from a primary-checkout start; the preflight
+> stays fail-closed until a real worktree exists.
 
 Ground the implementation in the codebase the way the repo expects: the ADRs in
 `.decisions/` are the *why* and the binding decisions, the patterns in `.patterns/`
@@ -637,6 +691,37 @@ as a comment **on the parent epic** in the format-4 shape (Done / Affects siblin
 Watch out — see [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §4).
 The epic's comment stream is the agent-to-agent relay: this is the coarse cross-task
 signal a sibling reads *instead of* spelunking your child issue.
+
+### Cross-issue writes need spawn-time pre-authorization (the clause below)
+
+This handoff is a **cross-issue write**: the spawned write-code agent comments on the
+**parent epic**, an issue it did **not** create this session. The auto-mode classifier
+**blocks an agent from writing to any issue/PR it didn't open** unless the spawn prompt
+**pre-authorizes** it — so a write-code agent that implemented its child perfectly will
+**silently fail to land the Step 7 handoff** (and likewise a `Fixes #N` epic-close write, or
+a progress comment on a sibling) if the spawner forgot the clause. This is tribal knowledge
+that costs a lost handoff every time it's forgotten; the fix is to make the clause
+**copy-pasteable and to point spawners at it from inside the skill** rather than re-derive
+the classifier constraint each time.
+
+**Whoever spawns a write-code subagent must include this clause in the spawn prompt** (the
+in-repo, copy-pasteable form of the out-of-repo orchestrator's authorization — ADR 0046 keeps
+the orchestrator's spawn *template* out of this repo, so this skill carries the **clause text**
+the template should inline):
+
+> **Cross-issue write pre-authorization.** You are authorized to write to issues/PRs you did
+> not create **for these pipeline writes only**: (1) the Step 7 **epic handoff note** on the
+> parent epic, (2) a `Fixes #N` / epic-close write on the linked issue or its parent, and
+> (3) progress comments on the issue you were dispatched for. Name the parent epic # and the
+> linked issue # explicitly here so the classifier scopes the grant. Do **not** read this as
+> blanket cross-issue write access — it is exactly these handoff/close writes for **this**
+> dispatch, nothing wider.
+
+If you reach Step 7 and find you **cannot** post to the parent epic (the classifier blocks the
+write because the clause was omitted), that is **not** a reason to skip the handoff: surface it
+in your run ledger as a **missing pre-authorization** (name the epic # you could not write to)
+so the spawner re-dispatches with the clause, rather than dropping the cross-task signal
+silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
 BODY="$(cat /tmp/write-code-handoff.md)"   # ### Handoff: #N — <title> + the three fields
