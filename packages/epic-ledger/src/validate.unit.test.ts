@@ -226,8 +226,17 @@ describe("validateLedger — each defect type", () => {
 		)) {
 			produced.add(t);
 		}
-		// a story-less epic produces the epic-level MISSING_STORIES_SECTION
-		for (const t of typesOf(ledger({epic: epic({stories: []})}))) produced.add(t);
+		// a story-less epic (WITH a child, so it has scope) produces MISSING_STORIES_SECTION
+		for (const t of typesOf(
+			ledger({
+				epic: epic({stories: [], dependencies: graph({nodes: [101], edges: []})}),
+				children: [child(101, {stories: undefined})],
+			}),
+		)) {
+			produced.add(t);
+		}
+		// a childless epic produces the zero-scope=fail self-assertion (ADR 0092)
+		for (const t of typesOf(ledger({epic: epic({stories: []}), children: []}))) produced.add(t);
 
 		for (const t of DEFECT_TYPES) {
 			assert.isTrue(produced.has(t), `expected defect type ${t} to be producible`);
@@ -341,5 +350,69 @@ describe("validateLedger — determinism", () => {
 		const types = validateLedger(a).map((d) => d.type);
 		assert.include(types, "UNCOVERED_STORY");
 		assert.include(types, "MISSING_STORY");
+	});
+});
+
+// The zero-scope=fail self-assertion (formats §ZS / ADR 0092), demonstrated on the floor:
+// a relevant input that yields zero scope (a childless epic) FAILs closed, while an input
+// that genuinely HAS scope (≥1 child) is judged on its merits — a clean ledger is a PASS,
+// not swept into the zero-match FAIL. This is the convention's first adoption.
+describe("validateLedger — zero-scope=fail self-assertion (ADR 0092)", () => {
+	it("a relevant-but-zero-match input (epic with zero children) FAILs CLOSED with ZERO_SCOPE", () => {
+		// The floor's scope IS the children it scans; an epic that declares none gave it nothing
+		// to validate, so "scanned nothing" must be a FAIL, never a silent clean PASS.
+		const l = ledger({
+			epic: epic({number: 100, dependencies: graph({present: true, nodes: [], edges: []})}),
+			children: [],
+		});
+		const defects = validateLedger(l);
+		assert.deepStrictEqual(
+			defects.map((d) => d.type),
+			["ZERO_SCOPE"],
+		);
+		assert.deepStrictEqual(defects[0]?.refs, [100]);
+		assert.strictEqual(isPickable(l), false);
+		assert.match(ledgerSignature(l), /^ZERO_SCOPE:100/);
+	});
+
+	it("ZERO_SCOPE is the single legible root cause — it suppresses every per-child/dep defect", () => {
+		// Even with a missing `## Dependencies` section, a childless epic emits ONLY ZERO_SCOPE:
+		// the per-child and dependency checks are vacuous on zero children, so the one epic-level
+		// finding is the root cause rather than a noisy pile of downstream defects.
+		const l = ledger({
+			epic: epic({
+				number: 100,
+				stories: [],
+				dependencies: graph({present: false, nodes: [], edges: []}),
+			}),
+			children: [],
+		});
+		assert.deepStrictEqual(
+			validateLedger(l).map((d) => d.type),
+			["ZERO_SCOPE"],
+		);
+	});
+
+	it("an explicit not-applicable scope (a clean ledger WITH children) is NOT a zero-match FAIL", () => {
+		// The convention's facet #3: a gate with genuine scope is judged on its merits. A clean
+		// two-child ledger has positive scope and zero defects, so it PASSes — it must never be
+		// swept into the ZERO_SCOPE FAIL, which is reserved for the scanned-nothing case.
+		const l = cleanLedger();
+		const types = validateLedger(l).map((d) => d.type);
+		assert.notInclude(types, "ZERO_SCOPE");
+		assert.deepStrictEqual(validateLedger(l), []);
+		assert.strictEqual(isPickable(l), true);
+	});
+
+	it("a single-child ledger with a real defect FAILs on that defect, not on ZERO_SCOPE", () => {
+		// Positive scope (1 child) ⇒ the floor scans it and reports the real defect (ZERO_AC),
+		// proving ZERO_SCOPE fires ONLY on an empty scope, never as a catch-all for any failure.
+		const l = ledger({
+			epic: epic({dependencies: graph({nodes: [101], edges: []})}),
+			children: [child(101, {acceptanceCriteriaCount: 0})],
+		});
+		const types = validateLedger(l).map((d) => d.type);
+		assert.notInclude(types, "ZERO_SCOPE");
+		assert.include(types, "ZERO_AC");
 	});
 });

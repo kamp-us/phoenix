@@ -44,6 +44,20 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 	const {epic, children} = ledger;
 	const graph = epic.dependencies;
 
+	// Zero-scope=fail self-assertion (formats §ZS / ADR 0092): the floor's scope IS the
+	// children it scans, so an epic that declares none gave it nothing to validate. Fail
+	// closed with a single root-cause finding rather than reading a silent clean PASS — every
+	// per-child check below is vacuous on zero children, so it would otherwise pass empty.
+	if (children.length === 0) {
+		return [
+			{
+				type: "ZERO_SCOPE",
+				message: `Epic #${epic.number} declares no linked children; the floor scanned zero scope (a gate that scans nothing fails closed — ADR 0092).`,
+				refs: [epic.number],
+			},
+		];
+	}
+
 	const childNumbers = new Set(children.map((c) => c.number));
 	const referenced = new Set(graph.nodes);
 	const external = new Set(ledger.externalRefs);

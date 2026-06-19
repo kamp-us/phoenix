@@ -119,4 +119,40 @@ describe("runGate — the deterministic review-plan gate action (#164)", () => {
 				assert.match(r.comments[0]?.body ?? "", /review-plan: PASS/);
 			}),
 	);
+
+	// The emit-scope facet of zero-scope=fail (formats §ZS / ADR 0092): the gate is the real
+	// consumer — every verdict states what the gate scanned, and a childless epic fails closed.
+	it.effect("PASS verdict emits the scanned scope (child count + matched numbers)", () =>
+		Effect.gen(function* () {
+			const rec = yield* Ref.make(emptyRecord());
+			yield* runGate(200).pipe(Effect.provide(fakeGithub(cleanPlannedLedger(), rec)));
+			const r = yield* Ref.get(rec);
+			assert.match(r.comments[0]?.body ?? "", /Scanned scope: 2 child\(ren\) — #201, #202/);
+		}),
+	);
+
+	it.effect("a childless epic FAILs CLOSED with ZERO_SCOPE and emits a zero-child scope line", () =>
+		Effect.gen(function* () {
+			const childless = ledger({
+				epic: epic({number: 400, dependencies: {present: true, nodes: [], edges: []}}),
+				children: [],
+			});
+			const rec = yield* Ref.make(emptyRecord());
+			const verdict = yield* runGate(400).pipe(Effect.provide(fakeGithub(childless, rec)));
+			const r = yield* Ref.get(rec);
+
+			assert.strictEqual(verdict._tag, "fail");
+			if (verdict._tag === "fail") {
+				assert.deepStrictEqual(
+					verdict.defects.map((d) => d.type),
+					["ZERO_SCOPE"],
+				);
+			}
+			// no flip — fail closed
+			assert.deepStrictEqual(r.flips, []);
+			assert.match(r.comments[0]?.body ?? "", /review-plan: FAIL/);
+			assert.match(r.comments[0]?.body ?? "", /ZERO_SCOPE/);
+			assert.match(r.comments[0]?.body ?? "", /Scanned scope: 0 child\(ren\) — —/);
+		}),
+	);
 });

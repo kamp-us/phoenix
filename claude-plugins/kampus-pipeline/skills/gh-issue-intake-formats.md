@@ -820,6 +820,47 @@ phantom doc class with no reachable gate to the code class that already gates it
 
 ---
 
+## ZS. Zero-scope = fail — the gate-self-assertion invariant (ADR 0092)
+
+Every gate's signature failure mode is the **silent no-op**: a gate keyed off an upstream
+marker nobody ever sets runs on every event, fires on **none**, and reads **PASS forever** —
+green because it never matched, not because the work is safe. The class lives at the
+meta-layer (`review-code`'s flag-gating check that always reads `none`, `ship-it`'s
+dark-merge branch off the same unset marker, the CI cycle test that only proves the absent
+path, the epic-ledger validator that "passes" a childless epic). This section states the
+fix **once** so every gate cites *one* definition and the per-gate retrofits don't each
+re-derive it (the §CP/§DOC single-sourcing discipline, applied to the fail-closed invariant;
+ADR [0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+
+**The invariant — every gate's enforcement step MUST, on every run:**
+
+1. **Emit what it scanned** — the file count, the matched paths, the set of events
+   considered. "What did this gate actually look at" is answerable from its output, so a
+   gate that quietly stopped matching is visible immediately rather than reading green.
+2. **FAIL CLOSED when a *relevant* input yields zero matches.** "Scanned nothing" on an
+   input the gate *was supposed to act on* is a **FAIL**, never a silent PASS. The design
+   bias flips from "default PASS, fail on detect" to **"default FAIL, pass on positive
+   evidence of scope."**
+3. **Express a legitimately-empty scope as an explicit *not-applicable* skip** — never an
+   accidental zero-match PASS. A docs-only PR hitting a code gate, an epic that correctly
+   has no children to flip on this pass: the gate states *not applicable to this input* and
+   that skip is **distinct** from a zero-match FAIL. The distinction is the whole point —
+   #2 catches the gate that *should* have matched and didn't; #3 is the gate that *correctly*
+   had nothing in its surface. A gate that can't tell them apart is itself a silent no-op.
+
+**The reading stance** (mirrors §CP/§DOC): a gate is *relevant* to an input when the input
+falls in the gate's surface (a code gate ↔ a PR with code files; the epic-ledger floor ↔ an
+epic that declares children). Relevant-but-zero-match ⇒ FAIL (#2); out-of-surface ⇒
+not-applicable skip (#3). The skip is a first-class, correct outcome — the same
+graceful-absence shape the cycle-doc probe (§1) and the milestone default (none) already use.
+
+A gate that adopts this convention is **self-asserting**: its own output proves it fired,
+so it can't rot into a no-op undetected. **A gate that cannot fail is worse than no gate**
+(ADR 0092) — this invariant is how a gate earns trust by demonstrating scope, not by
+defaulting green.
+
+---
+
 ## 5. review-code pass marker
 
 When `review-code` lands its verdict and a native review can't be posted (e.g. org
@@ -1281,3 +1322,11 @@ is **seeded** at triage but **time-varying within a PR's lifecycle** — a `revi
 gate may append an in-scope, provenance-tagged criterion through the fenced
 reviewer-append surface (§2, ADR 0079), so readers re-read it each round rather
 than treating it as fixed at pickup.
+
+The **zero-scope=fail invariant** (§ZS) is the one convention that is **not** a format but
+a *behavioral contract every gate honors*: `review-code`/`review-doc`/`review-skill`,
+`ship-it`, the epic-ledger validators (`review-plan`), and the CI cycle/convention checks
+each cite §ZS rather than re-deriving emit-scope + fail-closed-on-zero-match. Its first
+adoption is the epic-ledger floor — `validateLedger`'s `ZERO_SCOPE` defect fails a childless
+epic closed, and the `review-plan` gate verdict emits the scanned child count — so the
+convention ships demonstrated, not just stated (ADR 0092).
