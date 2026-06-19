@@ -74,23 +74,47 @@ const LOCAL_TOKEN = `${process.pid.toString(36)}${process.hrtime.bigint().toStri
 	"",
 );
 
+// Stage length is load-bearing: alchemy's `createPhysicalName` hard-caps a D1 name at
+// 64 chars by truncating the readable prefix while preserving the trailing 16-char
+// hash, and the harness's `resolveD1DatabaseId` (_harness.ts) reconstructs the name as
+// `phoenix-phoenix-db-${stage}-…` and finds the DB by that prefix — if alchemy
+// truncated the stage out of the readable prefix, `startsWith` misses and the lookup
+// throws (the #689 `sozluk-keyset` failure). Budget: `phoenix-phoenix-db-` (19) + `-`
+// + hash16 (17) = 36 fixed; capping the stage at 26 keeps the readable prefix (19+26=45)
+// comfortably under the cap so the stage is never the part alchemy truncates.
+const MAX_STAGE_LEN = 26;
+const DISC_LEN = 8;
+
+// Deterministic fixed-length discriminator (FNV-1a 32-bit → base36, padded/truncated to
+// DISC_LEN). Fed `${slug}|${runToken}`, it carries BOTH file-distinctness (within a run)
+// and run-distinctness (across runs) in a constant width, so the bounded stage never has
+// to depend on the raw slug or token fitting.
+const disc = (seed: string): string => {
+	let h = 0x811c9dc5;
+	for (let i = 0; i < seed.length; i++) {
+		h ^= seed.charCodeAt(i);
+		h = Math.imul(h, 0x01000193);
+	}
+	return (h >>> 0).toString(36).padStart(DISC_LEN, "0").slice(0, DISC_LEN);
+};
+
 /**
- * A run-unique per-file stage name. Real remote D1 + workers are keyed by stage
- * against ONE shared Cloudflare account, so two CI runs (different PRs, or a rerun)
- * executing the integration job concurrently must never collide — the file basename
- * alone repeats across runs, deploying the SAME stage names → `DatabaseAlreadyExists`
- * (the dominant integration flake, #689). The slug disambiguates files WITHIN a run;
- * a per-run token disambiguates runs:
+ * A run-unique, length-bounded per-file stage name. Real remote D1 + workers are keyed
+ * by stage against ONE shared Cloudflare account, so two CI runs (different PRs, or a
+ * rerun) executing the integration job concurrently must never collide — the file
+ * basename alone repeats across runs, deploying the SAME stage names →
+ * `DatabaseAlreadyExists` (the dominant integration flake, #689).
  *
- *   - CI (`GITHUB_RUN_ID` set): token = `<run-id>-<run-attempt>` — unique per CI run,
- *     shared across that run's files (the slug keeps files distinct). This is what
- *     stops the cross-PR collision.
- *   - Local + `NO_DESTROY`: NO token (`it-<slug>`) — NO_DESTROY explicitly keeps a
+ *   - Local + `NO_DESTROY`: stable `it-<slug>` (always short) — NO_DESTROY keeps a
  *     file's deploy alive between local runs to re-adopt it, which REQUIRES a stable name.
- *   - Local, default (destroy-on): a per-process token (`LOCAL_TOKEN`), distinct across
- *     concurrent local processes; the stage is torn down in afterAll, so no orphan.
+ *   - Otherwise: `it-<readable>-<disc>`, always ≤ MAX_STAGE_LEN. `<disc>` is a
+ *     fixed-width hash of `<slug>|<runToken>` — it alone guarantees uniqueness across
+ *     BOTH files (slug) and runs (runToken: CI's `<run-id>-<run-attempt>`, so a rerun
+ *     gets a distinct stage; else a per-process LOCAL_TOKEN). `<readable>` is a slug
+ *     prefix kept only as a human-debug aid (a CF-dashboard stage traces to its file).
  *
- * Sanitized to the `[a-z0-9-]` Cloudflare resource-name set.
+ * Bounded length is load-bearing — see MAX_STAGE_LEN. Sanitized to the `[a-z0-9-]`
+ * Cloudflare resource-name set, no leading/trailing dash, non-empty.
  */
 const stageFor = (metaUrl: string): string => {
 	const base = (metaUrl.split("/").pop() ?? "integration").replace(/\.test\.ts$/, "");
@@ -98,16 +122,16 @@ const stageFor = (metaUrl: string): string => {
 		.toLowerCase()
 		.replaceAll(/[^a-z0-9]+/g, "-")
 		.replace(/(^-|-$)/g, "");
+
+	if (NO_DESTROY) return `it-${slug}`;
+
 	const runToken = process.env.GITHUB_RUN_ID
 		? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}`
-		: NO_DESTROY
-			? ""
-			: LOCAL_TOKEN;
-	const token = runToken
-		.toLowerCase()
-		.replaceAll(/[^a-z0-9]+/g, "-")
-		.replace(/(^-|-$)/g, "");
-	return token ? `it-${slug}-${token}` : `it-${slug}`;
+		: LOCAL_TOKEN;
+
+	// `it-` (3) + `-` (1) + DISC_LEN leaves this many chars for the readable slug aid.
+	const readable = slug.slice(0, MAX_STAGE_LEN - "it-".length - 1 - DISC_LEN).replace(/-$/, "");
+	return `it-${readable}-${disc(`${slug}|${runToken}`)}`;
 };
 
 /**
