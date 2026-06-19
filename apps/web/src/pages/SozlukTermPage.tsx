@@ -15,6 +15,7 @@ import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermH
 import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
 import {useLiveKeepAlive} from "../fate/useLiveKeepAlive";
+import {useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
@@ -150,6 +151,7 @@ interface DefinitionsListProps {
 }
 
 function DefinitionsList(props: DefinitionsListProps) {
+	const fate = useFateClient();
 	const term = useView(TermView, props.term);
 	// Pin the SSE connection on the stable parent `Term` for the list's mount
 	// lifetime, so the definition list's per-mutation re-subscribe churn never
@@ -157,6 +159,18 @@ function DefinitionsList(props: DefinitionsListProps) {
 	// durable transport fix). See `apps/web/src/fate/useLiveKeepAlive.ts`.
 	useLiveKeepAlive(TermView, props.term);
 	const [items, loadNext] = useLiveListView(DefinitionConnectionView, term.definitions);
+
+	// Deterministic read-back: if the server's `appendNode` push for the author's own
+	// new definition is lost (publish-vs-register race, #714), refetch this page's
+	// request `network-only` so the definition lands without a manual refresh.
+	const confirmDefinition = useReadbackRefetch({
+		presentIds: items.map(({node}) => String(node.id)),
+		refetch: () =>
+			fate.request(
+				{term: {view: TermView, args: {slug: props.slug, definitions: {first: PAGE_SIZE}}}},
+				{mode: "network-only"},
+			),
+	});
 
 	return (
 		<>
@@ -174,7 +188,7 @@ function DefinitionsList(props: DefinitionsListProps) {
 					<LoadMoreButton loadNext={loadNext} />
 				</div>
 			) : null}
-			<Composer slug={props.slug} />
+			<Composer slug={props.slug} onConfirm={confirmDefinition} />
 		</>
 	);
 }
@@ -184,9 +198,19 @@ function DefinitionsList(props: DefinitionsListProps) {
  * *nested* `Term.definitions` connection is server-driven (fate's declarative
  * `insert` only targets registered root lists), so there is no optimistic
  * temp-node — it would double with the live append. `onTermCreated` is passed
- * only on the fresh-slug branch, where there's no list yet to append to.
+ * only on the fresh-slug branch, where there's no list yet to append to; on the
+ * list branch `onConfirm` hands the new id to the deterministic read-back so a lost
+ * live `appendNode` self-heals (see {@link useReadbackRefetch}).
  */
-function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => void}) {
+function Composer({
+	slug,
+	onTermCreated,
+	onConfirm,
+}: {
+	slug: string;
+	onTermCreated?: () => void;
+	onConfirm?: (definitionId: string) => void;
+}) {
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
@@ -208,7 +232,7 @@ function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => vo
 		setError(null);
 		setInFlight(true);
 		try {
-			const {error: callError} = await fate.mutations.definition.add({
+			const {result, error: callError} = await fate.mutations.definition.add({
 				input: {termSlug: slug, termTitle: slug.replace(/-/g, " "), body},
 				view: DefinitionView,
 			});
@@ -220,6 +244,7 @@ function Composer({slug, onTermCreated}: {slug: string; onTermCreated?: () => vo
 			// Fresh-slug branch only: remount to re-read `term(slug)` and flip to the
 			// list branch. On the list branch the server's `appendNode` delivers the row.
 			onTermCreated?.();
+			if (result?.id != null) onConfirm?.(String(result.id));
 		} catch (caught) {
 			const code = codeOf(caught);
 			if (code === "UNAUTHORIZED") {

@@ -27,6 +27,7 @@ import {Dialog} from "../components/ui/Dialog";
 import type {ReportOutcome} from "../components/ui/ReportButton";
 import {Screen} from "../fate/Screen";
 import {useLiveKeepAlive} from "../fate/useLiveKeepAlive";
+import {useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
@@ -283,10 +284,10 @@ function PostContent({idOrSlug}: {idOrSlug: string}) {
 		);
 	}
 
-	return <PostContentInner post={post} />;
+	return <PostContentInner post={post} idOrSlug={idOrSlug} />;
 }
 
-function PostContentInner({post}: {post: ViewRef<"Post">}) {
+function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: string}) {
 	const data = useView(PanoPostHeaderView, post);
 	const fate = useFateClient();
 	const session = useSession();
@@ -452,6 +453,7 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 			<Comments
 				post={post}
 				postId={data.id}
+				idOrSlug={idOrSlug}
 				postPath={`/pano/${data.slug ?? data.id}`}
 				signedIn={!!session.data?.user}
 				currentUserId={session.data?.user?.id ?? null}
@@ -463,6 +465,8 @@ function PostContentInner({post}: {post: ViewRef<"Post">}) {
 interface CommentsProps {
 	post: ViewRef<"Post">;
 	postId: string;
+	/** The `idOrSlug` the page request resolved under — the read-back refetch re-runs it verbatim. */
+	idOrSlug: string;
 	/** Parent post's canonical path; threaded into each node for its comment-anchor share URL. */
 	postPath: string;
 	signedIn: boolean;
@@ -502,6 +506,23 @@ function Comments(props: CommentsProps) {
 	useLiveKeepAlive(PostDetailView, props.post);
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
 	const activeCommentId = useCommentAnchor(items.length);
+
+	// Deterministic read-back: if the server's `appendNode` push for the author's own
+	// new comment is lost (publish-vs-register race, #714), refetch this page's request
+	// `network-only` so the comment lands without a manual refresh.
+	const confirmComment = useReadbackRefetch({
+		presentIds: items.map(({node}) => String(node.id)),
+		refetch: () =>
+			fate.request(
+				{
+					post: {
+						view: PostDetailView,
+						args: {idOrSlug: props.idOrSlug, comments: {first: PAGE_SIZE}},
+					},
+				},
+				{mode: "network-only"},
+			),
+	});
 
 	const [replyTo, setReplyTo] = React.useState<string | null>(null);
 	const [editingCommentId, setEditingCommentId] = React.useState<string | null>(null);
@@ -568,6 +589,7 @@ function Comments(props: CommentsProps) {
 						signedIn={props.signedIn}
 						onPosted={() => setReplyTo(null)}
 						onCancel={() => setReplyTo(null)}
+						onConfirm={confirmComment}
 						autoFocus
 					/>
 				) : undefined,
@@ -582,7 +604,7 @@ function Comments(props: CommentsProps) {
 					/>
 				) : undefined,
 		}),
-		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById, refById],
+		[replyTo, editingCommentId, props.postId, props.signedIn, bodyById, refById, confirmComment],
 	);
 
 	return (
@@ -592,6 +614,7 @@ function Comments(props: CommentsProps) {
 				parentId={null}
 				signedIn={props.signedIn}
 				onPosted={() => undefined}
+				onConfirm={confirmComment}
 			/>
 			<h2 className="kp-pano-postpage__thread-heading">{visibleCount} yorum</h2>
 			<div className="kp-pano-thread">
@@ -670,6 +693,7 @@ function CommentComposer({
 	signedIn,
 	onPosted,
 	onCancel,
+	onConfirm,
 	autoFocus,
 }: {
 	postId: string;
@@ -677,11 +701,14 @@ function CommentComposer({
 	signedIn: boolean;
 	onPosted: () => void;
 	onCancel?: () => void;
+	/** Hands the created comment's id to the deterministic read-back (see {@link useReadbackRefetch}). */
+	onConfirm?: (commentId: string) => void;
 	autoFocus?: boolean;
 }) {
 	const fate = useFateClient();
 	const navigate = useNavigate();
 	const textareaRef = React.useRef<HTMLTextAreaElement | null>(null);
+	const createdId = React.useRef<string | null>(null);
 
 	React.useEffect(() => {
 		if (autoFocus) textareaRef.current?.focus();
@@ -691,15 +718,19 @@ function CommentComposer({
 		initialBody: "",
 		validate: validateCommentBody,
 		redirectPath: currentLocationPath,
-		run: (value) =>
-			fate.mutations.comment.add({
+		run: async (value) => {
+			const {result, error: callError} = await fate.mutations.comment.add({
 				input: {postId, body: value, ...(parentId ? {parentId} : {})},
 				view: CommentTreeNodeView,
-			}),
+			});
+			createdId.current = result?.id != null ? String(result.id) : null;
+			return {error: callError};
+		},
 		errorMessage: commentErrorMessage,
 		failureFallback: "yorum eklenemedi",
 		onSuccess: () => {
 			setBody("");
+			if (createdId.current) onConfirm?.(createdId.current);
 			onPosted();
 			onCancel?.();
 		},
