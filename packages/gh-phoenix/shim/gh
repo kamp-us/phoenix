@@ -1,0 +1,19 @@
+#!/usr/bin/env sh
+# gh-phoenix shim — shadows `gh` on the subagent PATH (issue #743). Put this dir
+# FIRST on PATH so a subagent's `gh` resolves here; it routes the kamp-us org's
+# Projects-classic GraphQL-breaking verbs to REST (or fast-fails with a hint),
+# forwarding everything safe to the real `gh`.
+#
+# The real `gh` is found via $GH_PHOENIX_REAL_GH, else the first PATH `gh` that
+# isn't this shim (bin.ts handles the self-recursion guard). Resolve this script's
+# real directory so the repo-relative bin path holds through the PATH symlink.
+SELF="$0"
+while [ -L "$SELF" ]; do
+	LINK=$(readlink "$SELF")
+	case "$LINK" in
+		/*) SELF="$LINK" ;;
+		*) SELF="$(dirname "$SELF")/$LINK" ;;
+	esac
+done
+SHIM_DIR=$(cd "$(dirname "$SELF")" && pwd)
+exec node "$SHIM_DIR/../src/bin.ts" "$@"

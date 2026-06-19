@@ -1,0 +1,48 @@
+name: skill-gh-lint
+
+# The mechanical enforcement of the REST-only-on-this-org convention (#743): grep
+# the whole skill corpus for GraphQL-path `gh` invocations (`gh project`, GraphQL
+# `gh pr/issue edit`, `gh api graphql`) and FAIL on any match. It reuses
+# @kampus/gh-phoenix's `lint-skills` CLI; the match patterns + self-exempts live
+# once in the package (lint.ts), never re-grepped here.
+#
+# Scans the FULL corpus (not just changed files) so a GraphQL-path call anywhere in
+# the skills is caught regardless of which PR introduced it, and FAILS CLOSED on
+# zero scope per ADR 0092: a lint that scanned nothing is a broken lint, exit 3.
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  lint:
+    name: lint skill corpus for GraphQL-path gh calls
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # The skill corpus lives at claude-plugins/kampus-pipeline/skills/** (the
+      # .claude/skills and root skills/ symlinks point into it). Hand the CLI every
+      # .md/.sh file; it self-scopes (self-exempt files are dropped from scope) and
+      # fails closed (exit 3) if scope is empty (ADR 0092).
+      - name: Lint skill corpus
+        run: |
+          set -euo pipefail
+          find claude-plugins/kampus-pipeline/skills -type f \( -name '*.md' -o -name '*.sh' \) -print0 \
+            | sort -z \
+            | xargs -0 node packages/gh-phoenix/src/bin.ts lint-skills
