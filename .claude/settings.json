@@ -65,5 +65,8 @@
 				]
 			}
 		]
+	},
+	"env": {
+		"PATH": "${CLAUDE_PROJECT_DIR}/packages/gh-phoenix/shim:${PATH}"
 	}
 }
