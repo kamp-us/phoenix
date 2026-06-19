@@ -233,12 +233,14 @@ jobs:
     # Hang backstop (#660): the old `playwright install` hang stalled this job ~80min
     # with zero output before a human cancelled it. That install step is gone (the
     # container below prebakes the browsers), but cap the job anyway so ANY future
-    # hang fails fast instead of burning the GH 6h default. Budget: container pull
-    # (~3) + checkout/corepack/install (~3) + await-preview poll (10, its own
-    # `core.setFailed` deadline) + seed (~1) + specs ~72s with one retry (~4) +
-    # report upload (~1) ≈ 22min worst legit run; 25 leaves slack for a cold deploy
-    # yet trips ~3× faster than the old stall.
-    timeout-minutes: 25
+    # hang fails fast instead of burning the GH 6h default. Budget (full suite, #525):
+    # container pull (~3) + checkout/corepack/install (~3) + await-preview poll (10,
+    # its own `core.setFailed` deadline) + seed (~1) + the full 26-spec suite serially
+    # (`workers: 1`) — the write flows each do a real sign-up + bootstrap and the live
+    # specs run two clients, so ~12–15 with one retry — + report upload (~1) ≈ 33min
+    # worst legit run; 40 leaves slack for a cold deploy yet still trips well short of
+    # the GH 6h default. Revisit if the suite grows materially.
+    timeout-minutes: 40
     # Run in the Playwright-maintained image: chromium + headless-shell + ffmpeg
     # and all system deps are PREBAKED at /ms-playwright (PLAYWRIGHT_BROWSERS_PATH
     # is set in the image), so there's no `playwright install` download — which
@@ -300,18 +302,22 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
 
-      # Both lanes: `unauth` (the four public read specs) plus `authed`, whose
-      # `setup` dependency does one real sign-up against the preview and captures
-      # the session into storageState the authed search spec reuses (ADR 0085).
+      # The whole suite, all three lanes (#525): `unauth` (public read specs),
+      # `authed` (the storageState smoke whose `setup` dependency does one real
+      # sign-up and captures the session, ADR 0085), and `selfauth` (every
+      # write-flow spec — pano/sözlük create/vote/edit/delete/comment, profile,
+      # live, auth-redirect — each driving its own sign-up). Naming all three
+      # projects also runs `setup` (an `authed` dependency); omitting `setup` from
+      # the flags is intentional — Playwright pulls it in transitively.
       # E2E_BASE_URL points the whole run at the preview (#520); the suite uses
       # relative `page.goto`. `--reporter=html,list` overrides the config's `list`
       # reporter so a failure leaves a browsable HTML report for the artifact below
       # (traces come from the config's `trace: on-first-retry` + CI's one retry).
-      - name: Run e2e specs (unauth + authed)
+      - name: Run e2e specs (full suite — unauth + authed + selfauth)
         run: >-
           pnpm --filter @kampus/web exec playwright test
           --reporter=html,list
-          --project unauth --project authed
+          --project unauth --project authed --project selfauth
         env:
           E2E_BASE_URL: ${{ steps.preview.outputs.url }}
           PLAYWRIGHT_HTML_OPEN: never
