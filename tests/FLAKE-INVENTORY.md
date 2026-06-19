@@ -58,11 +58,15 @@ must be able to tell a **bounded** flake (`root-cause-filed`, `fixed`) from an
   never fixed). Re-observed flaking the zero-worker-code PR
   [#755](https://github.com/kamp-us/phoenix/pull/755), and again on a `main` CI
   run on 2026-06-19.
-- **Status:** `root-cause-filed` →
+- **Status:** `fixed` →
   [#769](https://github.com/kamp-us/phoenix/issues/769) (SSE/DO cold-start 500
-  determinism child of epic #765). The first `post.submit` after subscribe races
-  the `ConnectionDO`/`TopicDO` cold start; the DO is not yet warm, the publish
-  returns 500 instead of 200. The fix lives in #769 — this entry is bounded by it.
+  determinism child of epic #765), fixed in PR
+  [#775](https://github.com/kamp-us/phoenix/pull/775). The first `post.submit`
+  after subscribe raced the `ConnectionDO`/`TopicDO` cold start; the DO was not
+  yet warm, so the publish returned 500 instead of 200. The fix adds a
+  `liveControlWarm` step that warms the cold topic-role DO before the held stream
+  is exercised, making the assertion deterministic. Kept as a record so a
+  regression is recognized, not rediscovered.
 
 ## Scope notes
 
