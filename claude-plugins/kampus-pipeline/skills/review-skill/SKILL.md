@@ -167,8 +167,8 @@ CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" \
 ```
 
 - **Non-empty** (the PR touches a `.claude`/`.github` path or a **gate-critical skill** —
-  `skills/ship-it/**`, `skills/review-code/**`, `skills/review-doc/**`, `skills/review-skill/**`,
-  `skills/review-plan/**`, `skills/gh-issue-intake-formats.md`) → the PR is in the **blocking
+  `claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`, `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`,
+  `claude-plugins/kampus-pipeline/skills/review-plan/**`, `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) → the PR is in the **blocking
   set** (§CP). You review it and post your findings, but **advisory only** — your verdict does
   not authorize a merge; a maintainer merges it by hand. Say so explicitly in the verdict
   (Step 5, advisory path). **This is the common case for a skill PR that edits a gate** —

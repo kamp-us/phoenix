@@ -79,9 +79,15 @@ one subdir per plugin, each distributed from its own subdir source.**
 
 - **Installs carry only the plugin's own subtree** — no monorepo source, no stray `CLAUDE.md`,
   far less disk per consumer.
-- **The marketplace can grow** — a second `kamp.us` plugin is a sibling
-  `claude-plugins/<name>/` plus a catalog entry, with no repo-root reshuffle. The layout is
-  the marketplace shape, not a one-plugin special case.
+- **The marketplace can grow — for packaging/discovery.** A second `kamp.us` plugin is a
+  sibling `claude-plugins/<name>/` plus a catalog entry, with no repo-root reshuffle: install
+  and skill-discovery are plugin-agnostic. **The gate layer is not yet** — the §CP set, the
+  five `CONTROL_PLANE_RE` copies, and the skill-class routing probes are pinned to
+  `claude-plugins/kampus-pipeline/skills/`, so a second plugin's gate-critical skills would
+  match none of them and silently escape control-plane refusal + review-skill routing. Adding
+  plugin #2 therefore needs a deliberate gate-layer change (a `claude-plugins/[^/]+/skills/`
+  widening for routing; a per-plugin gate-critical list for the blocking set), not just a
+  sibling dir — tracked as a follow-up, not closed here.
 - **Sibling marketplaces** (`usirin-skills`, `agent-review-panel`) share the same `"./"`
   whole-repo-copy property; this ADR is the pattern they should follow, but restructuring
   them is out of scope here (each owns its own move).

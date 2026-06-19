@@ -34,9 +34,9 @@ A PR is in one of two classes by the files it touches (ADR
   hand; the pipeline NEVER self-merges them. If the diff touches even one such file, you
   **refuse** (see Step 0).
 
-  The **gate-critical skills** are `skills/ship-it/**`, `skills/review-code/**`,
-  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`, and
-  `skills/gh-issue-intake-formats.md` — the verification/merge gates plus the shared
+  The **gate-critical skills** are `claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
+  `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`, and
+  `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` — the verification/merge gates plus the shared
   marker-namespace/regex contract they all depend on. The single canonical definition of this
   set lives in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP; cite it,
   don't re-hard-code the path list (the three independent copies are exactly the #375 drift
@@ -162,9 +162,9 @@ re-hard-code the path list (the three independent copies are the #375 drift clas
 ADR 0073 §6):
 
 - **control plane (blocking):** matches the §CP set — `.claude/**`, `.github/**`, or a
-  **gate-critical skill** (`skills/ship-it/**`, `skills/review-code/**`,
-  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
-  `skills/gh-issue-intake-formats.md`). A gate-critical skill is blocking **for merge
+  **gate-critical skill** (`claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
+  `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`,
+  `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`). A gate-critical skill is blocking **for merge
   authority** (ship-it refuses → manual human merge, ADR
   [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md),
   **unchanged** by 0073) AND is **routed to `review-skill`** for its verdict (ADR
@@ -201,7 +201,7 @@ echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/skills/' && echo "has-
 echo "$FILES" | grep -Eq '^(apps|packages)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages — agrees with the docs-probe exclusion below (#663); skills/** is its OWN class (ADR 0073)
 # docs probe EXCLUDES the code roots AND skills/** first, so a code/app-internal README (apps/**, packages/**)
 # or a skills-only .md is NOT classed docs — only a prose .md on review-doc's own surface is (#542/#650)
-echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 **Routing:**
@@ -226,7 +226,7 @@ echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.
 unreachable.** ship-it requires a class's gate PASS *because that gate runs on that class* —
 so the docs probe may only class as docs a path a `review-doc` PASS can actually gate. The
 `.md$` match is therefore **scoped, not over-matching**: it runs only after `grep -Ev
-'^(skills|apps|packages)/'` carves out the three path-classes whose `.md` is **not** review-doc's:
+'^(claude-plugins|apps|packages)/'` carves out the three path-classes whose `.md` is **not** review-doc's:
 
 - **`claude-plugins/kampus-pipeline/skills/**`** — a skill `.md` is `review-skill`-gated (ADR 0073). Classing it docs would
   demand a `review-doc` PASS that never comes (the original #358 deadlock, closed by the
@@ -242,7 +242,7 @@ so the docs probe may only class as docs a path a `review-doc` PASS can actually
   class always have a reachable gate.
 
 **The has-code probe and this docs-exclusion name the same code roots — they MUST agree.** The
-docs probe carves out `^(skills|apps|packages)/` and the has-code probe is `^(apps|packages)/`:
+docs probe carves out `^(claude-plugins|apps|packages)/` and the has-code probe is `^(apps|packages)/`:
 both span the **full `apps/**` tree** (every app worker — `apps/web`, `apps/dashboard`, …), not
 just `apps/web`. That agreement is the invariant — if the two diverged (e.g. has-code stayed
 `apps/web` while docs excluded all `apps/**`), an `apps/dashboard/**` path — code `.ts` **or**

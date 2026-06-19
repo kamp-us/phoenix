@@ -802,7 +802,7 @@ that is:**
 This is **exactly `review-doc`'s verification surface**: a present doc class therefore
 always has a *reachable* gate. The code-root carve-out names the roots **`apps`,
 `packages`** — the same literals `ship-it` Step 0's has-code probe (`^(apps|packages)/`)
-and docs-exclusion (`grep -Ev '^(skills|apps|packages)/'`) use, so prose and probe name
+and docs-exclusion (`grep -Ev '^(claude-plugins|apps|packages)/'`) use, so prose and probe name
 one boundary and can't drift (the #663 has-code/docs-exclusion agreement invariant).
 
 The canonical probe both `ship-it` Step 0 and `review-doc` Step 0 run — carve out
@@ -811,7 +811,7 @@ control-plane, then `skills/**`, then the code roots, *then* test for a doc path
 ```bash
 # docs class = review-doc's surface: a .md/knowledge file outside control-plane, skills/**,
 # AND the code roots apps/**/packages/** (#542/#650/#663). Cite this; don't re-derive it loosely.
-echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 A code-root `*.md` is **not** weakened by this carve-out — it is gated harder, by

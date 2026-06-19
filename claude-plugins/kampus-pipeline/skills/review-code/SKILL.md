@@ -364,9 +364,9 @@ apart:
   *isolation* set, not a merge-blocking set.
 - **The control-plane set** — the **single canonical definition in §CP** of
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): `.claude/**`, `.github/**`,
-  **plus the six gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`,
-  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
-  `skills/gh-issue-intake-formats.md`) — is what `ship-it` *refuses to auto-merge* (ADR
+  **plus the six gate-critical skills** (`claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
+  `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`,
+  `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) — is what `ship-it` *refuses to auto-merge* (ADR
   [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md) §4,
   widened to the gate-critical skills by ADR
   [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md),
