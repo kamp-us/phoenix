@@ -177,37 +177,55 @@ Two more boundary notes:
 The sections below are phoenix-internal — they explain how the one source of truth serves
 both plugin and local discovery. Adopters can stop reading here.
 
-### Layout: one canonical home, bridged by a clone-safe symlink
+### Layout: a multi-plugin marketplace, each plugin in its own subdir
 
-Claude Code's **plugin** discovery scans only a plugin-root `skills/` directory and
+The repo is a **proper marketplace** that can host many plugins. `claude-plugins/` is the
+**container**; each plugin gets its own subdirectory (`claude-plugins/<plugin>/`) holding
+its `.claude-plugin/plugin.json` + `skills/`. Today that's `claude-plugins/kampus-pipeline/`;
+a second plugin is just a sibling `claude-plugins/<other>/` plus one more entry in the
+catalog. Each plugin's source (`source: "./claude-plugins/<plugin>"`) distributes **only that
+subtree** — the packaging fix from ADR [0087](https://github.com/kamp-us/phoenix/blob/main/.decisions/0087-plugin-dedicated-subdir-source.md): a `"./"` source copies the **whole monorepo**
+into every install (Claude Code does a full recursive copy and honors no ignore mechanism),
+so a plugin must be the only thing under its source root.
+
+Claude Code's **plugin** discovery scans the plugin source root's `skills/` directory and
 offers no manifest field to redirect it. Phoenix's **local** discovery reads
 `.claude/skills/`. To satisfy both with **no duplicated content**:
 
-- **Canonical files live here, at repo-root `skills/`** — the plugin-root location.
-- **`.claude/skills` is a symlink → `../skills`** (relative target, stored in git as a
-  mode-`120000` symlink blob). Local discovery follows it to this directory.
+- **Canonical files live at `claude-plugins/kampus-pipeline/skills/`** — the plugin source-root location.
+- **`.claude/skills` is a symlink → `../claude-plugins/kampus-pipeline/skills`** (relative target, stored
+  in git as a mode-`120000` symlink blob). Local discovery follows it to that directory.
 
-Editing a file in one location is editing it in the other — there is exactly one source
-of truth. The relative symlink target (`../skills`) means it **resolves in a fresh
-`git clone`** (marketplace installs clone the repo), not only in the working tree.
+Editing a file in one location is editing it in the other — there is exactly one source of
+truth. The relative symlink target means it **resolves in a fresh `git clone`** (marketplace
+installs clone the repo), not only in the working tree. CI runs the validators through the
+same symlink (`bash .claude/skills/validate-skills.sh`), so the layout needs no workflow change.
 
 ```
 phoenix/
-├── skills/                 # canonical — plugin-root discovery location
-│   ├── <name>/SKILL.md
-│   └── gh-issue-intake-formats.md
+├── .claude-plugin/
+│   └── marketplace.json                 # catalog — lists each plugin + its source
+├── claude-plugins/                      # marketplace container (one subdir per plugin)
+│   └── kampus-pipeline/                 # this plugin — source: "./claude-plugins/kampus-pipeline"
+│       ├── .claude-plugin/
+│       │   └── plugin.json
+│       └── skills/                      # canonical — plugin source-root discovery
+│           ├── <name>/SKILL.md
+│           └── gh-issue-intake-formats.md
+├── apps/  packages/  infra/             # repo source — no longer shipped to installers
 └── .claude/
-    └── skills -> ../skills # symlink — local .claude/skills/ discovery
+    └── skills -> ../claude-plugins/kampus-pipeline/skills  # symlink — local discovery
 ```
 
 #### Link invariants
 
-- **Intra-suite links stay relative and travel inside `skills/`**: each `SKILL.md`'s
+- **Intra-suite links stay relative and travel inside the plugin's `skills/`**: each `SKILL.md`'s
   `../gh-issue-intake-formats.md` and `../<sibling>/SKILL.md` resolve against this tree
   regardless of which discovery path reached them.
-- **External doc-references** (`../../../.decisions/*`, `.patterns/*`, `CLAUDE.md`) are
-  phoenix-specific rationale and are rewritten to stable GitHub URLs separately (see ADR
-  0062 §4); they are not bundled into an adopter's repo.
+- **External doc-references** (`.decisions/*`, `.patterns/*`, `CLAUDE.md`) are
+  phoenix-specific rationale and are written as **stable GitHub permalinks**, not relative
+  paths (ADR 0062 §4) — so they resolve from an adopter's install, where those trees don't
+  exist.
 
 ### In-repo discovery doubling — accept the doubles (ADR 0062 §5)
 

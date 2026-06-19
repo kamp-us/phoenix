@@ -10,7 +10,7 @@ checklist — you do **not** fix anything. Every gap is reported with the exact
 command that closes it; applying it is the operator's call (and most fixes mutate
 the repo — label creation, auth scopes — which is theirs to authorize).
 
-The pipeline is repo-agnostic (ADR [0062](../../.decisions/0062-repo-as-config-plugin.md)): an adopter installs the plugin and it
+The pipeline is repo-agnostic (ADR [0062](https://github.com/kamp-us/phoenix/blob/main/.decisions/0062-repo-as-config-plugin.md)): an adopter installs the plugin and it
 operates on *their* issues. Several skills hard-depend on environment the host repo
 must already provide — labels, `gh` auth, a CI signal — but nothing verifies that
 up front, so a first run otherwise fails deep inside a `gh api` call (e.g. labeling
@@ -43,7 +43,7 @@ Do not run the fix commands yourself.
 | **2 — gating** | target repo resolves | a skill can't target a repo it can't name |
 | | at least one CI workflow exists | `ship-it` Step 3 gates on checks-green; with zero checks that gate passes vacuously |
 | **3 — optional** | `@kampus/decisions-index` / `@kampus/epic-ledger` resolve on npm | `adr` / `review-plan` reach for them via `pnpm dlx`; absent → those stages degrade |
-| | a `run-evidence` producer is defined | `ship-it` guard 2 runs strict when present, and **degrades to checks-green when absent** (ADR [0086](../../.decisions/0086-ship-it-foreign-repo-degradation.md)) — so this is informational, not a failure |
+| | a `run-evidence` producer is defined | `ship-it` guard 2 runs strict when present, and **degrades to checks-green when absent** (ADR [0086](https://github.com/kamp-us/phoenix/blob/main/.decisions/0086-ship-it-foreign-repo-degradation.md)) — so this is informational, not a failure |
 
 The load-bearing pair is **auth + labels** (Tier 1): get those wrong and the very
 first `report` → `triage` round trips into a raw GitHub API error. The Tier-2 pair

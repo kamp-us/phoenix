@@ -720,12 +720,12 @@ closing the #375 drift class).
 - `.github/**` — CI enforcement.
 - the **gate-critical skills** — the verification/merge machinery plus the shared marker
   contract they all depend on:
-  - `skills/ship-it/**`
-  - `skills/review-code/**`
-  - `skills/review-doc/**`
-  - `skills/review-skill/**`
-  - `skills/review-plan/**`
-  - `skills/gh-issue-intake-formats.md` (this file)
+  - `claude-plugins/kampus-pipeline/skills/ship-it/**`
+  - `claude-plugins/kampus-pipeline/skills/review-code/**`
+  - `claude-plugins/kampus-pipeline/skills/review-doc/**`
+  - `claude-plugins/kampus-pipeline/skills/review-skill/**`
+  - `claude-plugins/kampus-pipeline/skills/review-plan/**`
+  - `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (this file)
 
 A PR touching **any** path in this set is **control plane**: `ship-it` refuses to auto-merge
 it and a human merges it by hand (ADR
@@ -752,13 +752,13 @@ Every consumer matches the set with this **one** anchored regex (POSIX ERE; the 
 form below). Cite this regex; do **not** re-hard-code the path list:
 
 ```
-^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$
+^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$
 ```
 
 ```bash
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — one definition, no fourth copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'
 gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename' \
   | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING — control plane (manual merge)"
 ```
@@ -802,7 +802,7 @@ that is:**
 This is **exactly `review-doc`'s verification surface**: a present doc class therefore
 always has a *reachable* gate. The code-root carve-out names the roots **`apps`,
 `packages`** — the same literals `ship-it` Step 0's has-code probe (`^(apps|packages)/`)
-and docs-exclusion (`grep -Ev '^(skills|apps|packages)/'`) use, so prose and probe name
+and docs-exclusion (`grep -Ev '^(claude-plugins|apps|packages)/'`) use, so prose and probe name
 one boundary and can't drift (the #663 has-code/docs-exclusion agreement invariant).
 
 The canonical probe both `ship-it` Step 0 and `review-doc` Step 0 run — carve out
@@ -811,7 +811,7 @@ control-plane, then `skills/**`, then the code roots, *then* test for a doc path
 ```bash
 # docs class = review-doc's surface: a .md/knowledge file outside control-plane, skills/**,
 # AND the code roots apps/**/packages/** (#542/#650/#663). Cite this; don't re-derive it loosely.
-echo "$FILES" | grep -Ev '^(skills|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 A code-root `*.md` is **not** weakened by this carve-out — it is gated harder, by

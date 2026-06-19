@@ -45,9 +45,9 @@ spec for this split, and it **supersedes** ADR
   adds no security value.
 - **BLOCKING (manual merge).** Anything in the **canonical §CP set** (the single source in
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `.claude/**`, `.github/**`,
-  or one of the six **gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`,
-  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
-  `skills/gh-issue-intake-formats.md`) — the agent control plane (instructions, tools, hooks),
+  or one of the six **gate-critical skills** (`claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
+  `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`,
+  `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) — the agent control plane (instructions, tools, hooks),
   CI enforcement, and the pipeline's own gates. A bad merge here is a serious security concern
   (self-modification of guardrails; CI/secret exfiltration), so a **human merges these by hand**
   and `ship-it` refuses them. The gate-critical skills were added to this set by ADR
@@ -137,9 +137,9 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
 
 - **Any control-plane path** — the **canonical §CP set** in
   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): `.claude/**`, `.github/**`,
-  or one of the six **gate-critical skills** (`skills/ship-it/**`, `skills/review-code/**`,
-  `skills/review-doc/**`, `skills/review-skill/**`, `skills/review-plan/**`,
-  `skills/gh-issue-intake-formats.md`) — → the PR is in the **blocking set**. You review it and
+  or one of the six **gate-critical skills** (`claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
+  `claude-plugins/kampus-pipeline/skills/review-doc/**`, `claude-plugins/kampus-pipeline/skills/review-skill/**`, `claude-plugins/kampus-pipeline/skills/review-plan/**`,
+  `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md`) — → the PR is in the **blocking set**. You review it and
   post your findings, but **advisory only** — your verdict does not authorize a merge; a
   maintainer merges it by hand (ADR 0053, widened to the gate-critical skills by ADR 0065, with
   `review-skill/**` added by ADR 0073). **§CP is the authoritative source — cite it, don't
@@ -147,7 +147,7 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
   (Step 5).
 
   ```bash
-  CONTROL_PLANE_RE='^(\.claude|\.github)/|^skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
+  CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
   CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
     --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
   # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073)

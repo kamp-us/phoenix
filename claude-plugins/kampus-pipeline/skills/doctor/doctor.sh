@@ -134,7 +134,10 @@ done
 # 3b. the run-evidence producer (ship-it degrades gracefully without it — ADR 0086)
 RUNEV=0
 if [ -n "${REPO:-}" ]; then
-	RUNEV=$(gh api "repos/$REPO/actions/workflows" --paginate \
+	# No --paginate: with --paginate, gh feeds each page to --jq separately, so `| length`
+	# prints one integer PER PAGE (a multi-line "0\n0" that breaks the -gt test). per_page=100
+	# fits any realistic repo's workflow set in one page → a single integer.
+	RUNEV=$(gh api "repos/$REPO/actions/workflows?per_page=100" \
 		--jq '[.workflows[] | select(.name=="run-evidence")] | length' 2>/dev/null || echo 0)
 fi
 if [ "${RUNEV:-0}" -gt 0 ]; then
