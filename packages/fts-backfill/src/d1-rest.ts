@@ -76,9 +76,13 @@ export const makeD1Rest = (config: D1RestConfig): D1Database => {
 		sql,
 		params,
 		all: async () => ({results: (await firstRows(sql, params)) as never[]}),
+		// Carry D1's real row-change count into `meta.changes`: drizzle's `.run()` exposes
+		// `result.meta.changes` (rows affected), and the REST `/query` response is
+		// `result: [{ meta: { changes }, … }]`. Hardcoding `{}` here dropped it — latent
+		// until a consumer reads it (it bit moderator-grant's setRole; #937/#940).
 		run: async () => {
-			await firstRows(sql, params);
-			return {success: true, meta: {}, results: []};
+			const res = await runQuery({accountId, databaseId, sql, params: toRestParams(params)});
+			return {success: true, meta: {changes: res.result?.[0]?.meta?.changes ?? 0}, results: []};
 		},
 		raw: async () => {
 			const rows = await firstRows(sql, params);
