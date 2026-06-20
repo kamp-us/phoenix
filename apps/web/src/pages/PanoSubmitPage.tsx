@@ -7,7 +7,7 @@ import {Button} from "../components/ui/Button";
 import {codeOf} from "../fate/wire";
 import {FlagGate} from "../flags/FlagGate";
 import {PANO_DRAFT_SAVE} from "../flags/keys";
-import type {MutationErrorCode} from "../lib/mutationErrorCodes";
+import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import "./PanoSubmitPage.css";
 
@@ -38,7 +38,7 @@ const BODY_MAX = 10_000;
 const TITLE_MIN = 5;
 
 /** Turkish copy for the validation codes the submit form surfaces inline. */
-const messageForCode = (code: MutationErrorCode, fallback: string): string => {
+const messageForCode = (code: FateWireCode, fallback: string): string => {
 	switch (code) {
 		case "TITLE_REQUIRED":
 			return "başlık boş olamaz";

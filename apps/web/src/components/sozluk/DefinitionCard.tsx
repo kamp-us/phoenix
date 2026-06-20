@@ -1,6 +1,7 @@
 // Vote/edit/delete dispatch through `fate.mutations.definition.*` with optimistic
-// updates; phoenix error codes classify as boundary, so mutations throw and we catch
-// per-call-site. See `.patterns/fate-mutations-client.md`.
+// updates; the `FateWireCode`s these raise are boundary-class in fate's mutation
+// taxonomy, so mutations throw and we catch per-call-site. See
+// `.patterns/fate-mutations-client.md`.
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
@@ -8,8 +9,8 @@ import type {Definition, ReportReceipt} from "../../../worker/features/fate/view
 import {useSession} from "../../auth/client";
 import {codeOf, toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
+import type {FateWireCode} from "../../lib/fateWireCodes";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
-import type {MutationErrorCode} from "../../lib/mutationErrorCodes";
 import {authRedirectPath} from "../../lib/returnTo";
 import {useToggleAction} from "../pano/useToggleAction";
 import {Button} from "../ui/Button";
@@ -38,7 +39,7 @@ const ReportReceiptView = view<ReportReceipt>()({
 	created: true,
 });
 
-const messageForCode = (code: MutationErrorCode, fallback: string): string => {
+const messageForCode = (code: FateWireCode, fallback: string): string => {
 	switch (code) {
 		case "BODY_REQUIRED":
 			return "tanım boş olamaz";

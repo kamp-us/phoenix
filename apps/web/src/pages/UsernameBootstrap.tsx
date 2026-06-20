@@ -12,7 +12,7 @@ import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
 import {codeOf} from "../fate/wire";
-import type {MutationErrorCode} from "../lib/mutationErrorCodes";
+import type {FateWireCode} from "../lib/fateWireCodes";
 import "./AuthPage.css";
 
 const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
@@ -27,7 +27,7 @@ const SetUsernameView = view<User>()({
 });
 
 /** Map a server wire code to the inline message. */
-function messageForCode(code: MutationErrorCode | null): string {
+function messageForCode(code: FateWireCode | null): string {
 	switch (code) {
 		case "TOO_SHORT":
 			return "kullanıcı adı en az 3 karakter olmalı";

@@ -28,7 +28,7 @@ import type {ReportOutcome} from "../components/ui/ReportButton";
 import {Screen} from "../fate/Screen";
 import {useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
-import type {MutationErrorCode} from "../lib/mutationErrorCodes";
+import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
@@ -121,7 +121,7 @@ function useReportHandler() {
 	);
 }
 
-const postErrorMessage = (code: MutationErrorCode, fallback: string): string => {
+const postErrorMessage = (code: FateWireCode, fallback: string): string => {
 	switch (code) {
 		case "TITLE_REQUIRED":
 			return "başlık boş olamaz";
@@ -136,7 +136,7 @@ const postErrorMessage = (code: MutationErrorCode, fallback: string): string => 
 	}
 };
 
-const commentErrorMessage = (code: MutationErrorCode, fallback: string): string => {
+const commentErrorMessage = (code: FateWireCode, fallback: string): string => {
 	switch (code) {
 		case "BODY_REQUIRED":
 			return "yorum boş olamaz";
@@ -160,7 +160,7 @@ const currentLocationPath = () => `${window.location.pathname}${window.location.
  * layer `useDraft` on top; the two-field post-edit form uses this directly.
  */
 function useDraftSubmit(options: {
-	errorMessage: (code: MutationErrorCode, fallback: string) => string;
+	errorMessage: (code: FateWireCode, fallback: string) => string;
 	redirectPath: () => string;
 }) {
 	const [error, setError] = React.useState<string | null>(null);
@@ -206,7 +206,7 @@ function useDraft(options: {
 	validate: (trimmed: string, body: string) => string | null;
 	redirectPath: () => string;
 	run: (body: string) => Promise<{error?: {message: string} | null}>;
-	errorMessage: (code: MutationErrorCode, fallback: string) => string;
+	errorMessage: (code: FateWireCode, fallback: string) => string;
 	failureFallback: string;
 	onSuccess: () => void;
 }) {

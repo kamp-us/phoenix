@@ -1,6 +1,6 @@
 /**
  * Pins every pasaport error class to its wire `code`, so the annotation-derived
- * codec and the SPA's `MUTATION_ERROR_CODES` vocabulary can't drift
+ * codec and the SPA's `FATE_WIRE_CODES` vocabulary can't drift
  * (`.patterns/fate-effect-wire-errors.md`).
  */
 import {encodeWireError, wireCodeOfClass} from "@kampus/fate-effect";

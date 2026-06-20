@@ -21,7 +21,7 @@ import {Button} from "../components/ui/Button";
 import {Screen} from "../fate/Screen";
 import {useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton} from "../fate/wire";
-import type {MutationErrorCode} from "../lib/mutationErrorCodes";
+import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
@@ -50,7 +50,7 @@ const TermView = view<Term>()({
 	definitions: DefinitionConnectionView,
 });
 
-const messageForCode = (code: MutationErrorCode, fallback: string): string => {
+const messageForCode = (code: FateWireCode, fallback: string): string => {
 	switch (code) {
 		case "BODY_REQUIRED":
 			return "tanım boş olamaz";

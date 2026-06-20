@@ -164,7 +164,7 @@ Wire codes (`BODY_REQUIRED`, `DEFINITION_NOT_FOUND`, etc.) are the public contra
 clients depend on them. The `_tag` namespace (`feature/Name`) is the internal contract. Two
 guards keep them honest: each feature's `errors.unit.test.ts` pins every class ↔ code pair, and
 `worker/features/fate/wireCodes.unit.test.ts` derives the server-emittable code set from the
-fate config's declared error unions and asserts the SPA's `MUTATION_ERROR_CODES` covers it.
+fate config's declared error unions and asserts the SPA's `FATE_WIRE_CODES` covers it.
 
 ## Anti-patterns
 
