@@ -69,3 +69,19 @@ pnpm --filter @kampus/publish-guard test
 node packages/publish-guard/src/bin.ts list    # the derived required set
 node packages/publish-guard/src/bin.ts check   # exit non-zero on drift, 0 clean
 ```
+
+## Pre-push drift check (local)
+
+`check` is the same command the PR gate runs (`.github/workflows/publish-guard.yml`,
+issue #808). Run it locally **before you push** whenever a change could touch
+publishability — making a package `private`, removing a `publishConfig`, or adding
+a skill that references a new `@kampus/*` package:
+
+```bash
+node packages/publish-guard/src/bin.ts check
+```
+
+A non-zero exit means a required package is unpublishable; the printed table names
+each drifted package and the fix. Catching it locally turns a red CI gate into a
+one-line pre-push check. Because `check` is offline/config-only, the local result
+matches CI exactly — a clean local run reliably predicts a green gate.
