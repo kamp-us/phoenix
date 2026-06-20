@@ -70,6 +70,16 @@ start: [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md).
 Read tolerantly (the formats are conventions, not parser specs — a synonym or a
 slightly different bullet style still means what it means), write canonically.
 
+## The glossary — read `.glossary/`, use the canonical terms
+
+Before you draft a PR title/body, a progress comment, an epic handoff, or any
+identifier you introduce, read the repo-owned vocabulary register and reach for its
+names rather than inventing your own (the one-concept-named-four-ways drift the audit
+found, #851): [`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
+(domain nouns) and [`.glossary/LANGUAGE.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/LANGUAGE.md)
+(architecture vocabulary). Point at the glossary, never copy a definition into this skill —
+the register is the single source. (ADR 0099.)
+
 ---
 
 ## Invocation — two modes, disambiguated by what you're given

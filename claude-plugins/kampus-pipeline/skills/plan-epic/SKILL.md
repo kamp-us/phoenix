@@ -79,6 +79,16 @@ You **write three of the five** shared formats; read them before you start:
 Read the formats doc tolerantly when reconciling an existing plan (re-plan, below) and
 write it canonically. Tolerant reading is the safety margin, not the target.
 
+## The glossary — read `.glossary/`, use the canonical terms
+
+As you author the plan — user stories, the `### What to build` spec on each child, the
+identifiers you coin — reach for the repo-owned vocabulary register rather than inventing
+names (the one-concept-named-four-ways drift the audit found, #851):
+[`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
+(domain nouns) and [`.glossary/LANGUAGE.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/LANGUAGE.md)
+(architecture vocabulary). Point at the glossary, never copy a definition into this skill —
+the register is the single source. (ADR 0099.)
+
 ## Acquire the epic-lock before you mutate — release it on every exit
 
 `plan-epic` and `review-plan` both mutate one epic's children (you supersede/unlink/close on

@@ -49,6 +49,15 @@ gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
   --jq '.[] | "#\(.number) (\(.user.login)) \(.title)"'
 ```
 
+## The glossary — read `.glossary/`, use the canonical terms
+
+As you classify, enrich, or rewrite an issue body, reach for the repo-owned vocabulary
+register rather than inventing names (the one-concept-named-four-ways drift the audit
+found, #851): [`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
+(domain nouns) and [`.glossary/LANGUAGE.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/LANGUAGE.md)
+(architecture vocabulary). Point at the glossary, never copy a definition into this skill —
+the register is the single source. (ADR 0099.)
+
 ---
 
 ## Step 0 — Claim the issue before you mutate it (concurrent-sweep guard)

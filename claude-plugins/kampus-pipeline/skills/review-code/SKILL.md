@@ -73,6 +73,16 @@ You also *read* the progress comments (format 3) on the issue and the PR descrip
 context, **not** evidence: a criterion is satisfied by what the diff/tests/behavior
 actually show, not by the implementer asserting it in a comment.
 
+## The glossary — read `.glossary/`, use the canonical terms
+
+When you write a FAIL finding, an appended acceptance criterion, or any verdict prose,
+reach for the repo-owned vocabulary register rather than inventing names (the
+one-concept-named-four-ways drift the audit found, #851):
+[`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
+(domain nouns) and [`.glossary/LANGUAGE.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/LANGUAGE.md)
+(architecture vocabulary). Point at the glossary, never copy a definition into this skill —
+the register is the single source. (ADR 0099.)
+
 ---
 
 ## Step 1 — Resolve the PR and its linked issue
