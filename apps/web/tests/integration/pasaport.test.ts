@@ -34,6 +34,13 @@
  * (writes are synchronous over `/fate`; just re-resolve) and the `createdAt`
  * timestamp ordering probe (the wire feed exposes a `<sec>:<id>` cursor, not a
  * `Date`) — re-expressed via the keyset cursor order + id-union assertions.
+ *
+ * moved to unit (ADR 0082): the `TOO_SHORT` / `TOO_LONG` / `INVALID_FORMAT`
+ * username codes are the pure `assertUsername` length+format gate, which runs
+ * before any DB read — proven with no DB in
+ * `worker/features/pasaport/username-validation.unit.test.ts`. The DB-state-
+ * dependent `TAKEN` (uniqueness conflict) and `ALREADY_SET` (immutability against
+ * a persisted username) stay here on real D1.
  */
 import {beforeAll, describe, expect, it} from "vitest";
 import {integrationStack} from "./_integration.ts";
@@ -135,32 +142,10 @@ describe("pasaport — user.setUsername / me", () => {
 		expect(meData.username).toBe(value);
 	});
 
-	it("a too-short username surfaces TOO_SHORT", async () => {
-		const user = await h.signUp(`pasa-${STAMP}-short@test.local`, "hunter2hunter2", "Too Short");
-		const result = await h.fate(
-			{kind: "mutation", name: "user.setUsername", input: {value: "ab"}, select: ["id"]},
-			{cookie: user.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("TOO_SHORT");
-	});
-
-	it("an illegal-format username surfaces INVALID_FORMAT", async () => {
-		const user = await h.signUp(`pasa-${STAMP}-fmt@test.local`, "hunter2hunter2", "Bad Format");
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "user.setUsername",
-				input: {value: "Bad_Name!"},
-				select: ["id"],
-			},
-			{cookie: user.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("INVALID_FORMAT");
-	});
+	// TOO_SHORT / TOO_LONG / INVALID_FORMAT (the pure `assertUsername` length+format
+	// gate, which runs before any DB read) are unit-tested with no DB in
+	// `worker/features/pasaport/username-validation.unit.test.ts` (ADR 0082). What
+	// stays here is the DB-state-dependent rest of the same mutation.
 
 	it("a taken username surfaces TAKEN", async () => {
 		const value = uname("taken");
