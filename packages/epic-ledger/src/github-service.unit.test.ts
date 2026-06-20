@@ -138,6 +138,47 @@ describe("Github.epicLedger — over a mock gh spawner", () => {
 		),
 	);
 
+	it.effect(
+		"a present cycle doc + a feature child with no Containment marker surfaces MISSING_CONTAINMENT",
+		() =>
+			Effect.gen(function* () {
+				const github = yield* Github;
+				const ledger = yield* github.epicLedger(159);
+				// the cycle-doc probe resolved (200), so the forcing function is in force:
+				// #101/#102 are type:feature with no `**Containment:**` line ⇒ both flagged.
+				assert.isTrue(ledger.cycleDocPresent);
+				const missing = validateLedger(ledger).filter((d) => d.type === "MISSING_CONTAINMENT");
+				assert.deepStrictEqual(
+					missing.map((d) => d.refs[0]),
+					[101, 102],
+				);
+			}).pipe((effect) =>
+				provide(effect, {
+					"repos/kamp-us/phoenix/issues/159": issue(159, EPIC_BODY, [
+						"type:epic",
+						"p1",
+						"status:triaged",
+					]),
+					"repos/kamp-us/phoenix/issues/159/sub_issues": JSON.stringify([
+						{number: 101},
+						{number: 102},
+					]),
+					"repos/kamp-us/phoenix/issues/101": issue(
+						101,
+						"**Stories:** 1\n### Acceptance criteria\n- [ ] ac",
+						["type:feature", "p1", "status:triaged"],
+					),
+					"repos/kamp-us/phoenix/issues/102": issue(
+						102,
+						"**Stories:** 2\n### Acceptance criteria\n- [ ] ac",
+						["type:feature", "p1", "status:triaged"],
+					),
+					"repos/kamp-us/phoenix/contents/product-development-cycle.md":
+						"product-development-cycle.md",
+				}),
+			),
+	);
+
 	it.effect("surfaces a non-zero `gh` exit as a typed GhCommandError (not a throw)", () =>
 		Effect.gen(function* () {
 			const github = yield* Github;
@@ -251,6 +292,7 @@ const soloResponses = (repo: string, epicNumber: number): Record<string, Respons
 		"p1",
 		"status:triaged",
 	]),
+	[`repos/${repo}/contents/product-development-cycle.md`]: "product-development-cycle.md",
 });
 
 // Run an epicLedger read against a fixture map + a chosen `gh repo view` answer,

@@ -28,6 +28,7 @@ import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
 import type {EpicLedger} from "./Ledger.ts";
 import {
 	countAcceptanceCriteria,
+	parseChildContainment,
 	parseChildStories,
 	parseDependencyGraph,
 	parseEpicStories,
@@ -77,10 +78,14 @@ const toLedger = (input: GithubEpicInput): EpicLedger => ({
 		labels: labelNames(child.labels),
 		acceptanceCriteriaCount: countAcceptanceCriteria(bodyOf(child.body)),
 		stories: parseChildStories(bodyOf(child.body)),
+		containment: parseChildContainment(bodyOf(child.body)),
 	})),
-	// Pure decode cannot probe GitHub, so cross-epic refs are left unresolved here;
-	// the IO boundary (`loadEpicLedger`) resolves and overrides this set.
+	// Pure decode cannot probe GitHub, so cross-epic refs and the cycle-doc presence
+	// are left unresolved here; the IO boundary (`loadEpicLedger`) resolves and
+	// overrides both (externalRefs by probing each ref, cycleDocPresent by probing
+	// the repo for `product-development-cycle.md`).
 	externalRefs: [],
+	cycleDocPresent: false,
 });
 
 /**
@@ -207,6 +212,14 @@ const issueArgs = (repo: string, number: number): ReadonlyArray<string> => [
 	`repos/${repo}/issues/${number}`,
 ];
 
+/** The well-known repo path the cycle-aware skills consult (formats §1). */
+const cycleDocArgs = (repo: string): ReadonlyArray<string> => [
+	"api",
+	`repos/${repo}/contents/product-development-cycle.md`,
+	"--jq",
+	".path",
+];
+
 const subIssuesArgs = (repo: string, number: number): ReadonlyArray<string> => [
 	"api",
 	`repos/${repo}/issues/${number}/sub_issues?per_page=100`,
@@ -330,6 +343,21 @@ const resolveExternalRefs = Effect.fn("Github.resolveExternalRefs")(function* (
 	return probed.filter((r) => r.exists).map((r) => r.n);
 });
 
+/**
+ * Does the repo carry a `product-development-cycle.md` (formats §1)? The canonical
+ * content probe: a clean 404 → `false` (the foreign-install graceful-absence case,
+ * so `MISSING_CONTAINMENT` is a no-op); any other `gh` fault propagates rather than
+ * silently demoting a present cycle doc to absent.
+ */
+const cycleDocPresent = Effect.fn("Github.cycleDocPresent")(function* (repo: string) {
+	return yield* runGh(cycleDocArgs(repo)).pipe(
+		Effect.as(true),
+		Effect.catchTag("@kampus/epic-ledger/GhCommandError", (error) =>
+			is404(error.stderr) ? Effect.succeed(false) : Effect.fail(error),
+		),
+	);
+});
+
 const loadEpicLedger = Effect.fn("Github.epicLedger")(function* (repo: string, epicNumber: number) {
 	const epic = yield* json(issueArgs(repo, epicNumber));
 	const refs = yield* decodeSubIssueRefs(yield* json(subIssuesArgs(repo, epicNumber)));
@@ -337,7 +365,11 @@ const loadEpicLedger = Effect.fn("Github.epicLedger")(function* (repo: string, e
 		concurrency: "unbounded",
 	});
 	const ledger = yield* decodeEpicLedger({epic, children});
-	return {...ledger, externalRefs: yield* resolveExternalRefs(repo, ledger)};
+	const [externalRefs, hasCycleDoc] = yield* Effect.all(
+		[resolveExternalRefs(repo, ledger), cycleDocPresent(repo)],
+		{concurrency: "unbounded"},
+	);
+	return {...ledger, externalRefs, cycleDocPresent: hasCycleDoc};
 });
 
 const flipChildToTriaged = Effect.fn("Github.flipChildToTriaged")(function* (

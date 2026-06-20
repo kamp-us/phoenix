@@ -39,12 +39,29 @@ export const DependencyGraph = Schema.Struct({
 export type DependencyGraph = (typeof DependencyGraph)["Type"];
 
 /**
+ * The decoded value of a child's `**Containment:**` line (formats §2): `"flag"`
+ * for `flag (default-off)`, `"exempt"` for `exempt (<reason>)`, `"none"` for the
+ * explicit `none (no cycle doc)` graceful-absence value. A child with **no**
+ * `**Containment:**` line decodes to `undefined`, which the tolerant-read rule
+ * treats identically to `"none"`. Only `"flag"` / `"exempt"` satisfy the
+ * forcing-function check (ADR 0091); `"none"`/`undefined` is the unset state.
+ */
+export const Containment = Schema.Literals(["flag", "exempt", "none"]);
+export type Containment = (typeof Containment)["Type"];
+
+/**
  * A linked child issue, reduced to the structural facts the floor checks.
  * `stories` is the child's `**Stories:**` refs (the epic story numbers it
  * implements or unblocks), parsed off its body at the boundary. `undefined`
  * records a child with **no** `**Stories:**` line at all (the `MISSING_STORY`
  * case); an empty array records the explicit pure-infra marker (covers nothing
  * by design — not a defect).
+ *
+ * `containment` is the child's `**Containment:**` marker, parsed off its body at
+ * the boundary. `undefined` records **no** line, read as `"none"` per the
+ * tolerant-read rule; `validateLedger` flags a `type:feature` child whose marker
+ * is `"none"`/`undefined` as `MISSING_CONTAINMENT`, but only when the repo has a
+ * cycle doc (ADR 0091).
  */
 export const ChildIssue = Schema.Struct({
 	number: Schema.Number,
@@ -52,6 +69,7 @@ export const ChildIssue = Schema.Struct({
 	labels: Schema.Array(Schema.String),
 	acceptanceCriteriaCount: Schema.Number,
 	stories: Schema.optional(Schema.Array(Schema.Number)),
+	containment: Schema.optional(Containment),
 });
 export type ChildIssue = (typeof ChildIssue)["Type"];
 
@@ -79,10 +97,19 @@ export type EpicHeader = (typeof EpicHeader)["Type"];
  * self-contained ledger. The pure floor flags a referenced non-child as
  * `DANGLING_DEP` only when it is absent from this set — so a real cross-epic
  * dependency is allowed through, while a typo'd or deleted ref still dangles.
+ *
+ * `cycleDocPresent` records whether the repo carries a `product-development-cycle.md`
+ * (formats §1). Like `externalRefs`, it is resolved at the GitHub boundary
+ * (`github.ts`), never by parsing the bodies — the validator stays a pure function
+ * of data. It gates the `MISSING_CONTAINMENT` check (ADR 0091): a `type:feature`
+ * child's missing/`none` containment marker is a defect only in a repo that HAS a
+ * cycle doc; a foreign install with no cycle doc carries `false` and the check is a
+ * graceful no-op (formats §1 graceful-absence contract).
  */
 export const EpicLedger = Schema.Struct({
 	epic: EpicHeader,
 	children: Schema.Array(ChildIssue),
 	externalRefs: Schema.Array(Schema.Number),
+	cycleDocPresent: Schema.Boolean,
 });
 export type EpicLedger = (typeof EpicLedger)["Type"];

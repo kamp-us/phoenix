@@ -27,6 +27,7 @@ import type {EpicLedger} from "./Ledger.ts";
 const REQUIRED_LABEL_PREFIXES = ["type:", "status:"] as const;
 const PRIORITY_LABELS = ["p0", "p1", "p2"] as const;
 const NEEDS_TRIAGE_LABEL = "status:needs-triage";
+const FEATURE_LABEL = "type:feature";
 
 const hasPrefixedLabel = (labels: ReadonlyArray<string>, prefix: string): boolean =>
 	labels.some((l) => l.startsWith(prefix));
@@ -155,6 +156,25 @@ export const validateLedger = (ledger: EpicLedger): ReadonlyArray<Defect> => {
 			defects.push({
 				type: "MISSING_LABEL",
 				message: `Child #${child.number} is missing required label(s): ${missing.join(", ")}.`,
+				refs: [child.number],
+			});
+		}
+
+		// ADR 0091 forcing function: in a repo with a cycle doc, every `type:feature`
+		// child must carry a `flag (default-off)` | `exempt (<reason>)` containment
+		// marker. A missing line decodes to `undefined`, read identically to `"none"`
+		// per the formats §2 tolerant-read rule — both are the unset state. Only
+		// `type:feature` is gated (a non-feature child has no user-facing surface to
+		// contain); without a cycle doc `none` is the valid graceful-absence value, so
+		// the check is a no-op (cycleDocPresent === false).
+		if (
+			ledger.cycleDocPresent &&
+			child.labels.includes(FEATURE_LABEL) &&
+			(child.containment === undefined || child.containment === "none")
+		) {
+			defects.push({
+				type: "MISSING_CONTAINMENT",
+				message: `Child #${child.number} is \`type:feature\` but carries no \`**Containment:**\` marker; every feature child must declare \`flag (default-off)\` or \`exempt (<reason>)\` (ADR 0091).`,
 				refs: [child.number],
 			});
 		}

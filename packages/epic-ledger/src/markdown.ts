@@ -13,7 +13,7 @@
  * grammar) and §2 (the ≥1-AC sub-issue invariant + the required `**Stories:**`
  * field) for the source conventions.
  */
-import type {DependencyEdge, DependencyGraph} from "./Ledger.ts";
+import type {Containment, DependencyEdge, DependencyGraph} from "./Ledger.ts";
 
 const ISSUE_REF = /#(\d+)/g;
 
@@ -31,6 +31,9 @@ const USER_STORIES_HEADING = /^#{1,6}\s+user\s+stor(?:y|ies)\b/i;
 
 /** A `**Stories:**` field line; captures the trailing ref list (group 1). */
 const STORIES_FIELD = /^\s*\**\s*stories\s*\**\s*:\s*\**\s*(.*?)\s*\**\s*$/i;
+
+/** A `**Containment:**` field line; captures the trailing value (group 1). */
+const CONTAINMENT_FIELD = /^\s*\**\s*containment\s*\**\s*:\s*\**\s*(.*?)\s*\**\s*$/i;
 
 /** An ordered-list item line; captures its leading number (group 1): `1.` / `2)`. */
 const ORDERED_ITEM = /^\s*(\d+)[.)]\s+\S/;
@@ -121,6 +124,28 @@ export const parseChildStories = (body: string): ReadonlyArray<number> | undefin
 		const value = match[1] ?? "";
 		if (/^none\b/i.test(value)) return [];
 		return uniqueSortedNumbers([...value.matchAll(/\d+/g)].map((m) => Number(m[0])));
+	}
+	return undefined;
+};
+
+/**
+ * The containment marker a child body's `**Containment:**` line declares (formats
+ * §2): `"flag"` for `flag (default-off)`, `"exempt"` for `exempt (<reason>)`,
+ * `"none"` for the explicit `none (no cycle doc)` value. The leading keyword of
+ * the value decides — only the first word matters, the parenthetical detail is
+ * ignored. A body with **no** `**Containment:**` line returns `undefined`, which
+ * the validator reads identically to `"none"` per the tolerant-read rule; an
+ * unrecognized value is also `undefined` (treated as unset, not malformed).
+ */
+export const parseChildContainment = (body: string): Containment | undefined => {
+	for (const line of body.split("\n")) {
+		const match = CONTAINMENT_FIELD.exec(line);
+		if (!match) continue;
+		const value = (match[1] ?? "").trim().toLowerCase();
+		if (/^flag\b/.test(value)) return "flag";
+		if (/^exempt\b/.test(value)) return "exempt";
+		if (/^none\b/.test(value)) return "none";
+		return undefined;
 	}
 	return undefined;
 };
