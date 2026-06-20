@@ -159,4 +159,49 @@ describe("makeD1Rest — the REST shim's prepare/bind/batch contract", () => {
 		expect(body.batch[1]!.sql).toBe('insert into "term_search" ("slug", "norm") values (?, ?)');
 		expect(body.batch[1]!.params).toEqual(["sisli", "sisli"]);
 	});
+
+	// #940: `run()` once hardcoded `meta: {}`, dropping D1's row-change count — latent
+	// here (no consumer reads it), but it bit moderator-grant's setRole (#937). Lock the
+	// REST `result: [{ meta: { changes } }]` → `meta.changes` mapping so it can't regress.
+	it("run() carries D1's row-change count from the REST meta (#937/#940)", async () => {
+		const fakeFetch: typeof globalThis.fetch = async () =>
+			new Response(JSON.stringify({result: [{meta: {changes: 3}, results: [], success: true}]}), {
+				status: 200,
+				headers: {"content-type": "application/json"},
+			});
+
+		const layer = Layer.mergeAll(
+			FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fakeFetch))),
+			fromApiToken({apiToken: "test-token"}),
+		);
+		const d1 = makeD1Rest({accountId: "acc", databaseId: "db", layer});
+
+		const res = await d1
+			.prepare("update term_search set norm = ? where slug = ?")
+			.bind("x", "y")
+			.run();
+
+		expect(res.meta.changes).toBe(3);
+	});
+
+	it("run() defaults meta.changes to 0 when the REST response carries none", async () => {
+		const fakeFetch: typeof globalThis.fetch = async () =>
+			new Response(JSON.stringify({result: [{results: [], success: true}]}), {
+				status: 200,
+				headers: {"content-type": "application/json"},
+			});
+
+		const layer = Layer.mergeAll(
+			FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fakeFetch))),
+			fromApiToken({apiToken: "test-token"}),
+		);
+		const d1 = makeD1Rest({accountId: "acc", databaseId: "db", layer});
+
+		const res = await d1
+			.prepare("update term_search set norm = ? where slug = ?")
+			.bind("x", "y")
+			.run();
+
+		expect(res.meta.changes).toBe(0);
+	});
 });
