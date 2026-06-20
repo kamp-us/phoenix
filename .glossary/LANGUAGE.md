@@ -185,7 +185,7 @@ vocabulary now keeps them apart.
 
 - **Store of record (`*_record` Drizzle table).** The authoritative, **mutated** D1 table
   add/edit/remove write directly to under the D1-direct model (ADR
-  [0009](../.decisions/0009-d1-direct-no-projection.md) — there is no projection layer).
+  [0009](../.decisions/0009-d1-direct-defer-dos-and-workflows.md) — there is no projection layer).
   `definition_record` / `comment_record` (Drizzle `definitionRecord` / `commentRecord`) are
   the canonical stores whose loss *is* data loss. The `_record` suffix is load-bearing: it
   reads as "store of record" and reserves "view" for the data view below. They were renamed
