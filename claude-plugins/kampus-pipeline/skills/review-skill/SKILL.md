@@ -56,14 +56,30 @@ absent.** Your own session stays in *this* worktree (the trusted base config you
 launched under) — you read the head's skill files *as text under test*, you never `cd` into
 the head tree or load its `.claude`/`CLAUDE.md` as your operating instructions.
 
+**This step is also §HEAD's materialization for this gate (mandatory).** Under
+`isolation:worktree` the launched CWD is a base-cut branch, so the skill text under test must
+come from `$REVIEW_WT/skills/...` (head) — **never** a `Read`/`cat`/`grep` of a working-copy
+path, which would read the **pre-PR base** (issue
+[#793](https://github.com/kamp-us/phoenix/issues/793); the false-PASS hazard). Obey
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §HEAD — cite it, don't
+re-derive: resolve the live head via REST and **assert the fetched ref equals it** before
+reviewing (below), read all skill text from the head, and re-check the live head before posting
+(§HEAD #4); the verdict (§5) binds to the SHA whose files you actually read and asserts it.
+
 ```bash
 BASE_REF="$(gh api repos/$REPO/pulls/$PR --jq '.base.ref')"   # normally main — your trusted config
 git fetch origin "$BASE_REF"
+
+# §HEAD: resolve the live head via REST (never GraphQL) — the SHA the verdict binds to (ADR 0058).
+HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
 
 # Fetch the PR head into a dedicated ref WITHOUT touching the session tree (same-repo AND
 # cross-fork; never `gh pr checkout`, which would materialize head config into the session).
 PR_REF="refs/pr/$PR-$(uuidgen)"
 git fetch origin "pull/$PR/head:$PR_REF"
+# §HEAD #2: confirm the fetched ref IS the resolved head before reviewing — else you'd review a
+# different SHA than the verdict claims. Abort on mismatch rather than bind a stale verdict.
+[ "$(git rev-parse "$PR_REF")" = "$HEAD_SHA" ] || { echo "FATAL: fetched head != resolved $HEAD_SHA — aborting" >&2; exit 1; }
 
 REVIEW_WT="$(mktemp -d)/review-skill-head-${PR}"
 git worktree add "$REVIEW_WT" "$PR_REF"
@@ -507,6 +523,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE> + the skill-rigor 
 - [PASS] Trigger / description quality — <evidence>
 - [PASS] Cross-skill conflict / shadowing — <evidence>
 - [PASS] Gate-invariant preservation — <evidence / "no gate invariant in diff's reach">
+
+Read the PR head (§HEAD): all skill text under review sourced from `<HEAD_SHA>` via
+`$REVIEW_WT/skills/...`, never the launched checkout's working copy.
 
 All checks pass. This PR is merge-ready. **review-skill does not merge** — `ship-it` is the
 authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.

@@ -910,6 +910,61 @@ throwaway-worktree mechanism above; it never reaches for the launched checkout.
 
 ---
 
+## HEAD. Review the PR head, never the launched checkout's working copy (#793)
+
+A review gate is frequently spawned with `isolation:worktree`, which lands it in a **fresh
+worktree on a branch cut from `origin/main` (the base)** — *not* the PR branch. So the gate's
+**current working directory is the BASE version of every file.** A plain full-file `Read` (or
+`cat`, `grep` in CWD) then resolves against the **pre-PR base**, and the reviewer reviews the
+wrong code while binding its verdict to the correct head SHA — the silent gate-integrity bug
+this section closes (issue [#793](https://github.com/kamp-us/phoenix/issues/793)). The
+dangerous case is the **false PASS**: a worktree reviewer reading base code green-lights a PR
+whose actual changes are broken, and `ship-it` merges on that PASS — a review that reads the
+wrong file version is a gate that doesn't gate. This is orthogonal to §RO (which keeps the
+gate's *writes* off the owner's tree) and to the 0052/0067 split (which keeps the head's
+*instructions* out of the reviewer's path): §HEAD is about **which version the reviewer
+*reads***. This section states the rule **once** so every review gate cites *one* definition
+rather than each re-deriving the per-invocation head-checkout that prompts have been bolting on
+ad hoc.
+
+**The invariant — a review gate MUST source ALL code/prose under review from the PR head, and
+assert it did:**
+
+1. **Resolve the live head SHA up front, via REST/porcelain — never GraphQL** (§Target repo
+   resolution / the all-`gh api` rule). This is the SHA the verdict binds to (§5/ADR 0058):
+   ```bash
+   HEAD_SHA="$(gh pr view "$PR" --repo "$REPO" --json headRefOid -q .headRefOid)"
+   ```
+2. **Materialize the head into a per-run ref (never the launched checkout)** — the §RO
+   read-only path — and confirm it resolves to exactly that SHA before reviewing:
+   ```bash
+   PR_REF="refs/pr/$PR-$(uuidgen)"
+   git fetch origin "pull/$PR/head:$PR_REF"
+   FETCHED="$(git rev-parse "$PR_REF")"
+   [ "$FETCHED" = "$HEAD_SHA" ] || { echo "FATAL: fetched head $FETCHED != resolved $HEAD_SHA — aborting" >&2; exit 1; }
+   ```
+3. **Read every file under review FROM THE HEAD, never from CWD.** Route full-file reads
+   through `git show "$PR_REF:<path>"` (or read from the throwaway head worktree the gate
+   already materializes — `git worktree add "$(mktemp -d)/…" "$PR_REF"`, `$REVIEW_WT`), and
+   search the head with `git grep <pattern> "$PR_REF"`. **Do NOT `Read`/`cat`/`grep` a
+   working-copy path for product/prose under review** — under `isolation:worktree` that path is
+   the base. The diff itself (`gh pr diff $PR`) is already head-vs-base and is fine; the trap is
+   the *full-file* read for surrounding context.
+4. **Re-check the live head before posting; abort a stale-bound verdict.** If the head moved
+   while you reviewed (re-resolve `headRefOid` and compare to `$HEAD_SHA`) or the head can't be
+   reached, do **not** post a verdict bound to a SHA you no longer reviewed — re-resolve and
+   re-review the new head, or abort. A verdict's `@ <HEAD_SHA>` marker (§5) must name the SHA
+   whose *files you actually read*, and the verdict body must **assert it read the PR head (not
+   the launched CWD)**, so a base-code review is self-evidently invalid to a human adjudicator.
+
+Gates that materialize a full head worktree for behavior verification (`review-code`,
+`review-skill`) satisfy #3 by reading from `$REVIEW_WT` (head) and running commands via
+`pnpm -C "$REVIEW_WT"`; the diff-only gate (`review-doc`) satisfies it via
+`git show "$PR_REF:<path>"`. Either way, the launched checkout's working copy is never the
+source of code under review.
+
+---
+
 ## 5. review-code pass marker
 
 When `review-code` lands its verdict and a native review can't be posted (e.g. org

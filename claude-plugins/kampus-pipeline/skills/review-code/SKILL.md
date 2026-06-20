@@ -129,6 +129,20 @@ gates the PRs that close *executable* issues, which carry the checklist.)
 
 ## Step 2 — Read what the PR actually does, and exercise its product code
 
+**Source ALL code under review from the PR head — never the launched checkout's working copy
+(§HEAD, mandatory).** This gate is frequently spawned with `isolation:worktree`, whose CWD is a
+branch cut from `origin/main` (the **base**) — so a plain full-file `Read`/`cat`/`grep` in CWD
+reads the **pre-PR base**, and you would review the wrong file version while binding the verdict
+to the right head SHA (issue [#793](https://github.com/kamp-us/phoenix/issues/793); the
+false-PASS hazard). Obey [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §HEAD
+**before** the per-criterion checks — cite it, don't re-derive the steps: resolve the live head
+via REST (`gh pr view $PR --repo "$REPO" --json headRefOid -q .headRefOid`), fetch it into the
+per-run `$PR_REF` + assert `git rev-parse "$PR_REF"` equals it, read every full file from the
+head (`$REVIEW_WT` below, or `git show "$PR_REF:<path>"`) and **never** from CWD, and re-check
+the live head before posting (§HEAD #4). The head-worktree + denylist mechanism below *is*
+§HEAD's materialization for this gate; the verdict (§5) must bind to the SHA whose files you
+actually read and assert it read the PR head.
+
 Verification is grounded in the diff, the tests, and — where it matters — the behavior,
 not in the PR's self-description. Pull the change:
 
@@ -985,6 +999,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE>, one at a time:
 
 Run-evidence bundle: <one of — "cited for `<short-sha>`: checks all pass; tests 47/0/2
 (passed/failed/skipped)" | "absent for this head SHA — verified from diff + worktree run">.
+
+Read the PR head (§HEAD): all files under review sourced from `<HEAD_SHA>` via `$REVIEW_WT` /
+`git show "$PR_REF:<path>"`, never the launched checkout's working copy.
 
 All criteria pass. This PR is merge-ready. **review-code does not merge** — `ship-it` is
 the authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
