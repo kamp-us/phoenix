@@ -115,6 +115,19 @@ jobs:
     name: unit tests
     needs: changes
     # Same gate as `check`: skip (→ green, non-blocking) on a docs/skills-only PR.
+    #
+    # #771 evaluated PR-scoping this to the AC-relevant unit tests via `vitest run
+    # --changed` (ADR 0082 blesses `--changed` for the unit tier — disjoint import
+    # graphs). It is LEFT FULL deliberately: `--changed` is unsound HERE against
+    # ADR 0092. Vitest forces `passWithNoTests=true` whenever `--changed` is set
+    # (vitest 4 `resolveConfig`), so a `code`-true PR that edits a `worker/**`/`src/**`
+    # module with NO unit test in its import graph runs ZERO tests and exits 0 — a
+    # green that scanned nothing on a relevant change, exactly the silent-no-op
+    # ADR 0092 forbids. The full run has no such hole. Sound PR-scoping needs a
+    # zero-selection-is-FAIL wrapper (assert ≥1 spec selected on a `code`-true PR,
+    # else fail) — that is gate-shaped (ADR 0092 fail-closed-on-zero-scope) and
+    # belongs with the #738/#751 gate-owner, not guessed at here. Until then `unit`
+    # runs FULL on every `code`-true PR + push (cheap: no DB, no creds).
     if: needs.changes.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -184,14 +197,27 @@ jobs:
   integration:
     name: integration tests
     needs: changes
-    # Only when backend-ish paths changed (see `changes`). Skipped → green, not
-    # blocking. PRs that touch `worker/**` (like the framework PR) still run it.
-    # Author gate (same as deploy.yml): this job injects real Cloudflare creds,
-    # so it must never run for an outside contributor's PR. `push` (main) always
-    # proceeds; PRs run only for owners/org-members/collaborators. Mirrors the
-    # repo's all_external_contributors fork-PR approval policy, made explicit.
+    # Runs the full sweep when backend-ish paths changed (see `changes`) OR when
+    # the `feature-complete` PR label is set (#771). The label is the forcing
+    # function: a feature-complete PR runs the FULL integration sweep before merge
+    # even if its changed paths didn't trip the backend filter — closing the window
+    # where an un-swept backend regression rides in on a PR whose last commit looked
+    # non-backend. A non-backend, non-flagged PR legitimately not-applicable-skips
+    # (zero backend files = real empty scope, a legitimate skip, not a silent pass —
+    # ADR 0092). `push` (main) keeps its existing backend-gated full run as the
+    # post-merge backstop and is NOT gated on the flag (labels are a PR-only input).
+    # Author gate (same as deploy.yml): this job injects real Cloudflare creds, so
+    # it must never run for an outside contributor's PR. `push` always proceeds; PRs
+    # run only for owners/org-members/collaborators. Mirrors the repo's
+    # all_external_contributors fork-PR approval policy, made explicit.
+    #
+    # EXECUTION only (#771): this `if:` decides whether the lane RUNS. Whether the
+    # lane is REQUIRED-at-merge — a skip being legitimate-not-applicable vs a hard
+    # fail when (backend-changed OR feature-complete) — is the #738/#751 gate-owner's
+    # `ci-required` follow-up. Do NOT encode required-ness here.
     if: >-
-      needs.changes.outputs.backend == 'true' &&
+      (needs.changes.outputs.backend == 'true' ||
+       contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
       (github.event_name == 'push' ||
        contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
     runs-on: ubuntu-latest
@@ -370,6 +396,12 @@ jobs:
       # `--project flows` run into the BLOCKING step above (drop this step's
       # `continue-on-error`), and the guard re-checks the new invariant. Do NOT flip
       # while the marker reads `pending` — the guard will fail the build (issue #751).
+      #
+      # #771 seam (symmetric to `integration`): `flows` already runs for SIGNAL on
+      # every e2e-path push (non-blocking here), the e2e analog of integration's
+      # flag-forced full sweep. The promotion to BLOCKING is the FUTURE co-action
+      # owned with #751 (flip on path/flag, not every-push — §6 #3 of the #771
+      # co-design). The marker line below is #751's flip seam — do NOT edit it here.
       #
       # FLOWS_GATE_PRECONDITION: pending  (requires: #713 — write-flow state-isolation)
       - name: Run e2e specs (non-blocking — flows, #713)
