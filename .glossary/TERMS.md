@@ -76,7 +76,7 @@ This file names the *what*.
 | Term | Definition | Not |
 |---|---|---|
 | fate | The Relay-inspired typed data client (`@nkzw/fate`); the data layer end to end (GraphQL + Relay torn out). | GraphQL, Relay |
-| data view (dataView) | fate's per-entity field declaration. Views are the schema. **A fate data view is a read-shape declaration, NOT a Drizzle table** — see the `definition`/`comment` store-of-record note below (#853). | a GraphQL type; a Drizzle `*_view` store-of-record table |
+| data view (dataView) | fate's per-entity field declaration. Views are the schema. **A fate data view is a read-shape declaration, NOT a Drizzle table** — see the `definition_view`/`comment_view` store-of-record note below (#853). | a GraphQL type; a Drizzle `*_view` store-of-record table |
 | ConnectionResult | fate's connection payload (`items` + `pagination`). | Edge, PageInfo |
 | Entity\<\> | The type a resolved view produces; the shared client/server type contract. | |
 | LiveDO | The unified **void**-aligned live-view Durable Object — ONE class, two roles, `state.storage` KV. Fans out mutations' `live.*` events to subscribers over SSE (ADR 0037). | two classes named ConnectionDO + TopicDO (see below) |
@@ -120,7 +120,7 @@ This file names the *what*.
 | alchemy.run.ts | The stack definition (`Alchemy.Stack`) declaring the worker + D1 + DOs; replaces `wrangler.jsonc`. | |
 | ASSETS | The static-assets binding serving the built SPA from `dist/client`. | |
 | D1-direct | The architecture (ADR 0009): resolvers read/write D1 directly — no projection layer. | |
-| `definition` / `comment` (Drizzle tables) | The authoritative **mutated stores of record** for sözlük definitions and pano comments (D1-direct, ADR 0009). **These tables are stores of record, NOT fate data views** — they were once mis-named `definition_view` / `comment_view`, a projection-era name that collided one capital apart with the fate `DefinitionView` / `CommentView` data views in the same feature folders (#853). | a read-projection; the fate `DefinitionView` / `CommentView` data views |
+| `definition_view` / `comment_view` (Drizzle tables) | The authoritative **mutated stores of record** for sözlük definitions and pano comments (D1-direct, ADR 0009). On `main` today the tables are still named `definition_view` / `comment_view` (Drizzle exports `definitionView` / `commentView`) — a projection-era name that collides one capital apart with the fate `DefinitionView` / `CommentView` data views in the same feature folders. **These tables are stores of record, NOT fate data views.** The rename to bare `definition` / `comment` is open and **unshipped** (#853). | a read-projection; the fate `DefinitionView` / `CommentView` data views |
 | localState | `Alchemy.localState()` — the offline state store for local dev; CI/deploy use the Cloudflare-hosted store (ADR 0031). | |
 | PHOENIX_DB | The single D1 database; the canonical store for every product table. ALWAYS a real remote Cloudflare DB (no offline local D1) even in dev/integration. | an offline local D1 |
 | R2 / R2Bucket | Cloudflare object-storage binding that will back **imge** (ADR 0044); net-new infra — **NOT yet in `alchemy.run.ts`**. | |
