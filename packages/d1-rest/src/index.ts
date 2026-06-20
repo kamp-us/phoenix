@@ -1,16 +1,22 @@
 /**
- * A `D1Database`-shaped binding backed by the Cloudflare D1 REST query API, so the
- * backfill's drizzle reads + FTS writes run from a plain Node process (no
- * workerd). Implements only the slice `drizzle-orm/d1` drives —
- * `prepare`/`bind`/`all`/`run`/`raw`/`first` and `batch` — the same adapter idiom
- * as `@kampus/preview-seed`'s `d1-rest.ts`.
+ * The single canonical D1 REST transport: a `D1Database`-shaped binding backed by
+ * the Cloudflare D1 REST query API, so a package's drizzle reads/writes run from a
+ * plain Node process (no workerd). It implements only the slice `drizzle-orm/d1`
+ * drives — `prepare`/`bind`/`all`/`run`/`raw`/`first` and `batch`.
  *
- * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the
- * tree via alchemy). A single statement is one REST call; `batch([...])` collects
- * every prepared+bound statement's sql+params into ONE REST `batch` call, which D1
- * runs as a single atomic transaction — load-bearing for the backfill's all-or-none
- * write. The adapter methods return Promises and run the `queryDatabase` Effect
- * with the provided credentials/HTTP layer per call.
+ * One leaf, three consumers: `@kampus/preview-seed` (`seed`), `@kampus/fts-backfill`
+ * (the FTS re-index), and `@kampus/moderator-grant` (`setRole`/`listModerators`) all
+ * run their real direct-D1 path through this — the bins offline over the env layer,
+ * the integration tiers against real D1 (ADR 0082, no faked engine). Before this leaf
+ * each carried a hand-copy (issue #941), which is why the `meta.changes` defect had to
+ * be fixed three times (#937/#940); now it's fixed once, here.
+ *
+ * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the tree
+ * via alchemy). A single statement is one REST call; a drizzle `batch([...])` collects
+ * every statement's sql+params into ONE REST `batch` call, which D1 runs as a single
+ * atomic transaction — load-bearing for an all-or-none write. The adapter methods
+ * return Promises and run the `queryDatabase` Effect with the provided credentials/HTTP
+ * layer per call.
  */
 import type {Credentials} from "@distilled.cloud/cloudflare/Credentials";
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
@@ -25,15 +31,33 @@ export type D1RestServices = Credentials | HttpClient;
 type Params = ReadonlyArray<unknown>;
 
 /**
- * REST `params` is typed `string[]`, but D1 binds a literal `null` as SQL NULL —
- * so a nullable drizzle column's `null` must reach the wire unstringified (else
- * it would bind the text "null"). The upstream type can't express that, so this
- * boundary widens to the runtime-accurate `(string | null)[]`.
+ * Assert one bound param satisfies D1's REST `params` contract.
+ * `@distilled.cloud/cloudflare`'s `queryDatabase` validates `params` as a strict
+ * `string[]` and **rejects a `null`/`undefined` element** (`SchemaError: Expected
+ * string, got null`), so a SQL NULL must be rendered *inline* in the statement text
+ * — never bound as a `null` param. A consumer keeps nullable columns out of the wire
+ * by leaving them unset in its statements (drizzle emits a literal `NULL`), so no
+ * `null` ever reaches the transport (#569). A `null`/`undefined` here is a caller bug
+ * (a nullable column bound instead of omitted); throw with the offending index. The
+ * leaf's unit tier pins this contract directly and each consumer's integration tier
+ * proves real D1 rejects null end to end — so the param shape can't drift from what
+ * the live REST wire accepts (#571).
  */
-const toRestParams = (params: Params): string[] => {
-	const out: Array<string | null> = params.map((p) => (p == null ? null : String(p)));
-	return out as string[];
+export const assertRestParam = (param: unknown, index: number): void => {
+	if (param == null) {
+		throw new Error(
+			`D1 REST param[${index}] is ${param}; D1 REST params is strict string[] and rejects null. ` +
+				`Render SQL NULL inline (omit the nullable column from the insert), never bind null.`,
+		);
+	}
 };
+
+/** Stringify bound params for the REST wire, asserting each against {@link assertRestParam}. */
+export const toRestParams = (params: Params): string[] =>
+	params.map((p, i) => {
+		assertRestParam(p, i);
+		return String(p);
+	});
 
 interface BoundStub {
 	readonly sql: string;
@@ -118,9 +142,9 @@ export const makeD1Rest = (config: D1RestConfig): D1Database => {
 };
 
 /**
- * The standard REST layer the bin runs the backfill on: `CredentialsFromEnv`
+ * The standard REST layer a bin runs the transport on: `CredentialsFromEnv`
  * (reads `$CLOUDFLARE_API_TOKEN`) + a Fetch HTTP client. Exposed so a caller
- * pointing at a known D1 (the bin, an integration test) builds the adapter the
+ * pointing at a known D1 (a bin, an integration test) builds the adapter the
  * exact same way, rather than re-assembling the credential/transport stack.
  */
 export const d1RestLayerFromEnv: Layer.Layer<D1RestServices> = Layer.merge(
@@ -129,9 +153,9 @@ export const d1RestLayerFromEnv: Layer.Layer<D1RestServices> = Layer.merge(
 );
 
 /**
- * `makeD1Rest` over the env-credentialed REST layer — the one path the bin and the
- * integration test both run the real backfill through, so neither hand-rolls the
- * credential wiring (`$CLOUDFLARE_API_TOKEN` via `CredentialsFromEnv`).
+ * `makeD1Rest` over the env-credentialed REST layer — the one path a bin and its
+ * integration test both run the real direct-D1 work through, so neither hand-rolls
+ * the credential wiring (`$CLOUDFLARE_API_TOKEN` via `CredentialsFromEnv`).
  */
 export const makeD1RestFromEnv = (target: {accountId: string; databaseId: string}): D1Database =>
 	makeD1Rest({...target, layer: d1RestLayerFromEnv});

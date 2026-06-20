@@ -23,10 +23,10 @@
  *   node src/bin.ts run --database-id <uuid> --account-id <acct>
  */
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {makeD1RestFromEnv} from "@kampus/d1-rest";
 import {Config, Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import {backfill} from "./backfill.ts";
-import {makeD1RestFromEnv} from "./d1-rest.ts";
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID to backfill"),

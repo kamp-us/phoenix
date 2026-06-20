@@ -22,10 +22,10 @@
  */
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
+import {makeD1Rest} from "@kampus/d1-rest";
 import {Config, Console, Effect, Layer, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {makeD1Rest} from "./d1-rest.ts";
 import {seed} from "./seed.ts";
 
 const databaseIdFlag = Flag.string("database-id").pipe(

@@ -1,24 +1,18 @@
 {
-	"name": "@kampus/fts-backfill",
+	"name": "@kampus/d1-rest",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Direct-D1 one-time backfill CLI — re-index existing term_summary / post_summary rows into the FTS5 term_search / post_search tables through the ADR-0080 dual-write sync path (issue #534)",
+	"description": "Single canonical D1 REST transport (makeD1Rest) — the one D1Database-shaped binding over the Cloudflare D1 REST query API that preview-seed / fts-backfill / moderator-grant all import, so a transport fix (e.g. the meta.changes mapping #940) lands once instead of in triplicate (issue #941). A true leaf — no @kampus/web — so fts-backfill's @kampus/web prod-dep stays acyclic.",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"
 	},
 	"scripts": {
 		"typecheck": "tsgo -p tsconfig.json",
-		"test": "vitest run",
-		"backfill": "node src/bin.ts run"
+		"test": "vitest run"
 	},
 	"dependencies": {
 		"@distilled.cloud/cloudflare": "catalog:",
-		"@effect/platform-node": "catalog:",
-		"@kampus/d1-rest": "workspace:*",
-		"@kampus/db-schema": "workspace:*",
-		"@kampus/web": "workspace:*",
-		"drizzle-orm": "catalog:",
 		"effect": "catalog:"
 	},
 	"devDependencies": {
