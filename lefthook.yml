@@ -1,3 +1,8 @@
+# rc is sourced by every generated hook wrapper (under /bin/sh, absolute shebang)
+# BEFORE lefthook runs — it restores the system bin dirs on PATH so lefthook can
+# resolve sh even in the harness stripped-PATH worktree-spawn env (#787). See .lefthookrc.
+rc: .lefthookrc
+
 # Git hooks, managed by lefthook (ADR 0068). The leak-guard pre-commit is the
 # local fast-fail leg of the no-local-paths defense-in-depth (#158/#173); CI
 # (.github/workflows/leak-guard.yml, #312) stays the unbypassable authority.
