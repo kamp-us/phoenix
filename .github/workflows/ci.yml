@@ -27,6 +27,28 @@ jobs:
       backend: ${{ steps.filter.outputs.backend }}
       code: ${{ steps.filter.outputs.code }}
       e2e: ${{ steps.filter.outputs.e2e }}
+      # Per-gating-job *required-ness* (#786): the SINGLE SOURCE of "should this job
+      # have run". Each `*_required` output mirrors the SAME inputs that gate the job's
+      # own `if:` (path-filter outputs + the `feature-complete` PR label + the
+      # event/author guard), so required-ness and run-ness read from ONE expression and
+      # can't drift (the #375/#738 predicate-drift failure class). Each gating job's
+      # `if:` consumes its `*_required` output, and `ci-required` consumes the same
+      # outputs to tell a legitimate not-applicable skip from a should-have-run skip —
+      # the latter is a silent-no-op (ADR 0092), so `ci-required` fails closed on it
+      # instead of waving it through. `check` and `unit` share the `code`-gated
+      # predicate, so both read `check_required`. The integration/e2e author+event
+      # guards are reproduced EXACTLY so a fork/non-author PR's legitimate
+      # secret-less skip stays legitimate (required=false ⇒ skip is a PASS).
+      check_required: ${{ steps.filter.outputs.code == 'true' }}
+      integration_required: >-
+        ${{ (steps.filter.outputs.backend == 'true' ||
+             contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
+            (github.event_name == 'push' ||
+             contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) }}
+      e2e_required: >-
+        ${{ steps.filter.outputs.e2e == 'true' &&
+            github.event_name == 'pull_request' &&
+            contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -88,9 +110,12 @@ jobs:
   check:
     name: lint / format / typecheck
     needs: changes
-    # Skipped → green, not blocking (no required-status-check rule on `main`, so a
-    # skipped job never wedges a docs-only PR). Runs whenever code/config changed.
-    if: needs.changes.outputs.code == 'true'
+    # Run-ness is single-sourced from the `changes` job's `check_required` output
+    # (mirrors `code == 'true'`); `ci-required` reads the SAME output to require this
+    # job's success when `check_required` is true. Skipped → green, not blocking (no
+    # required-status-check rule on `main`, so a legitimate skip never wedges a
+    # docs-only PR).
+    if: needs.changes.outputs.check_required == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -128,7 +153,11 @@ jobs:
     # else fail) — that is gate-shaped (ADR 0092 fail-closed-on-zero-scope) and
     # belongs with the #738/#751 gate-owner, not guessed at here. Until then `unit`
     # runs FULL on every `code`-true PR + push (cheap: no DB, no creds).
-    if: needs.changes.outputs.code == 'true'
+    #
+    # Shares `check`'s `code`-gated predicate, so it reads the same single-sourced
+    # `check_required` output (#786) — `ci-required` requires this job's success when
+    # `check_required` is true.
+    if: needs.changes.outputs.check_required == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -211,15 +240,16 @@ jobs:
     # run only for owners/org-members/collaborators. Mirrors the repo's
     # all_external_contributors fork-PR approval policy, made explicit.
     #
-    # EXECUTION only (#771): this `if:` decides whether the lane RUNS. Whether the
-    # lane is REQUIRED-at-merge — a skip being legitimate-not-applicable vs a hard
-    # fail when (backend-changed OR feature-complete) — is the #738/#751 gate-owner's
-    # `ci-required` follow-up. Do NOT encode required-ness here.
-    if: >-
-      (needs.changes.outputs.backend == 'true' ||
-       contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
-      (github.event_name == 'push' ||
-       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association))
+    # Run-ness AND required-ness are now single-sourced (#786, the required-ness half
+    # deferred by #771): `changes.integration_required` is computed from the EXACT
+    # inputs this `if:` used to inline — `(backend || feature-complete) && (push ||
+    # author-allowed)` — so this job runs iff it should, and `ci-required` reads the
+    # same output to require its success. The push-to-main backstop is preserved: on a
+    # `push` event the author guard is satisfied by `github.event_name == 'push'` and
+    # the label term is absent, so backend-changed pushes still run the full sweep,
+    # flag-independent. A non-author/fork PR has `integration_required == false`, so
+    # its secret-less skip stays a legitimate not-applicable PASS, never a FAIL.
+    if: needs.changes.outputs.integration_required == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -289,10 +319,11 @@ jobs:
   e2e:
     name: e2e (reads + authed blocking; flows non-blocking)
     needs: changes
-    if: >-
-      needs.changes.outputs.e2e == 'true' &&
-      github.event_name == 'pull_request' &&
-      contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)
+    # Run-ness AND required-ness single-sourced (#786): `changes.e2e_required` mirrors
+    # the EXACT inputs this `if:` inlined — `e2e-path && pull_request && author-allowed`
+    # — and `ci-required` reads the same output. A fork/non-author or non-e2e-path PR
+    # has `e2e_required == false`, so its skip stays a legitimate not-applicable PASS.
+    if: needs.changes.outputs.e2e_required == 'true'
     runs-on: ubuntu-latest
     # Hang backstop (#660): the old `playwright install` hang stalled this job ~80min
     # with zero output before a human cancelled it. That install step is gone (the
@@ -437,22 +468,71 @@ jobs:
   # non-backend, external-author). Listing a *conditional* context in a ruleset's
   # required_status_checks wedges those PRs — GitHub's skipped-as-success handling
   # for `if:`+`needs:` jobs is unreliable across configs. This aggregator always
-  # reports (`if: !cancelled()` keeps it from skipping when a dep skips) and
-  # passes iff every dep `success` OR `skipped`, so the ruleset requires this one
-  # context and transitively enforces the conditional checks when they do run.
+  # reports (`if: !cancelled()` keeps it from skipping when a dep skips) and is the
+  # one context the ruleset requires, transitively enforcing the conditional checks.
+  #
+  # FLAG/PATH-AWARE required-ness (#786, ADR 0092): treating EVERY `skipped` dep as a
+  # pass is a silent-no-op — a gating job that SHOULD have run but was skipped (a
+  # misconfigured `if:`, a path-filter miss, a flag not honored) read as a free PASS.
+  # So per job this asserts against the SAME `changes.*_required` single source its
+  # own `if:` consumes: should-run ⇒ the result MUST be `success` (a `skipped` or any
+  # non-success FAILS closed); should-not-run ⇒ a `skipped` is a legitimate
+  # not-applicable PASS (`success` is fine too). Required-ness and run-ness therefore
+  # read from ONE place (no predicate re-derivation here, no drift), and the verdict
+  # per job is EMITTED to the log (ADR 0092 §1 "emit what you scanned"), so a quietly
+  # -skipped required job is visible in the run, not only in the exit code.
   ci-required:
     name: ci-required
-    needs: [check, unit, integration, e2e]
+    needs: [changes, check, unit, integration, e2e]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - name: Require all gating checks to have passed or skipped
+      - name: Require should-have-run gating jobs to have passed (skip is legit only when not required)
+        env:
+          # `check` and `unit` share the single-sourced `check_required`; integration
+          # and e2e read their own. Pair each job's should-run with its result so the
+          # assertion below reads required-ness and run-ness from ONE source per job.
+          CHANGES_RESULT: ${{ needs.changes.result }}
+          CHECK_REQUIRED: ${{ needs.changes.outputs.check_required }}
+          INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
+          E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
+          CHECK_RESULT: ${{ needs.check.result }}
+          UNIT_RESULT: ${{ needs.unit.result }}
+          INTEGRATION_RESULT: ${{ needs.integration.result }}
+          E2E_RESULT: ${{ needs.e2e.result }}
         run: |
-          results='${{ needs.check.result }} ${{ needs.unit.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}'
-          echo "dep results: $results"
-          for r in $results; do
-            if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
-              echo "::error::a required gating check did not pass (got '$r')"; exit 1
+          fail=0
+          # The `changes` job IS the single source of every `*_required` boolean. If it
+          # didn't succeed, those outputs are empty/untrustworthy and every gating job
+          # skipped (their `needs: changes` was unmet) — fail closed rather than read an
+          # empty should-run as a wave-through (ADR 0092).
+          if [ "$CHANGES_RESULT" != "success" ]; then
+            echo "::error::changes: result=$CHANGES_RESULT → FAIL (the required-ness source job did not succeed; cannot trust skip legitimacy)"
+            fail=1
+          fi
+          verdict() {
+            local job="$1" should="$2" result="$3"
+            if [ "$should" = "true" ]; then
+              if [ "$result" = "success" ]; then
+                echo "✅ $job: should_run=true result=$result → required-pass"
+              else
+                echo "::error::$job: should_run=true result=$result → FAIL (a should-have-run gating job did not succeed — silent-no-op, ADR 0092)"
+                fail=1
+              fi
+            else
+              if [ "$result" = "success" ] || [ "$result" = "skipped" ]; then
+                echo "☑️  $job: should_run=false result=$result → legit-skip"
+              else
+                echo "::error::$job: should_run=false result=$result → FAIL (not-required job did not pass — unexpected non-success)"
+                fail=1
+              fi
             fi
-          done
-          echo "all gating checks passed or were legitimately skipped"
+          }
+          verdict check       "$CHECK_REQUIRED"       "$CHECK_RESULT"
+          verdict unit        "$CHECK_REQUIRED"       "$UNIT_RESULT"
+          verdict integration "$INTEGRATION_REQUIRED" "$INTEGRATION_RESULT"
+          verdict e2e         "$E2E_REQUIRED"         "$E2E_RESULT"
+          if [ "$fail" -ne 0 ]; then
+            echo "::error::ci-required FAILED — a should-have-run gating job was skipped or failed (see per-job verdicts above)"; exit 1
+          fi
+          echo "ci-required PASS — every should-have-run gating job succeeded; all skips were legitimately not-applicable"
