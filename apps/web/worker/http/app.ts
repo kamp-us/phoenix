@@ -2,8 +2,10 @@
  * `AppLive` — the single router layer the worker's `fetch` is compiled from
  * (ADR 0027, `.patterns/alchemy-http-router.md`). Assembles two kinds of routes,
  * both `Layer`s merged into one: a typed-JSON `HttpApiBuilder` group
- * (`GET /api/health`) and raw-`Request` `HttpRouter.add` routes (`POST /fate`,
- * `* /api/auth/*`, live).
+ * (`GET /api/health`) and the raw-`Request` `HttpRouter.add` routes, which come
+ * from the worker-owned-route manifest (`worker-routes.ts`) that `index.ts` also
+ * derives `runWorkerFirst` from — one source, so route and SPA-shadow glob can't
+ * drift (#861).
  *
  * The raw routes lift their handler's `R` into route-requirement markers that
  * plain `Layer.provide` does NOT discharge — they must be discharged with
@@ -15,15 +17,11 @@ import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
-import {fateRoute} from "../features/fate/route.ts";
-import {liveRoute} from "../features/fate-live/route.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {FlagsLive} from "../features/flagship/Flags.ts";
 import type {Flagship} from "../features/flagship/Flagship.ts";
-import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
-import {authRoute} from "../features/pasaport/route.ts";
-import {rssRoute} from "../features/rss/route.ts";
 import {healthApiLayer} from "./health.ts";
+import {rawWorkerRouteLayers} from "./worker-routes.ts";
 
 /** Build the application router layer. Each option's contract is on its property. */
 export const makeAppLive = (options: {
@@ -76,14 +74,7 @@ export const makeAppLive = (options: {
 	// `provideRequest` discharges the route-requirement markers `HttpRouter.add`
 	// lifts (plain `Layer.provide` does not). All provided layers are
 	// dependency-free (`R = never`), so they merge flat.
-	const rawRoutes = Layer.mergeAll(
-		fateRoute,
-		authRoute,
-		liveRoute,
-		rssRoute,
-		flagsProbeRoute,
-		flagsEvaluateRoute,
-	).pipe(
+	const rawRoutes = Layer.mergeAll(...rawWorkerRouteLayers).pipe(
 		HttpRouter.provideRequest(
 			Layer.mergeAll(
 				options.fateLayer,
