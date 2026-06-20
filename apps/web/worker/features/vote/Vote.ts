@@ -19,6 +19,7 @@ import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {hotMultiplier} from "../../db/hotScore.ts";
 import {type VoteTargetKind, VoteTargetNotFound} from "./errors.ts";
 
 // Re-exported from `errors.ts` (its source-of-truth home) for callers that
@@ -415,14 +416,12 @@ function buildScoreCacheStatement(
 				})
 				.where(eq(schema.definitionView.id, targetId));
 		case "post": {
-			// Must match `Pano.computeHotScore`: floor(score * 1000 / (hours+2)^1.8).
-			const hoursOld = Math.max(0, (now.getTime() - meta.createdAtMs) / 3_600_000);
-			const hotMultiplier = 1000 / (hoursOld + 2) ** 1.8;
+			const multiplier = hotMultiplier(meta.createdAtMs, now.getTime());
 			return db
 				.update(schema.postSummary)
 				.set({
 					score: sql`(SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId})`,
-					hotScore: sql`CAST((SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId}) * ${hotMultiplier} AS INTEGER)`,
+					hotScore: sql`CAST((SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId}) * ${multiplier} AS INTEGER)`,
 					updatedAt: now,
 					lastActivityAt: now,
 				})
