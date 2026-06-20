@@ -37,7 +37,9 @@
 .kp-subnav__filter:hover {
 	color: var(--text-primary);
 }
-.kp-subnav__filter[aria-pressed="true"] {
+/* aria-pressed → sort toggles; aria-current → NavLink active route (kaydedilenler). */
+.kp-subnav__filter[aria-pressed="true"],
+.kp-subnav__filter[aria-current="page"] {
 	color: var(--text-primary);
 	border-bottom-color: var(--accent);
 }
