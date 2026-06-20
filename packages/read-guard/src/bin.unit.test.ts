@@ -1,7 +1,7 @@
 import {execFile} from "node:child_process";
-import {mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync} from "node:fs";
+import {copyFileSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
-import {join} from "node:path";
+import {dirname, join} from "node:path";
 import {fileURLToPath} from "node:url";
 import {afterAll, assert, beforeAll, describe, it} from "@effect/vitest";
 import {decideForEnvelope} from "./bin.ts";
@@ -224,5 +224,51 @@ describe("bin PreToolUse hook — end to end over the real CLI", () => {
 		});
 		const out = JSON.parse(stdout);
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
+	}, 30_000);
+});
+
+// #777: on a tree where `@effect/platform-node` is NOT resolvable (a checkout that
+// hasn't run `pnpm install`), the bin must degrade LOUD — fail-open ALLOW on stdout
+// (read-guard's documented posture) + a visible stderr note — never an unhandled
+// `ERR_MODULE_NOT_FOUND` module-load crash that the harness silently fail-opens past.
+describe("bin — missing-dep degradation (#777)", () => {
+	const SRC = dirname(BIN);
+	const runFrom = (binPath: string): Promise<{code: number; stdout: string; stderr: string}> =>
+		new Promise((resolve) => {
+			// Strip NODE_PATH so module resolution is purely filesystem-walk from the isolated
+			// dir (the runner injects a NODE_PATH that would otherwise resolve the dep globally
+			// and mask the stale-tree case this test pins).
+			const {NODE_PATH: _drop, ...env} = process.env;
+			const child = execFile("node", [binPath], {env}, (error, stdout, stderr) => {
+				const code =
+					error && typeof (error as {code?: unknown}).code === "number"
+						? (error as {code: number}).code
+						: 0;
+				resolve({code, stdout, stderr});
+			});
+			child.stdin?.end(JSON.stringify({tool_name: "Bash", tool_input: {command: "ls"}}));
+		});
+
+	let isoDir: string;
+	beforeAll(() => {
+		// Copy ONLY the node-builtin-only modules into an isolated dir with NO node_modules,
+		// so `createRequire(...).resolve("@effect/platform-node")` fails there — exactly the
+		// stale-tree case. bin.run.ts (the lone platform-node importer) is intentionally NOT
+		// copied: the preflight short-circuits before it's dynamically imported.
+		isoDir = mkdtempSync(join(tmpdir(), "read-guard-nodeps-"));
+		for (const f of ["bin.ts", "preflight.ts", "read-guard.ts", "transcript.ts"]) {
+			copyFileSync(join(SRC, f), join(isoDir, f));
+		}
+	});
+	afterAll(() => rmSync(isoDir, {recursive: true, force: true}));
+
+	it("degrades to fail-open ALLOW with a loud stderr note when the runtime dep is missing", async () => {
+		const {code, stdout, stderr} = await runFrom(join(isoDir, "bin.ts"));
+		assert.strictEqual(code, 0, "must exit 0 (a hook crash would non-zero or blank stdout)");
+		const out = JSON.parse(stdout);
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
+		assert.include(stderr, "@effect/platform-node");
+		assert.include(stderr, "pnpm install");
+		assert.match(stderr, /not enforcing/i);
 	}, 30_000);
 });
