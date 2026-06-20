@@ -165,9 +165,14 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
     --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
   # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073)
   ```
-- **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md` *outside* `skills/**` and
-  `.glossary/**`, and/or `apps/web/**`, `packages/**`, `.glossary/**`) → **non-blocking**. Your
-  PASS marker binds `ship-it` (but `.glossary/**` rides `review-code`, not your marker — see below).
+- **Otherwise** → **non-blocking**, and the doc class — *which* `*.md`/knowledge files are
+  yours — is the **canonical §DOC definition** in
+  [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md): cite it, don't re-derive
+  it (the same single-sourcing move §CP makes for the blocking set; the #375 drift class).
+  §DOC owns the code-root carve-out — a `*.md` under the code roots `apps/**`/`packages/**`
+  (a README, CHANGELOG) and a `.glossary/**` touch are **code**, not docs, so they ride a
+  `review-code` PASS, not your marker (see the per-class notes below). For the doc class §DOC
+  defines, your PASS marker binds `ship-it`.
 
 `skills/**` is **not your class** — a skill is a behavioral artifact gated by `review-skill`
 (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), superseding
@@ -185,7 +190,7 @@ don't re-derive it. The has-code/docs-exclusion probes both name `.glossary/**` 
 If the diff is **pure product code** with no doc/knowledge file at all, this is the wrong
 gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` (a plain note,
 **not** a `review-doc:` marker — there's no doc to verdict) and stop.
-If the diff is **mixed code + doc** (both a `*.md` knowledge file and `apps/web`/`packages`
+If the diff is **mixed code + doc** (both a `*.md` knowledge file and `apps/**`/`packages/**`
 code or a `.glossary/**` touch, none of it blocking), it needs *both* gates: you verify the doc
 class here and emit the `review-doc` marker; `review-code` verifies the code class — `apps/**`,
 `packages/**`, **and `.glossary/**`** — and emits its own. `ship-it`
