@@ -29,6 +29,13 @@
       "when": 1782500000000,
       "tag": "0003_post_bookmark",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1783000000000,
+      "tag": "0004_pano_draft",
+      "breakpoints": true
     }
   ]
 }
