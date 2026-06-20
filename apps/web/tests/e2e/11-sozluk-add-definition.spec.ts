@@ -8,6 +8,14 @@ import {signUp} from "./_helpers/auth";
  * new term URL, write a definition, submit. The new term + definition appear
  * via re-fetched `term(slug)` (auto-create-term behaviour from
  * SozlukTerm.addDefinition).
+ *
+ * The fresh-slug create is a read-your-own-write seam (#730, epic #713 Family B):
+ * the auto-create remounts the content and re-reads `term(slug)` `network-only`,
+ * a *second* request that can race the just-committed write. The fix carries
+ * `definition.add`'s own returned id across the remount and confirms it via the
+ * deterministic read-back, so the **persisted** `definition-card-def_*` card must
+ * materialize — asserting on it (not just the body text, which an optimistic echo
+ * or a transient render could satisfy) is what guards the race.
  */
 test.describe("Sözlük addDefinition", () => {
 	test("adding a definition to a new slug auto-creates the term and renders the entry", async ({
@@ -34,8 +42,17 @@ test.describe("Sözlük addDefinition", () => {
 		await composerBody.fill(definitionBody);
 		await page.locator('[data-testid="sozluk-composer-submit"]').click();
 
-		// New definition appears in the list (re-fetched term query).
+		// New definition body is visible — necessary but not sufficient (the body text
+		// alone can be satisfied by a transient render before the persisted node lands).
 		await expect(page.getByText(definitionBody)).toBeVisible({timeout: 10_000});
+
+		// The race guard: the **persisted** definition card (real `def_<ulid>` id) must
+		// materialize on the fresh-slug remount. Before #730 the remount's blind
+		// `network-only` re-read could race the write and silently drop this card; the
+		// mutation's own returned id, confirmed via the read-back, makes it deterministic.
+		await expect(page.locator('[data-testid^="definition-card-def_"]').first()).toBeVisible({
+			timeout: 10_000,
+		});
 
 		// The term head shows the slug-derived title and a "1 tanım" counter.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(slug.replace(/-/g, " "));

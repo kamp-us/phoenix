@@ -3,7 +3,10 @@
  * of definitions; `TermView` spreads `TermHeaderView` and adds the nested
  * `definitions` connection (see `.patterns/fate-connections.md`). `definition.add`
  * is server-driven live; the fresh-slug branch (no term yet, so no list to append
- * to) instead re-reads `term(slug)` via a `network-only` remount.
+ * to) re-reads `term(slug)` via a `network-only` remount and then arms the
+ * deterministic read-back with the mutation's own returned id, so the just-created
+ * definition is guaranteed to materialize even if the remount re-read raced the
+ * write or the live `appendNode` push was lost (#730, epic #713 Family B).
  */
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -62,8 +65,14 @@ export function SozlukTermPage() {
 	const safeSlug = slug ?? "";
 	// Bumped when the fresh-slug composer auto-creates the term: remounts the
 	// content so the `network-only` read picks up the now-existing term and flips
-	// to the connection branch — no full reload.
-	const [reloadKey, setReloadKey] = React.useState(0);
+	// to the connection branch — no full reload. `createdDefinitionId` carries the
+	// mutation's own authoritative result across the remount so the now-list branch
+	// can arm its deterministic read-back on it (the remount re-read can race the
+	// write; the seeded id makes the just-created definition appear regardless).
+	const [{reloadKey, createdDefinitionId}, setRemount] = React.useState<{
+		reloadKey: number;
+		createdDefinitionId: string | null;
+	}>({reloadKey: 0, createdDefinitionId: null});
 
 	return (
 		<div className="kp-page">
@@ -79,7 +88,13 @@ export function SozlukTermPage() {
 					<SozlukTermContent
 						key={reloadKey}
 						slug={safeSlug}
-						onTermCreated={() => setReloadKey((k) => k + 1)}
+						seedDefinitionId={createdDefinitionId}
+						onTermCreated={(definitionId) =>
+							setRemount((prev) => ({
+								reloadKey: prev.reloadKey + 1,
+								createdDefinitionId: definitionId,
+							}))
+						}
 					/>
 				</Screen>
 			</div>
@@ -87,7 +102,15 @@ export function SozlukTermPage() {
 	);
 }
 
-function SozlukTermContent({slug, onTermCreated}: {slug: string; onTermCreated: () => void}) {
+function SozlukTermContent({
+	slug,
+	seedDefinitionId,
+	onTermCreated,
+}: {
+	slug: string;
+	seedDefinitionId: string | null;
+	onTermCreated: (definitionId: string | null) => void;
+}) {
 	const {term} = useRequest(
 		{term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
 		// `network-only`: re-reading from the network (not the cached `null`) is what
@@ -114,17 +137,23 @@ function SozlukTermContent({slug, onTermCreated}: {slug: string; onTermCreated: 
 	return (
 		<>
 			<SozlukTermHeader term={term} />
-			<DefinitionsList term={term} slug={slug} />
+			<DefinitionsList term={term} slug={slug} seedDefinitionId={seedDefinitionId} />
 		</>
 	);
 }
 
 /**
  * Header + composer for the slug-doesn't-exist-yet branch. The first definition
- * auto-creates the term, then `onCreated` remounts the content so the
- * `network-only` read flips to the connection branch.
+ * auto-creates the term, then `onCreated` remounts the content — carrying the new
+ * definition's id so the list branch confirms it deterministically (#730).
  */
-function NewTermComposer({slug, onCreated}: {slug: string; onCreated: () => void}) {
+function NewTermComposer({
+	slug,
+	onCreated,
+}: {
+	slug: string;
+	onCreated: (definitionId: string | null) => void;
+}) {
 	return (
 		<>
 			<header className="kp-sozluk-term__head">
@@ -148,6 +177,13 @@ function NewTermComposer({slug, onCreated}: {slug: string; onCreated: () => void
 interface DefinitionsListProps {
 	term: ViewRef<"Term">;
 	slug: string;
+	/**
+	 * The id `definition.add` returned on the fresh-slug remount, or `null` on a
+	 * plain load. When set, the list arms its read-back on this id at mount so the
+	 * just-created definition materializes even if the remount's `network-only`
+	 * re-read raced the write or the live push was lost (#730).
+	 */
+	seedDefinitionId: string | null;
 }
 
 function DefinitionsList(props: DefinitionsListProps) {
@@ -171,6 +207,16 @@ function DefinitionsList(props: DefinitionsListProps) {
 				{mode: "network-only"},
 			),
 	});
+
+	// Fresh-slug arrival: this list mounted because a `definition.add` just created
+	// the term. The remount's `network-only` re-read is not authoritative — it can
+	// race the write — so confirm the mutation's own returned id once on mount; the
+	// read-back settles instantly if the re-read already carried it, else deterministically
+	// refetches it in. Without this the just-created definition silently dropped (#730).
+	const {seedDefinitionId} = props;
+	React.useEffect(() => {
+		if (seedDefinitionId != null) confirmDefinition(seedDefinitionId);
+	}, [seedDefinitionId, confirmDefinition]);
 
 	return (
 		<>
@@ -198,9 +244,10 @@ function DefinitionsList(props: DefinitionsListProps) {
  * *nested* `Term.definitions` connection is server-driven (fate's declarative
  * `insert` only targets registered root lists), so there is no optimistic
  * temp-node — it would double with the live append. `onTermCreated` is passed
- * only on the fresh-slug branch, where there's no list yet to append to; on the
- * list branch `onConfirm` hands the new id to the deterministic read-back so a lost
- * live `appendNode` self-heals (see {@link useReadbackRefetch}).
+ * only on the fresh-slug branch, where there's no list yet to append to; it carries
+ * the new definition's id across the remount so the list branch arms its read-back
+ * on it. On the list branch `onConfirm` hands the new id to the same deterministic
+ * read-back so a lost live `appendNode` self-heals (see {@link useReadbackRefetch}).
  */
 function Composer({
 	slug,
@@ -208,7 +255,7 @@ function Composer({
 	onConfirm,
 }: {
 	slug: string;
-	onTermCreated?: () => void;
+	onTermCreated?: (definitionId: string | null) => void;
 	onConfirm?: (definitionId: string) => void;
 }) {
 	const fate = useFateClient();
@@ -241,10 +288,12 @@ function Composer({
 				return;
 			}
 			setBody("");
+			const createdId = result?.id != null ? String(result.id) : null;
 			// Fresh-slug branch only: remount to re-read `term(slug)` and flip to the
-			// list branch. On the list branch the server's `appendNode` delivers the row.
-			onTermCreated?.();
-			if (result?.id != null) onConfirm?.(String(result.id));
+			// list branch, carrying the mutation's own returned id so that branch confirms
+			// it deterministically (the remount re-read can race the write — #730).
+			onTermCreated?.(createdId);
+			if (createdId != null) onConfirm?.(createdId);
 		} catch (caught) {
 			const code = codeOf(caught);
 			if (code === "UNAUTHORIZED") {
