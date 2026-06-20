@@ -56,6 +56,58 @@ jobs:
             needs-auth: true
     steps:
       - uses: actions/checkout@v4.2.2
+        with:
+          # On a `pull_request` event we deliberately keep checkout's default
+          # `refs/remotes/pull/N/merge` (the PR merged into base `main`) so the
+          # deploy exercises the merged tree, surfacing main-drift/conflicts the
+          # bare head SHA wouldn't. `fetch-depth: 0` makes that merge commit's
+          # PARENTS reachable, which the stale-merge-ref guard below needs to
+          # read `HEAD^2` and to recompute the merge locally if it's stale.
+          fetch-depth: 0
+
+      # Reject (and repair) a stale pull/N/merge ref before building (issue #917).
+      # In the first minutes after a push — exactly when CI fires — GitHub's
+      # computed `pull/N/merge` can still be the merge of the PR's PRIOR head into
+      # main, so the default checkout builds the WRONG commit and false-FAILs code
+      # that is green at head (confirmed on PR #914: head 0a7a463 was green, but
+      # `pull/914/merge` was the merge of the already-superseded bca1889).
+      #
+      # The merge commit's second parent IS the PR head it was computed against, so
+      # `HEAD^2 == github.event.pull_request.head.sha` is the exact staleness test.
+      # On a match we build the merge ref unchanged (full main-drift coverage kept).
+      # On a mismatch the ref is stale: instead of failing the run (which would only
+      # self-correct on a re-run), we recompute the SAME merged-into-main tree
+      # LOCALLY from the event's known head SHA + the live base tip — preserving
+      # merged-into-main semantics while rejecting the stale build. `push`-to-main
+      # (prod) has no merge ref, so this step is `pull_request`-only and the prod
+      # path is untouched.
+      - name: Guard against a stale pull/N/merge ref (PR only)
+        if: github.event_name == 'pull_request'
+        env:
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          second_parent="$(git rev-parse HEAD^2)"
+          if [ "$second_parent" = "$PR_HEAD_SHA" ]; then
+            echo "merge ref is fresh: HEAD^2 ($second_parent) == event head SHA ($PR_HEAD_SHA)"
+            exit 0
+          fi
+          echo "::warning::stale pull/N/merge — HEAD^2 ($second_parent) != event head SHA ($PR_HEAD_SHA); recomputing the merge locally"
+          # Fetch the exact head the event fired for and the live base tip, then
+          # rebuild the merge deterministically. `--no-edit` keeps it non-interactive;
+          # a real merge conflict still fails the step (that conflict IS the main-drift
+          # signal the merge ref exists to surface — preserved, not papered over).
+          git fetch --no-tags --depth=1 origin "$PR_HEAD_SHA"
+          git fetch --no-tags --depth=1 origin "$PR_BASE_REF"
+          git -c user.name=ci -c user.email=ci@local checkout -B deploy-merge "origin/$PR_BASE_REF"
+          git -c user.name=ci -c user.email=ci@local merge --no-edit "$PR_HEAD_SHA"
+          rebuilt_second_parent="$(git rev-parse HEAD^2)"
+          if [ "$rebuilt_second_parent" != "$PR_HEAD_SHA" ]; then
+            echo "::error::failed to rebuild merge against event head SHA ($PR_HEAD_SHA); refusing to deploy the wrong commit"
+            exit 1
+          fi
+          echo "rebuilt merge of head $PR_HEAD_SHA into base $PR_BASE_REF"
 
       - uses: pnpm/action-setup@v4.1.0
         with:
