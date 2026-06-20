@@ -4,51 +4,63 @@
  * the application write path — NOT D1 triggers — so the worker that owns every
  * write to a summary row writes its search row in the same place.
  *
- * These are `sql` statement builders (delete-then-insert upsert: FTS5 has no
- * `ON CONFLICT`, so a re-sync removes the old row by key first). The module stays
- * shallow (ADR 0080): it builds statements and never crosses a service boundary —
- * the caller composes them, alongside the summary write, into ONE `Drizzle.batch`
- * so the summary row and its FTS row move all-or-none (the lockstep invariant ADR
- * 0080 stakes the design on; a crash between the two can never desync them).
- * `ftsBatchItems` is the single home of the "sync within this batch" composition:
- * callers fold the `SQL[]` to batch items through it instead of re-spelling a
- * separate-`run` loop per site.
+ * Each sync is a delete-then-insert upsert (FTS5 has no `ON CONFLICT`, so a
+ * re-sync removes the old row by key first). The module stays shallow (ADR 0080):
+ * it builds statements and never crosses a service boundary — the caller spreads
+ * the returned items, alongside the summary write, into ONE `Drizzle.batch` so the
+ * summary row and its FTS row move all-or-none (the lockstep invariant ADR 0080
+ * stakes the design on; a crash between the two can never desync them).
+ *
+ * Why drizzle query builders and NOT `sql`/`db.run(sql)`: a `Drizzle.batch` item
+ * must `_prepare()` to a `D1PreparedQuery` carrying a bound `.stmt` — D1's batch
+ * driver does `preparedQuery.stmt.bind(...params)` for every statement that has
+ * params. `db.run(sql\`…\`)` yields a `SQLiteRaw`, whose `_prepare()` returns
+ * itself with NO `.stmt`, so a parametrized raw statement throws
+ * `undefined.bind` and 500s the whole write the moment it rides in a batch (#863
+ * regression). A `db.insert(...)/.delete(...)` builder prepares to a real
+ * `D1PreparedQuery`, so it is batch-safe. The FTS5 tables can't be drizzle-kit
+ * generated (no virtual-table DSL — see `migrations/0002_search_fts.sql`), so we
+ * declare minimal `sqliteTable` shims here purely to build batch-safe statements;
+ * they are statement shapes, not a migration source.
  *
  * The indexed `norm` column is the Turkish-normalized title (see `normalize.ts`);
  * the `slug`/`id` column is `UNINDEXED`, carried only to join the match back to
  * the summary row.
  */
 
-import {type SQL, sql} from "drizzle-orm";
-import type {Stmt} from "../../db/Drizzle.ts";
+import {eq} from "drizzle-orm";
+import {sqliteTable, text} from "drizzle-orm/sqlite-core";
+import type {DrizzleDb, Stmt} from "../../db/Drizzle.ts";
 import {normalizeSearchText} from "./normalize.ts";
 
-/** A `db.run`-shaped runner — the one method this module needs to fold `SQL` into batch items. */
-type SqlRunner = {readonly run: (stmt: SQL) => Stmt};
+// Statement-shape shims for the FTS5 virtual tables (real DDL lives in
+// `migrations/0002_search_fts.sql`). Only the columns the write path touches.
+const termSearch = sqliteTable("term_search", {
+	slug: text("slug").primaryKey(),
+	norm: text("norm").notNull(),
+});
 
-/**
- * Fold FTS sync `SQL[]` into `Drizzle.batch` items, so a caller composes them
- * into the SAME batch as its summary write — the all-or-none seam (ADR 0080).
- * Stays shallow: a pure map of `sql` → `db.run(sql)`, owning no execution.
- */
-export const ftsBatchItems = (db: SqlRunner, statements: readonly SQL[]): Stmt[] =>
-	statements.map((stmt) => db.run(stmt));
+const postSearch = sqliteTable("post_search", {
+	id: text("id").primaryKey(),
+	norm: text("norm").notNull(),
+});
 
 /** Upsert a term's FTS row (keyed by slug). Indexes the normalized title. */
-export const syncTermSearch = (slug: string, title: string): [SQL, SQL] => [
-	sql`DELETE FROM term_search WHERE slug = ${slug}`,
-	sql`INSERT INTO term_search (slug, norm) VALUES (${slug}, ${normalizeSearchText(title)})`,
+export const syncTermSearch = (db: DrizzleDb, slug: string, title: string): [Stmt, Stmt] => [
+	db.delete(termSearch).where(eq(termSearch.slug, slug)),
+	db.insert(termSearch).values({slug, norm: normalizeSearchText(title)}),
 ];
 
 /** Remove a term's FTS row (term deleted / no longer searchable). */
-export const removeTermSearch = (slug: string): SQL =>
-	sql`DELETE FROM term_search WHERE slug = ${slug}`;
+export const removeTermSearch = (db: DrizzleDb, slug: string): Stmt =>
+	db.delete(termSearch).where(eq(termSearch.slug, slug));
 
 /** Upsert a post's FTS row (keyed by id). Indexes the normalized title. */
-export const syncPostSearch = (id: string, title: string): [SQL, SQL] => [
-	sql`DELETE FROM post_search WHERE id = ${id}`,
-	sql`INSERT INTO post_search (id, norm) VALUES (${id}, ${normalizeSearchText(title)})`,
+export const syncPostSearch = (db: DrizzleDb, id: string, title: string): [Stmt, Stmt] => [
+	db.delete(postSearch).where(eq(postSearch.id, id)),
+	db.insert(postSearch).values({id, norm: normalizeSearchText(title)}),
 ];
 
 /** Remove a post's FTS row (post deleted). */
-export const removePostSearch = (id: string): SQL => sql`DELETE FROM post_search WHERE id = ${id}`;
+export const removePostSearch = (db: DrizzleDb, id: string): Stmt =>
+	db.delete(postSearch).where(eq(postSearch.id, id));
