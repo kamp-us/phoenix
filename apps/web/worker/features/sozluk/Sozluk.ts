@@ -14,7 +14,7 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
-import {syncTermSearch} from "../search/fts-sync.ts";
+import {ftsBatchItems, syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -225,7 +225,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		// `DrizzleError` (infra failures are defects — the domain-boundary rule),
 		// so public signatures carry domain errors only and every method's `R`
 		// stays `never`.
-		const {run} = orDieAccess(yield* Drizzle);
+		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
 		// Per ADR 0013, body validation lives here, not in the resolver. Returns
@@ -281,7 +281,12 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const lastActivitySec = Math.floor(now.getTime() / 1000);
 			const lastEditSec = Math.floor(lastEditAt.getTime() / 1000);
 
-			yield* run((db) =>
+			// Summary upsert + its FTS dual-write in ONE batch so they move
+			// all-or-none (ADR 0080 lockstep): a crash between the two can never
+			// desync `term_search` from `term_summary`. `recomputeTermSummary` is
+			// the single convergent point every term write funnels through, so this
+			// keeps `term_search` current across add/edit/delete/vote with one wiring.
+			yield* batch((db) => [
 				db.run(sql`
 					INSERT INTO term_summary (
 						slug, title, first_letter, definition_count, total_score,
@@ -302,15 +307,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						last_activity_at  = excluded.last_activity_at,
 						last_edit_at      = excluded.last_edit_at
 				`),
-			);
-
-			// Dual-write the term's FTS row in lockstep with its summary (ADR 0080).
-			// `recomputeTermSummary` is the single convergent point every term write
-			// funnels through, so syncing here keeps `term_search` current across
-			// add/edit/delete/vote with one wiring.
-			for (const stmt of syncTermSearch(slug, title)) {
-				yield* run((db) => db.run(stmt));
-			}
+				...ftsBatchItems(db, syncTermSearch(slug, title)),
+			]);
 		});
 
 		// Refresh `sozluk_stats` totals; runs after every write that could affect them.
