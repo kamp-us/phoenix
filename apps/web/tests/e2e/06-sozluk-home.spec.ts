@@ -12,9 +12,10 @@ test.describe("SozlukHome (/sozluk)", () => {
 		await expect(page.locator(".kp-sozluk-home__title")).toContainText("sözlük");
 		await expect(page.locator(".kp-sozluk-home__searchbar input")).toBeVisible();
 		await expect(page.locator(".kp-sozluk-alphabet")).toBeVisible();
-		// at least one letter is a clickable button (not all empty)
-		const buttons = page.locator(".kp-sozluk-alphabet__letter[aria-pressed]");
-		expect(await buttons.count()).toBeGreaterThan(0);
+		// Each non-empty letter is a navigable link to `/sozluk?harf=<letter>` (#693):
+		// at least one such link renders (the index isn't all-inert).
+		const links = page.locator('.kp-sozluk-alphabet__letter[href*="harf="]');
+		expect(await links.count()).toBeGreaterThan(0);
 	});
 
 	test("recent and popular columns render rows", async ({page}) => {
@@ -49,12 +50,20 @@ test.describe("SozlukHome (/sozluk)", () => {
 		}
 	});
 
-	test("clicking an alphabet letter filters the recent column", async ({page}) => {
-		// Pick the first non-empty letter and click it.
-		const firstLetter = page.locator(".kp-sozluk-alphabet__letter[aria-pressed]").first();
+	test("clicking an alphabet letter navigates to ?harf= and filters the recent column", async ({
+		page,
+	}) => {
+		// Letters are navigable links now (#693): clicking pushes `/sozluk?harf=<letter>`,
+		// and the recent column filters client-side off that URL param.
+		const firstLetter = page.locator('.kp-sozluk-alphabet__letter[href*="harf="]').first();
 		const letter = (await firstLetter.textContent())?.trim().toLowerCase() ?? "";
 		await firstLetter.click();
-		await expect(firstLetter).toHaveAttribute("aria-pressed", "true");
+		// The click is a real navigation: the active letter is reflected in the URL…
+		await expect(page).toHaveURL(new RegExp(`[?&]harf=${encodeURIComponent(letter)}(&|$)`));
+		// …and marked active (aria-current + .is-active) rather than a transient toggle.
+		const activeLetter = page.locator(".kp-sozluk-alphabet__letter.is-active");
+		await expect(activeLetter).toHaveAttribute("aria-current", "page");
+		await expect(activeLetter).toHaveText(letter);
 		// Either rows remain (all starting with that letter), or the column is empty.
 		const titles = await page.locator(".kp-sozluk-term-row__title").allTextContents();
 		for (const t of titles) {
