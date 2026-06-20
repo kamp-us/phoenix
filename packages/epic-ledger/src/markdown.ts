@@ -20,6 +20,14 @@ const ISSUE_REF = /#(\d+)/g;
 /** Lines that are an unordered-list checkbox item: `- [ ]`, `* [x]`, `+ [X]`. */
 const CHECKBOX_ITEM = /^\s*[-*+]\s*\[[ xX]\]\s+\S/;
 
+/**
+ * An unordered-list item line: `- …`, `* …`, `+ …`. A dependency row is a list
+ * item (formats §1); gating on this shape keeps a blockquote (`>`) re-plan note
+ * or other section prose carrying an issue ref from parsing as a phantom row
+ * (which would induce a false `DEP_CYCLE`). See issue #733.
+ */
+const LIST_ITEM = /^\s*[-*+]\s+\S/;
+
 /** A `## Dependencies` (or `### Dependencies`) heading, tolerant of synonyms. */
 const DEPS_HEADING = /^#{1,6}\s+depend(?:ency|encies|s)\b/i;
 
@@ -207,6 +215,7 @@ const parsePhases = (body: string): ParsedPhases | undefined => {
 			pushPhase();
 			continue;
 		}
+		if (!LIST_ITEM.test(line)) continue;
 		const refs = collectIssueRefs(line);
 		const subject = refs[0];
 		if (subject === undefined) continue;

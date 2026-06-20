@@ -133,6 +133,41 @@ describe("parseDependencyGraph", () => {
 		assert.deepStrictEqual(g.nodes, [101]);
 	});
 
+	it("skips a blockquote re-plan note carrying issue refs (no phantom phase, no false cycle)", () => {
+		// Repro for #733: a `> Re-planned …` note above the first phase must not parse
+		// as an implicit phase, which previously induced backwards edges -> a false DEP_CYCLE.
+		const body = [
+			"## Dependencies",
+			"",
+			"> Re-planned (2026-06): #718 superseded by #730; #716 folded in.",
+			"",
+			"### Phase 1",
+			"- #730 — schema",
+			"- #714 — encoder",
+			"### Phase 2",
+			"- #716 — smoke test",
+		].join("\n");
+		const g = parseDependencyGraph(body);
+		assert.strictEqual(g.present, true);
+		assert.deepStrictEqual(g.nodes, [714, 716, 730]);
+		assert.deepStrictEqual(g.edges, [
+			{child: 716, requires: 714},
+			{child: 716, requires: 730},
+		]);
+	});
+
+	it("ignores non-list prose lines bearing an issue ref within the section", () => {
+		const body = [
+			"## Dependencies",
+			"Note: this supersedes #999 from the earlier plan.",
+			"### Phase 1",
+			"- #101 — a",
+		].join("\n");
+		const g = parseDependencyGraph(body);
+		assert.deepStrictEqual(g.nodes, [101]);
+		assert.deepStrictEqual(g.edges, []);
+	});
+
 	it("is order-independent: declaring the same topology differently yields the same graph", () => {
 		const a = parseDependencyGraph(
 			["## Dependencies", "### Phase 1", "- #101", "- #102", "### Phase 2", "- #103"].join("\n"),
