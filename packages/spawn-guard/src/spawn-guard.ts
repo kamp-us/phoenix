@@ -5,12 +5,13 @@
  * does the IO and hands these pure values to render. Three concerns:
  *
  *  1. `decideSpawn(requested, pin)` — the allowlist guard. The harness spawns a
- *     subagent (Task/Workflow) on some model; this decides allow / rewrite / deny.
+ *     subagent (Task/Workflow) on some model; this decides allow / allow-inherit / deny.
  *     Per ADR 0092 it **fails closed**: an unset OR off-allowlist model is a DENY,
- *     never a silent allow. A `WORKFLOW_MODEL` pin that is itself on the allowlist
- *     **rewrites** a requested-but-missing/disallowed model to the pin (the
- *     deterministic-model knob); a pin that is itself off-allowlist is rejected so a
- *     misconfigured pin can't smuggle a bad model past the guard.
+ *     never a silent allow. When the request is unset and the `WORKFLOW_MODEL` pin is
+ *     itself on the allowlist, the spawn is allowed to **inherit** the session model
+ *     (the Task tool rejects the full pin id, so the guard can't rewrite it in — #776);
+ *     an explicit off-allowlist request is denied even when a valid pin exists, so a bad
+ *     model can't smuggle past, and a pin that is itself off-allowlist gives no inheritance.
  *  2. `formatSessionCost(input)` — the statusline cost renderer. Takes the cost/token
  *     figures Claude Code hands a statusLine command and returns one compact line.
  *
@@ -25,13 +26,15 @@ export const ALLOWLIST: ReadonlyArray<string> = ["claude-opus-4-8", "claude-opus
 
 export type SpawnDecision =
 	| {readonly kind: "allow"; readonly model: string; readonly checked: string}
+	| {readonly kind: "allow-inherit"; readonly pin: string; readonly checked: string}
 	| {
-			readonly kind: "rewrite";
-			readonly from: string;
-			readonly model: string;
+			readonly kind: "deny";
+			readonly requested: string | null;
+			// true when the request was explicit + off-allowlist but a valid pin exists: denied
+			// because the Task tool rejects the full pin id (#776), so the pin can't override it.
+			readonly explicitOffAllowlist: boolean;
 			readonly checked: string;
-	  }
-	| {readonly kind: "deny"; readonly requested: string | null; readonly checked: string};
+	  };
 
 const norm = (m: string | null | undefined): string | null => {
 	if (m == null) return null;
@@ -51,12 +54,17 @@ export const isOnAllowlist = (model: string | null | undefined): boolean => {
  *   or null when the spawn left it unset.
  * - `pin` — the resolved `WORKFLOW_MODEL` env value, or null when unset.
  *
- * Rules (fail-closed, ADR 0092):
+ * Rules (fail-closed, ADR 0092). This core owns the full allow/inherit/deny decision —
+ * `bin.ts` only renders it, never re-derives the outcome:
  * - requested on allowlist → **allow** (the explicit, valid choice stands).
- * - requested off/absent, pin on allowlist → **rewrite** to the pin (the deterministic
- *   knob: a workflow's subagents inherit the pinned model rather than a session default).
- * - otherwise (no valid requested, no valid pin) → **deny**. An unset model is a deny,
- *   not a pass — the silent-default leak this guard exists to kill.
+ * - requested unset, pin on allowlist → **allow-inherit**: the spawn inherits the
+ *   session model. The guard can't rewrite the request to the pin id (the Task tool
+ *   rejects the full id `claude-opus-4-8[1m]`, #776), so an unset request rides the
+ *   already-allowlisted session model rather than a forced pin.
+ * - otherwise → **deny**. An explicit off-allowlist request is denied even when a valid
+ *   pin exists (the pin can't override it, #776; `explicitOffAllowlist` flags this), and
+ *   an unset/off-allowlist request with no valid pin is denied too — an unset model is a
+ *   deny, not a pass, the silent-default leak this guard exists to kill.
  */
 export const decideSpawn = (
 	requested: string | null | undefined,
@@ -70,10 +78,14 @@ export const decideSpawn = (
 		return {kind: "allow", model: req, checked};
 	}
 	if (isOnAllowlist(p)) {
-		// p is on the allowlist ⇒ non-null. Rewrite the absent/disallowed request to the pin.
-		return {kind: "rewrite", from: req ?? "<unset>", model: p as string, checked};
+		// p is on the allowlist ⇒ non-null. An unset request inherits the session model;
+		// an explicit off-allowlist request is denied — the pin can't rewrite it in (#776).
+		if (req === null) {
+			return {kind: "allow-inherit", pin: p as string, checked};
+		}
+		return {kind: "deny", requested: req, explicitOffAllowlist: true, checked};
 	}
-	return {kind: "deny", requested: req, checked};
+	return {kind: "deny", requested: req, explicitOffAllowlist: false, checked};
 };
 
 export interface SessionCostInput {

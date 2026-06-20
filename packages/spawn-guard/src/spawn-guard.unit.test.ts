@@ -30,45 +30,54 @@ describe("isOnAllowlist — only the opus-4.8 family", () => {
 	});
 });
 
-describe("decideSpawn — allowlist guard (allow / rewrite / deny)", () => {
+describe("decideSpawn — allowlist guard (allow / allow-inherit / deny)", () => {
 	it("ALLOWS an allowlisted requested model (the explicit valid choice stands)", () => {
 		const d = decideSpawn("claude-opus-4-8", null);
 		assert.strictEqual(d.kind, "allow");
 		assert.strictEqual(d.kind === "allow" ? d.model : "", "claude-opus-4-8");
 	});
 
-	it("REWRITES an unset request to a valid WORKFLOW_MODEL pin (the deterministic knob)", () => {
+	it("ALLOW-INHERITS an unset request when the pin is on the allowlist (inherit session model, #776)", () => {
 		const d = decideSpawn(null, "claude-opus-4-8");
-		assert.strictEqual(d.kind, "rewrite");
-		if (d.kind === "rewrite") {
-			assert.strictEqual(d.model, "claude-opus-4-8");
-			assert.strictEqual(d.from, "<unset>");
-		}
+		assert.strictEqual(d.kind, "allow-inherit");
+		assert.strictEqual(d.kind === "allow-inherit" ? d.pin : "", "claude-opus-4-8");
 	});
 
-	it("REWRITES a disallowed request to a valid pin (pin overrides a bad request)", () => {
+	it("ALLOW-INHERITS an unset request even with the full pin id as the pin (#776 — never rewrite to it)", () => {
+		const d = decideSpawn(null, "claude-opus-4-8[1m]");
+		assert.strictEqual(d.kind, "allow-inherit");
+		assert.strictEqual(d.kind === "allow-inherit" ? d.pin : "", "claude-opus-4-8[1m]");
+	});
+
+	it("DENIES an explicit off-allowlist request even when the pin is valid (the pin can't override it, #776)", () => {
 		const d = decideSpawn("claude-fable-5", "claude-opus-4-8[1m]");
-		assert.strictEqual(d.kind, "rewrite");
-		if (d.kind === "rewrite") {
-			assert.strictEqual(d.from, "claude-fable-5");
-			assert.strictEqual(d.model, "claude-opus-4-8[1m]");
+		assert.strictEqual(d.kind, "deny");
+		if (d.kind === "deny") {
+			assert.strictEqual(d.requested, "claude-fable-5");
+			assert.isTrue(d.explicitOffAllowlist);
 		}
 	});
 
 	it("DENIES when both request and pin are unset (ADR 0092 fail-closed)", () => {
 		const d = decideSpawn(null, null);
 		assert.strictEqual(d.kind, "deny");
-		assert.strictEqual(d.kind === "deny" ? d.requested : "x", null);
+		if (d.kind === "deny") {
+			assert.strictEqual(d.requested, null);
+			assert.isFalse(d.explicitOffAllowlist);
+		}
 	});
 
 	it("DENIES an off-allowlist request with no pin (never a silent allow)", () => {
 		const d = decideSpawn("claude-fable-5", null);
 		assert.strictEqual(d.kind, "deny");
+		// no valid pin ⇒ the fail-closed default reason, not the explicit-off-allowlist one
+		assert.strictEqual(d.kind === "deny" ? d.explicitOffAllowlist : true, false);
 	});
 
 	it("DENIES when the pin itself is off-allowlist (a misconfigured pin can't smuggle a bad model)", () => {
 		const d = decideSpawn(null, "claude-fable-5");
 		assert.strictEqual(d.kind, "deny");
+		assert.strictEqual(d.kind === "deny" ? d.explicitOffAllowlist : true, false);
 	});
 
 	it("a valid request stands even when the pin is garbage", () => {

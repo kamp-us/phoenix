@@ -8,12 +8,14 @@
  *
  *  - `node src/bin.ts guard` — a `PreToolUse` hook on Task/Workflow. It reads the
  *    Claude Code hook envelope on stdin (`tool_input.model`), resolves the
- *    `WORKFLOW_MODEL` pin from the env, and prints the `hookSpecificOutput`
- *    permission decision: **allow** an allowlisted model, **rewrite** an
- *    absent/disallowed model to the pin via `updatedInput.model`, or **deny** when
- *    neither the request nor the pin is on the allowlist. Per ADR 0092 it fails
- *    closed — an unset/unknown model is a `deny`, and the `systemMessage` always
- *    emits *what it checked* (the allowlist, the requested model, the pin).
+ *    `WORKFLOW_MODEL` pin from the env, and renders the `decideSpawn` outcome as a
+ *    `hookSpecificOutput` permission decision: **allow** an allowlisted model,
+ *    **allow** an unset request to inherit the session model when the pin is
+ *    allowlisted (the guard can't rewrite the request to the pin id — #776), or
+ *    **deny** otherwise. Per ADR 0092 it fails closed — an unset/unknown model with no
+ *    valid pin is a `deny`, and the `systemMessage` always emits *what it checked* (the
+ *    allowlist, the requested model, the pin). The decision is owned by `decideSpawn`;
+ *    this surface only renders it.
  *
  *  - `node src/bin.ts statusline` — a `statusLine` command. It reads the statusLine
  *    payload on stdin (`cost.total_cost_usd`, token totals, model) and prints one
@@ -74,44 +76,39 @@ const guard = Command.make(
 					}),
 				);
 				return;
-			case "rewrite":
-				// #776: the Task tool's `model` field accepts only short names (opus/sonnet/…);
-				// rewriting it to the full pin id (`claude-opus-4-8[1m]`) fails the tool schema
-				// and blocks the spawn. So never rewrite — an UNSET request inherits the
-				// (allowlisted) session model → allow; an EXPLICIT off-allowlist request is still
-				// denied, which is the protection #744 exists for.
-				if (requested == null) {
-					yield* Console.log(
-						JSON.stringify({
-							hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow"},
-							systemMessage: `spawn-guard: allow unset (inherit session model; pin ${decision.model} on allowlist) — ${decision.checked}`,
-						}),
-					);
-					return;
-				}
+			case "allow-inherit":
 				yield* Console.log(
 					JSON.stringify({
-						hookSpecificOutput: {
-							hookEventName: "PreToolUse",
-							permissionDecision: "deny",
-							permissionDecisionReason: `spawn-guard: DENY — explicit model ${requested} is not on the allowlist. ${decision.checked}`,
-						},
-						systemMessage: `spawn-guard: DENY explicit off-allowlist model ${requested} — ${decision.checked}`,
+						hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow"},
+						systemMessage: `spawn-guard: allow unset (inherit session model; pin ${decision.pin} on allowlist) — ${decision.checked}`,
 					}),
 				);
 				return;
 			case "deny":
 				// ADR 0092: fail closed. An off-allowlist or unset model is a DENY, and the
 				// reason emits what the guard checked so the refusal is observable, not silent.
+				// `explicitOffAllowlist` (an explicit bad model the pin can't override, #776)
+				// gets a sharper reason than the no-valid-pin fail-closed default.
 				yield* Console.log(
-					JSON.stringify({
-						hookSpecificOutput: {
-							hookEventName: "PreToolUse",
-							permissionDecision: "deny",
-							permissionDecisionReason: `spawn-guard: DENY — model ${decision.requested ?? "<unset>"} is not on the allowlist and no valid WORKFLOW_MODEL pin. ${decision.checked}`,
-						},
-						systemMessage: `spawn-guard: DENY off-allowlist/unset spawn model — ${decision.checked}`,
-					}),
+					JSON.stringify(
+						decision.explicitOffAllowlist
+							? {
+									hookSpecificOutput: {
+										hookEventName: "PreToolUse",
+										permissionDecision: "deny",
+										permissionDecisionReason: `spawn-guard: DENY — explicit model ${decision.requested} is not on the allowlist. ${decision.checked}`,
+									},
+									systemMessage: `spawn-guard: DENY explicit off-allowlist model ${decision.requested} — ${decision.checked}`,
+								}
+							: {
+									hookSpecificOutput: {
+										hookEventName: "PreToolUse",
+										permissionDecision: "deny",
+										permissionDecisionReason: `spawn-guard: DENY — model ${decision.requested ?? "<unset>"} is not on the allowlist and no valid WORKFLOW_MODEL pin. ${decision.checked}`,
+									},
+									systemMessage: `spawn-guard: DENY off-allowlist/unset spawn model — ${decision.checked}`,
+								},
+					),
 				);
 				return;
 		}
