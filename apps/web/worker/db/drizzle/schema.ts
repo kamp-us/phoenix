@@ -216,6 +216,11 @@ export const postSummary = sqliteTable(
 		updatedAt: timestamp("updated_at").notNull(),
 		lastActivityAt: timestamp("last_activity_at").notNull(),
 		deletedAt: timestamp("deleted_at"),
+		// Draft (taslak) marker — nullable, no default, mirroring the `deletedAt`
+		// soft-state shape: existing/published rows are `null` (= not a draft). A
+		// partial unique index (`post_summary_one_draft_per_author`, migration 0004)
+		// enforces one draft per author. Drafts are excluded from public feeds.
+		isDraft: integer("is_draft", {mode: "boolean"}),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [

@@ -19,6 +19,8 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
 import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
+import {type Flags, FlagsLive} from "../flagship/Flags.ts";
+import type {Flagship} from "../flagship/Flagship.ts";
 import {type Bookmark, BookmarkLive} from "../pano/Bookmark.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
@@ -39,7 +41,8 @@ export type WorkerFateServices =
 	| Stats
 	| Search
 	| Report
-	| Bookmark;
+	| Bookmark
+	| Flags;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -126,7 +129,7 @@ const KarmaBumpFromPasaport = Layer.succeed(KarmaBump, {statement: karmaBumpStat
 export const makeFateLayer: Layer.Layer<
 	WorkerFateServices,
 	never,
-	Database | BetterAuth.BetterAuth
+	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
 > = Layer.mergeAll(
 	PasaportFromTag,
 	Layer.mergeAll(SozlukLive, PanoLive).pipe(
@@ -140,6 +143,11 @@ export const makeFateLayer: Layer.Layer<
 	// discharged by `provideMerge(DrizzleLive)`.
 	SearchLive,
 	ReportLive,
+	// `Flags` is the dark-ship read surface the pano draft-save gate consumes (#746).
+	// `FlagsLive` needs only `Flagship` (a new R seam, discharged at the composition
+	// root like `Database`); `getBoolean`'s `RuntimeContext`/`FlagsContext` are per-call,
+	// supplied by the resolver, not at layer build.
+	FlagsLive,
 ).pipe(Layer.provideMerge(DrizzleLive));
 
 /**
@@ -155,5 +163,5 @@ export const makeFateLayer: Layer.Layer<
 export const PhoenixFateLive: Layer.Layer<
 	WorkerFateServices | FateServer,
 	never,
-	Database | BetterAuth.BetterAuth
+	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
 > = FateServer.layer(fateConfig).pipe(Layer.provideMerge(makeFateLayer));

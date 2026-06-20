@@ -131,6 +131,8 @@ export interface PostSummaryRow {
 	myVote?: number | null;
 	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
 	isSaved?: boolean | null;
+	/** Draft (taslak) marker; stamped from `post_summary.is_draft` (null = published). */
+	isDraft?: boolean | null;
 }
 
 export interface PostConnectionPage {
@@ -182,6 +184,28 @@ export interface SubmitPostResult {
 	commentCount: number;
 	tags: PostTagRow[];
 	createdAt: Date;
+}
+
+export interface SaveDraftInput {
+	authorId: string;
+	authorName: string;
+	title?: string | undefined;
+	url?: string | undefined;
+	body?: string | undefined;
+	tags?: ReadonlyArray<{kind: string; label?: string | undefined}> | undefined;
+}
+
+/** A draft re-resolves like a fresh post; `isDraft` rides the wire as `true`. */
+export interface SaveDraftResult extends SubmitPostResult {
+	isDraft: true;
+}
+
+export interface DiscardDraftInput {
+	authorId: string;
+}
+
+export interface DiscardDraftResult {
+	postId: string | null;
 }
 
 export interface VoteOnPostInput {
@@ -350,6 +374,10 @@ export class Pano extends Context.Service<
 		readonly submitPost: (
 			input: SubmitPostInput,
 		) => Effect.Effect<SubmitPostResult, PostValidation>;
+
+		readonly saveDraft: (input: SaveDraftInput) => Effect.Effect<SaveDraftResult, PostValidation>;
+
+		readonly discardDraft: (input: DiscardDraftInput) => Effect.Effect<DiscardDraftResult>;
 
 		readonly editPost: (
 			input: EditPostInput,
@@ -563,7 +591,12 @@ export const PanoLive = Layer.effect(Pano)(
 			const after = opts.after ?? null;
 			const host = opts.host ?? null;
 
-			const baseConditions = [isNull(schema.postSummary.deletedAt)];
+			// `is_draft IS NOT 1` excludes drafts from the public feed while keeping
+			// null/0 rows (published) — drafts are private to their author (#746).
+			const baseConditions = [
+				isNull(schema.postSummary.deletedAt),
+				sql`${schema.postSummary.isDraft} is not 1`,
+			];
 			if (host) baseConditions.push(eq(schema.postSummary.host, host));
 
 			const totalCount = yield* run((db) =>
@@ -786,6 +819,9 @@ export const PanoLive = Layer.effect(Pano)(
 					tags: parseTags(row.tags),
 					myVote: viewerId ? (voted.has(row.id) ? 1 : null) : null,
 					isSaved: viewerId ? saved.has(row.id) : null,
+					// A by-id read returns the author's own draft (read-your-writes); stamp
+					// its marker so the re-resolved entity carries `isDraft: true`.
+					isDraft: row.isDraft ?? null,
 				}),
 			);
 		});
@@ -913,6 +949,143 @@ export const PanoLive = Layer.effect(Pano)(
 				tags: normalizedTags,
 				createdAt: now,
 			} satisfies SubmitPostResult;
+		});
+
+		// A draft is a partial post: the only gates are submit's length/sanity caps
+		// (no required title/tags), so a half-filled form persists. One draft per
+		// author is enforced by the partial unique index + this probe-then-upsert.
+		const saveDraft = Effect.fn("Pano.saveDraft")(function* (input: SaveDraftInput) {
+			const rawTitle = (input.title ?? "").trim();
+			if (rawTitle.length > POST_TITLE_MAX) {
+				return yield* new TitleTooLong({
+					message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
+				});
+			}
+			const body = yield* validatePostBody(input.body ?? "");
+
+			let host: string | null = null;
+			let urlNormalized: string | null = null;
+			if (input.url != null && input.url.length > 0) {
+				const parsed = yield* Effect.try({
+					try: () => new URL(input.url as string),
+					catch: () => new UrlInvalid({message: "URL geçersiz"}),
+				});
+				urlNormalized = parsed.toString();
+				host = parsed.host;
+			}
+
+			const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
+			const normalizedTags: PostTagRow[] = [];
+			const seenKinds = new Set<string>();
+			for (const t of input.tags ?? []) {
+				const kind = (t.kind ?? "").trim();
+				if (kind.length === 0) continue;
+				if (!allowed.has(kind)) {
+					return yield* new TagInvalid({message: `geçersiz etiket: ${kind}`});
+				}
+				if (seenKinds.has(kind)) continue;
+				seenKinds.add(kind);
+				normalizedTags.push({kind, label: t.label?.trim() || kind});
+			}
+
+			const now = new Date();
+			const bodyExcerpt = body ? excerpt(body) : "";
+			const tagsCsv = normalizedTags.map((t) => t.kind).join(",");
+
+			const existing = yield* run((db) =>
+				db.query.postSummary.findFirst({
+					where: {authorId: input.authorId, isDraft: true},
+					columns: {id: true, createdAt: true},
+				}),
+			);
+
+			const postId = existing?.id ?? id("post");
+			const createdAt = existing?.createdAt ?? now;
+			const hotScore = computeHotScore(0, createdAt.getTime(), now.getTime());
+
+			if (existing) {
+				yield* run((db) =>
+					db
+						.update(schema.postSummary)
+						.set({
+							title: rawTitle,
+							url: urlNormalized,
+							host,
+							body: body ?? "",
+							bodyExcerpt,
+							authorName: input.authorName,
+							tags: tagsCsv,
+							hotScore,
+							updatedAt: now,
+							lastActivityAt: now,
+						})
+						.where(eq(schema.postSummary.id, postId)),
+				);
+			} else {
+				yield* run((db) =>
+					db.insert(schema.postSummary).values({
+						id: postId,
+						slug: null,
+						title: rawTitle,
+						url: urlNormalized,
+						host,
+						body: body ?? "",
+						bodyExcerpt,
+						authorId: input.authorId,
+						authorName: input.authorName,
+						tags: tagsCsv,
+						score: 0,
+						commentCount: 0,
+						hotScore,
+						createdAt: now,
+						updatedAt: now,
+						lastActivityAt: now,
+						deletedAt: null,
+						isDraft: true,
+						lastEventId: "",
+					}),
+				);
+			}
+
+			// A draft is never in the public FTS table (it never lists publicly), so
+			// no `syncPostSearch` dual-write and no `recomputePanoStats` — both are
+			// public-surface bookkeeping that a private draft must not touch.
+
+			return {
+				postId,
+				title: rawTitle,
+				url: urlNormalized,
+				host,
+				body,
+				authorId: input.authorId,
+				authorName: input.authorName,
+				score: 0,
+				commentCount: 0,
+				tags: normalizedTags,
+				createdAt,
+				isDraft: true,
+			} satisfies SaveDraftResult;
+		});
+
+		const discardDraft = Effect.fn("Pano.discardDraft")(function* (input: DiscardDraftInput) {
+			const existing = yield* run((db) =>
+				db.query.postSummary.findFirst({
+					where: {authorId: input.authorId, isDraft: true},
+					columns: {id: true},
+				}),
+			);
+			if (!existing) return {postId: null} satisfies DiscardDraftResult;
+			yield* run((db) =>
+				db
+					.delete(schema.postSummary)
+					.where(
+						and(
+							eq(schema.postSummary.authorId, input.authorId),
+							eq(schema.postSummary.isDraft, true),
+						),
+					),
+			);
+			return {postId: existing.id} satisfies DiscardDraftResult;
 		});
 
 		const editPost = Effect.fn("Pano.editPost")(function* (input: EditPostInput) {
@@ -1486,6 +1659,8 @@ export const PanoLive = Layer.effect(Pano)(
 			getCommentsByIds,
 			lookupCommentPostId,
 			submitPost,
+			saveDraft,
+			discardDraft,
 			editPost,
 			deletePost,
 			voteOnPost,

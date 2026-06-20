@@ -123,3 +123,14 @@ export class UnauthorizedCommentMutation extends Schema.TaggedErrorClass<Unautho
 	},
 	{[ErrorCode]: "UNAUTHORIZED"},
 ) {}
+
+/**
+ * Drafts (taslak) are reachable only when the `pano-draft-save` flag is on. The
+ * server-side gate raises this when a draft mutation runs with the flag off, so the
+ * dark path is unreachable even if a client bypasses the UI. See issue #746.
+ */
+export class DraftsDisabled extends Schema.TaggedErrorClass<DraftsDisabled>()(
+	"pano/DraftsDisabled",
+	{message: Schema.String},
+	{[ErrorCode]: "DRAFTS_DISABLED"},
+) {}

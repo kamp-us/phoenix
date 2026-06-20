@@ -15,11 +15,15 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {PANO_DRAFT_SAVE} from "../../db/resources.ts";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {Flags} from "../flagship/Flags.ts";
+import {FlagsContext, makeRequestFlagsContext} from "../flagship/FlagsContext.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
 	CommentValidationErrors,
+	DraftsDisabled,
 	PostNotFound,
 	PostValidationErrors,
 	UnauthorizedCommentMutation,
@@ -41,6 +45,22 @@ const SubmitPostInput = Schema.Struct({
 		}),
 	),
 });
+
+const SaveDraftInput = Schema.Struct({
+	title: Schema.optional(Schema.NullOr(Schema.String)),
+	url: Schema.optional(Schema.NullOr(Schema.String)),
+	body: Schema.optional(Schema.NullOr(Schema.String)),
+	tags: Schema.optional(
+		Schema.Array(
+			Schema.Struct({
+				kind: Schema.String,
+				label: Schema.optional(Schema.NullOr(Schema.String)),
+			}),
+		),
+	),
+});
+
+const DiscardDraftInput = Schema.Struct({});
 
 const PostIdInput = Schema.Struct({
 	id: Schema.String,
@@ -86,6 +106,7 @@ const shapePost = (r: {
 	updatedAt?: Date;
 	myVote?: number | null;
 	isSaved?: boolean | null;
+	isDraft?: boolean | null;
 }): Post =>
 	toPost({
 		id: r.postId,
@@ -102,6 +123,7 @@ const shapePost = (r: {
 		updatedAt: r.updatedAt ?? null,
 		myVote: r.myVote ?? null,
 		isSaved: r.isSaved ?? null,
+		isDraft: r.isDraft ?? null,
 		tags: r.tags,
 	});
 
@@ -152,6 +174,72 @@ export const mutations = {
 			// feed-sort variant, via the global topic). Inline node, no DB work.
 			yield* live.connection("posts").prependNode("Post", post.id, {node: post});
 			return post;
+		}),
+	),
+	// `post.saveDraft` / `post.discardDraft` are the dark-shipped taslak path (#746),
+	// gated server-side on `pano-draft-save` (default-off). The gate is load-bearing:
+	// with the flag off both fail `DraftsDisabled` so the path is unreachable even if a
+	// client bypasses the UI. The flag context is derived from the signed-in user (the
+	// `CurrentUser.required` identity), so a flip can target by user/percentage later.
+	"post.saveDraft": Fate.mutation(
+		{
+			input: SaveDraftInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, DraftsDisabled, ...PostValidationErrors]),
+		},
+		Effect.fn("post.saveDraft")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const flags = yield* Flags;
+			const context = yield* makeRequestFlagsContext({userId: user.id});
+			const on = yield* flags
+				.getBoolean(PANO_DRAFT_SAVE, false)
+				.pipe(Effect.provideService(FlagsContext, context));
+			if (!on) {
+				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
+			}
+			const pano = yield* Pano;
+			const live = yield* WorkerLivePublisher;
+			const r = yield* pano.saveDraft({
+				authorId: user.id,
+				authorName: user.name ?? user.email,
+				...(input.title != null ? {title: input.title} : {}),
+				...(input.url != null ? {url: input.url} : {}),
+				...(input.body != null ? {body: input.body} : {}),
+				...(input.tags
+					? {tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})}))}
+					: {}),
+			});
+			const post = shapePost({...r, myVote: null});
+			// A draft is private: re-resolve the affected entity (so the author's cache
+			// updates with `isDraft: true`), but never prepend it to the public `posts`
+			// connection.
+			yield* live.update("Post", post.id, {changed: ["isDraft"], data: post});
+			return post;
+		}),
+	),
+	"post.discardDraft": Fate.mutation(
+		{
+			input: DiscardDraftInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, DraftsDisabled]),
+		},
+		Effect.fn("post.discardDraft")(function* () {
+			const user = yield* CurrentUser.required;
+			const flags = yield* Flags;
+			const context = yield* makeRequestFlagsContext({userId: user.id});
+			const on = yield* flags
+				.getBoolean(PANO_DRAFT_SAVE, false)
+				.pipe(Effect.provideService(FlagsContext, context));
+			if (!on) {
+				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
+			}
+			const pano = yield* Pano;
+			const live = yield* WorkerLivePublisher;
+			const r = yield* pano.discardDraft({authorId: user.id});
+			if (!r.postId) return null;
+			yield* live.delete("Post", r.postId);
+			// Id-only eviction ref: the draft row is gone (see post.delete).
+			return {__typename: "Post", id: r.postId};
 		}),
 	),
 	"post.vote": Fate.mutation(

@@ -14,6 +14,7 @@ import {
 	type ProtocolOperation,
 	ProtocolResponse,
 } from "@kampus/fate-effect";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
@@ -42,6 +43,18 @@ export interface FateOpAuth {
 	readonly email: string;
 }
 
+// The pano draft-save flag gate (#746) reads `Flags`, whose `getBoolean` carries a
+// per-call `RuntimeContext` requirement; this Node harness has no alchemy ambient
+// runtime, so an inert stub satisfies the type (the flag reads degrade to their safe
+// default through it, which is exactly the off-path these op-tests exercise).
+const inertRuntimeContext: BaseRuntimeContext = {
+	Type: "run-fate-op",
+	id: "run-fate-op",
+	env: {},
+	get: () => Effect.succeed(undefined),
+	set: (id) => Effect.succeed(id),
+};
+
 /**
  * Run `operation` against `workerLayer` (a fully-resolved worker layer,
  * `Database`/`BetterAuth` already discharged) through the native interpreter.
@@ -63,7 +76,10 @@ export async function runFateOp(
 	// Disposed in `finally` — the harness has a shutdown point, so every op runs
 	// cold (it does not exercise production's cross-request layer memoization).
 	const {runtime} = makeFateRuntime(
-		FateServer.layer(fateConfig).pipe(Layer.provideMerge(workerLayer)),
+		FateServer.layer(fateConfig).pipe(
+			Layer.provideMerge(workerLayer),
+			Layer.provide(Layer.succeed(RuntimeContext)(inertRuntimeContext)),
+		),
 	);
 
 	const published: Array<string> = [];

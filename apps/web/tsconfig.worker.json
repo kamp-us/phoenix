@@ -20,6 +20,7 @@
 	"include": [
 		"worker",
 		"src/lib/mutationErrorCodes.ts",
+		"src/flags/keys.ts",
 		"alchemy.run.ts",
 		// The black-box integration suite (Vitest node pool → HTTP against the
 		// deployed worker) belongs to the worker project: it needs the same `.ts`
