@@ -706,25 +706,30 @@ EOF
 > after creation, patch via REST: `gh api -X PATCH repos/$REPO/pulls/<PR>
 > -f body="…"`. Get the PR body right at `create` time and you won't need it.
 
-Confirm the **closing** linkage landed — not merely that *a* cross-reference exists. A
-`Refs #N` also emits a `cross-referenced` event, so that event alone does **not** prove the
-auto-close seam armed. The authoritative signal is GitHub's `closingIssuesReferences` for the
-PR: a closing keyword populates it, a non-closing mention leaves it empty. Assert it is
-non-empty and names your issue (REST `pulls/<PR>` exposes it via the
-`closing_issues_references` field; the timeline `connected` event is a secondary confirmation):
+Confirm two things — that the cross-reference landed, **and** that the body you pushed
+actually carries a **closing** keyword (the part a `Refs`/bare-`#N` slip silently fails).
+The authoritative `closingIssuesReferences` field is **GraphQL-only**, and this org bans
+GraphQL (top-of-skill rule) — and the REST issue timeline renders the same
+`cross-referenced` event for a closing *and* a non-closing mention, so neither REST signal
+alone proves the seam armed. The REST-checkable proof is therefore the **body keyword
+itself**: read the PR body back and assert it matches a recognized closing keyword against
+`#N` — that is exactly the token GitHub auto-closes on and that `ship-it` Step 1 resolves:
 
 ```bash
-# the seam armed iff the PR's closing-issue references include #N (a Refs/bare-#N mention does NOT)
-gh api repos/$REPO/pulls/<PR> --jq '[.closing_issues_references[].number] | index(<N>) != null'
-# secondary: the issue timeline records a `connected` (closing) event for the PR
+# (a) the cross-reference landed (a closing OR non-closing mention both show here — necessary, not sufficient)
 gh api repos/$REPO/issues/<N>/timeline \
-  --jq '.[] | select(.event == "connected" or .event == "cross-referenced") | .event'
+  --jq '.[] | select(.event == "cross-referenced") | .event'
+# (b) the SUFFICIENT check, REST-only: the body carries a real CLOSING keyword for #N
+#     (the same keyword set ship-it Step 1 resolves: fix(es|ed)/close[sd]?/resolve[sd]?)
+gh api repos/$REPO/pulls/<PR> --jq '.body' \
+  | grep -qiE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#<N>\b' \
+  && echo "closing seam armed" || echo "BROKEN SEAM — body has no closing keyword for #<N>"
 ```
 
-If `closing_issues_references` does **not** contain `#N`, the body's keyword was non-closing
-(a `Refs`/bare-`#N` slip): **fix it before stopping** — re-`create` is gone, so patch the body
-via REST (`gh api -X PATCH repos/$REPO/pulls/<PR> -f body="…"` with a real `Fixes #N`) and
-re-check, since shipping the PR with a broken seam is exactly the #647 stall.
+If (b) reports a broken seam, the body's mention was non-closing (a `Refs`/bare-`#N` slip):
+**fix it before stopping** — re-`create` is gone, so patch the body via REST
+(`gh api -X PATCH repos/$REPO/pulls/<PR> -f body="…"` with a real `Fixes #N`) and re-check,
+since shipping the PR with a broken seam is exactly the #647 stall.
 
 ---
 
