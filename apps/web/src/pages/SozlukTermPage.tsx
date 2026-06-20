@@ -3,10 +3,12 @@
  * of definitions; `TermView` spreads `TermHeaderView` and adds the nested
  * `definitions` connection (see `.patterns/fate-connections.md`). `definition.add`
  * is server-driven live; the fresh-slug branch (no term yet, so no list to append
- * to) re-reads `term(slug)` via a `network-only` remount and then arms the
+ * to) forces a `network-only` re-read of `term(slug)` before remounting — the
+ * remount's own render-path read reuses the first mount's fulfilled `data:null`
+ * handle WITHOUT refetching (#817), so the re-read must precede it — then arms the
  * deterministic read-back with the mutation's own returned id, so the just-created
- * definition is guaranteed to materialize even if the remount re-read raced the
- * write or the live `appendNode` push was lost (#730, epic #713 Family B).
+ * definition is guaranteed to materialize even if the live `appendNode` push was
+ * lost (#730/#714, epic #713).
  */
 import * as React from "react";
 import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view} from "react-fate";
@@ -62,12 +64,12 @@ const messageForCode = (code: MutationErrorCode, fallback: string): string => {
 export function SozlukTermPage() {
 	const {slug} = useParams<{slug: string}>();
 	const safeSlug = slug ?? "";
-	// Bumped when the fresh-slug composer auto-creates the term: remounts the
-	// content so the `network-only` read picks up the now-existing term and flips
-	// to the connection branch — no full reload. `createdDefinitionId` carries the
-	// mutation's own authoritative result across the remount so the now-list branch
-	// can arm its deterministic read-back on it (the remount re-read can race the
-	// write; the seeded id makes the just-created definition appear regardless).
+	// Bumped when the fresh-slug composer auto-creates the term: remounts the content
+	// so it reads the now-existing term and flips to the connection branch — no full
+	// reload. The composer force-refetches `term(slug)` before bumping this, since the
+	// remount's own render read reuses the stale fulfilled-null handle (#817).
+	// `createdDefinitionId` carries the mutation's own authoritative result across the
+	// remount so the now-list branch can arm its deterministic read-back on it (#730).
 	const [{reloadKey, createdDefinitionId}, setRemount] = React.useState<{
 		reloadKey: number;
 		createdDefinitionId: string | null;
@@ -113,7 +115,9 @@ function SozlukTermContent({
 	const {term} = useRequest(
 		{term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
 		// `network-only`: re-reading from the network (not the cached `null`) is what
-		// surfaces a freshly auto-created term after the remount.
+		// surfaces a freshly auto-created term after the remount. The remount alone is
+		// not enough — the render path reuses a fulfilled-null handle — so the composer
+		// force-refetches this request first (#817).
 		{mode: "network-only"},
 	);
 	const session = useSession();
@@ -179,8 +183,8 @@ interface DefinitionsListProps {
 	/**
 	 * The id `definition.add` returned on the fresh-slug remount, or `null` on a
 	 * plain load. When set, the list arms its read-back on this id at mount so the
-	 * just-created definition materializes even if the remount's `network-only`
-	 * re-read raced the write or the live push was lost (#730).
+	 * just-created definition materializes even if the live `appendNode` push was
+	 * lost (#730/#714).
 	 */
 	seedDefinitionId: string | null;
 }
@@ -202,10 +206,10 @@ function DefinitionsList(props: DefinitionsListProps) {
 			),
 	});
 
-	// Fresh-slug arrival: this list mounted because a `definition.add` just created
-	// the term. The remount's `network-only` re-read is not authoritative — it can
-	// race the write — so confirm the mutation's own returned id once on mount; the
-	// read-back settles instantly if the re-read already carried it, else deterministically
+	// Fresh-slug arrival: this list mounted because a `definition.add` just created the
+	// term (the composer already force-refetched the term, so it resolved non-null).
+	// Confirm the mutation's own returned id once on mount; the read-back settles
+	// instantly if the term re-read already carried the definition, else deterministically
 	// refetches it in. Without this the just-created definition silently dropped (#730).
 	const {seedDefinitionId} = props;
 	React.useEffect(() => {
@@ -238,10 +242,11 @@ function DefinitionsList(props: DefinitionsListProps) {
  * *nested* `Term.definitions` connection is server-driven (fate's declarative
  * `insert` only targets registered root lists), so there is no optimistic
  * temp-node — it would double with the live append. `onTermCreated` is passed
- * only on the fresh-slug branch, where there's no list yet to append to; it carries
- * the new definition's id across the remount so the list branch arms its read-back
- * on it. On the list branch `onConfirm` hands the new id to the same deterministic
- * read-back so a lost live `appendNode` self-heals (see {@link useReadbackRefetch}).
+ * only on the fresh-slug branch, where there's no list yet to append to; it force-
+ * refetches `term(slug)` then carries the new definition's id across the remount so
+ * the list branch arms its read-back on it. On the list branch `onConfirm` hands the
+ * new id to the same deterministic read-back so a lost live `appendNode` self-heals
+ * (see {@link useReadbackRefetch}).
  */
 function Composer({
 	slug,
@@ -283,11 +288,24 @@ function Composer({
 			}
 			setBody("");
 			const createdId = result?.id != null ? String(result.id) : null;
-			// Fresh-slug branch only: remount to re-read `term(slug)` and flip to the
-			// list branch, carrying the mutation's own returned id so that branch confirms
-			// it deterministically (the remount re-read can race the write — #730).
-			onTermCreated?.(createdId);
-			if (createdId != null) onConfirm?.(createdId);
+			if (onTermCreated) {
+				// Fresh-slug branch: the term now exists, but the first mount's render-path
+				// `useRequest({term…}, network-only)` left a fulfilled `data:null` handle for
+				// this requestKey, and the remount's render path (`revalidateExisting:false`)
+				// reuses it WITHOUT refetching — so a bare remount reads back the cached null
+				// and the list branch never mounts (#817). Force a real network re-read first
+				// (imperative `request` passes `revalidateExisting:true`, re-executing the
+				// handle and repopulating the store), THEN remount so it reads the real term.
+				await fate.request(
+					{term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
+					{mode: "network-only"},
+				);
+				// Carry the mutation's own returned id across the remount so the list branch
+				// arms its deterministic read-back on it (#730).
+				onTermCreated(createdId);
+			} else if (createdId != null) {
+				onConfirm?.(createdId);
+			}
 		} catch (caught) {
 			const code = codeOf(caught);
 			if (code === "UNAUTHORIZED") {
