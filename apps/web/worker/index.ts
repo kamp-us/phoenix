@@ -103,15 +103,22 @@ export class Phoenix extends Cloudflare.Worker<
 			observability: {enabled: true},
 		};
 
-		// The custom domain is deploy-time-only: skip it at runtime (where `Stage` is
-		// absent) and offline (`alchemy dev` has no real CF zone — mirror the
-		// `resolveStateMode` gate the state store uses). A `--stage` deploy is the only
-		// path that attaches a domain, and it DOES get its `<stage>.phoenix.kamp.us`.
+		// The custom domain is deploy-time-only AND production-only: skip it at runtime
+		// (where `Stage` is absent and a `yield* Stage` would 500 every request) and
+		// offline (`alchemy dev` has no real CF zone — mirror the `resolveStateMode` gate
+		// the state store uses). The `ALCHEMY_PHASE === "plan"` guard is the runtime-safety
+		// gate (alchemy bakes `ALCHEMY_PHASE: "runtime"` into the deployed worker), and
+		// `customHostname` is production-only: it yields `phoenix.kamp.us` for a prod deploy
+		// and `undefined` for every non-prod stage. So an ephemeral integration `it-*`
+		// `Test.make` stage attaches NO domain → its `worker.url` stays `*.workers.dev` →
+		// the integration harness's `GET /api/health` hits a valid cert (a `<stage>` custom
+		// domain's TLS cert isn't provisioned yet and broke every integration test, #983).
 		const phase = yield* ALCHEMY_PHASE;
 		if (phase !== "plan" || resolveStateMode(process.env) === "local") return props;
 
 		const stage = yield* Stage;
-		return {...props, domain: customHostname(stage, process.env.ENVIRONMENT ?? "")};
+		const domain = customHostname(stage, process.env.ENVIRONMENT ?? "");
+		return domain === undefined ? props : {...props, domain};
 	}),
 ) {}
 

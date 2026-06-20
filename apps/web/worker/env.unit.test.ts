@@ -49,21 +49,25 @@ describe("resolveStateMode", () => {
 	});
 });
 
-describe("customHostname", () => {
+describe("customHostname (production-only — #594/#983)", () => {
 	it("a production deploy serves the apex phoenix.kamp.us", () => {
 		expect(customHostname("prod", "production")).toBe(PHOENIX_APEX_HOSTNAME);
 		expect(customHostname("prod", "production")).toBe("phoenix.kamp.us");
 	});
 
-	it("a non-prod stage gets its own <stage>.phoenix.kamp.us subdomain", () => {
-		expect(customHostname("preview", "preview")).toBe("preview.phoenix.kamp.us");
-		expect(customHostname("dev_umut", "development")).toBe("dev_umut.phoenix.kamp.us");
+	it("every non-prod stage gets NO custom domain (undefined) — its worker.url stays *.workers.dev", () => {
+		// No per-stage subdomain anymore: an ephemeral integration `it-*` stage, a preview
+		// stage, and a named dev stage all resolve to undefined, so the integration harness
+		// hits the workers.dev URL (valid cert) instead of an un-provisioned custom-domain TLS.
+		expect(customHostname("preview", "preview")).toBeUndefined();
+		expect(customHostname("dev_umut", "development")).toBeUndefined();
+		expect(customHostname("it-abc123", "preview")).toBeUndefined();
 	});
 
 	it("prod is decided by ENVIRONMENT, not the stage name", () => {
 		// A stage literally named "production" is still non-prod unless ENVIRONMENT says so —
-		// the per-stage subdomain keeps it off the apex (fail-closed, mirrors isProductionDeploy).
-		expect(customHostname("production", "preview")).toBe("production.phoenix.kamp.us");
+		// fail-closed, mirrors isProductionDeploy → no domain, never the apex.
+		expect(customHostname("production", "preview")).toBeUndefined();
 		// And a prod ENVIRONMENT serves the apex regardless of the stage label.
 		expect(customHostname("anything", "production")).toBe("phoenix.kamp.us");
 	});
