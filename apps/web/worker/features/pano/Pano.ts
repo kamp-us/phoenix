@@ -747,12 +747,15 @@ export const PanoLive = Layer.effect(Pano)(
 
 			// Resolve the (created_at) cursor tuple. The DB read is the port;
 			// `resolveCursor` is the pure cursor-miss decision (see `listPostsConnection`).
+			// The anchor lookup carries `visible`, so an invisible row (a removed leaf with
+			// no live child) is no anchor at all — resolving to null → miss → empty page,
+			// exactly as the old hard-delete made the cursor row vanish (ADR 0096 §5).
 			const resolvedRow = after
 				? ((yield* run((db) =>
 						db
 							.select({createdAt: schema.commentView.createdAt})
 							.from(schema.commentView)
-							.where(eq(schema.commentView.id, after))
+							.where(and(eq(schema.commentView.id, after), visible))
 							.get(),
 					)) ?? null)
 				: null;

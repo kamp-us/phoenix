@@ -29,7 +29,7 @@ interface ProfileNode {
 
 async function setUsername(cookie: string, value: string): Promise<void> {
 	const r = await h.fate(
-		{kind: "mutation", name: "user.setUsername", input: {username: value}, select: ["id"]},
+		{kind: "mutation", name: "user.setUsername", input: {value}, select: ["id"]},
 		{cookie},
 	);
 	expect(r.ok).toBe(true);
