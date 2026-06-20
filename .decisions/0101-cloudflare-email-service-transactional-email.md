@@ -50,7 +50,7 @@ the auth flow" a type, not a per-call-site convention.
 
 ### Two adapters, selected by the ENVIRONMENT gate
 
-Reusing the existing `environment` gate (ADR [0088](0088-three-deploy-classes.md)) —
+Reusing the existing `environment` gate (ADR [0088](0088-preview-deploy-environment.md)) —
 no new flag, the same `authUrlConfig` shape in `better-auth-live.ts`:
 
 - **`EmailSenderLog`** (development + preview) — logs `{to, subject}` via
