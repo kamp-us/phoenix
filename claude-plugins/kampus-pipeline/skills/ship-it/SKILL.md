@@ -100,6 +100,15 @@ pointless.
 3. **You are the only skill that merges.** If you find yourself wanting to merge a PR a gate
    hasn't passed, the answer is to route it back through that gate (`review-code` /
    `review-doc`), not to merge it here.
+4. **Read-only on git working state.** You ship entirely over `gh api` / `gh pr merge` — the
+   merge happens **server-side**, so you have **no reason to touch the local working tree at
+   all**. You often run in a checkout you do not own (typically the owner's **live, running
+   dev-server checkout**), where a working-tree mutation can silently destroy uncommitted
+   work — exactly the data loss this gate must never cause. So **never run `git checkout` /
+   `git switch` / `git reset` / `git stash` / `git clean` / `git merge` / `git pull` /
+   `git rebase`** — nor `gh pr checkout` — in the checkout you were launched in: no branch
+   switch, no working-tree mutation, ever. Read PR state read-only over `gh api`; you never
+   need a checkout to ship.
 
 ## The merge-ready signals
 

@@ -102,6 +102,28 @@ behavior is unchanged with no config (ADR 0062 §1).
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 ```
 
+## Read-only on git working state
+
+**You never mutate the git working tree of the checkout you run in.** A gate often runs in
+a checkout it does not own — typically the owner's **live, running dev-server checkout** —
+so a working-tree mutation there can silently destroy uncommitted work. That is exactly the
+data loss a review gate must never cause (a `review-doc` agent once ran `git stash pop` then
+`git reset --hard HEAD` in the primary checkout; no harm that time, pure luck). So:
+
+- **Never run `git checkout` / `git switch` / `git reset` / `git stash` / `git clean` /
+  `git merge` / `git pull` / `git rebase`** — nor `gh pr checkout` — in the checkout you
+  were launched in. No branch switch, no working-tree mutation, ever.
+- **Read the head and base read-only.** Fetch into a ref and read off it: `git fetch origin
+  pull/$PR/head:$PR_REF` then `git show "$PR_REF:<path>"` / `git grep <pattern> $PR_REF`, and
+  `gh pr diff` / `gh api` for the diff and file contents. `git fetch` and `git update-ref -d`
+  (your own per-run ref) are fine — they don't touch the working tree.
+- **If you genuinely need a materialized tree, isolate a throwaway worktree** (`git worktree
+  add "$(mktemp -d)/…" "$PR_REF"`, torn down with `git worktree prune`) — your own tree the
+  gate exclusively owns — never the primary checkout.
+
+This is non-negotiable and orthogonal to the config-isolation split: 0052 keeps the head's
+*instructions* out of your path; this keeps *your* git ops out of the owner's working tree.
+
 ## The formats contract
 
 Your gate is **format 2, the sub-issue body's `### Acceptance criteria` checklist** — and
@@ -242,11 +264,27 @@ gh pr diff $PR \
 
 For checks that need the file in context (a link target exists, an index row matches, a
 supersession cross-link resolves), read the file at the PR head rather than inferring from
-the hunk alone:
+the hunk alone — and read it **read-only**, without ever switching the checkout you run in
+(you may be running in the owner's live working tree; the gate must never mutate it — see
+**Read-only on git working state** below). Fetch the head into a ref and read off that ref:
 
 ```bash
-git fetch origin && git checkout <pr head ref>   # or: gh pr checkout $PR for a cross-fork PR
+# Land the head in a per-run ref WITHOUT touching the working tree (resolves for same-repo
+# AND cross-fork PRs — never `gh pr checkout` / `git checkout`, which switch your tree):
+PR_REF="refs/pr/$PR-$(uuidgen)"
+git fetch origin "pull/$PR/head:$PR_REF"
+
+# Read the head's files off the ref — read-only, no checkout:
+git show "$PR_REF:<path>"            # the file's content at the PR head
+git grep -n "<pattern>" "$PR_REF"    # search the head tree without checking it out
+
+git update-ref -d "$PR_REF"          # drop the throwaway ref when done
 ```
+
+If a check genuinely needs a materialized tree (rare for a doc PR), add a **throwaway
+worktree** from `$PR_REF` (`git worktree add "$(mktemp -d)/review-doc-head-$PR" "$PR_REF"`,
+torn down with `git worktree prune` after) — never `git checkout` / `gh pr checkout` in the
+checkout you were launched in.
 
 ### Fetch the base fresh before any "is-it-shipped on main" check
 

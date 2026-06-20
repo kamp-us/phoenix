@@ -62,6 +62,22 @@ behavior is unchanged with no config (ADR 0062 §1).
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 ```
 
+## Read-only on git working state
+
+**You never mutate the git working tree of the checkout you run in.** This gate verifies the
+epic ledger over `gh api` — it has **no reason to touch the working tree at all**, so it must
+not. A gate often runs in a checkout it does not own — typically the owner's **live, running
+dev-server checkout** — where a working-tree mutation can silently destroy uncommitted work,
+exactly the data loss a review gate must never cause. So never improvise one:
+
+- **Never run `git checkout` / `git switch` / `git reset` / `git stash` / `git clean` /
+  `git merge` / `git pull` / `git rebase`** — nor `gh pr checkout` — in the checkout you
+  were launched in. No branch switch, no working-tree mutation, ever.
+- **The ledger is read read-only over `gh api`** (the deterministic action's `Github`
+  capability); you never need a checkout to verify a plan.
+- **If you ever needed a materialized tree, isolate a throwaway worktree** (`git worktree
+  add` + `git worktree prune`) — never the primary checkout.
+
 ## The formats contract
 
 Your floor is the structural shape of the ledger — read the contract so you know what the
