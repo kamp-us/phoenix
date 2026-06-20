@@ -131,8 +131,8 @@ Pull the file list first; the classification gates everything after it.
 
 ```bash
 PR=<pr number>
-gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq '.[] | "\(.status)\t\(.filename)"'
+gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+  --jq '.[] | "\(.status)\t\(.filename)"'   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 ```
 
 - **Any control-plane path** — the **canonical §CP set** in
@@ -148,8 +148,11 @@ gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
 
   ```bash
   CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
-  CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
-    --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
+  # --paginate streams filenames (the API caps per_page at 100); grep aggregates the §CP matches
+  # ACROSS pages — a jq `[ … ]` aggregate would emit one array PER PAGE. `|| true`: no match is
+  # grep exit 1, an empty (non-control-plane) result, not a failure (#725).
+  CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+    --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
   # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073)
   ```
 - **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md` *outside* `skills/**`,

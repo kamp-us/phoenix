@@ -15,9 +15,9 @@ Capture one decision per file in `.decisions/`. Index links them; CLAUDE.md link
      ```bash
      # NNNN claimed by any open PR that ADDS a .decisions/00NN-*.md file (REST, per-PR files endpoint)
      for PR in $(gh api "repos/$REPO/pulls?state=open&per_page=100" --jq '.[].number'); do
-       gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
+       gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
          --jq '.[] | select(.status=="added") | .filename
-               | capture("^\\.decisions/(?<n>[0-9]{4})-") | .n'
+               | capture("^\\.decisions/(?<n>[0-9]{4})-") | .n'   # --paginate + streaming --jq: a >100-file PR that adds .decisions/NNNN past file #100 still claims its number (the API caps per_page at 100; #725)
      done
      ```
      (`$REPO` resolves the same way write-code's does: `${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}`.) **Fail closed** (ADR 0074, ADR 0059's fail-closed acquire): if the in-flight query errors, **surface it and re-run** — never silently fall back to the on-disk-only number. That stale-on-disk fall-back is the bug this step removes.

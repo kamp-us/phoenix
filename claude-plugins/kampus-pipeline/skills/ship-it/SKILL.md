@@ -153,7 +153,7 @@ Before anything else, read the PR's changed files and split them by class. This 
 
 ```bash
 PR=<pr number>
-gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '[.[].filename]'
+gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 ```
 
 Classify each path. The **control-plane / blocking set** is defined **once** in
@@ -194,7 +194,7 @@ ADR 0073 §6):
   scope-consistency note after the routing.
 
 ```bash
-FILES=$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')
+FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; the grep probes below aggregate the concatenated lines) (#725)
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set — one definition (ADR 0073 §6)
 echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge on a review-skill PASS (ADR 0073)
 echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
