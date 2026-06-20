@@ -25,13 +25,20 @@
  * `isUnattributable`. It is a turn-saver, not a gate; when it can't decide, it gets
  * out of the way.
  *
+ * The runtime dep (`@effect/platform-node`) is loaded via a preflight-gated DYNAMIC
+ * import (#777): a static top-level import would throw `ERR_MODULE_NOT_FOUND` at
+ * module-load on a not-yet-installed tree, *before* any fail-open `catch` runs, and the
+ * harness would silently fail-open — read-guard installed but enforcing nothing. The
+ * preflight degrades to a LOUD fail-open ALLOW (stderr note) instead, so the gap is
+ * visible. read-guard's documented posture is fail-OPEN (turn-saver, never wedge an
+ * edit), so degraded-ALLOW is the right safe state here.
+ *
  * Wired per effect-smol's CLI guidance (mirrors `@kampus/leak-guard`):
  * `@effect/platform-node` for stdin + filesystem, run via `NodeRuntime.runMain`.
  */
 import {readFileSync, statSync} from "node:fs";
 import {resolve, sep} from "node:path";
-import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Effect} from "effect";
+import {depsInstalled, missingDepMessage} from "./preflight.ts";
 import {blockReason, decide} from "./read-guard.ts";
 import {parseReadSet} from "./transcript.ts";
 
@@ -135,14 +142,19 @@ export const decideForEnvelope = (
 	return {allow: false, reason: blockReason(decision.path, decision.reason)};
 };
 
-const main = Effect.gen(function* () {
-	// Any failure inside → fail-open ALLOW (catchAll below); a hook crash never wedges an edit.
-	const decision = yield* Effect.sync(() => decideForEnvelope(readStdin()));
-	yield* Console.log(decision.allow ? ALLOW : denyOutput(decision.reason ?? ""));
-});
+/** The hook decision for the read stdin envelope, as the JSON line to print on stdout. */
+export const renderDecision = (raw: string): string => {
+	const decision = decideForEnvelope(raw);
+	return decision.allow ? ALLOW : denyOutput(decision.reason ?? "");
+};
 
-main.pipe(
-	Effect.catch(() => Console.log(ALLOW)),
-	Effect.provide(NodeServices.layer),
-	NodeRuntime.runMain,
-);
+// #777 preflight: resolve the runtime dep BEFORE the heavy dynamic import. Missing ⇒
+// stale node_modules (pre-`pnpm install`) ⇒ degrade to a LOUD fail-open ALLOW so the
+// hook is visibly not-enforcing, never a silent module-load crash that fail-opens unseen.
+if (depsInstalled()) {
+	const {run} = await import("./bin.run.ts");
+	run(() => renderDecision(readStdin()), ALLOW);
+} else {
+	console.error(missingDepMessage("read-guard"));
+	console.log(ALLOW);
+}
