@@ -32,6 +32,12 @@ import type {} from "zod/v4/core";
 import {AppConfig, betterAuthSecret} from "../../config.ts";
 import {Database} from "../../db/Database.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {type EmailMessage, EmailSender} from "./email-sender.ts";
+import {
+	changeEmailConfirmationEmail,
+	magicLinkEmail,
+	verificationEmail,
+} from "./email-templates.ts";
 
 // Keeps the reference layer's `Effect.cached` so `makeBetterAuth` runs once per
 // isolate. The secret and `baseURL`/`trustedOrigins` rationale (and the latent
@@ -54,7 +60,16 @@ export const BetterAuthLive = Layer.effect(
 		// lands in prod mode and closes every dev gate below. `orDie`: a value
 		// outside the three literals is a malformed env, unrecoverable.
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
-		const isLocalDev = environment === "development";
+
+		// The transactional-email port (ADR 0101). Resolved once here and closed
+		// over by the better-auth callbacks below, the same way `secret`/`raw` are
+		// threaded. `send` is `Effect<void, never, never>` (the adapter discharged
+		// its RuntimeContext + swallowed failures), so the async callbacks run it
+		// with `Effect.runPromise` — and a delivery failure never throws into
+		// better-auth, which would fail the sign-in/verify flow.
+		const emailSender = yield* EmailSender;
+		const sendEmail = (message: EmailMessage): Promise<void> =>
+			Effect.runPromise(emailSender.send(message));
 
 		// One tight auth-origin config per deploy class (ADR 0088). The bug this
 		// settles (#704): a deployed PR preview used to run as `development` and so
@@ -90,7 +105,23 @@ export const BetterAuthLive = Layer.effect(
 				database: drizzleAdapter(db, {provider: "sqlite", schema}),
 				secret: Redacted.value(secret),
 				...authUrlConfig,
+				// Verify a new account's email via a delivered link (the `EmailSender`
+				// port; ADR 0101). Was unreachable before — no sender existed.
+				emailVerification: {
+					sendVerificationEmail: async ({user, url}) => {
+						await sendEmail(verificationEmail(user.email, url));
+					},
+				},
 				user: {
+					// `changeEmail` is off by default; enabling it + the
+					// `sendChangeEmailConfirmation` callback (sent to the CURRENT address)
+					// is what lets #75 verify the switch before applying it (ADR 0101).
+					changeEmail: {
+						enabled: true,
+						sendChangeEmailConfirmation: async ({user, newEmail, url}) => {
+							await sendEmail(changeEmailConfirmationEmail(user.email, newEmail, url));
+						},
+					},
 					additionalFields: {
 						username: {
 							type: "string",
@@ -118,10 +149,11 @@ export const BetterAuthLive = Layer.effect(
 					// auth paths. Don't remove without `grep "Bearer" apps/web/src/` first.
 					bearer(),
 					magicLink({
-						sendMagicLink: async ({email, token, url}) => {
-							if (isLocalDev) {
-								console.log("[pasaport] magic link", {email, token, url});
-							}
+						// Deliver the magic link via the `EmailSender` port (ADR 0101). In
+						// dev/preview the port is the log sink (no real send); in production
+						// it goes through the CF Email Service binding.
+						sendMagicLink: async ({email, url}) => {
+							await sendEmail(magicLinkEmail(email, url));
 						},
 					}),
 				],

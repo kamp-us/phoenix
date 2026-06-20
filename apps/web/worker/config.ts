@@ -22,6 +22,9 @@ export const environment = Config.literals(
 	"ENVIRONMENT",
 ).pipe(Config.withDefault("production"));
 
+/** The three deploy classes the `environment` Config resolves to (ADR 0088). */
+export type Environment = "development" | "preview" | "production";
+
 /**
  * The better-auth session-signing secret. Redacted → `secret_text` binding (a
  * `Config.redacted` resolves to a Cloudflare secret). Read at RUNTIME via
