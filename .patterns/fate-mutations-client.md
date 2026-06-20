@@ -65,7 +65,7 @@ There is no hand-written updater enumerating connection keys. For connections th
 
 ## Errors {#errors}
 
-A failure is a `FateRequestError` with a `code` (`UNAUTHORIZED`, `VALIDATION_ERROR`, and the domain codes from `src/lib/mutationErrorCodes.ts`) and `message`. fate routes it by HTTP status:
+A failure is a `FateRequestError` with a `code` (a `FateWireCode` — `UNAUTHORIZED`, `VALIDATION_ERROR`, and the domain codes from `src/lib/fateWireCodes.ts`) and `message`. fate routes it by HTTP status:
 
 - **`callSite`** (4xx — validation, conflict, not-found): returned as `result.error`. Render it inline next to the form/button. The like button reads `result?.error`, a form shows the field error.
 - **`boundary`** (401/403/5xx): re-thrown, caught by the screen's error boundary ([fate-client-setup.md](./fate-client-setup.md)).

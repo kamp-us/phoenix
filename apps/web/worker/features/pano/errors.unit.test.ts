@@ -1,7 +1,7 @@
 /**
  * Pins every pano error class to the exact wire code the retired bridge's
  * registry emitted for it, so the annotation-derived codec and the SPA's
- * `MUTATION_ERROR_CODES` vocabulary can't drift through the migration. See
+ * `FATE_WIRE_CODES` vocabulary can't drift through the migration. See
  * `errors.ts` for why each former validation sub-code is now its own class.
  */
 import {encodeWireError, wireCodeOfClass} from "@kampus/fate-effect";

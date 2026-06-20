@@ -11,10 +11,16 @@
  * See `.patterns/fate-client-setup.md`.
  */
 import {Component, type ErrorInfo, type ReactNode, Suspense} from "react";
+import type {FateWireCode} from "../lib/fateWireCodes";
 
-/** The wire error code a screen branches on. Widened to `string` because the */
-/** phoenix server forwards a wider vocabulary than fate's closed union. */
-export type ScreenErrorCode = string;
+/**
+ * The fate wire `code` a screen branches on. The known {@link FateWireCode}
+ * literals keep autocompletion, but this stays open (`string`) on purpose: a
+ * boundary throw can carry a code the narrowed `decodeFateWireCode` set omits
+ * (e.g. a bare `NOT_FOUND`), so this is the *un-narrowed* read of the same
+ * vocabulary, not a second one.
+ */
+export type ScreenErrorCode = FateWireCode | (string & {});
 
 type FallbackRender = (error: {code: ScreenErrorCode; error: Error}) => ReactNode;
 
@@ -51,7 +57,7 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 		if (error) {
 			// Forward the wire `code` verbatim — the screen vocabulary is wider
 			// than fate's closed union (e.g. `NOT_FOUND`), so this does NOT narrow
-			// through `decodeMutationErrorCode` the way `wire.codeOf` does.
+			// through `decodeFateWireCode` the way `wire.codeOf` does.
 			const code: ScreenErrorCode = isFateError(error) ? error.code : "INTERNAL_SERVER_ERROR";
 			return this.props.fallback({code, error});
 		}

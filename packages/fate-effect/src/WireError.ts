@@ -64,7 +64,7 @@ declare module "effect/Schema" {
  * The wire code for everything that is not a declared, annotated error:
  * un-annotated failures and defects. `INTERNAL_SERVER_ERROR` (not fate's
  * protocol `INTERNAL_ERROR`) on purpose — it is the code phoenix's bridge has
- * always emitted and the SPA's `MUTATION_ERROR_CODES` contract decodes, so
+ * always emitted and the SPA's `FATE_WIRE_CODES` contract decodes, so
  * the package stays wire-identical with what the SPA expects.
  */
 export const INTERNAL_WIRE_CODE = "INTERNAL_SERVER_ERROR";
