@@ -38,7 +38,7 @@ pattern doc"): keep the bespoke thing while it's a one-off, formalize when it
 recurs. One hook does not justify a dependency; two do.
 
 The trigger is concrete and near: format (`biome check --write` on staged files),
-[`/deslop-comments`](../skills/deslop-comments/SKILL.md), or a typecheck-changed
+[`/deslop-comments`](../claude-plugins/kampus-pipeline/skills/deslop-comments/SKILL.md), or a typecheck-changed
 hook are all plausible second hooks, and `core.hooksPath` points at a single
 directory — a second hook means a second hand-rolled script sharing the same
 fragile `prepare`/degradation scaffolding.

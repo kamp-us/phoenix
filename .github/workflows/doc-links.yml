@@ -1,0 +1,36 @@
+name: doc-links
+
+# CI gate for #638: repo-wide dead-internal-link check. `review-doc` is PR-scoped
+# and structurally cannot catch a link orphaned in a doc *outside* the PR's diff
+# (a file rename/delete elsewhere). This job walks every git-tracked `.md` and
+# fails the PR when any relative/internal link target no longer resolves on disk.
+# It reuses @kampus/doc-links's `check` mode — the scan lives once in the package.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check docs have no dead internal links
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 on a dead internal doc link (the file:line → target report is on
+      # stderr); any other non-zero means the run could not complete. See #638.
+      - name: Check docs for dead internal links
+        run: node packages/doc-links/src/bin.ts check

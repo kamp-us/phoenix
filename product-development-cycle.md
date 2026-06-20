@@ -50,7 +50,7 @@ containment that makes the autonomous merge safe (ADR 0083; the containment argu
 `plan-epic` stamps each child issue with a `**Containment:**` line (alongside `**Stories:**`
 and `**TDD:**`) derived from this rule; `write-code` and `review-code` read it. The marker is
 defined once in the formats contract
-([`skills/gh-issue-intake-formats.md`](skills/gh-issue-intake-formats.md) §2); this
+([`skills/gh-issue-intake-formats.md`](claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) §2); this
 doc supplies the *rule* it encodes. The canonical values map directly:
 
 | This rule | Containment marker | What the executor does |
