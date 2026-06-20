@@ -41,6 +41,19 @@ test.describe("ProfilePage (/profile)", () => {
 		await expect(headings.nth(3)).toContainText("tehlikeli");
 	});
 
+	// #75 interim: the change-email flow needs email-verification infra the worker
+	// doesn't have yet (#875), so the e-posta "değiştir" button ships disabled with a
+	// hint instead of inert. Assert no silent inert button remains.
+	test("e-posta değiştir button is disabled with a hint (no silent inert button)", async ({
+		page,
+	}) => {
+		await signUp(page);
+		await bootstrapUsername(page);
+		await page.goto("/profile");
+		await expect(page.getByTestId("email-change-btn")).toBeDisabled();
+		await expect(page.getByTestId("email-change-hint")).toBeVisible();
+	});
+
 	test("çıkış yap signs out and topbar reflects", async ({page}) => {
 		await signUp(page);
 		await bootstrapUsername(page);

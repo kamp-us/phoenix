@@ -160,8 +160,22 @@ export function ProfilePage() {
 					</div>
 					<div className="kp-profile__row readonly">
 						<span className="label">e-posta</span>
-						<span className="value">{u.email}</span>
-						<button type="button" className="edit-btn">
+						<span className="value">
+							{u.email}
+							<span className="kp-profile__feedback ok" data-testid="email-change-hint">
+								e-posta değiştirme yakında
+							</span>
+						</span>
+						{/* Interim per #75: a secure change-email flow must verify the new address by
+						    email before switching, but the worker has no email sender yet (#875).
+						    Disabled-with-hint until #875 lands — no silent inert button. */}
+						<button
+							type="button"
+							className="edit-btn"
+							data-testid="email-change-btn"
+							disabled
+							title="e-posta değiştirme henüz kullanılamıyor"
+						>
 							değiştir
 						</button>
 					</div>
