@@ -16,10 +16,13 @@ const run = (
 	env: NodeJS.ProcessEnv = {},
 ): Promise<RunResult> =>
 	new Promise((resolve) => {
+		// Drop a WORKFLOW_MODEL inherited from the runner so a "no pin" case can't silently
+		// pick one up from the harness env; explicit `env` entries below still win.
+		const {WORKFLOW_MODEL: _drop, ...base} = process.env;
 		const child = execFile(
 			"node",
 			[BIN, ...args],
-			{env: {...process.env, ...env}},
+			{env: {...base, ...env}},
 			(error, stdout, stderr) => {
 				const code =
 					error && typeof (error as {code?: unknown}).code === "number"
@@ -59,11 +62,11 @@ describe("guard CLI — PreToolUse envelope", () => {
 		assert.strictEqual(JSON.parse(stdout).hookSpecificOutput.permissionDecision, "deny");
 	}, 30_000);
 
-	it("REWRITES an unset model to a valid WORKFLOW_MODEL pin via updatedInput.model", async () => {
+	it("ALLOWS an unset model with an allowlisted pin WITHOUT rewriting it (#776: inherit the session model — the Task tool's `model` accepts only short names, so injecting the full pin id failed the schema and blocked every spawn)", async () => {
 		const {stdout} = await run(["guard"], envelope(null), {WORKFLOW_MODEL: "claude-opus-4-8"});
 		const out = JSON.parse(stdout);
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
-		assert.strictEqual(out.hookSpecificOutput.updatedInput.model, "claude-opus-4-8");
+		assert.notProperty(out.hookSpecificOutput, "updatedInput");
 	}, 30_000);
 
 	it("DENIES even with a pin set when the pin itself is off-allowlist", async () => {
