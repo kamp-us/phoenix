@@ -49,7 +49,6 @@
 		"@cloudflare/workers-types": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
-		"@kampus/fts-backfill": "workspace:*",
 		"@playwright/test": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",
