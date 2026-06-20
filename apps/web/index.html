@@ -4,6 +4,26 @@
 		<meta charset="UTF-8" />
 		<meta name="viewport" content="width=device-width, initial-scale=1.0" />
 		<title>kamp.us</title>
+		<script>
+			// Apply the persisted theme before first paint so a stored light/auto
+			// choice doesn't flash the dark default (#697). Mirrors lib/themeStorage.ts:
+			// key "kampus.theme", values light|dark|auto, dark fallback. ThemeProvider
+			// re-applies + owns auto live-updates after mount.
+			(() => {
+				try {
+					const c = localStorage.getItem("kampus.theme");
+					const resolved =
+						c === "auto"
+							? matchMedia("(prefers-color-scheme: light)").matches
+								? "light"
+								: "dark"
+							: c === "light" || c === "dark"
+								? c
+								: "dark";
+					document.documentElement.dataset.theme = resolved;
+				} catch {}
+			})();
+		</script>
 		<link rel="preconnect" href="https://fonts.googleapis.com" />
 		<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 		<link
