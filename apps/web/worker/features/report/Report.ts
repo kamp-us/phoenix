@@ -71,17 +71,17 @@ export const ReportLive = Layer.effect(Report)(
 				switch (kind) {
 					case "definition":
 						return db.query.definitionView.findFirst({
-							where: {id: targetId, deletedAt: {isNull: true}},
+							where: {id: targetId, removedAt: {isNull: true}},
 							columns: {id: true},
 						});
 					case "post":
 						return db.query.postSummary.findFirst({
-							where: {id: targetId, deletedAt: {isNull: true}},
+							where: {id: targetId, removedAt: {isNull: true}},
 							columns: {id: true},
 						});
 					case "comment":
 						return db.query.commentView.findFirst({
-							where: {id: targetId, deletedAt: {isNull: true}},
+							where: {id: targetId, removedAt: {isNull: true}},
 							columns: {id: true},
 						});
 				}

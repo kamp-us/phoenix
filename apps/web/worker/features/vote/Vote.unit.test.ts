@@ -132,3 +132,46 @@ describe("Vote.cast — pre-write decisions (mocked Drizzle seam)", () => {
 		}).pipe(Effect.provide(voteLayer(access)));
 	});
 });
+
+// A `Drizzle` that runs the batch builder against a stub db and records the
+// produced statement array, so we can assert clearTarget's batch SHAPE (ADR 0096
+// §3) without a real engine: exactly two statements (votes + user_vote), and —
+// since KarmaBumpStub throws if reached — no karma statement.
+function recordingBatchAccess(): {access: DrizzleAccess; batches: ReadonlyArray<unknown>[]} {
+	const batches: ReadonlyArray<unknown>[] = [];
+	// A db proxy whose every `.delete(...).where(...)` chain returns a marker. We
+	// only count statements, so each chained call yields a chainable stand-in.
+	const chainable: Record<string, (...a: unknown[]) => unknown> = {};
+	const dbProxy: unknown = new Proxy(chainable, {
+		get: () => () => dbProxy,
+	});
+	const access: DrizzleAccess = {
+		run: () => Effect.die(new Error("clearTarget must not call run")),
+		batch: <T extends Readonly<[unknown, ...unknown[]]>>(fn: (db: never) => T) => {
+			const stmts = fn(dbProxy as never);
+			batches.push(stmts as ReadonlyArray<unknown>);
+			return Effect.succeed([] as never);
+		},
+	};
+	return {access, batches};
+}
+
+describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {
+	for (const kind of ["definition", "post", "comment"] as const) {
+		it.effect(`${kind}: one batch of exactly two statements, karma KEPT`, () => {
+			const {access, batches} = recordingBatchAccess();
+			return Effect.gen(function* () {
+				const vote = yield* Vote;
+				yield* vote.clearTarget(kind, "target-1");
+				assert.strictEqual(batches.length, 1, "clearTarget is one atomic batch");
+				assert.strictEqual(
+					batches[0]?.length,
+					2,
+					"votes + user_vote only — no karma decrement (karma KEPT)",
+				);
+				// KarmaBumpStub throws if its `statement` is ever read; reaching here
+				// proves clearTarget never touched karma.
+			}).pipe(Effect.provide(voteLayer(access)));
+		});
+	}
+});

@@ -40,8 +40,8 @@ drift.
 Each sync builder is a `DELETE … WHERE key = ?` then `INSERT …` — keyed on
 slug/id. The whole set lands as one atomic D1 `batch`. Re-running replaces the
 same FTS rows rather than duplicating them, so the backfill is **safe to re-run**.
-Deleted posts (`deleted_at IS NOT NULL`) are skipped — the resolver only hydrates
-live posts, and the dual-write removes a deleted post's FTS row.
+Removed posts (`removed_at IS NOT NULL`) are skipped — the resolver only hydrates
+live posts, and the dual-write removes a removed post's FTS row.
 
 ## Architecture
 

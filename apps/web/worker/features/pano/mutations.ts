@@ -364,9 +364,30 @@ export const mutations = {
 			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
 			yield* live.delete("Post", r.postId);
 			yield* live.connection("posts").deleteEdge("Post", r.postId);
-			// Bare id-only eviction ref: the post is gone, so there's no row to run
+			// Bare id-only eviction ref: the post is hidden, so there's no row to run
 			// through `toPost` and it stays a `{__typename, id}` the client drops.
 			return {__typename: "Post", id: r.postId};
+		}),
+	),
+	// Restore (un-delete) a removed post (ADR 0096 §4). Re-enters the feed; votes
+	// stay wiped (score 0). Returns the re-resolved `Post`.
+	"post.restore": Fate.mutation(
+		{
+			input: PostIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, UnauthorizedPostMutation]),
+		},
+		Effect.fn("post.restore")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const pano = yield* Pano;
+			const live = yield* WorkerLivePublisher;
+			yield* pano.restorePost({postId: input.id, actorId: user.id});
+			const page = yield* pano.getPost(input.id);
+			if (!page) return null;
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
+			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
+			yield* live.connection("posts").appendNode("Post", post.id, {node: post});
+			return post;
 		}),
 	),
 	"comment.add": Fate.mutation(
@@ -466,10 +487,11 @@ export const mutations = {
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
-			// Two delete shapes, driven by the service's reply-aware decision (ADR 0024):
-			//  - hard delete (leaf): the row is gone, so `deleteEdge` drops it from
-			//    every open `Post.comments` thread without a reload.
-			//  - soft delete (has replies): the row stays as a `[silindi]` tombstone.
+			// Removal is always soft now (ADR 0096); the reply-aware decision only
+			// shapes the live signal:
+			//  - leaf (no replies): the service returns no placeholder, so `deleteEdge`
+			//    drops it from every open `Post.comments` thread without a reload.
+			//  - has replies: the row stays as a `[silindi]` tombstone (view-rendered).
 			//    The edge must NOT leave the connection — that would orphan the subtree;
 			//    instead publish the tombstoned comment so threads re-render it in place.
 			if (result.placeholder) {
@@ -482,6 +504,36 @@ export const mutations = {
 				yield* live.connection("Post.comments", {id: post.id}).deleteEdge("Comment", input.id);
 			}
 			// Either way the parent post's `commentCount` changes — publish it.
+			yield* live.update("Post", post.id, {changed: ["commentCount"], data: post});
+			return post;
+		}),
+	),
+	// Restore (un-delete) a removed comment (ADR 0096 §4). Re-appends it to the
+	// thread; votes stay wiped. Returns the re-resolved parent `Post`.
+	"comment.restore": Fate.mutation(
+		{
+			input: CommentIdInput,
+			type: PostView,
+			error: Schema.Union([Unauthorized, CommentNotFound, UnauthorizedCommentMutation]),
+		},
+		Effect.fn("comment.restore")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const pano = yield* Pano;
+			const live = yield* WorkerLivePublisher;
+			const postId = yield* pano.lookupCommentPostId(input.id);
+			yield* pano.restoreComment({commentId: input.id, actorId: user.id});
+			if (!postId) return null;
+			const [comment] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
+			if (comment) {
+				const node = toComment(comment);
+				yield* live
+					.connection("Post.comments", {id: postId})
+					.appendNode("Comment", node.id, {node});
+			}
+			const page = yield* pano.getPost(postId);
+			if (!page) return null;
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
+			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
 			yield* live.update("Post", post.id, {changed: ["commentCount"], data: post});
 			return post;
 		}),

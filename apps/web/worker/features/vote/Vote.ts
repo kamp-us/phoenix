@@ -82,6 +82,16 @@ export class Vote extends Context.Service<
 			kind: VoteTargetKind,
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
+		/**
+		 * The single vote-cleanup home for the removal substrate (ADR 0096 §3):
+		 * wipe the per-target vote rows (`*_vote`) and the `user_vote` mirror for one
+		 * target, in **one** D1 batch (ADR 0014). Karma is **KEPT** — there is no
+		 * `total_karma` decrement here, so removing content never reverses the karma
+		 * its upvotes earned (sözlük's keep rule, generalized; pano's reversal is
+		 * deleted). The caller stamps `Removed` on the content row and recomputes the
+		 * summary caches outside this batch (recomputable caches, ADR 0011/0096).
+		 */
+		readonly clearTarget: (kind: VoteTargetKind, targetId: string) => Effect.Effect<void>;
 	}
 >()("@kampus/vote/Vote") {}
 
@@ -102,7 +112,7 @@ export const VoteLive = Layer.effect(Vote)(
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const karmaBump = yield* KarmaBump;
 
-		// Per-target metadata lookup. If the row is missing or soft-deleted we
+		// Per-target metadata lookup. If the row is missing or removed we
 		// surface `VoteTargetNotFound` rather than letting the batch fail with
 		// an FK-shaped error.
 		const loadMeta = Effect.fn("Vote.loadMeta")(function* (kind: VoteTargetKind, targetId: string) {
@@ -110,7 +120,7 @@ export const VoteLive = Layer.effect(Vote)(
 				case "definition": {
 					const row = yield* run((db) =>
 						db.query.definitionView.findFirst({
-							where: {id: targetId, deletedAt: {isNull: true}},
+							where: {id: targetId, removedAt: {isNull: true}},
 						}),
 					);
 					if (!row) {
@@ -128,7 +138,7 @@ export const VoteLive = Layer.effect(Vote)(
 				case "post": {
 					const row = yield* run((db) =>
 						db.query.postSummary.findFirst({
-							where: {id: targetId, deletedAt: {isNull: true}},
+							where: {id: targetId, removedAt: {isNull: true}},
 						}),
 					);
 					if (!row) {
@@ -146,7 +156,7 @@ export const VoteLive = Layer.effect(Vote)(
 				case "comment": {
 					const row = yield* run((db) =>
 						db.query.commentView.findFirst({
-							where: {id: targetId, deletedAt: {isNull: true}},
+							where: {id: targetId, removedAt: {isNull: true}},
 						}),
 					);
 					if (!row) {
@@ -281,9 +291,43 @@ export const VoteLive = Layer.effect(Vote)(
 					changed: true,
 				} satisfies VoteResult;
 			}),
+			clearTarget: Effect.fn("Vote.clearTarget")(function* (
+				kind: VoteTargetKind,
+				targetId: string,
+			) {
+				yield* batch((db) => buildClearTargetStatements(db, kind, targetId));
+			}),
 		};
 	}),
 );
+
+/**
+ * The two statements clearing one target's votes: the per-target `*_vote` rows
+ * and the `user_vote` mirror, no karma touched. `db.batch` commits both or
+ * neither (ADR 0014), so a removed entity never carries orphan vote rows.
+ */
+function buildClearTargetStatements(db: DrizzleDb, kind: VoteTargetKind, targetId: string) {
+	const userVoteWipe = db
+		.delete(schema.userVote)
+		.where(and(eq(schema.userVote.targetKind, kind), eq(schema.userVote.targetId, targetId)));
+	switch (kind) {
+		case "definition":
+			return [
+				db.delete(schema.definitionVote).where(eq(schema.definitionVote.definitionId, targetId)),
+				userVoteWipe,
+			] as const;
+		case "post":
+			return [
+				db.delete(schema.postVote).where(eq(schema.postVote.postId, targetId)),
+				userVoteWipe,
+			] as const;
+		case "comment":
+			return [
+				db.delete(schema.commentVote).where(eq(schema.commentVote.commentId, targetId)),
+				userVoteWipe,
+			] as const;
+	}
+}
 
 /**
  * The tuple of statements making up one atomic state-change, in order:

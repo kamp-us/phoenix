@@ -220,7 +220,7 @@ export const makePasaportLive = (auth: Auth) =>
 			// carry domain errors only and every method's `R` stays `never`.
 			const {run} = orDieAccess(yield* Drizzle);
 
-			// `COUNT(*)` of one author's live (non-deleted) rows in a contribution
+			// `COUNT(*)` of one author's live (non-removed) rows in a contribution
 			// table. Calls `run` directly so callers keep `R = never`.
 			const countByAuthor = (
 				table: typeof schema.definitionView | typeof schema.postSummary | typeof schema.commentView,
@@ -230,7 +230,7 @@ export const makePasaportLive = (auth: Auth) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})
 						.from(table)
-						.where(and(eq(table.authorId, authorId), isNull(table.deletedAt)))
+						.where(and(eq(table.authorId, authorId), isNull(table.removedAt)))
 						.then((r) => Number(r[0]?.n ?? 0)),
 				);
 
@@ -441,14 +441,14 @@ export const makePasaportLive = (auth: Auth) =>
 
 					// Per-table keyset for the global `(created_at desc, id desc)` merge.
 					// Null cursor values (no `after`) collapse the predicate to undefined
-					// so only the base author/deleted filter applies.
+					// so only the base author/removed filter applies.
 					function keysetWhere(
 						table:
 							| typeof schema.definitionView
 							| typeof schema.postSummary
 							| typeof schema.commentView,
 					) {
-						const base = and(eq(table.authorId, input.authorId), isNull(table.deletedAt));
+						const base = and(eq(table.authorId, input.authorId), isNull(table.removedAt));
 						const predicate = keysetAfter([
 							{column: table.createdAt, dir: "desc", value: cursor?.createdAt ?? null},
 							{column: table.id, dir: "desc", value: cursor?.id ?? null},

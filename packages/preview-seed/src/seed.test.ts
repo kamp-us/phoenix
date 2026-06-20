@@ -33,13 +33,13 @@ describe("seed — writes the rows the unauth specs read", () => {
 		try {
 			await seed(d1);
 			const db = makeSeedDb(d1);
-			// The exact read the term page does: WHERE term_slug = ? AND deleted_at IS NULL,
+			// The exact read the term page does: WHERE term_slug = ? AND removed_at IS NULL,
 			// ORDER BY score DESC, created_at ASC, id ASC. First row gets `--top`.
 			const defs = await db
 				.select()
 				.from(definitionView)
 				.where(
-					sql`${definitionView.termSlug} = ${SEED_TERM_SLUG} and ${definitionView.deletedAt} is null`,
+					sql`${definitionView.termSlug} = ${SEED_TERM_SLUG} and ${definitionView.removedAt} is null`,
 				)
 				.orderBy(desc(definitionView.score), definitionView.createdAt, definitionView.id);
 			assert.isAtLeast(defs.length, 1);
@@ -57,7 +57,7 @@ describe("seed — writes the rows the unauth specs read", () => {
 		try {
 			await seed(d1);
 			const db = makeSeedDb(d1);
-			const live = await db.select().from(postSummary).where(isNull(postSummary.deletedAt));
+			const live = await db.select().from(postSummary).where(isNull(postSummary.removedAt));
 			assert.isAtLeast(live.length, 1);
 			const byId = await db.select().from(postSummary).where(eq(postSummary.id, SEED_POST_ID));
 			assert.strictEqual(byId.length, 1);

@@ -5,6 +5,8 @@
  * (`apps/web/worker/db/drizzle/migrations/0000_d1_baseline.sql`); this is a
  * deliberately narrow local copy so the seed tool stays a self-contained
  * `packages/` CLI rather than pulling in the whole `@kampus/web` worker graph.
+ * (This duplication is the cost noted in #903 — a canonical rename like
+ * `deleted_at → removed_at` must be mirrored here by hand.)
  *
  * Timestamp columns are `integer({mode:"timestamp"})` — drizzle stores them as
  * unix SECONDS, the same encoding the worker's reads decode. The fixture builder
@@ -39,7 +41,7 @@ export const definitionView = sqliteTable("definition_view", {
 	score: integer("score").notNull().default(0),
 	createdAt: timestamp("created_at").notNull(),
 	updatedAt: timestamp("updated_at").notNull(),
-	deletedAt: timestamp("deleted_at"),
+	removedAt: timestamp("removed_at"),
 	lastEventId: text("last_event_id").notNull().default(""),
 });
 
@@ -60,7 +62,7 @@ export const postSummary = sqliteTable("post_summary", {
 	createdAt: timestamp("created_at").notNull(),
 	updatedAt: timestamp("updated_at").notNull(),
 	lastActivityAt: timestamp("last_activity_at").notNull(),
-	deletedAt: timestamp("deleted_at"),
+	removedAt: timestamp("removed_at"),
 	lastEventId: text("last_event_id").notNull().default(""),
 });
 

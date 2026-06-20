@@ -18,9 +18,9 @@
  * upsert keyed on slug/id, so the backfill is idempotent: re-running it replaces
  * the same FTS rows rather than duplicating them.
  *
- * Posts are filtered to live (`deleted_at IS NULL`) rows — the search resolver
- * only hydrates non-deleted posts and the dual-write removes a deleted post's
- * FTS row, so a deleted post must not be searchable.
+ * Posts are filtered to live (`removed_at IS NULL`) rows — the search resolver
+ * only hydrates non-removed posts and the dual-write removes a removed post's
+ * FTS row, so a removed post must not be searchable.
  */
 import {syncPostSearch, syncTermSearch} from "@kampus/web/features/search/fts-sync";
 import type {SQL} from "drizzle-orm";
@@ -86,7 +86,7 @@ export const backfill = async (d1: D1Database): Promise<BackfillReport> => {
 	const postRows = await db
 		.select({key: postSummary.id, title: postSummary.title})
 		.from(postSummary)
-		.where(isNull(postSummary.deletedAt));
+		.where(isNull(postSummary.removedAt));
 
 	const {statements, report} = buildBackfillStatements(termRows, postRows);
 	if (statements.length === 0) return report;

@@ -146,13 +146,18 @@ export const definitionView = sqliteTable(
 		score: integer("score").notNull().default(0),
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
-		deletedAt: timestamp("deleted_at"),
+		// The ADR 0096 removal triad. `removed_at` null ⇒ Live; this column IS the
+		// former `deleted_at`, repurposed. `removed_by`/`removed_reason` carry the
+		// audit. Projected to `EntityLifecycle` — services never read these raw.
+		removedAt: timestamp("removed_at"),
+		removedBy: text("removed_by"),
+		removedReason: text("removed_reason"),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
 		// WHERE author_id = ? ORDER BY created_at DESC (profile feed).
 		index("definition_view_author_created").on(t.authorId, t.createdAt),
-		// WHERE term_slug = ? AND deleted_at IS NULL (term page).
+		// WHERE term_slug = ? AND removed_at IS NULL (term page).
 		index("definition_view_term_score").on(t.termSlug, t.score),
 	],
 );
@@ -215,8 +220,13 @@ export const postSummary = sqliteTable(
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
 		lastActivityAt: timestamp("last_activity_at").notNull(),
-		deletedAt: timestamp("deleted_at"),
-		// Draft (taslak) marker — nullable, no default, mirroring the `deletedAt`
+		// The ADR 0096 removal triad (see `definition_view`). `removed_at` is the
+		// former `deleted_at`. Pano posts that hard-deleted pre-substrate are gone
+		// and not reconstructable; new removals are soft `Removed`, karma kept.
+		removedAt: timestamp("removed_at"),
+		removedBy: text("removed_by"),
+		removedReason: text("removed_reason"),
+		// Draft (taslak) marker — nullable, no default, mirroring the `removedAt`
 		// soft-state shape: existing/published rows are `null` (= not a draft). A
 		// partial unique index (`post_summary_one_draft_per_author`, migration 0004)
 		// enforces one draft per author. Drafts are excluded from public feeds.
@@ -272,8 +282,10 @@ export const postBookmark = sqliteTable(
  * the per-post thread reader. Canonical store for pano comments after d1-direct
  * (ADR 0009) — the per-post DO is no longer the source of truth.
  *
- * Deleted-with-replies surfaces as `body_excerpt = '[silindi]'` + `deleted_at`
- * set; deleted-without-replies fully removes the row (reply-aware soft-delete).
+ * A removed comment that still has live replies stays as a `Removed` row (its
+ * canonical body kept for restore + moderator review); the `[silindi]` tombstone
+ * is a VIEW rendering of that state, not a body the delete path writes (ADR 0096
+ * §5). A removed leaf comment is also a `Removed` row now — no hard delete.
  *
  * `last_event_id` is vestigial (projection-era convergence guard, unused under
  * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
@@ -286,16 +298,19 @@ export const commentView = sqliteTable(
 		authorName: text("author_name").notNull(),
 		postId: text("post_id").notNull(),
 		postTitle: text("post_title").notNull(),
-		// NULL for top-level comments; nested replies point at a non-deleted
+		// NULL for top-level comments; nested replies point at a non-removed
 		// comment in the same post.
 		parentId: text("parent_id"),
 		body: text("body").notNull().default(""),
-		// Rewritten to "[silindi]" on the parent-with-replies soft-delete path.
 		bodyExcerpt: text("body_excerpt").notNull(),
 		score: integer("score").notNull().default(0),
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
-		deletedAt: timestamp("deleted_at"),
+		// The ADR 0096 removal triad (see `definition_view`). `removed_at` is the
+		// former `deleted_at`.
+		removedAt: timestamp("removed_at"),
+		removedBy: text("removed_by"),
+		removedReason: text("removed_reason"),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [

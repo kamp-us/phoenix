@@ -41,8 +41,8 @@ describe("buildFixtures — sözlük content (07-sozluk-term, 00-smoke)", () => 
 		const {definitions} = buildFixtures();
 		const forTerm = definitions.filter((d) => d.termSlug === SEED_TERM_SLUG);
 		assert.isAtLeast(forTerm.length, 1);
-		// deleted_at must be unset so the term page (WHERE deleted_at IS NULL) lists it.
-		assert.isTrue(forTerm.every((d) => d.deletedAt == null));
+		// removed_at must be unset so the term page (WHERE removed_at IS NULL) lists it.
+		assert.isTrue(forTerm.every((d) => d.removedAt == null));
 	});
 
 	it("definition rows carry the columns the card renders (body, excerpt, author)", () => {
@@ -94,7 +94,7 @@ describe("buildFixtures — pano content (03-pano-feed, 00-smoke)", () => {
 		assert.isAtLeast(posts.length, 1);
 		const post = posts.find((p) => p.id === SEED_POST_ID);
 		assert.isDefined(post);
-		assert.isTrue(post?.deletedAt == null);
+		assert.isTrue(post?.removedAt == null);
 	});
 
 	it("seeds a link-post (url+host set) so the host-routing spec runs instead of skipping", () => {
