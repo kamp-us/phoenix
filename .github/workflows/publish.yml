@@ -31,6 +31,17 @@
 #      after this registration; before it, `pnpm publish` 403s.
 #   3. Cut a GitHub Release whose tag follows the grammar: `<pkg>-v<version>`,
 #      where `<version>` exactly equals packages/<pkg>/package.json `version`.
+#
+# ── Migrating an already-published package (human, one-time) ──────────────────
+# npm Trusted Publishing binds to the exact workflow FILENAME. Collapsing the
+# former per-package workflows into this `publish.yml` renamed the file, so the
+# existing trusted-publisher registrations — bound to publish-epic-ledger.yml and
+# publish-decisions-index.yml — no longer match. Before the NEXT release of
+# either package, re-register each on npmjs.com to point at `publish.yml`:
+#   - @kampus/epic-ledger      (was publish-epic-ledger.yml      → publish.yml)
+#   - @kampus/decisions-index  (was publish-decisions-index.yml  → publish.yml)
+# Until each is re-registered, `pnpm publish` fails closed (403/404) for that
+# package's tags. This is a one-time human step per package, not automatable.
 # ──────────────────────────────────────────────────────────────────────────────
 name: publish
 
