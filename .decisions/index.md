@@ -27,7 +27,7 @@ One row per ADR. Read the file for the why.
 | [0021](0021-frontend-on-react-fate.md) | Frontend on react-fate — batched per-screen requests, declarative mutations | accepted | 2026-05-23 |
 | [0022](0022-server-types-single-source-of-truth.md) | Server types are the single source of truth; fate codegen replaces relay-compiler | accepted | 2026-05-23 |
 | [0023](0023-live-views-sse-livedo.md) | Live views over SSE, fanned out by the LiveDO Durable Object | amended-in-part by [0025](0025-split-livedo-connection-topic.md), [0028](0028-effect-durable-object-model.md), [0037](0037-unified-void-aligned-live-do.md) | 2026-05-23 |
-| [0024](0024-delete-semantics-and-karma.md) | Entity-delete semantics and karma treatment | proposed | 2026-05-24 |
+| [0024](0024-delete-semantics-and-karma.md) | Entity-delete semantics and karma treatment | superseded by [0096](0096-uniform-soft-delete-substrate.md) | 2026-05-24 |
 | [0025](0025-split-livedo-connection-topic.md) | Split LiveDO into ConnectionDO and TopicDO | superseded by [0037](0037-unified-void-aligned-live-do.md) | 2026-05-24 |
 | [0026](0026-adopt-alchemy-effect-infra.md) | Adopt alchemy-effect as the infrastructure layer | accepted | 2026-05-25 |
 | [0027](0027-http-router-drop-hono.md) | Drop Hono; HTTP via Effect HttpRouter and HttpApiBuilder | accepted | 2026-05-25 |
@@ -100,3 +100,6 @@ One row per ADR. Read the file for the why.
 | [0093](0093-pano-draft-save-flag-consumer.md) | Pano draft-save is the flag substrate's first real consumer | accepted | 2026-06-19 |
 | [0094](0094-app-lifetime-global-live-pin.md) | One app-lifetime global live pin replaces the per-view keep-alives — the transient-0-refcount teardown made unrepresentable | accepted | 2026-06-19 |
 | [0095](0095-cold-start-retry-rpc-transport-seam.md) | Bounded cold-start retry at the LiveDO RPC transport seam — the `never` error channel is a type lie | accepted | 2026-06-20 |
+| [0096](0096-uniform-soft-delete-substrate.md) | A uniform soft-delete / removal substrate across all deletable content — reversible, audited, karma-kept | accepted | 2026-06-20 |
+| [0097](0097-account-deletion-anonymize-silinen.md) | Account deletion is anonymize-to-`@[silinen]` — content kept and re-attributed, identity torn down, karma kept, one synchronous `account.delete` mutation | accepted | 2026-06-20 |
+| [0098](0098-moderation-role-resolution-lifecycle.md) | Report moderation — a server-managed `moderator` role read as a `Moderator.required` capability, a report resolution state machine, act-on-target via the soft-delete substrate, full audit | accepted | 2026-06-20 |
