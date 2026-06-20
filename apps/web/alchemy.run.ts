@@ -79,6 +79,16 @@ export default Alchemy.Stack(
 		// above); its resolved output carries `databaseId`/`accountId` (alchemy
 		// `Cloudflare.D1Database`, output `{databaseId, accountId, …}`).
 		const db = yield* PhoenixDb;
-		return {url: worker.url, databaseId: db.databaseId, accountId: db.accountId};
+		// `domains` is the Custom Domain(s) bound to the worker (#594) — production-only:
+		// `phoenix.kamp.us` on a prod deploy, and empty for every non-prod stage (preview,
+		// named dev, and ephemeral integration `it-*` stages all attach no domain, so their
+		// `worker.url` stays `*.workers.dev`). See `customHostname` for why per-stage
+		// subdomains were dropped (un-provisioned TLS broke integration, #983).
+		return {
+			url: worker.url,
+			domains: worker.domains,
+			databaseId: db.databaseId,
+			accountId: db.accountId,
+		};
 	}).pipe(Effect.provide(PhoenixLive)),
 );

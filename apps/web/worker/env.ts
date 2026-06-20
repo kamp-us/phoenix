@@ -79,3 +79,35 @@ const isOfflinePath = (env: DeployEnvInput): boolean => {
  */
 export const resolveStateMode = (env: DeployEnvInput): StateMode =>
 	isOfflinePath(env) ? "local" : "cloudflare";
+
+/** The apex the phoenix worker is served under (a Cloudflare Custom Domain). */
+export const PHOENIX_APEX_HOSTNAME = "phoenix.kamp.us" as const;
+
+/**
+ * The Cloudflare Custom Domain hostname the worker is served at (issue #594) —
+ * PRODUCTION-ONLY. A production deploy serves the apex `phoenix.kamp.us`; every
+ * non-prod deploy (ephemeral integration `it-*` stages, preview stages, named dev
+ * stages) gets **no** custom domain (`undefined`), so its `worker.url` stays the
+ * `*.workers.dev` preview URL.
+ *
+ * The prod test is the `ENVIRONMENT` literal — a deploy is production iff
+ * `environment === "production"`, the same fail-closed gate the email IaC uses
+ * (`isProductionDeploy`), independent of the stage name. The `stage` arg is unused
+ * (kept for call-site symmetry / future named-stage domains) — there is deliberately
+ * NO `<stage>.phoenix.kamp.us` per-stage subdomain anymore.
+ *
+ * Why production-only and not per-stage: #594's AC asked for `<stage>.phoenix.kamp.us`
+ * per non-prod stage "so isolated deploys don't collide on the apex", but that itself
+ * was a bug. Attaching a custom domain to an ephemeral integration `Test.make` stage
+ * binds a hostname whose TLS cert isn't provisioned yet, so the integration harness's
+ * `GET <worker.url>/api/health` dies on an SSL handshake failure — it broke every
+ * integration test. The apex-collision the per-stage subdomain avoided is MOOT now:
+ * non-prod stages have no domain at all, so they cannot collide on the apex. A
+ * long-lived named stage that ever needs its own domain is a deliberate future
+ * addition, not an ephemeral-stage default (engineering-led per ADR 0078).
+ */
+export const customHostname = (
+	// biome-ignore lint/correctness/noUnusedFunctionParameters: kept for call-site symmetry; see docblock
+	stage: string,
+	environment: string,
+): string | undefined => (environment === "production" ? PHOENIX_APEX_HOSTNAME : undefined);

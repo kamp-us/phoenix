@@ -1,6 +1,6 @@
-/** Unit tests for `resolveStateMode` — the deploy-time state-store selector. */
+/** Unit tests for `resolveStateMode` + `customHostname` — deploy-time helpers. */
 import {describe, expect, it} from "vitest";
-import {resolveStateMode} from "./env.ts";
+import {customHostname, PHOENIX_APEX_HOSTNAME, resolveStateMode} from "./env.ts";
 
 describe("resolveStateMode", () => {
 	it("a real deploy (no CI, no dev signal) uses the Cloudflare-hosted store", () => {
@@ -46,5 +46,29 @@ describe("resolveStateMode", () => {
 
 	it("falls through to the shared store on a malformed ALCHEMY_EXEC_OPTIONS blob", () => {
 		expect(resolveStateMode({ALCHEMY_EXEC_OPTIONS: "{not json"})).toBe("cloudflare");
+	});
+});
+
+describe("customHostname (production-only — #594/#983)", () => {
+	it("a production deploy serves the apex phoenix.kamp.us", () => {
+		expect(customHostname("prod", "production")).toBe(PHOENIX_APEX_HOSTNAME);
+		expect(customHostname("prod", "production")).toBe("phoenix.kamp.us");
+	});
+
+	it("every non-prod stage gets NO custom domain (undefined) — its worker.url stays *.workers.dev", () => {
+		// No per-stage subdomain anymore: an ephemeral integration `it-*` stage, a preview
+		// stage, and a named dev stage all resolve to undefined, so the integration harness
+		// hits the workers.dev URL (valid cert) instead of an un-provisioned custom-domain TLS.
+		expect(customHostname("preview", "preview")).toBeUndefined();
+		expect(customHostname("dev_umut", "development")).toBeUndefined();
+		expect(customHostname("it-abc123", "preview")).toBeUndefined();
+	});
+
+	it("prod is decided by ENVIRONMENT, not the stage name", () => {
+		// A stage literally named "production" is still non-prod unless ENVIRONMENT says so —
+		// fail-closed, mirrors isProductionDeploy → no domain, never the apex.
+		expect(customHostname("production", "preview")).toBeUndefined();
+		// And a prod ENVIRONMENT serves the apex regardless of the stage label.
+		expect(customHostname("anything", "production")).toBe("phoenix.kamp.us");
 	});
 });

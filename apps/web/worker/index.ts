@@ -9,13 +9,15 @@
  * the `fetch` handler.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
-import {RuntimeContext} from "alchemy";
+import {RuntimeContext, Stage} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import {ALCHEMY_PHASE} from "alchemy/Phase";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {AppConfig, betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
+import {customHostname, resolveStateMode} from "./env.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
 import {withColdStartRetry} from "./features/fate-live/cold-start-retry.ts";
 import {connectionOf, LiveDO, LiveDOLive, topicOf} from "./features/fate-live/live-do.ts";
@@ -53,39 +55,72 @@ export class Phoenix extends Cloudflare.Worker<
 	// The hosted live-fan-out DO, declared as the worker's `Deps` (ADR 0028) so it
 	// can `yield*` the Tag in init and provide `.make()` below.
 	LiveDO
->()("phoenix", {
-	main: import.meta.filename,
-	// Pin the local dev port. `alchemy dev` defaults to 1337 but can silently fall back
-	// to the next free port; if a second app's worker ran alongside, that could make
-	// the Vite proxy in `apps/web/vite.config.ts` point at the wrong worker.
-	// `strictPort: true` makes collisions fail loudly instead of misrouting.
-	dev: {port: 1337, strictPort: true},
-	// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
-	// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
-	// resolves each at deploy and runtime reads the same value off the auto-wired
-	// ConfigProvider.
-	env: {
-		ENVIRONMENT: environment,
-		BETTER_AUTH_SECRET: betterAuthSecret,
-		// The Flagship app resource maps to the native `Flagship` runtime binding
-		// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
-		FLAGS: FlagshipResource,
-	},
-	assets: {
-		// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
-		// relative to the alchemy CLI's `apps/web` cwd). At the edge the worker
-		// serves it; the `runWorkerFirst` globs keep the worker-owned paths from
-		// being shadowed by the SPA shell (a missing entry returns the shell for
-		// GET and 405 for POST). Derived from the one worker-owned-route manifest
-		// `app.ts` also consumes (`http/worker-routes.ts`), so route and glob can't
-		// drift (#861).
-		directory: "./dist/client",
-		notFoundHandling: "single-page-application",
-		runWorkerFirst: [...workerFirstGlobs],
-	},
-	compatibility: {flags: ["nodejs_compat"]},
-	observability: {enabled: true},
-}) {}
+>()(
+	"phoenix",
+	// Props are an Effect so `domain` can derive from the deploy's `Stage` (issue
+	// #594). `Stage` is a deploy-only PlatformService — alchemy provides it solely in
+	// the stack context (`Stack.make`), NEVER in workerd. But `Phoenix.make()` (the
+	// runtime `PhoenixLive` Layer) re-runs this Effect on every isolate init to resolve
+	// props (`Platform.make` → `SelfLayer`), so a `yield* Stage` here would die at
+	// runtime and 500 every request. We gate the deploy-only derivation on
+	// `ALCHEMY_PHASE === "plan"` (alchemy bakes `ALCHEMY_PHASE: "runtime"` into the
+	// deployed worker; default is `"plan"`) — the same deploy-vs-runtime guard alchemy's
+	// own `Binding.ts` uses. At runtime we return the plain props untouched, so the
+	// fetch handler is identical to a domain-less worker; the Custom Domain (proxied DNS
+	// + TLS on the `kamp.us` zone) is purely a deploy concern.
+	Effect.gen(function* () {
+		const props = {
+			main: import.meta.filename,
+			// Pin the local dev port. `alchemy dev` defaults to 1337 but can silently fall back
+			// to the next free port; if a second app's worker ran alongside, that could make
+			// the Vite proxy in `apps/web/vite.config.ts` point at the wrong worker.
+			// `strictPort: true` makes collisions fail loudly instead of misrouting.
+			dev: {port: 1337, strictPort: true},
+			// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
+			// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
+			// resolves each at deploy and runtime reads the same value off the auto-wired
+			// ConfigProvider.
+			env: {
+				ENVIRONMENT: environment,
+				BETTER_AUTH_SECRET: betterAuthSecret,
+				// The Flagship app resource maps to the native `Flagship` runtime binding
+				// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
+				FLAGS: FlagshipResource,
+			},
+			assets: {
+				// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
+				// relative to the alchemy CLI's `apps/web` cwd). At the edge the worker
+				// serves it; the `runWorkerFirst` globs keep the worker-owned paths from
+				// being shadowed by the SPA shell (a missing entry returns the shell for
+				// GET and 405 for POST). Derived from the one worker-owned-route manifest
+				// `app.ts` also consumes (`http/worker-routes.ts`), so route and glob can't
+				// drift (#861).
+				directory: "./dist/client",
+				notFoundHandling: "single-page-application" as const,
+				runWorkerFirst: [...workerFirstGlobs],
+			},
+			compatibility: {flags: ["nodejs_compat"]},
+			observability: {enabled: true},
+		};
+
+		// The custom domain is deploy-time-only AND production-only: skip it at runtime
+		// (where `Stage` is absent and a `yield* Stage` would 500 every request) and
+		// offline (`alchemy dev` has no real CF zone — mirror the `resolveStateMode` gate
+		// the state store uses). The `ALCHEMY_PHASE === "plan"` guard is the runtime-safety
+		// gate (alchemy bakes `ALCHEMY_PHASE: "runtime"` into the deployed worker), and
+		// `customHostname` is production-only: it yields `phoenix.kamp.us` for a prod deploy
+		// and `undefined` for every non-prod stage. So an ephemeral integration `it-*`
+		// `Test.make` stage attaches NO domain → its `worker.url` stays `*.workers.dev` →
+		// the integration harness's `GET /api/health` hits a valid cert (a `<stage>` custom
+		// domain's TLS cert isn't provisioned yet and broke every integration test, #983).
+		const phase = yield* ALCHEMY_PHASE;
+		if (phase !== "plan" || resolveStateMode(process.env) === "local") return props;
+
+		const stage = yield* Stage;
+		const domain = customHostname(stage, process.env.ENVIRONMENT ?? "");
+		return domain === undefined ? props : {...props, domain};
+	}),
+) {}
 
 export default Phoenix.make(
 	Effect.gen(function* () {
