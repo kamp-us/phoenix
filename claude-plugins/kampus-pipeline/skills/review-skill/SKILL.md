@@ -488,7 +488,10 @@ fi
 Verdict body shape. The first line is the **canonical bare marker** — no leading `**`
 emphasis, **with the `@ <HEAD_SHA>` you resolved above** — per the matcher contract in
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5/§6.5 (matchers tolerate an
-optional leading `**`, but emit bare; the `@ <sha>` is required, ADR 0058):
+optional leading `**`, but emit bare; the `@ <sha>` is required, ADR 0058). **Token order is
+fixed** (§5): `@ <HEAD_SHA>` comes **immediately after** `PASS`, **before** `— merge-ready` —
+never `review-skill: PASS — merge-ready @ <sha>`; `ship-it`'s capture is anchored to that
+order, so a trailing `@ <sha>` captures `sha=null` and refuses a correct PASS as `unverified` (#625):
 
 ```markdown
 review-skill: PASS @ <HEAD_SHA> — merge-ready
@@ -615,7 +618,8 @@ unmerged; #<ISSUE> stays open and assigned. Re-request review once they're satis
 
 Do **not** post a native `REQUEST_CHANGES` review — `review-skill` is comment-only (ADR 0058
 rule 4), so the SHA-bound marker comment is the **sole** verdict artifact. Recognize the marker
-tolerantly by shape (`review-skill: FAIL @ <sha>`), not exact dashes. Do **not** touch the
+tolerantly by shape (`review-skill: FAIL @ <sha>`), not exact dashes; token order is fixed (§5):
+`@ <sha>` comes **immediately after** `FAIL`, before `— changes-requested`. Do **not** touch the
 issue's labels, assignee, or state on a fail — a failed gate is a no-op on the work state plus
 a comment.
 

@@ -951,6 +951,16 @@ and stalled every code-lane merge — #219), this contract pins **one** rule bot
 
 - **Canonical emit shape** (what an emitter SHOULD write): the bare, unbolded first line —
   `review-code: PASS @ <sha> — merge-ready`. New/converging emitters write this.
+- **Token order is fixed** (the single source every emitter cites): the `@ <sha>` comes
+  **immediately after** the `PASS`/`FAIL` polarity and **before** the `— merge-ready` /
+  `— not merge-ready` tail — `review-code: PASS @ <sha> — merge-ready`, never
+  `review-code: PASS — merge-ready @ <sha>`. The matcher below is **anchored to this order**:
+  it captures the SHA only when `@ <sha>` directly follows the polarity, so a marker that
+  pushes `@ <sha>` *past* `merge-ready` captures `sha=null` → the consumer resolves it
+  `unverified` and refuses a correct, current-head PASS (the token-order drift that silently
+  stalled #623's merge — #625). The fix is to **emit the canonical order**, not to loosen the
+  matcher to chase a trailing SHA (ADR 0058 forbids weakening the SHA-binding). §6/§6.5 inherit
+  this order for `review-doc` / `review-skill` via the same matcher contract.
 - **Matcher obligation** (what every scanner MUST accept): an **optional leading `**`** before
   the namespace token, so a bolded marker resolves identically to a bare one, **and a captured
   `@ <sha>`** so the consumer can apply the staleness test. The anchored, case-insensitive

@@ -800,7 +800,11 @@ path. The first line is the **canonical bare marker** — no leading `**` emphas
 `@ <HEAD_SHA>` you resolved above** — per the matcher contract in
 [gh-issue-intake-formats.md](../gh-issue-intake-formats.md) §5; matchers tolerate an optional
 leading `**` for backward compatibility, but emit the bare form, and the `@ <sha>` is required
-(ADR 0058):
+(ADR 0058). **Token order is fixed** (§5): `@ <HEAD_SHA>` comes **immediately after** `PASS`,
+**before** `— merge-ready` — `review-code: PASS @ <sha> — merge-ready`, never
+`review-code: PASS — merge-ready @ <sha>`. `ship-it`'s capture is anchored to that order; a
+trailing `@ <sha>` after `merge-ready` captures `sha=null` and `ship-it` refuses a correct
+PASS as `unverified` (#625):
 
 ```markdown
 review-code: PASS @ <HEAD_SHA> — merge-ready
@@ -863,8 +867,9 @@ SHA-bound marker** — the mirror of the PASS marker (formats §5). It is the se
 `write-code`'s resume-my-failed-PR path keys on: it scans for it to find a PR whose `Fixes #N`
 issue is still claimed by the implementer and still has failing criteria *against the current
 head* to address. Recognize it tolerantly by shape (`review-code: FAIL @ <sha>`), not by exact
-dashes; the `@ <sha>` is required (ADR 0058). (And `ship-it` reads it as the mirror of PASS: a
-FAIL marker means *do not merge*.)
+dashes; the `@ <sha>` is required (ADR 0058). Token order is fixed (§5): `@ <sha>` comes
+**immediately after** `FAIL`, before `— not merge-ready`. (And `ship-it` reads it as the mirror
+of PASS: a FAIL marker means *do not merge*.)
 
 Post it as an **upsert** — `PATCH` your own prior `review-code:` marker if one exists, else
 `POST` — exactly as the PASS path (one `review-code` verdict comment per PR, ADR 0058 rule 2).
