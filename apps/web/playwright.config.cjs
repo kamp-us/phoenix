@@ -56,6 +56,14 @@ const AUTHED_SPECS = /25-authed-smoke\.spec\.ts$/;
 module.exports = defineConfig({
 	testDir: "./tests/e2e",
 	timeout: 15_000,
+	// Inner fail-fast backstop nested under the e2e job's 25-min `timeout-minutes`
+	// (#660/#685): caps the WHOLE `playwright test` run even if no single step's own
+	// timeout fires (a wedge in a non-test phase — browser launch, global teardown —
+	// the per-test `timeout` can't catch). The observed worst legit run is the
+	// blocking tier's ~72s specs + one retry (~4 min); 10 min leaves ample slack yet
+	// trips minutes-fast, well below the 25-min job cap. CI-only so local debugging
+	// (long pauses on a breakpoint) isn't killed.
+	globalTimeout: process.env.CI ? 10 * 60_000 : undefined,
 	expect: {timeout: 5_000},
 	fullyParallel: false,
 	forbidOnly: !!process.env.CI,
