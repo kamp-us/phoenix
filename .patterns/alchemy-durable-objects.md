@@ -130,6 +130,45 @@ yield* live.getByName(`connection:${id}`).deliver({frame, row, limits});
 Reserve `fetch` for the genuinely request-shaped interaction — the SSE upgrade.
 Everything else (`subscribe`, `register`, `publish`, `check`, …) is a method.
 
+## The `never` error channel is a type lie — retry the cold-start transport seam
+
+Every `LiveRpcSurface` method above is typed `Effect<…, never, never>`, but that
+`never` is the **declared** shape, not the **runtime** one. The alchemy stub
+(`makeRpcStub`, `alchemy/Cloudflare/Workers/Rpc`) wraps each cross-DO call in
+`Effect.tryPromise({catch: … RpcCallError})`, so a real transport failure —
+crucially, a **cold-start** failure when Cloudflare has evicted an idle DO and the
+first RPC races the warm-up — surfaces as an `RpcCallError` in the **failure
+channel** the static type erases. A bare call (`connectionOf(live, id).subscribe(…)`)
+or an `Effect.orDie` therefore turns a sub-second warm window into a defect → HTTP
+500 that the client can't recover from (the fate live transport deletes the
+operation on a fatal non-200). This is the steady-state production path for the
+global live pin against an idle user's `topic:User:<id>` DO (ADR 0094).
+
+The fix is a **bounded retry keyed on the transport channel only**, at the one seam
+where the runtime error is reachable — the worker `index.ts` `liveLayer` call sites,
+where the stub method is actually invoked. `apps/web/worker/features/fate-live/cold-start-retry.ts`
+owns `withColdStartRetry(method, call)`: it reinterprets the type-lie `never` to the
+runtime reality, retries with capped exponential backoff
+(`Schedule.both(Schedule.exponential("100 millis"), Schedule.recurs(4))`), and on
+exhaustion surfaces a typed `LiveTransportError` the route renders as a graceful 503
+envelope. The retry keys on the `RpcCallError` `_tag` (the class is internal to
+alchemy, off the public export path — a structural tag check is the only seam) via
+`Retry.Options.while`, so a **genuine app error fails fast and passes through
+untouched** — never retried, never masked as a 503. Schedule shape grounds in
+effect-smol `LLMS.md` §"Working with Schedules" (`retryBackoffWithLimit` +
+`retryableOnly`). See [ADR 0095](../.decisions/0095-cold-start-retry-rpc-transport-seam.md).
+
+```ts
+// index.ts liveLayer — wrap each stub call at the seam, never call it bare:
+subscribe: (id, input) =>
+  withColdStartRetry("subscribe", connectionOf(live, id).subscribe(input)),
+```
+
+The service `Context.Service` signatures (`topics.ts`) then declare the truthful
+`LiveTransportError` channel instead of the erased `never`, so the route is forced
+to handle the 503 path — invalid state (a swallowed transport failure) made
+unrepresentable.
+
 ## Addressing: `getByName` only
 
 The alchemy DO stub exposes **only `getByName(name)` and `fetch(HttpServerRequest)`**.
