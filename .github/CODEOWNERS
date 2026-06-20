@@ -11,3 +11,11 @@
 /skills/review-doc/             @usirin
 /skills/review-plan/            @usirin
 /skills/gh-issue-intake-formats.md  @usirin
+# Control-plane: enforcement guard packages — the platform half of the §CP regex extension (ADR 0100).
+/packages/spawn-guard/          @usirin
+/packages/leak-guard/           @usirin
+/packages/read-guard/           @usirin
+/packages/worktree-guard/       @usirin
+/packages/structured-output-guard/  @usirin
+/packages/publish-guard/        @usirin
+/packages/ci-required/          @usirin
