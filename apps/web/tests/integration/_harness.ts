@@ -28,6 +28,8 @@
  *                             `definition.add` mutation (+ votes for scores)
  *   - `h.setLastActivityAt(...)` — controlled D1 write of a term's `last_activity_at`
  *                             (setup-only, real-D1 REST; the clock the seam can't set)
+ *   - `h.execD1(...)`        — one setup-only SQL statement against this stage's real
+ *                             D1 (real-D1 REST; e.g. drop an FTS table to inject a fault)
  *   - `h.json(...)` / `h.req(...)` — raw HTTP helpers
  *   - `h.openSse(...)` / `readFrame(...)` — live SSE transport helpers
  */
@@ -113,6 +115,17 @@ export interface Harness {
 	 * a term that already has a `term_summary` row (seed it first).
 	 */
 	setLastActivityAt(slug: string, epochSeconds: number): Promise<void>;
+	/**
+	 * Run one setup-only SQL statement against this stage's real D1 over the
+	 * Cloudflare REST API — the same off-the-binding seam `setLastActivityAt` uses
+	 * (NOT the worker binding; the black-box contract holds for assertions). The one
+	 * fault-injection a black-box HTTP test cannot reach through the public worker:
+	 * corrupting D1 *infrastructure* (e.g. dropping an FTS virtual table) to prove the
+	 * read path surfaces the failure as an error rather than masking it as an empty
+	 * result (#549). Returns D1's affected-row count (0 for DDL); throws on a
+	 * D1-reported SQL error.
+	 */
+	execD1(sql: string, params?: unknown[]): Promise<number>;
 	/** Open a live SSE stream on a connection id (cookie required). */
 	openSse(connectionId: string, cookie: string): Promise<Response>;
 	/** Drive a `/fate/live` control message (subscribe / unsubscribe). */
@@ -624,28 +637,37 @@ export function harness(getUrl: () => string, stage: string): Harness {
 		return d1DatabaseId;
 	};
 
-	const setLastActivityAt: Harness["setLastActivityAt"] = async (slug, epochSeconds) => {
+	// One setup-only statement against this stage's real D1 over the REST query API.
+	// Returns D1's reported affected-row count (0 for DDL); throws on a D1-side SQL
+	// error so a botched setup statement fails the test loudly, never silently.
+	const runD1Query = async (sql: string, params: unknown[]): Promise<number> => {
 		const acct = cloudflare.accountId();
 		const databaseId = await resolveD1DatabaseId();
 		const res = await cloudflareApi(`/accounts/${acct}/d1/database/${databaseId}/query`, {
 			method: "POST",
-			body: JSON.stringify({
-				sql: "UPDATE term_summary SET last_activity_at = ? WHERE slug = ?",
-				params: [epochSeconds, slug],
-			}),
+			body: JSON.stringify({sql, params}),
 		});
 		const body = (await res.json()) as {
 			result?: Array<{meta?: {changes?: number}}>;
 			errors?: Array<{message: string}>;
 		};
-		const changes = body.result?.[0]?.meta?.changes ?? 0;
+		if (body.errors?.length) {
+			throw new Error(`D1 query failed (${sql}): ${body.errors.map((e) => e.message).join("; ")}`);
+		}
+		return body.result?.[0]?.meta?.changes ?? 0;
+	};
+
+	const setLastActivityAt: Harness["setLastActivityAt"] = async (slug, epochSeconds) => {
+		const changes = await runD1Query(
+			"UPDATE term_summary SET last_activity_at = ? WHERE slug = ?",
+			[epochSeconds, slug],
+		);
 		if (changes !== 1) {
-			throw new Error(
-				`setLastActivityAt(${slug}): expected 1 row updated, got ${changes}` +
-					(body.errors?.length ? ` — ${body.errors.map((e) => e.message).join("; ")}` : ""),
-			);
+			throw new Error(`setLastActivityAt(${slug}): expected 1 row updated, got ${changes}`);
 		}
 	};
+
+	const execD1: Harness["execD1"] = (sql, params = []) => runD1Query(sql, params);
 
 	const openSse: Harness["openSse"] = (connectionId, cookie) =>
 		req(`/fate/live?connectionId=${encodeURIComponent(connectionId)}`, {
@@ -665,6 +687,7 @@ export function harness(getUrl: () => string, stage: string): Harness {
 		seedTerm,
 		touchTerm,
 		setLastActivityAt,
+		execD1,
 		openSse,
 		liveControl,
 	};
