@@ -22,11 +22,13 @@ import {Flagship} from "../features/flagship/Flagship.ts";
 export class HealthStatus extends Schema.Class<HealthStatus>("@kampus/HealthStatus")({
 	status: Schema.String,
 	environment: Schema.NullOr(Schema.String),
-	// A boolean read through the resolved Flagship binding (epic #488). No flag is
-	// declared yet, so evaluation falls back to this `false` default — a value
-	// returning at all proves the `FlagshipClient` resolved end-to-end through the
-	// worker's binding (the system-tier check #507 calls for).
-	flagshipBound: Schema.Boolean,
+	// System-tier liveness: `true` once the `FlagshipClient` binding resolved
+	// end-to-end through the worker (epic #488, #507). It asserts reachability of
+	// the binding, NOT the value of any feature flag — `true` on a healthy worker,
+	// independent of how any individual flag evaluates. Named `flagshipReachable`
+	// (not `…Bound`) so an operator can't misread it as a did-it-bind boolean whose
+	// `false` reads as "missing/unhealthy" (#864).
+	flagshipReachable: Schema.Boolean,
 }) {}
 
 const health = HttpApiEndpoint.get("health", "/api/health", {success: HealthStatus});
@@ -41,18 +43,19 @@ const healthGroup = HttpApiBuilder.group(HealthApi, "health", (h) =>
 			// `orDie`: a `ConfigError` (value outside the two literals) means a
 			// malformed env; die rather than widen the handler's error channel.
 			const {environment} = yield* AppConfig.pipe(Effect.orDie);
-			// Read one flag through the resolved Flagship binding (epic #488). Flagship
-			// evaluation never throws — it falls back to the default — so a misconfigured
+			// Drive one evaluation through the resolved Flagship binding (epic #488):
+			// the read completing at all proves the `FlagshipClient` resolved
+			// end-to-end through the worker, so `flagshipReachable` is `true` once it
+			// returns — the probe asserts reachability, not the flag's value. Flagship
+			// evaluation never throws (it falls back to the default), so a misconfigured
 			// binding surfaces only on the `FlagshipError` channel; `orDie` keeps the
 			// handler's error channel narrow.
 			const flagship = yield* Flagship;
-			const flagshipBound = yield* flagship
-				.getBooleanValue("phoenix-health-probe", false)
-				.pipe(Effect.orDie);
+			yield* flagship.getBooleanValue("phoenix-health-probe", false).pipe(Effect.orDie);
 			return new HealthStatus({
 				status: "ok",
 				environment,
-				flagshipBound,
+				flagshipReachable: true,
 			});
 		}),
 	),
