@@ -133,7 +133,7 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 
 			const baseWhere = and(
 				eq(schema.postBookmark.userId, viewerId),
-				isNull(schema.postSummary.deletedAt),
+				isNull(schema.postSummary.removedAt),
 			);
 
 			const fetched = yield* run((db) =>
@@ -161,7 +161,7 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 			toggle: Effect.fn("Bookmark.toggle")(function* (input: BookmarkToggleInput) {
 				const post = yield* run((db) =>
 					db.query.postSummary.findFirst({
-						where: {id: input.postId, deletedAt: {isNull: true}},
+						where: {id: input.postId, removedAt: {isNull: true}},
 						columns: {id: true},
 					}),
 				);

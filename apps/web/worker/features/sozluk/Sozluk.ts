@@ -13,6 +13,7 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
+import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
@@ -124,6 +125,12 @@ export interface EditDefinitionResult {
 export interface DeleteDefinitionInput {
 	definitionId: string;
 	actorId: string;
+	/**
+	 * Why the definition is being removed (ADR 0096). Defaults to `AuthorDeletion`
+	 * — the author-delete mutation passes nothing; account-deletion (0097) and
+	 * moderation (0098) pass `Anonymized` / `Moderated({reportId})`.
+	 */
+	reason?: Lifecycle.RemovalReason;
 }
 
 export interface DeleteDefinitionResult {
@@ -203,6 +210,11 @@ export class Sozluk extends Context.Service<
 			input: DeleteDefinitionInput,
 		) => Effect.Effect<DeleteDefinitionResult, DefinitionNotFound | UnauthorizedDefinitionMutation>;
 
+		/** Un-remove a `Removed` definition (ADR 0096 §4). Votes stay wiped. */
+		readonly restoreDefinition: (
+			input: DeleteDefinitionInput,
+		) => Effect.Effect<DeleteDefinitionResult, DefinitionNotFound | UnauthorizedDefinitionMutation>;
+
 		readonly voteDefinition: (
 			input: VoteDefinitionInput,
 		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
@@ -259,7 +271,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					})
 					.from(schema.definitionView)
 					.where(
-						and(eq(schema.definitionView.termSlug, slug), isNull(schema.definitionView.deletedAt)),
+						and(eq(schema.definitionView.termSlug, slug), isNull(schema.definitionView.removedAt)),
 					)
 					.orderBy(desc(schema.definitionView.score), asc(schema.definitionView.createdAt)),
 			);
@@ -319,14 +331,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.definitionView)
-					.where(isNull(schema.definitionView.deletedAt))
+					.where(isNull(schema.definitionView.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalAuthorsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(DISTINCT ${schema.definitionView.authorId})`})
 					.from(schema.definitionView)
-					.where(isNull(schema.definitionView.deletedAt))
+					.where(isNull(schema.definitionView.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 
@@ -353,7 +365,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.select()
 					.from(schema.definitionView)
 					.where(
-						and(eq(schema.definitionView.termSlug, slug), isNull(schema.definitionView.deletedAt)),
+						and(eq(schema.definitionView.termSlug, slug), isNull(schema.definitionView.removedAt)),
 					)
 					.orderBy(desc(schema.definitionView.score), asc(schema.definitionView.createdAt)),
 			);
@@ -395,7 +407,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const baseWhere = and(
 				eq(schema.definitionView.termSlug, slug),
-				isNull(schema.definitionView.deletedAt),
+				isNull(schema.definitionView.removedAt),
 			);
 			const totalCount = yield* run((db) =>
 				db
@@ -475,7 +487,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.where(
 						and(
 							inArray(schema.definitionView.id, [...ids]),
-							isNull(schema.definitionView.deletedAt),
+							isNull(schema.definitionView.removedAt),
 						),
 					),
 			);
@@ -652,7 +664,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					score: 0,
 					createdAt: now,
 					updatedAt: now,
-					deletedAt: null,
+					removedAt: null,
+					removedBy: null,
+					removedReason: null,
 					lastEventId: "",
 				}),
 			);
@@ -679,7 +693,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
-					where: {id: input.definitionId, deletedAt: {isNull: true}},
+					where: {id: input.definitionId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!definition) {
@@ -718,14 +732,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			} satisfies EditDefinitionResult;
 		});
 
-		/**
-		 * SOFT delete: stamps `deletedAt`/`updatedAt` and recomputes the term
-		 * summary + sözlük stats, but leaves the vote tables intact and does NOT
-		 * reverse the author's karma. This diverges from `Pano.deletePost` (hard
-		 * delete, karma reversed) — a deliberate, known inconsistency pending
-		 * `.decisions/0024-delete-semantics-and-karma.md`. Read that ADR before
-		 * "fixing" one path to match the other.
-		 */
+		// Remove → restore both flow through the ADR 0096 substrate: stamp the
+		// `Removed` triad (`Vote.clearTarget` wipes votes, karma KEPT), or clear it
+		// back to `Live`. The lifecycle is the projection of the three columns
+		// (`Lifecycle.fromColumns`); the term summary + sözlük stats are recomputable
+		// caches refreshed outside the cleanup batch (ADR 0011).
 		const deleteDefinition = Effect.fn("Sozluk.deleteDefinition")(function* (
 			input: DeleteDefinitionInput,
 		) {
@@ -746,7 +757,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					message: `not authorized to mutate definition ${input.definitionId}`,
 				});
 			}
-			if (definition.deletedAt) {
+			if (Lifecycle.isRemoved(Lifecycle.fromColumns(definition))) {
 				return {
 					definitionId: input.definitionId,
 					deleted: false,
@@ -754,10 +765,18 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 
 			const now = new Date();
+			const removed = Lifecycle.toColumns(
+				Lifecycle.remove({
+					removedAt: now,
+					removedBy: input.actorId,
+					reason: input.reason ?? new Lifecycle.AuthorDeletion(),
+				}),
+			);
+			yield* voteSvc.clearTarget("definition", input.definitionId);
 			yield* run((db) =>
 				db
 					.update(schema.definitionView)
-					.set({deletedAt: now, updatedAt: now})
+					.set({...removed, score: 0, updatedAt: now})
 					.where(eq(schema.definitionView.id, input.definitionId)),
 			);
 
@@ -768,6 +787,46 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				definitionId: input.definitionId,
 				deleted: true,
 			} satisfies DeleteDefinitionResult;
+		});
+
+		const restoreDefinition = Effect.fn("Sozluk.restoreDefinition")(function* (
+			input: DeleteDefinitionInput,
+		) {
+			const definition = yield* run((db) =>
+				db.query.definitionView.findFirst({where: {id: input.definitionId}}),
+			);
+			if (!definition) {
+				return yield* new DefinitionNotFound({
+					definitionId: input.definitionId,
+					message: `definition ${input.definitionId} not found`,
+				});
+			}
+			if (definition.authorId !== input.actorId) {
+				return yield* new UnauthorizedDefinitionMutation({
+					definitionId: input.definitionId,
+					message: `not authorized to mutate definition ${input.definitionId}`,
+				});
+			}
+			const lifecycle = Lifecycle.fromColumns(definition);
+			if (!Lifecycle.isRemoved(lifecycle)) {
+				return {definitionId: input.definitionId, deleted: false} satisfies DeleteDefinitionResult;
+			}
+
+			const now = new Date();
+			// `Lifecycle.restore : Removed → Live` clears the triad; votes wiped on
+			// removal are NOT resurrected (ADR 0096 §4), so the score cache stays 0.
+			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
+			yield* run((db) =>
+				db
+					.update(schema.definitionView)
+					.set({...live, updatedAt: now})
+					.where(eq(schema.definitionView.id, input.definitionId)),
+			);
+
+			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+			yield* recomputeSozlukStats(now);
+
+			return {definitionId: input.definitionId, deleted: true} satisfies DeleteDefinitionResult;
 		});
 
 		// Shared body for `voteDefinition` / `retractDefinitionVote`. Delegates to
@@ -782,7 +841,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			// regardless of the changed/no-op path.
 			const definition = yield* run((db) =>
 				db.query.definitionView.findFirst({
-					where: {id: input.definitionId, deletedAt: {isNull: true}},
+					where: {id: input.definitionId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!definition) {
@@ -856,6 +915,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			addDefinition,
 			editDefinition,
 			deleteDefinition,
+			restoreDefinition,
 			voteDefinition,
 			retractDefinitionVote,
 		};

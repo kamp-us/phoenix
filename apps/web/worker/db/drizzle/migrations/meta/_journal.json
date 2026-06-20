@@ -36,6 +36,13 @@
       "when": 1783000000000,
       "tag": "0004_pano_draft",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1783500000000,
+      "tag": "0005_removal_substrate",
+      "breakpoints": true
     }
   ]
 }

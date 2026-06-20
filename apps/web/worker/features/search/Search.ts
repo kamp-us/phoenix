@@ -208,11 +208,11 @@ export const SearchLive = Layer.effect(Search)(
 						commentCount: schema.postSummary.commentCount,
 						createdAt: schema.postSummary.createdAt,
 						tags: schema.postSummary.tags,
-						deletedAt: schema.postSummary.deletedAt,
+						removedAt: schema.postSummary.removedAt,
 					})
 					.from(schema.postSummary)
 					.where(
-						sql`${schema.postSummary.id} IN ${keys} AND ${schema.postSummary.deletedAt} IS NULL`,
+						sql`${schema.postSummary.id} IN ${keys} AND ${schema.postSummary.removedAt} IS NULL`,
 					),
 			);
 			const byId = new Map(

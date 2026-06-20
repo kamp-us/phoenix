@@ -14,10 +14,11 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
+import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
+import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
@@ -55,9 +56,9 @@ export const ALLOWED_POST_TAG_KINDS = ["göster", "tartışma", "soru", "söylen
 export type AllowedPostTagKind = (typeof ALLOWED_POST_TAG_KINDS)[number];
 
 /**
- * Body rendered for a soft-deleted comment that still has non-deleted replies
- * (parent-with-replies path). Leaf-deleted comments are removed entirely, so
- * the placeholder never appears for them.
+ * Tombstone body the view layer renders for a `Removed` comment (ADR 0096 §5) —
+ * not a body the delete path writes. The canonical body stays in the row for
+ * restore + moderator review; `rowToCommentRow` substitutes this for display.
  */
 export const SILINDI_PLACEHOLDER = "[silindi]";
 
@@ -257,6 +258,8 @@ export interface EditPostResult {
 export interface DeletePostInput {
 	postId: string;
 	actorId: string;
+	/** Why the post is removed (ADR 0096). Defaults to `AuthorDeletion`. */
+	reason?: Lifecycle.RemovalReason;
 }
 
 export interface DeletePostResult {
@@ -323,6 +326,8 @@ export interface EditCommentResult {
 export interface DeleteCommentInput {
 	commentId: string;
 	actorId: string;
+	/** Why the comment is removed (ADR 0096). Defaults to `AuthorDeletion`. */
+	reason?: Lifecycle.RemovalReason;
 }
 
 export interface DeleteCommentResult {
@@ -388,6 +393,11 @@ export class Pano extends Context.Service<
 			input: DeletePostInput,
 		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation>;
 
+		/** Un-remove a `Removed` post (ADR 0096 §4); re-enters search, votes stay wiped. */
+		readonly restorePost: (
+			input: DeletePostInput,
+		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation>;
+
 		readonly voteOnPost: (input: VoteOnPostInput) => Effect.Effect<VoteOnPostResult, PostNotFound>;
 
 		readonly retractPostVote: (
@@ -409,6 +419,11 @@ export class Pano extends Context.Service<
 			input: DeleteCommentInput,
 		) => Effect.Effect<DeleteCommentResult, CommentNotFound | UnauthorizedCommentMutation>;
 
+		/** Un-remove a `Removed` comment (ADR 0096 §4); votes stay wiped. */
+		readonly restoreComment: (
+			input: DeleteCommentInput,
+		) => Effect.Effect<DeleteCommentResult, CommentNotFound | UnauthorizedCommentMutation>;
+
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
 		) => Effect.Effect<VoteOnCommentResult, CommentNotFound>;
@@ -424,7 +439,7 @@ export const PanoLive = Layer.effect(Pano)(
 		// `orDieAccess`: every internal DB call site dies on `DrizzleError`
 		// (infra failures are defects — the domain-boundary rule), so public
 		// signatures carry domain errors only and `R` stays `never`.
-		const {run, batch} = orDieAccess(yield* Drizzle);
+		const {run} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 		const bookmarkSvc = yield* Bookmark;
 
@@ -444,13 +459,14 @@ export const PanoLive = Layer.effect(Pano)(
 			tags: parseTags(row.tags),
 		});
 
-		/**
-		 * Reply-aware projection: a row with `deletedAt` set is the
-		 * parent-with-replies case, rendered as the placeholder. Leaf-deleted
-		 * rows are removed from `comment_view`, so they never reach this branch.
-		 */
+		// The tombstone is rendered HERE, from the lifecycle projection — not written
+		// into the canonical body by the delete path (ADR 0096 §5). A `Removed`
+		// comment surfaces as the `[silindi]` placeholder with author elided; its real
+		// body stays in the row for restore + moderator review. `deletedAt` on the
+		// wire-facing `CommentRow` is the removal timestamp (presentation contract).
 		const rowToCommentRow = (row: typeof schema.commentView.$inferSelect): CommentRow => {
-			if (row.deletedAt) {
+			const lifecycle = Lifecycle.fromColumns(row);
+			if (Lifecycle.isRemoved(lifecycle)) {
 				return {
 					id: row.id,
 					parentId: row.parentId,
@@ -460,7 +476,7 @@ export const PanoLive = Layer.effect(Pano)(
 					score: row.score,
 					createdAt: row.createdAt ?? new Date(0),
 					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
-					deletedAt: row.deletedAt,
+					deletedAt: lifecycle.removedAt,
 				};
 			}
 			return {
@@ -485,23 +501,23 @@ export const PanoLive = Layer.effect(Pano)(
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.postSummary)
-					.where(isNull(schema.postSummary.deletedAt))
+					.where(isNull(schema.postSummary.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalComments = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.commentView)
-					.where(isNull(schema.commentView.deletedAt))
+					.where(isNull(schema.commentView.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalAuthors = yield* run((db) =>
 				db
 					.run(
 						sql`SELECT COUNT(DISTINCT author_id) as n FROM (
-								SELECT author_id FROM post_summary WHERE deleted_at IS NULL
+								SELECT author_id FROM post_summary WHERE removed_at IS NULL
 								UNION
-								SELECT author_id FROM comment_view WHERE deleted_at IS NULL
+								SELECT author_id FROM comment_view WHERE removed_at IS NULL
 							)`,
 					)
 					.then((r) => Number((r.results[0] as {n: number} | undefined)?.n ?? 0)),
@@ -566,7 +582,7 @@ export const PanoLive = Layer.effect(Pano)(
 		const getPost = Effect.fn("Pano.getPost")(function* (postId: string) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: {id: postId, deletedAt: {isNull: true}},
+					where: {id: postId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!meta) return null;
@@ -584,7 +600,7 @@ export const PanoLive = Layer.effect(Pano)(
 			// `is_draft IS NOT 1` excludes drafts from the public feed while keeping
 			// null/0 rows (published) — drafts are private to their author (#746).
 			const baseConditions = [
-				isNull(schema.postSummary.deletedAt),
+				isNull(schema.postSummary.removedAt),
 				sql`${schema.postSummary.isDraft} is not 1`,
 			];
 			if (host) baseConditions.push(eq(schema.postSummary.host, host));
@@ -714,7 +730,12 @@ export const PanoLive = Layer.effect(Pano)(
 			const after = opts.after ?? null;
 			const viewerId = opts.viewerId ?? null;
 
-			const baseWhere = eq(schema.commentView.postId, postId);
+			// A removed comment stays in the thread ONLY to preserve reply structure
+			// (ADR 0096 §5): keep it when it still has a live child (rendered as the
+			// `[silindi]` tombstone by `rowToCommentRow`), otherwise omit it. A live
+			// comment is always shown.
+			const visible = sql`(${schema.commentView.removedAt} IS NULL OR EXISTS (SELECT 1 FROM ${schema.commentView} AS child WHERE child.parent_id = ${schema.commentView.id} AND child.removed_at IS NULL))`;
+			const baseWhere = and(eq(schema.commentView.postId, postId), visible);
 			const totalCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`count(*)`})
@@ -784,7 +805,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.select()
 					.from(schema.postSummary)
 					.where(
-						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.deletedAt)),
+						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.removedAt)),
 					),
 			);
 			const ids2 = fetched.map((p) => p.id);
@@ -914,7 +935,7 @@ export const PanoLive = Layer.effect(Pano)(
 					createdAt: now,
 					updatedAt: now,
 					lastActivityAt: now,
-					deletedAt: null,
+					removedAt: null,
 					lastEventId: "",
 				}),
 			);
@@ -1030,7 +1051,7 @@ export const PanoLive = Layer.effect(Pano)(
 						createdAt: now,
 						updatedAt: now,
 						lastActivityAt: now,
-						deletedAt: null,
+						removedAt: null,
 						isDraft: true,
 						lastEventId: "",
 					}),
@@ -1081,7 +1102,7 @@ export const PanoLive = Layer.effect(Pano)(
 		const editPost = Effect.fn("Pano.editPost")(function* (input: EditPostInput) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: {id: input.postId, deletedAt: {isNull: true}},
+					where: {id: input.postId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!meta) {
@@ -1161,12 +1182,9 @@ export const PanoLive = Layer.effect(Pano)(
 			} satisfies EditPostResult;
 		});
 
-		/**
-		 * HARD delete: removes the summary row, wipes the vote tables, reverses
-		 * karma. Deliberately diverges from `Sozluk.deleteDefinition` (soft
-		 * delete, karma kept) — see `.decisions/0024-delete-semantics-and-karma.md`
-		 * before "fixing" one path to match the other.
-		 */
+		// SOFT delete onto the ADR 0096 substrate: stamp the `Removed` triad, wipe
+		// votes via `Vote.clearTarget` (karma KEPT — the pano karma-reversal is
+		// deleted), drop the FTS row, recompute stats outside. Restore is the inverse.
 		const deletePost = Effect.fn("Pano.deletePost")(function* (input: DeletePostInput) {
 			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
 			if (!meta) {
@@ -1178,55 +1196,63 @@ export const PanoLive = Layer.effect(Pano)(
 					message: `not authorized to mutate post ${input.postId}`,
 				});
 			}
-			if (meta.deletedAt) {
+			if (Lifecycle.isRemoved(Lifecycle.fromColumns(meta))) {
 				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 			}
 
 			const now = new Date();
-			const priorScore = meta.score;
+			const removed = Lifecycle.toColumns(
+				Lifecycle.remove({
+					removedAt: now,
+					removedBy: input.actorId,
+					reason: input.reason ?? new Lifecycle.AuthorDeletion(),
+				}),
+			);
+			yield* voteSvc.clearTarget("post", input.postId);
+			yield* run((db) =>
+				db
+					.update(schema.postSummary)
+					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
+					.where(eq(schema.postSummary.id, input.postId)),
+			);
 
-			// One batch for every delete-time mutation (karma decrement, vote-table
-			// wipe, `user_vote` mirror wipe, `post_summary` removal) so a crash
-			// mid-delete can't leave karma debited against a surviving post or
-			// orphan vote rows. `recomputePanoStats` stays outside — it's a
-			// recomputable cache refresh, not part of the atomic mutation.
-			if (priorScore > 0) {
-				yield* batch((db) => [
-					db
-						.update(schema.userProfile)
-						.set({
-							totalKarma: sql`MAX(0, ${schema.userProfile.totalKarma} - ${priorScore})`,
-							updatedAt: now,
-						})
-						.where(eq(schema.userProfile.userId, meta.authorId)),
-					db.delete(schema.postVote).where(eq(schema.postVote.postId, input.postId)),
-					db
-						.delete(schema.userVote)
-						.where(
-							and(
-								eq(schema.userVote.targetKind, "post"),
-								eq(schema.userVote.targetId, input.postId),
-							),
-						),
-					db.delete(schema.postSummary).where(eq(schema.postSummary.id, input.postId)),
-				]);
-			} else {
-				yield* batch((db) => [
-					db.delete(schema.postVote).where(eq(schema.postVote.postId, input.postId)),
-					db
-						.delete(schema.userVote)
-						.where(
-							and(
-								eq(schema.userVote.targetKind, "post"),
-								eq(schema.userVote.targetId, input.postId),
-							),
-						),
-					db.delete(schema.postSummary).where(eq(schema.postSummary.id, input.postId)),
-				]);
+			// A removed post leaves search (ADR 0080); restore re-syncs it.
+			yield* run((db) => db.run(removePostSearch(input.postId)));
+
+			yield* recomputePanoStats(now);
+
+			return {postId: input.postId, deleted: true} satisfies DeletePostResult;
+		});
+
+		const restorePost = Effect.fn("Pano.restorePost")(function* (input: DeletePostInput) {
+			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
+			if (!meta) {
+				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
+			}
+			if (meta.authorId !== input.actorId) {
+				return yield* new UnauthorizedPostMutation({
+					postId: input.postId,
+					message: `not authorized to mutate post ${input.postId}`,
+				});
+			}
+			const lifecycle = Lifecycle.fromColumns(meta);
+			if (!Lifecycle.isRemoved(lifecycle)) {
+				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 			}
 
-			// Drop the post's FTS row — a hard-deleted post must leave search (ADR 0080).
-			yield* run((db) => db.run(removePostSearch(input.postId)));
+			const now = new Date();
+			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
+			yield* run((db) =>
+				db
+					.update(schema.postSummary)
+					.set({...live, updatedAt: now, lastActivityAt: now})
+					.where(eq(schema.postSummary.id, input.postId)),
+			);
+
+			// Re-enter search; votes wiped on removal are not resurrected (score stays 0).
+			for (const stmt of syncPostSearch(input.postId, meta.title)) {
+				yield* run((db) => db.run(stmt));
+			}
 
 			yield* recomputePanoStats(now);
 
@@ -1243,7 +1269,7 @@ export const PanoLive = Layer.effect(Pano)(
 		) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: {id: input.postId, deletedAt: {isNull: true}},
+					where: {id: input.postId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!meta) {
@@ -1311,7 +1337,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const post = yield* run((db) =>
 				db.query.postSummary.findFirst({
-					where: {id: input.postId, deletedAt: {isNull: true}},
+					where: {id: input.postId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!post) {
@@ -1325,7 +1351,7 @@ export const PanoLive = Layer.effect(Pano)(
 			if (parentId !== null) {
 				const parent = yield* run((db) =>
 					db.query.commentView.findFirst({
-						where: {id: parentId, postId: input.postId, deletedAt: {isNull: true}},
+						where: {id: parentId, postId: input.postId, removedAt: {isNull: true}},
 					}),
 				);
 				if (!parent) {
@@ -1352,7 +1378,7 @@ export const PanoLive = Layer.effect(Pano)(
 					score: 0,
 					createdAt: now,
 					updatedAt: now,
-					deletedAt: null,
+					removedAt: null,
 					lastEventId: "",
 				}),
 			);
@@ -1396,7 +1422,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const row = yield* run((db) =>
 				db.query.commentView.findFirst({
-					where: {id: input.commentId, deletedAt: {isNull: true}},
+					where: {id: input.commentId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!row) {
@@ -1451,7 +1477,7 @@ export const PanoLive = Layer.effect(Pano)(
 					message: `not authorized to mutate comment ${input.commentId}`,
 				});
 			}
-			if (row.deletedAt) {
+			if (Lifecycle.isRemoved(Lifecycle.fromColumns(row))) {
 				return {
 					commentId: input.commentId,
 					deleted: false,
@@ -1467,7 +1493,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.where(
 						and(
 							eq(schema.commentView.parentId, input.commentId),
-							isNull(schema.commentView.deletedAt),
+							isNull(schema.commentView.removedAt),
 						),
 					)
 					.get(),
@@ -1475,62 +1501,26 @@ export const PanoLive = Layer.effect(Pano)(
 			const hasReplies = (childCountRow?.n ?? 0) > 0;
 
 			const now = new Date();
-			const priorScore = row.score;
-
-			// One batch for every delete-time mutation: karma decrement, vote-table
-			// wipe, `user_vote` mirror wipe, then the branch-dependent terminal —
-			// UPDATE (soft-delete) for parent-with-replies, DELETE (hard) for
-			// leaves. The `commentCount` decrement and `recomputePanoStats` stay
-			// outside — recomputable cache refreshes, not the atomic mutation.
-			const commentId = input.commentId;
-			const buildTerminal = (db: DrizzleDb) =>
-				hasReplies
-					? db
-							.update(schema.commentView)
-							.set({
-								body: "",
-								bodyExcerpt: SILINDI_PLACEHOLDER,
-								score: 0,
-								deletedAt: now,
-								updatedAt: now,
-							})
-							.where(eq(schema.commentView.id, commentId))
-					: db.delete(schema.commentView).where(eq(schema.commentView.id, commentId));
-
-			if (priorScore > 0) {
-				yield* batch((db) => [
-					db
-						.update(schema.userProfile)
-						.set({
-							totalKarma: sql`MAX(0, ${schema.userProfile.totalKarma} - ${priorScore})`,
-							updatedAt: now,
-						})
-						.where(eq(schema.userProfile.userId, row.authorId)),
-					db.delete(schema.commentVote).where(eq(schema.commentVote.commentId, commentId)),
-					db
-						.delete(schema.userVote)
-						.where(
-							and(
-								eq(schema.userVote.targetKind, "comment"),
-								eq(schema.userVote.targetId, commentId),
-							),
-						),
-					buildTerminal(db),
-				]);
-			} else {
-				yield* batch((db) => [
-					db.delete(schema.commentVote).where(eq(schema.commentVote.commentId, commentId)),
-					db
-						.delete(schema.userVote)
-						.where(
-							and(
-								eq(schema.userVote.targetKind, "comment"),
-								eq(schema.userVote.targetId, commentId),
-							),
-						),
-					buildTerminal(db),
-				]);
-			}
+			// SOFT remove for every comment now (ADR 0096 §1 — no hard delete): wipe
+			// votes via `Vote.clearTarget` (karma KEPT), then stamp the `Removed`
+			// triad. The canonical body is KEPT (the `[silindi]` tombstone is rendered
+			// by `rowToCommentRow`, not written here), so restore + moderator review
+			// have the real text. `hasReplies` now only shapes the result placeholder,
+			// not the strategy. `commentCount` + stats refresh outside (caches).
+			const removed = Lifecycle.toColumns(
+				Lifecycle.remove({
+					removedAt: now,
+					removedBy: input.actorId,
+					reason: input.reason ?? new Lifecycle.AuthorDeletion(),
+				}),
+			);
+			yield* voteSvc.clearTarget("comment", input.commentId);
+			yield* run((db) =>
+				db
+					.update(schema.commentView)
+					.set({...removed, score: 0, updatedAt: now})
+					.where(eq(schema.commentView.id, input.commentId)),
+			);
 
 			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
 			if (post) {
@@ -1577,6 +1567,65 @@ export const PanoLive = Layer.effect(Pano)(
 			} satisfies DeleteCommentResult;
 		});
 
+		const restoreComment = Effect.fn("Pano.restoreComment")(function* (input: DeleteCommentInput) {
+			const row = yield* run((db) =>
+				db.query.commentView.findFirst({where: {id: input.commentId}}),
+			);
+			if (!row) {
+				return yield* new CommentNotFound({
+					commentId: input.commentId,
+					message: `comment ${input.commentId} not found`,
+				});
+			}
+			if (row.authorId !== input.actorId) {
+				return yield* new UnauthorizedCommentMutation({
+					commentId: input.commentId,
+					message: `not authorized to mutate comment ${input.commentId}`,
+				});
+			}
+			const lifecycle = Lifecycle.fromColumns(row);
+			if (!Lifecycle.isRemoved(lifecycle)) {
+				return {
+					commentId: input.commentId,
+					deleted: false,
+					hasReplies: false,
+					placeholder: null,
+				} satisfies DeleteCommentResult;
+			}
+
+			const now = new Date();
+			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
+			yield* run((db) =>
+				db
+					.update(schema.commentView)
+					.set({...live, updatedAt: now})
+					.where(eq(schema.commentView.id, input.commentId)),
+			);
+
+			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
+			if (post) {
+				yield* run((db) =>
+					db
+						.update(schema.postSummary)
+						.set({
+							commentCount: post.commentCount + 1,
+							updatedAt: now,
+							lastActivityAt: now,
+						})
+						.where(eq(schema.postSummary.id, row.postId)),
+				);
+			}
+
+			yield* recomputePanoStats(now);
+
+			return {
+				commentId: input.commentId,
+				deleted: true,
+				hasReplies: false,
+				placeholder: null,
+			} satisfies DeleteCommentResult;
+		});
+
 		/**
 		 * Shared body for `voteOnComment` / `retractCommentVote`. Delegates to
 		 * `Vote.cast`. Translates `VoteTargetNotFound` from Vote into
@@ -1588,7 +1637,7 @@ export const PanoLive = Layer.effect(Pano)(
 		) {
 			const row = yield* run((db) =>
 				db.query.commentView.findFirst({
-					where: {id: input.commentId, deletedAt: {isNull: true}},
+					where: {id: input.commentId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!row) {
@@ -1653,11 +1702,13 @@ export const PanoLive = Layer.effect(Pano)(
 			discardDraft,
 			editPost,
 			deletePost,
+			restorePost,
 			voteOnPost,
 			retractPostVote,
 			addComment,
 			editComment,
 			deleteComment,
+			restoreComment,
 			voteOnComment,
 			retractCommentVote,
 		};

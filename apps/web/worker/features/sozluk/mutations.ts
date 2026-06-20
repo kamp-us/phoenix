@@ -181,4 +181,43 @@ export const mutations = {
 			return toTermFromPage(page);
 		}),
 	),
+
+	// Restore (un-delete) a previously removed definition (ADR 0096 §4). Returns
+	// the re-resolved parent `Term`; the definition re-enters the term's list.
+	"definition.restore": Fate.mutation(
+		{
+			input: DefinitionIdInput,
+			type: TermView,
+			error: Schema.Union([Unauthorized, DefinitionNotFound, UnauthorizedDefinitionMutation]),
+		},
+		Effect.fn("definition.restore")(function* ({input}) {
+			const user = yield* CurrentUser.required;
+			const sozluk = yield* Sozluk;
+			const live = yield* WorkerLivePublisher;
+			yield* sozluk.restoreDefinition({definitionId: input.id, actorId: user.id});
+			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
+			if (!slug) return null;
+			const page = yield* sozluk.getTerm(slug);
+			if (!page) return null;
+			const restored = page.definitions.find((d) => d.id === input.id);
+			if (restored) {
+				// Re-enter the term's `Term.definitions` connection — the inverse of
+				// the `deleteEdge` the delete path published.
+				const node = toDefinition({
+					id: restored.id,
+					body: restored.body,
+					score: restored.score,
+					author: restored.author,
+					authorId: restored.authorId,
+					createdAt: restored.createdAt,
+					updatedAt: restored.updatedAt,
+					myVote: restored.myVote ?? null,
+				});
+				yield* live
+					.connection("Term.definitions", {id: slug})
+					.appendNode("Definition", restored.id, {node});
+			}
+			return toTermFromPage(page);
+		}),
+	),
 };
