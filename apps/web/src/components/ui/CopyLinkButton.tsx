@@ -4,17 +4,20 @@ import * as React from "react";
  * Shared `paylaş` (share/copy-link) button — presentation + inline confirmation only.
  * The page passes the item's canonical **path** (`/pano/:id`, `/sozluk/:slug`, or a
  * comment-anchor `/pano/:id#comment-<id>`); the button resolves it to an absolute URL
- * and copies it to the clipboard, locking into visible "kopyalandı" feedback. Where the
- * platform offers a native share sheet (`navigator.share`, mobile/PWA) it invokes that
- * instead. Reused by every share surface (pano post/comment, sözlük definition), so no
- * page-specific link logic lives in the shared content components.
+ * and copies it to the clipboard, locking into visible "kopyalandı" feedback (or
+ * "kopyalanamadı" when the clipboard write is denied — insecure context, permission).
+ * Where the platform offers a native share sheet (`navigator.share`, mobile/PWA) it
+ * invokes that instead. Reused by every share surface (pano post/comment, sözlük
+ * definition), so no page-specific link logic lives in the shared content components.
  */
+
+export type ShareOutcome = "shared" | "copied" | "error";
 
 function absoluteUrl(path: string): string {
 	return new URL(path, window.location.origin).toString();
 }
 
-async function shareOrCopy(url: string): Promise<"shared" | "copied" | "error"> {
+async function shareOrCopy(url: string): Promise<ShareOutcome> {
 	// A native share sheet is the better affordance on the surfaces that have one
 	// (mobile/PWA); a desktop browser falls through to the clipboard. `canShare`
 	// guards against the URL-less `navigator.share` stub some browsers expose.
@@ -28,11 +31,34 @@ async function shareOrCopy(url: string): Promise<"shared" | "copied" | "error"> 
 			if (error instanceof DOMException && error.name === "AbortError") return "shared";
 		}
 	}
+	// `navigator.clipboard` is itself absent in an insecure context (non-localhost
+	// HTTP) — a missing API is a failure to surface, not a thrown write to catch.
+	if (!navigator.clipboard) return "error";
 	try {
 		await navigator.clipboard.writeText(url);
 		return "copied";
 	} catch {
 		return "error";
+	}
+}
+
+/**
+ * The label a {@link CopyLinkButton} shows for each transient feedback state. A
+ * `null` outcome (idle) and a `"shared"` (the OS sheet is its own feedback) both
+ * fall through to the caller's resting `label`. Pure, so the state→copy mapping is
+ * unit-tested without a DOM.
+ */
+export function shareFeedbackLabel(
+	outcome: "copied" | "error" | null,
+	restingLabel: string,
+): string {
+	switch (outcome) {
+		case "copied":
+			return "kopyalandı";
+		case "error":
+			return "kopyalanamadı";
+		default:
+			return restingLabel;
 	}
 }
 
@@ -45,7 +71,7 @@ export interface CopyLinkButtonProps {
 }
 
 export function CopyLinkButton({path, label = "paylaş", testId, className}: CopyLinkButtonProps) {
-	const [copied, setCopied] = React.useState(false);
+	const [feedback, setFeedback] = React.useState<"copied" | "error" | null>(null);
 	const timer = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
 	React.useEffect(
@@ -58,11 +84,12 @@ export function CopyLinkButton({path, label = "paylaş", testId, className}: Cop
 	async function onClick() {
 		const outcome = await shareOrCopy(absoluteUrl(path));
 		// A native share leaves the label as-is (the OS sheet is its own feedback); a
-		// clipboard write flashes "kopyalandı" for two seconds, then resets.
-		if (outcome !== "copied") return;
-		setCopied(true);
+		// clipboard write flashes its outcome — "kopyalandı" on success, "kopyalanamadı"
+		// on a denied/absent clipboard — for two seconds, then resets.
+		if (outcome === "shared") return;
+		setFeedback(outcome === "copied" ? "copied" : "error");
 		if (timer.current) clearTimeout(timer.current);
-		timer.current = setTimeout(() => setCopied(false), 2000);
+		timer.current = setTimeout(() => setFeedback(null), 2000);
 	}
 
 	return (
@@ -71,9 +98,10 @@ export function CopyLinkButton({path, label = "paylaş", testId, className}: Cop
 			className={className}
 			onClick={onClick}
 			data-testid={testId}
-			data-copied={copied ? "" : undefined}
+			data-copied={feedback === "copied" ? "" : undefined}
+			data-copy-error={feedback === "error" ? "" : undefined}
 		>
-			{copied ? "kopyalandı" : label}
+			{shareFeedbackLabel(feedback, label)}
 		</button>
 	);
 }
