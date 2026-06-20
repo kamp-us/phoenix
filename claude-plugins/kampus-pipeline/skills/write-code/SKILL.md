@@ -676,6 +676,19 @@ Open the PR with **`Fixes #N` in the body** so merging auto-closes the issue (th
 the seam `review-code` relies on: pass → merge → `Fixes #N` closes it). Use the issue
 number you're implementing.
 
+**Always emit a real GitHub *closing keyword* — `Fixes #N` (or `Closes #N`/`Resolves #N`) —
+never `Refs #N`, `Re: #N`, `See #N`, or a bare `#N`.** This is a load-bearing invariant, not
+a phrasing preference: GitHub only auto-closes the linked issue when the body carries one of
+its recognized **closing** keywords, and only a closing keyword populates
+`closingIssuesReferences`. A non-closing mention (`Refs`/`Re:`/bare `#N`) renders a
+cross-reference that *looks* linked in the timeline but **closes nothing** — so the issue
+never auto-closes on merge, and `ship-it` Step 1 (which resolves the linked issue from
+`Fixes|Closes #N`) sees a code-class PR with **no auto-close seam** and **refuses to merge**
+it: a verified, merge-ready PR stalls in the autonomous lane on one wrong token, with the
+linked issue left dangling even if force-merged (#647; PR #573 shipped `Refs #569` and
+jammed). The whole downstream merge stage depends on this exact token, so spell out `Fixes #N`
+verbatim and never substitute a near-synonym that GitHub doesn't treat as closing.
+
 ```bash
 git push -u origin "$BRANCH"   # the same per-run branch you created in Step 4
 gh pr create \
@@ -693,13 +706,25 @@ EOF
 > after creation, patch via REST: `gh api -X PATCH repos/$REPO/pulls/<PR>
 > -f body="…"`. Get the PR body right at `create` time and you won't need it.
 
-Confirm the linkage landed — once `Fixes #N` is in the body, the issue's timeline
-records a `cross-referenced` / `connected` event for the PR. Verify via REST:
+Confirm the **closing** linkage landed — not merely that *a* cross-reference exists. A
+`Refs #N` also emits a `cross-referenced` event, so that event alone does **not** prove the
+auto-close seam armed. The authoritative signal is GitHub's `closingIssuesReferences` for the
+PR: a closing keyword populates it, a non-closing mention leaves it empty. Assert it is
+non-empty and names your issue (REST `pulls/<PR>` exposes it via the
+`closing_issues_references` field; the timeline `connected` event is a secondary confirmation):
 
 ```bash
+# the seam armed iff the PR's closing-issue references include #N (a Refs/bare-#N mention does NOT)
+gh api repos/$REPO/pulls/<PR> --jq '[.closing_issues_references[].number] | index(<N>) != null'
+# secondary: the issue timeline records a `connected` (closing) event for the PR
 gh api repos/$REPO/issues/<N>/timeline \
-  --jq '.[] | select(.event == "cross-referenced" or .event == "connected") | .event'
+  --jq '.[] | select(.event == "connected" or .event == "cross-referenced") | .event'
 ```
+
+If `closing_issues_references` does **not** contain `#N`, the body's keyword was non-closing
+(a `Refs`/bare-`#N` slip): **fix it before stopping** — re-`create` is gone, so patch the body
+via REST (`gh api -X PATCH repos/$REPO/pulls/<PR> -f body="…"` with a real `Fixes #N`) and
+re-check, since shipping the PR with a broken seam is exactly the #647 stall.
 
 ---
 
