@@ -1,7 +1,8 @@
 /**
  * The GitHub boundary: decode untrusted `gh api` JSON from the Actions workflow-runs
  * endpoint into domain `WorkflowRun[]`, plus the live `Github` capability that reads
- * a trailing window of runs by shelling `gh api` REST.
+ * a trailing window of runs by shelling `gh api` REST. It also resolves a fixing PR's
+ * merge timestamp (the `fixedAt` boundary the budget discount uses; issue #812).
  *
  * Mirrors `@kampus/epic-ledger`'s `github.ts`: Schema lives at the trust boundary
  * (`.patterns/effect-schema-validation.md`) where untyped REST enters; the `Github`
@@ -17,7 +18,8 @@
 import {Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import type {WorkflowRun} from "./flake-rate.ts";
+import type {InventoryFix, WorkflowRun} from "./flake-rate.ts";
+import {parseFixedEntries} from "./inventory.ts";
 
 /** The raw workflow-run fields the flake signal needs, lenient on everything else. */
 const GithubRun = Schema.Struct({
@@ -53,6 +55,14 @@ export const decodeWorkflowRuns = (
 	input: unknown,
 ): Effect.Effect<ReadonlyArray<WorkflowRun>, Schema.SchemaError> =>
 	Effect.map(decodeRuns(input), (res) => res.workflow_runs.map(toWorkflowRun));
+
+/** The fields of a PR the discount needs: its number and merge timestamp (null if unmerged). */
+const GithubPull = Schema.Struct({
+	number: Schema.Number,
+	merged_at: Schema.NullOr(Schema.String),
+});
+
+const decodePull = Schema.decodeUnknownEffect(GithubPull);
 
 /** A `gh` invocation exited non-zero (auth, not-found, rate-limit, …). */
 export class GhCommandError extends Schema.TaggedErrorClass<GhCommandError>()(
@@ -171,11 +181,17 @@ const runsArgs = (repo: string, window: RunsWindow): ReadonlyArray<string> => [
 	`repos/${repo}/actions/workflows/${window.workflow}/runs?per_page=${window.perPage}&branch=${window.branch}`,
 ];
 
+const pullArgs = (repo: string, pr: number): ReadonlyArray<string> => [
+	"api",
+	`repos/${repo}/pulls/${pr}`,
+];
+
 /**
  * `Github` — the IO shell over `gh api` REST. `workflowRuns` reads a trailing window
- * of one workflow's runs on a branch and decodes them to `WorkflowRun[]` for the pure
- * core. Read-only: this package never mutates GitHub state, so there is no write half.
- * Built by `GithubLive`, whose `R` is `ChildProcessSpawner`.
+ * of one workflow's runs on a branch; `inventoryFixes` reads the recorded-fixed flake
+ * set (parse `tests/FLAKE-INVENTORY.md` markdown, then resolve each fixing PR's merge
+ * timestamp into the `fixedAt` boundary the budget discounts by). Read-only: this
+ * package never mutates GitHub state. Built by `GithubLive`, whose `R` is `ChildProcessSpawner`.
  */
 export class Github extends Context.Service<
 	Github,
@@ -186,6 +202,18 @@ export class Github extends Context.Service<
 			ReadonlyArray<WorkflowRun>,
 			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
 		>;
+		/**
+		 * The recorded-fixed flake set, as `InventoryFix[]` ready for the discount. Reads
+		 * the inventory markdown, parses its `fixed` entries, and resolves each fixing PR's
+		 * `merged_at` (the `fixedAt` boundary). An unmerged or unresolvable fixing PR is
+		 * skipped (its flake keeps tripping the budget — the safe default).
+		 */
+		readonly inventoryFixes: (
+			markdown: string,
+		) => Effect.Effect<
+			ReadonlyArray<InventoryFix>,
+			RepoResolutionError | GhCommandError | GhParseError | Schema.SchemaError
+		>;
 	}
 >()("@kampus/flake-rate/Github") {}
 
@@ -193,6 +221,28 @@ const loadRuns = Effect.fn("Github.workflowRuns")(function* (repo: string, windo
 	const args = runsArgs(repo, window);
 	const raw = yield* runGh(args);
 	return yield* decodeWorkflowRuns(yield* parseJson(args, raw));
+});
+
+const loadPullMergedAt = Effect.fn("Github.prMergedAt")(function* (repo: string, pr: number) {
+	const args = pullArgs(repo, pr);
+	const raw = yield* runGh(args);
+	const pull = yield* decodePull(yield* parseJson(args, raw));
+	return pull.merged_at;
+});
+
+const loadInventoryFixes = Effect.fn("Github.inventoryFixes")(function* (
+	repo: string,
+	markdown: string,
+) {
+	const entries = parseFixedEntries(markdown);
+	const fixes: Array<InventoryFix> = [];
+	for (const entry of entries) {
+		const mergedAt = yield* loadPullMergedAt(repo, entry.fixPr);
+		if (mergedAt !== null) {
+			fixes.push({ref: `${entry.heading} (PR #${entry.fixPr})`, fixedAt: mergedAt});
+		}
+	}
+	return fixes;
 });
 
 /**
@@ -213,6 +263,8 @@ export const GithubLive: Layer.Layer<Github, never, ChildProcessSpawner.ChildPro
 			return {
 				workflowRuns: (window: RunsWindow) =>
 					repo.pipe(Effect.flatMap((r) => withSpawner(loadRuns(r, window)))),
+				inventoryFixes: (markdown: string) =>
+					repo.pipe(Effect.flatMap((r) => withSpawner(loadInventoryFixes(r, markdown)))),
 			};
 		}),
 	);

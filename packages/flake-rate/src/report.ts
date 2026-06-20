@@ -4,7 +4,12 @@
  * Planner-agnostic on the destination (stdout, a CI step summary, a committed
  * artifact); this module just produces the text + the budget alarm line.
  */
-import type {BudgetVerdict, FlakeStats, TrendBucket} from "./flake-rate.ts";
+import type {
+	BudgetVerdict,
+	DiscountedBudgetVerdict,
+	FlakeStats,
+	TrendBucket,
+} from "./flake-rate.ts";
 
 const pct = (rate: number): string => `${(rate * 100).toFixed(1)}%`;
 
@@ -43,4 +48,28 @@ export const renderBudget = (verdict: BudgetVerdict): string => {
 		"  A laundered flake regressed. Required: add an entry to tests/FLAKE-INVENTORY.md " +
 			"and file a determinism child under epic #765.",
 	].join("\n");
+};
+
+/**
+ * Render the inventory-aware budget verdict (issue #812). The discount is made
+ * VISIBLE (AC #3): a `discounted N rerun-to-green as inventory-fixed` line names
+ * each discounted run + the recorded fix it is attributed to, the verdict is the
+ * post-discount one (`renderBudget` over the remaining runs), and the raw rerun-to-green
+ * count is shown so a reader sees the number was *lowered by a named discount*, never
+ * silently. When nothing is discounted this is identical to `renderBudget`.
+ */
+export const renderDiscountedBudget = (verdict: DiscountedBudgetVerdict): string => {
+	const lines: Array<string> = [];
+	const {discounted, rawStats} = verdict;
+	if (discounted.length > 0) {
+		lines.push(
+			`discounted ${discounted.length} rerun-to-green as inventory-fixed ` +
+				`(of ${rawStats.rerunToGreen} raw rerun-to-green in window):`,
+		);
+		for (const d of discounted) {
+			lines.push(`  - run #${d.run.runNumber} (${d.run.createdAt}) — fixed by ${d.fix.ref}`);
+		}
+	}
+	lines.push(renderBudget(verdict.verdict));
+	return lines.join("\n");
 };
