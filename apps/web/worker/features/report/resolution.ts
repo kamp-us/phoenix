@@ -34,11 +34,15 @@ const tagged = (status: ReportStatus): StatusTag => ({_tag: status});
 
 export class IllegalTransition extends Error {
 	readonly _tag = "IllegalTransition";
-	constructor(
-		readonly from: ReportStatus,
-		readonly intent: string,
-	) {
+	// Explicit fields + body assignment, not a TS parameter property: alchemy deploy
+	// loads the worker through Node's strip-only TS loader, which rejects parameter
+	// properties (ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX). See #916 for a permanent guard.
+	readonly from: ReportStatus;
+	readonly intent: string;
+	constructor(from: ReportStatus, intent: string) {
 		super(`illegal report transition: ${intent} from '${from}'`);
+		this.from = from;
+		this.intent = intent;
 	}
 }
 
