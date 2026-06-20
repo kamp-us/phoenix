@@ -24,6 +24,7 @@ The feature-flag substrate and dark-ship machinery (epic [#736](https://github.c
   - *Determinism lane* — worker write-path + the flag-default-equals-safe-state invariant test.
   - *Harness lane* — React UI + e2e + release plumbing.
 - **Shared contract:** flag key `pano-draft-save`; mutation `post.saveDraft` returning the re-resolved draft row with `isDraft`.
+- **Fallback.** If pano draft-save proves too large for a tracer slice, the fallback consumer is a new **sözlük discovery / search-result surface** on `apps/web/worker/features/search` + `sozluk` (the schema-lifecycle doc's own `sozluk-search-discovery` worked example) — same dark-ship shape (boolean default-off flag, flag-default-equals-safe-state invariant test), a smaller and independent surface.
 
 ## Consequences
 
