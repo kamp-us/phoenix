@@ -38,6 +38,11 @@ export interface SeedReport {
 	readonly terms: number;
 	readonly definitions: number;
 	readonly posts: number;
+	// FTS5 index rows written (ADR 0080): one per term / per post, the dual-write of
+	// the read-model rows above. Surfaced so the log reflects all five seeded tables,
+	// not just the three read-model ones.
+	readonly termsFts: number;
+	readonly postsFts: number;
 }
 
 /**
@@ -75,7 +80,13 @@ export const buildSeedStatements = (db: SeedDb, now?: Date) => {
 	const statements = [...termStmts, ...defStmts, ...postStmts, ...termFtsStmts, ...postFtsStmts];
 	return {
 		statements,
-		report: {terms: terms.length, definitions: definitions.length, posts: posts.length},
+		report: {
+			terms: terms.length,
+			definitions: definitions.length,
+			posts: posts.length,
+			termsFts: terms.length,
+			postsFts: posts.length,
+		},
 	};
 };
 
