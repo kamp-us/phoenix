@@ -132,7 +132,7 @@ end-to-end in a real non-phoenix repo (#432): `generate` regenerated a correct i
 ### Validating portability in a foreign repo
 
 **Start with `doctor`.** Before the first run in a freshly-adopted repo, run the `doctor`
-skill (`.claude/skills/doctor/doctor.sh`) — it asserts the prerequisites in one pass (gh
+skill (`claude-plugins/kampus-pipeline/skills/doctor/doctor.sh`) — it asserts the prerequisites in one pass (gh
 auth + the `project` scope, the 15 required `status:*`/`type:*`/`p*` labels, repo
 resolution, a CI signal, and the `@kampus/*` npm deps) and prints a tiered pass/fail
 checklist with the exact `gh label create …` / `gh auth refresh …` fix command for each

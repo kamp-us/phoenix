@@ -25,7 +25,7 @@ Resolve nothing by hand — the helper resolves the target repo itself (the stan
 `CLAUDE_PIPELINE_REPO`-else-current snippet) and runs every check:
 
 ```bash
-.claude/skills/doctor/doctor.sh
+claude-plugins/kampus-pipeline/skills/doctor/doctor.sh
 ```
 
 It prints a tiered checklist and exits **0** only when every Tier-1 and Tier-2
