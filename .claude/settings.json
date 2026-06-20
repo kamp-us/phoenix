@@ -67,6 +67,6 @@
 		]
 	},
 	"env": {
-		"PATH": "${CLAUDE_PROJECT_DIR}/packages/gh-phoenix/shim:${PATH}"
+		"PATH": "${CLAUDE_PROJECT_DIR}/packages/gh-phoenix/shim:/opt/homebrew/bin:/usr/bin:/bin:${PATH}"
 	}
 }
