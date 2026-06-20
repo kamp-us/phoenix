@@ -104,25 +104,12 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 
 ## Read-only on git working state
 
-**You never mutate the git working tree of the checkout you run in.** A gate often runs in
-a checkout it does not own — typically the owner's **live, running dev-server checkout** —
-so a working-tree mutation there can silently destroy uncommitted work. That is exactly the
-data loss a review gate must never cause (a `review-doc` agent once ran `git stash pop` then
-`git reset --hard HEAD` in the primary checkout; no harm that time, pure luck). So:
-
-- **Never run `git checkout` / `git switch` / `git reset` / `git stash` / `git clean` /
-  `git merge` / `git pull` / `git rebase`** — nor `gh pr checkout` — in the checkout you
-  were launched in. No branch switch, no working-tree mutation, ever.
-- **Read the head and base read-only.** Fetch into a ref and read off it: `git fetch origin
-  pull/$PR/head:$PR_REF` then `git show "$PR_REF:<path>"` / `git grep <pattern> $PR_REF`, and
-  `gh pr diff` / `gh api` for the diff and file contents. `git fetch` and `git update-ref -d`
-  (your own per-run ref) are fine — they don't touch the working tree.
-- **If you genuinely need a materialized tree, isolate a throwaway worktree** (`git worktree
-  add "$(mktemp -d)/…" "$PR_REF"`, torn down with `git worktree prune`) — your own tree the
-  gate exclusively owns — never the primary checkout.
-
-This is non-negotiable and orthogonal to the config-isolation split: 0052 keeps the head's
-*instructions* out of your path; this keeps *your* git ops out of the owner's working tree.
+**You never mutate the git working tree of the checkout you run in** — the single canonical
+rule lives in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §RO; cite it,
+don't restate the prohibition (the five verbatim copies were the #375-class drift §RO closes).
+This gate burned the incident §RO names — a `review-doc` agent once ran `git stash pop` then
+`git reset --hard HEAD` in the primary checkout (no harm that time, pure luck) — so the
+fetch-into-a-ref read mechanism below is the §RO read-only path made concrete for a doc PR.
 
 ## The formats contract
 

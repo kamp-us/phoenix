@@ -48,25 +48,12 @@ REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOw
 
 ## Read-only on git working state
 
-**You never mutate the git working tree of the checkout you run in.** A gate often runs in
-a checkout it does not own — typically the owner's **live, running dev-server checkout** —
-so a working-tree mutation there can silently destroy uncommitted work, exactly the data
-loss a review gate must never cause. Step 2's mechanism already enforces this *by
-construction* (the head reaches a per-run ref + throwaway worktree; your session tree is
-never switched, reset, or checked out — ADR 0052/0067). State the rule plainly so no
-improvised git op slips past it:
-
-- **Never run `git checkout` / `git switch` / `git reset` / `git stash` / `git clean` /
-  `git merge` / `git pull` / `git rebase`** — nor `gh pr checkout` — in the checkout you
-  were launched in. No branch switch, no working-tree mutation, ever.
-- **Read the head and base read-only** — `gh pr diff` / `gh api`, and `git show "$PR_REF:<path>"`
-  / `git grep <pattern> $PR_REF` off the fetched ref. `git fetch` and `git update-ref -d`
-  (your own per-run ref) are fine; they don't touch the working tree.
-- **The only materialized tree you touch is the throwaway worktree Step 2 adds from `$PR_REF`**
-  — a tree this gate exclusively owns, torn down after — never the primary checkout.
-
-This is orthogonal to the config-isolation split: 0052/0067 keep the head's *instructions*
-out of your path; this keeps *your* git ops out of the owner's working tree.
+**You never mutate the git working tree of the checkout you run in** — the single canonical
+rule lives in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §RO; cite it,
+don't restate the prohibition (the five verbatim copies were the #375-class drift §RO closes).
+Step 2's mechanism already enforces it *by construction* (the head reaches a per-run ref +
+throwaway worktree; your session tree is never switched, reset, or checked out — ADR
+0052/0067).
 
 ## The formats contract
 

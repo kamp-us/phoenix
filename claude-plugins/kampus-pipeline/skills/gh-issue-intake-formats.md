@@ -866,6 +866,39 @@ defaulting green.
 
 ---
 
+## RO. Read-only on git working state — the gate-never-mutates invariant (#639)
+
+Every review/ship gate runs in a checkout it does **not** own — often the owner's **live,
+running dev-server checkout** — so a working-tree mutation there can silently destroy
+uncommitted work, exactly the data loss a verification step must never cause (a `review-doc`
+agent once ran `git stash pop` then `git reset --hard HEAD` in the primary checkout; no harm
+that time, pure luck). This section states the rule **once** so every gate cites *one*
+definition rather than re-deriving the prohibition in five verbatim copies — the §CP/§DOC/§ZS
+single-sourcing discipline, applied to working-tree safety (closing the #375-class copy drift
+those copies would otherwise re-seed).
+
+**The invariant — a review/ship run MUST never mutate the launched/shared checkout's git
+state:**
+
+- **Never run `git checkout` / `git switch` / `git reset` / `git stash` / `git clean` /
+  `git merge` / `git pull` / `git rebase`** — nor `gh pr checkout` — in the checkout you were
+  launched in. No branch switch, no working-tree mutation, ever.
+- **Read head and base read-only.** Drive the diff/file reads over `gh api` / `gh pr diff`,
+  or fetch the head into a per-run ref and read off *that ref* without checking it out:
+  `git fetch origin pull/$PR/head:$PR_REF` then `git show "$PR_REF:<path>"` /
+  `git grep <pattern> $PR_REF`. `git fetch` and `git update-ref -d` (your own per-run ref)
+  are fine — they don't touch the working tree.
+- **Any materialized tree is an isolated throwaway worktree, never the primary checkout** —
+  `git worktree add "$(mktemp -d)/…" "$PR_REF"`, torn down with `git worktree prune` after.
+  A tree the gate exclusively owns, never the checkout it was launched in.
+
+This is non-negotiable and orthogonal to the 0052/0067 config-isolation split: that split
+keeps the head's *instructions* out of a reviewer's path; this keeps *the gate's* git ops out
+of the owner's working tree. A gate that needs a materialized head has the per-run-ref +
+throwaway-worktree mechanism above; it never reaches for the launched checkout.
+
+---
+
 ## 5. review-code pass marker
 
 When `review-code` lands its verdict and a native review can't be posted (e.g. org
