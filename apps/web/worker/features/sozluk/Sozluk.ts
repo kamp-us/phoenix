@@ -180,12 +180,6 @@ export class Sozluk extends Context.Service<
 			after?: string | null;
 		}) => Effect.Effect<TermConnectionPage>;
 
-		readonly readMyVote: (input: {
-			userId: string;
-			targetKind: "definition" | "post" | "comment";
-			targetId: string;
-		}) => Effect.Effect<number | null>;
-
 		readonly lookupDefinitionTermSlug: (definitionId: string) => Effect.Effect<string | null>;
 
 		readonly addDefinition: (
@@ -594,27 +588,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			return {...page, totalCount} satisfies TermConnectionPage;
 		});
 
-		const readMyVote = Effect.fn("Sozluk.readMyVote")(function* (input: {
-			userId: string;
-			targetKind: "definition" | "post" | "comment";
-			targetId: string;
-		}) {
-			const rows = yield* run((db) =>
-				db
-					.select({userId: schema.userVote.userId})
-					.from(schema.userVote)
-					.where(
-						and(
-							eq(schema.userVote.userId, input.userId),
-							eq(schema.userVote.targetKind, input.targetKind),
-							eq(schema.userVote.targetId, input.targetId),
-						),
-					)
-					.limit(1),
-			);
-			return rows.length > 0 ? 1 : null;
-		});
-
 		const lookupDefinitionTermSlug = Effect.fn("Sozluk.lookupDefinitionTermSlug")(function* (
 			definitionId: string,
 		) {
@@ -851,7 +824,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			getTermSummariesByIds,
 			listTermSummaries,
 			listTermSummariesConnection,
-			readMyVote,
 			lookupDefinitionTermSlug,
 			addDefinition,
 			editDefinition,
