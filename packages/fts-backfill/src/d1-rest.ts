@@ -6,9 +6,9 @@
  * as `@kampus/preview-seed`'s `d1-rest.ts`.
  *
  * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the
- * tree via alchemy). A single statement is one REST call; a drizzle `batch([...])`
- * collects every statement's sql+params into ONE REST `batch` call, which D1 runs
- * as a single atomic transaction — load-bearing for the backfill's all-or-none
+ * tree via alchemy). A single statement is one REST call; `batch([...])` collects
+ * every prepared+bound statement's sql+params into ONE REST `batch` call, which D1
+ * runs as a single atomic transaction — load-bearing for the backfill's all-or-none
  * write. The adapter methods return Promises and run the `queryDatabase` Effect
  * with the provided credentials/HTTP layer per call.
  */

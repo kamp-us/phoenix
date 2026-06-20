@@ -26,7 +26,10 @@ import {syncPostSearch, syncTermSearch} from "@kampus/web/features/search/fts-sy
 import type {SQL} from "drizzle-orm";
 import {isNull} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
+import {SQLiteAsyncDialect} from "drizzle-orm/sqlite-core";
 import {backfillSchema, postSummary, termSummary} from "./schema.ts";
+
+const dialect = new SQLiteAsyncDialect();
 
 export type BackfillDb = ReturnType<typeof drizzle<typeof backfillSchema>>;
 
@@ -64,9 +67,15 @@ export const buildBackfillStatements = (
 
 /**
  * Read every term + every live post from D1, then write their FTS rows as one
- * atomic, idempotent batch through the ADR-0080 sync builders. Returns the row
- * counts indexed. An empty corpus is a clean no-op (D1 `batch` rejects an empty
- * tuple, so the empty case returns without a write).
+ * atomic, idempotent batch. Returns the row counts indexed. An empty corpus is a
+ * clean no-op (the empty case returns before any write).
+ *
+ * The write goes over the raw D1 batch contract (`prepare(sql).bind(...params)`
+ * per statement, then one `D1Database.batch([...])`) rather than drizzle's
+ * `db.batch([db.run(sql)...])`: a raw `db.run(SQL)` builds a `SQLiteRaw` whose
+ * `_prepare()` returns itself with no `.stmt`, so drizzle's d1 batch loop throws
+ * reading `preparedQuery.stmt.bind` (drizzle 1.0.0-rc.3; see issue #893).
+ * `D1Database.batch` is itself atomic, so the all-or-none guarantee is preserved.
  */
 export const backfill = async (d1: D1Database): Promise<BackfillReport> => {
 	const db = makeBackfillDb(d1);
@@ -80,9 +89,12 @@ export const backfill = async (d1: D1Database): Promise<BackfillReport> => {
 		.where(isNull(postSummary.deletedAt));
 
 	const {statements, report} = buildBackfillStatements(termRows, postRows);
+	if (statements.length === 0) return report;
 
-	const [first, ...rest] = statements.map((stmt) => db.run(stmt));
-	if (first === undefined) return report;
-	await db.batch([first, ...rest]);
+	const bound = statements.map((stmt) => {
+		const {sql, params} = dialect.sqlToQuery(stmt);
+		return d1.prepare(sql).bind(...params);
+	});
+	await d1.batch(bound);
 	return report;
 };
