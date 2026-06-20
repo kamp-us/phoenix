@@ -100,6 +100,12 @@ pointless.
 3. **You are the only skill that merges.** If you find yourself wanting to merge a PR a gate
    hasn't passed, the answer is to route it back through that gate (`review-code` /
    `review-doc`), not to merge it here.
+4. **Read-only on git working state** — the single canonical rule lives in
+   [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §RO; cite it, don't restate
+   the prohibition (the five verbatim copies were the #375-class drift §RO closes). You ship
+   entirely over `gh api` / `gh pr merge` (the merge happens **server-side**), so you have **no
+   reason to touch the local working tree at all** — read PR state read-only over `gh api`; you
+   never need a checkout to ship.
 
 ## The merge-ready signals
 

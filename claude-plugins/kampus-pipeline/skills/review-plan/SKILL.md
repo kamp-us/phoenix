@@ -62,6 +62,14 @@ behavior is unchanged with no config (ADR 0062 §1).
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 ```
 
+## Read-only on git working state
+
+**You never mutate the git working tree of the checkout you run in** — the single canonical
+rule lives in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §RO; cite it,
+don't restate the prohibition (the five verbatim copies were the #375-class drift §RO closes).
+This gate verifies the epic ledger over `gh api` — it has **no reason to touch the working
+tree at all**, so a checkout is never even needed.
+
 ## The formats contract
 
 Your floor is the structural shape of the ledger — read the contract so you know what the

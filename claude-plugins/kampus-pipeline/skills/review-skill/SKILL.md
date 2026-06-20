@@ -127,6 +127,15 @@ behavior is unchanged with no config (ADR 0062 §1).
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
 ```
 
+## Read-only on git working state
+
+**You never mutate the git working tree of the checkout you run in** — the single canonical
+rule lives in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §RO; cite it,
+don't restate the prohibition (the five verbatim copies were the #375-class drift §RO closes).
+The Step-2-style fetch-into-a-ref + throwaway-worktree mechanism above already enforces it *by
+construction* (the head reaches a per-run ref; your session tree is never switched, reset, or
+checked out — ADR 0052/0067).
+
 ## The formats contract
 
 Your gate is **format 2, the sub-issue body's `### Acceptance criteria` checklist** — and
