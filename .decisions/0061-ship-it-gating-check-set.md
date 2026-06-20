@@ -39,7 +39,11 @@ is exactly the repo's current state.
 
 - A red check **blocks** (refuse + route to `heal-ci`) **by default**.
 - A red check is **non-blocking** only when its name is on the explicit **known-informational
-  list** — currently just the `Deploy` workflow's preview deploys (`deploy (web)`).
+  list** — the `Deploy` workflow's preview-deploy-infra checks: `deploy (web)` (the `pr-<n>`
+  preview-stage deploy) and `cleanup (web, …)` (`cleanup (web, @kampus/web, true)`, the
+  `alchemy destroy` of that preview stage). Both are orthogonal to whether the PR is correct
+  and tested — a teardown race (e.g. a close→reopen on PR #914) reds `cleanup` without
+  bearing on the run-evidence suite.
 - An **unrecognized** red check is treated as **gating** (it blocks) until it is deliberately
   added to the informational list. The default is fail-safe: a new check never silently
   passes the gate.
