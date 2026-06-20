@@ -30,7 +30,7 @@
  * `/küçük harf/`, `/kullanımda/`, `/zaten/`) — re-expressed as the stable
  * wire codes.
  * not portable black-box: `profile.test.ts` direct `user_profile` seed +
- * `definition_view` / `post_summary` / `comment_view` row-landing `waitFor`s
+ * `definition_record` / `post_summary` / `comment_record` row-landing `waitFor`s
  * (writes are synchronous over `/fate`; just re-resolve) and the `createdAt`
  * timestamp ordering probe (the wire feed exposes a `<sec>:<id>` cursor, not a
  * `Date`) — re-expressed via the keyset cursor order + id-union assertions.

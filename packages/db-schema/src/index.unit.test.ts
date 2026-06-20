@@ -10,7 +10,7 @@
  */
 import {getTableConfig} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
-import {commentView, definitionView, postSummary, termSummary} from "./index.ts";
+import {commentRecord, definitionRecord, postSummary, termSummary} from "./index.ts";
 
 const columnNames = (table: Parameters<typeof getTableConfig>[0]) =>
 	getTableConfig(table)
@@ -36,8 +36,8 @@ describe("shared read-model schema", () => {
 		);
 	});
 
-	it("definition_view column set carries the ADR 0096 removed_at triad", () => {
-		const cols = columnNames(definitionView);
+	it("definition_record column set carries the ADR 0096 removed_at triad", () => {
+		const cols = columnNames(definitionRecord);
 		expect(cols).toEqual(
 			[
 				"id",
@@ -90,8 +90,8 @@ describe("shared read-model schema", () => {
 		expect(cols).toContain("removed_at");
 	});
 
-	it("comment_view column set carries the ADR 0096 removed_at triad", () => {
-		const cols = columnNames(commentView);
+	it("comment_record column set carries the ADR 0096 removed_at triad", () => {
+		const cols = columnNames(commentRecord);
 		expect(cols).toEqual(
 			[
 				"id",

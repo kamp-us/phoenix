@@ -539,7 +539,7 @@ describe("pano comments — connection edge cases", () => {
 //   comment.vote on unknown id → COMMENT_NOT_FOUND, leaf comment.delete returning
 //   the re-resolved parent Post with the decremented commentCount.
 // not portable black-box: comment_vote / user_vote row counts, total_karma
-//   read-backs, comment_view body_excerpt + deleted_at columns, the
+//   read-backs, comment_record body_excerpt + deleted_at columns, the
 //   `{deleted, hasReplies, placeholder}` / `changed` service-return flags —
 //   re-expressed via the re-resolved Comment, the comments feed (tombstone body
 //   `[silindi]` + empty authorId), and `post(id).commentCount` over `/fate`.

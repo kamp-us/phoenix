@@ -21,7 +21,7 @@ import {eq} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
 import {buildFixtures} from "./fixtures.ts";
 import {
-	definitionView,
+	definitionRecord,
 	postSearch,
 	postSummary,
 	seedSchema,
@@ -57,7 +57,10 @@ export const buildSeedStatements = (db: SeedDb, now?: Date) => {
 		db.insert(termSummary).values(row).onConflictDoUpdate({target: termSummary.slug, set: row}),
 	);
 	const defStmts = definitions.map((row) =>
-		db.insert(definitionView).values(row).onConflictDoUpdate({target: definitionView.id, set: row}),
+		db
+			.insert(definitionRecord)
+			.values(row)
+			.onConflictDoUpdate({target: definitionRecord.id, set: row}),
 	);
 	const postStmts = posts.map((row) =>
 		db.insert(postSummary).values(row).onConflictDoUpdate({target: postSummary.id, set: row}),

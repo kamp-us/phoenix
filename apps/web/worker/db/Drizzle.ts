@@ -104,7 +104,7 @@ export const orDieAccess = (access: DrizzleAccess): DrizzleAccessOrDie => ({
  * @example
  *   yield* batch((db) => [
  *     db.insert(schema.definitionVote).values({...}),
- *     db.update(schema.definitionView).set({...}).where(...),
+ *     db.update(schema.definitionRecord).set({...}).where(...),
  *   ] as const);
  */
 export class Drizzle extends Context.Service<Drizzle, DrizzleAccess>()("@kampus/Drizzle") {}

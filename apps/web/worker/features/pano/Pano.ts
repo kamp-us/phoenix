@@ -491,7 +491,7 @@ export const PanoLive = Layer.effect(Pano)(
 		// comment surfaces as the `[silindi]` placeholder with author elided; its real
 		// body stays in the row for restore + moderator review. `deletedAt` on the
 		// wire-facing `CommentRow` is the removal timestamp (presentation contract).
-		const rowToCommentRow = (row: typeof schema.commentView.$inferSelect): CommentRow => {
+		const rowToCommentRow = (row: typeof schema.commentRecord.$inferSelect): CommentRow => {
 			const lifecycle = Lifecycle.fromColumns(row);
 			if (Lifecycle.isRemoved(lifecycle)) {
 				return {
@@ -534,8 +534,8 @@ export const PanoLive = Layer.effect(Pano)(
 			const totalComments = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.commentView)
-					.where(isNull(schema.commentView.removedAt))
+					.from(schema.commentRecord)
+					.where(isNull(schema.commentRecord.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalAuthors = yield* run((db) =>
@@ -544,7 +544,7 @@ export const PanoLive = Layer.effect(Pano)(
 						sql`SELECT COUNT(DISTINCT author_id) as n FROM (
 								SELECT author_id FROM post_summary WHERE removed_at IS NULL
 								UNION
-								SELECT author_id FROM comment_view WHERE removed_at IS NULL
+								SELECT author_id FROM comment_record WHERE removed_at IS NULL
 							)`,
 					)
 					.then((r) => Number((r.results[0] as {n: number} | undefined)?.n ?? 0)),
@@ -761,12 +761,12 @@ export const PanoLive = Layer.effect(Pano)(
 			// (ADR 0096 §5): keep it when it still has a live child (rendered as the
 			// `[silindi]` tombstone by `rowToCommentRow`), otherwise omit it. A live
 			// comment is always shown.
-			const visible = sql`(${schema.commentView.removedAt} IS NULL OR EXISTS (SELECT 1 FROM ${schema.commentView} AS child WHERE child.parent_id = ${schema.commentView.id} AND child.removed_at IS NULL))`;
-			const baseWhere = and(eq(schema.commentView.postId, postId), visible);
+			const visible = sql`(${schema.commentRecord.removedAt} IS NULL OR EXISTS (SELECT 1 FROM ${schema.commentRecord} AS child WHERE child.parent_id = ${schema.commentRecord.id} AND child.removed_at IS NULL))`;
+			const baseWhere = and(eq(schema.commentRecord.postId, postId), visible);
 			const totalCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`count(*)`})
-					.from(schema.commentView)
+					.from(schema.commentRecord)
 					.where(baseWhere)
 					.get()
 					.then((r) => r?.n ?? 0),
@@ -780,9 +780,9 @@ export const PanoLive = Layer.effect(Pano)(
 			const resolvedRow = after
 				? ((yield* run((db) =>
 						db
-							.select({createdAt: schema.commentView.createdAt})
-							.from(schema.commentView)
-							.where(and(eq(schema.commentView.id, after), visible))
+							.select({createdAt: schema.commentRecord.createdAt})
+							.from(schema.commentRecord)
+							.where(and(eq(schema.commentRecord.id, after), visible))
 							.get(),
 					)) ?? null)
 				: null;
@@ -793,16 +793,16 @@ export const PanoLive = Layer.effect(Pano)(
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
 			const cursorPredicate = keysetAfter([
-				{column: schema.commentView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
-				{column: schema.commentView.id, dir: "asc", value: after},
+				{column: schema.commentRecord.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
+				{column: schema.commentRecord.id, dir: "asc", value: after},
 			]);
 
 			const fetched = yield* run((db) =>
 				db
 					.select()
-					.from(schema.commentView)
+					.from(schema.commentRecord)
 					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
-					.orderBy(asc(schema.commentView.createdAt), asc(schema.commentView.id))
+					.orderBy(asc(schema.commentRecord.createdAt), asc(schema.commentRecord.id))
 					.limit(first + 1),
 			);
 
@@ -876,8 +876,8 @@ export const PanoLive = Layer.effect(Pano)(
 			const fetched = yield* run((db) =>
 				db
 					.select()
-					.from(schema.commentView)
-					.where(inArray(schema.commentView.id, [...ids])),
+					.from(schema.commentRecord)
+					.where(inArray(schema.commentRecord.id, [...ids])),
 			);
 			const voted = yield* voteSvc.readMine(
 				viewerId,
@@ -895,9 +895,9 @@ export const PanoLive = Layer.effect(Pano)(
 		) {
 			const rows = yield* run((db) =>
 				db
-					.select({postId: schema.commentView.postId})
-					.from(schema.commentView)
-					.where(eq(schema.commentView.id, commentId))
+					.select({postId: schema.commentRecord.postId})
+					.from(schema.commentRecord)
+					.where(eq(schema.commentRecord.id, commentId))
 					.limit(1),
 			);
 			return rows[0]?.postId ?? null;
@@ -1438,7 +1438,7 @@ export const PanoLive = Layer.effect(Pano)(
 			const parentId = input.parentId ?? null;
 			if (parentId !== null) {
 				const parent = yield* run((db) =>
-					db.query.commentView.findFirst({
+					db.query.commentRecord.findFirst({
 						where: {id: parentId, postId: input.postId, removedAt: {isNull: true}},
 					}),
 				);
@@ -1454,7 +1454,7 @@ export const PanoLive = Layer.effect(Pano)(
 			const bodyExcerpt = excerpt(rawBody);
 
 			yield* run((db) =>
-				db.insert(schema.commentView).values({
+				db.insert(schema.commentRecord).values({
 					id: commentId,
 					authorId: input.authorId,
 					authorName: input.authorName,
@@ -1509,7 +1509,7 @@ export const PanoLive = Layer.effect(Pano)(
 			const rawBody = yield* validateCommentBody(input.body);
 
 			const row = yield* run((db) =>
-				db.query.commentView.findFirst({
+				db.query.commentRecord.findFirst({
 					where: {id: input.commentId, removedAt: {isNull: true}},
 				}),
 			);
@@ -1531,9 +1531,9 @@ export const PanoLive = Layer.effect(Pano)(
 
 			yield* run((db) =>
 				db
-					.update(schema.commentView)
+					.update(schema.commentRecord)
 					.set({body: rawBody, bodyExcerpt, updatedAt: now})
-					.where(eq(schema.commentView.id, input.commentId)),
+					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
 			return {
@@ -1551,7 +1551,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const deleteComment = Effect.fn("Pano.deleteComment")(function* (input: DeleteCommentInput) {
 			const row = yield* run((db) =>
-				db.query.commentView.findFirst({where: {id: input.commentId}}),
+				db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 			);
 			if (!row) {
 				return yield* new CommentNotFound({
@@ -1577,11 +1577,11 @@ export const PanoLive = Layer.effect(Pano)(
 			const childCountRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.commentView)
+					.from(schema.commentRecord)
 					.where(
 						and(
-							eq(schema.commentView.parentId, input.commentId),
-							isNull(schema.commentView.removedAt),
+							eq(schema.commentRecord.parentId, input.commentId),
+							isNull(schema.commentRecord.removedAt),
 						),
 					)
 					.get(),
@@ -1605,9 +1605,9 @@ export const PanoLive = Layer.effect(Pano)(
 			yield* voteSvc.clearTarget("comment", input.commentId);
 			yield* run((db) =>
 				db
-					.update(schema.commentView)
+					.update(schema.commentRecord)
 					.set({...removed, score: 0, updatedAt: now})
-					.where(eq(schema.commentView.id, input.commentId)),
+					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
 			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
@@ -1657,7 +1657,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const restoreComment = Effect.fn("Pano.restoreComment")(function* (input: DeleteCommentInput) {
 			const row = yield* run((db) =>
-				db.query.commentView.findFirst({where: {id: input.commentId}}),
+				db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 			);
 			if (!row) {
 				return yield* new CommentNotFound({
@@ -1685,9 +1685,9 @@ export const PanoLive = Layer.effect(Pano)(
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
 			yield* run((db) =>
 				db
-					.update(schema.commentView)
+					.update(schema.commentRecord)
 					.set({...live, updatedAt: now})
-					.where(eq(schema.commentView.id, input.commentId)),
+					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
 			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
@@ -1720,7 +1720,7 @@ export const PanoLive = Layer.effect(Pano)(
 			reportId: string;
 		}) {
 			const row = yield* run((db) =>
-				db.query.commentView.findFirst({where: {id: input.commentId}}),
+				db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 			);
 			if (!row || Lifecycle.isRemoved(Lifecycle.fromColumns(row))) {
 				return {removed: false};
@@ -1737,9 +1737,9 @@ export const PanoLive = Layer.effect(Pano)(
 			yield* voteSvc.clearTarget("comment", input.commentId);
 			yield* run((db) =>
 				db
-					.update(schema.commentView)
+					.update(schema.commentRecord)
 					.set({...removed, score: 0, updatedAt: now})
-					.where(eq(schema.commentView.id, input.commentId)),
+					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
 			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
@@ -1764,7 +1764,7 @@ export const PanoLive = Layer.effect(Pano)(
 			commentId: string;
 		}) {
 			const row = yield* run((db) =>
-				db.query.commentView.findFirst({where: {id: input.commentId}}),
+				db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 			);
 			if (!row) return {restored: false};
 			const lifecycle = Lifecycle.fromColumns(row);
@@ -1774,9 +1774,9 @@ export const PanoLive = Layer.effect(Pano)(
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
 			yield* run((db) =>
 				db
-					.update(schema.commentView)
+					.update(schema.commentRecord)
 					.set({...live, updatedAt: now})
-					.where(eq(schema.commentView.id, input.commentId)),
+					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
 			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
@@ -1803,7 +1803,7 @@ export const PanoLive = Layer.effect(Pano)(
 			isVote: boolean,
 		) {
 			const row = yield* run((db) =>
-				db.query.commentView.findFirst({
+				db.query.commentRecord.findFirst({
 					where: {id: input.commentId, removedAt: {isNull: true}},
 				}),
 			);

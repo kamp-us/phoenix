@@ -57,6 +57,13 @@
       "when": 1784500000000,
       "tag": "0007_moderation_role_resolution",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1785000000000,
+      "tag": "0008_rename_store_of_record",
+      "breakpoints": true
     }
   ]
 }

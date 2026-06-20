@@ -1,5 +1,5 @@
 /**
- * The `DefinitionRow` shape and the `definition_view` → `DefinitionRow` mapper,
+ * The `DefinitionRow` shape and the `definition_record` → `DefinitionRow` mapper,
  * shared by the definition reads so they can't drift on field mapping.
  */
 import type * as schema from "../../db/drizzle/schema.ts";
@@ -37,7 +37,7 @@ export interface DefinitionConnectionPage {
 }
 
 export const toDefinitionRow = (
-	d: typeof schema.definitionView.$inferSelect,
+	d: typeof schema.definitionRecord.$inferSelect,
 	voted: Set<string>,
 	viewerId: string | null | undefined,
 ): DefinitionRow => ({

@@ -27,7 +27,7 @@ describe("fate seam — /fate", () => {
 		if (!result.ok) return;
 		const data = result.data as {status: string; definitions: number};
 		expect(data.status).toBe("ok");
-		// `definitions` comes from Stats.getLandingStats() reading definition_view —
+		// `definitions` comes from Stats.getLandingStats() reading definition_record —
 		// a number, not a stub/undefined.
 		// not portable black-box: the exact count is a shared-D1 aggregate (other
 		// test files seed definitions), so we assert the type, not a D1 row read-back.

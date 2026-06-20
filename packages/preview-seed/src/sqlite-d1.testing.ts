@@ -35,7 +35,7 @@ CREATE TABLE term_summary (
 	last_edit_at integer,
 	last_event_id text DEFAULT '' NOT NULL
 );
-CREATE TABLE definition_view (
+CREATE TABLE definition_record (
 	id text PRIMARY KEY NOT NULL,
 	author_id text NOT NULL,
 	author_name text NOT NULL,
