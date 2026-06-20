@@ -1,6 +1,6 @@
-/** Unit tests for `resolveStateMode` — the deploy-time state-store selector. */
+/** Unit tests for `resolveStateMode` + `customHostname` — deploy-time helpers. */
 import {describe, expect, it} from "vitest";
-import {resolveStateMode} from "./env.ts";
+import {customHostname, PHOENIX_APEX_HOSTNAME, resolveStateMode} from "./env.ts";
 
 describe("resolveStateMode", () => {
 	it("a real deploy (no CI, no dev signal) uses the Cloudflare-hosted store", () => {
@@ -46,5 +46,25 @@ describe("resolveStateMode", () => {
 
 	it("falls through to the shared store on a malformed ALCHEMY_EXEC_OPTIONS blob", () => {
 		expect(resolveStateMode({ALCHEMY_EXEC_OPTIONS: "{not json"})).toBe("cloudflare");
+	});
+});
+
+describe("customHostname", () => {
+	it("a production deploy serves the apex phoenix.kamp.us", () => {
+		expect(customHostname("prod", "production")).toBe(PHOENIX_APEX_HOSTNAME);
+		expect(customHostname("prod", "production")).toBe("phoenix.kamp.us");
+	});
+
+	it("a non-prod stage gets its own <stage>.phoenix.kamp.us subdomain", () => {
+		expect(customHostname("preview", "preview")).toBe("preview.phoenix.kamp.us");
+		expect(customHostname("dev_umut", "development")).toBe("dev_umut.phoenix.kamp.us");
+	});
+
+	it("prod is decided by ENVIRONMENT, not the stage name", () => {
+		// A stage literally named "production" is still non-prod unless ENVIRONMENT says so —
+		// the per-stage subdomain keeps it off the apex (fail-closed, mirrors isProductionDeploy).
+		expect(customHostname("production", "preview")).toBe("production.phoenix.kamp.us");
+		// And a prod ENVIRONMENT serves the apex regardless of the stage label.
+		expect(customHostname("anything", "production")).toBe("phoenix.kamp.us");
 	});
 });

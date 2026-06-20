@@ -9,13 +9,14 @@
  * the `fetch` handler.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
-import {RuntimeContext} from "alchemy";
+import {RuntimeContext, Stage} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {AppConfig, betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
+import {customHostname, resolveStateMode} from "./env.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
 import {withColdStartRetry} from "./features/fate-live/cold-start-retry.ts";
 import {connectionOf, LiveDO, LiveDOLive, topicOf} from "./features/fate-live/live-do.ts";
@@ -53,39 +54,57 @@ export class Phoenix extends Cloudflare.Worker<
 	// The hosted live-fan-out DO, declared as the worker's `Deps` (ADR 0028) so it
 	// can `yield*` the Tag in init and provide `.make()` below.
 	LiveDO
->()("phoenix", {
-	main: import.meta.filename,
-	// Pin the local dev port. `alchemy dev` defaults to 1337 but can silently fall back
-	// to the next free port; if a second app's worker ran alongside, that could make
-	// the Vite proxy in `apps/web/vite.config.ts` point at the wrong worker.
-	// `strictPort: true` makes collisions fail loudly instead of misrouting.
-	dev: {port: 1337, strictPort: true},
-	// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
-	// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
-	// resolves each at deploy and runtime reads the same value off the auto-wired
-	// ConfigProvider.
-	env: {
-		ENVIRONMENT: environment,
-		BETTER_AUTH_SECRET: betterAuthSecret,
-		// The Flagship app resource maps to the native `Flagship` runtime binding
-		// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
-		FLAGS: FlagshipResource,
-	},
-	assets: {
-		// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
-		// relative to the alchemy CLI's `apps/web` cwd). At the edge the worker
-		// serves it; the `runWorkerFirst` globs keep the worker-owned paths from
-		// being shadowed by the SPA shell (a missing entry returns the shell for
-		// GET and 405 for POST). Derived from the one worker-owned-route manifest
-		// `app.ts` also consumes (`http/worker-routes.ts`), so route and glob can't
-		// drift (#861).
-		directory: "./dist/client",
-		notFoundHandling: "single-page-application",
-		runWorkerFirst: [...workerFirstGlobs],
-	},
-	compatibility: {flags: ["nodejs_compat"]},
-	observability: {enabled: true},
-}) {}
+>()(
+	"phoenix",
+	// Props are an Effect so `domain` can derive from the deploy's `Stage` (a
+	// PlatformService the stack provides; `.make()` excludes it from `PhoenixLive`'s
+	// requirements). The Custom Domain auto-creates the proxied DNS record + TLS cert
+	// on the `kamp.us` zone (inferred from the hostname); prod serves the apex,
+	// non-prod stages get `<stage>.phoenix.kamp.us` (issue #594; see `customHostname`).
+	Effect.gen(function* () {
+		const props = {
+			main: import.meta.filename,
+			// Pin the local dev port. `alchemy dev` defaults to 1337 but can silently fall back
+			// to the next free port; if a second app's worker ran alongside, that could make
+			// the Vite proxy in `apps/web/vite.config.ts` point at the wrong worker.
+			// `strictPort: true` makes collisions fail loudly instead of misrouting.
+			dev: {port: 1337, strictPort: true},
+			// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
+			// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
+			// resolves each at deploy and runtime reads the same value off the auto-wired
+			// ConfigProvider.
+			env: {
+				ENVIRONMENT: environment,
+				BETTER_AUTH_SECRET: betterAuthSecret,
+				// The Flagship app resource maps to the native `Flagship` runtime binding
+				// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
+				FLAGS: FlagshipResource,
+			},
+			assets: {
+				// The built SPA shell (`vite build` emits `dist/client`, ADR 0030; path is
+				// relative to the alchemy CLI's `apps/web` cwd). At the edge the worker
+				// serves it; the `runWorkerFirst` globs keep the worker-owned paths from
+				// being shadowed by the SPA shell (a missing entry returns the shell for
+				// GET and 405 for POST). Derived from the one worker-owned-route manifest
+				// `app.ts` also consumes (`http/worker-routes.ts`), so route and glob can't
+				// drift (#861).
+				directory: "./dist/client",
+				notFoundHandling: "single-page-application" as const,
+				runWorkerFirst: [...workerFirstGlobs],
+			},
+			compatibility: {flags: ["nodejs_compat"]},
+			observability: {enabled: true},
+		};
+
+		// Offline `alchemy dev` has no real CF zone, so it never attaches a Custom
+		// Domain — mirror the `resolveStateMode` offline gate the state store uses. A
+		// `--stage` deploy is a real deploy and DOES get its `<stage>.phoenix.kamp.us`.
+		if (resolveStateMode(process.env) === "local") return props;
+
+		const stage = yield* Stage;
+		return {...props, domain: customHostname(stage, process.env.ENVIRONMENT ?? "")};
+	}),
+) {}
 
 export default Phoenix.make(
 	Effect.gen(function* () {

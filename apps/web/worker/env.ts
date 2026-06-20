@@ -79,3 +79,20 @@ const isOfflinePath = (env: DeployEnvInput): boolean => {
  */
 export const resolveStateMode = (env: DeployEnvInput): StateMode =>
 	isOfflinePath(env) ? "local" : "cloudflare";
+
+/** The apex the phoenix worker is served under (a Cloudflare Custom Domain). */
+export const PHOENIX_APEX_HOSTNAME = "phoenix.kamp.us" as const;
+
+/**
+ * The Cloudflare Custom Domain hostname the worker is served at, derived from the
+ * deploy's stage + environment (issue #594). Production serves the apex
+ * `phoenix.kamp.us`; every non-prod `alchemy deploy --stage <name>` gets its own
+ * `<stage>.phoenix.kamp.us` so isolated stages never collide on the apex.
+ *
+ * The prod test is the `ENVIRONMENT` literal, NOT the stage name: a deploy is
+ * production iff `environment === "production"` (the same fail-closed gate the email
+ * IaC uses), independent of what the stage happens to be called. The stage only names
+ * the per-stage subdomain for non-prod deploys.
+ */
+export const customHostname = (stage: string, environment: string): string =>
+	environment === "production" ? PHOENIX_APEX_HOSTNAME : `${stage}.${PHOENIX_APEX_HOSTNAME}`;

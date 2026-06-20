@@ -79,6 +79,13 @@ export default Alchemy.Stack(
 		// above); its resolved output carries `databaseId`/`accountId` (alchemy
 		// `Cloudflare.D1Database`, output `{databaseId, accountId, …}`).
 		const db = yield* PhoenixDb;
-		return {url: worker.url, databaseId: db.databaseId, accountId: db.accountId};
+		// `domains` is the Custom Domain(s) bound to the worker (#594): `phoenix.kamp.us`
+		// on a prod deploy, `<stage>.phoenix.kamp.us` per non-prod stage, empty offline.
+		return {
+			url: worker.url,
+			domains: worker.domains,
+			databaseId: db.databaseId,
+			accountId: db.accountId,
+		};
 	}).pipe(Effect.provide(PhoenixLive)),
 );
