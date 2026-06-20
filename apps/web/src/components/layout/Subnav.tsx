@@ -1,7 +1,11 @@
 import type * as React from "react";
+import {NavLink} from "react-router";
 import "./Subnav.css";
 
 export type SubnavFilter = {id: string; label: React.ReactNode};
+
+/** A route-navigating item that sits beside the sort toggles (e.g. kaydedilenler). */
+export type SubnavLink = {to: string; label: React.ReactNode};
 
 export function Subnav({
 	title,
@@ -9,6 +13,7 @@ export function Subnav({
 	filters,
 	activeFilter,
 	onFilterChange,
+	links,
 	crumb,
 	meta,
 }: {
@@ -17,14 +22,15 @@ export function Subnav({
 	filters?: SubnavFilter[];
 	activeFilter?: string;
 	onFilterChange?: (id: string) => void;
+	links?: SubnavLink[];
 	crumb?: {label: React.ReactNode; onClear?: () => void};
 	meta?: React.ReactNode;
 }) {
 	return (
 		<div className="kp-subnav">
-			{filters?.length ? (
+			{filters?.length || links?.length ? (
 				<div className="kp-subnav__filters">
-					{filters.map((f) => (
+					{filters?.map((f) => (
 						<button
 							key={f.id}
 							type="button"
@@ -34,6 +40,12 @@ export function Subnav({
 						>
 							{f.label}
 						</button>
+					))}
+					{/* NavLink sets aria-current="page" on the active route by default */}
+					{links?.map((l) => (
+						<NavLink key={l.to} to={l.to} className="kp-subnav__filter">
+							{l.label}
+						</NavLink>
 					))}
 				</div>
 			) : null}

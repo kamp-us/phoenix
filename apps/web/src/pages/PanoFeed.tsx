@@ -7,7 +7,8 @@
  */
 import * as React from "react";
 import {useLiveListView, useRequest} from "react-fate";
-import {Subnav} from "../components/layout/Subnav";
+import {useSession} from "../auth/client";
+import {Subnav, type SubnavLink} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Screen} from "../fate/Screen";
@@ -32,6 +33,9 @@ const FILTERS = [
 	{id: "en-iyi", label: "en iyi", sort: "top" as const},
 	{id: "tartisma", label: "tartışma", sort: "discuss" as const},
 ];
+
+/** Saved-posts (`/pano/kaydedilenler`) is per-viewer, so it's shown signed-in only. */
+const SAVED_LINK: SubnavLink = {to: "/pano/kaydedilenler", label: "kaydedilenler"};
 
 export function PanoFeed({host}: {host?: string}) {
 	const [filterId, setFilterId] = React.useState("sicak");
@@ -123,9 +127,18 @@ interface ChromeProps {
 }
 
 function FeedChrome({host, filterId, setFilterId, meta, children}: ChromeProps) {
+	const session = useSession();
+	const links = session.data?.user ? [SAVED_LINK] : undefined;
+
 	return (
 		<>
-			<Subnav filters={FILTERS} activeFilter={filterId} onFilterChange={setFilterId} meta={meta} />
+			<Subnav
+				filters={FILTERS}
+				activeFilter={filterId}
+				onFilterChange={setFilterId}
+				links={links}
+				meta={meta}
+			/>
 			{host ? <PanoCrumb host={host} /> : null}
 			<div className="kp-page">
 				<div className="kp-page__inner">{children}</div>
