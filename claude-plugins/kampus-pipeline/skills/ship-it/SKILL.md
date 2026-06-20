@@ -557,9 +557,14 @@ is on the explicit known-informational list below. Fail safe: an *unrecognized* 
 is treated as gating (it blocks) until it is deliberately classified — never the reverse.
 
 **Known-informational checks** (a red here does **not** block and is **not** routed to
-heal-ci): the `Deploy` workflow's preview deploys (`deploy (web)`). A preview-deploy infra
-flake (e.g. `Secret probe returned 502`) is orthogonal to whether the PR is correct and
-tested — see ADR [0061](https://github.com/kamp-us/phoenix/blob/main/.decisions/0061-ship-it-gating-check-set.md).
+heal-ci) — the `Deploy` workflow's preview-deploy-infra checks: `deploy (web)` (the `pr-<n>`
+preview-stage deploy) and `cleanup (web, …)` (the `Deploy` workflow's preview-stage
+`alchemy destroy` teardown leg). A preview-deploy infra flake (e.g. `Secret probe
+returned 502`) or a preview-teardown race (e.g. a close→reopen reds `cleanup`) is orthogonal
+to whether the PR is correct and tested. Match these two names exactly — only the named
+preview-deploy/teardown checks are informational; every other red, including any
+run-evidence (lint/format/typecheck, unit/integration/e2e) check, stays gating — see ADR
+[0061](https://github.com/kamp-us/phoenix/blob/main/.decisions/0061-ship-it-gating-check-set.md).
 
 Classify in this order (`skipping`/`cancel` are non-blocking — neither a failure nor an
 in-flight wait):
@@ -573,8 +578,9 @@ in-flight wait):
    multi-minute poll inside this atomic stage is out of scope.
 3. **Else proceed to Step 4** — every gating check is green. If a *known-informational*
    check is red, it does not block: note it in the ledger (`informational check red (deploy
-   (web)) — not gating`) and continue. Step 3.5 remains the SHA-bound backstop that the
-   gating suite actually passed for this commit.
+   (web)) — not gating`, or `informational check red (cleanup (web, …)) — not gating`) and
+   continue. Step 3.5 remains the SHA-bound backstop that the gating suite actually passed
+   for this commit.
 
 The gating set is, by construction, the suite the run-evidence bundle attests SHA-bound in
 Step 3.5 (lint / format / typecheck, unit tests, validate skill frontmatter, integration
