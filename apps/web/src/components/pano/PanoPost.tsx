@@ -6,6 +6,7 @@ import {codeOf} from "../../fate/wire";
 import {authRedirectPath} from "../../lib/returnTo";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
+import {useVoteToggle} from "./useVoteToggle";
 import "./PanoPost.css";
 
 /** Presentational vote control; the parent owns the mutation + auth gate. */
@@ -62,39 +63,42 @@ export function PostVoteWidget({
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
-	const [inFlight, setInFlight] = useState(false);
 
 	const voted = myVote === 1;
 
 	const redirectToAuth = () =>
 		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
 
-	const onToggle = async () => {
+	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818).
+	const drive = useVoteToggle(() => ({
+		voted,
+		dispatch: async (action) => {
+			try {
+				if (action === "retract") {
+					await fate.mutations.post.retractVote({
+						input: {id: postId},
+						optimistic: {score: Math.max(0, score - 1), myVote: null},
+						view: PostVoteView,
+					});
+				} else {
+					await fate.mutations.post.vote({
+						input: {id: postId},
+						optimistic: {score: score + 1, myVote: 1},
+						view: PostVoteView,
+					});
+				}
+			} catch (error) {
+				if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+			}
+		},
+	}));
+
+	const onToggle = () => {
 		if (!session.data?.user) {
 			redirectToAuth();
 			return;
 		}
-		if (inFlight) return;
-		setInFlight(true);
-		try {
-			if (voted) {
-				await fate.mutations.post.retractVote({
-					input: {id: postId},
-					optimistic: {score: Math.max(0, score - 1), myVote: null},
-					view: PostVoteView,
-				});
-			} else {
-				await fate.mutations.post.vote({
-					input: {id: postId},
-					optimistic: {score: score + 1, myVote: 1},
-					view: PostVoteView,
-				});
-			}
-		} catch (error) {
-			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
-		} finally {
-			setInFlight(false);
-		}
+		drive();
 	};
 
 	return <VoteControl count={score} pressed={voted} onToggle={onToggle} testIdSuffix={postId} />;

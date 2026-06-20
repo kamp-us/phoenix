@@ -16,6 +16,7 @@ import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
+import {useVoteToggle} from "./useVoteToggle";
 import "./PanoComment.css";
 
 export const CommentTreeNodeView = view<Comment>()({
@@ -71,7 +72,6 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const session = useSession();
 	const navigate = useNavigate();
 	const [open, setOpen] = React.useState(true);
-	const [inFlight, setInFlight] = React.useState(false);
 
 	const isDeleted = data.deletedAt != null;
 	const isOwner =
@@ -93,34 +93,38 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const redirectToAuth = () =>
 		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
 
-	const onUpvote = async () => {
+	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818).
+	const driveVote = useVoteToggle(() => ({
+		voted,
+		dispatch: async (action) => {
+			try {
+				if (action === "retract") {
+					await fate.mutations.comment.retractVote({
+						input: {id: data.id},
+						optimistic: {score: Math.max(0, score - 1), myVote: null},
+						view: CommentVoteView,
+					});
+				} else {
+					await fate.mutations.comment.vote({
+						input: {id: data.id},
+						optimistic: {score: score + 1, myVote: 1},
+						view: CommentVoteView,
+					});
+				}
+			} catch (error) {
+				// The vote button has no inline error slot, so we surface only
+				// UNAUTHORIZED (→ redirect) and stay silent otherwise.
+				if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+			}
+		},
+	}));
+
+	const onUpvote = () => {
 		if (!session.data?.user) {
 			redirectToAuth();
 			return;
 		}
-		if (inFlight) return;
-		setInFlight(true);
-		try {
-			if (voted) {
-				await fate.mutations.comment.retractVote({
-					input: {id: data.id},
-					optimistic: {score: Math.max(0, score - 1), myVote: null},
-					view: CommentVoteView,
-				});
-			} else {
-				await fate.mutations.comment.vote({
-					input: {id: data.id},
-					optimistic: {score: score + 1, myVote: 1},
-					view: CommentVoteView,
-				});
-			}
-		} catch (error) {
-			// The vote button has no inline error slot, so we surface only
-			// UNAUTHORIZED (→ redirect) and stay silent otherwise.
-			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
-		} finally {
-			setInFlight(false);
-		}
+		driveVote();
 	};
 
 	return (
