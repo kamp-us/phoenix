@@ -13,7 +13,9 @@
  * `generate` is what the `/adr` skill (and an author) runs instead of hand-editing
  * the table; `check` is the CI gate that fails on (a) a committed `index.md` that
  * differs from the generated one (stale) and (b) a duplicate ADR `id` — closing the
- * number-collision class in the same step (ADR 0066).
+ * number-collision class in the same step (ADR 0066). The branchy gate itself lives
+ * in `gate.ts` (`checkIndex`/`generateIndex`), so it is unit-testable over a fake
+ * `.decisions` dir; this file wires it to the CLI and the exit-code contract.
  *
  * Exit-code contract: 0 = clean (check passed / generate wrote), any non-zero =
  * failure — both a gate failure (stale index or duplicate id; report on stderr)
@@ -22,15 +24,14 @@
  * `@kampus/leak-guard` / `changelog-derive`): `effect/unstable/cli`, the Node
  * platform over `NodeServices.layer`, run via `NodeRuntime.runMain`.
  */
-import {existsSync, readdirSync, readFileSync, writeFileSync} from "node:fs";
+import {existsSync} from "node:fs";
 import {dirname, join, resolve} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Console, Data, Effect, Option} from "effect";
+import {Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import {type AdrFile, buildIndex, DuplicateIdError, findRootDir} from "./decisions-index.ts";
+import {findRootDir} from "./decisions-index.ts";
+import {checkIndex, generateIndex} from "./gate.ts";
 
-const INDEX_FILE = "index.md";
-const ADR_FILE = /^\d+[A-Za-z]*-.+\.md$/;
 const GATE_FAIL_EXIT_CODE = 1;
 const DECISIONS_DIR = ".decisions";
 // Repo-root markers, in priority order. `.decisions` itself is the strongest
@@ -57,37 +58,6 @@ const defaultDecisionsDir = (from: string = process.cwd()): string => {
 	return join(root ?? start, DECISIONS_DIR);
 };
 
-// A directory/file IO failure: the run couldn't complete. Uncaught — it falls through
-// to NodeRuntime's default handler (stack trace + non-zero exit).
-class IoError extends Data.TaggedError("IoError")<{
-	readonly path: string;
-	readonly cause: unknown;
-}> {}
-
-// Carries the non-zero gate-fail exit (the report is already on stderr).
-class CheckFailed extends Data.TaggedError("CheckFailed")<{readonly reason: string}> {}
-
-/** Read every ADR file (NNNN[a]-slug.md) in `dir`, excluding the generated index. */
-const readAdrFiles = (dir: string): Effect.Effect<ReadonlyArray<AdrFile>, IoError> =>
-	Effect.try({
-		try: () =>
-			readdirSync(dir)
-				.filter((f) => f !== INDEX_FILE && ADR_FILE.test(f))
-				.sort()
-				.map((file) => ({file, text: readFileSync(join(dir, file), "utf8")})),
-		catch: (cause) => new IoError({path: dir, cause}),
-	});
-
-/** Build the index, folding a duplicate id into a CheckFailed gate failure. */
-const build = (files: ReadonlyArray<AdrFile>): Effect.Effect<string, CheckFailed> =>
-	Effect.try({
-		try: () => buildIndex(files),
-		catch: (cause) =>
-			cause instanceof DuplicateIdError
-				? new CheckFailed({reason: cause.message})
-				: new CheckFailed({reason: String((cause as Error)?.message ?? cause)}),
-	});
-
 // Optional, not defaulted: an absent --dir resolves to the repo-root `.decisions`
 // (see `defaultDecisionsDir`); a passed --dir is honored verbatim, relative to cwd.
 const dirFlag = Flag.string("dir").pipe(
@@ -104,14 +74,7 @@ const generate = Command.make(
 	"generate",
 	{dir: dirFlag},
 	Effect.fn(function* ({dir: dirOpt}) {
-		const dir = resolveDir(dirOpt);
-		const markdown = yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
-		const target = join(dir, INDEX_FILE);
-		yield* Effect.try({
-			try: () => writeFileSync(target, markdown),
-			catch: (cause) => new IoError({path: target, cause}),
-		});
-		yield* Console.log(`decisions-index: wrote ${target}`);
+		yield* generateIndex(resolveDir(dirOpt));
 	}),
 ).pipe(Command.withDescription("Regenerate .decisions/index.md from the ADR files"));
 
@@ -119,25 +82,7 @@ const check = Command.make(
 	"check",
 	{dir: dirFlag},
 	Effect.fn(function* ({dir: dirOpt}) {
-		const dir = resolveDir(dirOpt);
-		const expected = yield* readAdrFiles(dir).pipe(Effect.flatMap(build));
-		const target = join(dir, INDEX_FILE);
-		const committed = yield* Effect.try({
-			try: () => readFileSync(target, "utf8"),
-			catch: () => "",
-		}).pipe(Effect.orElseSucceed(() => ""));
-		if (committed === expected) {
-			yield* Console.log("decisions-index: index.md is up to date");
-			return;
-		}
-		return yield* Effect.fail(
-			new CheckFailed({
-				reason:
-					`${target} is stale — it does not match the generated index.\n` +
-					"Run `pnpm --filter @kampus/decisions-index generate` and commit the result\n" +
-					"(edit the ADR file's front-matter, never index.md by hand — ADR 0066).",
-			}),
-		);
+		yield* checkIndex(resolveDir(dirOpt));
 	}),
 ).pipe(
 	Command.withDescription("Verify the committed index.md is fresh and has no duplicate ADR id"),
