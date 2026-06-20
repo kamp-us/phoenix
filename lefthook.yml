@@ -11,12 +11,15 @@ pre-commit:
   commands:
     leak-guard:
       # The scanner self-scopes to doc surfaces, so handing it every staged file
-      # is safe. {staged_files} is empty when nothing is staged → the guard exits 0.
+      # is safe. `set --` turns the {staged_files} expansion into positional params
+      # so the "nothing staged" early-out is a path-count test ($# -eq 0) — robust to
+      # the multi-path expansion that gave a bare `[ -z … ]` extra operands (#806).
       # Exit-code contract from bin.ts (#332): 2 = confirmed leak (block); any
       # OTHER non-zero = scan couldn't run (warn + allow, CI is the authority);
       # 0 = clean. The deny-list lives once in findLeaks — nothing is re-grepped here.
       run: |
-        [ -z "{staged_files}" ] && exit 0
+        set -- {staged_files}
+        [ "$#" -eq 0 ] && exit 0
         status=0
         node packages/leak-guard/src/bin.ts scan {staged_files} || status=$?
         if [ "$status" -eq 2 ]; then
