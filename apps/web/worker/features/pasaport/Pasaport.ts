@@ -606,9 +606,15 @@ export const makePasaportLive = (auth: Auth) =>
 				}) {
 					const {userId} = input;
 					const now = new Date();
-					// One atomic batch (ADR 0014/0097 §2): all eight statements commit or
-					// none do, so the world never sees a half-anonymized account.
-					yield* batch((db) => buildAnonymizeStatements(db, userId, now));
+					// `verification` keys by `identifier` = the live email, which the batch
+					// is about to scrub — so capture it as a plain value BEFORE the batch
+					// (ADR 0097 §2) and delete by that literal, never a correlated subquery
+					// (D1's batch executor rejects a raw subquery member).
+					const user = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
+					const email = user?.email ?? null;
+					// One atomic batch (ADR 0014/0097 §2): every statement commits or none
+					// does, so the world never sees a half-anonymized account.
+					yield* batch((db) => buildAnonymizeStatements(db, userId, email, now));
 				}),
 			};
 		}),
@@ -622,19 +628,17 @@ export const makePasaportLive = (auth: Auth) =>
  *       re-attribution, not removal — so its votes/scores and the karma they
  *       earned ride along untouched.
  *  4–7. Tear down the identity rows: `session` / `account` / `apikey` /
- *       `verification`. (`verification` keys by `identifier` = the user's email,
- *       not a FK, so it's scrubbed by email below — the user row carries the email
- *       until the same batch nulls it, so we match on the live email via a
- *       subquery before the scrub takes effect within the batch.)
+ *       `verification`. `verification` keys by `identifier` = the user's email
+ *       (not a FK), so it's deleted by the literal email the caller resolved
+ *       before this batch; skipped when the user has no email.
  *  8.   Scrub the `user` row to a kept tombstone: PII (email/name/image) nulled,
  *       `deleted_at` stamped. The row is KEPT so the `author_id → silinen`
  *       redirect and FKs stay coherent and the email can re-register fresh.
  *
- * `verification` rows are deleted by matching the user's current email before the
- * scrub; placed before the `user` UPDATE in the batch so the subquery still reads
- * the live email (D1 batches run sequentially in array order).
+ * Every statement is a query-builder statement (no raw correlated subquery) so
+ * D1's `batch()` executor accepts the whole array.
  */
-function buildAnonymizeStatements(db: DrizzleDb, userId: string, now: Date) {
+function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string | null, now: Date) {
 	const reattributeDefs = db
 		.update(schema.definitionView)
 		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
@@ -650,9 +654,6 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, now: Date) {
 		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
 		.where(eq(schema.commentView.authorId, userId));
 
-	const dropVerification = db.run(
-		sql`DELETE FROM verification WHERE identifier = (SELECT email FROM "user" WHERE id = ${userId})`,
-	);
 	const dropSessions = db.delete(schema.session).where(eq(schema.session.userId, userId));
 	const dropAccounts = db.delete(schema.account).where(eq(schema.account.userId, userId));
 	const dropApikeys = db.delete(schema.apikey).where(eq(schema.apikey.userId, userId));
@@ -662,11 +663,15 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, now: Date) {
 		.set({name: null, email: "", image: null, deletedAt: now, updatedAt: now})
 		.where(eq(schema.user.id, userId));
 
+	const dropVerification = email
+		? [db.delete(schema.verification).where(eq(schema.verification.identifier, email))]
+		: [];
+
 	return [
 		reattributeDefs,
 		reattributePosts,
 		reattributeComments,
-		dropVerification,
+		...dropVerification,
 		dropSessions,
 		dropAccounts,
 		dropApikeys,
