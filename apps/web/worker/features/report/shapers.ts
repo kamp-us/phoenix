@@ -7,8 +7,9 @@
  * `__typename` (`.patterns/fate-effect-operations.md`).
  */
 
-import type {ReportResult} from "./Report.ts";
-import type {ReportReceipt} from "./views.ts";
+import type {ReportTargetKind} from "./errors.ts";
+import type {OpenReportGroup, ReportResult} from "./Report.ts";
+import type {OpenReport, ReportReceipt, ResolveReceipt} from "./views.ts";
 
 // `id` is the `<targetKind>:<targetId>` normalization key (see `views.ts`).
 export const toReportReceipt = (r: ReportResult): ReportReceipt => ({
@@ -17,4 +18,30 @@ export const toReportReceipt = (r: ReportResult): ReportReceipt => ({
 	targetKind: r.targetKind,
 	targetId: r.targetId,
 	created: r.created,
+});
+
+export const toOpenReport = (g: OpenReportGroup): OpenReport => ({
+	__typename: "OpenReport",
+	id: `${g.targetKind}:${g.targetId}`,
+	targetKind: g.targetKind,
+	targetId: g.targetId,
+	reportCount: g.reportCount,
+	reason: g.reason,
+	firstReportedAt: g.firstReportedAt.toISOString(),
+});
+
+export const toResolveReceipt = (r: {
+	targetKind: ReportTargetKind;
+	targetId: string;
+	resolution: "removed" | "dismissed";
+	targetRemoved: boolean;
+	collapsed: number;
+}): ResolveReceipt => ({
+	__typename: "ResolveReceipt",
+	id: `${r.targetKind}:${r.targetId}`,
+	targetKind: r.targetKind,
+	targetId: r.targetId,
+	resolution: r.resolution,
+	targetRemoved: r.targetRemoved,
+	collapsed: r.collapsed,
 });

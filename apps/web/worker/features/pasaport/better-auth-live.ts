@@ -99,6 +99,16 @@ export const BetterAuthLive = Layer.effect(
 							// `setUsername` mutation (through `Pasaport`) can.
 							input: false,
 						},
+						// Server-managed moderation capability (ADR 0098). `input:false`:
+						// no client write reaches it — granted only by the offline D1
+						// script, read at the point of use via `Moderator.required`. NOT
+						// the better-auth admin plugin (deferred to #873) — a plain
+						// server-managed column on the `username` shape.
+						role: {
+							type: "string",
+							required: false,
+							input: false,
+						},
 					},
 				},
 				plugins: [

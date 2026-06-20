@@ -209,6 +209,24 @@ export class Sozluk extends Context.Service<
 			input: DeleteDefinitionInput,
 		) => Effect.Effect<DeleteDefinitionResult, DefinitionNotFound | UnauthorizedDefinitionMutation>;
 
+		/**
+		 * Moderator soft-delete (ADR 0098 §6) — the same 0096 substrate write as
+		 * `deleteDefinition`, but gated on discharged moderator authority (the caller
+		 * proved `Moderator.required`), NOT author ownership: `removed_by` is the
+		 * resolver and the reason is `Moderated({reportId})`. A missing target is a
+		 * no-op (`removed: false`), so resolving a stale report can't fail.
+		 */
+		readonly moderateRemoveDefinition: (input: {
+			definitionId: string;
+			resolverId: string;
+			reportId: string;
+		}) => Effect.Effect<{removed: boolean}>;
+
+		/** Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer. */
+		readonly moderateRestoreDefinition: (input: {
+			definitionId: string;
+		}) => Effect.Effect<{restored: boolean}>;
+
 		readonly voteDefinition: (
 			input: VoteDefinitionInput,
 		) => Effect.Effect<VoteDefinitionResult, DefinitionNotFound>;
@@ -802,6 +820,63 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			return {definitionId: input.definitionId, deleted: true} satisfies DeleteDefinitionResult;
 		});
 
+		const moderateRemoveDefinition = Effect.fn("Sozluk.moderateRemoveDefinition")(
+			function* (input: {definitionId: string; resolverId: string; reportId: string}) {
+				const definition = yield* run((db) =>
+					db.query.definitionView.findFirst({where: {id: input.definitionId}}),
+				);
+				if (!definition || Lifecycle.isRemoved(Lifecycle.fromColumns(definition))) {
+					return {removed: false};
+				}
+
+				const now = new Date();
+				const removed = Lifecycle.toColumns(
+					Lifecycle.remove({
+						removedAt: now,
+						removedBy: input.resolverId,
+						reason: new Lifecycle.Moderated({reportId: input.reportId}),
+					}),
+				);
+				yield* voteSvc.clearTarget("definition", input.definitionId);
+				yield* run((db) =>
+					db
+						.update(schema.definitionView)
+						.set({...removed, score: 0, updatedAt: now})
+						.where(eq(schema.definitionView.id, input.definitionId)),
+				);
+
+				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+				yield* recomputeSozlukStats(now);
+
+				return {removed: true};
+			},
+		);
+
+		const moderateRestoreDefinition = Effect.fn("Sozluk.moderateRestoreDefinition")(
+			function* (input: {definitionId: string}) {
+				const definition = yield* run((db) =>
+					db.query.definitionView.findFirst({where: {id: input.definitionId}}),
+				);
+				if (!definition) return {restored: false};
+				const lifecycle = Lifecycle.fromColumns(definition);
+				if (!Lifecycle.isRemoved(lifecycle)) return {restored: false};
+
+				const now = new Date();
+				const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
+				yield* run((db) =>
+					db
+						.update(schema.definitionView)
+						.set({...live, updatedAt: now})
+						.where(eq(schema.definitionView.id, input.definitionId)),
+				);
+
+				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+				yield* recomputeSozlukStats(now);
+
+				return {restored: true};
+			},
+		);
+
 		// Shared body for `voteDefinition` / `retractDefinitionVote`. Delegates to
 		// `Vote.cast` for the atomic batch, then recomputes `term_summary`
 		// aggregates after a state change. Translates `VoteTargetNotFound` into
@@ -888,6 +963,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			editDefinition,
 			deleteDefinition,
 			restoreDefinition,
+			moderateRemoveDefinition,
+			moderateRestoreDefinition,
 			voteDefinition,
 			retractDefinitionVote,
 		};

@@ -398,6 +398,21 @@ export class Pano extends Context.Service<
 			input: DeletePostInput,
 		) => Effect.Effect<DeletePostResult, UnauthorizedPostMutation>;
 
+		/**
+		 * Moderator soft-delete (ADR 0098 §6) — the same 0096 substrate write as
+		 * `deletePost`, gated on discharged moderator authority (NOT author ownership):
+		 * `removed_by` is the resolver, reason `Moderated({reportId})`. A missing target
+		 * is a no-op.
+		 */
+		readonly moderateRemovePost: (input: {
+			postId: string;
+			resolverId: string;
+			reportId: string;
+		}) => Effect.Effect<{removed: boolean}>;
+
+		/** Moderator restore (ADR 0098 §3) — reopens the report at the resolve layer. */
+		readonly moderateRestorePost: (input: {postId: string}) => Effect.Effect<{restored: boolean}>;
+
 		readonly voteOnPost: (input: VoteOnPostInput) => Effect.Effect<VoteOnPostResult, PostNotFound>;
 
 		readonly retractPostVote: (
@@ -423,6 +438,18 @@ export class Pano extends Context.Service<
 		readonly restoreComment: (
 			input: DeleteCommentInput,
 		) => Effect.Effect<DeleteCommentResult, CommentNotFound | UnauthorizedCommentMutation>;
+
+		/** Moderator soft-delete of a comment (ADR 0098 §6); reason `Moderated({reportId})`. */
+		readonly moderateRemoveComment: (input: {
+			commentId: string;
+			resolverId: string;
+			reportId: string;
+		}) => Effect.Effect<{removed: boolean}>;
+
+		/** Moderator restore of a comment (ADR 0098 §3) — reopens the report at the resolve layer. */
+		readonly moderateRestoreComment: (input: {
+			commentId: string;
+		}) => Effect.Effect<{restored: boolean}>;
 
 		readonly voteOnComment: (
 			input: VoteOnCommentInput,
@@ -1262,6 +1289,61 @@ export const PanoLive = Layer.effect(Pano)(
 			return {postId: input.postId, deleted: true} satisfies DeletePostResult;
 		});
 
+		const moderateRemovePost = Effect.fn("Pano.moderateRemovePost")(function* (input: {
+			postId: string;
+			resolverId: string;
+			reportId: string;
+		}) {
+			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
+			if (!meta || Lifecycle.isRemoved(Lifecycle.fromColumns(meta))) {
+				return {removed: false};
+			}
+
+			const now = new Date();
+			const removed = Lifecycle.toColumns(
+				Lifecycle.remove({
+					removedAt: now,
+					removedBy: input.resolverId,
+					reason: new Lifecycle.Moderated({reportId: input.reportId}),
+				}),
+			);
+			yield* voteSvc.clearTarget("post", input.postId);
+			yield* run((db) =>
+				db
+					.update(schema.postSummary)
+					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
+					.where(eq(schema.postSummary.id, input.postId)),
+			);
+			yield* run((db) => db.run(removePostSearch(input.postId)));
+			yield* recomputePanoStats(now);
+
+			return {removed: true};
+		});
+
+		const moderateRestorePost = Effect.fn("Pano.moderateRestorePost")(function* (input: {
+			postId: string;
+		}) {
+			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
+			if (!meta) return {restored: false};
+			const lifecycle = Lifecycle.fromColumns(meta);
+			if (!Lifecycle.isRemoved(lifecycle)) return {restored: false};
+
+			const now = new Date();
+			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
+			yield* run((db) =>
+				db
+					.update(schema.postSummary)
+					.set({...live, updatedAt: now, lastActivityAt: now})
+					.where(eq(schema.postSummary.id, input.postId)),
+			);
+			for (const stmt of syncPostSearch(input.postId, meta.title)) {
+				yield* run((db) => db.run(stmt));
+			}
+			yield* recomputePanoStats(now);
+
+			return {restored: true};
+		});
+
 		/**
 		 * Shared body for `voteOnPost` / `retractPostVote`. Delegates to
 		 * `Vote.cast` and translates `VoteTargetNotFound` into `PostNotFound`.
@@ -1629,6 +1711,85 @@ export const PanoLive = Layer.effect(Pano)(
 			} satisfies DeleteCommentResult;
 		});
 
+		const moderateRemoveComment = Effect.fn("Pano.moderateRemoveComment")(function* (input: {
+			commentId: string;
+			resolverId: string;
+			reportId: string;
+		}) {
+			const row = yield* run((db) =>
+				db.query.commentView.findFirst({where: {id: input.commentId}}),
+			);
+			if (!row || Lifecycle.isRemoved(Lifecycle.fromColumns(row))) {
+				return {removed: false};
+			}
+
+			const now = new Date();
+			const removed = Lifecycle.toColumns(
+				Lifecycle.remove({
+					removedAt: now,
+					removedBy: input.resolverId,
+					reason: new Lifecycle.Moderated({reportId: input.reportId}),
+				}),
+			);
+			yield* voteSvc.clearTarget("comment", input.commentId);
+			yield* run((db) =>
+				db
+					.update(schema.commentView)
+					.set({...removed, score: 0, updatedAt: now})
+					.where(eq(schema.commentView.id, input.commentId)),
+			);
+
+			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
+			if (post) {
+				yield* run((db) =>
+					db
+						.update(schema.postSummary)
+						.set({
+							commentCount: Math.max(0, post.commentCount - 1),
+							updatedAt: now,
+							lastActivityAt: now,
+						})
+						.where(eq(schema.postSummary.id, row.postId)),
+				);
+			}
+			yield* recomputePanoStats(now);
+
+			return {removed: true};
+		});
+
+		const moderateRestoreComment = Effect.fn("Pano.moderateRestoreComment")(function* (input: {
+			commentId: string;
+		}) {
+			const row = yield* run((db) =>
+				db.query.commentView.findFirst({where: {id: input.commentId}}),
+			);
+			if (!row) return {restored: false};
+			const lifecycle = Lifecycle.fromColumns(row);
+			if (!Lifecycle.isRemoved(lifecycle)) return {restored: false};
+
+			const now = new Date();
+			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
+			yield* run((db) =>
+				db
+					.update(schema.commentView)
+					.set({...live, updatedAt: now})
+					.where(eq(schema.commentView.id, input.commentId)),
+			);
+
+			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
+			if (post) {
+				yield* run((db) =>
+					db
+						.update(schema.postSummary)
+						.set({commentCount: post.commentCount + 1, updatedAt: now, lastActivityAt: now})
+						.where(eq(schema.postSummary.id, row.postId)),
+				);
+			}
+			yield* recomputePanoStats(now);
+
+			return {restored: true};
+		});
+
 		/**
 		 * Shared body for `voteOnComment` / `retractCommentVote`. Delegates to
 		 * `Vote.cast`. Translates `VoteTargetNotFound` from Vote into
@@ -1706,12 +1867,16 @@ export const PanoLive = Layer.effect(Pano)(
 			editPost,
 			deletePost,
 			restorePost,
+			moderateRemovePost,
+			moderateRestorePost,
 			voteOnPost,
 			retractPostVote,
 			addComment,
 			editComment,
 			deleteComment,
 			restoreComment,
+			moderateRemoveComment,
+			moderateRestoreComment,
 			voteOnComment,
 			retractCommentVote,
 		};

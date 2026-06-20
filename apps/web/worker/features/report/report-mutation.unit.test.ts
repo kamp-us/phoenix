@@ -34,8 +34,16 @@ const submit = (
 // envelope are the service's job (`Report.unit.test.ts`), not the wire boundary's.
 const reportStub = (
 	respond: (input: ReportInput) => Effect.Effect<ReportResult, ReportTargetNotFound>,
-) =>
-	Layer.succeed(Report, {submit: respond, readByReporter: () => Effect.succeed(new Set<string>())});
+): Layer.Layer<Report> =>
+	Layer.succeed(Report, {
+		submit: respond,
+		readByReporter: () => Effect.succeed(new Set<string>()),
+		listOpen: () => Effect.succeed([]),
+		resolveTarget: () => Effect.succeed({collapsed: 0}),
+		reopenForTarget: () => Effect.succeed({reopened: 0}),
+		lookupReportTarget: () => Effect.succeed(null),
+		firstOpenReportId: () => Effect.succeed(null),
+	});
 
 const landed = (input: ReportInput): Effect.Effect<ReportResult> =>
 	Effect.succeed({targetKind: input.targetKind, targetId: input.targetId, created: true});

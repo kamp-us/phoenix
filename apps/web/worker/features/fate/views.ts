@@ -7,6 +7,7 @@
 import {list} from "@nkzw/fate/server";
 import {postDataView} from "../pano/views.ts";
 import {profileDataView, userDataView} from "../pasaport/views.ts";
+import {openReportDataView} from "../report/views.ts";
 import {termDataView} from "../sozluk/views.ts";
 import {landingStatsDataView} from "../stats/views.ts";
 
@@ -19,8 +20,12 @@ export {
 	profileDataView,
 	userDataView,
 } from "../pasaport/views.ts";
-export type {ReportReceipt} from "../report/views.ts";
-export {reportReceiptDataView} from "../report/views.ts";
+export type {OpenReport, ReportReceipt, ResolveReceipt} from "../report/views.ts";
+export {
+	openReportDataView,
+	reportReceiptDataView,
+	resolveReceiptDataView,
+} from "../report/views.ts";
 export type {Definition, Term} from "../sozluk/views.ts";
 export {definitionDataView, termDataView} from "../sozluk/views.ts";
 export type {LandingStats} from "../stats/views.ts";
@@ -64,4 +69,7 @@ export const Root: Record<string, unknown> = {
 	searchPosts: list(postDataView, {orderBy: [{id: "asc"}]}),
 	profile: profileDataView,
 	landingStats: landingStatsDataView,
+	// The moderation queue (ADR 0098) — a `Moderator.required`-gated list root. The
+	// orderBy is nominal: the `report.listOpen` resolver owns the oldest-first order.
+	"report.listOpen": list(openReportDataView, {orderBy: [{firstReportedAt: "asc"}]}),
 };
