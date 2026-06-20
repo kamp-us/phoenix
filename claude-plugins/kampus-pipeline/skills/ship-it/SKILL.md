@@ -184,18 +184,22 @@ ADR 0073 §6):
   `review-skill` PASS. A skill is a behavioral artifact, gated by `review-skill`, not the code
   AC-gate nor the doc hygiene-gate (ADR 0073 §4, superseding ADR
   [0063](https://github.com/kamp-us/phoenix/blob/main/.decisions/0063-skills-are-code-gated.md)).
-- **code:** under any app worker or a package (`apps/**` or `packages/**` — the `^(apps|packages)/`
-  probe, covering **every** `apps/<app>` worker, not just `apps/web`); a source path matching none
+- **code:** under any app worker, a package, or the glossary (`apps/**`, `packages/**`, or
+  `.glossary/**` — the `^(apps|packages|\.glossary)/` probe, covering **every** `apps/<app>` worker,
+  not just `apps/web`); a source path matching none
   of the three probes still defaults to code, requiring a `review-code` PASS, so nothing under-gates.
   The probe spans `apps/**` (not `apps/web/**`) so a future second worker like `apps/<other>/**` — code
-  **or** README — is `review-code`-gated like `apps/web`, and agrees exactly with the docs probe's
-  `apps/**` exclusion below (the two must name the same code roots, or an `apps/<other>` path would
+  **or** README — is `review-code`-gated like `apps/web`, and `.glossary/**` is `review-code`-gated
+  because Step 3c reads + enforces it (#912/#919); it agrees exactly with the docs probe's
+  `apps/**`/`.glossary/**` exclusion below (the two must name the same code roots, or such a path would
   class as neither code nor docs and slip through ungated — #663).
 - **docs:** `.decisions/**`, `.patterns/**`, or a prose `*.md` *outside* `.claude`/`.github`,
-  **outside `claude-plugins/kampus-pipeline/skills/**`**, **and outside the code roots `apps/**`/`packages/**`** — exactly
-  `review-doc`'s verification scope. `claude-plugins/kampus-pipeline/skills/**` is the skill class, and an `*.md` under
+  **outside `claude-plugins/kampus-pipeline/skills/**`**, **outside the code roots `apps/**`/`packages/**`**,
+  **and outside `.glossary/**`** — exactly
+  `review-doc`'s verification scope. `claude-plugins/kampus-pipeline/skills/**` is the skill class, an `*.md` under
   `apps/**`/`packages/**` (a package/app-internal README, CHANGELOG, etc.) ships with its code
-  artifact and is **`review-code`'s** scope, so both are carved out of docs *before* the `.md$`
+  artifact and is **`review-code`'s** scope, and `.glossary/**` is owned by `review-code` Step 3c —
+  so all three are carved out of docs *before* the `.md$`
   match. The docs class is thus the surface a `review-doc` PASS can actually gate — see the
   scope-consistency note after the routing.
 
@@ -204,10 +208,11 @@ FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].f
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set — one definition (ADR 0073 §6)
 echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065); other skills/** auto-merge on a review-skill PASS (ADR 0073)
 echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
-echo "$FILES" | grep -Eq '^(apps|packages)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages — agrees with the docs-probe exclusion below (#663); skills/** is its OWN class (ADR 0073)
-# docs probe EXCLUDES the code roots AND skills/** first, so a code/app-internal README (apps/**, packages/**)
-# or a skills-only .md is NOT classed docs — only a prose .md on review-doc's own surface is (#542/#650)
-echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+echo "$FILES" | grep -Eq '^(apps|packages|\.glossary)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages + .glossary/** — agrees with the docs-probe exclusion below (#663/#919); review-code owns the glossary (Step 3c); skills/** is its OWN class (ADR 0073)
+# docs probe EXCLUDES the code roots, skills/**, AND .glossary/** first, so a code/app-internal README
+# (apps/**, packages/**), a skills-only .md, or a .glossary/** touch is NOT classed docs — only a prose
+# .md on review-doc's own surface is (#542/#650/#919). The §DOC contract is the single source — cite, don't re-derive.
+echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 **Routing:**
@@ -232,7 +237,8 @@ echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages)/' | grep -Eq '^(\.deci
 unreachable.** ship-it requires a class's gate PASS *because that gate runs on that class* —
 so the docs probe may only class as docs a path a `review-doc` PASS can actually gate. The
 `.md$` match is therefore **scoped, not over-matching**: it runs only after `grep -Ev
-'^(claude-plugins|apps|packages)/'` carves out the three path-classes whose `.md` is **not** review-doc's:
+'^(claude-plugins|apps|packages|\.glossary)/'` carves out the path-classes whose `.md` is **not** review-doc's
+(this is the §DOC contract — cite it, don't re-derive the carve-out here):
 
 - **`claude-plugins/kampus-pipeline/skills/**`** — a skill `.md` is `review-skill`-gated (ADR 0073). Classing it docs would
   demand a `review-doc` PASS that never comes (the original #358 deadlock, closed by the
@@ -246,16 +252,36 @@ so the docs probe may only class as docs a path a `review-doc` PASS can actually
   product PR that merely *includes* a package README **deadlocked** (`unverified — no review-doc
   PASS`), the exact defect on PR #644 (#542/#650). Carving the code roots out makes the present
   class always have a reachable gate.
+- **`.glossary/**`** — the domain-vocabulary surface (`.glossary/TERMS.md`) is gated by
+  `review-code` Step 3c, which **reads + enforces** the glossary contract (a new code surface MUST
+  touch `TERMS.md` — the #912 freshness gate). The gate that owns the glossary is therefore
+  `review-code`, so a `.glossary/**` touch rides the `review-code` PASS — the **same** precedent as
+  the `apps`/`packages` README. Were it left in the doc class, #912's mandatory `.glossary/TERMS.md`
+  touch on every new-surface **code** PR would make that PR mixed code+doc and demand a `review-doc`
+  PASS the pipeline never routes — the exact #919 deadlock (review-code PASSed, ship-it refused
+  `unverified — no review-doc PASS`). It is **non-blocking** — a knowledge surface like
+  `.decisions`/`.patterns`, **not** §CP — so a new-surface code PR still autoships with no
+  human-merge tax.
 
-**The has-code probe and this docs-exclusion name the same code roots — they MUST agree.** The
-docs probe carves out `^(claude-plugins|apps|packages)/` and the has-code probe is `^(apps|packages)/`:
+**The has-code probe and this docs-exclusion name the same roots — they MUST agree.** The
+docs probe carves out `^(claude-plugins|apps|packages|\.glossary)/` and the has-code probe is `^(apps|packages|\.glossary)/`:
 both span the **full `apps/**` tree** (every app worker — `apps/web`, and any future app), not
-just `apps/web`. That agreement is the invariant — if the two diverged (e.g. has-code stayed
-`apps/web` while docs excluded all `apps/**`), an `apps/<other>/**` path — code `.ts` **or**
-`README.md` — would class as **neither** has-code (the narrow probe misses it) **nor** has-docs
-(the docs exclusion drops it), and ship-it would demand **no** gate at all and merge it **ungated**.
-Widening has-code to `apps/**` closes that hole (#663): every `apps/<app>` path now classes
-has-code and rides its `review-code` PASS, exactly as `apps/web` always has.
+just `apps/web`, **and both name `.glossary/**`**. That agreement is the invariant — if the two
+diverged (e.g. has-code stayed `apps/web` while docs excluded all `apps/**`), an `apps/<other>/**`
+path — code `.ts` **or** `README.md` — would class as **neither** has-code (the narrow probe misses
+it) **nor** has-docs (the docs exclusion drops it), and ship-it would demand **no** gate at all and
+merge it **ungated**. Widening has-code to `apps/**` closes that hole (#663): every `apps/<app>` path
+now classes has-code and rides its `review-code` PASS, exactly as `apps/web` always has.
+
+`.glossary/**` is carved out of the docs probe (it is `review-code`'s scope, not `review-doc`'s —
+Step 3c reads + enforces it) **and** named by the has-code probe, in lockstep — so a `.glossary/**`
+touch classes **has-code** and rides the `review-code` PASS, never falling into the #663 neither-class
+hole. This holds for both shapes the glossary PR takes: the #912-mandated touch riding a new-surface
+code change (already has-code from the code files), and a pathological glossary-**only** PR (now
+has-code from `.glossary/**` alone) — both demand exactly the `review-code` PASS that the gate owning
+the glossary produces (`review-code`'s Step 0 verifies a glossary-only PR; it never off-ramps it). The
+class label moves docs→code; no path goes ungated, and `.glossary/**` is **never** §CP/blocking, so a
+new-surface code PR still autoships with no human-merge tax.
 
 So `.decisions/**`/`.patterns/**` always class docs, and a prose `*.md` classes docs **only when
 it lives outside the code roots, `claude-plugins/kampus-pipeline/skills/**`, and the control plane** — i.e. exactly the surface

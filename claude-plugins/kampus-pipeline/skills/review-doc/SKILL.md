@@ -34,12 +34,13 @@ spec for this split, and it **supersedes** ADR
 - **NON-BLOCKING (autonomous).** Two kinds of artifact, both non-blocking but verified by
   *different* gates:
   - **The doc/knowledge artifacts this gate verifies** — `.decisions/**`, `.patterns/**`,
-    and prose `*.md` *outside* `.claude/` and `.github/`. For a doc PR in this set, your
-    PASS marker is a **real `ship-it` go-ahead** — `ship-it` merges on it exactly as it
+    and prose `*.md` *outside* `.claude/`, `.github/`, and `.glossary/`. For a doc PR in this
+    set, your PASS marker is a **real `ship-it` go-ahead** — `ship-it` merges on it exactly as it
     merges on `review-code`'s.
-  - **Product code** — `apps/web/**`, `packages/**`. Non-blocking too, but that's
-    `review-code`'s class, **not yours**: a `review-doc` PASS never verifies product code.
-    A PR that touches both needs *both* gates (see the mixed code+doc routing in Step 0).
+  - **Product code (incl. `.glossary/**`)** — `apps/web/**`, `packages/**`, and `.glossary/**`.
+    Non-blocking too, but that's `review-code`'s class, **not yours**: a `review-doc` PASS never
+    verifies product code, and `.glossary/**` is owned by `review-code` Step 3c (#912/#919). A PR
+    that touches both needs *both* gates (see the mixed code+doc routing in Step 0).
 
   Both are product or knowledge artifacts; gated for quality, but a human at the merge
   adds no security value.
@@ -164,23 +165,34 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
     --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
   # non-empty → blocking: advisory verdict only; a human merges (ADR 0053/0065/0073)
   ```
-- **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md` *outside* `skills/**`,
-  and/or `apps/web/**`, `packages/**`) → **non-blocking**. Your PASS marker binds `ship-it`.
+- **Otherwise** (only `.decisions/**`, `.patterns/**`, prose `*.md` *outside* `skills/**` and
+  `.glossary/**`, and/or `apps/web/**`, `packages/**`, `.glossary/**`) → **non-blocking**. Your
+  PASS marker binds `ship-it` (but `.glossary/**` rides `review-code`, not your marker — see below).
 
 `skills/**` is **not your class** — a skill is a behavioral artifact gated by `review-skill`
 (ADR [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), superseding
 0063's `review-code` routing), not a prose doc. If the diff is a **skills-only** PR, report
 `not a doc PR — route to review-skill` (a plain note, **not** a `review-doc:` marker) and stop.
 
+`.glossary/**` is **not your class either** — though `.glossary/TERMS.md`/`LANGUAGE.md` are `.md`
+files, the glossary is owned by `review-code` Step 3c, which reads + enforces the freshness contract
+(a new code surface MUST touch `TERMS.md` — #912), so a `.glossary/**` touch rides the `review-code`
+PASS, not yours. This is the §DOC carve-out (the same `apps`/`packages` README precedent) — cite it,
+don't re-derive it. The has-code/docs-exclusion probes both name `.glossary/**` so it classes
+**code**, never docs (the #663/#919 agreement invariant). If the diff is **glossary-only**, report
+`not a doc PR — route to review-code` (a plain note, **not** a `review-doc:` marker) and stop.
+
 If the diff is **pure product code** with no doc/knowledge file at all, this is the wrong
 gate — that's `review-code`'s PR. Report `not a doc PR — route to review-code` (a plain note,
 **not** a `review-doc:` marker — there's no doc to verdict) and stop.
 If the diff is **mixed code + doc** (both a `*.md` knowledge file and `apps/web`/`packages`
-code, none of it blocking), it needs *both* gates: you verify the doc class here and emit
-the `review-doc` marker; `review-code` verifies the code class and emits its own. `ship-it`
+code or a `.glossary/**` touch, none of it blocking), it needs *both* gates: you verify the doc
+class here and emit the `review-doc` marker; `review-code` verifies the code class — `apps/**`,
+`packages/**`, **and `.glossary/**`** — and emits its own. `ship-it`
 requires the latest PASS in **each** namespace present before it merges, so don't try to
 cover the code half — verify the docs, emit `review-doc`, and note that `review-code` must
-also pass.
+also pass. (A `.glossary/TERMS.md` touch riding a code PR is **not** a doc class for you — it is
+part of the code class `review-code` owns; don't verdict it.)
 
 ---
 
