@@ -1078,7 +1078,12 @@ export const PanoLive = Layer.effect(Pano)(
 			yield* run((db) =>
 				db
 					.delete(schema.postSummary)
-					.where(and(eq(schema.postSummary.authorId, input.authorId), eq(schema.postSummary.isDraft, true))),
+					.where(
+						and(
+							eq(schema.postSummary.authorId, input.authorId),
+							eq(schema.postSummary.isDraft, true),
+						),
+					),
 			);
 			return {postId: existing.id} satisfies DiscardDraftResult;
 		});

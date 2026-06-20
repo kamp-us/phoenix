@@ -6,6 +6,7 @@
  */
 import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import {PANO_DRAFT_SAVE} from "../../src/flags/keys.ts";
 
 /**
  * The single D1 database — canonical store for every product table (ADR 0009,
@@ -78,7 +79,6 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 		],
 	});
 
-
 /**
  * The pano `taslak` (draft-save) dark-ship flag (#746) — the feature-flag
  * substrate's first real consumer (ADR 0091/0093). Declared in-stack default-OFF
@@ -94,14 +94,14 @@ export const demoTargetingFlag = (appId: Input<string>) =>
  * No targeting rules — a plain boolean kill-switch. `appId` is resolved at deploy
  * (see `demoTargetingFlag` for why it's a factory, not a module constant).
  */
-export const PANO_DRAFT_SAVE = "pano-draft-save";
-
 /**
  * The flag config, exported as a plain object so the default-=-safe-state invariant
  * is unit-inspectable WITHOUT constructing the alchemy resource (#746). The factory
  * spreads it into `FlagshipFlag`; the test asserts `defaultVariation`/`variations.off`
  * here, the same record the deploy ships.
  */
+export {PANO_DRAFT_SAVE};
+
 export const PANO_DRAFT_SAVE_FLAG = {
 	key: PANO_DRAFT_SAVE,
 	description:

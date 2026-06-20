@@ -5,6 +5,8 @@ import {useSession} from "../auth/client";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Button} from "../components/ui/Button";
 import {codeOf} from "../fate/wire";
+import {FlagGate} from "../flags/FlagGate";
+import {PANO_DRAFT_SAVE} from "../flags/keys";
 import type {MutationErrorCode} from "../lib/mutationErrorCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import "./PanoSubmitPage.css";
@@ -66,6 +68,7 @@ export function PanoSubmitPage() {
 	const [body, setBody] = React.useState("");
 	const [selectedTags, setSelectedTags] = React.useState<Set<string>>(new Set());
 	const [error, setError] = React.useState<string | null>(null);
+	const [draftSaved, setDraftSaved] = React.useState(false);
 
 	const fate = useFateClient();
 	const [isInFlight, setInFlight] = React.useState(false);
@@ -158,6 +161,42 @@ export function PanoSubmitPage() {
 				return;
 			}
 			setError(messageForCode(code, "gönderi paylaşılamadı"));
+		} finally {
+			setInFlight(false);
+		}
+	}
+
+	async function onSaveDraft() {
+		setError(null);
+		setDraftSaved(false);
+		if (!session.data?.user) {
+			navigate(authRedirectPath("/pano/yeni"));
+			return;
+		}
+		const trimmedUrl = url.trim();
+		setInFlight(true);
+		try {
+			const {error: callError} = await fate.mutations.post.saveDraft({
+				input: {
+					title: trimmedTitle,
+					...(mode === "link" && trimmedUrl ? {url: trimmedUrl} : {}),
+					...(body.trim() ? {body} : {}),
+					tags: Array.from(selectedTags).map((kind) => ({kind})),
+				},
+				view: PanoPostCardView,
+			});
+			if (callError) {
+				setError(messageForCode(codeOf(callError), callError.message));
+				return;
+			}
+			setDraftSaved(true);
+		} catch (caught) {
+			const code = codeOf(caught);
+			if (code === "UNAUTHORIZED") {
+				navigate(authRedirectPath("/pano/yeni"));
+				return;
+			}
+			setError(messageForCode(code, "taslak kaydedilemedi"));
 		} finally {
 			setInFlight(false);
 		}
@@ -292,10 +331,29 @@ export function PanoSubmitPage() {
 							</p>
 						) : null}
 
+						{draftSaved ? (
+							<p
+								className="kp-pano-submit__hint"
+								role="status"
+								data-testid="pano-submit-draft-saved"
+								style={{color: "var(--text-faint)"}}
+							>
+								taslak kaydedildi
+							</p>
+						) : null}
+
 						<div className="kp-pano-submit__form-actions">
-							<Button type="button" variant="tertiary">
-								taslak
-							</Button>
+							<FlagGate flag={PANO_DRAFT_SAVE}>
+								<Button
+									type="button"
+									variant="tertiary"
+									data-testid="pano-submit-draft"
+									disabled={isInFlight}
+									onClick={onSaveDraft}
+								>
+									taslak
+								</Button>
+							</FlagGate>
 							<Button
 								type="submit"
 								variant="primary"

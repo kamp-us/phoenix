@@ -55,15 +55,16 @@ const liveStub = Layer.succeed(LivePublisher)(
 
 // A `Pano` stub whose `saveDraft` is scripted; every other method dies. Cast to the
 // full service tag — the gate path only ever reaches `saveDraft`.
-const panoStub = (
-	saveDraft: (typeof Pano.Service)["saveDraft"],
-): Layer.Layer<Pano> =>
-	Layer.succeed(Pano, new Proxy({saveDraft} as Partial<typeof Pano.Service>, {
-		get(target, prop) {
-			if (prop in target) return (target as Record<string, unknown>)[prop as string];
-			return () => Effect.die(`Pano.${String(prop)} not exercised in draft-save.invariant`);
-		},
-	}) as typeof Pano.Service);
+const panoStub = (saveDraft: (typeof Pano.Service)["saveDraft"]): Layer.Layer<Pano> =>
+	Layer.succeed(
+		Pano,
+		new Proxy({saveDraft} as Partial<typeof Pano.Service>, {
+			get(target, prop) {
+				if (prop in target) return (target as Record<string, unknown>)[prop as string];
+				return () => Effect.die(`Pano.${String(prop)} not exercised in draft-save.invariant`);
+			},
+		}) as typeof Pano.Service,
+	);
 
 const draftRow: SaveDraftResult = {
 	postId: "post_draft1",
