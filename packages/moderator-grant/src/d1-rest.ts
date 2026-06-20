@@ -1,14 +1,16 @@
 /**
  * A `D1Database`-shaped binding backed by the Cloudflare D1 REST query API, so
- * the seed's drizzle inserts run from a plain Node process (no workerd). It
+ * the grant's drizzle UPDATE/SELECT run from a plain Node process (no workerd). It
  * implements only the slice `drizzle-orm/d1` drives — `prepare`/`bind`/`all`/
- * `run`/`raw`/`first` and `batch` — mirroring the in-memory test fake
- * (`sqlite-d1.testing.ts`); the same `seed(d1)` path runs against both.
+ * `run`/`raw`/`first` and `batch`. This is the grant's ONLY transport: both the
+ * `moderator-grant` bin and the integration tier (`tests/integration/_d1.ts`) run
+ * the same `setRole`/`listModerators` path through it against real D1 (ADR 0082 —
+ * the package's suite no longer leans on a faked engine).
  *
  * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the
  * tree via alchemy). A single statement is one REST call; a drizzle `batch([...])`
  * collects every statement's sql+params into ONE REST `batch` call, which D1 runs
- * as a single atomic transaction — load-bearing for the seed's all-or-none write.
+ * as a single atomic transaction.
  * The adapter methods return Promises and run the `queryDatabase` Effect with the
  * provided credentials/HTTP layer per call.
  */
@@ -28,13 +30,13 @@ type Params = ReadonlyArray<unknown>;
  * `@distilled.cloud/cloudflare`'s `queryDatabase` validates `params` as a strict
  * `string[]` and **rejects a `null`/`undefined` element** (`SchemaError: Expected
  * string, got null`), so a SQL NULL must be rendered *inline* in the statement text
- * — never bound as a `null` param. The seed achieves that by leaving nullable
- * columns unset in its fixtures, so drizzle emits a literal `NULL` and no `null`
- * ever reaches the wire (#569). A `null`/`undefined` here is a caller bug (a
- * nullable column bound instead of omitted); throw with the offending index. Shared
- * with the in-memory test fake so the fake rejects exactly what real D1 rejects
- * (#571) — the fake's `node:sqlite` engine would otherwise bind a `null` happily
- * and let a REST-incompatible param shape pass the unit suite yet die live.
+ * — never bound as a `null` param. The grant achieves that by selecting on non-null
+ * columns (id / username) and setting only `role` + `updated_at`, so no `null` ever
+ * reaches the wire (#569). A `null`/`undefined` here is a caller bug (a nullable
+ * column bound instead of omitted); throw with the offending index. The unit tier
+ * pins this contract directly (`d1-rest.unit.test.ts`) and the integration tier
+ * proves real D1 rejects null end to end — so the param shape can't drift from what
+ * the live REST wire accepts (#571).
  */
 export const assertRestParam = (param: unknown, index: number): void => {
 	if (param == null) {
