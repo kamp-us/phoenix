@@ -20,7 +20,7 @@ import {
 	profileSource,
 	userSource,
 } from "../pasaport/sources.ts";
-import {reportReceiptSource} from "../report/sources.ts";
+import {openReportSource, reportReceiptSource, resolveReceiptSource} from "../report/sources.ts";
 import {definitionSource, termSource} from "../sozluk/sources.ts";
 
 export const sources = [
@@ -34,4 +34,6 @@ export const sources = [
 	contributionSource,
 	accountDeletionReceiptSource,
 	reportReceiptSource,
+	openReportSource,
+	resolveReceiptSource,
 ] as const;

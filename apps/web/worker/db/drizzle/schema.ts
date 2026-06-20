@@ -26,6 +26,14 @@ export const user = sqliteTable("user", {
 	type: text("type", {enum: ["human", "bot", "system"]})
 		.notNull()
 		.default("human"),
+	// Server-managed moderation capability (ADR 0098). Born `member`; flipped to
+	// `moderator` only by the offline grant script — declared `input:false` to
+	// better-auth (`better-auth-live.ts`), so no client write can reach it. Read at
+	// the point of use via `Moderator.required` (through Pasaport), never trusted
+	// from session state. Reconciled onto the platform role/AC model under #873.
+	role: text("role", {enum: ["member", "moderator"]})
+		.notNull()
+		.default("member"),
 	emailVerified: integer("email_verified", {mode: "boolean"}),
 	// Public handle: 3–30 chars, lowercase ASCII + digits + `-`, no leading/
 	// trailing `-`. UNIQUE allows multiple NULLs (SQLite) so unbooted accounts coexist.
@@ -412,9 +420,11 @@ export const userProfile = sqliteTable(
  * `(reporter_id, target_kind, target_id)` makes a re-report by the same user an
  * idempotent no-op (`onConflictDoNothing`), mirroring `user_vote`.
  *
- * `status` is born `'open'`; its full value-set + transitions are owned by the
- * resolution-semantics decision child (epic #82), so this table pins only the
- * safe initial value. No live view publishes off this — a report is private
+ * `status` is the resolution state machine (ADR 0098): born `'open'`, terminal
+ * at `'resolved'` | `'dismissed'`. A terminal transition is the only writer of
+ * the audit triad (`resolverId`/`resolvedAt`/`resolution`) — a resolved row is
+ * uninhabitable without all three, so "resolved but we don't know who/what" is
+ * unrepresentable. No live view publishes off this — a report is private
  * moderation state, not a client-cached entity.
  */
 export const contentReport = sqliteTable(
@@ -427,12 +437,22 @@ export const contentReport = sqliteTable(
 		targetId: text("target_id").notNull(),
 		// Optional free-text reason supplied by the reporter.
 		reason: text("reason"),
-		status: text("status").notNull().default("open"),
+		// Resolution state machine (ADR 0098): 'open' | 'resolved' | 'dismissed'.
+		status: text("status", {enum: ["open", "resolved", "dismissed"]})
+			.notNull()
+			.default("open"),
 		createdAt: timestamp("created_at").notNull(),
+		// Audit triad — written only on a terminal transition, NULL while open.
+		resolverId: text("resolver_id"),
+		resolvedAt: timestamp("resolved_at"),
+		// The decision the resolver made: 'removed' (target soft-deleted via the
+		// substrate) | 'dismissed' (report unfounded, no action).
+		resolution: text("resolution", {enum: ["removed", "dismissed"]}),
 	},
 	(t) => [
 		primaryKey({columns: [t.reporterId, t.targetKind, t.targetId]}),
-		// Reverse lookup: reports against a given target (moderation read path).
+		// Reverse lookup: reports against a given target (moderation read path +
+		// free repeat-offender count, ADR 0098 §5).
 		index("content_report_target").on(t.targetKind, t.targetId),
 	],
 );

@@ -11,11 +11,12 @@
  * re-report by the same user a no-op success (the `user_vote` precedent). No
  * live view publishes off a write — a report is private moderation state.
  */
-import {and, eq, inArray} from "drizzle-orm";
+import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {type ReportTargetKind, ReportTargetNotFound} from "./errors.ts";
+import * as Resolution from "./resolution.ts";
 
 // Re-exported from `errors.ts` (its source-of-truth home) for callers that
 // prefer importing it from `./Report`.
@@ -36,6 +37,40 @@ export interface ReportResult {
 	created: boolean;
 }
 
+/**
+ * One row of the moderation queue (ADR 0098 §5): an open-reported target grouped
+ * by `(targetKind, targetId)`, with the distinct-reporter count — the
+ * repeat-offender / pile-on signal that comes free off the `content_report_target`
+ * index. `reportCount` doubles as the count of open reports the resolve collapses.
+ */
+export interface OpenReportGroup {
+	targetKind: ReportTargetKind;
+	targetId: string;
+	/** Distinct reporters who have an OPEN report on this target. */
+	reportCount: number;
+	/** The earliest open report's reason (representative free-text), or null. */
+	reason: string | null;
+	/** When the first open report on this target landed (oldest-first queue order). */
+	firstReportedAt: Date;
+}
+
+/**
+ * The audit a terminal transition records (ADR 0098 §4). All three fields are
+ * written together — there is no partial resolution.
+ */
+export interface ResolveTargetInput {
+	targetKind: ReportTargetKind;
+	targetId: string;
+	resolverId: string;
+	resolution: Resolution.Resolution;
+	resolvedAt: Date;
+}
+
+export interface ResolveTargetResult {
+	/** How many open reports on this target were collapsed in the batch. */
+	collapsed: number;
+}
+
 export class Report extends Context.Service<
 	Report,
 	{
@@ -51,6 +86,51 @@ export class Report extends Context.Service<
 			kind: ReportTargetKind,
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
+
+		/**
+		 * The moderation queue (ADR 0098 §5): open reports grouped by target,
+		 * oldest-first, each carrying its distinct-reporter (repeat-offender) count.
+		 * Private moderation state — the resolver gates it behind `Moderator.required`.
+		 */
+		readonly listOpen: (opts?: {limit?: number}) => Effect.Effect<ReadonlyArray<OpenReportGroup>>;
+
+		/**
+		 * Terminal transition (ADR 0098 §3/§4): collapse EVERY open report on
+		 * `(targetKind, targetId)` to the decided terminal status in one batch,
+		 * stamping the audit triad (`resolverId`/`resolvedAt`/`resolution`) on each.
+		 * Idempotent: zero open reports ⇒ `collapsed: 0`, no write. The author-side
+		 * authority check lives in the resolver (`Moderator.required`), not here.
+		 */
+		readonly resolveTarget: (input: ResolveTargetInput) => Effect.Effect<ResolveTargetResult>;
+
+		/**
+		 * Reopen (ADR 0098 §3): flip every resolved/dismissed report on the target
+		 * back to `open`, clearing its audit triad — the restore-reopens-its-report
+		 * edge (ADR 0096 §4). Returns how many reports were reopened.
+		 */
+		readonly reopenForTarget: (input: {
+			targetKind: ReportTargetKind;
+			targetId: string;
+		}) => Effect.Effect<{reopened: number}>;
+
+		/**
+		 * Resolve a single report id to its `(targetKind, targetId)` — so the resolve
+		 * mutation accepts a `reportId` and acts on its whole target group (ADR 0098).
+		 * `null` when no such report exists.
+		 */
+		readonly lookupReportTarget: (
+			reportId: string,
+		) => Effect.Effect<{targetKind: ReportTargetKind; targetId: string} | null>;
+
+		/**
+		 * The earliest OPEN report id on a target — the representative report the
+		 * `Moderated({reportId})` removal reason links to, so a later restore reopens
+		 * the whole group. `null` when no open report exists on the target.
+		 */
+		readonly firstOpenReportId: (
+			targetKind: ReportTargetKind,
+			targetId: string,
+		) => Effect.Effect<string | null>;
 	}
 >()("@kampus/report/Report") {}
 
@@ -116,8 +196,128 @@ export const ReportLive = Layer.effect(Report)(
 			return new Set(rows.map((r) => r.targetId));
 		});
 
+		const listOpen = Effect.fn("Report.listOpen")(function* (opts?: {limit?: number}) {
+			const limit = Math.max(1, Math.min(opts?.limit ?? 50, 200));
+			const rows = yield* run((db) =>
+				db
+					.select({
+						targetKind: schema.contentReport.targetKind,
+						targetId: schema.contentReport.targetId,
+						reportCount: sql<number>`COUNT(*)`,
+						firstReportedAt: sql<number>`MIN(${schema.contentReport.createdAt})`,
+						reason: sql<string | null>`MIN(${schema.contentReport.reason})`,
+					})
+					.from(schema.contentReport)
+					.where(eq(schema.contentReport.status, "open"))
+					.groupBy(schema.contentReport.targetKind, schema.contentReport.targetId)
+					.orderBy(sql`MIN(${schema.contentReport.createdAt}) ASC`)
+					.limit(limit),
+			);
+			return rows.map(
+				(r) =>
+					({
+						targetKind: r.targetKind as ReportTargetKind,
+						targetId: r.targetId,
+						reportCount: Number(r.reportCount),
+						reason: r.reason ?? null,
+						// D1 stores `created_at` as integer seconds (timestamp mode); MIN
+						// returns that raw value, so reconstruct the Date from seconds.
+						firstReportedAt: new Date(Number(r.firstReportedAt) * 1000),
+					}) satisfies OpenReportGroup,
+			);
+		});
+
+		const resolveTarget = Effect.fn("Report.resolveTarget")(function* (input: ResolveTargetInput) {
+			// The terminal status is decided by the state machine (open → resolved |
+			// dismissed); the `status='open'` WHERE guard below is the SQL-level
+			// counterpart that makes the transition apply only to open rows.
+			const {status} = Resolution.resolve("open", input.resolution);
+			const result = yield* run((db) =>
+				db
+					.update(schema.contentReport)
+					.set({
+						status,
+						resolverId: input.resolverId,
+						resolvedAt: input.resolvedAt,
+						resolution: input.resolution,
+					})
+					.where(
+						and(
+							eq(schema.contentReport.targetKind, input.targetKind),
+							eq(schema.contentReport.targetId, input.targetId),
+							eq(schema.contentReport.status, "open"),
+						),
+					)
+					.run(),
+			);
+			return {collapsed: result.meta.changes} satisfies ResolveTargetResult;
+		});
+
+		const reopenForTarget = Effect.fn("Report.reopenForTarget")(function* (input: {
+			targetKind: ReportTargetKind;
+			targetId: string;
+		}) {
+			const result = yield* run((db) =>
+				db
+					.update(schema.contentReport)
+					.set({status: "open", resolverId: null, resolvedAt: null, resolution: null})
+					.where(
+						and(
+							eq(schema.contentReport.targetKind, input.targetKind),
+							eq(schema.contentReport.targetId, input.targetId),
+							inArray(schema.contentReport.status, ["resolved", "dismissed"]),
+						),
+					)
+					.run(),
+			);
+			return {reopened: result.meta.changes};
+		});
+
+		const lookupReportTarget = Effect.fn("Report.lookupReportTarget")(function* (reportId: string) {
+			const row = yield* run((db) =>
+				db
+					.select({
+						targetKind: schema.contentReport.targetKind,
+						targetId: schema.contentReport.targetId,
+					})
+					.from(schema.contentReport)
+					.where(eq(schema.contentReport.id, reportId))
+					.limit(1)
+					.get(),
+			);
+			if (!row) return null;
+			return {targetKind: row.targetKind as ReportTargetKind, targetId: row.targetId};
+		});
+
+		const firstOpenReportId = Effect.fn("Report.firstOpenReportId")(function* (
+			targetKind: ReportTargetKind,
+			targetId: string,
+		) {
+			const row = yield* run((db) =>
+				db
+					.select({id: schema.contentReport.id})
+					.from(schema.contentReport)
+					.where(
+						and(
+							eq(schema.contentReport.targetKind, targetKind),
+							eq(schema.contentReport.targetId, targetId),
+							eq(schema.contentReport.status, "open"),
+						),
+					)
+					.orderBy(sql`${schema.contentReport.createdAt} ASC`)
+					.limit(1)
+					.get(),
+			);
+			return row?.id ?? null;
+		});
+
 		return {
 			readByReporter,
+			listOpen,
+			resolveTarget,
+			reopenForTarget,
+			lookupReportTarget,
+			firstOpenReportId,
 			submit: Effect.fn("Report.submit")(function* (input: ReportInput) {
 				yield* assertTargetLive(input.targetKind, input.targetId);
 

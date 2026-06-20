@@ -4,6 +4,7 @@
  */
 
 import {lists as panoLists} from "../pano/lists.ts";
+import {lists as reportLists} from "../report/lists.ts";
 import {lists as searchLists} from "../search/lists.ts";
 import {lists as sozlukLists} from "../sozluk/lists.ts";
 
@@ -11,4 +12,5 @@ export const lists = {
 	...sozlukLists,
 	...panoLists,
 	...searchLists,
+	...reportLists,
 };
