@@ -726,6 +726,15 @@ closing the #375 drift class).
   - `claude-plugins/kampus-pipeline/skills/review-skill/**`
   - `claude-plugins/kampus-pipeline/skills/review-plan/**`
   - `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (this file)
+- the **enforcement-guard packages** — the executable guardrails that gate agent tooling,
+  control-plane *by nature* the same way the gate-critical skills are (ADR
+  [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)),
+  even though they live under `packages/` rather than `.claude`/skills (ADR
+  [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md)):
+  - `packages/<name>-guard/**` — `spawn-guard` (the ADR-0092 fail-closed PreToolUse spawn
+    policy), `read-guard`, `worktree-guard`, `structured-output-guard`, `leak-guard` (the
+    `^packages/[^/]*-guard/` clause covers each).
+  - `packages/ci-required/**` — the aggregator of the gating CI checks.
 
 A PR touching **any** path in this set is **control plane**: `ship-it` refuses to auto-merge
 it and a human merges it by hand (ADR
@@ -734,10 +743,12 @@ widened to the gate-critical skills by ADR
 [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md);
 `review-skill/**` added to the gate-critical set by ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), since the gate
-that reviews the gates is itself a gate). Everything else — `apps/**`, `packages/**`,
-`.decisions/**`, `.patterns/**`, every prose doc `*.md` (the §DOC class), and every
-**non**-gate-critical `skills/**` — is **non-blocking** and auto-merges through its
-matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
+that reviews the gates is itself a gate; the enforcement-guard packages added by ADR
+[0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md),
+since a guard is a self-weakening surface wherever it lives). Everything else — `apps/**`,
+**non**-guard `packages/**`, `.decisions/**`, `.patterns/**`, every prose doc `*.md` (the
+§DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
+auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
 code-root `*.md` is non-blocking here yet rides `review-code`, not `review-doc`, per §DOC.)
 
 > **Merge-authority is the only axis this set governs.** It decides *who merges*
@@ -752,13 +763,13 @@ Every consumer matches the set with this **one** anchored regex (POSIX ERE; the 
 form below). Cite this regex; do **not** re-hard-code the path list:
 
 ```
-^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$
+^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/
 ```
 
 ```bash
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — one definition, no fourth copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a
