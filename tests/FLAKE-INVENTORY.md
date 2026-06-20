@@ -68,6 +68,37 @@ must be able to tell a **bounded** flake (`root-cause-filed`, `fixed`) from an
   is exercised, making the assertion deterministic. Kept as a record so a
   regression is recognized, not rediscovered.
 
+### prependNode live frame dropped under mutation churn
+
+- **Signature:** `live views — /fate/live > subscribe → post.submit →
+  prependNode frame arrives on the held SSE stream` — the held `EventSource`
+  receives no `prependNode` frame, so the awaited live update never arrives
+- **Suite / file:** integration —
+  `apps/web/tests/integration/fate-live.test.ts`
+- **Reddened CI check:** `integration tests` → `ci-required` (workflow
+  [`ci.yml`](../.github/workflows/ci.yml))
+- **First observed:** the dominant fate-live flake — a live-update frame
+  dropped under mutation churn. Distinct from the #613 SSE/DO cold-start 500
+  above: that was the held stream returning 500 on the first publish; this is a
+  warm stream that silently drops a frame. Root cause: fate's
+  transient-0-refcount SSE teardown — a brief `operations.size === 0` window
+  during churn tore down the `EventSource` mid-stream, so the in-flight
+  `prependNode` frame had no live connection to land on.
+- **Status:** `fixed` →
+  [#711](https://github.com/kamp-us/phoenix/issues/711), fixed in PR
+  [#810](https://github.com/kamp-us/phoenix/pull/810). The durable fix is an
+  app-lifetime global live pin
+  ([`apps/web/src/fate/useGlobalLivePin.ts`](../apps/web/src/fate/useGlobalLivePin.ts),
+  wired in [`FateProvider`](../apps/web/src/fate/FateProvider.tsx)) that holds
+  `operations.size >= 1` for the app's lifetime, so the `EventSource` is never
+  torn down mid-churn. The earlier per-view keep-alive band-aids were retired in
+  the same PR. Kept as a record so a regression is recognized, not rediscovered.
+- **Budget note:** the [`flake-rate`](../packages/flake-rate) budget may still
+  report this run as a rerun-to-green (reading "BUDGET BLOWN") until the last
+  pre-#711 flaky run ages out of the trailing-50-run window. That alarm is a
+  trailing-window artifact of an already-cured flake, **not** a live regression —
+  it does not warrant a new determinism child issue.
+
 ### report.submit D1 read-after-write staleness
 
 - **Signature:** `report.test.ts > report.submit persists created=true` —
