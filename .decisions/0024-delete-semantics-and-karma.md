@@ -1,12 +1,14 @@
 ---
 id: 0024
 title: Entity-delete semantics and karma treatment
-status: proposed
+status: superseded by [0096](0096-uniform-soft-delete-substrate.md)
 date: 2026-05-24
 tags: [delete, karma, vote, pano, sozluk]
 ---
 
 # 0024 — Entity-delete semantics and karma treatment
+
+Superseded by [0096](0096-uniform-soft-delete-substrate.md), which resolves both open questions: converge on **soft-delete everywhere** (strategy) and **keep karma** on removal (karma), with `Vote.clearTarget(kind, id)` as the single cleanup home (votes wiped, karma NOT decremented).
 
 ## Context
 
