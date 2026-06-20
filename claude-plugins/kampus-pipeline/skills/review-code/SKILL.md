@@ -1095,6 +1095,68 @@ issue is still claimed, still open, still in-progress; only the verdict changed.
 
 ---
 
+## Step 4c — Confirm the verdict landed (verdict-posting is itself a gate — ADR 0092 / §ZS)
+
+Posting the verdict (4a/4b) is **the** observable output of this whole gate — and it is exactly
+the kind of step that can **silently no-op**: the `… | head` pipe that masks an `APPROVE` 422 so
+the `||` fallback never fires (the hazard Step 4a names), a `PATCH` against a comment id that
+resolved empty, a `POST` swallowed by a transient 5xx. When that happens the gate *believes* it
+verdicted but **no SHA-bound `review-code:` marker exists on the PR's current head** — so `ship-it`
+and `write-code`-repair read the PR as **ungated**, and a verdict that was computed never reaches
+its consumers. That is the silent-no-op class at the *posting* layer, and it gets the same fix every
+gate gets: **read back what you posted, emit it, and FAIL LOUD when the scan finds nothing** (ADR
+[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md);
+`gh-issue-intake-formats.md` §ZS — verdict-posting is the gate's enforcement step, so it must
+emit-and-fail-closed like any other).
+
+**After** posting (whichever 4a/4b branch ran), **re-read the PR and assert a current-head-bound
+`review-code:` verdict is actually present** — a marker comment whose `@ <sha>` matches the head
+you reviewed (`$HEAD_SHA`), **or** the native approving review GitHub recorded against that same
+`commit_id`, **or** (the blocking-set path) the `review-code: advisory` line. The read-back is over
+the **same SHA-binding contract** (§5 / ADR 0058) the consumers apply, so "landed" means landed *for
+this head*, not "some review-code comment exists":
+
+```bash
+# verdict-posting self-assertion: prove a current-head review-code verdict actually landed (§ZS).
+ME="$(gh api user --jq .login)"
+# (1) a marker comment from me, first line review-code:, carrying THIS head's @ <sha> (or the
+#     advisory line, which is intentionally SHA-less — it authorizes nothing but IS a posted verdict):
+LANDED_COMMENT=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
+  | jq -r --arg me "$ME" --arg sha "$HEAD_SHA" '
+      [ .[] | select(.user.login==$me)
+            | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*" + ($sha[0:7]); "i")
+                          or  (.body | test("^\\s*\\**\\s*review-code:\\s*advisory"; "i"))) ]
+      | length')
+# (2) or a native approving review GitHub attributed to this exact head (commit_id == HEAD_SHA):
+LANDED_REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
+  --jq "[.[] | select(.user.login==\"$ME\" and .commit_id==\"$HEAD_SHA\" and .state==\"APPROVED\")] | length")
+echo "verdict-posting self-check @ ${HEAD_SHA:0:7}: marker=$LANDED_COMMENT native-approve=$LANDED_REVIEW"
+if [ "$LANDED_COMMENT" -eq 0 ] && [ "$LANDED_REVIEW" -eq 0 ]; then
+  # the gate computed a verdict but NONE bound to the current head landed: the post silently no-opped.
+  # Fail LOUD — do NOT exit 0 as if gated. Re-post the verdict (re-run the 4a/4b upsert) and re-assert;
+  # if it still cannot land, surface it as a posting failure in the run ledger (the PR is genuinely
+  # ungated and a consumer must not read it as verified), never swallow it as a silent success.
+  echo "review-code verdict-posting FAILED (fail-loud): no review-code verdict bound to head ${HEAD_SHA:0:7} landed — the post no-opped. Re-posting; if it still fails, report posting failure (the PR is ungated)." >&2
+fi
+```
+
+The `marker=N native-approve=M` line is the **load-bearing emit** (§ZS #1): the run output now states
+that the verdict reached the PR for this head, so a posting step that quietly stopped landing is
+visible immediately instead of reading green. A SHA-binding read is deliberate — a *stale* marker
+from an earlier head (a pre-rebase verdict, the head-moved-under-the-verdict race ADR 0058 closes)
+does **not** count as landed here, exactly as `ship-it` would refuse it; the self-check and the
+consumer apply one SHA contract. This makes verdict-posting an **enforced** gate, not a convention:
+the gate does not consider itself done until its own verdict is provably on the current head — closing
+the case where the posting step silently no-ops and a PR reads as ungated (#749 part b).
+
+> A `HEAD_SHA` moved between the 4a/4b post and this read-back means the PR head advanced *during*
+> the review — the verdict you posted is already stale against the new head. Re-resolve
+> `HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"`, **re-verify against the new head**
+> (the gate is stateless — re-run, don't patch the SHA), and re-post; never paper over a moved head
+> by loosening the match.
+
+---
+
 ## Running it
 
 A single invocation gates one PR end to end: resolve the PR ↔ issue pairing (Step 1),
@@ -1102,7 +1164,9 @@ read the diff/tests and the SHA-bound run-evidence bundle when present (Step 2),
 each acceptance criterion with evidence — citing the bundle's structured `checks[]`/`tests`
 where they cover it (Step 3), apply the flag-gating (Step 3b) and glossary-freshness
 (Step 3c) gates where they fire, then land the verdict — approving review or `review-code: PASS` comment on a full pass
-(Step 4a), or a per-criterion fail comment on any miss (Step 4b). **You never merge.**
+(Step 4a), or a per-criterion fail comment on any miss (Step 4b), and **confirm the verdict actually
+landed on the current head** before you consider the gate done (Step 4c — verdict-posting is itself a
+fail-closed gate, ADR 0092 §ZS). **You never merge.**
 
 Report back a short ledger: the PR and its linked issue, the per-criterion verdict
 (N pass / M fail), the overall result, and the link to the review/comment you posted.
