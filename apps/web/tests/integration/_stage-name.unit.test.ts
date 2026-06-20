@@ -5,7 +5,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {DISC_LEN, disc, MAX_STAGE_LEN, slugify, stageName} from "./_stage-name.ts";
+import {DISC_LEN, disc, slugify, stageName} from "./_stage-name.ts";
 
 const RUN_TOKEN = "run-1";
 
@@ -40,11 +40,6 @@ describe("stageName — destroy-on (CI / default)", () => {
 		const name = stageName("", false, RUN_TOKEN);
 		expect(name).not.toMatch(/--/);
 		expect(name).toBe(`it-${disc(`|${RUN_TOKEN}`)}`);
-	});
-
-	it("stays within MAX_STAGE_LEN", () => {
-		const long = "x".repeat(100);
-		expect(stageName(long, false, RUN_TOKEN).length).toBeLessThanOrEqual(MAX_STAGE_LEN);
 	});
 
 	it("is run-unique: the same slug under distinct run tokens differs", () => {

@@ -8,23 +8,21 @@
  * Cloudflare resource-name contract `stageFor`'s docblock states (see `_integration.ts`).
  */
 
-// Stage length is load-bearing: alchemy's `createPhysicalName` hard-caps a D1 name at
-// 64 chars by truncating the readable prefix while preserving the trailing 16-char
-// hash, and the harness's `resolveD1DatabaseId` (_harness.ts) reconstructs the name as
-// `phoenix-phoenix-db-${stage}-…` and finds the DB by that prefix — if alchemy
-// truncated the stage out of the readable prefix, `startsWith` misses and the lookup
-// throws (the #689 `sozluk-keyset` failure). Budget: `phoenix-phoenix-db-` (19) + `-`
-// + hash16 (17) = 36 fixed; capping the stage at 26 keeps the readable prefix (19+26=45)
-// comfortably under the cap so the stage is never the part alchemy truncates.
-export const MAX_STAGE_LEN = 26;
 export const DISC_LEN = 8;
+
+// The human-debug `readable` prefix is trimmed to this width. Purely cosmetic now: the
+// harness reads the deployed D1's uuid off the compiled Stack output (#692), so no name
+// reconstruction couples to the stage length — `disc` alone carries uniqueness. The #689
+// `MAX_STAGE_LEN` guard (a bound on the stage so alchemy's `createPhysicalName` 64-char
+// truncation never cut the prefix-match's readable part) is retired with that coupling.
+const READABLE_MAX = 15;
 
 const STAGE_PREFIX = "it-";
 
 // Deterministic fixed-length discriminator (FNV-1a 32-bit → base36, padded/truncated to
 // DISC_LEN). Fed `${slug}|${runToken}`, it carries BOTH file-distinctness (within a run)
-// and run-distinctness (across runs) in a constant width, so the bounded stage never has
-// to depend on the raw slug or token fitting.
+// and run-distinctness (across runs) in a constant width — the sole uniqueness guarantee,
+// never depending on the raw slug or token fitting into the name.
 export const disc = (seed: string): string => {
 	let h = 0x811c9dc5;
 	for (let i = 0; i < seed.length; i++) {
@@ -45,17 +43,17 @@ export const slugify = (base: string): string =>
  * Build the stage name from an already-sanitized `slug`.
  *
  *   - `NO_DESTROY`: stable `it-<slug>` so a kept-alive local deploy re-adopts by name.
- *   - otherwise: `it-<readable>-<disc>`, always ≤ MAX_STAGE_LEN.
+ *   - otherwise: `it-<readable>-<disc>`, where `<disc>` alone makes it run-unique.
  *
- * `readable` is a slug prefix kept only as a human-debug aid. A punctuation-only basename
- * sanitizes to an empty slug; the placeholder + dash-collapse below keep the output
- * non-empty and free of leading/trailing/internal `--` for every input (#698).
+ * `readable` is a slug prefix (trimmed to `READABLE_MAX`) kept only as a human-debug aid.
+ * A punctuation-only basename sanitizes to an empty slug; the placeholder + dash-collapse
+ * below keep the output non-empty and free of leading/trailing/internal `--` for every
+ * input (#698).
  */
 export const stageName = (slug: string, noDestroy: boolean, runToken: string): string => {
 	if (noDestroy) return collapse(`${STAGE_PREFIX}${slug}`);
 
-	const readableBudget = MAX_STAGE_LEN - STAGE_PREFIX.length - 1 - DISC_LEN;
-	const readable = slug.slice(0, readableBudget).replace(/-$/, "");
+	const readable = slug.slice(0, READABLE_MAX).replace(/-$/, "");
 	return collapse(`${STAGE_PREFIX}${readable}-${disc(`${slug}|${runToken}`)}`);
 };
 

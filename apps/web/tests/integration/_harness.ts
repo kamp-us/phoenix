@@ -129,9 +129,9 @@ export interface Harness {
 	/**
 	 * This stage's real D1 REST coordinates — `{accountId, databaseId}` — for a
 	 * setup tool that must drive D1 over the same Cloudflare REST seam off the
-	 * worker binding (the fts-backfill CLI's `makeD1RestFromEnv`, #645). Resolves
-	 * the per-stage database by the same physical-name prefix `execD1` uses, so the
-	 * brittle name reconstruction stays in one place. Setup-only, never an assertion.
+	 * worker binding (the fts-backfill CLI's `makeD1RestFromEnv`, #645). Read straight
+	 * off the deploy's compiled `Stack` output (#692), the same id `execD1` uses.
+	 * Setup-only, never an assertion.
 	 */
 	d1Target(): Promise<{accountId: string; databaseId: string}>;
 	/** Open a live SSE stream on a connection id (cookie required). */
@@ -181,31 +181,17 @@ const REQUEST_TIMEOUT_MS = 30_000;
 // prior run left behind.
 const STAMP_SEED = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-// The alchemy stack name (`Alchemy.Stack("phoenix", …)`, `alchemy.run.ts`) and the
-// D1 resource id (`Cloudflare.D1Database("phoenix_db", …)`, `worker/db/resources.ts`)
-// — the two stable halves of the deployed D1's physical name (the third is the stage,
-// the fourth a random suffix). `setLastActivityAt` resolves the database by this
-// prefix, sanitized to alchemy's physical-name form (non-`[a-zA-Z0-9-]` → `-`, so
-// `phoenix_db` → `phoenix-db`). Kept as the canonical ids in lockstep with those two
-// declarations; the sanitization is applied where the prefix is assembled.
-const STACK_NAME = "phoenix";
-const D1_RESOURCE_ID = "phoenix_db";
 const CLOUDFLARE_API_BASE = "https://api.cloudflare.com/client/v4";
 
-// Cloudflare REST credentials — the SAME ones the integration deploy uses
-// (`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID`, `_integration.ts`). Resolved
-// lazily so a file that never calls `setLastActivityAt` needs neither.
-const cloudflare = {
-	accountId(): string {
-		const id = process.env.CLOUDFLARE_ACCOUNT_ID;
-		if (!id) throw new Error("CLOUDFLARE_ACCOUNT_ID is not set (needed for setLastActivityAt)");
-		return id;
-	},
-	apiToken(): string {
-		const token = process.env.CLOUDFLARE_API_TOKEN;
-		if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set (needed for setLastActivityAt)");
-		return token;
-	},
+// The CF REST bearer token — the SAME one the integration deploy uses
+// (`CLOUDFLARE_API_TOKEN`, `_integration.ts`). The account + database id come off the
+// deploy's compiled output (`getD1Target`), not the env, so this is the only env
+// credential the setup-only D1 REST path still needs. Resolved lazily so a file that
+// never touches D1 needs neither.
+const cloudflareApiToken = (): string => {
+	const token = process.env.CLOUDFLARE_API_TOKEN;
+	if (!token) throw new Error("CLOUDFLARE_API_TOKEN is not set (needed for setLastActivityAt)");
+	return token;
 };
 
 // One authenticated request to the Cloudflare REST API; throws on a non-2xx with the
@@ -214,7 +200,7 @@ async function cloudflareApi(path: string, init?: RequestInit): Promise<Response
 	const res = await fetch(`${CLOUDFLARE_API_BASE}${path}`, {
 		...init,
 		headers: {
-			authorization: `Bearer ${cloudflare.apiToken()}`,
+			authorization: `Bearer ${cloudflareApiToken()}`,
 			"content-type": "application/json",
 			...init?.headers,
 		},
@@ -282,11 +268,17 @@ export function frameData<T = unknown>(frame: string): T {
  * lifecycle and supplies `getUrl`, which resolves to this file's stage's worker URL
  * (populated by the `beforeAll(deploy(Stack))` hook before any `it` body runs).
  *
- * `stage` is this file's isolated-stage name (`it-<slug>`), needed only by
- * `setLastActivityAt` to resolve the per-stage D1 by its alchemy physical-name
- * prefix over the Cloudflare REST API — see that method.
+ * `getD1Target` resolves this stage's real D1 REST coordinates —
+ * `{accountId, databaseId}` — read straight off the deploy's compiled `Stack`
+ * output (alchemy `Cloudflare.D1Database` surfaces `databaseId`/`accountId`), the
+ * same hook that populates `getUrl`. The harness no longer reconstructs the D1's
+ * physical name and prefix-matches the CF list API (#692, retiring #689's
+ * `MAX_STAGE_LEN`); it reads the id the deploy already knows.
  */
-export function harness(getUrl: () => string, stage: string): Harness {
+export function harness(
+	getUrl: () => string,
+	getD1Target: () => {accountId: string; databaseId: string},
+): Harness {
 	const url = () => {
 		const u = getUrl();
 		if (!u) {
@@ -618,39 +610,13 @@ export function harness(getUrl: () => string, stage: string): Harness {
 		return (voted.data as {score: number}).score;
 	};
 
-	// Resolve this stage's real D1 UUID once, then cache it. The deploy names the D1
-	// by alchemy's physical-name scheme `${stack}-${id}-${stage}-${random16}`, with
-	// every component sanitized (alchemy maps any non-`[a-zA-Z0-9-]` char to `-`) —
-	// so `phoenix_db` becomes `phoenix-db`, yielding `phoenix-phoenix-db-${stage}-…`
-	// (PR #567). Only the random suffix is unknown; the prefix is deterministic and
-	// unique to this stage. The CF `?name=` filter is a substring match, so the prefix
-	// selects exactly this stage's database.
-	let d1DatabaseId: string | undefined;
-	const resolveD1DatabaseId = async (): Promise<string> => {
-		if (d1DatabaseId) return d1DatabaseId;
-		const acct = cloudflare.accountId();
-		const physical = (s: string) => s.replace(/[^a-zA-Z0-9-]/g, "-");
-		const namePrefix = `${physical(STACK_NAME)}-${physical(D1_RESOURCE_ID)}-${physical(stage)}-`;
-		const res = await cloudflareApi(
-			`/accounts/${acct}/d1/database?name=${encodeURIComponent(namePrefix)}&per_page=100`,
-		);
-		const body = (await res.json()) as {result?: Array<{uuid: string; name: string}>};
-		const match = body.result?.find((db) => db.name.startsWith(namePrefix));
-		if (!match) {
-			throw new Error(
-				`setLastActivityAt: no D1 database matched prefix "${namePrefix}" for stage ${stage}`,
-			);
-		}
-		d1DatabaseId = match.uuid;
-		return d1DatabaseId;
-	};
-
 	// One setup-only statement against this stage's real D1 over the REST query API.
 	// Returns D1's reported affected-row count (0 for DDL); throws on a D1-side SQL
-	// error so a botched setup statement fails the test loudly, never silently.
+	// error so a botched setup statement fails the test loudly, never silently. The
+	// `{accountId, databaseId}` come straight off the deploy's compiled output
+	// (`getD1Target`) — the id the deploy already knows, never a reconstructed name (#692).
 	const runD1Query = async (sql: string, params: unknown[]): Promise<number> => {
-		const acct = cloudflare.accountId();
-		const databaseId = await resolveD1DatabaseId();
+		const {accountId: acct, databaseId} = getD1Target();
 		const res = await cloudflareApi(`/accounts/${acct}/d1/database/${databaseId}/query`, {
 			method: "POST",
 			body: JSON.stringify({sql, params}),
@@ -677,10 +643,7 @@ export function harness(getUrl: () => string, stage: string): Harness {
 
 	const execD1: Harness["execD1"] = (sql, params = []) => runD1Query(sql, params);
 
-	const d1Target: Harness["d1Target"] = async () => ({
-		accountId: cloudflare.accountId(),
-		databaseId: await resolveD1DatabaseId(),
-	});
+	const d1Target: Harness["d1Target"] = async () => getD1Target();
 
 	const openSse: Harness["openSse"] = (connectionId, cookie) =>
 		req(`/fate/live?connectionId=${encodeURIComponent(connectionId)}`, {
