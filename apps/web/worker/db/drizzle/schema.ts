@@ -19,7 +19,11 @@ export const user = sqliteTable("user", {
 	name: text("name"),
 	email: text("email").notNull(),
 	image: text("image"),
-	type: text("type", {enum: ["human", "bot"]})
+	// `system` is the reserved discriminant of the seeded `@[silinen]` sentinel
+	// user (ADR 0097) — a real row that is neither a human nor a bot; it carries
+	// re-attributed content from deleted accounts. Seeded by migration, never
+	// creatable at runtime.
+	type: text("type", {enum: ["human", "bot", "system"]})
 		.notNull()
 		.default("human"),
 	emailVerified: integer("email_verified", {mode: "boolean"}),
@@ -28,6 +32,12 @@ export const user = sqliteTable("user", {
 	username: text("username").unique(),
 	createdAt: timestamp("created_at"),
 	updatedAt: timestamp("updated_at"),
+	// Account-deletion tombstone (ADR 0097). Null = a live account; set ⇒ the row
+	// was scrubbed by `account.delete` (email/name/image nulled) but KEPT so the
+	// `author_id → silinen` redirect and the FKs stay coherent and the email can
+	// re-register fresh. Identity rows (session/account/apikey/verification) are
+	// torn down; this stamp marks the surviving tombstone.
+	deletedAt: timestamp("deleted_at"),
 });
 
 export const session = sqliteTable("session", {

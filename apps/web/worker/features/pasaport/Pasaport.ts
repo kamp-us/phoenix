@@ -11,7 +11,7 @@
 import type {Auth as BetterAuth} from "better-auth";
 import {and, desc, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
-import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
+import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {
@@ -151,6 +151,16 @@ export class Pasaport extends Context.Service<
 			after?: string | null | undefined;
 			first: number;
 		}) => Effect.Effect<ContributionConnection>;
+
+		// Account deletion = anonymize-to-`@[silinen]` (ADR 0097). For the calling
+		// user, in ONE atomic D1 batch: re-attribute every authored content row to
+		// the `silinen` sentinel (content stays Live, karma KEPT), tear down the
+		// identity rows (session/account/apikey/verification), and scrub the `user`
+		// row to a kept tombstone (PII nulled, `deleted_at` stamped). Idempotent
+		// for the same user (re-running re-attributes nothing and re-scrubs the
+		// already-scrubbed row). The caller is always the target — there is no
+		// "delete user X".
+		readonly anonymizeAccount: (input: {userId: string}) => Effect.Effect<void>;
 	}
 >()("@kampus/pasaport/Pasaport") {}
 
@@ -159,7 +169,28 @@ export class Pasaport extends Context.Service<
 // digit (no leading/trailing `-`, no `--`).
 const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){1,28}[a-z0-9]$|^[a-z0-9]{3,30}$/;
 
+/**
+ * The seeded `@[silinen]` sentinel's id, reserved username, and display name (ADR
+ * 0097). Migration `0006` seeds the `user` + `user_profile` rows; account-deletion
+ * re-attributes content to this id. Kept in lockstep with that migration.
+ */
+export const SILINEN_USER_ID = "silinen";
+export const SILINEN_USERNAME = "silinen";
+export const SILINEN_DISPLAY_NAME = "@[silinen]";
+
+// Usernames nobody may register — the sentinel handle, so `@[silinen]` can never
+// collide with a real account (ADR 0097 §1). Rejected with the INVALID_FORMAT
+// surface, like any other illegal handle.
+const RESERVED_USERNAMES: ReadonlySet<string> = new Set([SILINEN_USERNAME]);
+
 function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid> {
+	if (RESERVED_USERNAMES.has(normalized)) {
+		return Effect.fail(
+			new UsernameInvalidFormat({
+				message: "bu kullanıcı adı ayrılmış ve kullanılamaz",
+			}),
+		);
+	}
 	if (normalized.length < 3) {
 		return Effect.fail(
 			new UsernameTooShort({
@@ -218,7 +249,7 @@ export const makePasaportLive = (auth: Auth) =>
 			// `orDieAccess`: every DB call site dies on `DrizzleError` (infra
 			// failures are defects — the domain-boundary rule), so public signatures
 			// carry domain errors only and every method's `R` stays `never`.
-			const {run} = orDieAccess(yield* Drizzle);
+			const {run, batch} = orDieAccess(yield* Drizzle);
 
 			// `COUNT(*)` of one author's live (non-removed) rows in a contribution
 			// table. Calls `run` directly so callers keep `R = never`.
@@ -569,6 +600,81 @@ export const makePasaportLive = (auth: Auth) =>
 						totalCount,
 					} satisfies ContributionConnection;
 				}),
+
+				anonymizeAccount: Effect.fn("Pasaport.anonymizeAccount")(function* (input: {
+					userId: string;
+				}) {
+					const {userId} = input;
+					const now = new Date();
+					// `verification` keys by `identifier` = the live email, which the batch
+					// is about to scrub — so capture it as a plain value BEFORE the batch
+					// (ADR 0097 §2) and delete by that literal, never a correlated subquery
+					// (D1's batch executor rejects a raw subquery member).
+					const user = yield* run((db) => db.query.user.findFirst({where: {id: userId}}));
+					const email = user?.email ?? null;
+					// One atomic batch (ADR 0014/0097 §2): every statement commits or none
+					// does, so the world never sees a half-anonymized account.
+					yield* batch((db) => buildAnonymizeStatements(db, userId, email, now));
+				}),
 			};
 		}),
 	);
+
+/**
+ * The atomic teardown of one account (ADR 0097 §2). In order:
+ *  1–3. Re-attribute the user's content (`definition_view` / `post_summary` /
+ *       `comment_view`): `author_id := silinen`, denormalized `author_name`
+ *       overwritten. Content stays Live (`removed_at` untouched) — this is
+ *       re-attribution, not removal — so its votes/scores and the karma they
+ *       earned ride along untouched.
+ *  4–7. Tear down the identity rows: `session` / `account` / `apikey` /
+ *       `verification`. `verification` keys by `identifier` = the user's email
+ *       (not a FK), so it's deleted by the literal email the caller resolved
+ *       before this batch; skipped when the user has no email.
+ *  8.   Scrub the `user` row to a kept tombstone: PII (email/name/image) nulled,
+ *       `deleted_at` stamped. The row is KEPT so the `author_id → silinen`
+ *       redirect and FKs stay coherent and the email can re-register fresh.
+ *
+ * Every statement is a query-builder statement (no raw correlated subquery) so
+ * D1's `batch()` executor accepts the whole array.
+ */
+function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string | null, now: Date) {
+	const reattributeDefs = db
+		.update(schema.definitionView)
+		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
+		.where(eq(schema.definitionView.authorId, userId));
+
+	const reattributePosts = db
+		.update(schema.postSummary)
+		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
+		.where(eq(schema.postSummary.authorId, userId));
+
+	const reattributeComments = db
+		.update(schema.commentView)
+		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
+		.where(eq(schema.commentView.authorId, userId));
+
+	const dropSessions = db.delete(schema.session).where(eq(schema.session.userId, userId));
+	const dropAccounts = db.delete(schema.account).where(eq(schema.account.userId, userId));
+	const dropApikeys = db.delete(schema.apikey).where(eq(schema.apikey.userId, userId));
+
+	const scrubUser = db
+		.update(schema.user)
+		.set({name: null, email: "", image: null, deletedAt: now, updatedAt: now})
+		.where(eq(schema.user.id, userId));
+
+	const dropVerification = email
+		? [db.delete(schema.verification).where(eq(schema.verification.identifier, email))]
+		: [];
+
+	return [
+		reattributeDefs,
+		reattributePosts,
+		reattributeComments,
+		...dropVerification,
+		dropSessions,
+		dropAccounts,
+		dropApikeys,
+		scrubUser,
+	] as const;
+}

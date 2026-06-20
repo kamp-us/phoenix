@@ -5,7 +5,7 @@
  */
 
 import type {ContributionNode, ContributionRow, ProfileRow} from "./Pasaport.ts";
-import type {Profile, User} from "./views.ts";
+import type {AccountDeletionReceipt, Profile, User} from "./views.ts";
 
 export interface UserFields {
 	id: string;
@@ -38,6 +38,14 @@ export const toProfile = (r: ProfileRow): Profile => ({
 	definitionCount: r.definitionCount,
 	postCount: r.postCount,
 	commentCount: r.commentCount,
+});
+
+// The single spelling of the `account.delete` ack literal. The `id` is constant
+// (`account:deleted`) — the receipt carries no per-user payload to leak.
+export const toAccountDeletionReceipt = (): AccountDeletionReceipt => ({
+	__typename: "AccountDeletionReceipt",
+	id: "account:deleted",
+	deleted: true,
 });
 
 // Flatten a discriminated `ContributionNode` into the flat `ContributionRow`;
