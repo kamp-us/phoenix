@@ -24,6 +24,7 @@ import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {Flagship as FlagshipResource} from "./features/flagship/resources.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
+import {EmailSenderLive} from "./features/pasaport/email-sender.ts";
 import {makeAppLive} from "./http/app.ts";
 import {workerFirstGlobs} from "./http/worker-routes.ts";
 
@@ -217,7 +218,21 @@ export default Phoenix.make(
 				// `provideMerge` keeps both `Database` (yielded in init) and
 				// `BetterAuth` in scope while wiring the dependency in build order (a
 				// flat `mergeAll` would run them in parallel and not wire it).
-				BetterAuthLive.pipe(Layer.provideMerge(DatabaseLive)),
+				// `EmailSenderLive` (ADR 0101) is provided into it too: the better-auth
+				// email callbacks resolve `EmailSender`. The production adapter binds the
+				// `send_email` descriptor through alchemy's `SendEmailBindingLive`
+				// (`WorkerEnvironment`/`RuntimeContext` ambient), the same binding-graph
+				// shape as Flagship below; dev/preview pick the log sink and never touch
+				// the binding.
+				BetterAuthLive.pipe(
+					Layer.provideMerge(DatabaseLive),
+					Layer.provide(
+						EmailSenderLive.pipe(
+							Layer.provide(Cloudflare.SendEmailBindingLive),
+							Layer.provide(Cloudflare.SendEmailBindingPolicyLive),
+						),
+					),
+				),
 				// The `Flagship` seam (`bind()`-in-init) resolves through alchemy's
 				// Flagship binding graph: `FlagshipBindingLive` turns the app resource
 				// into the `FlagshipClient`, `FlagshipBindingPolicyLive` registers the

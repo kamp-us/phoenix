@@ -42,6 +42,10 @@ import {
 	Flagship,
 	panoDraftSaveFlag,
 } from "./worker/features/flagship/resources.ts";
+import {
+	isProductionDeploy,
+	provisionEmailSending,
+} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
 
 export default Alchemy.Stack(
@@ -60,6 +64,14 @@ export default Alchemy.Stack(
 		yield* demoTargetingFlag(flagship.appId);
 		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
 		yield* panoDraftSaveFlag(flagship.appId);
+		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
+		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
+		// provisions a per-stage email subdomain (reputation isolation + no waste). The
+		// `send_email` worker binding follows the same gate — its prod adapter `bind()`s
+		// the descriptor at init, dev/preview never reference it.
+		if (isProductionDeploy(process.env)) {
+			yield* provisionEmailSending;
+		}
 		// Surface this stage's D1 uuid (+ account) in the compiled output so the
 		// integration harness reads the deployed id directly instead of reconstructing
 		// the physical name and prefix-matching the CF list API (#692). Yielding the
