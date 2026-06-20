@@ -15,10 +15,12 @@ const verdictOf = (input: CiRequiredInput, name: string) =>
 const env = (over: Record<string, string>): Record<string, string> => ({
 	CHANGES_RESULT: "success",
 	CHECK_REQUIRED: "false",
+	PACKAGES_REQUIRED: "false",
 	INTEGRATION_REQUIRED: "false",
 	E2E_REQUIRED: "false",
 	CHECK_RESULT: "skipped",
 	UNIT_RESULT: "skipped",
+	PACKAGES_RESULT: "skipped",
 	INTEGRATION_RESULT: "skipped",
 	E2E_RESULT: "skipped",
 	...over,
@@ -96,6 +98,45 @@ describe("judge — the 4 integration scenarios from the PR body (#782/#786)", (
 	});
 });
 
+describe("judge — packages-tests (#760): packages/** change required, others legit-skip", () => {
+	// packages_required = (packages path filter matched) — no fork/author guard.
+
+	it("packages-changed PR → packages-tests required; ran+passed PASS", () => {
+		const e = env({PACKAGES_REQUIRED: "true", PACKAGES_RESULT: "success"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "required-pass");
+		assert.isTrue(judge(inputFromEnv(e)).pass);
+	});
+
+	it("packages-changed PR but suites SKIPPED → FAIL (the should-have-run silent-no-op, ADR 0092)", () => {
+		const e = env({PACKAGES_REQUIRED: "true", PACKAGES_RESULT: "skipped"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
+		assert.isFalse(judge(inputFromEnv(e)).pass);
+	});
+
+	it("packages-changed PR with a FAILING guard test → overall FAIL (a real failure is never masked)", () => {
+		const e = env({PACKAGES_REQUIRED: "true", PACKAGES_RESULT: "failure"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
+		assert.isFalse(judge(inputFromEnv(e)).pass);
+	});
+
+	it("non-packages PR → packages-tests NOT required; skip is a legit-skip PASS", () => {
+		const e = env({PACKAGES_REQUIRED: "false", PACKAGES_RESULT: "skipped"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "legit-skip");
+		assert.isTrue(judge(inputFromEnv(e)).pass);
+	});
+
+	it("changes source job failed → packages-tests required-ness untrustworthy ⇒ fail closed", () => {
+		const e = env({
+			CHANGES_RESULT: "failure",
+			PACKAGES_REQUIRED: "",
+			PACKAGES_RESULT: "skipped",
+		});
+		const v = judge(inputFromEnv(e));
+		assert.isFalse(v.pass);
+		assert.isNotNull(v.changesReport);
+	});
+});
+
 describe("judge — fork / non-author PR (the secret-less skip stays legitimate, never FAIL)", () => {
 	it("fork PR: integration_required=false && e2e_required=false ⇒ both skips are legit-skip PASS", () => {
 		const e = env({
@@ -153,10 +194,12 @@ describe("judge — the all-clean happy paths PASS", () => {
 	it("everything required and successful → PASS", () => {
 		const e = env({
 			CHECK_REQUIRED: "true",
+			PACKAGES_REQUIRED: "true",
 			INTEGRATION_REQUIRED: "true",
 			E2E_REQUIRED: "true",
 			CHECK_RESULT: "success",
 			UNIT_RESULT: "success",
+			PACKAGES_RESULT: "success",
 			INTEGRATION_RESULT: "success",
 			E2E_RESULT: "success",
 		});
@@ -171,11 +214,52 @@ describe("judge — the all-clean happy paths PASS", () => {
 	});
 });
 
+describe("judge — packages-tests gate (#760): packages_required required/legit-skip/fail", () => {
+	// packages_required = (the `packages` path filter only — creds-free, no author/fork guard)
+
+	it("packages changed → packages-tests required; ran+passed PASS", () => {
+		const e = env({PACKAGES_REQUIRED: "true", PACKAGES_RESULT: "success"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "required-pass");
+		assert.isTrue(judge(inputFromEnv(e)).pass);
+	});
+
+	it("packages changed but a guard test FAILED → packages-tests FAIL → overall FAIL", () => {
+		const e = env({PACKAGES_REQUIRED: "true", PACKAGES_RESULT: "failure"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
+		assert.isFalse(judge(inputFromEnv(e)).pass);
+	});
+
+	it("packages required but skipped → FAIL (the should-have-run silent-no-op, ADR 0092)", () => {
+		const e = env({PACKAGES_REQUIRED: "true", PACKAGES_RESULT: "skipped"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "FAIL");
+		assert.isFalse(judge(inputFromEnv(e)).pass);
+	});
+
+	it("non-packages PR → packages-tests NOT required; skip is a legit-skip PASS", () => {
+		const e = env({PACKAGES_REQUIRED: "false", PACKAGES_RESULT: "skipped"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "packages-tests"), "legit-skip");
+		assert.isTrue(judge(inputFromEnv(e)).pass);
+	});
+
+	it("changes source job failed → packages_required untrustworthy ⇒ overall fail closed", () => {
+		const e = env({CHANGES_RESULT: "failure", PACKAGES_REQUIRED: "", PACKAGES_RESULT: "skipped"});
+		const v = judge(inputFromEnv(e));
+		assert.isFalse(v.pass);
+		assert.isNotNull(v.changesReport);
+	});
+});
+
 describe("inputFromEnv — env mapping (check & unit share check_required; missing ⇒ false/empty)", () => {
 	it("check and unit both read CHECK_REQUIRED", () => {
 		const input = inputFromEnv(env({CHECK_REQUIRED: "true"}));
 		assert.isTrue(input.jobs.find((j) => j.name === "check")?.required);
 		assert.isTrue(input.jobs.find((j) => j.name === "unit")?.required);
+	});
+
+	it("packages-tests reads its own PACKAGES_REQUIRED (not check_required)", () => {
+		const input = inputFromEnv(env({CHECK_REQUIRED: "false", PACKAGES_REQUIRED: "true"}));
+		assert.isTrue(input.jobs.find((j) => j.name === "packages-tests")?.required);
+		assert.isFalse(input.jobs.find((j) => j.name === "check")?.required);
 	});
 
 	it("only the literal 'true' is required; 'TRUE'/'1'/'' are false (fail-closed default)", () => {
