@@ -14,7 +14,12 @@
  * `.patterns/fate-connections.md`, `.patterns/fate-effect-sources.md`.
  */
 import {commentSource, postSource, tagSource} from "../pano/sources.ts";
-import {contributionSource, profileSource, userSource} from "../pasaport/sources.ts";
+import {
+	accountDeletionReceiptSource,
+	contributionSource,
+	profileSource,
+	userSource,
+} from "../pasaport/sources.ts";
 import {reportReceiptSource} from "../report/sources.ts";
 import {definitionSource, termSource} from "../sozluk/sources.ts";
 
@@ -27,5 +32,6 @@ export const sources = [
 	tagSource,
 	profileSource,
 	contributionSource,
+	accountDeletionReceiptSource,
 	reportReceiptSource,
 ] as const;

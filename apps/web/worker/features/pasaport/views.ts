@@ -68,14 +68,30 @@ export class ProfileView extends FateDataView<ProfileViewRow>()("Profile")({
 	}),
 }) {}
 
+// The `account.delete` acknowledgement (ADR 0097) — NOT a re-resolved entity. The
+// deleting user's `User` row is scrubbed to a tombstone, so re-resolving it would
+// leak the half-emptied row; the mutation returns a small typed ack instead. The
+// synthetic `id` is the `account:deleted` literal — one receipt shape, no per-user
+// payload to leak. Mirrors `ReportReceipt`; see `.patterns/fate-effect-data-views.md`.
+export type AccountDeletionReceiptViewRow = ViewRow<{id: string; deleted: boolean}>;
+
+export class AccountDeletionReceiptView extends FateDataView<AccountDeletionReceiptViewRow>()(
+	"AccountDeletionReceipt",
+)({
+	id: true,
+	deleted: true,
+}) {}
+
 // The plain kernel `dataView()` values, for cross-feature surfaces (the
 // `fate/views.ts` `Root` map + barrel re-exports).
 export const userDataView = UserView.view;
 export const contributionDataView = ContributionView.view;
 export const profileDataView = ProfileView.view;
+export const accountDeletionReceiptDataView = AccountDeletionReceiptView.view;
 
 // The `Entity<>` second arg restates relations/`Date` fields that fate's
 // wire-facing derivation widens/narrows away — full rationale in `sozluk/views.ts`.
 export type User = Entity<typeof UserView>;
 export type Contribution = Entity<typeof ContributionView, {createdAt: Date}>;
 export type Profile = Entity<typeof ProfileView, {contributions?: Contribution[]}>;
+export type AccountDeletionReceipt = Entity<typeof AccountDeletionReceiptView>;

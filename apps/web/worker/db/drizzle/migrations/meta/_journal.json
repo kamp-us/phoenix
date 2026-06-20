@@ -43,6 +43,13 @@
       "when": 1783500000000,
       "tag": "0005_removal_substrate",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1784000000000,
+      "tag": "0006_account_deletion_tombstone_silinen",
+      "breakpoints": true
     }
   ]
 }
