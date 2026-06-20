@@ -1,5 +1,6 @@
 import type * as React from "react";
 import {Link} from "react-router";
+import {sozlukLetterHref} from "../../lib/sozlukLetterHref";
 import "./Sozluk.css";
 
 export type TermRow = {
@@ -118,14 +119,18 @@ const ALPHABET = [
 	"z",
 ];
 
+/**
+ * The A-Z index as real navigable links to `/sozluk?harf=<letter>` (issue #693):
+ * each letter is a shareable URL, back-button-correct and middle-clickable. The
+ * active letter links back to bare `/sozluk` so it still toggles its filter off.
+ * Empty letters stay inert `<span>`s — no destination to navigate to.
+ */
 export function SozlukAlphabet({
 	value,
 	emptyLetters = [],
-	onChange,
 }: {
 	value?: string;
 	emptyLetters?: string[];
-	onChange?: (l: string | undefined) => void;
 }) {
 	return (
 		<nav className="kp-sozluk-alphabet" aria-label="Harf">
@@ -147,15 +152,14 @@ export function SozlukAlphabet({
 					);
 				}
 				return (
-					<button
+					<Link
 						key={l}
-						type="button"
+						to={sozlukLetterHref(l, isActive)}
 						className={cls}
-						aria-pressed={isActive}
-						onClick={() => onChange?.(isActive ? undefined : l)}
+						aria-current={isActive ? "page" : undefined}
 					>
 						{l}
-					</button>
+					</Link>
 				);
 			})}
 		</nav>

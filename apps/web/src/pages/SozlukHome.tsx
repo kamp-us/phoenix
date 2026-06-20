@@ -6,7 +6,7 @@
  */
 import * as React from "react";
 import {useListView, useRequest, useView, type ViewRef} from "react-fate";
-import {useNavigate} from "react-router";
+import {useNavigate, useSearchParams} from "react-router";
 import {SozlukAlphabet} from "../components/sozluk/index";
 import {TermRow, TermRowView} from "../components/sozluk/TermRow";
 import {Button} from "../components/ui/Button";
@@ -26,8 +26,12 @@ const homeRequest = {
 
 type TermConnection = ReturnType<typeof useRequest<typeof homeRequest>>["recentTerms"];
 
+// The active letter is URL-driven (`/sozluk?harf=<letter>`, issue #693): the
+// alphabet renders real links, so the filter is shareable + back-button-correct
+// rather than transient component state.
 export function SozlukHome() {
-	const [letter, setLetter] = React.useState<string | undefined>();
+	const [params] = useSearchParams();
+	const letter = params.get("harf") ?? undefined;
 	const [query, setQuery] = React.useState("");
 
 	return (
@@ -35,13 +39,7 @@ export function SozlukHome() {
 			<div className="kp-page__inner">
 				<Screen
 					fallback={
-						<SozlukHomeChrome
-							letter={letter}
-							query={query}
-							setLetter={setLetter}
-							setQuery={setQuery}
-							status="loading"
-						>
+						<SozlukHomeChrome letter={letter} query={query} setQuery={setQuery} status="loading">
 							{null}
 						</SozlukHomeChrome>
 					}
@@ -49,7 +47,6 @@ export function SozlukHome() {
 						<SozlukHomeChrome
 							letter={letter}
 							query={query}
-							setLetter={setLetter}
 							setQuery={setQuery}
 							status="error"
 							errorMessage={code.toLowerCase()}
@@ -58,12 +55,7 @@ export function SozlukHome() {
 						</SozlukHomeChrome>
 					)}
 				>
-					<SozlukHomeContent
-						letter={letter}
-						query={query}
-						setLetter={setLetter}
-						setQuery={setQuery}
-					/>
+					<SozlukHomeContent letter={letter} query={query} setQuery={setQuery} />
 				</Screen>
 			</div>
 		</div>
@@ -73,21 +65,14 @@ export function SozlukHome() {
 interface ContentProps {
 	letter: string | undefined;
 	query: string;
-	setLetter: (l: string | undefined) => void;
 	setQuery: (q: string) => void;
 }
 
-function SozlukHomeContent({letter, query, setLetter, setQuery}: ContentProps) {
+function SozlukHomeContent({letter, query, setQuery}: ContentProps) {
 	const {recentTerms, popularTerms} = useRequest(homeRequest);
 
 	return (
-		<SozlukHomeChrome
-			letter={letter}
-			query={query}
-			setLetter={setLetter}
-			setQuery={setQuery}
-			status="ok"
-		>
+		<SozlukHomeChrome letter={letter} query={query} setQuery={setQuery} status="ok">
 			<RecentColumn connection={recentTerms} letter={letter} query={query} />
 			<PopularColumn connection={popularTerms} letter={letter} query={query} />
 		</SozlukHomeChrome>
@@ -100,15 +85,7 @@ interface ChromeProps extends ContentProps {
 	children: React.ReactNode;
 }
 
-function SozlukHomeChrome({
-	letter,
-	query,
-	setLetter,
-	setQuery,
-	status,
-	errorMessage,
-	children,
-}: ChromeProps) {
+function SozlukHomeChrome({letter, query, setQuery, status, errorMessage, children}: ChromeProps) {
 	const navigate = useNavigate();
 	const totalsLine = status === "ok" ? "" : status === "loading" ? "yükleniyor…" : "yüklenemedi";
 
@@ -151,7 +128,7 @@ function SozlukHomeChrome({
 				</form>
 			</header>
 
-			<SozlukAlphabet value={letter} onChange={setLetter} />
+			<SozlukAlphabet value={letter} />
 
 			{status === "error" ? (
 				<p style={{font: "var(--t-meta)", color: "var(--danger)", padding: "var(--s-3) 0"}}>
