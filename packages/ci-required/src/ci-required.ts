@@ -104,8 +104,8 @@ const parseRequired = (value: string | undefined): boolean => value === "true";
  * Map the `ci-required` step's `env:` block (`needs.*.result` + the single-sourced
  * `*_required` booleans) to a `CiRequiredInput`. `check` and `unit` share the
  * `check_required` predicate; `packages-tests` reads its own `packages_required`
- * (#760). Pure over an env record — the bin passes `process.env`, the test passes
- * a literal.
+ * (#760); `actionlint` reads its own `workflows_required` (#568). Pure over an env
+ * record — the bin passes `process.env`, the test passes a literal.
  */
 export const inputFromEnv = (e: Record<string, string | undefined>): CiRequiredInput => {
 	const result = (key: string): JobResult => e[key] ?? "";
@@ -116,6 +116,11 @@ export const inputFromEnv = (e: Record<string, string | undefined>): CiRequiredI
 			name: "packages-tests",
 			required: parseRequired(e.PACKAGES_REQUIRED),
 			result: result("PACKAGES_RESULT"),
+		},
+		{
+			name: "actionlint",
+			required: parseRequired(e.WORKFLOWS_REQUIRED),
+			result: result("ACTIONLINT_RESULT"),
 		},
 		{
 			name: "integration",

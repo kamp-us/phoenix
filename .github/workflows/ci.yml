@@ -28,6 +28,7 @@ jobs:
       code: ${{ steps.filter.outputs.code }}
       e2e: ${{ steps.filter.outputs.e2e }}
       packages: ${{ steps.filter.outputs.packages }}
+      workflows: ${{ steps.filter.outputs.workflows }}
       # Per-gating-job *required-ness* (#786): the SINGLE SOURCE of "should this job
       # have run". Each `*_required` output mirrors the SAME inputs that gate the job's
       # own `if:` (path-filter outputs + the `feature-complete` PR label + the
@@ -57,6 +58,12 @@ jobs:
       # pass them. A non-packages PR has `packages_required == false`, so the job's
       # skip is a legitimate not-applicable PASS.
       packages_required: ${{ steps.filter.outputs.packages == 'true' }}
+      # `actionlint` lints `.github/workflows/**` (issue #568). Its single-sourced
+      # required-ness is JUST the `workflows` path filter — actionlint is creds-free
+      # and fast (no author/fork guard), so any PR (incl. a fork) that touches a
+      # workflow MUST run + pass it. A non-workflow PR has `workflows_required ==
+      # false`, so the job's skip is a legitimate not-applicable PASS.
+      workflows_required: ${{ steps.filter.outputs.workflows == 'true' }}
     steps:
       - uses: actions/checkout@v4.2.2
 
@@ -127,6 +134,13 @@ jobs:
               - 'tsconfig*.json'
               - 'pnpm-lock.yaml'
               - '.github/workflows/ci.yml'
+            # Every workflow file actionlint lints (issue #568). A non-workflow PR
+            # touches none of these → `workflows` false → the `actionlint` job skips
+            # (→ green, non-blocking). Includes actions/ so a composite/local action's
+            # YAML is covered too, since actionlint validates referenced local actions.
+            workflows:
+              - '.github/workflows/**'
+              - '.github/actions/**'
 
   check:
     name: lint / format / typecheck
@@ -281,6 +295,47 @@ jobs:
       # (no Playwright, no network) so it can't itself flake. Runs locally too:
       # `bash .claude/skills/validate-flows-gate-precondition.sh`.
       - run: bash .claude/skills/validate-flows-gate-precondition.sh
+
+  # Reproducible workflow-YAML lint (issue #568). `.github/workflows/**` is the most
+  # control-plane-sensitive, human-merged file class (ADR 0053), yet was validated
+  # only by whoever happened to have actionlint installed locally — an ad-hoc,
+  # non-reproducible install. This pins actionlint and feeds its result to
+  # `ci-required`, so a malformed workflow (a bad `needs:`/`if:`, a typo'd job that
+  # never feeds the gate) fails the required gate for everyone, no local install.
+  #
+  # Pinned for reproducibility the way the repo pins tooling: the version AND the
+  # release-tarball SHA-256 are fixed here (the repo's action refs are pinned by tag;
+  # a downloaded binary is pinned by tag + checksum so a re-tagged release can't slip
+  # in). The hosted ubuntu runner ships shellcheck, so embedded `run:` scripts are
+  # shell-linted too. Run-ness is single-sourced from `changes.workflows_required`;
+  # `ci-required` reads the SAME output to require this job's success when a workflow
+  # changed. A non-workflow PR skips → green (legit not-applicable, ADR 0092).
+  actionlint:
+    name: lint workflow YAML
+    needs: changes
+    if: needs.changes.outputs.workflows_required == 'true'
+    runs-on: ubuntu-latest
+    env:
+      ACTIONLINT_VERSION: 1.7.12
+      ACTIONLINT_SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - name: Install pinned actionlint
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          curl --fail --silent --show-error --location -o "$tarball" "$url"
+          echo "${ACTIONLINT_SHA256}  ${tarball}" | sha256sum --check --status
+          tar -xzf "$tarball" actionlint
+          ./actionlint -version
+
+      # actionlint globs .github/workflows/** itself; pass no files so a new workflow
+      # is covered with no edit here. shellcheck (preinstalled on the runner) lints
+      # the embedded `run:` scripts. A malformed workflow → non-zero exit → red gate.
+      - name: Lint .github/workflows/**
+        run: ./actionlint -color
 
   integration:
     name: integration tests
@@ -552,7 +607,7 @@ jobs:
   # run by the `packages-tests` lane (which gates all `packages/**` suites, #760).
   ci-required:
     name: ci-required
-    needs: [changes, check, unit, packages-tests, integration, e2e]
+    needs: [changes, check, unit, packages-tests, actionlint, integration, e2e]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
@@ -572,9 +627,11 @@ jobs:
           INTEGRATION_REQUIRED: ${{ needs.changes.outputs.integration_required }}
           E2E_REQUIRED: ${{ needs.changes.outputs.e2e_required }}
           PACKAGES_REQUIRED: ${{ needs.changes.outputs.packages_required }}
+          WORKFLOWS_REQUIRED: ${{ needs.changes.outputs.workflows_required }}
           CHECK_RESULT: ${{ needs.check.result }}
           UNIT_RESULT: ${{ needs.unit.result }}
           PACKAGES_RESULT: ${{ needs.packages-tests.result }}
+          ACTIONLINT_RESULT: ${{ needs.actionlint.result }}
           INTEGRATION_RESULT: ${{ needs.integration.result }}
           E2E_RESULT: ${{ needs.e2e.result }}
         run: node packages/ci-required/src/bin.ts
