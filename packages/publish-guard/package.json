@@ -1,0 +1,31 @@
+{
+	"name": "@kampus/publish-guard",
+	"version": "0.0.0",
+	"private": true,
+	"description": "publish-guard CLI — derive the kampus-pipeline plugin's required-published @kampus/* set and check it for publish drift offline (epic #803); run from source like leak-guard/ci-required",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"list": "node src/bin.ts list",
+		"check": "node src/bin.ts check"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
