@@ -16,6 +16,7 @@ import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -426,17 +427,6 @@ export const PanoLive = Layer.effect(Pano)(
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 		const bookmarkSvc = yield* Bookmark;
-
-		/**
-		 * HN-style hot score: `score / (hours_old + 2)^1.8`, scaled by 1000 and
-		 * floored so the persisted column stays an integer (D1 indexes integers
-		 * cheaper than floats; only the relative ordering matters).
-		 */
-		const computeHotScore = (score: number, createdAtMs: number, nowMs: number): number => {
-			const hoursOld = Math.max(0, (nowMs - createdAtMs) / 3_600_000);
-			const denom = (hoursOld + 2) ** 1.8;
-			return Math.floor((score * 1000) / denom);
-		};
 
 		const rowToPostPage = (row: typeof schema.postSummary.$inferSelect): PostPage => ({
 			id: row.id,
