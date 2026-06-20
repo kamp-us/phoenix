@@ -12,7 +12,7 @@
  *     across repeated evaluations; and an eval error degrades to the safe default.
  *
  * The rule *configuration* (the live `FlagshipFlag` IaC) is system-tier and
- * declared in `db/resources.ts`; what's unit-testable — the bucketing stability
+ * declared in `resources.ts`; what's unit-testable — the bucketing stability
  * and the mapping/contract — is asserted here, per #511's TDD note.
  */
 import {assert, describe, it} from "@effect/vitest";

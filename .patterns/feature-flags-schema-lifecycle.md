@@ -17,7 +17,7 @@ Scope boundary against the sibling flag docs — **read them, don't duplicate th
   how-to-use guide) is the **call-site** layer — how to read a flag with `flags.getBoolean` / the
   `useFlag` hook. This doc is the *declaration-side convention* it points back to.
 
-Ground truth is `apps/web/worker/db/resources.ts` (the `FlagshipFlag` declarations),
+Ground truth is `apps/web/worker/features/flagship/resources.ts` (the `FlagshipFlag` declarations),
 `apps/web/alchemy.run.ts` (where they're yielded), and `apps/web/worker/features/flagship/`
 (the read service). When this doc and the source disagree, the source wins — fix the doc.
 
@@ -113,7 +113,7 @@ A flag is declared in **one** of two places (never both — see the warning). Th
 *lifetime and reviewability*, not by importance.
 
 - **IaC (`FlagshipFlag` in the stack) — the preferred default for durable flags.** Declared via a
-  factory in `apps/web/worker/db/resources.ts` and yielded in `apps/web/alchemy.run.ts` with the
+  factory in `apps/web/worker/features/flagship/resources.ts` and yielded in `apps/web/alchemy.run.ts` with the
   app's resolved `appId`. The flag's existence, default, and targeting rules live in version control,
   are code-reviewed, and ship on `alchemy deploy`. Use for **structural / long-lived** flags: a
   rollout whose rule shape is part of the release design, a dark-ship flag for a feature in active

@@ -62,11 +62,11 @@ human checkpoint.
 
 Before writing the gated code, declare a **boolean** flag, **default off**, named by the
 [#513 grammar](./feature-flags-schema-lifecycle.md) (`<product>-<feature>-<purpose>`, kebab-case). For
-a durable dark-ship flag, declare it **IaC** in `apps/web/worker/db/resources.ts` and export its key
+a durable dark-ship flag, declare it **IaC** in `apps/web/worker/features/flagship/resources.ts` and export its key
 as a `const` so the read site imports it (a typo silently reads the safe default forever):
 
 ```ts
-// apps/web/worker/db/resources.ts
+// apps/web/worker/features/flagship/resources.ts
 export const SOZLUK_SEARCH_DISCOVERY_FLAG_KEY = "sozluk-search-discovery";
 
 export const sozlukSearchDiscoveryFlag = (appId: Input<string>) =>
@@ -99,7 +99,7 @@ when the flag is on for this request.
 
 ```ts
 import {Flags} from "../flagship/Flags.ts";
-import {SOZLUK_SEARCH_DISCOVERY_FLAG_KEY} from "../db/resources.ts";
+import {SOZLUK_SEARCH_DISCOVERY_FLAG_KEY} from "../flagship/resources.ts";
 
 const flags = yield* Flags;
 const discovery = yield* flags.getBoolean(SOZLUK_SEARCH_DISCOVERY_FLAG_KEY, false); // safe default = off
@@ -285,7 +285,7 @@ dead-conditional debt. Retire it per the lifecycle's third stage
 
 ### Acceptance criteria
 - [ ] The `FlagshipFlag` declaration for `<flag-key>` is deleted (the factory in
-      `apps/web/worker/db/resources.ts` + its yield in `apps/web/alchemy.run.ts`; or the dashboard flag).
+      `apps/web/worker/features/flagship/resources.ts` + its yield in `apps/web/alchemy.run.ts`; or the dashboard flag).
 - [ ] The exported key `const` (`<FLAG>_KEY`) and every `flags.get*(<key>, …)` read site are deleted.
 - [ ] The dead `else` / fallback branch (the old path) is removed and the now-permanent new path is
       inlined at each read site (server `Flags` reads and any `useFlag` / `FlagGate` usage).

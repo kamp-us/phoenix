@@ -10,7 +10,7 @@
  */
 import * as Cloudflare from "alchemy/Cloudflare";
 import {Context, Effect, Layer} from "effect";
-import {Flagship as FlagshipApp} from "../../db/resources.ts";
+import {Flagship as FlagshipApp} from "./resources.ts";
 
 export class Flagship extends Context.Service<Flagship, Cloudflare.FlagshipClient>()(
 	"@kampus/Flagship",
