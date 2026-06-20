@@ -55,10 +55,10 @@ process.env.BETTER_AUTH_SECRET ??=
 // prod deploy's origin policy.
 process.env.ENVIRONMENT ??= "development";
 
-// The Stack's compiled output type (`{url: Output<string>}`) — what `deploy`
-// resolves. Pinning `A` explicitly keeps the link to the Stack's declared output:
-// if the stack stops returning `{url}`, `deploy` no longer accepts the Stack and
-// this stops compiling rather than breaking at runtime on `out.url`.
+// The Stack's compiled output type (`{url, databaseId, accountId}` as `Output<…>`) —
+// what `deploy` resolves. Pinning `A` explicitly keeps the link to the Stack's declared
+// output: if the stack stops returning these fields, `deploy` no longer accepts the
+// Stack and this stops compiling rather than breaking at runtime on `out.databaseId`.
 type StackOutput =
 	typeof Stack extends Effect.Effect<CompiledStack<infer A>, infer _E, infer _R> ? A : never;
 
@@ -76,24 +76,25 @@ const LOCAL_TOKEN = `${process.pid.toString(36)}${process.hrtime.bigint().toStri
 );
 
 /**
- * A run-unique, length-bounded per-file stage name. Real remote D1 + workers are keyed
- * by stage against ONE shared Cloudflare account, so two CI runs (different PRs, or a
- * rerun) executing the integration job concurrently must never collide — the file
- * basename alone repeats across runs, deploying the SAME stage names →
- * `DatabaseAlreadyExists` (the dominant integration flake, #689).
+ * A run-unique per-file stage name. Real remote D1 + workers are keyed by stage against
+ * ONE shared Cloudflare account, so two CI runs (different PRs, or a rerun) executing the
+ * integration job concurrently must never collide — the file basename alone repeats across
+ * runs, deploying the SAME stage names → `DatabaseAlreadyExists` (the dominant integration
+ * flake, #689).
  *
- *   - Local + `NO_DESTROY`: stable `it-<slug>` (always short) — NO_DESTROY keeps a
- *     file's deploy alive between local runs to re-adopt it, which REQUIRES a stable name.
- *   - Otherwise: `it-<readable>-<disc>`, always ≤ MAX_STAGE_LEN. `<disc>` is a
- *     fixed-width hash of `<slug>|<runToken>` — it alone guarantees uniqueness across
- *     BOTH files (slug) and runs (runToken: CI's `<run-id>-<run-attempt>`, so a rerun
- *     gets a distinct stage; else a per-process LOCAL_TOKEN). `<readable>` is a slug
- *     prefix kept only as a human-debug aid (a CF-dashboard stage traces to its file).
+ *   - Local + `NO_DESTROY`: stable `it-<slug>` — NO_DESTROY keeps a file's deploy alive
+ *     between local runs to re-adopt it, which REQUIRES a stable name.
+ *   - Otherwise: `it-<readable>-<disc>`. `<disc>` is a fixed-width hash of
+ *     `<slug>|<runToken>` — it alone guarantees uniqueness across BOTH files (slug) and
+ *     runs (runToken: CI's `<run-id>-<run-attempt>`, so a rerun gets a distinct stage; else
+ *     a per-process LOCAL_TOKEN). `<readable>` is a slug prefix kept only as a human-debug
+ *     aid (a CF-dashboard stage traces to its file).
  *
- * Bounded length is load-bearing — see MAX_STAGE_LEN in `_stage-name.ts`. Sanitized to
- * the `[a-z0-9-]` Cloudflare resource-name set, no leading/trailing dash, no internal
- * `--`, non-empty — the pure `stageName`/`slugify` of `_stage-name.ts` enforce this for
- * every input (unit-pinned in `_stage-name.unit.test.ts`).
+ * Sanitized to the `[a-z0-9-]` Cloudflare resource-name set, no leading/trailing dash, no
+ * internal `--`, non-empty — the pure `stageName`/`slugify` of `_stage-name.ts` enforce
+ * this for every input (unit-pinned in `_stage-name.unit.test.ts`). The harness reads the
+ * deployed D1's uuid off the compiled Stack output, so the stage no longer needs the #689
+ * `MAX_STAGE_LEN` length bound (#692).
  */
 const stageFor = (metaUrl: string): string => {
 	const base = (metaUrl.split("/").pop() ?? "integration").replace(/\.test\.ts$/, "");
@@ -124,6 +125,7 @@ export function integrationStack(metaUrl: string): Harness {
 	});
 
 	let workerUrl = "";
+	let d1Target: {accountId: string; databaseId: string} | undefined;
 
 	const stack = beforeAll(
 		deploy(Stack, {stage}).pipe(
@@ -132,9 +134,18 @@ export function integrationStack(metaUrl: string): Harness {
 					// The deploy publishes the worker URL with a trailing slash; the harness
 					// appends leading-slash paths, so strip it once here at the publish point
 					// to avoid `//api/...` (which workerd parses as a protocol-relative URL).
-					const url = (out as {url: string}).url.replace(/\/+$/, "");
+					const resolved = out as {url: string; accountId: string; databaseId: string};
+					const url = resolved.url.replace(/\/+$/, "");
 					if (!url) return yield* Effect.die(new Error("deploy returned no worker url"));
 					workerUrl = url;
+					// The D1 uuid + account this stage deployed, read straight off the
+					// compiled Stack output (alchemy `Cloudflare.D1Database`) — the harness's
+					// setup-only D1 REST path reads the id the deploy knows, never a
+					// reconstructed physical name (#692).
+					if (!resolved.databaseId) {
+						return yield* Effect.die(new Error("deploy returned no D1 databaseId"));
+					}
+					d1Target = {accountId: resolved.accountId, databaseId: resolved.databaseId};
 					// Retry-first-request: a fresh route 404s briefly while it propagates.
 					// Effect.repeat-style retry on a bounded `spaced` Schedule, never a
 					// Date.now() polling loop — capped at `times` so a never-ready worker
@@ -164,5 +175,16 @@ export function integrationStack(metaUrl: string): Harness {
 	// (hard within alchemy's model); tracked as a follow-up sweep. See #690.
 	afterAll.skipIf(NO_DESTROY)(destroy(Stack, {stage}));
 
-	return harness(() => workerUrl, stage);
+	return harness(
+		() => workerUrl,
+		() => {
+			if (!d1Target) {
+				throw new Error(
+					"integration D1 target is not set — beforeAll(deploy(Stack)) has not resolved. " +
+						"Build the harness via integrationStack() so the per-file deploy runs first.",
+				);
+			}
+			return d1Target;
+		},
+	);
 }

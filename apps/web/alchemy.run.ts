@@ -35,6 +35,7 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
+import {PhoenixDb} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
 import {
 	demoTargetingFlag,
@@ -59,6 +60,13 @@ export default Alchemy.Stack(
 		yield* demoTargetingFlag(flagship.appId);
 		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
 		yield* panoDraftSaveFlag(flagship.appId);
-		return {url: worker.url};
+		// Surface this stage's D1 uuid (+ account) in the compiled output so the
+		// integration harness reads the deployed id directly instead of reconstructing
+		// the physical name and prefix-matching the CF list API (#692). Yielding the
+		// same `D1Database` resource the worker `bind()`s is idempotent (same as Flagship
+		// above); its resolved output carries `databaseId`/`accountId` (alchemy
+		// `Cloudflare.D1Database`, output `{databaseId, accountId, …}`).
+		const db = yield* PhoenixDb;
+		return {url: worker.url, databaseId: db.databaseId, accountId: db.accountId};
 	}).pipe(Effect.provide(PhoenixLive)),
 );
