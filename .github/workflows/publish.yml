@@ -1,0 +1,145 @@
+# One workflow publishes ANY @kampus/* package to npm on a human-cut GitHub
+# Release. The tag grammar is `<pkg>-v<version>` (e.g. `epic-ledger-v0.1.2`):
+# the workflow parses `<pkg>` off the tag, maps it to `packages/<pkg>`, and runs
+# the proven publish steps for that package. Adding a third published package is
+# then a release tag, not a copy-pasted ~80-line workflow (collapses the former
+# publish-epic-ledger.yml + publish-decisions-index.yml; ADR 0064 established the
+# pattern, ADR 0076 corrected and generalized it).
+#
+# Auth is OIDC Trusted Publishing — no NPM_TOKEN secret: `id-token: write` mints a
+# short-lived per-run credential, and provenance is generated automatically. A
+# guard fails the run if the tag version and the package.json version disagree, so
+# a mistagged release never publishes.
+#
+# Publish is `pnpm publish` (not `npm publish`): pnpm has native OIDC
+# trusted-publishing support and resolves `catalog:`/`workspace:` specifiers into
+# the tarball at pack time, so the source package.json keeps the pnpm catalog as
+# the single source of truth. No `npm install -g npm@latest` step is needed.
+#
+# Fail-closed by construction: a tag that does not match the `<pkg>-v<version>`
+# grammar, names a package dir that does not exist, or names a dir that is not
+# publishable (no package.json, marked private, or missing publishConfig.access)
+# fails the run before any publish — same posture as the per-package workflows it
+# replaces.
+#
+# ── Onboarding a NEW published package (human, one-time) ──────────────────────
+# Until all three are done, this workflow fails closed for the new package's tags:
+#   1. In packages/<pkg>/package.json, make the package publishable: remove any
+#      `"private": true` and add `"publishConfig": { "access": "public" }`.
+#   2. Register THIS repo + workflow as a Trusted Publisher for `@kampus/<pkg>`
+#      on npmjs.com (Settings → Publishing). The OIDC credential is mintable only
+#      after this registration; before it, `pnpm publish` 403s.
+#   3. Cut a GitHub Release whose tag follows the grammar: `<pkg>-v<version>`,
+#      where `<version>` exactly equals packages/<pkg>/package.json `version`.
+#
+# ── Migrating an already-published package (human, one-time) ──────────────────
+# npm Trusted Publishing binds to the exact workflow FILENAME. Collapsing the
+# former per-package workflows into this `publish.yml` renamed the file, so the
+# existing trusted-publisher registrations — bound to publish-epic-ledger.yml and
+# publish-decisions-index.yml — no longer match. Before the NEXT release of
+# either package, re-register each on npmjs.com to point at `publish.yml`:
+#   - @kampus/epic-ledger      (was publish-epic-ledger.yml      → publish.yml)
+#   - @kampus/decisions-index  (was publish-decisions-index.yml  → publish.yml)
+# Until each is re-registered, `pnpm publish` fails closed (403/404) for that
+# package's tags. This is a one-time human step per package, not automatable.
+# ──────────────────────────────────────────────────────────────────────────────
+name: publish
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    name: publish @kampus package to npm
+    runs-on: ubuntu-latest
+    # The `release` event carries no tag filter, so the per-package gate moved into
+    # the parse step below: a tag that isn't `<pkg>-v<version>` fails the run there.
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      # Pin pnpm to 10.27.0 — pnpm 11 must NOT be used: it has a known OIDC
+      # trusted-publishing 404 regression (pnpm#11513).
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          registry-url: https://registry.npmjs.org
+          cache: pnpm
+
+      # Parse `<pkg>` off the `<pkg>-v<version>` tag and resolve the target dir,
+      # failing closed on anything that isn't a real, publishable package. This is
+      # the single gate the former per-workflow `if: startsWith(tag, '<pkg>-v')`
+      # plus the hardcoded package path collapse into.
+      - name: Resolve target package from release tag
+        id: resolve
+        run: |
+          TAG="${{ github.event.release.tag_name }}"
+          # Grammar: <pkg>-v<version>, <pkg> kebab-case. Strip the LAST `-v<version>`
+          # so package names containing `-v` survive; <version> is the remainder.
+          if [[ ! "$TAG" =~ ^(.+)-v([0-9].*)$ ]]; then
+            echo "::error::release tag '$TAG' does not match the <pkg>-v<version> grammar — refusing to publish"
+            exit 1
+          fi
+          PKG="${BASH_REMATCH[1]}"
+          TAG_VERSION="${BASH_REMATCH[2]}"
+          PKG_DIR="packages/$PKG"
+          PKG_JSON="$PKG_DIR/package.json"
+          if [ ! -f "$PKG_JSON" ]; then
+            echo "::error::tag '$TAG' resolves to '$PKG_DIR' which has no package.json — not a publishable package; refusing to publish"
+            exit 1
+          fi
+          # Publishable shape (the proven contract): not private, has publishConfig.access.
+          IS_PRIVATE="$(node -p "require('./$PKG_JSON').private === true")"
+          HAS_ACCESS="$(node -p "Boolean(require('./$PKG_JSON').publishConfig && require('./$PKG_JSON').publishConfig.access)")"
+          if [ "$IS_PRIVATE" = "true" ] || [ "$HAS_ACCESS" != "true" ]; then
+            echo "::error::'$PKG_DIR' is not publishable (private, or missing publishConfig.access) — see the onboarding steps in this workflow's header; refusing to publish"
+            exit 1
+          fi
+          {
+            echo "pkg=$PKG"
+            echo "pkg_dir=$PKG_DIR"
+            echo "tag_version=$TAG_VERSION"
+          } >> "$GITHUB_OUTPUT"
+          echo "resolved package: @kampus/$PKG  dir: $PKG_DIR  tag version: $TAG_VERSION"
+
+      - run: pnpm install --frozen-lockfile
+
+      # Tag version must equal packages/<pkg>/package.json version. A mismatch fails
+      # the run before any publish, so a mistagged release never ships.
+      - name: Guard — release tag must match package.json version
+        run: |
+          PKG_DIR="${{ steps.resolve.outputs.pkg_dir }}"
+          TAG_VERSION="${{ steps.resolve.outputs.tag_version }}"
+          PKG_VERSION="$(node -p "require('./$PKG_DIR/package.json').version")"
+          echo "tag version:        $TAG_VERSION"
+          echo "package.json version: $PKG_VERSION"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::release tag ($TAG_VERSION) does not match $PKG_DIR/package.json version ($PKG_VERSION) — refusing to publish"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: pnpm --filter "@kampus/${{ steps.resolve.outputs.pkg }}" typecheck
+
+      # The package ships compiled ESM JS (bin/exports point at dist/, files: [dist]),
+      # never raw .ts — Node refuses to strip types under node_modules, so a source-only
+      # tarball is dead-on-arrival for any consumer (issue #405). Build dist/ before
+      # publish; prepublishOnly also runs it, but an explicit step makes the gate visible.
+      - name: Build (compile src/ → dist/)
+        run: pnpm --filter "@kampus/${{ steps.resolve.outputs.pkg }}" build
+
+      # Publish ONLY this package, from its own dir. No NPM_TOKEN — pnpm's native
+      # OIDC trusted publishing supplies the credential per run and generates
+      # provenance automatically. pnpm resolves catalog:/workspace: specifiers into
+      # the tarball at pack time, so the source package.json keeps catalog: deps.
+      - name: Publish to npm (pnpm OIDC trusted publishing + automatic provenance)
+        working-directory: ${{ steps.resolve.outputs.pkg_dir }}
+        run: pnpm publish --access public --no-git-checks
