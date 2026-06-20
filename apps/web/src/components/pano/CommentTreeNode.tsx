@@ -16,7 +16,7 @@ import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {useVoteToggle} from "./useVoteToggle";
+import {useToggleAction} from "./useToggleAction";
 import "./PanoComment.css";
 
 export const CommentTreeNodeView = view<Comment>()({
@@ -94,11 +94,11 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
 
 	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818).
-	const driveVote = useVoteToggle(() => ({
-		voted,
+	const driveVote = useToggleAction(() => ({
+		on: voted,
 		dispatch: async (action) => {
 			try {
-				if (action === "retract") {
+				if (action === "unset") {
 					await fate.mutations.comment.retractVote({
 						input: {id: data.id},
 						optimistic: {score: Math.max(0, score - 1), myVote: null},

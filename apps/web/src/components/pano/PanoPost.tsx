@@ -1,4 +1,3 @@
-import {useState} from "react";
 import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
 import {useSession} from "../../auth/client";
@@ -6,7 +5,7 @@ import {codeOf} from "../../fate/wire";
 import {authRedirectPath} from "../../lib/returnTo";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
-import {useVoteToggle} from "./useVoteToggle";
+import {useToggleAction} from "./useToggleAction";
 import "./PanoPost.css";
 
 /** Presentational vote control; the parent owns the mutation + auth gate. */
@@ -70,11 +69,11 @@ export function PostVoteWidget({
 		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
 
 	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818).
-	const drive = useVoteToggle(() => ({
-		voted,
+	const drive = useToggleAction(() => ({
+		on: voted,
 		dispatch: async (action) => {
 			try {
-				if (action === "retract") {
+				if (action === "unset") {
 					await fate.mutations.post.retractVote({
 						input: {id: postId},
 						optimistic: {score: Math.max(0, score - 1), myVote: null},
@@ -118,39 +117,42 @@ export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: bool
 	const fate = useFateClient();
 	const session = useSession();
 	const navigate = useNavigate();
-	const [inFlight, setInFlight] = useState(false);
 
 	const saved = isSaved === true;
 
 	const redirectToAuth = () =>
 		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
 
-	const onToggle = async () => {
+	// Serialize-and-supersede so a rapid save→unsave does not drop the unsave (#825).
+	const drive = useToggleAction(() => ({
+		on: saved,
+		dispatch: async (action) => {
+			try {
+				if (action === "unset") {
+					await fate.mutations.post.unsave({
+						input: {id: postId},
+						optimistic: {isSaved: false},
+						view: PostSaveView,
+					});
+				} else {
+					await fate.mutations.post.save({
+						input: {id: postId},
+						optimistic: {isSaved: true},
+						view: PostSaveView,
+					});
+				}
+			} catch (error) {
+				if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+			}
+		},
+	}));
+
+	const onToggle = () => {
 		if (!session.data?.user) {
 			redirectToAuth();
 			return;
 		}
-		if (inFlight) return;
-		setInFlight(true);
-		try {
-			if (saved) {
-				await fate.mutations.post.unsave({
-					input: {id: postId},
-					optimistic: {isSaved: false},
-					view: PostSaveView,
-				});
-			} else {
-				await fate.mutations.post.save({
-					input: {id: postId},
-					optimistic: {isSaved: true},
-					view: PostSaveView,
-				});
-			}
-		} catch (error) {
-			if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
-		} finally {
-			setInFlight(false);
-		}
+		drive();
 	};
 
 	return (
