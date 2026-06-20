@@ -23,6 +23,7 @@
  */
 import {join} from "node:path";
 import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
+import {makeD1Rest} from "@kampus/d1-rest";
 import type {Input} from "alchemy";
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -30,7 +31,6 @@ import * as Test from "alchemy/Test/Vitest";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
-import {makeD1Rest} from "../../src/d1-rest.ts";
 import {slugify, stageName} from "./_stage-name.ts";
 
 // The worker's canonical migrations dir — the SAME one `apps/web`'s D1 resource

@@ -2,28 +2,20 @@
  * Unit tests for the backfill's batch WRITE path — the slice the pure
  * `buildBackfillStatements` test (backfill.unit.test.ts) does not exercise.
  *
- * Two contracts are locked here without CF creds:
- *
- * 1. `backfill()` drives the FTS write as drizzle's real d1 `batch()` over a fake
- *    `D1Database` — which `prepare(sql).bind(...params)` per statement and issues
- *    ONE `D1Database.batch([...])`, in source order with bound params. The
- *    statements are ADR-0080 drizzle BUILDERS now (ADR 0080 / #863), so what the
- *    fake records is the drizzle-rendered SQL; re-wrapping a builder through
- *    `db.run(sql)` would yield a `SQLiteRaw` with no `.stmt` and 500 the batch
- *    (issue #893) — exactly the regression this path guards.
- * 2. `makeD1Rest`'s `prepare`/`bind`/`batch` slice issues ONE REST `query` POST
- *    carrying the whole batch (sql+params, ordered) — driven over a fake
- *    `FetchHttpClient.Fetch` so the REST adapter's real transport runs offline.
+ * `backfill()` drives the FTS write as drizzle's real d1 `batch()` over a fake
+ * `D1Database` — which `prepare(sql).bind(...params)` per statement and issues ONE
+ * `D1Database.batch([...])`, in source order with bound params. The statements are
+ * ADR-0080 drizzle BUILDERS now (ADR 0080 / #863), so what the fake records is the
+ * drizzle-rendered SQL; re-wrapping a builder through `db.run(sql)` would yield a
+ * `SQLiteRaw` with no `.stmt` and 500 the batch (issue #893) — exactly the regression
+ * this path guards. The REST transport's own `prepare`/`bind`/`batch` single-POST
+ * contract is tested once in `@kampus/d1-rest`, not re-driven here.
  */
-import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
 import {createDrizzle, type DrizzleDb} from "@kampus/web/db/Drizzle";
 import {syncTermSearch} from "@kampus/web/features/search/fts-sync";
 import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
-import {Layer} from "effect";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {describe, expect, it} from "vitest";
 import {backfill} from "./backfill.ts";
-import {makeD1Rest} from "./d1-rest.ts";
 
 const dialect = new SQLiteSyncDialect();
 const renderStmt = (stmt: {getSQL: () => never}) => dialect.sqlToQuery(stmt.getSQL());
@@ -113,95 +105,5 @@ describe("backfill() — writes the FTS rows as one bound D1 batch", () => {
 		const report = await backfill(db);
 		expect(report).toEqual({terms: 0, posts: 0});
 		expect(batches).toHaveLength(0);
-	});
-});
-
-describe("makeD1Rest — the REST shim's prepare/bind/batch contract", () => {
-	it("sends the whole batch as ONE REST query POST, sql+params in order", async () => {
-		const requests: {url: string; body: unknown}[] = [];
-
-		const fakeFetch: typeof globalThis.fetch = async (input, init) => {
-			const raw = init?.body;
-			const text =
-				typeof raw === "string"
-					? raw
-					: raw instanceof Uint8Array
-						? new TextDecoder().decode(raw)
-						: await new Response(raw as BodyInit).text();
-			requests.push({url: String(input), body: text ? JSON.parse(text) : undefined});
-			return new Response(JSON.stringify({result: [{meta: {}, results: [], success: true}]}), {
-				status: 200,
-				headers: {"content-type": "application/json"},
-			});
-		};
-
-		const layer = Layer.mergeAll(
-			FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fakeFetch))),
-			// Credentials the REST adapter needs; a token is enough for the shape assertion.
-			fromApiToken({apiToken: "test-token"}),
-		);
-
-		const d1 = makeD1Rest({accountId: "acc", databaseId: "db", layer});
-
-		// Build the batch the way the backfill does: drizzle BUILDERS over the REST
-		// shim, spread straight into the drizzle `batch()` (which prepare/binds each).
-		const rdb = createDrizzle(d1) as DrizzleDb;
-		const [first, second] = syncTermSearch(rdb, "sisli", "Şişli");
-		await rdb.batch([first, second]);
-
-		// Exactly one REST round-trip carried the whole batch.
-		expect(requests).toHaveLength(1);
-		expect(requests[0]!.url).toContain("/d1/database/db/query");
-		const body = requests[0]!.body as {batch: {sql: string; params: string[]}[]};
-		expect(body.batch).toHaveLength(2);
-		expect(body.batch[0]!.sql).toBe('delete from "term_search" where "term_search"."slug" = ?');
-		expect(body.batch[0]!.params).toEqual(["sisli"]);
-		expect(body.batch[1]!.sql).toBe('insert into "term_search" ("slug", "norm") values (?, ?)');
-		expect(body.batch[1]!.params).toEqual(["sisli", "sisli"]);
-	});
-
-	// #940: `run()` once hardcoded `meta: {}`, dropping D1's row-change count — latent
-	// here (no consumer reads it), but it bit moderator-grant's setRole (#937). Lock the
-	// REST `result: [{ meta: { changes } }]` → `meta.changes` mapping so it can't regress.
-	it("run() carries D1's row-change count from the REST meta (#937/#940)", async () => {
-		const fakeFetch: typeof globalThis.fetch = async () =>
-			new Response(JSON.stringify({result: [{meta: {changes: 3}, results: [], success: true}]}), {
-				status: 200,
-				headers: {"content-type": "application/json"},
-			});
-
-		const layer = Layer.mergeAll(
-			FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fakeFetch))),
-			fromApiToken({apiToken: "test-token"}),
-		);
-		const d1 = makeD1Rest({accountId: "acc", databaseId: "db", layer});
-
-		const res = await d1
-			.prepare("update term_search set norm = ? where slug = ?")
-			.bind("x", "y")
-			.run();
-
-		expect(res.meta.changes).toBe(3);
-	});
-
-	it("run() defaults meta.changes to 0 when the REST response carries none", async () => {
-		const fakeFetch: typeof globalThis.fetch = async () =>
-			new Response(JSON.stringify({result: [{results: [], success: true}]}), {
-				status: 200,
-				headers: {"content-type": "application/json"},
-			});
-
-		const layer = Layer.mergeAll(
-			FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.Fetch)(fakeFetch))),
-			fromApiToken({apiToken: "test-token"}),
-		);
-		const d1 = makeD1Rest({accountId: "acc", databaseId: "db", layer});
-
-		const res = await d1
-			.prepare("update term_search set norm = ? where slug = ?")
-			.bind("x", "y")
-			.run();
-
-		expect(res.meta.changes).toBe(0);
 	});
 });
