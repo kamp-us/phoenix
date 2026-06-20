@@ -22,14 +22,11 @@
  * only hydrates non-removed posts and the dual-write removes a removed post's
  * FTS row, so a removed post must not be searchable.
  */
+import type {FtsSyncDb, Stmt} from "@kampus/web/db/Drizzle";
 import {syncPostSearch, syncTermSearch} from "@kampus/web/features/search/fts-sync";
-import type {SQL} from "drizzle-orm";
 import {isNull} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import {SQLiteAsyncDialect} from "drizzle-orm/sqlite-core";
 import {backfillSchema, postSummary, termSummary} from "./schema.ts";
-
-const dialect = new SQLiteAsyncDialect();
 
 export type BackfillDb = ReturnType<typeof drizzle<typeof backfillSchema>>;
 
@@ -54,11 +51,12 @@ export interface BackfillReport {
  * unit test passes fixtures — so the statement set is asserted with no database.
  */
 export const buildBackfillStatements = (
+	db: FtsSyncDb,
 	terms: ReadonlyArray<SourceRow>,
 	posts: ReadonlyArray<SourceRow>,
-): {statements: SQL[]; report: BackfillReport} => {
-	const termStmts = terms.flatMap((row) => syncTermSearch(row.key, row.title));
-	const postStmts = posts.flatMap((row) => syncPostSearch(row.key, row.title));
+): {statements: Stmt[]; report: BackfillReport} => {
+	const termStmts = terms.flatMap((row) => syncTermSearch(db, row.key, row.title));
+	const postStmts = posts.flatMap((row) => syncPostSearch(db, row.key, row.title));
 	return {
 		statements: [...termStmts, ...postStmts],
 		report: {terms: terms.length, posts: posts.length},
@@ -67,15 +65,9 @@ export const buildBackfillStatements = (
 
 /**
  * Read every term + every live post from D1, then write their FTS rows as one
- * atomic, idempotent batch. Returns the row counts indexed. An empty corpus is a
- * clean no-op (the empty case returns before any write).
- *
- * The write goes over the raw D1 batch contract (`prepare(sql).bind(...params)`
- * per statement, then one `D1Database.batch([...])`) rather than drizzle's
- * `db.batch([db.run(sql)...])`: a raw `db.run(SQL)` builds a `SQLiteRaw` whose
- * `_prepare()` returns itself with no `.stmt`, so drizzle's d1 batch loop throws
- * reading `preparedQuery.stmt.bind` (drizzle 1.0.0-rc.3; see issue #893).
- * `D1Database.batch` is itself atomic, so the all-or-none guarantee is preserved.
+ * atomic, idempotent batch through the ADR-0080 sync builders. Returns the row
+ * counts indexed. An empty corpus is a clean no-op (D1 `batch` rejects an empty
+ * tuple, so the empty case returns without a write).
  */
 export const backfill = async (d1: D1Database): Promise<BackfillReport> => {
 	const db = makeBackfillDb(d1);
@@ -88,13 +80,13 @@ export const backfill = async (d1: D1Database): Promise<BackfillReport> => {
 		.from(postSummary)
 		.where(isNull(postSummary.removedAt));
 
-	const {statements, report} = buildBackfillStatements(termRows, postRows);
-	if (statements.length === 0) return report;
+	const {statements, report} = buildBackfillStatements(db, termRows, postRows);
 
-	const bound = statements.map((stmt) => {
-		const {sql, params} = dialect.sqlToQuery(stmt);
-		return d1.prepare(sql).bind(...params);
-	});
-	await d1.batch(bound);
+	// The statements are ALREADY batch-able drizzle builders (ADR 0080 / #863) —
+	// batch them directly. Wrapping each back through `db.run` would yield a
+	// `SQLiteRaw` with no bound `.stmt` and 500 the batch: the exact #863 defect.
+	const [first, ...rest] = statements;
+	if (first === undefined) return report;
+	await db.batch([first, ...rest]);
 	return report;
 };

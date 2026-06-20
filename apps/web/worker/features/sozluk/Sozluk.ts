@@ -243,7 +243,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		// `DrizzleError` (infra failures are defects — the domain-boundary rule),
 		// so public signatures carry domain errors only and every method's `R`
 		// stays `never`.
-		const {run} = orDieAccess(yield* Drizzle);
+		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
 		// Per ADR 0013, body validation lives here, not in the resolver. Returns
@@ -295,40 +295,46 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const firstAt = earliestCreatedAt(defs) ?? now;
 			const lastEditAt = latestEditAt(defs) ?? now;
 
-			const firstAtSec = Math.floor(firstAt.getTime() / 1000);
-			const lastActivitySec = Math.floor(now.getTime() / 1000);
-			const lastEditSec = Math.floor(lastEditAt.getTime() / 1000);
-
-			yield* run((db) =>
-				db.run(sql`
-					INSERT INTO term_summary (
-						slug, title, first_letter, definition_count, total_score,
-						excerpt, top_definition_id, first_at, last_activity_at,
-						last_edit_at, last_event_id
-					) VALUES (
-						${slug}, ${title}, ${firstLetter}, ${defs.length}, ${totalScore},
-						${topExcerpt}, ${top?.id ?? null}, ${firstAtSec}, ${lastActivitySec},
-						${lastEditSec}, ''
-					)
-					ON CONFLICT(slug) DO UPDATE SET
-						title             = excluded.title,
-						definition_count  = excluded.definition_count,
-						total_score       = excluded.total_score,
-						excerpt           = excluded.excerpt,
-						top_definition_id = excluded.top_definition_id,
-						first_at          = excluded.first_at,
-						last_activity_at  = excluded.last_activity_at,
-						last_edit_at      = excluded.last_edit_at
-				`),
-			);
-
-			// Dual-write the term's FTS row in lockstep with its summary (ADR 0080).
-			// `recomputeTermSummary` is the single convergent point every term write
-			// funnels through, so syncing here keeps `term_search` current across
-			// add/edit/delete/vote with one wiring.
-			for (const stmt of syncTermSearch(slug, title)) {
-				yield* run((db) => db.run(stmt));
-			}
+			// Summary upsert + its FTS dual-write in ONE batch so they move
+			// all-or-none (ADR 0080 lockstep): a crash between the two can never
+			// desync `term_search` from `term_summary`. `recomputeTermSummary` is
+			// the single convergent point every term write funnels through, so this
+			// keeps `term_search` current across add/edit/delete/vote with one wiring.
+			// Both items are drizzle query builders, NOT `db.run(sql)`: a batch item
+			// must `_prepare()` to a `D1PreparedQuery` with a bound `.stmt`, which a
+			// parametrized `db.run(sql\`…\`)` (a `SQLiteRaw`) lacks — it 500s the whole
+			// batch on real D1 (#863). The builder prepares batch-safe.
+			yield* batch((db) => [
+				db
+					.insert(schema.termSummary)
+					.values({
+						slug,
+						title,
+						firstLetter,
+						definitionCount: defs.length,
+						totalScore,
+						excerpt: topExcerpt,
+						topDefinitionId: top?.id ?? null,
+						firstAt,
+						lastActivityAt: now,
+						lastEditAt,
+						lastEventId: "",
+					})
+					.onConflictDoUpdate({
+						target: schema.termSummary.slug,
+						set: {
+							title: sql`excluded.title`,
+							definitionCount: sql`excluded.definition_count`,
+							totalScore: sql`excluded.total_score`,
+							excerpt: sql`excluded.excerpt`,
+							topDefinitionId: sql`excluded.top_definition_id`,
+							firstAt: sql`excluded.first_at`,
+							lastActivityAt: sql`excluded.last_activity_at`,
+							lastEditAt: sql`excluded.last_edit_at`,
+						},
+					}),
+				...syncTermSearch(db, slug, title),
+			]);
 		});
 
 		// Refresh `sozluk_stats` totals; runs after every write that could affect them.

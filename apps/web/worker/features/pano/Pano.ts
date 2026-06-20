@@ -466,7 +466,7 @@ export const PanoLive = Layer.effect(Pano)(
 		// `orDieAccess`: every internal DB call site dies on `DrizzleError`
 		// (infra failures are defects — the domain-boundary rule), so public
 		// signatures carry domain errors only and `R` stays `never`.
-		const {run} = orDieAccess(yield* Drizzle);
+		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 		const bookmarkSvc = yield* Bookmark;
 
@@ -947,7 +947,10 @@ export const PanoLive = Layer.effect(Pano)(
 			const bodyExcerpt = body ? excerpt(body) : null;
 			const tagsCsv = normalizedTags.map((t) => t.kind).join(",");
 
-			yield* run((db) =>
+			// Summary insert + its FTS dual-write in ONE batch — all-or-none, so a
+			// crash mid-write can't orphan a `post_search` row against a missing
+			// `post_summary` row (the ADR 0080 lockstep invariant).
+			yield* batch((db) => [
 				db.insert(schema.postSummary).values({
 					id: postId,
 					slug: null,
@@ -968,12 +971,8 @@ export const PanoLive = Layer.effect(Pano)(
 					removedAt: null,
 					lastEventId: "",
 				}),
-			);
-
-			// Dual-write the post's FTS row alongside the summary insert (ADR 0080).
-			for (const stmt of syncPostSearch(postId, title)) {
-				yield* run((db) => db.run(stmt));
-			}
+				...syncPostSearch(db, postId, title),
+			]);
 
 			yield* recomputePanoStats(now);
 
@@ -1173,7 +1172,10 @@ export const PanoLive = Layer.effect(Pano)(
 			const createdAtMs = meta.createdAt ? meta.createdAt.getTime() : now.getTime();
 			const hotScore = computeHotScore(meta.score, createdAtMs, now.getTime());
 
-			yield* run((db) =>
+			// Summary update + its FTS re-sync in ONE batch so they move all-or-none
+			// (ADR 0080). The body is out of v1 search scope, so a body-only edit
+			// leaves the FTS row untouched — only the summary update batches alone.
+			yield* batch((db) => [
 				db
 					.update(schema.postSummary)
 					.set({
@@ -1185,15 +1187,8 @@ export const PanoLive = Layer.effect(Pano)(
 						lastActivityAt: now,
 					})
 					.where(eq(schema.postSummary.id, input.postId)),
-			);
-
-			// Re-sync the post's FTS row when the title changed (ADR 0080). The body
-			// is out of v1 scope, so a body-only edit leaves the FTS row untouched.
-			if (hasTitle) {
-				for (const stmt of syncPostSearch(input.postId, nextTitle)) {
-					yield* run((db) => db.run(stmt));
-				}
-			}
+				...(hasTitle ? syncPostSearch(db, input.postId, nextTitle) : []),
+			]);
 
 			return {
 				postId: input.postId,
@@ -1239,15 +1234,18 @@ export const PanoLive = Layer.effect(Pano)(
 				}),
 			);
 			yield* voteSvc.clearTarget("post", input.postId);
-			yield* run((db) =>
+			// Soft-delete stamp + FTS removal in ONE batch so they move all-or-none
+			// (ADR 0080 lockstep): a crash between them can't leave a `Removed` post
+			// still searchable, or strand a `post_search` row past a restore. The FTS
+			// removal builds from the id alone (no re-read of the removed row), so it
+			// is batch-safe. Karma is KEPT (ADR 0096) — no karma-reversal here.
+			yield* batch((db) => [
 				db
 					.update(schema.postSummary)
 					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
 					.where(eq(schema.postSummary.id, input.postId)),
-			);
-
-			// A removed post leaves search (ADR 0080); restore re-syncs it.
-			yield* run((db) => db.run(removePostSearch(input.postId)));
+				removePostSearch(db, input.postId),
+			]);
 
 			yield* recomputePanoStats(now);
 
@@ -1272,17 +1270,15 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const now = new Date();
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) =>
+			// Restore stamp + FTS re-entry in ONE batch (ADR 0080 lockstep). Votes
+			// wiped on removal are not resurrected (score stays 0).
+			yield* batch((db) => [
 				db
 					.update(schema.postSummary)
 					.set({...live, updatedAt: now, lastActivityAt: now})
 					.where(eq(schema.postSummary.id, input.postId)),
-			);
-
-			// Re-enter search; votes wiped on removal are not resurrected (score stays 0).
-			for (const stmt of syncPostSearch(input.postId, meta.title)) {
-				yield* run((db) => db.run(stmt));
-			}
+				...syncPostSearch(db, input.postId, meta.title),
+			]);
 
 			yield* recomputePanoStats(now);
 

@@ -4,6 +4,7 @@
 	"private": true,
 	"type": "module",
 	"exports": {
+		"./db/Drizzle": "./worker/db/Drizzle.ts",
 		"./features/search/normalize": "./worker/features/search/normalize.ts",
 		"./features/search/fts-sync": "./worker/features/search/fts-sync.ts"
 	},

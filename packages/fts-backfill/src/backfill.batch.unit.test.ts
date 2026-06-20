@@ -4,27 +4,29 @@
  *
  * Two contracts are locked here without CF creds:
  *
- * 1. `backfill()` assembles the FTS write as `prepare(sql).bind(...params)` per
- *    statement + one `D1Database.batch([...])`, in source order with bound params
- *    — driven against a fake in-memory `D1Database`. This is the exact site that
- *    threw on real D1 (PR #645/#890): the prior `db.batch([db.run(SQL)...])` hit a
- *    drizzle 1.0.0-rc.3 defect where `SQLiteRaw._prepare()` returns itself with no
- *    `.stmt` (issue #893). A faithful D1 binding never sees a malformed batch item.
- *
+ * 1. `backfill()` drives the FTS write as drizzle's real d1 `batch()` over a fake
+ *    `D1Database` — which `prepare(sql).bind(...params)` per statement and issues
+ *    ONE `D1Database.batch([...])`, in source order with bound params. The
+ *    statements are ADR-0080 drizzle BUILDERS now (ADR 0080 / #863), so what the
+ *    fake records is the drizzle-rendered SQL; re-wrapping a builder through
+ *    `db.run(sql)` would yield a `SQLiteRaw` with no `.stmt` and 500 the batch
+ *    (issue #893) — exactly the regression this path guards.
  * 2. `makeD1Rest`'s `prepare`/`bind`/`batch` slice issues ONE REST `query` POST
  *    carrying the whole batch (sql+params, ordered) — driven over a fake
  *    `FetchHttpClient.Fetch` so the REST adapter's real transport runs offline.
  */
 import {fromApiToken} from "@distilled.cloud/cloudflare/Credentials";
+import {createDrizzle, type DrizzleDb} from "@kampus/web/db/Drizzle";
 import {syncTermSearch} from "@kampus/web/features/search/fts-sync";
-import {SQLiteAsyncDialect} from "drizzle-orm/sqlite-core";
+import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
 import {Layer} from "effect";
 import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {describe, expect, it} from "vitest";
 import {backfill} from "./backfill.ts";
 import {makeD1Rest} from "./d1-rest.ts";
 
-const dialect = new SQLiteAsyncDialect();
+const dialect = new SQLiteSyncDialect();
+const renderStmt = (stmt: {getSQL: () => never}) => dialect.sqlToQuery(stmt.getSQL());
 
 /** One recorded statement as it reaches the D1 binding's batch contract. */
 interface RecordedStmt {
@@ -36,7 +38,7 @@ interface RecordedStmt {
  * An in-memory `D1Database` honoring the slice the backfill drives: `prepare(sql)`
  * → a stmt with `.bind(...args)` recording params, and `batch([...])` recording the
  * bound statements in order. Reads (`db.select(...)`) flow through drizzle's
- * `prepare(sql).bind(...).all()`, served from the seeded `terms`/`posts`.
+ * `prepare(sql).bind(...).all()`, served from the seeded `terms`.
  */
 const makeFakeD1 = (seed: {terms: {slug: string; title: string}[]}) => {
 	const batches: RecordedStmt[][] = [];
@@ -89,18 +91,20 @@ describe("backfill() — writes the FTS rows as one bound D1 batch", () => {
 		expect(stmts).toHaveLength(4);
 
 		// The bound statements are byte-equal to what the dialect renders from the
-		// ADR-0080 sync builders — proving prepare/bind carried the params, in order.
+		// ADR-0080 sync BUILDERS — proving prepare/bind carried the params, in order.
+		// A throwaway drizzle db renders the same builders the backfill batched.
+		const rdb = createDrizzle(db) as DrizzleDb;
 		const expected = terms
-			.flatMap((t) => syncTermSearch(t.slug, t.title))
-			.map((sql) => dialect.sqlToQuery(sql));
+			.flatMap((t) => syncTermSearch(rdb, t.slug, t.title))
+			.map((s) => renderStmt(s as never));
 
 		expect(stmts.map((s) => s.sql)).toEqual(expected.map((q) => q.sql));
 		expect(stmts.map((s) => s.params)).toEqual(expected.map((q) => q.params));
 
 		// Spot-check the crux: the first INSERT binds [slug, folded-title].
-		expect(stmts[0]!.sql).toMatch(/DELETE FROM term_search WHERE slug = \?/);
+		expect(stmts[0]!.sql).toBe('delete from "term_search" where "term_search"."slug" = ?');
 		expect(stmts[0]!.params).toEqual(["sisli"]);
-		expect(stmts[1]!.sql).toMatch(/INSERT INTO term_search \(slug, norm\) VALUES \(\?, \?\)/);
+		expect(stmts[1]!.sql).toBe('insert into "term_search" ("slug", "norm") values (?, ?)');
 		expect(stmts[1]!.params).toEqual(["sisli", "sisli buyuk bulusma"]);
 	});
 
@@ -139,20 +143,20 @@ describe("makeD1Rest — the REST shim's prepare/bind/batch contract", () => {
 
 		const d1 = makeD1Rest({accountId: "acc", databaseId: "db", layer});
 
-		const stmts = syncTermSearch("sisli", "Şişli").map((sql) => {
-			const {sql: text, params} = dialect.sqlToQuery(sql);
-			return d1.prepare(text).bind(...params);
-		});
-		await d1.batch(stmts);
+		// Build the batch the way the backfill does: drizzle BUILDERS over the REST
+		// shim, spread straight into the drizzle `batch()` (which prepare/binds each).
+		const rdb = createDrizzle(d1) as DrizzleDb;
+		const [first, second] = syncTermSearch(rdb, "sisli", "Şişli");
+		await rdb.batch([first, second]);
 
 		// Exactly one REST round-trip carried the whole batch.
 		expect(requests).toHaveLength(1);
 		expect(requests[0]!.url).toContain("/d1/database/db/query");
 		const body = requests[0]!.body as {batch: {sql: string; params: string[]}[]};
 		expect(body.batch).toHaveLength(2);
-		expect(body.batch[0]!.sql).toMatch(/DELETE FROM term_search WHERE slug = \?/);
+		expect(body.batch[0]!.sql).toBe('delete from "term_search" where "term_search"."slug" = ?');
 		expect(body.batch[0]!.params).toEqual(["sisli"]);
-		expect(body.batch[1]!.sql).toMatch(/INSERT INTO term_search/);
+		expect(body.batch[1]!.sql).toBe('insert into "term_search" ("slug", "norm") values (?, ?)');
 		expect(body.batch[1]!.params).toEqual(["sisli", "sisli"]);
 	});
 });

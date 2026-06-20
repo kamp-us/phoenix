@@ -29,6 +29,16 @@ export const relations = defineRelations(schema);
 export type DrizzleDb = ReturnType<typeof drizzle<typeof schema, typeof relations>>;
 
 /**
+ * The schema-agnostic surface the FTS dual-write builders need: just
+ * `delete`/`insert` against the FTS shim tables (`fts-sync.ts`), which carry their
+ * own table arg and so don't depend on the db's schema generic. Both the worker's
+ * full `DrizzleDb` and the backfill CLI's narrow-schema db satisfy it — so the
+ * `@kampus/fts-backfill` consumer can replay the same builders without pulling the
+ * worker's full schema graph (the preview-seed narrow-schema idiom).
+ */
+export type FtsSyncDb = Pick<DrizzleDb, "delete" | "insert">;
+
+/**
  * Raised when a drizzle promise rejects inside `run` / `batch`. The `cause` is
  * preserved for logs but never reaches the user.
  */
