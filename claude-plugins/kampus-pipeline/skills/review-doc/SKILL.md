@@ -252,6 +252,20 @@ hygiene checklist is the whole gate.)
 
 ## Step 2 — Read what the PR actually writes
 
+**Source ALL prose under review from the PR head — never the launched checkout's working copy
+(§HEAD, mandatory).** This gate is frequently spawned with `isolation:worktree`, whose CWD is a
+branch cut from `origin/main` (the **base**) — so a plain full-file `Read`/`cat`/`grep` in CWD
+reads the **pre-PR base**, and you would review the wrong file version while binding the verdict
+to the right head SHA (issue [#793](https://github.com/kamp-us/phoenix/issues/793); the
+false-PASS hazard). Obey [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §HEAD
+**before** verifying any criterion — cite it, don't re-derive the steps: resolve the live head
+via REST (`gh pr view $PR --repo "$REPO" --json headRefOid -q .headRefOid`), fetch it into the
+per-run `$PR_REF` + assert `git rev-parse "$PR_REF"` equals it, read every full file from the
+head (`git show "$PR_REF:<path>"`) and **never** from CWD, and re-check the live head before
+posting (§HEAD #4). The fetch-into-a-ref read mechanism below *is* §HEAD's read path for this
+diff-only gate; the verdict (§5) must bind to the SHA whose files you actually read and assert
+it read the PR head.
+
 Verification is grounded in the **diff**, not the PR's self-description. There is **no
 test-running here** — a doc PR has no behavior to exercise; the artifact *is* the prose,
 so you read it. Pull the change:
@@ -563,6 +577,9 @@ Verified PR #<PR> against the acceptance criteria of #<ISSUE> + the doc-hygiene 
 - [PASS] No leaked local/home paths — <evidence>
 - [PASS] Supersession noted + cross-linked — <evidence / n/a>
 - [PASS] Status sanity — <evidence>
+
+Read the PR head (§HEAD): all files under review sourced from `<HEAD_SHA>` via
+`git show "$PR_REF:<path>"`, never the launched checkout's working copy.
 
 All checks pass. This PR is merge-ready. **review-doc does not merge** — `ship-it` is the
 authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
