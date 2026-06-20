@@ -15,6 +15,7 @@
 	"dependencies": {
 		"@distilled.cloud/cloudflare": "catalog:",
 		"@effect/platform-node": "catalog:",
+		"@kampus/db-schema": "workspace:*",
 		"@kampus/web": "workspace:*",
 		"drizzle-orm": "catalog:",
 		"effect": "catalog:"

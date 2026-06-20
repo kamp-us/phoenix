@@ -1,6 +1,6 @@
 /**
  * A `node:sqlite`-backed stand-in for the Cloudflare `D1Database` binding, scoped
- * to the three tables this seed writes. A real SQL engine behind the D1 surface
+ * to the five tables this seed writes (3 read-model + 2 FTS5). A real SQL engine behind the D1 surface
  * `drizzle-orm/d1` calls, so the seed's production drizzle inserts run unmodified
  * against actual SQLite rows — the same idiom as
  * `apps/web/worker/db/sqlite-d1.testing.ts`, kept local so the package stays
@@ -14,11 +14,12 @@ import {DatabaseSync, type SQLInputValue} from "node:sqlite";
 import {assertRestParam} from "./d1-rest.ts";
 
 /**
- * DDL for the seeded tables: the three read-model tables copied verbatim from the
- * canonical migration `apps/web/worker/db/drizzle/migrations/0000_d1_baseline.sql`
- * (the column set the local `schema.ts` mirrors), plus the two FTS5 virtual tables
- * from `0002_search_fts.sql` that the seed dual-writes into (ADR 0080). Only the
- * tables the seed touches.
+ * DDL for the seeded tables: the three read-model tables, whose column set is now
+ * the canonical one from `@kampus/db-schema` (the seed's `schema.ts` imports those
+ * table objects, so this DDL must carry every column they declare — the
+ * `removed_by`/`removed_reason` triad and `is_draft`, not just `removed_at`), plus
+ * the two FTS5 virtual tables from `0002_search_fts.sql` that the seed dual-writes
+ * into (ADR 0080). Five tables total; only the ones the seed touches.
  */
 const SEED_TABLES_DDL = `
 CREATE TABLE term_summary (
@@ -46,6 +47,8 @@ CREATE TABLE definition_view (
 	created_at integer NOT NULL,
 	updated_at integer NOT NULL,
 	removed_at integer,
+	removed_by text,
+	removed_reason text,
 	last_event_id text DEFAULT '' NOT NULL
 );
 CREATE TABLE post_summary (
@@ -66,6 +69,9 @@ CREATE TABLE post_summary (
 	updated_at integer NOT NULL,
 	last_activity_at integer NOT NULL,
 	removed_at integer,
+	removed_by text,
+	removed_reason text,
+	is_draft integer,
 	last_event_id text DEFAULT '' NOT NULL
 );
 CREATE VIRTUAL TABLE term_search USING fts5(
@@ -119,7 +125,7 @@ export interface SqliteD1 {
 	close: () => void;
 }
 
-/** Build an in-memory SQLite D1 with the three seeded tables created. */
+/** Build an in-memory SQLite D1 with the five seeded tables created (3 read-model + 2 FTS5). */
 export function makeSeedTestDb(): SqliteD1 {
 	const db = new DatabaseSync(":memory:");
 	// D1 ships `foreign_keys` OFF; node:sqlite defaults it ON. Keep the fake faithful.

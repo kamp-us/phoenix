@@ -53,7 +53,7 @@ const run = Command.make(
 		const report = yield* Effect.promise(() => seed(d1));
 
 		yield* Console.log(
-			`preview-seed: ok — wrote ${report.terms} term(s), ${report.definitions} definition(s), ${report.posts} post(s) to D1 ${databaseId} (idempotent upsert)`,
+			`preview-seed: ok — wrote ${report.terms} term(s), ${report.definitions} definition(s), ${report.posts} post(s), ${report.termsFts} term-search + ${report.postsFts} post-search FTS row(s) to D1 ${databaseId} (idempotent upsert)`,
 		);
 	}),
 ).pipe(Command.withDescription("Seed a stage's D1 with the unauth read-flow fixtures"));

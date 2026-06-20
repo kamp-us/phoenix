@@ -1,28 +1,22 @@
 /**
- * The read-side slice of the phoenix D1 schema this backfill scans — just the
- * key + title (+ `removed_at` for posts) of `term_summary` / `post_summary`. A
- * deliberately narrow local copy (the `preview-seed` idiom) so the tool stays a
- * self-contained `packages/` CLI rather than pulling the worker's full schema
- * graph; only the columns the backfill reads. (The hand-mirroring cost of this
- * copy — e.g. the `deleted_at → removed_at` rename — is tracked in #903.)
+ * The read-side slice of the phoenix D1 schema this backfill scans —
+ * `term_summary` / `post_summary`. These come from the `@kampus/db-schema` leaf
+ * (the single canonical declaration the worker also re-exports), so this copy can
+ * never drift from the real schema again (issue #859; the `deleted_at →
+ * removed_at` rename that broke the old hand-copy now arrives by construction).
+ * The backfill reads only a projection (`.slug`/`.id`/`.title`/`.removedAt`), but
+ * importing the full canonical tables is the point — there is one declaration.
+ * The leaf is a true leaf (only `drizzle-orm`), so depending on it adds no cycle
+ * even though this package already prod-depends on `@kampus/web`.
  *
- * The *write* side is NOT copied — the FTS upsert SQL is the worker's own
+ * The *write* side is NOT here — the FTS upsert SQL is the worker's own
  * `syncTermSearch` / `syncPostSearch` (imported from `@kampus/web`), so the
  * indexed `norm` is byte-identical to the dual-write (issue #534's hard
  * constraint: same normalization, or backfilled rows won't match queries).
  */
-import {integer, sqliteTable, text} from "drizzle-orm/sqlite-core";
+import {postSummary, termSummary} from "@kampus/db-schema";
 
-export const termSummary = sqliteTable("term_summary", {
-	slug: text("slug").primaryKey(),
-	title: text("title").notNull(),
-});
-
-export const postSummary = sqliteTable("post_summary", {
-	id: text("id").primaryKey(),
-	title: text("title").notNull(),
-	removedAt: integer("removed_at", {mode: "timestamp"}),
-});
+export {postSummary, termSummary};
 
 export const backfillSchema = {termSummary, postSummary};
 export type BackfillSchema = typeof backfillSchema;
