@@ -11,16 +11,18 @@ import {
 const verdictOf = (input: CiRequiredInput, name: string) =>
 	judge(input).jobs.find((j) => j.name === name)?.verdict;
 
-/** The four gating jobs with `check`/`unit` sharing `check_required`. */
+/** The gating jobs with `check`/`unit` sharing `check_required`. */
 const env = (over: Record<string, string>): Record<string, string> => ({
 	CHANGES_RESULT: "success",
 	CHECK_REQUIRED: "false",
 	PACKAGES_REQUIRED: "false",
+	WORKFLOWS_REQUIRED: "false",
 	INTEGRATION_REQUIRED: "false",
 	E2E_REQUIRED: "false",
 	CHECK_RESULT: "skipped",
 	UNIT_RESULT: "skipped",
 	PACKAGES_RESULT: "skipped",
+	ACTIONLINT_RESULT: "skipped",
 	INTEGRATION_RESULT: "skipped",
 	E2E_RESULT: "skipped",
 	...over,
@@ -137,6 +139,45 @@ describe("judge — packages-tests (#760): packages/** change required, others l
 	});
 });
 
+describe("judge — actionlint (#568): workflow change required, non-workflow PR legit-skip", () => {
+	// workflows_required = (the `workflows` path filter only — creds-free, no author/fork guard)
+
+	it("workflow-changed PR → actionlint required; ran+passed PASS", () => {
+		const e = env({WORKFLOWS_REQUIRED: "true", ACTIONLINT_RESULT: "success"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "required-pass");
+		assert.isTrue(judge(inputFromEnv(e)).pass);
+	});
+
+	it("workflow-changed PR but actionlint SKIPPED → FAIL (the should-have-run silent-no-op, ADR 0092)", () => {
+		const e = env({WORKFLOWS_REQUIRED: "true", ACTIONLINT_RESULT: "skipped"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "FAIL");
+		assert.isFalse(judge(inputFromEnv(e)).pass);
+	});
+
+	it("malformed workflow → actionlint FAILED → overall FAIL (a real failure is never masked)", () => {
+		const e = env({WORKFLOWS_REQUIRED: "true", ACTIONLINT_RESULT: "failure"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "FAIL");
+		assert.isFalse(judge(inputFromEnv(e)).pass);
+	});
+
+	it("non-workflow PR → actionlint NOT required; skip is a legit-skip PASS", () => {
+		const e = env({WORKFLOWS_REQUIRED: "false", ACTIONLINT_RESULT: "skipped"});
+		assert.strictEqual(verdictOf(inputFromEnv(e), "actionlint"), "legit-skip");
+		assert.isTrue(judge(inputFromEnv(e)).pass);
+	});
+
+	it("changes source job failed → workflows_required untrustworthy ⇒ overall fail closed", () => {
+		const e = env({
+			CHANGES_RESULT: "failure",
+			WORKFLOWS_REQUIRED: "",
+			ACTIONLINT_RESULT: "skipped",
+		});
+		const v = judge(inputFromEnv(e));
+		assert.isFalse(v.pass);
+		assert.isNotNull(v.changesReport);
+	});
+});
+
 describe("judge — fork / non-author PR (the secret-less skip stays legitimate, never FAIL)", () => {
 	it("fork PR: integration_required=false && e2e_required=false ⇒ both skips are legit-skip PASS", () => {
 		const e = env({
@@ -195,11 +236,13 @@ describe("judge — the all-clean happy paths PASS", () => {
 		const e = env({
 			CHECK_REQUIRED: "true",
 			PACKAGES_REQUIRED: "true",
+			WORKFLOWS_REQUIRED: "true",
 			INTEGRATION_REQUIRED: "true",
 			E2E_REQUIRED: "true",
 			CHECK_RESULT: "success",
 			UNIT_RESULT: "success",
 			PACKAGES_RESULT: "success",
+			ACTIONLINT_RESULT: "success",
 			INTEGRATION_RESULT: "success",
 			E2E_RESULT: "success",
 		});
@@ -259,6 +302,12 @@ describe("inputFromEnv — env mapping (check & unit share check_required; missi
 	it("packages-tests reads its own PACKAGES_REQUIRED (not check_required)", () => {
 		const input = inputFromEnv(env({CHECK_REQUIRED: "false", PACKAGES_REQUIRED: "true"}));
 		assert.isTrue(input.jobs.find((j) => j.name === "packages-tests")?.required);
+		assert.isFalse(input.jobs.find((j) => j.name === "check")?.required);
+	});
+
+	it("actionlint reads its own WORKFLOWS_REQUIRED (not check_required)", () => {
+		const input = inputFromEnv(env({CHECK_REQUIRED: "false", WORKFLOWS_REQUIRED: "true"}));
+		assert.isTrue(input.jobs.find((j) => j.name === "actionlint")?.required);
 		assert.isFalse(input.jobs.find((j) => j.name === "check")?.required);
 	});
 
