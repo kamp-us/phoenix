@@ -1,0 +1,39 @@
+name: publish-guard
+
+# The publish-drift gate (issue #808, epic #803). CI is the only surface that
+# sees every PR regardless of how it was authored (agent tool, vim, cat >, a
+# human commit), so it — not a write-time hook — is the unbypassable gate that a
+# plugin-consumed @kampus/* package never lands unpublishable. It reuses
+# @kampus/publish-guard's `check`; the required set is derived in the package
+# (requiredPackages over the skills tree), never re-listed here.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check required @kampus packages are publishable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # `check` is offline/deterministic (config only, no registry network) and
+      # reads the whole plugin + package set each run, so no diff-scoping is
+      # needed. It exits non-zero on any drift (a required package that is private
+      # or lacks publishConfig.access: public), failing the run fail-closed.
+      - name: Check required @kampus packages for publish drift
+        run: node packages/publish-guard/src/bin.ts check
