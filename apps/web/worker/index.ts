@@ -11,6 +11,7 @@
 import * as BetterAuth from "@alchemy.run/better-auth";
 import {RuntimeContext, Stage} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
+import {ALCHEMY_PHASE} from "alchemy/Phase";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
@@ -56,11 +57,17 @@ export class Phoenix extends Cloudflare.Worker<
 	LiveDO
 >()(
 	"phoenix",
-	// Props are an Effect so `domain` can derive from the deploy's `Stage` (a
-	// PlatformService the stack provides; `.make()` excludes it from `PhoenixLive`'s
-	// requirements). The Custom Domain auto-creates the proxied DNS record + TLS cert
-	// on the `kamp.us` zone (inferred from the hostname); prod serves the apex,
-	// non-prod stages get `<stage>.phoenix.kamp.us` (issue #594; see `customHostname`).
+	// Props are an Effect so `domain` can derive from the deploy's `Stage` (issue
+	// #594). `Stage` is a deploy-only PlatformService — alchemy provides it solely in
+	// the stack context (`Stack.make`), NEVER in workerd. But `Phoenix.make()` (the
+	// runtime `PhoenixLive` Layer) re-runs this Effect on every isolate init to resolve
+	// props (`Platform.make` → `SelfLayer`), so a `yield* Stage` here would die at
+	// runtime and 500 every request. We gate the deploy-only derivation on
+	// `ALCHEMY_PHASE === "plan"` (alchemy bakes `ALCHEMY_PHASE: "runtime"` into the
+	// deployed worker; default is `"plan"`) — the same deploy-vs-runtime guard alchemy's
+	// own `Binding.ts` uses. At runtime we return the plain props untouched, so the
+	// fetch handler is identical to a domain-less worker; the Custom Domain (proxied DNS
+	// + TLS on the `kamp.us` zone) is purely a deploy concern.
 	Effect.gen(function* () {
 		const props = {
 			main: import.meta.filename,
@@ -96,10 +103,12 @@ export class Phoenix extends Cloudflare.Worker<
 			observability: {enabled: true},
 		};
 
-		// Offline `alchemy dev` has no real CF zone, so it never attaches a Custom
-		// Domain — mirror the `resolveStateMode` offline gate the state store uses. A
-		// `--stage` deploy is a real deploy and DOES get its `<stage>.phoenix.kamp.us`.
-		if (resolveStateMode(process.env) === "local") return props;
+		// The custom domain is deploy-time-only: skip it at runtime (where `Stage` is
+		// absent) and offline (`alchemy dev` has no real CF zone — mirror the
+		// `resolveStateMode` gate the state store uses). A `--stage` deploy is the only
+		// path that attaches a domain, and it DOES get its `<stage>.phoenix.kamp.us`.
+		const phase = yield* ALCHEMY_PHASE;
+		if (phase !== "plan" || resolveStateMode(process.env) === "local") return props;
 
 		const stage = yield* Stage;
 		return {...props, domain: customHostname(stage, process.env.ENVIRONMENT ?? "")};
