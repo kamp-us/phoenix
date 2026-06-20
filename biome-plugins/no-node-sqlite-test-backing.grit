@@ -16,14 +16,13 @@
 // don't false-positive.
 //
 // Allowlist: a deliberate carve-out is an ordinary biome suppression on the
-// import line — `// biome-ignore lint/plugin: <reason>`. The preview-seed carve-out
-// (`packages/preview-seed/src/sqlite-d1.testing.ts`, the fast-unit fake) was removed
-// by #672, which re-tiered the seed's suite onto real D1 via the alchemy `Test.make`
-// harness. One survivor remains — `packages/moderator-grant/src/sqlite-d1.testing.ts`
-// (`makeGrantTestDb`) — tracked for the same re-tier by #930; the ban reaches zero
-// allowlisted survivors when that lands. No blanket directory exemption — every
-// suppression is per-import and must name a reason, so the next un-blessed
-// re-introduction reds CI.
+// import line — `// biome-ignore lint/plugin: <reason>`. The two temporary fakes the
+// ban once allowlisted are both gone: `packages/preview-seed/src/sqlite-d1.testing.ts`
+// (removed by #672) and `packages/moderator-grant/src/sqlite-d1.testing.ts`
+// (`makeGrantTestDb`, removed by #930) — each re-tiered onto real D1 via the alchemy
+// `Test.make` harness. There are ZERO allowlisted survivors today; the ban is fully
+// clean. No blanket directory exemption — every suppression is per-import and must name
+// a reason, so the next un-blessed re-introduction reds CI.
 //
 // Registered via biome.jsonc `"plugins"`, run by the existing `check` CI job.
 // Excluded from biome's own formatter in biome.jsonc — its formatter drops

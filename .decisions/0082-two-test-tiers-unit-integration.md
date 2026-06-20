@@ -75,7 +75,7 @@ imports `node:sqlite` (`import … from "node:sqlite"` in any clause shape, or
 `// biome-ignore lint/plugin: <reason>` on the import — never a blanket directory
 exemption — so the next un-blessed re-introduction can't merge silently.
 
-**The preview-seed carve-out is removed; one survivor remains.** The temporary
+**Both carve-outs are removed; zero survivors — the ban is fully clean.** The temporary
 carve-out #633 recorded — `packages/preview-seed/src/sqlite-d1.testing.ts`
 (`makeSeedTestDb()`, the fast unit suite's backing) — was **removed by #672**: that
 issue re-tiered the seed's suite off the fake and onto real D1 via the alchemy
@@ -90,8 +90,13 @@ litmus below prescribes.
 A **second** `node:sqlite` carve-out, not tracked when this ADR was written, was
 found during #672: `packages/moderator-grant/src/sqlite-d1.testing.ts`
 (`makeGrantTestDb`), which mirrored the preview-seed carve-out without its own
-removal trigger. It is now the **last** allowlisted survivor, tracked for the same
-re-tier by #930; the ban reaches **zero allowlisted survivors** when that lands.
+removal trigger. It was the **last** allowlisted survivor — **removed by #930**, which
+re-tiered the grant's suite onto real D1 via the same `Test.make` D1-only harness
+(`packages/moderator-grant/tests/integration/_d1.ts`): the grant statement-building
+and REST-wire param contract stayed `unit` (no DB); the grant/revoke/list-against-a-row
+assertions moved to `integration` on real D1. With both fakes deleted the ban now
+reaches **zero allowlisted survivors** — the enforcing plugin reds CI on any
+re-introduction.
 
 **Principle — no domain decision welded to SQL execution.** Cursor resolution is
 a *port* (a thin DB read); the keyset / cursor-miss *decision* and the page
@@ -129,8 +134,9 @@ out-of-band edges the import graph cannot see.
   `node:sqlite` (or any faked engine) as a test backing; asserting pure logic
   through a database; filing a domain decision welded to SQL execution.
 - **Deleted:** `apps/web/worker/db/sqlite-d1.testing.ts` + `sqlite-d1.testing.test.ts`;
-  `packages/preview-seed/src/sqlite-d1.testing.ts` (the last `node:sqlite` survivor,
-  removed by #672 — see the enforcement section).
+  `packages/preview-seed/src/sqlite-d1.testing.ts` (removed by #672); and
+  `packages/moderator-grant/src/sqlite-d1.testing.ts` (the last `node:sqlite` survivor,
+  removed by #930) — zero allowlisted survivors remain (see the enforcement section).
 - **Migration cost (epic execution, tracked under #563, not this ADR):** each
   `makeSqliteTestDb` suite splits — pure-logic assertions move to `unit` (several
   are already duplicated by `keyset.unit.test.ts` / `normalize.unit.test.ts`, so
