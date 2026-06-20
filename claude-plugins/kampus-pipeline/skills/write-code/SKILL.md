@@ -515,11 +515,39 @@ a real linked worktree and `cd`s into it, after which this same check passes. **
 around the preflight by deleting it or relaxing the comparison; a green preflight is the
 precondition every mutation in Steps 4–7 relies on.
 
-> **Worktree cwd can reset between tool calls.** Some harnesses reset an isolated subagent's
-> shell cwd to the **primary** checkout between Bash calls (edits still land in the worktree).
-> If your preflight passed once but a later `git`/edit call reports the primary tree, re-`cd`
-> into your worktree root (the `git rev-parse --show-toplevel` you captured) and **re-run the
-> preflight** before mutating — don't assume the first pass holds for the whole run.
+<a id="per-mutation-preflight"></a>
+> **The preflight runs once at Step-4 start AND re-asserts before EVERY git-mutating op.**
+> The harness resets an isolated subagent's shell cwd back to the **primary** checkout
+> *between* Bash calls (edits still land in the worktree, but a fresh `git` invocation runs
+> where the cwd points). A `git commit`/`git push`/branch op issued *after* such a reset runs
+> against the **shared primary tree** even though the opening preflight was green — so two
+> parallel runs serialize their commits onto whatever branch the primary tree is on,
+> cross-contaminating each other's PRs (#832). One pass at Step-4 start does **not** hold for
+> the whole run.
+>
+> Capture your worktree root once, then run this **mandatory per-mutation preflight** —
+> `wt_preflight` — *immediately before* every `git commit`, `git push`, and branch
+> create/switch (Steps 4, 5, R2, R3). It re-`cd`s to your own worktree root first (correcting
+> a between-calls reset), then re-runs the same fail-closed check **and** asserts the toplevel
+> is your worktree. A green `wt_preflight` is the **only** sanctioned path to a mutation — no
+> bypass, same construction as the opening preflight:
+>
+> ```bash
+> WT="$(git rev-parse --show-toplevel)"   # capture ONCE, right after the opening preflight passes
+> wt_preflight() {   # MANDATED before every git commit/push/branch op — fail-closed, re-correcting cwd
+>   cd "$WT" || { echo "wt_preflight FAILED: cannot cd to worktree root $WT" >&2; return 1; }
+>   GITDIR="$(git rev-parse --absolute-git-dir 2>/dev/null)" || {
+>     echo "wt_preflight FAILED: not in a git repo at $WT" >&2; return 1; }
+>   COMMON="$(git rev-parse --git-common-dir 2>/dev/null)"
+>   case "$COMMON" in /*) ;; *) COMMON="$(pwd)/$COMMON" ;; esac
+>   COMMON="$(cd "$COMMON" && pwd)"
+>   TOP="$(git rev-parse --show-toplevel)"
+>   echo "wt_preflight: git-dir=$GITDIR common-dir=$COMMON toplevel=$TOP wt=$WT"
+>   [ "$GITDIR" != "$COMMON" ] || { echo "wt_preflight FAILED (fail-closed): on the PRIMARY checkout, not the worktree — refusing to mutate." >&2; return 1; }
+>   [ "$TOP" = "$WT" ]        || { echo "wt_preflight FAILED (fail-closed): toplevel ($TOP) != my worktree ($WT) — cwd reset landed me in a sibling/primary tree." >&2; return 1; }
+> }
+> wt_preflight && git <commit|push|switch …>   # the guard gates the mutation; never run the mutation without it
+> ```
 
 This constrains how you branch: `main`
 is already checked out in the primary tree, so `git checkout main` **fails** inside an
@@ -532,7 +560,7 @@ git fetch origin main
 # run on this issue, so two concurrent runs would both push origin/<that branch> and the
 # second push would clobber the first's commits. A per-invocation nonce keeps them distinct.
 BRANCH="<prefix>/<slug-for-issue-N>-$(uuidgen | head -c 8)"
-git switch -c "$BRANCH" FETCH_HEAD
+wt_preflight && git switch -c "$BRANCH" FETCH_HEAD   # branch create is a git mutation → gate it (per-mutation preflight above)
 ```
 
 It's `git switch -c "$BRANCH" FETCH_HEAD` (not `git checkout main`) on purpose: in an
@@ -605,7 +633,9 @@ path too, so the diff a reviewer reads matches what you wrote.
 > Bash-scripted in-place replace (a `node`/`sed` splice) rather than the Edit tool. (Most write-code
 > tasks don't touch `.claude/` content at all — this is the escape hatch for the ones that must.)
 
-Commit per repo conventions. Don't push to or PR from `main`.
+Commit per repo conventions, gating each `git commit` on `wt_preflight` (the
+[per-mutation preflight](#per-mutation-preflight) above) so a between-calls cwd reset can't
+land the commit on the primary tree. Don't push to or PR from `main`.
 
 ---
 
@@ -700,7 +730,7 @@ jammed). The whole downstream merge stage depends on this exact token, so spell 
 verbatim and never substitute a near-synonym that GitHub doesn't treat as closing.
 
 ```bash
-git push -u origin "$BRANCH"   # the same per-run branch you created in Step 4
+wt_preflight && git push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); same per-run branch from Step 4
 gh pr create \
   --base main \
   --title "<concise PR title>" \
@@ -1075,9 +1105,13 @@ orphan the PR and the gate's history):
 
 ```bash
 git fetch origin
-git switch <the PR's head branch>     # gh api .../pulls/$PR --jq '.head.ref'
+wt_preflight && git switch <the PR's head branch>   # gate the branch switch ([per-mutation preflight]); gh api .../pulls/$PR --jq '.head.ref'
 # apply the fixes addressing exactly the enumerated findings
 ```
+
+Repair mode runs in a worktree too, so re-run the Step-4 opening preflight (and capture `WT`)
+before this switch, then gate every later `git commit`/`git push` on `wt_preflight` exactly
+as the initial build does.
 
 Ground the fixes the same way the initial build does — ADRs in `.decisions/` for the *why*,
 patterns in `.patterns/` for *how the code is shaped* — and run `pnpm typecheck` / the test
@@ -1099,7 +1133,7 @@ cross-task signal a sibling should know the gate now enforces. Pushing new commi
 makes the **stateless** gate re-run — you do **not** re-trigger or self-approve it:
 
 ```bash
-git push origin HEAD
+wt_preflight && git push origin HEAD   # gate the push ([per-mutation preflight])
 gh api repos/$REPO/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
 ```
 
