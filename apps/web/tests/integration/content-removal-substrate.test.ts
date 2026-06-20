@@ -27,6 +27,12 @@ interface ProfileNode {
 	totalKarma: number;
 }
 
+// `Term.definitions` is a paginated `FateDataView.list` connection (sozluk
+// `views.ts`), not a bare array — `{items: [{node}]}`, matching `sozluk-keyset`.
+type Connection<N> = {items: Array<{cursor: string; node: N}>};
+const definitionIds = (data: unknown): string[] =>
+	(data as {definitions: Connection<{id: string}>}).definitions.items.map((e) => e.node.id);
+
 async function setUsername(cookie: string, value: string): Promise<void> {
 	const r = await h.fate(
 		{kind: "mutation", name: "user.setUsername", input: {value}, select: ["id"]},
@@ -89,10 +95,7 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 		});
 		expect(termBefore.ok).toBe(true);
 		if (termBefore.ok) {
-			const ids = (termBefore.data as {definitions: Array<{id: string}>}).definitions.map(
-				(d) => d.id,
-			);
-			expect(ids).toContain(definitionId);
+			expect(definitionIds(termBefore.data)).toContain(definitionId);
 		}
 
 		// The author removes it.
@@ -111,10 +114,7 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 		});
 		expect(termAfter.ok).toBe(true);
 		if (termAfter.ok) {
-			const ids = (termAfter.data as {definitions: Array<{id: string}>}).definitions.map(
-				(d) => d.id,
-			);
-			expect(ids).not.toContain(definitionId);
+			expect(definitionIds(termAfter.data)).not.toContain(definitionId);
 		}
 
 		// …but karma is KEPT (the upvote earned is not reversed by removal).
@@ -135,10 +135,7 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 		});
 		expect(termRestored.ok).toBe(true);
 		if (termRestored.ok) {
-			const ids = (termRestored.data as {definitions: Array<{id: string}>}).definitions.map(
-				(d) => d.id,
-			);
-			expect(ids).toContain(definitionId);
+			expect(definitionIds(termRestored.data)).toContain(definitionId);
 		}
 		// Karma still 1 after the whole round-trip.
 		expect(await karmaOf()).toBe(1);
@@ -194,8 +191,15 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 		);
 		expect(del.ok).toBe(true);
 
-		// The post is no longer publicly resolvable…
-		const gone = await h.fate({kind: "query", name: "post", args: {id: postId}, select: ["id"]});
+		// The post is no longer publicly resolvable — a removed post reads as null
+		// on the normal path (ADR 0096 §1/§5: filtered from public reads), exactly
+		// like an unknown id (pano-read.test.ts "returns null for an unknown id").
+		const gone = await h.fate({
+			kind: "query",
+			name: "post",
+			args: {idOrSlug: postId},
+			select: ["id"],
+		});
 		expect(gone.ok).toBe(true);
 		if (gone.ok) expect(gone.data).toBeNull();
 
@@ -209,7 +213,12 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 		);
 		expect(restored.ok).toBe(true);
 
-		const back = await h.fate({kind: "query", name: "post", args: {id: postId}, select: ["id"]});
+		const back = await h.fate({
+			kind: "query",
+			name: "post",
+			args: {idOrSlug: postId},
+			select: ["id"],
+		});
 		expect(back.ok).toBe(true);
 		if (back.ok) expect((back.data as {id: string} | null)?.id).toBe(postId);
 
@@ -277,12 +286,14 @@ describe("removal substrate — comment remove → restore, karma kept", () => {
 			const res = await h.fate({
 				kind: "query",
 				name: "post",
-				args: {id: postId},
+				args: {idOrSlug: postId},
 				select: ["comments.id"],
 			});
 			if (!res.ok) throw new Error("post read failed");
-			const data = res.data as {comments?: Array<{id: string}>} | null;
-			return (data?.comments ?? []).map((c) => c.id);
+			// `comments` is a paginated connection (`{items: [{node}]}`), not a bare
+			// array — same shape as pano-comments.test.ts.
+			const data = res.data as {comments?: Connection<{id: string}>} | null;
+			return (data?.comments?.items ?? []).map((e) => e.node.id);
 		};
 
 		// Live leaf comment is in the thread.

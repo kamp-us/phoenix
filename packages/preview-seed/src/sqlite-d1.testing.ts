@@ -45,7 +45,7 @@ CREATE TABLE definition_view (
 	score integer DEFAULT 0 NOT NULL,
 	created_at integer NOT NULL,
 	updated_at integer NOT NULL,
-	deleted_at integer,
+	removed_at integer,
 	last_event_id text DEFAULT '' NOT NULL
 );
 CREATE TABLE post_summary (
@@ -65,7 +65,7 @@ CREATE TABLE post_summary (
 	created_at integer NOT NULL,
 	updated_at integer NOT NULL,
 	last_activity_at integer NOT NULL,
-	deleted_at integer,
+	removed_at integer,
 	last_event_id text DEFAULT '' NOT NULL
 );
 CREATE VIRTUAL TABLE term_search USING fts5(

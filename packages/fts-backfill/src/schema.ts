@@ -1,9 +1,10 @@
 /**
  * The read-side slice of the phoenix D1 schema this backfill scans — just the
- * key + title (+ `deleted_at` for posts) of `term_summary` / `post_summary`. A
+ * key + title (+ `removed_at` for posts) of `term_summary` / `post_summary`. A
  * deliberately narrow local copy (the `preview-seed` idiom) so the tool stays a
  * self-contained `packages/` CLI rather than pulling the worker's full schema
- * graph; only the columns the backfill reads.
+ * graph; only the columns the backfill reads. (The hand-mirroring cost of this
+ * copy — e.g. the `deleted_at → removed_at` rename — is tracked in #903.)
  *
  * The *write* side is NOT copied — the FTS upsert SQL is the worker's own
  * `syncTermSearch` / `syncPostSearch` (imported from `@kampus/web`), so the
@@ -20,7 +21,7 @@ export const termSummary = sqliteTable("term_summary", {
 export const postSummary = sqliteTable("post_summary", {
 	id: text("id").primaryKey(),
 	title: text("title").notNull(),
-	deletedAt: integer("deleted_at", {mode: "timestamp"}),
+	removedAt: integer("removed_at", {mode: "timestamp"}),
 });
 
 export const backfillSchema = {termSummary, postSummary};
