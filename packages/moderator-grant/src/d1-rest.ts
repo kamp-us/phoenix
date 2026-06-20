@@ -95,9 +95,12 @@ export const makeD1Rest = (config: D1RestConfig): D1Database => {
 		sql,
 		params,
 		all: async () => ({results: (await firstRows(sql, params)) as never[]}),
+		// Carry D1's real row-change count into `meta.changes` — drizzle's `.run()` (the
+		// grant's `setRole`) reads `result.meta.changes` to tell a flip (1) from a
+		// no-such-user miss (0). The REST `/query` response is `result: [{ meta: { changes }, … }]`.
 		run: async () => {
-			await firstRows(sql, params);
-			return {success: true, meta: {}, results: []};
+			const res = await runQuery({accountId, databaseId, sql, params: toRestParams(params)});
+			return {success: true, meta: {changes: res.result?.[0]?.meta?.changes ?? 0}, results: []};
 		},
 		raw: async () => {
 			const rows = await firstRows(sql, params);
