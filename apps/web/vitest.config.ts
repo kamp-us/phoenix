@@ -74,6 +74,10 @@ export default defineConfig({
 				test: {
 					name: "integration",
 					include: ["tests/integration/**/*.test.ts"],
+					// `*.unit.test.ts` under the integration dir are pure-logic tests of the
+					// harness substrate (e.g. `_stage-name`), run in the `unit` tier — they
+					// deploy nothing, so keep them out of the slow forks pool here.
+					exclude: ["tests/integration/**/*.unit.test.ts"],
 					// Each file's beforeAll(deploy(Stack)) provisions a real worker + D1
 					// under an isolated stage and seeds over the network, then asserts over
 					// HTTP — so a file's wall-clock is deploy + migrate + seed + assert.
@@ -103,8 +107,15 @@ export default defineConfig({
 					// tests — the `.unit` infix is a label, no separate `include` entry
 					// needed.
 					name: "unit",
-					include: ["worker/**/*.test.ts", "src/**/*.test.ts"],
-					exclude: ["tests/**", "node_modules/**", "dist/**"],
+					// Plus the pure-logic `*.unit.test.ts` of the integration harness
+					// substrate (e.g. `_stage-name`) — they deploy nothing, so they run
+					// here, not in the integration tier's forks pool.
+					include: [
+						"worker/**/*.test.ts",
+						"src/**/*.test.ts",
+						"tests/integration/**/*.unit.test.ts",
+					],
+					exclude: ["node_modules/**", "dist/**"],
 					sequence: {groupOrder: 1},
 				},
 			},
