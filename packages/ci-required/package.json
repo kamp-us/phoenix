@@ -1,0 +1,26 @@
+{
+	"name": "@kampus/ci-required",
+	"version": "0.0.0",
+	"private": true,
+	"description": "ci-required verdict — pure, zero-runtime-dep core deciding whether a should-have-run gating job was silently skipped (fail-closed, issue #786, ADR 0092); the CI gate runs `node src/bin.ts` with no install",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"assert": "node src/bin.ts"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
