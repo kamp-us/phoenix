@@ -30,7 +30,7 @@
 
 import {eq} from "drizzle-orm";
 import {sqliteTable, text} from "drizzle-orm/sqlite-core";
-import type {DrizzleDb, Stmt} from "../../db/Drizzle.ts";
+import type {FtsSyncDb, Stmt} from "../../db/Drizzle.ts";
 import {normalizeSearchText} from "./normalize.ts";
 
 // Statement-shape shims for the FTS5 virtual tables (real DDL lives in
@@ -46,21 +46,21 @@ const postSearch = sqliteTable("post_search", {
 });
 
 /** Upsert a term's FTS row (keyed by slug). Indexes the normalized title. */
-export const syncTermSearch = (db: DrizzleDb, slug: string, title: string): [Stmt, Stmt] => [
+export const syncTermSearch = (db: FtsSyncDb, slug: string, title: string): [Stmt, Stmt] => [
 	db.delete(termSearch).where(eq(termSearch.slug, slug)),
 	db.insert(termSearch).values({slug, norm: normalizeSearchText(title)}),
 ];
 
 /** Remove a term's FTS row (term deleted / no longer searchable). */
-export const removeTermSearch = (db: DrizzleDb, slug: string): Stmt =>
+export const removeTermSearch = (db: FtsSyncDb, slug: string): Stmt =>
 	db.delete(termSearch).where(eq(termSearch.slug, slug));
 
 /** Upsert a post's FTS row (keyed by id). Indexes the normalized title. */
-export const syncPostSearch = (db: DrizzleDb, id: string, title: string): [Stmt, Stmt] => [
+export const syncPostSearch = (db: FtsSyncDb, id: string, title: string): [Stmt, Stmt] => [
 	db.delete(postSearch).where(eq(postSearch.id, id)),
 	db.insert(postSearch).values({id, norm: normalizeSearchText(title)}),
 ];
 
 /** Remove a post's FTS row (post deleted). */
-export const removePostSearch = (db: DrizzleDb, id: string): Stmt =>
+export const removePostSearch = (db: FtsSyncDb, id: string): Stmt =>
 	db.delete(postSearch).where(eq(postSearch.id, id));

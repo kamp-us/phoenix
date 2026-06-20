@@ -13,12 +13,8 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
-<<<<<<< HEAD
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
-import {ftsBatchItems, syncTermSearch} from "../search/fts-sync.ts";
-=======
 import {syncTermSearch} from "../search/fts-sync.ts";
->>>>>>> ef56870 (fix(search): batch-safe FTS dual-write — drizzle builders, not db.run(sql) (#863))
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";

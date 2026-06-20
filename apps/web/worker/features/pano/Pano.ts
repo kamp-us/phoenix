@@ -18,12 +18,8 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
-<<<<<<< HEAD
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
-import {ftsBatchItems, removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
-=======
 import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
->>>>>>> ef56870 (fix(search): batch-safe FTS dual-write — drizzle builders, not db.run(sql) (#863))
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -1221,10 +1217,9 @@ export const PanoLive = Layer.effect(Pano)(
 					.update(schema.postSummary)
 					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
 					.where(eq(schema.postSummary.id, input.postId)),
-				...ftsBatchItems(db, [removePostSearch(input.postId)]),
+				removePostSearch(db, input.postId),
 			]);
 
-<<<<<<< HEAD
 			yield* recomputePanoStats(now);
 
 			return {postId: input.postId, deleted: true} satisfies DeletePostResult;
@@ -1234,50 +1229,6 @@ export const PanoLive = Layer.effect(Pano)(
 			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
 			if (!meta) {
 				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
-=======
-			// One batch for every delete-time mutation (karma decrement, vote-table
-			// wipe, `user_vote` mirror wipe, `post_summary` removal, AND the
-			// `post_search` FTS removal) so a crash mid-delete can't leave karma
-			// debited against a surviving post, orphan vote rows, or strand a
-			// `post_search` row for an already-gone summary (ADR 0080 lockstep).
-			// `recomputePanoStats` stays outside — it's a recomputable cache
-			// refresh, not part of the atomic mutation.
-			if (priorScore > 0) {
-				yield* batch((db) => [
-					db
-						.update(schema.userProfile)
-						.set({
-							totalKarma: sql`MAX(0, ${schema.userProfile.totalKarma} - ${priorScore})`,
-							updatedAt: now,
-						})
-						.where(eq(schema.userProfile.userId, meta.authorId)),
-					db.delete(schema.postVote).where(eq(schema.postVote.postId, input.postId)),
-					db
-						.delete(schema.userVote)
-						.where(
-							and(
-								eq(schema.userVote.targetKind, "post"),
-								eq(schema.userVote.targetId, input.postId),
-							),
-						),
-					db.delete(schema.postSummary).where(eq(schema.postSummary.id, input.postId)),
-					removePostSearch(db, input.postId),
-				]);
-			} else {
-				yield* batch((db) => [
-					db.delete(schema.postVote).where(eq(schema.postVote.postId, input.postId)),
-					db
-						.delete(schema.userVote)
-						.where(
-							and(
-								eq(schema.userVote.targetKind, "post"),
-								eq(schema.userVote.targetId, input.postId),
-							),
-						),
-					db.delete(schema.postSummary).where(eq(schema.postSummary.id, input.postId)),
-					removePostSearch(db, input.postId),
-				]);
->>>>>>> ef56870 (fix(search): batch-safe FTS dual-write — drizzle builders, not db.run(sql) (#863))
 			}
 			if (meta.authorId !== input.actorId) {
 				return yield* new UnauthorizedPostMutation({
@@ -1299,7 +1250,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.update(schema.postSummary)
 					.set({...live, updatedAt: now, lastActivityAt: now})
 					.where(eq(schema.postSummary.id, input.postId)),
-				...ftsBatchItems(db, syncPostSearch(input.postId, meta.title)),
+				...syncPostSearch(db, input.postId, meta.title),
 			]);
 
 			yield* recomputePanoStats(now);
