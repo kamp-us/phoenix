@@ -12,7 +12,7 @@ import {formatAgoTR} from "../../lib/datetime";
 import type {FateWireCode} from "../../lib/fateWireCodes";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
-import {useToggleAction} from "../pano/useToggleAction";
+import {useVoteToggle} from "../pano/useVoteToggle";
 import {Button} from "../ui/Button";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
@@ -89,37 +89,27 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		return false;
 	}
 
-	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818/#865).
-	const driveVote = useToggleAction(() => ({
-		on: voted,
-		dispatch: async (action) => {
-			try {
-				if (action === "unset") {
-					await fate.mutations.definition.retractVote({
-						input: {id: definition.id},
-						optimistic: {score: Math.max(0, definition.score - 1), myVote: null},
-						view: DefinitionView,
-					});
-				} else {
-					await fate.mutations.definition.vote({
-						input: {id: definition.id},
-						optimistic: {score: definition.score + 1, myVote: 1},
-						view: DefinitionView,
-					});
-				}
-			} catch (error) {
-				// Boundary-class throw (fate classifies phoenix codes as boundary).
-				// The optimistic flip already rolled back; surface UNAUTHORIZED as a
-				// redirect, otherwise stay silent on the vote button (no inline slot).
-				if (codeOf(error) === "UNAUTHORIZED") redirectIfSignedOut();
-			}
+	const onVoteClick = useVoteToggle({
+		voted,
+		score: definition.score,
+		// A signed-out (or UNAUTHORIZED) vote returns to this term's page, not the
+		// current location — DefinitionCard renders inside the term route.
+		returnTo: () => `/sozluk/${props.slug}`,
+		mutations: {
+			vote: (optimistic) =>
+				fate.mutations.definition.vote({
+					input: {id: definition.id},
+					optimistic,
+					view: DefinitionView,
+				}),
+			retractVote: (optimistic) =>
+				fate.mutations.definition.retractVote({
+					input: {id: definition.id},
+					optimistic,
+					view: DefinitionView,
+				}),
 		},
-	}));
-
-	function onVoteClick() {
-		if (redirectIfSignedOut()) return;
-		driveVote();
-	}
+	});
 
 	async function onEditSubmit(e: React.SyntheticEvent) {
 		e.preventDefault();

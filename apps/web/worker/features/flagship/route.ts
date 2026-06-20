@@ -51,17 +51,18 @@ export const handleFlagsProbe = Effect.gen(function* () {
 	// stage with no change here (#512).
 	const context = yield* makeRequestFlagsContext(contextFromSession(session));
 
-	// The dark-ship read: the safe default is the off path, and the call provides
-	// the per-request identity context for bucketing.
-	const enabled = yield* flags
-		.getBoolean(PROBE_FLAG, false)
-		.pipe(Effect.provideService(FlagsContext, context));
-
-	// A typed (non-boolean) read through the same service — the safe default is the
-	// fallback variant; a server with the flag declared would return its value (#509).
-	const variant = yield* flags
-		.getString(PROBE_VARIANT_FLAG, "control")
-		.pipe(Effect.provideService(FlagsContext, context));
+	// `FlagsContext` is the per-request service every read needs; provide it ONCE at
+	// this handler edge (alongside the session-derived identity, ADR 0029) so the
+	// reads below call `flags.get*` directly with no inline provision.
+	const {enabled, variant} = yield* Effect.gen(function* () {
+		// The dark-ship read: the safe default is the off path; bucketing comes from
+		// the provided per-request identity context.
+		const enabled = yield* flags.getBoolean(PROBE_FLAG, false);
+		// A typed (non-boolean) read through the same service — the safe default is the
+		// fallback variant; a server with the flag declared would return its value (#509).
+		const variant = yield* flags.getString(PROBE_VARIANT_FLAG, "control");
+		return {enabled, variant};
+	}).pipe(Effect.provideService(FlagsContext, context));
 
 	// Branch on the flag — the whole point of the primitive.
 	return HttpServerResponse.jsonUnsafe({
@@ -91,13 +92,12 @@ export const handleFlagsEvaluate = Effect.gen(function* () {
 	const context = yield* makeRequestFlagsContext(contextFromSession(session));
 
 	// Evaluate every requested flag server-side under the session-derived context.
-	// Each `getBoolean` honors its own supplied default and never throws.
+	// Each `getBoolean` honors its own supplied default and never throws. The
+	// per-request `FlagsContext` is provided ONCE over the whole batch (ADR 0029)
+	// rather than per key, so the loop reads `flags.getBoolean` directly.
 	const entries = yield* Effect.forEach(keys, ({key, default: defaultValue}) =>
-		flags.getBoolean(key, defaultValue).pipe(
-			Effect.provideService(FlagsContext, context),
-			Effect.map((value) => [key, value] as const),
-		),
-	);
+		flags.getBoolean(key, defaultValue).pipe(Effect.map((value) => [key, value] as const)),
+	).pipe(Effect.provideService(FlagsContext, context));
 
 	const result: FlagEvaluateResult = {flags: Object.fromEntries(entries)};
 	return HttpServerResponse.jsonUnsafe(result);

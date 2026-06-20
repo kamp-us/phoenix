@@ -12,6 +12,7 @@
  * the provider's wire shape never leaks into the domain surface (the clean
  * OpenFeature seam, #506).
  */
+import {CurrentUser} from "@kampus/fate-effect";
 import type {FlagshipEvaluationContext} from "alchemy/Cloudflare";
 import {Context, Effect} from "effect";
 import {AppConfig} from "../../config.ts";
@@ -66,6 +67,28 @@ export const makeRequestFlagsContext = (identity: FlagsContextValue) =>
 		// env, unrecoverable — match the health route's read of the same var.
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
 		return {...identity, environment} satisfies FlagsContextValue;
+	});
+
+/**
+ * Provide the per-request {@link FlagsContext} to a flag-reading effect, sourcing
+ * the identity from the request's `CurrentUser` (the same per-request session the
+ * fate edge provides, ADR 0029) and the environment from the deploy stage. THE
+ * ONE place flag bucketing is wired for fate resolvers: a flag-gated resolver
+ * reads `flags.getBoolean(key, default)` directly and discharges the context with
+ * a single `.pipe(provideRequestFlags)`, so a change to what the context carries
+ * is an edit here, not at every gating site. Swaps the `FlagsContext` requirement
+ * for `CurrentUser`, which gated resolvers already hold and which `FateServer.layer`
+ * excludes from the layer R — so it never surfaces as a build-time requirement.
+ */
+export const provideRequestFlags = <A, E, R>(
+	effect: Effect.Effect<A, E, R>,
+): Effect.Effect<A, E, Exclude<R, FlagsContext> | CurrentUser> =>
+	Effect.gen(function* () {
+		const {user} = yield* CurrentUser;
+		const context = yield* makeRequestFlagsContext(
+			user ? {userId: user.id} : anonymousFlagsContext,
+		);
+		return yield* effect.pipe(Effect.provideService(FlagsContext, context));
 	});
 
 /**
