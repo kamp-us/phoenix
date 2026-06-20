@@ -16,7 +16,7 @@ A multi-app, multi-worker repo: one Cloudflare Worker per app under `apps/`
 - **`apps/web`** serves both the SPA (via `assets` binding) and the API.
 - The data layer is [fate](https://github.com/usirin/fate)'s native protocol: `/fate` serves data views, `/fate/live` drives live views over SSE. Other backend routes live under `/api/*`.
 - Frontend is React 19 + Vite, built into `dist/client`.
-- DOs are bindings on the same worker: `ConnectionDO` + `TopicDO` power the fate-live SSE fan-out (ADRs 0023/0025/0028). Add more DOs per feature.
+- DOs are bindings on the same worker: a single unified `LiveDO` (ADR 0037, on the Effect DO model of ADR 0028) plays both the connection and topic roles to power the fate-live SSE fan-out (ADRs 0023/0025). Add more DOs per feature.
 
 ```
 phoenix/
@@ -26,6 +26,7 @@ phoenix/
 │       ├── src/             # React frontend
 │       └── alchemy.run.ts   # this app's alchemy stack (replaces wrangler.jsonc)
 ├── packages/                # shared internal packages
+├── infra/                   # standalone stacks (e.g. ci-credentials — the one-shot CI-token provisioner)
 └── pnpm-workspace.yaml
 ```
 
