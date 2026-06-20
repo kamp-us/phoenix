@@ -11,7 +11,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {FlagshipError} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
-import {Flags, FlagsLive} from "./Flags.ts";
+import {Flags, type FlagsAccess, FlagsLive, withDevOverrides} from "./Flags.ts";
 import {anonymousFlagsContext, FlagsContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
 
@@ -236,5 +236,66 @@ describe("Flags.getObject", () => {
 				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
 			assert.deepStrictEqual(value, fallback);
 		}).pipe(Effect.provide(typedFlagsOver({getObjectValue: flagshipError}))),
+	);
+});
+
+/**
+ * A real-`Flags` stand-in for the override decorator tests: a boolean read returns
+ * its supplied default and typed reads return sentinels, so a passed-through read
+ * is distinguishable from a short-circuited override.
+ */
+const realFlagsStub: FlagsAccess = {
+	getBoolean: (_key, defaultValue) => Effect.succeed(defaultValue),
+	getString: () => Effect.succeed("real"),
+	getNumber: () => Effect.succeed(-1),
+	getObject: (_key, defaultValue) => Effect.succeed(defaultValue),
+};
+
+describe("withDevOverrides (#622)", () => {
+	it.effect("returns the forced-on override instead of the real read", () =>
+		Effect.gen(function* () {
+			// default is `false` (the safe path); the override forces it on.
+			const value = yield* withDevOverrides(realFlagsStub)
+				.getBoolean("flag-a", false)
+				.pipe(Effect.provideService(FlagsContext, {overrides: {"flag-a": true}}));
+			assert.strictEqual(value, true);
+		}).pipe(Effect.provide(RuntimeContextStub)),
+	);
+
+	it.effect("returns the forced-off override even when the default is true", () =>
+		Effect.gen(function* () {
+			const value = yield* withDevOverrides(realFlagsStub)
+				.getBoolean("flag-a", true)
+				.pipe(Effect.provideService(FlagsContext, {overrides: {"flag-a": false}}));
+			assert.strictEqual(value, false);
+		}).pipe(Effect.provide(RuntimeContextStub)),
+	);
+
+	it.effect("delegates to the real read when the key is not overridden", () =>
+		Effect.gen(function* () {
+			const value = yield* withDevOverrides(realFlagsStub)
+				.getBoolean("flag-b", true)
+				.pipe(Effect.provideService(FlagsContext, {overrides: {"flag-a": false}}));
+			// no override for flag-b → the real stub answers with the supplied default
+			assert.strictEqual(value, true);
+		}).pipe(Effect.provide(RuntimeContextStub)),
+	);
+
+	it.effect("delegates to the real read when there are no overrides at all", () =>
+		Effect.gen(function* () {
+			const value = yield* withDevOverrides(realFlagsStub)
+				.getBoolean("flag-a", false)
+				.pipe(Effect.provideService(FlagsContext, anonymousFlagsContext));
+			assert.strictEqual(value, false);
+		}).pipe(Effect.provide(RuntimeContextStub)),
+	);
+
+	it.effect("never overrides a typed (non-boolean) read — those stay on real eval", () =>
+		Effect.gen(function* () {
+			const str = yield* withDevOverrides(realFlagsStub)
+				.getString("flag-a", "default")
+				.pipe(Effect.provideService(FlagsContext, {overrides: {"flag-a": true}}));
+			assert.strictEqual(str, "real");
+		}).pipe(Effect.provide(RuntimeContextStub)),
 	);
 });

@@ -14,7 +14,7 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import {betterAuthSecret, environment} from "./config.ts";
+import {AppConfig, betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
 import {withColdStartRetry} from "./features/fate-live/cold-start-retry.ts";
@@ -122,6 +122,12 @@ export default Phoenix.make(
 		// per-call requirement); `makeAppLive` reuses it for the `/api/auth/*` route.
 		const runtimeContext = yield* RuntimeContext;
 
+		// The deploy environment, resolved once in init (off the auto-wired
+		// ConfigProvider). `makeAppLive` uses it for the load-bearing #622 gate:
+		// install the dev-only flag-override wrapper ONLY under `development`. `orDie`:
+		// a value outside the three literals is a malformed env, unrecoverable.
+		const {environment: appEnvironment} = yield* AppConfig.pipe(Effect.orDie);
+
 		// The one worker-level runtime (ADR 0041/0043 — init-only wiring): exactly
 		// one per isolate from `PhoenixFateLive` (`R = Database | BetterAuth`, both
 		// provided here). It is a layer-build vehicle only, no runtime on the
@@ -193,6 +199,7 @@ export default Phoenix.make(
 			betterAuthLayer,
 			flagshipLayer,
 			runtimeContext,
+			environment: appEnvironment,
 		});
 
 		// ── RUNTIME PHASE (per request) ──

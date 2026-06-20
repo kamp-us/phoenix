@@ -13,6 +13,7 @@ import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {FlagshipError} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
 import * as ConfigProvider from "effect/ConfigProvider";
+import {encodeOverrideCookieValue, FLAG_OVERRIDE_COOKIE} from "./dev-override.ts";
 import {Flags, FlagsLive} from "./Flags.ts";
 import {anonymousFlagsContext, FlagsContext, makeRequestFlagsContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
@@ -81,6 +82,49 @@ describe("makeRequestFlagsContext — environment sourced from the deploy stage"
 			const context = yield* makeRequestFlagsContext(anonymousFlagsContext);
 			assert.strictEqual(context.environment, "production");
 		}).pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))),
+	);
+});
+
+// The load-bearing #622 gate: the override cookie is read into the context ONLY
+// under `development`. Any other stage (incl. the fail-closed `production`
+// default) drops it, so a hand-set cookie can never flip a flag in a deployed
+// stage — the override branch is unreachable there.
+describe("makeRequestFlagsContext — dev-only override gate (#622)", () => {
+	const overrideCookie = `${FLAG_OVERRIDE_COOKIE}=${encodeOverrideCookieValue({"flag-a": true})}`;
+
+	it.effect("reads the override cookie into the context under development", () =>
+		Effect.gen(function* () {
+			const context = yield* makeRequestFlagsContext(anonymousFlagsContext, overrideCookie);
+			assert.deepStrictEqual(context.overrides, {"flag-a": true});
+		}).pipe(withStage("development")),
+	);
+
+	it.effect("drops the override cookie in the production stage", () =>
+		Effect.gen(function* () {
+			const context = yield* makeRequestFlagsContext(anonymousFlagsContext, overrideCookie);
+			assert.strictEqual(context.overrides, undefined);
+		}).pipe(withStage("production")),
+	);
+
+	it.effect("drops the override cookie in the preview stage", () =>
+		Effect.gen(function* () {
+			const context = yield* makeRequestFlagsContext(anonymousFlagsContext, overrideCookie);
+			assert.strictEqual(context.overrides, undefined);
+		}).pipe(withStage("preview")),
+	);
+
+	it.effect("drops the override cookie under the fail-closed (unset ENVIRONMENT) default", () =>
+		Effect.gen(function* () {
+			const context = yield* makeRequestFlagsContext(anonymousFlagsContext, overrideCookie);
+			assert.strictEqual(context.overrides, undefined);
+		}).pipe(Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))),
+	);
+
+	it.effect("a development request with no cookie carries no overrides", () =>
+		Effect.gen(function* () {
+			const context = yield* makeRequestFlagsContext(anonymousFlagsContext, null);
+			assert.strictEqual(context.overrides, undefined);
+		}).pipe(withStage("development")),
 	);
 });
 

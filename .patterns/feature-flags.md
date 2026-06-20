@@ -166,7 +166,29 @@ The decision rule: **need it live now → dashboard; want it recorded → IaC.**
 meanwhile, isn't a flip — it just degrades every read to the safe default (the invariant above), so an
 outage looks like every flag being off, never like a broken request.
 
-## 5. Where to go next
+## 5. Flip a flag locally (dev-only override, #622)
+
+Under offline `pnpm dev` the Flagship binding has no live evaluator, so every read degrades to its
+safe default — you can't see the flag-*on* path. A **dev-only override** closes that gap: it forces a
+boolean flag on/off *for your browser only*, short-circuiting the real read before it falls back.
+
+- Visit **`/api/flags/dev`** under `pnpm dev` — a settings page lists the declared boolean flags with
+  **on / off / clear** toggles. A toggle writes the choice into a `phoenix_flag_overrides` cookie;
+  `clear` drops it and the real evaluator answers again. The flag-on path then renders in the SPA
+  exactly as it would in prod (the override applies to `/api/flags/evaluate`, which `useFlag` /
+  `FlagGate` read).
+- It is **boolean-only** (the dark-ship primitive); typed `getString`/`getNumber`/`getObject` reads
+  stay on real eval.
+
+**This surface is unreachable in any deployed stage** — the load-bearing gate. The override `Flags`
+wrapper is installed, and the override cookie is read, ONLY when `environment === "development"`
+(`http/app.ts` + `makeRequestFlagsContext`); since `ENVIRONMENT` fail-closes to `"production"`
+(`config.ts`), the page 404s and any hand-set cookie is inert in preview/production. The override
+never reaches Flagship and never affects another request. The code is
+`worker/features/flagship/dev-override.ts` (cookie codec), `route-dev.ts` (the page), and
+`withDevOverrides`/`FlagsDevOverrideLive` in `Flags.ts` (the wrapper).
+
+## 6. Where to go next
 
 This doc is the hub. The depth lives in three sibling docs — read the one that matches your task:
 

@@ -48,8 +48,12 @@ export const handleFlagsProbe = Effect.gen(function* () {
 	const session = yield* pasaport.validateSession(raw.headers);
 	// The environment attribute is sourced from the deploy stage (`ENVIRONMENT`,
 	// ADR 0057), not hand-passed — so an environment-targeting rule resolves per
-	// stage with no change here (#512).
-	const context = yield* makeRequestFlagsContext(contextFromSession(session));
+	// stage with no change here (#512). The cookie carries any dev-only local
+	// override (#622), applied by `makeRequestFlagsContext` ONLY under `development`.
+	const context = yield* makeRequestFlagsContext(
+		contextFromSession(session),
+		raw.headers.get("cookie"),
+	);
 
 	// `FlagsContext` is the per-request service every read needs; provide it ONCE at
 	// this handler edge (alongside the session-derived identity, ADR 0029) so the
@@ -88,8 +92,12 @@ export const handleFlagsEvaluate = Effect.gen(function* () {
 	const session = yield* pasaport.validateSession(raw.headers);
 	// Same per-request context as the probe: session-derived identity plus the
 	// stage `environment` (#512), so every key is evaluated under the full
-	// targeting context — identity stays server-side, never from the body.
-	const context = yield* makeRequestFlagsContext(contextFromSession(session));
+	// targeting context — identity stays server-side, never from the body. The
+	// cookie carries any dev-only local override (#622), dev-gated in the builder.
+	const context = yield* makeRequestFlagsContext(
+		contextFromSession(session),
+		raw.headers.get("cookie"),
+	);
 
 	// Evaluate every requested flag server-side under the session-derived context.
 	// Each `getBoolean` honors its own supplied default and never throws. The
