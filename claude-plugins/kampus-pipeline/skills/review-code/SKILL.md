@@ -712,6 +712,120 @@ like any other criterion:
 When the marker is `exempt`/`none`/absent or no cycle doc exists, **omit this row entirely** — a
 skipped check is not an `UNVERIFIABLE` (which is a soft fail); it contributes nothing, by design.
 
+### Step 3c — Glossary-freshness gate: a new surface MUST touch `.glossary/TERMS.md`
+
+A PR that **adds a new domain surface** — a new feature folder under `apps/web/worker/features/*`,
+or a new public package / a new public export from one — ships a concept that needs a name the
+*rest of the codebase and the pipeline* can reach for. When that name lands only in code and the
+repo-owned vocabulary (`.glossary/TERMS.md`) is left untouched, the glossary **lags the shipped
+surface**: the same concept ends up named four different ways across issues, PRs, plans, and code
+(the cluster-16 / [#864](https://github.com/kamp-us/phoenix/issues/864) drift the audit found).
+This step turns that prose advice into an **enforced gate** — a PR that adds a new surface but does
+not also touch `.glossary/TERMS.md` FAILs the freshness check, so the term enters the glossary in
+the same change that ships the surface.
+
+**Read-only and computed off the already-loaded file list (formats §RO).** The check runs over the
+`status`/`filename` list Step 2 already pulled — it adds **no** worktree mutation, no
+`git checkout`/`reset`/`stash`, no second fetch. New-ness is read from the per-file `status`
+(`added`) and from a read-only `git cat-file -e "origin/$BASE_REF:<path>"` against the
+**freshly-fetched** base (Step 2's `git fetch origin "$BASE_REF"`), never the working tree — a
+folder is *new* only when its marker path is absent on fresh base.
+
+```bash
+# the file list WITH status (Step 2 already loaded the diff; this reuses the same files endpoint)
+# --paginate + streaming --jq so the full set past file #100 is seen (the API caps per_page at 100; #725)
+FILES_STATUS="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+  --jq '.[] | "\(.status)\t\(.filename)"')"
+ADDED="$(printf '%s\n' "$FILES_STATUS" | awk -F'\t' '$1=="added"{print $2}')"
+
+# (1) a NEW feature folder: an added file under apps/web/worker/features/<dir>/... whose <dir>
+#     did not exist on fresh base. Dedupe to the folder; a folder is new iff base has no tree there.
+NEW_FEATURE_DIRS=""
+for d in $(printf '%s\n' "$ADDED" \
+            | sed -nE 's#^(apps/web/worker/features/[^/]+)/.*#\1#p' | sort -u); do
+  # read-only existence probe against FRESH base — never the working tree (formats §RO)
+  git cat-file -e "origin/$BASE_REF:$d" 2>/dev/null || NEW_FEATURE_DIRS="$NEW_FEATURE_DIRS $d"
+done
+
+# (2) a NEW public package: an added packages/<pkg>/package.json whose package dir is absent on base
+NEW_PACKAGES=""
+for p in $(printf '%s\n' "$ADDED" \
+            | sed -nE 's#^(packages/[^/]+)/package\.json$#\1#p' | sort -u); do
+  git cat-file -e "origin/$BASE_REF:$p/package.json" 2>/dev/null || NEW_PACKAGES="$NEW_PACKAGES $p"
+done
+
+# A new public EXPORT from an existing package is the third surface — a public entry point
+# (packages/<pkg>/src/index.ts, or the file a package.json "exports"/"main" names) that the diff
+# CHANGES to expose a new name. This one is read from the diff hunk, not a path-status test:
+# inspect the diff of any touched public entry for an added `export …` line. Treat a public-entry
+# file with an added export as a new surface for this gate.
+PUBLIC_ENTRY_EXPORT_ADDED="$(gh pr diff $PR \
+  | awk '/^\+\+\+ b\/packages\/[^/]+\/src\/index\.(ts|tsx)$/{e=1;next}
+         /^\+\+\+ /{e=0} e && /^\+[^+].*\bexport\b/{print}')"
+
+# the union: is there ANY new surface?
+NEW_SURFACE="$(printf '%s %s %s' "$NEW_FEATURE_DIRS" "$NEW_PACKAGES" "$PUBLIC_ENTRY_EXPORT_ADDED" | tr -s ' ')"
+
+# does the PR touch the glossary's domain-noun file? (added OR modified — any touch counts)
+GLOSSARY_TOUCHED="$(printf '%s\n' "$FILES_STATUS" | awk -F'\t' '$2==".glossary/TERMS.md"{print}')"
+```
+
+**The self-asserting / fail-closed verdict (formats §ZS, ADR 0092) — three outcomes, never a
+silent PASS.** This gate's signature failure mode is *scanning nothing and reading green*, so it
+follows §ZS exactly: it **emits what it scanned** every run, **FAILs on the relevant-but-zero-match**
+case, and expresses a legitimately-empty scope as an **explicit not-applicable skip** — distinct
+from a FAIL:
+
+- **New surface present, `.glossary/TERMS.md` NOT touched ⇒ FAIL** (the relevant-but-zero-match
+  case). Emit the new surface you found and that the glossary went untouched. The remedy is in
+  scope by construction (name the new concept in `TERMS.md` in this PR), so it may also be routed
+  as an **appended acceptance criterion** via the §2 reviewer-append surface (per the
+  [Specialist fan-out + route-don't-grade](#specialist-fan-out--route-dont-grade-adr-0079--the-shared-reference)
+  procedure) — it traces to the issue's own "ship this surface" goal — landing it as a fresh
+  `[FAIL]` row `write-code` drains next round. Either way the conjunctive verdict reflects it.
+- **New surface present, `.glossary/TERMS.md` touched ⇒ PASS** for this facet — the surface and its
+  term shipped together. Cite the new surface + the glossary touch as evidence.
+- **No new surface ⇒ explicit not-applicable skip** (the §ZS #3 out-of-surface case): emit
+  `glossary-freshness: not applicable — no new feature folder / public package / export in this PR`
+  and **omit the row from the conjunctive table** (a skip, *not* an `UNVERIFIABLE` soft-fail, exactly
+  as Step 3b omits its row when the containment marker doesn't fire). The emitted line is the
+  self-assertion that the gate *fired and found nothing in its surface* — never a silent green.
+
+```bash
+if [ -n "$(printf '%s' "$NEW_SURFACE" | tr -d ' ')" ]; then
+  echo "glossary-freshness: scanned new surfaces ⇒$NEW_SURFACE"   # §ZS #1: emit what it scanned
+  if [ -n "$GLOSSARY_TOUCHED" ]; then
+    echo "glossary-freshness: PASS — new surface ships with a .glossary/TERMS.md touch"
+  else
+    echo "glossary-freshness: FAIL — new surface added but .glossary/TERMS.md untouched (§ZS relevant-but-zero-match)"
+    # fold as a FAIL facet in the verdict table (and/or append the in-scope AC per the §2 surface)
+  fi
+else
+  echo "glossary-freshness: not applicable — no new feature folder / public package / export in this PR"   # §ZS #3 skip
+fi
+```
+
+Fold the result into the per-criterion table as one line, exactly like Step 3b's flag-gating facet —
+so the conjunctive verdict (Step 3) accounts for it like any other criterion:
+
+```
+- [PASS] glossary-freshness — new feature folder apps/web/worker/features/<x> ships with a .glossary/TERMS.md touch (TERMS.md modified)
+- [FAIL] glossary-freshness — new feature folder apps/web/worker/features/<x> added, but .glossary/TERMS.md untouched; name the surface's concept in TERMS.md (or it is appended as an AC)
+```
+
+When there is **no** new surface, **omit this row entirely** (the not-applicable skip), exactly as
+Step 3b omits its flag-gating row when the containment marker doesn't fire — a skip contributes
+nothing to the conjunctive verdict, by design, and is **never** a silent PASS because the emitted
+`not applicable` line above is its self-assertion.
+
+> **Graceful absence — no `.glossary/TERMS.md` on the base ⇒ no glossary to enforce against.** If
+> the repo has not yet adopted the glossary (`.glossary/TERMS.md` absent on fresh `origin/$BASE_REF`
+> — a read-only `git cat-file -e "origin/$BASE_REF:.glossary/TERMS.md"`), this whole step is a
+> **not-applicable skip**: there is no vocabulary file to require a touch of, so it emits
+> `glossary-freshness: not applicable — no .glossary/TERMS.md on base` and contributes no row. This
+> is the same portability / graceful-absence contract the cycle-doc probe (Step 3b, formats §1) and
+> the milestone default follow — absence is a first-class state, not a defect.
+
 ---
 
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)
@@ -942,7 +1056,8 @@ issue is still claimed, still open, still in-progress; only the verdict changed.
 A single invocation gates one PR end to end: resolve the PR ↔ issue pairing (Step 1),
 read the diff/tests and the SHA-bound run-evidence bundle when present (Step 2), verify
 each acceptance criterion with evidence — citing the bundle's structured `checks[]`/`tests`
-where they cover it (Step 3), then land the verdict — approving review or `review-code: PASS` comment on a full pass
+where they cover it (Step 3), apply the flag-gating (Step 3b) and glossary-freshness
+(Step 3c) gates where they fire, then land the verdict — approving review or `review-code: PASS` comment on a full pass
 (Step 4a), or a per-criterion fail comment on any miss (Step 4b). **You never merge.**
 
 Report back a short ledger: the PR and its linked issue, the per-criterion verdict
