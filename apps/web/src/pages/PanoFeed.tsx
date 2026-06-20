@@ -11,7 +11,6 @@ import {Subnav} from "../components/layout/Subnav";
 import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Screen} from "../fate/Screen";
-import {useLiveListKeepAlive} from "../fate/useLiveKeepAlive";
 import {LoadMoreButton} from "../fate/wire";
 
 const PAGE_SIZE = 20;
@@ -95,11 +94,6 @@ function FeedRows({
 	filterId: string;
 	setFilterId: (id: string) => void;
 }) {
-	// Pin the SSE connection on the feed's stable `listKey` for the feed's mount
-	// lifetime, so a vote/post mutation's re-subscribe churn never drops the
-	// refcount to 0 and drops the live `prependNode` (#708; #711 is the durable
-	// transport fix). See `apps/web/src/fate/useLiveKeepAlive.ts`.
-	useLiveListKeepAlive(PostConnectionView, connection);
 	const [items, loadNext] = useLiveListView(PostConnectionView, connection);
 
 	const meta = host ? `${items.length} başlık · ${host}` : `${items.length} başlık`;

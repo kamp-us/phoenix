@@ -10,6 +10,14 @@ import {useMemo} from "react";
 import {FateClient} from "react-fate";
 import {useSession} from "../auth/client";
 import {createClient} from "./client";
+import {useGlobalLivePin} from "./useGlobalLivePin";
+
+// Holds the app-lifetime live pin (#711) from inside the FateClient context,
+// where `useFateClient` resolves. Renders nothing.
+function GlobalLivePin({userId}: {userId: string | null}) {
+	useGlobalLivePin(userId);
+	return null;
+}
 
 export function FateProvider({children}: {children: React.ReactNode}) {
 	const session = useSession();
@@ -29,6 +37,7 @@ export function FateProvider({children}: {children: React.ReactNode}) {
 
 	return (
 		<FateClient key={userId ?? "anon"} client={client}>
+			<GlobalLivePin userId={userId} />
 			{children}
 		</FateClient>
 	);
