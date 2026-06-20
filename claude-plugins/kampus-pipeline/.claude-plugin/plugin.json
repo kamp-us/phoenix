@@ -1,7 +1,6 @@
 {
 	"$schema": "https://json.schemastore.org/claude-code-plugin.json",
 	"name": "kampus-pipeline",
-	"version": "0.1.0",
 	"description": "The kamp.us agent pipeline: a repo-agnostic suite of triage → plan-epic → write-code → review → ship-it skills that operate on any GitHub repo's issue queue (resolved from the working git repo, with a CLAUDE_PIPELINE_REPO override).",
 	"author": {
 		"name": "kamp-us",
