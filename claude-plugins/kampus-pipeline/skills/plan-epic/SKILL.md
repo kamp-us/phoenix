@@ -333,10 +333,29 @@ The invariants you must hold:
   `### User stories`, which is shared context, not a sibling body.)
 
 Create each child via REST, assembling its body from a temp file so multi-line
-markdown and backticks survive the shell:
+markdown and backticks survive the shell. Allocate the body file with `mktemp`
+(every other temp this skill uses is already epic-scoped — `/tmp/plan-epic-<EPIC>-*`),
+not a fixed `/tmp/plan-epic-child.md`: concurrent `plan-epic` runs on sibling epics
+share `/tmp`, so a fixed path lets one run's child body clobber another's between the
+write and this `cat`, filing a child under the right title but with a **sibling epic's
+`### What to build` + acceptance criteria** — a cross-epic body bleed the structural
+floor can't see (it checks markers, never body fidelity), caught only by `review-plan`'s
+non-blocking advisor (#754, same `/tmp` collision class as `report`'s per-run `mktemp`):
 
 ```bash
-BODY="$(cat /tmp/plan-epic-child.md)"
+# write this child's body into a per-run temp file, never a shared fixed path (#754)
+CHILD_BODY_FILE="$(mktemp /tmp/plan-epic-<EPIC>-child.XXXXXX)"
+cat > "$CHILD_BODY_FILE" <<'EOF'
+**Stories:** <…>
+**TDD:** yes | no
+
+### What to build
+<…>
+
+### Acceptance criteria
+- [ ] <…>
+EOF
+BODY="$(cat "$CHILD_BODY_FILE")"
 gh api repos/$REPO/issues \
   -f title="<sharp single-unit title>" \
   -f body="$BODY" \
