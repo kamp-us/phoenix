@@ -45,7 +45,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node packages/spawn-guard/src/bin.ts guard"
+						"command": "node \"$CLAUDE_PROJECT_DIR/packages/spawn-guard/src/bin.ts\" guard"
 					}
 				]
 			}
