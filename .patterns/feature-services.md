@@ -93,7 +93,7 @@ const term = yield* run((db) =>
 );
 
 const inserted = yield* run((db) =>
-  db.insert(schema.definitionView).values({/* ... */}).returning(),
+  db.insert(schema.definitionRecord).values({/* ... */}).returning(),
 );
 ```
 
@@ -106,7 +106,7 @@ const {batch} = orDieAccess(yield* Drizzle);
 
 yield* batch((db) => [
   db.insert(schema.definitionVote).values({/* ... */}),
-  db.update(schema.definitionView).set({score: sql`score + 1`}).where(eq(schema.definitionView.id, id)),
+  db.update(schema.definitionRecord).set({score: sql`score + 1`}).where(eq(schema.definitionRecord.id, id)),
   db.insert(schema.userVote).values({/* ... */}),
 ] as const);
 ```
@@ -224,7 +224,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
         const now = new Date();
 
         yield* run((db) =>
-          db.insert(schema.definitionView).values({id: definitionId, /* ... */}),
+          db.insert(schema.definitionRecord).values({id: definitionId, /* ... */}),
         );
         yield* recomputeTermSummary(input.termSlug, input.title ?? input.termSlug, now);
 

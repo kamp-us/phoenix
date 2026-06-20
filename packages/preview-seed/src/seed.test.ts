@@ -10,7 +10,7 @@ import {normalizeSearchText, toMatchExpression} from "@kampus/web/features/searc
 import {desc, eq, isNull, sql} from "drizzle-orm";
 import {toRestParams} from "./d1-rest.ts";
 import {SEARCH_TERM_SLUG, SEARCH_TERM_TITLE, SEED_POST_ID, SEED_TERM_SLUG} from "./fixtures.ts";
-import {definitionView, postSummary, termSummary} from "./schema.ts";
+import {definitionRecord, postSummary, termSummary} from "./schema.ts";
 import {buildSeedStatements, makeSeedDb, seed} from "./seed.ts";
 import {makeSeedTestDb} from "./sqlite-d1.testing.ts";
 
@@ -37,11 +37,11 @@ describe("seed — writes the rows the unauth specs read", () => {
 			// ORDER BY score DESC, created_at ASC, id ASC. First row gets `--top`.
 			const defs = await db
 				.select()
-				.from(definitionView)
+				.from(definitionRecord)
 				.where(
-					sql`${definitionView.termSlug} = ${SEED_TERM_SLUG} and ${definitionView.removedAt} is null`,
+					sql`${definitionRecord.termSlug} = ${SEED_TERM_SLUG} and ${definitionRecord.removedAt} is null`,
 				)
-				.orderBy(desc(definitionView.score), definitionView.createdAt, definitionView.id);
+				.orderBy(desc(definitionRecord.score), definitionRecord.createdAt, definitionRecord.id);
 			assert.isAtLeast(defs.length, 1);
 			// The top card is the highest-scoring definition.
 			const maxScore = Math.max(...defs.map((d) => d.score));
@@ -205,7 +205,7 @@ describe("seed — idempotency (safely re-runnable)", () => {
 			// Re-run wrote no extra rows: the row count still equals the fixture set.
 			const db = makeSeedDb(d1);
 			const termRows = await db.select().from(termSummary);
-			const defRows = await db.select().from(definitionView);
+			const defRows = await db.select().from(definitionRecord);
 			const postRows = await db.select().from(postSummary);
 			assert.strictEqual(termRows.length, first.terms);
 			assert.strictEqual(defRows.length, first.definitions);

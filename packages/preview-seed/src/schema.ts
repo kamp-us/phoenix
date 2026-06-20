@@ -1,6 +1,6 @@
 /**
  * The slice of the phoenix D1 schema this seed writes. The read-model tables
- * (`term_summary` / `definition_view` / `post_summary`) come from the
+ * (`term_summary` / `definition_record` / `post_summary`) come from the
  * `@kampus/db-schema` leaf — the single canonical declaration the worker also
  * re-exports — so this seed can no longer drift from the real schema (issue
  * #859: the `is_draft`/`removed_at` columns now arrive by construction, not by
@@ -11,10 +11,10 @@
  * convenience, not duplicated canonical knowledge (the worker doesn't model them
  * as drizzle tables either).
  */
-import {definitionView, postSummary, termSummary} from "@kampus/db-schema";
+import {definitionRecord, postSummary, termSummary} from "@kampus/db-schema";
 import {sqliteTable, text} from "drizzle-orm/sqlite-core";
 
-export {definitionView, postSummary, termSummary};
+export {definitionRecord, postSummary, termSummary};
 
 /**
  * The FTS5 search tables (`term_search` / `post_search`, ADR 0080), modeled as
@@ -39,5 +39,5 @@ export const postSearch = sqliteTable("post_search", {
 	norm: text("norm").notNull(),
 });
 
-export const seedSchema = {termSummary, definitionView, postSummary, termSearch, postSearch};
+export const seedSchema = {termSummary, definitionRecord, postSummary, termSearch, postSearch};
 export type SeedSchema = typeof seedSchema;

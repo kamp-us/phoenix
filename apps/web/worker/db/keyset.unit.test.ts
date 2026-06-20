@@ -7,7 +7,7 @@
 import type {SQL} from "drizzle-orm";
 import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
-import {commentView, definitionView, postSummary, termSummary} from "./drizzle/schema";
+import {commentRecord, definitionRecord, postSummary, termSummary} from "./drizzle/schema";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "./keyset";
 
 const dialect = new SQLiteSyncDialect();
@@ -27,9 +27,9 @@ describe("keysetAfter", () => {
 	});
 
 	it("single asc column → a bare `>` comparison (no disjunction)", () => {
-		const predicate = keysetAfter([{column: commentView.id, dir: "asc", value: "c1"}]);
+		const predicate = keysetAfter([{column: commentRecord.id, dir: "asc", value: "c1"}]);
 		const {sql, params} = render(predicate as SQL);
-		expect(sql).toBe('"comment_view"."id" > ?');
+		expect(sql).toBe('"comment_record"."id" > ?');
 		expect(params).toEqual(["c1"]);
 	});
 
@@ -43,30 +43,30 @@ describe("keysetAfter", () => {
 	it("two-column asc tuple → lexicographic `(c1 > v1) or (c1 = v1 and c2 > v2)`", () => {
 		const created = new Date("2026-01-01T00:00:00.000Z");
 		const predicate = keysetAfter([
-			{column: commentView.createdAt, dir: "asc", value: created},
-			{column: commentView.id, dir: "asc", value: "c9"},
+			{column: commentRecord.createdAt, dir: "asc", value: created},
+			{column: commentRecord.id, dir: "asc", value: "c9"},
 		]);
 		const {sql} = render(predicate as SQL);
 		// drizzle 1.0 fully parenthesizes every comparison and and/or group
 		// (semantically identical to the sparser 0.45 output).
 		expect(sql).toBe(
-			'(("comment_view"."created_at" > ?) or ' +
-				'((("comment_view"."created_at" = ?) and ("comment_view"."id" > ?))))',
+			'(("comment_record"."created_at" > ?) or ' +
+				'((("comment_record"."created_at" = ?) and ("comment_record"."id" > ?))))',
 		);
 	});
 
 	it("mixed-direction tuple (score desc, createdAt asc, id asc) reproduces the definitions keyset", () => {
 		const created = new Date("2026-01-01T00:00:00.000Z");
 		const predicate = keysetAfter([
-			{column: definitionView.score, dir: "desc", value: 5},
-			{column: definitionView.createdAt, dir: "asc", value: created},
-			{column: definitionView.id, dir: "asc", value: "d7"},
+			{column: definitionRecord.score, dir: "desc", value: 5},
+			{column: definitionRecord.createdAt, dir: "asc", value: created},
+			{column: definitionRecord.id, dir: "asc", value: "d7"},
 		]);
 		const {sql} = render(predicate as SQL);
 		expect(sql).toBe(
-			'(("definition_view"."score" < ?) or ' +
-				'((("definition_view"."score" = ?) and ("definition_view"."created_at" > ?))) or ' +
-				'((("definition_view"."score" = ?) and ("definition_view"."created_at" = ?) and ("definition_view"."id" > ?))))',
+			'(("definition_record"."score" < ?) or ' +
+				'((("definition_record"."score" = ?) and ("definition_record"."created_at" > ?))) or ' +
+				'((("definition_record"."score" = ?) and ("definition_record"."created_at" = ?) and ("definition_record"."id" > ?))))',
 		);
 	});
 

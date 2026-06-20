@@ -8,14 +8,14 @@
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 
-// The shared read-model tables (`term_summary` / `definition_view` /
-// `post_summary` / `comment_view`) live in the `@kampus/db-schema` leaf so the
+// The shared read-model tables (`term_summary` / `definition_record` /
+// `post_summary` / `comment_record`) live in the `@kampus/db-schema` leaf so the
 // worker, preview-seed, and fts-backfill all import ONE declaration — a column
 // rename is one edit there, caught by typecheck, not three hand-mirrored copies
 // that drift (ADR 0096 `removed_at`, ADR 0093 `is_draft`; issues #859/#903).
 // drizzle-kit reads this module for migration generation, so re-exporting feeds
 // migrations exactly as a local declaration would.
-export {commentView, definitionView, postSummary, termSummary} from "@kampus/db-schema";
+export {commentRecord, definitionRecord, postSummary, termSummary} from "@kampus/db-schema";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
 
@@ -125,7 +125,7 @@ export const apikey = sqliteTable("apiKey", {
 
 /**
  * Per-(definition, voter) up-vote presence row. `user_vote` and
- * `definition_view.score` (COUNT(*) under `WHERE definition_id = ?`) are both
+ * `definition_record.score` (COUNT(*) under `WHERE definition_id = ?`) are both
  * denormalized off this, recomputed inline in the same D1 batch as the vote write.
  */
 export const definitionVote = sqliteTable(

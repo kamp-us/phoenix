@@ -264,7 +264,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			return rawBody;
 		});
 
-		// Recompute one slug's `term_summary` row from its live `definition_view`
+		// Recompute one slug's `term_summary` row from its live `definition_record`
 		// slice. Convergent: the row is fully derived from definitions + title.
 		const recomputeTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(function* (
 			slug: string,
@@ -274,18 +274,21 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const defs = yield* run((db) =>
 				db
 					.select({
-						id: schema.definitionView.id,
-						body: schema.definitionView.body,
-						bodyExcerpt: schema.definitionView.bodyExcerpt,
-						score: schema.definitionView.score,
-						createdAt: schema.definitionView.createdAt,
-						updatedAt: schema.definitionView.updatedAt,
+						id: schema.definitionRecord.id,
+						body: schema.definitionRecord.body,
+						bodyExcerpt: schema.definitionRecord.bodyExcerpt,
+						score: schema.definitionRecord.score,
+						createdAt: schema.definitionRecord.createdAt,
+						updatedAt: schema.definitionRecord.updatedAt,
 					})
-					.from(schema.definitionView)
+					.from(schema.definitionRecord)
 					.where(
-						and(eq(schema.definitionView.termSlug, slug), isNull(schema.definitionView.removedAt)),
+						and(
+							eq(schema.definitionRecord.termSlug, slug),
+							isNull(schema.definitionRecord.removedAt),
+						),
 					)
-					.orderBy(desc(schema.definitionView.score), asc(schema.definitionView.createdAt)),
+					.orderBy(desc(schema.definitionRecord.score), asc(schema.definitionRecord.createdAt)),
 			);
 
 			const totalScore = defs.reduce((s, d) => s + d.score, 0);
@@ -348,15 +351,15 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const totalDefsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.definitionView)
-					.where(isNull(schema.definitionView.removedAt))
+					.from(schema.definitionRecord)
+					.where(isNull(schema.definitionRecord.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalAuthorsRow = yield* run((db) =>
 				db
-					.select({n: sql<number>`COUNT(DISTINCT ${schema.definitionView.authorId})`})
-					.from(schema.definitionView)
-					.where(isNull(schema.definitionView.removedAt))
+					.select({n: sql<number>`COUNT(DISTINCT ${schema.definitionRecord.authorId})`})
+					.from(schema.definitionRecord)
+					.where(isNull(schema.definitionRecord.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 
@@ -381,11 +384,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const defs = yield* run((db) =>
 				db
 					.select()
-					.from(schema.definitionView)
+					.from(schema.definitionRecord)
 					.where(
-						and(eq(schema.definitionView.termSlug, slug), isNull(schema.definitionView.removedAt)),
+						and(
+							eq(schema.definitionRecord.termSlug, slug),
+							isNull(schema.definitionRecord.removedAt),
+						),
 					)
-					.orderBy(desc(schema.definitionView.score), asc(schema.definitionView.createdAt)),
+					.orderBy(desc(schema.definitionRecord.score), asc(schema.definitionRecord.createdAt)),
 			);
 
 			const firstAt = earliestCreatedAt(defs) ?? meta.firstAt ?? new Date(0);
@@ -424,13 +430,13 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const viewerId = opts.viewerId ?? null;
 
 			const baseWhere = and(
-				eq(schema.definitionView.termSlug, slug),
-				isNull(schema.definitionView.removedAt),
+				eq(schema.definitionRecord.termSlug, slug),
+				isNull(schema.definitionRecord.removedAt),
 			);
 			const totalCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`count(*)`})
-					.from(schema.definitionView)
+					.from(schema.definitionRecord)
 					.where(baseWhere)
 					.get()
 					.then((r) => r?.n ?? 0),
@@ -442,11 +448,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				? ((yield* run((db) =>
 						db
 							.select({
-								score: schema.definitionView.score,
-								createdAt: schema.definitionView.createdAt,
+								score: schema.definitionRecord.score,
+								createdAt: schema.definitionRecord.createdAt,
 							})
-							.from(schema.definitionView)
-							.where(eq(schema.definitionView.id, after))
+							.from(schema.definitionRecord)
+							.where(eq(schema.definitionRecord.id, after))
 							.get(),
 					)) ?? null)
 				: null;
@@ -459,20 +465,24 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			// Mixed-direction keyset, declared per column; `keysetAfter` builds the
 			// lexicographic predicate.
 			const cursorPredicate = keysetAfter([
-				{column: schema.definitionView.score, dir: "desc", value: cursorRow?.score ?? null},
-				{column: schema.definitionView.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
-				{column: schema.definitionView.id, dir: "asc", value: after},
+				{column: schema.definitionRecord.score, dir: "desc", value: cursorRow?.score ?? null},
+				{
+					column: schema.definitionRecord.createdAt,
+					dir: "asc",
+					value: cursorRow?.createdAt ?? null,
+				},
+				{column: schema.definitionRecord.id, dir: "asc", value: after},
 			]);
 
 			const fetched = yield* run((db) =>
 				db
 					.select()
-					.from(schema.definitionView)
+					.from(schema.definitionRecord)
 					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
 					.orderBy(
-						desc(schema.definitionView.score),
-						asc(schema.definitionView.createdAt),
-						asc(schema.definitionView.id),
+						desc(schema.definitionRecord.score),
+						asc(schema.definitionRecord.createdAt),
+						asc(schema.definitionRecord.id),
 					)
 					.limit(first + 1),
 			);
@@ -501,11 +511,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const fetched = yield* run((db) =>
 				db
 					.select()
-					.from(schema.definitionView)
+					.from(schema.definitionRecord)
 					.where(
 						and(
-							inArray(schema.definitionView.id, [...ids]),
-							isNull(schema.definitionView.removedAt),
+							inArray(schema.definitionRecord.id, [...ids]),
+							isNull(schema.definitionRecord.removedAt),
 						),
 					),
 			);
@@ -629,9 +639,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		) {
 			const rows = yield* run((db) =>
 				db
-					.select({termSlug: schema.definitionView.termSlug})
-					.from(schema.definitionView)
-					.where(eq(schema.definitionView.id, definitionId))
+					.select({termSlug: schema.definitionRecord.termSlug})
+					.from(schema.definitionRecord)
+					.where(eq(schema.definitionRecord.id, definitionId))
 					.limit(1),
 			);
 			return rows[0]?.termSlug ?? null;
@@ -650,7 +660,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const bodyExcerpt = excerpt(rawBody);
 
 			yield* run((db) =>
-				db.insert(schema.definitionView).values({
+				db.insert(schema.definitionRecord).values({
 					id: definitionId,
 					authorId: input.authorId,
 					authorName: input.authorName,
@@ -689,7 +699,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const rawBody = yield* validateBody(input.body);
 
 			const definition = yield* run((db) =>
-				db.query.definitionView.findFirst({
+				db.query.definitionRecord.findFirst({
 					where: {id: input.definitionId, removedAt: {isNull: true}},
 				}),
 			);
@@ -711,9 +721,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			yield* run((db) =>
 				db
-					.update(schema.definitionView)
+					.update(schema.definitionRecord)
 					.set({body: rawBody, bodyExcerpt, updatedAt: now})
-					.where(eq(schema.definitionView.id, input.definitionId)),
+					.where(eq(schema.definitionRecord.id, input.definitionId)),
 			);
 
 			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
@@ -738,7 +748,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			input: DeleteDefinitionInput,
 		) {
 			const definition = yield* run((db) =>
-				db.query.definitionView.findFirst({
+				db.query.definitionRecord.findFirst({
 					where: {id: input.definitionId},
 				}),
 			);
@@ -772,9 +782,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			yield* voteSvc.clearTarget("definition", input.definitionId);
 			yield* run((db) =>
 				db
-					.update(schema.definitionView)
+					.update(schema.definitionRecord)
 					.set({...removed, score: 0, updatedAt: now})
-					.where(eq(schema.definitionView.id, input.definitionId)),
+					.where(eq(schema.definitionRecord.id, input.definitionId)),
 			);
 
 			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
@@ -790,7 +800,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			input: DeleteDefinitionInput,
 		) {
 			const definition = yield* run((db) =>
-				db.query.definitionView.findFirst({where: {id: input.definitionId}}),
+				db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 			);
 			if (!definition) {
 				return yield* new DefinitionNotFound({
@@ -815,9 +825,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
 			yield* run((db) =>
 				db
-					.update(schema.definitionView)
+					.update(schema.definitionRecord)
 					.set({...live, updatedAt: now})
-					.where(eq(schema.definitionView.id, input.definitionId)),
+					.where(eq(schema.definitionRecord.id, input.definitionId)),
 			);
 
 			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
@@ -829,7 +839,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const moderateRemoveDefinition = Effect.fn("Sozluk.moderateRemoveDefinition")(
 			function* (input: {definitionId: string; resolverId: string; reportId: string}) {
 				const definition = yield* run((db) =>
-					db.query.definitionView.findFirst({where: {id: input.definitionId}}),
+					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
 				if (!definition || Lifecycle.isRemoved(Lifecycle.fromColumns(definition))) {
 					return {removed: false};
@@ -846,9 +856,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				yield* voteSvc.clearTarget("definition", input.definitionId);
 				yield* run((db) =>
 					db
-						.update(schema.definitionView)
+						.update(schema.definitionRecord)
 						.set({...removed, score: 0, updatedAt: now})
-						.where(eq(schema.definitionView.id, input.definitionId)),
+						.where(eq(schema.definitionRecord.id, input.definitionId)),
 				);
 
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
@@ -861,7 +871,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const moderateRestoreDefinition = Effect.fn("Sozluk.moderateRestoreDefinition")(
 			function* (input: {definitionId: string}) {
 				const definition = yield* run((db) =>
-					db.query.definitionView.findFirst({where: {id: input.definitionId}}),
+					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
 				if (!definition) return {restored: false};
 				const lifecycle = Lifecycle.fromColumns(definition);
@@ -871,9 +881,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
 				yield* run((db) =>
 					db
-						.update(schema.definitionView)
+						.update(schema.definitionRecord)
 						.set({...live, updatedAt: now})
-						.where(eq(schema.definitionView.id, input.definitionId)),
+						.where(eq(schema.definitionRecord.id, input.definitionId)),
 				);
 
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
@@ -894,7 +904,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			// Load meta up-front so we can return the canonical resolver shape
 			// regardless of the changed/no-op path.
 			const definition = yield* run((db) =>
-				db.query.definitionView.findFirst({
+				db.query.definitionRecord.findFirst({
 					where: {id: input.definitionId, removedAt: {isNull: true}},
 				}),
 			);
@@ -927,7 +937,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			const now = new Date();
 			if (voteResult.changed) {
-				// Vote already wrote definition_view.score in its batch; this re-reads
+				// Vote already wrote definition_record.score in its batch; this re-reads
 				// it to refresh the term aggregates.
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 			}

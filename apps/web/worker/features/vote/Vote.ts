@@ -119,7 +119,7 @@ export const VoteLive = Layer.effect(Vote)(
 			switch (kind) {
 				case "definition": {
 					const row = yield* run((db) =>
-						db.query.definitionView.findFirst({
+						db.query.definitionRecord.findFirst({
 							where: {id: targetId, removedAt: {isNull: true}},
 						}),
 					);
@@ -155,7 +155,7 @@ export const VoteLive = Layer.effect(Vote)(
 				}
 				case "comment": {
 					const row = yield* run((db) =>
-						db.query.commentView.findFirst({
+						db.query.commentRecord.findFirst({
 							where: {id: targetId, removedAt: {isNull: true}},
 						}),
 					);
@@ -207,7 +207,7 @@ export const VoteLive = Layer.effect(Vote)(
 			run(async (db) => {
 				switch (kind) {
 					case "definition": {
-						const row = await db.query.definitionView.findFirst({
+						const row = await db.query.definitionRecord.findFirst({
 							where: {id: targetId},
 							columns: {score: true},
 						});
@@ -221,7 +221,7 @@ export const VoteLive = Layer.effect(Vote)(
 						return row?.score ?? 0;
 					}
 					case "comment": {
-						const row = await db.query.commentView.findFirst({
+						const row = await db.query.commentRecord.findFirst({
 							where: {id: targetId},
 							columns: {score: true},
 						});
@@ -453,12 +453,12 @@ function buildScoreCacheStatement(
 	switch (kind) {
 		case "definition":
 			return db
-				.update(schema.definitionView)
+				.update(schema.definitionRecord)
 				.set({
 					score: sql`(SELECT COUNT(*) FROM ${schema.definitionVote} WHERE ${schema.definitionVote.definitionId} = ${targetId})`,
 					updatedAt: now,
 				})
-				.where(eq(schema.definitionView.id, targetId));
+				.where(eq(schema.definitionRecord.id, targetId));
 		case "post": {
 			const multiplier = hotMultiplier(meta.createdAtMs, now.getTime());
 			return db
@@ -473,11 +473,11 @@ function buildScoreCacheStatement(
 		}
 		case "comment":
 			return db
-				.update(schema.commentView)
+				.update(schema.commentRecord)
 				.set({
 					score: sql`(SELECT COUNT(*) FROM ${schema.commentVote} WHERE ${schema.commentVote.commentId} = ${targetId})`,
 					updatedAt: now,
 				})
-				.where(eq(schema.commentView.id, targetId));
+				.where(eq(schema.commentRecord.id, targetId));
 	}
 }

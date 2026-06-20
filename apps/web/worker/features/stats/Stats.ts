@@ -53,11 +53,11 @@ export const StatsLive = Layer.effect(Stats)(
 					db
 						.run(
 							sql`SELECT COUNT(DISTINCT author_id) as n FROM (
-								SELECT author_id FROM definition_view WHERE removed_at IS NULL
+								SELECT author_id FROM definition_record WHERE removed_at IS NULL
 								UNION
 								SELECT author_id FROM post_summary WHERE removed_at IS NULL
 								UNION
-								SELECT author_id FROM comment_view WHERE removed_at IS NULL
+								SELECT author_id FROM comment_record WHERE removed_at IS NULL
 							)`,
 						)
 						.then((r) => (r.results[0] as {n: number} | undefined) ?? null),

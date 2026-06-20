@@ -257,7 +257,10 @@ export const makePasaportLive = (auth: Auth) =>
 			// `COUNT(*)` of one author's live (non-removed) rows in a contribution
 			// table. Calls `run` directly so callers keep `R = never`.
 			const countByAuthor = (
-				table: typeof schema.definitionView | typeof schema.postSummary | typeof schema.commentView,
+				table:
+					| typeof schema.definitionRecord
+					| typeof schema.postSummary
+					| typeof schema.commentRecord,
 				authorId: string,
 			): Effect.Effect<number> =>
 				run((db) =>
@@ -302,9 +305,9 @@ export const makePasaportLive = (auth: Auth) =>
 				totalKarma: number;
 			}) {
 				const authorId = row.userId;
-				const defCount = yield* countByAuthor(schema.definitionView, authorId);
+				const defCount = yield* countByAuthor(schema.definitionRecord, authorId);
 				const postCount = yield* countByAuthor(schema.postSummary, authorId);
-				const commentCount = yield* countByAuthor(schema.commentView, authorId);
+				const commentCount = yield* countByAuthor(schema.commentRecord, authorId);
 
 				return {
 					userId: row.userId,
@@ -480,9 +483,9 @@ export const makePasaportLive = (auth: Auth) =>
 					// so only the base author/removed filter applies.
 					function keysetWhere(
 						table:
-							| typeof schema.definitionView
+							| typeof schema.definitionRecord
 							| typeof schema.postSummary
-							| typeof schema.commentView,
+							| typeof schema.commentRecord,
 					) {
 						const base = and(eq(table.authorId, input.authorId), isNull(table.removedAt));
 						const predicate = keysetAfter([
@@ -495,16 +498,16 @@ export const makePasaportLive = (auth: Auth) =>
 					const defs = yield* run((db) =>
 						db
 							.select({
-								id: schema.definitionView.id,
-								createdAt: schema.definitionView.createdAt,
-								score: schema.definitionView.score,
-								bodyExcerpt: schema.definitionView.bodyExcerpt,
-								termSlug: schema.definitionView.termSlug,
-								termTitle: schema.definitionView.termTitle,
+								id: schema.definitionRecord.id,
+								createdAt: schema.definitionRecord.createdAt,
+								score: schema.definitionRecord.score,
+								bodyExcerpt: schema.definitionRecord.bodyExcerpt,
+								termSlug: schema.definitionRecord.termSlug,
+								termTitle: schema.definitionRecord.termTitle,
 							})
-							.from(schema.definitionView)
-							.where(keysetWhere(schema.definitionView))
-							.orderBy(desc(schema.definitionView.createdAt), desc(schema.definitionView.id))
+							.from(schema.definitionRecord)
+							.where(keysetWhere(schema.definitionRecord))
+							.orderBy(desc(schema.definitionRecord.createdAt), desc(schema.definitionRecord.id))
 							.limit(fetchSize),
 					);
 
@@ -527,22 +530,22 @@ export const makePasaportLive = (auth: Auth) =>
 					const comments = yield* run((db) =>
 						db
 							.select({
-								id: schema.commentView.id,
-								createdAt: schema.commentView.createdAt,
-								score: schema.commentView.score,
-								bodyExcerpt: schema.commentView.bodyExcerpt,
-								postId: schema.commentView.postId,
-								postTitle: schema.commentView.postTitle,
+								id: schema.commentRecord.id,
+								createdAt: schema.commentRecord.createdAt,
+								score: schema.commentRecord.score,
+								bodyExcerpt: schema.commentRecord.bodyExcerpt,
+								postId: schema.commentRecord.postId,
+								postTitle: schema.commentRecord.postTitle,
 							})
-							.from(schema.commentView)
-							.where(keysetWhere(schema.commentView))
-							.orderBy(desc(schema.commentView.createdAt), desc(schema.commentView.id))
+							.from(schema.commentRecord)
+							.where(keysetWhere(schema.commentRecord))
+							.orderBy(desc(schema.commentRecord.createdAt), desc(schema.commentRecord.id))
 							.limit(fetchSize),
 					);
 
-					const defTotal = yield* countByAuthor(schema.definitionView, input.authorId);
+					const defTotal = yield* countByAuthor(schema.definitionRecord, input.authorId);
 					const postTotal = yield* countByAuthor(schema.postSummary, input.authorId);
-					const commentTotal = yield* countByAuthor(schema.commentView, input.authorId);
+					const commentTotal = yield* countByAuthor(schema.commentRecord, input.authorId);
 					const totalCount = defTotal + postTotal + commentTotal;
 
 					if (cursorMissed) {
@@ -627,8 +630,8 @@ export const makePasaportLive = (auth: Auth) =>
 
 /**
  * The atomic teardown of one account (ADR 0097 §2). In order:
- *  1–3. Re-attribute the user's content (`definition_view` / `post_summary` /
- *       `comment_view`): `author_id := silinen`, denormalized `author_name`
+ *  1–3. Re-attribute the user's content (`definition_record` / `post_summary` /
+ *       `comment_record`): `author_id := silinen`, denormalized `author_name`
  *       overwritten. Content stays Live (`removed_at` untouched) — this is
  *       re-attribution, not removal — so its votes/scores and the karma they
  *       earned ride along untouched.
@@ -645,9 +648,9 @@ export const makePasaportLive = (auth: Auth) =>
  */
 function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string | null, now: Date) {
 	const reattributeDefs = db
-		.update(schema.definitionView)
+		.update(schema.definitionRecord)
 		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
-		.where(eq(schema.definitionView.authorId, userId));
+		.where(eq(schema.definitionRecord.authorId, userId));
 
 	const reattributePosts = db
 		.update(schema.postSummary)
@@ -655,9 +658,9 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 		.where(eq(schema.postSummary.authorId, userId));
 
 	const reattributeComments = db
-		.update(schema.commentView)
+		.update(schema.commentRecord)
 		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
-		.where(eq(schema.commentView.authorId, userId));
+		.where(eq(schema.commentRecord.authorId, userId));
 
 	const dropSessions = db.delete(schema.session).where(eq(schema.session.userId, userId));
 	const dropAccounts = db.delete(schema.account).where(eq(schema.account.userId, userId));

@@ -150,7 +150,7 @@ export const ReportLive = Layer.effect(Report)(
 			const exists = yield* run((db) => {
 				switch (kind) {
 					case "definition":
-						return db.query.definitionView.findFirst({
+						return db.query.definitionRecord.findFirst({
 							where: {id: targetId, removedAt: {isNull: true}},
 							columns: {id: true},
 						});
@@ -160,7 +160,7 @@ export const ReportLive = Layer.effect(Report)(
 							columns: {id: true},
 						});
 					case "comment":
-						return db.query.commentView.findFirst({
+						return db.query.commentRecord.findFirst({
 							where: {id: targetId, removedAt: {isNull: true}},
 							columns: {id: true},
 						});

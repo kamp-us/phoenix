@@ -178,6 +178,28 @@ pure-membership and batch-mergeable, the resolver is where authorization-masking
 error-translation happen. fate itself never queries the database — handlers delegate to
 the domain services.
 
+### Store of record vs. data view — "view" names the fate read-shape only
+
+Two unrelated module kinds in the same feature folder once both wore the word "view"; the
+vocabulary now keeps them apart.
+
+- **Store of record (`*_record` Drizzle table).** The authoritative, **mutated** D1 table
+  add/edit/remove write directly to under the D1-direct model (ADR
+  [0009](../.decisions/0009-d1-direct-no-projection.md) — there is no projection layer).
+  `definition_record` / `comment_record` (Drizzle `definitionRecord` / `commentRecord`) are
+  the canonical stores whose loss *is* data loss. The `_record` suffix is load-bearing: it
+  reads as "store of record" and reserves "view" for the data view below. They were renamed
+  off the projection-era `*_view` name in #853 — that name lied about the module kind (a
+  reader assumes a rebuildable read-projection) and collided one capital apart with the fate
+  data view.
+- **Data view (fate `FateDataView`).** A pure read-shape *declaration* — the fields a fate
+  entity exposes, not a table. `DefinitionView` / `CommentView` (PascalCase, in each
+  feature's `views.ts`) declare what the loader/resolver above project; they hold no rows and
+  are never written. See the "data view" row in [`TERMS.md`](./TERMS.md).
+
+The test: if you can `INSERT`/`UPDATE` it, it's a store of record (`*_record`); if it only
+*declares fields to read*, it's a data view (`*View`). Never name a write target a "view."
+
 ### The LiveDO connection / topic roles
 
 Cross-isolate live (SSE) fan-out is carried by **one** `LiveDO` Durable Object class that

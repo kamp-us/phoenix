@@ -1,7 +1,11 @@
 /**
  * `@kampus/db-schema` — the single canonical Drizzle declaration of the D1
- * read-model tables that more than one package reads: `term_summary`,
- * `definition_view`, `post_summary`, `comment_view`. This is a LEAF (depends only
+ * tables that more than one package reads: `term_summary`, `definition_record`,
+ * `post_summary`, `comment_record`. `definition_record`/`comment_record` are the
+ * authoritative **mutated stores of record** (D1-direct, ADR 0009); they carry the
+ * `_record` suffix so the name reads as "store of record" and stays distinct from
+ * the fate `DefinitionView`/`CommentView` data-view tags one capital apart (#853).
+ * This is a LEAF (depends only
  * on `drizzle-orm`), so the worker, `@kampus/preview-seed`, and
  * `@kampus/fts-backfill` can all import from it with no dependency cycle —
  * `fts-backfill` already prod-depends on `@kampus/web`, and the repo deliberately
@@ -71,8 +75,8 @@ export const termSummary = sqliteTable(
  * `last_event_id` is vestigial (projection-era convergence guard, unused under
  * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
  */
-export const definitionView = sqliteTable(
-	"definition_view",
+export const definitionRecord = sqliteTable(
+	"definition_record",
 	{
 		id: text("id").primaryKey(),
 		authorId: text("author_id").notNull(),
@@ -94,9 +98,9 @@ export const definitionView = sqliteTable(
 	},
 	(t) => [
 		// WHERE author_id = ? ORDER BY created_at DESC (profile feed).
-		index("definition_view_author_created").on(t.authorId, t.createdAt),
+		index("definition_record_author_created").on(t.authorId, t.createdAt),
 		// WHERE term_slug = ? AND removed_at IS NULL (term page).
-		index("definition_view_term_score").on(t.termSlug, t.score),
+		index("definition_record_term_score").on(t.termSlug, t.score),
 	],
 );
 
@@ -128,7 +132,7 @@ export const postSummary = sqliteTable(
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
 		lastActivityAt: timestamp("last_activity_at").notNull(),
-		// The ADR 0096 removal triad (see `definition_view`). `removed_at` is the
+		// The ADR 0096 removal triad (see `definition_record`). `removed_at` is the
 		// former `deleted_at`. Pano posts that hard-deleted pre-substrate are gone
 		// and not reconstructable; new removals are soft `Removed`, karma kept.
 		removedAt: timestamp("removed_at"),
@@ -167,8 +171,8 @@ export const postSummary = sqliteTable(
  * `last_event_id` is vestigial (projection-era convergence guard, unused under
  * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
  */
-export const commentView = sqliteTable(
-	"comment_view",
+export const commentRecord = sqliteTable(
+	"comment_record",
 	{
 		id: text("id").primaryKey(),
 		authorId: text("author_id").notNull(),
@@ -183,7 +187,7 @@ export const commentView = sqliteTable(
 		score: integer("score").notNull().default(0),
 		createdAt: timestamp("created_at").notNull(),
 		updatedAt: timestamp("updated_at").notNull(),
-		// The ADR 0096 removal triad (see `definition_view`). `removed_at` is the
+		// The ADR 0096 removal triad (see `definition_record`). `removed_at` is the
 		// former `deleted_at`.
 		removedAt: timestamp("removed_at"),
 		removedBy: text("removed_by"),
@@ -192,10 +196,10 @@ export const commentView = sqliteTable(
 	},
 	(t) => [
 		// WHERE author_id = ? ORDER BY created_at DESC (profile feed).
-		index("comment_view_author_created").on(t.authorId, t.createdAt),
+		index("comment_record_author_created").on(t.authorId, t.createdAt),
 		// WHERE post_id = ? ORDER BY created_at ASC (per-post thread).
-		index("comment_view_post").on(t.postId),
+		index("comment_record_post").on(t.postId),
 		// Reply-aware soft-delete children-of-parent check.
-		index("comment_view_parent").on(t.parentId),
+		index("comment_record_parent").on(t.parentId),
 	],
 );

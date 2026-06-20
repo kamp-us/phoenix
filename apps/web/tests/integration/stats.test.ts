@@ -18,7 +18,7 @@
  * to that without depending on an exact starting count.
  *
  * not portable black-box: the `landing-stats.test.ts` direct-D1 COUNT parity
- * assertions (`total_definitions === COUNT(*) FROM definition_view`, distinct
+ * assertions (`total_definitions === COUNT(*) FROM definition_record`, distinct
  * `total_authors` across view tables, `pano_stats` post/comment parity) — the
  * raw view tables aren't on the wire; re-expressed as observable deltas.
  * not portable black-box: the soft-delete decrement probe (`deleteDefinition`
