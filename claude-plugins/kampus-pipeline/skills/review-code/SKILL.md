@@ -676,7 +676,46 @@ gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/nu
 # run the gating verification below ONLY when:  [ "$CONTAINMENT" = flag ] && [ "$CYCLE_DOC" = present ]
 ```
 
-When it **does** fire, verify all three facets of the **default = safe-state** invariant — the
+**Zero-scope = FAIL — a `flag`-marked PR that touches no user-facing surface fails (ADR 0092 / §ZS).**
+A `**Containment:** flag (default-off)` marker is the issue *claiming to deliver user-facing value*
+shipped dark — so when this check fires, the PR's user-facing surface is the gate's relevant input,
+and an **empty** surface is precisely the silent-no-op trap §ZS closes: with nothing to verify, the
+three-facet check below would vacuously pass and the gate would wave through a "feature" PR that
+changed no user-facing code (the unfiring-gate class — `gh-issue-intake-formats.md` §ZS, ADR
+[0092](https://github.com/kamp-us/phoenix/blob/main/.decisions/0092-gates-fail-closed-on-zero-scope.md)).
+So, before the facet checks, **scan the diff for a user-facing surface, emit what you scanned, and
+FAIL CLOSED when it is empty.** The user-facing surface is the set of changed paths a user can
+reach — **`apps/web/src/**/*.tsx`** (UI), and **new fate resolvers / HTTP routes / mutations** under
+`apps/web/worker/**` (the data + API surface a flag would gate). This is deliberately the *reachable*
+surface, not "any file": a `flag`-marked PR whose entire diff is a refactor, a test, a doc, or a
+config change is one that shipped **no** user-facing path to contain, which on a `flag` marker is the
+FAIL — there is no dark feature here to gate (it is **not** a graceful skip; the skip is for
+`exempt`/`none`/absent above, where the gate is *out of surface* — here the marker put it *in*
+surface and the surface came back empty):
+
+```bash
+# the PR's user-facing surface (reachable UI + new data/API entry points), off the changed file set.
+# Emit the count + matched paths (ADR 0092 §ZS #1 — a gate states its scope), then fail closed on zero.
+FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # the changed paths (same set Step 2 pulled; --paginate past file #100, #725)
+USERFACING=$(printf '%s\n' "$FILES" | grep -E '^apps/web/src/.*\.tsx$|^apps/web/worker/.*\.(ts|tsx)$' || true)
+USERFACING_N=$(printf '%s\n' "$USERFACING" | grep -c . || true)
+echo "flag-gating user-facing scope: $USERFACING_N path(s) matched"; printf '%s\n' "$USERFACING"
+if [ "$USERFACING_N" -eq 0 ]; then
+  # relevant input (flag marker present), zero matches ⇒ FAIL CLOSED, never a silent PASS (§ZS #2).
+  # Emit ONE [FAIL] row into the conjunctive verdict; the PR is not merge-ready.
+  echo "- [FAIL] flag-gating (default-off) — \`**Containment:** flag\` marks a dark-shipped feature, but the diff touches NO user-facing surface (apps/web/src/**/*.tsx, new apps/web/worker/** resolver/route/mutation): empty scope on a flag-marked PR is a FAIL (ADR 0092 §ZS), not a pass — there is no user-facing path to gate."
+fi
+```
+
+The matched-paths emit is **load-bearing, not narration** (§ZS #1): the verdict states the exact
+user-facing scope it found, so a future drift where this scan silently stops matching is visible in
+the run output rather than reading green. When `USERFACING_N` is zero you **stop the Step 3b work
+here** — the empty-scope `[FAIL]` row is the verdict's flag-gating entry, and the conjunctive rule
+(Step 3) makes it fail the PR; do **not** fall through to the facet checks (there is no gated path to
+inspect). Only a **non-empty** user-facing scope proceeds to the three facets below.
+
+When it **does** fire **with a non-empty user-facing scope**, verify all three facets of the
+**default = safe-state** invariant — the
 load-bearing flag contract grounded in
 [`.patterns/feature-flags.md`](https://github.com/kamp-us/phoenix/blob/main/.patterns/feature-flags.md)
 (§The one invariant) and the dark-ship procedure in
@@ -707,10 +746,15 @@ like any other criterion:
 ```
 - [PASS] flag-gating (default-off) — resources.ts:NN defaultVariation:"off"; reads pass old-path default (worker/...:NN, src/...:NN); new path gated behind FlagGate, no ungated entry
 - [FAIL] flag-gating (default-off) — <which facet failed: e.g. useFlag(key, true) defaults to the NEW path → ships live>
+- [FAIL] flag-gating (default-off) — flag-marked PR touches no user-facing surface (apps/web/src/**/*.tsx, new apps/web/worker/** resolver/route/mutation): empty scope = FAIL (ADR 0092 §ZS)
 ```
 
 When the marker is `exempt`/`none`/absent or no cycle doc exists, **omit this row entirely** — a
 skipped check is not an `UNVERIFIABLE` (which is a soft fail); it contributes nothing, by design.
+That graceful omission is **only** for the out-of-surface case (no marker / no cycle); it is **not**
+the same as the empty-user-facing-scope FAIL above, where the marker *is* present and the gate's
+relevant surface came back empty — that one emits the `[FAIL]` row, never omits it (the §ZS #2 vs #3
+distinction: a relevant-but-zero-match FAIL is not an out-of-surface skip).
 
 ### Step 3c — Glossary-freshness gate: a new surface MUST touch `.glossary/TERMS.md`
 
