@@ -11,6 +11,7 @@ import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import type {MutationErrorCode} from "../../lib/mutationErrorCodes";
 import {authRedirectPath} from "../../lib/returnTo";
+import {useToggleAction} from "../pano/useToggleAction";
 import {Button} from "../ui/Button";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
@@ -72,7 +73,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const [editError, setEditError] = React.useState<string | null>(null);
 	const [confirmDelete, setConfirmDelete] = React.useState(false);
 	const [deleteError, setDeleteError] = React.useState<string | null>(null);
-	const [inFlight, setInFlight] = React.useState(false);
 	const [editInFlight, setEditInFlight] = React.useState(false);
 	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
 
@@ -88,31 +88,36 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		return false;
 	}
 
-	async function onVoteClick() {
-		if (redirectIfSignedOut() || inFlight) return;
-		setInFlight(true);
-		try {
-			if (voted) {
-				await fate.mutations.definition.retractVote({
-					input: {id: definition.id},
-					optimistic: {score: Math.max(0, definition.score - 1), myVote: null},
-					view: DefinitionView,
-				});
-			} else {
-				await fate.mutations.definition.vote({
-					input: {id: definition.id},
-					optimistic: {score: definition.score + 1, myVote: 1},
-					view: DefinitionView,
-				});
+	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818/#865).
+	const driveVote = useToggleAction(() => ({
+		on: voted,
+		dispatch: async (action) => {
+			try {
+				if (action === "unset") {
+					await fate.mutations.definition.retractVote({
+						input: {id: definition.id},
+						optimistic: {score: Math.max(0, definition.score - 1), myVote: null},
+						view: DefinitionView,
+					});
+				} else {
+					await fate.mutations.definition.vote({
+						input: {id: definition.id},
+						optimistic: {score: definition.score + 1, myVote: 1},
+						view: DefinitionView,
+					});
+				}
+			} catch (error) {
+				// Boundary-class throw (fate classifies phoenix codes as boundary).
+				// The optimistic flip already rolled back; surface UNAUTHORIZED as a
+				// redirect, otherwise stay silent on the vote button (no inline slot).
+				if (codeOf(error) === "UNAUTHORIZED") redirectIfSignedOut();
 			}
-		} catch (error) {
-			// Boundary-class throw (fate classifies phoenix codes as boundary).
-			// The optimistic flip already rolled back; surface UNAUTHORIZED as a
-			// redirect, otherwise stay silent on the vote button (no inline slot).
-			if (codeOf(error) === "UNAUTHORIZED") redirectIfSignedOut();
-		} finally {
-			setInFlight(false);
-		}
+		},
+	}));
+
+	function onVoteClick() {
+		if (redirectIfSignedOut()) return;
+		driveVote();
 	}
 
 	async function onEditSubmit(e: React.SyntheticEvent) {
@@ -215,7 +220,6 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					aria-pressed={voted}
 					aria-label={voted ? "Oyunu geri al" : "Yukarı oy"}
 					data-testid={`definition-vote-${definition.id}`}
-					disabled={inFlight}
 					onClick={onVoteClick}
 				>
 					<span className="triangle" />
