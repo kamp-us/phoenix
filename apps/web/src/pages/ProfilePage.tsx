@@ -2,6 +2,7 @@ import {useEffect, useRef, useState} from "react";
 import {Navigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
+import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {type ThemeChoice, useTheme} from "../lib/theme";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
@@ -28,6 +29,7 @@ export function ProfilePage() {
 	const {choice: themeChoice, setChoice: setThemeChoice} = useTheme();
 	const [revokingAll, setRevokingAll] = useState(false);
 	const [revokeAllError, setRevokeAllError] = useState<string | null>(null);
+	const [deleteOpen, setDeleteOpen] = useState(false);
 
 	const u = session.data?.user;
 	const name = u?.name ?? u?.email.split("@")[0] ?? "user";
@@ -89,6 +91,15 @@ export function ProfilePage() {
 		clearBearerToken();
 		await authClient.signOut();
 		clearBearerToken();
+	}
+
+	// account.delete already tore down every session row server-side, so this only
+	// drops the now-dead local bearer + refetches the (now empty) session; the
+	// <Navigate to="/auth"> guard lands the sessionless user on auth.
+	async function onAccountDeleted() {
+		clearBearerToken();
+		setDeleteOpen(false);
+		await session.refetch();
 	}
 
 	return (
@@ -224,16 +235,27 @@ export function ProfilePage() {
 				<section className="kp-profile__section kp-profile__section--last">
 					<h3 className="danger">tehlikeli alan</h3>
 					<p>
-						hesabını kaldırırsan başlıkların ve tanımların 30 gün arşivde tutulur, sonra silinir.
-						yorumlar @[silinen]'e atanır.
+						hesabını kaldırırsan başlıkların, tanımların ve yorumların silinmez — @[silinen] adına
+						aktarılır, karmaları korunur. hesabın kimliği (e-posta, oturumlar) kalıcı olarak
+						kaldırılır; aynı e-posta ileride yeniden kayıt olabilir. bu işlem geri alınamaz.
 					</p>
 					<div className="kp-profile__danger">
-						<button type="button" className="danger">
+						<button
+							type="button"
+							className="danger"
+							data-testid="delete-account-btn"
+							onClick={() => setDeleteOpen(true)}
+						>
 							hesabı kaldır
 						</button>
 					</div>
 				</section>
 			</div>
+			<DeleteAccountDialog
+				open={deleteOpen}
+				onOpenChange={setDeleteOpen}
+				onConfirmed={onAccountDeleted}
+			/>
 		</div>
 	);
 }

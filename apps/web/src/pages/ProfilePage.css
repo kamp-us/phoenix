@@ -212,3 +212,14 @@
 	color: var(--danger);
 	margin: var(--s-2) 0 0;
 }
+.kp-profile__confirm-phrase {
+	margin: 0 0 var(--s-2);
+}
+.kp-profile__confirm-phrase code {
+	font: var(--t-mono, monospace);
+	user-select: all;
+}
+.kp-profile__confirm-input {
+	width: 100%;
+	box-sizing: border-box;
+}
