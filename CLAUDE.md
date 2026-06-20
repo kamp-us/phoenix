@@ -73,14 +73,18 @@ no `wrangler.jsonc`. `alchemy deploy --stage <name>` yields an isolated worker +
 - **Ground Effect API/design decisions in effect-smol's `LLMS.md`** (and its `ai-docs/` examples) **over intuition** — when the documented idiom and a "cleaner" instinct conflict, the documented idiom wins; cite it by section. Deviations from it must be justified by a real platform constraint (e.g. CF isolates have no shutdown hook), not preference.
 - **If you rely on a pattern not yet in `.patterns/`, add or extend a doc for it** (per the "When to add a new pattern doc" criteria in [.patterns/index.md](./.patterns/index.md)) — don't leave a load-bearing pattern undocumented.
 - In-repo docs: standard markdown links (`[text](relative/path.md)`), not Obsidian `[[wikilinks]]`; use real resolvable paths, no placeholders.
-- Doc surfaces: `README` = current state for builders (never carry retired or old-problem context a new reader has no frame for); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped.
+- Doc surfaces: `README` = current state for builders (never carry retired or old-problem context a new reader has no frame for); `.decisions/` = the why + history, including superseded approaches; `.patterns/` = how the current code is shaped; `.glossary/` = the canonical vocabulary (architecture terms + product/brand nouns).
 - Decisions are product-driven by default; engineering leads only on platform/infra (the pipeline, fate/DO substrate, infra primitives) — see ADR [0078](.decisions/0078-product-driven-decisions-by-default.md).
-- **Turkish for product/brand, English for technical.** Product/brand names (sözlük, pano, bildir, künye, imge) and user-facing copy stay Turkish; everything technical is English — URL routes/paths, code identifiers, D1 table/column names, file names. Canonical example: the route is `/search?q=`, not `/ara`.
+- **Turkish for product/brand, English for technical.** Product/brand names and user-facing copy stay Turkish; everything technical is English — URL routes/paths, code identifiers, D1 table/column names, file names. The canonical vocabulary lives in [`.glossary/LANGUAGE.md`](.glossary/LANGUAGE.md) — read it; the brand-noun list and the architecture terms (module / interface / depth / seam / …) are defined there, not duplicated here.
 - **Every dependency via `catalog:`.** Each dep in any `package.json` is sourced from the pnpm workspace `catalog:` (declared once in `pnpm-workspace.yaml`), never a hardcoded version string — one shared version per dep across the repo. When a dep is also a transitive dep of something already in the tree, catalog it at the EXACT version that parent links (don't introduce a second version). Incident: PR #535 hardcoded `@distilled.cloud/cloudflare` and broke frozen-lockfile CI.
 
 ## Decisions
 
 See [.decisions/index.md](./.decisions/index.md) — read the row, open the file when you need the why. Record new decisions with `/adr`.
+
+## Vocabulary
+
+See [.glossary/LANGUAGE.md](./.glossary/LANGUAGE.md) — the canonical architecture vocabulary (module / interface / implementation / depth / seam / adapter / leverage / locality + the deletion test), extended with phoenix's own structural terms (the T0–T3 test tiers, the fate loader/resolver split, the LiveDO connection/topic roles) and the product/brand nouns. This is the single source for those terms; don't redefine them inline.
 
 ## Patterns
 
