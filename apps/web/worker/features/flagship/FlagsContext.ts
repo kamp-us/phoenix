@@ -16,6 +16,7 @@ import {CurrentUser} from "@kampus/fate-effect";
 import type {FlagshipEvaluationContext} from "alchemy/Cloudflare";
 import {Context, Effect} from "effect";
 import {AppConfig} from "../../config.ts";
+import {type FlagOverrides, parseOverrideCookie} from "./dev-override.ts";
 
 /** The domain-facing per-request evaluation context. */
 export interface FlagsContextValue {
@@ -38,6 +39,16 @@ export interface FlagsContextValue {
 	 * {@link makeRequestFlagsContext}, never hand-passed (#512).
 	 */
 	readonly environment?: string;
+	/**
+	 * Dev-only local flag overrides (#622), read from the request's
+	 * `phoenix_flag_overrides` cookie. ONLY ever populated by `provideRequestFlags`
+	 * when `environment === "development"` (fail-closed); in every deployed stage it
+	 * stays `undefined` and the dev-only override wrapper that reads it isn't even
+	 * installed (`http/app.ts`), so this never affects a deployed flag read. Carried
+	 * here — not mapped into the provider wire shape (`toEvaluationContext` ignores
+	 * it) — because it is a local short-circuit, not a targeting attribute.
+	 */
+	readonly overrides?: FlagOverrides;
 }
 
 export class FlagsContext extends Context.Service<FlagsContext, FlagsContextValue>()(
@@ -60,13 +71,28 @@ export const anonymousFlagsContext: FlagsContextValue = {};
  * bucketing, roles for attribute targeting); pass `anonymousFlagsContext` for an
  * unauthenticated request. The environment is always populated from the stage —
  * it is a deploy-time fact about the request, not a per-user one.
+ *
+ * `cookieHeader` is the request's raw `Cookie` header (#622). Dev overrides are
+ * parsed from it ONLY when `environment === "development"` — the load-bearing
+ * fail-closed gate: since `ENVIRONMENT` defaults to `"production"` (`config.ts`),
+ * a deployed stage never reads the cookie, so `overrides` stays `undefined` and an
+ * attacker-supplied `phoenix_flag_overrides` cookie can never flip a flag in prod.
  */
-export const makeRequestFlagsContext = (identity: FlagsContextValue) =>
+export const makeRequestFlagsContext = (
+	identity: FlagsContextValue,
+	cookieHeader?: string | null,
+) =>
 	Effect.gen(function* () {
 		// `orDie`: a `ConfigError` (value outside the two literals) is a malformed
 		// env, unrecoverable — match the health route's read of the same var.
 		const {environment} = yield* AppConfig.pipe(Effect.orDie);
-		return {...identity, environment} satisfies FlagsContextValue;
+		// THE GATE: overrides exist only under `development`. Any other stage (incl.
+		// the `production` fail-closed default) drops the cookie entirely. An empty
+		// map (no cookie / a cleared one) is dropped too, so the context carries
+		// `overrides` only when there's an actual local flip to apply.
+		const parsed = environment === "development" ? parseOverrideCookie(cookieHeader) : undefined;
+		const overrides = parsed && Object.keys(parsed).length > 0 ? parsed : undefined;
+		return {...identity, environment, ...(overrides ? {overrides} : {})} satisfies FlagsContextValue;
 	});
 
 /**

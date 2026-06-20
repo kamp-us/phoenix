@@ -74,6 +74,46 @@ export interface FlagsAccess {
 export class Flags extends Context.Service<Flags, FlagsAccess>()("@kampus/Flags") {}
 
 /**
+ * Build the real {@link FlagsAccess} over a resolved `Flagship` client — the
+ * per-isolate read surface, captured at layer build so each read's only
+ * per-request requirement is the `FlagsContext` it reads at call time. Extracted
+ * from the layer so `FlagsDevOverrideLive` can decorate the same surface (#622).
+ */
+const buildRealFlags = (flagship: Flagship["Service"]): FlagsAccess => ({
+	getBoolean: (key, defaultValue) =>
+		Effect.gen(function* () {
+			const context = yield* FlagsContext;
+			return yield* flagship
+				.getBooleanValue(key, defaultValue, toEvaluationContext(context))
+				// Any `FlagshipError` (misconfigured/unreachable binding) collapses to
+				// the supplied default — the safe-default contract that makes a
+				// Flagship outage degrade safe (contract 1 above).
+				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+		}),
+	getString: (key, defaultValue) =>
+		Effect.gen(function* () {
+			const context = yield* FlagsContext;
+			return yield* flagship
+				.getStringValue(key, defaultValue, toEvaluationContext(context))
+				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+		}),
+	getNumber: (key, defaultValue) =>
+		Effect.gen(function* () {
+			const context = yield* FlagsContext;
+			return yield* flagship
+				.getNumberValue(key, defaultValue, toEvaluationContext(context))
+				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+		}),
+	getObject: (key, defaultValue) =>
+		Effect.gen(function* () {
+			const context = yield* FlagsContext;
+			return yield* flagship
+				.getObjectValue(key, defaultValue, toEvaluationContext(context))
+				.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
+		}),
+});
+
+/**
  * Resolved once per isolate from the init-bound `Flagship` client (the #507
  * seam). The client is captured at layer build, so `getBoolean`'s only
  * per-request requirement is the `FlagsContext` it reads at call time.
@@ -82,38 +122,44 @@ export const FlagsLive = Layer.effect(
 	Flags,
 	Effect.gen(function* () {
 		const flagship = yield* Flagship;
-		return Flags.of({
-			getBoolean: (key, defaultValue) =>
-				Effect.gen(function* () {
-					const context = yield* FlagsContext;
-					return yield* flagship
-						.getBooleanValue(key, defaultValue, toEvaluationContext(context))
-						// Any `FlagshipError` (misconfigured/unreachable binding) collapses to
-						// the supplied default — the safe-default contract that makes a
-						// Flagship outage degrade safe (contract 1 above).
-						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
-				}),
-			getString: (key, defaultValue) =>
-				Effect.gen(function* () {
-					const context = yield* FlagsContext;
-					return yield* flagship
-						.getStringValue(key, defaultValue, toEvaluationContext(context))
-						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
-				}),
-			getNumber: (key, defaultValue) =>
-				Effect.gen(function* () {
-					const context = yield* FlagsContext;
-					return yield* flagship
-						.getNumberValue(key, defaultValue, toEvaluationContext(context))
-						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
-				}),
-			getObject: (key, defaultValue) =>
-				Effect.gen(function* () {
-					const context = yield* FlagsContext;
-					return yield* flagship
-						.getObjectValue(key, defaultValue, toEvaluationContext(context))
-						.pipe(Effect.catch(() => Effect.succeed(defaultValue)));
-				}),
-		});
+		return Flags.of(buildRealFlags(flagship));
+	}),
+);
+
+/**
+ * Decorate a real {@link FlagsAccess} with the dev-only local override (#622): a
+ * boolean read whose key is present in the per-request `FlagsContext.overrides`
+ * returns the forced value; every other read (and every typed/non-boolean read)
+ * delegates unchanged to `inner`. Overrides are boolean-only — the local-flip
+ * surface forces a dark-ship boolean on/off; typed variations stay on real eval.
+ *
+ * Pure decorator (no Layer) so the short-circuit is unit-testable over a stub
+ * `FlagsAccess` without a binding. The wrapper this powers (`FlagsDevOverrideLive`)
+ * is installed ONLY in development (`http/app.ts`); `inner.getBoolean` still reads
+ * `FlagsContext`, so the decorated read's per-request requirement is unchanged.
+ */
+export const withDevOverrides = (inner: FlagsAccess): FlagsAccess => ({
+	...inner,
+	getBoolean: (key, defaultValue) =>
+		Effect.gen(function* () {
+			const {overrides} = yield* FlagsContext;
+			const override = overrides?.[key];
+			return override !== undefined ? override : yield* inner.getBoolean(key, defaultValue);
+		}),
+});
+
+/**
+ * The dev-only override `Flags` layer (#622): `FlagsLive`'s surface decorated with
+ * {@link withDevOverrides}. Built from the same init-bound `Flagship` client, so it
+ * is a drop-in replacement for `FlagsLive` in the per-request set — `http/app.ts`
+ * picks this layer instead of `FlagsLive` ONLY when `environment === "development"`.
+ * In any deployed stage this layer is never built, so the override branch is
+ * structurally absent from the prod flag path (the load-bearing #622 gate).
+ */
+export const FlagsDevOverrideLive = Layer.effect(
+	Flags,
+	Effect.gen(function* () {
+		const flagship = yield* Flagship;
+		return Flags.of(withDevOverrides(buildRealFlags(flagship)));
 	}),
 );
