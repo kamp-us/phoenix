@@ -6,11 +6,12 @@
 # (a human governance action — see ADR 0071 §3 and the PR that adds this file).
 /.claude/                       @usirin
 /.github/                       @usirin
-/skills/ship-it/                @usirin
-/skills/review-code/            @usirin
-/skills/review-doc/             @usirin
-/skills/review-plan/            @usirin
-/skills/gh-issue-intake-formats.md  @usirin
+/claude-plugins/kampus-pipeline/skills/ship-it/                    @usirin
+/claude-plugins/kampus-pipeline/skills/review-code/                @usirin
+/claude-plugins/kampus-pipeline/skills/review-doc/                 @usirin
+/claude-plugins/kampus-pipeline/skills/review-skill/               @usirin
+/claude-plugins/kampus-pipeline/skills/review-plan/                @usirin
+/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @usirin
 # Control-plane: enforcement guard packages — the platform half of the §CP regex extension (ADR 0100).
 /packages/spawn-guard/          @usirin
 /packages/leak-guard/           @usirin
