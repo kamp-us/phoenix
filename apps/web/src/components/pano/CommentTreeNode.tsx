@@ -5,18 +5,15 @@
  */
 import * as React from "react";
 import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
-import {useNavigate} from "react-router";
 import type {Comment} from "../../../worker/features/fate/views";
-import {useSession} from "../../auth/client";
-import {codeOf, toIso} from "../../fate/wire";
+import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
-import {authRedirectPath} from "../../lib/returnTo";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {useToggleAction} from "./useToggleAction";
+import {currentLocationReturnTo, useVoteToggle} from "./useVoteToggle";
 import "./PanoComment.css";
 
 export const CommentTreeNodeView = view<Comment>()({
@@ -69,8 +66,6 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const {onReport} = props;
 	const {replyComposer, editComposer} = props.composerFor(data.id);
 	const localId = data.id;
-	const session = useSession();
-	const navigate = useNavigate();
 	const [open, setOpen] = React.useState(true);
 
 	const isDeleted = data.deletedAt != null;
@@ -90,42 +85,21 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 		.filter(Boolean)
 		.join(" ");
 
-	const redirectToAuth = () =>
-		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
-
-	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818).
-	const driveVote = useToggleAction(() => ({
-		on: voted,
-		dispatch: async (action) => {
-			try {
-				if (action === "unset") {
-					await fate.mutations.comment.retractVote({
-						input: {id: data.id},
-						optimistic: {score: Math.max(0, score - 1), myVote: null},
-						view: CommentVoteView,
-					});
-				} else {
-					await fate.mutations.comment.vote({
-						input: {id: data.id},
-						optimistic: {score: score + 1, myVote: 1},
-						view: CommentVoteView,
-					});
-				}
-			} catch (error) {
-				// The vote button has no inline error slot, so we surface only
-				// UNAUTHORIZED (→ redirect) and stay silent otherwise.
-				if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
-			}
+	const onUpvote = useVoteToggle({
+		voted,
+		score,
+		returnTo: currentLocationReturnTo,
+		mutations: {
+			vote: (optimistic) =>
+				fate.mutations.comment.vote({input: {id: data.id}, optimistic, view: CommentVoteView}),
+			retractVote: (optimistic) =>
+				fate.mutations.comment.retractVote({
+					input: {id: data.id},
+					optimistic,
+					view: CommentVoteView,
+				}),
 		},
-	}));
-
-	const onUpvote = () => {
-		if (!session.data?.user) {
-			redirectToAuth();
-			return;
-		}
-		driveVote();
-	};
+	});
 
 	return (
 		<article className={cls} id={`comment-${data.id}`}>

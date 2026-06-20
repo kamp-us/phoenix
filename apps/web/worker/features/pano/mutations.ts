@@ -17,7 +17,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
-import {FlagsContext, makeRequestFlagsContext} from "../flagship/FlagsContext.ts";
+import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
@@ -190,10 +190,7 @@ export const mutations = {
 		Effect.fn("post.saveDraft")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const flags = yield* Flags;
-			const context = yield* makeRequestFlagsContext({userId: user.id});
-			const on = yield* flags
-				.getBoolean(PANO_DRAFT_SAVE, false)
-				.pipe(Effect.provideService(FlagsContext, context));
+			const on = yield* flags.getBoolean(PANO_DRAFT_SAVE, false).pipe(provideRequestFlags);
 			if (!on) {
 				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
 			}
@@ -226,10 +223,7 @@ export const mutations = {
 		Effect.fn("post.discardDraft")(function* () {
 			const user = yield* CurrentUser.required;
 			const flags = yield* Flags;
-			const context = yield* makeRequestFlagsContext({userId: user.id});
-			const on = yield* flags
-				.getBoolean(PANO_DRAFT_SAVE, false)
-				.pipe(Effect.provideService(FlagsContext, context));
+			const on = yield* flags.getBoolean(PANO_DRAFT_SAVE, false).pipe(provideRequestFlags);
 			if (!on) {
 				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
 			}

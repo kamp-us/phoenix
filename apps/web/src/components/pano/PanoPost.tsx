@@ -1,11 +1,8 @@
 import {useFateClient} from "react-fate";
-import {Link, useNavigate} from "react-router";
-import {useSession} from "../../auth/client";
-import {codeOf} from "../../fate/wire";
-import {authRedirectPath} from "../../lib/returnTo";
+import {Link} from "react-router";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
-import {useToggleAction} from "./useToggleAction";
+import {currentLocationReturnTo, useGatedToggle, useVoteToggle} from "./useVoteToggle";
 import "./PanoPost.css";
 
 /** Presentational vote control; the parent owns the mutation + auth gate. */
@@ -60,45 +57,20 @@ export function PostVoteWidget({
 	myVote: number | null;
 }) {
 	const fate = useFateClient();
-	const session = useSession();
-	const navigate = useNavigate();
 
 	const voted = myVote === 1;
 
-	const redirectToAuth = () =>
-		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
-
-	// Serialize-and-supersede so a rapid vote→unvote does not drop the retract (#818).
-	const drive = useToggleAction(() => ({
-		on: voted,
-		dispatch: async (action) => {
-			try {
-				if (action === "unset") {
-					await fate.mutations.post.retractVote({
-						input: {id: postId},
-						optimistic: {score: Math.max(0, score - 1), myVote: null},
-						view: PostVoteView,
-					});
-				} else {
-					await fate.mutations.post.vote({
-						input: {id: postId},
-						optimistic: {score: score + 1, myVote: 1},
-						view: PostVoteView,
-					});
-				}
-			} catch (error) {
-				if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
-			}
+	const onToggle = useVoteToggle({
+		voted,
+		score,
+		returnTo: currentLocationReturnTo,
+		mutations: {
+			vote: (optimistic) =>
+				fate.mutations.post.vote({input: {id: postId}, optimistic, view: PostVoteView}),
+			retractVote: (optimistic) =>
+				fate.mutations.post.retractVote({input: {id: postId}, optimistic, view: PostVoteView}),
 		},
-	}));
-
-	const onToggle = () => {
-		if (!session.data?.user) {
-			redirectToAuth();
-			return;
-		}
-		drive();
-	};
+	});
 
 	return <VoteControl count={score} pressed={voted} onToggle={onToggle} testIdSuffix={postId} />;
 }
@@ -115,45 +87,30 @@ export function PostVoteWidget({
  */
 export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: boolean | null}) {
 	const fate = useFateClient();
-	const session = useSession();
-	const navigate = useNavigate();
 
 	const saved = isSaved === true;
 
-	const redirectToAuth = () =>
-		navigate(authRedirectPath(`${window.location.pathname}${window.location.search}`));
-
-	// Serialize-and-supersede so a rapid save→unsave does not drop the unsave (#825).
-	const drive = useToggleAction(() => ({
+	// The save delta is a plain `isSaved` flip (no score floor), so it drives the
+	// shared gate directly rather than through the vote specialization.
+	const onToggle = useGatedToggle({
 		on: saved,
+		returnTo: currentLocationReturnTo,
 		dispatch: async (action) => {
-			try {
-				if (action === "unset") {
-					await fate.mutations.post.unsave({
-						input: {id: postId},
-						optimistic: {isSaved: false},
-						view: PostSaveView,
-					});
-				} else {
-					await fate.mutations.post.save({
-						input: {id: postId},
-						optimistic: {isSaved: true},
-						view: PostSaveView,
-					});
-				}
-			} catch (error) {
-				if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+			if (action === "unset") {
+				await fate.mutations.post.unsave({
+					input: {id: postId},
+					optimistic: {isSaved: false},
+					view: PostSaveView,
+				});
+			} else {
+				await fate.mutations.post.save({
+					input: {id: postId},
+					optimistic: {isSaved: true},
+					view: PostSaveView,
+				});
 			}
 		},
-	}));
-
-	const onToggle = () => {
-		if (!session.data?.user) {
-			redirectToAuth();
-			return;
-		}
-		drive();
-	};
+	});
 
 	return (
 		<button
