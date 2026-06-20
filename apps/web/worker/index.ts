@@ -25,6 +25,7 @@ import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
 import {Flagship, FlagshipLive} from "./features/flagship/Flagship.ts";
 import {BetterAuthLive} from "./features/pasaport/better-auth-live.ts";
 import {makeAppLive} from "./http/app.ts";
+import {workerFirstGlobs} from "./http/worker-routes.ts";
 
 /**
  * Lift a publish-side `PublishMessage` to the `DeliverFrame` `LiveDO.publish`
@@ -74,10 +75,12 @@ export class Phoenix extends Cloudflare.Worker<
 		// relative to the alchemy CLI's `apps/web` cwd). At the edge the worker
 		// serves it; the `runWorkerFirst` globs keep the worker-owned paths from
 		// being shadowed by the SPA shell (a missing entry returns the shell for
-		// GET and 405 for POST).
+		// GET and 405 for POST). Derived from the one worker-owned-route manifest
+		// `app.ts` also consumes (`http/worker-routes.ts`), so route and glob can't
+		// drift (#861).
 		directory: "./dist/client",
 		notFoundHandling: "single-page-application",
-		runWorkerFirst: ["/api/*", "/fate", "/fate/*", "/rss.xml"],
+		runWorkerFirst: [...workerFirstGlobs],
 	},
 	compatibility: {flags: ["nodejs_compat"]},
 	observability: {enabled: true},
