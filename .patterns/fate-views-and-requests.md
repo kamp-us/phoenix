@@ -68,6 +68,34 @@ export const SozlukTermPage = ({slug}: {slug: string}) => {
 
 Custom-resolver roots (`term`, `recentTerms`, …) are declared by the `Root` value in `worker/features/fate/views.ts` (the plugin emits them as typed client roots — see [fate-client-setup.md](./fate-client-setup.md)).
 
+### A `key`-bump remount does NOT refetch a `network-only` `useRequest` — force a fresh read imperatively {#remount-no-refetch}
+
+`useRequest(req, {mode: "network-only"})` fetches on **first mount**, but a `key`-bump remount of the same component reads the **already-fulfilled cached handle for the unchanged requestKey WITHOUT a network read**. So a screen that re-reads state by remounting (`<Content key={reloadKey} />`) silently gets the *stale* value, not a fresh one — `network-only` does not mean "always network" on the render path.
+
+The cause is a **render-before-cleanup ordering seam**, not a quirk of `network-only`'s name. On a `key` bump React renders the new mount **before** running the old mount's effect cleanup: the new mount's render-path read (fate's `prepareRequestForRender` → `requestWithDescriptor(…, {revalidateExisting: false})`) reads the still-present fulfilled handle for that requestKey *before* the old mount's `useRequest` cleanup `releaseRequestKey(requestKey, "network-only")` runs. The render-path read passes `revalidateExisting: false`, which does **not** satisfy fate's re-execute guard for a fulfilled `network-only` handle, so the cached value is returned and no fetch fires. This is **intended** `react-fate` behavior, not a bug — it has a test enforcing *"does not refetch network-only inline requests during rerenders with the same key"*, which a same-key remount is indistinguishable from at the client layer (both present an identical fulfilled handle + `revalidateExisting: false`; only React cleanup ordering differs).
+
+The corollary that bites: **phoenix cannot make the render/suspense path itself refetch on remount.** That lives inside fate's `prepareRequestForRender`; a phoenix-side wrapper hook can only bolt an imperative read alongside the suspending one — which *is* the remedy below, not a way to change the render path. (Making a `network-only` *mount* re-execute while a same-key *re-render* still reuses the cache is a `react-fate` `useRequest` change — decision-class, the personal-fork → local-patch path of [ADR 0038](../.decisions/0038-dependency-patches-local-only.md) — not something to attempt from `apps/web`.)
+
+**The remedy:** when you need a guaranteed fresh read across a known state change, issue an **imperative** `fate.request(req, {mode: "network-only"})` **before** the remount, rather than relying on the remount's render-path read. The imperative `FateClient.request` passes `revalidateExisting: true`, which **re-executes** the fulfilled handle and repopulates the store; the subsequent remount then reads the real value:
+
+```tsx
+// the fresh-slug add-definition flow: definition.add auto-creates the term, so the
+// next render must re-read term(slug). A bare `key` bump reuses the fulfilled
+// `data: null` handle, so force a real network re-read FIRST, then remount.
+await fate.request(
+  {term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
+  {mode: "network-only"},
+);
+onTermCreated(createdId);   // bumps reloadKey → the remount now reads the real term
+```
+
+Live call sites:
+
+- `apps/web/src/pages/SozlukTermPage.tsx` — the fresh-slug term re-read (#817): the composer force-refetches `term(slug)` imperatively, **then** bumps `reloadKey`. The inline comment at the `fate.request` call documents the exact seam.
+- `apps/web/src/fate/useReadbackRefetch.ts` / `apps/web/src/pages/PanoPostDetail.tsx` — `network-only` driven imperatively (`fate.request`) from a confirmed state change, never via a remount. This is the sanctioned shape ([fate-live-views.md](./fate-live-views.md#read-back)).
+
+**Recognizing it:** any flow that re-reads data by remounting a component (a `key`/`reloadKey` bump) after a write or navigation that changed server state, expecting the remount's `useRequest` to re-fetch. It won't — the symptom is the screen reading back the *pre-change* value (a cached `null`, a stale list) until a full reload. Drive the re-read with an imperative `fate.request(…, {mode: "network-only"})` before (or instead of) the remount.
+
 Request item shapes:
 
 | Item | Resolves to |
