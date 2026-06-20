@@ -10,6 +10,8 @@
 	"scripts": {
 		"typecheck": "tsgo -p tsconfig.json",
 		"test": "vitest run",
+		"test:unit": "vitest run --project unit",
+		"test:integration": "vitest run --project integration",
 		"seed": "node src/bin.ts run"
 	},
 	"dependencies": {
@@ -26,6 +28,7 @@
 		"@effect/vitest": "catalog:",
 		"@types/node": "catalog:",
 		"@typescript/native-preview": "catalog:",
+		"alchemy": "catalog:",
 		"typescript": "catalog:",
 		"vitest": "catalog:"
 	},

@@ -75,15 +75,23 @@ imports `node:sqlite` (`import … from "node:sqlite"` in any clause shape, or
 `// biome-ignore lint/plugin: <reason>` on the import — never a blanket directory
 exemption — so the next un-blessed re-introduction can't merge silently.
 
-**One temporary carve-out exists** (#633's recorded decision):
-`packages/preview-seed/src/sqlite-d1.testing.ts` (`makeSeedTestDb()`, the fast
-unit suite's backing). It is permitted because the seed's writes are plain inserts
-— no FTS5, no collation, none of the engine-divergence above — and
-`packages/preview-seed/src/d1-rest.ts` already exercises a **real** D1 on the
-production path, so real-D1 fidelity exists elsewhere. This carve-out is
-**temporary**: it is removed when #672 re-tiers the unit suite onto real D1 via the
-alchemy `Test.make` harness (#571, closed, was the prior REST-fidelity work, not this re-tier). The allowlist entry's inline comment names #672 as
-its removal trigger.
+**The preview-seed carve-out is removed; one survivor remains.** The temporary
+carve-out #633 recorded — `packages/preview-seed/src/sqlite-d1.testing.ts`
+(`makeSeedTestDb()`, the fast unit suite's backing) — was **removed by #672**: that
+issue re-tiered the seed's suite off the fake and onto real D1 via the alchemy
+`Test.make` harness (a D1-only stack deployed per-file,
+`packages/preview-seed/tests/integration/_d1.ts`, seeding over the production REST
+transport). The fake is deleted and its `biome-ignore` allowlist entry is gone. The
+seed's genuinely pure-logic assertions (fixture content, the REST-wire param
+contract) stayed in the `unit` tier (no DB); the row-landing, FTS5-fold, and
+idempotency assertions moved to `integration` on real D1 — exactly the placement the
+litmus below prescribes.
+
+A **second** `node:sqlite` carve-out, not tracked when this ADR was written, was
+found during #672: `packages/moderator-grant/src/sqlite-d1.testing.ts`
+(`makeGrantTestDb`), which mirrored the preview-seed carve-out without its own
+removal trigger. It is now the **last** allowlisted survivor, tracked for the same
+re-tier by #930; the ban reaches **zero allowlisted survivors** when that lands.
 
 **Principle — no domain decision welded to SQL execution.** Cursor resolution is
 a *port* (a thin DB read); the keyset / cursor-miss *decision* and the page
@@ -120,7 +128,9 @@ out-of-band edges the import graph cannot see.
 - **Banned:** calling any test that boots a SQL engine a "unit" test; using
   `node:sqlite` (or any faked engine) as a test backing; asserting pure logic
   through a database; filing a domain decision welded to SQL execution.
-- **Deleted:** `apps/web/worker/db/sqlite-d1.testing.ts` + `sqlite-d1.testing.test.ts`.
+- **Deleted:** `apps/web/worker/db/sqlite-d1.testing.ts` + `sqlite-d1.testing.test.ts`;
+  `packages/preview-seed/src/sqlite-d1.testing.ts` (the last `node:sqlite` survivor,
+  removed by #672 — see the enforcement section).
 - **Migration cost (epic execution, tracked under #563, not this ADR):** each
   `makeSqliteTestDb` suite splits — pure-logic assertions move to `unit` (several
   are already duplicated by `keyset.unit.test.ts` / `normalize.unit.test.ts`, so

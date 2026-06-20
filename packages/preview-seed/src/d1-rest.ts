@@ -2,8 +2,10 @@
  * A `D1Database`-shaped binding backed by the Cloudflare D1 REST query API, so
  * the seed's drizzle inserts run from a plain Node process (no workerd). It
  * implements only the slice `drizzle-orm/d1` drives — `prepare`/`bind`/`all`/
- * `run`/`raw`/`first` and `batch` — mirroring the in-memory test fake
- * (`sqlite-d1.testing.ts`); the same `seed(d1)` path runs against both.
+ * `run`/`raw`/`first` and `batch`. This is the seed's ONLY transport: both the
+ * `preview-seed` bin and the integration tier (`tests/integration/_d1.ts`) run
+ * the same `seed(d1)` path through it against real D1 (ADR 0082 — the package's
+ * suite no longer leans on a faked engine).
  *
  * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the
  * tree via alchemy). A single statement is one REST call; a drizzle `batch([...])`
@@ -31,10 +33,10 @@ type Params = ReadonlyArray<unknown>;
  * — never bound as a `null` param. The seed achieves that by leaving nullable
  * columns unset in its fixtures, so drizzle emits a literal `NULL` and no `null`
  * ever reaches the wire (#569). A `null`/`undefined` here is a caller bug (a
- * nullable column bound instead of omitted); throw with the offending index. Shared
- * with the in-memory test fake so the fake rejects exactly what real D1 rejects
- * (#571) — the fake's `node:sqlite` engine would otherwise bind a `null` happily
- * and let a REST-incompatible param shape pass the unit suite yet die live.
+ * nullable column bound instead of omitted); throw with the offending index. The
+ * unit tier pins this contract directly (`seed.unit.test.ts`) and the integration
+ * tier proves real D1 rejects null end to end — so the param shape can't drift from
+ * what the live REST wire accepts (#571).
  */
 export const assertRestParam = (param: unknown, index: number): void => {
 	if (param == null) {
