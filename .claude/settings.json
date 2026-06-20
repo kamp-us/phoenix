@@ -60,6 +60,17 @@
 					}
 				]
 			}
+		],
+		"SessionStart": [
+			{
+				"matcher": "startup|resume",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "node \"$CLAUDE_PROJECT_DIR/packages/spawn-guard/src/freshness-bin.ts\""
+					}
+				]
+			}
 		]
 	},
 	"env": {

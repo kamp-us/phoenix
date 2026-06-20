@@ -54,3 +54,20 @@ export const degradedStatusline = (): string => "spawn-guard: deps not installed
 /** The loud stderr note shown when the runtime dep is missing. */
 export const missingDepMessage = (subcommand: string, dep: string = RUNTIME_DEP): string =>
 	`spawn-guard ${subcommand}: ${dep} is not installed — run \`pnpm install\` (issue #777).`;
+
+/**
+ * The proactive SessionStart freshness signal (#835): when the hook-pack's runtime dep
+ * is unresolvable, the whole hook pack is degraded (read-guard / worktree-guard fail
+ * open or loud, the statusline placeholder-renders) until `pnpm install` runs. #834
+ * surfaces that at hook-FIRE time per bin; this is the UP-FRONT detector so the gap is
+ * flagged before a hook even fires. Returns `null` when deps resolve — a healthy session
+ * gets NO output (never spam a fresh tree). The string is the `additionalContext` body
+ * the SessionStart hook hands the agent so it can tell the user to run `pnpm install`.
+ */
+export const freshnessSignal = (dep: string = RUNTIME_DEP): string | null =>
+	depsInstalled(dep)
+		? null
+		: `Hook deps not installed — run \`pnpm install\`. The phoenix hook-pack's runtime ` +
+			`dep (\`${dep}\`) is unresolvable, so the read-guard / worktree-guard / spawn-guard ` +
+			`hooks are DEGRADED (not enforcing) and the statusline is a placeholder, until deps ` +
+			`are installed (issue #835). Tell the user to run \`pnpm install\` from the repo root.`;
