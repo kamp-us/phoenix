@@ -474,22 +474,48 @@ interface CommentsProps {
 
 /**
  * Resolves the `#comment-<id>` permalink anchor: returns the targeted comment id and
- * scrolls its node into view once it's rendered. Comments arrive async (fate connection),
- * so the native browser hash-jump misses — this re-tries on each thread change until the
- * `#comment-<id>` element exists, then scrolls it once.
+ * scrolls its node into view once it's rendered. Comments arrive async (fate
+ * connection), so the native browser hash-jump misses — and the node mounts only when
+ * its `CommentTreeNodeView` snapshot *fulfills*, a store update independent of list
+ * membership (#649). Keying a retry on `items.length` therefore races: membership can
+ * settle before the target node fulfills, and the effect never re-fires. A
+ * MutationObserver watches the thread subtree until `#comment-<id>` exists, scrolls it
+ * once, then disconnects — so the cold-load path no longer depends on a reactive key
+ * happening to change at the right moment.
+ *
+ * A permalinked comment on a not-yet-loaded pagination page is never observed (it's
+ * not in the DOM) — an accepted product limit.
  */
-function useCommentAnchor(threadKey: number): string | null {
+function useCommentAnchor(): string | null {
 	const {hash} = useLocation();
 	const activeId = hash.startsWith("#comment-") ? hash.slice("#comment-".length) : null;
 	const scrolledFor = React.useRef<string | null>(null);
 
 	React.useEffect(() => {
 		if (!activeId || scrolledFor.current === activeId) return;
-		const el = document.getElementById(`comment-${activeId}`);
-		if (!el) return;
-		el.scrollIntoView({behavior: "smooth", block: "center"});
-		scrolledFor.current = activeId;
-	}, [activeId, threadKey]);
+
+		const scroll = (el: Element): boolean => {
+			scrolledFor.current = activeId;
+			el.scrollIntoView({behavior: "smooth", block: "center"});
+			return true;
+		};
+
+		const existing = document.getElementById(`comment-${activeId}`);
+		if (existing) {
+			scroll(existing);
+			return;
+		}
+
+		const observer = new MutationObserver(() => {
+			const el = document.getElementById(`comment-${activeId}`);
+			if (el) {
+				scroll(el);
+				observer.disconnect();
+			}
+		});
+		observer.observe(document.body, {childList: true, subtree: true});
+		return () => observer.disconnect();
+	}, [activeId]);
 
 	return activeId;
 }
@@ -499,7 +525,7 @@ function Comments(props: CommentsProps) {
 	const fate = useFateClient();
 	const report = useReportHandler();
 	const [items, loadNext] = useLiveListView(CommentConnectionView, post.comments);
-	const activeCommentId = useCommentAnchor(items.length);
+	const activeCommentId = useCommentAnchor();
 
 	// Deterministic read-back: if the server's `appendNode` push for the author's own
 	// new comment is lost (publish-vs-register race, #714), refetch this page's request
