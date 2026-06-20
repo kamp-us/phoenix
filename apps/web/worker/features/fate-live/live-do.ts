@@ -441,13 +441,30 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			return unexpired.slice(overCap);
 		});
 
-	/** Append the just-published frame to the ring buffer (after a prune). */
-	const appendToBuffer = (topicKey: string, frame: DeliverFrame, limits: LiveLimits, now: number) =>
+	/** Allocate the next monotonic per-topic publish ordinal (persisted). */
+	const nextSeq = Effect.gen(function* () {
+		const seq = ((yield* state.storage.get<number>(BUFFER_SEQ_KEY)) ?? 0) + 1;
+		yield* state.storage.put(BUFFER_SEQ_KEY, seq);
+		return seq;
+	});
+
+	/**
+	 * Append an already-seq-stamped frame to the ring buffer (after a prune). The
+	 * caller allocated the `seq` (via {@link nextSeq}) and stamped it onto the frame's
+	 * `eventId` BEFORE fan-out, so the live-delivered frame, the buffered frame, and
+	 * its `BufferedFrame.eventId` all carry the SAME ordinal — replay resumes against
+	 * the exact id the client already saw on the wire.
+	 */
+	const appendToBuffer = (
+		topicKey: string,
+		frame: DeliverFrame,
+		seq: number,
+		limits: LiveLimits,
+		now: number,
+	) =>
 		Effect.gen(function* () {
 			const entries = yield* loadBuffer(topicKey);
 			yield* pruneBuffer(entries, limits, now);
-			const seq = ((yield* state.storage.get<number>(BUFFER_SEQ_KEY)) ?? 0) + 1;
-			yield* state.storage.put(BUFFER_SEQ_KEY, seq);
 			const buffered: BufferedFrame = {seq, eventId: frame.eventId, at: now, frame};
 			yield* state.storage.put(bufferKey(topicKey, seq), buffered);
 		});
@@ -486,18 +503,21 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			// `subscribedAt` is the connection-DO clock, `buffered.at` the topic-DO's;
 			// the grace absorbs sub-second cross-DO skew (see REPLAY_CLOCK_GRACE_MS).
 			const floor = subscribedAt - REPLAY_CLOCK_GRACE_MS;
-			// Skip everything up to and including the subscriber's lastEventId; with no
-			// cursor every frame at/after the intent floor is eligible.
-			let seen = lastEventId === undefined;
+			// The cursor is the last per-topic `seq` the subscriber saw (every delivered frame
+			// now carries `eventId === String(seq)`, primary fan-out and replay alike). Compare
+			// numerically against `buffered.seq` and replay only STRICTLY-newer frames — robust
+			// even when the cursor frame itself has aged out of the window (a string-equality
+			// scan would never find it and wrongly drop everything newer). A non-numeric/absent
+			// cursor leaves the whole at/after-intent window eligible (#714/#731).
+			const cursorSeq = lastEventId === undefined ? undefined : Number(lastEventId);
+			const sinceSeq =
+				cursorSeq !== undefined && Number.isFinite(cursorSeq) ? cursorSeq : undefined;
 			const connection = connectionOf(live, row.connectionId);
 			for (const [, buffered] of window) {
 				if (buffered.at < floor) {
 					continue;
 				}
-				if (!seen) {
-					if (buffered.eventId === lastEventId) {
-						seen = true;
-					}
+				if (sinceSeq !== undefined && buffered.seq <= sinceSeq) {
 					continue;
 				}
 				yield* connection
@@ -562,6 +582,14 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			if (role.kind !== "topic") {
 				return {delivered: 0};
 			}
+			// Stamp the topic's monotonic ordinal as this frame's `eventId` BEFORE fan-out,
+			// so the live-delivered frame, the buffered copy, and every replay all carry the
+			// SAME per-topic-monotonic SSE `id:` — the client only ever sees in-order,
+			// non-stale frames and its last-frame-wins apply is correct (#731). The topic owns
+			// the id (overriding any inbound `frame.eventId`): per-topic monotonicity is the
+			// invariant, and in production nothing upstream sets one.
+			const seq = yield* nextSeq;
+			const frame: DeliverFrame = {...input.frame, eventId: String(seq)};
 			const entries = yield* loadRows(input.topicKey);
 			// Fan out per-connection deliver passes concurrently (connections are
 			// independent). The inner per-row loop stays sequential because it
@@ -581,7 +609,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 							// rows on a 410/404/no response). First failure flips `reachable`.
 							const result = yield* connection
 								.deliver({
-									frame: {...input.frame, id: item.row.subId},
+									frame: {...frame, id: item.row.subId},
 									row: item.row,
 									limits: input.limits,
 								})
@@ -609,9 +637,10 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 					}),
 				{concurrency: "unbounded"},
 			);
-			// Retain the frame for a subscriber whose register lands after this publish
-			// (#714). After fan-out, so the ring reflects what already went out live.
-			yield* appendToBuffer(input.topicKey, input.frame, input.limits, Date.now());
+			// Retain the SAME seq-stamped frame for a subscriber whose register lands after
+			// this publish (#714). After fan-out, so the ring reflects what already went out
+			// live — buffered `eventId` === the live wire `id:`, so replay resumes exactly.
+			yield* appendToBuffer(input.topicKey, frame, seq, input.limits, Date.now());
 			return {delivered: perConnection.reduce((sum, n) => sum + n, 0)};
 		});
 
