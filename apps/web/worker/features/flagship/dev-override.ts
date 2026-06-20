@@ -59,7 +59,10 @@ export interface OverrideAction {
  * removes it. Pure — the new map is what `route-dev.ts` re-serializes into the
  * Set-Cookie value.
  */
-export function applyOverride(overrides: FlagOverrides, {key, state}: OverrideAction): FlagOverrides {
+export function applyOverride(
+	overrides: FlagOverrides,
+	{key, state}: OverrideAction,
+): FlagOverrides {
 	if (state === "clear") {
 		const {[key]: _dropped, ...rest} = overrides;
 		return rest;

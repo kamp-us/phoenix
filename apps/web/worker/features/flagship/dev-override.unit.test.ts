@@ -87,7 +87,10 @@ describe("applyOverride", () => {
 describe("parseOverrideAction", () => {
 	it("parses a valid key/state pair for each tri-state", () => {
 		for (const state of ["on", "off", "clear"] as const) {
-			expect(parseOverrideAction(new URLSearchParams({key: "f", state}))).toEqual({key: "f", state});
+			expect(parseOverrideAction(new URLSearchParams({key: "f", state}))).toEqual({
+				key: "f",
+				state,
+			});
 		}
 	});
 

@@ -92,7 +92,11 @@ export const makeRequestFlagsContext = (
 		// `overrides` only when there's an actual local flip to apply.
 		const parsed = environment === "development" ? parseOverrideCookie(cookieHeader) : undefined;
 		const overrides = parsed && Object.keys(parsed).length > 0 ? parsed : undefined;
-		return {...identity, environment, ...(overrides ? {overrides} : {})} satisfies FlagsContextValue;
+		return {
+			...identity,
+			environment,
+			...(overrides ? {overrides} : {}),
+		} satisfies FlagsContextValue;
 	});
 
 /**

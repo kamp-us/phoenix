@@ -11,7 +11,7 @@ import {assert, describe, it} from "@effect/vitest";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {FlagshipError} from "alchemy/Cloudflare";
 import {Effect, Layer} from "effect";
-import {type FlagsAccess, Flags, FlagsLive, withDevOverrides} from "./Flags.ts";
+import {Flags, type FlagsAccess, FlagsLive, withDevOverrides} from "./Flags.ts";
 import {anonymousFlagsContext, FlagsContext} from "./FlagsContext.ts";
 import {Flagship} from "./Flagship.ts";
 
@@ -248,7 +248,7 @@ const realFlagsStub: FlagsAccess = {
 	getBoolean: (_key, defaultValue) => Effect.succeed(defaultValue),
 	getString: () => Effect.succeed("real"),
 	getNumber: () => Effect.succeed(-1),
-	getObject: <T extends object>() => Effect.succeed({real: true} as unknown as T),
+	getObject: (_key, defaultValue) => Effect.succeed(defaultValue),
 };
 
 describe("withDevOverrides (#622)", () => {

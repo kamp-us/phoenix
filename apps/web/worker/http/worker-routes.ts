@@ -20,8 +20,8 @@
 import type {Layer} from "effect/Layer";
 import {fateRoute} from "../features/fate/route.ts";
 import {liveRoute} from "../features/fate-live/route.ts";
-import {flagsDevApplyRoute, flagsDevPageRoute} from "../features/flagship/route-dev.ts";
 import {flagsEvaluateRoute, flagsProbeRoute} from "../features/flagship/route.ts";
+import {flagsDevApplyRoute, flagsDevPageRoute} from "../features/flagship/route-dev.ts";
 import {authRoute} from "../features/pasaport/route.ts";
 import {rssRoute} from "../features/rss/route.ts";
 
