@@ -803,20 +803,31 @@ that is:**
 - the **code roots `apps/**` and `packages/**`** — a code/app-internal `*.md` (a package or
   app README, CHANGELOG, …) rides the `review-code` PASS its tree already needs, and is
   **never** the doc class.
+- **`.glossary/**`** — the repo-owned domain vocabulary (`.glossary/TERMS.md`, `LANGUAGE.md`;
+  a 4th committed doc surface, ADR [0099](https://github.com/kamp-us/phoenix/blob/main/.decisions/0099-glossary-surface-audit-skill-emits-issues.md)).
+  `review-code` Step 3c **reads + enforces** this contract (a new-surface code PR must touch
+  `.glossary/TERMS.md` — the [#912](https://github.com/kamp-us/phoenix/issues/912) freshness gate),
+  so the gate that owns the glossary is `review-code`, not `review-doc` — the glossary rides the
+  `review-code` PASS, exactly the #644 package-README precedent. Were it left in the doc class,
+  #912's mandatory `.glossary/TERMS.md` touch would make every new-surface **code** PR mixed
+  code+doc and demand a `review-doc` PASS that the pipeline never routes (the #919 deadlock).
 
 This is **exactly `review-doc`'s verification surface**: a present doc class therefore
-always has a *reachable* gate. The code-root carve-out names the roots **`apps`,
-`packages`** — the same literals `ship-it` Step 0's has-code probe (`^(apps|packages)/`)
-and docs-exclusion (`grep -Ev '^(claude-plugins|apps|packages)/'`) use, so prose and probe name
-one boundary and can't drift (the #663 has-code/docs-exclusion agreement invariant).
+always has a *reachable* gate. The code-class carve-out names the roots **`apps`,
+`packages`**, plus **`.glossary`** — and `ship-it` Step 0's has-code probe
+(`^(apps|packages|\.glossary)/`) names the **same** roots as the docs-exclusion
+(`grep -Ev '^(claude-plugins|apps|packages|\.glossary)/'`), so a `.glossary/**` path classes
+**has-code** (riding the `review-code` PASS) and is dropped from docs **in lockstep** — prose and
+both probes name one boundary and can't drift (the #663 has-code/docs-exclusion agreement invariant,
+extended to `.glossary/**` by #919).
 
 The canonical probe both `ship-it` Step 0 and `review-doc` Step 0 run — carve out
-control-plane, then `skills/**`, then the code roots, *then* test for a doc path:
+control-plane, then `skills/**`, then the code roots + `.glossary/**`, *then* test for a doc path:
 
 ```bash
 # docs class = review-doc's surface: a .md/knowledge file outside control-plane, skills/**,
-# AND the code roots apps/**/packages/** (#542/#650/#663). Cite this; don't re-derive it loosely.
-echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
+# the code roots apps/**/packages/**, AND .glossary/** (#542/#650/#663/#919). Cite this; don't re-derive it loosely.
+echo "$FILES" | grep -Ev '^(claude-plugins|apps|packages|\.glossary)/' | grep -Eq '^(\.decisions|\.patterns)/|\.md$' && echo "has-docs"
 ```
 
 A code-root `*.md` is **not** weakened by this carve-out — it is gated harder, by
