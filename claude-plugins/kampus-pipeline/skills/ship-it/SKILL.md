@@ -558,8 +558,8 @@ is treated as gating (it blocks) until it is deliberately classified — never t
 
 **Known-informational checks** (a red here does **not** block and is **not** routed to
 heal-ci) — the `Deploy` workflow's preview-deploy-infra checks: `deploy (web)` (the `pr-<n>`
-preview-stage deploy) and `cleanup (web, …)` (`cleanup (web, @kampus/web, true)`, the
-`alchemy destroy` of that preview stage). A preview-deploy infra flake (e.g. `Secret probe
+preview-stage deploy) and `cleanup (web, …)` (the `Deploy` workflow's preview-stage
+`alchemy destroy` teardown leg). A preview-deploy infra flake (e.g. `Secret probe
 returned 502`) or a preview-teardown race (e.g. a close→reopen reds `cleanup`) is orthogonal
 to whether the PR is correct and tested. Match these two names exactly — only the named
 preview-deploy/teardown checks are informational; every other red, including any
