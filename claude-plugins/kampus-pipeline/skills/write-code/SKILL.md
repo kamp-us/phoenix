@@ -1300,7 +1300,7 @@ not a PR.
 ### `type:decision`
 
 A decision issue asks for a settled, recorded technical choice — not code. Resolve it,
-then **record it via the in-repo `/adr` skill** (at `.claude/skills/adr/SKILL.md` —
+then **record it via the in-repo `/adr` skill** (at `../adr/SKILL.md` —
 read it): it writes one decision per file into `.decisions/NNNN-slug.md` (Context /
 Decision / Consequences), appends a row to `.decisions/index.md`, and follows the
 supersede rules for any ADR it replaces. The ADR file + index row land on a branch and
@@ -1439,5 +1439,5 @@ acceptance criteria before merge. The loop closes back on you: when a gate lands
 reads the findings, fixes, and re-submits for an independent re-gate, while `ship-it` stays
 the sole owner of PASS → merge. You also lean on two sibling skills inside type routing:
 `/adr`
-(`.claude/skills/adr/`) for `type:decision`, and [`report`](../report/SKILL.md) for an
+([`../adr/SKILL.md`](../adr/SKILL.md)) for `type:decision`, and [`report`](../report/SKILL.md) for an
 investigation's actionable residue.

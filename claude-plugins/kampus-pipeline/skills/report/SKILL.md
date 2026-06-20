@@ -47,7 +47,7 @@ Below the five sections, append a footer carrying the machine context of the ses
 Gather the context with the helper, which reads it from the environment and git:
 
 ```bash
-.claude/skills/report/footer.sh
+claude-plugins/kampus-pipeline/skills/report/footer.sh
 ```
 
 It prints a ready-to-append markdown block. Which fields appear varies by run — the helper includes only what the environment actually exposes and silently drops the rest, so a real footer might look like this (here `session` and `model` weren't available, so they're omitted — no dangling labels, no "unknown"):
