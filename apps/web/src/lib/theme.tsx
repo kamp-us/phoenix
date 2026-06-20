@@ -1,7 +1,14 @@
 import * as React from "react";
+import {readStoredChoice, writeStoredChoice} from "./themeStorage";
 
 export type ThemeChoice = "light" | "dark" | "auto";
 type ResolvedTheme = "light" | "dark";
+
+const DEFAULT_CHOICE: ThemeChoice = "dark";
+
+function browserStorage(): Storage | undefined {
+	return typeof window === "undefined" ? undefined : window.localStorage;
+}
 
 interface ThemeContextValue {
 	/** The user's selection — the single source of truth both controls drive. */
@@ -27,8 +34,17 @@ function resolve(choice: ThemeChoice, system: ResolvedTheme): ResolvedTheme {
 }
 
 export function ThemeProvider({children}: {children: React.ReactNode}) {
-	const [choice, setChoice] = React.useState<ThemeChoice>("dark");
+	const [choice, setChoiceState] = React.useState<ThemeChoice>(() =>
+		readStoredChoice(browserStorage(), DEFAULT_CHOICE),
+	);
 	const [system, setSystem] = React.useState<ResolvedTheme>(systemPrefers);
+
+	// Every choice change persists, so a reload rehydrates it (#697). Both the
+	// explicit picker and `toggle` route through here.
+	const setChoice = React.useCallback((next: ThemeChoice) => {
+		writeStoredChoice(browserStorage(), next);
+		setChoiceState(next);
+	}, []);
 
 	// Track the system preference only while it can actually affect the document
 	// — i.e. while the choice is `auto`. The listener is also what makes an `auto`
@@ -51,12 +67,12 @@ export function ThemeProvider({children}: {children: React.ReactNode}) {
 	}, [resolved]);
 
 	const toggle = React.useCallback(() => {
-		setChoice((c) => (resolve(c, systemPrefers()) === "dark" ? "light" : "dark"));
-	}, []);
+		setChoice(resolve(choice, systemPrefers()) === "dark" ? "light" : "dark");
+	}, [choice, setChoice]);
 
 	const value = React.useMemo<ThemeContextValue>(
 		() => ({choice, resolved, setChoice, toggle}),
-		[choice, resolved, toggle],
+		[choice, resolved, setChoice, toggle],
 	);
 
 	return <ThemeContext.Provider value={value}>{children}</ThemeContext.Provider>;
