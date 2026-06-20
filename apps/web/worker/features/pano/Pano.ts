@@ -1304,13 +1304,18 @@ export const PanoLive = Layer.effect(Pano)(
 				}),
 			);
 			yield* voteSvc.clearTarget("post", input.postId);
-			yield* run((db) =>
+			// Moderation removal stamp + FTS removal in ONE batch (ADR 0080 lockstep),
+			// mirroring `deletePost`. `removePostSearch` must be a drizzle query-builder
+			// item, never `db.run(sql)` — only a builder `_prepare()`s to a bound D1
+			// `.stmt` the batch driver binds; a raw `db.run(Stmt)` 500s in-batch and
+			// fails typecheck (#920 — this path was a trailing un-batched `db.run`).
+			yield* batch((db) => [
 				db
 					.update(schema.postSummary)
 					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
 					.where(eq(schema.postSummary.id, input.postId)),
-			);
-			yield* run((db) => db.run(removePostSearch(input.postId)));
+				removePostSearch(db, input.postId),
+			]);
 			yield* recomputePanoStats(now);
 
 			return {removed: true};
@@ -1326,15 +1331,17 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const now = new Date();
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) =>
+			// Restore stamp + FTS re-entry in ONE batch (ADR 0080 lockstep), mirroring
+			// `restorePost` — `syncPostSearch` returns drizzle query-builder items, not
+			// `db.run(sql)`, so they `_prepare()` to bound D1 `.stmt`s the batch driver
+			// binds (raw `db.run(Stmt)` 500s in-batch + fails typecheck; #920).
+			yield* batch((db) => [
 				db
 					.update(schema.postSummary)
 					.set({...live, updatedAt: now, lastActivityAt: now})
 					.where(eq(schema.postSummary.id, input.postId)),
-			);
-			for (const stmt of syncPostSearch(input.postId, meta.title)) {
-				yield* run((db) => db.run(stmt));
-			}
+				...syncPostSearch(db, input.postId, meta.title),
+			]);
 			yield* recomputePanoStats(now);
 
 			return {restored: true};
