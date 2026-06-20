@@ -554,8 +554,10 @@ describe("LiveDO live fan-out (KV model)", () => {
 		await streamLate.cancel();
 	});
 
-	// `lastEventId` bounds the replay: a resubscribe carrying the id of a frame it
-	// already saw replays ONLY the frames published after it, not the whole window.
+	// `lastEventId` bounds the replay: a resubscribe carrying the per-topic `seq` it
+	// already saw replays ONLY the strictly-newer frames, not the whole window. The
+	// topic owns the SSE `id:` (it stamps `eventId = String(seq)` on publish, #731),
+	// so the cursor the client carries on reconnect is that seq — here `"1"`.
 	it("lastEventId bounds replay to frames newer than the last one the subscriber saw", async () => {
 		const cell = makeLiveCell();
 		const topicKey = "Post:post-lei";
@@ -571,28 +573,103 @@ describe("LiveDO live fan-out (KV model)", () => {
 		const stream = await reader(res);
 		expect(await stream.next()).toContain("connected");
 
-		// Two frames published before any register, each carrying an eventId.
-		const frameOld: DeliverFrame = {kind: "next", id: "", event: {data: {n: 1}}, eventId: "e1"};
-		const frameNew: DeliverFrame = {kind: "next", id: "", event: {data: {n: 2}}, eventId: "e2"};
+		// Two frames published before any register; the topic stamps seq 1, then 2.
+		const frameOld: DeliverFrame = {kind: "next", id: "", event: {data: {n: 1}}};
+		const frameNew: DeliverFrame = {kind: "next", id: "", event: {data: {n: 2}}};
 		await run(topic.publish({topicKey, frame: frameOld, limits: LIMITS}));
 		await run(topic.publish({topicKey, frame: frameNew, limits: LIMITS}));
 
-		// Resubscribe declaring it already saw `e1` → replay must skip e1, deliver e2.
+		// Resubscribe declaring it already saw seq 1 → replay must skip seq 1, deliver seq 2.
 		const sub = await run(
 			connection.subscribe({
 				subId: "sub-lei",
 				topics: [topicKey],
 				ownerId: "owner-lei",
 				limits: LIMITS,
-				lastEventId: "e1",
+				lastEventId: "1",
 			}),
 		);
 		expect(sub.ok).toBe(true);
 
 		const frame = await stream.next();
-		// Only the newer frame replays — its SSE `id:` header carries e2.
-		expect(frame).toContain("id: e2");
-		expect(frame).not.toContain("id: e1");
+		// Only the newer frame replays — its SSE `id:` header carries seq 2.
+		expect(frame).toContain("id: 2");
+		expect(frame).not.toContain("id: 1\n");
+
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+
+	// The #731 fix, at the cursor that exposes it: the reconnect `lastEventId` is the
+	// last per-topic `seq` the client saw, and replay must skip `seq <= cursor` and
+	// deliver STRICTLY-newer — even when the cursor frame itself has aged out of the
+	// window. The old string-equality scan walked the window looking for the exact
+	// `eventId === lastEventId`; when that frame is gone it never matches, so it
+	// wrongly DROPS every newer frame too — the client never catches up and its scalar
+	// is stuck at the stale value it last applied (the #731 clobber, replay side).
+	//
+	// Drive register directly (deterministic `subscribedAt`) over a SEPARATE topic with
+	// no fan-out row, so the only path a frame can arrive is replay. Publish seq 1, then
+	// seq 2; age seq 1 out of the window; reconnect with cursor `"1"`. The numeric skip
+	// replays seq 2 (`2 > 1`); the string scan, never finding seq 1, drops it.
+	it("replay delivers strictly-newer even when the cursor frame aged out (the #731 clobber, replay side)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-clobber";
+		const decoyKey = "Post:decoy-clobber";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-clobber");
+		const ownerId = "owner-clobber";
+		const subId = "sub-clobber";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Activate `subId` on the connection via the decoy (so the replayed deliver isn't
+		// stale), generation 1 / revision 1 — matching the manual row below.
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// A short TTL: seq 1 is published, then aged past its window; seq 2 lands fresh.
+		const limits: LiveLimits = {...LIMITS, bufferedFrameTtlMs: 30};
+		const frameOld: DeliverFrame = {kind: "next", id: "", event: {data: {score: 1}}};
+		const frameNew: DeliverFrame = {kind: "next", id: "", event: {data: {score: 2}}};
+		const beforePublish = Date.now();
+		await run(topic.publish({topicKey, frame: frameOld, limits})); // seq 1 (the cursor frame)
+		await new Promise((resolve) => setTimeout(resolve, 50)); // seq 1 ages past the 30ms TTL
+		await run(topic.publish({topicKey, frame: frameNew, limits})); // seq 2 (strictly newer, fresh)
+
+		// Reconnect carrying cursor `"1"` — the seq it last saw, now aged out of the window.
+		// Register from BEFORE either publish so the `subscribedAt` floor admits seq 2.
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-clobber",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(
+			topic.register({row, limits, subscribedAt: beforePublish, lastEventId: "1"}),
+		);
+		expect(reg.ok).toBe(true);
+
+		// seq 2 replays (strictly newer than the cursor), carrying its SSE `id: 2`. The
+		// old string scan would have dropped it (cursor frame seq 1 is gone), stranding
+		// the client on the stale score-1 it last applied.
+		const frame = await stream.next();
+		expect(frame).toContain("id: 2");
+		expect(payloadOf(frame).id).toBe(subId);
 
 		const echo = await Promise.race([
 			stream.next(),
