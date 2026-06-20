@@ -6,16 +6,17 @@
  * as `@kampus/preview-seed`'s `d1-rest.ts`.
  *
  * Transport is `@distilled.cloud/cloudflare`'s `queryDatabase` (already in the
- * tree via alchemy). A single statement is one REST call; a drizzle `batch([...])`
- * collects every statement's sql+params into ONE REST `batch` call, which D1 runs
- * as a single atomic transaction — load-bearing for the backfill's all-or-none
+ * tree via alchemy). A single statement is one REST call; `batch([...])` collects
+ * every prepared+bound statement's sql+params into ONE REST `batch` call, which D1
+ * runs as a single atomic transaction — load-bearing for the backfill's all-or-none
  * write. The adapter methods return Promises and run the `queryDatabase` Effect
  * with the provided credentials/HTTP layer per call.
  */
 import type {Credentials} from "@distilled.cloud/cloudflare/Credentials";
+import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import * as d1 from "@distilled.cloud/cloudflare/d1";
-import type {Layer} from "effect";
-import {Effect} from "effect";
+import {Effect, Layer} from "effect";
+import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import type {HttpClient} from "effect/unstable/http/HttpClient";
 
 /** The services `queryDatabase` requires; the bin's layer must provide exactly these. */
@@ -111,3 +112,22 @@ export const makeD1Rest = (config: D1RestConfig): D1Database => {
 		dump: async () => new ArrayBuffer(0),
 	} as unknown as D1Database;
 };
+
+/**
+ * The standard REST layer the bin runs the backfill on: `CredentialsFromEnv`
+ * (reads `$CLOUDFLARE_API_TOKEN`) + a Fetch HTTP client. Exposed so a caller
+ * pointing at a known D1 (the bin, an integration test) builds the adapter the
+ * exact same way, rather than re-assembling the credential/transport stack.
+ */
+export const d1RestLayerFromEnv: Layer.Layer<D1RestServices> = Layer.merge(
+	CredentialsFromEnv,
+	FetchHttpClient.layer,
+);
+
+/**
+ * `makeD1Rest` over the env-credentialed REST layer — the one path the bin and the
+ * integration test both run the real backfill through, so neither hand-rolls the
+ * credential wiring (`$CLOUDFLARE_API_TOKEN` via `CredentialsFromEnv`).
+ */
+export const makeD1RestFromEnv = (target: {accountId: string; databaseId: string}): D1Database =>
+	makeD1Rest({...target, layer: d1RestLayerFromEnv});
