@@ -97,3 +97,4 @@ One row per ADR. Read the file for the why.
 | [0090](0090-remove-dashboard-app.md) | Remove `apps/dashboard` — unused pipeline-visualization meta-tooling; `web` is the sole app, the multi-app shape (ADR 0057) stands | accepted | 2026-06-19 |
 | [0091](0091-infra-epics-need-a-real-consumer.md) | Infrastructure Epics Aren't Done Until a Real Product Feature Consumes Them in Production | accepted | 2026-06-19 |
 | [0092](0092-gates-fail-closed-on-zero-scope.md) | Every Gate Fails Closed When Its Enforcement Scans Zero Scope (No Silent No-Op Gates) | accepted | 2026-06-19 |
+| [0093](0093-pano-draft-save-flag-consumer.md) | Pano draft-save is the flag substrate's first real consumer | accepted | 2026-06-19 |
