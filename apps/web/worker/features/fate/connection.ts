@@ -8,6 +8,9 @@
 
 import type {ConnectionResult} from "@nkzw/fate/server";
 import * as Schema from "effect/Schema";
+import type {KeysetPage} from "../../db/keyset.ts";
+
+export type {KeysetPage};
 
 const ConnectionArgsSchema = Schema.Struct({
 	first: Schema.optional(Schema.Number),
@@ -29,12 +32,6 @@ export const keysetInput = (
 	first: cArgs?.first ?? defaultFirst,
 	...(cArgs?.after !== undefined ? {after: cArgs.after} : {}),
 });
-
-export interface KeysetPage<Row> {
-	rows: ReadonlyArray<Row>;
-	hasNextPage: boolean;
-	endCursor: string | null;
-}
 
 export const toConnection = <Row, Node>(
 	page: KeysetPage<Row>,

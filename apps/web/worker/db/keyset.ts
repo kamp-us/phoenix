@@ -102,10 +102,13 @@ export const emptyKeysetPage: EmptyKeysetPage = {
 };
 
 /**
- * The single assembly point for the `{rows, hasNextPage, endCursor}` envelope
- * shared by all five keyset methods (each adds its own `totalCount`).
+ * The single assembly point for the `{rows, hasNextPage, endCursor}` forward
+ * keyset page envelope — shared by all five keyset methods (each adds its own
+ * `totalCount`) and by the `toConnection` adapter, which imports this same
+ * declaration (`features/fate/connection.ts`) so producer and adapter agree by a
+ * shared type, not by structural coincidence.
  */
-export interface ForwardPage<TRow> {
+export interface KeysetPage<TRow> {
 	readonly rows: TRow[];
 	readonly hasNextPage: boolean;
 	readonly endCursor: string | null;
@@ -123,19 +126,19 @@ export function forwardPage<TRow>(
 	fetched: ReadonlyArray<TRow>,
 	first: number,
 	cursorOf: (row: TRow) => string,
-): ForwardPage<TRow>;
+): KeysetPage<TRow>;
 export function forwardPage<TFetched, TRow>(
 	fetched: ReadonlyArray<TFetched>,
 	first: number,
 	cursorOf: (row: TRow) => string,
 	mapRow: (row: TFetched) => TRow,
-): ForwardPage<TRow>;
+): KeysetPage<TRow>;
 export function forwardPage<TRow>(
 	fetched: ReadonlyArray<unknown>,
 	first: number,
 	cursorOf: (row: TRow) => string,
 	mapRow?: (row: never) => TRow,
-): ForwardPage<TRow> {
+): KeysetPage<TRow> {
 	const limit = Math.max(1, first);
 	const hasNextPage = fetched.length > limit;
 	const slicedSource = hasNextPage ? fetched.slice(0, limit) : fetched;
