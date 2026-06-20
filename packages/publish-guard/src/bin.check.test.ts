@@ -29,18 +29,25 @@ const run = (args: ReadonlyArray<string>, root: string): Promise<RunResult> =>
 		);
 	});
 
-// Build a fixture repo root: skills/** referencing two packages, and a packages/
-// dir whose publishability we vary per test.
-const makeRoot = (parent: string, pkgs: Readonly<Record<string, unknown>>): string => {
+interface RootSpec {
+	/** The skill text written to skills/plan-epic/SKILL.md (the consumption signal). */
+	readonly skill?: string;
+	/** packages/<name>/package.json contents, keyed by package name. */
+	readonly pkgs?: Readonly<Record<string, unknown>>;
+}
+
+// Build a fixture repo root: skills/** carrying the consumption signal, and a packages/
+// dir whose presence + publishability we vary per test.
+const makeRoot = (parent: string, spec: RootSpec): string => {
 	const root = mkdtempSync(join(parent, "publish-guard-root-"));
 	const skills = join(root, "claude-plugins", "kampus-pipeline", "skills", "plan-epic");
 	mkdirSync(skills, {recursive: true});
 	writeFileSync(
 		join(skills, "SKILL.md"),
-		"runs @kampus/epic-ledger and @kampus/decisions-index",
+		spec.skill ?? "runs @kampus/epic-ledger and @kampus/decisions-index",
 		"utf8",
 	);
-	for (const [name, manifest] of Object.entries(pkgs)) {
+	for (const [name, manifest] of Object.entries(spec.pkgs ?? {})) {
 		mkdirSync(join(root, "packages", name), {recursive: true});
 		writeFileSync(join(root, "packages", name, "package.json"), JSON.stringify(manifest), "utf8");
 	}
@@ -57,7 +64,12 @@ describe("publish-guard bin", () => {
 	});
 
 	it("list prints the derived required-published set", async () => {
-		const root = makeRoot(base, {});
+		const root = makeRoot(base, {
+			pkgs: {
+				"epic-ledger": {publishConfig: {access: "public"}},
+				"decisions-index": {publishConfig: {access: "public"}},
+			},
+		});
 		const {code, stdout} = await run(["list"], root);
 		assert.strictEqual(code, 0);
 		assert.include(stdout, "@kampus/decisions-index");
@@ -66,8 +78,10 @@ describe("publish-guard bin", () => {
 
 	it("check exits 0 with a clean table when every required package is publishable", async () => {
 		const root = makeRoot(base, {
-			"epic-ledger": {publishConfig: {access: "public"}},
-			"decisions-index": {publishConfig: {access: "public"}},
+			pkgs: {
+				"epic-ledger": {publishConfig: {access: "public"}},
+				"decisions-index": {publishConfig: {access: "public"}},
+			},
 		});
 		const {code, stdout} = await run(["check"], root);
 		assert.strictEqual(code, 0);
@@ -77,8 +91,10 @@ describe("publish-guard bin", () => {
 
 	it("check exits non-zero with a drift table when a required package is private", async () => {
 		const root = makeRoot(base, {
-			"epic-ledger": {private: true, publishConfig: {access: "public"}},
-			"decisions-index": {publishConfig: {access: "public"}},
+			pkgs: {
+				"epic-ledger": {private: true, publishConfig: {access: "public"}},
+				"decisions-index": {publishConfig: {access: "public"}},
+			},
 		});
 		const {code, stdout, stderr} = await run(["check"], root);
 		assert.strictEqual(code, 1);
@@ -87,10 +103,40 @@ describe("publish-guard bin", () => {
 		assert.include(stderr, "blocked");
 	}, 30_000);
 
-	it("check exits non-zero when a required package is not found", async () => {
-		const root = makeRoot(base, {"decisions-index": {publishConfig: {access: "public"}}});
+	it("check ignores an incidental @kampus/web mention (apps/web — no packages/web), staying clean", async () => {
+		// the PR #974 trigger: a CI check name quoted verbatim in a skill file. @kampus/web
+		// resolves to apps/web (no packages/web), so it must NOT enter the required set.
+		const root = makeRoot(base, {
+			skill:
+				"runs @kampus/epic-ledger; the GitHub check is named `cleanup (web, @kampus/web, true)`",
+			pkgs: {"epic-ledger": {publishConfig: {access: "public"}}},
+		});
 		const {code, stdout} = await run(["check"], root);
+		assert.strictEqual(code, 0);
+		assert.include(stdout, "clean");
+		assert.notInclude(stdout, "@kampus/web");
+	}, 30_000);
+
+	it("check exits non-zero with a BREAK when a bare-path invocation has no published fallback", async () => {
+		const root = makeRoot(base, {
+			skill: "validate: `node packages/epic-ledger/src/bin.ts validate` (no dlx fallback)",
+			pkgs: {"epic-ledger": {publishConfig: {access: "public"}}},
+		});
+		const {code, stdout, stderr} = await run(["check"], root);
 		assert.strictEqual(code, 1);
-		assert.include(stdout, "DRIFT");
+		assert.include(stdout, "BREAK");
+		assert.include(stdout, "@kampus/epic-ledger");
+		assert.include(stderr, "foreign-repo break");
+	}, 30_000);
+
+	it("check stays clean when a bare-path invocation carries a pnpm dlx fallback", async () => {
+		const root = makeRoot(base, {
+			skill:
+				"locally `node packages/epic-ledger/src/bin.ts`, foreign `pnpm dlx @kampus/epic-ledger@latest`",
+			pkgs: {"epic-ledger": {publishConfig: {access: "public"}}},
+		});
+		const {code, stdout} = await run(["check"], root);
+		assert.strictEqual(code, 0);
+		assert.include(stdout, "clean");
 	}, 30_000);
 });

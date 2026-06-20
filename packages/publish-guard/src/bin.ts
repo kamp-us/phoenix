@@ -18,7 +18,7 @@ import {Console, Data, Effect} from "effect";
 import {Command} from "effect/unstable/cli";
 import {checkDrift, type DriftStatus, loadManifests} from "./drift.ts";
 import {PACKAGES_DIR, SKILLS_DIR} from "./paths.ts";
-import {requiredPackages} from "./required.ts";
+import {requiredPackages, unpublishedInvocationBreaks} from "./required.ts";
 
 const DRIFT_EXIT_CODE = 1;
 
@@ -36,7 +36,7 @@ const list = Command.make(
 	"list",
 	{},
 	Effect.fn(function* () {
-		const required = requiredPackages(SKILLS_DIR);
+		const required = requiredPackages(SKILLS_DIR, PACKAGES_DIR);
 		if (required.length === 0) {
 			yield* Console.log("publish-guard: no @kampus/* packages referenced under the skills tree");
 			return;
@@ -49,8 +49,11 @@ const check = Command.make(
 	"check",
 	{},
 	Effect.fn(function* () {
-		const required = requiredPackages(SKILLS_DIR);
+		const required = requiredPackages(SKILLS_DIR, PACKAGES_DIR);
 		const report = checkDrift(required, loadManifests(PACKAGES_DIR, required));
+		// the other-direction defect (#976/#975): a bare-path invocation with no published
+		// fallback breaks every foreign install, yet carries no @kampus/<pkg> token to drift on.
+		const breaks = unpublishedInvocationBreaks(SKILLS_DIR);
 
 		yield* Console.log("publish-guard check — required @kampus/* packages:");
 		for (const {name, status} of report.verdicts) {
@@ -58,21 +61,40 @@ const check = Command.make(
 			yield* Console.log(`  [${mark}] @kampus/${name} — ${STATUS_NOTE[status]}`);
 		}
 
-		if (!report.hasDrift) {
+		if (breaks.length > 0) {
+			yield* Console.log("publish-guard check — foreign-repo invocation breaks:");
+			for (const name of breaks) {
+				yield* Console.log(
+					`  [BREAK] @kampus/${name} — invoked as \`node packages/${name}/src/bin*\` with no \`pnpm dlx @kampus/${name}@latest\` fallback`,
+				);
+			}
+		}
+
+		const drifted = report.verdicts.filter((v) => v.status !== "ok");
+		if (drifted.length === 0 && breaks.length === 0) {
 			yield* Console.log(
 				`publish-guard: clean — all ${report.verdicts.length} required package(s) are publishable`,
 			);
 			return;
 		}
 
-		const drifted = report.verdicts.filter((v) => v.status !== "ok");
-		yield* Console.error(
-			`publish-guard: blocked — ${drifted.length} required package(s) are not publishable (epic #803).`,
-		);
-		yield* Console.error(
-			'Fix each: set `"publishConfig": {"access": "public"}` and remove `"private": true` in its package.json.',
-		);
-		return yield* Effect.fail(new DriftFound({count: drifted.length}));
+		if (drifted.length > 0) {
+			yield* Console.error(
+				`publish-guard: blocked — ${drifted.length} required package(s) are not publishable (epic #803).`,
+			);
+			yield* Console.error(
+				'Fix each: set `"publishConfig": {"access": "public"}` and remove `"private": true` in its package.json.',
+			);
+		}
+		if (breaks.length > 0) {
+			yield* Console.error(
+				`publish-guard: blocked — ${breaks.length} package(s) invoked by bare path with no published fallback (foreign-repo break, #976).`,
+			);
+			yield* Console.error(
+				"Fix each: add a `pnpm dlx @kampus/<pkg>@latest` fallback alongside the `node packages/<pkg>/src/bin*` invocation.",
+			);
+		}
+		return yield* Effect.fail(new DriftFound({count: drifted.length + breaks.length}));
 	}),
 ).pipe(
 	Command.withDescription("Check that every required @kampus/* package is publishable (offline)"),

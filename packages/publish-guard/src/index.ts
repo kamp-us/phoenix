@@ -20,4 +20,9 @@ export {
 	type PackageManifest,
 	type PackageVerdict,
 } from "./drift.ts";
-export {extractKampusRefs, requiredPackages} from "./required.ts";
+export {
+	extractKampusRefs,
+	extractUnpublishedInvocations,
+	requiredPackages,
+	unpublishedInvocationBreaks,
+} from "./required.ts";
