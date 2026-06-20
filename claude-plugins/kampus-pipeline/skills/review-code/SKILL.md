@@ -1124,8 +1124,8 @@ ME="$(gh api user --jq .login)"
 LANDED_COMMENT=$(gh api "repos/$REPO/issues/$PR/comments?per_page=100" \
   | jq -r --arg me "$ME" --arg sha "$HEAD_SHA" '
       [ .[] | select(.user.login==$me)
-            | select(.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*" + ($sha[0:7]); "i")
-                          or  (.body | test("^\\s*\\**\\s*review-code:\\s*advisory"; "i"))) ]
+            | select((.body | test("^\\s*\\**\\s*review-code:\\s*(PASS|FAIL)\\s*@\\s*" + ($sha[0:7]); "i"))
+                      or (.body | test("^\\s*\\**\\s*review-code:\\s*advisory"; "i"))) ]
       | length')
 # (2) or a native approving review GitHub attributed to this exact head (commit_id == HEAD_SHA):
 LANDED_REVIEW=$(gh api "repos/$REPO/pulls/$PR/reviews?per_page=100" \
