@@ -27,6 +27,7 @@ export interface PostFields {
 	updatedAt?: Date | null;
 	myVote?: number | null;
 	isSaved?: boolean | null;
+	isDraft?: boolean | null;
 	tags: ReadonlyArray<{kind: string; label: string}>;
 }
 
@@ -46,6 +47,7 @@ export const toPost = (r: PostFields): Post => ({
 	updatedAt: r.updatedAt ?? r.createdAt,
 	myVote: r.myVote ?? null,
 	isSaved: r.isSaved ?? null,
+	isDraft: r.isDraft ?? null,
 	tags: [...r.tags],
 });
 

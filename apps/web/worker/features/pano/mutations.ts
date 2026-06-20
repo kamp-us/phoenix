@@ -86,6 +86,7 @@ const shapePost = (r: {
 	updatedAt?: Date;
 	myVote?: number | null;
 	isSaved?: boolean | null;
+	isDraft?: boolean | null;
 }): Post =>
 	toPost({
 		id: r.postId,
@@ -102,6 +103,7 @@ const shapePost = (r: {
 		updatedAt: r.updatedAt ?? null,
 		myVote: r.myVote ?? null,
 		isSaved: r.isSaved ?? null,
+		isDraft: r.isDraft ?? null,
 		tags: r.tags,
 	});
 

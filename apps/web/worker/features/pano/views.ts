@@ -66,6 +66,9 @@ export class PostView extends FateDataView<PostViewRow>()("Post")({
 	// read (`Pano.getPostsByIds` / `queries.post`) and stamped here as a scalar —
 	// the `myVote` twin, no per-row resolver, no N+1.
 	isSaved: true,
+	// `isDraft` is the taslak marker, stamped here as a scalar (the `isSaved` twin —
+	// no per-row resolver, no N+1). Drafts are excluded from public feeds.
+	isDraft: true,
 	tags: true,
 	comments: FateDataView.list(CommentView, {orderBy: [{createdAt: "asc"}, {id: "asc"}]}),
 }) {}
