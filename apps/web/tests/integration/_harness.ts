@@ -126,6 +126,14 @@ export interface Harness {
 	 * D1-reported SQL error.
 	 */
 	execD1(sql: string, params?: unknown[]): Promise<number>;
+	/**
+	 * This stage's real D1 REST coordinates — `{accountId, databaseId}` — for a
+	 * setup tool that must drive D1 over the same Cloudflare REST seam off the
+	 * worker binding (the fts-backfill CLI's `makeD1RestFromEnv`, #645). Resolves
+	 * the per-stage database by the same physical-name prefix `execD1` uses, so the
+	 * brittle name reconstruction stays in one place. Setup-only, never an assertion.
+	 */
+	d1Target(): Promise<{accountId: string; databaseId: string}>;
 	/** Open a live SSE stream on a connection id (cookie required). */
 	openSse(connectionId: string, cookie: string): Promise<Response>;
 	/** Drive a `/fate/live` control message (subscribe / unsubscribe). */
@@ -669,6 +677,11 @@ export function harness(getUrl: () => string, stage: string): Harness {
 
 	const execD1: Harness["execD1"] = (sql, params = []) => runD1Query(sql, params);
 
+	const d1Target: Harness["d1Target"] = async () => ({
+		accountId: cloudflare.accountId(),
+		databaseId: await resolveD1DatabaseId(),
+	});
+
 	const openSse: Harness["openSse"] = (connectionId, cookie) =>
 		req(`/fate/live?connectionId=${encodeURIComponent(connectionId)}`, {
 			headers: {accept: "text/event-stream", cookie},
@@ -688,6 +701,7 @@ export function harness(getUrl: () => string, stage: string): Harness {
 		touchTerm,
 		setLastActivityAt,
 		execD1,
+		d1Target,
 		openSse,
 		liveControl,
 	};

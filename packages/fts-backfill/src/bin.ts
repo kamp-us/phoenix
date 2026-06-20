@@ -22,13 +22,11 @@
  *
  *   node src/bin.ts run --database-id <uuid> --account-id <acct>
  */
-import {CredentialsFromEnv} from "@distilled.cloud/cloudflare/Credentials";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
-import {Config, Console, Effect, Layer, Option} from "effect";
+import {Config, Console, Effect, Option} from "effect";
 import {Command, Flag} from "effect/unstable/cli";
-import * as FetchHttpClient from "effect/unstable/http/FetchHttpClient";
 import {backfill} from "./backfill.ts";
-import {makeD1Rest} from "./d1-rest.ts";
+import {makeD1RestFromEnv} from "./d1-rest.ts";
 
 const databaseIdFlag = Flag.string("database-id").pipe(
 	Flag.withDescription("the target stage's D1 database UUID to backfill"),
@@ -40,9 +38,6 @@ const accountIdFlag = Flag.string("account-id").pipe(
 	Flag.withDescription("Cloudflare account id (default: $CLOUDFLARE_ACCOUNT_ID)"),
 );
 
-// Credentials (CLOUDFLARE_API_TOKEN) + an HTTP client — the services queryDatabase needs.
-const restLayer = Layer.merge(CredentialsFromEnv, FetchHttpClient.layer);
-
 const run = Command.make(
 	"run",
 	{databaseId: databaseIdFlag, accountId: accountIdFlag},
@@ -51,7 +46,7 @@ const run = Command.make(
 			? accountId.value
 			: yield* Config.string("CLOUDFLARE_ACCOUNT_ID");
 
-		const d1 = makeD1Rest({accountId: resolvedAccount, databaseId, layer: restLayer});
+		const d1 = makeD1RestFromEnv({accountId: resolvedAccount, databaseId});
 		const report = yield* Effect.promise(() => backfill(d1));
 
 		yield* Console.log(
