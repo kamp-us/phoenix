@@ -36,51 +36,12 @@ beforeAll(async () => {
 	user = await h.signUp(`live-${Date.now()}@test.local`, "hunter2hunter2", "canlı");
 });
 
-// `/api/health` passing (the `_integration.ts` readiness probe) warms ONE route at
-// ONE edge PoP — it does NOT warm the `/fate/live` Durable Object path, which cold-
-// starts the ConnectionDO/TopicDO on the first SSE connect and 500s before the DO is
-// up (#613). The placeholder-404/connection retries in `_harness.ts` don't cover a
-// 5xx, so retry the FIRST SSE connect on a cold-start 5xx until the stream is
-// established (200) — then the held stream proves the DO is warm for the rest of the
-// case. A persistent 5xx still surfaces (the assertion after this fails clearly).
-const openSseWarm = async (connectionId: string, cookie: string): Promise<Response> => {
-	// ~6s worst case (8 × ~750ms) — bounded well under each case's 30s budget, where a
-	// real persistent 5xx returns and the status assertion after the call fails clearly.
-	for (let i = 0; i < 8; i++) {
-		const res = await h.openSse(connectionId, cookie);
-		if (res.status < 500) return res;
-		await res.body?.cancel();
-		await new Promise<void>((r) => setTimeout(r, 750));
-	}
-	return h.openSse(connectionId, cookie);
-};
-
-// `openSseWarm` warms only the CONNECTION-role DO (`connection:<id>`) — the GET SSE
-// connect. The asserted subscribe drives `connections.subscribe` →
-// `topicOf(live, topicKey).register(...)`, which addresses a DIFFERENT, still-cold
-// TOPIC-role DO (`topic:<topicKey>`); its first `register` RPC cold-starts on a
-// freshly-deployed per-file stage and can 5xx (#769 — the #613/#755 cold-start flake).
-// So the FIRST subscribe of each case warms the topic role with the same bounded 5xx
-// retry, symmetric to `openSseWarm`. Steady-state subscribes still assert a real 200
-// (this is only applied where the DO is being warmed). A persistent 5xx surfaces: the
-// final attempt's response is returned and the status assertion after the call fails.
-// Scope: ONLY the SSE/DO cold-start readiness race in this integration tier. The
-// flows-lane determinism class (D1 read-after-write + scalar `live.update` reconcile
-// under serial load) is the separate, non-absorbed epic #713 — not folded in here.
-const liveControlWarm = async (
-	connectionId: string,
-	operations: Array<Record<string, unknown>>,
-	cookie: string,
-): Promise<Response> => {
-	for (let i = 0; i < 8; i++) {
-		const res = await h.liveControl(connectionId, operations, cookie);
-		if (res.status < 500) return res;
-		await res.body?.cancel();
-		await new Promise<void>((r) => setTimeout(r, 750));
-	}
-	return h.liveControl(connectionId, operations, cookie);
-};
-
+// No harness warm-retry wrapper: the production worker seam now retries a cold-DO
+// transport failure itself (`fate-live/cold-start-retry.ts`, #842), so the first
+// SSE connect / first subscribe against a cold `connection:`/`topic:` DO succeeds
+// without a test-side 5xx loop. The prior `openSseWarm`/`liveControlWarm` wrappers
+// (#613/#769) were a harness-only cure for an unhardened runtime path; removing them
+// proves the fix is real, not another band-aid. A genuine 5xx now surfaces directly.
 describe("live views — /fate/live", () => {
 	it("rejects a connect with no session cookie (401)", async () => {
 		const res = await h.req("/fate/live?connectionId=no-cookie", {
@@ -92,7 +53,7 @@ describe("live views — /fate/live", () => {
 
 	it("subscribe → post.submit → prependNode frame arrives on the held SSE stream", async () => {
 		const connectionId = `live-conn-${Date.now()}`;
-		const connect = await openSseWarm(connectionId, user.cookie);
+		const connect = await h.openSse(connectionId, user.cookie);
 		expect(connect.status).toBe(200);
 		expect(connect.headers.get("content-type")).toContain("text/event-stream");
 
@@ -102,9 +63,9 @@ describe("live views — /fate/live", () => {
 		const connected = await readFrame(reader, decoder, buffer);
 		expect(connected).toContain("connected");
 
-		// Subscribe the connection to the global `posts` connection feed. First subscribe
-		// of the case → warm the cold topic-role DO (#769).
-		const sub = await liveControlWarm(
+		// Subscribe the connection to the global `posts` connection feed. The first
+		// subscribe hits a cold topic-role DO; the worker seam absorbs the warm window.
+		const sub = await h.liveControl(
 			connectionId,
 			[
 				{
@@ -150,7 +111,7 @@ describe("live views — /fate/live", () => {
 		// DO fan-out.
 		const slug = `live-term-${Date.now()}`;
 		const connectionId = `live-sozluk-${Date.now()}`;
-		const connect = await openSseWarm(connectionId, user.cookie);
+		const connect = await h.openSse(connectionId, user.cookie);
 		expect(connect.status).toBe(200);
 
 		const reader = connect.body!.getReader();
@@ -161,8 +122,7 @@ describe("live views — /fate/live", () => {
 
 		// Subscribe to the ARGS-scoped `Term.definitions` connection for this slug —
 		// the exact topic the mutation's `live.connection(..., {id: slug})` publishes to.
-		// First subscribe of the case → warm the cold topic-role DO (#769).
-		const sub = await liveControlWarm(
+		const sub = await h.liveControl(
 			connectionId,
 			[
 				{
@@ -205,13 +165,12 @@ describe("live views — /fate/live", () => {
 		const connectionId = `live-regen-${Date.now()}`;
 
 		// First stream + subscription.
-		const first = await openSseWarm(connectionId, user.cookie);
+		const first = await h.openSse(connectionId, user.cookie);
 		const firstReader = first.body!.getReader();
 		const decoder = new TextDecoder();
 		const firstBuf = {value: ""};
 		await readFrame(firstReader, decoder, firstBuf); // : connected
-		// First subscribe of the case → warm the cold topic-role DO (#769).
-		await liveControlWarm(
+		await h.liveControl(
 			connectionId,
 			[{kind: "subscribeConnection", id: "sub-a", type: "Post", procedure: "posts", select: []}],
 			user.cookie,
@@ -219,7 +178,7 @@ describe("live views — /fate/live", () => {
 
 		// Reconnect: a second stream on the SAME connectionId bumps the epoch,
 		// staling the first stream's subscriber rows.
-		const second = await openSseWarm(connectionId, user.cookie);
+		const second = await h.openSse(connectionId, user.cookie);
 		const secondReader = second.body!.getReader();
 		const secondBuf = {value: ""};
 		await readFrame(secondReader, decoder, secondBuf); // : connected

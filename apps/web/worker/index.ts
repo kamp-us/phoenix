@@ -18,6 +18,7 @@ import {betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
 import {Flagship as FlagshipResource} from "./db/resources.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
+import {withColdStartRetry} from "./features/fate-live/cold-start-retry.ts";
 import {connectionOf, LiveDO, LiveDOLive, topicOf} from "./features/fate-live/live-do.ts";
 import type {DeliverFrame, PublishMessage} from "./features/fate-live/protocol.ts";
 import {LiveConnections, LiveTopics} from "./features/fate-live/topics.ts";
@@ -162,10 +163,18 @@ export default Phoenix.make(
 			),
 			Layer.succeed(LiveConnections)(
 				LiveConnections.of({
-					open: (connectionId, request) => connectionOf(live, connectionId).fetch(request),
-					subscribe: (connectionId, input) => connectionOf(live, connectionId).subscribe(input),
+					// A cold `connection:`/`topic:` DO's first RPC can fail on the alchemy
+					// transport channel (`RpcCallError`); `withColdStartRetry` absorbs the
+					// warm window and surfaces `LiveTransportError` on exhaustion (#842).
+					open: (connectionId, request) =>
+						withColdStartRetry("open", connectionOf(live, connectionId).fetch(request)),
+					subscribe: (connectionId, input) =>
+						withColdStartRetry("subscribe", connectionOf(live, connectionId).subscribe(input)),
 					unsubscribe: (connectionId, subId) =>
-						connectionOf(live, connectionId).unsubscribe({subId}),
+						withColdStartRetry(
+							"unsubscribe",
+							connectionOf(live, connectionId).unsubscribe({subId}),
+						),
 				}),
 			),
 		);

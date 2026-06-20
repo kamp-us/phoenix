@@ -24,6 +24,7 @@ import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import {Pasaport} from "../pasaport/Pasaport.ts";
+import type {LiveTransportError} from "./cold-start-retry.ts";
 import {
 	defaultLiveLimits,
 	parseLiveControlRequest,
@@ -62,9 +63,15 @@ export const handleLive = Effect.gen(function* () {
 			`https://live/connect?connectionId=${encodeURIComponent(connectionId)}&ownerId=${encodeURIComponent(ownerId)}&maxQueuedEventsPerConnection=${defaultLiveLimits.maxQueuedEventsPerConnection}`,
 			{headers: raw.headers},
 		);
-		return yield* connections
-			.open(connectionId, HttpServerRequest.fromWeb(forward))
-			.pipe(Effect.orDie);
+		// A cold-DO transport failure that survived the worker-seam retry is a
+		// graceful 503 (the live pin retries on the next mount), NOT a defect — only
+		// a genuine `HttpServerError` (request framing) stays an `orDie` defect.
+		return yield* connections.open(connectionId, HttpServerRequest.fromWeb(forward)).pipe(
+			Effect.catchTag("fate-live/LiveTransportError", (error) =>
+				Effect.succeed(liveError("LIVE_UNAVAILABLE", error.message, 503)),
+			),
+			Effect.orDie,
+		);
 	}
 
 	if (raw.method === "POST") {
@@ -123,6 +130,13 @@ export const handleLive = Effect.gen(function* () {
 	}
 
 	return liveError("BAD_REQUEST", "Invalid live request.", 400);
-});
+}).pipe(
+	// A cold-DO transport failure from the POST control loop (`subscribe`/
+	// `unsubscribe`) that survived the worker-seam retry renders a graceful 503
+	// envelope, NOT a defect-500 (#842). The GET path handles its own locally.
+	Effect.catchTag("fate-live/LiveTransportError", (error: LiveTransportError) =>
+		Effect.succeed(liveError("LIVE_UNAVAILABLE", error.message, 503)),
+	),
+);
 
 export const liveRoute = HttpRouter.add("*", "/fate/live", handleLive);

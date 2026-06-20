@@ -11,6 +11,7 @@ import type * as Effect from "effect/Effect";
 import type {HttpServerError} from "effect/unstable/http/HttpServerError";
 import type * as HttpServerRequest from "effect/unstable/http/HttpServerRequest";
 import type * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
+import type {LiveTransportError} from "./cold-start-retry.ts";
 import type {LiveLimits, PublishMessage} from "./protocol.ts";
 
 export class LiveTopics extends Context.Service<
@@ -38,12 +39,25 @@ export class LiveTopics extends Context.Service<
 export class LiveConnections extends Context.Service<
 	LiveConnections,
 	{
-		/** Forward the (request-shaped) SSE upgrade to a connection DO's `fetch`. */
+		/**
+		 * Forward the (request-shaped) SSE upgrade to a connection DO's `fetch`.
+		 * `LiveTransportError` is the bounded-retry-exhausted cold-start failure
+		 * (#842); the worker seam wraps the cross-DO call in `withColdStartRetry`.
+		 */
 		readonly open: (
 			connectionId: string,
 			request: HttpServerRequest.HttpServerRequest,
-		) => Effect.Effect<HttpServerResponse.HttpServerResponse, HttpServerError, never>;
-		/** Record a subscription on a connection (typed RPC). */
+		) => Effect.Effect<
+			HttpServerResponse.HttpServerResponse,
+			HttpServerError | LiveTransportError,
+			never
+		>;
+		/**
+		 * Record a subscription on a connection (typed RPC). `LiveTransportError` is
+		 * the truthful error channel the alchemy stub's `never` hid (#842): the
+		 * worker seam retries a cold-DO transport failure and surfaces this on
+		 * exhaustion, so the route renders a 503 envelope instead of a defect-500.
+		 */
 		readonly subscribe: (
 			connectionId: string,
 			input: {
@@ -53,11 +67,11 @@ export class LiveConnections extends Context.Service<
 				readonly limits: LiveLimits;
 				readonly lastEventId?: string;
 			},
-		) => Effect.Effect<{readonly ok: boolean}, never, never>;
+		) => Effect.Effect<{readonly ok: boolean}, LiveTransportError, never>;
 		/** Drop a subscription on a connection (typed RPC). */
 		readonly unsubscribe: (
 			connectionId: string,
 			subId: string,
-		) => Effect.Effect<{readonly ok: true}, never, never>;
+		) => Effect.Effect<{readonly ok: true}, LiveTransportError, never>;
 	}
 >()("@kampus/LiveConnections") {}
