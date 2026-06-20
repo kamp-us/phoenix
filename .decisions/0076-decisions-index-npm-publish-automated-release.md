@@ -12,7 +12,7 @@ tags: [plugin, pipeline, packaging, decisions-index, npm, ci, release]
 
 `@kampus/decisions-index` (`packages/decisions-index`) is the Effect CLI that derives
 `.decisions/index.md` from the ADR files and gates a stale index / duplicate ADR id in CI
-(ADR [0066](0066-decisions-index-derive-and-gate.md)). Today it is `private: true`,
+(ADR [0066](0066-generate-decisions-index.md)). Today it is `private: true`,
 `version: 0.0.0`, `exports: "./src/index.ts"` (it runs `.ts` directly), and its `effect` +
 `@effect/platform-node` deps sit on the workspace `catalog:`.
 

@@ -1,0 +1,49 @@
+{
+	"name": "@kampus/doc-links",
+	"version": "0.1.0",
+	"description": "doc-links — repo-wide dead-internal-link gate: CI `check` fails on any markdown link whose relative target does not resolve on disk (#638)",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/doc-links"
+	},
+	"type": "module",
+	"private": true,
+	"bin": {
+		"doc-links": "./dist/bin.js"
+	},
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"check": "node src/bin.ts check"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}

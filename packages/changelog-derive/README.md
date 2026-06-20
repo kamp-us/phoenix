@@ -3,7 +3,7 @@
 The mechanism behind **[ADR 0069](../../.decisions/0069-derived-changelog-from-shipped-work.md)**:
 the repo's `CHANGELOG.md` is a **derived projection** of the pipeline's structured
 metadata, not a hand-edited doc. Every merged PR closes a triaged issue with a known
-title and a `type:*` label (the [`gh-issue-intake-formats.md`](../../skills/gh-issue-intake-formats.md)
+title and a `type:*` label (the [`gh-issue-intake-formats.md`](../../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md)
 contract), so the changelog is a *projection* of facts that already exist — the same
 posture as ADR 0022's generated types: regenerate, never hand-maintain.
 

@@ -28,7 +28,7 @@ nobody maintains it.
 
 The pipeline gives us a clean seam the raw git log does not: **every merged PR closes a
 triaged issue with a known title and a triaged `type:*` label** (the
-[`gh-issue-intake-formats.md`](../skills/gh-issue-intake-formats.md) contract). So a
+[`gh-issue-intake-formats.md`](../claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md) contract). So a
 changelog here is not "parse commit messages and hope" — it is a *projection* of
 structured pipeline metadata that already exists. The open questions issue #181 explicitly
 left to this decision: **per-ship vs per-release** derivation, and whether the mechanism
