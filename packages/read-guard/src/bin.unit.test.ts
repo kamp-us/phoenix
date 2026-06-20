@@ -67,7 +67,11 @@ describe("bin PreToolUse hook — end to end over the real CLI", () => {
 
 	it("DENIES an Edit of a never-read file with a Read-first instruction", async () => {
 		const target = file("never.ts", "x");
-		const tr = transcript("never.jsonl", []); // empty read-set
+		// A reliable (NON-empty) read-set of an UNRELATED file: the target itself is never
+		// read, so the guard can soundly deny. An EMPTY read-set is the worktree/child-session
+		// can't-reconstruct case (fail-open test below), NOT a sound "never-read".
+		const other = file("other.ts", "y");
+		const tr = transcript("never.jsonl", [readLine(other, "2026-06-19T10:00:00.000Z")]);
 		const {code, stdout} = await runHook({
 			tool_name: "Edit",
 			tool_input: {file_path: target},
@@ -78,6 +82,18 @@ describe("bin PreToolUse hook — end to end over the real CLI", () => {
 		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
 		assert.include(out.systemMessage, target);
 		assert.include(out.systemMessage, "Read");
+	}, 30_000);
+
+	it("FAILS OPEN on an empty/unreconstructable read-set — defers to the harness native read-before-edit check (#740/#776 worktree/child-session transcript-shape bug)", async () => {
+		const target = file("worktree-edit.ts", "x");
+		const tr = transcript("empty.jsonl", []); // zero reads reconstructable = unreliable, not a sound "never-read"
+		const {stdout} = await runHook({
+			tool_name: "Edit",
+			tool_input: {file_path: target},
+			transcript_path: tr,
+		});
+		const out = JSON.parse(stdout);
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
 	}, 30_000);
 
 	it("DENIES an Edit of a file modified since it was read", async () => {

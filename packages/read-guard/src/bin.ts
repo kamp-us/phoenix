@@ -86,6 +86,12 @@ export const decideForEnvelope = (
 	if (typeof target !== "string" || target.length === 0) return {allow: true};
 	const transcriptPath = typeof env.transcript_path === "string" ? env.transcript_path : "";
 	const readSet = transcriptPath ? parseReadSet(readTranscript(transcriptPath)) : [];
+	// #740/#776: when ZERO reads are reconstructable the read-set is UNRELIABLE — a
+	// worktree/child-session transcript uses a shape parseReadSet can't see, so every
+	// file reads as "never-read" and every Edit is wrongly DENIED (fail-closed). Defer
+	// to the harness's own native read-before-edit check here: read-guard only adds its
+	// precise-instruction deny when it can RELIABLY see reads (a non-empty read-set).
+	if (readSet.length === 0) return {allow: true};
 	const decision = decide(target, readSet, currentMtimeMs(target));
 	if (decision.kind === "no-op") return {allow: true};
 	return {allow: false, reason: blockReason(decision.path, decision.reason)};

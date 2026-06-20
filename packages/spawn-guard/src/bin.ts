@@ -70,14 +70,28 @@ const guard = Command.make(
 				);
 				return;
 			case "rewrite":
+				// #776: the Task tool's `model` field accepts only short names (opus/sonnet/…);
+				// rewriting it to the full pin id (`claude-opus-4-8[1m]`) fails the tool schema
+				// and blocks the spawn. So never rewrite — an UNSET request inherits the
+				// (allowlisted) session model → allow; an EXPLICIT off-allowlist request is still
+				// denied, which is the protection #744 exists for.
+				if (requested == null) {
+					yield* Console.log(
+						JSON.stringify({
+							hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow"},
+							systemMessage: `spawn-guard: allow unset (inherit session model; pin ${decision.model} on allowlist) — ${decision.checked}`,
+						}),
+					);
+					return;
+				}
 				yield* Console.log(
 					JSON.stringify({
 						hookSpecificOutput: {
 							hookEventName: "PreToolUse",
-							permissionDecision: "allow",
-							updatedInput: {...toolInput, model: decision.model},
+							permissionDecision: "deny",
+							permissionDecisionReason: `spawn-guard: DENY — explicit model ${requested} is not on the allowlist. ${decision.checked}`,
 						},
-						systemMessage: `spawn-guard: pinned ${decision.from} → ${decision.model} (WORKFLOW_MODEL) — ${decision.checked}`,
+						systemMessage: `spawn-guard: DENY explicit off-allowlist model ${requested} — ${decision.checked}`,
 					}),
 				);
 				return;
