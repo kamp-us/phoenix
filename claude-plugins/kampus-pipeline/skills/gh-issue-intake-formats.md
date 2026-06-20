@@ -759,7 +759,12 @@ form below). Cite this regex; do **not** re-hard-code the path list:
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — one definition, no fourth copy:
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'
-gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename' \
+# --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
+# concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
+# API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a
+# >100-file PR — hiding a control-plane file in the tail. Never pair --paginate with an AGGREGATE
+# --jq (`[ … ]` / `length` / `add`): gh runs the filter PER PAGE and emits one result each (#725).
+gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename' \
   | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING — control plane (manual merge)"
 ```
 

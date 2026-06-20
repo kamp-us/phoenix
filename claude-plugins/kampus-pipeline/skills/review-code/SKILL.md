@@ -118,7 +118,7 @@ not in the PR's self-description. Pull the change:
 gh pr diff $PR \
   || gh api repos/$REPO/pulls/$PR -H "Accept: application/vnd.github.v3.diff"
 # files touched, at a glance
-gh api "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'
+gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[] | "\(.status)\t+\(.additions)/-\(.deletions)\t\(.filename)"'   # --paginate: streaming --jq, pages concatenate — the full set past file #100 (#725)
 ```
 
 This same loaded diff (and the review worktree below) is what the **specialist fan-out** runs
@@ -139,7 +139,7 @@ each gate hands a mis-classed PR to the gate that owns its class:
 
 ```bash
 # the file set drives the class decision (same list pulled above)
-FILES="$(gh api "repos/$REPO/pulls/$PR/files?per_page=300" --jq '.[].filename')"
+FILES="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')"   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; #725)
 # skills-only ⇒ every changed path is under skills/ — review-skill's class, not yours
 if [ -n "$FILES" ] && ! grep -qvE '^claude-plugins/kampus-pipeline/skills/' <<<"$FILES"; then
   echo "not a code PR — route to review-skill"   # plain note, no review-code: marker; stop
@@ -384,8 +384,11 @@ So the verdict's not-auto-mergeable flag matches the **canonical §CP set** (the
 
 ```bash
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$'   # the §CP canonical set (ADR 0073 §6)
-CONTROL_PLANE_TOUCHED="$(gh api "repos/$REPO/pulls/$PR/files?per_page=100" \
-  --jq --arg re "$CONTROL_PLANE_RE" '[.[].filename | select(test($re))]')"
+# --paginate streams filenames (the API caps per_page at 100); grep aggregates the §CP matches
+# ACROSS the concatenated pages — a jq `[ … ]` aggregate would instead emit one array PER PAGE.
+# `|| true`: no §CP match is grep exit 1, an empty (non-control-plane) result, not a failure (#725).
+CONTROL_PLANE_TOUCHED="$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+  --jq '.[].filename' | grep -E "$CONTROL_PLANE_RE" || true)"
 # non-empty → control-plane: emit the advisory line in the verdict (Step 4a) per ADR 0053/0065/0073
 ```
 
