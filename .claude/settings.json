@@ -2,10 +2,6 @@
 	"enabledPlugins": {
 		"kampus-pipeline@kampus": false
 	},
-	"statusLine": {
-		"type": "command",
-		"command": "node packages/spawn-guard/src/bin.ts statusline"
-	},
 	"hooks": {
 		"PreToolUse": [
 			{
