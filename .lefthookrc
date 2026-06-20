@@ -1,0 +1,6 @@
+# lefthook rc — sourced by every generated hook wrapper before lefthook runs.
+# The wrapper runs under `/bin/sh` via its absolute shebang, so this executes even
+# when the invoking env has a PATH stripped of the system bin dirs (the harness
+# `git worktree add` exec env, #787). Prepending /bin:/usr/bin lets lefthook resolve
+# the `sh` it wraps `run` commands in; the inherited PATH (pnpm/node) is preserved.
+export PATH="/bin:/usr/bin:$PATH"
