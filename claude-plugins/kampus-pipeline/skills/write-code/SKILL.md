@@ -17,6 +17,22 @@ Pick, claim, implement, hand off. The one gate downstream is `review-code`, whic
 verifies your PR against the issue's acceptance criteria before it merges; your job is
 to make that verification pass, not to merge on your own authority.
 
+**You are the implementer, never the reviewer of your own diff (the split-role firewall).**
+The whole point of the pipeline is split-role review — implementer ≠ reviewer — so the
+self-evaluation bias of grading your own work never enters the merge decision. That guard
+lives in *who runs the gate*, and it is **structural, not advisory**: write-code **never
+invokes `review-code`/`review-doc`/`review-skill` on the PR it just opened or repaired**, and
+**never posts a `review-(code|doc|skill): PASS`/`FAIL` marker** on its own output. The gate is
+run by a **separate** reviewer agent; you **hard-stop** at PR-open (initial mode) and after
+resubmit (repair mode) and leave the verdict to them. Re-reading your own diff to *self-check
+before you push* is fine — what's forbidden is **stepping into the gate role**: running a
+review skill on your PR, or emitting a verdict marker. Repair mode's loop is sound for the same
+reason — you fix, an **independent** re-review re-gates; you never write the PASS (see
+[Why the author may fix its own FAIL'd PR](#why-the-author-may-fix-its-own-faild-pr-this-is-not-a-firewall-violation)).
+This invariant is the skill's own rule, enforced here — **it does not rely on a per-spawn
+hand-off instruction** (which agents demonstrably ignored, walking themselves into the gate on
+their own PR — #664).
+
 ## All GitHub ops via `gh api` REST — never GraphQL
 
 The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL issue
@@ -739,6 +755,40 @@ A standalone (non-sub-issue) issue has no parent epic — skip this step.
 
 ---
 
+## Step 8 — Hard-stop at PR-open: hand the gate to a separate reviewer (never self-review)
+
+This is the **terminus of initial-build mode**, and it is a hard stop. Once the PR is open
+(Step 5), progress is logged (Step 6), and any epic handoff is posted (Step 7), **you are
+done — full stop.** Do **not** continue into the review gate on the PR you just opened:
+
+- **Never run `review-code`/`review-doc`/`review-skill` on your own PR.** The gate is a
+  **separate reviewer's** job by design (the split-role firewall in the intro). Running the
+  review skill on your own diff *is* the self-evaluation collapse the pipeline exists to
+  prevent — the implementer grading its own work — even though you'd nominally be "just
+  checking." The verification you owe is making the AC checkable from the outside (Step 4),
+  **not** producing the verdict yourself.
+- **Never post a `review-(code|doc|skill): PASS`/`FAIL` marker on your own output**, and never
+  open/submit a native PR review (APPROVE/REQUEST_CHANGES) on it. Those are reviewer artifacts;
+  emitting one from the implementer seat forges a verdict the gate's ACL author-check (ADR
+  [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md))
+  is meant to keep honest, and races the dedicated reviewer (the #661 stale-verdict collision).
+- **Do not self-assign a reviewer, re-trigger the gate, or merge.** The gate is **stateless and
+  pull-driven** — opening the PR (and, in repair, pushing) is the *only* signal it needs; it
+  re-runs on its own when a separate reviewer picks the PR up. `ship-it` owns PASS → merge, and
+  for a control-plane `.claude`/`.github` PR a **human** does (ADR
+  [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)).
+
+The split-role guarantee holds **without per-spawn babysitting**: this hard stop is the skill's
+own rule, not a hand-off line a spawner must remember to include (the omitted-clause failure that
+let implementers walk into the gate — #664). You re-enter this skill **only** later, in
+[Repair mode](#repair-mode--consume-a-gate-fail-verdict-fix-and-resubmit), when a *separate*
+reviewer has landed a FAIL on your PR — and even then you fix and resubmit, never review (Step R3).
+If you were spawned with a wider "review-and-ship this through" instruction, the structural rule
+here **wins** over it: open the PR, hand off, and stop — flag in your run ledger that the gate is
+left to a separate reviewer.
+
+---
+
 ## Repair mode — consume a gate FAIL verdict, fix-and-resubmit
 
 This is the second invocation shape: keyed off a **PR number**, it is the consumer the
@@ -1008,10 +1058,12 @@ resolve threads — the reviewer (or `ship-it` on merge) resolves; the reply is 
 loop on write-code's side.
 
 Then **stop.** The independent re-review re-gates the fix and lands a fresh verdict; that
-is the firewall. write-code does **not** write a PASS marker, does **not** approve, and
-does **not** merge — merge is `ship-it`'s sole authority (and for a control-plane
-`.claude`/`.github` PR, a *human's*; see the guardrail below). Report which findings you
-addressed and that you handed the PR back to the gate.
+is the firewall. write-code does **not** run a review skill on the resubmitted head, does
+**not** write a PASS marker, does **not** approve, and does **not** merge — merge is
+`ship-it`'s sole authority (and for a control-plane `.claude`/`.github` PR, a *human's*; see
+the guardrail below). The push **is** the only re-trigger the stateless gate needs; a
+**separate** reviewer picks the new head up and judges it. Report which findings you addressed
+and that you handed the PR back to the gate.
 
 ### Bounding — cap at 3 rounds, then escalate
 
@@ -1127,6 +1179,12 @@ indistinguishable from "still FAILing after the cap" to the picker, so the same 
   [0053](https://github.com/kamp-us/phoenix/blob/main/.decisions/0053-control-plane-boundary.md)). **This very edit is such a PR:
   a `.claude/**` change `ship-it` will refuse to auto-merge, merged by hand.** Repair mode
   never weakens that refusal.
+- **Never review your own resubmit (split-role firewall).** After pushing the fix you
+  **stop** — you do **not** run `review-code`/`review-doc`/`review-skill` on the new head, post
+  a `review-(code|doc|skill): PASS`/`FAIL` marker, or open a native PR review on it. The fix is
+  re-gated by an **independent** reviewer; the bias firewall lives at the *review* step, and
+  write-code occupying both seats is exactly what defeats it (#664). The push is the only
+  re-trigger; a separate reviewer judges the new head.
 - **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
   gate history stay intact.
 - **Idempotent.** Re-running on an already-fixed / PASS PR (one with no latest FAIL, or one
@@ -1281,11 +1339,12 @@ A single invocation does one unit of work end to end, in one of the two modes:
 
 - **Initial build** (issue number / no arg): pick (Step 1 — including the pre-pick
   resume-my-failed-PR scan — +Step 2 if a sub-issue), claim (Step 3), then either
-  implement→PR→progress→handoff (Steps 4–7) or the type-routed path. Report a short
-  ledger: the issue picked (and why — bucket + age, the milestone tiebreaker or
+  implement→PR→progress→handoff (Steps 4–7) or the type-routed path, and **hard-stop at
+  PR-open (Step 8) — hand the review gate to a separate reviewer; never review your own PR.**
+  Report a short ledger: the issue picked (and why — bucket + age, the milestone tiebreaker or
   `work milestone N` scope if either applied, or the sub-issue eligibility derivation), the
-  branch and PR opened (or the ADR/diagnosis for a decision/investigation), and a pointer to
-  the progress comment.
+  branch and PR opened (or the ADR/diagnosis for a decision/investigation), a pointer to
+  the progress comment, and that the gate is left to a separate reviewer.
 - **Repair** (PR number): resolve the PR's latest verdict per namespace (Step R1) and, if
   it's FAIL, fix the enumerated marker findings — **including any review-appended AC, drained
   as an ordinary `[FAIL]` row (ADR 0079, §2)** — **plus the in-scope line-anchored inline
