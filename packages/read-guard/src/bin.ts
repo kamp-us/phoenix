@@ -20,12 +20,16 @@
  *
  * Fail-open: any malformed envelope, unreadable transcript, or unexpected error
  * exits 0 with `allow` (and an empty body) — a hook crash must never wedge an edit.
- * It is a turn-saver, not a gate; when it can't decide, it gets out of the way.
+ * It also fails open structurally when it can't attribute the read-set to the edit:
+ * an out-of-project target (#802) or a worktree-subagent target (#781) — see
+ * `isUnattributable`. It is a turn-saver, not a gate; when it can't decide, it gets
+ * out of the way.
  *
  * Wired per effect-smol's CLI guidance (mirrors `@kampus/leak-guard`):
  * `@effect/platform-node` for stdin + filesystem, run via `NodeRuntime.runMain`.
  */
 import {readFileSync, statSync} from "node:fs";
+import {resolve, sep} from "node:path";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Effect} from "effect";
 import {blockReason, decide} from "./read-guard.ts";
@@ -71,6 +75,39 @@ const readTranscript = (path: string): string => {
 	}
 };
 
+/**
+ * Can read-guard soundly attribute the handed transcript's read-set to an edit of
+ * `target`? It can only when `target` lives in the SAME phoenix checkout whose reads
+ * that transcript records. Two cases where it can't — both fail OPEN (defer to the
+ * harness's own native read-before-edit check) rather than deny a read it can't see:
+ *
+ *   - **out-of-project** (#802): `target` is outside `$CLAUDE_PROJECT_DIR` — an
+ *     ADR-0038 sibling-fork edit. read-guard reconstructs read-state from phoenix's
+ *     transcript and has no authority over another repo's reads.
+ *   - **worktree-subagent** (#781): `target` is inside a `.claude/worktrees/<agent>`
+ *     subtree. The harness lands every agent worktree there (`git worktree add`); a
+ *     worktree subagent's own `Read`s are recorded in a SEPARATE subagent transcript,
+ *     not the one the hook is handed, so the reconstructed read-set is non-empty (it
+ *     has the PARENT session's reads) yet omits this agent's reads of `target` → the
+ *     edit reads as "never-read" and is wrongly DENIED. Unattributable, so fail open.
+ *
+ * When `$CLAUDE_PROJECT_DIR` is unset the out-of-project test can't run (can't bound
+ * the project), so only the worktree subtree case applies — preserving the in-project
+ * sound-deny (#755) for the common main-session path.
+ */
+const isUnattributable = (target: string): boolean => {
+	const abs = resolve(target);
+	const projectDir = process.env.CLAUDE_PROJECT_DIR;
+	if (typeof projectDir === "string" && projectDir.length > 0) {
+		const root = resolve(projectDir);
+		// out-of-project: not `root` itself and not under `root/`.
+		if (abs !== root && !abs.startsWith(root + sep)) return true;
+	}
+	// worktree-subagent: any `…/.claude/worktrees/…` segment (the harness's own
+	// always-worktree landing dir) — reads live in a separate subagent transcript.
+	return abs.includes(`${sep}.claude${sep}worktrees${sep}`);
+};
+
 /** The decision for one PreToolUse envelope — pure-ish glue around the core; total. */
 export const decideForEnvelope = (
 	raw: string,
@@ -84,13 +121,14 @@ export const decideForEnvelope = (
 	if (env.tool_name !== "Edit" && env.tool_name !== "Write") return {allow: true};
 	const target = env.tool_input?.file_path;
 	if (typeof target !== "string" || target.length === 0) return {allow: true};
+	// #781/#802: fail OPEN when the read-set can't be attributed to this edit (out-of-
+	// project fork edit, or a worktree-subagent whose reads are in a separate transcript)
+	// — read-guard must not deny a read it structurally cannot see. See isUnattributable.
+	if (isUnattributable(target)) return {allow: true};
 	const transcriptPath = typeof env.transcript_path === "string" ? env.transcript_path : "";
 	const readSet = transcriptPath ? parseReadSet(readTranscript(transcriptPath)) : [];
-	// #740/#776: when ZERO reads are reconstructable the read-set is UNRELIABLE — a
-	// worktree/child-session transcript uses a shape parseReadSet can't see, so every
-	// file reads as "never-read" and every Edit is wrongly DENIED (fail-closed). Defer
-	// to the harness's own native read-before-edit check here: read-guard only adds its
-	// precise-instruction deny when it can RELIABLY see reads (a non-empty read-set).
+	// #740/#776: a fully-empty reconstructed read-set is likewise unreliable (a transcript
+	// shape parseReadSet can't see) — defer to the harness rather than deny everything.
 	if (readSet.length === 0) return {allow: true};
 	const decision = decide(target, readSet, currentMtimeMs(target));
 	if (decision.kind === "no-op") return {allow: true};

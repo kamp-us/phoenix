@@ -1,5 +1,5 @@
 import {execFile} from "node:child_process";
-import {mkdtempSync, rmSync, utimesSync, writeFileSync} from "node:fs";
+import {mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync} from "node:fs";
 import {tmpdir} from "node:os";
 import {join} from "node:path";
 import {fileURLToPath} from "node:url";
@@ -19,6 +19,94 @@ describe("decideForEnvelope — envelope glue (fail-open)", () => {
 	it("allows when tool_input has no file_path", () => {
 		const raw = JSON.stringify({tool_name: "Edit", tool_input: {}});
 		assert.isTrue(decideForEnvelope(raw).allow);
+	});
+});
+
+describe("decideForEnvelope — read-set attribution boundary (#781/#802 fail-open)", () => {
+	let projectDir: string;
+	let readDir: string;
+	let savedProjectDir: string | undefined;
+	const file = (root: string, name: string, content: string): string => {
+		const p = join(root, name);
+		writeFileSync(p, content, "utf8");
+		return p;
+	};
+	const transcript = (root: string, name: string, lines: ReadonlyArray<unknown>): string => {
+		const p = join(root, name);
+		writeFileSync(p, lines.map((l) => JSON.stringify(l)).join("\n"), "utf8");
+		return p;
+	};
+	const readLine = (filePath: string, iso: string) => ({
+		timestamp: iso,
+		message: {content: [{type: "tool_use", name: "Read", input: {file_path: filePath}}]},
+	});
+
+	beforeAll(() => {
+		// A real, isolated on-disk `$CLAUDE_PROJECT_DIR` for the boundary tests; `readDir`
+		// stands in for a sibling fork repo OUTSIDE it. Save/restore the env so the CLI
+		// end-to-end block (which spawns child processes inheriting env) is unaffected.
+		projectDir = mkdtempSync(join(tmpdir(), "read-guard-project-"));
+		readDir = mkdtempSync(join(tmpdir(), "read-guard-fork-"));
+		savedProjectDir = process.env.CLAUDE_PROJECT_DIR;
+		process.env.CLAUDE_PROJECT_DIR = projectDir;
+	});
+	afterAll(() => {
+		if (savedProjectDir === undefined) delete process.env.CLAUDE_PROJECT_DIR;
+		else process.env.CLAUDE_PROJECT_DIR = savedProjectDir;
+		rmSync(projectDir, {recursive: true, force: true});
+		rmSync(readDir, {recursive: true, force: true});
+	});
+
+	it("ALLOWS (fail-open) an Edit OUTSIDE $CLAUDE_PROJECT_DIR — sibling-fork edit, #802", () => {
+		// A never-read target in a sibling repo, judged against a non-empty phoenix read-set:
+		// without the boundary check this is a sound-looking 'never-read' DENY. It must ALLOW.
+		const forkTarget = file(readDir, "fork-src.ts", "x");
+		const inProject = file(projectDir, "seen.ts", "y");
+		const tr = transcript(projectDir, "fork.jsonl", [
+			readLine(inProject, "2026-06-19T10:00:00.000Z"),
+		]);
+		const raw = JSON.stringify({
+			tool_name: "Edit",
+			tool_input: {file_path: forkTarget},
+			transcript_path: tr,
+		});
+		assert.isTrue(decideForEnvelope(raw).allow);
+	});
+
+	it("ALLOWS (fail-open) an Edit of a worktree-subagent target under .claude/worktrees/ — #781", () => {
+		// The subagent's own Reads live in a SEPARATE subagent transcript; the handed
+		// transcript carries the PARENT session's reads (non-empty) but NOT this target's,
+		// so without the worktree-attribution carve-out it reads as never-read → wrong DENY.
+		const worktreeRoot = join(projectDir, ".claude", "worktrees", "agent-abc123");
+		mkdirSync(worktreeRoot, {recursive: true});
+		const worktreeTarget = file(worktreeRoot, "edit-me.ts", "x");
+		const parentRead = file(projectDir, "parent-read.ts", "y");
+		const tr = transcript(projectDir, "worktree.jsonl", [
+			readLine(parentRead, "2026-06-19T10:00:00.000Z"),
+		]);
+		const raw = JSON.stringify({
+			tool_name: "Edit",
+			tool_input: {file_path: worktreeTarget},
+			transcript_path: tr,
+		});
+		assert.isTrue(decideForEnvelope(raw).allow);
+	});
+
+	it("still DENIES a genuine never-read Edit of an in-project file with a reliable read-set — #755 preserved", () => {
+		// In-project (not under .claude/worktrees/), reliable non-empty read-set that does
+		// NOT contain the target → a SOUND never-read deny. The fail-open carve-outs must
+		// not blanket-disable this.
+		const target = file(projectDir, "never.ts", "x");
+		const other = file(projectDir, "other.ts", "y");
+		const tr = transcript(projectDir, "never.jsonl", [readLine(other, "2026-06-19T10:00:00.000Z")]);
+		const raw = JSON.stringify({
+			tool_name: "Edit",
+			tool_input: {file_path: target},
+			transcript_path: tr,
+		});
+		const decision = decideForEnvelope(raw);
+		assert.isFalse(decision.allow);
+		assert.include(decision.reason ?? "", target);
 	});
 });
 
