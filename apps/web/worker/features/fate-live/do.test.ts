@@ -19,6 +19,7 @@ import {
 	makeTopicName,
 } from "./live-do.ts";
 import type {
+	BufferedFrame,
 	DeliverFrame,
 	LiveLimits,
 	PublishMessage,
@@ -813,6 +814,192 @@ describe("LiveDO live fan-out (KV model)", () => {
 		expect(sub.ok).toBe(true);
 
 		// No replay frame — only the idle timeout resolves.
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+});
+
+// The OTHER buffer bound is the count cap (`maxBufferedFramesPerTopic`): the ring
+// stays small so a topic DO's storage can't grow without limit under a publish
+// storm with no subscriber to drain it. Prune runs INLINE on every publish
+// (`appendToBuffer`) and on register (`replayBuffer`), with no background sweep.
+//
+// Non-obvious shape exercised here: prune is "prune-then-append" — `appendToBuffer`
+// prunes the EXISTING buffer (to the cap) and then writes the new frame, so storage
+// settles at cap+1 frames, while the read path (`pruneBuffer` inside `replayBuffer`)
+// prunes again and only ever hands replay the newest `cap` survivors. The cap is the
+// thing under test, so these drive it directly with a small `maxBufferedFramesPerTopic`.
+describe("LiveDO replay buffer count-cap overflow prune", () => {
+	/** The seqs currently retained in a topic's storage-backed ring, ascending. */
+	const bufferedSeqs = (
+		fake: ReturnType<typeof makeDurableObjectStateForTest>,
+		topicKey: string,
+	): Promise<ReadonlyArray<number>> =>
+		run(
+			Effect.map(fake.state.storage.list<BufferedFrame>({prefix: `frame:${topicKey}:`}), (map) =>
+				[...map.values()].map((entry) => entry.seq).sort((a, b) => a - b),
+			),
+		);
+
+	it("publishing far past the cap holds at cap+1 retained frames, oldest seqs dropped", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-cap-overflow";
+		const {instance: topic, fake} = makeTopic(cell, topicKey);
+
+		// Cap of 3, no registered subscriber: every publish only writes the ring.
+		const cap = 3;
+		const limits: LiveLimits = {...LIMITS, maxBufferedFramesPerTopic: cap};
+
+		// Publish far past the cap (seq 1..10). Prune-then-append settles storage at
+		// cap+1: the prune (which runs BEFORE the append) trims the existing ring to
+		// `cap`, then the new frame lands → `cap + 1` retained.
+		const total = 10;
+		for (let i = 0; i < total; i++) {
+			await run(topic.publish({topicKey, frame: entityFrame, limits}));
+		}
+
+		const retained = await bufferedSeqs(fake, topicKey);
+		// (a) bounded: never grows with publish count — exactly cap+1, not `total`.
+		expect(retained.length).toBe(cap + 1);
+		// (b)+(c) the SURVIVORS are the newest contiguous window: seqs 7,8,9,10. The
+		// oldest (1..6) were pruned, lowest-seq-first.
+		expect(retained).toEqual([total - cap, total - cap + 1, total - cap + 2, total]);
+		expect(retained[0]).toBe(total - cap); // oldest survivor
+		expect(retained[retained.length - 1]).toBe(total); // newest survivor retained
+	});
+
+	it("the cap bounds the replay WINDOW to the newest `cap` frames (overflow not replayed)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-cap-window";
+		const decoyKey = "Post:decoy-cap-window";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-cap-window");
+		const ownerId = "owner-cap-window";
+		const subId = "sub-cap-window";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Activate the subId on the connection via a decoy topic (revision 1 /
+		// generation 1), so the replayed deliver to the REAL topic isn't stale.
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// Cap of 3; publish seq 1..6 to the real topic (no registered row → fan-out
+		// reaches nothing, so replay is the only delivery path). A `subscribedAt` from
+		// before any publish admits the whole surviving window, isolating the COUNT cap
+		// from the `subscribedAt` bound.
+		const cap = 3;
+		const limits: LiveLimits = {...LIMITS, maxBufferedFramesPerTopic: cap};
+		const beforePublish = Date.now();
+		const total = 6;
+		for (let i = 0; i < total; i++) {
+			await run(topic.publish({topicKey, frame: entityFrame, limits}));
+		}
+
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-cap-window",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits, subscribedAt: beforePublish}));
+		expect(reg.ok).toBe(true);
+
+		// Replay hands back exactly the newest `cap` frames, in order — the read-path
+		// prune drops the cap+1th oldest survivor from the window. SSE `id:` carries the
+		// per-topic seq, so we assert the exact retained seq range: 4, 5, 6.
+		const seqs: Array<number> = [];
+		for (let i = 0; i < cap; i++) {
+			const frame = await stream.next();
+			expect(payloadOf(frame).id).toBe(subId);
+			const idLine = frame.split("\n").find((l) => l.startsWith("id: "))!;
+			seqs.push(Number(idLine.slice("id: ".length)));
+		}
+		expect(seqs).toEqual([total - cap + 1, total - cap + 2, total]); // 4, 5, 6 — never seq 1..3
+
+		// No further frame: the overflow (seq 1..3) was pruned, not replayed.
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+
+	it("a cursor at a cap-pruned seq replays the surviving strictly-newer frames, never a pruned one", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-cap-cursor";
+		const decoyKey = "Post:decoy-cap-cursor";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-cap-cursor");
+		const ownerId = "owner-cap-cursor";
+		const subId = "sub-cap-cursor";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// Cap of 3; publish seq 1..6 — survivors are 4,5,6 (per the prune above). The
+		// client reconnects carrying cursor "2": a seq that has been EVICTED by the
+		// count cap (it's < the oldest survivor 4). The numeric-cursor semantics (#731)
+		// must resolve this to "replay everything still buffered strictly newer than 2"
+		// — i.e. the whole surviving window 4,5,6 — never deliver a pruned frame, never
+		// crash on a cursor it can't find in the window.
+		const cap = 3;
+		const limits: LiveLimits = {...LIMITS, maxBufferedFramesPerTopic: cap};
+		const beforePublish = Date.now();
+		const total = 6;
+		for (let i = 0; i < total; i++) {
+			await run(topic.publish({topicKey, frame: entityFrame, limits}));
+		}
+
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-cap-cursor",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(
+			topic.register({row, limits, subscribedAt: beforePublish, lastEventId: "2"}),
+		);
+		expect(reg.ok).toBe(true);
+
+		// Survivors 4,5,6 all satisfy `seq > 2`, so the whole window replays in order;
+		// the pruned seqs (1,2,3) are simply gone — none is delivered.
+		const seqs: Array<number> = [];
+		for (let i = 0; i < cap; i++) {
+			const frame = await stream.next();
+			expect(payloadOf(frame).id).toBe(subId);
+			const idLine = frame.split("\n").find((l) => l.startsWith("id: "))!;
+			seqs.push(Number(idLine.slice("id: ".length)));
+		}
+		expect(seqs).toEqual([total - cap + 1, total - cap + 2, total]); // 4, 5, 6
+
 		const echo = await Promise.race([
 			stream.next(),
 			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
