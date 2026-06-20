@@ -18,3 +18,4 @@ export {
 	renderIndex,
 	sortEntries,
 } from "./decisions-index.ts";
+export {CheckFailed, checkIndex, generateIndex, IoError, readAdrFiles} from "./gate.ts";

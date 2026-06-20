@@ -21,4 +21,5 @@ export {
 	type ScanFile,
 	scanFile,
 } from "./lint.ts";
+export {fileExists, isExecutable, resolveRealGh, resolveRepo, selfPath} from "./resolve.ts";
 export {type GhRoute, isMilestoneTitle, route} from "./router.ts";

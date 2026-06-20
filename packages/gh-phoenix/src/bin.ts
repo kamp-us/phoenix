@@ -21,89 +21,19 @@
  * transparently inherit stdio and the real `gh`'s exit code), so it short-circuits
  * before the Effect CLI runtime.
  */
-import {execFileSync, spawnSync} from "node:child_process";
-import {accessSync, constants, readFileSync, realpathSync} from "node:fs";
-import {delimiter, join} from "node:path";
+import {spawnSync} from "node:child_process";
+import {readFileSync} from "node:fs";
 import {NodeRuntime, NodeServices} from "@effect/platform-node";
 import {Console, Data, Effect} from "effect";
 import {Argument, Command} from "effect/unstable/cli";
 import {isZeroScope, lintCorpus, type ScanFile} from "./lint.ts";
+import {fileExists, resolveRealGh, resolveRepo} from "./resolve.ts";
 import {route} from "./router.ts";
 
 const FINDING_EXIT_CODE = 2;
 const ZERO_SCOPE_EXIT_CODE = 3;
 
 // ── The `gh` shim path (short-circuits before the Effect CLI) ──────────────────
-
-/** This binary's own resolved path, so PATH resolution can skip it (no self-recursion). */
-const selfPath = (() => {
-	try {
-		return realpathSync(process.argv[1] ?? "");
-	} catch {
-		return process.argv[1] ?? "";
-	}
-})();
-
-/**
- * Resolve the REAL `gh` to exec: `$GH_PHOENIX_REAL_GH` if set, else the first
- * executable `gh` on PATH whose realpath differs from this shim's. Returns null
- * when no real `gh` exists — the shim then can't passthrough and reports that.
- */
-const resolveRealGh = (): string | null => {
-	const explicit = process.env.GH_PHOENIX_REAL_GH;
-	if (explicit && isExecutable(explicit)) return explicit;
-	const dirs = (process.env.PATH ?? "").split(delimiter).filter((d) => d.length > 0);
-	for (const dir of dirs) {
-		const candidate = join(dir, "gh");
-		if (!isExecutable(candidate)) continue;
-		let resolved = candidate;
-		try {
-			resolved = realpathSync(candidate);
-		} catch {
-			/* use unresolved */
-		}
-		if (resolved !== selfPath) return candidate;
-	}
-	return null;
-};
-
-const isExecutable = (path: string): boolean => {
-	try {
-		accessSync(path, constants.X_OK);
-		return true;
-	} catch {
-		return false;
-	}
-};
-
-const fileExists = (path: string): boolean => {
-	try {
-		accessSync(path, constants.R_OK);
-		return true;
-	} catch {
-		return false;
-	}
-};
-
-/** Resolve `$CLAUDE_PIPELINE_REPO` or `gh repo view` — the repo the REST rewrites target. */
-const resolveRepo = (realGh: string | null): string => {
-	const fromEnv = process.env.CLAUDE_PIPELINE_REPO;
-	if (fromEnv && fromEnv.length > 0) return fromEnv;
-	if (realGh) {
-		try {
-			return execFileSync(
-				realGh,
-				["repo", "view", "--json", "nameWithOwner", "-q", ".nameWithOwner"],
-				{
-					encoding: "utf8",
-				},
-			).trim();
-		} catch {
-			/* fall through */
-		}
-	}
-	return "kamp-us/phoenix";
-};
 
 /**
  * Run the `gh` shim over `argv` (the args after the binary name). Execs the real
