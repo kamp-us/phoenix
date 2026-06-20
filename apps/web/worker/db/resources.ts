@@ -77,3 +77,38 @@ export const demoTargetingFlag = (appId: Input<string>) =>
 			},
 		],
 	});
+
+
+/**
+ * The pano `taslak` (draft-save) dark-ship flag (#746) — the feature-flag
+ * substrate's first real consumer (ADR 0091/0093). Declared in-stack default-OFF
+ * so it reaches production dark; flipping it on is the human release act (ADR 0083).
+ *
+ * Per-flag metadata (the IaC ownership record `feature-flags-agent-workflow.md`
+ * asks for):
+ *   - owner:           pano
+ *   - originating:     #746 (epic: feature-flag substrate, #488)
+ *   - removal trigger: once draft-save graduates to 100% on, retire the flag and
+ *                      delete its gate (the dark-ship is over).
+ *
+ * No targeting rules — a plain boolean kill-switch. `appId` is resolved at deploy
+ * (see `demoTargetingFlag` for why it's a factory, not a module constant).
+ */
+export const PANO_DRAFT_SAVE = "pano-draft-save";
+
+/**
+ * The flag config, exported as a plain object so the default-=-safe-state invariant
+ * is unit-inspectable WITHOUT constructing the alchemy resource (#746). The factory
+ * spreads it into `FlagshipFlag`; the test asserts `defaultVariation`/`variations.off`
+ * here, the same record the deploy ships.
+ */
+export const PANO_DRAFT_SAVE_FLAG = {
+	key: PANO_DRAFT_SAVE,
+	description:
+		"pano taslak (draft-save) dark-ship (#746). owner: pano. removal: retire once on at 100%.",
+	defaultVariation: "off",
+	variations: {off: false, on: true},
+} as const;
+
+export const panoDraftSaveFlag = (appId: Input<string>) =>
+	Cloudflare.FlagshipFlag("pano_draft_save", {appId, ...PANO_DRAFT_SAVE_FLAG});

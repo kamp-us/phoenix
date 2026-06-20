@@ -113,6 +113,11 @@ export default Phoenix.make(
 		const flagshipClient = yield* Flagship;
 		const flagshipLayer = Layer.succeed(Flagship)(flagshipClient);
 
+		// The worker's ambient `RuntimeContext`, resolved once. The fate runtime needs
+		// it because the pano draft-save gate (#746) reads `Flags` (a `RuntimeContext`
+		// per-call requirement); `makeAppLive` reuses it for the `/api/auth/*` route.
+		const runtimeContext = yield* RuntimeContext;
+
 		// The one worker-level runtime (ADR 0041/0043 — init-only wiring): exactly
 		// one per isolate from `PhoenixFateLive` (`R = Database | BetterAuth`, both
 		// provided here). It is a layer-build vehicle only, no runtime on the
@@ -120,7 +125,16 @@ export default Phoenix.make(
 		// lives in `fate/layers.ts`. Its built context reaches the routes as
 		// `fateLayer`.
 		const {contextLayer: fateLayer} = makeFateRuntime(
-			PhoenixFateLive.pipe(Layer.provide(Layer.merge(databaseLayer, betterAuthLayer))),
+			PhoenixFateLive.pipe(
+				Layer.provide(
+					Layer.mergeAll(
+						databaseLayer,
+						betterAuthLayer,
+						flagshipLayer,
+						Layer.succeed(RuntimeContext)(runtimeContext),
+					),
+				),
+			),
 		);
 
 		// NO init-time warmup (`yield*`-ing the runtime's `contextEffect`) —
@@ -155,12 +169,6 @@ export default Phoenix.make(
 				}),
 			),
 		);
-
-		// Capture the worker's ambient `RuntimeContext`. better-auth's `fetch`/`auth`
-		// carry it undischarged in their `R`, lifted into the `/api/auth/*` route's
-		// per-request requirements by `HttpRouter.add`; `makeAppLive` feeds this into
-		// `provideRequest` so the worker discharges it for its own handler.
-		const runtimeContext = yield* RuntimeContext;
 
 		// `AppLive` is the whole HTTP surface, Hono-free (ADR 0027). `makeAppLive`
 		// discharges the raw routes' worker-level requirements via

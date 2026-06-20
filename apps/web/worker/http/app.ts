@@ -32,7 +32,7 @@ export const makeAppLive = (options: {
 	 * DEPENDENCY-FREE context layer (`R = never`): `makeFateRuntime`'s
 	 * `contextLayer` from the one per-isolate runtime. No runtime on the request
 	 * path (ADR 0043). Pinning `R = never` makes the dual-build state
-	 * unrepresentable — raw `makeFateLayer` (`R = Database | BetterAuth`) no
+	 * unrepresentable — raw `makeFateLayer` (`R = Database | BetterAuth | Flagship | RuntimeContext`) no
 	 * longer typechecks here, so `provideRequest` can never silently construct a
 	 * second Drizzle/Pasaport per request (ADR 0041).
 	 */
