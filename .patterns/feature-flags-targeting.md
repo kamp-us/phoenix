@@ -54,7 +54,7 @@ declared flags (extend deliberately, not by default):
 A typical flag layers the two: a high-priority attribute rule releases to a named subset (internal
 users) outright, and a lower-priority `conditions: []` rule applies a percentage rollout to everyone
 else. See `demoTargetingFlag` in
-[`worker/db/resources.ts`](../apps/web/worker/db/resources.ts).
+[`worker/features/flagship/resources.ts`](../apps/web/worker/features/flagship/resources.ts).
 
 ## IaC vs dashboard-managed flags
 
@@ -63,7 +63,7 @@ created/edited on the Flagship dashboard. **Prefer IaC** where the rule should b
 reviewable in the repo.
 
 - **IaC (`FlagshipFlag` in the stack).** Declared via a factory in
-  [`worker/db/resources.ts`](../apps/web/worker/db/resources.ts) and yielded in
+  [`worker/features/flagship/resources.ts`](../apps/web/worker/features/flagship/resources.ts) and yielded in
   [`alchemy.run.ts`](../apps/web/alchemy.run.ts) with the app's resolved `appId`. The rule shape lives
   in version control and ships on `alchemy deploy`. Use for **structural** flags whose targeting/rollout
   is part of the release design and should be code-reviewed.

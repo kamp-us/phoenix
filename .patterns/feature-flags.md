@@ -11,7 +11,7 @@ Phoenix runs on Cloudflare Flagship (ADR
 flags it wants and gets back resolved booleans; the targeting context (who the user is) never leaves
 the Worker.
 
-Ground truth is the code under those two paths plus `apps/web/worker/db/resources.ts` (the
+Ground truth is the code under those two paths plus `apps/web/worker/features/flagship/resources.ts` (the
 `FlagshipFlag` declarations) and `apps/web/alchemy.run.ts` (where they're yielded). When this doc and
 the source disagree, the source wins — fix the doc.
 
@@ -37,7 +37,7 @@ honors it.
 
 ## 1. Declare a flag
 
-A durable flag is declared **IaC** — a `FlagshipFlag` resource in `apps/web/worker/db/resources.ts`,
+A durable flag is declared **IaC** — a `FlagshipFlag` resource in `apps/web/worker/features/flagship/resources.ts`,
 yielded in `apps/web/alchemy.run.ts` with the app's resolved `appId`. Its existence, default, and
 rules live in version control and ship on `alchemy deploy`. Name the key by the
 [#513 grammar](./feature-flags-schema-lifecycle.md) (`<product>-<feature>-<purpose>`, kebab-case), and
@@ -45,7 +45,7 @@ rules live in version control and ship on `alchemy deploy`. Name the key by the
 could silently break.
 
 ```ts
-// apps/web/worker/db/resources.ts
+// apps/web/worker/features/flagship/resources.ts
 import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 
@@ -84,7 +84,7 @@ code path on a flag, with the safe value as the default:
 
 ```ts
 import {Flags} from "../flagship/Flags.ts";
-import {SOZLUK_SEARCH_DISCOVERY_FLAG_KEY} from "../db/resources.ts";
+import {SOZLUK_SEARCH_DISCOVERY_FLAG_KEY} from "../flagship/resources.ts";
 
 const flags = yield* Flags;
 const discovery = yield* flags.getBoolean(SOZLUK_SEARCH_DISCOVERY_FLAG_KEY, false); // safe default = off

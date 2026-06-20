@@ -35,8 +35,12 @@
 import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
-import {demoTargetingFlag, Flagship, panoDraftSaveFlag} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
+import {
+	demoTargetingFlag,
+	Flagship,
+	panoDraftSaveFlag,
+} from "./worker/features/flagship/resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
 
 export default Alchemy.Stack(

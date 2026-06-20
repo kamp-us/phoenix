@@ -21,9 +21,9 @@ import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
-import {PANO_DRAFT_SAVE_FLAG, panoDraftSaveFlag} from "../../db/resources.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
+import {PANO_DRAFT_SAVE_FLAG, panoDraftSaveFlag} from "../flagship/resources.ts";
 import {mutations} from "./mutations.ts";
 import {Pano, type SaveDraftResult} from "./Pano.ts";
 
