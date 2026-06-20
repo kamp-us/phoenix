@@ -75,6 +75,19 @@ describe("guard CLI — PreToolUse envelope", () => {
 		});
 		assert.strictEqual(JSON.parse(stdout).hookSpecificOutput.permissionDecision, "deny");
 	}, 30_000);
+
+	it("DENIES an explicit off-allowlist model even when the pin is allowlisted (#776: the pin can't rewrite it in)", async () => {
+		const {stdout} = await run(["guard"], envelope("claude-fable-5"), {
+			WORKFLOW_MODEL: "claude-opus-4-8[1m]",
+		});
+		const out = JSON.parse(stdout);
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "deny");
+		assert.notProperty(out.hookSpecificOutput, "updatedInput");
+		assert.include(
+			out.hookSpecificOutput.permissionDecisionReason,
+			"explicit model claude-fable-5",
+		);
+	}, 30_000);
 });
 
 describe("statusline CLI — statusLine payload", () => {
