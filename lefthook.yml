@@ -28,14 +28,22 @@ pre-commit:
         fi
         exit 0
 
-# `git worktree add` fires post-checkout, so this auto-installs deps into every
-# fresh worktree — node_modules is gitignored and lives only in the main checkout,
-# so agent-spawned `isolation: worktree` trees were otherwise dead-on-arrival for
-# typechecks (#504). Install runs UNCONDITIONALLY (no `[ -d node_modules ]` guard):
-# pnpm no-ops when already in sync, and an unconditional install also resyncs deps
-# to the checked-out branch's lockfile on a branch switch — a guard would skip that
-# and leave deps stale.
+# `git worktree add` fires post-checkout, so this best-effort-installs deps into a
+# fresh worktree — node_modules is gitignored and lives per-checkout, so a worktree
+# is otherwise dead-on-arrival for typechecks (#504). Two guards keep it robust to
+# the harness's PATH-stripped worktree-spawn exec env (#787): `rc` (.lefthookrc)
+# restores /bin so lefthook can resolve `sh`, and the pnpm-presence check below makes
+# a missing toolchain a clean SKIP, never a worktree-creation abort. The install is
+# an optimization, not a hard gate: when pnpm is unresolvable the spawning agent
+# installs deps itself (it runs with a full PATH); when pnpm IS present it installs
+# normally and a real install failure still surfaces. No per-machine path is hardcoded
+# (volta/Library pnpm shims are local — committing them would break other devs/CI).
 post-checkout:
   commands:
     bootstrap-deps:
-      run: pnpm install --prefer-offline
+      run: |
+        command -v pnpm >/dev/null 2>&1 || {
+          echo "bootstrap-deps: pnpm not on PATH (stripped hook exec env, e.g. a harness 'git worktree add') — skipping; deps install in-worktree on first use" >&2
+          exit 0
+        }
+        pnpm install --prefer-offline
