@@ -39,6 +39,7 @@
  */
 import {
 	type DataViewListOptions,
+	type DataViewResult,
 	dataView,
 	type Entity as KernelEntity,
 	list,
@@ -164,3 +165,38 @@ export type Entity<
 	View extends {readonly view: DataViewOf<AnyRow>; readonly typeName: string},
 	Replacements extends Record<string, unknown> = Record<never, never>,
 > = KernelEntity<View["view"], View["typeName"], Replacements>;
+
+/** Substitute `Date` for `string` within a union, preserving the rest (`null`). */
+type StringToDate<T> = T extends string ? Date : T;
+
+/** The fate wire shape — the serialized field types `Entity` derives by default. */
+type WireResult<View extends {readonly view: DataViewOf<AnyRow>}> = DataViewResult<View["view"]>;
+
+/**
+ * The standard worker-side timestamp correction, applied once: each key in
+ * `DateKeys` is a field fate's wire-facing derivation serializes from a live
+ * `Date` to the JSON `string` (or `string | null`), but every worker call site
+ * runs *pre-serialization* — it holds the `Date` until fate serializes the
+ * response. Re-deriving the corrected type per field (`createdAt: Date`,
+ * `lastEdit: Date | null`, …) is what this collapses: name the timestamp keys
+ * and the `Date`/`Date | null` falls out of the view's own wire type
+ * (`StringToDate` distributes over the union, so nullability is preserved).
+ */
+type DateCorrection<
+	View extends {readonly view: DataViewOf<AnyRow>},
+	DateKeys extends keyof WireResult<View>,
+> = {[K in DateKeys]: StringToDate<WireResult<View>[K]>};
+
+/**
+ * `WorkerEntity` — `Entity` plus the standard wire-vs-worker correction in one
+ * helper: the timestamp string→`Date` map (`DateKeys`) and any per-view
+ * `Override` (the list-relation widening fate's `list()` flattens, or a field
+ * the standard correction doesn't cover) composed into the same `Replacements`
+ * slot. `Override` wins on a key collision, so a relation listed there is never
+ * shadowed by a date key. See `DateCorrection` for the rationale this captures.
+ */
+export type WorkerEntity<
+	View extends {readonly view: DataViewOf<AnyRow>; readonly typeName: string},
+	DateKeys extends keyof WireResult<View> = never,
+	Override extends Record<string, unknown> = Record<never, never>,
+> = Entity<View, Omit<DateCorrection<View, DateKeys>, keyof Override> & Override>;

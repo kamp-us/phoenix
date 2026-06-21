@@ -6,7 +6,7 @@
  * keyset `ORDER BY` (`createdAt desc, id desc`) or the cursors stop round-tripping
  * (ADR 0019; `.patterns/fate-connections.md`).
  */
-import {type Entity, FateDataView} from "@kampus/fate-effect";
+import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {ContributionRow, ProfileRow, UserRow} from "./Pasaport.ts";
 
@@ -90,9 +90,7 @@ export const contributionDataView = ContributionView.view;
 export const profileDataView = ProfileView.view;
 export const accountDeletionReceiptDataView = AccountDeletionReceiptView.view;
 
-// The `Entity<>` second arg restates relations/`Date` fields that fate's
-// wire-facing derivation widens/narrows away — full rationale in `sozluk/views.ts`.
-export type User = Entity<typeof UserView>;
-export type Contribution = Entity<typeof ContributionView, {createdAt: Date}>;
-export type Profile = Entity<typeof ProfileView, {contributions?: Contribution[]}>;
-export type AccountDeletionReceipt = Entity<typeof AccountDeletionReceiptView>;
+export type User = WorkerEntity<typeof UserView>;
+export type Contribution = WorkerEntity<typeof ContributionView, "createdAt">;
+export type Profile = WorkerEntity<typeof ProfileView, never, {contributions?: Contribution[]}>;
+export type AccountDeletionReceipt = WorkerEntity<typeof AccountDeletionReceiptView>;
