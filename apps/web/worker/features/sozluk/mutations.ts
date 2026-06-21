@@ -13,7 +13,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {LiveConnection, WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -86,7 +86,7 @@ export const mutations = {
 			// Append the node to the term's `Term.definitions` connection (same key
 			// `definition.delete` removes from) so every open term page updates live.
 			yield* live
-				.connection("Term.definitions", {id: input.termSlug})
+				.connection(LiveConnection.termDefinitions, {id: input.termSlug})
 				.appendNode("Definition", definition.id, {node: definition});
 			return definition;
 		}),
@@ -173,7 +173,9 @@ export const mutations = {
 			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
 			yield* live.delete("Definition", input.id);
 			if (slug) {
-				yield* live.connection("Term.definitions", {id: slug}).deleteEdge("Definition", input.id);
+				yield* live
+					.connection(LiveConnection.termDefinitions, {id: slug})
+					.deleteEdge("Definition", input.id);
 			}
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);
@@ -214,7 +216,7 @@ export const mutations = {
 					myVote: restored.myVote ?? null,
 				});
 				yield* live
-					.connection("Term.definitions", {id: slug})
+					.connection(LiveConnection.termDefinitions, {id: slug})
 					.appendNode("Definition", restored.id, {node});
 			}
 			return toTermFromPage(page);
