@@ -52,6 +52,16 @@ export interface GatedToggleArgs {
 }
 
 /**
+ * Whether a dispatch error is the auth-boundary class that should redirect to
+ * auth rather than stay silent — the `UNAUTHORIZED` mutation throw. Pure and
+ * exported so the classification is unit-testable apart from the hook; any other
+ * code stays silent (these sites have no inline error slot).
+ */
+export function isAuthRedirectError(error: unknown): boolean {
+	return codeOf(error) === "UNAUTHORIZED";
+}
+
+/**
  * The serialize-and-supersede toggle (via {@link useToggleAction}) wrapped with
  * the signed-out gate and the `UNAUTHORIZED`→auth-redirect classification. The
  * returned `onToggle` is the click handler: it redirects a signed-out click and
@@ -67,7 +77,7 @@ export function useGatedToggle(args: GatedToggleArgs): () => void {
 			try {
 				await args.dispatch(action);
 			} catch (error) {
-				if (codeOf(error) === "UNAUTHORIZED") redirectToAuth();
+				if (isAuthRedirectError(error)) redirectToAuth();
 			}
 		},
 	}));
@@ -89,11 +99,28 @@ export interface VoteMutations {
 	readonly retractVote: (optimistic: {score: number; myVote: false}) => Promise<unknown>;
 }
 
+/** The optimistic `{score, myVote}` payload for one vote/retract action. */
+export type VoteOptimistic =
+	| {readonly score: number; readonly myVote: true}
+	| {readonly score: number; readonly myVote: false};
+
+/**
+ * The optimistic vote delta a `set`/`unset` applies to the current score: a vote
+ * is `score + 1` / `myVote: true`, a retract is `Math.max(0, score - 1)` /
+ * `myVote: false` — the `0` floor so a retract never renders a negative score.
+ * Pure and exported so the load-bearing delta is unit-testable without the hook;
+ * {@link useVoteToggle} routes its dispatch through it.
+ */
+export function voteOptimistic(action: ToggleAction, score: number): VoteOptimistic {
+	return action === "unset"
+		? {score: Math.max(0, score - 1), myVote: false}
+		: {score: score + 1, myVote: true};
+}
+
 /**
  * Vote specialization of {@link useGatedToggle}: owns the optimistic vote delta
- * (score ±1, `myVote` true/false) and the `Math.max(0, score - 1)` floor, so a site
- * supplies only its current `{voted, score}` and the mutation pair. Returns the
- * vote-button click handler.
+ * ({@link voteOptimistic}), so a site supplies only its current `{voted, score}`
+ * and the mutation pair. Returns the vote-button click handler.
  */
 export function useVoteToggle(args: {
 	readonly voted: boolean;
@@ -106,10 +133,11 @@ export function useVoteToggle(args: {
 		on: voted,
 		returnTo,
 		dispatch: async (action) => {
-			if (action === "unset") {
-				await mutations.retractVote({score: Math.max(0, score - 1), myVote: false});
+			const optimistic = voteOptimistic(action, score);
+			if (optimistic.myVote) {
+				await mutations.vote(optimistic);
 			} else {
-				await mutations.vote({score: score + 1, myVote: true});
+				await mutations.retractVote(optimistic);
 			}
 		},
 	});
