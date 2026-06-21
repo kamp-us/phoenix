@@ -8,7 +8,7 @@
  *
  *   1. **A full operation round-trips** — wire request in → Schema decode →
  *      handler (yielding a domain service from the runtime + the captured
- *      build-time services) → wire result out. T1: the domain service is a
+ *      build-time services) → wire result out. The domain service is a
  *      mutable in-memory database, and a mutation's write is visible to a
  *      later read through the same runtime.
  *   2. **Failures map through the `FateWireCode` codec** — a declared
@@ -157,7 +157,7 @@ const compiledSourcesOf = async (harness: ReturnType<typeof makeHarness>) => {
 	});
 };
 
-// --- 1. the full round-trip (T1: in-memory database behind the runtime) ---------
+// --- 1. the full round-trip (in-memory database behind the runtime) ---------
 
 describe("FateExecutor.toFetchHandler — round-trip", () => {
 	it("wire request → Schema decode → handler over the runtime's domain service → wire result", async () => {

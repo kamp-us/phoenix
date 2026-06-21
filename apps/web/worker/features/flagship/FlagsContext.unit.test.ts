@@ -1,5 +1,5 @@
 /**
- * T0 unit coverage for the environment / per-app-stage mapping (#512): the
+ * Unit coverage for the environment / per-app-stage mapping (#512): the
  * per-request `FlagsContext` sources its `environment` attribute from the deploy
  * stage (`ENVIRONMENT` config / ADR 0057), and a flag with an environment rule
  * resolves per stage over the `Flags` service — degrading safe on error.

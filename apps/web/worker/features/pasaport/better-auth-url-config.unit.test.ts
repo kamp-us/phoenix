@@ -1,5 +1,5 @@
 /**
- * T0 unit coverage for `deriveAuthUrlConfig` — the per-deploy-class better-auth
+ * Unit coverage for `deriveAuthUrlConfig` — the per-deploy-class better-auth
  * origin/cookie derivation (#982, follow-on from the #594/#983 Custom Domain).
  *
  * The derivation is pure over the `environment` literal, so each class's

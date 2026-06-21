@@ -3,7 +3,7 @@
  * `FateExecutor.toCodegenServer(...)` schema module, end to end through its
  * actual `runnerImport` path (a programmatic `vite build` in a temp root).
  *
- * T0 in spirit (no worker, no storage), but lives here because the plugin
+ * Unit-tier in spirit (no worker, no storage), but lives here because the plugin
  * (`react-fate/vite`) and Vite are this app's dependencies — the same plugin
  * instance `vite.config.ts` runs in the real build. The schema module is
  * `codegen-schema.fixture.ts`, whose handlers close over a throw-on-touch Proxy

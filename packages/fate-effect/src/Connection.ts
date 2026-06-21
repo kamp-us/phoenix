@@ -101,7 +101,7 @@ const decodePagination = Schema.decodeUnknownEffect(ConnectionPaginationArgs);
 
 /**
  * Decode a (scoped) args bag's pagination slice. The schema failure stays in
- * the error channel for the T0 boundary tests; {@link arrayToConnection} maps
+ * the error channel for the unit boundary tests; {@link arrayToConnection} maps
  * it onto the wire-visible internal arm.
  */
 export const decodeConnectionPaginationArgs = (

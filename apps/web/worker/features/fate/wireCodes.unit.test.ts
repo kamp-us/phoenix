@@ -1,5 +1,5 @@
 /**
- * SPA wire-code list ⇄ server config guard (T0).
+ * SPA wire-code list ⇄ server config guard (unit tier).
  *
  * The server derives wire codes from each error class's `FateWireCode`
  * annotation (`.patterns/fate-effect-wire-errors.md`); the SPA's

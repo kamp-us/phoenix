@@ -1,5 +1,5 @@
 /**
- * T0 coverage for the `toConnection` adapter — the `hasNextPage`/`endCursor` →
+ * Unit coverage for the `toConnection` adapter — the `hasNextPage`/`endCursor` →
  * `pagination` mapping reachable elsewhere only through a fuller list path
  * (ADR 0019). Forward-only, so `hasPrevious` is always `false` and `nextCursor`
  * is spread in only when `endCursor` is non-null.

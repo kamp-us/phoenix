@@ -1,5 +1,5 @@
 /**
- * T0 unit coverage for the transactional email copy + the callback dispatch
+ * Unit coverage for the transactional email copy + the callback dispatch
  * contract (ADR 0101). The three better-auth callbacks (magic-link, verify,
  * change-email confirmation) each build their `EmailMessage` from these template
  * functions and dispatch it through the `EmailSender` port. This test asserts:

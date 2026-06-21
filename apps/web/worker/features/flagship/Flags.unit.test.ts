@@ -1,5 +1,5 @@
 /**
- * T0 unit coverage for the `Flags` domain service — the boolean dark-ship
+ * Unit coverage for the `Flags` domain service — the boolean dark-ship
  * primitive (#508). Drives `FlagsLive` over a stubbed `Flagship` client (no
  * binding, no I/O) and asserts the two load-bearing contracts:
  *
