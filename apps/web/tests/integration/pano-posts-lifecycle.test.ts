@@ -20,15 +20,22 @@
  * over `/fate`. The connection envelope has NO `totalCount`, so the old
  * `totalCount` assertion is dropped and re-expressed via the id-union size.
  *
- * D1 is shared across all test files (one deploy), so every title/host/email is
- * uniquely prefixed (`panopost-${Date.now()}-…`).
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file: every title/host/email/synthetic-id is prefixed with
+ * `NS` (this file's deterministic `nsToken`). Isolation on the shared D1 is by READ SHAPE —
+ * every lifecycle assertion (after submit/edit/delete/vote) re-resolves THIS test's own post
+ * by id (`post(idOrSlug: id)`), never a global feed. The two presence/absence checks that DO
+ * read a feed (id-union row count; "deleted post drops out") are scoped by an NS-prefixed
+ * HOST, so `posts(host)` returns only this file's (and this test's) rows — the host-scoping IS
+ * the namespace. No assertion observes another file's data.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface PostNode {
 	__typename: string;
@@ -82,40 +89,40 @@ async function readPost(id: string): Promise<PostNode | null> {
 }
 
 beforeAll(async () => {
-	author = await h.signUp(`panopost-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
-	voter = await h.signUp(`panopost-${STAMP}-voter@test.local`, "hunter2hunter2", "oycu");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
+	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "oycu");
 });
 
 describe("pano posts — edit field-subset re-resolution", () => {
 	it("a title-only edit re-resolves the new title and leaves the body intact", async () => {
 		const id = await seedPost({
-			title: `panopost-${STAMP} title-only before`,
+			title: `${NS} title-only before`,
 			body: "untouched body",
 		});
 		const edited = await h.fate(
 			{
 				kind: "mutation",
 				name: "post.edit",
-				input: {id, title: `panopost-${STAMP} title-only after`},
+				input: {id, title: `${NS} title-only after`},
 				select: ["id", "title", "body"],
 			},
 			{cookie: author.cookie},
 		);
 		expect(edited.ok).toBe(true);
 		if (!edited.ok) return;
-		expect((edited.data as PostNode).title).toBe(`panopost-${STAMP} title-only after`);
+		expect((edited.data as PostNode).title).toBe(`${NS} title-only after`);
 		expect((edited.data as PostNode).body).toBe("untouched body");
 
 		// Re-resolve independently: the body did not change.
 		const post = await readPost(id);
 		expect(post).not.toBeNull();
-		expect(post!.title).toBe(`panopost-${STAMP} title-only after`);
+		expect(post!.title).toBe(`${NS} title-only after`);
 		expect(post!.body).toBe("untouched body");
 	});
 
 	it("a body-only edit re-resolves the new body and leaves the title intact", async () => {
 		const id = await seedPost({
-			title: `panopost-${STAMP} body-only fixed title`,
+			title: `${NS} body-only fixed title`,
 			body: "original body",
 		});
 		const edited = await h.fate(
@@ -129,19 +136,19 @@ describe("pano posts — edit field-subset re-resolution", () => {
 		);
 		expect(edited.ok).toBe(true);
 		if (!edited.ok) return;
-		expect((edited.data as PostNode).title).toBe(`panopost-${STAMP} body-only fixed title`);
+		expect((edited.data as PostNode).title).toBe(`${NS} body-only fixed title`);
 		expect((edited.data as PostNode).body).toBe("rewritten body");
 
 		const post = await readPost(id);
 		expect(post).not.toBeNull();
-		expect(post!.title).toBe(`panopost-${STAMP} body-only fixed title`);
+		expect(post!.title).toBe(`${NS} body-only fixed title`);
 		expect(post!.body).toBe("rewritten body");
 	});
 });
 
 describe("pano posts — edit validation", () => {
 	it("an edit with neither title nor body surfaces TITLE_REQUIRED", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} edit-empty`});
+		const id = await seedPost({title: `${NS} edit-empty`});
 		const result = await h.fate(
 			{kind: "mutation", name: "post.edit", input: {id}, select: ["id"]},
 			{cookie: author.cookie},
@@ -163,7 +170,7 @@ describe("pano posts — edit validation", () => {
 			{
 				kind: "mutation",
 				name: "post.edit",
-				input: {id: `post_${STAMP}_does_not_exist`, title: "x"},
+				input: {id: `post_${NS}_does_not_exist`, title: "x"},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -176,7 +183,7 @@ describe("pano posts — edit validation", () => {
 
 describe("pano posts — vote idempotency / round-trip", () => {
 	it("two consecutive votes are idempotent (score stays 1, myVote 1)", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} vote idem`});
+		const id = await seedPost({title: `${NS} vote idem`});
 
 		const first = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id}, select: ["id", "score", "myVote"]},
@@ -202,7 +209,7 @@ describe("pano posts — vote idempotency / round-trip", () => {
 	});
 
 	it("vote → retract → vote nets score 1, myVote 1", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} vote rt`});
+		const id = await seedPost({title: `${NS} vote rt`});
 
 		await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id}, select: ["id"]},
@@ -223,7 +230,7 @@ describe("pano posts — vote idempotency / round-trip", () => {
 	});
 
 	it("retracting a vote that was never cast is a no-op (score stays 0)", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} retract noop`});
+		const id = await seedPost({title: `${NS} retract noop`});
 		const result = await h.fate(
 			{kind: "mutation", name: "post.retractVote", input: {id}, select: ["id", "score", "myVote"]},
 			{cookie: voter.cookie},
@@ -239,7 +246,7 @@ describe("pano posts — vote idempotency / round-trip", () => {
 			{
 				kind: "mutation",
 				name: "post.retractVote",
-				input: {id: `post_${STAMP}_does_not_exist`},
+				input: {id: `post_${NS}_does_not_exist`},
 				select: ["id"],
 			},
 			{cookie: voter.cookie},
@@ -252,7 +259,7 @@ describe("pano posts — vote idempotency / round-trip", () => {
 
 describe("pano posts — delete idempotency", () => {
 	it("re-deleting an already-deleted post is an idempotent no-op (same {__typename,id} ref)", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} delete idem`});
+		const id = await seedPost({title: `${NS} delete idem`});
 
 		const first = await h.fate(
 			{kind: "mutation", name: "post.delete", input: {id}, select: ["id"]},
@@ -285,12 +292,10 @@ describe("pano posts — delete idempotency", () => {
 
 describe("pano posts — connection edges", () => {
 	it("a host-scoped feed returns exactly the seeded rows (no totalCount; id-union)", async () => {
-		const host = `panopost-${STAMP}-hostcount.example.com`;
+		const host = `${NS}-hostcount.example.com`;
 		const seeded: string[] = [];
 		for (let i = 0; i < 3; i++) {
-			seeded.push(
-				await seedPost({title: `panopost-${STAMP} hostcount ${i}`, url: `https://${host}/p/${i}`}),
-			);
+			seeded.push(await seedPost({title: `${NS} hostcount ${i}`, url: `https://${host}/p/${i}`}));
 		}
 
 		const page = await h.fate({
@@ -303,7 +308,8 @@ describe("pano posts — connection edges", () => {
 		if (!page.ok) return;
 		const conn = page.data as Connection<PostNode>;
 		const ids = conn.items.map((e) => e.node.id);
-		// No totalCount on the wire — re-express the row count via the id-union.
+		// No totalCount on the wire — re-express the row count via the id-union. The
+		// NS-prefixed host scopes the feed to exactly this test's three rows.
 		expect(new Set(ids).size).toBe(3);
 		expect([...ids].sort()).toEqual([...seeded].sort());
 		expect(conn.pagination.hasNext).toBe(false);
@@ -312,13 +318,13 @@ describe("pano posts — connection edges", () => {
 	});
 
 	it("a deleted post drops out of its host-scoped feed", async () => {
-		const host = `panopost-${STAMP}-dropout.example.com`;
+		const host = `${NS}-dropout.example.com`;
 		const keep = await seedPost({
-			title: `panopost-${STAMP} dropout keep`,
+			title: `${NS} dropout keep`,
 			url: `https://${host}/keep`,
 		});
 		const gone = await seedPost({
-			title: `panopost-${STAMP} dropout gone`,
+			title: `${NS} dropout gone`,
 			url: `https://${host}/gone`,
 		});
 
@@ -335,6 +341,7 @@ describe("pano posts — connection edges", () => {
 		});
 		expect(page.ok).toBe(true);
 		if (!page.ok) return;
+		// The NS-prefixed host scopes the presence/absence check to this test's own rows.
 		const ids = (page.data as Connection<PostNode>).items.map((e) => e.node.id);
 		expect(ids).toContain(keep);
 		expect(ids).not.toContain(gone);
