@@ -1,0 +1,30 @@
+{
+	"name": "@kampus/orphan-sweep",
+	"version": "0.0.0",
+	"private": true,
+	"description": "orphan integration-stage sweep CLI — compute + (with --execute) delete the unbounded leak of it-* worker/D1 resources on the shared CF account (part of #690)",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"sweep": "node src/bin.ts sweep"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
