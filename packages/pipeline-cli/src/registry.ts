@@ -14,6 +14,9 @@ import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
+import {readGuardCommand} from "./tools/read-guard/command.ts";
+import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
+import {worktreeGuardCommand} from "./tools/worktree-guard/command.ts";
 import {versionCommand} from "./version.ts";
 
 /** The Node platform service union the bin provides — the requirement ceiling for a tool. */
@@ -52,4 +55,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	versionCommand,
 	epicLedgerCommand,
 	decisionsIndexCommand,
+	readGuardCommand,
+	worktreeGuardCommand,
+	spawnGuardCommand,
 ];
