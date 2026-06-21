@@ -23,10 +23,20 @@ export interface FlagGateProps {
 	readonly children: ReactNode;
 }
 
+/**
+ * The gate's render decision, factored out so the gating contract — show the
+ * gated `children` iff the resolved value is on, else the safe `fallback` — is
+ * unit-testable without a DOM. A gate that stopped gating on the resolved value
+ * (rendered `children` unconditionally) would fail exactly this function.
+ */
+export function flagGateChild(value: boolean, children: ReactNode, fallback: ReactNode): ReactNode {
+	return value ? children : fallback;
+}
+
 export function FlagGate({flag, fallback = null, children}: FlagGateProps) {
 	// Default `false`: the gated path stays dark until the server evaluates the
 	// flag on for this user — and through every failure mode (loading, error,
 	// undeclared flag), since each resolves to this default.
 	const {value} = useFlag(flag, false);
-	return <>{value ? children : fallback}</>;
+	return <>{flagGateChild(value, children, fallback)}</>;
 }

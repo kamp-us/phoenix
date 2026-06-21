@@ -46,9 +46,26 @@ async function fetchFlag(key: string, defaultValue: boolean): Promise<boolean> {
 		headers: {"content-type": "application/json"},
 		body: JSON.stringify(requestBody),
 	});
-	if (!res.ok) return defaultValue;
-	// `resolveFlag` takes the untrusted JSON directly and guards it structurally.
-	return resolveFlag(await res.json(), key, defaultValue);
+	return resolveFlagResponse(res.ok, res.ok ? await res.json() : null, key, defaultValue);
+}
+
+/**
+ * The hook's response → value wiring, factored out so the safe-default contract
+ * is unit-testable without a `fetch`/DOM (the pure-core idiom of
+ * `toProfileStatsState`). A non-2xx response is the fetch-error path → the
+ * default holds; a 2xx response routes the untrusted JSON through
+ * {@link resolveFlag}, whose structural guard enforces the safe default on a
+ * missing key / non-boolean. A gate that forgot to call `resolveFlag` or
+ * dropped the non-2xx guard would fail exactly this function.
+ */
+export function resolveFlagResponse(
+	ok: boolean,
+	body: unknown,
+	key: string,
+	defaultValue: boolean,
+): boolean {
+	if (!ok) return defaultValue;
+	return resolveFlag(body, key, defaultValue);
 }
 
 export function useFlag(key: string, defaultValue: boolean): FlagState {
