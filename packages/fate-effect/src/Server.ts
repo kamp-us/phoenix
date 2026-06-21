@@ -64,7 +64,7 @@ import type {
 } from "./Operation.ts";
 import {InputValidationError} from "./Operation.ts";
 import type {FateSourceServices, SourceConnectionInput} from "./Source.ts";
-import {ErrorCode, INTERNAL_WIRE_CODE, wireCodeOfClass} from "./WireError.ts";
+import {FateWireCode, INTERNAL_WIRE_CODE, wireCodeOfClass} from "./WireError.ts";
 
 // --- the erased entry shapes (what the config records may contain) ----------
 
@@ -370,7 +370,7 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 // --- the declared wire vocabulary -----------------------------------------------
 
 /**
- * Collect every `ErrorCode` annotation reachable from one Schema AST node:
+ * Collect every `FateWireCode` annotation reachable from one Schema AST node:
  * the node's own annotation plus (for a union) each member's. Structural
  * guards throughout — the walk must not assume AST internals beyond what it
  * reads (the same defensive shape as `wireCodeOfClass`); the package's
@@ -380,8 +380,8 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 const collectWireCodes = (ast: unknown, out: Set<string>): void => {
 	if (Predicate.hasProperty(ast, "annotations")) {
 		const annotations: unknown = ast.annotations;
-		if (Predicate.hasProperty(annotations, ErrorCode)) {
-			const code: unknown = annotations[ErrorCode];
+		if (Predicate.hasProperty(annotations, FateWireCode)) {
+			const code: unknown = annotations[FateWireCode];
 			if (typeof code === "string") out.add(code);
 		}
 	}

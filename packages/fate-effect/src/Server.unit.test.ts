@@ -9,7 +9,7 @@
  *      annotated code (Schema rejections) can be emitted independent of any
  *      declaration, so even an empty config carries them.
  *   2. **Declared error unions are walked across all three category
- *      records** — every union member's `ErrorCode` annotation lands in the
+ *      records** — every union member's `FateWireCode` annotation lands in the
  *      set; a bare (non-union) annotated error class is collected off its own
  *      AST node; entries without an `error:` contribute nothing. Sources are
  *      excluded by construction: loaders have `E = never`, nothing to walk.
@@ -30,7 +30,7 @@ import {describe, expect, expectTypeOf, it} from "vitest";
 import {FateDataView} from "./DataView.ts";
 import {Fate} from "./index.ts";
 import {declaredWireCodes, FateServer} from "./Server.ts";
-import {ErrorCode, INTERNAL_WIRE_CODE} from "./WireError.ts";
+import {FateWireCode, INTERNAL_WIRE_CODE} from "./WireError.ts";
 
 // --- fixture rows + views (exported: the TS2883 nameability fixture) --------
 
@@ -49,19 +49,19 @@ export class NoteView extends FateDataView<NoteRow>()("Note")({
 class NoteNotFound extends Schema.TaggedErrorClass<NoteNotFound>()(
 	"test/NoteNotFound",
 	{message: Schema.String},
-	{[ErrorCode]: "NOTE_NOT_FOUND"},
+	{[FateWireCode]: "NOTE_NOT_FOUND"},
 ) {}
 
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
-	{[ErrorCode]: "BODY_REQUIRED"},
+	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
 class RateLimited extends Schema.TaggedErrorClass<RateLimited>()(
 	"test/RateLimited",
 	{message: Schema.String},
-	{[ErrorCode]: "RATE_LIMITED"},
+	{[FateWireCode]: "RATE_LIMITED"},
 ) {}
 
 /** Un-annotated: declarable, but carries no wire code to collect. */

@@ -50,7 +50,7 @@ export const queries = {
 
 ## The error contract
 
-The constructor bounds the handler's `E` by the declared union (`E extends DefinitionErrors<D>`), so **failing with an undeclared error is a compile error at the constructor call** — it surfaces as TS2345 on the handler argument (and the effect LSP plugin's TS377003 "Missing errors … in the expected Effect type"). Declared errors are annotated with `ErrorCode` ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)); the wire boundary (`encodeWireError` — used by the interpreter's dispatch and the oracle-baseline compile step alike) derives their wire codes from the annotation, no registry.
+The constructor bounds the handler's `E` by the declared union (`E extends DefinitionErrors<D>`), so **failing with an undeclared error is a compile error at the constructor call** — it surfaces as TS2345 on the handler argument (and the effect LSP plugin's TS377003 "Missing errors … in the expected Effect type"). Declared errors are annotated with `FateWireCode` ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)); the wire boundary (`encodeWireError` — used by the interpreter's dispatch and the oracle-baseline compile step alike) derives their wire codes from the annotation, no registry.
 
 Declared unions are DOMAIN errors only. Infrastructure failures never enter a handler's `E`: domain services die on them internally ([feature-services.md](./feature-services.md) boundary rule), so a handler calls the service bare — no `orDie` pipe at the call site, no `Drizzle` import in an operations file — and a DB failure reaches the wire as `INTERNAL_SERVER_ERROR` via `encodeWireError`'s defect path.
 
@@ -67,7 +67,7 @@ Each entry carries `resolve` — the Effect the interpreter's dispatch yields pe
 How phoenix mutations are shaped, beyond the constructor mechanics:
 
 - **Names are `entity.verb`** (`definition.add`, `post.submit`, `comment.delete`) — namespaced commands that read as the action they perform. The wire name is the record key AND the `Effect.fn` span name.
-- **Domain validation lives in the service** ([ADR 0013](../.decisions/0013-validation-in-service-methods.md)). The service raises the domain errors whose `ErrorCode` annotations become wire codes; the definition's `input` Schema is shape coercion at the trust boundary only. Don't restate domain rules in the Schema — the service is the single source of truth.
+- **Domain validation lives in the service** ([ADR 0013](../.decisions/0013-validation-in-service-methods.md)). The service raises the domain errors whose `FateWireCode` annotations become wire codes; the definition's `input` Schema is shape coercion at the trust boundary only. Don't restate domain rules in the Schema — the service is the single source of truth.
 - **Return the changed entity's shaped row.** After the write, the service returns the fresh row and the feature's shaper maps it to the entity field set; fate masks it to the client's selection exactly as it masks a read — no hand-shaped responses.
 - **A delete returns the affected *parent* entity, re-resolved**, so the client's normalized cache updates the surrounding list: `definition.delete` returns the `Term`, `comment.delete` returns the `Post`. A parentless entity (`post.delete`) returns the deleted entity's `{__typename, id}` instead — there is no parent to re-resolve.
 - **Publish live events after the write**, through the per-request `LivePublisher` service, so subscribed views update in place:

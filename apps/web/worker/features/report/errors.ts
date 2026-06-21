@@ -1,7 +1,7 @@
 /**
  * Tagged errors raised by the Report service layer.
  *
- * `ReportTargetNotFound` carries NO `ErrorCode` by design: it never reaches the
+ * `ReportTargetNotFound` carries NO `FateWireCode` by design: it never reaches the
  * wire. The `report.submit` mutation (next epic-#82 child) translates it at its
  * own boundary via `Effect.catchTag` into the feature-level not-found wire error,
  * exactly as the vote mutations translate `VoteTargetNotFound`.

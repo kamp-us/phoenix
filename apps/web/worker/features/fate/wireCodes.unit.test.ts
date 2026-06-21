@@ -1,7 +1,7 @@
 /**
  * SPA wire-code list ⇄ server config guard (T0).
  *
- * The server derives `FateWireCode`s from each error class's `ErrorCode`
+ * The server derives wire codes from each error class's `FateWireCode`
  * annotation (`.patterns/fate-effect-wire-errors.md`); the SPA's
  * `FATE_WIRE_CODES` (`src/lib/fateWireCodes.ts`) is the literal authored source
  * the decoder narrows to. The two ends are bound by this guard, not by hope: if
@@ -16,6 +16,7 @@
  * the SPA constant + decoder directly.
  */
 
+import * as FateEffect from "@kampus/fate-effect";
 import {declaredWireCodes} from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
 import {decodeFateWireCode, FATE_WIRE_CODES} from "../../../src/lib/fateWireCodes.ts";
@@ -25,6 +26,16 @@ describe("wire-code contract", () => {
 	const spaCodes: ReadonlySet<string> = new Set(FATE_WIRE_CODES);
 
 	const serverCodes = declaredWireCodes(fateConfig);
+
+	it("the annotation key is exported under its one canonical name `FateWireCode`", () => {
+		// Names drift under a value-only guard (#1032): the codec reads the
+		// annotation by the `FateWireCode` *symbol* every author site spells, so a
+		// rename of the export — back to `ErrorCode` or any other — must fail CI
+		// here, not just silently work because the underlying string is unchanged.
+		expect(FateEffect).toHaveProperty("FateWireCode");
+		expect(FateEffect.FateWireCode).toBe("fate-effect/wireCode");
+		expect(FateEffect).not.toHaveProperty("ErrorCode");
+	});
 
 	it("the walk finds phoenix's declared vocabulary (sanity floor)", () => {
 		// One code per error surface (package gate, sozluk, pano, pasaport): if a

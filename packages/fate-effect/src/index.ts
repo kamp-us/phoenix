@@ -130,8 +130,8 @@ export {
 	syntheticSource,
 } from "./Source.ts";
 export {
-	ErrorCode,
 	encodeWireError,
+	FateWireCode,
 	failureOf,
 	INTERNAL_WIRE_CODE,
 	wireCodeOf,

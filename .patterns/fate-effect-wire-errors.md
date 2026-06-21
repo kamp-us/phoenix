@@ -1,21 +1,21 @@
-# fate-effect wire errors — the `ErrorCode` annotation
+# fate-effect wire errors — the `FateWireCode` annotation
 
 How `@kampus/fate-effect` (the workspace package at `packages/fate-effect`) maps Effect failures onto fate's wire error shape. The short answer: **the wire code is a schema annotation on the error class** — one edit per domain error, no registry. This replaced the bridge's `WIRE_CODE_BY_TAG` registry (deleted in the v1 cutover, ADR 0042). Two guards hold the contract: each feature's `errors.unit.test.ts` enumeration pin, and `worker/features/fate/wireCodes.unit.test.ts` — which derives the server-emittable code set via the package's `declaredWireCodes(config)` (the canonical walker: every declared error union's annotations plus the `INTERNAL_SERVER_ERROR`/`VALIDATION_ERROR` fallbacks; its AST-drift canary lives package-side in `Server.unit.test.ts`) and asserts the SPA's `FATE_WIRE_CODES` covers it.
 
-**One name for the concept: `FateWireCode`.** The error `code` string that crosses the worker↔SPA boundary is named *once* across the seam — `ErrorCode` (the annotation key, package side), `FateWireCode` / `FATE_WIRE_CODES` (the SPA literal union + `decodeFateWireCode` in `src/lib/fateWireCodes.ts`), and `ScreenErrorCode` (the un-narrowed boundary read in `src/fate/Screen.tsx`, `FateWireCode | (string & {})`) all spell the same thing. The SPA literal is the authored source — a runtime `Set<string>` (what `declaredWireCodes` yields) can't give an exhaustive-`switch`-able union — and the `wireCodes.unit.test.ts` coverage guard is what binds it to the server so the two ends can't drift.
+**One name for the concept: `FateWireCode`.** The error `code` string that crosses the worker↔SPA boundary is named *once* across the seam (#1032): `FateWireCode` (the annotation key, package side — `import {FateWireCode} from "@kampus/fate-effect"`), and `FateWireCode` / `FATE_WIRE_CODES` (the SPA literal union + `decodeFateWireCode` in `src/lib/fateWireCodes.ts`). The boundary in `src/fate/Screen.tsx` reads the same `FateWireCode` vocabulary un-narrowed, as `FateWireCode | (string & {})` (no separate alias) — open on purpose, because a fate-internal throw bypasses the codec and carries fate's own `INTERNAL_ERROR`, a code `FATE_WIRE_CODES` omits. The SPA literal is the authored source — a runtime `Set<string>` (what `declaredWireCodes` yields) can't give an exhaustive-`switch`-able union — and `wireCodes.unit.test.ts` is what binds it to the server: it covers the value set AND pins the canonical export *name* `FateWireCode`, so neither the codes nor the noun can drift.
 
 ## Declaring an error
 
-Attach the wire code where the error is defined, via the `ErrorCode` annotation key (`Schema.TaggedErrorClass`'s third parameter):
+Attach the wire code where the error is defined, via the `FateWireCode` annotation key (`Schema.TaggedErrorClass`'s third parameter):
 
 ```ts
-import {ErrorCode} from "@kampus/fate-effect";
+import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
 export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"sozluk/BodyRequired",
 	{message: Schema.String},
-	{[ErrorCode]: "BODY_REQUIRED"},
+	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 ```
 
@@ -29,7 +29,7 @@ That is the whole contract — the class declaration carries its own wire mappin
 
 | input | wire result |
 |---|---|
-| error whose class carries `ErrorCode` | the annotated code + the instance's own `message` |
+| error whose class carries `FateWireCode` | the annotated code + the instance's own `message` |
 | un-annotated error, defect, any other value | `INTERNAL_WIRE_CODE` (`INTERNAL_SERVER_ERROR`) + a fixed message — **defect details never reach the wire** |
 | `FateRequestError` | passed through verbatim (the escape hatch for code already speaking the wire shape) |
 
