@@ -55,6 +55,14 @@
 	font: var(--t-meta);
 	color: var(--text-muted);
 }
+.kp-auth__optional {
+	opacity: 0.7;
+}
+.kp-auth__hint {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: 0;
+}
 .kp-auth__field input {
 	background: var(--surface-sunken);
 	border: 1px solid var(--border);

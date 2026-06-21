@@ -1,8 +1,10 @@
 /**
- * Username bootstrap form — `fate.mutations.user.setUsername`. Mounted by the
- * layout when the signed-in user has `username === null`. Client-side validation
- * mirrors the worker-side validator (Pasaport.assertUsername): 3-30 chars,
- * lowercase a-z / 0-9 / `-`, no leading/trailing dash.
+ * Username bootstrap form — `fate.mutations.user.setUsername`. The FALLBACK for
+ * users who skipped the username field at signup (and pre-existing null-username
+ * accounts): mounted by the layout when the signed-in user has `username === null`.
+ * Client-side pre-flight runs the single-source rule (`checkUsername`,
+ * `worker/features/pasaport/username-rule.ts`) that `assertUsername` enforces
+ * server-side; the prefill is derived from the email local-part (`+tag` stripped).
  *
  * Error routing: phoenix codes classify as boundary, so the mutation **throws**
  * for some failures and returns `{error}` for others — we handle BOTH, keying the
@@ -11,11 +13,10 @@
 import {useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
+import {deriveUsernameFromEmail} from "../../worker/features/pasaport/username-rule";
 import {codeOf} from "../fate/wire";
-import type {FateWireCode} from "../lib/fateWireCodes";
+import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
-
-const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
 /** The `User` write-back selection for the `setUsername` result. */
 const SetUsernameView = view<User>()({
@@ -25,24 +26,6 @@ const SetUsernameView = view<User>()({
 	image: true,
 	username: true,
 });
-
-/** Map a server wire code to the inline message. */
-function messageForCode(code: FateWireCode | null): string {
-	switch (code) {
-		case "TOO_SHORT":
-			return "kullanıcı adı en az 3 karakter olmalı";
-		case "TOO_LONG":
-			return "kullanıcı adı en fazla 30 karakter olabilir";
-		case "INVALID_FORMAT":
-			return "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir";
-		case "TAKEN":
-			return "bu kullanıcı adı alınmış, başka bir tane dene";
-		case "ALREADY_SET":
-			return "kullanıcı adın zaten ayarlanmış";
-		default:
-			return "kullanıcı adı ayarlanamadı";
-	}
-}
 
 interface SetUsernameError {
 	readonly code?: unknown;
@@ -56,27 +39,13 @@ export function UsernameBootstrap({
 	onComplete: () => Promise<void> | void;
 }) {
 	const fate = useFateClient();
-	const localPart = (email.split("@")[0] ?? "")
-		.toLowerCase()
-		.replace(/[^a-z0-9-]/g, "-")
-		.replace(/^-+|-+$/g, "")
-		.slice(0, 30);
-	const [value, setValue] = useState(localPart);
+	const [value, setValue] = useState(() => deriveUsernameFromEmail(email));
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 
-	function validateLocal(v: string): string | null {
-		const trimmed = v.trim().toLowerCase();
-		if (trimmed.length < 3) return "kullanıcı adı en az 3 karakter olmalı";
-		if (trimmed.length > 30) return "kullanıcı adı en fazla 30 karakter olabilir";
-		if (!USERNAME_REGEX.test(trimmed))
-			return "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir";
-		return null;
-	}
-
 	async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
 		e.preventDefault();
-		const local = validateLocal(value);
+		const local = localRuleMessage(value);
 		if (local) {
 			setError(local);
 			return;

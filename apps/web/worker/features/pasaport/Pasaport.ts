@@ -25,6 +25,7 @@ import {
 	UsernameTooShort,
 } from "./errors.ts";
 import {contributionOrdering} from "./ordering.ts";
+import {checkUsername} from "./username-rule.ts";
 
 // Phoenix never specializes the better-auth options at the type level, so this
 // is the unparameterized `Auth` — matching the `BetterAuth` tag's `auth` field.
@@ -188,55 +189,40 @@ export class Pasaport extends Context.Service<
 	}
 >()("@kampus/pasaport/Pasaport") {}
 
-// Username constraints (mirrored on the SPA bootstrap form): 3-30 chars;
-// lowercase ASCII letters, digits, and `-`; must start/end with a letter or
-// digit (no leading/trailing `-`, no `--`).
-const USERNAME_REGEX = /^[a-z0-9](?:[a-z0-9]|-(?=[a-z0-9])){1,28}[a-z0-9]$|^[a-z0-9]{3,30}$/;
-
 /**
- * The seeded `@[silinen]` sentinel's id, reserved username, and display name (ADR
- * 0097). Migration `0006` seeds the `user` + `user_profile` rows; account-deletion
- * re-attributes content to this id. Kept in lockstep with that migration.
+ * The seeded `@[silinen]` sentinel's id + display name (ADR 0097). Migration
+ * `0006` seeds the `user` + `user_profile` rows; account-deletion re-attributes
+ * content to this id. The reserved username lives in `username-rule.ts`
+ * ({@link SILINEN_USERNAME}) — the one place the rule is sourced.
  */
 export const SILINEN_USER_ID = "silinen";
-export const SILINEN_USERNAME = "silinen";
+export {SILINEN_USERNAME} from "./username-rule.ts";
 export const SILINEN_DISPLAY_NAME = "@[silinen]";
 
-// Usernames nobody may register — the sentinel handle, so `@[silinen]` can never
-// collide with a real account (ADR 0097 §1). Rejected with the INVALID_FORMAT
-// surface, like any other illegal handle.
-const RESERVED_USERNAMES: ReadonlySet<string> = new Set([SILINEN_USERNAME]);
-
+// The server-authoritative gate: re-runs the shared {@link checkUsername} rule and
+// maps its code onto the typed domain error. The rule (length/charset/reserved) is
+// single-sourced in `username-rule.ts`, consumed identically by the SPA forms.
 function assertUsername(normalized: string): Effect.Effect<void, UsernameInvalid> {
-	if (RESERVED_USERNAMES.has(normalized)) {
-		return Effect.fail(
-			new UsernameInvalidFormat({
-				message: "bu kullanıcı adı ayrılmış ve kullanılamaz",
-			}),
-		);
+	switch (checkUsername(normalized)) {
+		case "RESERVED":
+			return Effect.fail(
+				new UsernameInvalidFormat({message: "bu kullanıcı adı ayrılmış ve kullanılamaz"}),
+			);
+		case "TOO_SHORT":
+			return Effect.fail(new UsernameTooShort({message: "kullanıcı adı en az 3 karakter olmalı"}));
+		case "TOO_LONG":
+			return Effect.fail(
+				new UsernameTooLong({message: "kullanıcı adı en fazla 30 karakter olabilir"}),
+			);
+		case "INVALID_FORMAT":
+			return Effect.fail(
+				new UsernameInvalidFormat({
+					message: "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir",
+				}),
+			);
+		default:
+			return Effect.void;
 	}
-	if (normalized.length < 3) {
-		return Effect.fail(
-			new UsernameTooShort({
-				message: "kullanıcı adı en az 3 karakter olmalı",
-			}),
-		);
-	}
-	if (normalized.length > 30) {
-		return Effect.fail(
-			new UsernameTooLong({
-				message: "kullanıcı adı en fazla 30 karakter olabilir",
-			}),
-		);
-	}
-	if (!USERNAME_REGEX.test(normalized)) {
-		return Effect.fail(
-			new UsernameInvalidFormat({
-				message: "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir",
-			}),
-		);
-	}
-	return Effect.void;
 }
 
 /**
