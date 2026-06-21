@@ -45,6 +45,8 @@ nature, regardless of directory). The guard packages are the `packages/` instanc
 
 ## Decision
 
+> Amended by ADR [0103](0103-consolidate-pipeline-cli-package.md): the guard-package §CP set collapses to the single `packages/pipeline-cli/` package (it absorbs the guards); the control-plane principle stands, the surface shrinks.
+
 The §CP control-plane / blocking set is extended to cover the **enforcement-guard
 packages**, alongside `.claude/**`, `.github/**`, and the gate-critical skills:
 

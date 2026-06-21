@@ -1,12 +1,14 @@
 ---
 id: 0076
 title: "Distribute decisions-index by automated npm publish — drop `private`, publish public `@kampus/decisions-index` from a `.github/workflows/` release pipeline on a `decisions-index-v*` Release tag via OIDC Trusted Publishing, following ADR 0064's epic-ledger pattern. Uses `pnpm publish` (not `npm publish`) so `catalog:`/`workspace:` specifiers resolve into the tarball at pack time and the pnpm catalog stays the single source of truth — no dep pinning, no `npm install -g npm@latest` step. `pnpm/action-setup` pinned to 10.27.0 (pnpm 11 has a known OIDC 404 regression, pnpm#11513). The CLI operates on the local `.decisions/` filesystem so there is no repo-resolution / `CLAUDE_PIPELINE_REPO` logic. The workflow file is control-plane (ADR 0053) so the PR is human-merged. Human prereqs: the public `@kampus` npm org/scope + a one-time manual bootstrap publish + registering the repo/workflow as a Trusted Publisher"
-status: accepted
+status: superseded by [0103](0103-consolidate-pipeline-cli-package.md)
 date: 2026-06-16
 tags: [plugin, pipeline, packaging, decisions-index, npm, ci, release]
 ---
 
 # 0076 — Distribute decisions-index by automated npm publish
+
+Superseded by [0103](0103-consolidate-pipeline-cli-package.md).
 
 ## Context
 

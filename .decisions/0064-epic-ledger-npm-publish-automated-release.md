@@ -1,12 +1,14 @@
 ---
 id: 0064
 title: "Distribute epic-ledger by automated npm publish — rename to public `@kampus/epic-ledger`, publish from a `.github/workflows/` release pipeline on an `epic-ledger-v*` Release tag via OIDC Trusted Publishing (no stored token; npm CLI ≥ 11.5.1, `id-token: write`, provenance), publishing only `packages/epic-ledger`; `review-plan` resolves in-repo first and falls back to the published package via `pnpm dlx`; published version tracks source. Supersedes 0062 §3's deferral; the workflow file is control-plane (ADR 0053) so #366's PR is human-merged. Human prereqs: create the public `@kampus` npm org + register the repo/workflow as a Trusted Publisher for the package"
-status: accepted
+status: superseded by [0103](0103-consolidate-pipeline-cli-package.md)
 date: 2026-06-15
 tags: [plugin, pipeline, packaging, epic-ledger, npm, ci, release]
 ---
 
 # 0064 — Distribute epic-ledger by automated npm publish
+
+Superseded by [0103](0103-consolidate-pipeline-cli-package.md).
 
 > **Amendment (2026-06-16, ADR [0076](0076-decisions-index-npm-publish-automated-release.md) is now the canonical pattern).**
 > This ADR's §1 originally pinned the `catalog:` deps (`effect`, `@effect/platform-node`)
