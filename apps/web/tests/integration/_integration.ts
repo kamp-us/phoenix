@@ -194,6 +194,39 @@ const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 		),
 	);
 
+// The eventually-consistent CF signatures the stage deploy can transiently draw under
+// cross-PR load on the shared account — registry lag right after `putScript`. Grounded in
+// the `@distilled.cloud/cloudflare` error decode (`src/services/workers.ts`): `WorkerNotFound`
+// = code 10007, `InternalServerError` = 15000, `UnknownCloudflareError` = 10013 — the same tags
+// alchemy-effect's own create path retries piecewise (`Cloudflare/Workers/Worker.ts`), here
+// applied to the deploy as a whole. ONLY these transient tags retry; a real deploy error (bad
+// config, auth, a 10068 invalid-script) carries a different tag and still fails fast.
+const DEPLOY_TRANSIENT_TAGS = new Set([
+	"WorkerNotFound",
+	"InternalServerError",
+	"UnknownCloudflareError",
+]);
+
+const isTransientDeployError = (error: unknown): boolean =>
+	typeof error === "object" &&
+	error !== null &&
+	"_tag" in error &&
+	DEPLOY_TRANSIENT_TAGS.has((error as {_tag: unknown})._tag as string);
+
+/**
+ * Wrap the stage `deploy` so a TRANSIENT CF deploy error self-heals. The ~24 ephemeral
+ * stages per run hit ONE eventually-consistent CF account; #1015's per-run fork cap bounds
+ * WITHIN-run concurrency, but two PRs' CI overlapping still produces registry lag — a
+ * `WorkerNotFound (10007)` mid-deploy fails an otherwise-green suite (#1019). alchemy deploys
+ * are convergent: re-running `deploy(Stack, {stage})` reconciles the SAME stage's state
+ * (idempotent), so the retry resolves the lag without standing up a duplicate stage or
+ * compounding the #1020/#690 teardown leak. Bounded — a persistent error still fails fast.
+ */
+const deployTransientRetry = Effect.retry({
+	while: isTransientDeployError,
+	schedule: Schedule.exponential("1 second").pipe(Schedule.both(Schedule.recurs(5))),
+});
+
 /**
  * Stand up this file's per-file `Test.make` lifecycle and return the black-box
  * `harness` bound to its deployed worker URL. Call once at module top level.
@@ -216,6 +249,7 @@ export function integrationStack(metaUrl: string): Harness {
 
 	const stack = beforeAll(
 		deploy(Stack, {stage}).pipe(
+			deployTransientRetry,
 			Effect.tap((out: Input.Resolve<StackOutput>) =>
 				Effect.gen(function* () {
 					// The deploy publishes the worker URL with a trailing slash; the harness
@@ -233,18 +267,39 @@ export function integrationStack(metaUrl: string): Harness {
 						return yield* Effect.die(new Error("deploy returned no D1 databaseId"));
 					}
 					d1Target = {accountId: resolved.accountId, databaseId: resolved.databaseId};
-					// Retry-first-request: a fresh route 404s briefly while it propagates.
-					// Effect.repeat-style retry on a bounded `spaced` Schedule, never a
-					// Date.now() polling loop — capped at `times` so a never-ready worker
-					// fails fast inside the hook timeout instead of hanging.
+					// Readiness probe: a fresh route 404s briefly while it propagates, so
+					// retry until the worker itself serves its health JSON.
 					const client = yield* HttpClient.HttpClient;
 					yield* client.get(`${url}/api/health`).pipe(
 						Effect.flatMap((res) =>
 							res.status === 200
-								? Effect.void
+								? res.json.pipe(
+										Effect.flatMap((body) =>
+											(body as {status?: unknown} | null)?.status === "ok"
+												? Effect.void
+												: Effect.fail(new WorkerNotReady({status: res.status})),
+										),
+										// A CF HTML error page (or any non-JSON body) fails `res.json`
+										// decode — treat as not-ready, retryable, never a hard error.
+										Effect.catchTag("HttpClientError", () =>
+											Effect.fail(new WorkerNotReady({status: res.status})),
+										),
+									)
 								: Effect.fail(new WorkerNotReady({status: res.status})),
 						),
+						// Retry EVERY non-ready outcome — `WorkerNotReady` AND any request-transport
+						// error (`HttpClientError` from the `get` itself, e.g. an edge connection
+						// reset) — on the bounded schedule, so no transient escapes the probe. The
+						// bound is generous (30 × 2s); a worker that never serves healthy JSON
+						// within it fails with a clear message rather than hanging.
 						Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
+						Effect.catch((cause) =>
+							Effect.die(
+								new Error(
+									`worker never served a healthy /api/health within the readiness window for ${url}: ${String(cause)}`,
+								),
+							),
+						),
 					);
 					yield* warmLiveDO(url);
 				}),
