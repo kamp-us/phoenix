@@ -70,13 +70,15 @@ How phoenix mutations are shaped, beyond the constructor mechanics:
 - **Domain validation lives in the service** ([ADR 0013](../.decisions/0013-validation-in-service-methods.md)). The service raises the domain errors whose `FateWireCode` annotations become wire codes; the definition's `input` Schema is shape coercion at the trust boundary only. Don't restate domain rules in the Schema — the service is the single source of truth.
 - **Return the changed entity's shaped row.** After the write, the service returns the fresh row and the feature's shaper maps it to the entity field set; fate masks it to the client's selection exactly as it masks a read — no hand-shaped responses.
 - **A delete returns the affected *parent* entity, re-resolved**, so the client's normalized cache updates the surrounding list: `definition.delete` returns the `Term`, `comment.delete` returns the `Post`. A parentless entity (`post.delete`) returns the deleted entity's `{__typename, id}` instead — there is no parent to re-resolve.
-- **Publish live events after the write**, through the per-request `LivePublisher` service, so subscribed views update in place:
+- **Publish live events after the write**, through the feature's `<feature>Live` binding over the per-request `WorkerLivePublisher`, so subscribed views update in place — and so the entity `__typename` + its topics are named once, not restated per resolver (#1127):
 
   ```ts
-  const live = yield* LivePublisher;
-  yield* live.update("Definition", id, {data: definition});                    // entity change
-  yield* live.topic("Term.definitions", {id: termSlug}).appendNode("Definition", id, {node: definition});
+  const live = sozlukLive(yield* WorkerLivePublisher);
+  yield* live.definition.update(id, {changed: ["body"], data: definition});      // entity change
+  yield* live.definition.term(termSlug).appendNode(id, {node: definition});      // term's connection
   ```
+
+  Each feature owns a `live.ts` (`panoLive` / `sozlukLive`) — the ONE place that answers "what does mutating a `Post` / `Definition` publish to?" It binds the entity's wire `__typename` (read off the view's `typeName`, never an inline `"Post"`/`"Definition"` literal) to the topic(s) it participates in. A resolver names the fan-out target (`live.post.feed.prependNode(...)`, `live.comment.thread(postId).appendNode(...)`) instead of hand-wiring `live.topic(LiveTopic.x).prependNode("Post", ...)`. The `changed` hint stays a per-resolver argument: it is mutation-specific (which fields a write touched), not a property of the entity, and it does not reach the wire — the update frame carries `data` only.
 
   Every publish method is `Effect<void>` (`E = never`) — a failed publish cannot fail the committed mutation; the swallow-with-log lives inside the implementation ([fate-effect-server.md](./fate-effect-server.md)). Publish the **already shaped** entity/node inline as `data`/`node`: the handler shaped it for the response, so the live event carries resolved data and clients mask it to their own selection. The mutating client gets the entity returned directly; live events update *other* clients. See [fate-live-views.md](./fate-live-views.md).
 
