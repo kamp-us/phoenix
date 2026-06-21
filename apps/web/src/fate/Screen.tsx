@@ -6,7 +6,7 @@
  * This boundary catches **thrown** errors only; mutation errors a call site
  * handles inline never reach here (that split lives in the mutation hooks — see
  * `.patterns/fate-mutations-client.md`). It surfaces the error's `code` so
- * screens can branch on it (e.g. `UNAUTHORIZED` vs `NOT_FOUND`).
+ * screens can branch on it (e.g. `UNAUTHORIZED` vs `POST_NOT_FOUND`).
  *
  * See `.patterns/fate-client-setup.md`.
  */
@@ -14,15 +14,15 @@ import {Component, type ErrorInfo, type ReactNode, Suspense} from "react";
 import type {FateWireCode} from "../lib/fateWireCodes";
 
 /**
- * The fate wire `code` a screen branches on. The known {@link FateWireCode}
- * literals keep autocompletion, but this stays open (`string`) on purpose: a
- * boundary throw can carry a code the narrowed `decodeFateWireCode` set omits
- * (e.g. a bare `NOT_FOUND`), so this is the *un-narrowed* read of the same
- * vocabulary, not a second one.
+ * The fate wire `code` a screen branches on — the same {@link FateWireCode}
+ * vocabulary, read un-narrowed: the known literals keep autocompletion, but the
+ * open `string & {}` arm stays on purpose, because the boundary forwards the
+ * thrown `code` verbatim (no `decodeFateWireCode`). A fate-internal throw
+ * bypasses the annotation codec and carries fate's own protocol fallback
+ * `INTERNAL_ERROR` — a real code `FATE_WIRE_CODES` omits (it lists
+ * `INTERNAL_SERVER_ERROR`) — so the read must not be closed to that set.
  */
-export type ScreenErrorCode = FateWireCode | (string & {});
-
-type FallbackRender = (error: {code: ScreenErrorCode; error: Error}) => ReactNode;
+type FallbackRender = (error: {code: FateWireCode | (string & {}); error: Error}) => ReactNode;
 
 // `FateRequestError` is only exported from `@nkzw/fate/server`, not the client
 // entrypoints, so we duck-type on the string `code` field rather than `instanceof`.
@@ -55,10 +55,10 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 	override render(): ReactNode {
 		const {error} = this.state;
 		if (error) {
-			// Forward the wire `code` verbatim — the screen vocabulary is wider
-			// than fate's closed union (e.g. `NOT_FOUND`), so this does NOT narrow
-			// through `decodeFateWireCode` the way `wire.codeOf` does.
-			const code: ScreenErrorCode = isFateError(error) ? error.code : "INTERNAL_SERVER_ERROR";
+			// Forward the wire `code` verbatim — wider than the SPA's narrowed set
+			// (a fate-internal throw carries `INTERNAL_ERROR`), so this does NOT
+			// narrow through `decodeFateWireCode` the way `wire.codeOf` does.
+			const code = isFateError(error) ? error.code : "INTERNAL_SERVER_ERROR";
 			return this.props.fallback({code, error});
 		}
 		return this.props.children;

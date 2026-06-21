@@ -95,7 +95,7 @@ The per-feature assembly on the `@kampus/fate-effect` constructors — sozluk
 and stats follow the same template. The feature's domain service stays
 untouched; the fate-facing fragments are:
 
-- **`errors.ts`** — `Schema.TaggedErrorClass`es carrying `{[ErrorCode]: "<CODE>"}`
+- **`errors.ts`** — `Schema.TaggedErrorClass`es carrying `{[FateWireCode]: "<CODE>"}`
   annotations ([fate-effect-wire-errors.md](./fate-effect-wire-errors.md)), with a
   per-feature `errors.unit.test.ts` enumeration pin.
 - **`views.ts`** — `FateDataView<Row>()("Name")({fields})` classes,

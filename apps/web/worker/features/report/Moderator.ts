@@ -12,7 +12,12 @@
  * goes through the identity service (the CLAUDE.md "richer reads behind a domain
  * service" rule). No env allowlist, no `if (isMod)` branch — the gate is structural.
  */
-import {CurrentUser, type CurrentUserInfo, ErrorCode, type Unauthorized} from "@kampus/fate-effect";
+import {
+	CurrentUser,
+	type CurrentUserInfo,
+	FateWireCode,
+	type Unauthorized,
+} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {Pasaport} from "../pasaport/Pasaport.ts";
@@ -37,7 +42,7 @@ export interface ModeratorIdentity {
 export class NotAModerator extends Schema.TaggedErrorClass<NotAModerator>()(
 	"report/NotAModerator",
 	{message: Schema.String},
-	{[ErrorCode]: "UNAUTHORIZED"},
+	{[FateWireCode]: "UNAUTHORIZED"},
 ) {}
 
 export const Moderator = {

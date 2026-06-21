@@ -2,7 +2,7 @@
  * The fate wire-error `code` vocabulary — the one canonical name for the error
  * `code` string that crosses the worker↔SPA boundary.
  *
- * The worker derives these from the `ErrorCode` annotations on its error
+ * The worker derives these from the `FateWireCode` annotations on its error
  * classes (`@kampus/fate-effect`'s `encodeWireError`, `.patterns/fate-effect-wire-errors.md`);
  * the SPA narrows incoming codes to this union with {@link decodeFateWireCode}
  * so UI code can `switch` on a typed value instead of stringly comparing

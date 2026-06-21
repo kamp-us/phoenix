@@ -1,6 +1,6 @@
 /**
  * Tagged errors raised by the Pasaport service layer. Each class carries its
- * wire `code` as an `ErrorCode` annotation that `encodeWireError` reads at the
+ * wire `code` as an `FateWireCode` annotation that `encodeWireError` reads at the
  * fate boundary (`.patterns/fate-effect-wire-errors.md`). One static code per
  * class (the codec reads the CONSTRUCTOR annotation), so each username sub-code
  * is its own class and {@link UsernameInvalid} is the union alias the service
@@ -10,25 +10,25 @@
  * The package's `Unauthorized` (annotated `UNAUTHORIZED`) gates the writes via
  * `CurrentUser.required` and is not redeclared here.
  */
-import {ErrorCode} from "@kampus/fate-effect";
+import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
 export class UsernameInvalidFormat extends Schema.TaggedErrorClass<UsernameInvalidFormat>()(
 	"pasaport/UsernameInvalidFormat",
 	{message: Schema.String},
-	{[ErrorCode]: "INVALID_FORMAT"},
+	{[FateWireCode]: "INVALID_FORMAT"},
 ) {}
 
 export class UsernameTooShort extends Schema.TaggedErrorClass<UsernameTooShort>()(
 	"pasaport/UsernameTooShort",
 	{message: Schema.String},
-	{[ErrorCode]: "TOO_SHORT"},
+	{[FateWireCode]: "TOO_SHORT"},
 ) {}
 
 export class UsernameTooLong extends Schema.TaggedErrorClass<UsernameTooLong>()(
 	"pasaport/UsernameTooLong",
 	{message: Schema.String},
-	{[ErrorCode]: "TOO_LONG"},
+	{[FateWireCode]: "TOO_LONG"},
 ) {}
 
 // Spread into the mutation `error:` union; {@link UsernameInvalid} is derived
@@ -48,7 +48,7 @@ export class UsernameTaken extends Schema.TaggedErrorClass<UsernameTaken>()(
 	{
 		message: Schema.String,
 	},
-	{[ErrorCode]: "TAKEN"},
+	{[FateWireCode]: "TAKEN"},
 ) {}
 
 // Username is immutable once set; re-setting fails with this.
@@ -57,7 +57,7 @@ export class UsernameAlreadySet extends Schema.TaggedErrorClass<UsernameAlreadyS
 	{
 		message: Schema.String,
 	},
-	{[ErrorCode]: "ALREADY_SET"},
+	{[FateWireCode]: "ALREADY_SET"},
 ) {}
 
 export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
@@ -65,5 +65,5 @@ export class UserNotFound extends Schema.TaggedErrorClass<UserNotFound>()(
 	{
 		message: Schema.String,
 	},
-	{[ErrorCode]: "USER_NOT_FOUND"},
+	{[FateWireCode]: "USER_NOT_FOUND"},
 ) {}

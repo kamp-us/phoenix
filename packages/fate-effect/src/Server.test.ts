@@ -38,7 +38,7 @@ import {Fate} from "./index.ts";
 import {LivePublisher} from "./LivePublisher.ts";
 import type {AnyFateMutation} from "./Server.ts";
 import {FateServer, FateServerConfigError} from "./Server.ts";
-import {ErrorCode} from "./WireError.ts";
+import {FateWireCode} from "./WireError.ts";
 
 // --- fixture rows + views (exported: the TS2883 nameability fixture) --------
 
@@ -83,7 +83,7 @@ const TermStoreLive = Layer.succeed(TermStore, {rows});
 class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
-	{[ErrorCode]: "BODY_REQUIRED"},
+	{[FateWireCode]: "BODY_REQUIRED"},
 ) {}
 
 // --- the realistic multi-feature authoring shape -----------------------------
