@@ -79,7 +79,7 @@ claims" rule.
   When it surfaces, `afterAll(destroy)` **throws** → vitest marks a
   154/154-**green** suite as **failed**. The cleanup step — not the assertions — is
   the failure. There is no alchemy ordering fix to make; the race is handled by
-  best-effort teardown (step 1, #1026) and structurally reduced by the shared stage
+  best-effort teardown (step 1, #1020) and structurally reduced by the shared stage
   (step 7, #1027 — one teardown per run instead of 24).
 
 - **The one-stage model is already proven in CI.** The e2e job in
@@ -114,7 +114,7 @@ flake classes for all of them.
 3. **Teardown SUCCEEDS rather than throws.** Alchemy already orders the delete
    worker-before-app correctly (grounded above); the residual `Conflict` is a CF
    eventual-consistency race, not an ordering defect to fix in the dep-fork. It is
-   handled by **best-effort teardown** (step 1, #1026 — catch + log + leak) and
+   handled by **best-effort teardown** (step 1, #1020 — catch + log + leak) and
    **structurally reduced by the shared stage** (step 7, #1027 — one teardown per
    run instead of 24, far fewer chances to hit the race), backstopped by the orphan
    sweep (#690). A teardown-`Conflict` retry is an optional further hardening, but
@@ -131,11 +131,11 @@ real improvement; the suite is never wedged on an all-or-nothing cutover.
 
 | # | Step | Closes / advances | Notes |
 |---|------|-------------------|-------|
-| 1 | **Best-effort teardown** — `afterAll(destroy)` catches + logs + leaks instead of throwing | [#1020](https://github.com/kamp-us/phoenix/issues/1020) *(in flight)* | A **mitigation**, not the fix — tolerates leaks until 5 + 6 land; must not become permanent (see Consequences). |
+| 1 | **Best-effort teardown** — `afterAll(destroy)` catches + logs + leaks instead of throwing | [#1020](https://github.com/kamp-us/phoenix/issues/1020) | Absorbs an **intrinsic CF eventual-consistency race** (the worker delete is ACKed but not propagated when the correctly-ordered app delete fires), not a band-aid over a missing fix — the leaked stages it tolerates are reaped by the #690 sweep (step 6) and the race surface is structurally reduced by the shared stage (step 7). |
 | 2 | **DO-readiness warm for `/fate/live`** — warm the LiveDO before asserting the SSE stream | [#1018](https://github.com/kamp-us/phoenix/issues/1018) (503) | Removes the cold-DO 503 on the live route. |
 | 3 | **Deploy retry-on-transient** — retry the stage deploy on transient CF errors | [#1019](https://github.com/kamp-us/phoenix/issues/1019) | Absorbs the cross-PR `WorkerNotFound` while still per-file. |
 | 4 | **Move ~10 pure-logic files → unit tier** | advances [#771](https://github.com/kamp-us/phoenix/issues/771) | Split conservatively (see Consequences); keep keyset/aggregate residue in the real tier. |
-| 5 | **No alchemy ordering fix needed** — a reproduction disproved the ordering hypothesis; the teardown `Conflict` is a CF eventual-consistency race | already mitigated by step 1 ([#1026](https://github.com/kamp-us/phoenix/issues/1026)) + structurally reduced by step 7 ([#1027](https://github.com/kamp-us/phoenix/issues/1027)) | Alchemy orders worker-before-app correctly (grounded above). An optional teardown-`Conflict` retry is the only residual hardening, and the race is already handled. (#813 is a *different* bug — the `deploy.yml` `pr-<n>` CI-cleanup leak — not this.) |
+| 5 | **No alchemy ordering fix needed** — a reproduction disproved the ordering hypothesis; the teardown `Conflict` is a CF eventual-consistency race | already mitigated by step 1 ([#1020](https://github.com/kamp-us/phoenix/issues/1020)) + structurally reduced by step 7 ([#1027](https://github.com/kamp-us/phoenix/issues/1027)) | Alchemy orders worker-before-app correctly (grounded above). An optional teardown-`Conflict` retry is the only residual hardening, and the race is already handled. (#813 is a *different* bug — the `deploy.yml` `pr-<n>` CI-cleanup leak — not this.) |
 | 6 | **Orphan sweep CLI** — best-effort leak reaper | [#690](https://github.com/kamp-us/phoenix/issues/690) | Reaps the stages step 1 leaks on a teardown-race `Conflict`; the Effect-CLI idiom (CLAUDE.md). |
 | 7 | **Run-scoped shared-stage harness mode** — deploy once per run, namespace-isolated | roots [#1010](https://github.com/kamp-us/phoenix/issues/1010) / [#1019](https://github.com/kamp-us/phoenix/issues/1019) / [#1020](https://github.com/kamp-us/phoenix/issues/1020) | Composes with [#684](https://github.com/kamp-us/phoenix/issues/684) (sharding) and [#958](https://github.com/kamp-us/phoenix/issues/958) (`isolate:false`). |
 
