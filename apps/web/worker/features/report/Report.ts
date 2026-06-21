@@ -15,23 +15,24 @@ import {and, eq, inArray, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {type ReportTargetKind, ReportTargetNotFound} from "./errors.ts";
+import type {TargetKind} from "../../db/target-kind.ts";
+import {ReportTargetNotFound} from "./errors.ts";
 import * as Resolution from "./resolution.ts";
 
-// Re-exported from `errors.ts` (its source-of-truth home) for callers that
-// prefer importing it from `./Report`.
-export type {ReportTargetKind};
+// Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
+// that prefer importing it from `./Report`.
+export type {TargetKind};
 
 export interface ReportInput {
 	reporterId: string;
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	/** Optional free-text reason. */
 	reason?: string | null;
 }
 
 export interface ReportResult {
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	/** `false` on idempotent no-op (the reporter already reported this target). */
 	created: boolean;
@@ -44,7 +45,7 @@ export interface ReportResult {
  * index. `reportCount` doubles as the count of open reports the resolve collapses.
  */
 export interface OpenReportGroup {
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	/** Distinct reporters who have an OPEN report on this target. */
 	reportCount: number;
@@ -59,7 +60,7 @@ export interface OpenReportGroup {
  * written together — there is no partial resolution.
  */
 export interface ResolveTargetInput {
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	resolverId: string;
 	/** The moderator's chosen action; the state machine derives the persisted outcome. */
@@ -84,7 +85,7 @@ export class Report extends Context.Service<
 		 */
 		readonly readByReporter: (
 			viewerId: string | null | undefined,
-			kind: ReportTargetKind,
+			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
 
@@ -110,7 +111,7 @@ export class Report extends Context.Service<
 		 * edge (ADR 0096 §4). Returns how many reports were reopened.
 		 */
 		readonly reopenForTarget: (input: {
-			targetKind: ReportTargetKind;
+			targetKind: TargetKind;
 			targetId: string;
 		}) => Effect.Effect<{reopened: number}>;
 
@@ -121,7 +122,7 @@ export class Report extends Context.Service<
 		 */
 		readonly lookupReportTarget: (
 			reportId: string,
-		) => Effect.Effect<{targetKind: ReportTargetKind; targetId: string} | null>;
+		) => Effect.Effect<{targetKind: TargetKind; targetId: string} | null>;
 
 		/**
 		 * The earliest OPEN report id on a target — the representative report the
@@ -129,7 +130,7 @@ export class Report extends Context.Service<
 		 * the whole group. `null` when no open report exists on the target.
 		 */
 		readonly firstOpenReportId: (
-			targetKind: ReportTargetKind,
+			targetKind: TargetKind,
 			targetId: string,
 		) => Effect.Effect<string | null>;
 	}
@@ -145,7 +146,7 @@ export const ReportLive = Layer.effect(Report)(
 		// Validate the target exists and is not soft-deleted. Surfaces
 		// `ReportTargetNotFound` rather than letting the insert fail FK-shaped.
 		const assertTargetLive = Effect.fn("Report.assertTargetLive")(function* (
-			kind: ReportTargetKind,
+			kind: TargetKind,
 			targetId: string,
 		) {
 			const exists = yield* run((db) => {
@@ -178,7 +179,7 @@ export const ReportLive = Layer.effect(Report)(
 
 		const readByReporter = Effect.fn("Report.readByReporter")(function* (
 			viewerId: string | null | undefined,
-			kind: ReportTargetKind,
+			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
 		) {
 			if (!viewerId || targetIds.length === 0) return new Set<string>();
@@ -217,7 +218,7 @@ export const ReportLive = Layer.effect(Report)(
 			return rows.map(
 				(r) =>
 					({
-						targetKind: r.targetKind as ReportTargetKind,
+						targetKind: r.targetKind as TargetKind,
 						targetId: r.targetId,
 						reportCount: Number(r.reportCount),
 						reason: r.reason ?? null,
@@ -256,7 +257,7 @@ export const ReportLive = Layer.effect(Report)(
 		});
 
 		const reopenForTarget = Effect.fn("Report.reopenForTarget")(function* (input: {
-			targetKind: ReportTargetKind;
+			targetKind: TargetKind;
 			targetId: string;
 		}) {
 			const result = yield* run((db) =>
@@ -288,11 +289,11 @@ export const ReportLive = Layer.effect(Report)(
 					.get(),
 			);
 			if (!row) return null;
-			return {targetKind: row.targetKind as ReportTargetKind, targetId: row.targetId};
+			return {targetKind: row.targetKind as TargetKind, targetId: row.targetId};
 		});
 
 		const firstOpenReportId = Effect.fn("Report.firstOpenReportId")(function* (
-			targetKind: ReportTargetKind,
+			targetKind: TargetKind,
 			targetId: string,
 		) {
 			const row = yield* run((db) =>

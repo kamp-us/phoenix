@@ -14,6 +14,7 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {TARGET_KINDS} from "../../db/target-kind.ts";
 import {KarmaBump, Vote, VoteLive} from "./Vote.ts";
 
 // A `Drizzle` whose every call throws — provided so that any path which actually
@@ -157,7 +158,7 @@ function recordingBatchAccess(): {access: DrizzleAccess; batches: ReadonlyArray<
 }
 
 describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {
-	for (const kind of ["definition", "post", "comment"] as const) {
+	for (const kind of TARGET_KINDS) {
 		it.effect(`${kind}: one batch of exactly two statements, karma KEPT`, () => {
 			const {access, batches} = recordingBatchAccess();
 			return Effect.gen(function* () {
