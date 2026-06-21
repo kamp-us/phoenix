@@ -5,27 +5,31 @@ init-only runtime, and the per-request seam. Since the v2 cutover (ADR 0043) the
 serves the NATIVE interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) on
 the request fiber — the compile path ([fate-effect-compiler.md](./fate-effect-compiler.md)) is
 the differential oracle's baseline plus the build-time codegen surface, not a serving path.
-Every record is a `Fate.*` entry composed from the per-feature aggregator barrels.
+Every record is a `Fate.*` entry, merged from the per-feature `fate-module.ts` manifests
+([per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md)).
 
 ## The pieces (one config, two consumers)
 
 ```
 worker/features/fate/
-├── config.ts      # fateConfig = FateServer.config({queries, lists, mutations, sources, live})
-├── sources.ts     # the features' Fate.source entries, composed into the config's array
+├── module.ts      # FateModule type + mergeFateModules — the per-feature manifest + the root merge
+├── config.ts      # fateConfig = FateServer.config({...mergeFateModules(modules), live})
 ├── layers.ts      # PhoenixFateLive = FateServer.layer(fateConfig) ⊕ makeFateLayer; makeFateRuntime
 ├── route.ts       # POST /fate: FateInterpreter.handleRequest on the request fiber + abort wiring
 ├── schema.ts      # fateServer = FateExecutor.toCodegenServer(fateConfig)  (Vite codegen, inert)
 └── run-fate-op.ts # runFateOp — the in-process mirror of route.ts
 ```
 
-- **`config.ts`** is the single declaration both edges consume. Record values are the features'
-  `Fate.query`/`Fate.list`/`Fate.mutation`/`Fate.source` entries, spread from the per-feature
-  barrels. It is **import-pure**: importing it captures handler functions and builds no runtime,
-  which the codegen path depends on.
-- **`sources.ts`** composes the per-feature `Fate.source` entries into the ARRAY form
-  `FateServer.config` takes. Definition objects are the features' exported objects, never
-  copies: fate's registry is identity-keyed.
+- **`config.ts`** is the single declaration both edges consume. It registers a flat `modules`
+  array of per-feature `fateModule` manifests and `mergeFateModules` spreads their
+  `Fate.query`/`Fate.list`/`Fate.mutation` records + concatenates their `Fate.source` arrays into
+  the one config. It is **import-pure**: importing it captures handler functions and builds no
+  runtime, which the codegen path depends on.
+- **`module.ts`** defines the `FateModule` manifest shape (every category optional) and the
+  generic `mergeFateModules` that recovers the precise merged type from the modules tuple — so the
+  `FateServer.config` R-channel infers exactly as the old per-category barrels did. Source
+  definition objects flow through unchanged: they stay the features' exported objects, never
+  copies, since fate's registry is identity-keyed. Merge order is not load-bearing.
 - **Source completeness is validated**: every view-reachable entity must be registered, so an
   entity that is *reachable but deliberately unfetchable* (e.g. `Contribution`, whose rows are
   synthetic and whose connection is a custom resolver per ADR 0019) registers a

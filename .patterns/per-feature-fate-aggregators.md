@@ -1,12 +1,20 @@
-# Per-feature fate aggregators with barrels
+# Per-feature fate modules + the root merge
 
 Each feature owns its own fate-shaped fragments (`queries.ts` / `lists.ts` /
-`views.ts` / `shapers.ts` / `sources.ts` / `mutations.ts`); the files under
-`worker/features/fate/` are **barrels** that compose those fragments into the
-single records (and the one source entry array) `FateServer.config` takes. The
-split is what makes feature locality (ADR 0036) compatible with fate's "one map
-per aggregator" wire contract — and it preserves the SPA's import surface
-untouched.
+`views.ts` / `shapers.ts` / `sources.ts` / `mutations.ts`) and bundles its whole
+operation surface into one **`fate-module.ts`** manifest. The composition root
+(`worker/features/fate/config.ts`) consumes a flat array of those manifests and
+merges them once (`fate/module.ts`'s `mergeFateModules`) into the single records
+(and source array) `FateServer.config` takes. The split is what makes feature
+locality (ADR 0036) compatible with fate's "one map per aggregator" wire
+contract — and it preserves the SPA's import surface untouched.
+
+`views.ts` is the one remaining **barrel** under `worker/features/fate/`: it owns
+the cross-feature `Root` map and re-exports every feature's entity types so the
+SPA imports from one stable path. The three operation barrels (`queries.ts` /
+`lists.ts` / `mutations.ts`) and the `sources.ts` barrel are gone — registering a
+feature is now one array entry in `config.ts`, not a spread line per central
+barrel (the registration-friction collapse, [issue #1034](https://github.com/kamp-us/phoenix/issues/1034)).
 
 Read this with [feature-services.md](./feature-services.md) (the per-feature
 service shape these fragments orchestrate) and
@@ -25,39 +33,60 @@ worker/features/
 │   ├── views.ts        # exports `TermView`/`DefinitionView` classes, kernel-view consts, types
 │   ├── shapers.ts      # exports `toTerm`, `toDefinition`, ...
 │   ├── sources.ts      # exports `termSource`, `definitionSource` (`Fate.source` entries)
-│   └── mutations.ts    # exports `mutations = { "definition.add": ... }`
-├── pano/               # same fragments, scoped to pano
+│   ├── mutations.ts    # exports `mutations = { "definition.add": ... }`
+│   └── fate-module.ts  # bundles this feature's {queries, lists, mutations, sources}
+├── pano/               # same fragments + fate-module.ts, scoped to pano
 ├── pasaport/           # same, scoped to pasaport
-├── vote/               # mutation-only feature — no queries/lists/views/etc
-├── stats/              # query-only feature — only queries.ts/views.ts
+├── vote/               # mutation-only feature — no fate fragments, no module
+├── stats/              # query-only feature — queries.ts/views.ts + a queries-only module
 └── fate/
-    ├── queries.ts      # barrel: spreads sozlukQueries, panoQueries, ...
-    ├── lists.ts        # barrel: spreads sozlukLists, panoLists
+    ├── module.ts       # the `FateModule` type + `mergeFateModules` (the root's merge)
+    ├── config.ts       # registers the `modules` array, merges, adds `live`
     ├── views.ts        # barrel + cross-feature `Root`/`LiveEntities`
-    ├── connection.ts   # leaf: the cross-feature `toConnection`/`KeysetPage` envelope
-    ├── sources.ts      # barrel: the features' `Fate.source` entries as the config's array
-    └── mutations.ts    # barrel: spreads sozlukMutations, panoMutations, ...
+    └── connection.ts   # leaf: the cross-feature `toConnection`/`KeysetPage` envelope
 ```
 
-Each barrel is small and mechanical — re-exports plus, where the cross-feature
-piece is genuinely cross-feature (e.g. `Root` in `views.ts`, the composed
-source entry array in `sources.ts`), one tiny piece of composition the
-per-feature fragments can't own:
+Each feature's `fate-module.ts` is small and mechanical — it imports the
+feature's own fragments and names them in one value:
 
 ```ts
-// worker/features/fate/queries.ts
-import {queries as panoQueries} from "../pano/queries.ts";
-import {queries as pasaportQueries} from "../pasaport/queries.ts";
-import {queries as sozlukQueries} from "../sozluk/queries.ts";
-import {queries as statsQueries} from "../stats/queries.ts";
+// worker/features/sozluk/fate-module.ts
+import type {FateModule} from "../fate/module.ts";
+import {lists} from "./lists.ts";
+import {mutations} from "./mutations.ts";
+import {queries} from "./queries.ts";
+import {definitionSource, termSource} from "./sources.ts";
 
-export const queries = {
-  ...statsQueries,
-  ...pasaportQueries,
-  ...sozlukQueries,
-  ...panoQueries,
-};
+export const fateModule = {
+  queries,
+  lists,
+  mutations,
+  sources: [definitionSource, termSource],
+} satisfies FateModule;
 ```
+
+`satisfies FateModule` (not a `: FateModule` annotation) keeps each module's
+precise entry types so the root's R-channel math infers exactly as the
+hand-written barrels did. The composition root then lists the modules once:
+
+```ts
+// worker/features/fate/config.ts
+const modules = [statsModule, pasaportModule, sozlukModule, panoModule, searchModule, reportModule];
+
+export const fateConfig = FateServer.config({
+  ...mergeFateModules(modules),
+  live: liveBusConfig,
+});
+```
+
+`mergeFateModules` is generic over the modules tuple: it spreads the
+`queries`/`lists`/`mutations` records (so the merged type is their intersection)
+and concatenates the `sources` arrays (a union of source-entry types). Order is
+not load-bearing — fate's registry is keyed by entry identity, and
+`collectConfigIssues` flags duplicate wire names / duplicate sources regardless
+of order — so the merged value resolves identically to the old per-category
+barrels. (`Codegen.test.ts`'s manifest-parity invariant and the worker's
+`wireCodes.unit.test.ts` pin that identity.)
 
 ## What each fragment contains
 
@@ -82,6 +111,8 @@ untouched; the fate-facing fragments are:
   ([fate-effect-operations.md](./fate-effect-operations.md)).
 - **`shapers.ts`** — the row → entity field-set mappers the resolvers return
   through.
+- **`fate-module.ts`** — the manifest bundling this feature's operation records
+  + source array into one `FateModule` the root registers.
 
 Two handler conventions hold across every fragment: the per-request services
 are `CurrentUser` and `LivePublisher` only ([fate-effect-server.md](./fate-effect-server.md)),
@@ -105,76 +136,84 @@ export {definitionDataView, termDataView} from "../sozluk/views.ts";
 // ... etc
 ```
 
-The chunk-3 restructure that moved every fragment per-feature touched **zero**
-files under `apps/web/src/`. That's the test: a split that requires the SPA to
-chase entity types around the worker tree has leaked the worker's internal
-shape into the client. The barrel keeps the seam at one stable path
+The restructure that moved every fragment per-feature touched **zero** files
+under `apps/web/src/`. That's the test: a split that requires the SPA to chase
+entity types around the worker tree has leaked the worker's internal shape into
+the client. The `views.ts` barrel keeps the seam at one stable path
 (`worker/features/fate/views`) and lets the worker reorganize freely behind it.
 
 ## When to add a fragment to a feature
 
 Only when the feature actually contributes to that aggregator. Not every
-feature has every file:
+feature has every file, and `fate-module.ts` names only the fragments it has:
 
 - **Product domains with reads + writes** (`sozluk/`, `pano/`) carry the full
   set — `queries.ts`, `lists.ts`, `views.ts`, `shapers.ts`, `sources.ts`,
-  `mutations.ts`.
+  `mutations.ts`, `fate-module.ts`.
 - **Mutation-only features** (`vote/`) carry the service (`Vote.ts`) and its
-  errors — no fate fragments. Vote is consumed by `Sozluk` and `Pano` as a
-  cross-service dep (see `feature-services.md`); it has no resolver surface of
-  its own.
+  errors — no fate fragments, no module. Vote is consumed by `Sozluk` and `Pano`
+  as a cross-service dep (see `feature-services.md`); it has no resolver surface
+  of its own.
 - **Query-only features** (`stats/`) carry only `queries.ts` and `views.ts` —
-  no `mutations.ts`, no `lists.ts`, no `sources.ts`. The landing-page stats
-  card is a single root query backed by a singleton entity.
-- **Pasaport** is in between: it has `queries.ts`/`mutations.ts`/`views.ts`/
-  `sources.ts`/`shapers.ts` for the fate surface, plus the `Auth` service, the
-  `Pasaport` capability, and the better-auth route — its non-fate machinery
-  lives in the same folder.
+  no `mutations.ts`, no `lists.ts`, no `sources.ts`. Its `fate-module.ts` is just
+  `{queries} satisfies FateModule`.
+- **Search** is lists-only (`{lists}`); **report** is lists + mutations +
+  synthetic sources, no queries. Every field on `FateModule` is optional for
+  exactly this reason.
+- **Pasaport** is in between: `queries.ts`/`mutations.ts`/`views.ts`/
+  `sources.ts`/`shapers.ts` for the fate surface (no `lists.ts`), plus the
+  `Auth` service, the `Pasaport` capability, and the better-auth route — its
+  non-fate machinery lives in the same folder.
 
 A feature does not invent a `queries.ts` to "complete the set." The presence of
-a fragment in a feature is a signal that the feature contributes to that
-aggregator; an empty one would be a lie.
+a fragment in a feature — and of its key in the `fateModule` — is a signal that
+the feature contributes to that aggregator; an empty one would be a lie.
 
-## Why the barrels still exist
+## Adding a fate entity — the reduced surface
 
-A reasonable instinct after seeing this is "if every fragment is per-feature,
-why does `fate/` exist at all?" Two answers:
+The point of the module manifest: adding an entity to a feature that already
+contributes touches only the feature's own files (its `views.ts` / `sources.ts`
+/ the relevant operation record). The feature's `fate-module.ts` already names
+those records, so the new entry flows into the merged config without any edit
+under `fate/`. Registering a *new* feature is one array entry in `config.ts` —
+not a spread line added to each of four central barrels. (Before #1034, an entity
+was a ~8-file barrel ritual; the operation/source barrels were the registry tax.)
+
+## Why the merge (and the `views.ts` barrel) still exist
+
+A reasonable instinct is "if every fragment is per-feature, why does `fate/`
+compose at all?" Two answers:
 
 1. **The wire contract is one record per aggregator.** `FateServer.config({queries,
    lists, mutations, sources, live})` takes a single `queries` record — dispatch
-   is by the request key, not by feature. The barrel is where the per-feature
-   fragments collapse into that shape. (The same is true downstream of the
-   config: fate's own `createFateServer` — alive only at codegen and as the
-   differential oracle's baseline, [fate-effect-compiler.md](./fate-effect-compiler.md) —
-   consumes the identical records.)
+   is by the request key, not by feature. `mergeFateModules` is where the
+   per-feature manifests collapse into that shape. (The same records feed fate's
+   own `createFateServer` at codegen and as the differential oracle's baseline,
+   [fate-effect-compiler.md](./fate-effect-compiler.md).)
 2. **The genuinely cross-feature pieces have a home.** `views.ts` owns `Root`
    (the client-exposed root map, which spans every feature's screens) and
    `LiveEntities` (the entity-name → entity-type registry the live bus types
-   against). `sources.ts` owns the composed source entry **array** the config
-   takes — the interpreter resolves entities from it by `typeName`; the
-   oracle-baseline compile step builds fate's `{getSource, registry}` from the
-   same entries (identity-keyed, so the array holds the features' exported
-   objects, never copies). None of these belong to a single feature; the
-   barrel is where they live.
+   against). Neither belongs to a single feature; the `views.ts` barrel is where
+   they live.
 
 A cross-feature **definition** that features import back, however, must NOT
 live in a barrel — that's how a barrel becomes a cycle seed. The `toConnection`/
 `KeysetPage` envelope used to live in a `fate/shapers.ts` barrel that also
-re-exported every feature's shapers; the five feature import sites pulling
+re-exported every feature's shapers; the feature import sites pulling
 `toConnection` transitively loaded *every other* feature's shaper modules. It
-now lives in `fate/connection.ts`, a leaf module (imports no feature code,
-like `fate/view-types.ts`), and the shapers barrel was deleted — nothing
-consumed its re-exports (per-feature shapers are imported directly by their
-owning feature).
+now lives in `fate/connection.ts`, a leaf module (imports no feature code, like
+`fate/view-types.ts`). The per-feature `fate-module.ts` files are the inverse —
+each imports only its own feature's fragments, so they seed no cross-feature
+cycle; only `config.ts` fans in across features.
 
 ## When NOT to do this
 
-This pattern is specifically for the **fate aggregators**. Don't generalize it
-to "every cross-cutting concern needs barrels." The reason it works here is
-that fate's contract is a single map per aggregator, and the worker has
-roughly five products contributing — small enough that the barrel doesn't
-become its own maintenance burden. A would-be `features/util/index.ts` that
-re-exports from every feature's `util.ts` is the
+This pattern is specifically for the **fate aggregators**. Don't generalize the
+manifest-and-merge to "every cross-cutting concern needs a module registry." The
+reason it works here is that fate's contract is a single map per aggregator, and
+the worker has roughly five products contributing — small enough that the merge
+is one line of composition. A would-be `features/util/index.ts` that re-exports
+from every feature's `util.ts` is the
 [`shared/`-graveyard pre-emptive rejection](../.decisions/0036-features-as-any-named-app-grouping.md#what-was-considered--rejected)
 in different clothing.
 
