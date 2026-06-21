@@ -175,6 +175,20 @@ const isAbort = (e: unknown): boolean =>
 // catching a true hang and leaving room to retry inside the 120s test budget.
 const REQUEST_TIMEOUT_MS = 30_000;
 
+// `openSse` readiness poll bounds (used below). A cold dedicated stage's first
+// `/fate/live` open can take many seconds to clear edge propagation + LiveDO cold
+// start; ~60s of 1.5s polls is generous enough to ride that out, and only delays —
+// never hangs (it returns the last response on deadline).
+const SSE_READY_DEADLINE_MS = 60_000;
+const SSE_READY_POLL_MS = 1_500;
+
+// A `/fate/live` response is READY only when the edge served the worker's real held
+// SSE stream (200 + `text/event-stream`). Every other outcome — the placeholder-404,
+// the 503 cold-start envelope, or any other not-yet-serving status — is "retry", never
+// terminal: more tolerant is the point (the opposite of the #1060 early-stop regression).
+const sseReady = (res: Response): boolean =>
+	res.status === 200 && (res.headers.get("content-type") ?? "").includes("text/event-stream");
+
 // Unique per-process stamp for seeded author/voter emails. Each file owns its own
 // isolated stage + D1, but a `NO_DESTROY` re-run reuses the same stage's D1, so a
 // fresh stamp per process keeps re-run seed identities from colliding with users a
@@ -645,10 +659,34 @@ export function harness(
 
 	const d1Target: Harness["d1Target"] = async () => getD1Target();
 
-	const openSse: Harness["openSse"] = (connectionId, cookie) =>
-		req(`/fate/live?connectionId=${encodeURIComponent(connectionId)}`, {
-			headers: {accept: "text/event-stream", cookie},
-		});
+	// A dedicated-stage `/fate/live` open can draw a cold edge well past the `req` loop's
+	// ~5s placeholder-404 window: the route is brand-new AND the LiveDO is cold, so the
+	// first open can surface either the Cloudflare placeholder-404 (edge route not yet
+	// propagated, which `req` already retries but only briefly) OR the worker's 503
+	// `LIVE_UNAVAILABLE` cold-start envelope (`fate-live/cold-start-retry.ts`) before it
+	// serves the held SSE stream. Both are "not ready yet, retry", NOT a real failure — so
+	// this rides BOTH out on a generous bounded poll (up to ~60s of 1.5s waits) and only
+	// returns once the edge serves the worker's real SSE response (200 + `text/event-stream`).
+	// It NEVER classifies an "unexpected" status as terminal and stops early (the #1060
+	// regression — that made the gate LESS tolerant): any other status is ALSO treated as
+	// not-ready and retried within the window. The deadline only delays, it never hangs; on
+	// exhaustion it returns the last response so the caller's own `expect(status).toBe(200)`
+	// still reports the truth.
+	const openSse: Harness["openSse"] = async (connectionId, cookie) => {
+		const path = `/fate/live?connectionId=${encodeURIComponent(connectionId)}`;
+		const init: RequestInit = {headers: {accept: "text/event-stream", cookie}};
+		const deadline = Date.now() + SSE_READY_DEADLINE_MS;
+		let last = await req(path, init);
+		while (!sseReady(last) && Date.now() < deadline) {
+			// Release the body (a held stream on a partial 200, or the 503 error envelope)
+			// before the next attempt — a leaked stream pins the fetch connection across the
+			// poll. A connection-level failure to open is already retried inside `req`.
+			await last.body?.cancel().catch(() => {});
+			await sleep(SSE_READY_POLL_MS);
+			last = await req(path, init);
+		}
+		return last;
+	};
 
 	const liveControl: Harness["liveControl"] = (connectionId, operations, cookie) =>
 		json("/fate/live", {version: 1, connectionId, operations}, cookie);
