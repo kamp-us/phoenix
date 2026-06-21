@@ -15,13 +15,19 @@
  *
  * The moderator is granted via the offline grant path — here a setup-only `execD1`
  * UPDATE (the same direct-D1 write `@kampus/moderator-grant` performs in prod).
- * Every email/slug is `mod-${STAMP}-…` prefixed for this file's isolated stage.
+ *
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
+ * is shared across every migrated file — every email/slug is `${NS}-…` prefixed (this
+ * file's deterministic `nsToken`), and every assertion scopes to this file's own seeded
+ * post (`postId`): the batch-collapse count is the per-target collapse for THIS file's
+ * own post, never a global `content_report` count.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
-const STAMP = Date.now();
+const h = sharedStack();
+const NS = nsToken(import.meta.url);
 
 let moderator: {userId: string; cookie: string};
 let reporterA: {userId: string; cookie: string};
@@ -69,10 +75,10 @@ const getPost = (idOrSlug: string) =>
 	h.fate({kind: "query", name: "post", args: {idOrSlug}, select: ["id"]});
 
 beforeAll(async () => {
-	moderator = await h.signUp(`mod-${STAMP}-mod@test.local`, "hunter2hunter2", "mod");
-	reporterA = await h.signUp(`mod-${STAMP}-ra@test.local`, "hunter2hunter2", "ra");
-	reporterB = await h.signUp(`mod-${STAMP}-rb@test.local`, "hunter2hunter2", "rb");
-	author = await h.signUp(`mod-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
+	moderator = await h.signUp(`${NS}-mod@test.local`, "hunter2hunter2", "mod");
+	reporterA = await h.signUp(`${NS}-ra@test.local`, "hunter2hunter2", "ra");
+	reporterB = await h.signUp(`${NS}-rb@test.local`, "hunter2hunter2", "rb");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
 
 	// The grant path: flip the moderator's role directly in D1 (no runtime endpoint).
 	await h.execD1("UPDATE user SET role = ? WHERE id = ?", ["moderator", moderator.userId]);
@@ -81,7 +87,7 @@ beforeAll(async () => {
 		{
 			kind: "mutation",
 			name: "post.submit",
-			input: {title: `mod-${STAMP} target`, tags: [{kind: "tartışma"}]},
+			input: {title: `${NS} target`, tags: [{kind: "tartışma"}]},
 			select: ["id"],
 		},
 		{cookie: author.cookie},
