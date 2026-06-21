@@ -1,34 +1,95 @@
 import {useState} from "react";
+import {useFateClient, view} from "react-fate";
+import type {User} from "../../worker/features/fate/views";
 import {authClient} from "../auth/client";
+import {codeOf} from "../fate/wire";
+import {localRuleMessage, messageForCode} from "./usernameMessages";
 import "./AuthPage.css";
 
 type Mode = "sign-in" | "sign-up";
+
+/** The `User` write-back selection for the post-signup `setUsername` call. */
+const SetUsernameView = view<User>()({
+	id: true,
+	email: true,
+	name: true,
+	image: true,
+	username: true,
+});
+
+interface SetUsernameError {
+	readonly code?: unknown;
+}
 
 export function AuthPage() {
 	const [mode, setMode] = useState<Mode>("sign-in");
 	const [error, setError] = useState<string | null>(null);
 	const [pending, setPending] = useState(false);
 	const isSignIn = mode === "sign-in";
+	const fate = useFateClient();
 
 	async function onSubmit(e: React.SyntheticEvent<HTMLFormElement>) {
 		e.preventDefault();
 		const data = new FormData(e.currentTarget);
 		setError(null);
-		setPending(true);
-		try {
-			if (isSignIn) {
+
+		if (isSignIn) {
+			setPending(true);
+			try {
 				const result = await authClient.signIn.email({
 					email: String(data.get("email") ?? ""),
 					password: String(data.get("password") ?? ""),
 				});
 				if (result.error) setError(result.error.message ?? "giriş başarısız");
-			} else {
-				const result = await authClient.signUp.email({
-					name: String(data.get("name") ?? ""),
-					email: String(data.get("email") ?? ""),
-					password: String(data.get("password") ?? ""),
-				});
-				if (result.error) setError(result.error.message ?? "kayıt başarısız");
+			} finally {
+				setPending(false);
+			}
+			return;
+		}
+
+		// Username is optional at signup; when present it must pass the same rule the
+		// server enforces (`assertUsername`). Pre-flight here so a bad handle never
+		// creates the account, then surfaces as a confusing post-signup failure.
+		const username = String(data.get("username") ?? "").trim();
+		if (username) {
+			const ruleError = localRuleMessage(username);
+			if (ruleError) {
+				setError(ruleError);
+				return;
+			}
+		}
+
+		setPending(true);
+		try {
+			const result = await authClient.signUp.email({
+				name: String(data.get("name") ?? ""),
+				email: String(data.get("email") ?? ""),
+				password: String(data.get("password") ?? ""),
+			});
+			if (result.error) {
+				setError(result.error.message ?? "kayıt başarısız");
+				return;
+			}
+
+			// `username` is better-auth `input: false`, so it can't ride `signUp.email`;
+			// route the chosen handle through the same `setUsername` mutation the
+			// bootstrap fallback uses (cookie-authenticated by the session signup just
+			// established). A blank field leaves `username === null` so the layout's
+			// bootstrap gate fires as the fallback (AC3).
+			if (username) {
+				try {
+					const {error: callError} = await fate.mutations.user.setUsername({
+						input: {value: username},
+						view: SetUsernameView,
+					});
+					if (callError) {
+						setError(messageForCode(codeOf(callError)));
+						return;
+					}
+				} catch (caught) {
+					setError(messageForCode(codeOf(caught as SetUsernameError)));
+					return;
+				}
 			}
 			// Redirect is intentionally not handled here: the Layout's effect
 			// watches `session.data` and navigates off /auth to `?returnTo=…`
@@ -73,6 +134,25 @@ export function AuthPage() {
 							placeholder="elif@kamp.us"
 						/>
 					</div>
+					{!isSignIn ? (
+						<div className="kp-auth__field">
+							<label htmlFor="auth-username">
+								kullanıcı adı <span className="kp-auth__optional">(isteğe bağlı)</span>
+							</label>
+							<input
+								id="auth-username"
+								name="username"
+								type="text"
+								autoComplete="off"
+								minLength={3}
+								maxLength={30}
+								placeholder="elif-kaya"
+							/>
+							<p className="kp-auth__hint">
+								profilin /u/&lt;ad&gt; üzerinden açılır. sonradan değişmez.
+							</p>
+						</div>
+					) : null}
 					<div className="kp-auth__field">
 						<label htmlFor="auth-pw">parola</label>
 						<input
