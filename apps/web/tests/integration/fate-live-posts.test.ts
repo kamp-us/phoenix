@@ -7,11 +7,15 @@
  * connection (no args), so `topicsForPublish` resolves the procedure-wide global
  * wildcard (`liveGlobalConnectionTopic("posts")` — `protocol.ts`): every connection in
  * the stage shares ONE topic DO. On a shared worker, a concurrent file's `post.submit`
- * (e.g. `stats.test.ts`, now on the shared stage) would interleave an extra
- * `prependNode` frame onto that single topic — these tests read the NEXT frame and
- * assert its exact title, so a foreign frame would break the assertion. A dedicated
- * stage isolates the global topic. (connectionIds are already unique; it is the global
- * fan-out that needs the isolation.)
+ * (e.g. `stats.test.ts`, now on the shared stage) would interleave a foreign
+ * `prependNode` frame onto that single topic and break an exact-title assertion. A
+ * dedicated stage isolates the global topic from OTHER files. (connectionIds are already
+ * unique; it is the global fan-out that needs the isolation.)
+ *
+ * Within this file the two cases still share that ONE topic DO, so the reconnect case
+ * can see the first case's `live post` frame buffered on its stream — the worker does not
+ * epoch-fence old-epoch frames for real clients (#1072, open). It therefore drains frames
+ * until it sees its OWN `regen post` title rather than asserting the very next frame.
  *
  * See the package seam (`fate-live/cold-start-retry.ts`, #842) for why there is no
  * harness warm-retry wrapper here: the production worker retries a cold-DO transport
@@ -123,10 +127,21 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		);
 		expect(submitted.ok).toBe(true);
 
-		const frame = await readEvent(secondReader, decoder, secondBuf);
-		expect(frame).toContain("event: connection");
-		const payload = frameData<{event: {edge: {node: {title: string}}}}>(frame);
-		expect(payload.event.edge.node.title).toBe("regen post");
+		// Read until THIS case's own frame arrives. Both cases publish to the ONE global
+		// `posts` topic DO on this shared dedicated stage, so the prior `post.submit` case's
+		// `live post` prependNode can still be buffered on this stream — the worker does not
+		// epoch-fence old-epoch frames for real clients (the deeper correctness question is
+		// #1072, which stays open). Asserting the very NEXT frame would read that stale frame;
+		// instead drain prior-title frames until we see `regen post`, which preserves the
+		// intent — the reconnected (current-epoch) stream DOES deliver the new frame — without
+		// reading a leaked one. Bounded: a stream that never delivers `regen post` still fails.
+		let title: string | undefined;
+		for (let i = 0; i < 10 && title !== "regen post"; i++) {
+			const frame = await readEvent(secondReader, decoder, secondBuf);
+			expect(frame).toContain("event: connection");
+			title = frameData<{event: {edge: {node: {title: string}}}}>(frame).event.edge.node.title;
+		}
+		expect(title).toBe("regen post");
 
 		await firstReader.cancel();
 		await secondReader.cancel();
