@@ -67,7 +67,7 @@ export interface DefinitionFields {
 	authorId: string;
 	createdAt: Date;
 	updatedAt: Date;
-	myVote?: number | null;
+	myVote?: boolean | null;
 }
 
 export const toDefinition = (r: DefinitionFields): Definition => ({

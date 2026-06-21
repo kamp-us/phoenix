@@ -28,7 +28,7 @@ interface PostNode {
 	__typename: string;
 	id: string;
 	title: string;
-	myVote: number | null;
+	myVote: boolean | null;
 	isSaved: boolean | null;
 }
 
@@ -112,10 +112,10 @@ describe("pano feed — viewer state stamping (#695)", () => {
 	it("stamps the signed-in viewer's myVote + isSaved per feed row", async () => {
 		const rows = await feed(viewer.cookie);
 
-		expect(rows.get(votedSaved)).toMatchObject({myVote: 1, isSaved: true});
-		expect(rows.get(votedOnly)).toMatchObject({myVote: 1, isSaved: false});
-		expect(rows.get(savedOnly)).toMatchObject({myVote: null, isSaved: true});
-		expect(rows.get(neutral)).toMatchObject({myVote: null, isSaved: false});
+		expect(rows.get(votedSaved)).toMatchObject({myVote: true, isSaved: true});
+		expect(rows.get(votedOnly)).toMatchObject({myVote: true, isSaved: false});
+		expect(rows.get(savedOnly)).toMatchObject({myVote: false, isSaved: true});
+		expect(rows.get(neutral)).toMatchObject({myVote: false, isSaved: false});
 	});
 
 	it("leaves feed rows neutral for a signed-out viewer", async () => {
@@ -132,7 +132,7 @@ describe("pano feed — viewer state stamping (#695)", () => {
 		const rows = await feed(other.cookie);
 
 		for (const id of [votedSaved, votedOnly, savedOnly, neutral]) {
-			expect(rows.get(id)).toMatchObject({myVote: null, isSaved: false});
+			expect(rows.get(id)).toMatchObject({myVote: false, isSaved: false});
 		}
 	});
 });

@@ -77,7 +77,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const [editInFlight, setEditInFlight] = React.useState(false);
 	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
 
-	const voted = (definition.myVote ?? 0) === 1;
+	const voted = definition.myVote === true;
 	const cls = props.top ? "kp-sozluk-definition kp-sozluk-definition--top" : "kp-sozluk-definition";
 	const isAuthor = !!session.data?.user && session.data.user.id === definition.authorId;
 

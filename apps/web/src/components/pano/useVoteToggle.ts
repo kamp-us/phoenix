@@ -84,14 +84,14 @@ export function useGatedToggle(args: GatedToggleArgs): () => void {
 /** The fate mutation pair a vote site supplies — set upvotes, unset retracts. */
 export interface VoteMutations {
 	/** Cast an upvote with the supplied optimistic `{score, myVote}`. */
-	readonly vote: (optimistic: {score: number; myVote: 1}) => Promise<unknown>;
+	readonly vote: (optimistic: {score: number; myVote: true}) => Promise<unknown>;
 	/** Retract the upvote with the supplied optimistic `{score, myVote}`. */
-	readonly retractVote: (optimistic: {score: number; myVote: null}) => Promise<unknown>;
+	readonly retractVote: (optimistic: {score: number; myVote: false}) => Promise<unknown>;
 }
 
 /**
  * Vote specialization of {@link useGatedToggle}: owns the optimistic vote delta
- * (score ±1, `myVote` 1/null) and the `Math.max(0, score - 1)` floor, so a site
+ * (score ±1, `myVote` true/false) and the `Math.max(0, score - 1)` floor, so a site
  * supplies only its current `{voted, score}` and the mutation pair. Returns the
  * vote-button click handler.
  */
@@ -107,9 +107,9 @@ export function useVoteToggle(args: {
 		returnTo,
 		dispatch: async (action) => {
 			if (action === "unset") {
-				await mutations.retractVote({score: Math.max(0, score - 1), myVote: null});
+				await mutations.retractVote({score: Math.max(0, score - 1), myVote: false});
 			} else {
-				await mutations.vote({score: score + 1, myVote: 1});
+				await mutations.vote({score: score + 1, myVote: true});
 			}
 		},
 	});

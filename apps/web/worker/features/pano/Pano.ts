@@ -258,8 +258,8 @@ export interface PostSummaryRow {
 	createdAt: Date;
 	updatedAt?: Date;
 	tags: PostTagRow[];
-	/** Viewer's upvote flag; `undefined` (unset) for reads that don't request it. */
-	myVote?: number | null;
+	/** Viewer's upvote presence (`true` voted); `undefined`/`null` when not requested or anonymous. */
+	myVote?: boolean | null;
 	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
 	isSaved?: boolean | null;
 	/** Draft (taslak) marker; stamped from `post_summary.is_draft` (null = published). */
@@ -283,8 +283,8 @@ export interface CommentRow {
 	createdAt: Date;
 	updatedAt: Date;
 	deletedAt?: Date | null;
-	/** Viewer's upvote flag; `undefined` (unset) for reads that don't request it. */
-	myVote?: number | null;
+	/** Viewer's upvote presence (`true` voted); `undefined`/`null` when not requested or anonymous. */
+	myVote?: boolean | null;
 }
 
 export interface CommentConnectionPage {
@@ -357,7 +357,7 @@ export interface VoteOnPostResult {
 	commentCount: number;
 	tags: PostTagRow[];
 	createdAt: Date;
-	myVote: number | null;
+	myVote: boolean;
 	changed: boolean;
 }
 
@@ -430,7 +430,7 @@ export interface VoteOnCommentResult {
 	body: string;
 	score: number;
 	createdAt: Date;
-	myVote: number | null;
+	myVote: boolean;
 	changed: boolean;
 }
 
@@ -897,7 +897,7 @@ export const PanoLive = Layer.effect(Pano)(
 				(r: CommentRow) => r.id,
 				(c) => {
 					const base = rowToCommentRow(c);
-					return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
+					return {...base, myVote: viewerId ? voted.has(c.id) : null};
 				},
 			);
 
@@ -938,7 +938,7 @@ export const PanoLive = Layer.effect(Pano)(
 					createdAt: row.createdAt ?? new Date(0),
 					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
 					tags: parseTags(row.tags),
-					myVote: viewerId ? (voted.has(row.id) ? 1 : null) : null,
+					myVote: viewerId ? voted.has(row.id) : null,
 					isSaved: viewerId ? saved.has(row.id) : null,
 					// A by-id read returns the author's own draft (read-your-writes); stamp
 					// its marker so the re-resolved entity carries `isDraft: true`.
@@ -966,7 +966,7 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 			return fetched.map((c): CommentRow => {
 				const base = rowToCommentRow(c);
-				return {...base, myVote: viewerId ? (voted.has(c.id) ? 1 : null) : null};
+				return {...base, myVote: viewerId ? voted.has(c.id) : null};
 			});
 		});
 
@@ -1392,7 +1392,7 @@ export const PanoLive = Layer.effect(Pano)(
 					userId: input.voterId,
 					targetKind: "post",
 					targetId: input.postId,
-					value: isVote ? 1 : null,
+					value: isVote,
 				})
 				.pipe(
 					Effect.catchTag("vote/VoteTargetNotFound", (_e: VoteTargetNotFound) =>
@@ -1839,7 +1839,7 @@ export const PanoLive = Layer.effect(Pano)(
 					userId: input.voterId,
 					targetKind: "comment",
 					targetId: input.commentId,
-					value: isVote ? 1 : null,
+					value: isVote,
 				})
 				.pipe(
 					Effect.catchTag("vote/VoteTargetNotFound", (_e: VoteTargetNotFound) =>

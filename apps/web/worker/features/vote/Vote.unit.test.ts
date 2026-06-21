@@ -86,7 +86,7 @@ describe("Vote.cast — pre-write decisions (mocked Drizzle seam)", () => {
 			const vote = yield* Vote;
 			// loadMeta's findFirst resolves to `undefined` → not-found, no batch.
 			const exit = yield* Effect.exit(
-				vote.cast({userId: "u1", targetKind: "definition", targetId: "ghost", value: 1}),
+				vote.cast({userId: "u1", targetKind: "definition", targetId: "ghost", value: true}),
 			);
 			assert.isTrue(exit._tag === "Failure", "cast against a missing target fails");
 			assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /VoteTargetNotFound/);
@@ -107,11 +107,11 @@ describe("Vote.cast — pre-write decisions (mocked Drizzle seam)", () => {
 				userId: "voter-1",
 				targetKind: "definition",
 				targetId: "def-1",
-				value: 1,
+				value: true,
 			});
 			assert.isFalse(result.changed, "matching state is a no-op");
 			assert.strictEqual(result.score, 7, "returns the cached score unchanged");
-			assert.strictEqual(result.myVote, 1, "already-cast → myVote 1");
+			assert.isTrue(result.myVote, "already-cast → myVote true");
 		}).pipe(Effect.provide(voteLayer(access)));
 	});
 
@@ -124,11 +124,11 @@ describe("Vote.cast — pre-write decisions (mocked Drizzle seam)", () => {
 				userId: "voter-1",
 				targetKind: "definition",
 				targetId: "def-1",
-				value: null,
+				value: false,
 			});
 			assert.isFalse(result.changed, "matching state is a no-op");
 			assert.strictEqual(result.score, 0);
-			assert.isNull(result.myVote, "never-cast → myVote null");
+			assert.isFalse(result.myVote, "never-cast → myVote false");
 		}).pipe(Effect.provide(voteLayer(access)));
 	});
 });

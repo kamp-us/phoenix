@@ -130,8 +130,8 @@ export interface VoteDefinitionResult {
 	authorName: string;
 	createdAt: Date;
 	updatedAt: Date;
-	/** `1` if the voter has voted on this definition (post-write), `null` otherwise. */
-	myVote: number | null;
+	/** `true` if the voter holds an upvote on this definition after the write. */
+	myVote: boolean;
 	/** `true` if the vote-row state changed; `false` on idempotent no-op. */
 	changed: boolean;
 }
@@ -934,7 +934,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					userId: input.voterId,
 					targetKind: "definition",
 					targetId: input.definitionId,
-					value: isVote ? 1 : null,
+					value: isVote,
 				})
 				.pipe(
 					Effect.catchTag("vote/VoteTargetNotFound", (_e: VoteTargetNotFound) =>

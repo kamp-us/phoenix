@@ -2,8 +2,9 @@
  * Vote — the polymorphic vote service. One canonical write surface
  * (`Vote.cast`) for the three vote targets: `definition`, `post`, `comment`.
  *
- * Voting is up-only in the MVP: `value` is a tri-state `1 | null` (1 casts,
- * null retracts), so invalid states (down-vote semantics) are unrepresentable.
+ * Voting is up-only in the MVP: a vote is a pure presence — `cast({value: true})`
+ * casts, `{value: false}` retracts — so invalid states (down-vote semantics, a
+ * vote *weight*) are structurally unrepresentable; there is no number to misuse.
  *
  * The feature-local vote table (`definition_vote`/`post_vote`/`comment_vote`,
  * PK `(target_id, voter_id)`) is the score-truth source; the score cached on
@@ -26,20 +27,20 @@ import {type VoteTargetKind, VoteTargetNotFound} from "./errors.ts";
 // prefer importing it from `./Vote`.
 export type {VoteTargetKind};
 
-export type VoteValue = 1 | null;
-
 export interface VoteInput {
 	userId: string;
 	targetKind: VoteTargetKind;
 	targetId: string;
-	value: VoteValue;
+	/** Up-only presence intent: `true` casts the upvote, `false` retracts it. */
+	value: boolean;
 }
 
 export interface VoteResult {
 	targetKind: VoteTargetKind;
 	targetId: string;
 	score: number;
-	myVote: number | null;
+	/** Whether the voter holds an upvote on this target after the write. */
+	myVote: boolean;
 	/** `false` on idempotent no-op. */
 	changed: boolean;
 }
@@ -259,7 +260,7 @@ export const VoteLive = Layer.effect(Vote)(
 				const meta = yield* loadMeta(input.targetKind, input.targetId);
 
 				const now = new Date();
-				const isCast = input.value === 1;
+				const isCast = input.value;
 				const alreadyCast = yield* probeExisting(input.targetKind, input.targetId, input.userId);
 
 				if (isCast === alreadyCast) {
@@ -269,7 +270,7 @@ export const VoteLive = Layer.effect(Vote)(
 						targetKind: input.targetKind,
 						targetId: input.targetId,
 						score,
-						myVote: alreadyCast ? 1 : null,
+						myVote: alreadyCast,
 						changed: false,
 					} satisfies VoteResult;
 				}
@@ -287,7 +288,7 @@ export const VoteLive = Layer.effect(Vote)(
 					targetKind: input.targetKind,
 					targetId: input.targetId,
 					score: newScore,
-					myVote: isCast ? 1 : null,
+					myVote: isCast,
 					changed: true,
 				} satisfies VoteResult;
 			}),

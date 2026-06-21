@@ -25,7 +25,7 @@ export interface PostFields {
 	// Summary/keyset rows and fresh writes/votes carry no `updatedAt`; the shaper
 	// owns the `updatedAt ?? createdAt` fallback so every path yields the same shape.
 	updatedAt?: Date | null;
-	myVote?: number | null;
+	myVote?: boolean | null;
 	isSaved?: boolean | null;
 	isDraft?: boolean | null;
 	tags: ReadonlyArray<{kind: string; label: string}>;
@@ -57,7 +57,7 @@ export const toPost = (r: PostFields): Post => ({
 // scalar) so the caller threads each in.
 export const toPostFromPage = (
 	page: PostPage,
-	myVote: number | null,
+	myVote: boolean | null,
 	isSaved: boolean | null = null,
 ): Post =>
 	toPost({
@@ -88,7 +88,7 @@ export interface CommentFields {
 	createdAt: Date;
 	updatedAt?: Date | null;
 	deletedAt?: Date | null;
-	myVote?: number | null;
+	myVote?: boolean | null;
 }
 
 export const toComment = (r: CommentFields): Comment => ({

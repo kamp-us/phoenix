@@ -45,7 +45,7 @@ interface PostNode {
 	id: string;
 	title: string;
 	commentCount: number;
-	myVote: number | null;
+	myVote: boolean | null;
 }
 interface CommentNode {
 	__typename: string;
@@ -55,7 +55,7 @@ interface CommentNode {
 	author: string;
 	authorId: string;
 	score: number;
-	myVote: number | null;
+	myVote: boolean | null;
 }
 type Connection<N> = {
 	items: Array<{cursor: string; node: N}>;
@@ -318,7 +318,7 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 });
 
 describe("pano comments — vote idempotency / round-trip", () => {
-	it("two consecutive votes are idempotent (score stays 1, myVote 1)", async () => {
+	it("two consecutive votes are idempotent (score stays 1, myVote true)", async () => {
 		const postId = await seedPost(`${NS} comment vote idem target`);
 		const id = await seedComment(postId, "a votable comment");
 
@@ -329,7 +329,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 		expect(first.ok).toBe(true);
 		if (!first.ok) return;
 		expect((first.data as CommentNode).score).toBe(1);
-		expect((first.data as CommentNode).myVote).toBe(1);
+		expect((first.data as CommentNode).myVote).toBe(true);
 
 		const second = await h.fate(
 			{kind: "mutation", name: "comment.vote", input: {id}, select: ["id", "score", "myVote"]},
@@ -338,10 +338,10 @@ describe("pano comments — vote idempotency / round-trip", () => {
 		expect(second.ok).toBe(true);
 		if (!second.ok) return;
 		expect((second.data as CommentNode).score).toBe(1);
-		expect((second.data as CommentNode).myVote).toBe(1);
+		expect((second.data as CommentNode).myVote).toBe(true);
 	});
 
-	it("vote → retract → vote nets score 1, myVote 1", async () => {
+	it("vote → retract → vote nets score 1, myVote true", async () => {
 		const postId = await seedPost(`${NS} comment vote rt target`);
 		const id = await seedComment(postId, "a round-trippable comment");
 
@@ -360,7 +360,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 		expect(final.ok).toBe(true);
 		if (!final.ok) return;
 		expect((final.data as CommentNode).score).toBe(1);
-		expect((final.data as CommentNode).myVote).toBe(1);
+		expect((final.data as CommentNode).myVote).toBe(true);
 	});
 
 	it("retracting a vote that was never cast is a no-op (score stays 0)", async () => {
@@ -379,10 +379,10 @@ describe("pano comments — vote idempotency / round-trip", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect((result.data as CommentNode).score).toBe(0);
-		expect((result.data as CommentNode).myVote).toBeNull();
+		expect((result.data as CommentNode).myVote).toBe(false);
 	});
 
-	it("retracting a vote then re-reading the comment shows score 0 / myVote null", async () => {
+	it("retracting a vote then re-reading the comment shows score 0 / myVote false", async () => {
 		const postId = await seedPost(`${NS} comment retract roundtrip target`);
 		const id = await seedComment(postId, "a comment to vote then retract");
 
@@ -402,7 +402,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 		expect(retracted.ok).toBe(true);
 		if (!retracted.ok) return;
 		expect((retracted.data as CommentNode).score).toBe(0);
-		expect((retracted.data as CommentNode).myVote).toBeNull();
+		expect((retracted.data as CommentNode).myVote).toBe(false);
 	});
 
 	it("retracting a missing comment surfaces COMMENT_NOT_FOUND", async () => {

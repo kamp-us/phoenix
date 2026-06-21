@@ -45,7 +45,7 @@ interface DefNode {
 	score: number;
 	author: string;
 	authorId: string;
-	myVote: number | null;
+	myVote: boolean | null;
 }
 interface TermNode {
 	__typename: string;
@@ -182,7 +182,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
 		expect((voted.data as DefNode).score).toBe(1);
-		expect((voted.data as DefNode).myVote).toBe(1);
+		expect((voted.data as DefNode).myVote).toBe(true);
 
 		const retracted = await h.fate(
 			{
@@ -196,7 +196,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(retracted.ok).toBe(true);
 		if (!retracted.ok) return;
 		expect((retracted.data as DefNode).score).toBe(0);
-		expect((retracted.data as DefNode).myVote).toBeNull();
+		expect((retracted.data as DefNode).myVote).toBe(false);
 	});
 
 	it("two consecutive votes from the same user are idempotent (score stays at 1)", async () => {
@@ -228,10 +228,10 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(second.ok).toBe(true);
 		if (!second.ok) return;
 		expect((second.data as DefNode).score).toBe(1);
-		expect((second.data as DefNode).myVote).toBe(1);
+		expect((second.data as DefNode).myVote).toBe(true);
 	});
 
-	it("retracting a vote that doesn't exist is a no-op (score 0, myVote null)", async () => {
+	it("retracting a vote that doesn't exist is a no-op (score 0, myVote false)", async () => {
 		const slug = `${NS}-vote-noop`;
 		const added = await h.fate(
 			{
@@ -257,7 +257,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect((result.data as DefNode).score).toBe(0);
-		expect((result.data as DefNode).myVote).toBeNull();
+		expect((result.data as DefNode).myVote).toBe(false);
 	});
 
 	it("vote → retract → vote round-trip ends with score 1", async () => {
@@ -289,7 +289,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 		expect(final.ok).toBe(true);
 		if (!final.ok) return;
 		expect((final.data as DefNode).score).toBe(1);
-		expect((final.data as DefNode).myVote).toBe(1);
+		expect((final.data as DefNode).myVote).toBe(true);
 	});
 
 	it("voting a missing definition surfaces DEFINITION_NOT_FOUND", async () => {

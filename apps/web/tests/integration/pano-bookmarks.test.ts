@@ -30,7 +30,7 @@ interface PostNode {
 	id: string;
 	title: string;
 	score: number;
-	myVote: number | null;
+	myVote: boolean | null;
 	isSaved: boolean | null;
 }
 
