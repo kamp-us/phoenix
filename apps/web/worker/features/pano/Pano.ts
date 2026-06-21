@@ -27,7 +27,8 @@ import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
-import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
+import * as Removal from "../lifecycle/removal.ts";
+import {syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
@@ -1258,18 +1259,7 @@ export const PanoLive = Layer.effect(Pano)(
 				}),
 			);
 			yield* voteSvc.clearTarget("post", input.postId);
-			// Soft-delete stamp + FTS removal in ONE batch so they move all-or-none
-			// (ADR 0080 lockstep): a crash between them can't leave a `Removed` post
-			// still searchable, or strand a `post_search` row past a restore. The FTS
-			// removal builds from the id alone (no re-read of the removed row), so it
-			// is batch-safe. Karma is KEPT (ADR 0096) — no karma-reversal here.
-			yield* batch((db) => [
-				db
-					.update(schema.postRecord)
-					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postRecord.id, input.postId)),
-				removePostSearch(db, input.postId),
-			]);
+			yield* batch((db) => Removal.removePostStatements(db, input.postId, removed, now));
 
 			yield* recomputePanoStats(now);
 
@@ -1294,15 +1284,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const now = new Date();
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			// Restore stamp + FTS re-entry in ONE batch (ADR 0080 lockstep). Votes
-			// wiped on removal are not resurrected (score stays 0).
-			yield* batch((db) => [
-				db
-					.update(schema.postRecord)
-					.set({...live, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postRecord.id, input.postId)),
-				...syncPostSearch(db, input.postId, meta.title),
-			]);
+			yield* batch((db) => Removal.restorePostStatements(db, input.postId, meta.title, live, now));
 
 			yield* recomputePanoStats(now);
 
@@ -1328,18 +1310,7 @@ export const PanoLive = Layer.effect(Pano)(
 				}),
 			);
 			yield* voteSvc.clearTarget("post", input.postId);
-			// Moderation removal stamp + FTS removal in ONE batch (ADR 0080 lockstep),
-			// mirroring `deletePost`. `removePostSearch` must be a drizzle query-builder
-			// item, never `db.run(sql)` — only a builder `_prepare()`s to a bound D1
-			// `.stmt` the batch driver binds; a raw `db.run(Stmt)` 500s in-batch and
-			// fails typecheck (#920 — this path was a trailing un-batched `db.run`).
-			yield* batch((db) => [
-				db
-					.update(schema.postRecord)
-					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postRecord.id, input.postId)),
-				removePostSearch(db, input.postId),
-			]);
+			yield* batch((db) => Removal.removePostStatements(db, input.postId, removed, now));
 			yield* recomputePanoStats(now);
 
 			return {removed: true};
@@ -1355,17 +1326,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const now = new Date();
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			// Restore stamp + FTS re-entry in ONE batch (ADR 0080 lockstep), mirroring
-			// `restorePost` — `syncPostSearch` returns drizzle query-builder items, not
-			// `db.run(sql)`, so they `_prepare()` to bound D1 `.stmt`s the batch driver
-			// binds (raw `db.run(Stmt)` 500s in-batch + fails typecheck; #920).
-			yield* batch((db) => [
-				db
-					.update(schema.postRecord)
-					.set({...live, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postRecord.id, input.postId)),
-				...syncPostSearch(db, input.postId, meta.title),
-			]);
+			yield* batch((db) => Removal.restorePostStatements(db, input.postId, meta.title, live, now));
 			yield* recomputePanoStats(now);
 
 			return {restored: true};
@@ -1627,12 +1588,7 @@ export const PanoLive = Layer.effect(Pano)(
 				}),
 			);
 			yield* voteSvc.clearTarget("comment", input.commentId);
-			yield* run((db) =>
-				db
-					.update(schema.commentRecord)
-					.set({...removed, score: 0, updatedAt: now})
-					.where(eq(schema.commentRecord.id, input.commentId)),
-			);
+			yield* run((db) => Removal.removeCommentStatement(db, input.commentId, removed, now));
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
@@ -1707,12 +1663,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const now = new Date();
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) =>
-				db
-					.update(schema.commentRecord)
-					.set({...live, updatedAt: now})
-					.where(eq(schema.commentRecord.id, input.commentId)),
-			);
+			yield* run((db) => Removal.restoreCommentStatement(db, input.commentId, live, now));
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
@@ -1759,12 +1710,7 @@ export const PanoLive = Layer.effect(Pano)(
 				}),
 			);
 			yield* voteSvc.clearTarget("comment", input.commentId);
-			yield* run((db) =>
-				db
-					.update(schema.commentRecord)
-					.set({...removed, score: 0, updatedAt: now})
-					.where(eq(schema.commentRecord.id, input.commentId)),
-			);
+			yield* run((db) => Removal.removeCommentStatement(db, input.commentId, removed, now));
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
@@ -1796,12 +1742,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const now = new Date();
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) =>
-				db
-					.update(schema.commentRecord)
-					.set({...live, updatedAt: now})
-					.where(eq(schema.commentRecord.id, input.commentId)),
-			);
+			yield* run((db) => Removal.restoreCommentStatement(db, input.commentId, live, now));
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {

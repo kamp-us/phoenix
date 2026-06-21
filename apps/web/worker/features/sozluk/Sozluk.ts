@@ -15,6 +15,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
+import * as Removal from "../lifecycle/removal.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
@@ -776,12 +777,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				}),
 			);
 			yield* voteSvc.clearTarget("definition", input.definitionId);
-			yield* run((db) =>
-				db
-					.update(schema.definitionRecord)
-					.set({...removed, score: 0, updatedAt: now})
-					.where(eq(schema.definitionRecord.id, input.definitionId)),
-			);
+			yield* run((db) => Removal.removeDefinitionStatement(db, input.definitionId, removed, now));
 
 			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 			yield* recomputeSozlukStats(now);
@@ -819,12 +815,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			// `Lifecycle.restore : Removed → Live` clears the triad; votes wiped on
 			// removal are NOT resurrected (ADR 0096 §4), so the score cache stays 0.
 			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) =>
-				db
-					.update(schema.definitionRecord)
-					.set({...live, updatedAt: now})
-					.where(eq(schema.definitionRecord.id, input.definitionId)),
-			);
+			yield* run((db) => Removal.restoreDefinitionStatement(db, input.definitionId, live, now));
 
 			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 			yield* recomputeSozlukStats(now);
@@ -850,12 +841,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					}),
 				);
 				yield* voteSvc.clearTarget("definition", input.definitionId);
-				yield* run((db) =>
-					db
-						.update(schema.definitionRecord)
-						.set({...removed, score: 0, updatedAt: now})
-						.where(eq(schema.definitionRecord.id, input.definitionId)),
-				);
+				yield* run((db) => Removal.removeDefinitionStatement(db, input.definitionId, removed, now));
 
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 				yield* recomputeSozlukStats(now);
@@ -875,12 +861,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 				const now = new Date();
 				const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-				yield* run((db) =>
-					db
-						.update(schema.definitionRecord)
-						.set({...live, updatedAt: now})
-						.where(eq(schema.definitionRecord.id, input.definitionId)),
-				);
+				yield* run((db) => Removal.restoreDefinitionStatement(db, input.definitionId, live, now));
 
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 				yield* recomputeSozlukStats(now);
