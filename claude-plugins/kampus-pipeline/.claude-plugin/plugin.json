@@ -9,6 +9,7 @@
 	"homepage": "https://github.com/kamp-us/phoenix",
 	"repository": "https://github.com/kamp-us/phoenix",
 	"license": "MIT",
+	"hooks": "./hooks.json",
 	"keywords": [
 		"github",
 		"issue-pipeline",
