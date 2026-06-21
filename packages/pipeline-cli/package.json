@@ -1,0 +1,52 @@
+{
+	"name": "@kampus/pipeline-cli",
+	"version": "0.1.0",
+	"description": "pipeline-cli — the single subcommand-router home all pipeline tooling folds into; `pipeline-cli <tool> …` dispatches to a registered tool (epic #994)",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/kamp-us/phoenix.git",
+		"directory": "packages/pipeline-cli"
+	},
+	"type": "module",
+	"bin": {
+		"pipeline-cli": "./dist/bin.js"
+	},
+	"main": "./dist/index.js",
+	"module": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		}
+	},
+	"files": [
+		"dist"
+	],
+	"publishConfig": {
+		"access": "public"
+	},
+	"scripts": {
+		"build": "tsc -p tsconfig.build.json",
+		"prepublishOnly": "tsc -p tsconfig.build.json",
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"cli": "node src/bin.ts"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
