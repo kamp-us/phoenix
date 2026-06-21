@@ -4,7 +4,9 @@
  * `Entity<>` derives the client type. See `.patterns/fate-effect-data-views.md`.
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
+import {viewOrderBy} from "../../db/ordering.ts";
 import type {ViewRow} from "../fate/view-types.ts";
+import {COMMENT_ORDERING} from "./ordering.ts";
 import type {CommentRow, PostSummaryRow, PostTagRow} from "./Pano.ts";
 
 // `Record<string, unknown>`-assignable restatements of the service rows (the
@@ -45,8 +47,8 @@ export class CommentView extends FateDataView<CommentViewRow>()("Comment")({
  * normalizes feed/post nodes. A scalar passes the array through verbatim. See
  * `.patterns/fate-data-views.md` (embedded-scalar note).
  *
- * `comments`'s `orderBy` MUST equal the service's comment-thread `ORDER BY`
- * (`created_at asc, id asc`) so the keyset cursors round-trip (ADR 0019).
+ * `comments`'s `orderBy` derives from `COMMENT_ORDERING` (`ordering.ts`), so it
+ * can't drift from the service's comment-thread keyset (ADR 0019).
  */
 export class PostView extends FateDataView<PostViewRow>()("Post")({
 	id: true,
@@ -70,7 +72,7 @@ export class PostView extends FateDataView<PostViewRow>()("Post")({
 	// no per-row resolver, no N+1). Drafts are excluded from public feeds.
 	isDraft: true,
 	tags: true,
-	comments: FateDataView.list(CommentView, {orderBy: [{createdAt: "asc"}, {id: "asc"}]}),
+	comments: FateDataView.list(CommentView, {orderBy: viewOrderBy(COMMENT_ORDERING)}),
 }) {}
 
 // Kernel views for cross-feature surfaces that want fate's plain `dataView()`

@@ -52,7 +52,7 @@ The phoenix shape that gives a true DB keyset:
 1. **The parent is a custom resolver** (`term(slug)` is a `queries` entry, not a source-masked byId root). A custom resolver returns shaped output directly with no source masking, so it owns the whole `Term` shape — including the `definitions` connection.
 2. **The resolver builds `definitions` as a pre-built `ConnectionResult`** from a service keyset method (`Sozluk.listDefinitionsKeyset`), only when the selection includes `definitions` (`hasNestedSelection(select, "definitions")`). Nested connection args arrive scoped under the field path (`args.definitions.{first,after}`), matching fate's `getScopedArgs`.
 3. **The cursor is the node `id`** (matching fate's default `getCursor`). The service resolves that id to its `(orderBy-fields…, id)` keyset tuple and fetches the rows that follow it, so a page is a bounded `WHERE … LIMIT` — no skips/dupes, no loading the whole list.
-4. **The view's `list(view, {orderBy})` declares the order** — `(score desc, createdAt asc, id asc)` for `Term.definitions` — kept in lockstep with the service `ORDER BY`, with `id` as the explicit final tiebreaker. This view `orderBy` is the *single* home for the keyset order: the source carries no `orderBy` or `connection` executor (they were dead — fate never invokes them for a hand-built source — and were removed; see the ADR 0019 1.0.4 amendment).
+4. **One per-connection `Ordering` is the single home for the order** — `(score desc, createdAt asc, id asc)` for `Term.definitions`, with `id` as the explicit final tiebreaker. An `Ordering` (`worker/db/ordering.ts`) names each column once — its view-field name, its Drizzle column, and its direction — and both the view's `list(view, {orderBy: viewOrderBy(ORDERING)})` and the service keyset (`keysetKeys(ORDERING, …)` + `orderByColumns(ORDERING)`) derive from it, so the nominal view order and the real DB order can no longer drift (they used to be copied per connection and kept in lockstep by a docblock). The source itself carries no `orderBy` or `connection` executor (they were dead — fate never invokes them for a hand-built source — and were removed; see the ADR 0019 1.0.4 amendment). The pano post feed single-sources its (per-sort) ordering the same way through `src/lib/panoFeedSort.ts`, which is DB-free so the SPA shares it.
 
 Always include `id` as the final `orderBy` key — it's the stable tiebreaker that makes the keyset deterministic.
 
@@ -70,8 +70,10 @@ const cursor = resolveCursor<CursorRow>(after, resolvedRow);
 if (cursor.kind === "miss") return {...emptyKeysetPage, totalCount} satisfies …ConnectionPage;
 const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-const cursorPredicate = keysetAfter([/* tuple from cursorRow */]);
-const fetched = yield* run((db) => db.select()….where(cursorPredicate ? and(base, cursorPredicate) : base).orderBy(…).limit(first + 1));
+// the lead-column tuple derives from the same per-connection `Ordering` the
+// view `orderBy` and `.orderBy(…)` use (db/ordering.ts), so they can't disagree
+const cursorPredicate = keysetAfter(keysetKeys(ORDERING, (field) => /* cursorRow value */));
+const fetched = yield* run((db) => db.select()….where(cursorPredicate ? and(base, cursorPredicate) : base).orderBy(...orderByColumns(ORDERING)).limit(first + 1));
 const page = forwardPage(fetched, first, (r) => r.id, mapRow);   // pure envelope
 return {...page, totalCount} satisfies …ConnectionPage;
 ```
