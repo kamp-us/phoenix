@@ -3,7 +3,7 @@
  * (ADR 0018): each view's static `view` is the kernel `dataView()` output and
  * `Entity<>` derives the client type. See `.patterns/fate-effect-data-views.md`.
  */
-import {type Entity, FateDataView} from "@kampus/fate-effect";
+import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {CommentRow, PostSummaryRow, PostTagRow} from "./Pano.ts";
 
@@ -79,19 +79,19 @@ export const tagDataView = TagView.view;
 export const commentDataView = CommentView.view;
 export const postDataView = PostView.view;
 
-// The `Entity<>` replacements restate the list relations (`comments`) and
-// live-`Date` timestamps that fate's wire-facing derivation widens/narrows away
-// — full rationale in `sozluk/views.ts`.
-export type Tag = Entity<typeof TagView>;
-export type Comment = Entity<
+export type Tag = WorkerEntity<typeof TagView>;
+// `deletedAt` is `Date | null` (the source row types it `deletedAt?: Date | null`, but
+// the corrected worker type drops the unset `undefined`) — an `Override`, not a `DateKeys`
+// member, which would preserve the optional and widen to `Date | null | undefined`.
+export type Comment = WorkerEntity<
 	typeof CommentView,
-	{createdAt: Date; updatedAt: Date; deletedAt: Date | null}
+	"createdAt" | "updatedAt",
+	{deletedAt: Date | null}
 >;
-export type Post = Entity<
+// `updatedAt` is `Date` for the same reason: `PostSummaryRow.updatedAt?: Date` is optional,
+// the corrected type pins it non-optional `Date`, so it rides the `Override` slot.
+export type Post = WorkerEntity<
 	typeof PostView,
-	{
-		createdAt: Date;
-		updatedAt: Date;
-		comments?: Comment[];
-	}
+	"createdAt",
+	{updatedAt: Date; comments?: Comment[]}
 >;

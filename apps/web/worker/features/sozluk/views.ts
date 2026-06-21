@@ -6,7 +6,7 @@
  * term-page `ORDER BY` (`score desc, createdAt asc, id asc`) or the keyset
  * cursors stop round-tripping (ADR 0019; see `.patterns/fate-connections.md`).
  */
-import {type Entity, FateDataView} from "@kampus/fate-effect";
+import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {DefinitionRow, TermSummaryRow} from "./Sozluk.ts";
 
@@ -52,18 +52,9 @@ export class TermView extends FateDataView<TermViewRow>()("Term")({
 export const definitionDataView = DefinitionView.view;
 export const termDataView = TermView.view;
 
-// The `Replacements` second parameter restates what fate's `Entity<>` derivation
-// widens/narrows away: list relations (kernel `list()` widens the child field
-// map) and timestamp fields (fate types `Date` rows as the JSON-serialized
-// `string`, but these worker-side values carry live `Date` objects until fate
-// serializes the response — every worker call site operates pre-serialization).
-export type Definition = Entity<typeof DefinitionView, {createdAt: Date; updatedAt: Date}>;
-export type Term = Entity<
+export type Definition = WorkerEntity<typeof DefinitionView, "createdAt" | "updatedAt">;
+export type Term = WorkerEntity<
 	typeof TermView,
-	{
-		firstAt: Date | null;
-		lastEdit: Date | null;
-		lastActivityAt: Date | null;
-		definitions?: Definition[];
-	}
+	"firstAt" | "lastEdit" | "lastActivityAt",
+	{definitions?: Definition[]}
 >;

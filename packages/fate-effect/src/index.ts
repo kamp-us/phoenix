@@ -31,6 +31,7 @@ export {
 	type FieldsConfigOf,
 	type KernelDataView,
 	type ListFieldOf,
+	type WorkerEntity,
 } from "./DataView.ts";
 export type {
 	CompiledFateServer,

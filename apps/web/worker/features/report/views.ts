@@ -8,7 +8,7 @@
  * receipt to one record. Mirrors `LandingStats` — a result-only data view with
  * no source/fetch path. See `.patterns/fate-effect-data-views.md`.
  */
-import {type Entity, FateDataView} from "@kampus/fate-effect";
+import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {ReportTargetKind} from "./errors.ts";
 import type {Resolution} from "./resolution.ts";
@@ -29,7 +29,7 @@ export class ReportReceiptView extends FateDataView<ReportReceiptViewRow>()("Rep
 
 export const reportReceiptDataView = ReportReceiptView.view;
 
-export type ReportReceipt = Entity<typeof ReportReceiptView>;
+export type ReportReceipt = WorkerEntity<typeof ReportReceiptView>;
 
 /**
  * `OpenReport` — one moderation-queue entry (ADR 0098 §5): an open-reported target
@@ -57,7 +57,7 @@ export class OpenReportView extends FateDataView<OpenReportViewRow>()("OpenRepor
 
 export const openReportDataView = OpenReportView.view;
 
-export type OpenReport = Entity<typeof OpenReportView>;
+export type OpenReport = WorkerEntity<typeof OpenReportView>;
 
 /**
  * `ResolveReceipt` — the `report.resolve` acknowledgement (ADR 0098 §3): the
@@ -84,4 +84,4 @@ export class ResolveReceiptView extends FateDataView<ResolveReceiptViewRow>()("R
 
 export const resolveReceiptDataView = ResolveReceiptView.view;
 
-export type ResolveReceipt = Entity<typeof ResolveReceiptView>;
+export type ResolveReceipt = WorkerEntity<typeof ResolveReceiptView>;
