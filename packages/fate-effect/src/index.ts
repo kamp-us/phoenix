@@ -131,8 +131,8 @@ export {
 } from "./Source.ts";
 export {
 	encodeWireError,
-	failureOf,
 	FateWireCode,
+	failureOf,
 	INTERNAL_WIRE_CODE,
 	wireCodeOf,
 	wireCodeOfClass,
