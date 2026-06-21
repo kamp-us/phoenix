@@ -7,20 +7,23 @@
  *       `PANO_DRAFT_SAVE_FLAG` record (the same object the factory spreads into
  *       `FlagshipFlag`), so no alchemy resource is constructed.
  *
- *   (b) Mutation gate — with `Flags` stubbed OFF, `post.saveDraft` fails
- *       `DraftsDisabled` and NEVER touches the service (the dark path is
+ *   (b) Mutation gate — with `Flags` stubbed OFF, `post.saveDraft` fails the wire
+ *       `DRAFTS_DISABLED` and NEVER touches the service (the dark path is
  *       unreachable even if a client bypasses the UI). With `Flags` stubbed ON, it
  *       calls `Pano.saveDraft` and returns a `Post` carrying `isDraft: true`.
  *
  * Wire-boundary unit test (ADR 0082): the `Pano`/`Flags`/`LivePublisher` seams are
- * substituted directly — no DB, no Flagship binding. Mirrors
- * `report-mutation.unit.test.ts` (handler-drive + `CurrentUser`) and
- * `Flags.unit.test.ts` (Flagship-free `Flags` stub).
+ * substituted directly — no DB, no Flagship binding. The mutation runs through
+ * `resolveWire` (its real external interface — `resolve` decode + the
+ * `encodeWireError` class→wire-code seam), so the OFF path is proven by the WIRE
+ * `code`. Mirrors `report-mutation.unit.test.ts` (`resolveWire` + `CurrentUser`)
+ * and `Flags.unit.test.ts` (Flagship-free `Flags` stub).
  */
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
-import {Effect, Layer} from "effect";
+import {Cause, Effect, Layer} from "effect";
+import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {PANO_DRAFT_SAVE_FLAG, panoDraftSaveFlag} from "../flagship/resources.ts";
@@ -81,21 +84,23 @@ const draftRow: SaveDraftResult = {
 	isDraft: true,
 };
 
+// Drive the op through its real external interface (`resolveWire`: `resolve`
+// decode + the `encodeWireError` class→wire-code seam), not `.handler` — so the
+// OFF-path assertion sees the WIRE `DRAFTS_DISABLED` code and a mis-annotated
+// `[ErrorCode]` on `DraftsDisabled` is a unit failure.
 const saveDraft = (
 	pano: Layer.Layer<Pano>,
 	flags: Layer.Layer<Flags>,
 	user: typeof AUTHOR | undefined = AUTHOR,
 ) =>
-	mutations["post.saveDraft"]
-		.handler({
-			input: {title: "yarım kalmış"},
-			select: ["id", "title", "isDraft"],
-		})
-		.pipe(
-			Effect.provide(Layer.mergeAll(pano, flags, liveStub)),
-			Effect.provideService(CurrentUser, {user}),
-			Effect.provideService(RuntimeContext, runtimeContextStub),
-		);
+	resolveWire(mutations["post.saveDraft"], {
+		input: {title: "yarım kalmış"},
+		select: ["id", "title", "isDraft"],
+	}).pipe(
+		Effect.provide(Layer.mergeAll(pano, flags, liveStub)),
+		Effect.provideService(CurrentUser, {user}),
+		Effect.provideService(RuntimeContext, runtimeContextStub),
+	);
 
 describe("pano draft-save — (a) IaC default is the safe (off) state", () => {
 	it("the flag config ships defaultVariation off and variations.off === false", () => {
@@ -111,7 +116,7 @@ describe("pano draft-save — (a) IaC default is the safe (off) state", () => {
 });
 
 describe("pano draft-save — (b) the mutation gate is the safe default", () => {
-	it.effect("flag OFF → DraftsDisabled, and Pano.saveDraft is never called", () =>
+	it.effect("flag OFF → the wire DRAFTS_DISABLED, and Pano.saveDraft is never called", () =>
 		Effect.gen(function* () {
 			const exit = yield* Effect.exit(
 				saveDraft(
@@ -120,7 +125,13 @@ describe("pano draft-save — (b) the mutation gate is the safe default", () => 
 				),
 			);
 			assert.isTrue(exit._tag === "Failure", "off-path fails");
-			assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /DraftsDisabled/);
+			if (exit._tag === "Failure") {
+				const error = Cause.findErrorOption(exit.cause);
+				assert.isTrue(error._tag === "Some");
+				if (error._tag === "Some") {
+					assert.strictEqual((error.value as {code?: unknown}).code, "DRAFTS_DISABLED");
+				}
+			}
 		}),
 	);
 

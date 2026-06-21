@@ -10,8 +10,10 @@
  *   2. **Caller-is-target invariant.** `account.delete` reads `CurrentUser.required`
  *      and anonymizes `user.id` — there is no target parameter in its input, so
  *      "delete user X" is unrepresentable. Asserted structurally (the input Schema
- *      carries only `confirmation`) and behaviorally (anonymous → `UNAUTHORIZED`
- *      before any `Pasaport` call).
+ *      carries only `confirmation`) and behaviorally — anonymous yields the WIRE
+ *      `UNAUTHORIZED` before any `Pasaport` call, proven through `resolveWire` (the
+ *      op's real external interface: `resolve` decode + the `encodeWireError`
+ *      class→wire-code seam), so a mis-annotated `[ErrorCode]` is a unit failure.
  *   3. **Reserved-username rejection.** `Pasaport.setUsername("silinen")` rejects
  *      with `INVALID_FORMAT` BEFORE any DB read, so `@[silinen]` can never collide
  *      with a real account. Proven over a throwing `Drizzle` seam — a reached read
@@ -23,11 +25,12 @@
  */
 
 import {it} from "@effect/vitest";
-import {CurrentUser, Unauthorized} from "@kampus/fate-effect";
+import {CurrentUser} from "@kampus/fate-effect";
 import {Cause, Effect, Exit, Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
+import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {ACCOUNT_DELETE_CONFIRMATION, mutations} from "./mutations.ts";
 import {type Auth, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
@@ -81,22 +84,23 @@ it("the input carries NO target field — the caller is always the target", () =
 });
 
 it.effect(
-	"account.delete on an anonymous request fails with Unauthorized before any anonymize",
+	"account.delete on an anonymous request fails with the wire UNAUTHORIZED before any anonymize",
 	() =>
 		Effect.gen(function* () {
-			const exit = yield* mutations["account.delete"]
-				.handler({input: {confirmation: ACCOUNT_DELETE_CONFIRMATION}, select: ["deleted"]})
-				.pipe(
-					Effect.provideService(CurrentUser, {user: undefined}),
-					Effect.provideService(Pasaport, failOnContactPasaport),
-					Effect.exit,
-				);
+			const exit = yield* resolveWire(mutations["account.delete"], {
+				input: {confirmation: ACCOUNT_DELETE_CONFIRMATION},
+				select: ["deleted"],
+			}).pipe(
+				Effect.provideService(CurrentUser, {user: undefined}),
+				Effect.provideService(Pasaport, failOnContactPasaport),
+				Effect.exit,
+			);
 			assert.isTrue(Exit.isFailure(exit));
 			if (Exit.isFailure(exit)) {
 				const error = Cause.findErrorOption(exit.cause);
 				assert.isTrue(error._tag === "Some");
 				if (error._tag === "Some") {
-					assert.instanceOf(error.value, Unauthorized);
+					assert.strictEqual(error.value.code, "UNAUTHORIZED");
 				}
 			}
 		}),

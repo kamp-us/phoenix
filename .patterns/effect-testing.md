@@ -31,6 +31,23 @@ A `unit` test never builds a database — it substitutes the seam **below** the 
 
 `runFateOp` ([`features/fate/run-fate-op.ts`](../apps/web/worker/features/fate/run-fate-op.ts)) still exists as the in-process mirror of the `/fate` route (drives one fate operation through `fateServer.handleRequest` in exactly one `Effect.provide`), but it is **no longer a test backing** — the fate-op behaviors it once exercised over the faked engine now run at the `integration` tier on real D1.
 
+## Per-feature op tests: drive `resolveWire`, not `.handler`
+
+A fate op's **external interface** is its `resolve` wrapper (decode-then-run) followed by the wire-error seam — `encodeWireError(failureOf(cause))` — that maps a typed failure CLASS (`Unauthorized`) to the wire `code` a client sees (`UNAUTHORIZED`) via its `[ErrorCode]` annotation (see [fate-effect-wire-errors.md](./fate-effect-wire-errors.md)). A unit test that calls `op.handler(...)` and asserts the typed instance (`assert.instanceOf(error, Unauthorized)`) — or matches the class NAME in the cause string (`/PostNotFound/`) — stops one layer beneath that seam: a mis-annotated `[ErrorCode]` (wrong/missing code, or a not-found that was never translated) **passes** such a test, leaving the class→wire-code break only to the slow `integration` tier.
+
+Drive the op through **`resolveWire`** ([`features/fate/resolve-wire.testing.ts`](../apps/web/worker/features/fate/resolve-wire.testing.ts)) instead — the no-DB slice of `Executor.ts`'s `runResolve` (`op.resolve(rawWireInput)` → `Effect.exit` → on failure `Effect.fail(encodeWireError(failureOf(cause)))`), lifted to an `it.effect`-native shape with no `ManagedRuntime` / Effect→Promise conversion. It crosses both seams the client crosses (input/args Schema decode AND the wire-error codec) for the same no-DB cost, and the op's real `R` discharges through the same `provideService`/`Effect.provide` the `.handler` form used. Then **assert the wire `code`** off the failure cause, not the typed instance:
+
+```ts
+const exit = yield* resolveWire(mutations["account.delete"], {
+  input: {confirmation: ACCOUNT_DELETE_CONFIRMATION},
+  select: ["deleted"],
+}).pipe(Effect.provideService(CurrentUser, {user: undefined}), Effect.exit);
+const error = Cause.findErrorOption(exit.cause); // a FateRequestError
+assert.strictEqual((error.value as {code?: unknown}).code, "UNAUTHORIZED");
+```
+
+This is the lighter in-process resolve/wire seam — **not** `runFateOp` (the heavyweight interpreter harness above, no longer a test backing). Keep using the input-`Schema`-decode-directly form (`account-deletion.unit.test.ts`) for facts that live *before* the handler (a typed-confirmation gate is an input-decode fact, not a handler-failure fact). The canonical examples are `pasaport/queries.unit.test.ts`, `pasaport/account-deletion.unit.test.ts`, `report/report-mutation.unit.test.ts`, and `pano/draft-save.invariant.test.ts`.
+
 ## Per-test isolation
 
 `unit` tests carry no per-test database to isolate, so there is no shared-handle lifecycle to manage: each test provides its own `Layer.succeed(Drizzle, …)` double inline. Module-scope a double that doesn't vary between tests; build it inside the test body when the scripted results differ per case.

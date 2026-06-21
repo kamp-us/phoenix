@@ -132,6 +132,7 @@ export {
 export {
 	ErrorCode,
 	encodeWireError,
+	failureOf,
 	INTERNAL_WIRE_CODE,
 	wireCodeOf,
 	wireCodeOfClass,
