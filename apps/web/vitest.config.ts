@@ -95,6 +95,17 @@ export default defineConfig({
 					// (EPIPE on the inherited pipe).
 					fileParallelism: true,
 					disableConsoleIntercept: true,
+					// Cap concurrent forks: ~24 files each deploy/destroy their own `it-*`
+					// stage against ONE shared, eventually-consistent CF account. Uncapped
+					// (os.cpus-1) parallelism turned CF's create/destroy registry lag into
+					// hard failures — WorkerNotFound(10007), "app referenced by Worker
+					// script", "no versions" — forcing per-PR re-runs (#1010). `maxWorkers`
+					// is the Vitest-4 key (v4 dropped `poolOptions.forks.maxForks`; only
+					// project-level `test.maxWorkers` is read, scoping the cap to this tier
+					// — resolveMaxWorkers, vitest@4.1.5). 4 is a reliability/wall-clock
+					// tradeoff, tunable; CI wall-clock is addressed separately by sharding
+					// (#684).
+					maxWorkers: 4,
 					// Vitest 4 requires a distinct `sequence.groupOrder` per project;
 					// ordering integration before unit keeps the projects from interleaving.
 					sequence: {groupOrder: 0},
