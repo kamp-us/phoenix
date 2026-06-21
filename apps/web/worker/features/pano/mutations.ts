@@ -285,7 +285,7 @@ export const mutations = {
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
 			const live = yield* WorkerLivePublisher;
-			yield* bookmark.toggle({userId: user.id, postId: input.id, saved: true});
+			yield* bookmark.toggle({userId: user.id, postId: input.id, value: true});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
@@ -306,7 +306,7 @@ export const mutations = {
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
 			const live = yield* WorkerLivePublisher;
-			yield* bookmark.toggle({userId: user.id, postId: input.id, saved: false});
+			yield* bookmark.toggle({userId: user.id, postId: input.id, value: false});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});

@@ -6,7 +6,14 @@
  * `toggle` is idempotent (probe-then-write, like `Vote.cast`): re-saving an
  * already-saved post — or un-saving an unsaved one — is a no-op that writes
  * nothing and returns `changed: false`. `readMine` is the batched presence read
- * `#128` will stamp `isSaved` from without an N+1.
+ * the post hydration stamps `isSaved` from without an N+1.
+ *
+ * Lexeme (the `Vote` twin, #1138): the wire viewer-scalar is `isSaved` (the
+ * `myVote` twin, the deliberate `is*` convention shared with `isDraft`), so the
+ * toggle's presence-intent input is `value` (mirrors `VoteInput.value`) and its
+ * result presence field is `isSaved` (mirrors `VoteResult.myVote`). The brand
+ * term stays Turkish (`kaydet`) and the table stays `post_bookmark` (the
+ * `post_vote` twin) — both deliberate, not drift.
  */
 import {and, desc, eq, inArray, isNull} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
@@ -18,12 +25,14 @@ import {PostNotFound} from "./errors.ts";
 export interface BookmarkToggleInput {
 	userId: string;
 	postId: string;
-	saved: boolean;
+	/** Presence intent: `true` saves, `false` un-saves (mirrors `VoteInput.value`). */
+	value: boolean;
 }
 
 export interface BookmarkToggleResult {
 	postId: string;
-	saved: boolean;
+	/** Viewer's save presence after the write — the wire `isSaved` lexeme (the `VoteResult.myVote` twin). */
+	isSaved: boolean;
 	/** `false` on an idempotent no-op (state already matched intent). */
 	changed: boolean;
 }
@@ -180,16 +189,16 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 				);
 				const alreadySaved = existing != null;
 
-				if (input.saved === alreadySaved) {
+				if (input.value === alreadySaved) {
 					return {
 						postId: input.postId,
-						saved: alreadySaved,
+						isSaved: alreadySaved,
 						changed: false,
 					} satisfies BookmarkToggleResult;
 				}
 
 				yield* batch((db) =>
-					input.saved
+					input.value
 						? ([
 								db
 									.insert(schema.postBookmark)
@@ -214,7 +223,7 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 
 				return {
 					postId: input.postId,
-					saved: input.saved,
+					isSaved: input.value,
 					changed: true,
 				} satisfies BookmarkToggleResult;
 			}),

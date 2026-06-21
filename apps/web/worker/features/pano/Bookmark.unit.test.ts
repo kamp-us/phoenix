@@ -79,7 +79,7 @@ describe("Bookmark.toggle — pre-write decisions (mocked Drizzle seam)", () => 
 			const bookmark = yield* Bookmark;
 			// the postRecord probe's findFirst resolves to `undefined` → not-found, no batch.
 			const exit = yield* Effect.exit(
-				bookmark.toggle({userId: "u1", postId: "ghost", saved: true}),
+				bookmark.toggle({userId: "u1", postId: "ghost", value: true}),
 			);
 			assert.isTrue(exit._tag === "Failure", "toggle against a missing post fails");
 			assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /PostNotFound/);
@@ -92,9 +92,9 @@ describe("Bookmark.toggle — pre-write decisions (mocked Drizzle seam)", () => 
 		const {access} = scriptedAccess([{id: "p1"}, {postId: "p1"}]);
 		return Effect.gen(function* () {
 			const bookmark = yield* Bookmark;
-			const result = yield* bookmark.toggle({userId: "u1", postId: "p1", saved: true});
+			const result = yield* bookmark.toggle({userId: "u1", postId: "p1", value: true});
 			assert.isFalse(result.changed, "matching state is a no-op");
-			assert.isTrue(result.saved, "already-saved → saved true");
+			assert.isTrue(result.isSaved, "already-saved → isSaved true");
 			assert.strictEqual(result.postId, "p1");
 		}).pipe(Effect.provide(bookmarkLayer(access)));
 	});
@@ -104,9 +104,9 @@ describe("Bookmark.toggle — pre-write decisions (mocked Drizzle seam)", () => 
 		const {access} = scriptedAccess([{id: "p1"}, undefined]);
 		return Effect.gen(function* () {
 			const bookmark = yield* Bookmark;
-			const result = yield* bookmark.toggle({userId: "u1", postId: "p1", saved: false});
+			const result = yield* bookmark.toggle({userId: "u1", postId: "p1", value: false});
 			assert.isFalse(result.changed, "matching state is a no-op");
-			assert.isFalse(result.saved, "never-saved → saved false");
+			assert.isFalse(result.isSaved, "never-saved → isSaved false");
 			assert.strictEqual(result.postId, "p1");
 		}).pipe(Effect.provide(bookmarkLayer(access)));
 	});

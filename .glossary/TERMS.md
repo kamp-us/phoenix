@@ -41,6 +41,7 @@ This file names the *what*.
 
 | Term | Definition | Not |
 |---|---|---|
+| bookmark (kaydet) | A per-user post save — pure presence (a `post_bookmark` row means saved). The structural twin of **vote** stripped of score/karma: per-user presence row + batched `readMine` + `changed`-returning toggle. **One lexeme per layer, mirroring vote (#1138):** engine `Bookmark` (vote: `Vote`); per-target row `post_bookmark` (vote: `post_vote`); presence intent input `value` (vote: `value`); wire viewer-scalar + result presence field both `isSaved` (vote: both `myVote`). Two deviations are deliberate, not drift: the brand term stays Turkish **`kaydet`** (Turkish-product / English-technical split), and the wire scalar uses the **`is*`** convention (`isSaved`, the `isDraft` twin) where vote uses bare `myVote`. | the bare lexemes `saved`/`bookmarked` for the wire/result field (the field is `isSaved`); a score-bearing vote |
 | comment | A threaded reply on a pano post. | |
 | contribution | An item in a profile's activity feed (a definition/post/comment); a discriminant-tagged fate view. | |
 | definition | A community-written meaning under a sözlük term; upvotable; its `score` is its net up-vote tally. | |
