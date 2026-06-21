@@ -10,16 +10,19 @@
  * mutations, then the feed is read back per viewer. Anonymous reads must stay
  * neutral (`null` state).
  *
- * Posts are seeded under a per-test unique host so the `host`-scoped feed returns
- * exactly the seeded set; D1 is real remote Cloudflare D1 (per-file isolated
- * stage), so every email/title/host is uniquely prefixed (`panofvs-${STAMP}-…`).
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027): its one D1 is
+ * shared with every migrated file. It isolates by NS — every email/title/host it seeds
+ * carries the deterministic `${NS}-…` prefix, and the feed read is HOST-scoped to this
+ * file's own `${NS}.example.com` host, so the `posts(host)` query returns exactly this
+ * file's seeded set and never another file's rows on the shared D1.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface PostNode {
 	__typename: string;
@@ -34,7 +37,7 @@ type Connection<N> = {
 	pagination: {hasNext: boolean; hasPrevious: boolean; nextCursor?: string};
 };
 
-const FEED_HOST = `panofvs-${STAMP}.example.com`;
+const FEED_HOST = `${NS}.example.com`;
 
 let viewer: {userId: string; cookie: string};
 let other: {userId: string; cookie: string};
@@ -81,13 +84,13 @@ async function feed(cookie?: string): Promise<Map<string, PostNode>> {
 }
 
 beforeAll(async () => {
-	viewer = await h.signUp(`panofvs-${STAMP}-viewer@test.local`, "hunter2hunter2", "izleyen");
-	other = await h.signUp(`panofvs-${STAMP}-other@test.local`, "hunter2hunter2", "öteki");
+	viewer = await h.signUp(`${NS}-viewer@test.local`, "hunter2hunter2", "izleyen");
+	other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "öteki");
 
-	votedSaved = await seedPost(`panofvs-${STAMP}-voted-saved`);
-	votedOnly = await seedPost(`panofvs-${STAMP}-voted-only`);
-	savedOnly = await seedPost(`panofvs-${STAMP}-saved-only`);
-	neutral = await seedPost(`panofvs-${STAMP}-neutral`);
+	votedSaved = await seedPost(`${NS}-voted-saved`);
+	votedOnly = await seedPost(`${NS}-voted-only`);
+	savedOnly = await seedPost(`${NS}-saved-only`);
+	neutral = await seedPost(`${NS}-neutral`);
 
 	for (const id of [votedSaved, votedOnly]) {
 		const r = await h.fate(

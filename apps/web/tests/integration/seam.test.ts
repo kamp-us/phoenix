@@ -9,11 +9,16 @@
  *     (`Stats.getLandingStats` reading D1) — `definitions` is a number, not a stub.
  *   - `me` resolved anonymously fails the `Auth.required` gate and serializes as
  *     `{ok:false, error:{code:"UNAUTHORIZED"}}` — the wire code the SPA keys off.
+ *
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027) and needs no
+ * namespace token: it seeds nothing. The `health` read touches a global `definitions`
+ * count other files seed into, so it asserts the SHAPE (a number ≥ 0), not an exact
+ * value; the anonymous-`me` UNAUTHORIZED gate is a fixed route, nothing to scope.
  */
 import {describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
 describe("fate seam — /fate", () => {
 	it("health resolves data produced by an Effect service method", async () => {
