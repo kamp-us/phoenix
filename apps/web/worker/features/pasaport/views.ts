@@ -2,12 +2,13 @@
  * Pasaport fate data views — `User`, `Profile`, `Contribution` (ADR 0018; see
  * `.patterns/fate-effect-data-views.md`).
  *
- * `Profile.contributions`'s `orderBy` MUST stay in lockstep with the service's
- * keyset `ORDER BY` (`createdAt desc, id desc`) or the cursors stop round-tripping
- * (ADR 0019; `.patterns/fate-connections.md`).
+ * `Profile.contributions`'s `orderBy` and the service keyset both derive from
+ * `contributionOrdering` (`ordering.ts`), so they can't drift (ADR 0019;
+ * `.patterns/fate-connections.md`).
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
+import {CONTRIBUTION_VIEW_ORDER_BY} from "./ordering.ts";
 import type {ContributionRow, ProfileRow, UserRow} from "./Pasaport.ts";
 
 // Exported because the `Fate.source` entries surface the row type in their
@@ -52,8 +53,7 @@ export class ContributionView extends FateDataView<ContributionViewRow>()("Contr
 // stamped by `queries.profile`. Without it the client throws `Missing 'id' on
 // entity record` when normalizing (see `.patterns/fate-data-views.md`). `userId`
 // stays for callers reading the raw per-type id (the source `byId` is keyed by it).
-// `contributions.orderBy` MUST equal the service keyset `ORDER BY`
-// (`createdAt desc, id desc`) or cursors skip/dupe (ADR 0019).
+// `contributions.orderBy` derives from `contributionOrdering` (ADR 0019).
 export class ProfileView extends FateDataView<ProfileViewRow>()("Profile")({
 	id: true,
 	userId: true,
@@ -64,9 +64,7 @@ export class ProfileView extends FateDataView<ProfileViewRow>()("Profile")({
 	definitionCount: true,
 	postCount: true,
 	commentCount: true,
-	contributions: FateDataView.list(ContributionView, {
-		orderBy: [{createdAt: "desc"}, {id: "desc"}],
-	}),
+	contributions: FateDataView.list(ContributionView, {orderBy: CONTRIBUTION_VIEW_ORDER_BY}),
 }) {}
 
 // The `account.delete` acknowledgement (ADR 0097) — NOT a re-resolved entity. The

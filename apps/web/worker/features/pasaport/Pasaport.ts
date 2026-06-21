@@ -9,11 +9,12 @@
  * `Pasaport` no longer mounts the handler itself.
  */
 import type {Auth as BetterAuth} from "better-auth";
-import {and, desc, eq, isNull, sql} from "drizzle-orm";
+import {and, eq, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
+import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import {
 	UserNotFound,
 	UsernameAlreadySet,
@@ -23,6 +24,7 @@ import {
 	UsernameTooLong,
 	UsernameTooShort,
 } from "./errors.ts";
+import {contributionOrdering} from "./ordering.ts";
 
 // Phoenix never specializes the better-auth options at the type level, so this
 // is the unparameterized `Auth` — matching the `BetterAuth` tag's `auth` field.
@@ -498,8 +500,9 @@ export const makePasaportLive = (auth: Auth) =>
 					const cursorMissed = input.after != null && cursor === null;
 
 					// Per-table keyset for the global `(created_at desc, id desc)` merge.
-					// Null cursor values (no `after`) collapse the predicate to undefined
-					// so only the base author/removed filter applies.
+					// The predicate and the `.orderBy(…)` both derive from the per-table
+					// `contributionOrdering`; null cursor values (no `after`) collapse the
+					// predicate to undefined so only the base author/removed filter applies.
 					function keysetWhere(
 						table:
 							| typeof schema.definitionRecord
@@ -507,10 +510,11 @@ export const makePasaportLive = (auth: Auth) =>
 							| typeof schema.commentRecord,
 					) {
 						const base = and(eq(table.authorId, input.authorId), isNull(table.removedAt));
-						const predicate = keysetAfter([
-							{column: table.createdAt, dir: "desc", value: cursor?.createdAt ?? null},
-							{column: table.id, dir: "desc", value: cursor?.id ?? null},
-						]);
+						const predicate = keysetAfter(
+							keysetKeys(contributionOrdering(table), (field) =>
+								field === "id" ? (cursor?.id ?? null) : (cursor?.createdAt ?? null),
+							),
+						);
 						return predicate ? and(base, predicate) : base;
 					}
 
@@ -526,7 +530,7 @@ export const makePasaportLive = (auth: Auth) =>
 							})
 							.from(schema.definitionRecord)
 							.where(keysetWhere(schema.definitionRecord))
-							.orderBy(desc(schema.definitionRecord.createdAt), desc(schema.definitionRecord.id))
+							.orderBy(...orderByColumns(contributionOrdering(schema.definitionRecord)))
 							.limit(fetchSize),
 					);
 
@@ -542,7 +546,7 @@ export const makePasaportLive = (auth: Auth) =>
 							})
 							.from(schema.postRecord)
 							.where(keysetWhere(schema.postRecord))
-							.orderBy(desc(schema.postRecord.createdAt), desc(schema.postRecord.id))
+							.orderBy(...orderByColumns(contributionOrdering(schema.postRecord)))
 							.limit(fetchSize),
 					);
 
@@ -558,7 +562,7 @@ export const makePasaportLive = (auth: Auth) =>
 							})
 							.from(schema.commentRecord)
 							.where(keysetWhere(schema.commentRecord))
-							.orderBy(desc(schema.commentRecord.createdAt), desc(schema.commentRecord.id))
+							.orderBy(...orderByColumns(contributionOrdering(schema.commentRecord)))
 							.limit(fetchSize),
 					);
 

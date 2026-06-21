@@ -12,7 +12,7 @@
  * Validation lives in the service methods, not resolvers (ADR 0013).
  */
 import {id} from "@usirin/forge";
-import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
+import {and, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {POST_SORT_LEAD_COLUMN, type PostSort} from "../../../src/lib/panoFeedSort.ts";
 import {
@@ -25,6 +25,7 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
+import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import {removePostSearch, syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -48,6 +49,7 @@ import {
 	UnauthorizedPostMutation,
 	UrlInvalid,
 } from "./errors.ts";
+import {COMMENT_ORDERING} from "./ordering.ts";
 
 export const POST_TITLE_MAX = 200;
 export const POST_BODY_MAX = 10_000;
@@ -872,17 +874,21 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			const cursorPredicate = keysetAfter([
-				{column: schema.commentRecord.createdAt, dir: "asc", value: cursorRow?.createdAt ?? null},
-				{column: schema.commentRecord.id, dir: "asc", value: after},
-			]);
+			// The predicate and `orderBy` derive from `COMMENT_ORDERING`; the `id`
+			// cursor value is the opaque `after` (the resolved row carries only
+			// `createdAt`).
+			const cursorPredicate = keysetAfter(
+				keysetKeys(COMMENT_ORDERING, (field) =>
+					field === "id" ? after : (cursorRow?.createdAt ?? null),
+				),
+			);
 
 			const fetched = yield* run((db) =>
 				db
 					.select()
 					.from(schema.commentRecord)
 					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
-					.orderBy(asc(schema.commentRecord.createdAt), asc(schema.commentRecord.id))
+					.orderBy(...orderByColumns(COMMENT_ORDERING))
 					.limit(first + 1),
 			);
 

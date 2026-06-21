@@ -13,6 +13,7 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
+import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -30,6 +31,7 @@ import {
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
 } from "./errors.ts";
+import {DEFINITION_ORDERING, TERM_SUMMARY_ORDERING, type TermSummarySort} from "./ordering.ts";
 import {
 	type TermConnectionPage,
 	type TermSummaryRow,
@@ -95,7 +97,8 @@ const latestEditAt = (
 		return acc && acc > u ? acc : u;
 	}, null);
 
-export type ListSort = "recent" | "popular";
+// The term-summary list sort — defined with the orderings it selects (`ordering.ts`).
+export type ListSort = TermSummarySort;
 
 export interface AddDefinitionInput {
 	termSlug: string;
@@ -474,28 +477,22 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			// Mixed-direction keyset, declared per column; `keysetAfter` builds the
-			// lexicographic predicate.
-			const cursorPredicate = keysetAfter([
-				{column: schema.definitionRecord.score, dir: "desc", value: cursorRow?.score ?? null},
-				{
-					column: schema.definitionRecord.createdAt,
-					dir: "asc",
-					value: cursorRow?.createdAt ?? null,
-				},
-				{column: schema.definitionRecord.id, dir: "asc", value: after},
-			]);
+			// Mixed-direction keyset; `keysetAfter` builds the lexicographic predicate.
+			// Both the predicate and `orderBy` derive from `DEFINITION_ORDERING`: the
+			// `id` cursor value is the opaque `after` itself (the resolved row carries
+			// only `score`/`createdAt`).
+			const cursorPredicate = keysetAfter(
+				keysetKeys(DEFINITION_ORDERING, (field) =>
+					field === "id" ? after : ((cursorRow as Record<string, unknown> | null)?.[field] ?? null),
+				),
+			);
 
 			const fetched = yield* run((db) =>
 				db
 					.select()
 					.from(schema.definitionRecord)
 					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
-					.orderBy(
-						desc(schema.definitionRecord.score),
-						asc(schema.definitionRecord.createdAt),
-						asc(schema.definitionRecord.id),
-					)
+					.orderBy(...orderByColumns(DEFINITION_ORDERING))
 					.limit(first + 1),
 			);
 
@@ -608,36 +605,23 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			// Lead column by sort, then the `slug` asc tiebreaker. A null
-			// lastActivityAt cursor drops the lead column → slug-only keyset.
-			const lead =
-				sort === "popular"
-					? {
-							column: schema.termRecord.totalScore,
-							dir: "desc" as const,
-							value: cursorRow?.totalScore ?? null,
-						}
-					: {
-							column: schema.termRecord.lastActivityAt,
-							dir: "desc" as const,
-							value: cursorRow?.lastActivityAt ?? null,
-						};
-			const cursorPredicate = keysetAfter([
-				lead,
-				{column: schema.termRecord.slug, dir: "asc", value: cursorRow?.slug ?? null},
-			]);
-
-			const orderBy =
-				sort === "popular"
-					? [desc(schema.termRecord.totalScore), schema.termRecord.slug]
-					: [desc(schema.termRecord.lastActivityAt), schema.termRecord.slug];
+			// Lead column + `slug` asc tiebreaker, single-sourced per sort: both the
+			// keyset predicate and `orderBy` derive from `TERM_SUMMARY_ORDERING[sort]`.
+			// A null lastActivityAt cursor value drops the lead column → slug-only keyset.
+			const ordering = TERM_SUMMARY_ORDERING[sort];
+			const cursorPredicate = keysetAfter(
+				keysetKeys(
+					ordering,
+					(field) => (cursorRow as Record<string, unknown> | null)?.[field] ?? null,
+				),
+			);
 
 			const fetched = yield* run((db) =>
 				db
 					.select(termSummaryColumns)
 					.from(schema.termRecord)
 					.where(cursorPredicate)
-					.orderBy(...orderBy)
+					.orderBy(...orderByColumns(ordering))
 					.limit(first + 1),
 			);
 
