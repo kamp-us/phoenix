@@ -24,6 +24,15 @@ import {defineConfig} from "vitest/config";
 
 export default defineConfig({
 	test: {
+		// Run-scoped shared integration stage (ADR 0104 step 7, #1027): deploy the phoenix
+		// Stack ONCE per run in globalSetup and `provide` its handle to forked files
+		// (`tests/integration/_global-setup.ts` → `sharedStack()`). `globalSetup` is a
+		// root-level `InlineConfig` key (Vitest forbids it per-project), so it runs for ANY
+		// invocation of this config — including `test:unit`. The setup self-gates on
+		// `vitest.projects` containing the `integration` project, so `--project unit` deploys
+		// nothing. Nothing is migrated onto it yet (PR A is the substrate); only the throwaway
+		// `sanity.shared.test.ts` reads it.
+		globalSetup: "./tests/integration/_global-setup.ts",
 		// `verbose` prints a ✓/✗ line per test (not just per file), so the slow
 		// single-fork integration suite emits a steady heartbeat instead of going
 		// silent for ~20s between files. Root-level on purpose: Vitest forbids a

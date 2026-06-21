@@ -34,9 +34,17 @@ import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
 import * as HttpClient from "effect/unstable/http/HttpClient";
+import {inject} from "vitest";
 import Stack from "../../alchemy.run.ts";
 import {type Harness, harness} from "./_harness.ts";
 import {slugify, stageName} from "./_stage-name.ts";
+
+// Re-export the readiness + deploy hardening the run-scoped shared-stage globalSetup
+// reuses (ADR 0104 step 7, #1027), so the two deploy paths share ONE copy of each
+// (`deployTransientRetry`, `awaitWorkerReady`, `warmLiveDO`, `ensureIntegrationEnv`,
+// `runTokenFromEnv`) rather than forking the logic. The shared-stage path lives in
+// `_global-setup.ts`; this file's per-file path (`integrationStack`) consumes the same
+// helpers below. The harness client itself (`sharedStack`) is exported at the end.
 
 // Tagged so the retry sentinel stays out of the untagged-error failure channel
 // (effect `globalErrorInEffectFailure`): the fresh route 404s until it propagates.
@@ -49,19 +57,29 @@ class WorkerNotReady extends Data.TaggedError("WorkerNotReady")<{readonly status
 // `WorkerNotReady` so the two readiness gates retry on their own signals.
 class LiveDONotReady extends Data.TaggedError("LiveDONotReady")<{readonly status: number}> {}
 
-// The worker's `env:` block binds `BETTER_AUTH_SECRET` from a required
-// `Config.redacted`; the deploy resolves it from this env. An `insecure_`-prefixed
-// 32-byte hex value (not a short word-string) keeps better-auth's startup
-// length/entropy checks quiet on a CI run with no `.env` — matching `.env.example`.
-process.env.BETTER_AUTH_SECRET ??=
-	"insecure_cb11c15edab29ce190c28e1cf4c2d8e27c6918e99bdb3b280c7af98e1e542bb6";
+/**
+ * Self-supply the two env values the integration deploy needs when a clean runner has no
+ * `.env` — idempotent (`??=`), so a real `.env`/CI secret always wins. Both deploy paths
+ * (this file's `integrationStack` and the shared-stage `_global-setup.ts`) call this, so
+ * the values live in ONE place.
+ *
+ *   - `BETTER_AUTH_SECRET`: the worker's `env:` block binds it from a required
+ *     `Config.redacted` (`worker/config.ts`); the deploy resolves it from this env. An
+ *     `insecure_`-prefixed 32-byte hex value (not a short word-string) keeps better-auth's
+ *     startup length/entropy checks quiet — matching `.env.example`.
+ *   - `ENVIRONMENT=development`: runs the deployed worker in dev mode so better-auth permits
+ *     the suite's server-side (browser-less, no `Origin` header) sign-ups; in prod mode
+ *     better-auth infers the origin from the request Host and 403s `INVALID_ORIGIN` for the
+ *     harness's `fetch`. The integration suite validates application logic, not the prod
+ *     deploy's origin policy.
+ */
+export const ensureIntegrationEnv = (): void => {
+	process.env.BETTER_AUTH_SECRET ??=
+		"insecure_cb11c15edab29ce190c28e1cf4c2d8e27c6918e99bdb3b280c7af98e1e542bb6";
+	process.env.ENVIRONMENT ??= "development";
+};
 
-// Run the deployed worker in dev mode so better-auth permits the suite's
-// server-side (browser-less, no `Origin` header) sign-ups: in prod mode better-auth
-// infers the origin from the request Host and 403s `INVALID_ORIGIN` for the
-// harness's `fetch`. The integration suite validates application logic, not the
-// prod deploy's origin policy.
-process.env.ENVIRONMENT ??= "development";
+ensureIntegrationEnv();
 
 // The Stack's compiled output type (`{url, databaseId, accountId}` as `Output<…>`) —
 // what `deploy` resolves. Pinning `A` explicitly keeps the link to the Stack's declared
@@ -82,6 +100,18 @@ const LOCAL_TOKEN = `${process.pid.toString(36)}${process.hrtime.bigint().toStri
 	/[^a-z0-9]/g,
 	"",
 );
+
+/**
+ * The run-unique token both stage-naming paths discriminate on: CI's
+ * `<run-id>-<run-attempt>` (so a rerun gets a distinct stage; two PRs' overlapping CI never
+ * collide), else the per-process `LOCAL_TOKEN`. The per-file `stageFor` folds it into
+ * `<slug>|<runToken>`; the shared-stage `sharedStageName` into `shared|<runToken>` — one
+ * source for the run dimension.
+ */
+export const runTokenFromEnv = (): string =>
+	process.env.GITHUB_RUN_ID
+		? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}`
+		: LOCAL_TOKEN;
 
 /**
  * A run-unique per-file stage name. Real remote D1 + workers are keyed by stage against
@@ -107,12 +137,7 @@ const LOCAL_TOKEN = `${process.pid.toString(36)}${process.hrtime.bigint().toStri
 const stageFor = (metaUrl: string): string => {
 	const base = (metaUrl.split("/").pop() ?? "integration").replace(/\.test\.ts$/, "");
 	const slug = slugify(base);
-
-	const runToken = process.env.GITHUB_RUN_ID
-		? `${process.env.GITHUB_RUN_ID}-${process.env.GITHUB_RUN_ATTEMPT ?? "1"}`
-		: LOCAL_TOKEN;
-
-	return stageName(slug, NO_DESTROY, runToken);
+	return stageName(slug, NO_DESTROY, runTokenFromEnv());
 };
 
 /**
@@ -129,7 +154,7 @@ const stageFor = (metaUrl: string): string => {
  * GET-open `/fate/live` and retry while it 503s — so the cold-start cost is paid by
  * the gate, not by `fate-live.test.ts`'s first subscribe (#1018).
  */
-const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
+export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 	Effect.tryPromise(async () => {
 		const signUp = await fetch(`${url}/api/auth/sign-up/email`, {
 			method: "POST",
@@ -232,10 +257,49 @@ const isTransientDeployError = (error: unknown): boolean => {
  * (idempotent), so the retry resolves the lag without standing up a duplicate stage or
  * compounding the #1020/#690 teardown leak. Bounded — a persistent error still fails fast.
  */
-const deployTransientRetry = Effect.retry({
+export const deployTransientRetry = Effect.retry({
 	while: isTransientDeployError,
 	schedule: Schedule.exponential("1 second").pipe(Schedule.both(Schedule.recurs(5))),
 });
+
+/**
+ * Probe a freshly-deployed worker's `/api/health` until it serves `{status:"ok"}` — a fresh
+ * workers.dev route 404s for a few seconds while it propagates, so retry every non-ready
+ * outcome (`WorkerNotReady` AND any request-transport `HttpClientError`, e.g. an edge reset)
+ * on a bounded `spaced` schedule. A worker that never serves healthy JSON within the bound
+ * (30 × 2s) dies with a clear message rather than hanging. ONE copy for both deploy paths
+ * (the per-file `integrationStack` and the shared-stage `_global-setup.ts`).
+ */
+export const awaitWorkerReady = (url: string): Effect.Effect<void, never, HttpClient.HttpClient> =>
+	Effect.gen(function* () {
+		const client = yield* HttpClient.HttpClient;
+		yield* client.get(`${url}/api/health`).pipe(
+			Effect.flatMap((res) =>
+				res.status === 200
+					? res.json.pipe(
+							Effect.flatMap((body) =>
+								(body as {status?: unknown} | null)?.status === "ok"
+									? Effect.void
+									: Effect.fail(new WorkerNotReady({status: res.status})),
+							),
+							// A CF HTML error page (or any non-JSON body) fails `res.json`
+							// decode — treat as not-ready, retryable, never a hard error.
+							Effect.catchTag("HttpClientError", () =>
+								Effect.fail(new WorkerNotReady({status: res.status})),
+							),
+						)
+					: Effect.fail(new WorkerNotReady({status: res.status})),
+			),
+			Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
+			Effect.catch((cause) =>
+				Effect.die(
+					new Error(
+						`worker never served a healthy /api/health within the readiness window for ${url}: ${String(cause)}`,
+					),
+				),
+			),
+		);
+	});
 
 /**
  * Stand up this file's per-file `Test.make` lifecycle and return the black-box
@@ -277,40 +341,7 @@ export function integrationStack(metaUrl: string): Harness {
 						return yield* Effect.die(new Error("deploy returned no D1 databaseId"));
 					}
 					d1Target = {accountId: resolved.accountId, databaseId: resolved.databaseId};
-					// Readiness probe: a fresh route 404s briefly while it propagates, so
-					// retry until the worker itself serves its health JSON.
-					const client = yield* HttpClient.HttpClient;
-					yield* client.get(`${url}/api/health`).pipe(
-						Effect.flatMap((res) =>
-							res.status === 200
-								? res.json.pipe(
-										Effect.flatMap((body) =>
-											(body as {status?: unknown} | null)?.status === "ok"
-												? Effect.void
-												: Effect.fail(new WorkerNotReady({status: res.status})),
-										),
-										// A CF HTML error page (or any non-JSON body) fails `res.json`
-										// decode — treat as not-ready, retryable, never a hard error.
-										Effect.catchTag("HttpClientError", () =>
-											Effect.fail(new WorkerNotReady({status: res.status})),
-										),
-									)
-								: Effect.fail(new WorkerNotReady({status: res.status})),
-						),
-						// Retry EVERY non-ready outcome — `WorkerNotReady` AND any request-transport
-						// error (`HttpClientError` from the `get` itself, e.g. an edge connection
-						// reset) — on the bounded schedule, so no transient escapes the probe. The
-						// bound is generous (30 × 2s); a worker that never serves healthy JSON
-						// within it fails with a clear message rather than hanging.
-						Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
-						Effect.catch((cause) =>
-							Effect.die(
-								new Error(
-									`worker never served a healthy /api/health within the readiness window for ${url}: ${String(cause)}`,
-								),
-							),
-						),
-					);
+					yield* awaitWorkerReady(url);
 					yield* warmLiveDO(url);
 				}),
 			),
@@ -353,5 +384,26 @@ export function integrationStack(metaUrl: string): Harness {
 			}
 			return d1Target;
 		},
+	);
+}
+
+/**
+ * Build the black-box `harness` over the RUN-SCOPED SHARED stage (ADR 0104 step 7, #1027) —
+ * the deploy-once counterpart to `integrationStack`. No `beforeAll`/`afterAll`, no deploy:
+ * `_global-setup.ts` deploys ONE stage per run in vitest `globalSetup` and `provide`s its
+ * handle, so this is a pure HTTP/D1 client over the injected values, built via the SAME
+ * `harness(urlAccessor, d1Accessor)` factory the per-file path uses. A file moves onto the
+ * shared stage by swapping `integrationStack(import.meta.url)` for `sharedStack()` (no file
+ * is migrated in this PR — only the sanity test reads it).
+ *
+ * `inject` resolves the values `globalSetup` provided; it throws if globalSetup didn't run
+ * (the `integration` project wasn't selected), which is the correct failure for a file that
+ * deploys nothing of its own.
+ */
+export function sharedStack(): Harness {
+	const d1 = inject("integrationD1");
+	return harness(
+		() => inject("integrationWorkerUrl"),
+		() => d1,
 	);
 }

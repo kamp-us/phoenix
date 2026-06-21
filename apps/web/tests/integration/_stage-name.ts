@@ -57,6 +57,19 @@ export const stageName = (slug: string, noDestroy: boolean, runToken: string): s
 	return collapse(`${STAGE_PREFIX}${readable}-${disc(`${slug}|${runToken}`)}`);
 };
 
+/**
+ * The run-scoped SHARED stage name (ADR 0104 step 7, #1027) — `it-shared-<disc>`.
+ *
+ * One stage per RUN, not per file: globalSetup deploys it once and every migrated file reads
+ * the injected handle. `<disc>` is the SAME fixed-width hash `stageName` uses, seeded on
+ * `shared|<runToken>` — so it is run-unique across concurrent PRs and reruns (the runToken
+ * carries CI's `<run-id>-<run-attempt>`, else a per-process local token), mirroring the
+ * per-file stage's run-uniqueness while collapsing the per-file `<slug>` dimension to the
+ * single literal `shared`. Same `[a-z0-9-]` invariant via `collapse`.
+ */
+export const sharedStageName = (runToken: string): string =>
+	collapse(`${STAGE_PREFIX}shared-${disc(`shared|${runToken}`)}`);
+
 // Fold any run of dashes to one and trim the ends — an empty `slug`/`readable` would
 // otherwise leave `it--<disc>` (internal `--`) or a trailing dash, both of which the
 // docblock invariant forbids. A name reduced to bare `it` (empty slug under NO_DESTROY)

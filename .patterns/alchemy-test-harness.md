@@ -156,6 +156,41 @@ assertion) to that **one** root cause. Per-file isolated stages give each file
 its own worker + D1, so there is no cross-file contention to race — the class is
 gone, and the files parallelize instead of serializing.
 
+## The run-scoped shared stage (`sharedStack()` + globalSetup)
+
+ADR [0104](../.decisions/0104-two-mode-integration-test-tier.md) adds a **second
+mode** alongside the per-file path above: a single stage deployed **once per
+run** in a vitest `globalSetup`, with its handle published to every forked file
+via `provide`/`inject`. This is the deploy-once counterpart to the ~24 ephemeral
+per-file stages — it structurally shrinks the create/destroy surface every CF
+flake class scales with (#1010 / #1019 / #1020).
+
+```ts
+import {describe, expect, it} from "vitest";
+import {sharedStack} from "./_integration.ts";
+
+const h = sharedStack(); // NO per-file deploy — pure client over the injected handle
+```
+
+`tests/integration/_global-setup.ts` deploys `Stack` under `sharedStageName(runToken)`
+(`it-shared-<disc>`, run-unique like the per-file name), then
+`project.provide(...)`s the worker URL + D1 coordinates; `sharedStack()` builds
+the SAME `harness(urlAccessor, d1Accessor)` over those `inject(...)` values, with
+no `beforeAll`/`afterAll` of its own. The deploy hardening
+(`deployTransientRetry`, the `/api/health` `awaitWorkerReady` probe, `warmLiveDO`,
+the env defaults, the run token) lives ONCE in `_integration.ts` and is reused by
+both paths — globalSetup runs it through `alchemy/Test/Core`'s `run` (the same
+runtime `Test.make` wraps `deploy` with). The globalSetup self-gates on
+`vitest.projects` containing the `integration` project, so `test:unit`
+(`--project unit`) deploys nothing.
+
+This is the substrate only — the mode exists, but **no existing file is migrated
+onto it yet** (a throwaway `sanity.shared.test.ts` is the lone consumer). Files
+move over per [0104](../.decisions/0104-two-mode-integration-test-tier.md) only
+after they are validated not to bleed rows across files on the shared D1; the
+irreducible real-D1/DO files migrate, the pure-logic ones go to the unit tier
+instead.
+
 ## `test.provider` for provider-lifecycle tests
 
 `alchemy/Test/Vitest`'s `test.provider(name, fn)` runs a test against a scratch

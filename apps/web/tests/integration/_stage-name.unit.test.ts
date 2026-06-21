@@ -5,7 +5,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {DISC_LEN, disc, slugify, stageName} from "./_stage-name.ts";
+import {DISC_LEN, disc, sharedStageName, slugify, stageName} from "./_stage-name.ts";
 
 const RUN_TOKEN = "run-1";
 
@@ -56,6 +56,20 @@ describe("stageName — NO_DESTROY (stable local re-adopt)", () => {
 		const name = stageName("", true, RUN_TOKEN);
 		expect(name).toBe("it");
 		assertInvariant(name);
+	});
+});
+
+describe("sharedStageName — run-scoped shared stage (ADR 0104 step 7)", () => {
+	it("upholds the stage-name invariant", () => {
+		assertInvariant(sharedStageName(RUN_TOKEN));
+	});
+
+	it("is the it-shared-<disc> form, seeded on shared|<runToken>", () => {
+		expect(sharedStageName(RUN_TOKEN)).toBe(`it-shared-${disc(`shared|${RUN_TOKEN}`)}`);
+	});
+
+	it("is run-unique: distinct run tokens yield distinct shared stages", () => {
+		expect(sharedStageName("run-a")).not.toBe(sharedStageName("run-b"));
 	});
 });
 
