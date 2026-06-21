@@ -23,15 +23,20 @@
  * Ownership uses two real users: the author creates, the intruder's cookie
  * attempts edit/delete → `UNAUTHORIZED`.
  *
- * D1 is shared (one deploy) — every title/host/email is uniquely prefixed
- * (`panomut-${Date.now()}-…`).
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027): its one D1 is
+ * shared across every migrated file, so every email/sign-up name/title/synthetic id is
+ * prefixed with `NS` (this file's deterministic `nsToken`). There is no feed/list assertion
+ * to scope — every read here re-resolves THIS test's own seeded post/comment by id (the
+ * re-resolved entity, `commentCount`, `score`/`myVote`), never an unfiltered global feed —
+ * so NS-prefixing the seeds is the whole of the isolation.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface PostNode {
 	__typename: string;
@@ -93,8 +98,8 @@ async function seedPost(input: {
 }
 
 beforeAll(async () => {
-	author = await h.signUp(`panomut-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
-	intruder = await h.signUp(`panomut-${STAMP}-intruder@test.local`, "hunter2hunter2", "davetsiz");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", `${NS}-yazar`);
+	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", `${NS}-davetsiz`);
 });
 
 describe("pano mutations — post.submit", () => {
@@ -104,7 +109,7 @@ describe("pano mutations — post.submit", () => {
 				kind: "mutation",
 				name: "post.submit",
 				input: {
-					title: `panomut-${STAMP} a submitted post`,
+					title: `${NS} a submitted post`,
 					body: "the post body",
 					tags: [{kind: "tartışma"}],
 				},
@@ -118,8 +123,8 @@ describe("pano mutations — post.submit", () => {
 		expect(post.__typename).toBe("Post");
 		expect(post.id).toBeTruthy();
 		expect(post.id).toMatch(/^post_/);
-		expect(post.title).toBe(`panomut-${STAMP} a submitted post`);
-		expect(post.author).toBe("yazar");
+		expect(post.title).toBe(`${NS} a submitted post`);
+		expect(post.author).toBe(`${NS}-yazar`);
 		expect(post.authorId).toBe(author.userId);
 		expect(post.score).toBe(0);
 		expect(post.commentCount).toBe(0);
@@ -146,7 +151,7 @@ describe("pano mutations — post.submit", () => {
 
 describe("pano mutations — post.vote / retractVote", () => {
 	it("vote then retractVote return the entity with myVote + score", async () => {
-		const id = await seedPost({title: `panomut-${STAMP} a votable post`, tags: [{kind: "soru"}]});
+		const id = await seedPost({title: `${NS} a votable post`, tags: [{kind: "soru"}]});
 
 		const voted = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id}, select: ["id", "score", "myVote"]},
@@ -172,7 +177,7 @@ describe("pano mutations — post.vote / retractVote", () => {
 			{
 				kind: "mutation",
 				name: "post.vote",
-				input: {id: `post_${STAMP}_does_not_exist`},
+				input: {id: `post_${NS}_does_not_exist`},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -185,12 +190,12 @@ describe("pano mutations — post.vote / retractVote", () => {
 
 describe("pano mutations — post.edit / post.delete", () => {
 	it("edit returns the edited entity (title alone)", async () => {
-		const id = await seedPost({title: `panomut-${STAMP} before edit`, tags: [{kind: "meta"}]});
+		const id = await seedPost({title: `${NS} before edit`, tags: [{kind: "meta"}]});
 		const edited = await h.fate(
 			{
 				kind: "mutation",
 				name: "post.edit",
-				input: {id, title: `panomut-${STAMP} after edit`},
+				input: {id, title: `${NS} after edit`},
 				select: ["id", "title"],
 			},
 			{cookie: author.cookie},
@@ -198,12 +203,12 @@ describe("pano mutations — post.edit / post.delete", () => {
 		expect(edited.ok).toBe(true);
 		if (!edited.ok) return;
 		expect((edited.data as PostNode).id).toBe(id);
-		expect((edited.data as PostNode).title).toBe(`panomut-${STAMP} after edit`);
+		expect((edited.data as PostNode).title).toBe(`${NS} after edit`);
 	});
 
 	it("edit can change the body alone", async () => {
 		const id = await seedPost({
-			title: `panomut-${STAMP} body-edit`,
+			title: `${NS} body-edit`,
 			body: "original body",
 			tags: [{kind: "meta"}],
 		});
@@ -219,12 +224,12 @@ describe("pano mutations — post.edit / post.delete", () => {
 		expect(edited.ok).toBe(true);
 		if (!edited.ok) return;
 		expect((edited.data as PostNode).id).toBe(id);
-		expect((edited.data as PostNode).title).toBe(`panomut-${STAMP} body-edit`);
+		expect((edited.data as PostNode).title).toBe(`${NS} body-edit`);
 		expect((edited.data as PostNode).body).toBe("edited body");
 	});
 
 	it("a non-author edit is rejected with UNAUTHORIZED; the title is unchanged", async () => {
-		const id = await seedPost({title: `panomut-${STAMP} owned title`, tags: [{kind: "meta"}]});
+		const id = await seedPost({title: `${NS} owned title`, tags: [{kind: "meta"}]});
 		const result = await h.fate(
 			{
 				kind: "mutation",
@@ -246,11 +251,11 @@ describe("pano mutations — post.edit / post.delete", () => {
 		});
 		expect(detail.ok).toBe(true);
 		if (!detail.ok) return;
-		expect((detail.data as PostNode).title).toBe(`panomut-${STAMP} owned title`);
+		expect((detail.data as PostNode).title).toBe(`${NS} owned title`);
 	});
 
 	it("delete returns a bare {__typename, id} ref; post(id) then resolves null", async () => {
-		const id = await seedPost({title: `panomut-${STAMP} to be deleted`, tags: [{kind: "meta"}]});
+		const id = await seedPost({title: `${NS} to be deleted`, tags: [{kind: "meta"}]});
 		const deleted = await h.fate(
 			{kind: "mutation", name: "post.delete", input: {id}, select: ["id"]},
 			{cookie: author.cookie},
@@ -273,7 +278,7 @@ describe("pano mutations — post.edit / post.delete", () => {
 	});
 
 	it("a non-author delete is rejected with UNAUTHORIZED; the post survives", async () => {
-		const id = await seedPost({title: `panomut-${STAMP} defended`, tags: [{kind: "meta"}]});
+		const id = await seedPost({title: `${NS} defended`, tags: [{kind: "meta"}]});
 		const result = await h.fate(
 			{kind: "mutation", name: "post.delete", input: {id}, select: ["id"]},
 			{cookie: intruder.cookie},
@@ -296,7 +301,7 @@ describe("pano mutations — post.edit / post.delete", () => {
 
 describe("pano mutations — comment.add", () => {
 	it("adds a top-level comment and returns the re-resolved Comment", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} comment target`});
+		const postId = await seedPost({title: `${NS} comment target`});
 		const result = await h.fate(
 			{
 				kind: "mutation",
@@ -314,7 +319,7 @@ describe("pano mutations — comment.add", () => {
 		expect(comment.id).toMatch(/^comm_/);
 		expect(comment.parentId).toBeNull();
 		expect(comment.body).toContain("first top-level comment");
-		expect(comment.author).toBe("yazar");
+		expect(comment.author).toBe(`${NS}-yazar`);
 		expect(comment.authorId).toBe(author.userId);
 		expect(comment.score).toBe(0);
 		expect(comment.myVote).toBeNull();
@@ -332,7 +337,7 @@ describe("pano mutations — comment.add", () => {
 	});
 
 	it("accepts a nested reply with a valid parentId and bumps commentCount to 2", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} nested target`});
+		const postId = await seedPost({title: `${NS} nested target`});
 
 		const parent = await h.fate(
 			{
@@ -372,12 +377,12 @@ describe("pano mutations — comment.add", () => {
 	});
 
 	it("a reply to a missing parentId surfaces PARENT_NOT_FOUND; commentCount stays 0", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} orphan target`});
+		const postId = await seedPost({title: `${NS} orphan target`});
 		const result = await h.fate(
 			{
 				kind: "mutation",
 				name: "comment.add",
-				input: {postId, body: "reply to nothing", parentId: `comm_${STAMP}_missing`},
+				input: {postId, body: "reply to nothing", parentId: `comm_${NS}_missing`},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -398,8 +403,8 @@ describe("pano mutations — comment.add", () => {
 	});
 
 	it("a reply whose parent lives on a different post surfaces PARENT_NOT_FOUND", async () => {
-		const postA = await seedPost({title: `panomut-${STAMP} cross A`});
-		const postB = await seedPost({title: `panomut-${STAMP} cross B`});
+		const postA = await seedPost({title: `${NS} cross A`});
+		const postB = await seedPost({title: `${NS} cross B`});
 
 		const parentOnA = await h.fate(
 			{
@@ -437,7 +442,7 @@ describe("pano mutations — comment.add", () => {
 			{
 				kind: "mutation",
 				name: "comment.add",
-				input: {postId: `post_${STAMP}_does_not_exist`, body: "hello"},
+				input: {postId: `post_${NS}_does_not_exist`, body: "hello"},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -448,7 +453,7 @@ describe("pano mutations — comment.add", () => {
 	});
 
 	it("anonymous comment writes surface UNAUTHORIZED", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} anon comment target`});
+		const postId = await seedPost({title: `${NS} anon comment target`});
 		const result = await h.fate({
 			kind: "mutation",
 			name: "comment.add",
@@ -463,7 +468,7 @@ describe("pano mutations — comment.add", () => {
 
 describe("pano mutations — comment.vote / retractVote / edit", () => {
 	it("vote then retractVote return the entity with myVote stamped", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} comment vote target`});
+		const postId = await seedPost({title: `${NS} comment vote target`});
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -502,7 +507,7 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 	});
 
 	it("edit returns the edited entity", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} comment edit target`});
+		const postId = await seedPost({title: `${NS} comment edit target`});
 		const added = await h.fate(
 			{kind: "mutation", name: "comment.add", input: {postId, body: "before edit"}, select: ["id"]},
 			{cookie: author.cookie},
@@ -531,7 +536,7 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 			{
 				kind: "mutation",
 				name: "comment.vote",
-				input: {id: `comm_${STAMP}_does_not_exist`},
+				input: {id: `comm_${NS}_does_not_exist`},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -542,7 +547,7 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 	});
 
 	it("delete returns the re-resolved parent Post with the surviving commentCount", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} comment delete target`});
+		const postId = await seedPost({title: `${NS} comment delete target`});
 		const a = await h.fate(
 			{
 				kind: "mutation",
