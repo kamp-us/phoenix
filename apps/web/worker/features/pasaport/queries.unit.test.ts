@@ -12,7 +12,7 @@
  * `CurrentUser` and a fail-on-contact `Pasaport` sentinel: the sentinel proves the
  * gate short-circuits the DB read (a reached read would `die` → `INTERNAL_SERVER_ERROR`,
  * not `UNAUTHORIZED`). Asserting the WIRE `code` (not the typed `Unauthorized`
- * instance one layer in) is what makes a mis-annotated `[ErrorCode]` a unit failure.
+ * instance one layer in) is what makes a mis-annotated `[FateWireCode]` a unit failure.
  */
 
 import {it} from "@effect/vitest";
@@ -41,7 +41,7 @@ it.effect(
 				Effect.exit,
 			);
 			// The wire `UNAUTHORIZED` a client sees — derived by `encodeWireError` from the
-			// `Unauthorized` class's `[ErrorCode]` annotation, not the typed instance one
+			// `Unauthorized` class's `[FateWireCode]` annotation, not the typed instance one
 			// layer in. A defect from a reached DB read would be `INTERNAL_SERVER_ERROR`.
 			assert.isTrue(Exit.isFailure(exit));
 			if (Exit.isFailure(exit)) {

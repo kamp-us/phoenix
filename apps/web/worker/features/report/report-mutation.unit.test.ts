@@ -25,7 +25,7 @@ const REPORTER = {id: "u-reporter", email: "elif@example.com", name: "elif"};
 // Drive the op through its real external interface (`resolveWire`: `resolve`
 // decode + the `encodeWireError` class→wire-code seam), not `.handler` — so the
 // failure assertions see the WIRE `code` a client gets, and a mis-annotated
-// `[ErrorCode]` (e.g. on `PostNotFound`) is a unit failure, not just an
+// `[FateWireCode]` (e.g. on `PostNotFound`) is a unit failure, not just an
 // integration-tier one.
 const submit = (
 	input: {targetKind: "post" | "comment" | "definition"; targetId: string; reason?: string | null},
@@ -91,7 +91,7 @@ describe("report.submit wire boundary — auth gate (no DB)", () => {
 
 describe("report.submit wire boundary — ReportTargetNotFound translates by targetKind", () => {
 	// The per-feature not-found WIRE codes — what `encodeWireError` derives from each
-	// translated class's `[ErrorCode]`. Asserting the code (not the class name in the
+	// translated class's `[FateWireCode]`. Asserting the code (not the class name in the
 	// cause string) is what catches a mis-annotated `PostNotFound` etc.
 	const cases = [
 		{targetKind: "post" as const, wireCode: "POST_NOT_FOUND"},

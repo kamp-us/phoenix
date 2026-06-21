@@ -13,7 +13,7 @@
  *      carries only `confirmation`) and behaviorally — anonymous yields the WIRE
  *      `UNAUTHORIZED` before any `Pasaport` call, proven through `resolveWire` (the
  *      op's real external interface: `resolve` decode + the `encodeWireError`
- *      class→wire-code seam), so a mis-annotated `[ErrorCode]` is a unit failure.
+ *      class→wire-code seam), so a mis-annotated `[FateWireCode]` is a unit failure.
  *   3. **Reserved-username rejection.** `Pasaport.setUsername("silinen")` rejects
  *      with `INVALID_FORMAT` BEFORE any DB read, so `@[silinen]` can never collide
  *      with a real account. Proven over a throwing `Drizzle` seam — a reached read

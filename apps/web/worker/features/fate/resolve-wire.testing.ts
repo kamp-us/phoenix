@@ -6,8 +6,8 @@
  * A per-feature unit test that calls `op.handler(...)` and asserts the typed
  * failure CLASS (`Unauthorized`) stops one layer beneath the interface a client
  * sees: it never crosses the seam that maps the class to its wire `code`
- * (`UNAUTHORIZED`) via the `ErrorCode` annotation. A mis-annotated handler error
- * (wrong/missing `[ErrorCode]`) passes such a test. Driving through `resolveWire`
+ * (`UNAUTHORIZED`) via the `FateWireCode` annotation. A mis-annotated handler error
+ * (wrong/missing `[FateWireCode]`) passes such a test. Driving through `resolveWire`
  * exercises both seams — the definition's input/args Schema decode AND
  * `encodeWireError` — so the class→wire-code translation is proven locally.
  *
