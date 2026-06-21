@@ -13,13 +13,14 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {LiveTopic, WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
 	DefinitionNotFound,
 	UnauthorizedDefinitionMutation,
 } from "./errors.ts";
+import {sozlukLive} from "./live.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
@@ -73,7 +74,7 @@ export const mutations = {
 		Effect.fn("definition.add")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* WorkerLivePublisher;
+			const live = sozlukLive(yield* WorkerLivePublisher);
 			const result = yield* sozluk.addDefinition({
 				termSlug: input.termSlug,
 				authorId: user.id,
@@ -85,9 +86,7 @@ export const mutations = {
 			const definition = shapeDefinition({...result, myVote: null});
 			// Append the node to the term's `Term.definitions` topic (same key
 			// `definition.delete` removes from) so every open term page updates live.
-			yield* live
-				.topic(LiveTopic.termDefinitions, {id: input.termSlug})
-				.appendNode("Definition", definition.id, {node: definition});
+			yield* live.definition.term(input.termSlug).appendNode(definition.id, {node: definition});
 			return definition;
 		}),
 	),
@@ -100,11 +99,11 @@ export const mutations = {
 		Effect.fn("definition.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* WorkerLivePublisher;
+			const live = sozlukLive(yield* WorkerLivePublisher);
 			const result = yield* sozluk.voteDefinition({definitionId: input.id, voterId: user.id});
 			const definition = shapeDefinition(result);
 			// `myVote` is viewer-specific, so it's omitted from `changed`.
-			yield* live.update("Definition", definition.id, {changed: ["score"], data: definition});
+			yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
 			return definition;
 		}),
 	),
@@ -117,13 +116,13 @@ export const mutations = {
 		Effect.fn("definition.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* WorkerLivePublisher;
+			const live = sozlukLive(yield* WorkerLivePublisher);
 			const result = yield* sozluk.retractDefinitionVote({
 				definitionId: input.id,
 				voterId: user.id,
 			});
 			const definition = shapeDefinition(result);
-			yield* live.update("Definition", definition.id, {changed: ["score"], data: definition});
+			yield* live.definition.update(definition.id, {changed: ["score"], data: definition});
 			return definition;
 		}),
 	),
@@ -142,7 +141,7 @@ export const mutations = {
 		Effect.fn("definition.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* WorkerLivePublisher;
+			const live = sozlukLive(yield* WorkerLivePublisher);
 			const result = yield* sozluk.editDefinition({
 				definitionId: input.id,
 				actorId: user.id,
@@ -152,7 +151,7 @@ export const mutations = {
 			// leaves vote state untouched but must not blank it).
 			const [fresh] = yield* sozluk.getDefinitionsByIds([result.definitionId], {viewerId: user.id});
 			const definition = shapeDefinition({...result, myVote: fresh?.myVote ?? null});
-			yield* live.update("Definition", definition.id, {changed: ["body"], data: definition});
+			yield* live.definition.update(definition.id, {changed: ["body"], data: definition});
 			return definition;
 		}),
 	),
@@ -167,13 +166,13 @@ export const mutations = {
 		Effect.fn("definition.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* WorkerLivePublisher;
+			const live = sozlukLive(yield* WorkerLivePublisher);
 			// Resolve the parent slug before the delete, while the row still exists.
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
-			yield* live.delete("Definition", input.id);
+			yield* live.definition.delete(input.id);
 			if (slug) {
-				yield* live.topic(LiveTopic.termDefinitions, {id: slug}).deleteEdge("Definition", input.id);
+				yield* live.definition.term(slug).deleteEdge(input.id);
 			}
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);
@@ -193,7 +192,7 @@ export const mutations = {
 		Effect.fn("definition.restore")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
-			const live = yield* WorkerLivePublisher;
+			const live = sozlukLive(yield* WorkerLivePublisher);
 			yield* sozluk.restoreDefinition({definitionId: input.id, actorId: user.id});
 			const slug = yield* sozluk.lookupDefinitionTermSlug(input.id);
 			if (!slug) return null;
@@ -213,9 +212,7 @@ export const mutations = {
 					updatedAt: restored.updatedAt,
 					myVote: restored.myVote ?? null,
 				});
-				yield* live
-					.topic(LiveTopic.termDefinitions, {id: slug})
-					.appendNode("Definition", restored.id, {node});
+				yield* live.definition.term(slug).appendNode(restored.id, {node});
 			}
 			return toTermFromPage(page);
 		}),

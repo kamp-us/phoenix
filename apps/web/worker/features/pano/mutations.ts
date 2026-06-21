@@ -15,7 +15,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {LiveTopic, WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
@@ -29,6 +29,7 @@ import {
 	UnauthorizedCommentMutation,
 	UnauthorizedPostMutation,
 } from "./errors.ts";
+import {panoLive} from "./live.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPost, toPostFromPage} from "./shapers.ts";
 import type {Comment, Post} from "./views.ts";
@@ -160,7 +161,7 @@ export const mutations = {
 		Effect.fn("post.submit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.submitPost({
 				title: input.title,
 				...(input.url ? {url: input.url} : {}),
@@ -172,7 +173,7 @@ export const mutations = {
 			const post = shapePost({...r, myVote: null});
 			// New post leads the feed: prepend to the `posts` topic (every
 			// feed-sort variant, via the global topic). Inline node, no DB work.
-			yield* live.topic(LiveTopic.posts).prependNode("Post", post.id, {node: post});
+			yield* live.post.feed.prependNode(post.id, {node: post});
 			return post;
 		}),
 	),
@@ -195,7 +196,7 @@ export const mutations = {
 				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
 			}
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.saveDraft({
 				authorId: user.id,
 				authorName: user.name ?? user.email,
@@ -210,7 +211,7 @@ export const mutations = {
 			// A draft is private: re-resolve the affected entity (so the author's cache
 			// updates with `isDraft: true`), but never prepend it to the public `posts`
 			// topic.
-			yield* live.update("Post", post.id, {changed: ["isDraft"], data: post});
+			yield* live.post.update(post.id, {changed: ["isDraft"], data: post});
 			return post;
 		}),
 	),
@@ -228,10 +229,10 @@ export const mutations = {
 				return yield* new DraftsDisabled({message: "taslak özelliği şu an kapalı"});
 			}
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.discardDraft({authorId: user.id});
 			if (!r.postId) return null;
-			yield* live.delete("Post", r.postId);
+			yield* live.post.delete(r.postId);
 			// Id-only eviction ref: the draft row is gone (see post.delete).
 			return {__typename: "Post", id: r.postId};
 		}),
@@ -245,10 +246,10 @@ export const mutations = {
 		Effect.fn("post.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.voteOnPost({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
-			yield* live.update("Post", post.id, {changed: ["score"], data: post});
+			yield* live.post.update(post.id, {changed: ["score"], data: post});
 			return post;
 		}),
 	),
@@ -261,10 +262,10 @@ export const mutations = {
 		Effect.fn("post.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.retractPostVote({postId: input.id, voterId: user.id});
 			const post = shapePost(r);
-			yield* live.update("Post", post.id, {changed: ["score"], data: post});
+			yield* live.post.update(post.id, {changed: ["score"], data: post});
 			return post;
 		}),
 	),
@@ -284,14 +285,14 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			yield* bookmark.toggle({userId: user.id, postId: input.id, value: true});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
 			}
 			const post = toPost(row);
-			yield* live.update("Post", post.id, {changed: ["isSaved"], data: post});
+			yield* live.post.update(post.id, {changed: ["isSaved"], data: post});
 			return post;
 		}),
 	),
@@ -305,14 +306,14 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const bookmark = yield* Bookmark;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			yield* bookmark.toggle({userId: user.id, postId: input.id, value: false});
 			const [row] = yield* pano.getPostsByIds([input.id], {viewerId: user.id});
 			if (!row) {
 				return yield* new PostNotFound({postId: input.id, message: `post ${input.id} not found`});
 			}
 			const post = toPost(row);
-			yield* live.update("Post", post.id, {changed: ["isSaved"], data: post});
+			yield* live.post.update(post.id, {changed: ["isSaved"], data: post});
 			return post;
 		}),
 	),
@@ -330,7 +331,7 @@ export const mutations = {
 		Effect.fn("post.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.editPost({
 				postId: input.id,
 				actorId: user.id,
@@ -341,7 +342,7 @@ export const mutations = {
 			// `myVote` (edit doesn't touch vote state).
 			const [fresh] = yield* pano.getPostsByIds([r.postId], {viewerId: user.id});
 			const post = shapePost({...r, myVote: fresh?.myVote ?? null});
-			yield* live.update("Post", post.id, {changed: ["title", "body"], data: post});
+			yield* live.post.update(post.id, {changed: ["title", "body"], data: post});
 			return post;
 		}),
 	),
@@ -354,10 +355,10 @@ export const mutations = {
 		Effect.fn("post.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
-			yield* live.delete("Post", r.postId);
-			yield* live.topic(LiveTopic.posts).deleteEdge("Post", r.postId);
+			yield* live.post.delete(r.postId);
+			yield* live.post.feed.deleteEdge(r.postId);
 			// Bare id-only eviction ref: the post is hidden, so there's no row to run
 			// through `toPost` and it stays a `{__typename, id}` the client drops.
 			return {__typename: "Post", id: r.postId};
@@ -374,13 +375,13 @@ export const mutations = {
 		Effect.fn("post.restore")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			yield* pano.restorePost({postId: input.id, actorId: user.id});
 			const page = yield* pano.getPost(input.id);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
-			yield* live.topic(LiveTopic.posts).appendNode("Post", post.id, {node: post});
+			yield* live.post.feed.appendNode(post.id, {node: post});
 			return post;
 		}),
 	),
@@ -393,7 +394,7 @@ export const mutations = {
 		Effect.fn("comment.add")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.addComment({
 				postId: input.postId,
 				authorId: user.id,
@@ -403,9 +404,7 @@ export const mutations = {
 			});
 			const comment = shapeComment({...r, myVote: null});
 			// Append to the `Post.comments` topic keyed by the parent post id.
-			yield* live
-				.topic(LiveTopic.postComments, {id: input.postId})
-				.appendNode("Comment", comment.id, {node: comment});
+			yield* live.comment.thread(input.postId).appendNode(comment.id, {node: comment});
 			return comment;
 		}),
 	),
@@ -418,10 +417,10 @@ export const mutations = {
 		Effect.fn("comment.vote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.voteOnComment({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
-			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
+			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
 			return comment;
 		}),
 	),
@@ -434,10 +433,10 @@ export const mutations = {
 		Effect.fn("comment.retractVote")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.retractCommentVote({commentId: input.id, voterId: user.id});
 			const comment = shapeComment(r);
-			yield* live.update("Comment", comment.id, {changed: ["score"], data: comment});
+			yield* live.comment.update(comment.id, {changed: ["score"], data: comment});
 			return comment;
 		}),
 	),
@@ -455,11 +454,11 @@ export const mutations = {
 		Effect.fn("comment.edit")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const r = yield* pano.editComment({commentId: input.id, actorId: user.id, body: input.body});
 			const [fresh] = yield* pano.getCommentsByIds([r.commentId], {viewerId: user.id});
 			const comment = shapeComment({...r, myVote: fresh?.myVote ?? null});
-			yield* live.update("Comment", comment.id, {changed: ["body"], data: comment});
+			yield* live.comment.update(comment.id, {changed: ["body"], data: comment});
 			return comment;
 		}),
 	),
@@ -472,7 +471,7 @@ export const mutations = {
 		Effect.fn("comment.delete")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			// Resolve the parent post id before the delete, while the row exists.
 			const postId = yield* pano.lookupCommentPostId(input.id);
 			const result = yield* pano.deleteComment({commentId: input.id, actorId: user.id});
@@ -490,15 +489,15 @@ export const mutations = {
 			//    instead publish the tombstoned comment so threads re-render it in place.
 			if (result.placeholder) {
 				const placeholder = toComment(result.placeholder);
-				yield* live.update("Comment", input.id, {
+				yield* live.comment.update(input.id, {
 					changed: ["body", "score", "deletedAt", "updatedAt"],
 					data: placeholder,
 				});
 			} else {
-				yield* live.topic(LiveTopic.postComments, {id: post.id}).deleteEdge("Comment", input.id);
+				yield* live.comment.thread(post.id).deleteEdge(input.id);
 			}
 			// Either way the parent post's `commentCount` changes — publish it.
-			yield* live.update("Post", post.id, {changed: ["commentCount"], data: post});
+			yield* live.post.update(post.id, {changed: ["commentCount"], data: post});
 			return post;
 		}),
 	),
@@ -513,22 +512,20 @@ export const mutations = {
 		Effect.fn("comment.restore")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
-			const live = yield* WorkerLivePublisher;
+			const live = panoLive(yield* WorkerLivePublisher);
 			const postId = yield* pano.lookupCommentPostId(input.id);
 			yield* pano.restoreComment({commentId: input.id, actorId: user.id});
 			if (!postId) return null;
 			const [comment] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
 			if (comment) {
 				const node = toComment(comment);
-				yield* live
-					.topic(LiveTopic.postComments, {id: postId})
-					.appendNode("Comment", node.id, {node});
+				yield* live.comment.thread(postId).appendNode(node.id, {node});
 			}
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
-			yield* live.update("Post", post.id, {changed: ["commentCount"], data: post});
+			yield* live.post.update(post.id, {changed: ["commentCount"], data: post});
 			return post;
 		}),
 	),
