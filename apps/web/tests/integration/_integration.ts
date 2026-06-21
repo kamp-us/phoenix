@@ -42,6 +42,13 @@ import {slugify, stageName} from "./_stage-name.ts";
 // (effect `globalErrorInEffectFailure`): the fresh route 404s until it propagates.
 class WorkerNotReady extends Data.TaggedError("WorkerNotReady")<{readonly status: number}> {}
 
+// Retry sentinel for the DO-backed `/fate/live` warmup below. The `/api/health` probe
+// proves the WORKER route propagated, but never touches the `LiveDO` — so a cold
+// LiveDO still surfaces the bounded cold-start envelope (`fate-live/cold-start-retry.ts`)
+// as a 503 `LIVE_UNAVAILABLE` on the first connect/subscribe. Tagged distinctly from
+// `WorkerNotReady` so the two readiness gates retry on their own signals.
+class LiveDONotReady extends Data.TaggedError("LiveDONotReady")<{readonly status: number}> {}
+
 // The worker's `env:` block binds `BETTER_AUTH_SECRET` from a required
 // `Config.redacted`; the deploy resolves it from this env. An `insecure_`-prefixed
 // 32-byte hex value (not a short word-string) keeps better-auth's startup
@@ -109,6 +116,85 @@ const stageFor = (metaUrl: string): string => {
 };
 
 /**
+ * Warm the DO-backed `/fate/live` path so the suite's first asserting subscribe
+ * doesn't draw the cold-start 503.
+ *
+ * `/api/health` proving green warms only the WORKER route — it never reaches the
+ * `LiveDO`. Cloudflare instantiates a DO lazily, so the freshly-deployed stage's
+ * first `/fate/live` connect/subscribe hits a cold `connection:`/`topic:` DO; the
+ * worker seam's bounded cold-start retry (`fate-live/cold-start-retry.ts`, #842) can
+ * exhaust on that first hit and render the 503 `LIVE_UNAVAILABLE` envelope. We force
+ * that warm here, behind the same bounded `spaced` retry as the health probe: sign up
+ * a throwaway session (the route 401s without one, before the DO is touched), then
+ * GET-open `/fate/live` and retry while it 503s — so the cold-start cost is paid by
+ * the gate, not by `fate-live.test.ts`'s first subscribe (#1018).
+ */
+const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
+	Effect.tryPromise(async () => {
+		const signUp = await fetch(`${url}/api/auth/sign-up/email`, {
+			method: "POST",
+			headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+			body: JSON.stringify({
+				email: `live-warmup-${LOCAL_TOKEN}@warmup.local`,
+				password: "warmup-warmup-warmup",
+				name: "warmup",
+			}),
+		});
+		// A `NO_DESTROY` re-run reuses the stage's D1, so a warmup user from a prior run
+		// makes sign-up 422 USER_ALREADY_EXISTS — fall back to sign-in for the cookie.
+		const authed =
+			signUp.status === 422
+				? await fetch(`${url}/api/auth/sign-in/email`, {
+						method: "POST",
+						headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+						body: JSON.stringify({
+							email: `live-warmup-${LOCAL_TOKEN}@warmup.local`,
+							password: "warmup-warmup-warmup",
+						}),
+					})
+				: signUp;
+		const setCookie = authed.headers.get("set-cookie");
+		if (!authed.ok || !setCookie) {
+			throw new Error(`live warmup auth failed: ${authed.status} ${await authed.text()}`);
+		}
+		const cookie = setCookie
+			.split(/,(?=[^;]+=)/)
+			.map((part) => part.split(";")[0]!.trim())
+			.filter((kv) => kv.includes("="))
+			.join("; ");
+		return cookie;
+	}).pipe(
+		Effect.flatMap((cookie) =>
+			Effect.tryPromise(() =>
+				fetch(`${url}/fate/live?connectionId=live-warmup-${LOCAL_TOKEN}`, {
+					headers: {accept: "text/event-stream", cookie},
+				}),
+			).pipe(
+				// Always release the response body (the held SSE stream on a 200, the error
+				// envelope body on a 503) before deciding — a leaked stream keeps the fetch
+				// connection open across the retry loop.
+				Effect.tap((res) =>
+					Effect.promise(() => res.body?.cancel().catch(() => {}) ?? Promise.resolve()),
+				),
+				Effect.flatMap((res) =>
+					// A cold LiveDO renders 503 `LIVE_UNAVAILABLE`; 200 means it warmed.
+					res.status === 200 ? Effect.void : Effect.fail(new LiveDONotReady({status: res.status})),
+				),
+				Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
+			),
+		),
+		// Warmup is a readiness OPTIMIZATION, not an assertion: if it can't establish a
+		// cookie or never warms within the bound, the suite still runs (the worker seam's
+		// own retry is the real fix; this just front-loads the cold cost). Swallow so a
+		// warmup hiccup can't red a green stage — the asserting tests remain the gate.
+		Effect.catchCause((cause) =>
+			Effect.logWarning(
+				`[integration] /fate/live warmup did not settle (non-fatal):\n${Cause.pretty(cause)}`,
+			),
+		),
+	);
+
+/**
  * Stand up this file's per-file `Test.make` lifecycle and return the black-box
  * `harness` bound to its deployed worker URL. Call once at module top level.
  *
@@ -160,6 +246,7 @@ export function integrationStack(metaUrl: string): Harness {
 						),
 						Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
 					);
+					yield* warmLiveDO(url);
 				}),
 			),
 		),
