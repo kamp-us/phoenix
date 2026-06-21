@@ -8,8 +8,9 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser} from "@kampus/fate-effect";
-import {Effect, Layer} from "effect";
-import {Pasaport, type UserRow} from "../pasaport/Pasaport.ts";
+import {Effect, type Layer} from "effect";
+import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
+import type {Pasaport, UserRow} from "../pasaport/Pasaport.ts";
 import {Moderator, NotAModerator} from "./Moderator.ts";
 
 const userRow = (role: "member" | "moderator"): UserRow => ({
@@ -22,20 +23,9 @@ const userRow = (role: "member" | "moderator"): UserRow => ({
 });
 
 // A Pasaport double whose `getUserById` returns the scripted row; every other
-// method fails-on-contact (the gate must touch only `getUserById`). Full record so
-// `Layer.succeed` needs no cast (it is identity on the Tag's value shape).
-const unused = () => Effect.die(new Error("Moderator.required touched an unexpected method"));
+// method fails-on-contact via the shared stub (the gate must touch only `getUserById`).
 const pasaportWithRole = (row: UserRow | null): Layer.Layer<Pasaport> =>
-	Layer.succeed(Pasaport, {
-		getUserById: () => Effect.succeed(row),
-		getUsersByIds: unused,
-		validateSession: unused,
-		setUsername: unused,
-		lookupProfile: unused,
-		lookupProfileById: unused,
-		listContributions: unused,
-		anonymizeAccount: unused,
-	});
+	makePasaportStub({getUserById: () => Effect.succeed(row)});
 
 const sessionUser = {id: "u1", email: "u1@test.local", name: "U One"};
 

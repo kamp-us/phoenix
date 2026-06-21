@@ -14,11 +14,12 @@
 
 import {assert, describe, it} from "@effect/vitest";
 import {CurrentUser} from "@kampus/fate-effect";
-import {Cause, Effect, Layer} from "effect";
+import {Cause, Effect, type Layer} from "effect";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {ReportTargetNotFound} from "./errors.ts";
 import {mutations} from "./mutations.ts";
-import {Report, type ReportInput, type ReportResult} from "./Report.ts";
+import {makeReportStub} from "./Report.testing.ts";
+import type {Report, ReportInput, ReportResult} from "./Report.ts";
 
 const REPORTER = {id: "u-reporter", email: "elif@example.com", name: "elif"};
 
@@ -44,20 +45,12 @@ const wireCodeOf = (cause: Cause.Cause<unknown>): unknown => {
 };
 
 // A `Report` stub that hands `submit` whatever the test scripts — a landed
-// `ReportResult` or a `ReportTargetNotFound`. The presence read and idempotency
-// envelope are the service's job (`Report.unit.test.ts`), not the wire boundary's.
+// `ReportResult` or a `ReportTargetNotFound`. Every other method fails-on-contact
+// via the shared stub: this boundary only ever touches `submit`, so a reached
+// presence read / idempotency path (`Report.unit.test.ts`'s job) fails the test.
 const reportStub = (
 	respond: (input: ReportInput) => Effect.Effect<ReportResult, ReportTargetNotFound>,
-): Layer.Layer<Report> =>
-	Layer.succeed(Report, {
-		submit: respond,
-		readByReporter: () => Effect.succeed(new Set<string>()),
-		listOpen: () => Effect.succeed([]),
-		resolveTarget: () => Effect.succeed({collapsed: 0}),
-		reopenForTarget: () => Effect.succeed({reopened: 0}),
-		lookupReportTarget: () => Effect.succeed(null),
-		firstOpenReportId: () => Effect.succeed(null),
-	});
+): Layer.Layer<Report> => makeReportStub({submit: respond});
 
 const landed = (input: ReportInput): Effect.Effect<ReportResult> =>
 	Effect.succeed({targetKind: input.targetKind, targetId: input.targetId, created: true});
