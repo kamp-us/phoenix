@@ -99,6 +99,19 @@ at all (their `worker.url` stays `*.workers.dev`, a valid cert), so the
 apex-collision the subdomain was meant to avoid is moot — they can't collide on an
 apex they never touch.
 
+A deploy-time domain teardown is retry-tolerant by nature. When a stage's domain
+presence flips from has-domain to no-domain between deploys — a stage that
+previously deployed *with* a custom domain redeployed *without* one, or a
+prod→preview stage reuse — alchemy must DELETE the now-leftover Custom
+Domain/hostname resource. That DELETE can fail with `CloudflareHttpError: null`
+when it races the hostname's TLS certificate still being provisioned, and it
+typically clears on the next deploy: the cert finishes, the delete succeeds. So a
+transient `CloudflareHttpError: null` on a leftover-domain DELETE is an expected
+mid-provisioning race, not a hard failure — re-running the deploy resolves it.
+This is the operational counterpart to the production-only rule: because only
+production ever *attaches* a domain, this teardown race only surfaces when a
+stage's domain presence changes between deploys.
+
 ### Email sending subdomain — `provisionEmailSending`
 
 `apps/web/worker/features/pasaport/email-resources.ts` declares the
