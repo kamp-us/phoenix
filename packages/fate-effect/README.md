@@ -17,7 +17,7 @@ differential oracle in this package's test suite.
 ```
 defining things                 composing                serving
 ───────────────                 ─────────                ───────
-ErrorCode (errors)     ┐
+FateWireCode (errors)  ┐
 FateDataView (views)      │
 Fate.source (loaders)     ├──►  FateServer.config  ──►   FateInterpreter.handleRequest
 Fate.query / list /       │     FateServer.layer         (one Effect, request fiber)
@@ -38,18 +38,18 @@ update. Every piece below is the real API; the in-repo worked example is sozluk
 
 ### 1. Errors: one annotation, no registry
 
-A domain error becomes a wire error by carrying a `ErrorCode` annotation. That's the whole
+A domain error becomes a wire error by carrying a `FateWireCode` annotation. That's the whole
 contract — `encodeWireError` reads the annotation at the boundary; there is no central registry
 to keep in sync.
 
 ```ts
-import {ErrorCode} from "@kampus/fate-effect";
+import {FateWireCode} from "@kampus/fate-effect";
 import * as Schema from "effect/Schema";
 
 export class NoteNotFound extends Schema.TaggedErrorClass<NoteNotFound>()(
 	"notes/NoteNotFound",
 	{noteId: Schema.String, message: Schema.String},
-	{[ErrorCode]: "NOTE_NOT_FOUND"},
+	{[FateWireCode]: "NOTE_NOT_FOUND"},
 ) {}
 ```
 
@@ -250,11 +250,11 @@ type-level tests in this package.
 
 | Module | What it is |
 | --- | --- |
-| `WireError.ts` | `ErrorCode` annotation + `encodeWireError` (the one error codec) |
+| `WireError.ts` | `FateWireCode` annotation + `encodeWireError` (the one error codec) |
 | `DataView.ts` | `FateDataView` class factory, `Entity<>`, `FateDataView.list` |
 | `Source.ts` | `Fate.source` — per-entity loaders, span-named handlers |
 | `Operation.ts` | `Fate.query` / `Fate.list` / `Fate.mutation` + `InputValidationError` |
-| `Fate.ts` | the `Fate` authoring namespace (the constructors + `Entity` + `ErrorCode`; every member is also flat-exported) |
+| `Fate.ts` | the `Fate` authoring namespace (the constructors + `Entity` + `FateWireCode`; every member is also flat-exported) |
 | `Server.ts` | `FateServer` tag, `config`, `layer`; config validation (shared with codegen, so a bad config also fails the build) |
 | `CurrentUser.ts`, `LivePublisher.ts` | the per-request pair (tags; values come from the host) |
 | `RequestContext.ts` | `FateRequestContext` — the per-request contract (the pair as values; deliberately no `signal`) |
