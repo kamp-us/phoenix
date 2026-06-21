@@ -14,7 +14,6 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
-import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -164,7 +163,7 @@ export interface DeleteDefinitionInput {
 	 * — the author-delete mutation passes nothing; account-deletion (0097) and
 	 * moderation (0098) pass `Anonymized` / `Moderated({reportId})`.
 	 */
-	reason?: Lifecycle.RemovalReason;
+	reason?: Removal.RemovalReason;
 }
 
 export interface DeleteDefinitionResult {
@@ -279,6 +278,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		// stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
+
+		// The removal-sequence owner (#1129): the vote-wipe→stamp ordering is the
+		// module's to enforce, not this service's to hand-wire.
+		const removalSeq: Removal.RemovalSequence = {run, batch, clearTarget: voteSvc.clearTarget};
 
 		// Recompute one slug's `term_record` row from its live `definition_record`
 		// slice. Convergent: the row is fully derived from definitions + title.
@@ -739,7 +742,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		// Remove → restore both flow through the ADR 0096 substrate: stamp the
 		// `Removed` triad (`Vote.clearTarget` wipes votes, karma KEPT), or clear it
 		// back to `Live`. The lifecycle is the projection of the three columns
-		// (`Lifecycle.fromColumns`); the term summary + sözlük stats are recomputable
+		// (`Removal.fromColumns`); the term summary + sözlük stats are recomputable
 		// caches refreshed outside the cleanup batch (ADR 0011).
 		const deleteDefinition = Effect.fn("Sozluk.deleteDefinition")(function* (
 			input: DeleteDefinitionInput,
@@ -761,7 +764,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					message: `not authorized to mutate definition ${input.definitionId}`,
 				});
 			}
-			if (Lifecycle.isRemoved(Lifecycle.fromColumns(definition))) {
+			if (Removal.isRemoved(Removal.fromColumns(definition))) {
 				return {
 					definitionId: input.definitionId,
 					deleted: false,
@@ -769,15 +772,19 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			}
 
 			const now = new Date();
-			const removed = Lifecycle.toColumns(
-				Lifecycle.remove({
+			const removed = Removal.toColumns(
+				Removal.remove({
 					removedAt: now,
 					removedBy: input.actorId,
-					reason: input.reason ?? new Lifecycle.AuthorDeletion(),
+					reason: input.reason ?? new Removal.AuthorDeletion(),
 				}),
 			);
-			yield* voteSvc.clearTarget("definition", input.definitionId);
-			yield* run((db) => Removal.removeDefinitionStatement(db, input.definitionId, removed, now));
+			yield* Removal.removeEntity(
+				removalSeq,
+				{kind: "definition", id: input.definitionId},
+				removed,
+				now,
+			);
 
 			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 			yield* recomputeSozlukStats(now);
@@ -806,16 +813,21 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					message: `not authorized to mutate definition ${input.definitionId}`,
 				});
 			}
-			const lifecycle = Lifecycle.fromColumns(definition);
-			if (!Lifecycle.isRemoved(lifecycle)) {
+			const lifecycle = Removal.fromColumns(definition);
+			if (!Removal.isRemoved(lifecycle)) {
 				return {definitionId: input.definitionId, deleted: false} satisfies DeleteDefinitionResult;
 			}
 
 			const now = new Date();
-			// `Lifecycle.restore : Removed → Live` clears the triad; votes wiped on
+			// `Removal.restore : Removed → Live` clears the triad; votes wiped on
 			// removal are NOT resurrected (ADR 0096 §4), so the score cache stays 0.
-			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) => Removal.restoreDefinitionStatement(db, input.definitionId, live, now));
+			const live = Removal.toColumns(Removal.restore(lifecycle));
+			yield* Removal.restoreEntity(
+				removalSeq,
+				{kind: "definition", id: input.definitionId},
+				live,
+				now,
+			);
 
 			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 			yield* recomputeSozlukStats(now);
@@ -828,20 +840,24 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				const definition = yield* run((db) =>
 					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
-				if (!definition || Lifecycle.isRemoved(Lifecycle.fromColumns(definition))) {
+				if (!definition || Removal.isRemoved(Removal.fromColumns(definition))) {
 					return {removed: false};
 				}
 
 				const now = new Date();
-				const removed = Lifecycle.toColumns(
-					Lifecycle.remove({
+				const removed = Removal.toColumns(
+					Removal.remove({
 						removedAt: now,
 						removedBy: input.resolverId,
-						reason: new Lifecycle.Moderated({reportId: input.reportId}),
+						reason: new Removal.Moderated({reportId: input.reportId}),
 					}),
 				);
-				yield* voteSvc.clearTarget("definition", input.definitionId);
-				yield* run((db) => Removal.removeDefinitionStatement(db, input.definitionId, removed, now));
+				yield* Removal.removeEntity(
+					removalSeq,
+					{kind: "definition", id: input.definitionId},
+					removed,
+					now,
+				);
 
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 				yield* recomputeSozlukStats(now);
@@ -856,12 +872,17 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					db.query.definitionRecord.findFirst({where: {id: input.definitionId}}),
 				);
 				if (!definition) return {restored: false};
-				const lifecycle = Lifecycle.fromColumns(definition);
-				if (!Lifecycle.isRemoved(lifecycle)) return {restored: false};
+				const lifecycle = Removal.fromColumns(definition);
+				if (!Removal.isRemoved(lifecycle)) return {restored: false};
 
 				const now = new Date();
-				const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-				yield* run((db) => Removal.restoreDefinitionStatement(db, input.definitionId, live, now));
+				const live = Removal.toColumns(Removal.restore(lifecycle));
+				yield* Removal.restoreEntity(
+					removalSeq,
+					{kind: "definition", id: input.definitionId},
+					live,
+					now,
+				);
 
 				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
 				yield* recomputeSozlukStats(now);
