@@ -95,6 +95,14 @@ export default defineConfig({
 					// (EPIPE on the inherited pipe).
 					fileParallelism: true,
 					disableConsoleIntercept: true,
+					// Cap concurrent fork count: ~24 files each deploy/destroy their own
+					// `it-*` stage against ONE shared, eventually-consistent CF account.
+					// Uncapped (os.cpus-1) parallelism turned CF's create/destroy registry
+					// lag into hard failures — WorkerNotFound(10007), "app referenced by
+					// Worker script", "no versions" — forcing per-PR re-runs (#1010). 4 is a
+					// reliability/wall-clock tradeoff, tunable; CI wall-clock is addressed
+					// separately by sharding (#684).
+					poolOptions: {forks: {maxForks: 4, minForks: 1}},
 					// Vitest 4 requires a distinct `sequence.groupOrder` per project;
 					// ordering integration before unit keeps the projects from interleaving.
 					sequence: {groupOrder: 0},
