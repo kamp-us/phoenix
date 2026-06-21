@@ -3,7 +3,7 @@
  * `/fate` route (ADR 0026–0031, ADR 0082).
  *
  * Drives the `savedPosts` keyset connection #676 adds: a `Bookmark`-driven page
- * over `post_summary`, `CurrentUser`-scoped, ordered by save time
+ * over `post_record`, `CurrentUser`-scoped, ordered by save time
  * (`post_bookmark.created_at DESC, post_id DESC`). Everything is observed over
  * HTTP — saves are made through `post.save`, the list is read back per viewer.
  * The keyset *predicate shape* + cursor-miss/envelope *decision* are pure and

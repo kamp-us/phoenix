@@ -17,7 +17,7 @@
  * Everything is observed over HTTP. Author identity comes from the session
  * (`h.signUp`), not explicit `authorId`/`authorName`, so submit input is
  * `{title, url?, body?, tags}`. Wire codes are the UPCASED pano sub-codes
- * (`title_required` → `TITLE_REQUIRED`). D1 row assertions (post_summary /
+ * (`title_required` → `TITLE_REQUIRED`). D1 row assertions (post_record /
  * comment_record columns, body_excerpt) are dropped; behavior is re-expressed by
  * re-resolving the entity over `/fate` (e.g. `commentCount` via `post(id)`).
  * Ownership uses two real users: the author creates, the intruder's cookie
@@ -585,7 +585,7 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 });
 
 // not portable black-box: pano-submit-post.test.ts D1 row-shape assertions
-// (post_summary columns, tags CSV, body_excerpt) and the (author_id, created_at)
+// (post_record columns, tags CSV, body_excerpt) and the (author_id, created_at)
 // index probe — re-expressed by re-resolving the Post over `/fate`.
 // not portable black-box: pano-add-comment.test.ts comment_record row assertions
 // (author_id, post_title, body_excerpt, parent_id, deleted_at) — re-expressed via

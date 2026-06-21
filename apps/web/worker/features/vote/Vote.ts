@@ -138,7 +138,7 @@ export const VoteLive = Layer.effect(Vote)(
 				}
 				case "post": {
 					const row = yield* run((db) =>
-						db.query.postSummary.findFirst({
+						db.query.postRecord.findFirst({
 							where: {id: targetId, removedAt: {isNull: true}},
 						}),
 					);
@@ -215,7 +215,7 @@ export const VoteLive = Layer.effect(Vote)(
 						return row?.score ?? 0;
 					}
 					case "post": {
-						const row = await db.query.postSummary.findFirst({
+						const row = await db.query.postRecord.findFirst({
 							where: {id: targetId},
 							columns: {score: true},
 						});
@@ -463,14 +463,14 @@ function buildScoreCacheStatement(
 		case "post": {
 			const multiplier = hotMultiplier(meta.createdAtMs, now.getTime());
 			return db
-				.update(schema.postSummary)
+				.update(schema.postRecord)
 				.set({
 					score: sql`(SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId})`,
 					hotScore: sql`CAST((SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId}) * ${multiplier} AS INTEGER)`,
 					updatedAt: now,
 					lastActivityAt: now,
 				})
-				.where(eq(schema.postSummary.id, targetId));
+				.where(eq(schema.postRecord.id, targetId));
 		}
 		case "comment":
 			return db

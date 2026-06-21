@@ -42,7 +42,7 @@ test.describe("Pano submitPost", () => {
 
 		// PanoPostDetail renders the new post via the `post(idOrSlug)` query
 		// resolver, which reads the row the `post.submit` mutation persisted to
-		// D1 (`post_summary`) — pano has no per-post DO.
+		// D1 (`post_record`) — pano has no per-post DO.
 		await expect(page.getByRole("heading", {level: 1})).toContainText(title, {timeout: 10_000});
 	});
 

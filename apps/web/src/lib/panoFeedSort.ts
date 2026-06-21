@@ -12,7 +12,7 @@
  *
  * Each sort orders by an optional lead column (always descending) plus an `id`
  * desc tiebreaker; `new` has no lead column (`id` alone). The lead column key
- * names a `post_summary` column shared by the cursor row and the Drizzle table,
+ * names a `post_record` column shared by the cursor row and the Drizzle table,
  * so the service resolves the actual column/cursor-value from this one key —
  * this module stays DB-free so both bundles can import it.
  */
@@ -26,7 +26,7 @@ export type PostSort = (typeof POST_SORTS)[number];
 export const DEFAULT_POST_SORT: PostSort = "hot";
 
 /**
- * Each sort's lead ordering column — a `post_summary` column name shared by the
+ * Each sort's lead ordering column — a `post_record` column name shared by the
  * cursor row and the Drizzle table, or `null` for `new` (ordered by `id` alone).
  * Exhaustive over `PostSort`, so adding a sort without a lead column is a compile
  * error. The service derives BOTH its keyset cursor predicate and its `orderBy`

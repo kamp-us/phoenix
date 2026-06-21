@@ -59,7 +59,7 @@ export class Bookmark extends Context.Service<
 		/**
 		 * Keyset page of the viewer's saved post ids, ordered by save time
 		 * (`post_bookmark.created_at DESC, post_id DESC`) over the
-		 * `(user_id, created_at DESC)` index (#127). Inner-joins `post_summary` so
+		 * `(user_id, created_at DESC)` index (#127). Inner-joins `post_record` so
 		 * a soft-deleted post never appears. Missing viewer → empty page, no read.
 		 */
 		readonly listSavedConnection: (
@@ -133,14 +133,14 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 
 			const baseWhere = and(
 				eq(schema.postBookmark.userId, viewerId),
-				isNull(schema.postSummary.removedAt),
+				isNull(schema.postRecord.removedAt),
 			);
 
 			const fetched = yield* run((db) =>
 				db
 					.select({postId: schema.postBookmark.postId})
 					.from(schema.postBookmark)
-					.innerJoin(schema.postSummary, eq(schema.postSummary.id, schema.postBookmark.postId))
+					.innerJoin(schema.postRecord, eq(schema.postRecord.id, schema.postBookmark.postId))
 					.where(cursorPredicate ? and(baseWhere, cursorPredicate) : baseWhere)
 					.orderBy(desc(schema.postBookmark.createdAt), desc(schema.postBookmark.postId))
 					.limit(first + 1),
@@ -160,7 +160,7 @@ export const BookmarkLive = Layer.effect(Bookmark)(
 			listSavedConnection,
 			toggle: Effect.fn("Bookmark.toggle")(function* (input: BookmarkToggleInput) {
 				const post = yield* run((db) =>
-					db.query.postSummary.findFirst({
+					db.query.postRecord.findFirst({
 						where: {id: input.postId, removedAt: {isNull: true}},
 						columns: {id: true},
 					}),

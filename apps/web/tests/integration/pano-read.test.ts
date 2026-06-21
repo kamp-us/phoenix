@@ -20,7 +20,7 @@
  * pagination:{hasNext, hasPrevious:false, nextCursor?}}`), so the old `totalCount`
  * assertions are dropped and "every row once" is re-expressed by walking
  * `nextCursor` and asserting the union of node ids has the expected size, no dupes.
- * D1 row-shape assertions (post_summary / comment_record columns, body_excerpt,
+ * D1 row-shape assertions (post_record / comment_record columns, body_excerpt,
  * the (author_id, created_at) index probe) are not black-box and are dropped;
  * behavior is re-expressed by re-resolving entities over `/fate`.
  *
@@ -453,5 +453,5 @@ describe("posts connection — keyset walk", () => {
 // the connection envelope has no `totalCount`; "every row once" is re-expressed
 // above by walking `nextCursor` and asserting the union of ids (size 5, no dupes).
 // not portable black-box: pano-submit-post.test.ts D1 row-shape assertions
-// (post_summary columns, body_excerpt, tags CSV) and the (author_id, created_at)
+// (post_record columns, body_excerpt, tags CSV) and the (author_id, created_at)
 // index probe — re-expressed by re-resolving the Post over `/fate`.

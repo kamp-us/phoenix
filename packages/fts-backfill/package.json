@@ -2,7 +2,7 @@
 	"name": "@kampus/fts-backfill",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Direct-D1 one-time backfill CLI — re-index existing term_summary / post_summary rows into the FTS5 term_search / post_search tables through the ADR-0080 dual-write sync path (issue #534)",
+	"description": "Direct-D1 one-time backfill CLI — re-index existing term_record / post_record rows into the FTS5 term_search / post_search tables through the ADR-0080 dual-write sync path (issue #534)",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"

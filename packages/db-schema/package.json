@@ -2,7 +2,7 @@
 	"name": "@kampus/db-schema",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Single canonical Drizzle declaration of the shared D1 tables (term_summary / definition_record / post_summary / comment_record) — the one source the worker, preview-seed, and fts-backfill all import so a column rename is one edit (issue #859)",
+	"description": "Single canonical Drizzle declaration of the shared D1 tables (term_record / definition_record / post_record / comment_record) — the one source the worker, preview-seed, and fts-backfill all import so a column rename is one edit (issue #859)",
 	"type": "module",
 	"exports": {
 		".": "./src/index.ts"

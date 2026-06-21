@@ -28,7 +28,7 @@ import {
 	SEED_POST_ID,
 	SEED_TERM_SLUG,
 } from "../../src/fixtures.ts";
-import {definitionRecord, postSummary, termSummary} from "../../src/schema.ts";
+import {definitionRecord, postRecord, termRecord} from "../../src/schema.ts";
 import {makeSeedDb, type SeedReport, seed} from "../../src/seed.ts";
 import {seedD1} from "./_d1.ts";
 
@@ -57,7 +57,7 @@ const matchTermSlugs = async (
 describe("seed — writes the rows the unauth specs read (real D1)", () => {
 	it("/sozluk lists the seeded term row", async () => {
 		const db = makeSeedDb(h.seedDb());
-		const terms = await db.select().from(termSummary);
+		const terms = await db.select().from(termRecord);
 		expect(terms.length).toBeGreaterThanOrEqual(1);
 		expect(terms.some((t) => t.slug === SEED_TERM_SLUG && t.title.length > 0)).toBe(true);
 	});
@@ -81,9 +81,9 @@ describe("seed — writes the rows the unauth specs read (real D1)", () => {
 
 	it("/pano lists the seeded post; it is addressable by id (the permalink target)", async () => {
 		const db = makeSeedDb(h.seedDb());
-		const live = await db.select().from(postSummary).where(isNull(postSummary.removedAt));
+		const live = await db.select().from(postRecord).where(isNull(postRecord.removedAt));
 		expect(live.length).toBeGreaterThanOrEqual(1);
-		const byId = await db.select().from(postSummary).where(eq(postSummary.id, SEED_POST_ID));
+		const byId = await db.select().from(postRecord).where(eq(postRecord.id, SEED_POST_ID));
 		expect(byId.length).toBe(1);
 		expect((byId[0]?.title.length ?? 0) > 0).toBe(true);
 	});
@@ -128,9 +128,9 @@ describe("seed — idempotency on real D1 (safely re-runnable)", () => {
 		// Re-run wrote no extra rows: each count still equals the fixture set the first
 		// run reported.
 		const db = makeSeedDb(h.seedDb());
-		const termRows = await db.select().from(termSummary);
+		const termRows = await db.select().from(termRecord);
 		const defRows = await db.select().from(definitionRecord);
-		const postRows = await db.select().from(postSummary);
+		const postRows = await db.select().from(postRecord);
 		expect(termRows.length).toBe(report.terms);
 		expect(defRows.length).toBe(report.definitions);
 		expect(postRows.length).toBe(report.posts);

@@ -560,7 +560,7 @@ describe("sozluk mutations — seed idempotency / emptying a term", () => {
 	// The old admin `clear` route is gone (it was a fail-open security hole). The
 	// public surface has no term-wipe, so the equivalent observable behavior is:
 	// soft-deleting every definition empties the term — `count` → 0 and the
-	// `definitions` connection is empty. (The `term_summary` row persists, so the
+	// `definitions` connection is empty. (The `term_record` row persists, so the
 	// term still resolves; it just has no live definitions.)
 	it("deleting the term's only definition empties it (count 0, no definitions)", async () => {
 		const slug = `${NS}-transient`;

@@ -1,7 +1,7 @@
 /**
  * `fts-backfill run` — the one-time, direct-D1 FTS backfill for issue #534.
  *
- * Re-indexes every existing `term_summary` / `post_summary` row into the FTS5
+ * Re-indexes every existing `term_record` / `post_record` row into the FTS5
  * `term_search` / `post_search` tables through the worker's own ADR-0080 sync
  * builders, so search works for content written before the dual-write existed.
  * This is the direct-D1 script CLAUDE.md's "Sözlük seed" mandates — NOT a worker

@@ -2,8 +2,8 @@
  * The fixture content the unauthenticated read e2e specs sample — a pure,
  * deterministic description of the rows the seed writes. No I/O, no DB: this is
  * the unit-testable core. `buildFixtures` returns typed insert values shaped to
- * the three read-model tables (`term_summary`, `definition_record`,
- * `post_summary`); `seed.ts` turns them into idempotent upserts.
+ * the three read-model tables (`term_record`, `definition_record`,
+ * `post_record`); `seed.ts` turns them into idempotent upserts.
  *
  * What each row satisfies (the specs in apps/web/tests/e2e):
  *   - term + ≥1 definition → 00-smoke, 07-sozluk-term: a `.kp-sozluk-term-row`
@@ -21,9 +21,9 @@
  */
 import type {seedSchema} from "./schema.ts";
 
-type TermSummaryInsert = typeof seedSchema.termSummary.$inferInsert;
+type TermSummaryInsert = typeof seedSchema.termRecord.$inferInsert;
 type DefinitionRecordInsert = typeof seedSchema.definitionRecord.$inferInsert;
-type PostSummaryInsert = typeof seedSchema.postSummary.$inferInsert;
+type PostSummaryInsert = typeof seedSchema.postRecord.$inferInsert;
 
 export interface Fixtures {
 	readonly terms: ReadonlyArray<TermSummaryInsert>;

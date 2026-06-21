@@ -10,7 +10,7 @@
  */
 import {getTableConfig} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
-import {commentRecord, definitionRecord, postSummary, termSummary} from "./index.ts";
+import {commentRecord, definitionRecord, postRecord, termRecord} from "./index.ts";
 
 const columnNames = (table: Parameters<typeof getTableConfig>[0]) =>
 	getTableConfig(table)
@@ -18,8 +18,8 @@ const columnNames = (table: Parameters<typeof getTableConfig>[0]) =>
 		.sort();
 
 describe("shared read-model schema", () => {
-	it("term_summary column set", () => {
-		expect(columnNames(termSummary)).toEqual(
+	it("term_record column set", () => {
+		expect(columnNames(termRecord)).toEqual(
 			[
 				"slug",
 				"title",
@@ -59,8 +59,8 @@ describe("shared read-model schema", () => {
 		expect(cols).toContain("removed_at");
 	});
 
-	it("post_summary column set carries is_draft (ADR 0093) and the removed_at triad", () => {
-		const cols = columnNames(postSummary);
+	it("post_record column set carries is_draft (ADR 0093) and the removed_at triad", () => {
+		const cols = columnNames(postRecord);
 		expect(cols).toEqual(
 			[
 				"id",

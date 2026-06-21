@@ -22,11 +22,11 @@ import {drizzle} from "drizzle-orm/d1";
 import {buildFixtures} from "./fixtures.ts";
 import {
 	definitionRecord,
+	postRecord,
 	postSearch,
-	postSummary,
 	seedSchema,
+	termRecord,
 	termSearch,
-	termSummary,
 } from "./schema.ts";
 
 export type SeedDb = ReturnType<typeof drizzle<typeof seedSchema>>;
@@ -54,7 +54,7 @@ export const buildSeedStatements = (db: SeedDb, now?: Date) => {
 	const {terms, definitions, posts} = buildFixtures(now);
 
 	const termStmts = terms.map((row) =>
-		db.insert(termSummary).values(row).onConflictDoUpdate({target: termSummary.slug, set: row}),
+		db.insert(termRecord).values(row).onConflictDoUpdate({target: termRecord.slug, set: row}),
 	);
 	const defStmts = definitions.map((row) =>
 		db
@@ -63,7 +63,7 @@ export const buildSeedStatements = (db: SeedDb, now?: Date) => {
 			.onConflictDoUpdate({target: definitionRecord.id, set: row}),
 	);
 	const postStmts = posts.map((row) =>
-		db.insert(postSummary).values(row).onConflictDoUpdate({target: postSummary.id, set: row}),
+		db.insert(postRecord).values(row).onConflictDoUpdate({target: postRecord.id, set: row}),
 	);
 
 	// FTS dual-write (ADR 0080): index each seeded title into term_search / post_search

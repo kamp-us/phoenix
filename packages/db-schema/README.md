@@ -1,7 +1,7 @@
 # @kampus/db-schema
 
 The single canonical Drizzle declaration of the D1 **read-model tables that more than one
-package reads**: `term_summary`, `definition_record`, `post_summary`, `comment_record`.
+package reads**: `term_record`, `definition_record`, `post_record`, `comment_record`.
 
 ## Why this package exists
 
@@ -43,9 +43,9 @@ set and indexes.
 
 ## Consumers
 
-- `apps/web/worker/db/drizzle/schema.ts` — re-exports `termSummary` / `definitionRecord` /
-  `postSummary` / `commentRecord` from here, keeps the worker-only tables local. The 15 worker
+- `apps/web/worker/db/drizzle/schema.ts` — re-exports `termRecord` / `definitionRecord` /
+  `postRecord` / `commentRecord` from here, keeps the worker-only tables local. The 15 worker
   import sites still import from `db/drizzle/schema` unchanged.
 - `packages/preview-seed/src/schema.ts` — re-exports these four, adds its local FTS-table models.
-- `packages/fts-backfill/src/schema.ts` — re-exports `termSummary` / `postSummary` (it reads only
+- `packages/fts-backfill/src/schema.ts` — re-exports `termRecord` / `postRecord` (it reads only
   a projection of their columns).

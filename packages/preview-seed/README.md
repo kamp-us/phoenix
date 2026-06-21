@@ -17,9 +17,9 @@ not an ad-hoc script.
 
 | Table             | Rows | Satisfies                                                              |
 | ----------------- | ---- | --------------------------------------------------------------------- |
-| `term_summary`    | 1    | `/sozluk` lists a `.kp-sozluk-term-row`; `/sozluk/<slug>` resolves     |
+| `term_record`    | 1    | `/sozluk` lists a `.kp-sozluk-term-row`; `/sozluk/<slug>` resolves     |
 | `definition_record` | 2    | term page renders `.kp-sozluk-definition` cards; top one gets `--top` |
-| `post_summary`    | 1    | `/pano` lists a `.kp-pano-post`; `/pano/<id>` permalink renders        |
+| `post_record`    | 1    | `/pano` lists a `.kp-pano-post`; `/pano/<id>` permalink renders        |
 
 The fixture identity is fixed (stable slugs/ids in `fixtures.ts`), so the seed is
 **idempotent** — every write is an `onConflictDoUpdate` keyed on the primary key,

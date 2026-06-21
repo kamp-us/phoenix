@@ -1,6 +1,6 @@
 /**
- * The FTS backfill core (issue #534): re-index the existing `term_summary` /
- * `post_summary` rows into the FTS5 `term_search` / `post_search` tables by
+ * The FTS backfill core (issue #534): re-index the existing `term_record` /
+ * `post_record` rows into the FTS5 `term_search` / `post_search` tables by
  * replaying the ADR-0080 dual-write sync over every source row.
  *
  * Root cause it fixes: the FTS tables are populated ONLY by the application
@@ -26,7 +26,7 @@ import type {FtsSyncDb, Stmt} from "@kampus/web/db/Drizzle";
 import {syncPostSearch, syncTermSearch} from "@kampus/web/features/search/fts-sync";
 import {isNull} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
-import {backfillSchema, postSummary, termSummary} from "./schema.ts";
+import {backfillSchema, postRecord, termRecord} from "./schema.ts";
 
 export type BackfillDb = ReturnType<typeof drizzle<typeof backfillSchema>>;
 
@@ -73,12 +73,12 @@ export const backfill = async (d1: D1Database): Promise<BackfillReport> => {
 	const db = makeBackfillDb(d1);
 
 	const termRows = await db
-		.select({key: termSummary.slug, title: termSummary.title})
-		.from(termSummary);
+		.select({key: termRecord.slug, title: termRecord.title})
+		.from(termRecord);
 	const postRows = await db
-		.select({key: postSummary.id, title: postSummary.title})
-		.from(postSummary)
-		.where(isNull(postSummary.removedAt));
+		.select({key: postRecord.id, title: postRecord.title})
+		.from(postRecord)
+		.where(isNull(postRecord.removedAt));
 
 	const {statements, report} = buildBackfillStatements(db, termRows, postRows);
 

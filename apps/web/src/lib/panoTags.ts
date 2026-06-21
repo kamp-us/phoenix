@@ -9,13 +9,13 @@
  * drift is a type error, not a silent ship — mirroring `src/flags/keys.ts` and
  * `src/lib/fateWireCodes.ts`.
  *
- * Tags are stored verbatim (the Turkish kind) on `post_summary.tags` as a CSV;
+ * Tags are stored verbatim (the Turkish kind) on `post_record.tags` as a CSV;
  * this module changes nothing about that wire/stored shape. The English aliases
  * (`show`/`discuss`/…) are normalization-only: a legacy seed value maps to its
  * Turkish kind for display, and each kind's CSS modifier is its English alias.
  */
 
-/** The closed set of post-tag kinds, stored verbatim on `post_summary.tags`. */
+/** The closed set of post-tag kinds, stored verbatim on `post_record.tags`. */
 export const POST_TAG_KINDS = ["göster", "tartışma", "soru", "söylenme", "meta"] as const;
 
 /** A typed post-tag kind — the resolved, in-enum value (not untyped text). */

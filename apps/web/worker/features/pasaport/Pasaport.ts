@@ -278,7 +278,7 @@ export const makePasaportLive = (auth: Auth) =>
 			const countByAuthor = (
 				table:
 					| typeof schema.definitionRecord
-					| typeof schema.postSummary
+					| typeof schema.postRecord
 					| typeof schema.commentRecord,
 				authorId: string,
 			): Effect.Effect<number> =>
@@ -325,7 +325,7 @@ export const makePasaportLive = (auth: Auth) =>
 			}) {
 				const authorId = row.userId;
 				const defCount = yield* countByAuthor(schema.definitionRecord, authorId);
-				const postCount = yield* countByAuthor(schema.postSummary, authorId);
+				const postCount = yield* countByAuthor(schema.postRecord, authorId);
 				const commentCount = yield* countByAuthor(schema.commentRecord, authorId);
 
 				return {
@@ -503,7 +503,7 @@ export const makePasaportLive = (auth: Auth) =>
 					function keysetWhere(
 						table:
 							| typeof schema.definitionRecord
-							| typeof schema.postSummary
+							| typeof schema.postRecord
 							| typeof schema.commentRecord,
 					) {
 						const base = and(eq(table.authorId, input.authorId), isNull(table.removedAt));
@@ -533,16 +533,16 @@ export const makePasaportLive = (auth: Auth) =>
 					const posts = yield* run((db) =>
 						db
 							.select({
-								id: schema.postSummary.id,
-								slug: schema.postSummary.slug,
-								createdAt: schema.postSummary.createdAt,
-								score: schema.postSummary.score,
-								title: schema.postSummary.title,
-								bodyExcerpt: schema.postSummary.bodyExcerpt,
+								id: schema.postRecord.id,
+								slug: schema.postRecord.slug,
+								createdAt: schema.postRecord.createdAt,
+								score: schema.postRecord.score,
+								title: schema.postRecord.title,
+								bodyExcerpt: schema.postRecord.bodyExcerpt,
 							})
-							.from(schema.postSummary)
-							.where(keysetWhere(schema.postSummary))
-							.orderBy(desc(schema.postSummary.createdAt), desc(schema.postSummary.id))
+							.from(schema.postRecord)
+							.where(keysetWhere(schema.postRecord))
+							.orderBy(desc(schema.postRecord.createdAt), desc(schema.postRecord.id))
 							.limit(fetchSize),
 					);
 
@@ -563,7 +563,7 @@ export const makePasaportLive = (auth: Auth) =>
 					);
 
 					const defTotal = yield* countByAuthor(schema.definitionRecord, input.authorId);
-					const postTotal = yield* countByAuthor(schema.postSummary, input.authorId);
+					const postTotal = yield* countByAuthor(schema.postRecord, input.authorId);
 					const commentTotal = yield* countByAuthor(schema.commentRecord, input.authorId);
 					const totalCount = defTotal + postTotal + commentTotal;
 
@@ -649,7 +649,7 @@ export const makePasaportLive = (auth: Auth) =>
 
 /**
  * The atomic teardown of one account (ADR 0097 §2). In order:
- *  1–3. Re-attribute the user's content (`definition_record` / `post_summary` /
+ *  1–3. Re-attribute the user's content (`definition_record` / `post_record` /
  *       `comment_record`): `author_id := silinen`, denormalized `author_name`
  *       overwritten. Content stays Live (`removed_at` untouched) — this is
  *       re-attribution, not removal — so its votes/scores and the karma they
@@ -672,9 +672,9 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 		.where(eq(schema.definitionRecord.authorId, userId));
 
 	const reattributePosts = db
-		.update(schema.postSummary)
+		.update(schema.postRecord)
 		.set({authorId: SILINEN_USER_ID, authorName: SILINEN_DISPLAY_NAME, updatedAt: now})
-		.where(eq(schema.postSummary.authorId, userId));
+		.where(eq(schema.postRecord.authorId, userId));
 
 	const reattributeComments = db
 		.update(schema.commentRecord)
