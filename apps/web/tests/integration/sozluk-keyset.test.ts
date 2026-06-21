@@ -22,15 +22,23 @@
  * by slug-asc. The assertions then check the engine honored `(last_activity_at desc,
  * slug asc)` over those injected seconds. No `touchTerm`/`sleep` race remains: against
  * real remote D1 the prior "two adjacent touches share a second" assumption lost on
- * round-trip latency and reddened unrelated PRs (#643). Per-file isolated stage owns
- * its own D1, so files run in parallel; slugs are still process-stamped so a
- * `NO_DESTROY` re-run never collides with a prior run's rows.
+ * round-trip latency and reddened unrelated PRs (#643).
+ *
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file: every slug/email is prefixed with `NS` (this file's
+ * deterministic `nsToken`). Each keyset assertion walks the GLOBAL `terms` connection but
+ * `.startsWith(<NS-prefix>)`-filters to THIS file's rows BEFORE asserting order, so another
+ * file's terms can never interleave into the asserted sequence. The three fixture prefixes
+ * (`P`/`R`/`DEFS_SLUG`) are mutually disjoint by the first char after `${NS}-` (`p`/`r`/`d`),
+ * so a `.startsWith` for one never matches another's rows.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
+const NS = nsToken(import.meta.url);
 const STAMP = Date.now();
 
 interface TermNode {
@@ -55,7 +63,7 @@ type Connection<N> = {
 // the only thing ordering them — the vertical the real engine must execute.
 // Distinct totals elsewhere pin the primary desc ordering. Scores are realized
 // by distinct up-votes, so total_score == sum of definition scores.
-const P = `kx${STAMP}p`; // popular-fixture slug prefix (kept short — slugs sort lexicographically)
+const P = `${NS}-p`; // popular-fixture slug prefix (slugs sort lexicographically within it)
 const POP: Array<[slug: string, score: number]> = [
 	[`${P}a`, 5],
 	[`${P}b`, 4],
@@ -70,7 +78,7 @@ const POP: Array<[slug: string, score: number]> = [
 // tie-breaks need a direct INSERT the seam can't do — those columns' EXECUTION is
 // exercised by distinct-score ordering here; the tie-break BRANCH is the pure
 // `keysetAfter` shape, unit-tested).
-const DEFS_SLUG = `kx${STAMP}defs`;
+const DEFS_SLUG = `${NS}-defs`;
 
 // `terms(recent)` keyset is `(last_activity_at desc, slug asc)`. `last_activity_at`
 // is server-stamped (`recomputeTermSummary` writes `floor(now/1000)`) and never
@@ -82,7 +90,7 @@ const DEFS_SLUG = `kx${STAMP}defs`;
 // `last_activity_at` to an EXACT whole-second epoch directly (`h.setLastActivityAt`):
 // the activity order is CONSTRUCTED, the 2/3 tie is an identical injected second, and
 // nothing depends on wall-clock alignment.
-const R = `kr${STAMP}`; // recent-fixture slug prefix
+const R = `${NS}-r`; // recent-fixture slug prefix
 const REC_SLUGS = [`${R}1`, `${R}2`, `${R}3`, `${R}4`] as const;
 
 // Fixed activity seconds: 4 newest, 2 == 3 (the injected tie slug-asc must order), 1
@@ -321,8 +329,10 @@ describe("sözlük read-row shaping + denormalized counters — real D1", () => 
 
 describe("sözlük write→read re-resolve — real D1", () => {
 	it("definition.add increments the count and the new row re-resolves on the term page", async () => {
-		const slug = `kx${STAMP}rt`;
-		const author = await h.signUp(`kx-${STAMP}-rt@seed.local`, "seedpass-seedpass", "writer");
+		// `-w` keeps this slug disjoint from the `-p`/`-r`/`-defs` fixture prefixes, so it
+		// can never satisfy a `.startsWith` filter and leak into a keyset-order assertion.
+		const slug = `${NS}-wrt`;
+		const author = await h.signUp(`${NS}-wrt@seed.local`, "seedpass-seedpass", "writer");
 
 		// `definition.add` is identity-bearing and not auto-retried; it runs under
 		// the author's session cookie.

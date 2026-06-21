@@ -22,8 +22,11 @@
  * CODE (`error.code`), never the Turkish message text — the message may carry
  * TR text but the stable contract is the code.
  *
- * D1 is shared (one deploy) — every email/username/slug is uniquely prefixed
- * (`pasa-${STAMP}-…`); usernames stay within the 3–30 lowercase `[a-z0-9-]` rule.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
+ * is shared across every migrated file — every email/username/slug is prefixed with `NS`
+ * (this file's deterministic `nsToken`); usernames stay within the 3–30 lowercase
+ * `[a-z0-9-]` rule, and every assertion (karma is read per-author off the file's own
+ * NS-username) scopes to its own rows.
  *
  * not portable black-box: `pasaport-username.test.ts` `user_profile` row
  * read-backs and the Turkish validation message regexes (`/en az 3/`,
@@ -43,14 +46,15 @@
  * a persisted username) stay here on real D1.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now().toString(36);
+const NS = nsToken(import.meta.url);
 let counter = 0;
 /** A unique 3–30 char lowercase `[a-z0-9-]` username for this suite. */
-const uname = (label: string) => `pasa-${STAMP}-${label}-${counter++}`;
+const uname = (label: string) => `${NS}-${label}-${counter++}`;
 
 interface UserNode {
 	__typename: string;
@@ -120,14 +124,14 @@ async function setUsername(cookie: string, value: string): Promise<UserNode> {
 
 describe("pasaport — user.setUsername / me", () => {
 	it("user.setUsername writes and returns the re-resolved User; me reflects it", async () => {
-		const user = await h.signUp(`pasa-${STAMP}-setname@test.local`, "hunter2hunter2", "Set Name");
+		const user = await h.signUp(`${NS}-setname@test.local`, "hunter2hunter2", "Set Name");
 		const value = uname("setname");
 
 		const out = await setUsername(user.cookie, value);
 		expect(out.__typename).toBe("User");
 		expect(out.id).toBe(user.userId);
 		expect(out.username).toBe(value);
-		expect(out.email).toBe(`pasa-${STAMP}-setname@test.local`);
+		expect(out.email).toBe(`${NS}-setname@test.local`);
 		expect(out.name).toBe("Set Name");
 
 		// `me` (with cookie) now reflects the freshly-set username.
@@ -149,10 +153,10 @@ describe("pasaport — user.setUsername / me", () => {
 
 	it("a taken username surfaces TAKEN", async () => {
 		const value = uname("taken");
-		const owner = await h.signUp(`pasa-${STAMP}-owner@test.local`, "hunter2hunter2", "Owner");
+		const owner = await h.signUp(`${NS}-owner@test.local`, "hunter2hunter2", "Owner");
 		await setUsername(owner.cookie, value);
 
-		const other = await h.signUp(`pasa-${STAMP}-other@test.local`, "hunter2hunter2", "Other");
+		const other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "Other");
 		const result = await h.fate(
 			{kind: "mutation", name: "user.setUsername", input: {value}, select: ["id"]},
 			{cookie: other.cookie},
@@ -163,7 +167,7 @@ describe("pasaport — user.setUsername / me", () => {
 	});
 
 	it("setting a username twice surfaces ALREADY_SET", async () => {
-		const user = await h.signUp(`pasa-${STAMP}-twice@test.local`, "hunter2hunter2", "Twice");
+		const user = await h.signUp(`${NS}-twice@test.local`, "hunter2hunter2", "Twice");
 		await setUsername(user.cookie, uname("twice"));
 
 		const result = await h.fate(
@@ -205,11 +209,7 @@ describe("pasaport — profile reads", () => {
 	let userId = "";
 
 	beforeAll(async () => {
-		const user = await h.signUp(
-			`pasa-${STAMP}-profile@test.local`,
-			"hunter2hunter2",
-			"Fate Profile",
-		);
+		const user = await h.signUp(`${NS}-profile@test.local`, "hunter2hunter2", "Fate Profile");
 		userId = user.userId;
 		await setUsername(user.cookie, username);
 
@@ -219,7 +219,7 @@ describe("pasaport — profile reads", () => {
 				kind: "mutation",
 				name: "definition.add",
 				input: {
-					termSlug: `pasa-${STAMP}-profile-term`,
+					termSlug: `${NS}-profile-term`,
 					termTitle: "Profile Term",
 					body: "a seeded definition for the profile feed",
 				},
@@ -234,7 +234,7 @@ describe("pasaport — profile reads", () => {
 				kind: "mutation",
 				name: "post.submit",
 				input: {
-					title: `pasa-${STAMP} profile post`,
+					title: `${NS} profile post`,
 					url: "https://example.com/pasa-profile",
 					body: "a seeded post",
 					tags: [{kind: "tartışma"}],
@@ -281,7 +281,7 @@ describe("pasaport — profile reads", () => {
 		const result = await h.fate({
 			kind: "query",
 			name: "profile",
-			args: {username: `no-such-user-${STAMP}`},
+			args: {username: `no-such-user-${NS}`},
 			select: ["userId"],
 		});
 		expect(result.ok).toBe(true);
@@ -323,11 +323,7 @@ describe("pasaport — profile reads", () => {
 		// property in `db/Drizzle.test.ts`, tracked for real-D1 migration under #582
 		// (see #614; #581 AC3).
 		const authorUsername = uname("karma");
-		const author = await h.signUp(
-			`pasa-${STAMP}-karma@test.local`,
-			"hunter2hunter2",
-			"Karma Author",
-		);
+		const author = await h.signUp(`${NS}-karma@test.local`, "hunter2hunter2", "Karma Author");
 		await setUsername(author.cookie, authorUsername);
 
 		// The author writes a definition; a distinct voter will up-vote it.
@@ -336,7 +332,7 @@ describe("pasaport — profile reads", () => {
 				kind: "mutation",
 				name: "definition.add",
 				input: {
-					termSlug: `pasa-${STAMP}-karma-term`,
+					termSlug: `${NS}-karma-term`,
 					termTitle: "Karma Term",
 					body: "a definition whose votes feed the author's karma",
 				},
@@ -363,7 +359,7 @@ describe("pasaport — profile reads", () => {
 		// Baseline: a freshly-seeded author has zero karma.
 		expect(await karmaOf()).toBe(0);
 
-		const voter = await h.signUp(`pasa-${STAMP}-voter@test.local`, "hunter2hunter2", "Voter");
+		const voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "Voter");
 		const vote = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
 			{cookie: voter.cookie},

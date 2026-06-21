@@ -11,17 +11,20 @@
  *     §3, the pano karma-reversal deleted). The score *cache* drops to 0 (votes
  *     wiped by `Vote.clearTarget`), but the author's karma credential is stable.
  *
- * Everything is observed over HTTP; every email/slug/username is `rm-${STAMP}-…`
- * prefixed for this file's isolated stage.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file: every email/slug/username is prefixed with `NS` (this
+ * file's deterministic `nsToken`) and karma is asserted per-author off the file's own
+ * NS-username, so its rows are uniquely its own.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now().toString(36);
+const NS = nsToken(import.meta.url);
 let counter = 0;
-const uname = (label: string) => `rm-${STAMP}-${label}-${counter++}`;
+const uname = (label: string) => `${NS}-${label}-${counter++}`;
 
 interface ProfileNode {
 	totalKarma: number;
@@ -48,10 +51,10 @@ beforeAll(() => {
 describe("removal substrate — definition remove → restore, karma kept", () => {
 	it("a removed definition leaves the term and restores; the author's karma is unchanged", async () => {
 		const authorUsername = uname("def");
-		const author = await h.signUp(`rm-${STAMP}-def@test.local`, "hunter2hunter2", "Def Author");
+		const author = await h.signUp(`${NS}-def@test.local`, "hunter2hunter2", "Def Author");
 		await setUsername(author.cookie, authorUsername);
 
-		const termSlug = `rm-${STAMP}-def-term`;
+		const termSlug = `${NS}-def-term`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -78,7 +81,7 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 		};
 
 		// A distinct voter up-votes the definition → author karma 1.
-		const voter = await h.signUp(`rm-${STAMP}-def-v@test.local`, "hunter2hunter2", "Voter");
+		const voter = await h.signUp(`${NS}-def-v@test.local`, "hunter2hunter2", "Voter");
 		const vote = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
 			{cookie: voter.cookie},
@@ -145,7 +148,7 @@ describe("removal substrate — definition remove → restore, karma kept", () =
 describe("removal substrate — post remove → restore, karma kept", () => {
 	it("a removed post disappears and restores; the author's karma is unchanged", async () => {
 		const authorUsername = uname("post");
-		const author = await h.signUp(`rm-${STAMP}-post@test.local`, "hunter2hunter2", "Post Author");
+		const author = await h.signUp(`${NS}-post@test.local`, "hunter2hunter2", "Post Author");
 		await setUsername(author.cookie, authorUsername);
 
 		const submitted = await h.fate(
@@ -153,8 +156,8 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 				kind: "mutation",
 				name: "post.submit",
 				input: {
-					title: `rm-${STAMP} post to remove`,
-					url: `https://example.com/rm-${STAMP}`,
+					title: `${NS} post to remove`,
+					url: `https://example.com/${NS}`,
 					tags: [{kind: "tartışma"}],
 				},
 				select: ["id"],
@@ -176,7 +179,7 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 			return (res.data as ProfileNode).totalKarma;
 		};
 
-		const voter = await h.signUp(`rm-${STAMP}-post-v@test.local`, "hunter2hunter2", "Voter");
+		const voter = await h.signUp(`${NS}-post-v@test.local`, "hunter2hunter2", "Voter");
 		const vote = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id: postId}, select: ["score"]},
 			{cookie: voter.cookie},
@@ -229,7 +232,7 @@ describe("removal substrate — post remove → restore, karma kept", () => {
 describe("removal substrate — comment remove → restore, karma kept", () => {
 	it("a removed comment tombstones and restores; the author's karma is unchanged", async () => {
 		const authorUsername = uname("cmt");
-		const author = await h.signUp(`rm-${STAMP}-cmt@test.local`, "hunter2hunter2", "Cmt Author");
+		const author = await h.signUp(`${NS}-cmt@test.local`, "hunter2hunter2", "Cmt Author");
 		await setUsername(author.cookie, authorUsername);
 
 		// A post to hang the comment on.
@@ -238,8 +241,8 @@ describe("removal substrate — comment remove → restore, karma kept", () => {
 				kind: "mutation",
 				name: "post.submit",
 				input: {
-					title: `rm-${STAMP} comment host`,
-					url: `https://example.com/rm-${STAMP}-host`,
+					title: `${NS} comment host`,
+					url: `https://example.com/${NS}-host`,
 					tags: [{kind: "tartışma"}],
 				},
 				select: ["id"],
@@ -274,7 +277,7 @@ describe("removal substrate — comment remove → restore, karma kept", () => {
 			return (res.data as ProfileNode).totalKarma;
 		};
 
-		const voter = await h.signUp(`rm-${STAMP}-cmt-v@test.local`, "hunter2hunter2", "Voter");
+		const voter = await h.signUp(`${NS}-cmt-v@test.local`, "hunter2hunter2", "Voter");
 		const vote = await h.fate(
 			{kind: "mutation", name: "comment.vote", input: {id: commentId}, select: ["score"]},
 			{cookie: voter.cookie},
