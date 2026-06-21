@@ -6,8 +6,9 @@
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import {viewOrderBy} from "../../db/ordering.ts";
 import type {ViewRow} from "../fate/view-types.ts";
+import {type CommentRow, commentViewFields} from "./comment-fields.ts";
 import {COMMENT_ORDERING} from "./ordering.ts";
-import type {CommentRow, PostSummaryRow, PostTagRow} from "./Pano.ts";
+import {type PostSummaryRow, type PostTagRow, postViewFields} from "./post-fields.ts";
 
 // `Record<string, unknown>`-assignable restatements of the service rows (the
 // plain row interfaces are not). Exported so `Fate.source` declarations over
@@ -23,21 +24,10 @@ export class TagView extends FateDataView<TagViewRow>()("Tag")({
 	label: true,
 }) {}
 
-// `myVote` is the viewer's vote, batched in one `user_vote` read
-// (`Pano.getCommentsByIds` / `listCommentsKeyset`) and stamped here as a scalar
-// — no per-row resolver, no N+1.
-export class CommentView extends FateDataView<CommentViewRow>()("Comment")({
-	id: true,
-	parentId: true,
-	author: true,
-	authorId: true,
-	body: true,
-	score: true,
-	createdAt: true,
-	updatedAt: true,
-	deletedAt: true,
-	myVote: true,
-}) {}
+// The field list derives from `comment-fields.ts`'s column→field map, so it can't
+// drift from the row mapper / wire shaper (#1166). `myVote` is the viewer's vote,
+// batched in one `user_vote` read and stamped as a scalar — no per-row resolver.
+export class CommentView extends FateDataView<CommentViewRow>()("Comment")(commentViewFields) {}
 
 /**
  * `tags` is an embedded scalar array, NOT a `FateDataView.list(TagView)`
@@ -51,26 +41,10 @@ export class CommentView extends FateDataView<CommentViewRow>()("Comment")({
  * can't drift from the service's comment-thread keyset (ADR 0019).
  */
 export class PostView extends FateDataView<PostViewRow>()("Post")({
-	id: true,
-	slug: true,
-	title: true,
-	url: true,
-	host: true,
-	body: true,
-	author: true,
-	authorId: true,
-	score: true,
-	commentCount: true,
-	createdAt: true,
-	updatedAt: true,
-	myVote: true,
-	// `isSaved` is the viewer's bookmark presence, batched in one `post_bookmark`
-	// read (`Pano.getPostsByIds` / `queries.post`) and stamped here as a scalar —
-	// the `myVote` twin, no per-row resolver, no N+1.
-	isSaved: true,
-	// `isDraft` is the taslak marker, stamped here as a scalar (the `isSaved` twin —
-	// no per-row resolver, no N+1). Drafts are excluded from public feeds.
-	isDraft: true,
+	// The scalar fields derive from `post-fields.ts`'s column→field map (incl.
+	// `myVote` / `isSaved` viewer scalars + the `isDraft` taslak marker), so they
+	// can't drift from the row mapper / wire shaper (#1166).
+	...postViewFields,
 	tags: true,
 	comments: FateDataView.list(CommentView, {orderBy: viewOrderBy(COMMENT_ORDERING)}),
 }) {}
