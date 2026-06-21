@@ -196,8 +196,13 @@ vocabulary now keeps them apart.
   feature's `views.ts`) declare what the loader/resolver above project; they hold no rows and
   are never written. See the "data view" row in [`TERMS.md`](./TERMS.md).
 
-The test: if you can `INSERT`/`UPDATE` it, it's a store of record (`*_record`); if it only
-*declares fields to read*, it's a data view (`*View`). Never name a write target a "view."
+The test: if you can `INSERT`/`UPDATE` it, it's a store of record; if it only *declares
+fields to read*, it's a data view (`*View`). Never name a write target a "view." The
+`*_record` suffix is narrower than "any store of record": it marks a store that is
+**shared across packages** (the canonical `@kampus/db-schema` declaration). A worker-private
+mutated store — `user_profile`, `content_report`, the stats singletons — is a store of record
+too, but lives in the worker schema without the suffix, so lacking `*_record` is not a
+convention violation for those.
 
 ### The LiveDO connection / topic roles
 
