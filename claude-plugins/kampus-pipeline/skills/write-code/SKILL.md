@@ -556,10 +556,13 @@ latest origin `main` **without checking it out**:
 
 ```bash
 git fetch origin main
-# Per-run suffix: the deterministic <prefix>/<slug-for-issue-N> is the SAME ref for every
+# Derive the prefix from THIS checkout's git identity — never a hardcoded literal. A copied
+# literal namespaces every agent's branch under one person's handle regardless of who runs.
+PREFIX="$(git config user.name | tr '[:upper:] ' '[:lower:]-')"   # e.g. "Umut Sirin" → "umut-sirin"
+# Per-run suffix: the deterministic $PREFIX/<slug-for-issue-N> is the SAME ref for every
 # run on this issue, so two concurrent runs would both push origin/<that branch> and the
 # second push would clobber the first's commits. A per-invocation nonce keeps them distinct.
-BRANCH="<prefix>/<slug-for-issue-N>-$(uuidgen | head -c 8)"
+BRANCH="$PREFIX/<slug-for-issue-N>-$(uuidgen | head -c 8)"
 wt_preflight && git switch -c "$BRANCH" FETCH_HEAD   # branch create is a git mutation → gate it (per-mutation preflight above)
 ```
 
@@ -568,9 +571,10 @@ isolated worktree `main` is checked out elsewhere, so branching directly off the
 freshly-fetched `FETCH_HEAD` is the only flow that works — don't "fix" it back to a
 `main` checkout.
 
-Use your git convention — `<prefix>` is your personal branch prefix, like `umut/` — with
-a short kebab-case slug naming the work, and the per-run nonce appended so two concurrent
-runs on the same issue never push the same `origin/` ref. Read the issue's `### What to build` for scope
+The prefix is **derived** from this checkout's `git config user.name`, not a copied literal —
+so the branch lands under *your* handle (`<your-handle>/…`), whoever runs the skill, instead
+of inheriting someone else's namespace. Append a short kebab-case slug naming the work and the
+per-run nonce so two concurrent runs on the same issue never push the same `origin/` ref. Read the issue's `### What to build` for scope
 and honor the `**TDD:**` flag — `yes` means write the failing test first, then make it
 pass; `no` means config/docs/scaffolding where test-first doesn't apply.
 
