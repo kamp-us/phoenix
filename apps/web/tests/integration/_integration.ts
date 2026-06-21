@@ -50,12 +50,25 @@ import {slugify, stageName} from "./_stage-name.ts";
 // (effect `globalErrorInEffectFailure`): the fresh route 404s until it propagates.
 class WorkerNotReady extends Data.TaggedError("WorkerNotReady")<{readonly status: number}> {}
 
-// Retry sentinel for the DO-backed `/fate/live` warmup below. The `/api/health` probe
-// proves the WORKER route propagated, but never touches the `LiveDO` — so a cold
-// LiveDO still surfaces the bounded cold-start envelope (`fate-live/cold-start-retry.ts`)
-// as a 503 `LIVE_UNAVAILABLE` on the first connect/subscribe. Tagged distinctly from
-// `WorkerNotReady` so the two readiness gates retry on their own signals.
+// Retry sentinel for the DO-backed `/fate/live` warmup below. Two "not ready" signals
+// land on it, both retryable on the same bounded schedule:
+//   - 503 `LIVE_UNAVAILABLE`: the `/api/health` probe proves the WORKER route propagated,
+//     but never touches the `LiveDO` — so a cold LiveDO still surfaces the bounded
+//     cold-start envelope (`fate-live/cold-start-retry.ts`) on the first connect/subscribe.
+//   - the Cloudflare-placeholder 404: the preview-stage EDGE route hasn't propagated yet,
+//     so `/fate/live` returns CF's HTML 404 page, NOT the worker's response (#1055). The
+//     worker's `/fate/live` matches `*` and only ever answers SSE (200) or a JSON
+//     `liveError` envelope — never an HTML 404 — so an HTML-bodied 404 is unambiguously the
+//     un-propagated edge, distinct from a legitimate worker 404/auth (JSON), which stops.
+// Tagged distinctly from `WorkerNotReady` so the two readiness gates retry on their own signals.
 class LiveDONotReady extends Data.TaggedError("LiveDONotReady")<{readonly status: number}> {}
+
+// A non-200 `/fate/live` response that is NOT one of the two retryable "not ready" signals
+// above — e.g. a legitimate worker 404/auth (JSON), a 500. Tagged distinctly so the warmup's
+// bounded retry only re-polls `LiveDONotReady`; an unexpected response stops immediately
+// (swallowed non-fatally by `catchCause`) rather than burning the full deadline on something
+// that will never warm.
+class LiveDOUnexpected extends Data.TaggedError("LiveDOUnexpected")<{readonly status: number}> {}
 
 /**
  * Self-supply the two env values the integration deploy needs when a clean runner has no
@@ -151,8 +164,10 @@ const stageFor = (metaUrl: string): string => {
  * exhaust on that first hit and render the 503 `LIVE_UNAVAILABLE` envelope. We force
  * that warm here, behind the same bounded `spaced` retry as the health probe: sign up
  * a throwaway session (the route 401s without one, before the DO is touched), then
- * GET-open `/fate/live` and retry while it 503s — so the cold-start cost is paid by
- * the gate, not by `fate-live.test.ts`'s first subscribe (#1018).
+ * GET-open `/fate/live` and retry while it 503s (cold DO) OR returns the Cloudflare
+ * HTML-placeholder 404 (edge route not yet propagated, #1055) — so the cold-start cost
+ * AND the edge-propagation lag are paid by the gate, not by `fate-live.test.ts`'s first
+ * subscribe (#1018, #1058).
  */
 export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 	Effect.tryPromise(async () => {
@@ -201,11 +216,25 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 				Effect.tap((res) =>
 					Effect.promise(() => res.body?.cancel().catch(() => {}) ?? Promise.resolve()),
 				),
-				Effect.flatMap((res) =>
-					// A cold LiveDO renders 503 `LIVE_UNAVAILABLE`; 200 means it warmed.
-					res.status === 200 ? Effect.void : Effect.fail(new LiveDONotReady({status: res.status})),
-				),
-				Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
+				Effect.flatMap((res) => {
+					// 200 means the LiveDO warmed. Otherwise retry only the two "not ready"
+					// signals (`LiveDONotReady`): a 503 cold-DO envelope, OR a Cloudflare
+					// HTML-placeholder 404 (edge route not yet propagated, #1055). The worker's
+					// `/fate/live` answers only SSE (200) or a JSON `liveError` — never HTML — so a
+					// non-JSON 404 is unambiguously the un-propagated edge. Any OTHER non-200 (a
+					// real JSON 404/auth, a 500) is `LiveDOUnexpected`: outside the retry's `while`,
+					// so the loop stops at once instead of burning the deadline on a real response.
+					if (res.status === 200) return Effect.void;
+					const contentType = res.headers.get("content-type") ?? "";
+					const isPlaceholder404 = res.status === 404 && !contentType.includes("application/json");
+					return res.status === 503 || isPlaceholder404
+						? Effect.fail(new LiveDONotReady({status: res.status}))
+						: Effect.fail(new LiveDOUnexpected({status: res.status}));
+				}),
+				Effect.retry({
+					while: (error) => error._tag === "LiveDONotReady",
+					schedule: Schedule.spaced("2 seconds").pipe(Schedule.both(Schedule.recurs(30))),
+				}),
 			),
 		),
 		// Warmup is a readiness OPTIMIZATION, not an assertion: if it can't establish a
