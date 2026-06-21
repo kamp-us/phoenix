@@ -276,8 +276,8 @@ jobs:
       - run: pnpm --filter @kampus/web test:unit
 
   # The `packages/**` vitest suites (#760). Every workspace tooling/guard package
-  # ships a `test` script (leak-guard, epic-ledger, spawn-guard, read-guard,
-  # worktree-guard, ci-required, …) but CI ran only `@kampus/web`'s — so a
+  # ships a `test` script (pipeline-cli — now the single home for the consolidated
+  # guard/tooling logic — plus ci-required, …) but CI ran only `@kampus/web`'s — so a
   # regression in any gate guard's logic (incl. the #786 ci-required verdict
   # helper that runs HERE) shipped uncaught. This runs them as a REQUIRED gate.
   #

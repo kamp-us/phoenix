@@ -12,10 +12,7 @@
 /claude-plugins/kampus-pipeline/skills/review-skill/               @usirin
 /claude-plugins/kampus-pipeline/skills/review-plan/                @usirin
 /claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @usirin
-# Control-plane: enforcement guard packages — the platform half of the §CP regex extension (ADR 0100).
-/packages/spawn-guard/          @usirin
-/packages/leak-guard/           @usirin
-/packages/read-guard/           @usirin
-/packages/worktree-guard/       @usirin
-/packages/structured-output-guard/  @usirin
+# Control-plane: enforcement guard packages — the platform half of the §CP regex (ADR 0100).
+# The standalone *-guard packages were folded into pipeline-cli and deleted (#1003); ci-required
+# stays standalone (ADR 0092) and keeps its own owner line.
 /packages/ci-required/          @usirin
