@@ -36,11 +36,10 @@ export interface DefinitionConnectionPage {
 	totalCount: number;
 }
 
-export const toDefinitionRow = (
-	d: typeof schema.definitionRecord.$inferSelect,
-	voted: Set<string>,
-	viewerId: string | null | undefined,
-): DefinitionRow => ({
+// Maps the DB record to the row's intrinsic (non-viewer) fields. `myVote` is the
+// viewer scalar, stamped by the `stampViewerScalars` finalize step (#1126), not
+// here — the row→viewer-scalar split keeps the N+1-avoidance contract structural.
+export const toDefinitionRow = (d: typeof schema.definitionRecord.$inferSelect): DefinitionRow => ({
 	id: d.id,
 	score: d.score,
 	body: d.body,
@@ -48,5 +47,4 @@ export const toDefinitionRow = (
 	authorId: d.authorId,
 	createdAt: d.createdAt ?? new Date(0),
 	updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
-	myVote: viewerId ? voted.has(d.id) : null,
 });

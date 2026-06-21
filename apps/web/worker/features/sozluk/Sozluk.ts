@@ -14,6 +14,7 @@ import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -283,6 +284,15 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		// module's to enforce, not this service's to hand-wire.
 		const removalSeq: Removal.RemovalSequence = {run, batch, clearTarget: voteSvc.clearTarget};
 
+		// `Definition`'s one viewer scalar: `myVote` from the batched `user_vote`
+		// presence read. Every definition read finalizes through `stampViewerScalars`
+		// with this spec, so the batch-read-then-stamp contract can't be forgotten (#1126).
+		const definitionVoteScalar = {
+			field: "myVote",
+			read: (viewerId: string | null | undefined, ids: ReadonlyArray<string>) =>
+				voteSvc.readMine(viewerId, "definition", ids),
+		} as const;
+
 		// Recompute one slug's `term_record` row from its live `definition_record`
 		// slice. Convergent: the row is fully derived from definitions + title.
 		const recomputeTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(function* (
@@ -500,19 +510,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.limit(first + 1),
 			);
 
-			const voted = yield* voteSvc.readMine(
-				viewerId,
-				"definition",
-				fetched.slice(0, first).map((d) => d.id),
-			);
-			const page = forwardPage(
-				fetched,
-				first,
-				(r: DefinitionRow) => r.id,
-				(d) => toDefinitionRow(d, voted, viewerId),
-			);
+			const page = forwardPage(fetched, first, (r: DefinitionRow) => r.id, toDefinitionRow);
+			const rows = yield* stampViewerScalars(page.rows, viewerId, [definitionVoteScalar]);
 
-			return {...page, totalCount} satisfies DefinitionConnectionPage;
+			return {...page, rows, totalCount} satisfies DefinitionConnectionPage;
 		});
 
 		const getDefinitionsByIds = Effect.fn("Sozluk.getDefinitionsByIds")(function* (
@@ -532,12 +533,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						),
 					),
 			);
-			const voted = yield* voteSvc.readMine(
-				viewerId,
-				"definition",
-				fetched.map((d) => d.id),
-			);
-			return fetched.map((d) => toDefinitionRow(d, voted, viewerId));
+			return yield* stampViewerScalars(fetched.map(toDefinitionRow), viewerId, [
+				definitionVoteScalar,
+			]);
 		});
 
 		const getTermSummariesByIds = Effect.fn("Sozluk.getTermSummariesByIds")(function* (
