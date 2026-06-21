@@ -30,7 +30,7 @@ This file names the *what*.
 | imge | Product (designed — ADR 0044; **not built**): an imgur-style image/video host backed by Cloudflare R2, auth'd against the pasaport user; agents upload via an `apiKey` credential. Originating need: hosting report-agent screenshots + pano/sözlük markdown images. | |
 | pano | HN-style link & discussion aggregator with threaded comments. Turkish for "board". | "board", "pinboard" |
 | pasaport | Identity/auth/profiles/karma domain; wraps better-auth. Turkish for "passport". | "auth" (broader) |
-| report (bildir) | The content-reporting **feature** (`features/report`): users flag a post/comment/definition for moderation. Turkish brand name **bildir**. | the `/report` pipeline skill or the report-*agent* (which file GitHub issues) — unrelated |
+| report (bildir) | The content-reporting **feature** (`features/report`): users flag a post/comment/definition for moderation. The Turkish brand lexeme **bildir** lives on the **user-facing copy** (the `ReportButton` labels `bildir` / `bildirildi` / `zaten bildirildi`); the **technical** surface stays English per the convention — module dir `features/report`, the `Report` service, the `content_report` table. (No `bildir`-specific exemption is needed: report conforms — Turkish brand on the copy, English technical identifiers.) | the `/report` pipeline skill or the report-*agent* (which file GitHub issues) — unrelated |
 | rss / feed | The feed-generation feature (`features/rss`): emits RSS/Atom feeds of pano/sözlük activity. | |
 | sözlük (sozluk) | Turkish dev-terms dictionary; community definitions ranked by upvotes. Turkish for "dictionary". | "dictionary" |
 | stats | Landing-page aggregate counts (query-only feature). | |
