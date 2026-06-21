@@ -12,10 +12,11 @@
  * dedicated stage isolates the global topic from OTHER files. (connectionIds are already
  * unique; it is the global fan-out that needs the isolation.)
  *
- * Within this file the two cases still share that ONE topic DO, so the reconnect case
- * can see the first case's `live post` frame buffered on its stream — the worker does not
- * epoch-fence old-epoch frames for real clients (#1072, open). It therefore drains frames
- * until it sees its OWN `regen post` title rather than asserting the very next frame.
+ * Within this file the two cases share that ONE topic DO, and a buffered cross-epoch frame
+ * (a prior run/epoch's, or the first case's `live post` reaching the reconnect stream) can
+ * be the next frame — the worker does not epoch-fence old-epoch frames for real clients
+ * (#1072, open). Both cases therefore drain frames until they see their OWN title (`live
+ * post` / `regen post`) rather than asserting the very next frame.
  *
  * See the package seam (`fate-live/cold-start-retry.ts`, #842) for why there is no
  * harness warm-retry wrapper here: the production worker retries a cold-DO transport
@@ -76,14 +77,25 @@ describe("live views — /fate/live (global topic:posts)", () => {
 		);
 		expect(submitted.ok).toBe(true);
 
-		const frame = await readEvent(reader, decoder, buffer);
-		expect(frame).toContain("event: connection");
-		const payload = frameData<{kind: string; event: {type: string; edge: {node: {title: string}}}}>(
-			frame,
-		);
-		expect(payload.kind).toBe("connection");
-		expect(payload.event.type).toBe("prependNode");
-		expect(payload.event.edge.node.title).toBe("live post");
+		// Read until THIS case's own frame arrives. Both cases publish to the ONE global
+		// `posts` topic DO on this shared dedicated stage, so a buffered cross-epoch frame
+		// (a prior run/epoch's prependNode) can be the next frame — the worker does not
+		// epoch-fence old-epoch frames for real clients (the deeper correctness question is
+		// #1072, which stays open). Asserting the very NEXT frame is `live post` is fragile
+		// against such a buffered foreign frame; instead drain frames until we see our OWN
+		// `live post` prependNode, mirroring the reconnect case below. Bounded: a stream that
+		// never delivers `live post` still fails.
+		let payload: {kind: string; event: {type: string; edge: {node: {title: string}}}} | undefined;
+		for (let i = 0; i < 10 && payload?.event.edge.node.title !== "live post"; i++) {
+			const frame = await readEvent(reader, decoder, buffer);
+			expect(frame).toContain("event: connection");
+			payload = frameData<{kind: string; event: {type: string; edge: {node: {title: string}}}}>(
+				frame,
+			);
+		}
+		expect(payload?.kind).toBe("connection");
+		expect(payload?.event.type).toBe("prependNode");
+		expect(payload?.event.edge.node.title).toBe("live post");
 
 		await reader.cancel();
 	}, 30_000);
