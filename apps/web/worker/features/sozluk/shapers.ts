@@ -5,6 +5,13 @@
  * service rows: each source (`TermPage`, `TermSummaryRow`, a vote result) names
  * its fields differently, so the row→wire mapping stays at the call site and the
  * shaper owns only the wire shape.
+ *
+ * `Definition` is the one exception — its row mapper (`toDefinitionRow`), this
+ * wire shaper, and the `DefinitionView` field list all derive from the single
+ * column→field map in `definition-fields.ts` (#1126 AC#1, deferred from #1159),
+ * so a one-field change touches that map, not three sites. `toDefinition` here
+ * just stamps `__typename` + the `myVote` viewer-scalar default onto the map's
+ * already-wire-named fields.
  */
 
 import type {TermPage} from "./Sozluk.ts";
@@ -70,6 +77,9 @@ export interface DefinitionFields {
 	myVote?: boolean | null;
 }
 
+// The wire fields are exactly `definition-fields.ts`'s field set (TS pins the
+// shape against `Definition`); this stamps `__typename` + the `myVote`
+// viewer-scalar default onto the map's already-wire-named values.
 export const toDefinition = (r: DefinitionFields): Definition => ({
 	__typename: "Definition",
 	id: r.id,

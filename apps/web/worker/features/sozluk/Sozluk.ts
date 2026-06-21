@@ -25,7 +25,7 @@ import {
 	type DefinitionRow,
 	type TermPage,
 	toDefinitionRow,
-} from "./definition-row.ts";
+} from "./definition-fields.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -40,7 +40,7 @@ import {
 	toTermSummaryRow,
 } from "./term-summary.ts";
 
-export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-row.ts";
+export type {DefinitionConnectionPage, DefinitionRow, TermPage} from "./definition-fields.ts";
 export type {TermConnectionPage, TermSummaryRow} from "./term-summary.ts";
 
 /** Body length cap for definitions — surfaced as `BODY_TOO_LONG` on overflow. */
@@ -434,15 +434,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				totalScore: defs.reduce((s, d) => s + d.score, 0),
 				firstAt,
 				lastEdit,
-				definitions: defs.map((d) => ({
-					id: d.id,
-					score: d.score,
-					body: d.body,
-					author: d.authorName,
-					authorId: d.authorId,
-					createdAt: d.createdAt ?? new Date(0),
-					updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
-				})),
+				definitions: defs.map(toDefinitionRow),
 			} satisfies TermPage;
 		});
 

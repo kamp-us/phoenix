@@ -9,6 +9,7 @@
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import {viewOrderBy} from "../../db/ordering.ts";
 import type {ViewRow} from "../fate/view-types.ts";
+import {definitionViewFields} from "./definition-fields.ts";
 import {DEFINITION_ORDERING} from "./ordering.ts";
 import type {DefinitionRow, TermSummaryRow} from "./Sozluk.ts";
 
@@ -18,16 +19,11 @@ import type {DefinitionRow, TermSummaryRow} from "./Sozluk.ts";
 export type DefinitionViewRow = ViewRow<DefinitionRow>;
 export type TermViewRow = ViewRow<TermSummaryRow>;
 
-export class DefinitionView extends FateDataView<DefinitionViewRow>()("Definition")({
-	id: true,
-	body: true,
-	score: true,
-	author: true,
-	authorId: true,
-	createdAt: true,
-	updatedAt: true,
-	myVote: true,
-}) {}
+// The field list derives from `definition-fields.ts`'s column→field map, so it
+// can't drift from the row mapper / wire shaper (#1126 AC#1).
+export class DefinitionView extends FateDataView<DefinitionViewRow>()("Definition")(
+	definitionViewFields,
+) {}
 
 /**
  * `Term` — a dictionary headword. The view is over `TermSummaryRow`; the
