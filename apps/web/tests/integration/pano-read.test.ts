@@ -49,7 +49,7 @@ interface PostNode {
 	commentCount: number;
 	author: string;
 	authorId: string;
-	myVote: number | null;
+	myVote: boolean | null;
 	tags: Array<{kind: string; label: string}>;
 }
 interface CommentNode {
@@ -59,7 +59,7 @@ interface CommentNode {
 	author: string;
 	authorId: string;
 	score: number;
-	myVote: number | null;
+	myVote: boolean | null;
 }
 type Connection<N> = {
 	items: Array<{cursor: string; node: N}>;

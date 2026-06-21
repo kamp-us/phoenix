@@ -54,11 +54,11 @@ export function PostVoteWidget({
 }: {
 	postId: string;
 	score: number;
-	myVote: number | null;
+	myVote: boolean | null;
 }) {
 	const fate = useFateClient();
 
-	const voted = myVote === 1;
+	const voted = myVote === true;
 
 	const onToggle = useVoteToggle({
 		voted,
@@ -137,7 +137,7 @@ export type PanoPostData = {
 	agoLabel: string;
 	commentCount: number;
 	score: number;
-	myVote?: -1 | 0 | 1;
+	myVote?: boolean | null;
 	isSaved?: boolean | null;
 };
 
@@ -149,7 +149,7 @@ export function PanoPost({post, onHide}: {post: PanoPostData; onHide?: (id: stri
 			<span className="kp-pano-post__rank">
 				{post.rank != null ? String(post.rank).padStart(2, "0") : ""}
 			</span>
-			<PostVoteWidget postId={post.id} score={post.score} myVote={post.myVote === 1 ? 1 : null} />
+			<PostVoteWidget postId={post.id} score={post.score} myVote={post.myVote ?? null} />
 			<div className="kp-pano-post__body">
 				<div className="kp-pano-post__title-row">
 					{post.tags?.length ? (

@@ -104,7 +104,7 @@ const shapePost = (r: {
 	tags: ReadonlyArray<{kind: string; label: string}>;
 	createdAt: Date;
 	updatedAt?: Date;
-	myVote?: number | null;
+	myVote?: boolean | null;
 	isSaved?: boolean | null;
 	isDraft?: boolean | null;
 }): Post =>
@@ -136,7 +136,7 @@ const shapeComment = (r: {
 	score: number;
 	createdAt: Date;
 	updatedAt?: Date;
-	myVote?: number | null;
+	myVote?: boolean | null;
 }): Comment =>
 	toComment({
 		id: r.commentId,

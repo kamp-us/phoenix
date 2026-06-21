@@ -12,10 +12,10 @@ export interface DefinitionRow {
 	authorId: string;
 	createdAt: Date;
 	updatedAt: Date;
-	// `1` upvoted / `null` not, stamped by the batch reads when a `viewerId` is
-	// supplied (one `user_vote` query for the whole list, not a per-row N+1).
-	// `undefined` when not requested (anonymous / read paths that omit it).
-	myVote?: number | null;
+	// Viewer's upvote presence (`true` voted), stamped by the batch reads when a
+	// `viewerId` is supplied (one `user_vote` query for the whole list, not a
+	// per-row N+1). `null` for an anonymous viewer; `undefined` when not requested.
+	myVote?: boolean | null;
 }
 
 export interface TermPage {
@@ -48,5 +48,5 @@ export const toDefinitionRow = (
 	authorId: d.authorId,
 	createdAt: d.createdAt ?? new Date(0),
 	updatedAt: d.updatedAt ?? d.createdAt ?? new Date(0),
-	myVote: viewerId ? (voted.has(d.id) ? 1 : null) : null,
+	myVote: viewerId ? voted.has(d.id) : null,
 });

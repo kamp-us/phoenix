@@ -50,7 +50,7 @@ const shapeDefinition = (r: {
 	score: number;
 	createdAt: Date;
 	updatedAt: Date;
-	myVote?: number | null;
+	myVote?: boolean | null;
 }): Definition =>
 	toDefinition({
 		id: r.definitionId,

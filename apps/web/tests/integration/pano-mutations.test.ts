@@ -47,7 +47,7 @@ interface PostNode {
 	authorId: string;
 	score: number;
 	commentCount: number;
-	myVote: number | null;
+	myVote: boolean | null;
 	tags: Array<{kind: string; label: string}>;
 }
 interface CommentNode {
@@ -58,7 +58,7 @@ interface CommentNode {
 	author: string;
 	authorId: string;
 	score: number;
-	myVote: number | null;
+	myVote: boolean | null;
 }
 
 let author: {userId: string; cookie: string};
@@ -160,7 +160,7 @@ describe("pano mutations — post.vote / retractVote", () => {
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
 		expect((voted.data as PostNode).score).toBe(1);
-		expect((voted.data as PostNode).myVote).toBe(1);
+		expect((voted.data as PostNode).myVote).toBe(true);
 
 		const retracted = await h.fate(
 			{kind: "mutation", name: "post.retractVote", input: {id}, select: ["id", "score", "myVote"]},
@@ -169,7 +169,7 @@ describe("pano mutations — post.vote / retractVote", () => {
 		expect(retracted.ok).toBe(true);
 		if (!retracted.ok) return;
 		expect((retracted.data as PostNode).score).toBe(0);
-		expect((retracted.data as PostNode).myVote).toBeNull();
+		expect((retracted.data as PostNode).myVote).toBe(false);
 	});
 
 	it("voting a missing post surfaces POST_NOT_FOUND", async () => {
@@ -489,7 +489,7 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 		expect(voted.ok).toBe(true);
 		if (!voted.ok) return;
 		expect((voted.data as CommentNode).score).toBe(1);
-		expect((voted.data as CommentNode).myVote).toBe(1);
+		expect((voted.data as CommentNode).myVote).toBe(true);
 
 		const retracted = await h.fate(
 			{
@@ -503,7 +503,7 @@ describe("pano mutations — comment.vote / retractVote / edit", () => {
 		expect(retracted.ok).toBe(true);
 		if (!retracted.ok) return;
 		expect((retracted.data as CommentNode).score).toBe(0);
-		expect((retracted.data as CommentNode).myVote).toBeNull();
+		expect((retracted.data as CommentNode).myVote).toBe(false);
 	});
 
 	it("edit returns the edited entity", async () => {

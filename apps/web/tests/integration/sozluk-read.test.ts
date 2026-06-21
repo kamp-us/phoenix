@@ -45,7 +45,7 @@ interface DefNode {
 	score: number;
 	author: string;
 	authorId: string;
-	myVote: number | null;
+	myVote: boolean | null;
 }
 type Connection<N> = {
 	items: Array<{cursor: string; node: N}>;

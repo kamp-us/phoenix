@@ -15,7 +15,7 @@ export const POSTS: PanoPostData[] = [
 		agoLabel: "3 saat önce",
 		commentCount: 14,
 		score: 47,
-		myVote: 1,
+		myVote: true,
 	},
 	{
 		id: "p2",

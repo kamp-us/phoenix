@@ -44,7 +44,7 @@ interface PostNode {
 	body: string | null;
 	score: number;
 	commentCount: number;
-	myVote: number | null;
+	myVote: boolean | null;
 }
 type Connection<N> = {
 	items: Array<{cursor: string; node: N}>;
@@ -182,7 +182,7 @@ describe("pano posts — edit validation", () => {
 });
 
 describe("pano posts — vote idempotency / round-trip", () => {
-	it("two consecutive votes are idempotent (score stays 1, myVote 1)", async () => {
+	it("two consecutive votes are idempotent (score stays 1, myVote true)", async () => {
 		const id = await seedPost({title: `${NS} vote idem`});
 
 		const first = await h.fate(
@@ -192,7 +192,7 @@ describe("pano posts — vote idempotency / round-trip", () => {
 		expect(first.ok).toBe(true);
 		if (!first.ok) return;
 		expect((first.data as PostNode).score).toBe(1);
-		expect((first.data as PostNode).myVote).toBe(1);
+		expect((first.data as PostNode).myVote).toBe(true);
 
 		const second = await h.fate(
 			{kind: "mutation", name: "post.vote", input: {id}, select: ["id", "score", "myVote"]},
@@ -201,14 +201,14 @@ describe("pano posts — vote idempotency / round-trip", () => {
 		expect(second.ok).toBe(true);
 		if (!second.ok) return;
 		expect((second.data as PostNode).score).toBe(1);
-		expect((second.data as PostNode).myVote).toBe(1);
+		expect((second.data as PostNode).myVote).toBe(true);
 
 		// Re-resolve: the score holds at 1.
 		const post = await readPost(id);
 		expect(post!.score).toBe(1);
 	});
 
-	it("vote → retract → vote nets score 1, myVote 1", async () => {
+	it("vote → retract → vote nets score 1, myVote true", async () => {
 		const id = await seedPost({title: `${NS} vote rt`});
 
 		await h.fate(
@@ -226,7 +226,7 @@ describe("pano posts — vote idempotency / round-trip", () => {
 		expect(final.ok).toBe(true);
 		if (!final.ok) return;
 		expect((final.data as PostNode).score).toBe(1);
-		expect((final.data as PostNode).myVote).toBe(1);
+		expect((final.data as PostNode).myVote).toBe(true);
 	});
 
 	it("retracting a vote that was never cast is a no-op (score stays 0)", async () => {
@@ -238,7 +238,7 @@ describe("pano posts — vote idempotency / round-trip", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect((result.data as PostNode).score).toBe(0);
-		expect((result.data as PostNode).myVote).toBeNull();
+		expect((result.data as PostNode).myVote).toBe(false);
 	});
 
 	it("retracting a vote on a missing post surfaces POST_NOT_FOUND", async () => {

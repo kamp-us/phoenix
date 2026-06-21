@@ -71,7 +71,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 	const isDeleted = data.deletedAt != null;
 	const isOwner =
 		!isDeleted && props.currentUserId != null && data.authorId === props.currentUserId;
-	const voted = (data.myVote ?? 0) === 1;
+	const voted = data.myVote === true;
 	const score = data.score;
 	const editing = editComposer != null;
 
