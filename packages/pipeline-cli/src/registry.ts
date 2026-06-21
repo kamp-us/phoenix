@@ -12,13 +12,17 @@
  */
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
+import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
 import {ciRequiredCommand} from "./tools/ci-required/command.ts";
+import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {docLinksCommand} from "./tools/doc-links/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
+import {ghPhoenixCommand} from "./tools/gh-phoenix/command.ts";
 import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {readGuardCommand} from "./tools/read-guard/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
+import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {worktreeGuardCommand} from "./tools/worktree-guard/command.ts";
 import {versionCommand} from "./version.ts";
 
@@ -64,4 +68,8 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	leakGuardCommand,
 	docLinksCommand,
 	ciRequiredCommand,
+	ghPhoenixCommand,
+	crabboxManifestCommand,
+	changelogDeriveCommand,
+	structuredOutputGuardCommand,
 ];
