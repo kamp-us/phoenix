@@ -12,6 +12,8 @@
  */
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
+import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
+import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
 import {versionCommand} from "./version.ts";
 
 /** The Node platform service union the bin provides — the requirement ceiling for a tool. */
@@ -29,12 +31,14 @@ type Platform = NodeServices.NodeServices;
  * the bin and the router core stable as tools fold in: a tool self-contains its
  * services, the bin never grows a per-tool layer. The `Name`/`Input`/
  * `ContextInput`/`E` slots are left at their widest so the registry stays
- * heterogeneous over tools with different names, args, flags, and error rows;
- * `Name` is `any` because it appears in the contravariant `CommandContext<Name>`
- * position, where a concrete literal (`"version"`) is not assignable to `string` —
- * only `any` admits tools with different literal names into one registry array.
+ * heterogeneous over tools with different names, args, flags, and error rows.
+ * Both `Name` and `Input` are `any` because each sits in a contravariant slot
+ * (`CommandContext<Name>`, `Variance<in Input, …>`): a concrete literal name
+ * (`"version"`) is not assignable to `string`, and a tool's concrete input shape
+ * (`{epic, dryRun}`) is not assignable from `object` — so only `any` admits tools
+ * with different literal names and different arg/flag inputs into one registry array.
  */
-export type RegisteredTool = Command.Command<any, object, object, unknown, Platform>;
+export type RegisteredTool = Command.Command<any, any, object, unknown, Platform>;
 
 /**
  * The registered pipeline tools, in the order they list under `--help`.
@@ -44,4 +48,8 @@ export type RegisteredTool = Command.Command<any, object, object, unknown, Platf
  * registration step (epic #994). The router and bin read this array opaquely, so
  * a new entry needs no edit anywhere else.
  */
-export const registeredTools: ReadonlyArray<RegisteredTool> = [versionCommand];
+export const registeredTools: ReadonlyArray<RegisteredTool> = [
+	versionCommand,
+	epicLedgerCommand,
+	decisionsIndexCommand,
+];
