@@ -1,6 +1,6 @@
 /**
  * Bookmark unit coverage — the decisions that are wrong-or-right with no database
- * (ADR 0082, no `node:sqlite` stand-in). The `Drizzle` seam is substituted
+ * (ADR 0082). The `Drizzle` seam is substituted
  * directly (`Vote.unit.test.ts` idiom): a `run`/`batch` that THROWS proves a
  * short-circuit never touched the DB, and a stubbed `run` feeds the decision its
  * inputs without an engine.

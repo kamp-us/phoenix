@@ -1,5 +1,5 @@
 /**
- * Guard (T2 → integration, ADR 0082) for `PasaportFromTag`'s inert `RuntimeContext`
+ * Guard (integration, ADR 0082) for `PasaportFromTag`'s inert `RuntimeContext`
  * stub in `features/fate/layers.ts`. `betterAuth.auth` is `Effect<Auth, never,
  * RuntimeContext>`, so `makeFateLayer` discharges that requirement with a hand-built
  * inert stub (empty env, no-op get/set) to keep its `R` exactly
@@ -7,8 +7,7 @@
  * reads its secret from a binding and never touches `RuntimeContext` during auth
  * resolution.
  *
- * The retired version pinned this in-process over a `node:sqlite` fake. The real
- * deployed worker is precisely this path — `index.ts` builds its isolate runtime
+ * The real deployed worker is precisely this path — `index.ts` builds its isolate runtime
  * through the same `makeFateRuntime(PhoenixFateLive)` → `makeFateLayer` →
  * `PasaportFromTag` with the inert stub — so a black-box session round-trip over the
  * deployed worker exercises the stub against real remote D1: a sign-up cookie that

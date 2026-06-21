@@ -105,41 +105,40 @@ structures. Each is anchored to the ADR that decided it — read the ADR for the
 this section fixes the *term* so an audit, a review, and a test file all mean the same
 thing by it.
 
-### The test tiers (T0–T3) and seam-graduation
+### The two test tiers (unit / integration) and seam-graduation
 
-phoenix names its test tiers by **which layer satisfies a fixed dependency channel**,
-not by folder. A tier is a choice of adapter at the storage **seam**; the tier boundary
-is where the layer algebra runs out — the workerd process boundary. (ADR
-[0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md) — *Testing taxonomy
-and test-seam graduation*, the source of the tier vocabulary. Note: 0040 is **superseded
-by [0082](../.decisions/0082-two-test-tiers-unit-integration.md)**, which collapses the
-day-to-day naming to two tiers, **unit** and **integration**; the T0–T3 vocabulary below
-is the full taxonomy 0040 fixed and the terms an audit still reaches for.)
+phoenix runs **exactly two test tiers**, split by *which fidelity a claim needs* — not
+by folder. (ADR [0082](../.decisions/0082-two-test-tiers-unit-integration.md) — *Two test
+tiers: unit (no DB) and integration (real D1 via alchemy `Test.make`)*, the source of
+truth, extended by [0104](../.decisions/0104-two-mode-integration-test-tier.md). 0082
+**supersedes** [0040](../.decisions/0040-testing-taxonomy-and-seam-graduation.md), whose
+four-tier T0–T3 taxonomy rested on a faked in-memory `node:sqlite` D1 stand-in
+(`makeSqliteTestDb`) and the now-falsified premise that *`node:sqlite` is the same engine
+as D1*. There is **no in-memory SQL tier**; the helper is deleted.)
 
-- **T0 — unit (pure).** Pure functions / Effect logic, zero storage. The seam is never
-  crossed; there is no SQL engine and no I/O. _If a test boots `node:sqlite` it is not a
-  T0 unit test._ Examples: a keyset codec, hot-score arithmetic, `encodeFateError`.
-- **T1 — service-integration.** A real feature service over a real in-memory SQL engine
-  (`node:sqlite` behind the D1 surface) + real migrations, in one Node process. Only the
-  `Database` layer swaps at the seam. Examples: `Vote.test.ts`, `Drizzle.test.ts`.
-- **T2 — bridge / app-integration.** The full request env (minus the per-request trio)
-  driven through `fateServer.handleRequest`: wire codes, topic publishes,
-  real-or-stubbed auth. Still `node:sqlite` under the worker layer, no workerd. Examples:
-  `sozluk.test.ts`, `products.test.ts`, `app.test.ts`. T1 and T2 stay distinct because
-  they swap *different* layers — T1 only the `Database` seam, T2 also the wire-encoding
-  boundary and the auth layer.
-- **T3 — system (stack-smoke, NOT a layer).** Black-box HTTP over the deployed alchemy
-  stack on local workerd, asserted against **real remote D1**. There is no dependency
-  channel to provide to — it's a URL, not a layer. Reserved for the genuine real-D1-only
-  divergences (batch-meta envelope, `foreign_keys` default, the DO + SSE + D1 composite).
-  Examples: `seam.test.ts`, `fate-live.test.ts`.
+- **`unit` — pure logic + in-process service contracts, no database.** Pure functions /
+  Effect logic and feature-service contracts that are wrong-or-right *even if the DB
+  behaves perfectly* (normalization, clamping, envelope shaping, pagination math, auth
+  gates, empty/cursor-miss branches, topic-key routing). No deployed worker and **no SQL
+  engine** — the `Drizzle` storage seam is *substituted* (a `run`/`batch` that throws or a
+  stubbed return proves the decision never touched the DB). Runs offline in the default node
+  pool; files carry the `*.unit.test.ts` infix (plus plain `*.test.ts` service-contract
+  tests). Examples: a keyset codec, the pasaport `me` auth gate, `Bookmark.unit.test.ts`.
+- **`integration` — real behavior over real remote Cloudflare D1.** Black-box over the
+  deployed phoenix stack via the alchemy `Test.make` idiom: a file runs against a real
+  worker + D1 (+ DOs) and asserts over HTTP/SSE. This is the only tier that can prove a
+  claim that *could only be wrong if the real engine differed* — D1's FTS5 build,
+  tokenizer, and collation are **not** `node:sqlite`'s, so search/ranking fidelity,
+  `ON CONFLICT`/soft-delete round-trips against real rows, and the DO + SSE + D1 composite
+  all land here. Per ADR 0104 the tier runs in two modes: a run-scoped shared stage for the
+  pure-logic-dominant files and per-file dedicated stages for the few that need isolation
+  (`tests/integration/_integration.ts`). Examples: `search.test.ts`, `fate-live-posts.test.ts`.
 
 **One `Database` seam.** A single `Database` tag holds the raw `D1Database` handle; both
 the `Drizzle` service and the better-auth adapter *derive* from it, so they share one
-underlying handle by construction — the one-`sqlite` invariant is type-enforced by the
-layer graph, not upheld by hand. Domain correctness (keyset order, `ON CONFLICT`,
-soft-delete filters) is **hermetically faithful at T1/T2** because `node:sqlite` is the
-same engine as D1, so it belongs there, not at T3.
+underlying handle by construction — the one-handle invariant is type-enforced by the layer
+graph, not upheld by hand. At `unit` that seam is *substituted*; the real handle exists only
+at `integration`, where it is real remote D1.
 
 **Seam-graduation (organic framework evolution).** A test seam is born app-local and
 graduates only when it has earned it:

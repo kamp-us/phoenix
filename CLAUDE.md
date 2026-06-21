@@ -84,7 +84,7 @@ See [.decisions/index.md](./.decisions/index.md) — read the row, open the file
 
 ## Vocabulary
 
-See [.glossary/LANGUAGE.md](./.glossary/LANGUAGE.md) — the canonical architecture vocabulary (module / interface / implementation / depth / seam / adapter / leverage / locality + the deletion test), extended with phoenix's own structural terms (the T0–T3 test tiers, the fate loader/resolver split, the LiveDO connection/topic roles) and the product/brand nouns. This is the single source for those terms; don't redefine them inline.
+See [.glossary/LANGUAGE.md](./.glossary/LANGUAGE.md) — the canonical architecture vocabulary (module / interface / implementation / depth / seam / adapter / leverage / locality + the deletion test), extended with phoenix's own structural terms (the two test tiers — unit / integration, the fate loader/resolver split, the LiveDO connection/topic roles) and the product/brand nouns. This is the single source for those terms; don't redefine them inline.
 
 ## Patterns
 

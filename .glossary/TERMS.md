@@ -106,10 +106,8 @@ This file names the *what*.
 
 | Term | Definition | Not |
 |---|---|---|
-| test taxonomy (T0–T3) | The four test tiers (ADR 0040): **T0** pure (no SQL engine), **T1** service-integration (real service over in-memory `node:sqlite`), **T2** bridge/app-integration (full fate over in-memory SQL, no workerd), **T3** system (deployed `workerd` over real remote D1). A tier is *which layer satisfies a fixed R-channel*, not a folder. | calling any SQLite-booting test a "unit" test |
-| T0 / `*.unit.test.ts` | The pure-test naming convention inside the existing `unit` vitest project (the `unit` glob catches it). | a third vitest project |
-| makeSqliteTestDb | Test-kit factory: a fresh in-memory `node:sqlite` D1 handle with `foreign_keys` OFF (D1 parity) + baseline migration applied. A factory, never a shared instance. | a shared instance |
-| makeDatabaseTest | The scoped `DatabaseTest` layer provisioning + closing an in-memory handle; provided inside each `it.effect` for per-test isolation. | `it.layer` for isolation (it builds once per `describe`) |
+| test tiers (unit / integration) | The two live tiers (ADR 0082, extended by 0104). **unit** — pure logic + in-process service contracts, no DB: the `Drizzle` storage seam is *substituted*, no SQL engine, no deployed worker. **integration** — real behavior over **real remote Cloudflare D1** (+ DOs) via the alchemy `Test.make` idiom, black-box over HTTP/SSE. There is **no in-memory SQL tier**. | the retired T0–T3 four-tier model; a `node:sqlite` D1 stand-in (deleted #579) |
+| `*.unit.test.ts` | The pure-test naming convention inside the `unit` vitest project (the glob catches both `*.unit.test.ts` and plain `*.test.ts` service-contract tests). | a third vitest project |
 | runFateOp | Test-kit helper running a fate operation through the compiled fate server over a per-op disposed `ManagedRuntime`; returns `{status, result, published}`. | copy-pasted inline `fateOp` bodies |
 
 ## Infra / store

@@ -1,8 +1,9 @@
 /**
  * The seed core: given a `D1Database`-shaped binding, write the fixture set as
- * idempotent upserts. This is pure of *transport* — it runs identically against
- * an in-memory `node:sqlite` D1 (the unit test) and a Cloudflare D1 REST adapter
- * (the bin), because both satisfy the same `D1Database` surface drizzle drives.
+ * idempotent upserts. This is pure of *transport* — statement-building resolves
+ * SQL+params off an inert `D1Database` with no engine (the unit test), and the bin
+ * runs the same writes over the Cloudflare D1 REST adapter, because both satisfy
+ * the same `D1Database` surface drizzle drives.
  *
  * Idempotency (AC: "safely re-runnable"): every insert is an
  * `onConflictDoUpdate` keyed on the row's primary key, so a second run overwrites

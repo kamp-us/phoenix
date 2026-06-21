@@ -7,7 +7,9 @@
  * hand-seeded FTS table.
  *
  * This is the real-D1 residue of the retired `worker/features/fate/search.test.ts`
- * `makeSqliteTestDb` suite (#579). The *pure* halves of that suite moved DOWN to
+ * suite (#579) — which leaned on the now-deleted `makeSqliteTestDb` in-memory
+ * `node:sqlite` D1 fake (gone with the four-tier model, ADR 0082; there is no
+ * in-memory SQL tier). The *pure* halves of that suite moved DOWN to
  * `unit`, where they belong and are already proven with no SQL engine:
  *   - Turkish diacritic/dotted-`i` folding + min-length → `normalizeSearchText` /
  *     `toMatchExpression` in `worker/features/search/normalize.unit.test.ts`.
