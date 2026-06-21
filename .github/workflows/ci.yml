@@ -29,6 +29,20 @@ jobs:
       e2e: ${{ steps.filter.outputs.e2e }}
       packages: ${{ steps.filter.outputs.packages }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      # Worker-relevance of the diff (issue #1014): `false` ONLY when the WHOLE PR
+      # diff — including its `pnpm-lock.yaml` delta — is provably confined to packages
+      # the worker never imports, so the slow real-D1 `integration`/`e2e` tiers can
+      # skip. The `backend`/`e2e` filters list `pnpm-lock.yaml` (a worker-dep bump
+      # needs integration) and `paths-filter` can't attribute a lockfile delta to a
+      # package, so it ran integration on EVERY lockfile change — and a packages-only
+      # PR (the #994 pipeline-cli reorg) edits the lockfile, paying the tier + the
+      # #1010/#813 stage-leak flake for nothing. The `@kampus/worker-relevance`
+      # classifier (run in the `worker-relevance` step below) attributes the lockfile
+      # delta and FAILS SAFE TO RUNNING. Default `'true'`: the step only runs on PRs
+      # (it needs a base ref), so a `push` keeps the full backstop, and any step
+      # failure/skip leaves the safe default. ANDed into integration/e2e required-ness
+      # below so it can only ever REMOVE a run, never add a skip the old gate didn't.
+      worker_relevant: ${{ steps.worker-relevance.outputs.worker_relevant || 'true' }}
       # Per-gating-job *required-ness* (#786): the SINGLE SOURCE of "should this job
       # have run". Each `*_required` output mirrors the SAME inputs that gate the job's
       # own `if:` (path-filter outputs + the `feature-complete` PR label + the
@@ -42,13 +56,24 @@ jobs:
       # guards are reproduced EXACTLY so a fork/non-author PR's legitimate
       # secret-less skip stays legitimate (required=false ⇒ skip is a PASS).
       check_required: ${{ steps.filter.outputs.code == 'true' }}
+      # `worker_relevant != 'false'` (issue #1014) is ANDed in LAST so it can only
+      # REMOVE an integration run, never add one: a PR whose diff is provably confined
+      # to worker-irrelevant packages skips the tier even though the lockfile delta
+      # tripped `backend`. `!= 'false'` (not `== 'true'`) keeps the fail-safe default —
+      # on a `push` the step doesn't run and the output defaults to `'true'`, so the
+      # post-merge backstop is unchanged; the classifier itself fails safe to running.
+      # The `feature-complete` forcing function still wins (it ORs with `backend`), and
+      # since a feature-complete PR is by definition worker-affecting the worker-
+      # relevance AND never strips a flagged full sweep in practice.
       integration_required: >-
         ${{ (steps.filter.outputs.backend == 'true' ||
              contains(github.event.pull_request.labels.*.name, 'feature-complete')) &&
+            (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             (github.event_name == 'push' ||
              contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association)) }}
       e2e_required: >-
         ${{ steps.filter.outputs.e2e == 'true' &&
+            (steps.worker-relevance.outputs.worker_relevant || 'true') != 'false' &&
             github.event_name == 'pull_request' &&
             contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
       # `packages-tests` runs the workspace `packages/**` vitest suites (#760). Its
@@ -65,7 +90,11 @@ jobs:
       # false`, so the job's skip is a legitimate not-applicable PASS.
       workflows_required: ${{ steps.filter.outputs.workflows == 'true' }}
     steps:
+      # Full history so the worker-relevance step's base...head diff resolves; the
+      # default shallow checkout has no merge-base for the comparison (issue #1014).
       - uses: actions/checkout@v4.2.2
+        with:
+          fetch-depth: 0
 
       - uses: dorny/paths-filter@v3.0.2
         id: filter
@@ -146,6 +175,33 @@ jobs:
             workflows:
               - '.github/workflows/**'
               - '.github/actions/**'
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+
+      # Worker-relevance classifier (issue #1014). Only on a PR (a `push` has no base
+      # ref to diff and keeps the full integration backstop). Emits `worker_relevant`
+      # — `false` ONLY when the whole diff (incl. the `pnpm-lock.yaml` delta, attributed
+      # per importer block) is provably confined to packages the worker never imports;
+      # any worker-affecting path, a shared lockfile section, an unattributable diff, or
+      # any failure leaves it `true` (fail-safe to running). Runs the zero-runtime-dep
+      # `@kampus/worker-relevance` bin directly — no `pnpm install` (the `ci-required`
+      # idiom), so the always-on detector stays fast. `git diff base...head` over the
+      # full-history checkout above gives the PR's changed files + the lockfile diff.
+      - name: Classify worker-relevance of the diff
+        id: worker-relevance
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_REF"
+          base="$(git merge-base "origin/$BASE_REF" HEAD)"
+          CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRD "$base...HEAD")"
+          LOCKFILE_DIFF="$(git diff "$base...HEAD" -- pnpm-lock.yaml)"
+          export CHANGED_FILES LOCKFILE_DIFF
+          node packages/worker-relevance/src/bin.ts
 
   check:
     name: lint / format / typecheck
