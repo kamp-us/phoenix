@@ -5,8 +5,8 @@
  *   1. every publish method's error channel is `never` ("a publish cannot fail
  *      the mutation" is a TYPE);
  *   2. the published `(topicKey, PublishMessage)` pairs match the wire shape —
- *      pinned against literal fixtures AND the frozen baseline from the retired
- *      bridge event-bus (the drift guard);
+ *      pinned against literal fixtures (the drift guard), including the no-`data`
+ *      update frame;
  *   3. a rejecting topic call cannot fail the calling effect;
  *   4. publishes are scheduled through `waitUntil`, never awaited on the request
  *      path.
@@ -77,6 +77,9 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 			changed: ["body"],
 			eventId: "e1",
 		});
+		// An update with no `data` still carries the `data` key on the wire
+		// (`frame: {data: undefined}`) — asserted by the fixture below.
+		yield* live.update("Definition", "d9", {eventId: "e9"});
 		yield* live.delete("Post", 7, {eventId: "e2"});
 		const definitions = live.topic("Term.definitions", {slug: "effect"});
 		yield* definitions.appendNode("Definition", "d2", {
@@ -100,6 +103,15 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 					match: {type: "Definition", entityId: "d1"},
 					frame: {data: {id: "d1", body: "updated"}},
 					eventId: "e1",
+				},
+			},
+			{
+				topicKey: liveEntityTopic("Definition", "d9"),
+				message: {
+					kind: "entity",
+					match: {type: "Definition", entityId: "d9"},
+					frame: {data: undefined},
+					eventId: "e9",
 				},
 			},
 			{
@@ -159,99 +171,6 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 				},
 			},
 		]);
-	}),
-);
-
-it.effect("wire shape is identical to the retired event bus for the same mutation calls", () =>
-	Effect.gen(function* () {
-		const {live, recorded, flush} = makeHarness();
-		yield* live.update("Definition", "d1", {eventId: "e1"});
-		yield* live.delete("Post", 7, {eventId: "e2"});
-		const definitions = live.topic("Term.definitions", {slug: "effect"});
-		yield* definitions.appendNode("Definition", "d2", {
-			node: {id: "d2"},
-			cursor: "c1",
-			eventId: "e3",
-		});
-		yield* definitions.prependNode("Definition", "d3", {node: {id: "d3"}});
-		yield* definitions.deleteEdge("Definition", "d2", {eventId: "e4"});
-		yield* definitions.invalidate({eventId: "e5"});
-		yield* live.topic("posts").appendNode("Post", "p1", {node: {id: "p1"}});
-		yield* Effect.promise(flush);
-
-		// The FROZEN baseline: the `(topicKey, message)` pairs the bridge's
-		// `makeLiveEventBus` recorded for these calls before deletion. Note `frame:
-		// {data: undefined}`: an update without `data` still carried the `data` key
-		// (the bus spelled `{data: options?.data}`), and the publisher must too.
-		const bridgeRecorded: Array<Recorded> = [
-			{
-				topicKey: liveEntityTopic("Definition", "d1"),
-				message: {
-					kind: "entity",
-					match: {type: "Definition", entityId: "d1"},
-					frame: {data: undefined},
-					eventId: "e1",
-				},
-			},
-			{
-				topicKey: liveEntityTopic("Post", 7),
-				message: {
-					kind: "entity",
-					match: {type: "Post", entityId: "7"},
-					frame: {delete: true, id: 7},
-					eventId: "e2",
-				},
-			},
-			{
-				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
-				message: {
-					kind: "connection",
-					match: {procedure: "Term.definitions", args: {slug: "effect"}},
-					frame: {
-						type: "appendNode",
-						nodeType: "Definition",
-						edge: {node: {id: "d2"}, cursor: "c1"},
-					},
-					eventId: "e3",
-				},
-			},
-			{
-				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
-				message: {
-					kind: "connection",
-					match: {procedure: "Term.definitions", args: {slug: "effect"}},
-					frame: {type: "prependNode", nodeType: "Definition", edge: {node: {id: "d3"}}},
-				},
-			},
-			{
-				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
-				message: {
-					kind: "connection",
-					match: {procedure: "Term.definitions", args: {slug: "effect"}},
-					frame: {type: "deleteEdge", nodeType: "Definition", id: "d2"},
-					eventId: "e4",
-				},
-			},
-			{
-				topicKey: liveConnectionTopic("Term.definitions", {slug: "effect"}),
-				message: {
-					kind: "connection",
-					match: {procedure: "Term.definitions", args: {slug: "effect"}},
-					frame: {type: "invalidate"},
-					eventId: "e5",
-				},
-			},
-			{
-				topicKey: liveGlobalConnectionTopic("posts"),
-				message: {
-					kind: "connection",
-					match: {procedure: "posts"},
-					frame: {type: "appendNode", nodeType: "Post", edge: {node: {id: "p1"}}},
-				},
-			},
-		];
-
-		assert.deepStrictEqual(recorded, bridgeRecorded);
 	}),
 );
 
