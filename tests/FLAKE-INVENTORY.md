@@ -101,10 +101,13 @@ must be able to tell a **bounded** flake (`root-cause-filed`, `fixed`) from an
 
 ### report.submit D1 read-after-write staleness
 
-- **Signature:** `report.test.ts > report.submit persists created=true` —
+- **Signature:** `report.submit — persistence + idempotency (real D1) > an
+  authed report on a live post persists and acks created=true` (its sibling `a
+  definition report persists and acks created=true` shares the signature) —
   assertion got `false` (expected the created record to persist)
 - **Suite / file:** integration — `apps/web/tests/integration/report.test.ts`
-  (`report.submit persists created=true`)
+  (`report.submit — persistence + idempotency (real D1) > an authed report on a
+  live post persists and acks created=true`)
 - **Reddened CI check:** `integration tests` → `ci-required` (workflow
   [`ci.yml`](../.github/workflows/ci.yml))
 - **First observed:** on the `main` push of commit `cf80e7e` (the
