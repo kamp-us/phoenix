@@ -97,30 +97,10 @@ describe("sozluk mutations — definition.add", () => {
 		expect(conn.items.some((e) => e.node.id === def.id)).toBe(true);
 	});
 
-	it("derives the term title from the slug when termTitle is not supplied", async () => {
-		const slug = `szmut-${STAMP}-pure-function`;
-		const added = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: slug, body: "A function whose output depends only on its inputs."},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(added.ok).toBe(true);
-
-		const term = await h.fate({
-			kind: "query",
-			name: "term",
-			args: {slug},
-			select: ["slug", "title"],
-		});
-		expect(term.ok).toBe(true);
-		if (!term.ok) return;
-		// "szmut-…-pure-function" → spaces for hyphens.
-		expect((term.data as TermNode).title).toBe(slug.split("-").join(" "));
-	});
+	// The pure title-from-slug derivation is unit-tested off-DB in
+	// worker/features/sozluk/definition-validation.unit.test.ts (ADR 0082) —
+	// Sozluk.titleFromSlug. The "second add extends the term" case below keeps the
+	// auto-create-term round-trip on real D1.
 
 	it("a second add on the same slug extends the term, not creates a new one", async () => {
 		const slug = `szmut-${STAMP}-two-defs`;
@@ -154,35 +134,9 @@ describe("sozluk mutations — definition.add", () => {
 		expect((term.data as TermNode).count).toBe(2);
 	});
 
-	it("empty body surfaces BODY_REQUIRED", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: `szmut-${STAMP}-empty`, body: "   "},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("BODY_REQUIRED");
-	});
-
-	it("bodies over 10000 chars surface BODY_TOO_LONG", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: `szmut-${STAMP}-toolong`, body: "x".repeat(10_001)},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("BODY_TOO_LONG");
-	});
+	// The pure definition-body codes (BODY_REQUIRED / BODY_TOO_LONG) on add are
+	// unit-tested off-DB in worker/features/sozluk/definition-validation.unit.test.ts
+	// (ADR 0082) — addDefinition calls validateBody before any DB read.
 
 	it("anonymous writes surface UNAUTHORIZED", async () => {
 		const result = await h.fate({
@@ -376,56 +330,9 @@ describe("sozluk mutations — definition.edit", () => {
 		expect((edited.data as DefNode).body).toBe("after edit");
 	});
 
-	it("rejects an empty edit body with BODY_REQUIRED", async () => {
-		const slug = `szmut-${STAMP}-edit-empty`;
-		const added = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: slug, body: "anchor"},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		if (!added.ok) return;
-		const id = (added.data as DefNode).id;
-
-		const result = await h.fate(
-			{kind: "mutation", name: "definition.edit", input: {id, body: "   "}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("BODY_REQUIRED");
-	});
-
-	it("rejects an edit body over 10000 chars with BODY_TOO_LONG", async () => {
-		const slug = `szmut-${STAMP}-edit-long`;
-		const added = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.add",
-				input: {termSlug: slug, body: "anchor"},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		if (!added.ok) return;
-		const id = (added.data as DefNode).id;
-
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "definition.edit",
-				input: {id, body: "x".repeat(10_001)},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("BODY_TOO_LONG");
-	});
+	// The pure definition-body codes (BODY_REQUIRED / BODY_TOO_LONG) on edit are
+	// unit-tested off-DB in worker/features/sozluk/definition-validation.unit.test.ts
+	// (ADR 0082) — editDefinition calls validateBody before any DB read.
 
 	it("ownership: a non-author edit is rejected with UNAUTHORIZED; the body is unchanged", async () => {
 		const slug = `szmut-${STAMP}-edit-cross`;

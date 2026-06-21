@@ -201,31 +201,9 @@ describe("pano comments — ownership (edit/delete)", () => {
 		expect(result.error.code).toBe("COMMENT_NOT_FOUND");
 	});
 
-	it("editing with an empty body surfaces BODY_REQUIRED; over 5000 chars BODY_TOO_LONG", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} edit-validation target`);
-		const id = await seedComment(postId, "valid original body");
-
-		const empty = await h.fate(
-			{kind: "mutation", name: "comment.edit", input: {id, body: "    "}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-		expect(empty.ok).toBe(false);
-		if (empty.ok) return;
-		expect(empty.error.code).toBe("BODY_REQUIRED");
-
-		const tooLong = await h.fate(
-			{
-				kind: "mutation",
-				name: "comment.edit",
-				input: {id, body: "x".repeat(5_001)},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(tooLong.ok).toBe(false);
-		if (tooLong.ok) return;
-		expect(tooLong.error.code).toBe("BODY_TOO_LONG");
-	});
+	// The pure comment-body codes (BODY_REQUIRED / BODY_TOO_LONG) on edit are
+	// unit-tested off-DB in worker/features/pano/submit-validation.unit.test.ts
+	// (ADR 0082) — editComment calls validateCommentBody before any DB read.
 });
 
 describe("pano comments — soft-delete placeholder semantics", () => {

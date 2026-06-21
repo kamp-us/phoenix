@@ -97,6 +97,149 @@ export interface PostTagRow {
 	label: string;
 }
 
+/** Raw tag shape on submit/draft input — `label` is optional until normalized. */
+export interface PostTagInput {
+	kind: string;
+	label?: string | undefined;
+}
+
+// Submit-validation lives here as exported pure functions (ADR 0013 for *where*
+// validation belongs, ADR 0082 for *why* it's lifted off the service): each is
+// wrong-or-right on its input with no DB, so the wire codes unit-test off-DB and
+// the integration tier keeps only the real-DB-miss cases. `submitPost` /
+// `saveDraft` / `addComment` / `editPost` / `editComment` call these at the same
+// point they used to call the in-factory closures, so observable behavior + wire
+// codes are unchanged.
+
+/** Returns the normalized body (`null` for empty), or fails `PostBodyTooLong`. */
+export const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
+	if (rawBody.length > POST_BODY_MAX) {
+		return yield* new PostBodyTooLong({
+			message: `metin en fazla ${POST_BODY_MAX} karakter olabilir`,
+		});
+	}
+	return rawBody.length === 0 ? null : rawBody;
+});
+
+export const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: string) {
+	const trimmed = raw.trim();
+	if (trimmed.length === 0) {
+		return yield* new TitleRequired({
+			message: "başlık boş olamaz",
+		});
+	}
+	if (trimmed.length > POST_TITLE_MAX) {
+		return yield* new TitleTooLong({
+			message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
+		});
+	}
+	return trimmed;
+});
+
+/**
+ * Draft title gate — `saveDraft` has no required title (a half-filled form
+ * persists), only the length cap. Returns the trimmed title or fails
+ * `TitleTooLong`.
+ */
+export const validateDraftTitle = Effect.fn("Pano.validateDraftTitle")(function* (raw: string) {
+	const trimmed = raw.trim();
+	if (trimmed.length > POST_TITLE_MAX) {
+		return yield* new TitleTooLong({
+			message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
+		});
+	}
+	return trimmed;
+});
+
+export const validateCommentBody = Effect.fn("Pano.validateCommentBody")(function* (
+	body: string | null | undefined,
+) {
+	const rawBody = body ?? "";
+	if (rawBody.trim().length === 0) {
+		return yield* new CommentBodyRequired({
+			message: "yorum boş olamaz",
+		});
+	}
+	if (rawBody.length > COMMENT_BODY_MAX) {
+		return yield* new CommentBodyTooLong({
+			message: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
+		});
+	}
+	return rawBody;
+});
+
+/**
+ * Parse an optional submit/draft URL to its normalized form + host. An empty or
+ * absent URL yields `{host: null, urlNormalized: null}`; a malformed one fails
+ * `UrlInvalid`. Shared by `submitPost` and `saveDraft`.
+ */
+export const parseSubmitUrl = Effect.fn("Pano.parseSubmitUrl")(function* (
+	url: string | null | undefined,
+) {
+	if (url == null || url.length === 0) {
+		return {host: null, urlNormalized: null} as const;
+	}
+	const parsed = yield* Effect.try({
+		try: () => new URL(url),
+		catch: () => new UrlInvalid({message: "URL geçersiz"}),
+	});
+	return {host: parsed.host, urlNormalized: parsed.toString()} as const;
+});
+
+/**
+ * `submitPost` tag normalization: at least one tag is required, every kind must
+ * be in the fixed enum, duplicate kinds collapse. Fails `TagsRequired` /
+ * `TagInvalid`.
+ */
+export const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(function* (
+	tags: ReadonlyArray<PostTagInput> | null | undefined,
+) {
+	if (!tags || tags.length === 0) {
+		return yield* new TagsRequired({
+			message: "en az bir etiket seç",
+		});
+	}
+	const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
+	const normalizedTags: PostTagRow[] = [];
+	const seenKinds = new Set<string>();
+	for (const t of tags) {
+		const kind = (t.kind ?? "").trim();
+		if (!allowed.has(kind)) {
+			return yield* new TagInvalid({
+				message: `geçersiz etiket: ${kind || "(boş)"}`,
+			});
+		}
+		if (seenKinds.has(kind)) continue;
+		seenKinds.add(kind);
+		normalizedTags.push({kind, label: t.label?.trim() || kind});
+	}
+	return normalizedTags;
+});
+
+/**
+ * `saveDraft` tag normalization: tags are optional (empty kinds skipped, not
+ * rejected), but a non-empty kind outside the fixed enum still fails
+ * `TagInvalid`.
+ */
+export const normalizeDraftTags = Effect.fn("Pano.normalizeDraftTags")(function* (
+	tags: ReadonlyArray<PostTagInput> | null | undefined,
+) {
+	const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
+	const normalizedTags: PostTagRow[] = [];
+	const seenKinds = new Set<string>();
+	for (const t of tags ?? []) {
+		const kind = (t.kind ?? "").trim();
+		if (kind.length === 0) continue;
+		if (!allowed.has(kind)) {
+			return yield* new TagInvalid({message: `geçersiz etiket: ${kind}`});
+		}
+		if (seenKinds.has(kind)) continue;
+		seenKinds.add(kind);
+		normalizedTags.push({kind, label: t.label?.trim() || kind});
+	}
+	return normalizedTags;
+});
+
 export interface PostPage {
 	id: string;
 	slug: string | null;
@@ -564,48 +707,6 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 		});
 
-		/** Returns the normalized body (`null` for empty), or fails `PostValidation`. */
-		const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
-			if (rawBody.length > POST_BODY_MAX) {
-				return yield* new PostBodyTooLong({
-					message: `metin en fazla ${POST_BODY_MAX} karakter olabilir`,
-				});
-			}
-			return rawBody.length === 0 ? null : rawBody;
-		});
-
-		const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: string) {
-			const trimmed = raw.trim();
-			if (trimmed.length === 0) {
-				return yield* new TitleRequired({
-					message: "başlık boş olamaz",
-				});
-			}
-			if (trimmed.length > POST_TITLE_MAX) {
-				return yield* new TitleTooLong({
-					message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
-				});
-			}
-			return trimmed;
-		});
-
-		const validateCommentBody = Effect.fn("Pano.validateCommentBody")(function* (
-			body: string | null | undefined,
-		) {
-			const rawBody = body ?? "";
-			if (rawBody.trim().length === 0) {
-				return yield* new CommentBodyRequired({
-					message: "yorum boş olamaz",
-				});
-			}
-			if (rawBody.length > COMMENT_BODY_MAX) {
-				return yield* new CommentBodyTooLong({
-					message: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
-				});
-			}
-			return rawBody;
-		});
-
 		const getPost = Effect.fn("Pano.getPost")(function* (postId: string) {
 			const meta = yield* run((db) =>
 				db.query.postSummary.findFirst({
@@ -906,40 +1007,8 @@ export const PanoLive = Layer.effect(Pano)(
 		const submitPost = Effect.fn("Pano.submitPost")(function* (input: SubmitPostInput) {
 			const title = yield* validatePostTitle(input.title ?? "");
 			const body = yield* validatePostBody(input.body ?? "");
-
-			let host: string | null = null;
-			let urlNormalized: string | null = null;
-			if (input.url != null && input.url.length > 0) {
-				const parsed = yield* Effect.try({
-					try: () => new URL(input.url as string),
-					catch: () =>
-						new UrlInvalid({
-							message: "URL geçersiz",
-						}),
-				});
-				urlNormalized = parsed.toString();
-				host = parsed.host;
-			}
-
-			if (!input.tags || input.tags.length === 0) {
-				return yield* new TagsRequired({
-					message: "en az bir etiket seç",
-				});
-			}
-			const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
-			const normalizedTags: PostTagRow[] = [];
-			const seenKinds = new Set<string>();
-			for (const t of input.tags) {
-				const kind = (t.kind ?? "").trim();
-				if (!allowed.has(kind)) {
-					return yield* new TagInvalid({
-						message: `geçersiz etiket: ${kind || "(boş)"}`,
-					});
-				}
-				if (seenKinds.has(kind)) continue;
-				seenKinds.add(kind);
-				normalizedTags.push({kind, label: t.label?.trim() || kind});
-			}
+			const {host, urlNormalized} = yield* parseSubmitUrl(input.url);
+			const normalizedTags = yield* normalizeSubmitTags(input.tags);
 
 			const postId = id("post");
 			const now = new Date();
@@ -995,38 +1064,10 @@ export const PanoLive = Layer.effect(Pano)(
 		// (no required title/tags), so a half-filled form persists. One draft per
 		// author is enforced by the partial unique index + this probe-then-upsert.
 		const saveDraft = Effect.fn("Pano.saveDraft")(function* (input: SaveDraftInput) {
-			const rawTitle = (input.title ?? "").trim();
-			if (rawTitle.length > POST_TITLE_MAX) {
-				return yield* new TitleTooLong({
-					message: `başlık en fazla ${POST_TITLE_MAX} karakter olabilir`,
-				});
-			}
+			const rawTitle = yield* validateDraftTitle(input.title ?? "");
 			const body = yield* validatePostBody(input.body ?? "");
-
-			let host: string | null = null;
-			let urlNormalized: string | null = null;
-			if (input.url != null && input.url.length > 0) {
-				const parsed = yield* Effect.try({
-					try: () => new URL(input.url as string),
-					catch: () => new UrlInvalid({message: "URL geçersiz"}),
-				});
-				urlNormalized = parsed.toString();
-				host = parsed.host;
-			}
-
-			const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
-			const normalizedTags: PostTagRow[] = [];
-			const seenKinds = new Set<string>();
-			for (const t of input.tags ?? []) {
-				const kind = (t.kind ?? "").trim();
-				if (kind.length === 0) continue;
-				if (!allowed.has(kind)) {
-					return yield* new TagInvalid({message: `geçersiz etiket: ${kind}`});
-				}
-				if (seenKinds.has(kind)) continue;
-				seenKinds.add(kind);
-				normalizedTags.push({kind, label: t.label?.trim() || kind});
-			}
+			const {host, urlNormalized} = yield* parseSubmitUrl(input.url);
+			const normalizedTags = yield* normalizeDraftTags(input.tags);
 
 			const now = new Date();
 			const bodyExcerpt = body ? excerpt(body) : "";

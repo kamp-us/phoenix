@@ -4,8 +4,8 @@
  *
  * Vote mutations delegate to the shared `Vote.cast` (atomic vote write + karma)
  * and only recompute `term_summary` aggregates afterward, rather than
- * reimplementing the batch-vote logic. Validation lives in the service methods
- * as closure helpers (ADR 0013).
+ * reimplementing the batch-vote logic. Pure validation/derivation is exported as
+ * module-level functions so it unit-tests off-DB (ADR 0013 / 0082).
  */
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
@@ -42,6 +42,36 @@ export type {TermConnectionPage, TermSummaryRow} from "./term-summary.ts";
 
 /** Body length cap for definitions — surfaced as `BODY_TOO_LONG` on overflow. */
 export const DEFINITION_BODY_MAX = 10_000;
+
+// Pure validation/derivation lifted off the service (ADR 0013 for *where*, ADR
+// 0082 for *why*): each is wrong-or-right on its input with no DB, so the wire
+// codes + title derivation unit-test off-DB. `addDefinition` / `editDefinition`
+// call these at the same point the in-factory closure / inline `replace` ran, so
+// observable behavior is unchanged.
+
+/**
+ * Per ADR 0013, body validation lives in the domain, not the resolver. Returns
+ * the body when valid (empty after trim ⇒ `BodyRequired`, over the cap ⇒
+ * `BodyTooLong`).
+ */
+export const validateBody = Effect.fn("Sozluk.validateBody")(function* (
+	body: string | null | undefined,
+) {
+	const rawBody = body ?? "";
+	if (rawBody.trim().length === 0) {
+		return yield* new BodyRequired({message: "tanım boş olamaz"});
+	}
+	if (rawBody.length > DEFINITION_BODY_MAX) {
+		return yield* new BodyTooLong({
+			max: DEFINITION_BODY_MAX,
+			message: `tanım en fazla ${DEFINITION_BODY_MAX} karakter olabilir`,
+		});
+	}
+	return rawBody;
+});
+
+/** Fallback term title when none is supplied: the slug with dashes as spaces. */
+export const titleFromSlug = (slug: string): string => slug.replace(/-/g, " ");
 
 const DEFINITION_EXCERPT_LEN = 140;
 
@@ -245,24 +275,6 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		// stays `never`.
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
-
-		// Per ADR 0013, body validation lives here, not in the resolver. Returns
-		// the trimmed body when valid, else fails with the tagged error.
-		const validateBody = Effect.fn("Sozluk.validateBody")(function* (
-			body: string | null | undefined,
-		) {
-			const rawBody = body ?? "";
-			if (rawBody.trim().length === 0) {
-				return yield* new BodyRequired({message: "tanım boş olamaz"});
-			}
-			if (rawBody.length > DEFINITION_BODY_MAX) {
-				return yield* new BodyTooLong({
-					max: DEFINITION_BODY_MAX,
-					message: `tanım en fazla ${DEFINITION_BODY_MAX} karakter olabilir`,
-				});
-			}
-			return rawBody;
-		});
 
 		// Recompute one slug's `term_summary` row from its live `definition_record`
 		// slice. Convergent: the row is fully derived from definitions + title.
@@ -653,7 +665,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const slug = input.termSlug;
 			const existing = yield* run((db) => db.query.termSummary.findFirst({where: {slug}}));
 			const termCreated = !existing;
-			const title = existing?.title ?? input.termTitle ?? slug.replace(/-/g, " ");
+			const title = existing?.title ?? input.termTitle ?? titleFromSlug(slug);
 
 			const definitionId = id("def");
 			const now = new Date();
