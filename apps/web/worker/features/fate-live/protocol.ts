@@ -20,14 +20,30 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 /**
- * The closed set of live connection procedures phoenix publishes to / subscribes
- * on. A typo on either side silently creates a dead topic (publish and subscribe
- * miss each other with no failure). The subscribe side is gated by
- * {@link LiveConnectionProcedureSchema}; the publish side by
- * {@link WorkerLivePublisher}. Add a member when a resolver publishes to a new
- * connection.
+ * The ONE source of every live connection-procedure topic name: the string is
+ * authored here once, and the union, the subscribe-side decode schema, and every
+ * publish call site all derive from / reference this object. A topic key can no
+ * longer be mistyped at a call site (publish and subscribe can't miss each other
+ * via a stray literal). Add a connection by adding ONE entry here — the union and
+ * the schema literal pick it up automatically, and publish sites reference
+ * `LiveConnection.<name>` instead of restating the string.
  */
-export type LiveConnectionProcedure = "posts" | "Post.comments" | "Term.definitions";
+export const LiveConnection = {
+	/** pano feed (no-args, global). */
+	posts: "posts",
+	/** pano post → comments (args: `{id: postId}`). */
+	postComments: "Post.comments",
+	/** sözlük term → definitions (args: `{id: termSlug}`). */
+	termDefinitions: "Term.definitions",
+} as const;
+
+/**
+ * The closed set of live connection procedures phoenix publishes to / subscribes
+ * on, derived from {@link LiveConnection}'s values. The subscribe side is gated by
+ * {@link LiveConnectionProcedureSchema}; the publish side by
+ * {@link WorkerLivePublisher}.
+ */
+export type LiveConnectionProcedure = (typeof LiveConnection)[keyof typeof LiveConnection];
 
 /**
  * The package `LivePublisher` service surface with `connection`'s procedure
@@ -134,16 +150,11 @@ export type SubscribeControl =
 const OptionalArgs = Schema.optional(Schema.Record(Schema.String, Schema.Unknown));
 
 /**
- * The subscribe-side schema literal for {@link LiveConnectionProcedure}. An
- * unknown procedure fails decode (→ `BAD_REQUEST`) rather than registering a dead
- * topic. The `satisfies` pins the members to the union, so adding a
- * `LiveConnectionProcedure` member without listing it here is a compile error.
+ * The subscribe-side schema for {@link LiveConnectionProcedure}, derived from
+ * {@link LiveConnection}'s values so it can't drift from the union. An unknown
+ * procedure fails decode (→ `BAD_REQUEST`) rather than registering a dead topic.
  */
-const LiveConnectionProcedureSchema = Schema.Literals([
-	"posts",
-	"Post.comments",
-	"Term.definitions",
-] satisfies ReadonlyArray<LiveConnectionProcedure>);
+const LiveConnectionProcedureSchema = Schema.Literals(Object.values(LiveConnection));
 
 const SubscribeOp = Schema.Struct({
 	id: Schema.String,
