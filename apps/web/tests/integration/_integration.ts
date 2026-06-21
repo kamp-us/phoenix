@@ -29,6 +29,7 @@ import type {Input} from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import type {CompiledStack} from "alchemy/Stack";
 import * as Test from "alchemy/Test/Vitest";
+import * as Cause from "effect/Cause";
 import * as Data from "effect/Data";
 import * as Effect from "effect/Effect";
 import * as Schedule from "effect/Schedule";
@@ -173,7 +174,21 @@ export function integrationStack(metaUrl: string): Harness {
 	// overwritten by the next run's same-named deploy — orphan D1s accumulate instead.
 	// A partial-deploy teardown that reliably cleans those up is out of scope here
 	// (hard within alchemy's model); tracked as a follow-up sweep. See #690.
-	afterAll.skipIf(NO_DESTROY)(destroy(Stack, {stage}));
+	//
+	// Teardown is CLEANUP, not an assertion: a CF delete-ordering Conflict ("referenced
+	// by Worker script" — the #813 missing worker→FlagshipApp downstream edge deletes
+	// app+worker concurrently) or a WorkerNotFound here must NOT red a green suite, whose
+	// pass/fail is the test assertions alone. So we catch the destroy's cause, log it loud
+	// so the leaked stage is visible (swept by #690), and succeed. Durable fix: #813 (#1020).
+	afterAll.skipIf(NO_DESTROY)(
+		destroy(Stack, {stage}).pipe(
+			Effect.catchCause((cause) =>
+				Effect.logWarning(
+					`[integration] best-effort teardown failed for stage "${stage}" — stage leaked, sweep via #690 (durable fix #813):\n${Cause.pretty(cause)}`,
+				),
+			),
+		),
+	);
 
 	return harness(
 		() => workerUrl,
