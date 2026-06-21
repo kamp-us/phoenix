@@ -72,6 +72,18 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   for the related lint-path footgun (bare `biome check .` resolves to the worktree
   CWD and silently matches the `!**/.claude/worktrees` exclusion → false green).
 
+- **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
+  never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run
+  from a *subdirectory* (e.g. `apps/web/`) trips pnpm's refusal: it resolves the
+  nearest package from the nested CWD and won't run a root script from there. The
+  symptom is a message telling you to *run from the workspace root or use `-w`* — it
+  is **not** a real lint/type failure, so don't misread it as one. This compounds the
+  cwd-reset above: when the Bash cwd drifts to a subdir (or the `pre-bash` pin lands
+  you in a nested path), a bare `pnpm <script>` resolves from there and hits the
+  refusal. Invoke root scripts as `pnpm -w <script>` (the `-w`/`--workspace-root`
+  flag pins resolution to the workspace root regardless of CWD), which sidesteps both
+  footguns at once.
+
 - **`read-guard` is NOT a blocker here** — it already fails OPEN for any target
   under `.claude/worktrees/` (`packages/read-guard/src/bin.ts`, #781), because a
   worktree subagent's own `Read`s live in a separate transcript the hook can't see,
