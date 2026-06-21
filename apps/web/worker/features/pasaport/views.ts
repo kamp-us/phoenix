@@ -27,11 +27,12 @@ export class UserView extends FateDataView<UserViewRow>()("User")({
 }) {}
 
 // The **discriminant** view for the profile contributions feed: fate has no
-// union type, so the three variants' fields are flattened onto one row keyed by
-// a `kind` discriminant (ADR 0018; flattened by `shapers.toContributionRow`).
-// Variant fields are nullable, populated per `kind`: definition →
-// bodyExcerpt/termSlug/termTitle, post → title/slug/bodyExcerpt, comment →
-// bodyExcerpt/postId/postTitle.
+// union type, so the variants' fields are flattened onto one row keyed by a
+// `kind` discriminant (ADR 0018; flattened by `shapers.toContributionRow`).
+// The field map IS the keys of `ContributionRow`, which derives from the
+// `ContributionVariants` manifest in `Pasaport.ts` — `ContributionViewRow` is
+// `ViewRow<ContributionRow>`, so a field added there (or dropped here) is a
+// compile error, never a silent flatten drift.
 export class ContributionView extends FateDataView<ContributionViewRow>()("Contribution")({
 	kind: true,
 	id: true,
@@ -44,7 +45,7 @@ export class ContributionView extends FateDataView<ContributionViewRow>()("Contr
 	slug: true,
 	postId: true,
 	postTitle: true,
-}) {}
+} satisfies {[K in keyof ContributionViewRow]: true}) {}
 
 // `id` is the client's normalization key (codegen hardcodes `getId` to
 // `record.id`); a `Profile` is one-to-one with its user, so `id` === `userId`,
