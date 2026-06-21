@@ -216,7 +216,7 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 				Effect.tap((res) =>
 					Effect.promise(() => res.body?.cancel().catch(() => {}) ?? Promise.resolve()),
 				),
-				Effect.flatMap((res) => {
+				Effect.flatMap((res): Effect.Effect<void, LiveDONotReady | LiveDOUnexpected> => {
 					// 200 means the LiveDO warmed. Otherwise retry only the two "not ready"
 					// signals (`LiveDONotReady`): a 503 cold-DO envelope, OR a Cloudflare
 					// HTML-placeholder 404 (edge route not yet propagated, #1055). The worker's
