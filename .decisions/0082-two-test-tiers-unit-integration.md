@@ -1,7 +1,7 @@
 ---
 id: 0082
 title: Two Test Tiers — Unit (No DB) and Integration (Real D1 via alchemy `Test.make`)
-status: accepted
+status: extended-in-part by [0104](0104-two-mode-integration-test-tier.md)
 date: 2026-06-17
 tags: [testing, architecture, alchemy, d1]
 ---
@@ -174,3 +174,10 @@ Builds on [0029](0029-worker-runtime-servicemap.md),
 [0011](0011-drizzle-context-service.md), [0032](0032-alchemy-beta45-and-dev-model.md),
 [0080](0080-site-search-lexical-bar-semantic-discovery.md), and the alchemy `Test.make` testing model.
 Supersedes [0040](0040-testing-taxonomy-and-seam-graduation.md).
+
+Extended-in-part by [0104](0104-two-mode-integration-test-tier.md): the two-tier
+names (`unit` / `integration`) and the faked-engine ban stand; the `integration`
+tier's **per-file-stage** shape is superseded by a run-scoped shared stage for the
+irreducible real-D1/DO files plus a downward move of the pure-logic files to the
+`unit` tier — the per-file 24× create/destroy surface was the root of the
+#1010/#1019/#1020 flake cluster.
