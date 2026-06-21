@@ -14,6 +14,7 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
+import {POST_SORT_LEAD_COLUMN, type PostSort} from "../../../src/lib/panoFeedSort.ts";
 import {
 	isPostTagKind,
 	POST_TAG_KINDS,
@@ -241,7 +242,7 @@ export interface PostPage {
 	tags: PostTagRow[];
 }
 
-export type PostSort = "hot" | "new" | "top" | "discuss";
+export type {PostSort};
 
 export interface PostSummaryRow {
 	id: string;
@@ -755,16 +756,13 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 			const cursorRow = cursor.kind === "hit" ? cursor.row : null;
 
-			// Sort's lead column (all descending) + `id` desc tiebreaker; `new`
-			// orders by id alone.
-			const leadColumn =
-				sort === "top"
-					? {column: schema.postSummary.score, value: cursorRow?.score}
-					: sort === "discuss"
-						? {column: schema.postSummary.commentCount, value: cursorRow?.commentCount}
-						: sort === "new"
-							? null
-							: {column: schema.postSummary.hotScore, value: cursorRow?.hotScore};
+			// Both the keyset cursor predicate and `orderBy` derive from the one
+			// `POST_SORT_LEAD_COLUMN` map: an optional lead column (descending) +
+			// `id` desc tiebreaker; `new` (no lead column) orders by `id` alone.
+			const leadKey = POST_SORT_LEAD_COLUMN[sort];
+			const leadColumn = leadKey
+				? {column: schema.postSummary[leadKey], value: cursorRow?.[leadKey]}
+				: null;
 
 			const cursorPredicate = keysetAfter([
 				...(leadColumn
@@ -777,14 +775,10 @@ export const PanoLive = Layer.effect(Pano)(
 				? and(...baseConditions, cursorPredicate)
 				: and(...baseConditions);
 
-			const orderBy =
-				sort === "new"
-					? [desc(schema.postSummary.id)]
-					: sort === "top"
-						? [desc(schema.postSummary.score), desc(schema.postSummary.id)]
-						: sort === "discuss"
-							? [desc(schema.postSummary.commentCount), desc(schema.postSummary.id)]
-							: [desc(schema.postSummary.hotScore), desc(schema.postSummary.id)];
+			const orderBy = [
+				...(leadColumn ? [desc(leadColumn.column)] : []),
+				desc(schema.postSummary.id),
+			];
 
 			const fetched = yield* run((db) =>
 				db
