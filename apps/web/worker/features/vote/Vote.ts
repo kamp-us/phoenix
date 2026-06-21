@@ -16,12 +16,12 @@
  * bump (via {@link KarmaBump}) — in one batch that commits or rolls back as a
  * unit. See ADR 0014 (batch as service method).
  */
-import {and, eq, inArray, sql} from "drizzle-orm";
+import {and, eq, inArray} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
-import {hotMultiplier} from "../../db/hotScore.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
+import {type TargetRecordMeta, targetTable} from "../../db/target-table.ts";
 import {VoteTargetNotFound} from "./errors.ts";
 
 // Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
@@ -97,15 +97,6 @@ export class Vote extends Context.Service<
 	}
 >()("@kampus/vote/Vote") {}
 
-/**
- * Per-target metadata resolved before the write. `authorId` is the karma
- * recipient; `createdAtMs` feeds the post hot-score recompute.
- */
-interface TargetMeta {
-	authorId: string;
-	createdAtMs: number;
-}
-
 export const VoteLive = Layer.effect(Vote)(
 	Effect.gen(function* () {
 		// `orDieAccess`: every internal DB call site dies on `DrizzleError`
@@ -118,119 +109,27 @@ export const VoteLive = Layer.effect(Vote)(
 		// surface `VoteTargetNotFound` rather than letting the batch fail with
 		// an FK-shaped error.
 		const loadMeta = Effect.fn("Vote.loadMeta")(function* (kind: TargetKind, targetId: string) {
-			switch (kind) {
-				case "definition": {
-					const row = yield* run((db) =>
-						db.query.definitionRecord.findFirst({
-							where: {id: targetId, removedAt: {isNull: true}},
-						}),
-					);
-					if (!row) {
-						return yield* new VoteTargetNotFound({
-							targetKind: "definition",
-							targetId,
-							message: `vote target definition ${targetId} not found`,
-						});
-					}
-					return {
-						authorId: row.authorId,
-						createdAtMs: (row.createdAt ?? new Date()).getTime(),
-					} satisfies TargetMeta;
-				}
-				case "post": {
-					const row = yield* run((db) =>
-						db.query.postRecord.findFirst({
-							where: {id: targetId, removedAt: {isNull: true}},
-						}),
-					);
-					if (!row) {
-						return yield* new VoteTargetNotFound({
-							targetKind: "post",
-							targetId,
-							message: `vote target post ${targetId} not found`,
-						});
-					}
-					return {
-						authorId: row.authorId,
-						createdAtMs: (row.createdAt ?? new Date()).getTime(),
-					} satisfies TargetMeta;
-				}
-				case "comment": {
-					const row = yield* run((db) =>
-						db.query.commentRecord.findFirst({
-							where: {id: targetId, removedAt: {isNull: true}},
-						}),
-					);
-					if (!row) {
-						return yield* new VoteTargetNotFound({
-							targetKind: "comment",
-							targetId,
-							message: `vote target comment ${targetId} not found`,
-						});
-					}
-					return {
-						authorId: row.authorId,
-						createdAtMs: (row.createdAt ?? new Date()).getTime(),
-					} satisfies TargetMeta;
-				}
+			const meta = yield* run((db) => targetTable[kind].loadMeta(db, targetId));
+			if (!meta) {
+				return yield* new VoteTargetNotFound({
+					targetKind: kind,
+					targetId,
+					message: `vote target ${kind} ${targetId} not found`,
+				});
 			}
+			return meta;
 		});
 
 		// Idempotency probe: one point-lookup against the vote table to decide
 		// if the write would be a no-op, so re-casts/re-retracts stay cheap
 		// reads (the `isCast === alreadyCast` path skips the batch).
 		const probeExisting = (kind: TargetKind, targetId: string, userId: string) =>
-			run(async (db) => {
-				switch (kind) {
-					case "definition": {
-						const row = await db.query.definitionVote.findFirst({
-							where: {definitionId: targetId, voterId: userId},
-						});
-						return row != null;
-					}
-					case "post": {
-						const row = await db.query.postVote.findFirst({
-							where: {postId: targetId, voterId: userId},
-						});
-						return row != null;
-					}
-					case "comment": {
-						const row = await db.query.commentVote.findFirst({
-							where: {commentId: targetId, voterId: userId},
-						});
-						return row != null;
-					}
-				}
-			});
+			run((db) => targetTable[kind].probeVote(db, targetId, userId));
 
 		// Read the truth-derived score back from the cache the batch just
 		// refreshed; also serves the idempotent path's tail.
 		const readCachedScore = (kind: TargetKind, targetId: string) =>
-			run(async (db) => {
-				switch (kind) {
-					case "definition": {
-						const row = await db.query.definitionRecord.findFirst({
-							where: {id: targetId},
-							columns: {score: true},
-						});
-						return row?.score ?? 0;
-					}
-					case "post": {
-						const row = await db.query.postRecord.findFirst({
-							where: {id: targetId},
-							columns: {score: true},
-						});
-						return row?.score ?? 0;
-					}
-					case "comment": {
-						const row = await db.query.commentRecord.findFirst({
-							where: {id: targetId},
-							columns: {score: true},
-						});
-						return row?.score ?? 0;
-					}
-				}
-			});
+			run((db) => targetTable[kind].readScore(db, targetId));
 
 		// Lives here (not in each consuming feature) because Vote owns the
 		// cross-product `user_vote` table. See the `readMine` interface doc.
@@ -306,26 +205,12 @@ export const VoteLive = Layer.effect(Vote)(
  * neither (ADR 0014), so a removed entity never carries orphan vote rows.
  */
 function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: string) {
-	const userVoteWipe = db
-		.delete(schema.userVote)
-		.where(and(eq(schema.userVote.targetKind, kind), eq(schema.userVote.targetId, targetId)));
-	switch (kind) {
-		case "definition":
-			return [
-				db.delete(schema.definitionVote).where(eq(schema.definitionVote.definitionId, targetId)),
-				userVoteWipe,
-			] as const;
-		case "post":
-			return [
-				db.delete(schema.postVote).where(eq(schema.postVote.postId, targetId)),
-				userVoteWipe,
-			] as const;
-		case "comment":
-			return [
-				db.delete(schema.commentVote).where(eq(schema.commentVote.commentId, targetId)),
-				userVoteWipe,
-			] as const;
-	}
+	return [
+		targetTable[kind].clearVotes(db, targetId),
+		db
+			.delete(schema.userVote)
+			.where(and(eq(schema.userVote.targetKind, kind), eq(schema.userVote.targetId, targetId))),
+	] as const;
 }
 
 /**
@@ -336,15 +221,18 @@ function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: s
 function buildBatchStatements(
 	db: DrizzleDb,
 	input: VoteInput,
-	meta: TargetMeta,
+	meta: TargetRecordMeta,
 	isCast: boolean,
 	karmaDelta: number,
 	now: Date,
 	karmaBump: KarmaBumpService,
 ) {
-	const voteRow = isCast ? buildVoteInsert(db, input, now) : buildVoteDelete(db, input);
+	const table = targetTable[input.targetKind];
+	const voteRow = isCast
+		? table.voteInsert(db, input.targetId, input.userId, now)
+		: table.voteDelete(db, input.targetId, input.userId);
 
-	const scoreUpdate = buildScoreCacheStatement(db, input.targetKind, input.targetId, now, meta);
+	const scoreUpdate = table.scoreCache(db, input.targetId, now, meta);
 
 	const userVoteRow = isCast
 		? db
@@ -369,114 +257,4 @@ function buildBatchStatements(
 	const karma = karmaBump.statement(db, meta.authorId, karmaDelta);
 
 	return [voteRow, scoreUpdate, userVoteRow, karma] as const;
-}
-
-function buildVoteInsert(db: DrizzleDb, input: VoteInput, now: Date) {
-	switch (input.targetKind) {
-		case "definition":
-			return db
-				.insert(schema.definitionVote)
-				.values({
-					definitionId: input.targetId,
-					voterId: input.userId,
-					createdAt: now,
-				})
-				.onConflictDoNothing();
-		case "post":
-			return db
-				.insert(schema.postVote)
-				.values({
-					postId: input.targetId,
-					voterId: input.userId,
-					createdAt: now,
-				})
-				.onConflictDoNothing();
-		case "comment":
-			return db
-				.insert(schema.commentVote)
-				.values({
-					commentId: input.targetId,
-					voterId: input.userId,
-					createdAt: now,
-				})
-				.onConflictDoNothing();
-	}
-}
-
-function buildVoteDelete(db: DrizzleDb, input: VoteInput) {
-	switch (input.targetKind) {
-		case "definition":
-			return db
-				.delete(schema.definitionVote)
-				.where(
-					and(
-						eq(schema.definitionVote.definitionId, input.targetId),
-						eq(schema.definitionVote.voterId, input.userId),
-					),
-				);
-		case "post":
-			return db
-				.delete(schema.postVote)
-				.where(
-					and(
-						eq(schema.postVote.postId, input.targetId),
-						eq(schema.postVote.voterId, input.userId),
-					),
-				);
-		case "comment":
-			return db
-				.delete(schema.commentVote)
-				.where(
-					and(
-						eq(schema.commentVote.commentId, input.targetId),
-						eq(schema.commentVote.voterId, input.userId),
-					),
-				);
-	}
-}
-
-/**
- * Score-cache UPDATE for the target row. The new score is a `COUNT(*)` subquery
- * against the truth-source vote table inside the same UPDATE, so the cache
- * reflects truth after the batch and concurrent `ON CONFLICT DO NOTHING`
- * collisions self-heal. Posts also carry a precomputed `hot_score` — SQLite has
- * no `POW`, so the multiplier is computed in JS and bound in.
- */
-function buildScoreCacheStatement(
-	db: DrizzleDb,
-	kind: TargetKind,
-	targetId: string,
-	now: Date,
-	meta: TargetMeta,
-) {
-	switch (kind) {
-		case "definition":
-			return db
-				.update(schema.definitionRecord)
-				.set({
-					score: sql`(SELECT COUNT(*) FROM ${schema.definitionVote} WHERE ${schema.definitionVote.definitionId} = ${targetId})`,
-					updatedAt: now,
-				})
-				.where(eq(schema.definitionRecord.id, targetId));
-		case "post": {
-			const multiplier = hotMultiplier(meta.createdAtMs, now.getTime());
-			return db
-				.update(schema.postRecord)
-				.set({
-					score: sql`(SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId})`,
-					hotScore: sql`CAST((SELECT COUNT(*) FROM ${schema.postVote} WHERE ${schema.postVote.postId} = ${targetId}) * ${multiplier} AS INTEGER)`,
-					updatedAt: now,
-					lastActivityAt: now,
-				})
-				.where(eq(schema.postRecord.id, targetId));
-		}
-		case "comment":
-			return db
-				.update(schema.commentRecord)
-				.set({
-					score: sql`(SELECT COUNT(*) FROM ${schema.commentVote} WHERE ${schema.commentVote.commentId} = ${targetId})`,
-					updatedAt: now,
-				})
-				.where(eq(schema.commentRecord.id, targetId));
-	}
 }

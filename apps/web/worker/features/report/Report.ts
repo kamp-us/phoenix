@@ -16,6 +16,7 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
+import {targetTable} from "../../db/target-table.ts";
 import {ReportTargetNotFound} from "./errors.ts";
 import * as Resolution from "./resolution.ts";
 
@@ -149,26 +150,8 @@ export const ReportLive = Layer.effect(Report)(
 			kind: TargetKind,
 			targetId: string,
 		) {
-			const exists = yield* run((db) => {
-				switch (kind) {
-					case "definition":
-						return db.query.definitionRecord.findFirst({
-							where: {id: targetId, removedAt: {isNull: true}},
-							columns: {id: true},
-						});
-					case "post":
-						return db.query.postRecord.findFirst({
-							where: {id: targetId, removedAt: {isNull: true}},
-							columns: {id: true},
-						});
-					case "comment":
-						return db.query.commentRecord.findFirst({
-							where: {id: targetId, removedAt: {isNull: true}},
-							columns: {id: true},
-						});
-				}
-			});
-			if (!exists) {
+			const meta = yield* run((db) => targetTable[kind].loadMeta(db, targetId));
+			if (!meta) {
 				return yield* new ReportTargetNotFound({
 					targetKind: kind,
 					targetId,
