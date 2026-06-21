@@ -57,6 +57,12 @@ class WorkerNotReady extends Data.TaggedError("WorkerNotReady")<{readonly status
 // `WorkerNotReady` so the two readiness gates retry on their own signals.
 class LiveDONotReady extends Data.TaggedError("LiveDONotReady")<{readonly status: number}> {}
 
+// Retry sentinel for the `POST /fate` warmup below. `/api/health` warms only the worker
+// route and `warmLiveDO` only the `/fate/live` DO path — neither exercises `POST /fate`
+// or the D1 read replica it reads through. Tagged distinctly so the fate-read gate
+// retries on its own signal.
+class FateReadNotReady extends Data.TaggedError("FateReadNotReady")<{readonly status: number}> {}
+
 /**
  * Self-supply the two env values the integration deploy needs when a clean runner has no
  * `.env` — idempotent (`??=`), so a real `.env`/CI secret always wins. Both deploy paths
@@ -219,6 +225,48 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 		),
 	);
 
+/**
+ * Warm the `POST /fate` read path + D1 read replica so the dedicated stage's first
+ * asserting fate read doesn't pay the cold-PoP / cold-replica cost.
+ *
+ * `awaitWorkerReady` warms only `/api/health` and `warmLiveDO` only `/fate/live` — neither
+ * touches `POST /fate` or the D1 read it serves. The run-scoped SHARED stage masks this:
+ * ~11 files' prior traffic warms every route/PoP before any assertion. A DEDICATED stage
+ * (`integrationStack`) gets only its own file's traffic, so its first `POST /fate`
+ * (`fts-backfill`'s `before`, `search-error-vs-empty`'s reads) can hit a cold PoP. We
+ * front-load that warm here behind the same bounded `spaced` retry as `warmLiveDO`, on the
+ * dedicated path only (NOT the shared globalSetup — minimal blast radius). See ADR 0104, #1108.
+ *
+ * The anonymous `health` query (`Stats.getLandingStats` reads D1) needs no auth; the wire
+ * envelope (`{version, operations}`) mirrors the harness `fateBatch`.
+ */
+export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
+	Effect.tryPromise(() =>
+		fetch(`${url}/fate`, {
+			method: "POST",
+			headers: {"content-type": "application/json", origin: "http://localhost:3000"},
+			body: JSON.stringify({
+				version: 1,
+				operations: [{id: "1", kind: "query", name: "health", select: ["status"]}],
+			}),
+		}),
+	).pipe(
+		// A 200 means the route + D1 read served; a cold PoP placeholder-404 / edge reset
+		// surfaces as a non-200 → retry. The body is small JSON, so nothing to release.
+		Effect.flatMap((res) =>
+			res.status === 200 ? Effect.void : Effect.fail(new FateReadNotReady({status: res.status})),
+		),
+		Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
+		// Warmup is a readiness OPTIMIZATION, not an assertion (mirrors `warmLiveDO`): the
+		// asserting tests remain the gate, so a warm that never settles must NOT red a green
+		// stage. Swallow the cause and log it non-fatally.
+		Effect.catchCause((cause) =>
+			Effect.logWarning(
+				`[integration] POST /fate warmup did not settle (non-fatal):\n${Cause.pretty(cause)}`,
+			),
+		),
+	);
+
 // The eventually-consistent CF signatures the stage deploy can transiently draw under
 // cross-PR load on the shared account — registry lag right after `putScript`. Grounded in
 // the `@distilled.cloud/cloudflare` error decode (`src/services/workers.ts`): `WorkerNotFound`
@@ -343,6 +391,7 @@ export function integrationStack(metaUrl: string): Harness {
 					d1Target = {accountId: resolved.accountId, databaseId: resolved.databaseId};
 					yield* awaitWorkerReady(url);
 					yield* warmLiveDO(url);
+					yield* warmFateRead(url);
 				}),
 			),
 		),
