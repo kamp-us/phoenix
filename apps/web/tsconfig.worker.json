@@ -20,6 +20,7 @@
 	"include": [
 		"worker",
 		"src/lib/fateWireCodes.ts",
+		"src/lib/panoTags.ts",
 		"src/flags/keys.ts",
 		"alchemy.run.ts",
 		// The black-box integration suite (Vitest node pool → HTTP against the

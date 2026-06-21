@@ -14,6 +14,12 @@
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
+import {
+	isPostTagKind,
+	POST_TAG_KINDS,
+	type PostTagKind,
+	tagLabel,
+} from "../../../src/lib/panoTags.ts";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
@@ -50,10 +56,12 @@ const POST_EXCERPT_LEN = 280; // tweet-sized
 
 const excerpt = (body: string): string => excerptText(body, POST_EXCERPT_LEN);
 
-/** Fixed tag enum, stored on `post_summary.tags` as comma-separated values. */
-export const ALLOWED_POST_TAG_KINDS = ["göster", "tartışma", "soru", "söylenme", "meta"] as const;
-
-export type AllowedPostTagKind = (typeof ALLOWED_POST_TAG_KINDS)[number];
+// The tag enum + label aliases have a single typed home in `src/lib/panoTags.ts`,
+// cross-included by the worker tsconfig (#1030); re-exported here so the long-lived
+// server-side names (consumed by `sources.ts` etc.) keep resolving.
+export {tagLabel};
+export const ALLOWED_POST_TAG_KINDS = POST_TAG_KINDS;
+export type AllowedPostTagKind = PostTagKind;
 
 /**
  * Tombstone body the view layer renders for a `Removed` comment (ADR 0096 §5) —
@@ -61,27 +69,6 @@ export type AllowedPostTagKind = (typeof ALLOWED_POST_TAG_KINDS)[number];
  * restore + moderator review; `rowToCommentRow` substitutes this for display.
  */
 export const SILINDI_PLACEHOLDER = "[silindi]";
-
-/**
- * Label map for the fixed tag enum: the Turkish source-of-truth kinds plus
- * legacy English aliases that may exist in seed data.
- */
-const TAG_LABELS: Record<string, string> = {
-	göster: "göster",
-	tartışma: "tartışma",
-	soru: "soru",
-	söylenme: "söylenme",
-	meta: "meta",
-	show: "göster",
-	discuss: "tartışma",
-	ask: "soru",
-	rant: "söylenme",
-};
-
-/** Falls back to the raw kind so unknown tags still render. */
-export function tagLabel(kind: string): string {
-	return TAG_LABELS[kind] ?? kind;
-}
 
 function parseTags(csv: string): Array<{kind: string; label: string}> {
 	if (!csv) return [];
@@ -199,12 +186,11 @@ export const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(functio
 			message: "en az bir etiket seç",
 		});
 	}
-	const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
 	const normalizedTags: PostTagRow[] = [];
 	const seenKinds = new Set<string>();
 	for (const t of tags) {
 		const kind = (t.kind ?? "").trim();
-		if (!allowed.has(kind)) {
+		if (!isPostTagKind(kind)) {
 			return yield* new TagInvalid({
 				message: `geçersiz etiket: ${kind || "(boş)"}`,
 			});
@@ -224,13 +210,12 @@ export const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(functio
 export const normalizeDraftTags = Effect.fn("Pano.normalizeDraftTags")(function* (
 	tags: ReadonlyArray<PostTagInput> | null | undefined,
 ) {
-	const allowed = new Set<string>(ALLOWED_POST_TAG_KINDS);
 	const normalizedTags: PostTagRow[] = [];
 	const seenKinds = new Set<string>();
 	for (const t of tags ?? []) {
 		const kind = (t.kind ?? "").trim();
 		if (kind.length === 0) continue;
-		if (!allowed.has(kind)) {
+		if (!isPostTagKind(kind)) {
 			return yield* new TagInvalid({message: `geçersiz etiket: ${kind}`});
 		}
 		if (seenKinds.has(kind)) continue;

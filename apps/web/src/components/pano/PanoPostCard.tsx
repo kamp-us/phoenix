@@ -9,6 +9,7 @@ import {Link} from "react-router";
 import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
+import {tagClass} from "../../lib/panoTags";
 import {Tag, type TagKind} from "../ui/atoms";
 import {PostSaveButton, PostVoteWidget} from "./PanoPost";
 import "./PanoPost.css";
@@ -55,7 +56,7 @@ export function PanoPostCard({
 					{tags.length ? (
 						<span className="kp-pano-post__tags">
 							{tags.map((t, i) => (
-								<Tag key={i} kind={t.kind as TagKind}>
+								<Tag key={i} kind={tagClass(t.kind) as TagKind}>
 									{t.label}
 								</Tag>
 							))}
