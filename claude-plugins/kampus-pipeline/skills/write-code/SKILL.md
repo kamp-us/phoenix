@@ -559,6 +559,7 @@ git fetch origin main
 # Derive the prefix from THIS checkout's git identity — never a hardcoded literal. A copied
 # literal namespaces every agent's branch under one person's handle regardless of who runs.
 PREFIX="$(git config user.name | tr '[:upper:] ' '[:lower:]-')"   # e.g. "Umut Sirin" → "umut-sirin"
+: "${PREFIX:?set git user.name to derive a branch prefix}"        # empty identity ⇒ "/slug…" (leading slash) git rejects with an opaque error; fail here with a fixable one
 # Per-run suffix: the deterministic $PREFIX/<slug-for-issue-N> is the SAME ref for every
 # run on this issue, so two concurrent runs would both push origin/<that branch> and the
 # second push would clobber the first's commits. A per-invocation nonce keeps them distinct.
