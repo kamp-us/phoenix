@@ -8,23 +8,16 @@ import {codeOf} from "../fate/wire";
 import {FlagGate} from "../flags/FlagGate";
 import {PANO_DRAFT_SAVE} from "../flags/keys";
 import type {FateWireCode} from "../lib/fateWireCodes";
+import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
 
-/**
- * Fixed tag enum — kinds match the producer-side `ALLOWED_POST_TAG_KINDS` and are
- * stored verbatim on `post_summary.tags`. `cls` is a CSS modifier chosen to match
- * the existing Tag styling without touching the server-side kind enum.
- */
-const TAGS: {kind: string; label: string; cls: string}[] = [
-	{kind: "göster", label: "göster", cls: "show"},
-	{kind: "tartışma", label: "tartışma", cls: "discuss"},
-	{kind: "soru", label: "soru", cls: "ask"},
-	{kind: "söylenme", label: "söylenme", cls: "rant"},
-	{kind: "meta", label: "meta", cls: "meta"},
-];
+// The five kinds + their CSS modifier (`cls`) come from the shared typed home
+// `src/lib/panoTags.ts` (#1030) — the same module the server allow-list imports,
+// so the form can't drift from the producer enum.
+const TAGS = POST_TAG_KINDS.map((kind) => ({kind, label: tagLabel(kind), cls: tagClass(kind)}));
 
 const URL_RE = /^https?:\/\/[^/]+/i;
 

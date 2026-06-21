@@ -8,6 +8,7 @@ import type {Post} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {formatAgoTR} from "../../lib/datetime";
 import {renderMarkdownInline} from "../../lib/markdown";
+import {tagClass} from "../../lib/panoTags";
 import {Tag, type TagKind} from "../ui/atoms";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
@@ -75,7 +76,7 @@ export function PanoPostHeader(props: PanoPostHeaderProps) {
 			) : null}
 			<div className="kp-pano-postpage__meta">
 				{tags.map((t, i) => (
-					<Tag key={i} kind={t.kind as TagKind}>
+					<Tag key={i} kind={tagClass(t.kind) as TagKind}>
 						{t.label}
 					</Tag>
 				))}
