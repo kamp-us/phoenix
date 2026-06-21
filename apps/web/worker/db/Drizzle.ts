@@ -98,7 +98,7 @@ export const orDieAccess = (access: DrizzleAccess): DrizzleAccessOrDie => ({
  * @example
  *   const {run, batch} = yield* Drizzle;
  *   const term = yield* run((db) =>
- *     db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
+ *     db.query.termRecord.findFirst({where: eq(schema.termRecord.slug, slug)}),
  *   );
  *
  * @example

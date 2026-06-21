@@ -64,6 +64,13 @@
       "when": 1785000000000,
       "tag": "0008_rename_store_of_record",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1785500000000,
+      "tag": "0009_summary_to_record",
+      "breakpoints": true
     }
   ]
 }

@@ -156,7 +156,7 @@ export const ReportLive = Layer.effect(Report)(
 							columns: {id: true},
 						});
 					case "post":
-						return db.query.postSummary.findFirst({
+						return db.query.postRecord.findFirst({
 							where: {id: targetId, removedAt: {isNull: true}},
 							columns: {id: true},
 						});

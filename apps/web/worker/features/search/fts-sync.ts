@@ -1,6 +1,6 @@
 /**
  * Dual-write FTS sync (ADR 0080). The FTS5 virtual tables `term_search` /
- * `post_search` are kept in lockstep with `term_summary` / `post_summary` from
+ * `post_search` are kept in lockstep with `term_record` / `post_record` from
  * the application write path — NOT D1 triggers — so the worker that owns every
  * write to a summary row writes its search row in the same place.
  *

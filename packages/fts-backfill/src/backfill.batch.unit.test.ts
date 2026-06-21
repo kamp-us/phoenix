@@ -35,9 +35,9 @@ interface RecordedStmt {
 const makeFakeD1 = (seed: {terms: {slug: string; title: string}[]}) => {
 	const batches: RecordedStmt[][] = [];
 
-	// The backfill's only read is `SELECT slug, title FROM term_summary`; drizzle's
+	// The backfill's only read is `SELECT slug, title FROM term_record`; drizzle's
 	// d1 select reads it through `.raw()` (array-of-arrays, mapped by column order).
-	const isTermRead = (sql: string) => /from\s+["`]?term_summary["`]?/i.test(sql);
+	const isTermRead = (sql: string) => /from\s+["`]?term_record["`]?/i.test(sql);
 
 	const stmt = (sql: string, params: ReadonlyArray<unknown>) => ({
 		sql,

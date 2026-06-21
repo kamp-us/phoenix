@@ -1,7 +1,7 @@
 /**
  * Search — the lexical site-search service (ADR 0080). Owns the FTS5 read path:
  * a bm25-ranked, keyset-paginated MATCH over the `term_search` / `post_search`
- * virtual tables, joined back to `term_summary` / `post_summary` for the row
+ * virtual tables, joined back to `term_record` / `post_record` for the row
  * shape the existing `Term` / `Post` views already render.
  *
  * Scope v1 is term titles + post titles (ADR 0080); definition/comment bodies and
@@ -166,8 +166,8 @@ export const SearchLive = Layer.effect(Search)(
 			const summaries = yield* run((db) =>
 				db
 					.select(termSummaryColumns)
-					.from(schema.termSummary)
-					.where(sql`${schema.termSummary.slug} IN ${keys}`),
+					.from(schema.termRecord)
+					.where(sql`${schema.termRecord.slug} IN ${keys}`),
 			);
 			const bySlug = new Map(summaries.map((r) => [r.slug, toTermSummaryRow(r)]));
 			const rows = keys.flatMap((slug) => {
@@ -196,23 +196,23 @@ export const SearchLive = Layer.effect(Search)(
 			const summaries = yield* run((db) =>
 				db
 					.select({
-						id: schema.postSummary.id,
-						slug: schema.postSummary.slug,
-						title: schema.postSummary.title,
-						url: schema.postSummary.url,
-						host: schema.postSummary.host,
-						bodyExcerpt: schema.postSummary.bodyExcerpt,
-						authorId: schema.postSummary.authorId,
-						authorName: schema.postSummary.authorName,
-						score: schema.postSummary.score,
-						commentCount: schema.postSummary.commentCount,
-						createdAt: schema.postSummary.createdAt,
-						tags: schema.postSummary.tags,
-						removedAt: schema.postSummary.removedAt,
+						id: schema.postRecord.id,
+						slug: schema.postRecord.slug,
+						title: schema.postRecord.title,
+						url: schema.postRecord.url,
+						host: schema.postRecord.host,
+						bodyExcerpt: schema.postRecord.bodyExcerpt,
+						authorId: schema.postRecord.authorId,
+						authorName: schema.postRecord.authorName,
+						score: schema.postRecord.score,
+						commentCount: schema.postRecord.commentCount,
+						createdAt: schema.postRecord.createdAt,
+						tags: schema.postRecord.tags,
+						removedAt: schema.postRecord.removedAt,
 					})
-					.from(schema.postSummary)
+					.from(schema.postRecord)
 					.where(
-						sql`${schema.postSummary.id} IN ${keys} AND ${schema.postSummary.removedAt} IS NULL`,
+						sql`${schema.postRecord.id} IN ${keys} AND ${schema.postRecord.removedAt} IS NULL`,
 					),
 			);
 			const byId = new Map(

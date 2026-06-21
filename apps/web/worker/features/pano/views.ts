@@ -14,7 +14,7 @@ export type TagViewRow = ViewRow<PostTagRow>;
 export type CommentViewRow = ViewRow<CommentRow>;
 export type PostViewRow = ViewRow<PostSummaryRow>;
 
-// `Tag` is an embedded scalar on the post row (parsed from `post_summary.tags`
+// `Tag` is an embedded scalar on the post row (parsed from `post_record.tags`
 // CSV), not a standalone table; `kind` is the natural key.
 export class TagView extends FateDataView<TagViewRow>()("Tag")({
 	kind: true,

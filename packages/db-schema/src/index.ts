@@ -1,10 +1,10 @@
 /**
  * `@kampus/db-schema` — the single canonical Drizzle declaration of the D1
- * tables that more than one package reads: `term_summary`, `definition_record`,
- * `post_summary`, `comment_record`. `definition_record`/`comment_record` are the
- * authoritative **mutated stores of record** (D1-direct, ADR 0009); they carry the
- * `_record` suffix so the name reads as "store of record" and stays distinct from
- * the fate `DefinitionView`/`CommentView` data-view tags one capital apart (#853).
+ * tables that more than one package reads: `term_record`, `definition_record`,
+ * `post_record`, `comment_record`. All four are the authoritative **mutated stores
+ * of record** (D1-direct, ADR 0009); they carry the `_record` suffix so the name
+ * reads as "store of record" and stays distinct from the fate
+ * `DefinitionView`/`CommentView` data-view tags one capital apart (#853, #1041).
  * This is a LEAF (depends only
  * on `drizzle-orm`), so the worker, `@kampus/preview-seed`, and
  * `@kampus/fts-backfill` can all import from it with no dependency cycle —
@@ -39,10 +39,11 @@ import {index, integer, sqliteTable, text} from "drizzle-orm/sqlite-core";
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
 
 /**
- * One row per term, keyed by slug. Maintained by the `TermChanged` projection step.
+ * One row per term, keyed by slug. Canonical store for sozluk terms under
+ * d1-direct (ADR 0009) — the D1 row IS the term; deleting it destroys it.
  */
-export const termSummary = sqliteTable(
-	"term_summary",
+export const termRecord = sqliteTable(
+	"term_record",
 	{
 		slug: text("slug").primaryKey(),
 		title: text("title").notNull(),
@@ -60,9 +61,9 @@ export const termSummary = sqliteTable(
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
-		index("term_summary_recent").on(t.lastActivityAt),
-		index("term_summary_popular").on(t.totalScore),
-		index("term_summary_letter").on(t.firstLetter),
+		index("term_record_recent").on(t.lastActivityAt),
+		index("term_record_popular").on(t.totalScore),
+		index("term_record_letter").on(t.firstLetter),
 	],
 );
 
@@ -70,7 +71,7 @@ export const termSummary = sqliteTable(
  * Per-definition row. Canonical store for sozluk definitions after d1-direct
  * (ADR 0009) — the per-term DO is no longer the source of truth. Denormalized
  * with term slug + title so the profile feed renders without joining
- * `term_summary`; `body_excerpt` is a denormalized truncation for the feed card.
+ * `term_record`; `body_excerpt` is a denormalized truncation for the feed card.
  *
  * `last_event_id` is vestigial (projection-era convergence guard, unused under
  * d1-direct); kept to hold the read-side schema stable until a cleanup pass.
@@ -105,10 +106,11 @@ export const definitionRecord = sqliteTable(
 );
 
 /**
- * One row per post. Maintained by the `PostChanged` projection step.
+ * One row per post. Canonical store for pano posts under d1-direct (ADR 0009) —
+ * the per-post DO is no longer the source of truth; the D1 row IS the post.
  */
-export const postSummary = sqliteTable(
-	"post_summary",
+export const postRecord = sqliteTable(
+	"post_record",
 	{
 		id: text("id").primaryKey(),
 		slug: text("slug"),
@@ -140,21 +142,21 @@ export const postSummary = sqliteTable(
 		removedReason: text("removed_reason"),
 		// Draft (taslak) marker — nullable, no default, mirroring the `removedAt`
 		// soft-state shape: existing/published rows are `null` (= not a draft). A
-		// partial unique index (`post_summary_one_draft_per_author`, migration 0004)
+		// partial unique index (`post_record_one_draft_per_author`, migration 0004)
 		// enforces one draft per author. Drafts are excluded from public feeds.
 		isDraft: integer("is_draft", {mode: "boolean"}),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
-		index("post_summary_hot").on(t.hotScore),
-		index("post_summary_new").on(t.createdAt),
-		index("post_summary_top").on(t.score),
-		index("post_summary_discuss").on(t.commentCount),
-		index("post_summary_host").on(t.host),
+		index("post_record_hot").on(t.hotScore),
+		index("post_record_new").on(t.createdAt),
+		index("post_record_top").on(t.score),
+		index("post_record_discuss").on(t.commentCount),
+		index("post_record_host").on(t.host),
 		// `created_at DESC` via a `sql` fragment: drizzle 0.45's index DSL can't
 		// express per-column ordering, and SQLite must walk forward for the
 		// newest-first profile feed read.
-		index("post_summary_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
+		index("post_record_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
 	],
 );
 

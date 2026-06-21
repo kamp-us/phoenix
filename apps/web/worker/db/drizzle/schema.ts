@@ -9,14 +9,14 @@ import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
 
-// The shared read-model tables (`term_summary` / `definition_record` /
-// `post_summary` / `comment_record`) live in the `@kampus/db-schema` leaf so the
+// The shared read-model tables (`term_record` / `definition_record` /
+// `post_record` / `comment_record`) live in the `@kampus/db-schema` leaf so the
 // worker, preview-seed, and fts-backfill all import ONE declaration — a column
 // rename is one edit there, caught by typecheck, not three hand-mirrored copies
 // that drift (ADR 0096 `removed_at`, ADR 0093 `is_draft`; issues #859/#903).
 // drizzle-kit reads this module for migration generation, so re-exporting feeds
 // migrations exactly as a local declaration would.
-export {commentRecord, definitionRecord, postSummary, termSummary} from "@kampus/db-schema";
+export {commentRecord, definitionRecord, postRecord, termRecord} from "@kampus/db-schema";
 
 const timestamp = (name: string) => integer(name, {mode: "timestamp"});
 
@@ -170,7 +170,7 @@ export const postVote = sqliteTable(
  * means saved, its absence means not; no score or value column (the structural
  * difference from `postVote`, which the score cache reads). The `(user_id,
  * created_at DESC)` index serves a future newest-first saved-posts list, the
- * same `sql` DESC-fragment idiom as `post_summary_author_created`.
+ * same `sql` DESC-fragment idiom as `post_record_author_created`.
  */
 export const postBookmark = sqliteTable(
 	"post_bookmark",

@@ -9,7 +9,7 @@ The FTS5 search tables `term_search` / `post_search` (ADR
 [0080](../../.decisions/0080-site-search-lexical-bar-semantic-discovery.md)) are
 populated **only by the application dual-write on new writes** (`syncTermSearch` /
 `syncPostSearch`, called from the sözlük/pano mutation handlers). Rows written
-**before** that sync existed in `term_summary` / `post_summary` but were never
+**before** that sync existed in `term_record` / `post_record` but were never
 indexed — so search returns **empty for all pre-existing content** until each row
 is organically re-touched. The migration `0002_search_fts.sql` is DDL-only; it
 creates the virtual tables but never backfills them.

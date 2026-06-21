@@ -3,7 +3,7 @@
  * connection-shaped pagination.
  *
  * Vote mutations delegate to the shared `Vote.cast` (atomic vote write + karma)
- * and only recompute `term_summary` aggregates afterward, rather than
+ * and only recompute `term_record` aggregates afterward, rather than
  * reimplementing the batch-vote logic. Pure validation/derivation is exported as
  * module-level functions so it unit-tests off-DB (ADR 0013 / 0082).
  */
@@ -276,7 +276,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		const {run, batch} = orDieAccess(yield* Drizzle);
 		const voteSvc = yield* Vote;
 
-		// Recompute one slug's `term_summary` row from its live `definition_record`
+		// Recompute one slug's `term_record` row from its live `definition_record`
 		// slice. Convergent: the row is fully derived from definitions + title.
 		const recomputeTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(function* (
 			slug: string,
@@ -312,7 +312,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 			// Summary upsert + its FTS dual-write in ONE batch so they move
 			// all-or-none (ADR 0080 lockstep): a crash between the two can never
-			// desync `term_search` from `term_summary`. `recomputeTermSummary` is
+			// desync `term_search` from `term_record`. `recomputeTermSummary` is
 			// the single convergent point every term write funnels through, so this
 			// keeps `term_search` current across add/edit/delete/vote with one wiring.
 			// Both items are drizzle query builders, NOT `db.run(sql)`: a batch item
@@ -321,7 +321,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			// batch on real D1 (#863). The builder prepares batch-safe.
 			yield* batch((db) => [
 				db
-					.insert(schema.termSummary)
+					.insert(schema.termRecord)
 					.values({
 						slug,
 						title,
@@ -336,7 +336,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						lastEventId: "",
 					})
 					.onConflictDoUpdate({
-						target: schema.termSummary.slug,
+						target: schema.termRecord.slug,
 						set: {
 							title: sql`excluded.title`,
 							definitionCount: sql`excluded.definition_count`,
@@ -357,7 +357,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const totalTermsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.termSummary)
+					.from(schema.termRecord)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalDefsRow = yield* run((db) =>
@@ -390,7 +390,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		});
 
 		const getTerm = Effect.fn("Sozluk.getTerm")(function* (slug: string) {
-			const meta = yield* run((db) => db.query.termSummary.findFirst({where: {slug}}));
+			const meta = yield* run((db) => db.query.termRecord.findFirst({where: {slug}}));
 			if (!meta) return null;
 
 			const defs = yield* run((db) =>
@@ -546,8 +546,8 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const rows = yield* run((db) =>
 				db
 					.select(termSummaryColumns)
-					.from(schema.termSummary)
-					.where(inArray(schema.termSummary.slug, [...slugs])),
+					.from(schema.termRecord)
+					.where(inArray(schema.termRecord.slug, [...slugs])),
 			);
 			return rows.map(toTermSummaryRow);
 		});
@@ -561,11 +561,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const rows = yield* run((db) =>
 				db
 					.select(termSummaryColumns)
-					.from(schema.termSummary)
+					.from(schema.termRecord)
 					.orderBy(
 						sort === "popular"
-							? desc(schema.termSummary.totalScore)
-							: desc(schema.termSummary.lastActivityAt),
+							? desc(schema.termRecord.totalScore)
+							: desc(schema.termRecord.lastActivityAt),
 					)
 					.limit(limit),
 			);
@@ -583,7 +583,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const totalCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`count(*)`})
-					.from(schema.termSummary)
+					.from(schema.termRecord)
 					.get()
 					.then((r) => r?.n ?? 0),
 			);
@@ -593,12 +593,12 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				? ((yield* run((db) =>
 						db
 							.select({
-								slug: schema.termSummary.slug,
-								totalScore: schema.termSummary.totalScore,
-								lastActivityAt: schema.termSummary.lastActivityAt,
+								slug: schema.termRecord.slug,
+								totalScore: schema.termRecord.totalScore,
+								lastActivityAt: schema.termRecord.lastActivityAt,
 							})
-							.from(schema.termSummary)
-							.where(eq(schema.termSummary.slug, after))
+							.from(schema.termRecord)
+							.where(eq(schema.termRecord.slug, after))
 							.get(),
 					)) ?? null)
 				: null;
@@ -613,29 +613,29 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const lead =
 				sort === "popular"
 					? {
-							column: schema.termSummary.totalScore,
+							column: schema.termRecord.totalScore,
 							dir: "desc" as const,
 							value: cursorRow?.totalScore ?? null,
 						}
 					: {
-							column: schema.termSummary.lastActivityAt,
+							column: schema.termRecord.lastActivityAt,
 							dir: "desc" as const,
 							value: cursorRow?.lastActivityAt ?? null,
 						};
 			const cursorPredicate = keysetAfter([
 				lead,
-				{column: schema.termSummary.slug, dir: "asc", value: cursorRow?.slug ?? null},
+				{column: schema.termRecord.slug, dir: "asc", value: cursorRow?.slug ?? null},
 			]);
 
 			const orderBy =
 				sort === "popular"
-					? [desc(schema.termSummary.totalScore), schema.termSummary.slug]
-					: [desc(schema.termSummary.lastActivityAt), schema.termSummary.slug];
+					? [desc(schema.termRecord.totalScore), schema.termRecord.slug]
+					: [desc(schema.termRecord.lastActivityAt), schema.termRecord.slug];
 
 			const fetched = yield* run((db) =>
 				db
 					.select(termSummaryColumns)
-					.from(schema.termSummary)
+					.from(schema.termRecord)
 					.where(cursorPredicate)
 					.orderBy(...orderBy)
 					.limit(first + 1),
@@ -663,7 +663,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			const rawBody = yield* validateBody(input.body);
 
 			const slug = input.termSlug;
-			const existing = yield* run((db) => db.query.termSummary.findFirst({where: {slug}}));
+			const existing = yield* run((db) => db.query.termRecord.findFirst({where: {slug}}));
 			const termCreated = !existing;
 			const title = existing?.title ?? input.termTitle ?? titleFromSlug(slug);
 
@@ -906,7 +906,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		);
 
 		// Shared body for `voteDefinition` / `retractDefinitionVote`. Delegates to
-		// `Vote.cast` for the atomic batch, then recomputes `term_summary`
+		// `Vote.cast` for the atomic batch, then recomputes `term_record`
 		// aggregates after a state change. Translates `VoteTargetNotFound` into
 		// `DefinitionNotFound` so this surface keeps emitting `DEFINITION_NOT_FOUND`.
 		const applyVote = Effect.fn("Sozluk.applyVote")(function* (

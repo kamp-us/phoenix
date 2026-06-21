@@ -1,6 +1,6 @@
 /**
- * The `term_summary` column projection and the `TermSummaryRow` mapper, shared
- * by every term-summary read so they can't drift on column selection or mapping.
+ * The `term_record` column projection and the `TermSummaryRow` mapper, shared
+ * by every term read so they can't drift on column selection or mapping.
  */
 import * as schema from "../../db/drizzle/schema.ts";
 
@@ -27,15 +27,15 @@ export interface TermConnectionPage {
 
 // Pass to `db.select(...)`; pairs with `toTermSummaryRow`.
 export const termSummaryColumns = {
-	slug: schema.termSummary.slug,
-	title: schema.termSummary.title,
-	firstLetter: schema.termSummary.firstLetter,
-	definitionCount: schema.termSummary.definitionCount,
-	totalScore: schema.termSummary.totalScore,
-	excerpt: schema.termSummary.excerpt,
-	firstAt: schema.termSummary.firstAt,
-	lastActivityAt: schema.termSummary.lastActivityAt,
-	lastEditAt: schema.termSummary.lastEditAt,
+	slug: schema.termRecord.slug,
+	title: schema.termRecord.title,
+	firstLetter: schema.termRecord.firstLetter,
+	definitionCount: schema.termRecord.definitionCount,
+	totalScore: schema.termRecord.totalScore,
+	excerpt: schema.termRecord.excerpt,
+	firstAt: schema.termRecord.firstAt,
+	lastActivityAt: schema.termRecord.lastActivityAt,
+	lastEditAt: schema.termRecord.lastEditAt,
 } as const;
 
 export interface TermSummarySelection {

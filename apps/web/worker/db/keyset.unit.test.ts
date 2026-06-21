@@ -7,7 +7,7 @@
 import type {SQL} from "drizzle-orm";
 import {SQLiteSyncDialect} from "drizzle-orm/sqlite-core";
 import {describe, expect, it} from "vitest";
-import {commentRecord, definitionRecord, postSummary, termSummary} from "./drizzle/schema";
+import {commentRecord, definitionRecord, postRecord, termRecord} from "./drizzle/schema";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "./keyset";
 
 const dialect = new SQLiteSyncDialect();
@@ -20,8 +20,8 @@ describe("keysetAfter", () => {
 
 	it("returns undefined when every cursor value is null/undefined", () => {
 		const predicate = keysetAfter([
-			{column: termSummary.lastActivityAt, dir: "desc", value: null},
-			{column: termSummary.slug, dir: "asc", value: undefined},
+			{column: termRecord.lastActivityAt, dir: "desc", value: null},
+			{column: termRecord.slug, dir: "asc", value: undefined},
 		]);
 		expect(predicate).toBeUndefined();
 	});
@@ -34,9 +34,9 @@ describe("keysetAfter", () => {
 	});
 
 	it("single desc column → a bare `<` comparison", () => {
-		const predicate = keysetAfter([{column: postSummary.score, dir: "desc", value: 42}]);
+		const predicate = keysetAfter([{column: postRecord.score, dir: "desc", value: 42}]);
 		const {sql, params} = render(predicate as SQL);
-		expect(sql).toBe('"post_summary"."score" < ?');
+		expect(sql).toBe('"post_record"."score" < ?');
 		expect(params).toEqual([42]);
 	});
 
@@ -70,13 +70,13 @@ describe("keysetAfter", () => {
 		);
 	});
 
-	it("a null cursor value drops that column (term-summary `recent` fallback)", () => {
+	it("a null cursor value drops that column (term-record `recent` fallback)", () => {
 		const predicate = keysetAfter([
-			{column: termSummary.lastActivityAt, dir: "desc", value: null},
-			{column: termSummary.slug, dir: "asc", value: "zebra"},
+			{column: termRecord.lastActivityAt, dir: "desc", value: null},
+			{column: termRecord.slug, dir: "asc", value: "zebra"},
 		]);
 		const {sql, params} = render(predicate as SQL);
-		expect(sql).toBe('"term_summary"."slug" > ?');
+		expect(sql).toBe('"term_record"."slug" > ?');
 		expect(params).toEqual(["zebra"]);
 	});
 });

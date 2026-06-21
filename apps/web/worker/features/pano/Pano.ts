@@ -262,7 +262,7 @@ export interface PostSummaryRow {
 	myVote?: number | null;
 	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
 	isSaved?: boolean | null;
-	/** Draft (taslak) marker; stamped from `post_summary.is_draft` (null = published). */
+	/** Draft (taslak) marker; stamped from `post_record.is_draft` (null = published). */
 	isDraft?: boolean | null;
 }
 
@@ -599,7 +599,7 @@ export const PanoLive = Layer.effect(Pano)(
 		const voteSvc = yield* Vote;
 		const bookmarkSvc = yield* Bookmark;
 
-		const rowToPostPage = (row: typeof schema.postSummary.$inferSelect): PostPage => ({
+		const rowToPostPage = (row: typeof schema.postRecord.$inferSelect): PostPage => ({
 			id: row.id,
 			slug: row.slug,
 			title: row.title,
@@ -656,8 +656,8 @@ export const PanoLive = Layer.effect(Pano)(
 			const totalPosts = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
-					.from(schema.postSummary)
-					.where(isNull(schema.postSummary.removedAt))
+					.from(schema.postRecord)
+					.where(isNull(schema.postRecord.removedAt))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalComments = yield* run((db) =>
@@ -671,7 +671,7 @@ export const PanoLive = Layer.effect(Pano)(
 				db
 					.run(
 						sql`SELECT COUNT(DISTINCT author_id) as n FROM (
-								SELECT author_id FROM post_summary WHERE removed_at IS NULL
+								SELECT author_id FROM post_record WHERE removed_at IS NULL
 								UNION
 								SELECT author_id FROM comment_record WHERE removed_at IS NULL
 							)`,
@@ -695,7 +695,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const getPost = Effect.fn("Pano.getPost")(function* (postId: string) {
 			const meta = yield* run((db) =>
-				db.query.postSummary.findFirst({
+				db.query.postRecord.findFirst({
 					where: {id: postId, removedAt: {isNull: true}},
 				}),
 			);
@@ -714,15 +714,15 @@ export const PanoLive = Layer.effect(Pano)(
 			// `is_draft IS NOT 1` excludes drafts from the public feed while keeping
 			// null/0 rows (published) — drafts are private to their author (#746).
 			const baseConditions = [
-				isNull(schema.postSummary.removedAt),
-				sql`${schema.postSummary.isDraft} is not 1`,
+				isNull(schema.postRecord.removedAt),
+				sql`${schema.postRecord.isDraft} is not 1`,
 			];
-			if (host) baseConditions.push(eq(schema.postSummary.host, host));
+			if (host) baseConditions.push(eq(schema.postRecord.host, host));
 
 			const totalCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`count(*)`})
-					.from(schema.postSummary)
+					.from(schema.postRecord)
 					.where(and(...baseConditions))
 					.get()
 					.then((r) => r?.n ?? 0),
@@ -739,14 +739,14 @@ export const PanoLive = Layer.effect(Pano)(
 				? ((yield* run((db) =>
 						db
 							.select({
-								id: schema.postSummary.id,
-								score: schema.postSummary.score,
-								hotScore: schema.postSummary.hotScore,
-								commentCount: schema.postSummary.commentCount,
-								createdAt: schema.postSummary.createdAt,
+								id: schema.postRecord.id,
+								score: schema.postRecord.score,
+								hotScore: schema.postRecord.hotScore,
+								commentCount: schema.postRecord.commentCount,
+								createdAt: schema.postRecord.createdAt,
 							})
-							.from(schema.postSummary)
-							.where(eq(schema.postSummary.id, after))
+							.from(schema.postRecord)
+							.where(eq(schema.postRecord.id, after))
 							.get(),
 					)) ?? null)
 				: null;
@@ -761,14 +761,14 @@ export const PanoLive = Layer.effect(Pano)(
 			// `id` desc tiebreaker; `new` (no lead column) orders by `id` alone.
 			const leadKey = POST_SORT_LEAD_COLUMN[sort];
 			const leadColumn = leadKey
-				? {column: schema.postSummary[leadKey], value: cursorRow?.[leadKey]}
+				? {column: schema.postRecord[leadKey], value: cursorRow?.[leadKey]}
 				: null;
 
 			const cursorPredicate = keysetAfter([
 				...(leadColumn
 					? [{column: leadColumn.column, dir: "desc" as const, value: leadColumn.value ?? null}]
 					: []),
-				{column: schema.postSummary.id, dir: "desc", value: cursorRow?.id ?? null},
+				{column: schema.postRecord.id, dir: "desc", value: cursorRow?.id ?? null},
 			]);
 
 			const whereExpr = cursorPredicate
@@ -777,26 +777,26 @@ export const PanoLive = Layer.effect(Pano)(
 
 			const orderBy = [
 				...(leadColumn ? [desc(leadColumn.column)] : []),
-				desc(schema.postSummary.id),
+				desc(schema.postRecord.id),
 			];
 
 			const fetched = yield* run((db) =>
 				db
 					.select({
-						id: schema.postSummary.id,
-						slug: schema.postSummary.slug,
-						title: schema.postSummary.title,
-						url: schema.postSummary.url,
-						host: schema.postSummary.host,
-						bodyExcerpt: schema.postSummary.bodyExcerpt,
-						authorId: schema.postSummary.authorId,
-						authorName: schema.postSummary.authorName,
-						score: schema.postSummary.score,
-						commentCount: schema.postSummary.commentCount,
-						createdAt: schema.postSummary.createdAt,
-						tags: schema.postSummary.tags,
+						id: schema.postRecord.id,
+						slug: schema.postRecord.slug,
+						title: schema.postRecord.title,
+						url: schema.postRecord.url,
+						host: schema.postRecord.host,
+						bodyExcerpt: schema.postRecord.bodyExcerpt,
+						authorId: schema.postRecord.authorId,
+						authorName: schema.postRecord.authorName,
+						score: schema.postRecord.score,
+						commentCount: schema.postRecord.commentCount,
+						createdAt: schema.postRecord.createdAt,
+						tags: schema.postRecord.tags,
 					})
-					.from(schema.postSummary)
+					.from(schema.postRecord)
 					.where(whereExpr)
 					.orderBy(...orderBy)
 					.limit(first + 1),
@@ -913,10 +913,8 @@ export const PanoLive = Layer.effect(Pano)(
 			const fetched = yield* run((db) =>
 				db
 					.select()
-					.from(schema.postSummary)
-					.where(
-						and(inArray(schema.postSummary.id, [...ids]), isNull(schema.postSummary.removedAt)),
-					),
+					.from(schema.postRecord)
+					.where(and(inArray(schema.postRecord.id, [...ids]), isNull(schema.postRecord.removedAt))),
 			);
 			const ids2 = fetched.map((p) => p.id);
 			const voted = yield* voteSvc.readMine(viewerId, "post", ids2);
@@ -997,9 +995,9 @@ export const PanoLive = Layer.effect(Pano)(
 
 			// Summary insert + its FTS dual-write in ONE batch — all-or-none, so a
 			// crash mid-write can't orphan a `post_search` row against a missing
-			// `post_summary` row (the ADR 0080 lockstep invariant).
+			// `post_record` row (the ADR 0080 lockstep invariant).
 			yield* batch((db) => [
-				db.insert(schema.postSummary).values({
+				db.insert(schema.postRecord).values({
 					id: postId,
 					slug: null,
 					title,
@@ -1053,7 +1051,7 @@ export const PanoLive = Layer.effect(Pano)(
 			const tagsCsv = normalizedTags.map((t) => t.kind).join(",");
 
 			const existing = yield* run((db) =>
-				db.query.postSummary.findFirst({
+				db.query.postRecord.findFirst({
 					where: {authorId: input.authorId, isDraft: true},
 					columns: {id: true, createdAt: true},
 				}),
@@ -1066,7 +1064,7 @@ export const PanoLive = Layer.effect(Pano)(
 			if (existing) {
 				yield* run((db) =>
 					db
-						.update(schema.postSummary)
+						.update(schema.postRecord)
 						.set({
 							title: rawTitle,
 							url: urlNormalized,
@@ -1079,11 +1077,11 @@ export const PanoLive = Layer.effect(Pano)(
 							updatedAt: now,
 							lastActivityAt: now,
 						})
-						.where(eq(schema.postSummary.id, postId)),
+						.where(eq(schema.postRecord.id, postId)),
 				);
 			} else {
 				yield* run((db) =>
-					db.insert(schema.postSummary).values({
+					db.insert(schema.postRecord).values({
 						id: postId,
 						slug: null,
 						title: rawTitle,
@@ -1129,7 +1127,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const discardDraft = Effect.fn("Pano.discardDraft")(function* (input: DiscardDraftInput) {
 			const existing = yield* run((db) =>
-				db.query.postSummary.findFirst({
+				db.query.postRecord.findFirst({
 					where: {authorId: input.authorId, isDraft: true},
 					columns: {id: true},
 				}),
@@ -1137,11 +1135,11 @@ export const PanoLive = Layer.effect(Pano)(
 			if (!existing) return {postId: null} satisfies DiscardDraftResult;
 			yield* run((db) =>
 				db
-					.delete(schema.postSummary)
+					.delete(schema.postRecord)
 					.where(
 						and(
-							eq(schema.postSummary.authorId, input.authorId),
-							eq(schema.postSummary.isDraft, true),
+							eq(schema.postRecord.authorId, input.authorId),
+							eq(schema.postRecord.isDraft, true),
 						),
 					),
 			);
@@ -1150,7 +1148,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const editPost = Effect.fn("Pano.editPost")(function* (input: EditPostInput) {
 			const meta = yield* run((db) =>
-				db.query.postSummary.findFirst({
+				db.query.postRecord.findFirst({
 					where: {id: input.postId, removedAt: {isNull: true}},
 				}),
 			);
@@ -1197,7 +1195,7 @@ export const PanoLive = Layer.effect(Pano)(
 			// leaves the FTS row untouched — only the summary update batches alone.
 			yield* batch((db) => [
 				db
-					.update(schema.postSummary)
+					.update(schema.postRecord)
 					.set({
 						title: nextTitle,
 						body: nextBodyStored,
@@ -1206,7 +1204,7 @@ export const PanoLive = Layer.effect(Pano)(
 						updatedAt: now,
 						lastActivityAt: now,
 					})
-					.where(eq(schema.postSummary.id, input.postId)),
+					.where(eq(schema.postRecord.id, input.postId)),
 				...(hasTitle ? syncPostSearch(db, input.postId, nextTitle) : []),
 			]);
 
@@ -1231,7 +1229,7 @@ export const PanoLive = Layer.effect(Pano)(
 		// votes via `Vote.clearTarget` (karma KEPT — the pano karma-reversal is
 		// deleted), drop the FTS row, recompute stats outside. Restore is the inverse.
 		const deletePost = Effect.fn("Pano.deletePost")(function* (input: DeletePostInput) {
-			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
+			const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 			if (!meta) {
 				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 			}
@@ -1261,9 +1259,9 @@ export const PanoLive = Layer.effect(Pano)(
 			// is batch-safe. Karma is KEPT (ADR 0096) — no karma-reversal here.
 			yield* batch((db) => [
 				db
-					.update(schema.postSummary)
+					.update(schema.postRecord)
 					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postSummary.id, input.postId)),
+					.where(eq(schema.postRecord.id, input.postId)),
 				removePostSearch(db, input.postId),
 			]);
 
@@ -1273,7 +1271,7 @@ export const PanoLive = Layer.effect(Pano)(
 		});
 
 		const restorePost = Effect.fn("Pano.restorePost")(function* (input: DeletePostInput) {
-			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
+			const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 			if (!meta) {
 				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 			}
@@ -1294,9 +1292,9 @@ export const PanoLive = Layer.effect(Pano)(
 			// wiped on removal are not resurrected (score stays 0).
 			yield* batch((db) => [
 				db
-					.update(schema.postSummary)
+					.update(schema.postRecord)
 					.set({...live, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postSummary.id, input.postId)),
+					.where(eq(schema.postRecord.id, input.postId)),
 				...syncPostSearch(db, input.postId, meta.title),
 			]);
 
@@ -1310,7 +1308,7 @@ export const PanoLive = Layer.effect(Pano)(
 			resolverId: string;
 			reportId: string;
 		}) {
-			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
+			const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 			if (!meta || Lifecycle.isRemoved(Lifecycle.fromColumns(meta))) {
 				return {removed: false};
 			}
@@ -1331,9 +1329,9 @@ export const PanoLive = Layer.effect(Pano)(
 			// fails typecheck (#920 — this path was a trailing un-batched `db.run`).
 			yield* batch((db) => [
 				db
-					.update(schema.postSummary)
+					.update(schema.postRecord)
 					.set({...removed, score: 0, hotScore: 0, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postSummary.id, input.postId)),
+					.where(eq(schema.postRecord.id, input.postId)),
 				removePostSearch(db, input.postId),
 			]);
 			yield* recomputePanoStats(now);
@@ -1344,7 +1342,7 @@ export const PanoLive = Layer.effect(Pano)(
 		const moderateRestorePost = Effect.fn("Pano.moderateRestorePost")(function* (input: {
 			postId: string;
 		}) {
-			const meta = yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}));
+			const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 			if (!meta) return {restored: false};
 			const lifecycle = Lifecycle.fromColumns(meta);
 			if (!Lifecycle.isRemoved(lifecycle)) return {restored: false};
@@ -1357,9 +1355,9 @@ export const PanoLive = Layer.effect(Pano)(
 			// binds (raw `db.run(Stmt)` 500s in-batch + fails typecheck; #920).
 			yield* batch((db) => [
 				db
-					.update(schema.postSummary)
+					.update(schema.postRecord)
 					.set({...live, updatedAt: now, lastActivityAt: now})
-					.where(eq(schema.postSummary.id, input.postId)),
+					.where(eq(schema.postRecord.id, input.postId)),
 				...syncPostSearch(db, input.postId, meta.title),
 			]);
 			yield* recomputePanoStats(now);
@@ -1376,7 +1374,7 @@ export const PanoLive = Layer.effect(Pano)(
 			isVote: boolean,
 		) {
 			const meta = yield* run((db) =>
-				db.query.postSummary.findFirst({
+				db.query.postRecord.findFirst({
 					where: {id: input.postId, removedAt: {isNull: true}},
 				}),
 			);
@@ -1409,7 +1407,7 @@ export const PanoLive = Layer.effect(Pano)(
 			// Vote.cast wrote score + hot_score inside its batch; re-read for the
 			// converged values.
 			const refreshed = voteResult.changed
-				? yield* run((db) => db.query.postSummary.findFirst({where: {id: input.postId}}))
+				? yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}))
 				: meta;
 			const score = refreshed?.score ?? voteResult.score;
 			const hotScore = refreshed?.hotScore ?? meta.hotScore;
@@ -1444,7 +1442,7 @@ export const PanoLive = Layer.effect(Pano)(
 			const rawBody = yield* validateCommentBody(input.body);
 
 			const post = yield* run((db) =>
-				db.query.postSummary.findFirst({
+				db.query.postRecord.findFirst({
 					where: {id: input.postId, removedAt: {isNull: true}},
 				}),
 			);
@@ -1500,14 +1498,14 @@ export const PanoLive = Layer.effect(Pano)(
 
 			yield* run((db) =>
 				db
-					.update(schema.postSummary)
+					.update(schema.postRecord)
 					.set({
 						commentCount: newCommentCount,
 						hotScore,
 						updatedAt: now,
 						lastActivityAt: now,
 					})
-					.where(eq(schema.postSummary.id, input.postId)),
+					.where(eq(schema.postRecord.id, input.postId)),
 			);
 
 			yield* recomputePanoStats(now);
@@ -1630,7 +1628,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
-			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
+			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
 				const newCommentCount = Math.max(0, post.commentCount - 1);
 				const hotScore = computeHotScore(
@@ -1640,14 +1638,14 @@ export const PanoLive = Layer.effect(Pano)(
 				);
 				yield* run((db) =>
 					db
-						.update(schema.postSummary)
+						.update(schema.postRecord)
 						.set({
 							commentCount: newCommentCount,
 							hotScore,
 							updatedAt: now,
 							lastActivityAt: now,
 						})
-						.where(eq(schema.postSummary.id, row.postId)),
+						.where(eq(schema.postRecord.id, row.postId)),
 				);
 			}
 
@@ -1710,17 +1708,17 @@ export const PanoLive = Layer.effect(Pano)(
 					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
-			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
+			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
 				yield* run((db) =>
 					db
-						.update(schema.postSummary)
+						.update(schema.postRecord)
 						.set({
 							commentCount: post.commentCount + 1,
 							updatedAt: now,
 							lastActivityAt: now,
 						})
-						.where(eq(schema.postSummary.id, row.postId)),
+						.where(eq(schema.postRecord.id, row.postId)),
 				);
 			}
 
@@ -1762,17 +1760,17 @@ export const PanoLive = Layer.effect(Pano)(
 					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
-			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
+			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
 				yield* run((db) =>
 					db
-						.update(schema.postSummary)
+						.update(schema.postRecord)
 						.set({
 							commentCount: Math.max(0, post.commentCount - 1),
 							updatedAt: now,
 							lastActivityAt: now,
 						})
-						.where(eq(schema.postSummary.id, row.postId)),
+						.where(eq(schema.postRecord.id, row.postId)),
 				);
 			}
 			yield* recomputePanoStats(now);
@@ -1799,13 +1797,13 @@ export const PanoLive = Layer.effect(Pano)(
 					.where(eq(schema.commentRecord.id, input.commentId)),
 			);
 
-			const post = yield* run((db) => db.query.postSummary.findFirst({where: {id: row.postId}}));
+			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
 				yield* run((db) =>
 					db
-						.update(schema.postSummary)
+						.update(schema.postRecord)
 						.set({commentCount: post.commentCount + 1, updatedAt: now, lastActivityAt: now})
-						.where(eq(schema.postSummary.id, row.postId)),
+						.where(eq(schema.postRecord.id, row.postId)),
 				);
 			}
 			yield* recomputePanoStats(now);

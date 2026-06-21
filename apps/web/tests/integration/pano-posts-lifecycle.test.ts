@@ -359,7 +359,7 @@ describe("pano posts — connection edges", () => {
 //   exactly once (sort:new newest-first, stable id cursor, no skips/dupes) and
 //   the ghost-cursor empty-page edge.
 // not portable black-box: post_vote / user_vote row counts, total_karma
-//   read-backs, post_summary body_excerpt columns, hot_score, pano_stats
+//   read-backs, post_record body_excerpt columns, hot_score, pano_stats
 //   total_posts decrement, the `{deleted, changed}` service-return flags —
 //   re-expressed via the re-resolved Post (title/body/score/myVote) and the
 //   host-scoped feed over `/fate`.

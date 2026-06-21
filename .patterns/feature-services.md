@@ -89,7 +89,7 @@ Object notation forces an explicit `catch` at every async boundary. The single-a
 const {run} = orDieAccess(yield* Drizzle);  // at layer build, once
 
 const term = yield* run((db) =>
-  db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
+  db.query.termRecord.findFirst({where: eq(schema.termRecord.slug, slug)}),
 );
 
 const inserted = yield* run((db) =>
@@ -212,7 +212,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
     return {
       getTerm: Effect.fn("Sozluk.getTerm")(function*(slug: string) {
         const meta = yield* run((db) =>
-          db.query.termSummary.findFirst({where: eq(schema.termSummary.slug, slug)}),
+          db.query.termRecord.findFirst({where: eq(schema.termRecord.slug, slug)}),
         );
         if (!meta) return null;
         // ... rest

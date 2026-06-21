@@ -77,7 +77,7 @@ describe("Bookmark.toggle — pre-write decisions (mocked Drizzle seam)", () => 
 	it.effect("a missing/soft-deleted post raises PostNotFound before any write", () =>
 		Effect.gen(function* () {
 			const bookmark = yield* Bookmark;
-			// the postSummary probe's findFirst resolves to `undefined` → not-found, no batch.
+			// the postRecord probe's findFirst resolves to `undefined` → not-found, no batch.
 			const exit = yield* Effect.exit(
 				bookmark.toggle({userId: "u1", postId: "ghost", saved: true}),
 			);

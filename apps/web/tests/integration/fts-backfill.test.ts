@@ -19,7 +19,7 @@
  * the integration harness already uses), so it backfills this stage's D1 directly.
  *
  * The pre-backfill state is constructed, not faked: `seedTerm` writes a real
- * `term_summary` row AND its `term_search` FTS row (the dual-write), then a
+ * `term_record` row AND its `term_search` FTS row (the dual-write), then a
  * setup-only `DELETE FROM term_search` removes ONLY the FTS row — leaving exactly
  * the pre-#534 condition (summary present, never indexed). The pre-assertion that
  * search is empty in that state is the non-vacuity guard: it pins that the hit in
@@ -51,7 +51,7 @@ const FOLDED_QUERY = "sisli";
 
 beforeAll(async () => {
 	await h.signUp(`${SLUG}-author@test.local`, "hunter2hunter2", "yazar");
-	// Seed through the public dual-write: a real term_summary row + its term_search
+	// Seed through the public dual-write: a real term_record row + its term_search
 	// FTS row land together.
 	await h.seedTerm({
 		slug: SLUG,
@@ -64,7 +64,7 @@ beforeAll(async () => {
 });
 
 describe("fts-backfill → FTS5 MATCH on real D1 (#645)", () => {
-	it("a backfilled term_summary row becomes findable by a diacritic-folded MATCH", async () => {
+	it("a backfilled term_record row becomes findable by a diacritic-folded MATCH", async () => {
 		// Non-vacuity guard: with the FTS row deleted, the folded query matches
 		// nothing — so a hit below can only come from the backfill, never a leftover index.
 		const before = await h.fate({

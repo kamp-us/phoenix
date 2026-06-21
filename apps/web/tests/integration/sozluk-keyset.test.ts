@@ -7,7 +7,7 @@
  * `node:sqlite` fate-op suite, not re-proven here. What stays at `integration`
  * is the irreducible real-D1 core (ADR 0082 "Irreducible integration core"): how
  * the real engine *executes* the keyset — ordering and tie-breaks across page
- * boundaries — plus read-row shaping, the denormalized term_summary counters,
+ * boundaries — plus read-row shaping, the denormalized term_record counters,
  * and the write→read re-resolve loop.
  *
  * Seeded through the PUBLIC fate seam (`h.seedTerm` → `definition.add` +
@@ -322,8 +322,8 @@ describe("sözlük read-row shaping + denormalized counters — real D1", () => 
 		const data = res.data as TermNode;
 		expect(data.slug).toBe(DEFS_SLUG);
 		expect(data.title).toBe("Keyset Defs");
-		expect(data.count).toBe(3); // term_summary.definition_count
-		expect(data.totalScore).toBe(9); // 5 + 3 + 1, term_summary.total_score
+		expect(data.count).toBe(3); // term_record.definition_count
+		expect(data.totalScore).toBe(9); // 5 + 3 + 1, term_record.total_score
 	});
 });
 
