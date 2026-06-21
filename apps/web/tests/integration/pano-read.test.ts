@@ -24,17 +24,20 @@
  * the (author_id, created_at) index probe) are not black-box and are dropped;
  * behavior is re-expressed by re-resolving entities over `/fate`.
  *
- * D1 is shared across all test files (one deploy), so every host/email is uniquely
- * prefixed (`pano-read-${Date.now()}-…`) — host-filter / connection tests seed
- * their posts under a per-test unique host so the filter returns exactly the
- * seeded set.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file: every host/email is prefixed with `NS` (this file's
+ * deterministic `nsToken`). The ordered-feed assertions are scoped by HOST — each seeds its
+ * posts under a per-test `${NS}-…` host so the `posts(host)` query filters to exactly this
+ * file's (and this test's) rows. The host-scoping IS the namespace: no ordered assertion
+ * reads a feed unfiltered by an NS-host.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface PostNode {
 	__typename: string;
@@ -74,16 +77,14 @@ const commenters: Array<{userId: string; cookie: string}> = [];
 // chronological comments. The comment ids are forge ULIDs (monotonic with
 // creation order), so the keyset `(created_at asc, id asc)` order equals
 // insertion order.
-const READ_HOST = `pano-read-${STAMP}.example.com`;
+const READ_HOST = `${NS}.example.com`;
 let postId = "";
 const commentIds: string[] = [];
 
 beforeAll(async () => {
-	author = await h.signUp(`pano-read-${STAMP}-author@test.local`, "hunter2hunter2", "umut");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "umut");
 	for (let i = 0; i < 5; i++) {
-		commenters.push(
-			await h.signUp(`pano-read-${STAMP}-c${i}@test.local`, "hunter2hunter2", `commenter ${i}`),
-		);
+		commenters.push(await h.signUp(`${NS}-c${i}@test.local`, "hunter2hunter2", `commenter ${i}`));
 	}
 
 	const submitted = await h.fate(
@@ -266,7 +267,7 @@ describe("pano reads — /fate", () => {
 	});
 
 	it("submits a post and reads it back via post(id) and via the posts feed", async () => {
-		const host = `pano-read-${STAMP}-readback.example.com`;
+		const host = `${NS}-readback.example.com`;
 		const submitted = await h.fate(
 			{
 				kind: "mutation",
@@ -325,7 +326,7 @@ describe("pano reads — /fate", () => {
 	});
 
 	it("host filter narrows to the requested host", async () => {
-		const tag = `${STAMP}-${Math.random().toString(36).slice(2, 8)}`;
+		const tag = `${NS}-${Math.random().toString(36).slice(2, 8)}`;
 		const hostA = `${tag}-a.example.com`;
 		const hostB = `${tag}-b.example.com`;
 
@@ -368,7 +369,7 @@ describe("pano reads — /fate", () => {
 
 describe("posts connection — keyset walk", () => {
 	it("paginates through every row exactly once when walking nextCursor", async () => {
-		const host = `pano-read-${STAMP}-paginate.example.com`;
+		const host = `${NS}-paginate.example.com`;
 		const seededIds: string[] = [];
 		for (let i = 0; i < 5; i++) {
 			const r = await h.fate(
@@ -422,7 +423,7 @@ describe("posts connection — keyset walk", () => {
 	});
 
 	it("a ghost cursor (a since-deleted / never-existed post) yields no rows", async () => {
-		const host = `pano-read-${STAMP}-ghost.example.com`;
+		const host = `${NS}-ghost.example.com`;
 		const r = await h.fate(
 			{
 				kind: "mutation",

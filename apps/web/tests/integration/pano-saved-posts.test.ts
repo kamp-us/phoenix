@@ -19,15 +19,18 @@
  * membership + no-skips/dupes invariant, and the concrete order where the saves
  * are clearly sequenced.
  *
- * D1 is real remote Cloudflare D1 (per-file isolated stage); every email/title is
- * uniquely prefixed (`panosaved-${STAMP}-…`) so concurrent files never collide.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file: every email/title is prefixed with `NS` (this file's
+ * deterministic `nsToken`). The list is `CurrentUser`-scoped, so every assertion reads the
+ * viewer's own saves and `.filter`s to this file's own NS post ids — its rows are its own.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface PostNode {
 	__typename: string;
@@ -84,8 +87,8 @@ async function savedPage(
 }
 
 beforeAll(async () => {
-	saver = await h.signUp(`panosaved-${STAMP}-saver@test.local`, "hunter2hunter2", "kaydeden");
-	other = await h.signUp(`panosaved-${STAMP}-other@test.local`, "hunter2hunter2", "öteki");
+	saver = await h.signUp(`${NS}-saver@test.local`, "hunter2hunter2", "kaydeden");
+	other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "öteki");
 });
 
 describe("pano savedPosts — viewer-scoped saved list", () => {
@@ -96,9 +99,9 @@ describe("pano savedPosts — viewer-scoped saved list", () => {
 	});
 
 	it("returns only the viewer's own saves, each stamped isSaved=true", async () => {
-		const mine1 = await seedPost(`panosaved-${STAMP} mine 1`);
-		const mine2 = await seedPost(`panosaved-${STAMP} mine 2`);
-		const theirs = await seedPost(`panosaved-${STAMP} theirs`);
+		const mine1 = await seedPost(`${NS} mine 1`);
+		const mine2 = await seedPost(`${NS} mine 2`);
+		const theirs = await seedPost(`${NS} theirs`);
 
 		await save(mine1, saver.cookie);
 		await save(mine2, saver.cookie);
@@ -122,8 +125,8 @@ describe("pano savedPosts — viewer-scoped saved list", () => {
 	});
 
 	it("a post the viewer un-saves leaves the list", async () => {
-		const keep = await seedPost(`panosaved-${STAMP} keep`);
-		const drop = await seedPost(`panosaved-${STAMP} drop`);
+		const keep = await seedPost(`${NS} keep`);
+		const drop = await seedPost(`${NS} drop`);
 		await save(keep, saver.cookie);
 		await save(drop, saver.cookie);
 
@@ -144,7 +147,7 @@ describe("pano savedPosts — viewer-scoped saved list", () => {
 
 describe("pano savedPosts — keyset ordering + pagination on real D1", () => {
 	// Save four fresh posts in sequence; the list returns them newest-save-first.
-	const ORDER_TITLES = [0, 1, 2, 3].map((i) => `panosaved-${STAMP} order ${i}`);
+	const ORDER_TITLES = [0, 1, 2, 3].map((i) => `${NS} order ${i}`);
 	const orderIds: string[] = [];
 
 	beforeAll(async () => {
