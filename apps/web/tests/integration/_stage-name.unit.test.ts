@@ -5,7 +5,7 @@
  */
 
 import {describe, expect, it} from "vitest";
-import {DISC_LEN, disc, sharedStageName, slugify, stageName} from "./_stage-name.ts";
+import {DISC_LEN, disc, nsToken, sharedStageName, slugify, stageName} from "./_stage-name.ts";
 
 const RUN_TOKEN = "run-1";
 
@@ -70,6 +70,30 @@ describe("sharedStageName — run-scoped shared stage (ADR 0104 step 7)", () => 
 
 	it("is run-unique: distinct run tokens yield distinct shared stages", () => {
 		expect(sharedStageName("run-a")).not.toBe(sharedStageName("run-b"));
+	});
+});
+
+describe("nsToken — per-file row namespace on the shared stage (ADR 0104 step 7)", () => {
+	it("is stable for a given metaUrl", () => {
+		const url = "file:///app/tests/integration/report.test.ts";
+		expect(nsToken(url)).toBe(nsToken(url));
+	});
+
+	it("strips .test.ts and slugifies the basename", () => {
+		expect(nsToken("file:///x/report.test.ts")).toBe("report");
+		expect(nsToken("file:///x/pasaport-from-tag.test.ts")).toBe("pasaport-fro");
+	});
+
+	it("is distinct for different files", () => {
+		expect(nsToken("file:///x/report.test.ts")).not.toBe(
+			nsToken("file:///x/pasaport-from-tag.test.ts"),
+		);
+	});
+
+	it("is bounded to 12 chars and stays in the sanitized [a-z0-9-] set", () => {
+		const token = nsToken("file:///x/a-name-far-longer-than-twelve-chars.test.ts");
+		expect(token.length).toBeLessThanOrEqual(12);
+		expect(token).toMatch(/^[a-z0-9-]+$/);
 	});
 });
 
