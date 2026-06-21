@@ -1,0 +1,26 @@
+{
+	"name": "@kampus/worker-relevance",
+	"version": "0.0.0",
+	"private": true,
+	"description": "worker-relevance classifier — pure, zero-runtime-dep core deciding whether a PR's diff (incl. its pnpm-lock.yaml delta) can affect the apps/web worker, so the changes job can skip the real-D1 integration/e2e tiers for worker-irrelevant package changes, fail-safe-to-running (issue #1014); the CI step runs `node src/bin.ts` with no install",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run",
+		"classify": "node src/bin.ts"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
