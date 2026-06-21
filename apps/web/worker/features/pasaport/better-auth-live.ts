@@ -118,6 +118,12 @@ export const BetterAuthLive = Layer.effect(
 				// Verify a new account's email via a delivered link (the `EmailSender`
 				// port; ADR 0101). Was unreachable before — no sender existed.
 				emailVerification: {
+					// Opens the send tap: better-auth fires `sendVerificationEmail` on
+					// every email signup (sign-up.ts gates the send on `sendOnSignUp ??
+					// requireEmailVerification`). We do NOT set `requireEmailVerification`,
+					// so this sends the link without gating sign-in — auto-sign-in still
+					// issues the session (#995).
+					sendOnSignUp: true,
 					sendVerificationEmail: async ({user, url}) => {
 						await sendEmail(verificationEmail(user.email, url));
 					},
