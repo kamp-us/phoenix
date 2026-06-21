@@ -72,6 +72,13 @@ const mergeCategory = (
 	key: "queries" | "lists" | "mutations",
 ) => Object.assign({}, ...modules.map((m) => m[key] ?? {}));
 
+// Typed to the wide base (`FateSourcesList`) — not the concrete `flatMap` element
+// type — so the per-call narrowing to `MergedSources<Modules>` overlaps in one
+// `as`, matching the three category casts and staying single-cast (TS2352 would
+// fire on a direct cast from the concrete `flatMap` result; see `no-type-assertions`).
+const mergeSources = (modules: ReadonlyArray<FateModule>): FateSourcesList =>
+	modules.flatMap((m) => m.sources ?? []);
+
 export const mergeFateModules = <const Modules extends ReadonlyArray<FateModule>>(
 	modules: Modules,
 ): MergedFateConfig<Modules> => ({
@@ -82,5 +89,5 @@ export const mergeFateModules = <const Modules extends ReadonlyArray<FateModule>
 	queries: mergeCategory(modules, "queries") as MergedRecord<Modules, "queries">,
 	lists: mergeCategory(modules, "lists") as MergedRecord<Modules, "lists">,
 	mutations: mergeCategory(modules, "mutations") as MergedRecord<Modules, "mutations">,
-	sources: modules.flatMap((m) => m.sources ?? []) as MergedSources<Modules>,
+	sources: mergeSources(modules) as MergedSources<Modules>,
 });

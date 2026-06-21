@@ -36,8 +36,16 @@ const FORBIDDEN_SEGMENTS = ["pasaport", "sozluk", "pano", "stats", "fate", "fate
 
 // The wire/gate layer composes OVER the features by design (see the file
 // docblock), so it is exempt from the service-clean sweep: `mutations.ts`/`lists.ts`
-// dispatch act-on-target + translate errors, `Moderator.ts` reads role via Pasaport.
-const WIRE_LAYER = new Set(["mutations.ts", "lists.ts", "Moderator.ts", "views.ts"]);
+// dispatch act-on-target + translate errors, `Moderator.ts` reads role via Pasaport,
+// and `fate-module.ts` is the type-only aggregator of this feature's fate contribution
+// (its `import type` from `../fate/module.ts` is the registration edge, not a cycle).
+const WIRE_LAYER = new Set([
+	"mutations.ts",
+	"lists.ts",
+	"Moderator.ts",
+	"views.ts",
+	"fate-module.ts",
+]);
 
 describe("report/ service module imports are feature-clean", () => {
 	const files = readdirSync(reportDir).filter(

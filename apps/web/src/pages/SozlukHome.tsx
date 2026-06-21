@@ -1,7 +1,7 @@
 /**
  * Sözlük home page — fate. Two term connections (recent + popular) resolve in one
  * batched `useRequest({recentTerms, popularTerms})`; each maps to a fixed-sort
- * `list` root over the `terms` keyset (see `worker/features/fate/lists.ts`).
+ * `list` root over the `terms` keyset (see `worker/features/sozluk/lists.ts`).
  * Letter + search filtering is client-side over the already-loaded first page.
  */
 import * as React from "react";
