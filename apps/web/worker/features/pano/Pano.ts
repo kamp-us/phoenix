@@ -26,7 +26,6 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
-import * as Lifecycle from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -391,7 +390,7 @@ export interface DeletePostInput {
 	postId: string;
 	actorId: string;
 	/** Why the post is removed (ADR 0096). Defaults to `AuthorDeletion`. */
-	reason?: Lifecycle.RemovalReason;
+	reason?: Removal.RemovalReason;
 }
 
 export interface DeletePostResult {
@@ -459,7 +458,7 @@ export interface DeleteCommentInput {
 	commentId: string;
 	actorId: string;
 	/** Why the comment is removed (ADR 0096). Defaults to `AuthorDeletion`. */
-	reason?: Lifecycle.RemovalReason;
+	reason?: Removal.RemovalReason;
 }
 
 export interface DeleteCommentResult {
@@ -602,6 +601,10 @@ export const PanoLive = Layer.effect(Pano)(
 		const voteSvc = yield* Vote;
 		const bookmarkSvc = yield* Bookmark;
 
+		// The removal-sequence owner (#1129): the vote-wipe→stamp→FTS ordering is the
+		// module's to enforce, not this service's to hand-wire.
+		const removalSeq: Removal.RemovalSequence = {run, batch, clearTarget: voteSvc.clearTarget};
+
 		const rowToPostPage = (row: typeof schema.postRecord.$inferSelect): PostPage => ({
 			id: row.id,
 			slug: row.slug,
@@ -624,8 +627,8 @@ export const PanoLive = Layer.effect(Pano)(
 		// body stays in the row for restore + moderator review. `deletedAt` on the
 		// wire-facing `CommentRow` is the removal timestamp (presentation contract).
 		const rowToCommentRow = (row: typeof schema.commentRecord.$inferSelect): CommentRow => {
-			const lifecycle = Lifecycle.fromColumns(row);
-			if (Lifecycle.isRemoved(lifecycle)) {
+			const lifecycle = Removal.fromColumns(row);
+			if (Removal.isRemoved(lifecycle)) {
 				return {
 					id: row.id,
 					parentId: row.parentId,
@@ -1246,20 +1249,19 @@ export const PanoLive = Layer.effect(Pano)(
 					message: `not authorized to mutate post ${input.postId}`,
 				});
 			}
-			if (Lifecycle.isRemoved(Lifecycle.fromColumns(meta))) {
+			if (Removal.isRemoved(Removal.fromColumns(meta))) {
 				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 			}
 
 			const now = new Date();
-			const removed = Lifecycle.toColumns(
-				Lifecycle.remove({
+			const removed = Removal.toColumns(
+				Removal.remove({
 					removedAt: now,
 					removedBy: input.actorId,
-					reason: input.reason ?? new Lifecycle.AuthorDeletion(),
+					reason: input.reason ?? new Removal.AuthorDeletion(),
 				}),
 			);
-			yield* voteSvc.clearTarget("post", input.postId);
-			yield* batch((db) => Removal.removePostStatements(db, input.postId, removed, now));
+			yield* Removal.removeEntity(removalSeq, {kind: "post", id: input.postId}, removed, now);
 
 			yield* recomputePanoStats(now);
 
@@ -1277,14 +1279,19 @@ export const PanoLive = Layer.effect(Pano)(
 					message: `not authorized to mutate post ${input.postId}`,
 				});
 			}
-			const lifecycle = Lifecycle.fromColumns(meta);
-			if (!Lifecycle.isRemoved(lifecycle)) {
+			const lifecycle = Removal.fromColumns(meta);
+			if (!Removal.isRemoved(lifecycle)) {
 				return {postId: input.postId, deleted: false} satisfies DeletePostResult;
 			}
 
 			const now = new Date();
-			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* batch((db) => Removal.restorePostStatements(db, input.postId, meta.title, live, now));
+			const live = Removal.toColumns(Removal.restore(lifecycle));
+			yield* Removal.restoreEntity(
+				removalSeq,
+				{kind: "post", id: input.postId, title: meta.title},
+				live,
+				now,
+			);
 
 			yield* recomputePanoStats(now);
 
@@ -1297,20 +1304,19 @@ export const PanoLive = Layer.effect(Pano)(
 			reportId: string;
 		}) {
 			const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
-			if (!meta || Lifecycle.isRemoved(Lifecycle.fromColumns(meta))) {
+			if (!meta || Removal.isRemoved(Removal.fromColumns(meta))) {
 				return {removed: false};
 			}
 
 			const now = new Date();
-			const removed = Lifecycle.toColumns(
-				Lifecycle.remove({
+			const removed = Removal.toColumns(
+				Removal.remove({
 					removedAt: now,
 					removedBy: input.resolverId,
-					reason: new Lifecycle.Moderated({reportId: input.reportId}),
+					reason: new Removal.Moderated({reportId: input.reportId}),
 				}),
 			);
-			yield* voteSvc.clearTarget("post", input.postId);
-			yield* batch((db) => Removal.removePostStatements(db, input.postId, removed, now));
+			yield* Removal.removeEntity(removalSeq, {kind: "post", id: input.postId}, removed, now);
 			yield* recomputePanoStats(now);
 
 			return {removed: true};
@@ -1321,12 +1327,17 @@ export const PanoLive = Layer.effect(Pano)(
 		}) {
 			const meta = yield* run((db) => db.query.postRecord.findFirst({where: {id: input.postId}}));
 			if (!meta) return {restored: false};
-			const lifecycle = Lifecycle.fromColumns(meta);
-			if (!Lifecycle.isRemoved(lifecycle)) return {restored: false};
+			const lifecycle = Removal.fromColumns(meta);
+			if (!Removal.isRemoved(lifecycle)) return {restored: false};
 
 			const now = new Date();
-			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* batch((db) => Removal.restorePostStatements(db, input.postId, meta.title, live, now));
+			const live = Removal.toColumns(Removal.restore(lifecycle));
+			yield* Removal.restoreEntity(
+				removalSeq,
+				{kind: "post", id: input.postId, title: meta.title},
+				live,
+				now,
+			);
 			yield* recomputePanoStats(now);
 
 			return {restored: true};
@@ -1550,7 +1561,7 @@ export const PanoLive = Layer.effect(Pano)(
 					message: `not authorized to mutate comment ${input.commentId}`,
 				});
 			}
-			if (Lifecycle.isRemoved(Lifecycle.fromColumns(row))) {
+			if (Removal.isRemoved(Removal.fromColumns(row))) {
 				return {
 					commentId: input.commentId,
 					deleted: false,
@@ -1580,15 +1591,14 @@ export const PanoLive = Layer.effect(Pano)(
 			// by `rowToCommentRow`, not written here), so restore + moderator review
 			// have the real text. `hasReplies` now only shapes the result placeholder,
 			// not the strategy. `commentCount` + stats refresh outside (caches).
-			const removed = Lifecycle.toColumns(
-				Lifecycle.remove({
+			const removed = Removal.toColumns(
+				Removal.remove({
 					removedAt: now,
 					removedBy: input.actorId,
-					reason: input.reason ?? new Lifecycle.AuthorDeletion(),
+					reason: input.reason ?? new Removal.AuthorDeletion(),
 				}),
 			);
-			yield* voteSvc.clearTarget("comment", input.commentId);
-			yield* run((db) => Removal.removeCommentStatement(db, input.commentId, removed, now));
+			yield* Removal.removeEntity(removalSeq, {kind: "comment", id: input.commentId}, removed, now);
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
@@ -1651,8 +1661,8 @@ export const PanoLive = Layer.effect(Pano)(
 					message: `not authorized to mutate comment ${input.commentId}`,
 				});
 			}
-			const lifecycle = Lifecycle.fromColumns(row);
-			if (!Lifecycle.isRemoved(lifecycle)) {
+			const lifecycle = Removal.fromColumns(row);
+			if (!Removal.isRemoved(lifecycle)) {
 				return {
 					commentId: input.commentId,
 					deleted: false,
@@ -1662,8 +1672,8 @@ export const PanoLive = Layer.effect(Pano)(
 			}
 
 			const now = new Date();
-			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) => Removal.restoreCommentStatement(db, input.commentId, live, now));
+			const live = Removal.toColumns(Removal.restore(lifecycle));
+			yield* Removal.restoreEntity(removalSeq, {kind: "comment", id: input.commentId}, live, now);
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
@@ -1697,20 +1707,19 @@ export const PanoLive = Layer.effect(Pano)(
 			const row = yield* run((db) =>
 				db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 			);
-			if (!row || Lifecycle.isRemoved(Lifecycle.fromColumns(row))) {
+			if (!row || Removal.isRemoved(Removal.fromColumns(row))) {
 				return {removed: false};
 			}
 
 			const now = new Date();
-			const removed = Lifecycle.toColumns(
-				Lifecycle.remove({
+			const removed = Removal.toColumns(
+				Removal.remove({
 					removedAt: now,
 					removedBy: input.resolverId,
-					reason: new Lifecycle.Moderated({reportId: input.reportId}),
+					reason: new Removal.Moderated({reportId: input.reportId}),
 				}),
 			);
-			yield* voteSvc.clearTarget("comment", input.commentId);
-			yield* run((db) => Removal.removeCommentStatement(db, input.commentId, removed, now));
+			yield* Removal.removeEntity(removalSeq, {kind: "comment", id: input.commentId}, removed, now);
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
@@ -1737,12 +1746,12 @@ export const PanoLive = Layer.effect(Pano)(
 				db.query.commentRecord.findFirst({where: {id: input.commentId}}),
 			);
 			if (!row) return {restored: false};
-			const lifecycle = Lifecycle.fromColumns(row);
-			if (!Lifecycle.isRemoved(lifecycle)) return {restored: false};
+			const lifecycle = Removal.fromColumns(row);
+			if (!Removal.isRemoved(lifecycle)) return {restored: false};
 
 			const now = new Date();
-			const live = Lifecycle.toColumns(Lifecycle.restore(lifecycle));
-			yield* run((db) => Removal.restoreCommentStatement(db, input.commentId, live, now));
+			const live = Removal.toColumns(Removal.restore(lifecycle));
+			yield* Removal.restoreEntity(removalSeq, {kind: "comment", id: input.commentId}, live, now);
 
 			const post = yield* run((db) => db.query.postRecord.findFirst({where: {id: row.postId}}));
 			if (post) {
