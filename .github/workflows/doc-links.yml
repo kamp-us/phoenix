@@ -4,7 +4,7 @@ name: doc-links
 # and structurally cannot catch a link orphaned in a doc *outside* the PR's diff
 # (a file rename/delete elsewhere). This job walks every git-tracked `.md` and
 # fails the PR when any relative/internal link target no longer resolves on disk.
-# It reuses @kampus/doc-links's `check` mode — the scan lives once in the package.
+# It reuses pipeline-cli's `doc-links check` mode — the scan lives once in the tool.
 on:
   pull_request:
 
@@ -33,4 +33,4 @@ jobs:
       # Exit 1 on a dead internal doc link (the file:line → target report is on
       # stderr); any other non-zero means the run could not complete. See #638.
       - name: Check docs for dead internal links
-        run: node packages/doc-links/src/bin.ts check
+        run: node packages/pipeline-cli/src/bin.ts doc-links check

@@ -42,7 +42,7 @@ Do not run the fix commands yourself.
 | | the 15 required labels exist (`status:*` spine, `type:*` class, `p*` priority) | the intake skills key on them — `report` applies `status:needs-triage`, `write-code` picks `status:triaged`, etc. A missing one fails a run mid-`gh api`. |
 | **2 — gating** | target repo resolves | a skill can't target a repo it can't name |
 | | at least one CI workflow exists | `ship-it` Step 3 gates on checks-green; with zero checks that gate passes vacuously |
-| **3 — optional** | `@kampus/decisions-index` / `@kampus/epic-ledger` resolve on npm | `adr` / `review-plan` reach for them via `pnpm dlx`; absent → those stages degrade |
+| **3 — optional** | `@kampus/pipeline-cli` resolves on npm | `adr` / `review-plan` reach for its `decisions-index` / `epic-ledger` tools via `pnpm dlx` as the published fallback (epic #994); absent → those stages degrade |
 | | a `run-evidence` producer is defined | `ship-it` guard 2 runs strict when present, and **degrades to checks-green when absent** (ADR [0086](https://github.com/kamp-us/phoenix/blob/main/.decisions/0086-ship-it-foreign-repo-degradation.md)) — so this is informational, not a failure |
 
 The load-bearing pair is **auth + labels** (Tier 1): get those wrong and the very

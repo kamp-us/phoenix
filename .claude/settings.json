@@ -2,6 +2,10 @@
 	"enabledPlugins": {
 		"kampus-pipeline@kampus": false
 	},
+	"env": {
+		"KAMPUS_PIPELINE_DATA": "${CLAUDE_PROJECT_DIR}/.claude/.pipeline-cli-data",
+		"PATH": "${CLAUDE_PROJECT_DIR}/packages/gh-phoenix/shim:/opt/homebrew/bin:/usr/bin:/bin:${PATH}"
+	},
 	"hooks": {
 		"PreToolUse": [
 			{
@@ -9,7 +13,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node \"$CLAUDE_PROJECT_DIR/packages/read-guard/src/bin.ts\""
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" read-guard"
 					}
 				]
 			},
@@ -18,7 +22,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts pre-file"
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" worktree-guard pre-file"
 					}
 				]
 			},
@@ -27,7 +31,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts pre-bash"
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" worktree-guard pre-bash"
 					}
 				]
 			},
@@ -36,7 +40,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts pre-enter"
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" worktree-guard pre-enter"
 					}
 				]
 			},
@@ -45,7 +49,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node \"$CLAUDE_PROJECT_DIR/packages/spawn-guard/src/bin.ts\" guard"
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" spawn-guard guard"
 					}
 				]
 			}
@@ -56,7 +60,7 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node $CLAUDE_PROJECT_DIR/packages/worktree-guard/src/bin.ts reap"
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" worktree-guard reap"
 					}
 				]
 			}
@@ -67,13 +71,15 @@
 				"hooks": [
 					{
 						"type": "command",
-						"command": "node \"$CLAUDE_PROJECT_DIR/packages/spawn-guard/src/freshness-bin.ts\""
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/install.sh\"",
+						"timeout": 120
+					},
+					{
+						"type": "command",
+						"command": "\"$CLAUDE_PROJECT_DIR/claude-plugins/kampus-pipeline/hooks/guard.sh\" spawn-guard freshness"
 					}
 				]
 			}
 		]
-	},
-	"env": {
-		"PATH": "${CLAUDE_PROJECT_DIR}/packages/gh-phoenix/shim:/opt/homebrew/bin:/usr/bin:/bin:${PATH}"
 	}
 }

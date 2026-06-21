@@ -6,7 +6,8 @@
 #                                         guard.sh spawn-guard guard
 #                                         guard.sh spawn-guard freshness
 #
-# Resolves the SessionStart-installed pipeline-cli from ${CLAUDE_PLUGIN_DATA}
+# Resolves the SessionStart-installed pipeline-cli from the pipeline data dir
+# ($KAMPUS_PIPELINE_DATA, else $CLAUDE_PLUGIN_DATA — same precedence as install.sh)
 # and dispatches `pipeline-cli <tool> [mode...]`, forwarding the hook's stdin.
 #
 # #1050 FAIL-OPEN INVARIANT (HARD): when the CLI is absent — not yet installed,
@@ -19,7 +20,7 @@
 
 set -u
 
-DATA="${CLAUDE_PLUGIN_DATA:-}"
+DATA="${KAMPUS_PIPELINE_DATA:-${CLAUDE_PLUGIN_DATA:-}}"
 BIN="${DATA:+$DATA/node_modules/.bin/pipeline-cli}"
 
 # FAIL-OPEN: CLI not resolvable -> drain stdin and no-op (exit 0). Never crash.

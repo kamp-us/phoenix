@@ -118,7 +118,7 @@ jobs:
           set -euo pipefail
           VERSION="${TAG##*-v}"
           DATE="$(date -u +%Y-%m-%d)"
-          node packages/changelog-derive/src/bin.ts derive \
+          node packages/pipeline-cli/src/bin.ts changelog-derive derive \
             --entries entries.json \
             --version "$VERSION" \
             --date "$DATE" \

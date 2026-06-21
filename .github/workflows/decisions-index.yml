@@ -3,8 +3,8 @@ name: decisions-index
 # The CI gate for ADR 0066: `.decisions/index.md` is generated output, so this
 # job fails a PR when the committed index is stale (does not match the generated
 # one) OR when two ADR files share an `id` (the sibling number-collision class).
-# It reuses @kampus/decisions-index's `check` mode — the derivation lives once in
-# the package (buildIndex), never re-grepped here.
+# It reuses pipeline-cli's `decisions-index check` mode — the derivation lives once
+# in the tool (buildIndex), never re-grepped here.
 on:
   pull_request:
 
@@ -33,4 +33,4 @@ jobs:
       # Exit 1 on a stale index or a duplicate ADR id (reason on stderr); any
       # other non-zero means the run could not complete. See ADR 0066.
       - name: Check decisions index
-        run: node packages/decisions-index/src/bin.ts check
+        run: node packages/pipeline-cli/src/bin.ts decisions-index check
