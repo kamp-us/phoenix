@@ -245,7 +245,7 @@ The Turkish product/brand nouns this repo uses:
 | **sözlük** | the dictionary product (terms + definitions) |
 | **pano** | the link/discussion board product (posts + comments) |
 | **kampus** | the umbrella product / community |
-| **bildir** | the report / notify surface |
+| **bildir** | the report / notify surface — the brand lexeme surfaces in the **user-facing copy** (the `ReportButton` labels `bildir` / `bildirildi` / `zaten bildirildi`); the technical surface (`features/report` dir, `Report` service, `content_report` table) is English per this convention |
 | **künye** | the per-user identity DO (karma, invite-only access, privileges) |
 | **imge** | the image surface |
 
