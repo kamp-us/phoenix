@@ -207,11 +207,21 @@ const DEPLOY_TRANSIENT_TAGS = new Set([
 	"UnknownCloudflareError",
 ]);
 
-const isTransientDeployError = (error: unknown): boolean =>
-	typeof error === "object" &&
-	error !== null &&
-	"_tag" in error &&
-	DEPLOY_TRANSIENT_TAGS.has((error as {_tag: unknown})._tag as string);
+// One more eventually-consistent signature, decoded NOT to a code-specific tag but to the
+// bare HTTP-404 fallback `NotFound` (`@distilled.cloud/core/errors`, via `HTTP_STATUS_MAP[404]`):
+// "This Worker has no versions, which means this Worker has no content or versioned settings."
+// — the deploy reads the freshly-`putScript`ed worker before its version propagates through the
+// registry (an original #1010 flake signature). Matched on the MESSAGE, not the bare `NotFound`
+// _tag: a blanket 404 retry would mask a genuinely-missing resource, which must still fail fast.
+// This precise substring is the version-propagation race alone.
+const NO_VERSIONS_MESSAGE = "no versions";
+
+const isTransientDeployError = (error: unknown): boolean => {
+	if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
+	const {_tag: tag, message} = error as {_tag: unknown; message?: unknown};
+	if (typeof tag === "string" && DEPLOY_TRANSIENT_TAGS.has(tag)) return true;
+	return tag === "NotFound" && typeof message === "string" && message.includes(NO_VERSIONS_MESSAGE);
+};
 
 /**
  * Wrap the stage `deploy` so a TRANSIENT CF deploy error self-heals. The ~24 ephemeral
