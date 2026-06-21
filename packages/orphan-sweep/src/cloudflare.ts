@@ -82,6 +82,16 @@ const collect = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<stri
 		Effect.orElseSucceed(() => ""),
 	);
 
+const AUTH_HEADER_PREFIX = "Authorization: Bearer ";
+
+// Strip the bearer token before the argv is STORED on an error. The real argv (with the
+// live token) still goes to curl; only the loggable copy captured on CfCommandError /
+// CfParseError is redacted, so a routine curl/parse fault rendered by runMain's logError
+// (util.inspect of the error fields) can never leak the token. The header pair is kept —
+// just its value masked — so diagnostics still show an auth header was present.
+const redactArgs = (args: ReadonlyArray<string>): ReadonlyArray<string> =>
+	args.map((arg) => (arg.startsWith(AUTH_HEADER_PREFIX) ? `${AUTH_HEADER_PREFIX}[REDACTED]` : arg));
+
 /**
  * Run `curl <args>` and return stdout, lowering a non-zero exit (or a spawn
  * `PlatformError`) into `CfCommandError`. Mirrors `@kampus/flake-rate`'s `runGh`.
@@ -94,7 +104,7 @@ const runCurl = Effect.fn("Cloudflare.runCurl")(
 			{concurrency: "unbounded"},
 		);
 		if (exitCode !== 0) {
-			return yield* new CfCommandError({args, exitCode, stderr});
+			return yield* new CfCommandError({args: redactArgs(args), exitCode, stderr});
 		}
 		return stdout;
 	},
@@ -103,7 +113,7 @@ const runCurl = Effect.fn("Cloudflare.runCurl")(
 		Effect.catchTag(
 			effect,
 			"PlatformError",
-			(cause) => new CfCommandError({args, exitCode: -1, stderr: cause.message}),
+			(cause) => new CfCommandError({args: redactArgs(args), exitCode: -1, stderr: cause.message}),
 		),
 );
 
@@ -114,7 +124,10 @@ const parseJson = (
 	Effect.try({
 		try: () => JSON.parse(raw) as unknown,
 		catch: (cause) =>
-			new CfParseError({args, message: cause instanceof Error ? cause.message : String(cause)}),
+			new CfParseError({
+				args: redactArgs(args),
+				message: cause instanceof Error ? cause.message : String(cause),
+			}),
 	});
 
 // The auth + silent-fail flags every call shares. `-f` makes curl exit non-zero on an
@@ -202,8 +215,10 @@ const deleteD1 = Effect.fn("Cloudflare.deleteD1")(function* (creds: Creds, name:
 
 const resolveCreds = Effect.gen(function* () {
 	const accountId = yield* Config.string("CLOUDFLARE_ACCOUNT_ID").pipe(Config.option);
-	// Read as a string (not Redacted) — the token is only ever spliced into a curl arg,
-	// never logged or rendered, so it needs no redaction ceremony here.
+	// Read as a string (not Redacted): the token is spliced into the live curl argv, but
+	// every error that CAPTURES that argv stores a `redactArgs`-masked copy (the auth header
+	// value → `[REDACTED]`), so the raw token never reaches a logged/rendered error field —
+	// even when runMain's logError inspects the failing error.
 	const token = yield* Config.string("CLOUDFLARE_API_TOKEN").pipe(Config.option);
 	if (accountId._tag === "None" || token._tag === "None") {
 		return yield* new CfCredentialsError({
