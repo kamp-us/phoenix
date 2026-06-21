@@ -18,5 +18,4 @@
 /packages/read-guard/           @usirin
 /packages/worktree-guard/       @usirin
 /packages/structured-output-guard/  @usirin
-/packages/publish-guard/        @usirin
 /packages/ci-required/          @usirin
