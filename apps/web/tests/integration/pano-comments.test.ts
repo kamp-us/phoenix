@@ -24,15 +24,21 @@
  * `totalCount`, so the old `totalCount` assertions are dropped and re-expressed
  * via the id-union of the comments feed.
  *
- * D1 is shared across all test files (one deploy), so every title/email is
- * uniquely prefixed (`panocomm-${Date.now()}-…`).
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file. It isolates by NAMESPACE + POST-SCOPE: every email /
+ * sign-up name / post title / synthetic miss-id is prefixed with `NS` (this file's
+ * deterministic `nsToken`), and every assertion reads a per-test, NS-owned post's own
+ * comment thread (`post(id).comments` / `post(id).commentCount` for THIS post). The comment
+ * thread is intrinsically post-scoped, so no assertion ever reads a global comment list or
+ * unfiltered feed — each test owns its post and observes only its own seeded comment ids.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface PostNode {
 	__typename: string;
@@ -123,14 +129,14 @@ async function commentCount(postId: string): Promise<number> {
 }
 
 beforeAll(async () => {
-	author = await h.signUp(`panocomm-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
-	intruder = await h.signUp(`panocomm-${STAMP}-intruder@test.local`, "hunter2hunter2", "davetsiz");
-	voter = await h.signUp(`panocomm-${STAMP}-voter@test.local`, "hunter2hunter2", "oycu");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
+	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
+	voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "oycu");
 });
 
 describe("pano comments — ownership (edit/delete)", () => {
 	it("a non-author edit is rejected with UNAUTHORIZED; the body is unchanged", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} owned-comment target`);
+		const postId = await seedPost(`${NS} owned-comment target`);
 		const id = await seedComment(postId, "the original comment body");
 
 		const result = await h.fate(
@@ -154,7 +160,7 @@ describe("pano comments — ownership (edit/delete)", () => {
 	});
 
 	it("a non-author delete is rejected with UNAUTHORIZED; the comment survives", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} defended-comment target`);
+		const postId = await seedPost(`${NS} defended-comment target`);
 		const id = await seedComment(postId, "this comment is defended");
 
 		const result = await h.fate(
@@ -176,7 +182,7 @@ describe("pano comments — ownership (edit/delete)", () => {
 			{
 				kind: "mutation",
 				name: "comment.edit",
-				input: {id: `comm_${STAMP}_does_not_exist`, body: "x"},
+				input: {id: `comm_${NS}_does_not_exist`, body: "x"},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -191,7 +197,7 @@ describe("pano comments — ownership (edit/delete)", () => {
 			{
 				kind: "mutation",
 				name: "comment.delete",
-				input: {id: `comm_${STAMP}_does_not_exist`},
+				input: {id: `comm_${NS}_does_not_exist`},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -208,7 +214,7 @@ describe("pano comments — ownership (edit/delete)", () => {
 
 describe("pano comments — soft-delete placeholder semantics", () => {
 	it("deleting a leaf comment removes it from the feed and decrements commentCount", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} leaf-delete target`);
+		const postId = await seedPost(`${NS} leaf-delete target`);
 		const leaf = await seedComment(postId, "leaf comment to be removed");
 		await seedComment(postId, "the survivor stays");
 		expect(await commentCount(postId)).toBe(2);
@@ -232,7 +238,7 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 	});
 
 	it("deleting a comment with replies leaves a [silindi] tombstone in the feed; replies survive", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} parent-delete target`);
+		const postId = await seedPost(`${NS} parent-delete target`);
 		const parent = await seedComment(postId, "parent comment with a reply");
 		const reply = await seedComment(postId, "the reply that keeps the parent alive", {
 			cookie: intruder.cookie,
@@ -270,7 +276,7 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 	});
 
 	it("re-deleting a parent-with-replies tombstone is an idempotent no-op", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} idempotent-delete target`);
+		const postId = await seedPost(`${NS} idempotent-delete target`);
 		const parent = await seedComment(postId, "parent that becomes a tombstone");
 		await seedComment(postId, "reply keeping parent alive", {parentId: parent});
 
@@ -313,7 +319,7 @@ describe("pano comments — soft-delete placeholder semantics", () => {
 
 describe("pano comments — vote idempotency / round-trip", () => {
 	it("two consecutive votes are idempotent (score stays 1, myVote 1)", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} comment vote idem target`);
+		const postId = await seedPost(`${NS} comment vote idem target`);
 		const id = await seedComment(postId, "a votable comment");
 
 		const first = await h.fate(
@@ -336,7 +342,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 	});
 
 	it("vote → retract → vote nets score 1, myVote 1", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} comment vote rt target`);
+		const postId = await seedPost(`${NS} comment vote rt target`);
 		const id = await seedComment(postId, "a round-trippable comment");
 
 		await h.fate(
@@ -358,7 +364,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 	});
 
 	it("retracting a vote that was never cast is a no-op (score stays 0)", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} comment retract noop target`);
+		const postId = await seedPost(`${NS} comment retract noop target`);
 		const id = await seedComment(postId, "a never-voted comment");
 
 		const result = await h.fate(
@@ -377,7 +383,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 	});
 
 	it("retracting a vote then re-reading the comment shows score 0 / myVote null", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} comment retract roundtrip target`);
+		const postId = await seedPost(`${NS} comment retract roundtrip target`);
 		const id = await seedComment(postId, "a comment to vote then retract");
 
 		await h.fate(
@@ -404,7 +410,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 			{
 				kind: "mutation",
 				name: "comment.retractVote",
-				input: {id: `comm_${STAMP}_does_not_exist`},
+				input: {id: `comm_${NS}_does_not_exist`},
 				select: ["id"],
 			},
 			{cookie: voter.cookie},
@@ -417,7 +423,7 @@ describe("pano comments — vote idempotency / round-trip", () => {
 
 describe("pano comments — connection edge cases", () => {
 	it("reply-aware feed: leaf-deleted is gone, parent-with-replies stays as a tombstone", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} reply-aware feed target`);
+		const postId = await seedPost(`${NS} reply-aware feed target`);
 		const c0 = await seedComment(postId, "comment 0 — will be parent of a reply");
 		const c1 = await seedComment(postId, "comment 1 — stays live");
 		const c2 = await seedComment(postId, "comment 2 — will be leaf-deleted");
@@ -448,13 +454,13 @@ describe("pano comments — connection edge cases", () => {
 	});
 
 	it("a stale cursor (a never-existed comment id) yields an empty page", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} stale-cursor target`);
+		const postId = await seedPost(`${NS} stale-cursor target`);
 		for (let i = 0; i < 3; i++) await seedComment(postId, `comment ${i} for stale cursor test`);
 
 		const page = await h.fate({
 			kind: "query",
 			name: "post",
-			args: {idOrSlug: postId, comments: {first: 2, after: `comm_${STAMP}_never_existed`}},
+			args: {idOrSlug: postId, comments: {first: 2, after: `comm_${NS}_never_existed`}},
 			select: ["id", "comments.id"],
 		});
 		expect(page.ok).toBe(true);
@@ -466,7 +472,7 @@ describe("pano comments — connection edge cases", () => {
 	});
 
 	it("when the `after` row is hard-removed between pages, the next page is empty", async () => {
-		const postId = await seedPost(`panocomm-${STAMP} removed-cursor target`);
+		const postId = await seedPost(`${NS} removed-cursor target`);
 		const ids: string[] = [];
 		for (let i = 0; i < 4; i++)
 			ids.push(await seedComment(postId, `comment ${i} removed-cursor test`));
