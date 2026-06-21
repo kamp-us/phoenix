@@ -20,15 +20,23 @@
  * by re-resolving entities over `/fate`. Ownership uses two real users: the author
  * creates, the intruder's cookie attempts edit/delete → `UNAUTHORIZED`.
  *
- * D1 is shared (one deploy) — every slug/email is uniquely prefixed
- * (`szmut-${Date.now()}-…`); never reuse a slug another test may touch.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file. Isolation is by `NS` (this file's deterministic
+ * `nsToken`): every seeded identifier — sign-up emails, every term SLUG, every `seedTerm`
+ * slug — is `${NS}-…`-prefixed, so this file's rows are uniquely its own on the shared D1.
+ * Every assertion reads back by THIS file's own NS-prefixed term slug (a by-slug `term(slug)`
+ * read is naturally scoped once the slug is NS-prefixed) or off a mutation's re-resolved
+ * return — there is no global `terms`-LIST read here, so no assertion can observe another
+ * file's rows. The `definitionCount`/`score`/`totalScore` receipts are read off this file's
+ * own NS term/definition.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface DefNode {
 	__typename: string;
@@ -57,13 +65,13 @@ let intruder: {userId: string; cookie: string};
 const DEF_SELECT = ["id", "body", "score", "author", "authorId", "myVote"];
 
 beforeAll(async () => {
-	author = await h.signUp(`szmut-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
-	intruder = await h.signUp(`szmut-${STAMP}-intruder@test.local`, "hunter2hunter2", "davetsiz");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
+	intruder = await h.signUp(`${NS}-intruder@test.local`, "hunter2hunter2", "davetsiz");
 });
 
 describe("sozluk mutations — definition.add", () => {
 	it("writes and returns the re-resolved Definition", async () => {
-		const slug = `szmut-${STAMP}-add`;
+		const slug = `${NS}-add`;
 		const result = await h.fate(
 			{
 				kind: "mutation",
@@ -103,7 +111,7 @@ describe("sozluk mutations — definition.add", () => {
 	// auto-create-term round-trip on real D1.
 
 	it("a second add on the same slug extends the term, not creates a new one", async () => {
-		const slug = `szmut-${STAMP}-two-defs`;
+		const slug = `${NS}-two-defs`;
 		await h.fate(
 			{
 				kind: "mutation",
@@ -142,7 +150,7 @@ describe("sozluk mutations — definition.add", () => {
 		const result = await h.fate({
 			kind: "mutation",
 			name: "definition.add",
-			input: {termSlug: `szmut-${STAMP}-anon`, body: "nope"},
+			input: {termSlug: `${NS}-anon`, body: "nope"},
 			select: ["id"],
 		});
 		expect(result.ok).toBe(false);
@@ -153,7 +161,7 @@ describe("sozluk mutations — definition.add", () => {
 
 describe("sozluk mutations — definition.vote / retractVote", () => {
 	it("vote then retractVote return the entity with myVote stamped", async () => {
-		const slug = `szmut-${STAMP}-vote`;
+		const slug = `${NS}-vote`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -192,7 +200,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 	});
 
 	it("two consecutive votes from the same user are idempotent (score stays at 1)", async () => {
-		const slug = `szmut-${STAMP}-vote-idem`;
+		const slug = `${NS}-vote-idem`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -224,7 +232,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 	});
 
 	it("retracting a vote that doesn't exist is a no-op (score 0, myVote null)", async () => {
-		const slug = `szmut-${STAMP}-vote-noop`;
+		const slug = `${NS}-vote-noop`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -253,7 +261,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 	});
 
 	it("vote → retract → vote round-trip ends with score 1", async () => {
-		const slug = `szmut-${STAMP}-vote-rt`;
+		const slug = `${NS}-vote-rt`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -289,7 +297,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 			{
 				kind: "mutation",
 				name: "definition.vote",
-				input: {id: `def_${STAMP}_does_not_exist`},
+				input: {id: `def_${NS}_does_not_exist`},
 				select: ["score"],
 			},
 			{cookie: author.cookie},
@@ -302,7 +310,7 @@ describe("sozluk mutations — definition.vote / retractVote", () => {
 
 describe("sozluk mutations — definition.edit", () => {
 	it("returns the edited entity", async () => {
-		const slug = `szmut-${STAMP}-edit`;
+		const slug = `${NS}-edit`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -335,7 +343,7 @@ describe("sozluk mutations — definition.edit", () => {
 	// (ADR 0082) — editDefinition calls validateBody before any DB read.
 
 	it("ownership: a non-author edit is rejected with UNAUTHORIZED; the body is unchanged", async () => {
-		const slug = `szmut-${STAMP}-edit-cross`;
+		const slug = `${NS}-edit-cross`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -379,7 +387,7 @@ describe("sozluk mutations — definition.edit", () => {
 
 describe("sozluk mutations — definition.delete", () => {
 	it("returns the re-resolved parent Term and decrements its aggregates", async () => {
-		const slug = `szmut-${STAMP}-del`;
+		const slug = `${NS}-del`;
 		const a = await h.fate(
 			{
 				kind: "mutation",
@@ -454,7 +462,7 @@ describe("sozluk mutations — definition.delete", () => {
 	});
 
 	it("ownership: a non-author delete is rejected with UNAUTHORIZED; the count is unchanged", async () => {
-		const slug = `szmut-${STAMP}-del-cross`;
+		const slug = `${NS}-del-cross`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -482,7 +490,7 @@ describe("sozluk mutations — definition.delete", () => {
 	});
 
 	it("re-deleting an already-deleted definition still returns the Term with unchanged count", async () => {
-		const slug = `szmut-${STAMP}-del-idem`;
+		const slug = `${NS}-del-idem`;
 		const a = await h.fate(
 			{
 				kind: "mutation",
@@ -529,7 +537,7 @@ describe("sozluk mutations — definition.delete", () => {
 
 describe("sozluk mutations — seed idempotency / emptying a term", () => {
 	it("seedTerm is idempotent: re-seeding the same definition skips it", async () => {
-		const slug = `szmut-${STAMP}-outbox`;
+		const slug = `${NS}-outbox`;
 		const def = {
 			authorName: "umut",
 			body: "Atomic durability primitive in the producer-consumer outbox pattern.",
@@ -555,7 +563,7 @@ describe("sozluk mutations — seed idempotency / emptying a term", () => {
 	// `definitions` connection is empty. (The `term_summary` row persists, so the
 	// term still resolves; it just has no live definitions.)
 	it("deleting the term's only definition empties it (count 0, no definitions)", async () => {
-		const slug = `szmut-${STAMP}-transient`;
+		const slug = `${NS}-transient`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
