@@ -13,6 +13,7 @@ import {PanoCrumb} from "../components/pano/index";
 import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
+import type {PostSort} from "../lib/panoFeedSort";
 
 const PAGE_SIZE = 20;
 
@@ -26,12 +27,12 @@ const PostConnectionView = {
 	live: {prepend: "visible"},
 } as const;
 
-/** UI sort labels (Turkish) → server `sort` string. */
-const FILTERS = [
-	{id: "sicak", label: "sıcak", sort: "hot" as const},
-	{id: "yeni", label: "yeni", sort: "new" as const},
-	{id: "en-iyi", label: "en iyi", sort: "top" as const},
-	{id: "tartisma", label: "tartışma", sort: "discuss" as const},
+/** UI sort labels (Turkish) → server `sort` string (the shared `PostSort` vocabulary). */
+const FILTERS: {id: string; label: string; sort: PostSort}[] = [
+	{id: "sicak", label: "sıcak", sort: "hot"},
+	{id: "yeni", label: "yeni", sort: "new"},
+	{id: "en-iyi", label: "en iyi", sort: "top"},
+	{id: "tartisma", label: "tartışma", sort: "discuss"},
 ];
 
 /** Saved-posts (`/pano/kaydedilenler`) is per-viewer, so it's shown signed-in only. */

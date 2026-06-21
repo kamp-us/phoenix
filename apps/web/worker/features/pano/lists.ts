@@ -17,16 +17,14 @@
 import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import {toPostSort} from "../../../src/lib/panoFeedSort.ts";
 import {emptyKeysetPage} from "../../db/keyset.ts";
 import {toConnection} from "../fate/connection.ts";
 import {Bookmark} from "./Bookmark.ts";
-import {Pano, type PostSort, type PostSummaryRow} from "./Pano.ts";
+import {Pano, type PostSummaryRow} from "./Pano.ts";
 import {toPost} from "./shapers.ts";
 import type {Post} from "./views.ts";
 import {PostView} from "./views.ts";
-
-const toPostSort = (value: string | undefined): PostSort =>
-	value === "new" || value === "top" || value === "discuss" ? value : "hot";
 
 const PostsArgs = Schema.Struct({
 	sort: Schema.optional(Schema.String),
