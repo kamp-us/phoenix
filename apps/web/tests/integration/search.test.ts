@@ -18,30 +18,35 @@
  * soft-delete/retitle re-index, title-only scope, and the min-length boundary as
  * it hits the real `searchTerms` op.
  *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
- * shared across every migrated file. The FTS index is the normalized TITLE (`fts-sync.ts`),
- * and the `MATCH` builder (`normalize.ts`) ANDs each query token's prefix — so a query of
- * two tokens selects only docs whose title carries BOTH. We exploit that: every seeded
- * title is prefixed with `NS` (this file's deterministic `nsToken`) and every FTS query is
- * prefixed with the same `NS` token, so the `MATCH` AND scopes each result set to THIS
- * file's rows alone — another file's overlapping `istanbul`/`ortak`/`yazilim` title can
- * never interleave. `NS` is pure ASCII `[a-z0-9-]`, so it folds to itself through
+ * This file runs on its OWN DEDICATED per-file stage (`integrationStack`), NOT the run-scoped
+ * SHARED stage — because it does multi-request keyset paging walks (`searchTerms first:2 →
+ * cursor → after`) whose lead-sort statistic, bm25 rank, is a CROSS-FILE-GLOBAL corpus
+ * statistic (total docs / term frequencies over the whole `term_search` table). On a shared
+ * D1 a parallel fork's writes BETWEEN two page requests re-rank the corpus mid-walk, skipping
+ * or duping a row across the page boundary (CI: search dropped `proje-c`, `Array(2)` vs
+ * `Array(3)`). NS-namespacing scopes a single request's RESULT SET but can't fence a global
+ * ranking across requests. A dedicated stage gives a stable corpus across the walk — per
+ * ADR 0104, paged-walk files stay dedicated (#1027 over-migrated this one; #1143 reverts it).
+ *
+ * The per-file `NS` (this file's deterministic `nsToken`) prefixing is retained from the
+ * shared-stage migration: harmless on the dedicated D1, and it keeps the fixtures honest.
+ * The FTS index is the normalized TITLE (`fts-sync.ts`) and the `MATCH` builder
+ * (`normalize.ts`) ANDs each query token's prefix; every seeded title and FTS query carries
+ * the same `NS` token. `NS` is pure ASCII `[a-z0-9-]`, so it folds to itself through
  * `normalizeSearchText` and never perturbs the diacritic fold under test (the `istanbul`
- * token still folds to match a dotted-`İ` title independently). The bm25-tie fixture stays
- * a genuine tie on the shared stage: the `NS` token is added SYMMETRICALLY to all three
- * `ortak` titles at the same position with the same frequency, so it shifts every doc's
- * rank by the same amount — the tie (and thus the slug-asc page order) is preserved.
+ * token still folds to match a dotted-`İ` title independently), and it's added SYMMETRICALLY
+ * to all three `ortak` titles, so the bm25 tie — and the slug-asc page order — is preserved.
  *
  * The min-length boundary (`query: "i"`) is the one query left UN-namespaced: it must short-
  * circuit in `toMatchExpression` (normalized length < MIN_QUERY_LENGTH) BEFORE FTS, and
  * prefixing it with `NS` would push it over the min length and defeat the boundary it proves.
- * It returns `[]` via the short-circuit regardless of the shared corpus, so it stays correct.
+ * It returns `[]` via the short-circuit regardless of the corpus, so it stays correct.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {sharedStack} from "./_integration.ts";
+import {integrationStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
-const h = sharedStack();
+const h = integrationStack(import.meta.url);
 
 const NS = nsToken(import.meta.url);
 const STAMP = Date.now();
@@ -97,8 +102,8 @@ async function seedPost(title: string): Promise<string> {
 
 describe("searchTerms — real FTS5 over the deployed worker", () => {
 	// Distinct slug prefixes per concern so one describe's fixtures never leak into
-	// another's result set. The `NS`-prefixed title + query scope every match to this
-	// file's rows on the shared D1 (the index is shared across the whole stage).
+	// another's result set. (The `NS`-prefixed title + query also scope every match to
+	// this file's rows — retained from the shared-stage era, harmless on the dedicated D1.)
 	const istanbulSlug = `${NS}-${STAMP}-istanbul`;
 	const sisliSlug = `${NS}-${STAMP}-sisli`;
 	const ankaraSlug = `${NS}-${STAMP}-ankara`;
@@ -146,7 +151,7 @@ describe("searchTerms — real FTS5 over the deployed worker", () => {
 		// The resolver short-circuits (toMatchExpression → null) before touching FTS5;
 		// this asserts that boundary as the real `searchTerms` op serves it end-to-end.
 		// Left UN-namespaced on purpose: the `NS` prefix would push it over the min length
-		// and defeat the short-circuit. It returns `[]` regardless of the shared corpus.
+		// and defeat the short-circuit. It returns `[]` regardless of the corpus.
 		const c = await searchTerms({query: "i"});
 		expect(c.items).toEqual([]);
 		expect(c.pagination.hasNext).toBe(false);

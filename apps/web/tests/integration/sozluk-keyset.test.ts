@@ -24,19 +24,27 @@
  * real remote D1 the prior "two adjacent touches share a second" assumption lost on
  * round-trip latency and reddened unrelated PRs (#643).
  *
- * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
- * shared across every migrated file: every slug/email is prefixed with `NS` (this file's
- * deterministic `nsToken`). Each keyset assertion walks the GLOBAL `terms` connection but
- * `.startsWith(<NS-prefix>)`-filters to THIS file's rows BEFORE asserting order, so another
- * file's terms can never interleave into the asserted sequence. The three fixture prefixes
- * (`P`/`R`/`DEFS_SLUG`) are mutually disjoint by the first char after `${NS}-` (`p`/`r`/`d`),
- * so a `.startsWith` for one never matches another's rows.
+ * This file runs on its OWN DEDICATED per-file stage (`integrationStack`), NOT the run-scoped
+ * SHARED stage — because it does multi-request keyset paging walks (`terms … first:2 → cursor
+ * → after`, the popular/recent verticals) whose lead-sort statistic, `total_score`, is a
+ * CROSS-FILE-GLOBAL aggregate over the whole `term_record` table. On a shared D1 a parallel
+ * fork's writes BETWEEN two page requests mutate that ranking mid-walk, skipping or duping a
+ * row across the page boundary (CI: the popular walk duped `pf`, collecting 7 rows vs the
+ * expected 6). NS-namespacing scopes a single request's RESULT SET but can't fence a global
+ * ranking across requests. A dedicated stage gives a stable corpus across the walk — per
+ * ADR 0104, paged-walk files stay dedicated (#1027 over-migrated this one; #1143 reverts it).
+ *
+ * The per-file `NS` (this file's deterministic `nsToken`) prefixing is retained from the
+ * shared-stage migration: harmless on the dedicated D1. Every slug/email is `NS`-prefixed and
+ * each keyset assertion `.startsWith(<NS-prefix>)`-filters to THIS file's rows before asserting
+ * order. The three fixture prefixes (`P`/`R`/`DEFS_SLUG`) are mutually disjoint by the first
+ * char after `${NS}-` (`p`/`r`/`d`), so a `.startsWith` for one never matches another's rows.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {sharedStack} from "./_integration.ts";
+import {integrationStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
 
-const h = sharedStack();
+const h = integrationStack(import.meta.url);
 
 const NS = nsToken(import.meta.url);
 const STAMP = Date.now();
