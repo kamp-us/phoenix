@@ -12,8 +12,11 @@
  */
 import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
+import {ciRequiredCommand} from "./tools/ci-required/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
+import {docLinksCommand} from "./tools/doc-links/command.ts";
 import {epicLedgerCommand} from "./tools/epic-ledger/command.ts";
+import {leakGuardCommand} from "./tools/leak-guard/command.ts";
 import {readGuardCommand} from "./tools/read-guard/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
 import {worktreeGuardCommand} from "./tools/worktree-guard/command.ts";
@@ -58,4 +61,7 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	readGuardCommand,
 	worktreeGuardCommand,
 	spawnGuardCommand,
+	leakGuardCommand,
+	docLinksCommand,
+	ciRequiredCommand,
 ];
