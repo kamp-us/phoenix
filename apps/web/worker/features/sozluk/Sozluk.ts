@@ -4,8 +4,8 @@
  *
  * Vote mutations delegate to the shared `Vote.cast` (atomic vote write + karma)
  * and only recompute `term_record` aggregates afterward, rather than
- * reimplementing the batch-vote logic. Pure validation/derivation is exported as
- * module-level functions so it unit-tests off-DB (ADR 0013 / 0082).
+ * reimplementing the batch-vote logic. Pure validation/derivation is module-private;
+ * its wire codes unit-test off-DB THROUGH the mutation (ADR 0013 / 0082).
  */
 import {id} from "@usirin/forge";
 import {and, asc, desc, eq, inArray, isNull, sql} from "drizzle-orm";
@@ -46,19 +46,19 @@ export type {TermConnectionPage, TermSummaryRow} from "./term-summary.ts";
 export const DEFINITION_BODY_MAX = 10_000;
 
 // Pure validation/derivation lifted off the service (ADR 0013 for *where*, ADR
-// 0082 for *why*): each is wrong-or-right on its input with no DB, so the wire
-// codes + title derivation unit-test off-DB. `addDefinition` / `editDefinition`
-// call these at the same point the in-factory closure / inline `replace` ran, so
-// observable behavior is unchanged.
+// 0082 for *why*): each is wrong-or-right on its input with no DB. They're
+// module-private; the wire codes unit-test off-DB THROUGH the mutation
+// (`definition-validation.unit.test.ts` drives `addDefinition` / `editDefinition`
+// over a throwing `Drizzle`, proving the gate fires before any DB call).
+// `addDefinition` / `editDefinition` call these at the same point the in-factory
+// closure / inline `replace` ran, so observable behavior is unchanged.
 
 /**
  * Per ADR 0013, body validation lives in the domain, not the resolver. Returns
  * the body when valid (empty after trim ⇒ `BodyRequired`, over the cap ⇒
  * `BodyTooLong`).
  */
-export const validateBody = Effect.fn("Sozluk.validateBody")(function* (
-	body: string | null | undefined,
-) {
+const validateBody = Effect.fn("Sozluk.validateBody")(function* (body: string | null | undefined) {
 	const rawBody = body ?? "";
 	if (rawBody.trim().length === 0) {
 		return yield* new BodyRequired({message: "tanım boş olamaz"});
@@ -73,7 +73,7 @@ export const validateBody = Effect.fn("Sozluk.validateBody")(function* (
 });
 
 /** Fallback term title when none is supplied: the slug with dashes as spaces. */
-export const titleFromSlug = (slug: string): string => slug.replace(/-/g, " ");
+const titleFromSlug = (slug: string): string => slug.replace(/-/g, " ");
 
 const DEFINITION_EXCERPT_LEN = 140;
 

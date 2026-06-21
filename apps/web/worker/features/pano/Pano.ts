@@ -93,16 +93,18 @@ export interface PostTagInput {
 	label?: string | undefined;
 }
 
-// Submit-validation lives here as exported pure functions (ADR 0013 for *where*
-// validation belongs, ADR 0082 for *why* it's lifted off the service): each is
-// wrong-or-right on its input with no DB, so the wire codes unit-test off-DB and
-// the integration tier keeps only the real-DB-miss cases. `submitPost` /
-// `saveDraft` / `addComment` / `editPost` / `editComment` call these at the same
-// point they used to call the in-factory closures, so observable behavior + wire
-// codes are unchanged.
+// Submit-validation lives here as module-private pure functions (ADR 0013 for
+// *where* validation belongs, ADR 0082 for *why* it's lifted off the service):
+// each is wrong-or-right on its input with no DB. The wire codes unit-test off-DB
+// THROUGH the mutation (`submit-validation.unit.test.ts` drives `submitPost` /
+// `saveDraft` / `addComment` / `editPost` over a throwing `Drizzle`, proving the
+// gate fires before any DB call), and the integration tier keeps only the
+// real-DB-miss cases. `submitPost` / `saveDraft` / `addComment` / `editPost` /
+// `editComment` call these at the same point they used to call the in-factory
+// closures, so observable behavior + wire codes are unchanged.
 
 /** Returns the normalized body (`null` for empty), or fails `PostBodyTooLong`. */
-export const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
+const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (rawBody: string) {
 	if (rawBody.length > POST_BODY_MAX) {
 		return yield* new PostBodyTooLong({
 			message: `metin en fazla ${POST_BODY_MAX} karakter olabilir`,
@@ -111,7 +113,7 @@ export const validatePostBody = Effect.fn("Pano.validatePostBody")(function* (ra
 	return rawBody.length === 0 ? null : rawBody;
 });
 
-export const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: string) {
+const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (raw: string) {
 	const trimmed = raw.trim();
 	if (trimmed.length === 0) {
 		return yield* new TitleRequired({
@@ -131,7 +133,7 @@ export const validatePostTitle = Effect.fn("Pano.validatePostTitle")(function* (
  * persists), only the length cap. Returns the trimmed title or fails
  * `TitleTooLong`.
  */
-export const validateDraftTitle = Effect.fn("Pano.validateDraftTitle")(function* (raw: string) {
+const validateDraftTitle = Effect.fn("Pano.validateDraftTitle")(function* (raw: string) {
 	const trimmed = raw.trim();
 	if (trimmed.length > POST_TITLE_MAX) {
 		return yield* new TitleTooLong({
@@ -141,7 +143,7 @@ export const validateDraftTitle = Effect.fn("Pano.validateDraftTitle")(function*
 	return trimmed;
 });
 
-export const validateCommentBody = Effect.fn("Pano.validateCommentBody")(function* (
+const validateCommentBody = Effect.fn("Pano.validateCommentBody")(function* (
 	body: string | null | undefined,
 ) {
 	const rawBody = body ?? "";
@@ -163,9 +165,7 @@ export const validateCommentBody = Effect.fn("Pano.validateCommentBody")(functio
  * absent URL yields `{host: null, urlNormalized: null}`; a malformed one fails
  * `UrlInvalid`. Shared by `submitPost` and `saveDraft`.
  */
-export const parseSubmitUrl = Effect.fn("Pano.parseSubmitUrl")(function* (
-	url: string | null | undefined,
-) {
+const parseSubmitUrl = Effect.fn("Pano.parseSubmitUrl")(function* (url: string | null | undefined) {
 	if (url == null || url.length === 0) {
 		return {host: null, urlNormalized: null} as const;
 	}
@@ -181,7 +181,7 @@ export const parseSubmitUrl = Effect.fn("Pano.parseSubmitUrl")(function* (
  * be in the fixed enum, duplicate kinds collapse. Fails `TagsRequired` /
  * `TagInvalid`.
  */
-export const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(function* (
+const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(function* (
 	tags: ReadonlyArray<PostTagInput> | null | undefined,
 ) {
 	if (!tags || tags.length === 0) {
@@ -210,7 +210,7 @@ export const normalizeSubmitTags = Effect.fn("Pano.normalizeSubmitTags")(functio
  * rejected), but a non-empty kind outside the fixed enum still fails
  * `TagInvalid`.
  */
-export const normalizeDraftTags = Effect.fn("Pano.normalizeDraftTags")(function* (
+const normalizeDraftTags = Effect.fn("Pano.normalizeDraftTags")(function* (
 	tags: ReadonlyArray<PostTagInput> | null | undefined,
 ) {
 	const normalizedTags: PostTagRow[] = [];

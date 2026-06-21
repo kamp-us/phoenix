@@ -1,170 +1,260 @@
 /**
- * Pano submit-validation unit coverage (ADR 0082) — the post/draft/comment input
- * checks that are wrong-or-right with NO database.
+ * Pano submit-validation WIRING coverage (ADR 0082) — the post/draft/comment
+ * input checks driven THROUGH their only caller, the mutation, not the extracted
+ * helper in isolation.
  *
- * `submitPost` / `saveDraft` / `addComment` run these pure validators BEFORE any
- * DB read, so the length/format/URL/tag rejections are pure logic on the input —
- * they could never be wrong just because the database differed (ADR 0082 litmus).
- * Each is now an exported module-level function with no `Drizzle` dependency at
- * all, so calling it directly is itself the "no DB read" proof: there is no seam
- * to a database to reach. The DB-state-dependent rejections of the same mutations
- * (`POST_NOT_FOUND`, `PARENT_NOT_FOUND`, `UNAUTHORIZED`) stay on real D1 in
+ * `submitPost` / `saveDraft` / `addComment` run their validators BEFORE any DB
+ * read, so a throwing `Drizzle` (every `run`/`batch` `die`s) is the "no DB call"
+ * proof: a typed validation failure surfacing instead of a defect means the gate
+ * fired before the seam was reached. A refactor that reorders a `validate*` call
+ * after a DB read, or drops it, would die (or succeed) here instead of
+ * rejecting — closing the interface-as-test-surface hole the
+ * `pasaport/username-validation.unit.test.ts` pattern already closes.
+ *
+ * `editPost` is the one mutation whose validation runs AFTER its existence/auth
+ * read (it validates against the persisted row), so its wiring is proven over a
+ * scripted `Drizzle` that returns an owned post on the read and `die`s on the
+ * write batch: the validator must reject before that write.
+ *
+ * The DB-state-dependent rejections of the same mutations (`POST_NOT_FOUND`,
+ * `PARENT_NOT_FOUND`, `UNAUTHORIZED`) stay on real D1 in
  * `tests/integration/pano-*.test.ts` — those are only-wrong-if-the-DB-differs.
+ * The validator helpers are module-private; this file reaches them only through
+ * the mutation, never by direct import.
  */
 
-import {Cause, Effect, Exit} from "effect";
-import {assert, describe, expect, it} from "vitest";
-import {
-	normalizeDraftTags,
-	normalizeSubmitTags,
-	POST_BODY_MAX,
-	POST_TITLE_MAX,
-	parseSubmitUrl,
-	validateCommentBody,
-	validateDraftTitle,
-	validatePostBody,
-	validatePostTitle,
-} from "./Pano.ts";
+import {it} from "@effect/vitest";
+import {Cause, type Context, Effect, Exit, Layer} from "effect";
+import {assert} from "vitest";
+import {Drizzle, type DrizzleAccess, type DrizzleDb} from "../../db/Drizzle.ts";
+import {Vote} from "../vote/Vote.ts";
+import {Bookmark} from "./Bookmark.ts";
+import {COMMENT_BODY_MAX, Pano, PanoLive, POST_BODY_MAX, POST_TITLE_MAX} from "./Pano.ts";
 
-const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runSyncExit(effect);
+// Every DB call dies, so any path that reaches the seam fails the test: the
+// validation gate short-circuits before any read/write, and running to a typed
+// failure against this access is the "no DB call" proof.
+const throwingAccess: DrizzleAccess = {
+	run: () => Effect.die(new Error("a pano mutation read the DB on a path that must short-circuit")),
+	batch: () =>
+		Effect.die(new Error("a pano mutation wrote a batch on a path that must short-circuit")),
+};
+
+// `editPost` validates AFTER its existence/auth read, so its wiring is proven
+// over a `run` that resolves an owned post once and dies on any later write: the
+// title/body gate must reject before the write batch is ever built.
+const editPostReadThenDieAccess = (postRow: unknown): DrizzleAccess => {
+	const state = {firstRunDone: false};
+	return {
+		run: <A>(fn: (db: DrizzleDb) => Promise<A>) => {
+			void fn;
+			if (!state.firstRunDone) {
+				state.firstRunDone = true;
+				return Effect.succeed(postRow as A);
+			}
+			return Effect.die(new Error("editPost wrote past the validation gate it must short-circuit"));
+		},
+		batch: () =>
+			Effect.die(new Error("editPost wrote a batch past the gate it must short-circuit")),
+	};
+};
+
+// Pano's validation gate touches neither Vote nor Bookmark (they're consulted
+// only on the read/aggregate paths), so never-cast inert instances satisfy the
+// layer's dependency types without a real implementation.
+const inertVote = Layer.succeed(Vote, {} as Context.Service.Shape<typeof Vote>);
+const inertBookmark = Layer.succeed(Bookmark, {} as Context.Service.Shape<typeof Bookmark>);
+
+const panoLayer = (access: DrizzleAccess) =>
+	PanoLive.pipe(
+		Layer.provide(Layer.succeed(Drizzle, access)),
+		Layer.provide(inertVote),
+		Layer.provide(inertBookmark),
+	);
 
 const expectTag = (exit: Exit.Exit<unknown, unknown>, tag: string) => {
-	assert.isTrue(Exit.isFailure(exit), "expected the validator to fail");
+	assert.isTrue(Exit.isFailure(exit), "expected the mutation to fail at the validation gate");
 	if (Exit.isFailure(exit)) {
 		const error = Cause.findErrorOption(exit.cause);
-		assert.isTrue(error._tag === "Some", "expected a typed failure, not a die");
+		assert.isTrue(
+			error._tag === "Some",
+			"expected a typed validation failure, not a die (a DB call)",
+		);
 		if (error._tag === "Some") {
 			assert.strictEqual((error.value as {_tag: string})._tag, tag);
 		}
 	}
 };
 
-const expectValue = <A>(exit: Exit.Exit<A, unknown>): A => {
-	assert.isTrue(Exit.isSuccess(exit), "expected the validator to succeed");
-	if (Exit.isSuccess(exit)) return exit.value;
-	throw new Error("unreachable");
+const ownerId = "u1";
+
+const baseSubmit = {
+	title: "geçerli başlık",
+	body: "gövde" as string | undefined,
+	url: undefined as string | undefined,
+	tags: [{kind: "soru"}] as ReadonlyArray<{kind: string; label?: string}>,
+	authorId: ownerId,
+	authorName: "umut",
 };
 
-describe("Pano.validatePostTitle", () => {
-	it("an empty title rejects with TitleRequired", () => {
-		expectTag(run(validatePostTitle("")), "pano/TitleRequired");
-	});
+const runSubmit = (overrides: Partial<typeof baseSubmit>) =>
+	Effect.gen(function* () {
+		const pano = yield* Pano;
+		return yield* pano.submitPost({...baseSubmit, ...overrides}).pipe(Effect.exit);
+	}).pipe(Effect.provide(panoLayer(throwingAccess)));
 
-	it("a whitespace-only title rejects with TitleRequired", () => {
-		expectTag(run(validatePostTitle("   ")), "pano/TitleRequired");
-	});
+it.effect("submitPost: an empty title rejects with TitleRequired before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runSubmit({title: "   "}), "pano/TitleRequired");
+	}),
+);
 
-	it("a title over the max rejects with TitleTooLong", () => {
-		expectTag(run(validatePostTitle("a".repeat(POST_TITLE_MAX + 1))), "pano/TitleTooLong");
-	});
+it.effect("submitPost: an over-long title rejects with TitleTooLong before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runSubmit({title: "a".repeat(POST_TITLE_MAX + 1)}), "pano/TitleTooLong");
+	}),
+);
 
-	it("a valid title returns trimmed", () => {
-		expect(expectValue(run(validatePostTitle("  hello  ")))).toBe("hello");
-	});
-});
+it.effect("submitPost: an over-long body rejects with PostBodyTooLong before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runSubmit({body: "a".repeat(POST_BODY_MAX + 1)}), "pano/PostBodyTooLong");
+	}),
+);
 
-describe("Pano.validateDraftTitle", () => {
-	it("an empty draft title is allowed (no required gate)", () => {
-		expect(expectValue(run(validateDraftTitle("")))).toBe("");
-	});
+it.effect("submitPost: a malformed URL rejects with UrlInvalid before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runSubmit({url: "not a url"}), "pano/UrlInvalid");
+	}),
+);
 
-	it("a draft title over the max still rejects with TitleTooLong", () => {
-		expectTag(run(validateDraftTitle("a".repeat(POST_TITLE_MAX + 1))), "pano/TitleTooLong");
-	});
+it.effect("submitPost: an empty tag list rejects with TagsRequired before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runSubmit({tags: []}), "pano/TagsRequired");
+	}),
+);
 
-	it("a valid draft title returns trimmed", () => {
-		expect(expectValue(run(validateDraftTitle("  taslak  ")))).toBe("taslak");
-	});
-});
+it.effect("submitPost: a tag outside the enum rejects with TagInvalid before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runSubmit({tags: [{kind: "nope"}]}), "pano/TagInvalid");
+	}),
+);
 
-describe("Pano.validatePostBody", () => {
-	it("an empty body normalizes to null", () => {
-		expect(expectValue(run(validatePostBody("")))).toBeNull();
-	});
+const baseDraft = {
+	authorId: ownerId,
+	authorName: "umut",
+	title: "taslak" as string | undefined,
+	body: undefined as string | undefined,
+	url: undefined as string | undefined,
+	tags: undefined as ReadonlyArray<{kind: string; label?: string}> | undefined,
+};
 
-	it("a body over the max rejects with PostBodyTooLong", () => {
-		expectTag(run(validatePostBody("a".repeat(POST_BODY_MAX + 1))), "pano/PostBodyTooLong");
-	});
+const runDraft = (overrides: Partial<typeof baseDraft>) =>
+	Effect.gen(function* () {
+		const pano = yield* Pano;
+		return yield* pano.saveDraft({...baseDraft, ...overrides}).pipe(Effect.exit);
+	}).pipe(Effect.provide(panoLayer(throwingAccess)));
 
-	it("a non-empty body within the cap returns verbatim", () => {
-		expect(expectValue(run(validatePostBody("gövde")))).toBe("gövde");
-	});
-});
+it.effect("saveDraft: an over-long draft title rejects with TitleTooLong before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runDraft({title: "a".repeat(POST_TITLE_MAX + 1)}), "pano/TitleTooLong");
+	}),
+);
 
-describe("Pano.validateCommentBody", () => {
-	it("an undefined body rejects with CommentBodyRequired", () => {
-		expectTag(run(validateCommentBody(undefined)), "pano/CommentBodyRequired");
-	});
+it.effect("saveDraft: an over-long body rejects with PostBodyTooLong before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runDraft({body: "a".repeat(POST_BODY_MAX + 1)}), "pano/PostBodyTooLong");
+	}),
+);
 
-	it("a whitespace-only body rejects with CommentBodyRequired", () => {
-		expectTag(run(validateCommentBody("   ")), "pano/CommentBodyRequired");
-	});
+it.effect("saveDraft: a malformed URL rejects with UrlInvalid before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runDraft({url: "not a url"}), "pano/UrlInvalid");
+	}),
+);
 
-	it("a body over the max rejects with CommentBodyTooLong", () => {
-		expectTag(run(validateCommentBody("a".repeat(5_001))), "pano/CommentBodyTooLong");
-	});
+it.effect("saveDraft: a tag outside the enum rejects with TagInvalid before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runDraft({tags: [{kind: "nope"}]}), "pano/TagInvalid");
+	}),
+);
 
-	it("a valid body returns verbatim (untrimmed)", () => {
-		expect(expectValue(run(validateCommentBody(" yorum ")))).toBe(" yorum ");
-	});
-});
+const baseComment = {
+	postId: "post_1",
+	authorId: ownerId,
+	authorName: "umut",
+	body: "yorum",
+	parentId: null as string | null,
+};
 
-describe("Pano.parseSubmitUrl", () => {
-	it("a null URL yields no host / no normalized url", () => {
-		expect(expectValue(run(parseSubmitUrl(null)))).toEqual({host: null, urlNormalized: null});
-	});
+const runComment = (overrides: Partial<typeof baseComment>) =>
+	Effect.gen(function* () {
+		const pano = yield* Pano;
+		return yield* pano.addComment({...baseComment, ...overrides}).pipe(Effect.exit);
+	}).pipe(Effect.provide(panoLayer(throwingAccess)));
 
-	it("an empty URL yields no host / no normalized url", () => {
-		expect(expectValue(run(parseSubmitUrl("")))).toEqual({host: null, urlNormalized: null});
-	});
+it.effect(
+	"addComment: a whitespace-only body rejects with CommentBodyRequired before any DB call",
+	() =>
+		Effect.gen(function* () {
+			expectTag(yield* runComment({body: "   "}), "pano/CommentBodyRequired");
+		}),
+);
 
-	it("a malformed URL rejects with UrlInvalid", () => {
-		expectTag(run(parseSubmitUrl("not a url")), "pano/UrlInvalid");
-	});
-
-	it("a valid URL is normalized and the host extracted", () => {
-		const value = expectValue(run(parseSubmitUrl("https://example.com/path")));
-		expect(value.host).toBe("example.com");
-		expect(value.urlNormalized).toBe("https://example.com/path");
-	});
-});
-
-describe("Pano.normalizeSubmitTags", () => {
-	it("an empty tag list rejects with TagsRequired", () => {
-		expectTag(run(normalizeSubmitTags([])), "pano/TagsRequired");
-	});
-
-	it("an absent tag list rejects with TagsRequired", () => {
-		expectTag(run(normalizeSubmitTags(null)), "pano/TagsRequired");
-	});
-
-	it("a tag outside the fixed enum rejects with TagInvalid", () => {
-		expectTag(run(normalizeSubmitTags([{kind: "nope"}])), "pano/TagInvalid");
-	});
-
-	it("valid tags normalize, dedupe by kind, and default the label to the kind", () => {
-		const value = expectValue(
-			run(normalizeSubmitTags([{kind: "soru"}, {kind: "soru"}, {kind: "meta", label: "M"}])),
+it.effect("addComment: an over-long body rejects with CommentBodyTooLong before any DB call", () =>
+	Effect.gen(function* () {
+		expectTag(
+			yield* runComment({body: "a".repeat(COMMENT_BODY_MAX + 1)}),
+			"pano/CommentBodyTooLong",
 		);
-		expect(value).toEqual([
-			{kind: "soru", label: "soru"},
-			{kind: "meta", label: "M"},
-		]);
-	});
-});
+	}),
+);
 
-describe("Pano.normalizeDraftTags", () => {
-	it("an absent tag list yields an empty list (no required gate)", () => {
-		expect(expectValue(run(normalizeDraftTags(undefined)))).toEqual([]);
-	});
+// An owned, live post the existence/auth read resolves before editPost reaches
+// its validation gate — only the columns the mutation reads need be present.
+const ownedPostRow = {
+	id: "post_1",
+	title: "eski başlık",
+	body: "eski gövde",
+	bodyExcerpt: "eski gövde",
+	authorId: ownerId,
+	authorName: "umut",
+	score: 0,
+	createdAt: new Date(0),
+	removedAt: null,
+};
 
-	it("empty kinds are skipped, not rejected", () => {
-		expect(expectValue(run(normalizeDraftTags([{kind: "  "}, {kind: "soru"}])))).toEqual([
-			{kind: "soru", label: "soru"},
-		]);
-	});
+const runEdit = (overrides: {
+	postId?: string;
+	actorId?: string;
+	title?: string | undefined;
+	body?: string | undefined;
+}) =>
+	Effect.gen(function* () {
+		const pano = yield* Pano;
+		return yield* pano
+			.editPost({postId: "post_1", actorId: ownerId, title: "yeni başlık", ...overrides})
+			.pipe(Effect.exit);
+	}).pipe(Effect.provide(panoLayer(editPostReadThenDieAccess(ownedPostRow))));
 
-	it("a non-empty kind outside the fixed enum still rejects with TagInvalid", () => {
-		expectTag(run(normalizeDraftTags([{kind: "nope"}])), "pano/TagInvalid");
-	});
-});
+it.effect(
+	"editPost: neither title nor body rejects with TitleRequired before the write batch",
+	() =>
+		Effect.gen(function* () {
+			expectTag(yield* runEdit({title: undefined, body: undefined}), "pano/TitleRequired");
+		}),
+);
+
+it.effect("editPost: an over-long title rejects with TitleTooLong before the write batch", () =>
+	Effect.gen(function* () {
+		expectTag(yield* runEdit({title: "a".repeat(POST_TITLE_MAX + 1)}), "pano/TitleTooLong");
+	}),
+);
+
+it.effect("editPost: an over-long body rejects with PostBodyTooLong before the write batch", () =>
+	Effect.gen(function* () {
+		expectTag(
+			yield* runEdit({title: undefined, body: "a".repeat(POST_BODY_MAX + 1)}),
+			"pano/PostBodyTooLong",
+		);
+	}),
+);
