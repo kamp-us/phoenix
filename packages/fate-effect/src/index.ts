@@ -42,10 +42,10 @@ export type {
 export * as Fate from "./Fate.ts";
 export {FateInterpreter} from "./Interpreter.ts";
 export {
-	type LiveConnectionPublisher,
 	type LiveEdgeOptions,
 	type LiveEventOptions,
 	LivePublisher,
+	type LiveTopicPublisher,
 	type LiveUpdateOptions,
 } from "./LivePublisher.ts";
 export {

@@ -36,7 +36,7 @@ const publisherStub = (): typeof LivePublisher.Service => {
 	return {
 		update: noop,
 		delete: noop,
-		connection: () => ({appendNode: noop, prependNode: noop, deleteEdge: noop, invalidate: noop}),
+		topic: () => ({appendNode: noop, prependNode: noop, deleteEdge: noop, invalidate: noop}),
 	};
 };
 

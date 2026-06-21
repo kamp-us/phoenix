@@ -15,7 +15,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {LiveConnection, WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {LiveTopic, WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
@@ -170,9 +170,9 @@ export const mutations = {
 				authorName: user.name ?? user.email,
 			});
 			const post = shapePost({...r, myVote: null});
-			// New post leads the feed: prepend to the `posts` connection (every
+			// New post leads the feed: prepend to the `posts` topic (every
 			// feed-sort variant, via the global topic). Inline node, no DB work.
-			yield* live.connection(LiveConnection.posts).prependNode("Post", post.id, {node: post});
+			yield* live.topic(LiveTopic.posts).prependNode("Post", post.id, {node: post});
 			return post;
 		}),
 	),
@@ -209,7 +209,7 @@ export const mutations = {
 			const post = shapePost({...r, myVote: null});
 			// A draft is private: re-resolve the affected entity (so the author's cache
 			// updates with `isDraft: true`), but never prepend it to the public `posts`
-			// connection.
+			// topic.
 			yield* live.update("Post", post.id, {changed: ["isDraft"], data: post});
 			return post;
 		}),
@@ -357,7 +357,7 @@ export const mutations = {
 			const live = yield* WorkerLivePublisher;
 			const r = yield* pano.deletePost({postId: input.id, actorId: user.id});
 			yield* live.delete("Post", r.postId);
-			yield* live.connection(LiveConnection.posts).deleteEdge("Post", r.postId);
+			yield* live.topic(LiveTopic.posts).deleteEdge("Post", r.postId);
 			// Bare id-only eviction ref: the post is hidden, so there's no row to run
 			// through `toPost` and it stays a `{__typename, id}` the client drops.
 			return {__typename: "Post", id: r.postId};
@@ -380,7 +380,7 @@ export const mutations = {
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
-			yield* live.connection(LiveConnection.posts).appendNode("Post", post.id, {node: post});
+			yield* live.topic(LiveTopic.posts).appendNode("Post", post.id, {node: post});
 			return post;
 		}),
 	),
@@ -402,9 +402,9 @@ export const mutations = {
 				...(input.parentId ? {parentId: input.parentId} : {}),
 			});
 			const comment = shapeComment({...r, myVote: null});
-			// Append to the `Post.comments` connection keyed by the parent post id.
+			// Append to the `Post.comments` topic keyed by the parent post id.
 			yield* live
-				.connection(LiveConnection.postComments, {id: input.postId})
+				.topic(LiveTopic.postComments, {id: input.postId})
 				.appendNode("Comment", comment.id, {node: comment});
 			return comment;
 		}),
@@ -495,9 +495,7 @@ export const mutations = {
 					data: placeholder,
 				});
 			} else {
-				yield* live
-					.connection(LiveConnection.postComments, {id: post.id})
-					.deleteEdge("Comment", input.id);
+				yield* live.topic(LiveTopic.postComments, {id: post.id}).deleteEdge("Comment", input.id);
 			}
 			// Either way the parent post's `commentCount` changes — publish it.
 			yield* live.update("Post", post.id, {changed: ["commentCount"], data: post});
@@ -523,7 +521,7 @@ export const mutations = {
 			if (comment) {
 				const node = toComment(comment);
 				yield* live
-					.connection(LiveConnection.postComments, {id: postId})
+					.topic(LiveTopic.postComments, {id: postId})
 					.appendNode("Comment", node.id, {node});
 			}
 			const page = yield* pano.getPost(postId);

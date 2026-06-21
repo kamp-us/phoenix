@@ -204,7 +204,7 @@ export const sozlukMutations = {
 			db.definitions.push(definition);
 			const live = yield* LivePublisher;
 			yield* live
-				.connection("Term.definitions", {term: input.term})
+				.topic("Term.definitions", {term: input.term})
 				.appendNode("Definition", definition.id, {node: definition});
 			return definition;
 		}),
@@ -254,7 +254,7 @@ export const recordingPublisher = (): {
 	const publisher: typeof LivePublisher.Service = {
 		update: (type, id) => push(`update ${type}:${id}`),
 		delete: (type, id) => push(`delete ${type}:${id}`),
-		connection: (procedure, args) => ({
+		topic: (procedure, args) => ({
 			appendNode: (nodeType, id) =>
 				push(`append ${procedure}(${JSON.stringify(args ?? {})}) ${nodeType}:${id}`),
 			prependNode: (nodeType, id) =>
