@@ -98,6 +98,56 @@ const latestEditAt = (
 		return acc && acc > u ? acc : u;
 	}, null);
 
+/** One live-definition row the term-summary fold reads (the `recomputeTermSummary` select). */
+export interface TermSummaryDefRow {
+	id: string;
+	body: string;
+	bodyExcerpt: string | null;
+	score: number;
+	createdAt: Date | null;
+	updatedAt: Date | null;
+}
+
+/** The fully-derived `term_record` aggregate the upsert consumes — no DB, no Effect. */
+export interface TermSummary {
+	slug: string;
+	title: string;
+	firstLetter: string;
+	definitionCount: number;
+	totalScore: number;
+	topDefinitionId: string | null;
+	excerpt: string | null;
+	firstAt: Date;
+	lastEditAt: Date;
+}
+
+/**
+ * Pure convergent fold: a term's `term_record` aggregate is fully derived from
+ * its live definitions + title (ADR 0082 — the decision lifted above the Drizzle
+ * seam). `rows` MUST already be in term-page order `(score desc, created_at asc)`
+ * so `rows[0]` is the top definition. `now` is the empty-slice fallback for
+ * `firstAt` / `lastEditAt`.
+ */
+export const recomputeTermSummary = (
+	rows: ReadonlyArray<TermSummaryDefRow>,
+	slug: string,
+	title: string,
+	now: Date,
+): TermSummary => {
+	const top = rows[0];
+	return {
+		slug,
+		title,
+		firstLetter: slug.charAt(0).toLowerCase(),
+		definitionCount: rows.length,
+		totalScore: rows.reduce((s, d) => s + d.score, 0),
+		topDefinitionId: top?.id ?? null,
+		excerpt: top ? top.bodyExcerpt || excerpt(top.body) : null,
+		firstAt: earliestCreatedAt(rows) ?? now,
+		lastEditAt: latestEditAt(rows) ?? now,
+	};
+};
+
 // The term-summary list sort — defined with the orderings it selects (`ordering.ts`).
 export type ListSort = TermSummarySort;
 
@@ -294,8 +344,9 @@ export const SozlukLive = Layer.effect(Sozluk)(
 		} as const;
 
 		// Recompute one slug's `term_record` row from its live `definition_record`
-		// slice. Convergent: the row is fully derived from definitions + title.
-		const recomputeTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(function* (
+		// slice. The closure is just the port: read rows via `run`, call the pure
+		// `recomputeTermSummary` fold (module scope), write via `batch`.
+		const persistTermSummary = Effect.fn("Sozluk.recomputeTermSummary")(function* (
 			slug: string,
 			title: string,
 			now: Date,
@@ -320,18 +371,13 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.orderBy(desc(schema.definitionRecord.score), asc(schema.definitionRecord.createdAt)),
 			);
 
-			const totalScore = defs.reduce((s, d) => s + d.score, 0);
-			const top = defs[0];
-			const topExcerpt = top ? top.bodyExcerpt || excerpt(top.body) : null;
-			const firstLetter = slug.charAt(0).toLowerCase();
-			const firstAt = earliestCreatedAt(defs) ?? now;
-			const lastEditAt = latestEditAt(defs) ?? now;
+			const summary = recomputeTermSummary(defs, slug, title, now);
 
 			// Summary upsert + its FTS dual-write in ONE batch so they move
 			// all-or-none (ADR 0080 lockstep): a crash between the two can never
-			// desync `term_search` from `term_record`. `recomputeTermSummary` is
-			// the single convergent point every term write funnels through, so this
-			// keeps `term_search` current across add/edit/delete/vote with one wiring.
+			// desync `term_search` from `term_record`. This is the single convergent
+			// point every term write funnels through, so this keeps `term_search`
+			// current across add/edit/delete/vote with one wiring.
 			// Both items are drizzle query builders, NOT `db.run(sql)`: a batch item
 			// must `_prepare()` to a `D1PreparedQuery` with a bound `.stmt`, which a
 			// parametrized `db.run(sql\`…\`)` (a `SQLiteRaw`) lacks — it 500s the whole
@@ -340,16 +386,16 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				db
 					.insert(schema.termRecord)
 					.values({
-						slug,
-						title,
-						firstLetter,
-						definitionCount: defs.length,
-						totalScore,
-						excerpt: topExcerpt,
-						topDefinitionId: top?.id ?? null,
-						firstAt,
+						slug: summary.slug,
+						title: summary.title,
+						firstLetter: summary.firstLetter,
+						definitionCount: summary.definitionCount,
+						totalScore: summary.totalScore,
+						excerpt: summary.excerpt,
+						topDefinitionId: summary.topDefinitionId,
+						firstAt: summary.firstAt,
 						lastActivityAt: now,
-						lastEditAt,
+						lastEditAt: summary.lastEditAt,
 						lastEventId: "",
 					})
 					.onConflictDoUpdate({
@@ -668,7 +714,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				}),
 			);
 
-			yield* recomputeTermSummary(slug, title, now);
+			yield* persistTermSummary(slug, title, now);
 			yield* recomputeSozlukStats(now);
 
 			return {
@@ -716,7 +762,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.where(eq(schema.definitionRecord.id, input.definitionId)),
 			);
 
-			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+			yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 
 			return {
 				definitionId: input.definitionId,
@@ -776,7 +822,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				now,
 			);
 
-			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+			yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 			yield* recomputeSozlukStats(now);
 
 			return {
@@ -819,7 +865,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				now,
 			);
 
-			yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+			yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 			yield* recomputeSozlukStats(now);
 
 			return {definitionId: input.definitionId, deleted: true} satisfies DeleteDefinitionResult;
@@ -849,7 +895,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					now,
 				);
 
-				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+				yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 				yield* recomputeSozlukStats(now);
 
 				return {removed: true};
@@ -874,7 +920,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					now,
 				);
 
-				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+				yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 				yield* recomputeSozlukStats(now);
 
 				return {restored: true};
@@ -927,7 +973,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			if (voteResult.changed) {
 				// Vote already wrote definition_record.score in its batch; this re-reads
 				// it to refresh the term aggregates.
-				yield* recomputeTermSummary(definition.termSlug, definition.termTitle, now);
+				yield* persistTermSummary(definition.termSlug, definition.termTitle, now);
 			}
 
 			return {
