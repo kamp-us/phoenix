@@ -1,10 +1,15 @@
 /**
  * `@kampus/db-schema` — the single canonical Drizzle declaration of the D1
  * tables that more than one package reads: `term_record`, `definition_record`,
- * `post_record`, `comment_record`. All four are the authoritative **mutated stores
+ * `post_record`, `comment_record`. All four are authoritative **mutated stores
  * of record** (D1-direct, ADR 0009); they carry the `_record` suffix so the name
  * reads as "store of record" and stays distinct from the fate
  * `DefinitionView`/`CommentView` data-view tags one capital apart (#853, #1041).
+ * The suffix marks a **cross-package / shared** store of record specifically — not
+ * "every mutated store of record carries `_record`": worker-private mutated stores
+ * (`user_profile`, `content_report`, the stats singletons) are equally authoritative
+ * but live in the worker schema without the suffix, because they aren't duplicated by
+ * any package (see SCOPE below).
  * This is a LEAF (depends only
  * on `drizzle-orm`), so the worker, `@kampus/preview-seed`, and
  * `@kampus/fts-backfill` can all import from it with no dependency cycle —
