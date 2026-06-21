@@ -737,18 +737,18 @@ closing the #375 drift class).
   [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)),
   even though they live under `packages/` rather than `.claude`/skills (ADR
   [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md)):
-  - `packages/<name>-guard/**` — `spawn-guard` (the ADR-0092 fail-closed PreToolUse spawn
-    policy), `read-guard`, `worktree-guard`, `structured-output-guard`, `leak-guard` (the
-    `^packages/[^/]*-guard/` clause covers each).
-  - `packages/ci-required/**` — the aggregator of the gating CI checks.
+  - `packages/ci-required/**` — the zero-dep aggregator of the gating CI checks; the ADR-0092
+    special-case kept as its own package (its CI job still runs `node packages/ci-required/src/bin.ts`).
   - `packages/pipeline-cli/**` — the consolidated guard machinery (ADR
-    [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)).
-    The whole package matches (`^packages/pipeline-cli/`), not a `src/guards/` sub-prefix:
-    the shared guard-dispatch infra — `registry.ts` (the `registeredTools[]` array that wires
-    every guard in), `router.ts`/`bin.ts` — lives at the **package root**, so an edit there
-    could disable or bypass every guard. The whole package is a self-weakening surface; the
-    legacy `^packages/[^/]*-guard/` + `^packages/ci-required/` clauses are kept until Phase-4
-    deletes those packages, so their coverage holds through the migration.
+    [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)),
+    now the single home for every guard the standalone `*-guard` packages used to carry
+    (`spawn-guard`, `read-guard`, `worktree-guard`, `structured-output-guard`, `leak-guard`),
+    those packages deleted by Phase-4 (#1003). The whole package matches (`^packages/pipeline-cli/`),
+    not a `src/guards/` sub-prefix: the shared guard-dispatch infra — `registry.ts` (the
+    `registeredTools[]` array that wires every guard in), `router.ts`/`bin.ts` — lives at the
+    **package root**, so an edit there could disable or bypass every guard. The whole package is
+    a self-weakening surface. The legacy `^packages/[^/]*-guard/` clause is now retired with those
+    packages; guard coverage flows through `^packages/pipeline-cli/`.
 
 A PR touching **any** path in this set is **control plane**: `ship-it` refuses to auto-merge
 it and a human merges it by hand (ADR
@@ -779,13 +779,13 @@ Every consumer matches the set with this **one** anchored regex (POSIX ERE; the 
 form below). Cite this regex; do **not** re-hard-code the path list:
 
 ```
-^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/
+^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/
 ```
 
 ```bash
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — one definition, no fourth copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a

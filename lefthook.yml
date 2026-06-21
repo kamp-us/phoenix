@@ -21,7 +21,7 @@ pre-commit:
         set -- {staged_files}
         [ "$#" -eq 0 ] && exit 0
         status=0
-        node packages/leak-guard/src/bin.ts scan {staged_files} || status=$?
+        node packages/pipeline-cli/src/bin.ts leak-guard scan {staged_files} || status=$?
         if [ "$status" -eq 2 ]; then
           echo "blocked by leak-guard (#173); fix or \`git commit --no-verify\` to bypass" >&2
           exit 1
