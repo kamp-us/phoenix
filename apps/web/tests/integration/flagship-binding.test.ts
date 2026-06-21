@@ -8,11 +8,15 @@
  * binding resolved end-to-end through the worker, so the probe reports
  * `flagshipReachable: true` — the system-tier check #507 calls for. The field
  * asserts reachability of the binding, not the value of any feature flag.
+ *
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027) and needs no
+ * namespace token: it is read-only against a deploy-time binding, seeding no data and
+ * reading no per-test rows, so there is nothing to collide on the shared DB.
  */
 import {describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
 describe("Flagship binding — /api/health", () => {
 	it("reports flagshipReachable once the FlagshipClient binding resolves end-to-end", async () => {
