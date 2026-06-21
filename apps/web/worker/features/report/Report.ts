@@ -62,7 +62,8 @@ export interface ResolveTargetInput {
 	targetKind: ReportTargetKind;
 	targetId: string;
 	resolverId: string;
-	resolution: Resolution.Resolution;
+	/** The moderator's chosen action; the state machine derives the persisted outcome. */
+	action: Resolution.ResolveAction;
 	resolvedAt: Date;
 }
 
@@ -228,10 +229,11 @@ export const ReportLive = Layer.effect(Report)(
 		});
 
 		const resolveTarget = Effect.fn("Report.resolveTarget")(function* (input: ResolveTargetInput) {
-			// The terminal status is decided by the state machine (open → resolved |
-			// dismissed); the `status='open'` WHERE guard below is the SQL-level
-			// counterpart that makes the transition apply only to open rows.
-			const {status} = Resolution.resolve("open", input.resolution);
+			// The terminal status AND the persisted outcome are decided by the state
+			// machine (open → resolved/removed | dismissed/dismissed); the `status='open'`
+			// WHERE guard below is the SQL-level counterpart that makes the transition
+			// apply only to open rows.
+			const {status, resolution} = Resolution.resolve("open", input.action);
 			const result = yield* run((db) =>
 				db
 					.update(schema.contentReport)
@@ -239,7 +241,7 @@ export const ReportLive = Layer.effect(Report)(
 						status,
 						resolverId: input.resolverId,
 						resolvedAt: input.resolvedAt,
-						resolution: input.resolution,
+						resolution,
 					})
 					.where(
 						and(

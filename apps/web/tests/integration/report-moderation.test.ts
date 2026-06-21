@@ -110,7 +110,7 @@ describe("report.resolve / listOpen — gate (real D1)", () => {
 		if (!list.ok) expect(list.error.code).toBe("UNAUTHORIZED");
 
 		const res = await resolve(
-			{targetKind: "post", targetId: postId, action: "dismissed"},
+			{targetKind: "post", targetId: postId, action: "dismiss"},
 			reporterA.cookie,
 		);
 		expect(res.ok).toBe(false);
@@ -134,7 +134,7 @@ describe("report.resolve — act-on-target via substrate + repeat-offender + reo
 
 	it("resolve(removed) hides the target, collapses BOTH reports, and stamps the audit", async () => {
 		const res = await resolve(
-			{targetKind: "post", targetId: postId, action: "removed"},
+			{targetKind: "post", targetId: postId, action: "remove"},
 			moderator.cookie,
 		);
 		expect(res.ok).toBe(true);

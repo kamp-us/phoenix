@@ -11,6 +11,7 @@
 import {type Entity, FateDataView} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
 import type {ReportTargetKind} from "./errors.ts";
+import type {Resolution} from "./resolution.ts";
 
 export type ReportReceiptViewRow = ViewRow<{
 	id: string;
@@ -67,7 +68,7 @@ export type ResolveReceiptViewRow = ViewRow<{
 	id: string;
 	targetKind: ReportTargetKind;
 	targetId: string;
-	resolution: "removed" | "dismissed";
+	resolution: Resolution;
 	targetRemoved: boolean;
 	collapsed: number;
 }>;

@@ -9,6 +9,7 @@
 
 import type {ReportTargetKind} from "./errors.ts";
 import type {OpenReportGroup, ReportResult} from "./Report.ts";
+import type {Resolution} from "./resolution.ts";
 import type {OpenReport, ReportReceipt, ResolveReceipt} from "./views.ts";
 
 // `id` is the `<targetKind>:<targetId>` normalization key (see `views.ts`).
@@ -33,7 +34,7 @@ export const toOpenReport = (g: OpenReportGroup): OpenReport => ({
 export const toResolveReceipt = (r: {
 	targetKind: ReportTargetKind;
 	targetId: string;
-	resolution: "removed" | "dismissed";
+	resolution: Resolution;
 	targetRemoved: boolean;
 	collapsed: number;
 }): ResolveReceipt => ({
