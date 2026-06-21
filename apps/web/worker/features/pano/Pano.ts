@@ -33,6 +33,7 @@ import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {Bookmark} from "./Bookmark.ts";
+import {type CommentConnectionPage, type CommentRow, toCommentRow} from "./comment-fields.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -51,6 +52,15 @@ import {
 	UrlInvalid,
 } from "./errors.ts";
 import {COMMENT_ORDERING} from "./ordering.ts";
+import {
+	type PostConnectionPage,
+	type PostPage,
+	type PostSummaryRow,
+	type PostTagRow,
+	parseTags,
+	toPostPage,
+	toPostSummaryRow,
+} from "./post-fields.ts";
 
 export const POST_TITLE_MAX = 200;
 export const POST_BODY_MAX = 10_000;
@@ -74,19 +84,10 @@ export type AllowedPostTagKind = PostTagKind;
  */
 export const SILINDI_PLACEHOLDER = "[silindi]";
 
-function parseTags(csv: string): Array<{kind: string; label: string}> {
-	if (!csv) return [];
-	return csv
-		.split(",")
-		.map((s) => s.trim())
-		.filter(Boolean)
-		.map((kind) => ({kind, label: tagLabel(kind)}));
-}
-
-export interface PostTagRow {
-	kind: string;
-	label: string;
-}
+// `PostTagRow` + `parseTags` live in `post-fields.ts` (the `Post` column→field
+// map owns the `tags` CSV parse); re-exported so the long-lived server-side names
+// keep resolving.
+export type {PostTagRow};
 
 /** Raw tag shape on submit/draft input — `label` is optional until normalized. */
 export interface PostTagInput {
@@ -229,73 +230,17 @@ const normalizeDraftTags = Effect.fn("Pano.normalizeDraftTags")(function* (
 	return normalizedTags;
 });
 
-export interface PostPage {
-	id: string;
-	slug: string | null;
-	title: string;
-	url: string | null;
-	host: string | null;
-	body: string | null;
-	author: string;
-	authorId: string;
-	score: number;
-	commentCount: number;
-	createdAt: Date;
-	updatedAt: Date;
-	tags: PostTagRow[];
-}
+export type {CommentConnectionPage, CommentRow} from "./comment-fields.ts";
 
+// `Post` / `Comment` row + connection-page types derive from their column→field
+// maps (`post-fields.ts` / `comment-fields.ts`, #1166); re-exported so the
+// long-lived `Pano.ts` import surface keeps resolving.
+export type {
+	PostConnectionPage,
+	PostPage,
+	PostSummaryRow,
+} from "./post-fields.ts";
 export type {PostSort};
-
-export interface PostSummaryRow {
-	id: string;
-	slug: string | null;
-	title: string;
-	url: string | null;
-	host: string | null;
-	body: string | null;
-	author: string;
-	authorId: string;
-	score: number;
-	commentCount: number;
-	createdAt: Date;
-	updatedAt?: Date;
-	tags: PostTagRow[];
-	/** Viewer's upvote presence (`true` voted); `undefined`/`null` when not requested or anonymous. */
-	myVote?: boolean | null;
-	/** Viewer's bookmark presence; `undefined` (unset) for reads that don't request it. */
-	isSaved?: boolean | null;
-	/** Draft (taslak) marker; stamped from `post_record.is_draft` (null = published). */
-	isDraft?: boolean | null;
-}
-
-export interface PostConnectionPage {
-	rows: PostSummaryRow[];
-	hasNextPage: boolean;
-	endCursor: string | null;
-	totalCount: number;
-}
-
-export interface CommentRow {
-	id: string;
-	parentId: string | null;
-	author: string;
-	authorId: string;
-	body: string;
-	score: number;
-	createdAt: Date;
-	updatedAt: Date;
-	deletedAt?: Date | null;
-	/** Viewer's upvote presence (`true` voted); `undefined`/`null` when not requested or anonymous. */
-	myVote?: boolean | null;
-}
-
-export interface CommentConnectionPage {
-	rows: CommentRow[];
-	hasNextPage: boolean;
-	endCursor: string | null;
-	totalCount: number;
-}
 
 export interface SubmitPostInput {
 	title: string;
@@ -629,53 +574,27 @@ export const PanoLive = Layer.effect(Pano)(
 				voteSvc.readMine(viewerId, "comment", ids),
 		} as const;
 
-		const rowToPostPage = (row: typeof schema.postRecord.$inferSelect): PostPage => ({
-			id: row.id,
-			slug: row.slug,
-			title: row.title,
-			url: row.url,
-			host: row.host,
-			body: row.body && row.body.length > 0 ? row.body : null,
-			author: row.authorName,
-			authorId: row.authorId,
-			score: row.score,
-			commentCount: row.commentCount,
-			createdAt: row.createdAt ?? new Date(0),
-			updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
-			tags: parseTags(row.tags),
-		});
+		const rowToPostPage = toPostPage;
 
 		// The tombstone is rendered HERE, from the lifecycle projection — not written
 		// into the canonical body by the delete path (ADR 0096 §5). A `Removed`
 		// comment surfaces as the `[silindi]` placeholder with author elided; its real
 		// body stays in the row for restore + moderator review. `deletedAt` on the
 		// wire-facing `CommentRow` is the removal timestamp (presentation contract).
+		// The live shape comes from the `comment-fields.ts` column→field map; the
+		// tombstone overrides the four presentation fields it elides.
 		const rowToCommentRow = (row: typeof schema.commentRecord.$inferSelect): CommentRow => {
 			const lifecycle = Removal.fromColumns(row);
 			if (Removal.isRemoved(lifecycle)) {
 				return {
-					id: row.id,
-					parentId: row.parentId,
+					...toCommentRow(row),
 					author: "",
 					authorId: "",
 					body: SILINDI_PLACEHOLDER,
-					score: row.score,
-					createdAt: row.createdAt ?? new Date(0),
-					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
 					deletedAt: lifecycle.removedAt,
 				};
 			}
-			return {
-				id: row.id,
-				parentId: row.parentId,
-				author: row.authorName,
-				authorId: row.authorId,
-				body: row.body,
-				score: row.score,
-				createdAt: row.createdAt ?? new Date(0),
-				updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
-				deletedAt: null,
-			};
+			return toCommentRow(row);
 		};
 
 		/**
@@ -940,28 +859,10 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 			// `myVote`/`isSaved` are the viewer scalars, finalized via `stampViewerScalars`
 			// (one `user_vote` + one `post_bookmark` read for the whole batch); the row's
-			// intrinsic fields — incl. `isDraft`, which is read off the row itself, not a
-			// viewer-presence read — are mapped here.
-			const intrinsic = fetched.map(
-				(row): PostSummaryRow => ({
-					id: row.id,
-					slug: row.slug,
-					title: row.title,
-					url: row.url,
-					host: row.host,
-					body: row.bodyExcerpt && row.bodyExcerpt.length > 0 ? row.bodyExcerpt : null,
-					author: row.authorName,
-					authorId: row.authorId,
-					score: row.score,
-					commentCount: row.commentCount,
-					createdAt: row.createdAt ?? new Date(0),
-					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
-					tags: parseTags(row.tags),
-					// A by-id read returns the author's own draft (read-your-writes); stamp
-					// its marker so the re-resolved entity carries `isDraft: true`.
-					isDraft: row.isDraft ?? null,
-				}),
-			);
+			// intrinsic fields come from the `post-fields.ts` column→field map — incl.
+			// `isDraft`, read off the row itself (a by-id read returns the author's own
+			// draft, read-your-writes), not a viewer-presence read.
+			const intrinsic = fetched.map(toPostSummaryRow);
 			return yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
 		});
 
