@@ -63,16 +63,24 @@ claims" rule.
   They move to the **existing unit tier** (the `Drizzle` layer seam). This is the
   0040 ghost, still load-bearing.
 
-- **The dominant teardown flake (#1020) is a missing persisted dependency edge.**
-  In alchemy-effect, a delete node waits for its persisted `downstream` set to
-  delete first (the delete-ordering loop in `packages/alchemy/src/.../Apply.ts`);
-  that `downstream` set is written at **deploy** time by `computeDownstream`
-  (`packages/alchemy/src/.../Plan.ts`). The `worker → FlagshipApp` binding edge is
-  **not landing** in the persisted `downstream`, so on teardown the worker and the
-  app delete **concurrently** → Cloudflare rejects deleting a FlagshipApp still
-  referenced by a live worker → `afterAll(destroy)` **throws** → vitest marks a
-  154/154-**green** suite as **failed**. The cleanup step is failing the
-  assertions. This is durable-fixable upstream (see step 5).
+- **The dominant teardown flake (#1020) is a Cloudflare eventual-consistency
+  race, not an alchemy ordering defect.** An initial hypothesis attributed the
+  teardown `Conflict` (Cloudflare rejecting an app delete while a worker still
+  references it) to a *missing* `worker → FlagshipApp` edge in the persisted
+  `downstream` set — i.e. an alchemy delete-ordering bug. A rigorous reproduction
+  against the real flagship-binding shape (in the alchemy-effect fork) **disproved
+  this**: the FlagshipApp's persisted state correctly carries `downstream:
+  ["Worker"]`; `Output.upstreamAny` *does* extract the app FQN from the binding's
+  `appId` PropExpr; no cycle-exclusion drops it; and a real deploy→destroy tears
+  the worker down **before** the app, cleanly. **Alchemy's delete ordering is
+  correct.** The residual `Conflict` is therefore a Cloudflare eventual-consistency
+  race: the worker delete is ACKed by CF but not yet propagated when the
+  correctly-ordered app delete fires, so CF still sees the reference and rejects.
+  When it surfaces, `afterAll(destroy)` **throws** → vitest marks a
+  154/154-**green** suite as **failed**. The cleanup step — not the assertions — is
+  the failure. There is no alchemy ordering fix to make; the race is handled by
+  best-effort teardown (step 1, #1020) and structurally reduced by the shared stage
+  (step 7, #1027 — one teardown per run instead of 24).
 
 - **The one-stage model is already proven in CI.** The e2e job in
   `.github/workflows/ci.yml` does exactly **one** preview deploy and lets
@@ -103,12 +111,14 @@ flake classes for all of them.
    per-file: *"could this be wrong even if the database behaved perfectly?"* —
    yes → unit.
 
-3. **Teardown SUCCEEDS rather than throws.** The durable fix is the alchemy-effect
-   `downstream`-ordering correction (step 5) so `destroy` orders worker-before-app
-   and completes cleanly. Near-term it is **backstopped by best-effort teardown**
-   (catch + log + leak) plus the orphan sweep (#690). The end state is a teardown
-   that cleans up; the interim tolerates a leak rather than reddening a green
-   suite.
+3. **Teardown SUCCEEDS rather than throws.** Alchemy already orders the delete
+   worker-before-app correctly (grounded above); the residual `Conflict` is a CF
+   eventual-consistency race, not an ordering defect to fix in the dep-fork. It is
+   handled by **best-effort teardown** (step 1, #1020 — catch + log + leak) and
+   **structurally reduced by the shared stage** (step 7, #1027 — one teardown per
+   run instead of 24, far fewer chances to hit the race), backstopped by the orphan
+   sweep (#690). A teardown-`Conflict` retry is an optional further hardening, but
+   the race is already handled — it is not a blocking fix.
 
 The shared-stage mode and the unit-tier split together turn "we test CF's
 create/destroy reliability 24 times a run" into "we deploy once, assert real
@@ -121,21 +131,24 @@ real improvement; the suite is never wedged on an all-or-nothing cutover.
 
 | # | Step | Closes / advances | Notes |
 |---|------|-------------------|-------|
-| 1 | **Best-effort teardown** — `afterAll(destroy)` catches + logs + leaks instead of throwing | [#1020](https://github.com/kamp-us/phoenix/issues/1020) *(in flight)* | A **mitigation**, not the fix — tolerates leaks until 5 + 6 land; must not become permanent (see Consequences). |
+| 1 | **Best-effort teardown** — `afterAll(destroy)` catches + logs + leaks instead of throwing | [#1020](https://github.com/kamp-us/phoenix/issues/1020) | Absorbs an **intrinsic CF eventual-consistency race** (the worker delete is ACKed but not propagated when the correctly-ordered app delete fires), not a band-aid over a missing fix — the leaked stages it tolerates are reaped by the #690 sweep (step 6) and the race surface is structurally reduced by the shared stage (step 7). |
 | 2 | **DO-readiness warm for `/fate/live`** — warm the LiveDO before asserting the SSE stream | [#1018](https://github.com/kamp-us/phoenix/issues/1018) (503) | Removes the cold-DO 503 on the live route. |
 | 3 | **Deploy retry-on-transient** — retry the stage deploy on transient CF errors | [#1019](https://github.com/kamp-us/phoenix/issues/1019) | Absorbs the cross-PR `WorkerNotFound` while still per-file. |
 | 4 | **Move ~10 pure-logic files → unit tier** | advances [#771](https://github.com/kamp-us/phoenix/issues/771) | Split conservatively (see Consequences); keep keyset/aggregate residue in the real tier. |
-| 5 | **Durable `downstream`-ordering fix** in the alchemy-effect dep-fork | [#813](https://github.com/kamp-us/phoenix/issues/813) | The real fix for #1020 — orders worker-before-app delete; a local-only dep patch per ADR [0038](0038-dependency-patches-local-only.md). |
-| 6 | **Orphan sweep CLI** — best-effort leak reaper | [#690](https://github.com/kamp-us/phoenix/issues/690) | Backstops step 1's tolerated leaks until 5 lands; the Effect-CLI idiom (CLAUDE.md). |
+| 5 | **No alchemy ordering fix needed** — a reproduction disproved the ordering hypothesis; the teardown `Conflict` is a CF eventual-consistency race | already mitigated by step 1 ([#1020](https://github.com/kamp-us/phoenix/issues/1020)) + structurally reduced by step 7 ([#1027](https://github.com/kamp-us/phoenix/issues/1027)) | Alchemy orders worker-before-app correctly (grounded above). An optional teardown-`Conflict` retry is the only residual hardening, and the race is already handled. (#813 is a *different* bug — the `deploy.yml` `pr-<n>` CI-cleanup leak — not this.) |
+| 6 | **Orphan sweep CLI** — best-effort leak reaper | [#690](https://github.com/kamp-us/phoenix/issues/690) | Reaps the stages step 1 leaks on a teardown-race `Conflict`; the Effect-CLI idiom (CLAUDE.md). |
 | 7 | **Run-scoped shared-stage harness mode** — deploy once per run, namespace-isolated | roots [#1010](https://github.com/kamp-us/phoenix/issues/1010) / [#1019](https://github.com/kamp-us/phoenix/issues/1019) / [#1020](https://github.com/kamp-us/phoenix/issues/1020) | Composes with [#684](https://github.com/kamp-us/phoenix/issues/684) (sharding) and [#958](https://github.com/kamp-us/phoenix/issues/958) (`isolate:false`). |
 
 ## Consequences
 
-- **Best-effort teardown (step 1) is a mitigation, not the fix — and must not
-  become permanent.** It tolerates a leaked stage so a green suite stays green,
-  but a tolerated leak is exactly the kind of band-aid CLAUDE.md's root-cause rule
-  forbids leaving in place. Steps 5 (durable ordering fix) and 6 (sweep) are the
-  fix; step 1 must be *removed* once they land, not left as the steady state.
+- **Best-effort teardown (step 1) tolerates a leaked stage so a green suite stays
+  green.** The teardown `Conflict` is a CF eventual-consistency race, not an
+  alchemy ordering bug a dep-fork patch could eliminate (a reproduction disproved
+  that hypothesis — see Grounded facts). So step 1 is not a band-aid over a missing
+  fix: it absorbs an intrinsic platform race, and the shared stage (step 7)
+  structurally reduces how often that race can fire (one teardown per run instead
+  of 24). The orphan sweep (#690) reaps whatever step 1 leaks. An optional
+  teardown-`Conflict` retry could tighten this further, but is not required.
 - **The shared stage (step 7) risks cross-file row bleed.** Files that touch a
   **global aggregate** — `stats` landing counters, karma totals — cannot be
   namespace-isolated by a per-file slug the way per-row content can, because the
@@ -163,9 +176,8 @@ real improvement; the suite is never wedged on an all-or-nothing cutover.
 
 Builds on [0082](0082-two-test-tiers-unit-integration.md),
 [0040](0040-testing-taxonomy-and-seam-graduation.md) (the `node:sqlite`≠D1 lesson
-this rests on), [0032](0032-alchemy-beta45-and-dev-model.md) (alchemy binds remote
-D1 in dev), and [0038](0038-dependency-patches-local-only.md) (the dep-fork patch
-path for step 5).
+this rests on), and [0032](0032-alchemy-beta45-and-dev-model.md) (alchemy binds
+remote D1 in dev).
 
 Extends [0082](0082-two-test-tiers-unit-integration.md): its two-tier *names*
 (`unit` / `integration`) and its ban on faked SQL engines stand unchanged; only
