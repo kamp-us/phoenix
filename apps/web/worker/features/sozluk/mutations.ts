@@ -13,7 +13,7 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
-import {LiveConnection, WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {LiveTopic, WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -83,10 +83,10 @@ export const mutations = {
 			});
 			// Fresh write: not yet voted by anyone.
 			const definition = shapeDefinition({...result, myVote: null});
-			// Append the node to the term's `Term.definitions` connection (same key
+			// Append the node to the term's `Term.definitions` topic (same key
 			// `definition.delete` removes from) so every open term page updates live.
 			yield* live
-				.connection(LiveConnection.termDefinitions, {id: input.termSlug})
+				.topic(LiveTopic.termDefinitions, {id: input.termSlug})
 				.appendNode("Definition", definition.id, {node: definition});
 			return definition;
 		}),
@@ -173,9 +173,7 @@ export const mutations = {
 			yield* sozluk.deleteDefinition({definitionId: input.id, actorId: user.id});
 			yield* live.delete("Definition", input.id);
 			if (slug) {
-				yield* live
-					.connection(LiveConnection.termDefinitions, {id: slug})
-					.deleteEdge("Definition", input.id);
+				yield* live.topic(LiveTopic.termDefinitions, {id: slug}).deleteEdge("Definition", input.id);
 			}
 			if (!slug) return null;
 			const page = yield* sozluk.getTerm(slug);
@@ -203,7 +201,7 @@ export const mutations = {
 			if (!page) return null;
 			const restored = page.definitions.find((d) => d.id === input.id);
 			if (restored) {
-				// Re-enter the term's `Term.definitions` connection — the inverse of
+				// Re-enter the term's `Term.definitions` topic — the inverse of
 				// the `deleteEdge` the delete path published.
 				const node = toDefinition({
 					id: restored.id,
@@ -216,7 +214,7 @@ export const mutations = {
 					myVote: restored.myVote ?? null,
 				});
 				yield* live
-					.connection(LiveConnection.termDefinitions, {id: slug})
+					.topic(LiveTopic.termDefinitions, {id: slug})
 					.appendNode("Definition", restored.id, {node});
 			}
 			return toTermFromPage(page);

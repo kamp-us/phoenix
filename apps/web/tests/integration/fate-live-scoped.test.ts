@@ -7,7 +7,7 @@
  * Both cases here are shared-safe. The auth-only 401 case never touches a topic DO.
  * The `definition.add → appendNode` case subscribes to the ARGS-scoped
  * `Term.definitions` connection keyed on a slug: the `definition.add` resolver
- * publishes via `live.connection("Term.definitions", {id: slug})`, and
+ * publishes via `live.topic("Term.definitions", {id: slug})`, and
  * `topicsForPublish` resolves the args-scoped key alone (args !== undefined →
  * `liveConnectionTopic(procedure, args)`, never the global wildcard — `protocol.ts`).
  * An `NS`-unique slug makes that topic key unique to this file, so a concurrent file's
@@ -60,7 +60,7 @@ describe("live views — /fate/live (args-scoped)", () => {
 		expect(connected).toContain("connected");
 
 		// Subscribe to the ARGS-scoped `Term.definitions` connection for this slug —
-		// the exact topic the mutation's `live.connection(..., {id: slug})` publishes to.
+		// the exact topic the mutation's `live.topic(..., {id: slug})` publishes to.
 		const sub = await h.liveControl(
 			connectionId,
 			[

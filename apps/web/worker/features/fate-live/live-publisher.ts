@@ -121,8 +121,8 @@ export function livePublisherFor(options: LivePublisherOptions): typeof LivePubl
 					...(opts?.eventId !== undefined ? {eventId: opts.eventId} : {}),
 				}),
 			),
-		connection: (procedure, args) => {
-			// Carry the connection's filter args into the match so `topicsForPublish`
+		topic: (procedure, args) => {
+			// Carry the topic's filter args into the match so `topicsForPublish`
 			// resolves the SAME args-scoped key the subscriber registered under, instead
 			// of the procedure-wide global wildcard (which would fan one term's new
 			// definition out to every `Term.definitions` subscriber across all slugs).

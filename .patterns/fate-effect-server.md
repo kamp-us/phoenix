@@ -36,7 +36,7 @@ Effect.fn("definition.add")(function* ({input}) {
 	const user = yield* CurrentUser.required; // fails Unauthorized → UNAUTHORIZED on the wire
 	const live = yield* LivePublisher;
 	const definition = yield* sozluk.addDefinition({...input, userId: user.id});
-	yield* live.connection("Term.definitions", {slug: input.termSlug}).appendNode("Definition", definition.id, {node: definition});
+	yield* live.topic("Term.definitions", {slug: input.termSlug}).appendNode("Definition", definition.id, {node: definition});
 	return definition;
 })
 ```

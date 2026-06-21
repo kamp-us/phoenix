@@ -8,7 +8,7 @@
  * This drives the REAL resolver (`mutations["definition.add"].handler`) over a
  * stub `Sozluk` and a recording `LivePublisher` — the same handler-over-stubs
  * seam `report/report-mutation.unit.test.ts` and `pano/draft-save.invariant.test.ts`
- * use. The resolver owns the `live.connection("Term.definitions", {id:
+ * use. The resolver owns the `live.topic("Term.definitions", {id:
  * input.termSlug})` call; if it ever dropped the args (→ wildcard, the ADR 0039
  * mis-route), the recorded topic key is the global one and this test fails. The
  * publisher's key-MATH (the `(procedure, args)` → topic computation) is pinned
@@ -90,7 +90,7 @@ it.effect(
 			// updates live.
 			assert.deepStrictEqual(recorded, [liveConnectionTopic("Term.definitions", {id: slug})]);
 			// The ADR 0039 mis-route guard: a regression where the resolver called
-			// `connection("Term.definitions")` with NO args would land on the
+			// `topic("Term.definitions")` with NO args would land on the
 			// procedure-wide global wildcard (fanning one term's definition out to every
 			// `Term.definitions` subscriber across all slugs). That topic must be absent.
 			assert.isFalse(recorded.includes(liveGlobalConnectionTopic("Term.definitions")));

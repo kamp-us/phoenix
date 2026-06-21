@@ -55,14 +55,14 @@ A mutation handler publishes events after the write, through the per-request `Li
 // inside a Fate.mutation handler, after the service write + shaping
 const live = yield* LivePublisher;
 yield* live.update("Post", post.id, {changed: ["score", "myVote"], data: post});
-yield* live.connection("Post.comments", {id: post.id}).appendNode("Comment", comment.id, {node: comment});
-yield* live.connection("posts").prependNode("Post", post.id);
-yield* live.connection("Post.comments", {id: postId}).deleteEdge("Comment", commentId);
+yield* live.topic("Post.comments", {id: post.id}).appendNode("Comment", comment.id, {node: comment});
+yield* live.topic("posts").prependNode("Post", post.id);
+yield* live.topic("Post.comments", {id: postId}).deleteEdge("Comment", commentId);
 ```
 
 - `live.update(type, id, {changed, data})` — entity field change. **Publish the re-resolved entity inline as `data`.** The mutation already re-resolved it for its own response ([fate-effect-operations.md](./fate-effect-operations.md)), so the live event carries resolved data and each client masks it to its own selection. The DO does no database work and needs no Effect runtime.
-- `live.connection(name | "Type.field", args?).appendNode/prependNode/deleteEdge/invalidate(...)` — list membership. Pass the resolved `node` inline.
-- Connection identity strips pagination args, keeps filter args — `live.connection("posts")` reaches every feed-sort variant; `live.connection("Post.comments", {id})` targets one post's comments.
+- `live.topic(name | "Type.field", args?).appendNode/prependNode/deleteEdge/invalidate(...)` — list membership. Pass the resolved `node` inline.
+- Topic identity strips pagination args, keeps filter args — `live.topic("posts")` reaches every feed-sort variant; `live.topic("Post.comments", {id})` targets one post's comments.
 
 This is why connection membership is server-driven ([fate-mutations-client.md](./fate-mutations-client.md)): one publish updates every subscribed client, instead of each client patching its own cache.
 

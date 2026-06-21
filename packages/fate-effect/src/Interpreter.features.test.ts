@@ -313,7 +313,7 @@ const fxMutations = {
 			db.comments.push(comment);
 			const live = yield* LivePublisher;
 			yield* live
-				.connection("FxPost.comments", {postId: input.postId})
+				.topic("FxPost.comments", {postId: input.postId})
 				.appendNode("FxComment", comment.id, {node: comment});
 			return comment;
 		}),

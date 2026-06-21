@@ -146,7 +146,7 @@ export const mutations = {
 
 			// Live publish: error channel is `never` by construction — a failed
 			// publish can never fail the mutation, and it never blocks the response.
-			yield* live.connection("Notes.feed", {id: "all"}).appendNode("Note", note.id, {node: note});
+			yield* live.topic("Notes.feed", {id: "all"}).appendNode("Note", note.id, {node: note});
 
 			return note;
 		}),

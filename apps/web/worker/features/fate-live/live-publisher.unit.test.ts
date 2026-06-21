@@ -54,11 +54,11 @@ it("every publish method's error channel is `never` — the no-fail contract is 
 	type Publisher = typeof LivePublisher.Service;
 	expectTypeOf<Effect.Error<ReturnType<Publisher["update"]>>>().toEqualTypeOf<never>();
 	expectTypeOf<Effect.Error<ReturnType<Publisher["delete"]>>>().toEqualTypeOf<never>();
-	type Connection = ReturnType<Publisher["connection"]>;
-	expectTypeOf<Effect.Error<ReturnType<Connection["appendNode"]>>>().toEqualTypeOf<never>();
-	expectTypeOf<Effect.Error<ReturnType<Connection["prependNode"]>>>().toEqualTypeOf<never>();
-	expectTypeOf<Effect.Error<ReturnType<Connection["deleteEdge"]>>>().toEqualTypeOf<never>();
-	expectTypeOf<Effect.Error<ReturnType<Connection["invalidate"]>>>().toEqualTypeOf<never>();
+	type Topic = ReturnType<Publisher["topic"]>;
+	expectTypeOf<Effect.Error<ReturnType<Topic["appendNode"]>>>().toEqualTypeOf<never>();
+	expectTypeOf<Effect.Error<ReturnType<Topic["prependNode"]>>>().toEqualTypeOf<never>();
+	expectTypeOf<Effect.Error<ReturnType<Topic["deleteEdge"]>>>().toEqualTypeOf<never>();
+	expectTypeOf<Effect.Error<ReturnType<Topic["invalidate"]>>>().toEqualTypeOf<never>();
 
 	// The live value implements exactly the package's service shape — a drift in
 	// either direction is a compile error here.
@@ -78,7 +78,7 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 			eventId: "e1",
 		});
 		yield* live.delete("Post", 7, {eventId: "e2"});
-		const definitions = live.connection("Term.definitions", {slug: "effect"});
+		const definitions = live.topic("Term.definitions", {slug: "effect"});
 		yield* definitions.appendNode("Definition", "d2", {
 			node: {id: "d2"},
 			cursor: "c1",
@@ -87,8 +87,8 @@ it.effect("publishes the bridge's exact wire frames (literal fixtures)", () =>
 		yield* definitions.prependNode("Definition", "d3", {node: {id: "d3"}});
 		yield* definitions.deleteEdge("Definition", "d2", {eventId: "e4"});
 		yield* definitions.invalidate({eventId: "e5"});
-		// no-args connection → the procedure-wide global wildcard topic
-		yield* live.connection("posts").appendNode("Post", "p1", {node: {id: "p1"}});
+		// no-args topic → the procedure-wide global wildcard topic
+		yield* live.topic("posts").appendNode("Post", "p1", {node: {id: "p1"}});
 		yield* Effect.promise(flush);
 
 		const definitionsTopic = liveConnectionTopic("Term.definitions", {slug: "effect"});
@@ -167,7 +167,7 @@ it.effect("wire shape is identical to the retired event bus for the same mutatio
 		const {live, recorded, flush} = makeHarness();
 		yield* live.update("Definition", "d1", {eventId: "e1"});
 		yield* live.delete("Post", 7, {eventId: "e2"});
-		const definitions = live.connection("Term.definitions", {slug: "effect"});
+		const definitions = live.topic("Term.definitions", {slug: "effect"});
 		yield* definitions.appendNode("Definition", "d2", {
 			node: {id: "d2"},
 			cursor: "c1",
@@ -176,7 +176,7 @@ it.effect("wire shape is identical to the retired event bus for the same mutatio
 		yield* definitions.prependNode("Definition", "d3", {node: {id: "d3"}});
 		yield* definitions.deleteEdge("Definition", "d2", {eventId: "e4"});
 		yield* definitions.invalidate({eventId: "e5"});
-		yield* live.connection("posts").appendNode("Post", "p1", {node: {id: "p1"}});
+		yield* live.topic("posts").appendNode("Post", "p1", {node: {id: "p1"}});
 		yield* Effect.promise(flush);
 
 		// The FROZEN baseline: the `(topicKey, message)` pairs the bridge's
@@ -262,7 +262,7 @@ it.effect("a rejecting topic publish cannot fail the calling effect", () => {
 		const {live, flush} = makeHarness(() => Effect.die(new Error("DO unreachable")));
 
 		const exit = yield* Effect.exit(
-			live.connection("Term.definitions", {slug: "effect"}).appendNode("Definition", "d1"),
+			live.topic("Term.definitions", {slug: "effect"}).appendNode("Definition", "d1"),
 		);
 		assert.isTrue(Exit.isSuccess(exit));
 

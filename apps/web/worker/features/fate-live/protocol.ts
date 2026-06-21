@@ -20,15 +20,15 @@ import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 
 /**
- * The ONE source of every live connection-procedure topic name: the string is
+ * The ONE source of every live topic name: the string is
  * authored here once, and the union, the subscribe-side decode schema, and every
  * publish call site all derive from / reference this object. A topic key can no
  * longer be mistyped at a call site (publish and subscribe can't miss each other
- * via a stray literal). Add a connection by adding ONE entry here — the union and
+ * via a stray literal). Add a topic by adding ONE entry here — the union and
  * the schema literal pick it up automatically, and publish sites reference
- * `LiveConnection.<name>` instead of restating the string.
+ * `LiveTopic.<name>` instead of restating the string.
  */
-export const LiveConnection = {
+export const LiveTopic = {
 	/** pano feed (no-args, global). */
 	posts: "posts",
 	/** pano post → comments (args: `{id: postId}`). */
@@ -38,27 +38,27 @@ export const LiveConnection = {
 } as const;
 
 /**
- * The closed set of live connection procedures phoenix publishes to / subscribes
- * on, derived from {@link LiveConnection}'s values. The subscribe side is gated by
- * {@link LiveConnectionProcedureSchema}; the publish side by
+ * The closed set of live topic keys phoenix publishes to / subscribes
+ * on, derived from {@link LiveTopic}'s values. The subscribe side is gated by
+ * {@link LiveTopicKeySchema}; the publish side by
  * {@link WorkerLivePublisher}.
  */
-export type LiveConnectionProcedure = (typeof LiveConnection)[keyof typeof LiveConnection];
+export type LiveTopicKey = (typeof LiveTopic)[keyof typeof LiveTopic];
 
 /**
- * The package `LivePublisher` service surface with `connection`'s procedure
- * narrowed to {@link LiveConnectionProcedure} — the publish-side typo gate. The
+ * The package `LivePublisher` service surface with `topic`'s procedure
+ * narrowed to {@link LiveTopicKey} — the publish-side typo gate. The
  * package takes a plain `string` by design; narrowing it here makes a misspelled
  * procedure a compile error instead of a silent dead topic. Parameters are
  * contravariant, so the package value is assignable with no cast/wrapper, and
  * everything but the narrowed parameter is structural (`Omit`/`Parameters`/
  * `ReturnType`) so the two surfaces can't drift.
  */
-export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "connection"> & {
-	readonly connection: (
-		procedure: LiveConnectionProcedure,
-		args?: Parameters<(typeof LivePublisher.Service)["connection"]>[1],
-	) => ReturnType<(typeof LivePublisher.Service)["connection"]>;
+export type WorkerLivePublisher = Omit<typeof LivePublisher.Service, "topic"> & {
+	readonly topic: (
+		procedure: LiveTopicKey,
+		args?: Parameters<(typeof LivePublisher.Service)["topic"]>[1],
+	) => ReturnType<(typeof LivePublisher.Service)["topic"]>;
 };
 
 /**
@@ -142,7 +142,7 @@ export type SubscribeControl =
 	| {
 			readonly kind: "subscribeConnection";
 			readonly subId: string;
-			readonly procedure: LiveConnectionProcedure;
+			readonly procedure: LiveTopicKey;
 			readonly args?: Record<string, unknown>;
 			readonly lastEventId?: string;
 	  };
@@ -150,11 +150,11 @@ export type SubscribeControl =
 const OptionalArgs = Schema.optional(Schema.Record(Schema.String, Schema.Unknown));
 
 /**
- * The subscribe-side schema for {@link LiveConnectionProcedure}, derived from
- * {@link LiveConnection}'s values so it can't drift from the union. An unknown
+ * The subscribe-side schema for {@link LiveTopicKey}, derived from
+ * {@link LiveTopic}'s values so it can't drift from the union. An unknown
  * procedure fails decode (→ `BAD_REQUEST`) rather than registering a dead topic.
  */
-const LiveConnectionProcedureSchema = Schema.Literals(Object.values(LiveConnection));
+const LiveTopicKeySchema = Schema.Literals(Object.values(LiveTopic));
 
 const SubscribeOp = Schema.Struct({
 	id: Schema.String,
@@ -171,7 +171,7 @@ const SubscribeConnectionOp = Schema.Struct({
 	id: Schema.String,
 	kind: Schema.Literal("subscribeConnection"),
 	type: Schema.String,
-	procedure: LiveConnectionProcedureSchema,
+	procedure: LiveTopicKeySchema,
 	args: OptionalArgs,
 	selectionArgs: OptionalArgs,
 	lastEventId: Schema.optional(Schema.String),

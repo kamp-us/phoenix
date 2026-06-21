@@ -75,7 +75,7 @@ How phoenix mutations are shaped, beyond the constructor mechanics:
   ```ts
   const live = yield* LivePublisher;
   yield* live.update("Definition", id, {data: definition});                    // entity change
-  yield* live.connection("Term.definitions", {id: termSlug}).appendNode("Definition", id, {node: definition});
+  yield* live.topic("Term.definitions", {id: termSlug}).appendNode("Definition", id, {node: definition});
   ```
 
   Every publish method is `Effect<void>` (`E = never`) — a failed publish cannot fail the committed mutation; the swallow-with-log lives inside the implementation ([fate-effect-server.md](./fate-effect-server.md)). Publish the **already shaped** entity/node inline as `data`/`node`: the handler shaped it for the response, so the live event carries resolved data and clients mask it to their own selection. The mutating client gets the entity returned directly; live events update *other* clients. See [fate-live-views.md](./fate-live-views.md).

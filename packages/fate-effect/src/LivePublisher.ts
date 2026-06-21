@@ -14,7 +14,7 @@
  * (the worker implementation of this contract is `live-publisher.ts`, the
  * module named above; `event-bus.ts` survives only as a build-time throwing
  * stub): entity `update`/
- * `delete` plus the connection edge operations, targeting the existing LiveDO
+ * `delete` plus the topic edge operations, targeting the existing LiveDO
  * topic role unchanged. Entity/procedure names are plain strings here — the
  * package cannot know phoenix's live entities; the worker may layer its
  * narrowing (the bridge's `TypedLiveUpdate` idea) over this service when it
@@ -39,7 +39,7 @@ export interface LiveEventOptions {
 	readonly eventId?: string;
 }
 
-/** Options for a connection edge publish (`appendNode`/`prependNode`). */
+/** Options for a topic edge publish (`appendNode`/`prependNode`). */
 export interface LiveEdgeOptions {
 	readonly node?: unknown;
 	readonly cursor?: string;
@@ -47,11 +47,11 @@ export interface LiveEdgeOptions {
 }
 
 /**
- * The publish surface of one live connection (procedure + scoped args):
+ * The publish surface of one live topic (procedure + scoped args):
  * append/prepend a node, remove an edge, or invalidate. Every method is
  * `Effect<void>` — failures are swallowed (logged) inside the layer.
  */
-export interface LiveConnectionPublisher {
+export interface LiveTopicPublisher {
 	readonly appendNode: (
 		nodeType: string,
 		id: string | number,
@@ -78,7 +78,7 @@ export interface LiveConnectionPublisher {
  *   Effect.fn("definition.add")(function* ({input}) {
  *     ...
  *     const live = yield* LivePublisher;
- *     yield* live.connection("Term.definitions", {slug: input.slug}).appendNode("Definition", definition.id, {node: definition});
+ *     yield* live.topic("Term.definitions", {slug: input.slug}).appendNode("Definition", definition.id, {node: definition});
  *   })
  */
 export class LivePublisher extends Context.Service<
@@ -94,9 +94,6 @@ export class LivePublisher extends Context.Service<
 			id: string | number,
 			options?: LiveEventOptions,
 		) => Effect.Effect<void>;
-		readonly connection: (
-			procedure: string,
-			args?: Record<string, unknown>,
-		) => LiveConnectionPublisher;
+		readonly topic: (procedure: string, args?: Record<string, unknown>) => LiveTopicPublisher;
 	}
 >()("fate-effect/LivePublisher") {}
