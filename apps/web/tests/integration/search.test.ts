@@ -18,15 +18,32 @@
  * soft-delete/retitle re-index, title-only scope, and the min-length boundary as
  * it hits the real `searchTerms` op.
  *
- * Each file owns its own per-file isolated stage + D1 (ADR 0082), but seeds still
- * carry a unique stamp so a `NO_DESTROY` re-run never collides with a prior run's
- * rows.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1 is
+ * shared across every migrated file. The FTS index is the normalized TITLE (`fts-sync.ts`),
+ * and the `MATCH` builder (`normalize.ts`) ANDs each query token's prefix — so a query of
+ * two tokens selects only docs whose title carries BOTH. We exploit that: every seeded
+ * title is prefixed with `NS` (this file's deterministic `nsToken`) and every FTS query is
+ * prefixed with the same `NS` token, so the `MATCH` AND scopes each result set to THIS
+ * file's rows alone — another file's overlapping `istanbul`/`ortak`/`yazilim` title can
+ * never interleave. `NS` is pure ASCII `[a-z0-9-]`, so it folds to itself through
+ * `normalizeSearchText` and never perturbs the diacritic fold under test (the `istanbul`
+ * token still folds to match a dotted-`İ` title independently). The bm25-tie fixture stays
+ * a genuine tie on the shared stage: the `NS` token is added SYMMETRICALLY to all three
+ * `ortak` titles at the same position with the same frequency, so it shifts every doc's
+ * rank by the same amount — the tie (and thus the slug-asc page order) is preserved.
+ *
+ * The min-length boundary (`query: "i"`) is the one query left UN-namespaced: it must short-
+ * circuit in `toMatchExpression` (normalized length < MIN_QUERY_LENGTH) BEFORE FTS, and
+ * prefixing it with `NS` would push it over the min length and defeat the boundary it proves.
+ * It returns `[]` via the short-circuit regardless of the shared corpus, so it stays correct.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
+const NS = nsToken(import.meta.url);
 const STAMP = Date.now();
 
 interface TermNode {
@@ -59,7 +76,7 @@ async function searchPosts(args: Record<string, unknown>): Promise<Connection<Po
 let author: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	author = await h.signUp(`search-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
+	author = await h.signUp(`${NS}-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
 });
 
 /** Submit a post under the author cookie; assert success; return its id. */
@@ -80,25 +97,26 @@ async function seedPost(title: string): Promise<string> {
 
 describe("searchTerms — real FTS5 over the deployed worker", () => {
 	// Distinct slug prefixes per concern so one describe's fixtures never leak into
-	// another's result set (the index is shared within the file's single stage).
-	const istanbulSlug = `search-${STAMP}-istanbul`;
-	const sisliSlug = `search-${STAMP}-sisli`;
-	const ankaraSlug = `search-${STAMP}-ankara`;
+	// another's result set. The `NS`-prefixed title + query scope every match to this
+	// file's rows on the shared D1 (the index is shared across the whole stage).
+	const istanbulSlug = `${NS}-${STAMP}-istanbul`;
+	const sisliSlug = `${NS}-${STAMP}-sisli`;
+	const ankaraSlug = `${NS}-${STAMP}-ankara`;
 
 	beforeAll(async () => {
 		await h.seedTerm({
 			slug: istanbulSlug,
-			title: "İstanbul",
+			title: `${NS} İstanbul`,
 			definitions: [{authorName: "yazar", body: "İstanbul gövde"}],
 		});
 		await h.seedTerm({
 			slug: sisliSlug,
-			title: "Şişli",
+			title: `${NS} Şişli`,
 			definitions: [{authorName: "yazar", body: "Şişli gövde"}],
 		});
 		await h.seedTerm({
 			slug: ankaraSlug,
-			title: "Ankara",
+			title: `${NS} Ankara`,
 			definitions: [{authorName: "yazar", body: "Ankara gövde"}],
 		});
 	});
@@ -108,15 +126,17 @@ describe("searchTerms — real FTS5 over the deployed worker", () => {
 		// app-side normalized column is what FTS5 indexes — unicode61's ASCII-wrong
 		// case-fold is sidestepped. (The fold itself is unit-proven in
 		// normalize.unit.test.ts; this proves the engine matches over the folded text.)
-		const c1 = await searchTerms({query: "istanbul"});
+		// The `NS` token only AND-scopes the result set to this file; the diacritic fold
+		// still applies to the `istanbul`/`sisli` token against the dotted-İ/Ş title.
+		const c1 = await searchTerms({query: `${NS} istanbul`});
 		expect(c1.items.map((e) => e.node.slug)).toEqual([istanbulSlug]);
 
-		const c2 = await searchTerms({query: "sisli"});
+		const c2 = await searchTerms({query: `${NS} sisli`});
 		expect(c2.items.map((e) => e.node.slug)).toEqual([sisliSlug]);
 	});
 
 	it("prefix-matches (poor-man's stemmer) via FTS5 MATCH and excludes non-matching terms", async () => {
-		const c = await searchTerms({query: "ist"});
+		const c = await searchTerms({query: `${NS} ist`});
 		expect(c.items.map((e) => e.node.slug)).toEqual([istanbulSlug]);
 		expect(c.items.find((e) => e.node.slug === ankaraSlug)).toBeUndefined();
 		expect(c.items.find((e) => e.node.slug === sisliSlug)).toBeUndefined();
@@ -125,6 +145,8 @@ describe("searchTerms — real FTS5 over the deployed worker", () => {
 	it("a below-min-length query returns an empty connection (not everything)", async () => {
 		// The resolver short-circuits (toMatchExpression → null) before touching FTS5;
 		// this asserts that boundary as the real `searchTerms` op serves it end-to-end.
+		// Left UN-namespaced on purpose: the `NS` prefix would push it over the min length
+		// and defeat the short-circuit. It returns `[]` regardless of the shared corpus.
 		const c = await searchTerms({query: "i"});
 		expect(c.items).toEqual([]);
 		expect(c.pagination.hasNext).toBe(false);
@@ -133,39 +155,41 @@ describe("searchTerms — real FTS5 over the deployed worker", () => {
 
 describe("searchTerms — bm25-ranked keyset pagination over real FTS5", () => {
 	const projectSlugs = [
-		`search-${STAMP}-proje-a`,
-		`search-${STAMP}-proje-b`,
-		`search-${STAMP}-proje-c`,
+		`${NS}-${STAMP}-proje-a`,
+		`${NS}-${STAMP}-proje-b`,
+		`${NS}-${STAMP}-proje-c`,
 	];
 
 	beforeAll(async () => {
 		// Three terms sharing the common token "ortak" so bm25 ties make the slug-asc
-		// tiebreaker order the page deterministically across the cursor walk.
+		// tiebreaker order the page deterministically across the cursor walk. The `NS`
+		// token is added symmetrically to all three titles, so the bm25 tie (and thus the
+		// slug-asc order) is preserved while the result set is scoped to this file.
 		await h.seedTerm({
 			slug: projectSlugs[0]!,
-			title: "ortak proje a",
+			title: `${NS} ortak proje a`,
 			definitions: [{authorName: "yazar", body: "ortak proje a gövde"}],
 		});
 		await h.seedTerm({
 			slug: projectSlugs[1]!,
-			title: "ortak proje b",
+			title: `${NS} ortak proje b`,
 			definitions: [{authorName: "yazar", body: "ortak proje b gövde"}],
 		});
 		await h.seedTerm({
 			slug: projectSlugs[2]!,
-			title: "ortak proje c",
+			title: `${NS} ortak proje c`,
 			definitions: [{authorName: "yazar", body: "ortak proje c gövde"}],
 		});
 	});
 
 	it("the cursor round-trips to the next page with no skips or dupes", async () => {
-		const p1 = await searchTerms({query: "ortak", first: 2});
+		const p1 = await searchTerms({query: `${NS} ortak`, first: 2});
 		expect(p1.items.length).toBe(2);
 		expect(p1.pagination.hasNext).toBe(true);
 		const after = p1.pagination.nextCursor;
 		expect(after).toBeDefined();
 
-		const p2 = await searchTerms({query: "ortak", first: 2, after});
+		const p2 = await searchTerms({query: `${NS} ortak`, first: 2, after});
 		const all = [...p1.items, ...p2.items].map((e) => e.node.slug);
 		expect(all).toEqual(projectSlugs);
 		expect(new Set(all).size).toBe(3);
@@ -175,10 +199,10 @@ describe("searchTerms — bm25-ranked keyset pagination over real FTS5", () => {
 
 describe("searchPosts — FTS5 sync, soft-delete and retitle re-index", () => {
 	it("matches post titles and drops a deleted post from the index", async () => {
-		const keepId = await seedPost(`Yazılım mimarisi ${STAMP}a`);
-		const dropId = await seedPost(`Yazılım testleri ${STAMP}a`);
+		const keepId = await seedPost(`${NS} Yazılım mimarisi ${STAMP}a`);
+		const dropId = await seedPost(`${NS} Yazılım testleri ${STAMP}a`);
 
-		const before = await searchPosts({query: "yazilim"});
+		const before = await searchPosts({query: `${NS} yazilim`});
 		const beforeIds = before.items.map((e) => e.node.id);
 		expect(beforeIds).toContain(keepId);
 		expect(beforeIds).toContain(dropId);
@@ -189,31 +213,31 @@ describe("searchPosts — FTS5 sync, soft-delete and retitle re-index", () => {
 		);
 		expect(del.ok).toBe(true);
 
-		const after = await searchPosts({query: "yazilim"});
+		const after = await searchPosts({query: `${NS} yazilim`});
 		const afterIds = after.items.map((e) => e.node.id);
 		expect(afterIds).toContain(keepId);
 		expect(afterIds).not.toContain(dropId);
 	});
 
 	it("a retitled post is re-indexed under its new title (and drops its old title)", async () => {
-		const id = await seedPost(`Eskimola ${STAMP}b`);
-		const before = await searchPosts({query: "eskimola"});
+		const id = await seedPost(`${NS} Eskimola ${STAMP}b`);
+		const before = await searchPosts({query: `${NS} eskimola`});
 		expect(before.items.map((e) => e.node.id)).toContain(id);
 
 		const edit = await h.fate(
 			{
 				kind: "mutation",
 				name: "post.edit",
-				input: {id, title: `Yenimola ${STAMP}b`},
+				input: {id, title: `${NS} Yenimola ${STAMP}b`},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
 		);
 		expect(edit.ok).toBe(true);
 
-		const stale = await searchPosts({query: "eskimola"});
+		const stale = await searchPosts({query: `${NS} eskimola`});
 		expect(stale.items.map((e) => e.node.id)).not.toContain(id);
-		const fresh = await searchPosts({query: "yenimola"});
+		const fresh = await searchPosts({query: `${NS} yenimola`});
 		expect(fresh.items.map((e) => e.node.id)).toContain(id);
 	});
 });
@@ -222,13 +246,14 @@ describe("searchTerms — title-only scope (guards against scope creep)", () => 
 	it("excludes a term whose query appears only in its definition body, never the title", async () => {
 		// Scope v1 is titles only: "gövde" appears in every seeded definition body but
 		// never in a title, so a body-only query must return nothing — the real FTS5
-		// index proves the body is not part of the term search document.
+		// index proves the body is not part of the term search document. The `NS` token
+		// scopes the (empty) result to this file: no NS-prefixed title carries `govde`.
 		await h.seedTerm({
-			slug: `search-${STAMP}-kavram`,
-			title: "Kavram",
+			slug: `${NS}-${STAMP}-kavram`,
+			title: `${NS} Kavram`,
 			definitions: [{authorName: "yazar", body: "Kavram gövde"}],
 		});
-		const c = await searchTerms({query: "govde"});
+		const c = await searchTerms({query: `${NS} govde`});
 		expect(c.items).toEqual([]);
 	});
 });
