@@ -102,7 +102,7 @@ export interface Harness {
 	 */
 	touchTerm(definitionId: string): Promise<number>;
 	/**
-	 * Stamp a term's `term_summary.last_activity_at` to an EXACT whole-second epoch,
+	 * Stamp a term's `term_record.last_activity_at` to an EXACT whole-second epoch,
 	 * by-passing the server write clock — the deterministic handle the public seam
 	 * cannot give. `last_activity_at` is server-stamped (`recomputeTermSummary` writes
 	 * `floor(now/1000)`, `Sozluk.ts`) and never settable by caller input, so two
@@ -112,7 +112,7 @@ export interface Harness {
 	 * over the Cloudflare D1 REST API (NOT the worker binding — the black-box contract
 	 * holds for assertions; this is setup-only), so a keyset tie is CONSTRUCTED, not
 	 * raced. `epochSeconds` is the whole-second value the column stores. Only valid for
-	 * a term that already has a `term_summary` row (seed it first).
+	 * a term that already has a `term_record` row (seed it first).
 	 */
 	setLastActivityAt(slug: string, epochSeconds: number): Promise<void>;
 	/**
@@ -564,7 +564,7 @@ export function harness(
 			[];
 
 		// Sequential on purpose: term creation/extension and the per-definition
-		// vote writes share the slug's term_summary row; concurrent writes would
+		// vote writes share the slug's term_record row; concurrent writes would
 		// race the denormalized aggregates.
 		for (const def of input.definitions) {
 			const key = `${input.slug} ${def.body}`;
@@ -646,10 +646,10 @@ export function harness(
 	};
 
 	const setLastActivityAt: Harness["setLastActivityAt"] = async (slug, epochSeconds) => {
-		const changes = await runD1Query(
-			"UPDATE term_summary SET last_activity_at = ? WHERE slug = ?",
-			[epochSeconds, slug],
-		);
+		const changes = await runD1Query("UPDATE term_record SET last_activity_at = ? WHERE slug = ?", [
+			epochSeconds,
+			slug,
+		]);
 		if (changes !== 1) {
 			throw new Error(`setLastActivityAt(${slug}): expected 1 row updated, got ${changes}`);
 		}
