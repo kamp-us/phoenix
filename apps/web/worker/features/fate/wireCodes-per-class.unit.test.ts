@@ -1,5 +1,5 @@
 /**
- * Per-class wire-code pin (T0), consolidated.
+ * Per-class wire-code pin (unit tier), consolidated.
  *
  * Every annotated domain error class reachable from `fateConfig` is pinned to
  * the exact wire `code` it must carry, so the annotation-derived codec

@@ -1,5 +1,5 @@
 /**
- * T0 unit tests for the Turkish search normalization (ADR 0080) — the fold
+ * Unit tests for the Turkish search normalization (ADR 0080) — the fold
  * applied symmetrically at write and query time. Pure functions, no SQL.
  */
 import {describe, expect, it} from "vitest";

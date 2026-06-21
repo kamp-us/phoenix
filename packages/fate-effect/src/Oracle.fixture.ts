@@ -78,7 +78,7 @@ export class DefinitionView extends FateDataView<DefinitionRow>()("Definition")(
 	votes: true,
 }) {}
 
-// --- the in-memory database (the T1 seam: mutable state behind a service) ----------
+// --- the in-memory database (the integration seam: mutable state behind a service) ----------
 
 export class SozlukDb extends Context.Service<
 	SozlukDb,

@@ -1,5 +1,5 @@
 /**
- * T0 unit coverage for targeting + percentage rollout (epic #488, #511). Two
+ * Unit coverage for targeting + percentage rollout (epic #488, #511). Two
  * layers are exercised without a binding or any I/O:
  *
  *   - `toEvaluationContext` — the domain→wire mapping: `userId → targetingKey`

@@ -1,5 +1,5 @@
 /**
- * T0 — `Fate.query` / `Fate.list` / `Fate.mutation` (the record-entry
+ * Unit — `Fate.query` / `Fate.list` / `Fate.mutation` (the record-entry
  * constructors).
  *
  * The resolver contract under test:

@@ -7,7 +7,7 @@
  *
  * Two pins per service: (1) a SWEEP proving no method's `E` channel contains
  * `DrizzleError`, (2) an exact-union pin catching a silently widened/narrowed
- * domain union. Type-only assertions, T0 per ADR 0040.
+ * domain union. Type-only assertions, unit tier (ADR 0082).
  *
  * Uses expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's TS377003
  * escapes the directive (recurring finding).

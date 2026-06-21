@@ -1,5 +1,5 @@
 /**
- * T0 unit coverage for the dev-only flag-override codec (#622) — the pure cookie
+ * Unit coverage for the dev-only flag-override codec (#622) — the pure cookie
  * parse/serialize + tri-state apply that the dev settings route and the override
  * `Flags` wrapper rest on. No worker, no binding, no DOM: just the codec contract.
  *

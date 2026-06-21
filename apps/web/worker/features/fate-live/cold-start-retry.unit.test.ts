@@ -17,7 +17,7 @@
  * fiber runs the wrapped call, the clock is adjusted past the whole window, then
  * the exit is observed.
  *
- * T0 per ADR 0082: pure logic over a stubbed cross-DO call, no platform fake.
+ * Unit tier (ADR 0082): pure logic over a stubbed cross-DO call, no platform fake.
  */
 import {assert, it} from "@effect/vitest";
 import {Cause, Effect, Exit, Fiber} from "effect";

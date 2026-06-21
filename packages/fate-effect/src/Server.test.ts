@@ -16,9 +16,9 @@
  *   3. **Init-time validation fails layer construction with names attached**:
  *      duplicate wire names across the category records (both owners named)
  *      and view-reachable entities without a source (entity named). These are
- *      the layer-construction tests tiered T1: they build the
+ *      the layer-construction tests in the integration tier: they build the
  *      layer for real (`Layer.build` through the Effect runtime) — no
- *      storage, but not pure-value T0 either.
+ *      storage, but not pure-value unit either.
  *   4. **Every record is constructor-built** — the raw legacy bridge-shaped
  *      arms were removed with the v2 cutover (ADR 0043), so a non-`Fate.*`
  *      record is a compile error at the config site.

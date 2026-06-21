@@ -1,5 +1,5 @@
 /**
- * T0 unit tests for the FTS dual-write sync (ADR 0080) — no workerd. Pins three
+ * Unit tests for the FTS dual-write sync (ADR 0080) — no workerd. Pins three
  * invariants the live write→sync→read loop depends on:
  *
  *  1. The symmetric write/query fold: the `norm` text written into the FTS row

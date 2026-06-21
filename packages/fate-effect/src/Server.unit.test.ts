@@ -1,5 +1,5 @@
 /**
- * T0 — `declaredWireCodes`: the canonical "every wire code this config can
+ * Unit — `declaredWireCodes`: the canonical "every wire code this config can
  * emit" walker.
  *
  * The contract under test:

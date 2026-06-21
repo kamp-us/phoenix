@@ -1,5 +1,5 @@
 /**
- * Tests for `interruptOnAbort` (T0: pure helper, no router, no workerd). Run on
+ * Tests for `interruptOnAbort` (unit: pure helper, no router, no workerd). Run on
  * the Effect runtime (`it.effect`), exercising the combinator the same way
  * production does. Coordination uses a `Latch`, never timers (a fixed tick raced
  * fiber startup on loaded CI runners).

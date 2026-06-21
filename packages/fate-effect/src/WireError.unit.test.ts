@@ -1,5 +1,5 @@
 /**
- * T0 — the `FateWireCode` annotation key and the wire-error codec.
+ * Unit — the `FateWireCode` annotation key and the wire-error codec.
  *
  * The contract under test — define a domain error once with an `FateWireCode`
  * annotation on the error class and have the wire codec derived from it,

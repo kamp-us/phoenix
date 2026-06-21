@@ -11,7 +11,7 @@
  *   4. publishes are scheduled through `waitUntil`, never awaited on the request
  *      path.
  *
- * T0 per ADR 0040: stubs at the topic seam, zero storage, no platform fake.
+ * Unit tier (ADR 0082): stubs at the topic seam, zero storage, no platform fake.
  */
 
 import {assert, it} from "@effect/vitest";

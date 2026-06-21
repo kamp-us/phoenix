@@ -1,5 +1,5 @@
 /**
- * T0 — `provideRequestPair`: THE per-request provision pipeline.
+ * Unit — `provideRequestPair`: THE per-request provision pipeline.
  *
  * The contract under test:
  *

@@ -1,5 +1,5 @@
 /**
- * T0 unit coverage for the `EmailSender` port (ADR 0101). Drives both adapters
+ * Unit coverage for the `EmailSender` port (ADR 0101). Drives both adapters
  * over substituted seams — no binding, no network:
  *
  *   - `EmailSenderCloudflareLive` over a FAKE `SendEmailBinding`: asserts it

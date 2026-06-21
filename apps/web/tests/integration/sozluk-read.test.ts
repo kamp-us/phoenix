@@ -2,15 +2,15 @@
  * sozluk reads — system smoke against the deployed worker `/fate` route (ADR 0026–0031).
  *
  * This is the SMOKE residue after the keyset/pagination CORRECTNESS was migrated
- * down to a T2 fate-op test (`worker/features/fate/sozluk-keyset.test.ts`):
+ * down to a fate-op integration test (`worker/features/fate/sozluk-keyset.test.ts`):
  * popular/recent ordering across pages, the `Term.definitions` keyset walk, the
- * `endCursor`/`hasNext` semantics, and stale-cursor collapse are all asserted at
- * T2 now, seeded by direct INSERT with explicit `score`/`createdAt`/`id` — no
+ * `endCursor`/`hasNext` semantics, and stale-cursor collapse are all asserted
+ * there now, seeded by direct INSERT with explicit `score`/`createdAt`/`id` — no
  * votes, no `sleep`. The flake engine that lived here (HTTP sign-up + per-score
  * `definition.vote` seeding + a `sleep(1100)` to space `last_activity_at` across
  * its second-resolution) is gone with it.
  *
- * What stays here is the genuinely system-level claim T2 cannot make: the
+ * What stays here is the genuinely system-level claim that fate-op test cannot make: the
  * DEPLOYED worker serves sozluk reads end-to-end over HTTP — the `/fate` route is
  * wired, a `terms` list + a `term` detail + the nested `Term.definitions`
  * connection resolve over the wire, and the session-derived Definition scalar
@@ -53,8 +53,8 @@ type Connection<N> = {
 };
 
 // One seeded term with two definitions — enough to prove the read surface serves
-// over HTTP without realizing a deterministic keyset (that is the T2 fixture's
-// job). The real `authorId` the worker assigned is captured from the seed.
+// over HTTP without realizing a deterministic keyset (that is the keyset
+// fixture's job). The real `authorId` the worker assigned is captured from the seed.
 let seeded: Awaited<ReturnType<typeof h.seedTerm>>["definitions"];
 
 beforeAll(async () => {

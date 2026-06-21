@@ -4,7 +4,7 @@
  * Three contracts under test:
  *
  *   1. **Round-trip** — the canonical codecs decode every operation kind and
- *      encode back byte-identically (T0). The canonical schemas ARE fate's
+ *      encode back byte-identically. The canonical schemas ARE fate's
  *      exported protocol types in Schema form.
  *   2. **fate-faithful rejection** — `decodeProtocolRequest` is fate's
  *      `assertProtocolRequest` as a staged Schema decode: malformed requests
@@ -70,7 +70,7 @@ const expectAccepted = (body: unknown) => Effect.runSync(decodeProtocolRequest(b
 
 const requestOf = (operations: ReadonlyArray<unknown>) => ({version: 1, operations});
 
-// --- 1. round-trips (T0) -------------------------------------------------------
+// --- 1. round-trips -------------------------------------------------------------
 
 describe("Protocol — canonical round-trips", () => {
 	it("round-trips every operation kind byte-identically", () => {
@@ -147,7 +147,7 @@ describe("Protocol — canonical round-trips", () => {
 	});
 });
 
-// --- 2. fate-faithful rejection + leniency (T0) ---------------------------------
+// --- 2. fate-faithful rejection + leniency ---------------------------------------
 
 describe("decodeProtocolRequest — fate's assertProtocolRequest, staged", () => {
 	it("accepts a valid mixed-kind request and yields validated operations", () => {
