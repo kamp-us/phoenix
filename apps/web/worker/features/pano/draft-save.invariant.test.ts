@@ -87,7 +87,7 @@ const draftRow: SaveDraftResult = {
 // Drive the op through its real external interface (`resolveWire`: `resolve`
 // decode + the `encodeWireError` class→wire-code seam), not `.handler` — so the
 // OFF-path assertion sees the WIRE `DRAFTS_DISABLED` code and a mis-annotated
-// `[ErrorCode]` on `DraftsDisabled` is a unit failure.
+// `[FateWireCode]` on `DraftsDisabled` is a unit failure.
 const saveDraft = (
 	pano: Layer.Layer<Pano>,
 	flags: Layer.Layer<Flags>,
