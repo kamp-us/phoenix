@@ -1,0 +1,79 @@
+{
+	"description": "kampus-pipeline portable guard surface: SessionStart-installs @kampus/pipeline-cli into ${CLAUDE_PLUGIN_DATA} (version-aware, idempotent, network-resilient) and wires the read/worktree/spawn guards through a fail-open dispatch wrapper. Mirrors the matchers in phoenix's .claude/settings.json (ADR 0103, #1001). Inert until the plugin is enabled (#1003).",
+	"hooks": {
+		"SessionStart": [
+			{
+				"matcher": "startup|resume",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/install.sh",
+						"timeout": 120
+					},
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh spawn-guard freshness"
+					}
+				]
+			}
+		],
+		"PreToolUse": [
+			{
+				"matcher": "Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh read-guard"
+					}
+				]
+			},
+			{
+				"matcher": "Read|Edit|Write",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh worktree-guard pre-file"
+					}
+				]
+			},
+			{
+				"matcher": "Bash",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh worktree-guard pre-bash"
+					}
+				]
+			},
+			{
+				"matcher": "EnterWorktree",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh worktree-guard pre-enter"
+					}
+				]
+			},
+			{
+				"matcher": "Task|Workflow",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh spawn-guard guard"
+					}
+				]
+			}
+		],
+		"SubagentStop": [
+			{
+				"matcher": "*",
+				"hooks": [
+					{
+						"type": "command",
+						"command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard.sh worktree-guard reap"
+					}
+				]
+			}
+		]
+	}
+}
