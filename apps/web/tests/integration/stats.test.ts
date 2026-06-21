@@ -8,14 +8,15 @@
  * only observable surface is the `landingStats` query (four counters + the
  * build `version`).
  *
- * D1 is per-file isolated (ADR 0082): this file deploys its own worker + D1 under
- * its own stage, so the only writer against this D1 is this file. Absolute counts
- * are therefore deterministic here — no concurrent cross-file drift. We still assert
- * by DELTA (snapshot `landingStats`, create N definitions + M posts + K comments
- * under a fresh cookie, snapshot again, assert each counter rose by AT LEAST the
- * amount we added) because the harness seeds its own author/voter users for sign-up
- * and seeding, so a counter's absolute baseline isn't fixed; the `>=` delta is robust
- * to that without depending on an exact starting count.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
+ * is shared across every migrated file — concurrent writers can only INFLATE the global
+ * `landingStats` counters between this file's snapshots. Every assertion here is a
+ * lower-bound `>=` DELTA (snapshot `landingStats`, create N definitions + M posts + K
+ * comments under a fresh cookie, snapshot again, assert each counter rose by AT LEAST the
+ * amount we added), which is monotone-safe under that inflation — a concurrent add only
+ * widens the gap, never narrows it, so no `>=` ever breaks. The delta form is independent
+ * of the absolute baseline, which is never fixed (the harness seeds its own author/voter
+ * users for sign-up and seeding).
  *
  * not portable black-box: the `landing-stats.test.ts` direct-D1 COUNT parity
  * assertions (`total_definitions === COUNT(*) FROM definition_record`, distinct
@@ -30,11 +31,12 @@
  * (the seam test already asserts `health.definitions` flows from this service).
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now().toString(36);
+const NS = nsToken(import.meta.url);
 
 interface LandingStats {
 	totalDefinitions: number;
@@ -56,7 +58,7 @@ async function landingStats(): Promise<LandingStats> {
 let author: {userId: string; cookie: string};
 
 beforeAll(async () => {
-	author = await h.signUp(`stats-${STAMP}-author@test.local`, "hunter2hunter2", "Stats Author");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "Stats Author");
 });
 
 describe("landing stats — /fate", () => {
@@ -78,7 +80,7 @@ describe("landing stats — /fate", () => {
 				{
 					kind: "mutation",
 					name: "definition.add",
-					input: {termSlug: `stats-${STAMP}-def-${i}`, body: `stats definition ${i}`},
+					input: {termSlug: `${NS}-def-${i}`, body: `stats definition ${i}`},
 					select: ["id"],
 				},
 				{cookie: author.cookie},
@@ -91,7 +93,7 @@ describe("landing stats — /fate", () => {
 			{
 				kind: "mutation",
 				name: "post.submit",
-				input: {title: `stats-${STAMP} a post`, tags: [{kind: "tartışma"}]},
+				input: {title: `${NS} a post`, tags: [{kind: "tartışma"}]},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
@@ -116,9 +118,9 @@ describe("landing stats — /fate", () => {
 
 		const after = await landingStats();
 
-		// Deltas: at least what we added. This file's D1 is isolated (per-file stage),
-		// so nothing else writes to it concurrently — `>=` is robust to the harness's
-		// own seeded users without depending on an exact baseline.
+		// Deltas: at least what we added. These are lower-bound `>=` deltas on the shared
+		// stage's global counters — concurrent writers can only inflate them between our two
+		// snapshots, which only widens the gap, so `>=` holds without depending on a baseline.
 		expect(after.totalDefinitions).toBeGreaterThanOrEqual(before.totalDefinitions + 2);
 		expect(after.totalPosts).toBeGreaterThanOrEqual(before.totalPosts + 1);
 		expect(after.totalComments).toBeGreaterThanOrEqual(before.totalComments + 3);
@@ -129,15 +131,15 @@ describe("landing stats — /fate", () => {
 
 	it("add-then-delete nets to a smaller delta than add alone (decrement is observable)", async () => {
 		// An add and its matching delete cancel: the net contribution of an add+delete
-		// pair to `totalDefinitions` is 0, whereas a bare add contributes +1. This file's
-		// D1 is isolated (per-file stage), so we can bound by our own deterministic
-		// contribution via each path's own before/after.
+		// pair to `totalDefinitions` is 0, whereas a bare add contributes +1. We bound only
+		// by our own deterministic contribution via a lower-bound `>=` on `afterAdd` — safe
+		// on the shared stage, where concurrent writers can only inflate the counter further.
 		const baseline = await landingStats();
 		const added = await h.fate(
 			{
 				kind: "mutation",
 				name: "definition.add",
-				input: {termSlug: `stats-${STAMP}-del`, body: "to be deleted"},
+				input: {termSlug: `${NS}-del`, body: "to be deleted"},
 				select: ["id"],
 			},
 			{cookie: author.cookie},

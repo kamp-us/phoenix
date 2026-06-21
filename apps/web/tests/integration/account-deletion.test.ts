@@ -13,17 +13,24 @@
  *   - **The typed confirmation gates the op.** A wrong/absent confirmation never
  *     deletes (the input fails validation); only the exact phrase fires it.
  *
- * Everything is observed over HTTP; every email/slug/username is `del-${STAMP}-…`
- * prefixed for this file's isolated stage.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
+ * is shared across every migrated file. Every email/slug/username this file seeds is `NS`-
+ * prefixed (this file's deterministic `nsToken`) so its own rows can't collide. The one
+ * shared-mutable row it touches is the `silinen` reserved sentinel profile, which multiple
+ * files concurrently re-attribute deleted content to; the sentinel assertion is a lower-
+ * bound `definitionCount >= 1` (re-attribution is an append, never an exact count), so it
+ * holds under that concurrent inflation. `silinen` + the confirmation phrase are product
+ * constants, not test data, and stay verbatim.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now().toString(36);
+const NS = nsToken(import.meta.url);
 let counter = 0;
-const uname = (label: string) => `del-${STAMP}-${label}-${counter++}`;
+const uname = (label: string) => `${NS}-${label}-${counter++}`;
 
 const CONFIRMATION = "hesabımı kalıcı olarak sil";
 
@@ -52,11 +59,11 @@ beforeAll(() => {
 describe("account.delete — anonymize-to-@[silinen]", () => {
 	it("re-attributes content to @[silinen] (kept Live, karma kept) and tears down the session", async () => {
 		const authorUsername = uname("author");
-		const author = await h.signUp(`del-${STAMP}-author@test.local`, "hunter2hunter2", "Author");
+		const author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "Author");
 		await setUsername(author.cookie, authorUsername);
 
 		// The author writes a definition; a distinct voter up-votes it (author karma → 1).
-		const termSlug = `del-${STAMP}-term`;
+		const termSlug = `${NS}-term`;
 		const added = await h.fate(
 			{
 				kind: "mutation",
@@ -70,7 +77,7 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 		if (!added.ok) return;
 		const definitionId = (added.data as {id: string}).id;
 
-		const voter = await h.signUp(`del-${STAMP}-voter@test.local`, "hunter2hunter2", "Voter");
+		const voter = await h.signUp(`${NS}-voter@test.local`, "hunter2hunter2", "Voter");
 		const vote = await h.fate(
 			{kind: "mutation", name: "definition.vote", input: {id: definitionId}, select: ["score"]},
 			{cookie: voter.cookie},
@@ -170,7 +177,7 @@ describe("account.delete — anonymize-to-@[silinen]", () => {
 	});
 
 	it("nobody can register the reserved `silinen` username", async () => {
-		const squatter = await h.signUp(`del-${STAMP}-squat@test.local`, "hunter2hunter2", "Squatter");
+		const squatter = await h.signUp(`${NS}-squat@test.local`, "hunter2hunter2", "Squatter");
 		const r = await h.fate(
 			{kind: "mutation", name: "user.setUsername", input: {value: "silinen"}, select: ["id"]},
 			{cookie: squatter.cookie},
