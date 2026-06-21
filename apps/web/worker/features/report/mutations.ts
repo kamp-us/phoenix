@@ -26,6 +26,7 @@ import {Sozluk} from "../sozluk/Sozluk.ts";
 import type {ReportTargetKind, ReportTargetNotFound} from "./errors.ts";
 import {Moderator, NotAModerator} from "./Moderator.ts";
 import {Report} from "./Report.ts";
+import {outcomeOf} from "./resolution.ts";
 import {toReportReceipt, toResolveReceipt} from "./shapers.ts";
 import {ReportReceiptView, ResolveReceiptView} from "./views.ts";
 
@@ -41,7 +42,7 @@ const ResolveReportInput = Schema.Struct({
 	reportId: Schema.optional(Schema.String),
 	targetKind: Schema.optional(Schema.Literals(["definition", "post", "comment"])),
 	targetId: Schema.optional(Schema.String),
-	action: Schema.Literals(["removed", "dismissed"]),
+	action: Schema.Literals(["remove", "dismiss"]),
 });
 
 const RestoreReportInput = Schema.Struct({
@@ -111,7 +112,7 @@ export const mutations = {
 				return toResolveReceipt({
 					targetKind: input.targetKind ?? "post",
 					targetId: input.targetId ?? "",
-					resolution: input.action,
+					resolution: outcomeOf(input.action),
 					targetRemoved: false,
 					collapsed: 0,
 				});
@@ -120,7 +121,7 @@ export const mutations = {
 			const now = new Date();
 			let targetRemoved = false;
 
-			if (input.action === "removed") {
+			if (input.action === "remove") {
 				// Act on the target via the 0096 substrate (reason `Moderated`); the
 				// reportId carried into the removal is the FIRST open report id on the
 				// target, so a later restore can reopen the group.
@@ -134,14 +135,14 @@ export const mutations = {
 				targetKind: target.targetKind,
 				targetId: target.targetId,
 				resolverId: mod.id,
-				resolution: input.action,
+				action: input.action,
 				resolvedAt: now,
 			});
 
 			return toResolveReceipt({
 				targetKind: target.targetKind,
 				targetId: target.targetId,
-				resolution: input.action,
+				resolution: outcomeOf(input.action),
 				targetRemoved,
 				collapsed,
 			});

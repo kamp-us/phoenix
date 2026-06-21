@@ -6,26 +6,26 @@
  * `open` rejects reopen.
  */
 import {assert, describe, it} from "@effect/vitest";
-import {IllegalTransition, isTerminal, reopen, resolve} from "./resolution.ts";
+import {IllegalTransition, isTerminal, outcomeOf, reopen, resolve} from "./resolution.ts";
 
 describe("resolve — legal only from open", () => {
-	it("open + removed → resolved/removed", () => {
-		assert.deepStrictEqual(resolve("open", "removed"), {status: "resolved", resolution: "removed"});
+	it("open + remove → resolved/removed", () => {
+		assert.deepStrictEqual(resolve("open", "remove"), {status: "resolved", resolution: "removed"});
 	});
 
-	it("open + dismissed → dismissed/dismissed", () => {
-		assert.deepStrictEqual(resolve("open", "dismissed"), {
+	it("open + dismiss → dismissed/dismissed", () => {
+		assert.deepStrictEqual(resolve("open", "dismiss"), {
 			status: "dismissed",
 			resolution: "dismissed",
 		});
 	});
 
 	it("resolved → resolve is an IllegalTransition", () => {
-		assert.throws(() => resolve("resolved", "dismissed"), IllegalTransition);
+		assert.throws(() => resolve("resolved", "dismiss"), IllegalTransition);
 	});
 
 	it("dismissed → resolve is an IllegalTransition", () => {
-		assert.throws(() => resolve("dismissed", "removed"), IllegalTransition);
+		assert.throws(() => resolve("dismissed", "remove"), IllegalTransition);
 	});
 });
 
@@ -48,5 +48,12 @@ describe("isTerminal", () => {
 		assert.isFalse(isTerminal("open"));
 		assert.isTrue(isTerminal("resolved"));
 		assert.isTrue(isTerminal("dismissed"));
+	});
+});
+
+describe("outcomeOf — the action→outcome map (off the action token)", () => {
+	it("remove → removed; dismiss → dismissed", () => {
+		assert.strictEqual(outcomeOf("remove"), "removed");
+		assert.strictEqual(outcomeOf("dismiss"), "dismissed");
 	});
 });

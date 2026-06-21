@@ -7,6 +7,7 @@
  */
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
+import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
 
 // The shared read-model tables (`term_summary` / `definition_record` /
 // `post_summary` / `comment_record`) live in the `@kampus/db-schema` leaf so the
@@ -280,8 +281,9 @@ export const contentReport = sqliteTable(
 		targetId: text("target_id").notNull(),
 		// Optional free-text reason supplied by the reporter.
 		reason: text("reason"),
-		// Resolution state machine (ADR 0098): 'open' | 'resolved' | 'dismissed'.
-		status: text("status", {enum: ["open", "resolved", "dismissed"]})
+		// Status + resolution enums source from the ADR 0098 machine's tuples
+		// (`features/report/resolution.ts`) so the column can't drift from it.
+		status: text("status", {enum: [...REPORT_STATUSES]})
 			.notNull()
 			.default("open"),
 		createdAt: timestamp("created_at").notNull(),
@@ -290,7 +292,7 @@ export const contentReport = sqliteTable(
 		resolvedAt: timestamp("resolved_at"),
 		// The decision the resolver made: 'removed' (target soft-deleted via the
 		// substrate) | 'dismissed' (report unfounded, no action).
-		resolution: text("resolution", {enum: ["removed", "dismissed"]}),
+		resolution: text("resolution", {enum: [...RESOLUTIONS]}),
 	},
 	(t) => [
 		primaryKey({columns: [t.reporterId, t.targetKind, t.targetId]}),
