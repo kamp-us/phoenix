@@ -70,6 +70,23 @@ export const stageName = (slug: string, noDestroy: boolean, runToken: string): s
 export const sharedStageName = (runToken: string): string =>
 	collapse(`${STAGE_PREFIX}shared-${disc(`shared|${runToken}`)}`);
 
+// The per-file namespace token a migrated file prefixes EVERY row it seeds with, so the
+// shared stage's single D1 can't collide across files (ADR 0104 step 7, #1027).
+const NS_TOKEN_LEN = 12;
+
+/**
+ * A deterministic, file-derived namespace token for a file's seeded rows on the SHARED
+ * stage — `nsToken("…/report.test.ts") === "report"`, `"…/pasaport-from-tag.test.ts"`
+ * → `"pasaport-fro"`. Derived from the file basename (the `.test.ts` stripped,
+ * `slugify`'d, capped to `NS_TOKEN_LEN`), it is deterministic and collision-free across
+ * files — two files can never share a token, where the old per-file `Date.now()` STAMP
+ * could (and carried no file identity). A migrated file prefixes every slug/email/id it
+ * seeds with this so its rows are uniquely its own on the shared D1, and scopes every
+ * assertion to those `NS`-prefixed rows.
+ */
+export const nsToken = (metaUrl: string): string =>
+	slugify((metaUrl.split("/").pop() ?? "f").replace(/\.test\.ts$/, "")).slice(0, NS_TOKEN_LEN);
+
 // Fold any run of dashes to one and trim the ends — an empty `slug`/`readable` would
 // otherwise leave `it--<disc>` (internal `--`) or a trailing dash, both of which the
 // docblock invariant forbids. A name reduced to bare `it` (empty slug under NO_DESTROY)

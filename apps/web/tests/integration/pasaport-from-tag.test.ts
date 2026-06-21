@@ -22,17 +22,18 @@
  * one), NOT to delete this test.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 describe("PasaportFromTag — inert RuntimeContext stub guard (real D1)", () => {
 	let session: {userId: string; cookie: string};
 
 	beforeAll(async () => {
-		session = await h.signUp(`guard-${STAMP}@example.com`, "hunter2hunter2", "guard");
+		session = await h.signUp(`${NS}-guard@example.com`, "hunter2hunter2", "guard");
 	});
 
 	it("a session round-trips through PasaportFromTag with only the inert stub", async () => {
@@ -49,6 +50,6 @@ describe("PasaportFromTag — inert RuntimeContext stub guard (real D1)", () => 
 		if (!me.ok) return;
 		const data = me.data as {id: string; email: string};
 		expect(data.id).toBe(session.userId);
-		expect(data.email).toBe(`guard-${STAMP}@example.com`);
+		expect(data.email).toBe(`${NS}-guard@example.com`);
 	});
 });

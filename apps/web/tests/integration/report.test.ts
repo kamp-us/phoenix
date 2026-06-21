@@ -9,15 +9,18 @@
  * mock (#581); this suite exercises them over real D1, mirroring
  * `pano-comments.test.ts`'s vote-idempotency shape.
  *
- * D1 is shared across all test files (one deploy), so every title/email is
- * uniquely prefixed (`report-${STAMP}-…`).
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one
+ * D1 is shared across every migrated file: every title/email/target id it seeds is
+ * prefixed with `NS` (this file's deterministic `nsToken`) so its rows are uniquely
+ * its own and every assertion scopes to them.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface Receipt {
 	__typename: string;
@@ -49,14 +52,14 @@ async function submitReport(
 }
 
 beforeAll(async () => {
-	reporter = await h.signUp(`report-${STAMP}-reporter@test.local`, "hunter2hunter2", "muhbir");
-	author = await h.signUp(`report-${STAMP}-author@test.local`, "hunter2hunter2", "yazar");
+	reporter = await h.signUp(`${NS}-reporter@test.local`, "hunter2hunter2", "muhbir");
+	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
 
 	const post = await h.fate(
 		{
 			kind: "mutation",
 			name: "post.submit",
-			input: {title: `report-${STAMP} target post`, tags: [{kind: "tartışma"}]},
+			input: {title: `${NS} target post`, tags: [{kind: "tartışma"}]},
 			select: ["id"],
 		},
 		{cookie: author.cookie},
@@ -79,8 +82,8 @@ beforeAll(async () => {
 	commentId = (comment.data as {id: string}).id;
 
 	const seeded = await h.seedTerm({
-		slug: `report-${STAMP}-term`,
-		title: `report-${STAMP} term`,
+		slug: `${NS}-term`,
+		title: `${NS} term`,
 		definitions: [{authorName: "yazar", body: "report target definition body"}],
 	});
 	definitionId = seeded.definitions[0]!.id;
@@ -139,7 +142,7 @@ describe("report.submit — auth + target gating (real D1)", () => {
 
 	it("a report against a non-existent post target → POST_NOT_FOUND (feature-level, not infra)", async () => {
 		const r = await submitReport(
-			{targetKind: "post", targetId: `post_${STAMP}_does_not_exist`},
+			{targetKind: "post", targetId: `post_${NS}_does_not_exist`},
 			reporter.cookie,
 		);
 		expect(r.ok).toBe(false);
@@ -149,7 +152,7 @@ describe("report.submit — auth + target gating (real D1)", () => {
 
 	it("a report against a non-existent comment target → COMMENT_NOT_FOUND", async () => {
 		const r = await submitReport(
-			{targetKind: "comment", targetId: `comm_${STAMP}_does_not_exist`},
+			{targetKind: "comment", targetId: `comm_${NS}_does_not_exist`},
 			reporter.cookie,
 		);
 		expect(r.ok).toBe(false);
@@ -159,7 +162,7 @@ describe("report.submit — auth + target gating (real D1)", () => {
 
 	it("a report against a non-existent definition target → DEFINITION_NOT_FOUND", async () => {
 		const r = await submitReport(
-			{targetKind: "definition", targetId: `def_${STAMP}_does_not_exist`},
+			{targetKind: "definition", targetId: `def_${NS}_does_not_exist`},
 			reporter.cookie,
 		);
 		expect(r.ok).toBe(false);
@@ -172,7 +175,7 @@ describe("report.submit — auth + target gating (real D1)", () => {
 			{
 				kind: "mutation",
 				name: "post.submit",
-				input: {title: `report-${STAMP} soft-deleted target`, tags: [{kind: "tartışma"}]},
+				input: {title: `${NS} soft-deleted target`, tags: [{kind: "tartışma"}]},
 				select: ["id"],
 			},
 			{cookie: author.cookie},
