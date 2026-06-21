@@ -21,22 +21,23 @@ import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {hotMultiplier} from "../../db/hotScore.ts";
-import {type VoteTargetKind, VoteTargetNotFound} from "./errors.ts";
+import type {TargetKind} from "../../db/target-kind.ts";
+import {VoteTargetNotFound} from "./errors.ts";
 
-// Re-exported from `errors.ts` (its source-of-truth home) for callers that
-// prefer importing it from `./Vote`.
-export type {VoteTargetKind};
+// Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
+// that prefer importing it from `./Vote`.
+export type {TargetKind};
 
 export interface VoteInput {
 	userId: string;
-	targetKind: VoteTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	/** Up-only presence intent: `true` casts the upvote, `false` retracts it. */
 	value: boolean;
 }
 
 export interface VoteResult {
-	targetKind: VoteTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	score: number;
 	/** Whether the voter holds an upvote on this target after the write. */
@@ -80,7 +81,7 @@ export class Vote extends Context.Service<
 		 */
 		readonly readMine: (
 			viewerId: string | null | undefined,
-			kind: VoteTargetKind,
+			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
 		) => Effect.Effect<Set<string>>;
 		/**
@@ -92,7 +93,7 @@ export class Vote extends Context.Service<
 		 * deleted). The caller stamps `Removed` on the content row and recomputes the
 		 * summary caches outside this batch (recomputable caches, ADR 0011/0096).
 		 */
-		readonly clearTarget: (kind: VoteTargetKind, targetId: string) => Effect.Effect<void>;
+		readonly clearTarget: (kind: TargetKind, targetId: string) => Effect.Effect<void>;
 	}
 >()("@kampus/vote/Vote") {}
 
@@ -116,7 +117,7 @@ export const VoteLive = Layer.effect(Vote)(
 		// Per-target metadata lookup. If the row is missing or removed we
 		// surface `VoteTargetNotFound` rather than letting the batch fail with
 		// an FK-shaped error.
-		const loadMeta = Effect.fn("Vote.loadMeta")(function* (kind: VoteTargetKind, targetId: string) {
+		const loadMeta = Effect.fn("Vote.loadMeta")(function* (kind: TargetKind, targetId: string) {
 			switch (kind) {
 				case "definition": {
 					const row = yield* run((db) =>
@@ -178,7 +179,7 @@ export const VoteLive = Layer.effect(Vote)(
 		// Idempotency probe: one point-lookup against the vote table to decide
 		// if the write would be a no-op, so re-casts/re-retracts stay cheap
 		// reads (the `isCast === alreadyCast` path skips the batch).
-		const probeExisting = (kind: VoteTargetKind, targetId: string, userId: string) =>
+		const probeExisting = (kind: TargetKind, targetId: string, userId: string) =>
 			run(async (db) => {
 				switch (kind) {
 					case "definition": {
@@ -204,7 +205,7 @@ export const VoteLive = Layer.effect(Vote)(
 
 		// Read the truth-derived score back from the cache the batch just
 		// refreshed; also serves the idempotent path's tail.
-		const readCachedScore = (kind: VoteTargetKind, targetId: string) =>
+		const readCachedScore = (kind: TargetKind, targetId: string) =>
 			run(async (db) => {
 				switch (kind) {
 					case "definition": {
@@ -235,7 +236,7 @@ export const VoteLive = Layer.effect(Vote)(
 		// cross-product `user_vote` table. See the `readMine` interface doc.
 		const readMine = Effect.fn("Vote.readMine")(function* (
 			viewerId: string | null | undefined,
-			kind: VoteTargetKind,
+			kind: TargetKind,
 			targetIds: ReadonlyArray<string>,
 		) {
 			if (!viewerId || targetIds.length === 0) return new Set<string>();
@@ -292,10 +293,7 @@ export const VoteLive = Layer.effect(Vote)(
 					changed: true,
 				} satisfies VoteResult;
 			}),
-			clearTarget: Effect.fn("Vote.clearTarget")(function* (
-				kind: VoteTargetKind,
-				targetId: string,
-			) {
+			clearTarget: Effect.fn("Vote.clearTarget")(function* (kind: TargetKind, targetId: string) {
 				yield* batch((db) => buildClearTargetStatements(db, kind, targetId));
 			}),
 		};
@@ -307,7 +305,7 @@ export const VoteLive = Layer.effect(Vote)(
  * and the `user_vote` mirror, no karma touched. `db.batch` commits both or
  * neither (ADR 0014), so a removed entity never carries orphan vote rows.
  */
-function buildClearTargetStatements(db: DrizzleDb, kind: VoteTargetKind, targetId: string) {
+function buildClearTargetStatements(db: DrizzleDb, kind: TargetKind, targetId: string) {
 	const userVoteWipe = db
 		.delete(schema.userVote)
 		.where(and(eq(schema.userVote.targetKind, kind), eq(schema.userVote.targetId, targetId)));
@@ -446,7 +444,7 @@ function buildVoteDelete(db: DrizzleDb, input: VoteInput) {
  */
 function buildScoreCacheStatement(
 	db: DrizzleDb,
-	kind: VoteTargetKind,
+	kind: TargetKind,
 	targetId: string,
 	now: Date,
 	meta: TargetMeta,

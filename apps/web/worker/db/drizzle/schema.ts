@@ -8,6 +8,7 @@
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
+import {TARGET_KINDS} from "../target-kind.ts";
 
 // The shared read-model tables (`term_summary` / `definition_record` /
 // `post_summary` / `comment_record`) live in the `@kampus/db-schema` leaf so the
@@ -220,8 +221,7 @@ export const userVote = sqliteTable(
 	"user_vote",
 	{
 		userId: text("user_id").notNull(),
-		// 'definition' | 'post' | 'comment'
-		targetKind: text("target_kind").notNull(),
+		targetKind: text("target_kind", {enum: [...TARGET_KINDS]}).notNull(),
 		targetId: text("target_id").notNull(),
 		createdAt: timestamp("created_at").notNull(),
 	},
@@ -276,8 +276,7 @@ export const contentReport = sqliteTable(
 	{
 		id: text("id").notNull(),
 		reporterId: text("reporter_id").notNull(),
-		// 'post' | 'comment' | 'definition'
-		targetKind: text("target_kind").notNull(),
+		targetKind: text("target_kind", {enum: [...TARGET_KINDS]}).notNull(),
 		targetId: text("target_id").notNull(),
 		// Optional free-text reason supplied by the reporter.
 		reason: text("reason"),

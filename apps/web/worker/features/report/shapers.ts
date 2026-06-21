@@ -7,7 +7,7 @@
  * `__typename` (`.patterns/fate-effect-operations.md`).
  */
 
-import type {ReportTargetKind} from "./errors.ts";
+import type {TargetKind} from "../../db/target-kind.ts";
 import type {OpenReportGroup, ReportResult} from "./Report.ts";
 import type {Resolution} from "./resolution.ts";
 import type {OpenReport, ReportReceipt, ResolveReceipt} from "./views.ts";
@@ -32,7 +32,7 @@ export const toOpenReport = (g: OpenReportGroup): OpenReport => ({
 });
 
 export const toResolveReceipt = (r: {
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	resolution: Resolution;
 	targetRemoved: boolean;

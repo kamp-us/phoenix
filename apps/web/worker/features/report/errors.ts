@@ -7,16 +7,12 @@
  * exactly as the vote mutations translate `VoteTargetNotFound`.
  */
 import * as Schema from "effect/Schema";
-
-// Lives here, not in `Report.ts`, to keep the `Report.ts → errors.ts` edge
-// one-way: the reverse direction is a cycle tsgo refuses to resolve even with
-// `import type` (the `vote/errors.ts` precedent).
-export type ReportTargetKind = "definition" | "post" | "comment";
+import {TargetKindSchema} from "../../db/target-kind.ts";
 
 export class ReportTargetNotFound extends Schema.TaggedErrorClass<ReportTargetNotFound>()(
 	"report/ReportTargetNotFound",
 	{
-		targetKind: Schema.Literals(["definition", "post", "comment"]),
+		targetKind: TargetKindSchema,
 		targetId: Schema.String,
 		message: Schema.String,
 	},

@@ -19,11 +19,13 @@
 import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
+import type {TargetKind} from "../../db/target-kind.ts";
+import {TargetKindSchema} from "../../db/target-kind.ts";
 import {CommentNotFound, PostNotFound} from "../pano/errors.ts";
 import {Pano} from "../pano/Pano.ts";
 import {DefinitionNotFound} from "../sozluk/errors.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
-import type {ReportTargetKind, ReportTargetNotFound} from "./errors.ts";
+import type {ReportTargetNotFound} from "./errors.ts";
 import {Moderator, NotAModerator} from "./Moderator.ts";
 import {Report} from "./Report.ts";
 import {outcomeOf} from "./resolution.ts";
@@ -31,7 +33,7 @@ import {toReportReceipt, toResolveReceipt} from "./shapers.ts";
 import {ReportReceiptView, ResolveReceiptView} from "./views.ts";
 
 const SubmitReportInput = Schema.Struct({
-	targetKind: Schema.Literals(["definition", "post", "comment"]),
+	targetKind: TargetKindSchema,
 	targetId: Schema.String,
 	reason: Schema.optional(Schema.NullOr(Schema.String)),
 });
@@ -40,14 +42,14 @@ const SubmitReportInput = Schema.Struct({
 // `targetId`), or pass a `reportId` and the resolve acts on its whole target group.
 const ResolveReportInput = Schema.Struct({
 	reportId: Schema.optional(Schema.String),
-	targetKind: Schema.optional(Schema.Literals(["definition", "post", "comment"])),
+	targetKind: Schema.optional(TargetKindSchema),
 	targetId: Schema.optional(Schema.String),
 	action: Schema.Literals(["remove", "dismiss"]),
 });
 
 const RestoreReportInput = Schema.Struct({
 	reportId: Schema.optional(Schema.String),
-	targetKind: Schema.optional(Schema.Literals(["definition", "post", "comment"])),
+	targetKind: Schema.optional(TargetKindSchema),
 	targetId: Schema.optional(Schema.String),
 });
 
@@ -100,7 +102,7 @@ export const mutations = {
 
 			// Resolve the target: a `reportId` resolves to its `(targetKind, targetId)`;
 			// otherwise `targetKind` + `targetId` are taken directly.
-			let target: {targetKind: ReportTargetKind; targetId: string} | null = null;
+			let target: {targetKind: TargetKind; targetId: string} | null = null;
 			if (input.reportId !== undefined) {
 				target = yield* report.lookupReportTarget(input.reportId);
 			} else if (input.targetKind !== undefined && input.targetId !== undefined) {
@@ -162,7 +164,7 @@ export const mutations = {
 			yield* Moderator.required;
 			const report = yield* Report;
 
-			let target: {targetKind: ReportTargetKind; targetId: string} | null = null;
+			let target: {targetKind: TargetKind; targetId: string} | null = null;
 			if (input.reportId !== undefined) {
 				target = yield* report.lookupReportTarget(input.reportId);
 			} else if (input.targetKind !== undefined && input.targetId !== undefined) {
@@ -194,7 +196,7 @@ export const mutations = {
 
 /** Dispatch act-on-target to the content service that owns the target kind. */
 const moderateRemove = Effect.fn("report.moderateRemove")(function* (
-	target: {targetKind: ReportTargetKind; targetId: string},
+	target: {targetKind: TargetKind; targetId: string},
 	resolverId: string,
 	reportId: string,
 ) {
@@ -231,7 +233,7 @@ const moderateRemove = Effect.fn("report.moderateRemove")(function* (
 
 /** Dispatch the moderator restore to the content service that owns the target kind. */
 const moderateRestore = Effect.fn("report.moderateRestore")(function* (target: {
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 }) {
 	switch (target.targetKind) {

@@ -9,13 +9,13 @@
  * no source/fetch path. See `.patterns/fate-effect-data-views.md`.
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
+import type {TargetKind} from "../../db/target-kind.ts";
 import type {ViewRow} from "../fate/view-types.ts";
-import type {ReportTargetKind} from "./errors.ts";
 import type {Resolution} from "./resolution.ts";
 
 export type ReportReceiptViewRow = ViewRow<{
 	id: string;
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	created: boolean;
 }>;
@@ -39,7 +39,7 @@ export type ReportReceipt = WorkerEntity<typeof ReportReceiptView>;
  */
 export type OpenReportViewRow = ViewRow<{
 	id: string;
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	reportCount: number;
 	reason: string | null;
@@ -66,7 +66,7 @@ export type OpenReport = WorkerEntity<typeof OpenReportView>;
  */
 export type ResolveReceiptViewRow = ViewRow<{
 	id: string;
-	targetKind: ReportTargetKind;
+	targetKind: TargetKind;
 	targetId: string;
 	resolution: Resolution;
 	targetRemoved: boolean;
