@@ -127,95 +127,9 @@ describe("pano mutations — post.submit", () => {
 		expect(post.tags.map((t) => t.kind)).toEqual(["tartışma"]);
 	});
 
-	it("empty title surfaces TITLE_REQUIRED", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.submit",
-				input: {title: "   ", tags: [{kind: "tartışma"}]},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("TITLE_REQUIRED");
-	});
-
-	it("titles over 200 chars surface TITLE_TOO_LONG", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.submit",
-				input: {title: "x".repeat(201), tags: [{kind: "tartışma"}]},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("TITLE_TOO_LONG");
-	});
-
-	it("invalid URLs surface URL_INVALID", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.submit",
-				input: {title: "valid title", url: "not a url", tags: [{kind: "tartışma"}]},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("URL_INVALID");
-	});
-
-	it("bodies over 10000 chars surface BODY_TOO_LONG", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.submit",
-				input: {title: "valid title", body: "x".repeat(10_001), tags: [{kind: "tartışma"}]},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("BODY_TOO_LONG");
-	});
-
-	it("an empty tag list surfaces TAGS_REQUIRED", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.submit",
-				input: {title: "valid title", tags: []},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("TAGS_REQUIRED");
-	});
-
-	it("a tag outside the fixed enum surfaces TAG_INVALID", async () => {
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "post.submit",
-				input: {title: "valid title", tags: [{kind: "haber"}]},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("TAG_INVALID");
-	});
+	// Pure post-submit validation codes (TITLE_REQUIRED / TITLE_TOO_LONG /
+	// URL_INVALID / BODY_TOO_LONG / TAGS_REQUIRED / TAG_INVALID) are unit-tested
+	// off-DB in worker/features/pano/submit-validation.unit.test.ts (ADR 0082).
 
 	it("anonymous writes surface UNAUTHORIZED", async () => {
 		const result = await h.fate({
@@ -514,34 +428,9 @@ describe("pano mutations — comment.add", () => {
 		expect(result.error.code).toBe("PARENT_NOT_FOUND");
 	});
 
-	it("empty / whitespace-only bodies surface BODY_REQUIRED", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} body-required target`});
-		for (const body of ["", "    ", "\n\n\t"]) {
-			const result = await h.fate(
-				{kind: "mutation", name: "comment.add", input: {postId, body}, select: ["id"]},
-				{cookie: author.cookie},
-			);
-			expect(result.ok).toBe(false);
-			if (result.ok) return;
-			expect(result.error.code).toBe("BODY_REQUIRED");
-		}
-	});
-
-	it("bodies over 5000 chars surface BODY_TOO_LONG", async () => {
-		const postId = await seedPost({title: `panomut-${STAMP} body-toolong target`});
-		const result = await h.fate(
-			{
-				kind: "mutation",
-				name: "comment.add",
-				input: {postId, body: "x".repeat(5_001)},
-				select: ["id"],
-			},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("BODY_TOO_LONG");
-	});
+	// Pure comment-body validation codes (BODY_REQUIRED / BODY_TOO_LONG) are
+	// unit-tested off-DB in worker/features/pano/submit-validation.unit.test.ts
+	// (ADR 0082); the DB-miss codes below stay at integration.
 
 	it("commenting on a missing post surfaces POST_NOT_FOUND", async () => {
 		const result = await h.fate(

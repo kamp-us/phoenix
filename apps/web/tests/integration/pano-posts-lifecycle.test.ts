@@ -151,38 +151,12 @@ describe("pano posts — edit validation", () => {
 		expect(result.error.code).toBe("TITLE_REQUIRED");
 	});
 
-	it("an edit with a blank title surfaces TITLE_REQUIRED", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} edit-blank-title`});
-		const result = await h.fate(
-			{kind: "mutation", name: "post.edit", input: {id, title: "   "}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("TITLE_REQUIRED");
-	});
-
-	it("an edit with a title over 200 chars surfaces TITLE_TOO_LONG", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} edit-title-long`});
-		const result = await h.fate(
-			{kind: "mutation", name: "post.edit", input: {id, title: "x".repeat(201)}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("TITLE_TOO_LONG");
-	});
-
-	it("an edit with a body over 10000 chars surfaces BODY_TOO_LONG", async () => {
-		const id = await seedPost({title: `panopost-${STAMP} edit-body-long`});
-		const result = await h.fate(
-			{kind: "mutation", name: "post.edit", input: {id, body: "x".repeat(10_001)}, select: ["id"]},
-			{cookie: author.cookie},
-		);
-		expect(result.ok).toBe(false);
-		if (result.ok) return;
-		expect(result.error.code).toBe("BODY_TOO_LONG");
-	});
+	// The pure title/body content codes (TITLE_REQUIRED on a blank title,
+	// TITLE_TOO_LONG, BODY_TOO_LONG) are unit-tested off-DB in
+	// worker/features/pano/submit-validation.unit.test.ts (ADR 0082) — the
+	// validatePostTitle/validatePostBody editPost calls. The neither-field guard
+	// above is kept: it runs after the DB read and is editPost's own structural
+	// rule, not a pure validator.
 
 	it("editing an unknown post id surfaces POST_NOT_FOUND", async () => {
 		const result = await h.fate(
