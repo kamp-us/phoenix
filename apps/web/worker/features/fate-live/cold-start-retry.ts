@@ -21,6 +21,21 @@
  * {@link LiveTransportError}, which the route renders as a graceful 503 envelope
  * instead of a defect-500.
  *
+ * THE SECOND CHANNEL (#1048): the GET SSE-open path does NOT go through
+ * `makeRpcStub`'s `tryPromise`. The stub's `.fetch` is alchemy's
+ * `fromCloudflareFetcher.fetch`, whose server-shaped branch wraps the cross-DO
+ * call in `Effect.promise(() => fetcher.fetch(request))` with NO catch — so a
+ * cold-DO transport rejection surfaces as a DEFECT (die), not an `RpcCallError`
+ * failure. The defect slips past {@link withColdStartRetry} (it keys on the
+ * FAILURE channel) and the route's `LiveTransportError`→503 boundary, escaping as
+ * a raw HTTP 500. {@link withColdStartRetryFetch} closes the seam: it lifts that
+ * transport defect into the same `RpcCallError`-shaped failure the RPC methods
+ * raise, so the ONE bounded-retry + `LiveTransportError` path covers both
+ * channels. Safe by construction — a remote app error INSIDE the DO's `fetch`
+ * comes back as a 500-status *Response* (alchemy's worker renders the failed
+ * Effect to HTTP), never a promise rejection; only transport/readiness failure
+ * rejects, so a defect on THIS call is a cold-start signal, not a masked bug.
+ *
  * Schedule shape grounds in effect-smol `LLMS.md` §"Working with Schedules"
  * (`ai-docs/src/06_schedule/10_schedules.ts`): `retryBackoffWithLimit` =
  * `Schedule.both(exponential, recurs(N))` for capped backoff, and the
@@ -89,9 +104,54 @@ export const withColdStartRetry = <A, E>(
 ): Effect.Effect<A, E | LiveTransportError, never> =>
 	// Reinterpret the static error channel to the runtime reality (`E` ∪ the hidden
 	// transport error) so the retry + `catchIf` narrow against the real failure.
-	(call as Effect.Effect<A, E | RpcCallErrorShape, never>).pipe(
+	retryTransportFailure(
+		method,
+		call as Effect.Effect<A, E | RpcCallErrorShape, never>,
+	) as Effect.Effect<A, E | LiveTransportError, never>;
+
+/**
+ * Wrap the GET SSE-open `.fetch` cross-DO call. Unlike the RPC methods, `.fetch`
+ * surfaces a cold-DO transport rejection as a DEFECT (alchemy's
+ * `Effect.promise`-wrapped fetcher — see module docblock §"THE SECOND CHANNEL",
+ * #1048), so {@link withColdStartRetry}'s failure-channel key never sees it. We
+ * first lift that defect into an `RpcCallError`-shaped FAILURE, then route it
+ * through the identical bounded-retry + {@link LiveTransportError} path — so the
+ * open path warms up and renders 503 exactly like the RPC seam, never a raw 500.
+ *
+ * The declared `E` (the `.fetch` `HttpServerError`/`RequestError` request-framing
+ * channel) passes through untouched: the route deliberately `orDie`s that (a real
+ * framing defect), and lifting it would wrongly mask it as a cold-start retry.
+ */
+export const withColdStartRetryFetch = <A, E>(
+	method: string,
+	call: Effect.Effect<A, E, never>,
+): Effect.Effect<A, E | LiveTransportError, never> =>
+	retryTransportFailure(
+		method,
+		call.pipe(
+			// A defect on `.fetch` can ONLY be the cold-DO transport rejection (a remote
+			// app error returns a 500 *Response*, not a rejection — module docblock), so
+			// reinterpret it to the same failure the RPC seam already raises. The declared
+			// `E` stays on its own channel, never lifted.
+			Effect.catchDefect((cause) =>
+				Effect.fail({_tag: "RpcCallError", cause} satisfies RpcCallErrorShape),
+			),
+		) as Effect.Effect<A, E | RpcCallErrorShape, never>,
+	) as Effect.Effect<A, E | LiveTransportError, never>;
+
+/**
+ * The shared bounded-retry + convert both wrappers above reuse: retry ONLY the
+ * `RpcCallError`-shaped transport failure (capped backoff), then map a surviving
+ * one to the typed {@link LiveTransportError}. Any other channel member passes
+ * through unchanged.
+ */
+const retryTransportFailure = <A, E>(
+	method: string,
+	call: Effect.Effect<A, E | RpcCallErrorShape, never>,
+): Effect.Effect<A, Exclude<E, RpcCallErrorShape> | LiveTransportError, never> =>
+	call.pipe(
 		Effect.retry({schedule: coldStartRetrySchedule, while: isRpcCallError}),
 		Effect.catchIf(isRpcCallError, (error) =>
 			Effect.fail(new LiveTransportError({method, cause: error.cause})),
 		),
-	);
+	) as Effect.Effect<A, Exclude<E, RpcCallErrorShape> | LiveTransportError, never>;
