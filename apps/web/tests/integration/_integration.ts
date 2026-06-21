@@ -36,6 +36,7 @@ import * as Schedule from "effect/Schedule";
 import * as HttpClient from "effect/unstable/http/HttpClient";
 import {inject} from "vitest";
 import Stack from "../../alchemy.run.ts";
+import {isTransientDeployError} from "./_deploy-transient.ts";
 import {type Harness, harness} from "./_harness.ts";
 import {slugify, stageName} from "./_stage-name.ts";
 
@@ -266,35 +267,6 @@ export const warmFateRead = (url: string): Effect.Effect<void, never, never> =>
 			),
 		),
 	);
-
-// The eventually-consistent CF signatures the stage deploy can transiently draw under
-// cross-PR load on the shared account — registry lag right after `putScript`. Grounded in
-// the `@distilled.cloud/cloudflare` error decode (`src/services/workers.ts`): `WorkerNotFound`
-// = code 10007, `InternalServerError` = 15000, `UnknownCloudflareError` = 10013 — the same tags
-// alchemy-effect's own create path retries piecewise (`Cloudflare/Workers/Worker.ts`), here
-// applied to the deploy as a whole. ONLY these transient tags retry; a real deploy error (bad
-// config, auth, a 10068 invalid-script) carries a different tag and still fails fast.
-const DEPLOY_TRANSIENT_TAGS = new Set([
-	"WorkerNotFound",
-	"InternalServerError",
-	"UnknownCloudflareError",
-]);
-
-// One more eventually-consistent signature, decoded NOT to a code-specific tag but to the
-// bare HTTP-404 fallback `NotFound` (`@distilled.cloud/core/errors`, via `HTTP_STATUS_MAP[404]`):
-// "This Worker has no versions, which means this Worker has no content or versioned settings."
-// — the deploy reads the freshly-`putScript`ed worker before its version propagates through the
-// registry (an original #1010 flake signature). Matched on the MESSAGE, not the bare `NotFound`
-// _tag: a blanket 404 retry would mask a genuinely-missing resource, which must still fail fast.
-// This precise substring is the version-propagation race alone.
-const NO_VERSIONS_MESSAGE = "no versions";
-
-const isTransientDeployError = (error: unknown): boolean => {
-	if (typeof error !== "object" || error === null || !("_tag" in error)) return false;
-	const {_tag: tag, message} = error as {_tag: unknown; message?: unknown};
-	if (typeof tag === "string" && DEPLOY_TRANSIENT_TAGS.has(tag)) return true;
-	return tag === "NotFound" && typeof message === "string" && message.includes(NO_VERSIONS_MESSAGE);
-};
 
 /**
  * Wrap the stage `deploy` so a TRANSIENT CF deploy error self-heals. The ~24 ephemeral
