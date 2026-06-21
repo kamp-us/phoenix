@@ -2,11 +2,8 @@
  * Unit coverage for the pasaport `me` resolver's auth gate — the anonymous →
  * `UNAUTHORIZED` boundary, proven with NO database (ADR 0082). The litmus: the
  * gate is wrong-or-right independent of the DB — `CurrentUser.required` fails
- * before any `Pasaport` read — so it belongs at `unit`, not on a faked SQL engine.
+ * before any `Pasaport` read — so it belongs at `unit`, not on a database.
  *
- * Re-homed from the deleted `node:sqlite` fate-op suite
- * (`features/fate/sozluk.test.ts`), whose "me anonymous → UNAUTHORIZED" case
- * booted the full interpreter over a faked engine only to assert this pure gate.
  * The `me` op runs through `resolveWire` — its real external interface (`resolve`
  * decode + the `encodeWireError` class→wire-code seam) — over an anonymous
  * `CurrentUser` and a fail-on-contact `Pasaport` sentinel: the sentinel proves the
