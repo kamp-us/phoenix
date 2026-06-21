@@ -12,13 +12,21 @@
  * control path (`fate-live.test.ts`). What stays is the route wiring NO other
  * integration file exercises: the RSS feed and the server-side flag-evaluation
  * seam (#510).
+ *
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
+ * is shared with every migrated file. It isolates by NS: the email + post title it seeds
+ * are `${NS}-…` prefixed, and the RSS assertion that reads the (now-shared) global feed
+ * checks only id/title-membership of its OWN seeded post (its NS-prefixed title is present)
+ * — never an exact item set, which another file's posts would now break. The structural
+ * RSS test and the flag-evaluation seam seed nothing and read fixed routes.
  */
 import {describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 describe("RSS feed — /rss.xml over the deployed worker", () => {
 	it("returns well-formed RSS 2.0 with the feed's own self-link", async () => {
@@ -35,8 +43,8 @@ describe("RSS feed — /rss.xml over the deployed worker", () => {
 	});
 
 	it("lists a submitted post with an absolute /pano link + pubDate", async () => {
-		const author = await h.signUp(`rss-${STAMP}@test.local`, "hunter2hunter2", "rss");
-		const title = `rss feed test post ${STAMP}`;
+		const author = await h.signUp(`${NS}-rss@test.local`, "hunter2hunter2", "rss");
+		const title = `${NS} rss feed test post`;
 		const submit = await h.fate(
 			{
 				kind: "mutation",

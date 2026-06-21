@@ -11,15 +11,19 @@
  * saves resolve correctly across a set of posts in one read, with each viewer
  * seeing only their own.
  *
- * D1 is real remote Cloudflare D1 (per-file isolated stage); every email/title is
- * uniquely prefixed (`panobm-${STAMP}-…`) so concurrent files never collide.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027): its one D1 is
+ * shared with every migrated file. It isolates by NS — every email/title it seeds carries
+ * the deterministic `${NS}-…` prefix, and every assertion reads a post back by its own
+ * seeded id (`post(idOrSlug)`), never an unfiltered list/feed, so another file's posts on
+ * the shared D1 are never in scope.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
+const NS = nsToken(import.meta.url);
 
 interface PostNode {
 	__typename: string;
@@ -63,25 +67,25 @@ async function readIsSaved(id: string, cookie?: string): Promise<boolean | null>
 }
 
 beforeAll(async () => {
-	saver = await h.signUp(`panobm-${STAMP}-saver@test.local`, "hunter2hunter2", "kaydeden");
-	other = await h.signUp(`panobm-${STAMP}-other@test.local`, "hunter2hunter2", "öteki");
+	saver = await h.signUp(`${NS}-saver@test.local`, "hunter2hunter2", "kaydeden");
+	other = await h.signUp(`${NS}-other@test.local`, "hunter2hunter2", "öteki");
 });
 
 describe("pano bookmarks — isSaved view scalar", () => {
 	it("resolves false for a signed-in viewer who has not saved the post", async () => {
-		const id = await seedPost(`panobm-${STAMP} unsaved`);
+		const id = await seedPost(`${NS} unsaved`);
 		expect(await readIsSaved(id, saver.cookie)).toBe(false);
 	});
 
 	it("resolves null for an anonymous viewer", async () => {
-		const id = await seedPost(`panobm-${STAMP} anon view`);
+		const id = await seedPost(`${NS} anon view`);
 		expect(await readIsSaved(id)).toBeNull();
 	});
 
 	it("stamps each viewer's own saves across a set of posts (batched, no cross-talk)", async () => {
-		const a = await seedPost(`panobm-${STAMP} set a`);
-		const b = await seedPost(`panobm-${STAMP} set b`);
-		const c = await seedPost(`panobm-${STAMP} set c`);
+		const a = await seedPost(`${NS} set a`);
+		const b = await seedPost(`${NS} set b`);
+		const c = await seedPost(`${NS} set c`);
 
 		// saver saves a + c; `other` saves b.
 		for (const [id, cookie] of [
@@ -108,7 +112,7 @@ describe("pano bookmarks — isSaved view scalar", () => {
 
 describe("pano bookmarks — post.save / post.unsave", () => {
 	it("save then unsave flip isSaved true → false and return the re-resolved Post", async () => {
-		const id = await seedPost(`panobm-${STAMP} toggle`);
+		const id = await seedPost(`${NS} toggle`);
 
 		const saved = await h.fate(
 			{kind: "mutation", name: "post.save", input: {id}, select: POST_SELECT},
@@ -133,7 +137,7 @@ describe("pano bookmarks — post.save / post.unsave", () => {
 	});
 
 	it("is idempotent: re-saving an already-saved post stays isSaved true", async () => {
-		const id = await seedPost(`panobm-${STAMP} idempotent`);
+		const id = await seedPost(`${NS} idempotent`);
 
 		const first = await h.fate(
 			{kind: "mutation", name: "post.save", input: {id}, select: POST_SELECT},
@@ -166,7 +170,7 @@ describe("pano bookmarks — post.save / post.unsave", () => {
 	});
 
 	it("an anonymous save is rejected with UNAUTHORIZED", async () => {
-		const id = await seedPost(`panobm-${STAMP} anon save`);
+		const id = await seedPost(`${NS} anon save`);
 		const result = await h.fate({
 			kind: "mutation",
 			name: "post.save",
@@ -179,7 +183,7 @@ describe("pano bookmarks — post.save / post.unsave", () => {
 	});
 
 	it("an anonymous unsave is rejected with UNAUTHORIZED", async () => {
-		const id = await seedPost(`panobm-${STAMP} anon unsave`);
+		const id = await seedPost(`${NS} anon unsave`);
 		const result = await h.fate({
 			kind: "mutation",
 			name: "post.unsave",
@@ -196,7 +200,7 @@ describe("pano bookmarks — post.save / post.unsave", () => {
 			{
 				kind: "mutation",
 				name: "post.save",
-				input: {id: `post_${STAMP}_does_not_exist`},
+				input: {id: `${NS}_post_does_not_exist`},
 				select: ["id"],
 			},
 			{cookie: saver.cookie},
@@ -211,7 +215,7 @@ describe("pano bookmarks — post.save / post.unsave", () => {
 			{
 				kind: "mutation",
 				name: "post.unsave",
-				input: {id: `post_${STAMP}_does_not_exist`},
+				input: {id: `${NS}_post_does_not_exist`},
 				select: ["id"],
 			},
 			{cookie: saver.cookie},

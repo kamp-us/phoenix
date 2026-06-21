@@ -17,16 +17,21 @@
  * surface (author/authorId/myVote) round-trips. One small seed, single page, no
  * ordering walk.
  *
- * D1 is shared across all test files (one deploy), so the slug is uniquely
- * prefixed (`szread-${Date.now()}-…`) — never reuse a slug another test may touch.
+ * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027): its one D1
+ * is shared with every migrated file, so the seeded term's slug carries the deterministic
+ * `NS` prefix (`${NS}-detail`) and the `terms` list read is scoped to that NS slug by
+ * id-membership (find the row whose slug is this file's) — never an exact list/count,
+ * which another file's terms would now break. The `term(slug)` detail + unknown-slug
+ * reads are already keyed to the NS slug.
  */
 import {beforeAll, describe, expect, it} from "vitest";
-import {integrationStack} from "./_integration.ts";
+import {sharedStack} from "./_integration.ts";
+import {nsToken} from "./_stage-name.ts";
 
-const h = integrationStack(import.meta.url);
+const h = sharedStack();
 
-const STAMP = Date.now();
-const SLUG = `szread-${STAMP}-detail`;
+const NS = nsToken(import.meta.url);
+const SLUG = `${NS}-detail`;
 
 interface TermNode {
 	slug: string;
@@ -103,7 +108,7 @@ describe("sozluk reads — deployed worker /fate (system smoke)", () => {
 		const result = await h.fate({
 			kind: "query",
 			name: "term",
-			args: {slug: `szread-${STAMP}-does-not-exist`},
+			args: {slug: `${NS}-does-not-exist`},
 			select: ["slug"],
 		});
 		expect(result.ok).toBe(true);
