@@ -58,42 +58,81 @@ export interface ProfileRow {
 	commentCount: number;
 }
 
-export type ContributionKind = "definition" | "post" | "comment";
-
-interface DefinitionContributionNode {
-	kind: "definition";
+// The shared discriminant + identity fields every contribution variant carries.
+interface ContributionBase {
 	id: string;
 	createdAt: Date;
 	score: number;
-	bodyExcerpt: string;
-	termSlug: string;
-	termTitle: string;
 }
 
-interface PostContributionNode {
-	kind: "post";
-	id: string;
-	createdAt: Date;
-	score: number;
-	title: string;
-	slug: string | null;
-	bodyExcerpt: string | null;
+/**
+ * The single source of the contribution-union's variant→fields knowledge (the
+ * `Contribution` concept is *either* a definition, post, or comment). Each
+ * variant lists ONLY its own fields, above {@link ContributionBase}; every other
+ * shape — the discriminated {@link ContributionNode}, the flattened
+ * {@link ContributionRow}, the runtime null-padding in `shapers`, and the
+ * `ContributionView` field map — derives from this map so a variant (or a
+ * per-variant field) is declared once (ADR 0018: fate has no union type, so the
+ * variants are flattened onto one nullable row — but the membership fact lives
+ * here, not spread across four sites).
+ */
+interface ContributionVariants {
+	definition: {bodyExcerpt: string; termSlug: string; termTitle: string};
+	post: {title: string; slug: string | null; bodyExcerpt: string | null};
+	comment: {bodyExcerpt: string; postId: string; postTitle: string};
 }
 
-interface CommentContributionNode {
-	kind: "comment";
-	id: string;
-	createdAt: Date;
-	score: number;
-	bodyExcerpt: string;
-	postId: string;
-	postTitle: string;
-}
+export type ContributionKind = keyof ContributionVariants;
 
-export type ContributionNode =
-	| DefinitionContributionNode
-	| PostContributionNode
-	| CommentContributionNode;
+// `kind` + base + the variant's own fields, per discriminant.
+type ContributionNodeOf<K extends ContributionKind> = {kind: K} & ContributionBase &
+	ContributionVariants[K];
+
+export type ContributionNode = {[K in ContributionKind]: ContributionNodeOf<K>}[ContributionKind];
+
+// Union of every variant's field names — the columns the flat row flattens onto.
+type ContributionVariantField = {
+	[K in ContributionKind]: keyof ContributionVariants[K];
+}[ContributionKind];
+
+// Each variant field's value type, unioned across the variants that declare it
+// (and `null`, since the row nulls every field a given `kind` doesn't own).
+type ContributionVariantValue<F extends ContributionVariantField> = {
+	[K in ContributionKind]: F extends keyof ContributionVariants[K]
+		? ContributionVariants[K][F]
+		: never;
+}[ContributionKind];
+
+// The variant-field columns, all nullable — the flattened half of the row.
+type ContributionVariantColumns = {
+	[F in ContributionVariantField]: ContributionVariantValue<F> | null;
+};
+
+// Flat **discriminant** reshape of {@link ContributionNode} (ADR 0018: fate has
+// no union type). Derived from {@link ContributionVariants}: base fields plus
+// every variant's fields made nullable, populated per `kind`.
+export type ContributionRow = {kind: ContributionKind} & ContributionBase &
+	ContributionVariantColumns;
+
+/**
+ * The variant→field-names manifest, the runtime witness of
+ * {@link ContributionVariants}. `shapers.toContributionRow` reads it to null-pad
+ * generically (every variant column starts `null`, then the node's own fields
+ * overlay) — so a forgotten field is a compile-time error here, never a silent
+ * wrong-shape in a hand-written `case`. The `satisfies` ties the runtime list to
+ * the type-level variant map: drop or misspell a field name and it fails to
+ * compile.
+ */
+export const CONTRIBUTION_VARIANT_FIELDS = {
+	definition: ["bodyExcerpt", "termSlug", "termTitle"],
+	post: ["title", "slug", "bodyExcerpt"],
+	comment: ["bodyExcerpt", "postId", "postTitle"],
+} as const satisfies {[K in ContributionKind]: ReadonlyArray<keyof ContributionVariants[K]>};
+
+// Every variant column name, deduped — the keys the flat row nulls then overlays.
+export const CONTRIBUTION_VARIANT_FIELD_NAMES: ReadonlyArray<ContributionVariantField> = [
+	...new Set(Object.values(CONTRIBUTION_VARIANT_FIELDS).flat() as ContributionVariantField[]),
+];
 
 export interface ContributionEdge {
 	cursor: string;
@@ -105,26 +144,6 @@ export interface ContributionConnection {
 	hasNextPage: boolean;
 	endCursor: string | null;
 	totalCount: number;
-}
-
-// Flat **discriminant** reshape of {@link ContributionNode} (ADR 0018: fate has
-// no union type). Variant fields are nullable, populated per `kind`.
-export interface ContributionRow {
-	kind: ContributionKind;
-	id: string;
-	score: number;
-	createdAt: Date;
-	// definition + comment carry a non-null excerpt; post's is nullable.
-	bodyExcerpt: string | null;
-	// definition only
-	termSlug: string | null;
-	termTitle: string | null;
-	// post only
-	title: string | null;
-	slug: string | null;
-	// comment only
-	postId: string | null;
-	postTitle: string | null;
 }
 
 export class Pasaport extends Context.Service<

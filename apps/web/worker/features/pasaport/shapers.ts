@@ -4,7 +4,12 @@
  * (`.patterns/fate-effect-operations.md`).
  */
 
-import type {ContributionNode, ContributionRow, ProfileRow} from "./Pasaport.ts";
+import {
+	CONTRIBUTION_VARIANT_FIELD_NAMES,
+	type ContributionNode,
+	type ContributionRow,
+	type ProfileRow,
+} from "./Pasaport.ts";
 import type {AccountDeletionReceipt, Profile, User} from "./views.ts";
 
 export interface UserFields {
@@ -48,43 +53,22 @@ export const toAccountDeletionReceipt = (): AccountDeletionReceipt => ({
 	deleted: true,
 });
 
-// Flatten a discriminated `ContributionNode` into the flat `ContributionRow`;
-// non-applicable variant fields are `null`.
+// Flatten a discriminated `ContributionNode` onto the flat `ContributionRow`
+// (ADR 0018: fate has no union type). Every variant column starts `null`, then
+// the node's own fields overlay — so the null-padding is derived from the
+// `CONTRIBUTION_VARIANT_FIELD_NAMES` manifest, not hand-written per `case`. A
+// forgotten field is a compile error at the manifest, not a silent wrong shape.
 export function toContributionRow(node: ContributionNode): ContributionRow {
-	const base = {kind: node.kind, id: node.id, score: node.score, createdAt: node.createdAt};
-	switch (node.kind) {
-		case "definition":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: node.termSlug,
-				termTitle: node.termTitle,
-				title: null,
-				slug: null,
-				postId: null,
-				postTitle: null,
-			};
-		case "post":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: null,
-				termTitle: null,
-				title: node.title,
-				slug: node.slug,
-				postId: null,
-				postTitle: null,
-			};
-		case "comment":
-			return {
-				...base,
-				bodyExcerpt: node.bodyExcerpt,
-				termSlug: null,
-				termTitle: null,
-				title: null,
-				slug: null,
-				postId: node.postId,
-				postTitle: node.postTitle,
-			};
-	}
+	const variantColumns = Object.fromEntries(
+		CONTRIBUTION_VARIANT_FIELD_NAMES.map((name) => [name, null]),
+	);
+	const {kind, id, score, createdAt, ...variantFields} = node;
+	return {
+		...variantColumns,
+		kind,
+		id,
+		score,
+		createdAt,
+		...variantFields,
+	} as ContributionRow;
 }
