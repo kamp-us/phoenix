@@ -1,6 +1,6 @@
 ---
 name: review-plan
-description: Verify a planned epic's ledger against the deterministic structural floor before its children become pickable — the plan-layer gate, the symmetric twin of review-code one stage earlier. Trigger on "review the plan for epic #N", "gate epic #N", "run review-plan", "verify the ledger for #N", "flip the planned children of #N", or whenever a plan-epic-output epic needs its `status:planned` children gated to `status:triaged`. This is the verification stage between plan-epic and write-code: it consumes the epic ledger plan-epic produced and produces a pass/fail verdict against the `epic-ledger` hard-defect floor — flipping `status:planned → status:triaged` on a clean ledger, posting a per-defect FAIL on a dirty one. The gate is portable: it resolves the in-repo `packages/epic-ledger` when present and falls back to the published `@kampus/epic-ledger` CLI otherwise (ADR 0064), so it runs in a foreign install too. It never repairs the ledger and never blocks the flip on a judgment call.
+description: Verify a planned epic's ledger against the deterministic structural floor before its children become pickable — the plan-layer gate, the symmetric twin of review-code one stage earlier. Trigger on "review the plan for epic #N", "gate epic #N", "run review-plan", "verify the ledger for #N", "flip the planned children of #N", or whenever a plan-epic-output epic needs its `status:planned` children gated to `status:triaged`. This is the verification stage between plan-epic and write-code: it consumes the epic ledger plan-epic produced and produces a pass/fail verdict against the `epic-ledger` hard-defect floor — flipping `status:planned → status:triaged` on a clean ledger, posting a per-defect FAIL on a dirty one. The gate is portable: it resolves the in-repo consolidated `packages/pipeline-cli` (`epic-ledger` tool) when present and falls back to the published `@kampus/pipeline-cli` CLI otherwise (ADR 0064, epic #994), so it runs in a foreign install too. It never repairs the ledger and never blocks the flip on a judgment call.
 ---
 
 # review-plan
@@ -173,28 +173,28 @@ FAIL verdict and flips **nothing**. It returns a structured `GateVerdict`
 
 Invoke it through the package's CLI (the `bin.ts` entry, wired over `NodeRuntime.runMain` +
 `NodeServices.layer` — you run the binary, you don't re-implement the floor in prose). Which
-binary — the in-repo `packages/epic-ledger/src/bin.ts` or the published `@kampus/epic-ledger`
-CLI — is resolved by the block just below; either way the floor is identical.
+binary — the in-repo `packages/pipeline-cli/src/bin.ts epic-ledger` or the published
+`@kampus/pipeline-cli` CLI's `epic-ledger` tool — is resolved by the block just below; either
+way the floor is identical.
 
 **Resolve the gate binary — in-repo first, published fallback (ADR
-[0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-epic-ledger-npm-publish-automated-release.md)).**
+[0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-epic-ledger-npm-publish-automated-release.md); epic #994).**
 `review-plan` is **portable**: the same `epic-ledger` floor runs whether or not the plugin
 is installed in phoenix. The gate dependency resolves **in-repo first, published fallback** —
-prefer the on-disk `packages/epic-ledger/src/bin.ts` when it exists (phoenix-local: no
-network, no published-artifact dependency on the daily pipeline), and otherwise invoke the
-**published** `@kampus/epic-ledger` CLI via `pnpm dlx`. Build the invocation once into a
-`$GATE` command and use it everywhere below, so there is exactly one resolution site:
+prefer the on-disk consolidated `packages/pipeline-cli/src/bin.ts` when it exists (phoenix-local:
+no network, no published-artifact dependency on the daily pipeline), and otherwise invoke the
+**published** `@kampus/pipeline-cli` CLI's `epic-ledger` tool via `pnpm dlx`. Build the invocation
+once into a `$GATE` command and use it everywhere below, so there is exactly one resolution site:
 
 ```bash
-# resolve the gate command once — in-repo-first, published-fallback (ADR 0064)
-if [ -f packages/epic-ledger/src/bin.ts ]; then
-  GATE="node packages/epic-ledger/src/bin.ts"          # phoenix-local: run the in-repo bin directly
+# resolve the gate command once — in-repo-first, published-fallback (ADR 0064; epic #994)
+if [ -f packages/pipeline-cli/src/bin.ts ]; then
+  GATE="node packages/pipeline-cli/src/bin.ts epic-ledger"   # phoenix-local: run the in-repo consolidated bin
 else
-  # foreign install: run the PUBLISHED CLI. Version tracks the in-repo package (ADR 0064 §3):
-  # the published version is authoritative-by-package.json, and a gate-logic change bumps it +
-  # cuts a matching epic-ledger-v* release in the same change, so `@latest` is the version that
-  # mirrors the current source. Pin a concrete `@<version>` only to reproduce an older verdict.
-  GATE="pnpm dlx @kampus/epic-ledger@latest"
+  # foreign install: run the PUBLISHED consolidated CLI. The pin is the single source-of-truth
+  # version (`install.sh`'s PIN + the other skills' published-fallback share it; epic #994 / #1003);
+  # bump all in lockstep when pipeline-cli releases. Pin a concrete `@<version>` to reproduce a verdict.
+  GATE="pnpm dlx @kampus/pipeline-cli@0.1.0 epic-ledger"
 fi
 ```
 
@@ -207,7 +207,6 @@ Then run the gate through `$GATE`:
 # from the repo root:
 $GATE <EPIC>            # the live gate — flips + comments
 $GATE <EPIC> --dry-run  # read-only: validate + print, no mutation
-# phoenix-local equivalent via the workspace script:  pnpm --filter @kampus/epic-ledger gate <EPIC>
 ```
 
 `runGate(<EPIC>)` is the underlying action the CLI calls (`epic-ledger`'s `runGate`,

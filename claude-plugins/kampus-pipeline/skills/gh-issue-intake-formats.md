@@ -726,6 +726,12 @@ closing the #375 drift class).
   - `claude-plugins/kampus-pipeline/skills/review-skill/**`
   - `claude-plugins/kampus-pipeline/skills/review-plan/**`
   - `claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md` (this file)
+- the **plugin hook surface** — `claude-plugins/kampus-pipeline/hooks/**` (the `install.sh`
+  that drops the installed `pipeline-cli` and the `guard.sh` fail-open dispatch wrapper) plus
+  `claude-plugins/kampus-pipeline/hooks.json` (the foreign-repo hook manifest). These are
+  self-weakening by nature — they wire the guard dispatch + the CLI install the `.claude/settings.json`
+  hooks depend on (ADR [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md),
+  #1003). The `^claude-plugins/kampus-pipeline/hooks(/|\.json$)` clause covers the dir + the manifest.
 - the **enforcement-guard packages** — the executable guardrails that gate agent tooling,
   control-plane *by nature* the same way the gate-critical skills are (ADR
   [0065](https://github.com/kamp-us/phoenix/blob/main/.decisions/0065-gate-critical-skills-are-blocking.md)),
@@ -773,13 +779,13 @@ Every consumer matches the set with this **one** anchored regex (POSIX ERE; the 
 form below). Cite this regex; do **not** re-hard-code the path list:
 
 ```
-^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/
+^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/
 ```
 
 ```bash
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — one definition, no fourth copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a

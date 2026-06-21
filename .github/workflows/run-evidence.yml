@@ -1,6 +1,6 @@
 # Run-evidence producer (ADR 0054 + 0056, epic #238 Phase 2 / #245).
 #
-# On every PR, run crabbox + the @kampus/crabbox-manifest adapter to assemble the
+# On every PR, run crabbox + pipeline-cli's `crabbox-manifest` tool to assemble the
 # ADR 0054 §2 run-evidence manifest and publish it as a GitHub Actions run artifact
 # named `run-evidence` — the storage ADR 0056 chose. The gate consumers (#246 ship-it,
 # #247 review-code) resolve the PR head SHA, find THIS workflow's run with that
@@ -159,17 +159,15 @@ jobs:
       - name: Assemble run-evidence manifest
         run: |
           set -euo pipefail
-          # `bundle/` is at the repo root, but the adapter runs with its CWD set to
-          # `packages/crabbox-manifest` (pnpm --filter), so `--output` must be an
-          # absolute path or it lands under the package dir. The later steps
-          # (stage JUnit, upload-artifact) run at the repo root, so they read `bundle/`.
+          # The adapter runs at the repo root, so `--output` is given as an absolute
+          # path under `bundle/` (the later stage-JUnit / upload-artifact steps read
+          # `bundle/` from the repo root). `crabbox-manifest` is a flat pipeline-cli
+          # tool (flags directly, no `adapter` subcommand) — flags are passed as-is.
           BUNDLE="$GITHUB_WORKSPACE/bundle"
           mkdir -p "$BUNDLE"
-          # No `--` before the flags: pnpm forwards a literal `--` into the script,
-          # which effect-cli reads as "end of flags" and then rejects --run-summary.
           JUNIT_ARG=()
           if [ -n "${JUNIT:-}" ]; then JUNIT_ARG=(--junit "$JUNIT"); fi
-          pnpm --filter @kampus/crabbox-manifest adapter \
+          node packages/pipeline-cli/src/bin.ts crabbox-manifest \
             --run-summary "$RUN_SUMMARY" \
             "${JUNIT_ARG[@]}" \
             --commit "${{ github.event.pull_request.head.sha }}" \

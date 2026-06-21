@@ -121,10 +121,11 @@ fi
 # ── Tier 3 — optional (absence degrades a stage, never breaks the pipeline) ──
 hdr "Tier 3 — optional (degrades a stage; pipeline still runs)"
 
-# 3a. the `pnpm dlx` packages adr / review-plan reach for
-for pkg in @kampus/decisions-index @kampus/epic-ledger; do
+# 3a. the consolidated `pnpm dlx` package adr / review-plan reach for (epic #994:
+# decisions-index + epic-ledger now ship as tools inside @kampus/pipeline-cli)
+for pkg in @kampus/pipeline-cli; do
 	if npm view "$pkg" version >/dev/null 2>&1; then
-		say "$PASS" "$pkg resolves on the npm registry"
+		say "$PASS" "$pkg resolves on the npm registry (provides decisions-index / epic-ledger)"
 	else
 		say "$WARN" "$pkg does not resolve — adr/review-plan run degraded"
 		fix "publish $pkg, or vendor it; see ADR 0062 §3"

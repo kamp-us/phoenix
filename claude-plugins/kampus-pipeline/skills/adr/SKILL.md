@@ -27,11 +27,11 @@ Capture one decision per file in `.decisions/`. Index links them; CLAUDE.md link
 3. Write `.decisions/NNNN-slug.md` using the template below — the front-matter `title`/`status`/`date` are the **source of truth** for the index row, so write the exact display text you want in the table there (inline markdown and all).
 4. **Regenerate** `.decisions/index.md` — do **not** hand-append a row (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md)): `index.md` is generated output now, and a hand-appended row at the table tail is exactly the concurrent-merge collision the generator removes. Resolve the generator **in-repo first, published fallback** — prefer the on-disk workspace package when it's present, else the published CLI (the same portability shape `review-plan` uses for its gate, ADR [0064](https://github.com/kamp-us/phoenix/blob/main/.decisions/0064-epic-ledger-npm-publish-automated-release.md)), so the step works in a foreign install too, not just phoenix:
    ```bash
-   # resolve the index generator once — in-repo-first, published-fallback
-   if [ -f packages/decisions-index/src/bin.ts ]; then
-     pnpm --filter @kampus/decisions-index generate    # phoenix-local: the workspace package
+   # resolve the index generator once — in-repo-first, published-fallback (epic #994)
+   if [ -f packages/pipeline-cli/src/bin.ts ]; then
+     node packages/pipeline-cli/src/bin.ts decisions-index generate   # phoenix-local: the in-repo consolidated bin
    else
-     pnpm dlx @kampus/decisions-index@latest generate   # foreign install: the published CLI
+     pnpm dlx @kampus/pipeline-cli@0.1.0 decisions-index generate      # foreign install: the published consolidated CLI (single-source pin)
    fi
    ```
    The published CLI operates on the local `.decisions/` filesystem (no GitHub target), so there is no `$REPO`/`$CLAUDE_PIPELINE_REPO` resolution here — it is purely the in-repo-vs-published invocation swap.
@@ -62,7 +62,7 @@ tags: [<area>, <area>]
 
 ## Index — generated output
 
-`.decisions/index.md` is a heading + a markdown table, **regenerated** from the ADR files by `@kampus/decisions-index` (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md)) — never hand-edited. Each row is derived from one file's front-matter (`id` → linked `title` → `status` → `date`), ordered ascending by `id`:
+`.decisions/index.md` is a heading + a markdown table, **regenerated** from the ADR files by pipeline-cli's `decisions-index` tool (ADR [0066](https://github.com/kamp-us/phoenix/blob/main/.decisions/0066-generate-decisions-index.md)) — never hand-edited. Each row is derived from one file's front-matter (`id` → linked `title` → `status` → `date`), ordered ascending by `id`:
 
 ```markdown
 # Decisions
@@ -83,4 +83,4 @@ The row's `Title`/`Status`/`Date` cells are the file's front-matter values **ver
 - Superseding an older ADR: in the new file write `Supersedes [NNNN](NNNN-slug.md).` in `## Context`, and edit the old file's front-matter `status: superseded by [NNNN](NNNN-slug.md)` plus a body line `Superseded by [NNNN](NNNN-slug.md).` Then regenerate so the index reflects both.
 - Date is today (`date` command if unsure).
 - Never edit an accepted ADR's decision text after the fact — supersede instead.
-- Never hand-edit `index.md` — edit the ADR file's front-matter and regenerate, resolving the generator in-repo-first / published-fallback (Step 4): `pnpm --filter @kampus/decisions-index generate` when the workspace package is on disk, else `pnpm dlx @kampus/decisions-index@latest generate`.
+- Never hand-edit `index.md` — edit the ADR file's front-matter and regenerate, resolving the generator in-repo-first / published-fallback (Step 4): `node packages/pipeline-cli/src/bin.ts decisions-index generate` when the consolidated bin is on disk, else `pnpm dlx @kampus/pipeline-cli@0.1.0 decisions-index generate`.

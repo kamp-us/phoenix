@@ -49,6 +49,11 @@ apps/web/tests/e2e/.auth
 # Local scratch (uncommitted explorations)
 /.scratch/
 
+# pipeline-cli data dir: where the SessionStart install.sh drops the installed
+# @kampus/pipeline-cli (deps bundled) the guard hooks resolve (ADR 0103, #1003).
+# Per-machine, never committed — mirrors the plugin's ${CLAUDE_PLUGIN_DATA}.
+/.claude/.pipeline-cli-data/
+
 # OS
 .DS_Store
 

@@ -3,8 +3,8 @@ name: skill-gh-lint
 # The mechanical enforcement of the REST-only-on-this-org convention (#743): grep
 # the whole skill corpus for GraphQL-path `gh` invocations (`gh project`, GraphQL
 # `gh pr/issue edit`, `gh api graphql`) and FAIL on any match. It reuses
-# @kampus/gh-phoenix's `lint-skills` CLI; the match patterns + self-exempts live
-# once in the package (lint.ts), never re-grepped here.
+# pipeline-cli's `gh-phoenix lint-skills` mode; the match patterns + self-exempts
+# live once in the tool (lint.ts), never re-grepped here.
 #
 # Scans the FULL corpus (not just changed files) so a GraphQL-path call anywhere in
 # the skills is caught regardless of which PR introduced it, and FAILS CLOSED on
@@ -45,4 +45,4 @@ jobs:
           set -euo pipefail
           find claude-plugins/kampus-pipeline/skills -type f \( -name '*.md' -o -name '*.sh' \) -print0 \
             | sort -z \
-            | xargs -0 node packages/gh-phoenix/src/bin.ts lint-skills
+            | xargs -0 node packages/pipeline-cli/src/bin.ts gh-phoenix lint-skills

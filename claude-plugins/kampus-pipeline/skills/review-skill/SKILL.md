@@ -185,7 +185,7 @@ the path list here (that fourth copy is exactly the #375 drift class §CP closes
 ```bash
 PR=<pr number>
 # the canonical §CP probe — one definition all four gates cite
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'
 # --paginate streams filenames (the API caps per_page at 100, NOT 300); grep aggregates the §CP
 # matches ACROSS pages — a jq `[ … ]` aggregate would emit one array PER PAGE. `|| true`: no match
 # is grep exit 1, an empty (non-control-plane) result, not a failure (#725).

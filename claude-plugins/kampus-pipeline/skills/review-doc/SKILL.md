@@ -157,7 +157,7 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
   (Step 5).
 
   ```bash
-  CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set (ADR 0073 §6; guard pkgs added by 0100)
+  CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set (ADR 0073 §6; guard pkgs added by 0100; hooks added by 0103/#1003)
   # --paginate streams filenames (the API caps per_page at 100); grep aggregates the §CP matches
   # ACROSS pages — a jq `[ … ]` aggregate would emit one array PER PAGE. `|| true`: no match is
   # grep exit 1, an empty (non-control-plane) result, not a failure (#725).

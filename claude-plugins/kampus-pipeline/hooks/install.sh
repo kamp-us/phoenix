@@ -1,7 +1,13 @@
 #!/usr/bin/env bash
-# SessionStart: install @kampus/pipeline-cli into ${CLAUDE_PLUGIN_DATA} once,
+# SessionStart: install @kampus/pipeline-cli into the pipeline data dir once,
 # version-aware + idempotent + network-resilient. See ADR 0103 and
 # .patterns/plugin-sessionstart-install.md.
+#
+# Data dir (where the CLI is installed) is resolved from, in order:
+#   1. $KAMPUS_PIPELINE_DATA  — phoenix's .claude/settings.json self-wiring (#1003)
+#   2. $CLAUDE_PLUGIN_DATA    — the foreign-repo plugin surface (hooks.json)
+# guard.sh resolves the CLI from the SAME dir via the same precedence, so the two
+# stay in lockstep whether invoked by the plugin or by phoenix's settings.json.
 #
 # Invariant: this MUST NOT hard-crash the session. Every failure path degrades
 # (logs to stderr, exit 0) so a SessionStart on an offline/npm-unreachable host
@@ -10,13 +16,14 @@
 
 set -u
 
-# The one version pin. Bump to reinstall on the next SessionStart.
+# The one version pin (single source: also read by guard.sh's data dir; the
+# skills' published-fallback pins must match). Bump to reinstall on next SessionStart.
 PIN="0.1.0"
 PKG="@kampus/pipeline-cli"
 
-DATA="${CLAUDE_PLUGIN_DATA:-}"
+DATA="${KAMPUS_PIPELINE_DATA:-${CLAUDE_PLUGIN_DATA:-}}"
 if [ -z "$DATA" ]; then
-	echo "kampus-pipeline: CLAUDE_PLUGIN_DATA unset; skipping install" >&2
+	echo "kampus-pipeline: no data dir (KAMPUS_PIPELINE_DATA / CLAUDE_PLUGIN_DATA unset); skipping install" >&2
 	exit 0
 fi
 
@@ -47,7 +54,7 @@ JSON
 # the whole thing is best-effort — any failure degrades to exit 0 below.
 if (cd "$DATA" && npm install --no-audit --no-fund --loglevel=error >/dev/null 2>&1) && [ -x "$BIN" ]; then
 	printf '%s' "$PIN" >"$MARKER"
-	echo "kampus-pipeline: installed $PKG@$PIN into CLAUDE_PLUGIN_DATA" >&2
+	echo "kampus-pipeline: installed $PKG@$PIN into $DATA" >&2
 	exit 0
 fi
 
