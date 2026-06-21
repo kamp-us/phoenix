@@ -189,6 +189,15 @@ const SSE_READY_POLL_MS = 1_500;
 const sseReady = (res: Response): boolean =>
 	res.status === 200 && (res.headers.get("content-type") ?? "").includes("text/event-stream");
 
+// A `/fate/live` CONTROL (subscribe/unsubscribe) POST against a cold topic-role LiveDO
+// returns the worker's 503 `LIVE_UNAVAILABLE` cold-start envelope (`fate-live/route.ts`),
+// exactly the "not ready yet, retry" signal `sseReady` rides out on the held-stream open
+// (#1074) — only the un-streamed control POST never had the same readiness wait, so a cold
+// subscribe surfaced the raw 503 as `expected 503 to be 200` (#1173). A 503 is therefore
+// NOT ready; anything else IS — a genuine subscribe 200, OR a real error the test must
+// still see (only the cold-start 503 is retried, never a real failure masked).
+const liveControlReady = (res: Response): boolean => res.status !== 503;
+
 // Unique per-process stamp for seeded author/voter emails. Each file owns its own
 // isolated stage + D1, but a `NO_DESTROY` re-run reuses the same stage's D1, so a
 // fresh stamp per process keeps re-run seed identities from colliding with users a
@@ -659,37 +668,49 @@ export function harness(
 
 	const d1Target: Harness["d1Target"] = async () => getD1Target();
 
+	// Shared bounded readiness poll for the two cold-DO-tolerant `/fate/live` paths: re-send
+	// the request until `ready(res)` holds or the (same #1074) deadline lapses, releasing each
+	// not-ready response's body first so a held SSE stream can't pin the fetch connection across
+	// the poll (harmless on the control POST's already-buffered body). On exhaustion it returns
+	// the last response, so the caller's own `expect(status).toBe(200)` still reports the truth —
+	// it NEVER classifies a status as terminal and stops early (the #1060 early-stop regression).
+	const pollUntilReady = async (
+		send: () => Promise<Response>,
+		ready: (res: Response) => boolean,
+	): Promise<Response> => {
+		const deadline = Date.now() + SSE_READY_DEADLINE_MS;
+		let last = await send();
+		while (!ready(last) && Date.now() < deadline) {
+			await last.body?.cancel().catch(() => {});
+			await sleep(SSE_READY_POLL_MS);
+			last = await send();
+		}
+		return last;
+	};
+
 	// A dedicated-stage `/fate/live` open can draw a cold edge well past the `req` loop's
 	// ~5s placeholder-404 window: the route is brand-new AND the LiveDO is cold, so the
 	// first open can surface either the Cloudflare placeholder-404 (edge route not yet
 	// propagated, which `req` already retries but only briefly) OR the worker's 503
 	// `LIVE_UNAVAILABLE` cold-start envelope (`fate-live/cold-start-retry.ts`) before it
 	// serves the held SSE stream. Both are "not ready yet, retry", NOT a real failure — so
-	// this rides BOTH out on a generous bounded poll (up to ~60s of 1.5s waits) and only
-	// returns once the edge serves the worker's real SSE response (200 + `text/event-stream`).
-	// It NEVER classifies an "unexpected" status as terminal and stops early (the #1060
-	// regression — that made the gate LESS tolerant): any other status is ALSO treated as
-	// not-ready and retried within the window. The deadline only delays, it never hangs; on
-	// exhaustion it returns the last response so the caller's own `expect(status).toBe(200)`
-	// still reports the truth.
-	const openSse: Harness["openSse"] = async (connectionId, cookie) => {
+	// this rides BOTH out on the generous bounded `pollUntilReady` and only returns once the
+	// edge serves the worker's real SSE response (200 + `text/event-stream`).
+	const openSse: Harness["openSse"] = (connectionId, cookie) => {
 		const path = `/fate/live?connectionId=${encodeURIComponent(connectionId)}`;
 		const init: RequestInit = {headers: {accept: "text/event-stream", cookie}};
-		const deadline = Date.now() + SSE_READY_DEADLINE_MS;
-		let last = await req(path, init);
-		while (!sseReady(last) && Date.now() < deadline) {
-			// Release the body (a held stream on a partial 200, or the 503 error envelope)
-			// before the next attempt — a leaked stream pins the fetch connection across the
-			// poll. A connection-level failure to open is already retried inside `req`.
-			await last.body?.cancel().catch(() => {});
-			await sleep(SSE_READY_POLL_MS);
-			last = await req(path, init);
-		}
-		return last;
+		return pollUntilReady(() => req(path, init), sseReady);
 	};
 
+	// The subscribe/unsubscribe control POST shares the cold-topic-role-DO hazard with the
+	// held-stream open above: a not-yet-warm topic DO answers 503 `LIVE_UNAVAILABLE`, so this
+	// rides the SAME bounded readiness poll (`liveControlReady` — only the cold-start 503 is
+	// retried) instead of surfacing the raw 503 as `expected 503 to be 200` (#1173).
 	const liveControl: Harness["liveControl"] = (connectionId, operations, cookie) =>
-		json("/fate/live", {version: 1, connectionId, operations}, cookie);
+		pollUntilReady(
+			() => json("/fate/live", {version: 1, connectionId, operations}, cookie),
+			liveControlReady,
+		);
 
 	return {
 		url,
