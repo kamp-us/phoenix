@@ -26,6 +26,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import {stampViewerScalars} from "../fate/viewer-scalars.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
@@ -605,6 +606,29 @@ export const PanoLive = Layer.effect(Pano)(
 		// module's to enforce, not this service's to hand-wire.
 		const removalSeq: Removal.RemovalSequence = {run, batch, clearTarget: voteSvc.clearTarget};
 
+		// The viewer scalars per entity (#1126): `Post` carries `myVote` (batched
+		// `user_vote`) + `isSaved` (batched `post_bookmark`); `Comment` carries
+		// `myVote`. Every read finalizes through `stampViewerScalars` with these specs
+		// — one `IN (...)` read per scalar for the whole batch, never a per-row N+1 —
+		// so a new read path can't silently ship an always-`null` scalar.
+		const postViewerScalars = [
+			{
+				field: "myVote",
+				read: (viewerId: string | null | undefined, ids: ReadonlyArray<string>) =>
+					voteSvc.readMine(viewerId, "post", ids),
+			},
+			{
+				field: "isSaved",
+				read: (viewerId: string | null | undefined, ids: ReadonlyArray<string>) =>
+					bookmarkSvc.readMine(viewerId, ids),
+			},
+		] as const;
+		const commentVoteScalar = {
+			field: "myVote",
+			read: (viewerId: string | null | undefined, ids: ReadonlyArray<string>) =>
+				voteSvc.readMine(viewerId, "comment", ids),
+		} as const;
+
 		const rowToPostPage = (row: typeof schema.postRecord.$inferSelect): PostPage => ({
 			id: row.id,
 			slug: row.slug,
@@ -896,22 +920,10 @@ export const PanoLive = Layer.effect(Pano)(
 					.limit(first + 1),
 			);
 
-			const voted = yield* voteSvc.readMine(
-				viewerId,
-				"comment",
-				fetched.slice(0, first).map((c) => c.id),
-			);
-			const page = forwardPage(
-				fetched,
-				first,
-				(r: CommentRow) => r.id,
-				(c) => {
-					const base = rowToCommentRow(c);
-					return {...base, myVote: viewerId ? voted.has(c.id) : null};
-				},
-			);
+			const page = forwardPage(fetched, first, (r: CommentRow) => r.id, rowToCommentRow);
+			const rows = yield* stampViewerScalars(page.rows, viewerId, [commentVoteScalar]);
 
-			return {...page, totalCount} satisfies CommentConnectionPage;
+			return {...page, rows, totalCount} satisfies CommentConnectionPage;
 		});
 
 		const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
@@ -926,12 +938,11 @@ export const PanoLive = Layer.effect(Pano)(
 					.from(schema.postRecord)
 					.where(and(inArray(schema.postRecord.id, [...ids]), isNull(schema.postRecord.removedAt))),
 			);
-			const ids2 = fetched.map((p) => p.id);
-			const voted = yield* voteSvc.readMine(viewerId, "post", ids2);
-			// `isSaved` rides the same batch as `myVote` — one `post_bookmark` read for
-			// the whole page, stamped here as a scalar (no per-row resolver, no N+1).
-			const saved = yield* bookmarkSvc.readMine(viewerId, ids2);
-			return fetched.map(
+			// `myVote`/`isSaved` are the viewer scalars, finalized via `stampViewerScalars`
+			// (one `user_vote` + one `post_bookmark` read for the whole batch); the row's
+			// intrinsic fields — incl. `isDraft`, which is read off the row itself, not a
+			// viewer-presence read — are mapped here.
+			const intrinsic = fetched.map(
 				(row): PostSummaryRow => ({
 					id: row.id,
 					slug: row.slug,
@@ -946,13 +957,12 @@ export const PanoLive = Layer.effect(Pano)(
 					createdAt: row.createdAt ?? new Date(0),
 					updatedAt: row.updatedAt ?? row.createdAt ?? new Date(0),
 					tags: parseTags(row.tags),
-					myVote: viewerId ? voted.has(row.id) : null,
-					isSaved: viewerId ? saved.has(row.id) : null,
 					// A by-id read returns the author's own draft (read-your-writes); stamp
 					// its marker so the re-resolved entity carries `isDraft: true`.
 					isDraft: row.isDraft ?? null,
 				}),
 			);
+			return yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
 		});
 
 		const getCommentsByIds = Effect.fn("Pano.getCommentsByIds")(function* (
@@ -967,15 +977,7 @@ export const PanoLive = Layer.effect(Pano)(
 					.from(schema.commentRecord)
 					.where(inArray(schema.commentRecord.id, [...ids])),
 			);
-			const voted = yield* voteSvc.readMine(
-				viewerId,
-				"comment",
-				fetched.map((c) => c.id),
-			);
-			return fetched.map((c): CommentRow => {
-				const base = rowToCommentRow(c);
-				return {...base, myVote: viewerId ? voted.has(c.id) : null};
-			});
+			return yield* stampViewerScalars(fetched.map(rowToCommentRow), viewerId, [commentVoteScalar]);
 		});
 
 		const lookupCommentPostId = Effect.fn("Pano.lookupCommentPostId")(function* (
