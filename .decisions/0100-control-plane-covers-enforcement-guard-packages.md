@@ -94,3 +94,28 @@ auto-merges on a `review-code` PASS.
   guard-package paths are not yet in `.github/CODEOWNERS`, so this ADR's boundary is
   `ship-it`-honor-system for the guard packages until CODEOWNERS is extended — the same
   honor-system → platform-enforced progression 0071 closed for the original §CP set.
+
+### Amendment (2026-06-20) — `^packages/pipeline-cli/` carries this coverage forward
+
+The consolidation in ADR [0103](0103-consolidate-pipeline-cli-package.md) merges the guards
+into one `packages/pipeline-cli/` package. `CONTROL_PLANE_RE` now carries a **third** package
+clause, `^packages/pipeline-cli/`, so this ADR's control-plane coverage flows through the
+consolidated package as well:
+
+```
+…|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/
+```
+
+- **The whole package matches, not a `src/guards/` sub-prefix.** The consolidated package *is*
+  the guard machinery, and its shared guard-dispatch infra — `registry.ts` (the
+  `registeredTools[]` array wiring every guard in), `router.ts`/`bin.ts` — lives at the
+  **package root**, not under any sub-dir. A narrower prefix would leave that shared dispatch
+  non-§CP, so an edit to it could disable or bypass every guard and still auto-merge. The whole
+  package is a self-weakening surface (this ADR's own "by nature" principle) → the broad
+  `^packages/pipeline-cli/` match is the correct coverage.
+- **The legacy `^packages/[^/]*-guard/` + `^packages/ci-required/` clauses are kept.** The
+  legacy guard packages still exist until Phase-4 ([#1003](https://github.com/kamp-us/phoenix/issues/1003))
+  deletes them, so their §CP coverage must remain through the migration; the kept clauses are
+  harmless and future-proof (they match nothing once the packages are gone).
+- The clause was added byte-identically to all five §CP copies (the canonical +
+  `ship-it`/`review-code`/`review-doc`/`review-skill`); `validate-gate-path-drift.sh` PASSES.

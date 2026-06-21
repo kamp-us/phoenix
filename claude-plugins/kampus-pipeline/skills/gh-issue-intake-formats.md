@@ -735,6 +735,14 @@ closing the #375 drift class).
     policy), `read-guard`, `worktree-guard`, `structured-output-guard`, `leak-guard` (the
     `^packages/[^/]*-guard/` clause covers each).
   - `packages/ci-required/**` — the aggregator of the gating CI checks.
+  - `packages/pipeline-cli/**` — the consolidated guard machinery (ADR
+    [0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)).
+    The whole package matches (`^packages/pipeline-cli/`), not a `src/guards/` sub-prefix:
+    the shared guard-dispatch infra — `registry.ts` (the `registeredTools[]` array that wires
+    every guard in), `router.ts`/`bin.ts` — lives at the **package root**, so an edit there
+    could disable or bypass every guard. The whole package is a self-weakening surface; the
+    legacy `^packages/[^/]*-guard/` + `^packages/ci-required/` clauses are kept until Phase-4
+    deletes those packages, so their coverage holds through the migration.
 
 A PR touching **any** path in this set is **control plane**: `ship-it` refuses to auto-merge
 it and a human merges it by hand (ADR
@@ -745,7 +753,9 @@ widened to the gate-critical skills by ADR
 [0073](https://github.com/kamp-us/phoenix/blob/main/.decisions/0073-review-skill-gate.md), since the gate
 that reviews the gates is itself a gate; the enforcement-guard packages added by ADR
 [0100](https://github.com/kamp-us/phoenix/blob/main/.decisions/0100-control-plane-covers-enforcement-guard-packages.md),
-since a guard is a self-weakening surface wherever it lives). Everything else — `apps/**`,
+since a guard is a self-weakening surface wherever it lives; that coverage now also flows
+through the consolidated `^packages/pipeline-cli/` package per ADR
+[0103](https://github.com/kamp-us/phoenix/blob/main/.decisions/0103-consolidate-pipeline-cli-package.md)). Everything else — `apps/**`,
 **non**-guard `packages/**`, `.decisions/**`, `.patterns/**`, every prose doc `*.md` (the
 §DOC class), and every **non**-gate-critical `skills/**` — is **non-blocking** and
 auto-merges through its matching gate on a PASS. (This set governs *who merges*, not *which gate verifies* — a
@@ -763,13 +773,13 @@ Every consumer matches the set with this **one** anchored regex (POSIX ERE; the 
 form below). Cite this regex; do **not** re-hard-code the path list:
 
 ```
-^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/
+^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/
 ```
 
 ```bash
 # the single probe ship-it Step 0, review-code Step 2, review-doc Step 0, and review-skill
 # Step 0 all use — one definition, no fourth copy:
-CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/'
+CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^packages/[^/]*-guard/|^packages/ci-required/|^packages/pipeline-cli/'
 # --paginate + a STREAMING --jq ('.[].filename', one line per file) is the canonical pattern: gh
 # concatenates the per-page element streams, so grep aggregates §CP matches across ALL pages. The
 # API caps per_page at 100 regardless of the value, so a single non-paginated call truncates a
