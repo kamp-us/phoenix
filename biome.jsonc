@@ -7,6 +7,11 @@
 			// `.claude/worktrees/`; exclude only those, not the rest of `.claude`,
 			// so the repo's own skill/config files still get linted (#119).
 			"!**/.claude/worktrees",
+			// Workflow scripts (`.claude/workflows/*.js`) use the Workflow runtime
+			// contract — top-level `return` + `export const meta` — which biome
+			// can't parse as a standard module; you can't format/lint what won't
+			// parse, so exclude them (same precedent as `!biome-plugins`).
+			"!**/.claude/workflows",
 			// The GritQL plugin source: biome's `.grit` formatter drops the
 			// `language js;` terminator, which silently breaks the plugin.
 			"!biome-plugins",
