@@ -110,3 +110,4 @@ One row per ADR. Read the file for the why.
 | [0103](0103-consolidate-pipeline-cli-package.md) | Consolidate Pipeline Tooling into One `@kampus/pipeline-cli`, Consumed by Plugin + CI | accepted | 2026-06-20 |
 | [0104](0104-two-mode-integration-test-tier.md) | Two-Mode Integration Test Tier — a Run-Scoped Shared Stage for Real-D1/DO Files, the Unit Tier for Pure Logic | accepted | 2026-06-20 |
 | [0105](0105-delete-runfateop-harness.md) | Delete the zero-consumer `runFateOp` op-test harness | accepted | 2026-06-21 |
+| [0106](0106-iac-provisions-flags-dashboard-owns-serving.md) | IaC Provisions Feature Flags; the Dashboard Owns Their Serving | accepted | 2026-06-21 |
