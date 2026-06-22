@@ -29,7 +29,7 @@ A `unit` test never builds a database — it substitutes the seam **below** the 
 - **A throwing `Drizzle`** — a `DrizzleAccess` whose every `run` / `batch` `Effect.die`s. Provide it so that any path which *should* short-circuit before touching the DB fails loudly if it doesn't — running to completion against it is the "no read / no write" proof.
 - **A scripted `Drizzle`** — a `DrizzleAccess` whose `run` replays a queued sequence of fixture results (and whose `batch` throws), feeding a decision its DB inputs without an engine. The canonical pair lives at the top of [`Vote.unit.test.ts`](../apps/web/worker/features/vote/Vote.unit.test.ts) (`throwingAccess`, `scriptedAccess`) — the `Drizzle.unit.test.ts` half-A idiom.
 
-`runFateOp` ([`features/fate/run-fate-op.ts`](../apps/web/worker/features/fate/run-fate-op.ts)) still exists as the in-process mirror of the `/fate` route (drives one fate operation through `fateServer.handleRequest` in exactly one `Effect.provide`), but it is **no longer a test backing** — the fate-op behaviors it once exercised over the faked engine now run at the `integration` tier on real D1.
+There is **no app-level in-process op-test harness**. The heavyweight `runFateOp` mirror of the `/fate` route was deleted as a zero-consumer dead end (ADR [0105](../.decisions/0105-delete-runfateop-harness.md)). `route.ts → FateInterpreter` reachability runs at the `integration` tier on real D1; the interpreter dispatch loop is unit-tested at the package tier (`fate-effect`'s `Executor.test.ts` / `Codegen.test.ts`); the light app-level resolve/wire seam is [`resolveWire`](#per-feature-op-tests-drive-resolvewire-not-handler) below.
 
 ## Per-feature op tests: drive `resolveWire`, not `.handler`
 
@@ -46,7 +46,7 @@ const error = Cause.findErrorOption(exit.cause); // a FateRequestError
 assert.strictEqual((error.value as {code?: unknown}).code, "UNAUTHORIZED");
 ```
 
-This is the lighter in-process resolve/wire seam — **not** `runFateOp` (the heavyweight interpreter harness above, no longer a test backing). Keep using the input-`Schema`-decode-directly form (`account-deletion.unit.test.ts`) for facts that live *before* the handler (a typed-confirmation gate is an input-decode fact, not a handler-failure fact). The canonical examples are `pasaport/queries.unit.test.ts`, `pasaport/account-deletion.unit.test.ts`, `report/report-mutation.unit.test.ts`, and `pano/draft-save.invariant.test.ts`.
+This is the in-process resolve/wire seam — the app-level fate-op unit surface (there is no heavyweight interpreter harness; ADR [0105](../.decisions/0105-delete-runfateop-harness.md)). Keep using the input-`Schema`-decode-directly form (`account-deletion.unit.test.ts`) for facts that live *before* the handler (a typed-confirmation gate is an input-decode fact, not a handler-failure fact). The canonical examples are `pasaport/queries.unit.test.ts`, `pasaport/account-deletion.unit.test.ts`, `report/report-mutation.unit.test.ts`, and `pano/draft-save.invariant.test.ts`.
 
 ## Per-test isolation
 
@@ -172,7 +172,7 @@ Canonical implementation: `apps/web/worker/db/Drizzle.unit.test.ts`.
   - **`layerStub`** — a canned / **fail-on-contact** double (a stub that returns fixtures or `Effect.die`s if a path it shouldn't reach is hit). `better-auth.testing.ts`'s `layerStub()` cans `getSession` and `Effect.die`s in `fetch` — the fate-op tests provide it because they never touch the session/auth paths.
   - **`layerNoop`** — a double whose methods silently succeed as no-ops (v3's `FileSystem.layerNoop` / `MessageStorage.layerNoop`). Use this *only* when no-op-and-succeed is the wanted behavior — **not** for fail-on-contact (that's `layerStub`).
 
-  For a phoenix `Context.Service` you own, the v4 form is a **`static readonly layerTest` on the service class** — but only if it has a real consumer (no consumer-less layers). Where the test double must return more than the bare seam (e.g. a capture sink), build it with a small factory closure that returns both halves: the fate server provides `LivePublisher` as a per-request VALUE (not a layer), so its recording double wraps [`live-publisher.ts`](../apps/web/worker/features/fate-live/live-publisher.ts)'s `livePublisherFor` over a capturing publish + collecting `waitUntil` — see [`run-fate-op.ts`](../apps/web/worker/features/fate/run-fate-op.ts), which owns the capture array internally and surfaces `published` in its `FateOpResult`.
+  For a phoenix `Context.Service` you own, the v4 form is a **`static readonly layerTest` on the service class** — but only if it has a real consumer (no consumer-less layers). Where the test double must return more than the bare seam (e.g. a capture sink), build it with a small factory closure that returns both halves: the fate server provides `LivePublisher` as a per-request VALUE (not a layer), so its recording double wraps [`live-publisher.ts`](../apps/web/worker/features/fate-live/live-publisher.ts)'s `livePublisherFor` over a capturing publish + collecting `waitUntil` — see [`live-publisher.unit.test.ts`](../apps/web/worker/features/fate-live/live-publisher.unit.test.ts)'s `makeHarness`, which builds the publisher over a recording `publish` and reads back the captured frames.
 
   **`TestXxx` (prefix) is reserved for the framework kit** (`TestClock`, `TestConsole`) — do **not** use the prefix form for feature services.
 

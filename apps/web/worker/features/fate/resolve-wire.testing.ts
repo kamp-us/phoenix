@@ -14,8 +14,8 @@
  * This is the no-DB slice of `Executor.ts`'s `runResolve` (`resolve` → `Effect.exit`
  * → on failure `encodeWireError(failureOf(cause))`) lifted to an `it.effect`-native
  * shape — no worker runtime / Effect→Promise conversion, since those carry nothing
- * for a no-DB gate assertion. It is the lighter in-process resolve/wire seam, not
- * the heavyweight `runFateOp` interpreter harness (see effect-testing.md).
+ * for a no-DB gate assertion. It is the in-process resolve/wire seam — the
+ * app-level fate-op unit surface (see effect-testing.md).
  *
  * The op's real `R` is preserved (`FateQuery`/`FateList`/`FateMutation`, not the
  * type-erased `Any*` shapes) so the caller's `provideService` / `Effect.provide`
