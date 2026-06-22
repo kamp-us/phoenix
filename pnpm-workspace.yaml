@@ -51,11 +51,21 @@ onlyBuiltDependencies:
   - workerd
 
 # Local patch (policy: patch deps locally, don't depend on an upstream/fork
-# release). Adds `DurableObjectNamespaceScope` to alchemy's `DurableObjectServices`
-# union so the `.make()` DO scope no longer leaks into the Stack's requirements
-# (alchemy.run.ts TS2375). NOT upstreamed — verified still absent from beta.56:
-# beta.56 defines `DurableObjectNamespaceScope` but never adds it to the
-# `DurableObjectServices` union in DurableObjectNamespace.d.ts (2026-06-16).
+# release). Two hunks, both NOT upstreamed; re-key on the next alchemy bump.
+#
+# 1. DurableObjectNamespace.d.ts — adds `DurableObjectNamespaceScope` to alchemy's
+#    `DurableObjectServices` union so the `.make()` DO scope no longer leaks into
+#    the Stack's requirements (alchemy.run.ts TS2375). Verified still absent from
+#    beta.56: it defines `DurableObjectNamespaceScope` but never adds it to the
+#    union in DurableObjectNamespace.d.ts (2026-06-16).
+#
+# 2. Cloudflare/Flagship/Flag.js — `FlagshipFlag.reconcile` UPDATE path reconciles
+#    only the schema/metadata IaC owns ({variations, description}) and preserves the
+#    live serving the dashboard owns ({defaultVariation, rules, enabled}); the no-op
+#    skip compares only the schema. CREATE path unchanged (still seeds the full safe
+#    initial flag). Implements ADR 0106 (IaC provisions flags; dashboard owns serving);
+#    fixes the full-body PUT that clobbered live serving on every deploy (#840).
+#
 # Re-keyed beta.52 → beta.56 with the alchemy pin bump; re-target again on the next bump.
 patchedDependencies:
   alchemy@2.0.0-beta.56: patches/alchemy@2.0.0-beta.56.patch
