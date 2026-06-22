@@ -109,7 +109,7 @@ This file names the *what*.
 |---|---|---|
 | test tiers (unit / integration) | The two live tiers (ADR 0082, extended by 0104). **unit** — pure logic + in-process service contracts, no DB: the `Drizzle` storage seam is *substituted*, no SQL engine, no deployed worker. **integration** — real behavior over **real remote Cloudflare D1** (+ DOs) via the alchemy `Test.make` idiom, black-box over HTTP/SSE. There is **no in-memory SQL tier**. | the retired T0–T3 four-tier model; a `node:sqlite` D1 stand-in (deleted #579) |
 | `*.unit.test.ts` | The pure-test naming convention inside the `unit` vitest project (the glob catches both `*.unit.test.ts` and plain `*.test.ts` service-contract tests). | a third vitest project |
-| runFateOp | Test-kit helper running a fate operation through the compiled fate server over a per-op disposed `ManagedRuntime`; returns `{status, result, published}`. | copy-pasted inline `fateOp` bodies |
+| runFateOp | **Deleted (ADR 0105).** The former in-process op-test harness running a fate operation through the compiled fate server over a per-op disposed `ManagedRuntime`. Removed as a zero-consumer dead end; interpreter dispatch is unit-tested in `fate-effect` (`Executor.test.ts` / `Codegen.test.ts`), route reachability at the `integration` tier (ADR 0082), and the light app seam is `resolveWire`. | a live test helper (it no longer exists) |
 
 ## Infra / store
 

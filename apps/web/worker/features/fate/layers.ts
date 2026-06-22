@@ -49,7 +49,7 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | F
 /**
  * Build the ONE worker-level {@link WorkerRuntime} plus the route-context layer
  * derived from its built context. The single construction point shared by
- * `index.ts`, `app.test.ts`, and `run-fate-op.ts`.
+ * `index.ts` and `app.test.ts`.
  *
  * The shared `memoMap` (effect-smol "Integrating Effect into existing
  * applications" idiom, `ai-docs/src/03_integration/10_managed-runtime.ts`) keeps
@@ -58,8 +58,7 @@ export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | F
  *
  * NEVER DISPOSED IN THE WORKER: a Cloudflare isolate has no shutdown hook, so the
  * deployed worker never calls `runtime.dispose()` and Drizzle/D1 holds no poolable
- * socket to release (ADR 0041). The Node test harness (`run-fate-op.ts`) DOES
- * dispose per operation — it has a shutdown point.
+ * socket to release (ADR 0041).
  */
 export const makeFateRuntime = (
 	layer: Layer.Layer<WorkerFateServices | FateServer>,

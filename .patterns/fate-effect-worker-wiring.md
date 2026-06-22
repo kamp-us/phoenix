@@ -16,8 +16,7 @@ worker/features/fate/
 ├── config.ts      # fateConfig = FateServer.config({...mergeFateModules(modules), live})
 ├── layers.ts      # PhoenixFateLive = FateServer.layer(fateConfig) ⊕ makeFateLayer; makeFateRuntime
 ├── route.ts       # POST /fate: FateInterpreter.handleRequest on the request fiber + abort wiring
-├── schema.ts      # fateServer = FateExecutor.toCodegenServer(fateConfig)  (Vite codegen, inert)
-└── run-fate-op.ts # runFateOp — the in-process mirror of route.ts
+└── schema.ts      # fateServer = FateExecutor.toCodegenServer(fateConfig)  (Vite codegen, inert)
 ```
 
 - **`config.ts`** is the single declaration both edges consume. It registers a flat `modules`
@@ -96,8 +95,7 @@ runtime lives for the isolate's lifetime, and Drizzle/D1 holds no poolable socke
 there is nothing leaked by not disposing. Recorded in
 [ADR 0041](../.decisions/0041-fate-bridge-worker-managed-runtime.md). If a service genuinely
 needs per-request acquire/release (none do today), wrap *that* service in a `Scope`, not the
-runtime. (The in-process route mirror `runFateOp`, below, runs in Node and HAS a shutdown point,
-so it builds and disposes a runtime per operation.) This is strictly about runtime teardown — mutations still
+runtime. This is strictly about runtime teardown — mutations still
 fan out to the topic DO via `executionCtx.waitUntil(...)` so the live fan-out doesn't block the
 response.
 
@@ -143,29 +141,18 @@ same `roots: {}`/`live` passthrough as the live config, every handler inert — 
 throws the same `FateServerConfigError` the layer dies with. The worker entry never imports
 `schema.ts`; the serving path is `route.ts` → `FateInterpreter.handleRequest`.
 
-## `runFateOp` (the in-process route mirror)
+## No in-process op-test harness (the deleted `runFateOp`)
 
-The in-process mirror of the route, same composition over the caller's worker layer, serving through
-the SAME interpreter the route serves:
-
-```ts
-const {runtime} = makeFateRuntime(FateServer.layer(fateConfig).pipe(Layer.provideMerge(workerLayer)));
-const res = await runtime.runPromise(FateInterpreter.handleRequest(request, ctx));
-// ctx: FateRequestContext with a recording livePublisherFor (capturing publish + collected
-// waitUntil promises, flushed before returning) — `published` is the array of resolved topic
-// keys the operation's live.* fanned out to. The per-op runtime is this in-process mirror's
-// RUN vehicle (production's conversion point is the platform layer's).
-// finally: await runtime.dispose()  — the in-process mirror HAS a shutdown point (per-op lifecycle)
-```
-
-Returns `{status, result, published}`. `runFateOp` is a **wiring/composition artifact, not a test
-backing** — it has **zero test consumers today** (its only importer is its own definition). It once
-backed the fate-op suites over the `node:sqlite` fake, but that engine is banned and those suites
-moved to the `integration` tier on **real remote D1** ([ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md));
-data-plane regression coverage now lives in [`apps/web/tests/integration/`](../apps/web/tests/integration/),
-black-box over the deployed worker, **not** here. Authoring a new fate-op regression test against
-`runFateOp` (in-process, no DB) instead of at `integration` is the mistake this note exists to
-prevent. See [effect-testing.md](./effect-testing.md), which records the same.
+There is **no app-level in-process op-test mirror of the route.** A heavyweight `runFateOp`
+harness (a per-op `ManagedRuntime` driving one operation through `FateInterpreter.handleRequest`)
+once existed in `run-fate-op.ts`; it was deleted as a zero-consumer dead end
+([ADR 0105](../.decisions/0105-delete-runfateop-harness.md)). The real seams it would have
+duplicated: interpreter dispatch is unit-tested at the package tier (`fate-effect`'s
+`Executor.test.ts` / `Codegen.test.ts`); `route.ts → FateInterpreter` reachability runs at the
+`integration` tier on real remote D1 ([ADR 0082](../.decisions/0082-two-test-tiers-unit-integration.md),
+black-box over the deployed worker in [`apps/web/tests/integration/`](../apps/web/tests/integration/));
+the light app-level resolve/wire seam is [`resolveWire`](../apps/web/worker/features/fate/resolve-wire.testing.ts).
+See [effect-testing.md](./effect-testing.md), which records the same.
 
 ## What not to do
 
