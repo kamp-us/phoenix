@@ -59,6 +59,7 @@ import {
 	type PostTagRow,
 	parseTags,
 	toPostPage,
+	toPostSummaryKeysetRow,
 	toPostSummaryRow,
 } from "./post-fields.ts";
 
@@ -777,25 +778,10 @@ export const PanoLive = Layer.effect(Pano)(
 					.limit(first + 1),
 			);
 
-			const page = forwardPage(
-				fetched,
-				first,
-				(r: PostSummaryRow) => r.id,
-				(r) => ({
-					id: r.id,
-					slug: r.slug,
-					title: r.title,
-					url: r.url,
-					host: r.host,
-					body: r.bodyExcerpt,
-					author: r.authorName,
-					authorId: r.authorId,
-					score: r.score,
-					commentCount: r.commentCount,
-					createdAt: r.createdAt ?? new Date(0),
-					tags: parseTags(r.tags),
-				}),
-			);
+			// Route the keyset projection through the same `post-fields.ts` column→field
+			// map the by-id path uses, so `body` collapses to `null` for an empty excerpt
+			// (not `""`) — the divergence is unrepresentable, not hand-synced (#1170).
+			const page = forwardPage(fetched, first, (r) => r.id, toPostSummaryKeysetRow);
 
 			return {...page, totalCount} satisfies PostConnectionPage;
 		});
