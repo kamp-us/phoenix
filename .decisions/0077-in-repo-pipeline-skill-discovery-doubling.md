@@ -25,6 +25,8 @@ This is the boundary decision #346 routed to epic #228 (ADR child #232).
 
 Phoenix **suppresses the `kampus-pipeline@kampus` plugin in-repo** via tracked project settings — `.claude/settings.json` with `enabledPlugins: { "kampus-pipeline@kampus": false }`. The committed `.claude/skills` → `skills/` symlink remains the **canonical in-repo discovery source**; the symlink (layout work #231) is unchanged.
 
+The same in-repo discovery mechanism now covers the plugin's **agents** too: a committed `.claude/agents` → `claude-plugins/kampus-pipeline/agents` symlink surfaces the suppressed plugin's agent definitions (e.g. `coder`) for project-scope discovery and dogfooding, exactly as `.claude/skills` does for skills (#1185).
+
 This is disposition **(b)** of #346 — keep local discovery, disable the redundant plugin in-repo — chosen over:
 
 - **(a) Drop local `.claude/skills` discovery and rely solely on the plugin in-repo.** Rejected: it breaks contributors who have not installed the plugin, and discards the dogfooding source that makes phoenix exercise its own suite.
