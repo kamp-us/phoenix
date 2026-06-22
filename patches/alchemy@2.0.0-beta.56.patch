@@ -1,3 +1,67 @@
+diff --git a/lib/Cloudflare/Flagship/Flag.js b/lib/Cloudflare/Flagship/Flag.js
+index faa4cb457395672cec6249733ab26abe8f0347a4..7ad6b29bb9383db1680eaceff00f4f55ca0705d0 100644
+--- a/lib/Cloudflare/Flagship/Flag.js
++++ b/lib/Cloudflare/Flagship/Flag.js
+@@ -167,35 +167,39 @@ export const FlagshipFlagProvider = () => Provider.succeed(FlagshipFlag, {
+                 return toAttributes(created, accountId, appId);
+             }
+         }
+-        // Sync — diff observed cloud state against desired; the update API is
+-        // a PUT that takes the full body, so send everything, but skip the
+-        // call entirely on a no-op.
++        // Sync — IaC reconciles only the schema/metadata it owns ({variations,
++        // description}); the serving config ({defaultVariation, rules, enabled})
++        // is dashboard-owned and carried forward from live, never reconciled
++        // (ADR 0106). Skip the PUT entirely when the schema hasn't drifted.
+         const live = observed ?? (yield* getFlag(accountId, appId, key));
+         if (live) {
+-            const observedShape = {
+-                enabled: live.enabled,
+-                defaultVariation: live.defaultVariation,
++            const observedSchema = {
+                 variations: live.variations,
+-                rules: normalizeRules(live.rules),
+                 description: live.description ?? undefined,
+             };
+-            const desiredShape = {
+-                ...desired,
+-                rules: normalizeRules(desired.rules),
++            const desiredSchema = {
++                variations: news.variations,
++                description: news.description,
+             };
+-            if (deepEqual(observedShape, desiredShape)) {
++            if (deepEqual(observedSchema, desiredSchema)) {
+                 return toAttributes(live, accountId, appId);
+             }
++            const updated = yield* flagship.updateAppFlag({
++                accountId,
++                appId,
++                flagKey: key,
++                key,
++                type: news.type,
++                variations: news.variations, // IaC owns: schema
++                description: news.description, // IaC owns: metadata
++                // ADR 0106: serving is dashboard-owned — preserve live, never reconcile.
++                defaultVariation: live.defaultVariation,
++                rules: live.rules,
++                enabled: live.enabled,
++            });
++            return toAttributes(updated, accountId, appId);
+         }
+-        const updated = yield* flagship.updateAppFlag({
+-            accountId,
+-            appId,
+-            flagKey: key,
+-            key,
+-            ...desired,
+-            type: news.type,
+-        });
+-        return toAttributes(updated, accountId, appId);
++        return undefined;
+     }),
+     delete: Effect.fn(function* ({ output }) {
+         yield* flagship
 diff --git a/lib/Cloudflare/Workers/DurableObjectNamespace.d.ts b/lib/Cloudflare/Workers/DurableObjectNamespace.d.ts
 index 49dae40f64388d102199797458151f5c1f5c79aa..43cdc888695b449a51c146606e74636f69b96e37 100644
 --- a/lib/Cloudflare/Workers/DurableObjectNamespace.d.ts
