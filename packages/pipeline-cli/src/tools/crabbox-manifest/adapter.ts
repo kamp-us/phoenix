@@ -4,7 +4,7 @@
  *
  * `buildManifest` is total over its decoded inputs — no IO, no throw — so the
  * whole adapter's correctness is unit-testable without git or a filesystem
- * (#244's T0 tests run it directly). It derives `checks[]` from per-command
+ * (its unit tests run it directly; ADR 0082). It derives `checks[]` from per-command
  * `exitCode` (0 → `pass`, non-zero → `fail`), preferring the run-summary's
  * `commands[]` and falling back to a single check from the top-level `exitCode`;
  * folds the JUnit into `tests`; and carries crabbox's provider/lease facts into

@@ -8,7 +8,7 @@
  * token select, and what happens for an unknown token. It owns no IO and no
  * Effect runtime, so the dispatch contract — correct tool for a known name, a
  * clear typed error for an unknown one — is unit-testable without spawning a CLI
- * (ADR 0040 T0/T1). The router is closed for modification: new tools arrive only
+ * (ADR 0082). The router is closed for modification: new tools arrive only
  * via `registry.ts`, never by editing this file.
  */
 import {Data, Result} from "effect";
