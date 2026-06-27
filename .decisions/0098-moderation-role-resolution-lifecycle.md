@@ -29,6 +29,8 @@ Add a moderator capability to `user` as a **server-managed field** following the
 
 > Amended by [ADR 0102](0102-admin-via-better-auth-plugin.md): the direct-D1-only grant path (the offline grant script) is superseded by the authenticated better-auth admin-plugin API mounted on the worker, surfaced through the `kampus admin role set …` CLI verb; the rest of this ADR stands.
 
+> Amended by [ADR 0107](0107-capability-authz-framework.md): the `Moderator.required` capability + `role`-column authority mechanism (§1–§2) is superseded by the capability-as-Effect framework — moderation becomes a `Relation`-backed `Moderate` capability over a `moderates` tuple store, and `user.role` is retired as an authority source. The denial invariants (invisible-denial, fresh-read, fail-closed) are preserved; the resolution lifecycle, audit, and act-via-substrate (§3–§6) stand.
+
 This column is the moderation MVP — it is reconciled onto the platform's role/AC model under [#873](https://github.com/kamp-us/phoenix/issues/873) when the admin plugin + admin dashboard are built. There is **no runtime endpoint** that writes it. The `input:false` declaration means no client write can reach it. It is *not* carried in the session's `CurrentUserInfo` (which stays the minimal id/email/name/image — `CurrentUser.ts:31`); per the CLAUDE.md rule, richer reads go through a domain service. Authority is read from D1 at the point of use, not trusted from session state.
 
 ### 2. `Moderator.required` — a capability that makes acting-without-authority untypeable
