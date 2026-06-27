@@ -15,18 +15,15 @@ import type {LivePublisher} from "./LivePublisher.ts";
  * request's execution context (built worker-side, e.g. via
  * `livePublisherFor`; the package never imports the implementation).
  *
- * `requestServices` is the GENERIC per-request provision seam (ADR 0107 §7):
- * an opaque context bag of EXTRA per-request service values an app provides
- * alongside the pair (e.g. a `CurrentActor` derived from `currentUser`),
- * provided innermost so it wins over the build-time services
- * (`Provision.ts`). It is typed `Context.Context<never>` — opaque exactly
- * like `FateServerService.services` — so this contract stays vocab-free: the
- * package never names the app's per-request service, never imports authz.
- * The app DECLARES which tags it provides per request to `FateServer.layer`'s
- * registration (so `FateServerRequirements` excludes them from build-time R);
- * it FULFILLS that declaration by putting their values here. Absent ⇒
- * `Context.empty()`; a declared-but-not-provided service then fails loudly at
- * run ("Service not found"), exactly like a missing `currentUser`.
+ * `requestServices` is the generic per-request provision seam (ADR 0107 §7): an
+ * opaque `Context.Context<never>` bag of EXTRA per-request service values an app
+ * provides alongside the pair (e.g. a `CurrentActor` derived from `currentUser`),
+ * provided innermost so it wins over the build-time services. Opaque keeps the
+ * contract vocab-free — the package never names the app's service. The app
+ * DECLARES the tags to `FateServer.layer` (so `FateServerRequirements` excludes
+ * them from build-time R) and FULFILLS them by putting their values here; absent
+ * ⇒ `Context.empty()`, and a declared-but-unprovided service fails loudly at run
+ * ("Service not found"), like a missing `currentUser`.
  *
  * Deliberately NO `signal` field: the serving path
  * (`FateInterpreter`) leaves interruption to the caller — the worker route

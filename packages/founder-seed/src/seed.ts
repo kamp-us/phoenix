@@ -1,16 +1,11 @@
 /**
- * The pure core of the founder-seed CLI (ADR 0107). The founder cohort — the
- * existing `role='moderator'` users (ADR 0098's offline grant cohort) — is minted as
- * `(id, "moderates", "platform")` relation tuples, the day-one moderation authority on
- * the `Relation` capability axis. This is the offline tuple-assignment path, NOT a
- * runtime worker route (the deleted `/api/admin/*` fail-open shape, CLAUDE.md "Sözlük
- * seed"). A `node:sqlite`-free, unit-testable core (the cohort read + the idempotent
- * tuple insert over a `D1Database` slice) + a thin Effect bin, mirroring
- * `@kampus/moderator-grant`.
- *
- * The seed is **idempotent**: the insert is `onConflictDoNothing` against the
- * composite PK, so a re-run mints nothing new (`inserted === 0`) and never duplicates a
- * founder's grant.
+ * The pure core of the founder-seed CLI (ADR 0107): mint the founder cohort
+ * (`role='moderator'` users, ADR 0098's offline grant cohort) as
+ * `(id, "moderates", "platform")` relation tuples — the day-one moderation
+ * authority on the `Relation` axis. This is the offline tuple-assignment path,
+ * NOT a runtime worker route (the deleted `/api/admin/*` fail-open shape,
+ * CLAUDE.md "Sözlük seed"). Idempotent: `onConflictDoNothing` against the
+ * composite PK, so a re-run mints nothing new and never duplicates a grant.
  */
 import {and, eq, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
@@ -41,9 +36,8 @@ export const makeSeedDb = (d1: D1Database): SeedDb => drizzle(d1, {schema});
 
 /**
  * Mint the founder cohort (`role='moderator'`) as `(id, "moderates", "platform")`
- * tuples. Returns `{founders, inserted}` so the caller can report distinctly: an empty
- * cohort reads `{founders: 0, inserted: 0}`, a first real seed `{founders: N, inserted:
- * N}`, a re-run `{founders: N, inserted: 0}` (idempotent — `onConflictDoNothing`).
+ * tuples. Returns `{founders, inserted}` so the caller reports the cases
+ * distinctly — a re-run reads `inserted: 0` (idempotent).
  */
 export const seedFounders = async (db: SeedDb): Promise<SeedResult> => {
 	const founders = await db

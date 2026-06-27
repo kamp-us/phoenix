@@ -1,14 +1,11 @@
 /**
- * `Level` — an ordered scale with `gte`, the RBAC/MLS-shaped axis that backs the
- * earned-authorship ladder (ADR 0107 §4). The ordering lives *inside* a right's
- * check (a yazar passes any çaylak-floored gate), so the comparison is the whole
- * mechanism here: a {@link Scale} is a list of rank names whose only operation is
- * monotone comparison.
- *
- * Vocab-free: the rank names are caller-supplied strings (`features/kunye`
- * passes `["visitor", "çaylak", "yazar"]`); this module names no rank. The
- * `const` scale captures the name *literals* as the scale's type, so `min`/
- * comparison arguments are checked against the actual ladder, not bare `string`.
+ * `Level` — an ordered scale with `gte`, the RBAC/MLS-shaped axis backing the
+ * earned-authorship ladder (ADR 0107 §4): a {@link Scale} is a list of rank
+ * names whose only operation is monotone comparison (a yazar passes any
+ * çaylak-floored gate). Vocab-free — the rank names are caller-supplied
+ * (`features/kunye` passes `["visitor", "çaylak", "yazar"]`); the `const` scale
+ * pins the name literals so `min`/comparison args are checked against the real
+ * ladder, not bare `string`.
  */
 
 /** An ordered scale of rank `Name`s, lowest-first, with monotone comparison. */

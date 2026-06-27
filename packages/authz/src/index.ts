@@ -1,15 +1,13 @@
 /**
  * `@kampus/authz` — the vocab-free capability-as-Effect authorization mechanism
- * (ADR 0107). It names no kamp.us noun, no fate, no D1: primitives ({@link Actor},
- * {@link Resource}, the {@link Scale} ladder, {@link Relation}), the sealed
+ * (ADR 0107). Names no kamp.us noun, no fate, no D1: primitives, the sealed
  * {@link Grant}, the {@link Capability} class-builders, and the
  * {@link CurrentActor}/{@link RelationStore}/{@link AgentAuthority} ports. The
- * kamp.us instances (`OpenTerm`/`AddEntry`/`Moderate`/`Admin`) and the `*Live`
- * adapter Layers live in `features/kunye`, not here.
+ * kamp.us instances + `*Live` adapter Layers live in `features/kunye`.
  *
- * Note the deliberate omission: {@link Grant}'s constructor (`mint`) is **not**
- * re-exported — only the `Grant` *type* escapes, so a consumer can hold a proof
- * but never fabricate one (the seal, ADR 0107 §1).
+ * Deliberate omission: {@link Grant}'s constructor (`mint`) is NOT re-exported —
+ * only the `Grant` *type* escapes, so a consumer can hold a proof but never
+ * fabricate one (the seal, ADR 0107 §1).
  */
 export {
 	type Actor,
