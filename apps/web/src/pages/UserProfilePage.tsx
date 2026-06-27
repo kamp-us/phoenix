@@ -7,6 +7,8 @@
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useParams} from "react-router";
 import type {Profile} from "../../worker/features/fate/views";
+import {useMe} from "../auth/useMe";
+import {shouldShowCaylakStatus} from "../components/profile/CaylakStatusBlock";
 import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
 import {PromotionActions} from "../components/profile/PromotionActions";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
@@ -14,6 +16,7 @@ import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {FlagGate} from "../flags/FlagGate";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {NotFoundPage} from "./NotFoundPage";
 import "./UserProfilePage.css";
 
@@ -86,6 +89,13 @@ function ProfilePromotion({profile}: {profile: ViewRef<"Profile">}) {
 
 function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 	const data = useView(UserProfileView, profile);
+	const {userId} = useView(UserProfileHeaderView, profile);
+	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
+	const {me} = useMe();
+	// Same three-gate as the status block: the "incelemede" badge shows only for a
+	// çaylak viewing their own profile behind the flag. A non-owner never receives a
+	// sandboxed row from the server, so this also keeps the badge off others' feeds.
+	const sandboxBadge = shouldShowCaylakStatus(flagOn, me?.tier, me?.id === userId);
 	const [items, loadNext] = useListView(ContributionsConnectionView, data.contributions);
 
 	return (
@@ -96,7 +106,7 @@ function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {
 			) : (
 				<ul className="kp-user-profile__list">
 					{items.map(({cursor, node}) => (
-						<ContributionRow key={cursor} node={node} />
+						<ContributionRow key={cursor} node={node} sandboxBadge={sandboxBadge} />
 					))}
 				</ul>
 			)}

@@ -1,0 +1,46 @@
+/* çaylak "yazarlığa giden yol" status block (#1291) — the çaylak's own
+   aggregate standing on their own profile. Role tokens only; the Karma atom owns
+   the progress bar + its reduced-motion behavior. */
+
+.kp-caylak-status {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	padding: var(--s-3) 0;
+	border-bottom: 1px solid var(--border-faint);
+	margin-bottom: var(--s-4);
+}
+
+.kp-caylak-status__heading {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-caylak-status__karma {
+	display: flex;
+}
+
+.kp-caylak-status__facts {
+	display: flex;
+	gap: var(--s-4);
+	margin: 0;
+}
+
+.kp-caylak-status__fact {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-caylak-status__term {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+.kp-caylak-status__value {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+	margin: 0;
+	font-variant-numeric: tabular-nums;
+}
