@@ -6,6 +6,7 @@ import {Link} from "react-router";
 import type {Contribution} from "../../../worker/features/fate/views";
 import {toIso} from "../../fate/wire";
 import {renderMarkdownInline} from "../../lib/markdown";
+import "./ContributionRow.css";
 
 export const ContributionView = view<Contribution>()({
 	kind: true,

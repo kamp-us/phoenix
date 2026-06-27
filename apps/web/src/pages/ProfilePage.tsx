@@ -4,6 +4,7 @@ import {authClient, clearBearerToken, useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
 import {Karma} from "../components/karma/Karma";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
+import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {type ThemeChoice, useTheme} from "../lib/theme";
@@ -145,6 +146,14 @@ export function ProfilePage() {
 						</div>
 					)}
 				</header>
+
+				{/* Thin contribution signal (#1209) — the owner's own track record,
+				    dark behind the authorship-loop flag (#1204). Flag off → exactly
+				    today's profile. The owner sees their OWN sandboxed content here
+				    (the feed keys on authorId with no sandbox filter). */}
+				{authorshipLoop && me?.username ? (
+					<ProfileContributionSignal username={me.username} />
+				) : null}
 
 				<section className="kp-profile__section">
 					<h3>hesap</h3>
