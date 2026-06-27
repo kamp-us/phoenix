@@ -19,6 +19,7 @@ import {interruptOnAbort} from "../../http/interrupt-on-abort.ts";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
 import {defaultLiveLimits, type PublishMessage} from "../fate-live/protocol.ts";
 import {LiveTopics} from "../fate-live/topics.ts";
+import {currentActorContext} from "../kunye/CurrentActorLive.ts";
 import {Pasaport} from "../pasaport/Pasaport.ts";
 
 export const handleFate = Effect.gen(function* () {
@@ -39,9 +40,12 @@ export const handleFate = Effect.gen(function* () {
 
 	// ONE context object for the whole request — never copy or rebuild it per
 	// resolver. No `signal` field: interruption is wired at this edge (below).
+	// `requestServices` fulfills the `[CurrentActor]` registered in `layers.ts`,
+	// derived from the same validated session (ADR 0107 §7).
 	const ctx: FateRequestContext = {
 		currentUser: {user: session?.user},
 		livePublisher: livePublisherFor({publish: publishToTopic, waitUntil}),
+		requestServices: currentActorContext(session?.user),
 	};
 
 	const res = yield* FateInterpreter.handleRequest(raw, ctx).pipe(interruptOnAbort(raw.signal));
