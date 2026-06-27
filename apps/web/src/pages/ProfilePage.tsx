@@ -5,6 +5,7 @@ import {useMe} from "../auth/useMe";
 import {Karma} from "../components/karma/Karma";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
 import {ProfileContributionSignal} from "../components/profile/ProfileContributionSignal";
+import {profileStandingLabel} from "../components/profile/profileStanding";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
 import {useFlag} from "../flags/useFlag";
 import {type ThemeChoice, useTheme} from "../lib/theme";
@@ -41,6 +42,12 @@ export function ProfilePage() {
 	const u = session.data?.user;
 	const name = u?.name ?? u?.email.split("@")[0] ?? "user";
 	const handle = u?.email.split("@")[0] ?? "user";
+	// The handle-line standing label, derived from the trusted tier (#1302) instead
+	// of the old hard-coded `· yeni üye` lie. `null` (flag off, or no honest tier) →
+	// handle-only, never a placeholder. Dark behind the same authorship-loop flag as
+	// the karma stat / CaylakStatusBlock so the tier surfaces here exactly when the
+	// rest of the loop does.
+	const standingLabel = profileStandingLabel(authorshipLoop, me?.tier);
 
 	const [draftName, setDraftName] = useState(name);
 	const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -116,7 +123,9 @@ export function ProfilePage() {
 					<div className="kp-profile__avatar">{initialsOf(name)}</div>
 					<div className="kp-profile__id">
 						<div className="kp-profile__name">{name}</div>
-						<div className="kp-profile__handle">@{handle} · yeni üye</div>
+						<div className="kp-profile__handle">
+							{standingLabel ? `@${handle} · ${standingLabel}` : `@${handle}`}
+						</div>
 					</div>
 					{statsFailed ? (
 						<div
