@@ -38,6 +38,7 @@ import * as Effect from "effect/Effect";
 import {PhoenixDb} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
 import {
+	authorshipLoopFlag,
 	demoTargetingFlag,
 	Flagship,
 	panoDraftSaveFlag,
@@ -64,6 +65,9 @@ export default Alchemy.Stack(
 		yield* demoTargetingFlag(flagship.appId);
 		// The pano taslak (draft-save) dark-ship flag, default-off (#746).
 		yield* panoDraftSaveFlag(flagship.appId);
+		// The earned-authorship loop (çaylak→yazar) dark-ship flag, default-off
+		// (#1204, epic #1202) — the single seam the authorship-loop epic gates behind.
+		yield* authorshipLoopFlag(flagship.appId);
 		// Email Sending IaC (ADR 0101) — the `send.kamp.us` sending subdomain, declared
 		// PRODUCTION-ONLY: a preview/dev deploy uses the `EmailSenderLog` sink and never
 		// provisions a per-stage email subdomain (reputation isolation + no waste). The

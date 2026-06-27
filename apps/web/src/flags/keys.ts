@@ -10,3 +10,11 @@
 
 /** Pano taslak (draft-save) dark-ship flag (#746). */
 export const PANO_DRAFT_SAVE = "pano-draft-save";
+
+/**
+ * Earned-authorship loop (çaylak→yazar) dark-ship flag (#1204, epic #1202). The
+ * single seam every authorship-loop surface gates behind: cross-cutting
+ * (`phoenix`) because the loop touches sözlük/pano/pasaport, default-off so the
+ * loop ships dark until a human flips it at release (ADR 0083).
+ */
+export const PHOENIX_AUTHORSHIP_LOOP = "phoenix-authorship-loop";
