@@ -223,3 +223,24 @@
 	width: 100%;
 	box-sizing: border-box;
 }
+
+/* Phone account surface (~375–414px, content ≈ 327px): the fixed 140px label track
+   crushes the value cell, and the margin-left:auto stats strip overflows a non-wrapping
+   flex head. Stack the label above the value (1fr value + auto edit-btn) and let the head
+   wrap so the stats strip drops below the avatar/name. 640px is the shared narrow-viewport
+   breakpoint for this cluster (LandingPage #1249, SozlukHome #1250). */
+@media (max-width: 640px) {
+	.kp-profile__head {
+		flex-wrap: wrap;
+	}
+	.kp-profile__stats-strip {
+		margin-left: 0;
+	}
+
+	.kp-profile__row {
+		grid-template-columns: 1fr auto;
+	}
+	.kp-profile__row .label {
+		grid-column: 1 / -1;
+	}
+}
