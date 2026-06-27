@@ -824,6 +824,174 @@ describe("LiveDO live fan-out (KV model)", () => {
 	});
 });
 
+// The epoch fence (#1072): the `subscribedAt - REPLAY_CLOCK_GRACE_MS` time-grace alone
+// admits ANY frame published within 1s before a (re)subscribe — including a frame published
+// BEFORE this connection's current epoch began. On a cursorless reconnect under a reused
+// connectionId the epoch bumps, but the replayed pre-epoch frame carries the CURRENT
+// generation, so `isStale` doesn't catch it → it leaks onto the new stream ahead of the live
+// frame. `replayBuffer` now ALSO floors at `epochStartedAt`, which a pre-epoch frame can never
+// beat — while a #714 register-race frame (published after `openStream`) still clears it. The
+// existing `subscribedAt + 60_000` test only covers the coarse past-grace case; these cover the
+// grace-window edge that leaked.
+describe("LiveDO replay epoch fence (#1072)", () => {
+	// Driven via direct `register` with explicit `subscribedAt` + `epochStartedAt` so the
+	// window edges are deterministic (no wall-clock race), mirroring the `subscribedAt`-floor
+	// tests: subscribe to a DECOY topic to activate the subId on the connection, publish to a
+	// SEPARATE topic with NO registered row (fan-out reaches nothing), so replay is the only
+	// path the frame could arrive by.
+	it("a pre-epoch frame inside the clock grace does NOT replay (epoch fence)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-epoch-fence";
+		const decoyKey = "Post:decoy-epoch-fence";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-epoch-fence");
+		const ownerId = "owner-epoch-fence";
+		const subId = "sub-epoch-fence";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Activate `subId` on the connection via the decoy (revision 1, generation 1).
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// Buffer a frame on the REAL topic (no row → fan-out delivers nothing).
+		const beforePublish = Date.now();
+		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		const afterPublish = Date.now();
+
+		// The epoch began strictly AFTER the frame was buffered (a reconnect past the
+		// publish), while `subscribedAt` sits INSIDE the 1s grace — so the time-grace floor
+		// alone (`subscribedAt - 1000` ≈ `afterPublish - 900` ≤ buffered.at) WOULD admit it
+		// (the pre-fix leak). The epoch floor (`epochStartedAt` > buffered.at) excludes it.
+		const epochStartedAt = afterPublish + 1;
+		const subscribedAt = afterPublish + 100;
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-epoch-fence",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		expect(beforePublish).toBeLessThan(epochStartedAt); // buffered.at < epoch start ⇒ fenced
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt, epochStartedAt}));
+		expect(reg.ok).toBe(true);
+
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+
+	it("a register-race frame at/after the epoch start still replays (#714 preserved)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:post-epoch-race";
+		const decoyKey = "Post:decoy-epoch-race";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		makeTopic(cell, decoyKey);
+
+		const connection = makeConnection(cell, "conn-epoch-race");
+		const ownerId = "owner-epoch-race";
+		const subId = "sub-epoch-race";
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		await run(connection.subscribe({subId, topics: [decoyKey], ownerId, limits: LIMITS}));
+
+		// The epoch began BEFORE the frame was published (the stream was already open when
+		// the race frame fired) and `subscribedAt` is at the epoch start — the #714 catch-up
+		// case. `buffered.at >= epochStartedAt`, so the fence does NOT exclude it.
+		const epochStartedAt = Date.now();
+		const subscribedAt = epochStartedAt;
+		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-epoch-race",
+			subId,
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const reg = await run(topic.register({row, limits: LIMITS, subscribedAt, epochStartedAt}));
+		expect(reg.ok).toBe(true);
+
+		const frame = await stream.next();
+		expect(frame).toContain("event: next");
+		expect(payloadOf(frame).id).toBe(subId);
+
+		await stream.cancel();
+	});
+
+	// The real-client flake shape end to end: a cursorless reconnect under a reused
+	// connectionId, driven through `openStream` → `subscribe` (which threads the recorded
+	// `epochStartedAt`), not a direct `register`. A small real gap before the reconnect makes
+	// `epochStartedAt` strictly later than the buffered frame yet far inside the 1s grace, so
+	// pre-fix the time-grace floor would leak the prior frame onto the reconnected stream.
+	it("a frame buffered before a cursorless reconnect's epoch does not leak onto the new stream", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:posts-reconnect";
+		const {instance: topic} = makeTopic(cell, topicKey);
+		const connection = makeConnection(cell, "conn-reconnect");
+		const ownerId = "owner-reconnect";
+
+		// First connect (epoch 1): a connection exists so the frame is realistic, but no
+		// subscription yet — the published frame lands only in the buffer.
+		await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+
+		// A real gap so the reconnect's `epochStartedAt` is strictly after the buffered
+		// frame's `at`, yet far inside the 1s grace (pre-fix, the grace floor still admits it).
+		await new Promise((resolve) => setTimeout(resolve, 5));
+
+		// Reconnect under the SAME connectionId (epoch 2): generation bumps, a fresh
+		// `epochStartedAt` is recorded — strictly after the buffered frame.
+		const res = await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+
+		// Cursorless resubscribe on the reconnected stream → register (generation 2) →
+		// replay. The buffered frame predates epoch 2, so the epoch fence excludes it.
+		const sub = await run(
+			connection.subscribe({subId: "sub-reconnect", topics: [topicKey], ownerId, limits: LIMITS}),
+		);
+		expect(sub.ok).toBe(true);
+
+		const echo = await Promise.race([
+			stream.next(),
+			new Promise<"idle">((resolve) => setTimeout(() => resolve("idle"), 50)),
+		]);
+		expect(echo).toBe("idle");
+
+		await stream.cancel();
+	});
+});
+
 // The OTHER buffer bound is the count cap (`maxBufferedFramesPerTopic`): the ring
 // stays small so a topic DO's storage can't grow without limit under a publish
 // storm with no subscriber to drain it. Prune runs INLINE on every publish

@@ -91,6 +91,12 @@ export interface LiveRpcSurface {
 		readonly row: SubscriberRow;
 		readonly limits: LiveLimits;
 		readonly subscribedAt: number;
+		// Connection-DO internal state (NOT a persisted row/frame field): the instant
+		// the subscribing connection's current epoch began. When present it raises the
+		// replay floor to the epoch start, fencing pre-epoch frames (#1072). Optional so
+		// a direct `register` (tests) that doesn't model an epoch falls back to the
+		// time-grace bound alone.
+		readonly epochStartedAt?: number;
 		readonly lastEventId?: string;
 	}) => Effect.Effect<{readonly ok: boolean}, never, never>;
 	readonly unregister: (input: {
@@ -194,6 +200,11 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	let framesQueue: Queue.Queue<Uint8Array> | undefined;
 	let ownerId: string | undefined;
 	let generation: number | undefined;
+	// Wall-clock instant this connection's CURRENT epoch began (set when `openStream`
+	// bumps `generation`). Replay floors at this so a frame published before the epoch
+	// — already in a cursorless reconnect's query result — can't leak onto the new
+	// stream past the backward time-grace. See {@link replayBuffer} (#1072).
+	let epochStartedAt: number | undefined;
 	const subscriptions = new Map<
 		string,
 		{revision: number; active: boolean; topics: ReadonlyArray<string>}
@@ -225,6 +236,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			// eviction still lands strictly higher than any stale row.
 			const next = (yield* loadGeneration) + 1;
 			generation = next;
+			epochStartedAt = Date.now();
 			yield* state.storage.put(GENERATION_KEY, next);
 			ownerId = input.ownerId;
 			subscriptions.clear();
@@ -300,13 +312,16 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 							revision,
 							updatedAt: Date.now(),
 						};
-						// Thread `subscribedAt` (the primary replay bound) plus `lastEventId`
-						// (an additional tightening on a cursored resubscribe) so the topic
-						// replays only frames from this subscriber's intent forward (#714).
+						// Thread `subscribedAt` (the primary replay bound), `epochStartedAt`
+						// (raises the floor to this connection's current epoch, fencing
+						// pre-epoch frames — #1072), and `lastEventId` (an additional
+						// tightening on a cursored resubscribe) so the topic replays only
+						// frames from this subscriber's current-epoch intent forward (#714).
 						yield* topicOf(live, topicKey).register({
 							row,
 							limits: input.limits,
 							subscribedAt,
+							...(epochStartedAt !== undefined ? {epochStartedAt} : {}),
 							...(input.lastEventId !== undefined ? {lastEventId: input.lastEventId} : {}),
 						});
 					}),
@@ -480,6 +495,15 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 	 * tightens further on a cursored resubscribe (skip frames at/under the id already
 	 * seen), but `subscribedAt` is the primary bound and applies even when no cursor.
 	 *
+	 * `epochStartedAt` is a SECOND lower floor (#1072): a cursorless resubscribe under a
+	 * reused `connectionId` reads `subscribedAt` fresh, so the backward time-grace alone
+	 * admits any frame published within `REPLAY_CLOCK_GRACE_MS` before the resubscribe —
+	 * INCLUDING a frame published before this connection's current epoch began (the epoch
+	 * bumps on each (re)connect, but that pre-epoch frame carries the CURRENT generation
+	 * once replayed, so `isStale` doesn't exclude it). Flooring at the epoch start fences
+	 * it: a #714 register-race frame is published after `openStream` (`at >= epochStartedAt`)
+	 * so it still replays, while a pre-epoch frame (`at < epochStartedAt`) is excluded.
+	 *
 	 * Dedup guarantee — at-most-once, exclusive-by-construction: fan-out (`publish`)
 	 * delivers ONLY to connections already in the registry; replay delivers ONLY to
 	 * the connection that is registering NOW — which fan-out could not have reached,
@@ -494,6 +518,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		row: SubscriberRow,
 		limits: LiveLimits,
 		subscribedAt: number,
+		epochStartedAt: number | undefined,
 		lastEventId: string | undefined,
 	) =>
 		Effect.gen(function* () {
@@ -502,7 +527,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			const window = yield* pruneBuffer(entries, limits, now);
 			// `subscribedAt` is the connection-DO clock, `buffered.at` the topic-DO's;
 			// the grace absorbs sub-second cross-DO skew (see REPLAY_CLOCK_GRACE_MS).
-			const floor = subscribedAt - REPLAY_CLOCK_GRACE_MS;
+			// `epochStartedAt` raises the floor to this connection's current epoch start so
+			// a pre-epoch frame inside the grace window can't leak (#1072); absent ⇒ the
+			// epoch term drops out and the grace bound stands alone.
+			const floor = Math.max(
+				subscribedAt - REPLAY_CLOCK_GRACE_MS,
+				epochStartedAt ?? Number.NEGATIVE_INFINITY,
+			);
 			// The cursor is the last per-topic `seq` the subscriber saw (every delivered frame
 			// now carries `eventId === String(seq)`, primary fan-out and replay alike). Compare
 			// numerically against `buffered.seq` and replay only STRICTLY-newer frames — robust
@@ -567,7 +598,13 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			// Catch up the just-registered connection on frames a publish that beat this
 			// register would have missed it on (#714). Replay reaches ONLY this
 			// connection, which fan-out could not have — see {@link replayBuffer}.
-			yield* replayBuffer(row, input.limits, input.subscribedAt, input.lastEventId);
+			yield* replayBuffer(
+				row,
+				input.limits,
+				input.subscribedAt,
+				input.epochStartedAt,
+				input.lastEventId,
+			);
 			return {ok: true};
 		});
 
