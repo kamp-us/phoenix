@@ -403,9 +403,13 @@
 
 /* ──────────── 3. ROLE ALIASES ────────────
    These are the ONLY tokens components should reference.
-   Radix only sanctions step 11 (low-contrast) and step 12 (high-contrast)
-   for text. We collapse muted/faint onto gray-11 so all body/meta passes AA;
-   only --text-primary uses gray-12.                                         */
+   Text-hierarchy ladder — four perceptually distinct steps, not the old
+   collapse-onto-gray-11. Radix sanctions gray-11/12 for body text, so the three
+   meaning-carrying rungs stay AA-safe (≥4.5:1 vs --surface in every theme):
+   primary=12, secondary=mix(11,12), muted=11. Only faint — reserved for
+   decorative/non-essential text (placeholders, disabled, hints) — drops to
+   gray-10, which clears the 3:1 large-text/UI bar but not 4.5:1, so it is never
+   used for text that carries meaning. Per-theme contrast table is in the PR. */
 :root {
 	--surface: var(--gray-2);
 	--surface-sunken: var(--gray-1);
@@ -415,9 +419,9 @@
 	--border: var(--gray-6);
 	--border-strong: var(--gray-7);
 
-	--text-faint: var(--gray-11);
+	--text-faint: var(--gray-10);
 	--text-muted: var(--gray-11);
-	--text-secondary: var(--gray-11);
+	--text-secondary: color-mix(in oklab, var(--gray-11), var(--gray-12));
 	--text-primary: var(--gray-12);
 
 	--accent: var(--accent-9);

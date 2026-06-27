@@ -59,7 +59,7 @@
 
 .kp-search__section-empty {
 	font: var(--t-meta);
-	color: var(--text-faint);
+	color: var(--text-muted);
 	padding: var(--s-2) 0;
 }
 
