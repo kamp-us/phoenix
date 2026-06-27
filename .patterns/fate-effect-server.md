@@ -43,6 +43,15 @@ Effect.fn("definition.add")(function* ({input}) {
 
 but **no worker-level layer ever provides them**: the interpreter ([fate-effect-interpreter.md](./fate-effect-interpreter.md)) provides the pair onto each operation as VALUES off the one `FateRequestContext` the route builds (`currentUser` from the session, `livePublisher` from the request's execution context — the oracle-baseline compile step does the same on its plane), and `FateServerRequirements` excludes both from the layer's R. This is what made the bridge's `FateContext` smuggling unnecessary (the bridge is deleted — ADR 0042). `LivePublisher`'s publish methods are typed `Effect<void>` — waitUntil scheduling and error-swallowing live inside its layer, once, so "a publish cannot fail the mutation" is a type, not a per-call-site convention.
 
+## The generic per-request provision seam (ADR 0107 §7)
+
+An app can register **extra** per-request services beyond the pair — e.g. a `CurrentActor` derived from `CurrentUser` — **without coupling fate-effect to the app's vocabulary** (no authz import; the package names none of them). The seam has two ends:
+
+- **Declare** the extra per-request tags at the composition root: `FateServer.layer(config, [CurrentActor])`. The registration is a **type-level witness only** — the layer captures build-time services exactly as the single-arg overload does and never reads the keys at runtime. Its job is to widen `FateServerRequirements<C, PR>` so the registered tags drop out of the layer's R alongside the pair. A handler depending on a registered per-request service is therefore **not** a `Layer.provide` requirement; it's filled per request.
+- **Fulfill** it per request: put the tags' VALUES in `FateRequestContext.requestServices` (an opaque `Context.Context<never>`, like the captured build-time `services`). `provideRequestPair` provides this bag **innermost of the build-time services** (`Provision.ts`), so a per-request value wins there too. Absent ⇒ `Context.empty()`.
+
+The two ends are deliberately decoupled, mirroring the pair: registering a tag at the layer excludes it from build-time R, but nothing forces the request context to actually supply it — a **declared-but-unprovided** per-request service fails loudly at run (`Service not found`), never silently, exactly like a missing `currentUser`. Conversely, a handler that needs a service the app **neither layers nor registers** stays in R and is a **compile error at the composition site** — the leak is caught at build time. (`RegisteredRequestServices<Keys>` extracts each key's R-channel identifier off its `Context.Key` `Identifier` phantom.)
+
 ### The `LivePublisher` live implementation (worker-side)
 
 The package owns only the tag + contract; the live implementation is the worker's — it needs the LiveDO topic fan-out and the request's execution context, which the package can't know. [`livePublisherFor(options)`](../apps/web/worker/features/fate-live/live-publisher.ts) builds the per-request service VALUE (a value, not a `Layer`) over two capabilities:

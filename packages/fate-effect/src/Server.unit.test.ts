@@ -24,12 +24,17 @@
  * purpose: the package tsconfig is `composite`, so tsgo's declaration
  * nameability checks (TS2883) run over the inferred types.
  */
-import {Effect} from "effect";
+import {Context, Effect, type Layer} from "effect";
 import * as Schema from "effect/Schema";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {FateDataView} from "./DataView.ts";
 import {Fate} from "./index.ts";
-import {declaredWireCodes, FateServer} from "./Server.ts";
+import {
+	declaredWireCodes,
+	FateServer,
+	type FateServerRequirements,
+	type RegisteredRequestServices,
+} from "./Server.ts";
 import {FateWireCode, INTERNAL_WIRE_CODE} from "./WireError.ts";
 
 // --- fixture rows + views (exported: the TS2883 nameability fixture) --------
@@ -198,5 +203,65 @@ describe("declaredWireCodes", () => {
 		for (const canary of ["NOTE_NOT_FOUND", "BODY_REQUIRED", "RATE_LIMITED"]) {
 			expect(codes).toContain(canary);
 		}
+	});
+});
+
+// --- the generic per-request provision seam (ADR 0107 §7) -------------------
+
+/**
+ * A stand-in for an app's EXTRA per-request service (the künye `CurrentActor`
+ * shape). The package names none of it: it appears here only as a handler
+ * requirement and as a registration KEY, exactly as an app would wire it.
+ */
+class Actor extends Context.Service<Actor, {readonly id: string; readonly level: string}>()(
+	"test/Actor",
+) {}
+
+/**
+ * A config whose one handler requires `Actor`. `type: "Whoami"` is a bare wire
+ * type (no view ⇒ no source), so `Actor` is the only thing left in R after the
+ * per-request pair is excluded — the cleanest probe for the exclusion math.
+ */
+export const actorConfig = FateServer.config({
+	queries: {
+		whoami: Fate.query({type: "Whoami"}, () =>
+			Effect.gen(function* () {
+				const actor = yield* Actor;
+				return {id: actor.id};
+			}),
+		),
+	},
+});
+
+describe("FateServerRequirements — generic per-request provision exclusion (ADR 0107 §7)", () => {
+	it("an UNREGISTERED per-request service leaks into R (a build-time requirement)", () => {
+		// Without registration `Actor` stays in R, so a handler depending on it is
+		// a compile error at the `Layer.provide` composition site — the leak is
+		// caught at build time, never as a silent runtime miss.
+		expectTypeOf<FateServerRequirements<typeof actorConfig>>().toEqualTypeOf<Actor>();
+		expectTypeOf(FateServer.layer(actorConfig)).toEqualTypeOf<
+			Layer.Layer<FateServer, never, Actor>
+		>();
+	});
+
+	it("a REGISTERED per-request service is excluded from R (provided per request, not at build time)", () => {
+		// `PR = Actor` drops it out alongside the pair…
+		expectTypeOf<FateServerRequirements<typeof actorConfig, Actor>>().toEqualTypeOf<never>();
+		// …and the registration overload infers `PR` from the key list, so the
+		// composed layer needs nothing extra at `Layer.provide` time.
+		expectTypeOf(FateServer.layer(actorConfig, [Actor])).toEqualTypeOf<
+			Layer.Layer<FateServer, never, never>
+		>();
+	});
+
+	it("RegisteredRequestServices extracts each key's R-channel identifier", () => {
+		expectTypeOf<RegisteredRequestServices<readonly [typeof Actor]>>().toEqualTypeOf<Actor>();
+		expectTypeOf<RegisteredRequestServices<readonly []>>().toEqualTypeOf<never>();
+	});
+
+	it("the registration is type-level only — the built layer is the same FateServer value", () => {
+		// The keys widen the type exclusion; at runtime the layer captures
+		// build-time services exactly as the unregistered overload does.
+		expect(FateServer.layer(actorConfig, [Actor])).toBeDefined();
 	});
 });

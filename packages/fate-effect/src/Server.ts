@@ -222,15 +222,32 @@ export type FateConfigServices<C extends AnyFateServerConfig> =
 	| FateSourceServices<C["sources"][number]>;
 
 /**
- * The layer's R: the config's requirements MINUS the per-request pair. The
- * server itself provides `CurrentUser` and `LivePublisher` to each handler
- * per request (the provision pipeline, `Provision.ts`) — they are the
- * per-request contract, so they never appear at the `Layer.provide`
- * composition site.
+ * The service identifier a `Context.Key` registers (its R-channel tag) —
+ * `typeof CurrentActor` ↦ `CurrentActor`. The provision seam reads it off the
+ * keys {@link FateServer.layer} takes, never naming the app's service.
  */
-export type FateServerRequirements<C extends AnyFateServerConfig> = Exclude<
+export type RequestServiceId<K> = K extends Context.Key<infer Id, infer _S> ? Id : never;
+
+/**
+ * The union of service identifiers a list of per-request `Context.Key`s
+ * registers, driving the extra exclusion in {@link FateServerRequirements}.
+ */
+export type RegisteredRequestServices<Keys extends ReadonlyArray<unknown>> = {
+	[Index in keyof Keys]: RequestServiceId<Keys[Index]>;
+}[number];
+
+/**
+ * The layer's R: the config's requirements MINUS the per-request pair
+ * (`CurrentUser`/`LivePublisher`, provided per request by `Provision.ts`), and
+ * MINUS any extra per-request services the app registered (`PR`, default
+ * `never`, ADR 0107 §7) — a handler depending on a registered service is then
+ * filled per request, not at `Layer.provide`. A handler needing a service the
+ * app neither layers NOR registers stays in R: a build-time compile error, never
+ * a silent runtime miss.
+ */
+export type FateServerRequirements<C extends AnyFateServerConfig, PR = never> = Exclude<
 	FateConfigServices<C>,
-	CurrentUser | LivePublisher
+	CurrentUser | LivePublisher | PR
 >;
 
 // --- init-time validation -------------------------------------------------------
@@ -488,7 +505,25 @@ export class FateServer extends Context.Service<FateServer, FateServerService>()
 	static layer<C extends AnyFateServerConfig>(
 		config: C,
 	): Layer.Layer<FateServer, never, FateServerRequirements<C>>;
-	static layer(config: AnyFateServerConfig): Layer.Layer<FateServer> {
+	/**
+	 * The generic per-request provision overload (ADR 0107 §7). Pass the extra
+	 * per-request service KEYS the app fills per request (e.g. `[CurrentActor]`)
+	 * and they drop out of R alongside the pair. The keys are a TYPE-LEVEL witness
+	 * only — they widen {@link FateServerRequirements}; the layer never reads them
+	 * at runtime (hence `_requestServices`), and the app fills their VALUES via
+	 * `FateRequestContext.requestServices`.
+	 */
+	static layer<
+		C extends AnyFateServerConfig,
+		const Keys extends ReadonlyArray<Context.Key<unknown, unknown>>,
+	>(
+		config: C,
+		requestServices: Keys,
+	): Layer.Layer<FateServer, never, FateServerRequirements<C, RegisteredRequestServices<Keys>>>;
+	static layer(
+		config: AnyFateServerConfig,
+		_requestServices?: ReadonlyArray<Context.Key<unknown, unknown>>,
+	): Layer.Layer<FateServer> {
 		return Layer.effect(
 			FateServer,
 			Effect.gen(function* () {
