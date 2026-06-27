@@ -102,6 +102,24 @@ export interface PostConnectionPage {
 export type PostPage = Omit<IntrinsicRow, "isDraft">;
 
 /**
+ * `PostFields` — the wire shaper's input (`toPost` in `shapers.ts`): the intrinsic
+ * wire-named fields a shaper call supplies, derived from this one column→field map
+ * so the wire shaper's field set can't drift from the row mappers / `postViewFields`
+ * (the third hand-synced restatement #1126 AC#1 collapses). The shaper tolerates the
+ * looser write/vote nullability — a fresh write/vote carries no `updatedAt`, and
+ * `isDraft` + the `myVote` / `isSaved` viewer scalars are stamped late — so those ride
+ * as optional; `tags` widens to a `ReadonlyArray`. The map stays the single source:
+ * rename a column reader here and `PostFields` follows, no fourth restatement to sync.
+ */
+export type PostFields = Omit<IntrinsicRow, "updatedAt" | "isDraft" | "tags"> & {
+	updatedAt?: Date | null;
+	isDraft?: boolean | null;
+	myVote?: boolean | null;
+	isSaved?: boolean | null;
+	tags: ReadonlyArray<PostTagRow>;
+};
+
+/**
  * The view/wire field selection (`{id: true, …}`) — a static literal (fate's
  * `FateDataView` reads the literal field map off this, so it can't be a
  * dynamically-built object). `satisfies Record<keyof PostSummaryRow, true>` pins
