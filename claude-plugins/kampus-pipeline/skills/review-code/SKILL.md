@@ -1007,6 +1007,37 @@ All criteria pass. This PR is merge-ready. **review-code does not merge** — `s
 the authorized merge step; merging will auto-close #<ISSUE> via `Fixes #<ISSUE>`.
 ```
 
+### The marker is the contract — emit the canonical line, never a freelance form (governs 4a *and* 4b)
+
+The first line is **the contract `ship-it` consumes**, not a stylistic choice — it must match
+the anchored recognizer **exactly**, or `ship-it` resolves the PR to `unverified` and silently
+refuses to merge a genuine, current-head PASS. The recognizer is one anchored regex, shared
+verbatim by all three consumer sites — `ship-it` Step 2 (`^\s*\**\s*review-code:\s*(PASS|FAIL)\s*@\s*([0-9a-f]{7,40})`),
+`write-code`'s fix round-trip, and this gate's own Step 4c self-check — and pinned once in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §5. **Emit the canonical first
+line so it matches that regex; never any of the freelance forms §5 forbids.** The forms below
+each fail the anchor and are exactly what stalled a real PASS on PR #1095:
+
+- **Never wrap the marker in an HTML comment** — `<!-- review-code: PASS @ <sha> — merge-ready -->`.
+  The `<!--` is non-whitespace ahead of `review-code:`, so it fails the `^\s*\**\s*` anchor (which
+  absorbs only Markdown emphasis, never `<!--`). The marker is **live body text**. This is the
+  exact #1095 shape (`<!-- review-code: PASS sha:b82d1d42… round:1 -->`) that ship-it could not read.
+- **Never use `sha:` (or any non-`@` delimiter)** — `review-code: PASS sha:<sha>`. The recognizer
+  captures the bound SHA **only** from the literal `@ <sha>` tail; `sha:<sha>` matches just the
+  SHA-less prefix → `unverified`. The delimiter is `@`, never `sha:`/`SHA=`/`commit:`.
+- **Never post a heading-only / prose-only verdict** — `## review-code verdict: PASS` with no
+  marker line. A heading carries no `@ <sha>` and isn't anchored at the namespace token; the
+  recognizable marker line is required *in addition to* any human-facing heading.
+- **Never bury the marker below a preamble** — the `^` anchor pins it to the **literal first line**
+  of the comment body; a marker after an intro paragraph never matches. It leads the body.
+
+The fix for any of these is always to **emit the canonical shape** — never to ask a consumer to
+loosen its matcher (ADR 0058 forbids weakening the SHA-binding). Step 4c is the backstop: it
+re-reads the posted comment against this same anchored regex and **hard-fails + re-posts** if the
+landed marker doesn't match — so a freelanced form is caught loudly at emission, not silently at
+merge. The FAIL marker (Step 4b) is held to the identical contract — same anchor, same `@ <sha>`,
+same forbidden forms — differing only in polarity (`FAIL @ <sha> — not merge-ready`).
+
 ### Pass path — blocking-set PR (advisory only, the canonical advisory form)
 
 Every criterion passed but `CONTROL_PLANE_TOUCHED` (Step 2) is non-empty — the PR touches the
