@@ -37,6 +37,7 @@ import * as HttpClient from "effect/unstable/http/HttpClient";
 import {inject} from "vitest";
 import Stack from "../../alchemy.run.ts";
 import {isTransientDeployError} from "./_deploy-transient.ts";
+import {isLiveWarmupNotReady} from "./_fate-live-warmup.ts";
 import {type Harness, harness} from "./_harness.ts";
 import {slugify, stageName} from "./_stage-name.ts";
 
@@ -54,9 +55,15 @@ class WorkerNotReady extends Data.TaggedError("WorkerNotReady")<{readonly status
 // Retry sentinel for the DO-backed `/fate/live` warmup below. The `/api/health` probe
 // proves the WORKER route propagated, but never touches the `LiveDO` — so a cold
 // LiveDO still surfaces the bounded cold-start envelope (`fate-live/cold-start-retry.ts`)
-// as a 503 `LIVE_UNAVAILABLE` on the first connect/subscribe. Tagged distinctly from
-// `WorkerNotReady` so the two readiness gates retry on their own signals.
-class LiveDONotReady extends Data.TaggedError("LiveDONotReady")<{readonly status: number}> {}
+// as a 503 `LIVE_UNAVAILABLE` on the first connect/subscribe; and the DO-backed route can
+// still serve a Cloudflare edge-placeholder 404 (HTML) until it propagates, even after
+// `/api/health` is green (#1058). Carries the `contentType` so `isLiveWarmupNotReady` can
+// tell that placeholder apart from a legitimate worker JSON 404/auth response. Tagged
+// distinctly from `WorkerNotReady` so the two readiness gates retry on their own signals.
+class LiveDONotReady extends Data.TaggedError("LiveDONotReady")<{
+	readonly status: number;
+	readonly contentType: string;
+}> {}
 
 // Retry sentinel for the `POST /fate` warmup below. `/api/health` warms only the worker
 // route and `warmLiveDO` only the `/fate/live` DO path — neither exercises `POST /fate`
@@ -209,10 +216,29 @@ export const warmLiveDO = (url: string): Effect.Effect<void, never, never> =>
 					Effect.promise(() => res.body?.cancel().catch(() => {}) ?? Promise.resolve()),
 				),
 				Effect.flatMap((res) =>
-					// A cold LiveDO renders 503 `LIVE_UNAVAILABLE`; 200 means it warmed.
-					res.status === 200 ? Effect.void : Effect.fail(new LiveDONotReady({status: res.status})),
+					// 200 means it warmed. Any non-200 carries its `content-type` so the retry's
+					// `while` can tell a "not ready yet" signal (cold-start 503, CF edge-placeholder
+					// HTML 404) from a terminal worker JSON 4xx (`isLiveWarmupNotReady`).
+					res.status === 200
+						? Effect.void
+						: Effect.fail(
+								new LiveDONotReady({
+									status: res.status,
+									contentType: res.headers.get("content-type") ?? "",
+								}),
+							),
 				),
-				Effect.retry({schedule: Schedule.spaced("2 seconds"), times: 30}),
+				Effect.retry({
+					// Keep retrying every not-ready signal AND any transport-level fetch failure (an
+					// edge reset while the route propagates), but stop on a terminal worker JSON 4xx
+					// so a real 404/auth response doesn't burn the whole bound (#1058).
+					while: (cause) =>
+						cause instanceof LiveDONotReady
+							? isLiveWarmupNotReady(cause.status, cause.contentType)
+							: true,
+					schedule: Schedule.spaced("2 seconds"),
+					times: 30,
+				}),
 			),
 		),
 		// Warmup is a readiness OPTIMIZATION, not an assertion: if it can't establish a
