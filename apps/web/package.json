@@ -33,6 +33,7 @@
 		"@effect/platform-node": "catalog:",
 		"@effect/sql-pg": "catalog:",
 		"@nkzw/fate": "catalog:",
+		"@kampus/authz": "workspace:*",
 		"@kampus/db-schema": "workspace:*",
 		"@kampus/fate-effect": "workspace:*",
 		"@usirin/forge": "catalog:",

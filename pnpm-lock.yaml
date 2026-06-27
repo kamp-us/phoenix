@@ -166,6 +166,9 @@ importers:
       '@effect/sql-pg':
         specifier: 'catalog:'
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)
+      '@kampus/authz':
+        specifier: workspace:*
+        version: link:../../packages/authz
       '@kampus/db-schema':
         specifier: workspace:*
         version: link:../../packages/db-schema
