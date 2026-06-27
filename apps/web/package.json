@@ -33,6 +33,7 @@
 		"@effect/platform-node": "catalog:",
 		"@effect/sql-pg": "catalog:",
 		"@nkzw/fate": "catalog:",
+		"@kampus/authz": "workspace:*",
 		"@kampus/db-schema": "workspace:*",
 		"@kampus/fate-effect": "workspace:*",
 		"@usirin/forge": "catalog:",
@@ -49,8 +50,10 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:",
+		"@distilled.cloud/cloudflare": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
+		"@kampus/d1-rest": "workspace:*",
 		"@playwright/test": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",
