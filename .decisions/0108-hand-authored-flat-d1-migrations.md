@@ -56,7 +56,7 @@ Two facts bound the decision:
   remaining flat-layout consumers are alchemy's `migrationsDir` (deploy) and
   `drizzle.config.ts`'s `out`; the former test-side consumer (`sqlite-d1.testing.ts`,
   a `?raw` baseline import) is gone since the test tier moved to real-D1 integration
-  (ADRs [0082](0082-two-test-tiers-real-d1-do.md) / [0104](0104-two-mode-integration-test-tier.md)).
+  (ADRs [0082](0082-two-test-tiers-unit-integration.md) / [0104](0104-two-mode-integration-test-tier.md)).
 - **A history rewrite collides with the in-flight authz/imge migration lane.**
   Migrations `0010_relation_tuple` … `0014_imge_object` are the capability-authz
   framework's work (epic #1228, issue #1109, ADR
