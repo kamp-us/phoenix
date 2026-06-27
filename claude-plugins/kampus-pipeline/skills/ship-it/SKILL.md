@@ -795,35 +795,71 @@ deliberate **human** act (infra-admins, the Cloudflare dashboard), never an agen
 ends at queueing; the human consumes the queue and flips. Applying the label is the **whole**
 of the release-queue step — no flip, no notification, no second action.
 
-This step keys off the **`**Containment:**` marker on the linked issue** — the per-child field
-defined once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
-§The-product-development-cycle-hook (the single source; cite it, don't re-derive the grammar).
-It runs **only** when the cycle doc is present *and* the linked issue's marker is
-`flag (default-off)`. On `exempt`, `none (no cycle doc)`, a **missing** marker (which reads as
-`none` per the contract's tolerant-read rule), an **absent** cycle doc (the graceful-absence
-contract, ADR 0062), or **no linked issue** (the docs-only path) → there is **nothing dark to
-release**, so this step **no-ops** and the merge behavior is exactly as it was before this
-dimension existed:
+This step keys off a **ground-truth signal of the merged PR itself** — *did this PR actually ship
+a flag-gated dark feature?* — **not** the linked issue's `**Containment:**` stamp. That stamp
+encodes the issue's *containment intent* and is routinely **inherited from an epic's blanket
+stamp** (every child of a flag-containment epic carries `flag (default-off)` whether or not it
+ships dark), so it is *necessary-but-not-sufficient*: a PR can carry the inherited stamp yet ship
+**ungated** — an a11y/contrast/UX foundation on an existing surface, where gating it default-off
+would ship the regressed state as the prod default. Keying off the stamp queued such a PR toward a
+flag-flip **that does not exist**, pointing a human releaser at a phantom release and eroding trust
+in the queue; today only per-shipper ad-hoc judgment ("this shipped ungated, so no queue") avoided
+the false label. So ship-it **no longer reads the Containment marker here** (the bug issue #1257
+closes). The marker's two contract-named readers in
+[`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)
+§The-product-development-cycle-hook — `write-code` (ships dark) and `review-code` (verifies the
+gating) — are **unchanged**; ship-it was never one of them, so dropping the read makes ship-it
+*consistent* with that contract while making the release-queue decision **structural, requiring no
+per-shipper judgment**.
+
+The trigger is **two ground-truth signals of the PR**, either of which proves the merge shipped a
+real dark feature:
+
+- **(a) the diff introduces a flag.** The PR **adds** a default-off flag declaration in the
+  flag-IaC surface — the canonical home is `apps/web/worker/features/flagship/resources.ts` (ADR
+  [0081](https://github.com/kamp-us/phoenix/blob/main/.decisions/0081-feature-flag-substrate-cloudflare-flagship.md),
+  epic #488). An added `Cloudflare.FlagshipFlag(` factory call or a `defaultVariation:` flag-config
+  line there is a **real default-off flag this merge introduced** — the very artifact `write-code`
+  Step 4b mints and `review-code` Step 3b verifies, so a genuine dark ship carries it.
+- **(b) the PR body declares the flag key.** An explicit `Flag: <key>` / `Flag key: <key>` line
+  naming the kebab-case flag this PR dark-ships — the fallback for a feature that gates behind a
+  flag a **prior** PR already declared, so the flag resource isn't in *this* diff.
+
+It runs **only** when there is a linked issue *and* the cycle doc is present (the graceful absence
+contract, ADR 0062 — an absent cycle doc means no flag substrate, hence nothing to release). With
+those preconditions met, the merge queues `status:awaiting-release` **iff** signal (a) or (b)
+fires. When **neither** fires the PR shipped **ungated** → this step **no-ops** regardless of the
+issue's inherited stamp (exactly the #1211/#1212/#1213 foundation shape, addressing #1202). On
+**no linked issue** (the docs-only path) or an **absent cycle doc** it also no-ops — so the merge
+behavior is exactly as it was before this dimension existed:
 
 ```bash
 RELEASE_QUEUE="n/a (not a dark ship)"   # default: the no-op state
 
-# Only a dark feature ship has anything to queue: a linked issue + the cycle doc present + the
-# issue's Containment marker == flag (default-off). All three or it's a no-op (graceful absence).
+# Only a REAL dark ship has anything to queue: a linked issue + the cycle doc present (graceful
+# absence, ADR 0062), THEN a ground-truth signal that THIS PR shipped a flag-gated feature — never
+# the linked issue's (often epic-inherited) Containment stamp, the phantom-release bug #1257 closes.
 if [ -n "$ISSUE" ] && gh api "repos/$REPO/contents/product-development-cycle.md" --jq '.path' >/dev/null 2>&1; then
-  # the per-child marker (gh-issue-intake-formats.md §The-product-development-cycle-hook).
-  # Missing line ⇒ "" ⇒ reads as none ⇒ no-op (tolerant-read rule).
-  # `// {v:null}` is required: jq's capture ERRORS on no match (it doesn't return null), so a
-  # missing line falls through to "" — the same defensive idiom Step 2's @ <sha> capture uses.
-  CONTAINMENT=$(gh api repos/$REPO/issues/$ISSUE \
-    --jq '.body // "" | (capture("(?i)\\*\\*Containment:\\*\\*\\s*(?<v>[^\\n]*)") // {v:null}) | .v // ""')
-  case "$CONTAINMENT" in
-    flag\ \(default-off\)*)
-      # deployed-dark → add the linked issue to the release queue for a human to flip (#602)
-      gh api -X POST "repos/$REPO/issues/$ISSUE/labels" -f "labels[]=status:awaiting-release"
-      RELEASE_QUEUE="queued (awaiting human flip)"
-      ;;
-  esac
+  # (a) the DIFF introduces a flag: an ADDED declaration in the flag-IaC surface
+  #     (apps/web/worker/features/flagship/resources.ts — the canonical flag home, ADR 0081).
+  #     `+` patch lines are additions; an added `FlagshipFlag(` factory call or a `defaultVariation:`
+  #     flag-config line is a real default-off flag THIS PR introduced (write-code Step 4b mints it,
+  #     review-code Step 3b verifies it).
+  FLAG_IN_DIFF=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+    --jq '.[] | select(.filename | test("features/flagship/resources\\.ts$")) | .patch // ""' \
+    | grep -E '^\+' | grep -Eq 'FlagshipFlag\(|defaultVariation:' && echo yes || echo no)
+
+  # (b) the PR BODY declares the dark-ship flag key explicitly (a `Flag:`/`Flag key:` line naming a
+  #     kebab-case key) — covers gating behind a flag a PRIOR PR already declared (not in THIS diff).
+  FLAG_IN_BODY=$(gh api repos/$REPO/pulls/$PR --jq '.body // ""' \
+    | grep -Eiq '^[[:space:]]*\**[[:space:]]*flag([[:space:]]*key)?:[[:space:]]*\**[[:space:]]*[a-z0-9]+(-[a-z0-9]+)+' && echo yes || echo no)
+
+  if [ "$FLAG_IN_DIFF" = yes ] || [ "$FLAG_IN_BODY" = yes ]; then
+    # deployed-dark (a real flag shipped) → add the linked issue to the release queue for a human flip (#602)
+    gh api -X POST "repos/$REPO/issues/$ISSUE/labels" -f "labels[]=status:awaiting-release"
+    RELEASE_QUEUE="queued (awaiting human flip)"
+  fi
+  # neither signal ⇒ the PR shipped ungated (the inherited-stamp false positive #1257 closes) ⇒ no-op, no label
 fi
 ```
 
@@ -860,10 +896,12 @@ release: queued (awaiting human flip) | n/a (not a dark ship)
 ```
 
 The `release:` line is the deployment/release boundary made visible (ADR 0083): `queued
-(awaiting human flip)` when Step 5b applied `status:awaiting-release` to a dark feature ship,
-`n/a (not a dark ship)` on an `exempt`/`none`/missing marker, an absent cycle doc, or a docs-only
-PR. ship-it never flips the flag — the queued line hands the release to a human, it does not
-perform it.
+(awaiting human flip)` when Step 5b's ground-truth signal fired (the PR introduced a default-off
+`FlagshipFlag` in the diff, or its body declared the dark-ship flag key) and it applied
+`status:awaiting-release`; `n/a (not a dark ship)` when the merged PR shipped **ungated** (no flag
+in the diff, no flag key declared — regardless of any inherited issue Containment stamp), on an
+absent cycle doc, or on a docs-only / unlinked PR. ship-it never flips the flag — the queued line
+hands the release to a human, it does not perform it.
 
 When `ISSUE` is unset (the docs-only no-link path, Step 1 / ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)) the two issue
