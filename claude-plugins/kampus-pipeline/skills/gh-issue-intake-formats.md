@@ -795,6 +795,19 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'
   | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING — control plane (manual merge)"
 ```
 
+**The §CP-deciding consumers resolve this line from `origin/main` at run time, not from the
+copy embedded in their own skill body.** A skill runs against the **snapshot injected into the
+agent's context at invoke time**, which can lag `origin/main` even when the on-disk copy in the
+same worktree is current — so an agent on a pre-amendment snapshot once auto-merged a
+now-control-plane PR the *current* boundary marks human-merge-only (#981). The fix makes the
+single source authoritative **at run time**: `ship-it` Step 0 and `review-code` Step 2 read the
+`CONTROL_PLANE_RE` line from this file on `origin/main` (REST raw, `?ref=main`) and classify
+against *that*, **failing closed** — every path treated as control-plane, so the gate refuses —
+if the read can't be made, never falling back to the possibly-stale snapshot. The embedded copy
+each consumer still carries is the fail-closed reference and the `validate-gate-path-drift`
+lockstep target; it is **not** the live decision source. This makes ADR 0073 §6's "single
+definition" hold across snapshot age, not just on disk.
+
 The **0052 instruction-trust set** (root `CLAUDE.md`, `.claude/**`, `.decisions/**`,
 `.patterns/**`) is a *different* set — what a reviewer must never *load*, an isolation
 concern, not a merge-blocking one. Keep them apart (review-code Step 2 spells out the
