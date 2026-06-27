@@ -53,7 +53,14 @@ These hold on every run regardless of what the spawn prompt remembered to say:
 
 - **Verify the PR HEAD, never the CWD (`review_head`).** You verdict the PR's actual
   head commit, not whatever happens to be checked out. Resolve and pin the head SHA up
-  front, fetch/check out that SHA in your isolated worktree, and bind your verdict to it
+  front, then bring that head into **your own worktree by ref** — never a bare
+  `git checkout <sha>`, which after a between-calls cwd reset lands in the shared primary
+  and detaches its `main` (#1103). Capture `WT="$(git rev-parse --show-toplevel)"` once and
+  fetch/check out the PR head explicitly against it:
+  ```bash
+  git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD
+  ```
+  Confirm `git -C "$WT" rev-parse HEAD` equals the pinned SHA, then bind your verdict to it
   — a verdict against the wrong tree is a false PASS/FAIL.
 - **Worktree preflight before any git checkout (`wt_preflight`).** You run in an isolated
   worktree (`isolation:worktree`). The harness resets your shell cwd back to the shared
