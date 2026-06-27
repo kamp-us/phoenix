@@ -17,6 +17,7 @@ import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
 import {AppConfig, betterAuthSecret, environment} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
+import {MediaStoreLive} from "./db/MediaStore.ts";
 import {customHostname, resolveStateMode} from "./env.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
 import {
@@ -280,6 +281,18 @@ export default Phoenix.make(
 				FlagshipLive.pipe(
 					Layer.provide(Cloudflare.FlagshipBindingLive),
 					Layer.provide(Cloudflare.FlagshipBindingPolicyLive),
+				),
+				// The imge R2 object store (ADR 0044 Decision 1). Resolved once per
+				// isolate via the same `bind()`-in-a-layer shape as Flagship:
+				// `R2BucketBindingLive` turns the bucket resource into the
+				// `R2BucketClient`, `R2BucketBindingPolicyLive` registers the binding
+				// policy; `WorkerEnvironment` is ambient. Merged here (not `yield*`-ed in
+				// init) because no route consumes it yet — the binding-only slice; #109
+				// adds the consumer. A missing Live/Policy layer is a compile error at
+				// this provide, never a runtime `undefined`.
+				MediaStoreLive.pipe(
+					Layer.provide(Cloudflare.R2BucketBindingLive),
+					Layer.provide(Cloudflare.R2BucketBindingPolicyLive),
 				),
 			).pipe(Layer.provideMerge(Cloudflare.D1ConnectionLive)),
 		),
