@@ -2,6 +2,7 @@ import type * as React from "react";
 import {useEffect, useRef} from "react";
 import {Link, NavLink, useNavigate} from "react-router";
 import {isSearchShortcut} from "../../lib/searchShortcut";
+import {Karma} from "../karma/Karma";
 import {Avatar} from "../ui/Avatar";
 import {Menu} from "../ui/Menu";
 import "./Topbar.css";
@@ -13,6 +14,7 @@ export function Topbar({
 	brandTo = "/",
 	nav = [],
 	user,
+	karma,
 	actions,
 	onSearchSubmit,
 	onToggleTheme,
@@ -23,6 +25,12 @@ export function Topbar({
 	nav?: NavItem[];
 	/** `username` drives the @username link; null means the bootstrap CTA. */
 	user?: {name: string; src?: string; username?: string | null};
+	/**
+	 * The signed-in user's ambient self-karma (#1208). Rendered only when present —
+	 * the Layout passes it solely behind the authorship-loop flag, so when the flag
+	 * is off it is `undefined` and the topbar is exactly as before.
+	 */
+	karma?: number;
 	actions?: React.ReactNode;
 	onSearchSubmit?: (query: string) => void;
 	onToggleTheme?: () => void;
@@ -93,6 +101,9 @@ export function Topbar({
 				</button>
 			) : null}
 			{actions}
+			{typeof karma === "number" ? (
+				<Karma value={karma} variant="inline" testId="topbar-karma" className="kp-topbar__karma" />
+			) : null}
 			{user?.username ? (
 				<Link
 					className="kp-topbar__profile-link"

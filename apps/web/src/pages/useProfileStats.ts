@@ -23,6 +23,8 @@ export interface ProfileStats {
 	postCount: number;
 	commentCount: number;
 	definitionCount: number;
+	/** `user_profile.total_karma` (ADR 0050) — surfaced ambiently on the owner's profile (#1208). */
+	totalKarma: number;
 }
 
 export type ProfileStatsState =
@@ -36,13 +38,15 @@ const ProfileStatsView = view<Profile>()({
 	postCount: true,
 	commentCount: true,
 	definitionCount: true,
+	totalKarma: true,
 });
 
 /**
  * Pure snapshot → `ok` mapping, factored out so the count-projection contract is
  * unit-testable without a DOM/React runtime — the swallow this fixes lived in
  * exactly this un-asserted path. A `null` snapshot (user not found / empty view)
- * is a real, successful zero result, NOT an error: it maps to all-zero counts.
+ * is a real, successful zero result, NOT an error: it maps to all-zero counts
+ * (and zero karma — an honest çaylak, never a placeholder; #1208 AC).
  */
 export function toProfileStatsState(data: ProfileStats | null): ProfileStatsState {
 	return {
@@ -52,8 +56,9 @@ export function toProfileStatsState(data: ProfileStats | null): ProfileStatsStat
 					postCount: data.postCount,
 					commentCount: data.commentCount,
 					definitionCount: data.definitionCount,
+					totalKarma: data.totalKarma,
 				}
-			: {postCount: 0, commentCount: 0, definitionCount: 0},
+			: {postCount: 0, commentCount: 0, definitionCount: 0, totalKarma: 0},
 	};
 }
 
