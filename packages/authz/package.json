@@ -1,0 +1,27 @@
+{
+	"name": "@kampus/authz",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Vocab-free capability-as-Effect authorization mechanism (ADR 0107): Actor, Resource, Level scale, Relation, the sealed Grant + class-as-capability builders, and the CurrentActor/RelationStore/AgentAuthority ports — names no kamp.us noun, no fate, no D1",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run"
+	},
+	"dependencies": {
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
