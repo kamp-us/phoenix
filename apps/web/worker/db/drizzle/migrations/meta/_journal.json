@@ -99,6 +99,13 @@
       "when": 1787500000000,
       "tag": "0013_authorship_vouch",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "6",
+      "when": 1788000000000,
+      "tag": "0014_imge_object",
+      "breakpoints": true
     }
   ]
 }
