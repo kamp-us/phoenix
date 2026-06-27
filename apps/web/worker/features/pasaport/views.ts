@@ -52,6 +52,9 @@ export class ContributionView extends FateDataView<ContributionViewRow>()("Contr
 	id: true,
 	score: true,
 	createdAt: true,
+	// The per-item review-state flag (#1316): `true` for a still-sandboxed item, so
+	// #1291 can badge "incelemede". Carries no reviewer identity (one-way-glass).
+	sandboxed: true,
 	bodyExcerpt: true,
 	termSlug: true,
 	termTitle: true,
@@ -117,6 +120,37 @@ export class PromotionReceiptView extends FateDataView<PromotionReceiptViewRow>(
 	vouchRecorded: true,
 }) {}
 
+// The çaylak-SELF authorship-standing aggregate (#1316, epic #1202) — the
+// "yazarlığa giden yol" read the #1291 status block consumes about ITSELF. The
+// subject is always the authenticated çaylak (the `myAuthorshipStanding` resolver
+// keys it on `CurrentUser`, never an input arg), so it can only ever describe the
+// reader's own progress.
+//
+// ONE-WAY-GLASS, ENFORCED IN THE TYPE (#1316 hard AC): the row carries ONLY
+// aggregate scalars — `karma`/`bar` (numbers), `vouchExists` (a bare boolean, NOT
+// who vouched), `inReviewCount` (a bare count, NOT which items or who is reviewing).
+// There is deliberately NO reviewer / voter / voucher identity field, so a leak is
+// structurally unrepresentable, not merely unsent — the reason this is a NEW
+// self-scoped view and not a widening of the identity-carrying divan roster / vouch
+// ledger. `id` === the user id (the client normalization key).
+export type AuthorshipStandingViewRow = ViewRow<{
+	id: string;
+	karma: number;
+	bar: number;
+	vouchExists: boolean;
+	inReviewCount: number;
+}>;
+
+export class AuthorshipStandingView extends FateDataView<AuthorshipStandingViewRow>()(
+	"AuthorshipStanding",
+)({
+	id: true,
+	karma: true,
+	bar: true,
+	vouchExists: true,
+	inReviewCount: true,
+}) {}
+
 // The plain kernel `dataView()` values, for cross-feature surfaces (the
 // `fate/views.ts` `Root` map + barrel re-exports).
 export const userDataView = UserView.view;
@@ -124,9 +158,11 @@ export const contributionDataView = ContributionView.view;
 export const profileDataView = ProfileView.view;
 export const accountDeletionReceiptDataView = AccountDeletionReceiptView.view;
 export const promotionReceiptDataView = PromotionReceiptView.view;
+export const authorshipStandingDataView = AuthorshipStandingView.view;
 
 export type User = WorkerEntity<typeof UserView>;
 export type Contribution = WorkerEntity<typeof ContributionView, "createdAt">;
 export type Profile = WorkerEntity<typeof ProfileView, never, {contributions?: Contribution[]}>;
 export type AccountDeletionReceipt = WorkerEntity<typeof AccountDeletionReceiptView>;
 export type PromotionReceipt = WorkerEntity<typeof PromotionReceiptView>;
+export type AuthorshipStanding = WorkerEntity<typeof AuthorshipStandingView>;

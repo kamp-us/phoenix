@@ -4,6 +4,7 @@ import {mutations} from "./mutations.ts";
 import {queries} from "./queries.ts";
 import {
 	accountDeletionReceiptSource,
+	authorshipStandingSource,
 	contributionSource,
 	profileSource,
 	promotionReceiptSource,
@@ -19,5 +20,6 @@ export const fateModule = {
 		contributionSource,
 		accountDeletionReceiptSource,
 		promotionReceiptSource,
+		authorshipStandingSource,
 	],
 } satisfies FateModule;
