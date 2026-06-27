@@ -124,6 +124,6 @@ for authorization.
 the ~20 founders as `(id, "moderates", "platform")`. The current `report/Moderator.ts` rewrites
 to a `Capability.Relation` instance; `report.resolve` threads the `Grant` proof.
 
-**Process.** Conversation-authored platform ADR (the ADR [0075](0075-conversation-authored-adr-exception.md)
+**Process.** Conversation-authored platform ADR (the ADR [0075](0075-issueless-doc-pr-merge-seam.md)
 issueless exception). The sözlük **term/entry** domain split used in examples here is a separate
 sözlük-domain decision (informs #1203), not part of this framework decision.
