@@ -85,68 +85,8 @@
 	gap: var(--s-2);
 }
 
-.kp-user-profile__row {
-	padding: var(--s-2);
-	border: 1px solid var(--border-faint);
-	border-radius: 8px;
-	background: var(--surface-raised);
-}
-
-.kp-user-profile__row-head {
-	display: flex;
-	gap: var(--s-2);
-	align-items: center;
-	flex-wrap: wrap;
-	margin-bottom: var(--s-1);
-}
-
-.kp-user-profile__kind {
-	font: var(--t-meta);
-	font-weight: 600;
-	padding: 2px 6px;
-	border-radius: 4px;
-	background: var(--surface-raised);
-	color: var(--text-muted);
-	text-transform: lowercase;
-}
-
-.kp-user-profile__kind--definition {
-	background: var(--tag-discuss-bg);
-	color: var(--tag-discuss-fg);
-}
-
-.kp-user-profile__kind--post {
-	background: var(--tag-show-bg);
-	color: var(--tag-show-fg);
-}
-
-.kp-user-profile__kind--comment {
-	background: var(--tag-ask-bg);
-	color: var(--tag-ask-fg);
-}
-
-.kp-user-profile__row-title {
-	color: var(--text-primary);
-	text-decoration: none;
-	font-weight: 600;
-}
-
-.kp-user-profile__row-title:hover {
-	text-decoration: underline;
-}
-
-.kp-user-profile__row-score,
-.kp-user-profile__row-date {
-	font: var(--t-meta);
-	color: var(--text-muted);
-}
-
-.kp-user-profile__row-body {
-	margin: 0;
-	color: var(--text-primary);
-	font: var(--t-body);
-	line-height: 1.5;
-}
+/* The contribution row + kind chrome now lives with the shared ContributionRow
+   component (components/profile/ContributionRow.css, #1209). */
 
 .kp-user-profile__more {
 	color: var(--text-muted);
