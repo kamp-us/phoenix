@@ -11,7 +11,7 @@
  * invariant). The instance lives here — künye owns the kamp.us capability
  * instances; the vocab-free mechanism is `@kampus/authz`.
  */
-import {Capability, type Grant, matchActor, platform} from "@kampus/authz";
+import {Capability, type Grant, matchActor, platform, RelationStore} from "@kampus/authz";
 import {Effect} from "effect";
 import {Denied} from "./errors.ts";
 
@@ -22,6 +22,24 @@ export class Moderate extends Capability.Relation<Moderate>()("kunye/Moderate", 
 
 // Re-export the platform scope so a moderation surface gates with one import.
 export {platform};
+
+/**
+ * Is `subject` a platform moderator? The SELF-status read behind the trusted `me`
+ * view's `isModerator` (#1320): the SAME `(subject, "moderates", platform)` tuple
+ * `Moderate.over(platform)` discharges against, read straight off the
+ * {@link RelationStore} port keyed by an account id. It takes a subject id (NOT
+ * `CurrentActor`), so it answers "is THIS account a moderator" for the viewer's own
+ * id and never another's — the `me` resolver passes `CurrentUser`'s id. The frontend
+ * gates the divan "yazar yap" (promote) affordance on it, because a dual-role
+ * yazar+moderator account reads `tier: "yazar"` and the mod axis can't ride on
+ * `tier`. The encoding lives here, next to {@link Moderate}, so the read key can't
+ * drift from the discharge key.
+ */
+export const isModerator = (subject: string): Effect.Effect<boolean, never, RelationStore> =>
+	Effect.gen(function* () {
+		const store = yield* RelationStore;
+		return yield* store.has({subject, relation: "moderates", object: platform});
+	});
 
 /**
  * Gate `body` behind platform-moderation authority: discharge

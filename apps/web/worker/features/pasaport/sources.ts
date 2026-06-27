@@ -6,6 +6,8 @@
  * relation/by-id callers). See `.patterns/fate-effect-sources.md`.
  */
 import {Fate} from "@kampus/fate-effect";
+import {Effect} from "effect";
+import {isModerator} from "../kunye/moderate.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toProfile} from "./shapers.ts";
 import {
@@ -21,9 +23,19 @@ export const userSource = Fate.source(
 	UserView,
 	{id: "id"},
 	{
+		// `isModerator` (#1320) isn't a stored column — it's each user's `(id,
+		// "moderates", platform)` membership in the `relation_tuple` store (the same
+		// tuple `Moderate.over(platform)` discharges, ADR 0107). The by-id loader joins
+		// it per row off `RelationStore` so the field is total for any `User` entity,
+		// not just the self `me` path. Moderator standing is an aggregate boolean, not
+		// secret (the issue's "expose 'can promote', not a role list"), so reading it
+		// for a by-id load is honest, not a leak.
 		byIds: function* (ids) {
 			const pasaport = yield* Pasaport;
-			return yield* pasaport.getUsersByIds(ids);
+			const rows = yield* pasaport.getUsersByIds(ids);
+			return yield* Effect.forEach(rows, (row) =>
+				Effect.map(isModerator(row.id), (isMod) => ({...row, isModerator: isMod})),
+			);
 		},
 	},
 );

@@ -31,6 +31,12 @@ export interface MeUser {
 	// The frontend gates rendering of authorship affordances on the
 	// `phoenix-authorship-loop` flag, not on this value.
 	tier: Tier;
+	// The trusted SELF moderator signal (#1320): always present, read server-side
+	// off the `moderates` relation tuple — never inferred from `tier`. The divan
+	// "yazar yap" (promote) affordance keys off this so a dual-role yazar+moderator
+	// (who reads `tier: "yazar"`) still sees it. (UI wiring is the #1320 frontend
+	// half in `CaylakDetail.tsx`; this is the minimal type plumbing only.)
+	isModerator: boolean;
 }
 
 export type MeStatus = "idle" | "loading" | "ok" | "error";
@@ -42,6 +48,7 @@ const MeView = view<User>()({
 	image: true,
 	username: true,
 	tier: true,
+	isModerator: true,
 });
 
 export function useMe(): {
@@ -78,6 +85,7 @@ export function useMe(): {
 							image: user.image,
 							username: user.username,
 							tier: user.tier,
+							isModerator: user.isModerator,
 						}
 					: null,
 			);

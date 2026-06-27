@@ -20,7 +20,12 @@ import type {ContributionRow, ProfileRow, UserRow} from "./Pasaport.ts";
 // read-time `Tier` (`visitor | çaylak | yazar`): the `me` resolver reads it via
 // `Kunye.tierOf`, which ranks a row-missing principal as `visitor`, so the wire
 // value spans the full ladder even though the column itself never stores it.
-export type UserViewRow = ViewRow<Omit<UserRow, "tier"> & {tier: Tier}>;
+//
+// `isModerator` (#1320) is the SELF moderator signal — not a stored column either:
+// the resolver reads it from the `moderates` `relation_tuple` (the same tuple
+// `Moderate.over(platform)` discharges, ADR 0107 §4), so it joins onto the wire row
+// here, never on `UserRow`.
+export type UserViewRow = ViewRow<Omit<UserRow, "tier"> & {tier: Tier; isModerator: boolean}>;
 export type ProfileViewRow = ViewRow<ProfileRow & {id: string}>;
 export type ContributionViewRow = ViewRow<ContributionRow>;
 
@@ -31,6 +36,14 @@ export type ContributionViewRow = ViewRow<ContributionRow>;
 // better-auth session additionalField (#1203/#1297). Always present — the value
 // is not secret; the frontend gates rendering of authorship affordances on the
 // `phoenix-authorship-loop` flag, not on the field's presence.
+//
+// `isModerator` is the SELF moderator signal (#1320): the resolver reads it
+// server-side off the `moderates` `relation_tuple` (`kunye/moderate.ts`'s
+// `isModerator`, the same tuple `Moderate.over(platform)` checks — never a
+// retired `user.role` column, ADR 0107), keyed on the CURRENT user, so it is only
+// ever the viewer's OWN mod status. Like `tier` it is always present (the divan
+// "yazar yap" affordance is gated frontend-side); a dual-role yazar+moderator reads
+// `tier: "yazar"` + `isModerator: true`, which `tier` alone cannot express.
 export class UserView extends FateDataView<UserViewRow>()("User")({
 	id: true,
 	email: true,
@@ -38,6 +51,7 @@ export class UserView extends FateDataView<UserViewRow>()("User")({
 	image: true,
 	username: true,
 	tier: true,
+	isModerator: true,
 }) {}
 
 // The **discriminant** view for the profile contributions feed: fate has no
