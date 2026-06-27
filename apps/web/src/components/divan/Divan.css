@@ -1,0 +1,277 @@
+/* divan surface (#1290) — the yazar/mod reviewer workspace. Role tokens only;
+   state is carried by text + shape (aria-current, aria-pressed, the "incelemede"
+   badge), never color alone. No custom animation — reduced-motion is satisfied by
+   default and by the global reset (styles/global.css). */
+
+.kp-divan {
+	display: flex;
+	justify-content: center;
+	padding: var(--s-4) var(--s-3);
+}
+
+.kp-divan__inner {
+	width: 100%;
+	max-width: 980px;
+}
+
+.kp-divan__masthead {
+	margin-bottom: var(--s-4);
+}
+
+.kp-divan__title {
+	margin: 0;
+	font: var(--t-h1);
+	color: var(--text-primary);
+}
+
+.kp-divan__lead {
+	margin: var(--s-1) 0 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-divan__layout {
+	display: grid;
+	grid-template-columns: minmax(260px, 340px) 1fr;
+	gap: var(--s-4);
+	align-items: start;
+}
+
+@media (max-width: 720px) {
+	.kp-divan__layout {
+		grid-template-columns: 1fr;
+	}
+}
+
+.kp-divan__loading,
+.kp-divan__hint,
+.kp-divan__empty {
+	font: var(--t-body-sm);
+	color: var(--text-muted);
+}
+
+.kp-divan__error {
+	font: var(--t-body-sm);
+	color: var(--danger);
+}
+
+/* roster ------------------------------------------------------------------ */
+
+.kp-divan__roster {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-divan__roster-item {
+	margin: 0;
+}
+
+.kp-divan__roster-row {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	width: 100%;
+	padding: var(--s-2) var(--s-3);
+	text-align: left;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: inherit;
+	cursor: pointer;
+}
+
+.kp-divan__roster-row:hover {
+	background: var(--surface-raised);
+}
+
+.kp-divan__roster-row[aria-current="true"] {
+	border-color: var(--accent);
+	border-left-width: 3px;
+	background: var(--accent-faint);
+}
+
+.kp-divan__counts {
+	font: var(--t-meta);
+	color: var(--text-muted);
+}
+
+/* identity (handle + karma-on-others) ------------------------------------- */
+
+.kp-divan__identity {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-2);
+}
+
+.kp-divan__handle {
+	font: var(--t-body-sm);
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+/* detail ------------------------------------------------------------------ */
+
+.kp-divan__detail {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-3);
+}
+
+.kp-divan__detail-head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-2);
+	padding-bottom: var(--s-2);
+	border-bottom: 1px solid var(--border);
+}
+
+.kp-divan__detail-title {
+	margin: 0;
+	font: var(--t-h3);
+	color: var(--text-primary);
+}
+
+.kp-divan__actions {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: var(--s-1);
+}
+
+.kp-divan__action-buttons {
+	display: flex;
+	gap: var(--s-2);
+}
+
+.kp-divan__status {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-secondary);
+}
+
+/* backlog ----------------------------------------------------------------- */
+
+.kp-divan__backlog {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+}
+
+.kp-divan__item {
+	display: grid;
+	grid-template-columns: auto 1fr auto;
+	align-items: start;
+	gap: var(--s-3);
+	padding: var(--s-2) var(--s-3);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+}
+
+.kp-divan__item-vote {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 2px;
+}
+
+.kp-divan__upvote {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.kp-divan__upvote:hover {
+	color: var(--text-primary);
+	border-color: var(--accent);
+}
+
+.kp-divan__upvote[aria-pressed="true"] {
+	color: var(--accent-fg);
+	border-color: var(--accent);
+	background: var(--accent-faint);
+}
+
+.kp-divan__score {
+	font: var(--t-meta);
+	font-variant-numeric: tabular-nums;
+	color: var(--text-secondary);
+}
+
+.kp-divan__item-body {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+	min-width: 0;
+}
+
+.kp-divan__item-meta {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--s-2);
+}
+
+.kp-divan__kind {
+	font: var(--t-meta);
+	font-weight: 600;
+	color: var(--text-secondary);
+	text-transform: lowercase;
+}
+
+.kp-divan__badge {
+	font: var(--t-meta);
+	padding: 1px 6px;
+	border-radius: var(--r-pill);
+	border: 1px solid var(--border);
+	color: var(--text-muted);
+}
+
+.kp-divan__preview {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-primary);
+	overflow-wrap: anywhere;
+}
+
+.kp-divan__bildir {
+	align-self: start;
+	font: var(--t-meta);
+	padding: 2px 8px;
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface);
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.kp-divan__bildir:hover {
+	color: var(--text-primary);
+}
+
+.kp-divan__bildir[data-reported] {
+	color: var(--text-muted);
+	cursor: default;
+}
+
+/* the stake-confirm sheet's stake copy */
+.kp-divan__stake {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
