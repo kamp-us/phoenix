@@ -1,0 +1,70 @@
+name: orphan-sweep
+
+# Scheduled bound on the it-* integration-stage leak (#690). A partial integration
+# `beforeAll` deploy can orphan its real, remote Cloudflare D1 (+ worker); since #689's
+# run-unique stage names a later run never overwrites that orphan, so it-* resources
+# accumulate without bound on the one shared account. This job runs the
+# @kampus/orphan-sweep CLI (built in #1141/#1142) on a daily schedule to delete them.
+#
+# Safety is the CLI's pure core (packages/orphan-sweep/src/orphan-sweep.ts):
+# allow-by-pattern + deny-by-protection. prod, named-dev (--protect), and OPEN-PR
+# pr-<n> previews are NEVER swept — only it-* orphans are. Closed-PR pr-<n> previews
+# are left to #813's lane (this job does NOT pass --sweep-closed-previews).
+on:
+  schedule:
+    # Daily at 03:17 UTC — off-hours and off the top of the hour (the GitHub scheduler
+    # congests on-the-hour crons), a quiet window that minimizes overlap with on-demand
+    # CI integration runs (whose own afterAll already destroys their own stage).
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+    inputs:
+      execute:
+        description: "Delete the planned resources (true) or dry-run / print-only (false)"
+        type: boolean
+        default: false
+
+concurrency:
+  # Never let two sweeps race the same account.
+  group: orphan-sweep
+  cancel-in-progress: false
+
+permissions:
+  contents: read # checkout
+  pull-requests: read # the CLI lists open PRs to keep their pr-<n> previews
+
+jobs:
+  sweep:
+    name: sweep orphan it-* integration stages
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # A scheduled run always --executes: the whole point is to bound the leak
+      # autonomously. A manual workflow_dispatch defaults to dry-run so a human can
+      # eyeball the plan first, opting into deletion via the `execute` input.
+      - name: Sweep orphan it-* integration stages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          # The CLI resolves the repo from GITHUB_REPOSITORY (auto-set) and lists open
+          # PRs via `gh api`; GH_TOKEN is what gh authenticates with.
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ github.event_name }}" = "schedule" ] || [ "${{ inputs.execute }}" = "true" ]; then
+            echo "Running sweep with --execute (deleting orphan it-* resources)."
+            node packages/orphan-sweep/src/bin.ts sweep --execute
+          else
+            echo "Running sweep in dry-run mode (printing the plan only; no deletions)."
+            node packages/orphan-sweep/src/bin.ts sweep
+          fi
