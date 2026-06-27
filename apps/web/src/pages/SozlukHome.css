@@ -95,3 +95,20 @@
 	color: var(--text-primary);
 	font-weight: 600;
 }
+
+/* Phone reflow (≤640px, the repo's 640px container convention — ProfilePage/PanoSubmitPage):
+   stack the masthead (searchbar under the title) and the two body columns to one column, and
+   let the fixed-320px searchbar shrink fluidly so it can't force horizontal overflow (#1250). */
+@media (max-width: 640px) {
+	.kp-sozluk-home__masthead {
+		grid-template-columns: 1fr;
+	}
+	.kp-sozluk-home__searchbar {
+		width: 100%;
+		max-width: 320px;
+		min-width: 0;
+	}
+	.kp-sozluk-home__columns {
+		grid-template-columns: 1fr;
+	}
+}
