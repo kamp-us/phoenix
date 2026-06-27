@@ -72,6 +72,42 @@ will deny the same `Edit` again. Switch to Bash on the first denial.
   for the related lint-path footgun (bare `biome check .` resolves to the worktree
   CWD and silently matches the `!**/.claude/worktrees` exclusion → false green).
 
+- **A bare `git checkout`/`switch` can detach the *shared primary* HEAD — never run
+  one; address git at your worktree explicitly.** This is the cwd-reset bullet's most
+  damaging instance, and it bites a class the `pre-bash` pin does **not** cover. A
+  worktree agent that is *armed* by `@kampus/worktree-guard` has its bare commands
+  prepended with `cd "$WORKTREE_ROOT" && …`, so its stray `git checkout` at worst
+  detaches the *worktree's* own HEAD. But a **review/ship agent shares the primary
+  checkout's git state** (the "review/ship agents share the primary checkout" footgun),
+  where `bash-pin` is not arming it — so its bare `git checkout <pr-head-sha>`, run after
+  a between-calls cwd reset, executes in the **primary** tree and detaches the shared
+  `main`. That silently breaks a sibling puller's `git merge --ff-only origin/main` (it
+  stalls on a detached HEAD / non-ff), with the symptom (puller stuck, merged work not
+  propagating) far from the cause. It recurs on every review/ship agent that checks out a
+  PR head (#1103). The rule, mandatory for **every** worktree/review/ship agent:
+  - **Capture `WT="$(git rev-parse --show-toplevel)"` once at spawn** (right after the
+    opening worktree preflight passes) and run **ALL** git ops as `git -C "$WT" …`, so a
+    cwd reset can never silently relocate the command into the primary tree.
+  - **Never run a bare `git checkout` / `git switch`** (nor `rebase` / `reset` / `stash`)
+    against a shared checkout. To bring a **PR head** in for review, fetch and check out
+    *inside the worktree* by ref, not by a bare SHA:
+    ```bash
+    git -C "$WT" fetch origin pull/<N>/head && git -C "$WT" checkout FETCH_HEAD
+    ```
+  - **If you must touch a working tree, confirm you are in your OWN worktree first** —
+    `git -C "$WT" rev-parse --show-toplevel` must equal `$WT`, never the primary — exactly
+    as the Step-4 fail-closed preflight asserts.
+
+  **Fix shape (the #1103 owner's call):** the chosen fix is **spawn-prompt / agent-def
+  hardening** — encode the `git -C "$WT"` rule + the no-bare-checkout prohibition in the
+  reviewer/shipper/coder agent definitions and here — **not** a `worktree-guard` `pre-bash`
+  refusal of detached-SHA checkouts on the primary. The guard route was the alternative
+  (arm review/ship agents with the same pin, or refuse/rewrite the offending call); it is
+  deferred because review/ship agents are documented read-only on git working state, so the
+  durable enforcement belongs in *who never issues the bare checkout*, not in a guard that
+  rewrites it after the fact. Re-open the guard route only if a recurrence shows the prose
+  rule is insufficient.
+
 - **Run root `pnpm` scripts as `pnpm -w <script>` (or from the worktree root),
   never from a subdir.** A root-level script (`pnpm lint`, `pnpm typecheck`, …) run
   from a *subdirectory* (e.g. `apps/web/`) trips pnpm's refusal: it resolves the

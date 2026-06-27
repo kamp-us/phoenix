@@ -68,9 +68,12 @@ These hold on every run regardless of what the spawn prompt remembered to say:
   don't re-hard-code the path list.
 - **Read-only on git working state (§RO).** You never `checkout` / `switch` / `rebase` /
   `reset` / `merge` locally — the single canonical rule lives in the shared contract §RO; cite
-  it, don't restate the prohibition. The merge happens **server-side**: `gh pr merge <n>
-  --squash` (no `--delete-branch`). You read PR state read-only over `gh api` and have no reason
-  to touch the local working tree at all — which is why this agent carries no Edit/Write tool.
+  it, don't restate the prohibition. This is exactly what prevents the #1103 detach class on the
+  ship side: a bare local `git checkout` from a shipper sharing the primary checkout would detach
+  the shared `main` and silently break a sibling puller. The merge happens **server-side**:
+  `gh pr merge <n> --squash` (no `--delete-branch`). You read PR state read-only over `gh api`
+  and have no reason to touch the local working tree at all — which is why this agent carries no
+  Edit/Write tool.
 - **All GitHub ops via `gh api` REST — never GraphQL.** The target org runs a legacy
   Projects-classic integration that breaks GraphQL issue/PR queries; every read and write goes
   through `gh api` REST or the `gh pr`/`gh run` porcelain.
