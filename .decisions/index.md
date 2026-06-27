@@ -113,4 +113,4 @@ One row per ADR. Read the file for the why.
 | [0106](0106-iac-provisions-flags-dashboard-owns-serving.md) | IaC Provisions Feature Flags; the Dashboard Owns Their Serving | accepted | 2026-06-21 |
 | [0107](0107-capability-authz-framework.md) | Capability-as-Effect authorization framework (packages/authz + künye) | accepted | 2026-06-26 |
 | [0108](0108-hand-authored-flat-d1-migrations.md) | Hand-Authored Flat D1 Migrations Are the Sanctioned Path; Defer the drizzle-kit v7 Cutover | accepted | 2026-06-27 |
-| [0109](0109-worktree-deps-provision-not-share.md) | Worktree deps are provisioned by a real `pnpm install`, never a filesystem share; the correct install is deferred to a full-PATH context | accepted | 2026-06-27 |
+| [0109](0109-worktree-deps-provision-not-share.md) | Worktree Deps Are Provisioned by a Real pnpm install, Never a Filesystem Share; the Correct Install Is Deferred to a Full-PATH Context | accepted | 2026-06-27 |
