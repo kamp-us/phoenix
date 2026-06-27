@@ -215,12 +215,18 @@ importers:
       '@cloudflare/workers-types':
         specifier: 'catalog:'
         version: 4.20260509.1
+      '@distilled.cloud/cloudflare':
+        specifier: 'catalog:'
+        version: 0.25.2(effect@4.0.0-beta.78)
       '@effect/tsgo':
         specifier: 'catalog:'
         version: 0.5.2
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(vitest@4.1.5(@opentelemetry/api@1.9.0)(@types/node@25.6.2)(vite@8.0.11(@types/node@25.6.2)(esbuild@0.27.3)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)))
+      '@kampus/d1-rest':
+        specifier: workspace:*
+        version: link:../../packages/d1-rest
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.59.1

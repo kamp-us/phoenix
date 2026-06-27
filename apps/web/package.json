@@ -50,8 +50,10 @@
 	},
 	"devDependencies": {
 		"@cloudflare/workers-types": "catalog:",
+		"@distilled.cloud/cloudflare": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
+		"@kampus/d1-rest": "workspace:*",
 		"@playwright/test": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",
