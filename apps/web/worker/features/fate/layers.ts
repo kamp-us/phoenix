@@ -12,6 +12,7 @@
  * moved here, from a per-request runtime.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
+import {CurrentActor} from "@kampus/authz";
 import {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
@@ -158,9 +159,13 @@ export const makeFateLayer: Layer.Layer<
  * output alongside `FateServer` so routes still yield them directly; and because
  * `FateServer.layer`'s own R is discharged by the same domain layers, a record
  * needing a forgotten service is a compile error HERE, the composition site.
+ *
+ * `[CurrentActor]` registers the per-request authz actor (ADR 0107 §7): it is
+ * excluded from build-time R and fulfilled per request from the session in
+ * `route.ts` (`requestServices`), never provided by a worker-level layer.
  */
 export const PhoenixFateLive: Layer.Layer<
 	WorkerFateServices | FateServer,
 	never,
 	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
-> = FateServer.layer(fateConfig).pipe(Layer.provideMerge(makeFateLayer));
+> = FateServer.layer(fateConfig, [CurrentActor]).pipe(Layer.provideMerge(makeFateLayer));
