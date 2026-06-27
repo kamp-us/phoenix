@@ -1448,6 +1448,53 @@ ping-pong of routing the re-type through `triage` (ADR 0070 rejected that option
 
 ---
 
+## 9. The PR-body closing-keyword seam — one close directive per PR
+
+The single source of the closing-keyword rule, for **both** halves: *arm the seam for the
+issue you fix* and *never arm it for any other issue you merely name*. `write-code` Step 5
+(authoring + its operational guard) and `ship-it` Step 1 (which resolves the linked issue
+from the body) each cite **this** section rather than re-deriving the keyword set or the
+discipline, so the two halves can't drift apart (the §CP/§DOC single-sourcing discipline).
+
+**The seam.** A PR body that carries a GitHub **closing keyword** + `#N` auto-closes `#N`
+when the PR merges, and only a closing keyword populates `closingIssuesReferences` — the
+field `ship-it` Step 1 reads to resolve *which* issue a code-class PR closes. The recognized
+closing keywords are, case-insensitive:
+`fix`/`fixes`/`fixed`/`close`/`closes`/`closed`/`resolve`/`resolves`/`resolved`. So:
+
+- **Arm it for the target.** Emit a real closing keyword — `Fixes #N` (or
+  `Closes #N`/`Resolves #N`) — for the **single** issue the PR closes. A *non*-closing
+  mention (`Refs #N`, `Re: #N`, `See #N`, a bare `#N`) renders a timeline cross-reference
+  that **closes nothing** and populates **no** `closingIssuesReferences`, so the issue never
+  auto-closes on merge and `ship-it` Step 1 finds a code-class PR with no auto-close seam and
+  **refuses to merge** it — a verified, merge-ready PR stalls on one wrong token (#647; PR
+  #573 shipped `Refs #569` and jammed).
+
+- **Arm it for *nothing else* (the one-close-keyword-per-PR discipline).** A closing keyword
+  is a **targeted** directive, emitted for that single target and **nothing else**. *Every
+  other* issue you name in the body — a sibling, a related issue, a "see also", a parent-epic
+  mention in prose — takes a **non-closing** form: `addresses #M`, `relates to #M`, `see #M`,
+  or a bare `#M` with no preceding closing verb. The set of issue numbers preceded by a
+  closing keyword anywhere in the body must be **exactly `{N}`**.
+
+**Why prose phrasing is the load-bearing control.** GitHub parses a closing keyword + `#M`
+**anywhere** in the body — any line, mid-sentence, any repo the PR can close — as a close
+directive; there is **no** "first ref only" or "same line only" exception. So a sibling-ref
+`fixes #M` buried in prose **silently auto-closes `#M` on merge** even though the PR never
+touched it. This already bit once: PR #1254 (which fixed #1249 and touched only one CSS file)
+carried a "Sibling **fixes** #1248…" sentence, GitHub closed the *unfixed* #1248 on merge, and
+it was caught only when the next agent went to pick #1248 up and found the work never landed —
+the exact silent state corruption that derails lane coordination in an autonomous multi-agent
+pipeline (#1259; #1248 was manually reopened).
+
+**Who writes vs reads.** `write-code` Step 5 authors the body to satisfy both halves and runs
+the operational pre-push self-check (its `(a)` cross-reference / `(b)` target-seam-armed /
+`(c)` no-stray-close-directive grep) — the actionable check lives there. `ship-it` Step 1
+reads the armed `Fixes|Closes|Resolves #N` to resolve the linked issue it closes on merge.
+Both cite this section as the canonical statement of the rule; neither re-derives it.
+
+---
+
 ## Relationship between the formats
 
 | Format | Lives on | Written by | Read by |
