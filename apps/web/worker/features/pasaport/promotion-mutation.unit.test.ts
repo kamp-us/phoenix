@@ -91,6 +91,12 @@ const vouch = (candidateId: string) =>
 		select: ["userId", "promoted", "vouchRecorded"],
 	});
 
+const withdrawVouch = (candidateId: string) =>
+	resolveWire(mutations["user.withdrawVouch"], {
+		input: {candidateId},
+		select: ["userId", "promoted", "vouchRecorded"],
+	});
+
 const wireCodeOf = (cause: Cause.Cause<unknown>): unknown => {
 	const error = Cause.findErrorOption(cause);
 	return error._tag === "Some" ? (error.value as {code?: unknown}).code : undefined;
@@ -155,8 +161,10 @@ describe("user.promote — direct moderator promotion", () => {
 describe("user.vouch — author-vouch tandem", () => {
 	const yazarVoucher = {tier: {"u-yazar": "yazar"} as Record<string, Tier>};
 
+	// The KARMA-FIRST tandem order: karma is already over the bar, so placing the vouch
+	// promotes on the vouch act itself (through the shared `resolveTandem`).
 	it.effect(
-		"vouch + clearing the reduced bar promotes; the vouch is recorded (actor preserved)",
+		"karma-first: vouch with karma already over the bar promotes; the vouch is recorded (actor preserved)",
 		() =>
 			Effect.gen(function* () {
 				const receipt = yield* vouch("u-caylak");
@@ -166,7 +174,12 @@ describe("user.vouch — author-vouch tandem", () => {
 				Effect.provide(
 					Layer.mergeAll(
 						makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
-						makeVouchLedgerStub({record: () => Effect.succeed({recorded: true})}),
+						makeVouchLedgerStub({
+							has: () => Effect.succeed(false),
+							activeCountFor: () => Effect.succeed(0),
+							record: () => Effect.succeed({recorded: true}),
+							hasActiveFor: () => Effect.succeed(true),
+						}),
 						kunyeOf(yazarVoucher.tier, {"u-caylak": 25}), // above VOUCH_PROMOTION_KARMA_BAR
 						agentAuthorityStub,
 						requestContext(human("u-yazar"), true),
@@ -185,8 +198,63 @@ describe("user.vouch — author-vouch tandem", () => {
 			Effect.provide(
 				Layer.mergeAll(
 					makePasaportStub(),
-					makeVouchLedgerStub({record: () => Effect.succeed({recorded: true})}),
+					makeVouchLedgerStub({
+						has: () => Effect.succeed(false),
+						activeCountFor: () => Effect.succeed(0),
+						record: () => Effect.succeed({recorded: true}),
+						hasActiveFor: () => Effect.succeed(true),
+					}),
 					kunyeOf(yazarVoucher.tier, {"u-caylak": 1}), // below the bar
+					agentAuthorityStub,
+					requestContext(human("u-yazar"), true),
+				),
+			),
+		),
+	);
+
+	// The concurrent-vouch cap (D5): a yazar already holding VOUCH_CONCURRENT_CAP active
+	// vouches is denied a 4th NEW one — public VOUCH_LIMIT_REACHED, no record, no write.
+	it.effect("a yazar at the concurrent-vouch cap is denied a 4th — VOUCH_LIMIT_REACHED", () =>
+		Effect.gen(function* () {
+			const exit = yield* vouch("u-fourth").pipe(Effect.exit);
+			assert.isTrue(Exit.isFailure(exit));
+			if (Exit.isFailure(exit)) assert.strictEqual(wireCodeOf(exit.cause), "VOUCH_LIMIT_REACHED");
+		}).pipe(
+			// record + hasActiveFor + Pasaport fail-on-contact: a denied vouch records nothing
+			// and never reaches the tandem.
+			Effect.provide(
+				Layer.mergeAll(
+					makePasaportStub(),
+					makeVouchLedgerStub({
+						has: () => Effect.succeed(false), // a NEW candidate
+						activeCountFor: () => Effect.succeed(3), // already at the cap
+					}),
+					kunyeOf(yazarVoucher.tier, {}),
+					agentAuthorityStub,
+					requestContext(human("u-yazar"), true),
+				),
+			),
+		),
+	);
+
+	// Re-vouching an already-vouched candidate is the idempotent no-op — it does NOT
+	// consume a fresh slot, so the cap is not consulted even when the yazar is at it
+	// (`activeCountFor` is fail-on-contact here, proving it's skipped).
+	it.effect("re-vouching an already-vouched candidate is allowed (idempotent, no fresh slot)", () =>
+		Effect.gen(function* () {
+			const receipt = yield* vouch("u-existing");
+			assert.strictEqual((receipt as {vouchRecorded: boolean}).vouchRecorded, false);
+			assert.strictEqual((receipt as {promoted: boolean}).promoted, false);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					makePasaportStub(),
+					makeVouchLedgerStub({
+						has: () => Effect.succeed(true), // already vouched ⇒ skip the cap check
+						record: () => Effect.succeed({recorded: false}),
+						hasActiveFor: () => Effect.succeed(true),
+					}),
+					kunyeOf(yazarVoucher.tier, {"u-existing": 1}), // below the bar ⇒ no promote
 					agentAuthorityStub,
 					requestContext(human("u-yazar"), true),
 				),
@@ -227,6 +295,65 @@ describe("user.vouch — author-vouch tandem", () => {
 					kunyeOf({}, {}),
 					agentAuthorityStub,
 					requestContext(unauthenticated, true),
+				),
+			),
+		),
+	);
+});
+
+describe("user.withdrawVouch — releasing the slot", () => {
+	const yazarVoucher = {tier: {"u-yazar": "yazar"} as Record<string, Tier>};
+
+	it.effect("a yazar withdraws their vouch (deletes the row); the ack never promotes", () =>
+		Effect.gen(function* () {
+			const receipt = yield* withdrawVouch("u-caylak");
+			assert.strictEqual((receipt as {promoted: boolean}).promoted, false);
+			assert.strictEqual((receipt as {vouchRecorded: boolean}).vouchRecorded, false);
+		}).pipe(
+			// Pasaport fail-on-contact: withdraw must never touch the promotion path.
+			Effect.provide(
+				Layer.mergeAll(
+					makePasaportStub(),
+					makeVouchLedgerStub({withdraw: () => Effect.succeed({withdrawn: true})}),
+					kunyeOf(yazarVoucher.tier, {}),
+					agentAuthorityStub,
+					requestContext(human("u-yazar"), true),
+				),
+			),
+		),
+	);
+
+	it.effect("a çaylak cannot withdraw a vouch — public FORBIDDEN, no write", () =>
+		Effect.gen(function* () {
+			const exit = yield* withdrawVouch("u-anyone").pipe(Effect.exit);
+			assert.isTrue(Exit.isFailure(exit));
+			if (Exit.isFailure(exit)) assert.strictEqual(wireCodeOf(exit.cause), "FORBIDDEN");
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					makePasaportStub(),
+					makeVouchLedgerStub(),
+					kunyeOf({"u-caylak-actor": "çaylak"}, {}),
+					agentAuthorityStub,
+					requestContext(human("u-caylak-actor"), true),
+				),
+			),
+		),
+	);
+
+	it.effect("with the #1204 flag OFF withdraw is inert — no authority check, no write", () =>
+		Effect.gen(function* () {
+			const receipt = yield* withdrawVouch("u-caylak");
+			assert.strictEqual((receipt as {promoted: boolean}).promoted, false);
+		}).pipe(
+			// Both seams fail-on-contact: neither the ledger nor the standing read is reached.
+			Effect.provide(
+				Layer.mergeAll(
+					makePasaportStub(),
+					makeVouchLedgerStub(),
+					kunyeOf({}, {}),
+					agentAuthorityStub,
+					requestContext(human("u-rando"), false),
 				),
 			),
 		),

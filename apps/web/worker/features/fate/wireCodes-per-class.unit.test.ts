@@ -35,7 +35,7 @@ import {
 	wireCodeOfClass,
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
-import {Denied, RequiresLevel} from "../kunye/errors.ts";
+import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -111,6 +111,9 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	// künye earned-ladder denial — first reachable from fateConfig via `user.vouch` (#1206).
 	// Has an extra required field (`need`), so it is pinned here but NOT in ROUND_TRIP_CLASSES.
 	[RequiresLevel, "FORBIDDEN"],
+	// künye concurrent-vouch cap (D5, #1289) — reachable via `user.vouch` past the floor.
+	// Has an extra required field (`cap`), so pinned here but NOT in ROUND_TRIP_CLASSES.
+	[VouchLimitReached, "VOUCH_LIMIT_REACHED"],
 ]);
 
 const ORACLE_ENTRIES = [...EXPECTED_CODE.entries()] as ReadonlyArray<[unknown, string]>;

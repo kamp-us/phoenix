@@ -18,6 +18,9 @@ const die =
 const failOnContact: VouchLedgerShape = {
 	record: die("record"),
 	has: die("has"),
+	activeCountFor: die("activeCountFor"),
+	hasActiveFor: die("hasActiveFor"),
+	withdraw: die("withdraw"),
 };
 
 export const makeVouchLedgerStub = (

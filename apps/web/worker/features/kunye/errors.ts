@@ -29,3 +29,17 @@ export class RequiresLevel extends Schema.TaggedErrorClass<RequiresLevel>()(
 	{message: Schema.String, need: Schema.String},
 	{[FateWireCode]: "FORBIDDEN"},
 ) {}
+
+/**
+ * The concurrent-vouch cap (D5, `VOUCH_CONCURRENT_CAP`) is reached — a yazar already
+ * holds the maximum active vouches and is denied a further one until a slot frees
+ * (the vouched çaylak is promoted, or the voucher withdraws). Distinct from the two
+ * authority denials above: the actor IS a yazar (they cleared the `Vouch` floor),
+ * the act is just rate-limited, so it carries its own `VOUCH_LIMIT_REACHED` code and
+ * the `cap` so the surface can show "you've used all N of your vouches."
+ */
+export class VouchLimitReached extends Schema.TaggedErrorClass<VouchLimitReached>()(
+	"kunye/VouchLimitReached",
+	{message: Schema.String, cap: Schema.Number},
+	{[FateWireCode]: "VOUCH_LIMIT_REACHED"},
+) {}
