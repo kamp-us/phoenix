@@ -8,23 +8,36 @@
  */
 import {FateDataView, type WorkerEntity} from "@kampus/fate-effect";
 import type {ViewRow} from "../fate/view-types.ts";
+import type {Tier} from "../kunye/standing.ts";
 import {CONTRIBUTION_VIEW_ORDER_BY} from "./ordering.ts";
 import type {ContributionRow, ProfileRow, UserRow} from "./Pasaport.ts";
 
 // Exported because the `Fate.source` entries surface the row type in their
 // declarations (TS2883 portability). The `Profile` view row adds the client
 // normalization key `id` (=== `userId`, stamped by the resolver).
-export type UserViewRow = ViewRow<UserRow>;
+//
+// `tier` is widened from the stored `StoredTier` (`çaylak | yazar`) to the
+// read-time `Tier` (`visitor | çaylak | yazar`): the `me` resolver reads it via
+// `Kunye.tierOf`, which ranks a row-missing principal as `visitor`, so the wire
+// value spans the full ladder even though the column itself never stores it.
+export type UserViewRow = ViewRow<Omit<UserRow, "tier"> & {tier: Tier}>;
 export type ProfileViewRow = ViewRow<ProfileRow & {id: string}>;
 export type ContributionViewRow = ViewRow<ContributionRow>;
 
 // `username` is `null` until the bootstrap step sets it.
+// `tier` is the GLOBAL account-level authorship rank (ADR 0107 §4), exposed on
+// the TRUSTED read path: the resolver fills it from `Kunye.tierOf` (the stored
+// `user.tier` column read fresh through pasaport), NEVER from the `input:false`
+// better-auth session additionalField (#1203/#1297). Always present — the value
+// is not secret; the frontend gates rendering of authorship affordances on the
+// `phoenix-authorship-loop` flag, not on the field's presence.
 export class UserView extends FateDataView<UserViewRow>()("User")({
 	id: true,
 	email: true,
 	name: true,
 	image: true,
 	username: true,
+	tier: true,
 }) {}
 
 // The **discriminant** view for the profile contributions feed: fate has no

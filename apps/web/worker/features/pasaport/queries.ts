@@ -10,6 +10,7 @@ import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
+import {Kunye} from "../kunye/Kunye.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toContributionRow, toProfile, toUser} from "./shapers.ts";
 import type {Contribution} from "./views.ts";
@@ -33,6 +34,12 @@ export const queries = {
 		Effect.fn("me")(function* () {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
+			const kunye = yield* Kunye;
+			// The TRUSTED authorship rank: read fresh from the stored `user.tier`
+			// column through `Kunye.tierOf`, never the `input:false` session field
+			// (#1297). A row-missing principal ranks `visitor`, so this also covers
+			// the fallback branch below.
+			const tier = yield* kunye.tierOf(user.id);
 			const fresh = yield* pasaport.getUserById(user.id);
 			if (!fresh) {
 				return toUser({
@@ -41,9 +48,10 @@ export const queries = {
 					name: user.name ?? null,
 					image: user.image ?? null,
 					username: null,
+					tier,
 				});
 			}
-			return toUser(fresh);
+			return toUser({...fresh, tier});
 		}),
 	),
 	// `contributions` is delivered inline (not via a source `connection`

@@ -78,14 +78,19 @@ export const mutations = {
 		Effect.fn("user.setUsername")(function* ({input}) {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
+			const kunye = yield* Kunye;
 			const result = yield* pasaport.setUsername({userId: user.id, value: input.value});
-			// email comes from the session; the rest from the service result.
+			// email comes from the session; the rest from the service result. `tier` is
+			// the TRUSTED rank from `Kunye.tierOf` (stored column), never the session
+			// field (#1297) — keeping this `User` shape identical to the `me` query's.
+			const tier = yield* kunye.tierOf(user.id);
 			return toUser({
 				id: result.userId,
 				email: user.email,
 				name: result.displayName,
 				image: result.image,
 				username: result.username,
+				tier,
 			});
 		}),
 	),
