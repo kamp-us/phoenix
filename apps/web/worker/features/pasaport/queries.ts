@@ -11,6 +11,7 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Kunye} from "../kunye/Kunye.ts";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toContributionRow, toProfile, toUser} from "./shapers.ts";
 import type {Contribution} from "./views.ts";
@@ -72,8 +73,13 @@ export const queries = {
 				return base;
 			}
 
+			// Resolve the sandbox viewer once (identity + moderator probe) and thread
+			// it into the feed so a visitor never sees this author's sandboxed content
+			// (#1309) — only the author themselves + a moderator do.
+			const sandboxViewer = yield* currentSandboxViewer;
 			const connection = yield* pasaport.listContributions({
 				authorId: row.userId,
+				sandboxViewer,
 				...keysetInput(args.contributions, CONTRIBUTIONS_PAGE_SIZE),
 			});
 			const contributions = toConnection<(typeof connection.rows)[number], Contribution>(
