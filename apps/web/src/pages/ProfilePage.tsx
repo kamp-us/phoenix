@@ -2,7 +2,10 @@ import {useEffect, useRef, useState} from "react";
 import {Navigate} from "react-router";
 import {authClient, clearBearerToken, useSession} from "../auth/client";
 import {useMe} from "../auth/useMe";
+import {Karma} from "../components/karma/Karma";
 import {DeleteAccountDialog} from "../components/profile/DeleteAccountDialog";
+import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
+import {useFlag} from "../flags/useFlag";
 import {type ThemeChoice, useTheme} from "../lib/theme";
 import {useProfileStats} from "./useProfileStats";
 import "./ProfilePage.css";
@@ -22,6 +25,9 @@ export function ProfilePage() {
 	const session = useSession();
 	const {me, status: meStatus} = useMe();
 	const statsState = useProfileStats(me?.username);
+	// Reinforce the owner's own karma on their identity mirror, dark behind the
+	// authorship-loop flag (#1208). Flag off → no karma stat, profile as today.
+	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	// A failed stats (or `me`) fetch must NOT render as `0` — that's the silent
 	// honest-empty-state bug (#448). Treat either failure as the strip's error.
 	const statsFailed = statsState.status === "error" || meStatus === "error";
@@ -133,6 +139,9 @@ export function ProfilePage() {
 								<div className="n">{stats?.definitionCount ?? 0}</div>
 								<div className="l">tanım</div>
 							</div>
+							{authorshipLoop ? (
+								<Karma variant="stat" value={stats?.totalKarma ?? 0} testId="stat-karma" />
+							) : null}
 						</div>
 					)}
 				</header>

@@ -8,6 +8,8 @@ import {Topbar} from "./components/layout/Topbar";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
 import {LANDING_TERMS, POSTS} from "./fixtures";
+import {PHOENIX_AUTHORSHIP_LOOP} from "./flags/keys";
+import {useFlag} from "./flags/useFlag";
 import {safeReturnTo} from "./lib/returnTo";
 import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
@@ -24,6 +26,7 @@ import {SozlukHome} from "./pages/SozlukHome";
 import {SozlukTermPage} from "./pages/SozlukTermPage";
 import {UsernameBootstrap} from "./pages/UsernameBootstrap";
 import {UserProfilePage} from "./pages/UserProfilePage";
+import {useProfileStats} from "./pages/useProfileStats";
 
 function Layout() {
 	const session = useSession();
@@ -31,6 +34,12 @@ function Layout() {
 	const navigate = useNavigate();
 	const location = useLocation();
 	const {toggle: toggleTheme} = useTheme();
+	// Ambient self-karma in the topbar, dark behind the authorship-loop flag (#1208).
+	// Gating the fetch on the flag keeps the flag-off path exactly as today: no flag →
+	// null username → the read short-circuits off the wire (useProfileStats).
+	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
+	const karmaState = useProfileStats(authorshipLoop ? me?.username : null);
+	const selfKarma = karmaState.status === "ok" ? karmaState.stats.totalKarma : undefined;
 
 	useEffect(() => {
 		if (!session.data) return;
@@ -78,6 +87,7 @@ function Layout() {
 							{to: "/pano", label: "pano"},
 						]}
 						{...userProps}
+						karma={selfKarma}
 						onSearchSubmit={(query) => {
 							const target = searchTarget(query);
 							if (target) navigate(target);

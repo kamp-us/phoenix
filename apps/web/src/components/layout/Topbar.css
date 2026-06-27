@@ -146,3 +146,8 @@
 .kp-topbar__profile-link:hover {
 	background: var(--accent-soft);
 }
+
+/* The ambient self-karma chip (#1208) — keep it centered in the topbar row. */
+.kp-topbar__karma {
+	align-self: center;
+}
