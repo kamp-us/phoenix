@@ -1,6 +1,6 @@
 # Drizzle on D1
 
-How the query builder reaches the database. The short answer: `bind` the D1 connection in the worker's init phase, take its `raw` handle, and hand that to `drizzle(raw, {schema})`. The `Drizzle` capability service is then built **once per isolate** from that instance and provided as a worker-level layer — not rebuilt per request. Migrations are generated **out-of-band** by `drizzle-kit` against `drizzle.config.ts` and applied by alchemy through the D1 resource's `migrationsDir`.
+How the query builder reaches the database. The short answer: `bind` the D1 connection in the worker's init phase, take its `raw` handle, and hand that to `drizzle(raw, {schema})`. The `Drizzle` capability service is then built **once per isolate** from that instance and provided as a worker-level layer — not rebuilt per request. Migrations are **hand-authored** in the flat layout under `migrations/` and applied by alchemy through the D1 resource's `migrationsDir`; `drizzle-kit generate` is a scratch SQL aid only, not the incremental path (see [Migrations](#migrations) and [ADR 0108](../.decisions/0108-hand-authored-flat-d1-migrations.md)).
 
 The `Drizzle.run` / `Drizzle.batch` callback surface that feature code uses (see [feature-services.md](./feature-services.md)) is unchanged. Only how the `drizzle` instance is constructed moves.
 
@@ -59,7 +59,7 @@ Inside a Durable Object the embedded SQLite is `state.storage.sql.exec(...)` ins
 
 ## Migrations
 
-The schema lives at `worker/db/drizzle/schema.ts`. The generate→apply pipeline is split: `drizzle-kit` generates the SQL out-of-band, alchemy applies it on deploy.
+The schema lives at `worker/db/drizzle/schema.ts`. The author→apply pipeline is split: migrations are **hand-authored** in the flat layout, alchemy applies them on deploy.
 
 ```ts
 // worker/db/resources.ts
@@ -69,7 +69,19 @@ export const PhoenixDb = Cloudflare.D1Database("phoenix_db", {
 });
 ```
 
-The `D1Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists, the worker `bind()`s it. There is no `Drizzle.Schema` resource in the alchemy stack: migration SQL is generated against `drizzle.config.ts` (`pnpm --filter @kampus/web drizzle-kit generate`) and committed under `worker/db/drizzle/migrations/`. alchemy scans `migrationsDir` and applies new migrations on deploy — replacing the `wrangler d1 migrations apply` step, but not `drizzle-kit generate`. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
+The `D1Database` resource lives in a module both the stack and the worker import (`worker/db/resources.ts`) so there's one definition — the stack ensures the DB exists, the worker `bind()`s it. There is no `Drizzle.Schema` resource in the alchemy stack. alchemy scans `migrationsDir` and applies new migrations on deploy — replacing the `wrangler d1 migrations apply` step. See [alchemy-stack-deploy.md](./alchemy-stack-deploy.md).
+
+### Authoring a migration — hand-authored flat layout (ADR 0108)
+
+The committed migrations use the **flat layout**: top-level `NNNN_name.sql`, a central `meta/_journal.json`, and per-migration `meta/NNNN_*_snapshot.json` (all `"version": "6"`). **Do not run `drizzle-kit generate` against the committed tree** — the catalog-pinned `drizzle-kit@1.0.0-rc.3` aborts with `Your migrations folder format is outdated, please run drizzle-kit up` because its `assertV3OutFolder` gate trips on the presence of `meta/_journal.json` (drizzle-kit 1.0 expects the per-migration-dir layout, not the legacy central journal). Running `drizzle-kit up` would restructure **all** committed migrations — a history rewrite deferred to a single coordinated cutover ([ADR 0108](../.decisions/0108-hand-authored-flat-d1-migrations.md)).
+
+To add a migration:
+
+1. Author the SQL as a new flat `worker/db/drizzle/migrations/NNNN_name.sql`. `drizzle-kit generate` is usable **only** as a scratch aid — run it against an empty throwaway out-dir to get the SQL for a new table, then hand-place the emitted SQL into the flat file.
+2. Append the entry to `meta/_journal.json` (`idx`, `version: "6"`, `when`, `tag`, `breakpoints`).
+3. Add a `meta/NNNN_*_snapshot.json`. The snapshot JSON is **advisory** — it is read only by drizzle-kit's diff engine, never at apply time, so the load-bearing artifact is the `.sql`.
+
+alchemy applies the committed `.sql` on deploy; the integration tier applies the full set against real D1.
 
 ### Dev binds D1 *remote* and applies *no* migrations
 
