@@ -16,7 +16,12 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import type {StoredTier} from "../kunye/standing.ts";
-import {sandboxBacklogWhere} from "../lifecycle/SandboxVisibility.ts";
+import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
+import {
+	resolveSandboxViewer,
+	sandboxBacklogWhere,
+	sandboxVisibleWhere,
+} from "../lifecycle/SandboxVisibility.ts";
 import {
 	UserNotFound,
 	UsernameAlreadySet,
@@ -177,10 +182,17 @@ export class Pasaport extends Context.Service<
 
 		readonly lookupProfileById: (userId: string) => Effect.Effect<ProfileRow | null>;
 
+		// The contribution feed for a profile page. `sandboxViewer`/`viewerId` thread
+		// the request viewer so the feed applies the #1205 sandbox filter (#1309): a
+		// visitor sees only the author's LIVE content, the owner + a moderator also see
+		// the author's sandboxed content. Omitted ⇒ anonymous (public-only), the safe
+		// default.
 		readonly listContributions: (input: {
 			authorId: string;
 			after?: string | null | undefined;
 			first: number;
+			viewerId?: string | null | undefined;
+			sandboxViewer?: SandboxViewer | undefined;
 		}) => Effect.Effect<ContributionConnection>;
 
 		// Account deletion = anonymize-to-`@[silinen]` (ADR 0097). For the calling
@@ -280,20 +292,35 @@ export const makePasaportLive = (auth: Auth) =>
 			// carry domain errors only and every method's `R` stays `never`.
 			const {run, batch} = orDieAccess(yield* Drizzle);
 
-			// `COUNT(*)` of one author's live (non-removed) rows in a contribution
-			// table. Calls `run` directly so callers keep `R = never`.
+			// `COUNT(*)` of one author's non-removed rows in a contribution table.
+			// Calls `run` directly so callers keep `R = never`. A `viewer` narrows the
+			// count to that viewer's sandbox-visible set (#1309) — so the feed's
+			// `totalCount` matches the rows it actually returns and never leaks the
+			// COUNT of an author's sandboxed content; omitted ⇒ no sandbox narrowing.
 			const countByAuthor = (
 				table:
 					| typeof schema.definitionRecord
 					| typeof schema.postRecord
 					| typeof schema.commentRecord,
 				authorId: string,
+				viewer?: SandboxViewer,
 			): Effect.Effect<number> =>
 				run((db) =>
 					db
 						.select({n: sql<number>`COUNT(*)`})
 						.from(table)
-						.where(and(eq(table.authorId, authorId), isNull(table.removedAt)))
+						.where(
+							and(
+								eq(table.authorId, authorId),
+								isNull(table.removedAt),
+								viewer
+									? sandboxVisibleWhere(
+											{sandboxedAt: table.sandboxedAt, authorId: table.authorId},
+											viewer,
+										)
+									: undefined,
+							),
+						)
 						.then((r) => Number(r[0]?.n ?? 0)),
 				);
 
@@ -498,10 +525,18 @@ export const makePasaportLive = (auth: Auth) =>
 					authorId: string;
 					after?: string | null | undefined;
 					first: number;
+					viewerId?: string | null | undefined;
+					sandboxViewer?: SandboxViewer | undefined;
 				}) {
 					const first = Math.max(1, Math.min(input.first, 50));
 					const cursor = input.after ? decodeCursor(input.after) : null;
 					const fetchSize = first + 1;
+
+					// The #1205 sandbox filter, resolved against the request viewer (#1309):
+					// the profile feed shows the author's LIVE content to everyone, but the
+					// author's SANDBOXED content only to the author themselves + a moderator.
+					// A missing viewer resolves to anonymous, so the default is public-only.
+					const viewer = resolveSandboxViewer(input);
 
 					// `after` present but undecodable is a cursor miss → empty page.
 					const cursorMissed = input.after != null && cursor === null;
@@ -516,7 +551,14 @@ export const makePasaportLive = (auth: Auth) =>
 							| typeof schema.postRecord
 							| typeof schema.commentRecord,
 					) {
-						const base = and(eq(table.authorId, input.authorId), isNull(table.removedAt));
+						const base = and(
+							eq(table.authorId, input.authorId),
+							isNull(table.removedAt),
+							sandboxVisibleWhere(
+								{sandboxedAt: table.sandboxedAt, authorId: table.authorId},
+								viewer,
+							),
+						);
 						const predicate = keysetAfter(
 							keysetKeys(contributionOrdering(table), (field) =>
 								field === "id" ? (cursor?.id ?? null) : (cursor?.createdAt ?? null),
@@ -573,9 +615,9 @@ export const makePasaportLive = (auth: Auth) =>
 							.limit(fetchSize),
 					);
 
-					const defTotal = yield* countByAuthor(schema.definitionRecord, input.authorId);
-					const postTotal = yield* countByAuthor(schema.postRecord, input.authorId);
-					const commentTotal = yield* countByAuthor(schema.commentRecord, input.authorId);
+					const defTotal = yield* countByAuthor(schema.definitionRecord, input.authorId, viewer);
+					const postTotal = yield* countByAuthor(schema.postRecord, input.authorId, viewer);
+					const commentTotal = yield* countByAuthor(schema.commentRecord, input.authorId, viewer);
 					const totalCount = defTotal + postTotal + commentTotal;
 
 					if (cursorMissed) {
