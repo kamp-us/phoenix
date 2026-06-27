@@ -24,6 +24,7 @@ import {readGuardCommand} from "./tools/read-guard/command.ts";
 import {spawnGuardCommand} from "./tools/spawn-guard/command.ts";
 import {structuredOutputGuardCommand} from "./tools/structured-output-guard/command.ts";
 import {worktreeGuardCommand} from "./tools/worktree-guard/command.ts";
+import {worktreeSweepCommand} from "./tools/worktree-sweep/command.ts";
 import {versionCommand} from "./version.ts";
 
 /** The Node platform service union the bin provides — the requirement ceiling for a tool. */
@@ -72,4 +73,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	crabboxManifestCommand,
 	changelogDeriveCommand,
 	structuredOutputGuardCommand,
+	worktreeSweepCommand,
 ];
