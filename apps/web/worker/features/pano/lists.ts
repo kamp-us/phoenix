@@ -20,6 +20,7 @@ import * as Schema from "effect/Schema";
 import {toPostSort} from "../../../src/lib/panoFeedSort.ts";
 import {emptyKeysetPage} from "../../db/keyset.ts";
 import {toConnection} from "../fate/connection.ts";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {Pano, type PostSummaryRow} from "./Pano.ts";
 import {toPost} from "./shapers.ts";
@@ -42,14 +43,17 @@ export const lists = {
 	posts: Fate.list(
 		{args: PostsArgs, type: PostView},
 		Effect.fn("posts")(function* ({args}) {
-			const {user} = yield* CurrentUser;
-			const viewerId = user?.id ?? null;
+			// Resolve the sandbox viewer once (identity + moderator probe); the feed
+			// hides çaylak-sandboxed posts from anyone but their author + a mod (#1205).
+			const sandboxViewer = yield* currentSandboxViewer;
+			const viewerId = sandboxViewer.viewerId;
 			const pano = yield* Pano;
 			const page = yield* pano.listPostsConnection({
 				sort: toPostSort(args.sort),
 				...(args.first !== undefined ? {first: args.first} : {}),
 				...(args.after !== undefined ? {after: args.after} : {}),
 				...(args.host !== undefined && args.host.length > 0 ? {host: args.host} : {}),
+				sandboxViewer,
 			});
 
 			// Signed-out: serve the keyset page as-is (neutral `myVote`/`isSaved`).
@@ -65,7 +69,7 @@ export const lists = {
 			// the viewer's `myVote`/`isSaved`, then re-order to the keyset (the `inArray`
 			// fetch loses the sort), mirroring `savedPosts`.
 			const ids = page.rows.map((row) => row.id);
-			const hydrated = yield* pano.getPostsByIds(ids, {viewerId});
+			const hydrated = yield* pano.getPostsByIds(ids, {viewerId, sandboxViewer});
 			const byId = new Map(hydrated.map((row) => [row.id, row]));
 			const rows = page.rows.flatMap((row) => {
 				const stamped = byId.get(row.id);

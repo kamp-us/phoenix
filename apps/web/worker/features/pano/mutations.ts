@@ -19,6 +19,7 @@ import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
+import {publishIfLive, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
@@ -162,6 +163,9 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
+			// A çaylak's new post lands sandboxed when the authorship-loop flag is on;
+			// flag-off / yazar ⇒ live, exactly as today (#1205).
+			const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 			const r = yield* pano.submitPost({
 				title: input.title,
 				...(input.url ? {url: input.url} : {}),
@@ -169,11 +173,14 @@ export const mutations = {
 				tags: input.tags.map((t) => ({kind: t.kind, ...(t.label ? {label: t.label} : {})})),
 				authorId: user.id,
 				authorName: user.name ?? user.email,
+				sandboxedAt,
 			});
 			const post = shapePost({...r, myVote: null});
 			// New post leads the feed: prepend to the `posts` topic (every
-			// feed-sort variant, via the global topic). Inline node, no DB work.
-			yield* live.post.feed.prependNode(post.id, {node: post});
+			// feed-sort variant, via the global topic). Inline node, no DB work —
+			// but only when the post is live: the feed topic is viewer-blind, so a
+			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
+			yield* publishIfLive(sandboxedAt, live.post.feed.prependNode(post.id, {node: post}));
 			return post;
 		}),
 	),
@@ -395,16 +402,25 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const pano = yield* Pano;
 			const live = panoLive(yield* WorkerLivePublisher);
+			// A çaylak's new comment lands sandboxed when the authorship-loop flag is
+			// on; flag-off / yazar ⇒ live, exactly as today (#1205).
+			const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 			const r = yield* pano.addComment({
 				postId: input.postId,
 				authorId: user.id,
 				authorName: user.name ?? user.email,
 				body: input.body,
+				sandboxedAt,
 				...(input.parentId ? {parentId: input.parentId} : {}),
 			});
 			const comment = shapeComment({...r, myVote: null});
-			// Append to the `Post.comments` topic keyed by the parent post id.
-			yield* live.comment.thread(input.postId).appendNode(comment.id, {node: comment});
+			// Append to the `Post.comments` topic keyed by the parent post id — but
+			// only when the comment is live: the thread topic is viewer-blind, so a
+			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
+			yield* publishIfLive(
+				sandboxedAt,
+				live.comment.thread(input.postId).appendNode(comment.id, {node: comment}),
+			);
 			return comment;
 		}),
 	),

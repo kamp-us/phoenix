@@ -23,6 +23,7 @@ import {DrizzleLive} from "../../db/Drizzle.ts";
 import {type Flags, FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
+import {type Kunye, KunyeLive} from "../kunye/Kunye.ts";
 import {RelationStoreLive} from "../kunye/RelationStore.ts";
 import {type Bookmark, BookmarkLive} from "../pano/Bookmark.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
@@ -51,7 +52,11 @@ export type WorkerFateServices =
 	// agent-attenuation seam (`AgentAuthorityV1`). `CurrentActor` is NOT here —
 	// it is per-request, registered separately below.
 	| RelationStore
-	| AgentAuthority;
+	| AgentAuthority
+	// Künye standing (ADR 0107 §4) — the earned-authorship read side. Mounted now
+	// that the çaylak sandbox (#1205) is its first consumer (`Kunye.tierOf` decides
+	// sandbox-on-create); previously declared but dormant.
+	| Kunye;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -139,7 +144,6 @@ export const makeFateLayer: Layer.Layer<
 	never,
 	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
 > = Layer.mergeAll(
-	PasaportFromTag,
 	Layer.mergeAll(SozlukLive, PanoLive).pipe(
 		Layer.provideMerge(VoteLive),
 		Layer.provideMerge(BookmarkLive),
@@ -157,12 +161,16 @@ export const makeFateLayer: Layer.Layer<
 	// `AgentAuthorityV1` fills the dormant agent-attenuation port fail-closed.
 	RelationStoreLive,
 	AgentAuthorityV1,
+	// Künye standing (ADR 0107 §4), the çaylak sandbox's tier source (#1205). Reads
+	// through `Pasaport`, discharged by the `provideMerge(PasaportFromTag)` below
+	// (which keeps `Pasaport` an output for the routes too).
+	KunyeLive,
 	// `Flags` is the dark-ship read surface the pano draft-save gate consumes (#746).
 	// `FlagsLive` needs only `Flagship` (a new R seam, discharged at the composition
 	// root like `Database`); `getBoolean`'s `RuntimeContext`/`FlagsContext` are per-call,
 	// supplied by the resolver, not at layer build.
 	FlagsLive,
-).pipe(Layer.provideMerge(DrizzleLive));
+).pipe(Layer.provideMerge(PasaportFromTag), Layer.provideMerge(DrizzleLive));
 
 /**
  * The composed fate-server layer (`.patterns/fate-effect-server.md`):

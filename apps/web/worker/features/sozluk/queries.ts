@@ -7,11 +7,12 @@
  * `.patterns/fate-effect-operations.md`, `.patterns/fate-connections.md`).
  */
 
-import {CurrentUser, Fate} from "@kampus/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {toDefinition, toTermFromPage} from "./shapers.ts";
 import type {Definition} from "./views.ts";
@@ -31,11 +32,12 @@ export const queries = {
 		{args: TermArgs, type: TermView},
 		Effect.fn("term")(function* ({args, select}) {
 			const sozluk = yield* Sozluk;
-			const page = yield* sozluk.getTerm(args.slug);
+			// Resolve the sandbox viewer once (identity + moderator probe) so the
+			// term + its definitions filter çaylak-sandboxed content per #1205.
+			const sandboxViewer = yield* currentSandboxViewer;
+			const viewerId = sandboxViewer.viewerId;
+			const page = yield* sozluk.getTerm(args.slug, {sandboxViewer});
 			if (!page) return null;
-
-			const {user} = yield* CurrentUser;
-			const viewerId = user?.id ?? null;
 
 			const base = toTermFromPage(page);
 
@@ -49,6 +51,7 @@ export const queries = {
 			const connection = yield* sozluk.listDefinitionsKeyset(args.slug, {
 				...keysetInput(args.definitions, DEFINITIONS_PAGE_SIZE),
 				viewerId,
+				sandboxViewer,
 			});
 			const definitions = toConnection<(typeof connection.rows)[number], Definition>(
 				connection,

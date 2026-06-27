@@ -15,7 +15,13 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
+import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
+import {
+	resolveSandboxViewer,
+	sandboxBacklogWhere,
+	sandboxVisibleWhere,
+} from "../lifecycle/SandboxVisibility.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
@@ -158,6 +164,11 @@ export interface AddDefinitionInput {
 	body: string;
 	/** Optional human title. Falls back to slug-with-spaces. */
 	termTitle?: string | undefined;
+	/**
+	 * The çaylak mod-only sandbox stamp (#1205), decided by the resolver from the
+	 * authorship flag + author tier. `null`/absent ⇒ created live (today's behavior).
+	 */
+	sandboxedAt?: Date | null | undefined;
 }
 
 export interface AddDefinitionResult {
@@ -226,14 +237,18 @@ export interface DeleteDefinitionResult {
 export class Sozluk extends Context.Service<
 	Sozluk,
 	{
-		readonly getTerm: (slug: string) => Effect.Effect<TermPage | null>;
+		readonly getTerm: (
+			slug: string,
+			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+		) => Effect.Effect<TermPage | null>;
 
 		/**
 		 * DB-keyset page of a term's live definitions in the canonical
 		 * `(score desc, created_at asc, id asc)` term-page order. The cursor is a
 		 * definition id and the keyset predicate fetches the rows after it, so a
 		 * page is a bounded `WHERE … LIMIT`, not a full load. `viewerId` batches
-		 * `myVote` for the whole page in one `user_vote` read.
+		 * `myVote` for the whole page in one `user_vote` read; `sandboxViewer`
+		 * filters the çaylak sandbox (#1205) per the same viewer.
 		 */
 		readonly listDefinitionsKeyset: (
 			slug: string,
@@ -241,6 +256,7 @@ export class Sozluk extends Context.Service<
 				first?: number | undefined;
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
 			},
 		) => Effect.Effect<DefinitionConnectionPage>;
 
@@ -252,8 +268,18 @@ export class Sozluk extends Context.Service<
 		 */
 		readonly getDefinitionsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {viewerId?: string | null | undefined},
+			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
 		) => Effect.Effect<DefinitionRow[]>;
+
+		/**
+		 * The moderator sandbox-queue / promotion-backlog read model (#1205, the
+		 * #1206 seam): a çaylak's still-sandboxed, not-removed definitions — scoped to
+		 * one author when promotion flips their backlog. Authority (moderator) is
+		 * gated at the resolver; the service read itself is unconditional.
+		 */
+		readonly listSandboxedDefinitions: (opts?: {
+			authorId?: string | undefined;
+		}) => Effect.Effect<DefinitionRow[]>;
 
 		/** Batched read of term summaries by slug; order not guaranteed (fate re-associates by id). */
 		readonly getTermSummariesByIds: (
@@ -366,6 +392,10 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						and(
 							eq(schema.definitionRecord.termSlug, slug),
 							isNull(schema.definitionRecord.removedAt),
+							// The public term card (excerpt / top definition / count) must
+							// reflect only LIVE content — a sandboxed çaylak definition (#1205)
+							// is pending, never surfaced in the public denormalized aggregate.
+							isNull(schema.definitionRecord.sandboxedAt),
 						),
 					)
 					.orderBy(desc(schema.definitionRecord.score), asc(schema.definitionRecord.createdAt)),
@@ -423,18 +453,24 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					.from(schema.termRecord)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
+			// Public stats count LIVE content only: a sandboxed çaylak definition
+			// (#1205) is pending, excluded from the landing totals like a removed one.
+			const publicDefWhere = and(
+				isNull(schema.definitionRecord.removedAt),
+				isNull(schema.definitionRecord.sandboxedAt),
+			);
 			const totalDefsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.definitionRecord)
-					.where(isNull(schema.definitionRecord.removedAt))
+					.where(publicDefWhere)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalAuthorsRow = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(DISTINCT ${schema.definitionRecord.authorId})`})
 					.from(schema.definitionRecord)
-					.where(isNull(schema.definitionRecord.removedAt))
+					.where(publicDefWhere)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 
@@ -452,10 +488,14 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			);
 		});
 
-		const getTerm = Effect.fn("Sozluk.getTerm")(function* (slug: string) {
+		const getTerm = Effect.fn("Sozluk.getTerm")(function* (
+			slug: string,
+			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
+		) {
 			const meta = yield* run((db) => db.query.termRecord.findFirst({where: {slug}}));
 			if (!meta) return null;
 
+			const viewer = resolveSandboxViewer(opts);
 			const defs = yield* run((db) =>
 				db
 					.select()
@@ -464,6 +504,13 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						and(
 							eq(schema.definitionRecord.termSlug, slug),
 							isNull(schema.definitionRecord.removedAt),
+							sandboxVisibleWhere(
+								{
+									sandboxedAt: schema.definitionRecord.sandboxedAt,
+									authorId: schema.definitionRecord.authorId,
+								},
+								viewer,
+							),
 						),
 					)
 					.orderBy(desc(schema.definitionRecord.score), asc(schema.definitionRecord.createdAt)),
@@ -490,15 +537,24 @@ export const SozlukLive = Layer.effect(Sozluk)(
 				first?: number | undefined;
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
 			} = {},
 		) {
 			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
 			const after = opts.after ?? null;
 			const viewerId = opts.viewerId ?? null;
+			const viewer = resolveSandboxViewer(opts);
 
 			const baseWhere = and(
 				eq(schema.definitionRecord.termSlug, slug),
 				isNull(schema.definitionRecord.removedAt),
+				sandboxVisibleWhere(
+					{
+						sandboxedAt: schema.definitionRecord.sandboxedAt,
+						authorId: schema.definitionRecord.authorId,
+					},
+					viewer,
+				),
 			);
 			const totalCount = yield* run((db) =>
 				db
@@ -556,10 +612,11 @@ export const SozlukLive = Layer.effect(Sozluk)(
 
 		const getDefinitionsByIds = Effect.fn("Sozluk.getDefinitionsByIds")(function* (
 			ids: ReadonlyArray<string>,
-			opts: {viewerId?: string | null | undefined} = {},
+			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
 		) {
 			if (ids.length === 0) return [];
 			const viewerId = opts.viewerId ?? null;
+			const viewer = resolveSandboxViewer(opts);
 			const fetched = yield* run((db) =>
 				db
 					.select()
@@ -568,12 +625,41 @@ export const SozlukLive = Layer.effect(Sozluk)(
 						and(
 							inArray(schema.definitionRecord.id, [...ids]),
 							isNull(schema.definitionRecord.removedAt),
+							sandboxVisibleWhere(
+								{
+									sandboxedAt: schema.definitionRecord.sandboxedAt,
+									authorId: schema.definitionRecord.authorId,
+								},
+								viewer,
+							),
 						),
 					),
 			);
 			return yield* stampViewerScalars(fetched.map(toDefinitionRow), viewerId, [
 				definitionVoteScalar,
 			]);
+		});
+
+		const listSandboxedDefinitions = Effect.fn("Sozluk.listSandboxedDefinitions")(function* (
+			opts: {authorId?: string | undefined} = {},
+		) {
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.definitionRecord)
+					.where(
+						sandboxBacklogWhere(
+							{
+								sandboxedAt: schema.definitionRecord.sandboxedAt,
+								removedAt: schema.definitionRecord.removedAt,
+								authorId: schema.definitionRecord.authorId,
+							},
+							{authorId: opts.authorId},
+						),
+					)
+					.orderBy(desc(schema.definitionRecord.createdAt)),
+			);
+			return fetched.map(toDefinitionRow);
 		});
 
 		const getTermSummariesByIds = Effect.fn("Sozluk.getTermSummariesByIds")(function* (
@@ -710,6 +796,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					removedAt: null,
 					removedBy: null,
 					removedReason: null,
+					sandboxedAt: input.sandboxedAt ?? null,
 					lastEventId: "",
 				}),
 			);
@@ -1005,6 +1092,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			getTerm,
 			listDefinitionsKeyset,
 			getDefinitionsByIds,
+			listSandboxedDefinitions,
 			getTermSummariesByIds,
 			listTermSummaries,
 			listTermSummariesConnection,

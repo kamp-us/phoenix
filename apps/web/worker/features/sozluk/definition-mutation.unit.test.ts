@@ -21,13 +21,40 @@
 import {assert, it} from "@effect/vitest";
 import {CurrentUser, LivePublisher} from "@kampus/fate-effect";
 import {liveConnectionTopic, liveGlobalConnectionTopic} from "@nkzw/fate/server";
+import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
 import {livePublisherFor} from "../fate-live/live-publisher.ts";
+import {Flags} from "../flagship/Flags.ts";
+import {Kunye} from "../kunye/Kunye.ts";
 import {mutations} from "./mutations.ts";
 import type {AddDefinitionResult} from "./Sozluk.ts";
 import {Sozluk} from "./Sozluk.ts";
 
 const AUTHOR = {id: "u-author", email: "yazar@example.com", name: "yazar"};
+
+const runtimeContextStub: BaseRuntimeContext = {
+	Type: "test",
+	id: "test",
+	env: {},
+	get: () => Effect.succeed(undefined),
+	set: (id) => Effect.succeed(id),
+};
+
+// The çaylak-sandbox deps the resolver gained (#1205): `Flags` OFF ⇒
+// `sandboxedAtForAuthor` returns null without reading `Kunye`, so the add path is
+// today's live-create. The `Kunye` stub satisfies the type without being exercised.
+const flagsOffStub = Layer.succeed(Flags, {
+	getBoolean: () => Effect.succeed(false),
+	getString: () => Effect.die("getString not exercised"),
+	getNumber: () => Effect.die("getNumber not exercised"),
+	getObject: () => Effect.die("getObject not exercised"),
+} as typeof Flags.Service);
+
+const kunyeStub = Layer.succeed(Kunye, {
+	tierOf: () => Effect.succeed("yazar" as const),
+	karmaOf: () => Effect.succeed(0),
+	rootOf: (id: string) => Effect.succeed(id),
+} as typeof Kunye.Service);
 
 // A `Sozluk` stub whose `addDefinition` is scripted; every other method dies on
 // contact, so a passing test proves `definition.add` reached only the write it
@@ -80,8 +107,9 @@ it.effect(
 			yield* mutations["definition.add"]
 				.handler({input: {termSlug: slug, body: ADD_RESULT.body}, select: ["id"]})
 				.pipe(
-					Effect.provide(Layer.mergeAll(sozlukStub(ADD_RESULT), liveStub)),
+					Effect.provide(Layer.mergeAll(sozlukStub(ADD_RESULT), liveStub, flagsOffStub, kunyeStub)),
 					Effect.provideService(CurrentUser, {user: AUTHOR}),
+					Effect.provideService(RuntimeContext, runtimeContextStub),
 				);
 			yield* Effect.promise(() => Promise.allSettled(scheduled));
 

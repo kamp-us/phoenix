@@ -52,12 +52,24 @@ export const decodeReason = Schema.decodeUnknownSync(ReasonFromJson);
 export const encodeReason = Schema.encodeSync(ReasonFromJson);
 
 /**
- * The lifecycle state of a deletable entity. `Removed` carries the full audit
- * triad; there is no `Removed` without `removedAt` + `removedBy` + `reason`.
+ * The lifecycle state of a deletable entity (ADR 0096, extended by #1205). A
+ * closed union of exactly three states, so an entity is *one* of them — which is
+ * what makes the çaylak-sandbox invariant hold by construction: a `Sandboxed`
+ * cannot also be `Removed` (they are distinct tags), so "sandboxed-AND-removed" is
+ * unrepresentable, no flag-pair to fall into a contradictory combination.
+ *
+ * - `Live` — public, the default; carries no audit.
+ * - `Sandboxed` — çaylak content held in the mod-only sandbox (#1205): visible to
+ *   its author + moderators only, until promotion (#1206) transitions it to `Live`.
+ * - `Removed` — soft-deleted, carrying the full audit triad; there is no `Removed`
+ *   without `removedAt` + `removedBy` + `reason`.
  */
 export type EntityLifecycle = Data.TaggedEnum<{
 	// biome-ignore lint/complexity/noBannedTypes: Data.taggedEnum needs the literal `{}` for a payload-less member; `Record<string, never>` makes `Live()` demand an arg.
 	Live: {};
+	Sandboxed: {
+		readonly sandboxedAt: Date;
+	};
 	Removed: {
 		readonly removedAt: Date;
 		readonly removedBy: string;
@@ -66,55 +78,78 @@ export type EntityLifecycle = Data.TaggedEnum<{
 }>;
 
 export const EntityLifecycle = Data.taggedEnum<EntityLifecycle>();
-export const {Live, Removed, $is, $match} = EntityLifecycle;
+export const {Live, Sandboxed, Removed, $is, $match} = EntityLifecycle;
 
 export type Removed = Extract<EntityLifecycle, {readonly _tag: "Removed"}>;
+export type Sandboxed = Extract<EntityLifecycle, {readonly _tag: "Sandboxed"}>;
 
 export const isRemoved = $is("Removed");
 export const isLive = $is("Live");
+export const isSandboxed = $is("Sandboxed");
 
 /**
- * The three persisted columns, exactly as they sit on a content row. `removedAt`
- * null ⇒ the entity is `Live`. This is the only shape the projection reads.
+ * The persisted lifecycle columns, exactly as they sit on a content row: the ADR
+ * 0096 removal triad plus the #1205 `sandboxedAt` marker. `removedAt` AND
+ * `sandboxedAt` both null ⇒ `Live`. This is the only shape the projection reads.
+ * `RemovalColumns` stays as a name alias for the `removal.ts` call sites that
+ * predate the sandbox dimension.
  */
-export interface RemovalColumns {
+export interface LifecycleColumns {
 	readonly removedAt: Date | null;
 	readonly removedBy: string | null;
 	readonly removedReason: string | null;
+	readonly sandboxedAt: Date | null;
 }
+export type RemovalColumns = LifecycleColumns;
 
 /**
- * Reconstitute the lifecycle union from a row's three raw columns — the single
+ * Reconstitute the lifecycle union from a row's raw columns — the single
  * projection seam ADR 0096 §2 mandates (services call this, never branch on the
- * columns). A row with `removedAt` set but a missing `removedBy`/`removedReason`
- * is a corrupt half-removal the domain can't represent; we surface it loudly
- * rather than silently projecting a `Removed` with a fabricated audit.
+ * columns). Removal takes precedence over sandbox (a removed row reads `Removed`
+ * regardless of `sandboxedAt`; `toColumns` never persists both, so the precedence
+ * is only a defensive belt). A row with `removedAt` set but a missing
+ * `removedBy`/`removedReason` is a corrupt half-removal the domain can't
+ * represent; we surface it loudly rather than projecting a fabricated audit.
  */
-export const fromColumns = (cols: RemovalColumns): EntityLifecycle => {
-	if (cols.removedAt === null) return Live();
-	if (cols.removedBy === null || cols.removedReason === null) {
-		throw new Error(
-			"lifecycle: removed_at set without removed_by/removed_reason — corrupt half-removal",
-		);
+export const fromColumns = (cols: LifecycleColumns): EntityLifecycle => {
+	if (cols.removedAt !== null) {
+		if (cols.removedBy === null || cols.removedReason === null) {
+			throw new Error(
+				"lifecycle: removed_at set without removed_by/removed_reason — corrupt half-removal",
+			);
+		}
+		return Removed({
+			removedAt: cols.removedAt,
+			removedBy: cols.removedBy,
+			reason: decodeReason(cols.removedReason),
+		});
 	}
-	return Removed({
-		removedAt: cols.removedAt,
-		removedBy: cols.removedBy,
-		reason: decodeReason(cols.removedReason),
-	});
+	if (cols.sandboxedAt !== null) return Sandboxed({sandboxedAt: cols.sandboxedAt});
+	return Live();
 };
 
 /**
- * The inverse: the column values a lifecycle persists to. `Live` clears all
- * three (what {@link restore} writes); `Removed` stamps the triad.
+ * The inverse: the column values a lifecycle persists to. Each member writes a
+ * shape with **at most one** of `removedAt`/`sandboxedAt` non-null — so the
+ * persisted form can never hold the sandboxed-AND-removed contradiction the union
+ * already forbids in memory. `Live` clears everything (what {@link restore} /
+ * {@link promote} write); `Sandboxed` stamps only `sandboxedAt`; `Removed` stamps
+ * only the triad.
  */
-export const toColumns = (lifecycle: EntityLifecycle): RemovalColumns =>
+export const toColumns = (lifecycle: EntityLifecycle): LifecycleColumns =>
 	$match(lifecycle, {
-		Live: () => ({removedAt: null, removedBy: null, removedReason: null}),
+		Live: () => ({removedAt: null, removedBy: null, removedReason: null, sandboxedAt: null}),
+		Sandboxed: ({sandboxedAt}) => ({
+			removedAt: null,
+			removedBy: null,
+			removedReason: null,
+			sandboxedAt,
+		}),
 		Removed: ({removedAt, removedBy, reason}) => ({
 			removedAt,
 			removedBy,
 			removedReason: encodeReason(reason),
+			sandboxedAt: null,
 		}),
 	});
 
@@ -135,6 +170,60 @@ export const remove = (input: {
  * `Vote.clearTarget` wiped are not resurrected (ADR 0096 §4).
  */
 export const restore = (_removed: Removed): EntityLifecycle => Live();
+
+/**
+ * Construct the sandboxed state — the one constructor a çaylak create path uses to
+ * hold new content in the mod-only sandbox (#1205).
+ */
+export const sandbox = (input: {readonly sandboxedAt: Date}): Sandboxed => Sandboxed(input);
+
+/**
+ * `promote : Sandboxed → Live`. Defined **only** on `Sandboxed` — promoting a
+ * `Live`/`Removed` entity is not expressible because the parameter type excludes
+ * them. This is the seam the çaylak→yazar promotion (#1206) flips a sandboxed
+ * backlog through; it lives here so the transition is one place, symmetric with
+ * {@link restore}.
+ */
+export const promote = (_sandboxed: Sandboxed): EntityLifecycle => Live();
+
+/**
+ * The viewer a sandbox-visibility decision is made against. `viewerId` is the
+ * signed-in account id (null = anonymous/public); `canSeeSandboxed` is true only
+ * for a moderator (the discharged {@link Moderate} authority — ADR 0107), who sees
+ * the full sandbox. A non-moderator member sees only the sandboxed content they
+ * authored. Deliberately a plain value, not a service: the visibility decision is
+ * pure, so the resolver resolves the viewer once and the read layer + the matrix
+ * test both apply the same rule.
+ */
+export interface SandboxViewer {
+	readonly viewerId: string | null;
+	readonly canSeeSandboxed: boolean;
+}
+
+/** An anonymous/public viewer — sees only `Live`. The safe default. */
+export const anonymousViewer: SandboxViewer = {viewerId: null, canSeeSandboxed: false};
+
+/**
+ * The pure visibility decision (#1205) — the rule the read queries' SQL predicate
+ * mirrors and the visibility-matrix test targets directly. A piece of content with
+ * `lifecycle`/`authorId` is visible to `viewer` iff:
+ *
+ * - `Live` — visible to everyone.
+ * - `Removed` — hidden from the content reads (the existing `removed_at IS NULL`
+ *   guard, unchanged — moderators review removed content through a different queue).
+ * - `Sandboxed` — visible only to a moderator (`canSeeSandboxed`) or the author
+ *   (`viewerId === authorId`); hidden from anonymous + every other member.
+ */
+export const isVisibleTo = (
+	lifecycle: EntityLifecycle,
+	authorId: string,
+	viewer: SandboxViewer,
+): boolean =>
+	$match(lifecycle, {
+		Live: () => true,
+		Removed: () => false,
+		Sandboxed: () => viewer.canSeeSandboxed || viewer.viewerId === authorId,
+	});
 
 /**
  * Exhaustive reason handling via `Match.tagsExhaustive` — the call site that adds

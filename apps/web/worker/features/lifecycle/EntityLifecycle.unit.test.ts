@@ -58,8 +58,13 @@ describe("EntityLifecycle — type transitions", () => {
 });
 
 describe("EntityLifecycle — column projection round-trip", () => {
-	it("removedAt null ⇒ Live", () => {
-		const lifecycle = L.fromColumns({removedAt: null, removedBy: null, removedReason: null});
+	it("removedAt + sandboxedAt both null ⇒ Live", () => {
+		const lifecycle = L.fromColumns({
+			removedAt: null,
+			removedBy: null,
+			removedReason: null,
+			sandboxedAt: null,
+		});
 		assert.isTrue(L.isLive(lifecycle));
 	});
 
@@ -68,6 +73,7 @@ describe("EntityLifecycle — column projection round-trip", () => {
 			removedAt: fixedNow,
 			removedBy: "user-1",
 			removedReason: '{"_tag":"Moderated","reportId":"rep-9"}',
+			sandboxedAt: null,
 		});
 		assert.isTrue(L.isRemoved(lifecycle));
 		if (L.isRemoved(lifecycle)) {
@@ -86,26 +92,81 @@ describe("EntityLifecycle — column projection round-trip", () => {
 		const cols = L.toColumns(removed);
 		assert.strictEqual(cols.removedBy, "user-1");
 		assert.strictEqual(cols.removedReason, '{"_tag":"Anonymized"}');
+		assert.strictEqual(cols.sandboxedAt, null);
 		const back = L.fromColumns(cols);
 		assert.isTrue(L.isRemoved(back));
 		if (L.isRemoved(back)) assert.strictEqual(back.reason._tag, "Anonymized");
 	});
 
-	it("toColumns(restore(removed)) clears the whole triad (Live persistence)", () => {
+	it("toColumns(restore(removed)) clears the whole triad + sandbox (Live persistence)", () => {
 		const removed = L.remove({
 			removedAt: fixedNow,
 			removedBy: "user-1",
 			reason: new L.AuthorDeletion(),
 		});
 		const cols = L.toColumns(L.restore(removed));
-		assert.deepStrictEqual(cols, {removedAt: null, removedBy: null, removedReason: null});
+		assert.deepStrictEqual(cols, {
+			removedAt: null,
+			removedBy: null,
+			removedReason: null,
+			sandboxedAt: null,
+		});
 	});
 
 	it("a corrupt half-removal (removedAt set, audit missing) is rejected loudly", () => {
 		assert.throws(
-			() => L.fromColumns({removedAt: fixedNow, removedBy: null, removedReason: null}),
+			() =>
+				L.fromColumns({
+					removedAt: fixedNow,
+					removedBy: null,
+					removedReason: null,
+					sandboxedAt: null,
+				}),
 			/corrupt half-removal/,
 		);
+	});
+});
+
+describe("EntityLifecycle — sandbox (#1205)", () => {
+	it("sandboxedAt set (removedAt null) ⇒ Sandboxed", () => {
+		const lifecycle = L.fromColumns({
+			removedAt: null,
+			removedBy: null,
+			removedReason: null,
+			sandboxedAt: fixedNow,
+		});
+		assert.isTrue(L.isSandboxed(lifecycle));
+		assert.isFalse(L.isLive(lifecycle));
+		assert.isFalse(L.isRemoved(lifecycle));
+		if (L.isSandboxed(lifecycle)) assert.strictEqual(lifecycle.sandboxedAt, fixedNow);
+	});
+
+	it("removal takes precedence over sandbox in the projection (no contradiction)", () => {
+		const lifecycle = L.fromColumns({
+			removedAt: fixedNow,
+			removedBy: "user-1",
+			removedReason: '{"_tag":"AuthorDeletion"}',
+			sandboxedAt: fixedNow,
+		});
+		assert.isTrue(L.isRemoved(lifecycle));
+	});
+
+	it("toColumns(sandbox(...)) writes only sandboxedAt; never sandboxed-AND-removed", () => {
+		const cols = L.toColumns(L.sandbox({sandboxedAt: fixedNow}));
+		assert.deepStrictEqual(cols, {
+			removedAt: null,
+			removedBy: null,
+			removedReason: null,
+			sandboxedAt: fixedNow,
+		});
+	});
+
+	it("promote : Sandboxed → Live, and is only defined on Sandboxed", () => {
+		const sandboxed = L.sandbox({sandboxedAt: fixedNow});
+		assert.isTrue(L.isLive(L.promote(sandboxed)));
+		expectTypeOf(L.promote).parameter(0).toEqualTypeOf<L.Sandboxed>();
+		// @ts-expect-error — a `Live` is not assignable to the `Sandboxed` parameter.
+		L.promote(L.Live());
 	});
 });
 

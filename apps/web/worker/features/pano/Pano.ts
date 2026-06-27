@@ -27,7 +27,13 @@ import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
+import {isVisibleTo, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
+import {
+	resolveSandboxViewer,
+	sandboxBacklogWhere,
+	sandboxVisibleWhere,
+} from "../lifecycle/SandboxVisibility.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
 import type {VoteTargetNotFound} from "../vote/errors.ts";
@@ -277,6 +283,11 @@ export interface SubmitPostInput {
 	tags: ReadonlyArray<{kind: string; label?: string | undefined}>;
 	authorId: string;
 	authorName: string;
+	/**
+	 * The çaylak mod-only sandbox stamp (#1205), decided by the resolver from the
+	 * authorship flag + author tier. `null`/absent ⇒ posted live (today's behavior).
+	 */
+	sandboxedAt?: Date | null | undefined;
 }
 
 export interface SubmitPostResult {
@@ -378,6 +389,11 @@ export interface AddCommentInput {
 	authorName: string;
 	body: string;
 	parentId?: string | null | undefined;
+	/**
+	 * The çaylak mod-only sandbox stamp (#1205), decided by the resolver from the
+	 * authorship flag + author tier. `null`/absent ⇒ created live (today's behavior).
+	 */
+	sandboxedAt?: Date | null | undefined;
 }
 
 export interface AddCommentResult {
@@ -445,18 +461,23 @@ export interface DeleteCommentResult {
 export class Pano extends Context.Service<
 	Pano,
 	{
-		readonly getPost: (postId: string) => Effect.Effect<PostPage | null>;
+		readonly getPost: (
+			postId: string,
+			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+		) => Effect.Effect<PostPage | null>;
 
 		readonly listPostsConnection: (opts?: {
 			sort?: PostSort;
 			first?: number;
 			after?: string | null;
 			host?: string | null;
+			sandboxViewer?: SandboxViewer | undefined;
 		}) => Effect.Effect<PostConnectionPage>;
 
 		/**
 		 * Keyset page over a post's comments, `(created_at asc, id asc)` (ADR 0019).
-		 * `viewerId` stamps `myVote` for the whole page in one `user_vote` read.
+		 * `viewerId` stamps `myVote` for the whole page in one `user_vote` read;
+		 * `sandboxViewer` filters the çaylak sandbox (#1205) per the same viewer.
 		 */
 		readonly listCommentsKeyset: (
 			postId: string,
@@ -464,20 +485,33 @@ export class Pano extends Context.Service<
 				first?: number | undefined;
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
 			},
 		) => Effect.Effect<CommentConnectionPage>;
 
 		/** Post source `byIds` — batched read avoiding the relation N+1. */
 		readonly getPostsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {viewerId?: string | null | undefined},
+			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
 		) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
 
 		/** Comment source `byIds` — batched read avoiding the relation N+1. */
 		readonly getCommentsByIds: (
 			ids: ReadonlyArray<string>,
-			opts?: {viewerId?: string | null | undefined},
+			opts?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
 		) => Effect.Effect<ReadonlyArray<CommentRow>>;
+
+		/**
+		 * The moderator sandbox-queue / promotion-backlog read models (#1205, #1206
+		 * seam): a çaylak's still-sandboxed, not-removed posts/comments — scoped to one
+		 * author when promotion flips their backlog.
+		 */
+		readonly listSandboxedPosts: (opts?: {
+			authorId?: string | undefined;
+		}) => Effect.Effect<ReadonlyArray<PostSummaryRow>>;
+		readonly listSandboxedComments: (opts?: {
+			authorId?: string | undefined;
+		}) => Effect.Effect<ReadonlyArray<CommentRow>>;
 
 		/** Resolve a comment's parent post id (for re-resolving on delete). */
 		readonly lookupCommentPostId: (commentId: string) => Effect.Effect<string | null>;
@@ -629,27 +663,31 @@ export const PanoLive = Layer.effect(Pano)(
 		// COUNTs via `run`, call the pure `recomputePanoStats` fold (module scope),
 		// persist via the upsert. Runs after every write that could affect totals.
 		const persistPanoStats = Effect.fn("Pano.recomputePanoStats")(function* (now: Date) {
+			// Public stats count LIVE content only: a sandboxed çaylak post/comment
+			// (#1205) is pending, excluded from the landing totals like a removed one.
 			const totalPosts = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.postRecord)
-					.where(isNull(schema.postRecord.removedAt))
+					.where(and(isNull(schema.postRecord.removedAt), isNull(schema.postRecord.sandboxedAt)))
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalComments = yield* run((db) =>
 				db
 					.select({n: sql<number>`COUNT(*)`})
 					.from(schema.commentRecord)
-					.where(isNull(schema.commentRecord.removedAt))
+					.where(
+						and(isNull(schema.commentRecord.removedAt), isNull(schema.commentRecord.sandboxedAt)),
+					)
 					.then((r) => Number(r[0]?.n ?? 0)),
 			);
 			const totalAuthors = yield* run((db) =>
 				db
 					.run(
 						sql`SELECT COUNT(DISTINCT author_id) as n FROM (
-								SELECT author_id FROM post_record WHERE removed_at IS NULL
+								SELECT author_id FROM post_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
 								UNION
-								SELECT author_id FROM comment_record WHERE removed_at IS NULL
+								SELECT author_id FROM comment_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
 							)`,
 					)
 					.then((r) => Number((r.results[0] as {n: number} | undefined)?.n ?? 0)),
@@ -669,18 +707,33 @@ export const PanoLive = Layer.effect(Pano)(
 			);
 		});
 
-		const getPost = Effect.fn("Pano.getPost")(function* (postId: string) {
+		const getPost = Effect.fn("Pano.getPost")(function* (
+			postId: string,
+			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
+		) {
 			const meta = yield* run((db) =>
 				db.query.postRecord.findFirst({
 					where: {id: postId, removedAt: {isNull: true}},
 				}),
 			);
 			if (!meta) return null;
+			// A sandboxed post (#1205) is hidden from anyone but its author + a
+			// moderator — the in-memory mirror of the list reads' SQL predicate, since
+			// this single-row read uses the relational query builder.
+			if (!isVisibleTo(Removal.fromColumns(meta), meta.authorId, resolveSandboxViewer(opts))) {
+				return null;
+			}
 			return rowToPostPage(meta);
 		});
 
 		const listPostsConnection = Effect.fn("Pano.listPostsConnection")(function* (
-			opts: {sort?: PostSort; first?: number; after?: string | null; host?: string | null} = {},
+			opts: {
+				sort?: PostSort;
+				first?: number;
+				after?: string | null;
+				host?: string | null;
+				sandboxViewer?: SandboxViewer | undefined;
+			} = {},
 		) {
 			const sort = opts.sort ?? "hot";
 			const first = Math.max(1, Math.min(opts.first ?? 20, 100));
@@ -694,6 +747,12 @@ export const PanoLive = Layer.effect(Pano)(
 				sql`${schema.postRecord.isDraft} is not 1`,
 			];
 			if (host) baseConditions.push(eq(schema.postRecord.host, host));
+			// Filter the çaylak sandbox (#1205) for this viewer at the same layer.
+			const sandboxClause = sandboxVisibleWhere(
+				{sandboxedAt: schema.postRecord.sandboxedAt, authorId: schema.postRecord.authorId},
+				resolveSandboxViewer(opts),
+			);
+			if (sandboxClause) baseConditions.push(sandboxClause);
 
 			const totalCount = yield* run((db) =>
 				db
@@ -792,6 +851,7 @@ export const PanoLive = Layer.effect(Pano)(
 				first?: number | undefined;
 				after?: string | null | undefined;
 				viewerId?: string | null | undefined;
+				sandboxViewer?: SandboxViewer | undefined;
 			} = {},
 		) {
 			const first = Math.max(1, Math.min(opts.first ?? 50, 200));
@@ -803,7 +863,13 @@ export const PanoLive = Layer.effect(Pano)(
 			// `[silindi]` tombstone by `rowToCommentRow`), otherwise omit it. A live
 			// comment is always shown.
 			const visible = sql`(${schema.commentRecord.removedAt} IS NULL OR EXISTS (SELECT 1 FROM ${schema.commentRecord} AS child WHERE child.parent_id = ${schema.commentRecord.id} AND child.removed_at IS NULL))`;
-			const baseWhere = and(eq(schema.commentRecord.postId, postId), visible);
+			// A çaylak-sandboxed comment (#1205) is filtered for this viewer beside the
+			// removal/reply-structure guard above.
+			const sandboxClause = sandboxVisibleWhere(
+				{sandboxedAt: schema.commentRecord.sandboxedAt, authorId: schema.commentRecord.authorId},
+				resolveSandboxViewer(opts),
+			);
+			const baseWhere = and(eq(schema.commentRecord.postId, postId), visible, sandboxClause);
 			const totalCount = yield* run((db) =>
 				db
 					.select({n: sql<number>`count(*)`})
@@ -859,7 +925,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const getPostsByIds = Effect.fn("Pano.getPostsByIds")(function* (
 			ids: ReadonlyArray<string>,
-			opts: {viewerId?: string | null | undefined} = {},
+			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
 		) {
 			if (ids.length === 0) return [];
 			const viewerId = opts.viewerId ?? null;
@@ -867,7 +933,19 @@ export const PanoLive = Layer.effect(Pano)(
 				db
 					.select()
 					.from(schema.postRecord)
-					.where(and(inArray(schema.postRecord.id, [...ids]), isNull(schema.postRecord.removedAt))),
+					.where(
+						and(
+							inArray(schema.postRecord.id, [...ids]),
+							isNull(schema.postRecord.removedAt),
+							sandboxVisibleWhere(
+								{
+									sandboxedAt: schema.postRecord.sandboxedAt,
+									authorId: schema.postRecord.authorId,
+								},
+								resolveSandboxViewer(opts),
+							),
+						),
+					),
 			);
 			// `myVote`/`isSaved` are the viewer scalars, finalized via `stampViewerScalars`
 			// (one `user_vote` + one `post_bookmark` read for the whole batch); the row's
@@ -880,7 +958,7 @@ export const PanoLive = Layer.effect(Pano)(
 
 		const getCommentsByIds = Effect.fn("Pano.getCommentsByIds")(function* (
 			ids: ReadonlyArray<string>,
-			opts: {viewerId?: string | null | undefined} = {},
+			opts: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined} = {},
 		) {
 			if (ids.length === 0) return [];
 			const viewerId = opts.viewerId ?? null;
@@ -888,9 +966,68 @@ export const PanoLive = Layer.effect(Pano)(
 				db
 					.select()
 					.from(schema.commentRecord)
-					.where(inArray(schema.commentRecord.id, [...ids])),
+					.where(
+						and(
+							inArray(schema.commentRecord.id, [...ids]),
+							sandboxVisibleWhere(
+								{
+									sandboxedAt: schema.commentRecord.sandboxedAt,
+									authorId: schema.commentRecord.authorId,
+								},
+								resolveSandboxViewer(opts),
+							),
+						),
+					),
 			);
 			return yield* stampViewerScalars(fetched.map(rowToCommentRow), viewerId, [commentVoteScalar]);
+		});
+
+		// The moderator sandbox-queue / promotion-backlog read models (#1205, the
+		// #1206 seam): a çaylak's still-sandboxed, not-removed posts/comments — scoped
+		// to one author when promotion flips their backlog. Authority is gated at the
+		// resolver; the service reads are unconditional.
+		const listSandboxedPosts = Effect.fn("Pano.listSandboxedPosts")(function* (
+			opts: {authorId?: string | undefined} = {},
+		) {
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.postRecord)
+					.where(
+						sandboxBacklogWhere(
+							{
+								sandboxedAt: schema.postRecord.sandboxedAt,
+								removedAt: schema.postRecord.removedAt,
+								authorId: schema.postRecord.authorId,
+							},
+							{authorId: opts.authorId},
+						),
+					)
+					.orderBy(desc(schema.postRecord.createdAt)),
+			);
+			return fetched.map(toPostSummaryRow);
+		});
+
+		const listSandboxedComments = Effect.fn("Pano.listSandboxedComments")(function* (
+			opts: {authorId?: string | undefined} = {},
+		) {
+			const fetched = yield* run((db) =>
+				db
+					.select()
+					.from(schema.commentRecord)
+					.where(
+						sandboxBacklogWhere(
+							{
+								sandboxedAt: schema.commentRecord.sandboxedAt,
+								removedAt: schema.commentRecord.removedAt,
+								authorId: schema.commentRecord.authorId,
+							},
+							{authorId: opts.authorId},
+						),
+					)
+					.orderBy(desc(schema.commentRecord.createdAt)),
+			);
+			return fetched.map(rowToCommentRow);
 		});
 
 		const lookupCommentPostId = Effect.fn("Pano.lookupCommentPostId")(function* (
@@ -940,6 +1077,7 @@ export const PanoLive = Layer.effect(Pano)(
 					updatedAt: now,
 					lastActivityAt: now,
 					removedAt: null,
+					sandboxedAt: input.sandboxedAt ?? null,
 					lastEventId: "",
 				}),
 				...syncPostSearch(db, postId, title),
@@ -1378,11 +1516,14 @@ export const PanoLive = Layer.effect(Pano)(
 					createdAt: now,
 					updatedAt: now,
 					removedAt: null,
+					sandboxedAt: input.sandboxedAt ?? null,
 					lastEventId: "",
 				}),
 			);
 
-			const newCommentCount = post.commentCount + 1;
+			// A sandboxed çaylak comment (#1205) is pending — it must not bump the
+			// post's PUBLIC `comment_count`. Promotion (#1206) recomputes it on flip.
+			const newCommentCount = post.commentCount + (input.sandboxedAt != null ? 0 : 1);
 			const hotScore = computeHotScore(
 				post.score,
 				(post.createdAt ?? now).getTime(),
@@ -1752,6 +1893,8 @@ export const PanoLive = Layer.effect(Pano)(
 			listCommentsKeyset,
 			getPostsByIds,
 			getCommentsByIds,
+			listSandboxedPosts,
+			listSandboxedComments,
 			lookupCommentPostId,
 			submitPost,
 			saveDraft,
