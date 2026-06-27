@@ -53,6 +53,7 @@
 		"@distilled.cloud/cloudflare": "catalog:",
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
+		"@kampus/admin-grant": "workspace:*",
 		"@kampus/d1-rest": "workspace:*",
 		"@kampus/founder-seed": "workspace:*",
 		"@playwright/test": "catalog:",
