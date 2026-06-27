@@ -174,3 +174,22 @@
 	margin-top: 4px;
 	text-transform: lowercase;
 }
+
+/* Phone front door (~375–414px): the desktop grids are fixed multi-column and
+   never collapse, so below the cluster breakpoint stack the hero + columns to a
+   single column and let the stats strip wrap instead of overflowing.
+   640px is the shared narrow-viewport breakpoint for this cluster (#1248/#1250). */
+@media (max-width: 640px) {
+	.kp-landing__hero {
+		grid-template-columns: 1fr;
+		align-items: start;
+	}
+
+	.kp-landing__cols {
+		grid-template-columns: 1fr;
+	}
+
+	.kp-landing__stats {
+		flex-wrap: wrap;
+	}
+}
