@@ -825,7 +825,7 @@ real dark feature:
   naming the kebab-case flag this PR dark-ships — the fallback for a feature that gates behind a
   flag a **prior** PR already declared, so the flag resource isn't in *this* diff.
 
-It runs **only** when there is a linked issue *and* the cycle doc is present (the graceful-absence
+It runs **only** when there is a linked issue *and* the cycle doc is present (the graceful absence
 contract, ADR 0062 — an absent cycle doc means no flag substrate, hence nothing to release). With
 those preconditions met, the merge queues `status:awaiting-release` **iff** signal (a) or (b)
 fires. When **neither** fires the PR shipped **ungated** → this step **no-ops** regardless of the
