@@ -50,7 +50,7 @@ const seed = Command.make(
 	}),
 ).pipe(
 	Command.withDescription(
-		'Mint the founder cohort (role=\'moderator\') as (id, "moderates", "platform") tuples — idempotent',
+		'Mint the founder cohort (role=\'moderator\') as (id, "moderates", "platform:platform") tuples — idempotent',
 	),
 );
 
@@ -67,7 +67,9 @@ const list = Command.make(
 				: `founder-seed: ${tuples.length} founder tuple(s):\n${tuples.map((t) => `  - (${t.subject}, ${t.relation}, ${t.object})`).join("\n")}`,
 		);
 	}),
-).pipe(Command.withDescription('List the founder tuples (subject, "moderates", "platform")'));
+).pipe(
+	Command.withDescription('List the founder tuples (subject, "moderates", "platform:platform")'),
+);
 
 const cli = Command.make("founder-seed").pipe(
 	Command.withSubcommands([seed, list]),

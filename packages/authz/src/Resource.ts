@@ -18,6 +18,24 @@ export interface Resource {
 export const resource = (type: string, id: string, parent?: Resource): Resource =>
 	parent === undefined ? {type, id} : {type, id, parent};
 
+/**
+ * The canonical storage key for a resource node — its `(type, id)` pair as
+ * `type:id`. The ONE encoding both sides of the ReBAC seam agree on: the offline
+ * tuple mint (`@kampus/founder-seed`) writes `relation_tuple.object` as this, and
+ * `RelationStoreLive` reads it back as this, so a discharge over the node finds
+ * the seeded tuple. Centralized here (not duplicated per writer/reader) so the
+ * write key and the read key cannot diverge.
+ */
+export const key = (node: Resource): string => `${node.type}:${node.id}`;
+
+/**
+ * The platform root — the top of the resource tree, the scope platform-wide
+ * authority (`moderates`, `admin`) is held over. A fixed singleton node so
+ * `key(platform)` is one stable string across the offline mint and the runtime
+ * read. Vocab-free: a generic structural root, named no kamp.us product noun.
+ */
+export const platform: Resource = resource("platform", "platform");
+
 /** Two nodes denote the same resource iff their `(type, id)` match. */
 export const sameNode = (a: Resource, b: Resource): boolean => a.type === b.type && a.id === b.id;
 

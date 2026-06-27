@@ -8,15 +8,16 @@
  * widened `R` would fail the pin.
  *
  * The pin scopes to the SERVICE (`Report.ts`); the wire/gate layer
- * (`mutations.ts`, `lists.ts`, `Moderator.ts`, `views.ts`, `fate-module.ts`)
- * composes OVER the features by design and is not part of `ReportLive`'s `R` —
- * the `report.submit`/`report.resolve` resolvers translate the service's
+ * (`mutations.ts`, `lists.ts`, `views.ts`, `fate-module.ts`) composes OVER the
+ * features by design and is not part of `ReportLive`'s `R` — the
+ * `report.submit`/`report.resolve` resolvers translate the service's
  * `ReportTargetNotFound` into the per-feature not-found errors and dispatch
- * act-on-target to the sibling content services, `Moderator.ts` reads the
- * caller's role through `Pasaport` (ADR 0098 §2), and `fate-module.ts` aggregates
- * this feature's fate contribution. The boundary that matters is that the service
- * stays feature-clean; the wire/gate layer reaching siblings is the point of the
- * layer, exactly as `pano/`/`sozluk/` own their vote mutation files.
+ * act-on-target to the sibling content services, the moderation gate discharges
+ * künye's `Moderate` capability over the `moderates` relation (ADR 0107, carrying
+ * ADR 0098 §2's invisible denial), and `fate-module.ts` aggregates this feature's
+ * fate contribution. The boundary that matters is that the service stays
+ * feature-clean; the wire/gate layer reaching siblings is the point of the layer,
+ * exactly as `pano/`/`sozluk/` own their vote mutation files.
  *
  * Type pins use expectTypeOf, not `@ts-expect-error` — the effect LSP plugin's
  * TS377003 escapes the directive (recurring finding; the `vote/` precedent).

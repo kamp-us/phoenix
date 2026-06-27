@@ -13,8 +13,11 @@
  *   - **Reopen on restore.** `report.restore` brings the content back AND reopens
  *     its reports (the bounded reopen, ADR 0096 §4 ↔ 0098 §3).
  *
- * The moderator is granted via the offline grant path — here a setup-only `execD1`
- * UPDATE (the same direct-D1 write `@kampus/moderator-grant` performs in prod).
+ * Moderation authority is the `moderates` relation now (ADR 0107, `user.role`
+ * retired as an authority source) — granted here via the offline mint path: a
+ * setup-only `execD1` INSERT of `(userId, "moderates", key(platform))`, the same
+ * direct-D1 write `@kampus/founder-seed` performs in prod, keyed by the canonical
+ * `key(platform)` so the gate's `Moderate.over(platform)` finds it.
  *
  * This file runs on the run-scoped SHARED stage (ADR 0104 step 7, #1027), so its one D1
  * is shared across every migrated file — every email/slug is `${NS}-…` prefixed (this
@@ -22,6 +25,7 @@
  * post (`postId`): the batch-collapse count is the per-target collapse for THIS file's
  * own post, never a global `content_report` count.
  */
+import {key, platform} from "@kampus/authz";
 import {beforeAll, describe, expect, it} from "vitest";
 import {sharedStack} from "./_integration.ts";
 import {nsToken} from "./_stage-name.ts";
@@ -80,8 +84,13 @@ beforeAll(async () => {
 	reporterB = await h.signUp(`${NS}-rb@test.local`, "hunter2hunter2", "rb");
 	author = await h.signUp(`${NS}-author@test.local`, "hunter2hunter2", "yazar");
 
-	// The grant path: flip the moderator's role directly in D1 (no runtime endpoint).
-	await h.execD1("UPDATE user SET role = ? WHERE id = ?", ["moderator", moderator.userId]);
+	// The grant path: mint the moderator's `moderates` tuple directly in D1 (the
+	// offline mint, no runtime endpoint), keyed by canonical `key(platform)`.
+	await h.execD1("INSERT INTO relation_tuple (subject, relation, object) VALUES (?, ?, ?)", [
+		moderator.userId,
+		"moderates",
+		key(platform),
+	]);
 
 	const post = await h.fate(
 		{

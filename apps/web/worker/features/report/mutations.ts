@@ -4,12 +4,16 @@
  * - `report.submit` — the capture-side write. `CurrentUser.required` gates it; the
  *   handler returns a `ReportReceipt` ack and translates the service's kind-blind
  *   `ReportTargetNotFound` into the per-feature not-found the wire knows.
- * - `report.resolve` — the moderation-side write. `Moderator.required` gates it
- *   (anonymous or non-moderator → `UNAUTHORIZED`, so the surface is invisible to
- *   non-moderators); on `removed` it calls the content service's moderator-remove,
- *   reusing the 0096 substrate with reason `Moderated({reportId})`, then collapses
- *   EVERY open report on the target with the audit triad. The state machine in
- *   `resolution.ts` keeps an illegal transition unrepresentable.
+ * - `report.resolve` — the moderation-side write. The `Moderate` capability gates
+ *   it (`requireModeration`): anonymous or non-moderator → the invisible `Denied`
+ *   (`UNAUTHORIZED`), so the surface is invisible to non-moderators; the discharged
+ *   `Grant` threads through the R-channel, so the resolve stamps `resolver_id` /
+ *   `removed_by` from the authority-checked identity (`moderatorOf`) and resolving
+ *   without a `Grant` does not typecheck (ADR 0107). On `removed` it calls the
+ *   content service's moderator-remove, reusing the 0096 substrate with reason
+ *   `Moderated({reportId})`, then collapses EVERY open report on the target with
+ *   the audit triad. The state machine in `resolution.ts` keeps an illegal
+ *   transition unrepresentable.
  *
  * Both acks are returned inline (the interpreter stamps `__typename` only on
  * source-resolved entities), so the handlers shape them through the shapers.
@@ -21,12 +25,13 @@ import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {TargetKindSchema} from "../../db/target-kind.ts";
+import {Denied} from "../kunye/errors.ts";
+import {Moderate, moderatorOf, requireModeration} from "../kunye/moderate.ts";
 import {CommentNotFound, PostNotFound} from "../pano/errors.ts";
 import {Pano} from "../pano/Pano.ts";
 import {DefinitionNotFound} from "../sozluk/errors.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
 import type {ReportTargetNotFound} from "./errors.ts";
-import {Moderator, NotAModerator} from "./Moderator.ts";
 import {Report} from "./Report.ts";
 import {outcomeOf} from "./resolution.ts";
 import {toReportReceipt, toResolveReceipt} from "./shapers.ts";
@@ -94,105 +99,124 @@ export const mutations = {
 		{
 			input: ResolveReportInput,
 			type: ResolveReceiptView,
-			error: Schema.Union([Unauthorized, NotAModerator]),
+			error: Schema.Union([Denied]),
 		},
 		Effect.fn("report.resolve")(function* ({input}) {
-			const mod = yield* Moderator.required;
-			const report = yield* Report;
-
-			// Resolve the target: a `reportId` resolves to its `(targetKind, targetId)`;
-			// otherwise `targetKind` + `targetId` are taken directly.
-			let target: {targetKind: TargetKind; targetId: string} | null = null;
-			if (input.reportId !== undefined) {
-				target = yield* report.lookupReportTarget(input.reportId);
-			} else if (input.targetKind !== undefined && input.targetId !== undefined) {
-				target = {targetKind: input.targetKind, targetId: input.targetId};
-			}
-			// A stale/unknown target is a benign no-op (nothing to collapse) — the
-			// moderation surface never leaks "exists/doesn't" beyond UNAUTHORIZED.
-			if (target === null) {
-				return toResolveReceipt({
-					targetKind: input.targetKind ?? "post",
-					targetId: input.targetId ?? "",
-					resolution: outcomeOf(input.action),
-					targetRemoved: false,
-					collapsed: 0,
-				});
-			}
-
-			const now = new Date();
-			let targetRemoved = false;
-
-			if (input.action === "remove") {
-				// Act on the target via the 0096 substrate (reason `Moderated`); the
-				// reportId carried into the removal is the FIRST open report id on the
-				// target, so a later restore can reopen the group.
-				const firstId = yield* report.firstOpenReportId(target.targetKind, target.targetId);
-				const reportId = firstId ?? input.reportId ?? `${target.targetKind}:${target.targetId}`;
-				const removed = yield* moderateRemove(target, mod.id, reportId);
-				targetRemoved = removed;
-			}
-
-			const {collapsed} = yield* report.resolveTarget({
-				targetKind: target.targetKind,
-				targetId: target.targetId,
-				resolverId: mod.id,
-				action: input.action,
-				resolvedAt: now,
-			});
-
-			return toResolveReceipt({
-				targetKind: target.targetKind,
-				targetId: target.targetId,
-				resolution: outcomeOf(input.action),
-				targetRemoved,
-				collapsed,
-			});
+			return yield* requireModeration(resolveGated(input));
 		}),
 	),
 
 	// The reopen edge (ADR 0098 §3 / 0096 §4): a moderator restore of a removed
 	// target brings the content back live AND reopens its reports (the bounded
-	// reopen). `Moderator.required`-gated, like resolve.
+	// reopen). `Moderate`-gated, like resolve.
 	"report.restore": Fate.mutation(
 		{
 			input: RestoreReportInput,
 			type: ResolveReceiptView,
-			error: Schema.Union([Unauthorized, NotAModerator]),
+			error: Schema.Union([Denied]),
 		},
 		Effect.fn("report.restore")(function* ({input}) {
-			yield* Moderator.required;
-			const report = yield* Report;
-
-			let target: {targetKind: TargetKind; targetId: string} | null = null;
-			if (input.reportId !== undefined) {
-				target = yield* report.lookupReportTarget(input.reportId);
-			} else if (input.targetKind !== undefined && input.targetId !== undefined) {
-				target = {targetKind: input.targetKind, targetId: input.targetId};
-			}
-			if (target === null) {
-				return toResolveReceipt({
-					targetKind: input.targetKind ?? "post",
-					targetId: input.targetId ?? "",
-					resolution: "dismissed",
-					targetRemoved: false,
-					collapsed: 0,
-				});
-			}
-
-			const restored = yield* moderateRestore(target);
-			const {reopened} = yield* report.reopenForTarget(target);
-
-			return toResolveReceipt({
-				targetKind: target.targetKind,
-				targetId: target.targetId,
-				resolution: "dismissed",
-				targetRemoved: !restored,
-				collapsed: reopened,
-			});
+			return yield* requireModeration(restoreGated(input));
 		}),
 	),
 };
+
+// The post-gate resolve body — runnable only with a `Moderate` `Grant` in R
+// (`requireModeration` provides it). It reads the grant for the authority-checked
+// moderator id (`moderatorOf`) it stamps as `resolver_id`/`removed_by`, so
+// resolving without a discharged grant is a compile error.
+const resolveGated = Effect.fn("report.resolveGated")(function* (
+	input: typeof ResolveReportInput.Type,
+) {
+	const grant = yield* Moderate;
+	const moderatorId = yield* moderatorOf(grant);
+	const report = yield* Report;
+
+	// Resolve the target: a `reportId` resolves to its `(targetKind, targetId)`;
+	// otherwise `targetKind` + `targetId` are taken directly.
+	let target: {targetKind: TargetKind; targetId: string} | null = null;
+	if (input.reportId !== undefined) {
+		target = yield* report.lookupReportTarget(input.reportId);
+	} else if (input.targetKind !== undefined && input.targetId !== undefined) {
+		target = {targetKind: input.targetKind, targetId: input.targetId};
+	}
+	// A stale/unknown target is a benign no-op (nothing to collapse) — the
+	// moderation surface never leaks "exists/doesn't" beyond UNAUTHORIZED.
+	if (target === null) {
+		return toResolveReceipt({
+			targetKind: input.targetKind ?? "post",
+			targetId: input.targetId ?? "",
+			resolution: outcomeOf(input.action),
+			targetRemoved: false,
+			collapsed: 0,
+		});
+	}
+
+	const now = new Date();
+	let targetRemoved = false;
+
+	if (input.action === "remove") {
+		// Act on the target via the 0096 substrate (reason `Moderated`); the
+		// reportId carried into the removal is the FIRST open report id on the
+		// target, so a later restore can reopen the group.
+		const firstId = yield* report.firstOpenReportId(target.targetKind, target.targetId);
+		const reportId = firstId ?? input.reportId ?? `${target.targetKind}:${target.targetId}`;
+		targetRemoved = yield* moderateRemove(target, moderatorId, reportId);
+	}
+
+	const {collapsed} = yield* report.resolveTarget({
+		targetKind: target.targetKind,
+		targetId: target.targetId,
+		resolverId: moderatorId,
+		action: input.action,
+		resolvedAt: now,
+	});
+
+	return toResolveReceipt({
+		targetKind: target.targetKind,
+		targetId: target.targetId,
+		resolution: outcomeOf(input.action),
+		targetRemoved,
+		collapsed,
+	});
+});
+
+// The post-gate restore body — `Moderate`-gated in R like {@link resolveGated}.
+// `reopenForTarget` clears the audit triad (no moderator id stamped on reopen), so
+// the grant is read only to require the proof; `yield* Moderate` IS that gate.
+const restoreGated = Effect.fn("report.restoreGated")(function* (
+	input: typeof RestoreReportInput.Type,
+) {
+	yield* Moderate;
+	const report = yield* Report;
+
+	let target: {targetKind: TargetKind; targetId: string} | null = null;
+	if (input.reportId !== undefined) {
+		target = yield* report.lookupReportTarget(input.reportId);
+	} else if (input.targetKind !== undefined && input.targetId !== undefined) {
+		target = {targetKind: input.targetKind, targetId: input.targetId};
+	}
+	if (target === null) {
+		return toResolveReceipt({
+			targetKind: input.targetKind ?? "post",
+			targetId: input.targetId ?? "",
+			resolution: "dismissed",
+			targetRemoved: false,
+			collapsed: 0,
+		});
+	}
+
+	const restored = yield* moderateRestore(target);
+	const {reopened} = yield* report.reopenForTarget(target);
+
+	return toResolveReceipt({
+		targetKind: target.targetKind,
+		targetId: target.targetId,
+		resolution: "dismissed",
+		targetRemoved: !restored,
+		collapsed: reopened,
+	});
+});
 
 /** Dispatch act-on-target to the content service that owns the target kind. */
 const moderateRemove = Effect.fn("report.moderateRemove")(function* (

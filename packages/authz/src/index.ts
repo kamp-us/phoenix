@@ -37,4 +37,4 @@ export {CurrentActor} from "./CurrentActor.ts";
 export {type Grant, type GrantScope, isGrant} from "./Grant.ts";
 export {Scale} from "./Level.ts";
 export {type Relation, RelationStore} from "./Relation.ts";
-export {ancestry, covers, type Resource, resource, sameNode} from "./Resource.ts";
+export {ancestry, covers, key, platform, type Resource, resource, sameNode} from "./Resource.ts";

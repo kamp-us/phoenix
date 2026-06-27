@@ -35,6 +35,7 @@ import {
 	wireCodeOfClass,
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
+import {Denied} from "../kunye/errors.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -59,7 +60,6 @@ import {
 	UsernameTooLong,
 	UsernameTooShort,
 } from "../pasaport/errors.ts";
-import {NotAModerator} from "../report/Moderator.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -105,8 +105,8 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	[UsernameTaken, "TAKEN"],
 	[UsernameAlreadySet, "ALREADY_SET"],
 	[UserNotFound, "USER_NOT_FOUND"],
-	// report + the package-side gate the SPA already decodes for writes
-	[NotAModerator, "UNAUTHORIZED"],
+	// künye moderation gate + the package-side gate the SPA already decodes for writes
+	[Denied, "UNAUTHORIZED"],
 	[Unauthorized, "UNAUTHORIZED"],
 ]);
 
@@ -137,7 +137,7 @@ const ROUND_TRIP_CLASSES = [
 	UsernameInvalidFormat,
 	UsernameTooShort,
 	UsernameTooLong,
-	NotAModerator,
+	Denied,
 	Unauthorized,
 ] as const satisfies ReadonlyArray<new (props: {message: string}) => unknown>;
 

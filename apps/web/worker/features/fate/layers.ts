@@ -12,7 +12,7 @@
  * moved here, from a per-request runtime.
  */
 import * as BetterAuth from "@alchemy.run/better-auth";
-import {CurrentActor} from "@kampus/authz";
+import {type AgentAuthority, CurrentActor, type RelationStore} from "@kampus/authz";
 import {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import {Effect, Layer} from "effect";
@@ -22,6 +22,8 @@ import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
 import {type Flags, FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
+import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
+import {RelationStoreLive} from "../kunye/RelationStore.ts";
 import {type Bookmark, BookmarkLive} from "../pano/Bookmark.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
@@ -43,7 +45,13 @@ export type WorkerFateServices =
 	| Search
 	| Report
 	| Bookmark
-	| Flags;
+	| Flags
+	// The authz ports the moderation gate discharges against (ADR 0107): the
+	// `moderates` relation read (`RelationStoreLive` ← D1) and the dormant
+	// agent-attenuation seam (`AgentAuthorityV1`). `CurrentActor` is NOT here —
+	// it is per-request, registered separately below.
+	| RelationStore
+	| AgentAuthority;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -143,6 +151,12 @@ export const makeFateLayer: Layer.Layer<
 	// discharged by `provideMerge(DrizzleLive)`.
 	SearchLive,
 	ReportLive,
+	// The authz ports the moderation gate (`report.resolve`/`restore`/`listOpen`)
+	// discharges `Moderate.over(platform)` against: `RelationStoreLive` reads the
+	// `moderates` tuple off the same `Drizzle` seam (discharged below), and
+	// `AgentAuthorityV1` fills the dormant agent-attenuation port fail-closed.
+	RelationStoreLive,
+	AgentAuthorityV1,
 	// `Flags` is the dark-ship read surface the pano draft-save gate consumes (#746).
 	// `FlagsLive` needs only `Flagship` (a new R seam, discharged at the composition
 	// root like `Database`); `getBoolean`'s `RuntimeContext`/`FlagsContext` are per-call,
