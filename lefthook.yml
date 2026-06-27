@@ -31,22 +31,48 @@ pre-commit:
         fi
         exit 0
 
-# `git worktree add` fires post-checkout, so this best-effort-installs deps into a
-# fresh worktree — node_modules is gitignored and lives per-checkout, so a worktree
-# is otherwise dead-on-arrival for typechecks (#504). Two guards keep it robust to
-# the harness's PATH-stripped worktree-spawn exec env (#787): `rc` (.lefthookrc)
-# restores /bin so lefthook can resolve `sh`, and the pnpm-presence check below makes
-# a missing toolchain a clean SKIP, never a worktree-creation abort. The install is
-# an optimization, not a hard gate: when pnpm is unresolvable the spawning agent
-# installs deps itself (it runs with a full PATH); when pnpm IS present it installs
-# normally and a real install failure still surfaces. No per-machine path is hardcoded
-# (volta/Library pnpm shims are local — committing them would break other devs/CI).
+# `git worktree add` fires post-checkout, so this provisions a fresh worktree's deps —
+# node_modules is gitignored and per-checkout, so a worktree is otherwise dead-on-arrival
+# for typechecks (#504). Only a real `pnpm install` is CORRECT here: a filesystem-only
+# SHARE of the primary's node_modules silently breaks workspace-edit correctness, because
+# pnpm's virtual store holds RELATIVE links into workspace source
+# (node_modules/.pnpm/node_modules/@kampus/* -> ../../../../packages/*), so a shared store
+# resolves a consumer's @kampus/* dep to the PRIMARY checkout's source, not this worktree's
+# edits. `pnpm install` rebuilds those links worktree-local — but it needs node/pnpm, which
+# the harness PATH-stripped spawn env lacks (#1256; see ADR 0109). Two regimes:
+#  * full PATH (a normal `git worktree add`): pin pnpm@10.27.0 and install — version-safe
+#    (never the stale per-machine pnpm 8 the lockfile rejects) and workspace-correct.
+#  * harness stripped-PATH spawn env (#787/#789): lefthook itself is unresolvable there, so
+#    the hook never runs and creation never aborts; when this body DOES run with no toolchain
+#    it is a clean SKIP (exit 0) and prints the one command to provision later under full PATH.
+# No per-machine path is hardcoded (volta/Library pnpm shims are local — committing them would
+# break other devs/CI); the store is resolved by pnpm itself.
 post-checkout:
   commands:
     bootstrap-deps:
       run: |
-        command -v pnpm >/dev/null 2>&1 || {
-          echo "bootstrap-deps: pnpm not on PATH (stripped hook exec env, e.g. a harness 'git worktree add') — skipping; deps install in-worktree on first use" >&2
+        PIN="10.27.0"
+        # Resolve a pnpm at the pinned major; prefer corepack (it honors packageManager).
+        if command -v corepack >/dev/null 2>&1; then
+          corepack prepare "pnpm@${PIN}" --activate >/dev/null 2>&1 || true
+          set -- corepack "pnpm@${PIN}"
+        elif command -v pnpm >/dev/null 2>&1; then
+          set -- pnpm
+        else
+          echo "bootstrap-deps: no pnpm/corepack on PATH (stripped hook exec env, e.g. a harness 'git worktree add') — skipping." >&2
+          echo "bootstrap-deps: provision later with a full PATH: \`corepack pnpm@${PIN} install --prefer-offline --ignore-scripts\` (or \`pnpm install\`)." >&2
           exit 0
-        }
-        pnpm install --prefer-offline
+        fi
+        # Never install under the wrong major — the stale per-machine pnpm 8 the lockfile rejects (#1256).
+        VER="$("$@" --version 2>/dev/null || echo 0)"
+        case "$VER" in
+          10.*) ;;
+          *)
+            echo "bootstrap-deps: resolved pnpm $VER (not the pinned ${PIN} major) and corepack can't pin it — skipping rather than install under the wrong toolchain (#1256)." >&2
+            echo "bootstrap-deps: provision with \`corepack pnpm@${PIN} install\` once corepack is available." >&2
+            exit 0
+            ;;
+        esac
+        # --ignore-scripts: a worktree shares .git/hooks (the common dir), so firing `prepare`
+        # (lefthook install) from here would rewrite the SHARED hooks — provision deps, not lifecycle.
+        "$@" install --prefer-offline --ignore-scripts
