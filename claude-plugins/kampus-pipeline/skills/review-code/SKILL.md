@@ -413,10 +413,27 @@ apart:
   does and stall the autonomous lane.
 
 So the verdict's not-auto-mergeable flag matches the **canonical §CP set** (the same one
-`ship-it` Step 0 uses):
+`ship-it` Step 0 uses) — and, like `ship-it`, it is **resolved from `origin/main` at run time,
+not from the copy embedded in this skill body.** The embedded copy travels in the *injected
+snapshot*, which can lag `origin/main` even when the on-disk file is current, so a pre-amendment
+snapshot once mis-classified a now-control-plane PR (#981); reading §CP freshly from `origin/main`
+(and **failing closed** if that read can't be made) keeps the flag tracking `main`, not snapshot age:
 
 ```bash
+# §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
+# is current — a pre-amendment snapshot once mis-classified a now-control-plane PR (#981). So the
+# literal below is the fail-closed reference + the validate-gate-path-drift lockstep target, NOT the
+# live decision source: the regex actually classified is re-resolved from origin/main right after it.
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003)
+# Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-flag a now-control-plane
+# PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
+# freshly via REST raw (never GraphQL). origin/main's line wins over the snapshot; fail closed on read failure.
+CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
+if [ -n "$CP_LIVE" ]; then
+  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"   # the flag tracks origin/main, not the snapshot's age (AC1/AC2)
+else
+  CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ flag EVERY path control-plane (not-auto-mergeable), never trust the possibly-stale snapshot
+fi
 # --paginate streams filenames (the API caps per_page at 100); grep aggregates the §CP matches
 # ACROSS the concatenated pages — a jq `[ … ]` aggregate would instead emit one array PER PAGE.
 # `|| true`: no §CP match is grep exit 1, an empty (non-control-plane) result, not a failure (#725).

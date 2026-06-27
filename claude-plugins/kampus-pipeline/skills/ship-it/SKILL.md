@@ -165,7 +165,11 @@ gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename'
 Classify each path. The **control-plane / blocking set** is defined **once** in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §CP — cite that regex, don't
 re-hard-code the path list (the three independent copies are the #375 drift class §CP closes,
-ADR 0073 §6):
+ADR 0073 §6). And **resolve it from `origin/main` at run time, not from the copy embedded in
+this skill body** — that embedded copy travels in the *injected snapshot*, which can lag
+`origin/main` even when the on-disk file is current, so a pre-amendment snapshot once
+auto-merged a now-control-plane PR (#981). The bash below reads §CP freshly from `origin/main`
+and **fails closed** (treats every path as control-plane → refuses) if that read can't be made:
 
 - **control plane (blocking):** matches the §CP set — `.claude/**`, `.github/**`, or a
   **gate-critical skill** (`claude-plugins/kampus-pipeline/skills/ship-it/**`, `claude-plugins/kampus-pipeline/skills/review-code/**`,
@@ -205,8 +209,21 @@ ADR 0073 §6):
 
 ```bash
 FILES=$(gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" --jq '.[].filename')   # --paginate + streaming --jq: full set past file #100 (the API caps per_page at 100; the grep probes below aggregate the concatenated lines) (#725)
+# §CP travels in the INJECTED skill snapshot, which can lag origin/main even when the on-disk file
+# is current — a pre-amendment snapshot once auto-merged a now-control-plane PR (#981). So the
+# literal below is the fail-closed reference + the validate-gate-path-drift lockstep target, NOT the
+# live decision source: the regex actually classified is re-resolved from origin/main right after it.
 CONTROL_PLANE_RE='^(\.claude|\.github)/|^claude-plugins/kampus-pipeline/skills/(ship-it|review-code|review-doc|review-skill|review-plan)/|^claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats\.md$|^claude-plugins/kampus-pipeline/hooks(/|\.json$)|^packages/ci-required/|^packages/pipeline-cli/'   # the §CP canonical set — one definition (ADR 0073 §6; hooks added by 0103/#1003; the standalone -guard clause retired with those packages by #1003)
-echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065) + the enforcement-guard packages (ADR 0100); other skills/** auto-merge on a review-skill PASS (ADR 0073)
+# Re-resolve §CP from origin/main at run time so a stale snapshot can't mis-classify a now-control-plane
+# PR as auto-mergeable (#981). ADR 0073 §6 names gh-issue-intake-formats.md the single source; read it
+# freshly via REST raw (never GraphQL, top-of-skill rule). origin/main's line wins over the snapshot.
+CP_LIVE="$(gh api "repos/$REPO/contents/claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md?ref=main" -H 'Accept: application/vnd.github.raw' 2>/dev/null | grep '^CONTROL_PLANE_RE=' | head -n1 || true)"
+if [ -n "$CP_LIVE" ]; then
+  CONTROL_PLANE_RE="$(printf '%s' "$CP_LIVE" | sed "s/^CONTROL_PLANE_RE='//; s/'$//")"   # classification tracks origin/main, not the snapshot's age (AC1/AC2)
+else
+  CONTROL_PLANE_RE='.'   # FAIL CLOSED: can't read origin/main's boundary ⇒ treat EVERY path as control-plane (refuse), never trust the possibly-stale snapshot
+fi
+echo "$FILES" | grep -Eq "$CONTROL_PLANE_RE" && echo "BLOCKING"   # control plane: .claude/.github + the gate-critical skills (ADR 0065) + the enforcement-guard packages (ADR 0100/0103); other skills/** auto-merge on a review-skill PASS (ADR 0073)
 echo "$FILES" | grep -Eq '^claude-plugins/kampus-pipeline/skills/' && echo "has-skills"   # skill-class probe → review-skill (ADR 0073, supersedes 0063)
 echo "$FILES" | grep -Eq '^(apps|packages|\.glossary)/' && echo "has-code"   # code probe: ALL app workers (apps/**) + packages + .glossary/** — agrees with the docs-probe exclusion below (#663/#919); review-code owns the glossary (Step 3c); skills/** is its OWN class (ADR 0073)
 # docs probe EXCLUDES the code roots, skills/**, AND .glossary/** first, so a code/app-internal README
