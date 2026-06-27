@@ -113,6 +113,8 @@ export {
 	type FateServerRequirements,
 	type FateServerService,
 	type FateSourcesList,
+	type RegisteredRequestServices,
+	type RequestServiceId,
 	type SourceDefinitionLike,
 } from "./Server.ts";
 export {

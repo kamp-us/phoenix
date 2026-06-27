@@ -17,8 +17,14 @@
  *      `R = unknown` and returns `R = never`, preserving A and E. This is
  *      the package's ONE documented `erased→kernel` request-pipeline cast
  *      (`Provision.ts`); Executor/Interpreter/Walk no longer spell it.
+ *   4. **The generic per-request provision seam** (ADR 0107 §7) — an app
+ *      provides EXTRA per-request service values through
+ *      `context.requestServices`; they are visible to a handler, win over the
+ *      same tag in the build-time services, and a registered-but-unprovided
+ *      one fails loudly at run ("Service not found"), never silently. The
+ *      package names no app service — the bag is opaque.
  */
-import {Context, Effect} from "effect";
+import {Cause, Context, Effect, Exit} from "effect";
 import {describe, expect, expectTypeOf, it} from "vitest";
 import {CurrentUser, type CurrentUserInfo} from "./CurrentUser.ts";
 import {LivePublisher} from "./LivePublisher.ts";
@@ -88,5 +94,71 @@ describe("provideRequestPair", () => {
 			.toEqualTypeOf<Effect.Effect<number, "boom", unknown>>();
 		// …and returns the runnable re-pin, A and E untouched
 		expectTypeOf(provide<number, "boom">).returns.toEqualTypeOf<Effect.Effect<number, "boom">>();
+	});
+});
+
+/**
+ * A stand-in for an app's EXTRA per-request service (the künye `CurrentActor`
+ * shape, but the package names none of it — this is the seam's genericity).
+ * fate-effect never imports this kind of tag; the app provides its value
+ * through `context.requestServices`.
+ */
+class Actor extends Context.Service<Actor, {readonly id: string; readonly level: string}>()(
+	"test/Actor",
+) {}
+
+/** A request context that fills the generic seam with an `Actor` value. */
+const requestContextWithActor = (id: string, actor: typeof Actor.Service): FateRequestContext => ({
+	currentUser: {user: userInfo(id)},
+	livePublisher: publisherStub(),
+	requestServices: Context.make(Actor, actor),
+});
+
+/** Reads the pair + the app per-request service in one program. */
+const readWithActor = Effect.gen(function* () {
+	const current = yield* CurrentUser;
+	const actor = yield* Actor;
+	return {actor, current};
+});
+
+describe("provideRequestPair — generic per-request provision seam (ADR 0107 §7)", () => {
+	it("provides an app-registered per-request service through the seam, visible to a handler", () => {
+		const ctx = requestContextWithActor("u1", {id: "u1", level: "yazar"});
+		const result = Effect.runSync(provideRequestPair(ctx, Context.empty())(readWithActor));
+		expect(result.actor).toEqual({id: "u1", level: "yazar"});
+		expect(result.current.user?.id).toBe("u1");
+	});
+
+	it("the per-request seam value WINS over the same tag in the build-time services", () => {
+		// The app's per-request `Actor` is provided INNERMOST of the build-time
+		// services, so it wins — the request value beats a captured default.
+		const ctx = requestContextWithActor("u1", {id: "u1", level: "yazar"});
+		const services = Context.make(Actor, {id: "build", level: "visitor"});
+		const result = Effect.runSync(provideRequestPair(ctx, services)(readWithActor));
+		expect(result.actor).toEqual({id: "u1", level: "yazar"});
+	});
+
+	it("a registered-but-unprovided per-request service fails loudly at run, never silently", () => {
+		// No `requestServices` on the context AND nothing in the build-time
+		// services — reading `Actor` must surface a loud "Service not found"
+		// defect, not a silent wrong value.
+		const ctx = requestContext("u1");
+		const exit = Effect.runSyncExit(provideRequestPair(ctx, Context.empty())(readWithActor));
+		expect(Exit.isFailure(exit)).toBe(true);
+		if (Exit.isFailure(exit)) {
+			expect(Cause.pretty(exit.cause)).toContain("Service not found");
+			expect(Cause.pretty(exit.cause)).toContain("test/Actor");
+		}
+	});
+
+	it("the seam stays opaque: a context with no requestServices is unchanged (the pair still resolves)", () => {
+		// Absent `requestServices` ⇒ `Context.empty()`; the existing pair path is
+		// untouched, so a non-seam request behaves exactly as before.
+		const ctx = requestContext("u1");
+		expect(ctx.requestServices).toBeUndefined();
+		const services = Context.make(Greeting, {word: "merhaba"});
+		const result = Effect.runSync(provideRequestPair(ctx, services)(readAll));
+		expect(result.current.user?.id).toBe("u1");
+		expect(result.greeting.word).toBe("merhaba");
 	});
 });

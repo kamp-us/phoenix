@@ -10,6 +10,16 @@
  * `FateServer.layer` (`service.services`) sit beneath. No per-request layer,
  * no runtime rebuild, no context smuggling.
  *
+ * Between the pair and the build-time services sits the generic per-request
+ * provision seam (ADR 0107 §7): `context.requestServices`, an opaque bag of
+ * EXTRA per-request service VALUES the app provides (a `CurrentActor` derived
+ * from `CurrentUser`, say). It is provided over the build-time `services` so
+ * a per-request value wins there too, and the package stays vocab-free — it
+ * never names the app's service, never imports authz. An app DECLARES the
+ * tags it fills here to `FateServer.layer` (which then excludes them from the
+ * build-time R via `FateServerRequirements`); a declared-but-unprovided
+ * service fails loudly at run ("Service not found"), never silently.
+ *
  * erased→kernel: the trailing cast re-pins the erased entry effect's
  * requirements to `never` so a runtime can run it. The erased shapes carry
  * `R = unknown` (the covariant top — every entry assigns into the config
@@ -24,8 +34,7 @@
  * Package-internal: not exported from the barrel (no exported value's type
  * surfaces it; the repo-root typecheck gate guards TS2883).
  */
-import type {Context} from "effect";
-import {Effect} from "effect";
+import {Context, Effect} from "effect";
 import {CurrentUser} from "./CurrentUser.ts";
 import {LivePublisher} from "./LivePublisher.ts";
 import type {FateRequestContext} from "./RequestContext.ts";
@@ -50,5 +59,6 @@ export const provideRequestPair =
 		effect.pipe(
 			Effect.provideService(CurrentUser, context.currentUser),
 			Effect.provideService(LivePublisher, context.livePublisher),
+			Effect.provideContext(context.requestServices ?? Context.empty()),
 			Effect.provideContext(services),
 		) as Effect.Effect<A, E>;
