@@ -5,7 +5,8 @@
  * Mirrors `report`'s `OpenReport` source. See `.patterns/fate-effect-sources.md`.
  */
 import {Fate} from "@kampus/fate-effect";
-import {DivanBacklogItemView, DivanCaylakView} from "./views.ts";
+import {DivanBacklogItemView, DivanCaylakView, DivanVoteReceiptView} from "./views.ts";
 
 export const divanCaylakSource = Fate.syntheticSource(DivanCaylakView);
 export const divanBacklogItemSource = Fate.syntheticSource(DivanBacklogItemView);
+export const divanVoteReceiptSource = Fate.syntheticSource(DivanVoteReceiptView);

@@ -24,7 +24,7 @@ import {
 } from "../lifecycle/SandboxVisibility.ts";
 import {syncTermSearch} from "../search/fts-sync.ts";
 import {excerpt as excerptText} from "../text/index.ts";
-import type {VoteTargetNotFound} from "../vote/errors.ts";
+import type {VoteTargetNotFound, VoteTargetSandboxed} from "../vote/errors.ts";
 import {Vote} from "../vote/Vote.ts";
 import {
 	type DefinitionConnectionPage,
@@ -1046,14 +1046,25 @@ export const SozlukLive = Layer.effect(Sozluk)(
 					value: isVote,
 				})
 				.pipe(
-					Effect.catchTag("vote/VoteTargetNotFound", (_e: VoteTargetNotFound) =>
-						Effect.fail(
-							new DefinitionNotFound({
-								definitionId: input.definitionId,
-								message: `definition ${input.definitionId} not found`,
-							}),
-						),
-					),
+					// A sandboxed definition reads as not-found to the inline voter — only the
+					// divan-gated path (#1288) may score sandboxed content; the race-soft-deleted
+					// case is the same.
+					Effect.catchTags({
+						"vote/VoteTargetNotFound": (_e: VoteTargetNotFound) =>
+							Effect.fail(
+								new DefinitionNotFound({
+									definitionId: input.definitionId,
+									message: `definition ${input.definitionId} not found`,
+								}),
+							),
+						"vote/VoteTargetSandboxed": (_e: VoteTargetSandboxed) =>
+							Effect.fail(
+								new DefinitionNotFound({
+									definitionId: input.definitionId,
+									message: `definition ${input.definitionId} not found`,
+								}),
+							),
+					}),
 				);
 
 			const now = new Date();

@@ -42,7 +42,7 @@ import type {
 } from "./sozluk/errors.ts";
 import type {Sozluk} from "./sozluk/Sozluk.ts";
 import type {Stats} from "./stats/Stats.ts";
-import type {VoteTargetNotFound} from "./vote/errors.ts";
+import type {VoteTargetNotFound, VoteTargetSandboxed} from "./vote/errors.ts";
 import type {Vote} from "./vote/Vote.ts";
 
 type ErrorsOf<F> = F extends (...args: never[]) => Effect.Effect<infer _A, infer E, infer _R>
@@ -94,7 +94,10 @@ it("Stats: no method leaks DrizzleError", () => {
 it("Vote: no method leaks DrizzleError; exact domain unions hold", () => {
 	type Svc = typeof Vote.Service;
 	expectTypeOf<InfraLeaks<Svc>>().toEqualTypeOf<never>();
-	expectTypeOf<ErrorsOf<Svc["cast"]>>().toEqualTypeOf<VoteTargetNotFound>();
+	// `cast` rejects a sandboxed target (inline path); `castOnSandboxed` (the divan-gated
+	// path, #1288) permits it, so its only domain error is the not-found race.
+	expectTypeOf<ErrorsOf<Svc["cast"]>>().toEqualTypeOf<VoteTargetNotFound | VoteTargetSandboxed>();
+	expectTypeOf<ErrorsOf<Svc["castOnSandboxed"]>>().toEqualTypeOf<VoteTargetNotFound>();
 	expectTypeOf<ErrorsOf<Svc["readMine"]>>().toEqualTypeOf<never>();
 });
 

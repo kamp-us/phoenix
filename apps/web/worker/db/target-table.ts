@@ -23,6 +23,13 @@ import type {TargetKind} from "./target-kind.ts";
 export interface TargetRecordMeta {
 	authorId: string;
 	createdAtMs: number;
+	/**
+	 * Is the target a still-sandboxed (`sandboxed_at IS NOT NULL`) çaylak item? The
+	 * eligibility split `Vote.cast` reads: the ordinary cast rejects a sandboxed target
+	 * ({@link ./../features/vote/errors.ts VoteTargetSandboxed}); only the divan-gated
+	 * `castOnSandboxed` accepts one (#1288). Live content reads `false`.
+	 */
+	sandboxed: boolean;
 }
 
 /**
@@ -57,9 +64,14 @@ export interface TargetTableDescriptor {
 	readonly scoreCache: (db: DrizzleDb, targetId: string, now: Date, meta: TargetRecordMeta) => Stmt;
 }
 
-const metaOf = (row: {authorId: string; createdAt: Date | null}): TargetRecordMeta => ({
+const metaOf = (row: {
+	authorId: string;
+	createdAt: Date | null;
+	sandboxedAt: Date | null;
+}): TargetRecordMeta => ({
 	authorId: row.authorId,
 	createdAtMs: (row.createdAt ?? new Date()).getTime(),
+	sandboxed: row.sandboxedAt != null,
 });
 
 /**

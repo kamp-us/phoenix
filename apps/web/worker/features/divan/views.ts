@@ -57,3 +57,28 @@ export class DivanBacklogItemView extends FateDataView<DivanBacklogItemViewRow>(
 export const divanBacklogItemDataView = DivanBacklogItemView.view;
 
 export type DivanBacklogItem = WorkerEntity<typeof DivanBacklogItemView>;
+
+/**
+ * The receipt a `divan.vote` returns (#1288): the post-cast vote state of one sandboxed
+ * backlog item, delivered inline by the mutation (no by-id read), so its source is a
+ * capability-less `Fate.syntheticSource` like the other two divan views. `id` is the
+ * `<kind>:<itemId>` composite — the same identity as {@link DivanBacklogItemView} — so the
+ * #1290 surface keys the rendered up-vote off the item it voted on.
+ */
+export type DivanVoteReceiptViewRow = ViewRow<{
+	id: string;
+	score: number;
+	myVote: boolean;
+}>;
+
+export class DivanVoteReceiptView extends FateDataView<DivanVoteReceiptViewRow>()(
+	"DivanVoteReceipt",
+)({
+	id: true,
+	score: true,
+	myVote: true,
+}) {}
+
+export const divanVoteReceiptDataView = DivanVoteReceiptView.view;
+
+export type DivanVoteReceipt = WorkerEntity<typeof DivanVoteReceiptView>;

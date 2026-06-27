@@ -22,7 +22,7 @@ import {Drizzle, type DrizzleDb, orDieAccess, type Stmt} from "../../db/Drizzle.
 import * as schema from "../../db/drizzle/schema.ts";
 import type {TargetKind} from "../../db/target-kind.ts";
 import {type TargetRecordMeta, targetTable} from "../../db/target-table.ts";
-import {VoteTargetNotFound} from "./errors.ts";
+import {VoteTargetNotFound, VoteTargetSandboxed} from "./errors.ts";
 
 // Re-exported from `db/target-kind.ts` (its source-of-truth home) for callers
 // that prefer importing it from `./Vote`.
@@ -39,6 +39,13 @@ export interface VoteInput {
 export interface VoteResult {
 	targetKind: TargetKind;
 	targetId: string;
+	/**
+	 * The target's author — the karma recipient of this cast. Surfaced so a caller can
+	 * fire an author-keyed downstream effect (e.g. the divan vote path re-evaluating the
+	 * çaylak→yazar promotion tandem on a bar-crossing vote, #1288/#1289) on the
+	 * **server-derived** author, never a client-supplied one.
+	 */
+	authorId: string;
 	score: number;
 	/** Whether the voter holds an upvote on this target after the write. */
 	myVote: boolean;
@@ -72,7 +79,26 @@ export class KarmaBump extends Context.Service<KarmaBump, KarmaBumpService>()(
 export class Vote extends Context.Service<
 	Vote,
 	{
-		readonly cast: (input: VoteInput) => Effect.Effect<VoteResult, VoteTargetNotFound>;
+		/**
+		 * Score + credit karma for a vote on a **live** target. Rejects a still-sandboxed
+		 * target with {@link VoteTargetSandboxed}: sandboxed çaylak content is votable ONLY
+		 * through {@link castOnSandboxed}, past the divan gate (#1288). This is the surface the
+		 * inline sözlük/pano vote paths delegate to, so an inline voter can never score
+		 * sandboxed content.
+		 */
+		readonly cast: (
+			input: VoteInput,
+		) => Effect.Effect<VoteResult, VoteTargetNotFound | VoteTargetSandboxed>;
+		/**
+		 * The divan-authorized cast (#1288): identical to {@link cast} but ACCEPTS a sandboxed
+		 * target. The only caller is the `features/divan` vote mutation, which reaches this
+		 * past `requireDivanAccess` (`yield* ViewDivan` — the compile-error gate, ADR 0107);
+		 * Vote stays vocabulary-free about the divan, so the authorization lives at that
+		 * resolver, not here. Karma + scoring are the SAME atomic batch as `cast` — the vote
+		 * writes GLOBAL `user_profile.total_karma` (ADR 0050) and a yazar's and a mod's vote
+		 * each weigh `+1` (the divan gate admits both identically).
+		 */
+		readonly castOnSandboxed: (input: VoteInput) => Effect.Effect<VoteResult, VoteTargetNotFound>;
 		/**
 		 * Batched `myVote` presence read: the subset of `targetIds` the viewer has
 		 * a `user_vote` row for, of the given `kind`, in one `IN (...)` read so
@@ -154,44 +180,68 @@ export const VoteLive = Layer.effect(Vote)(
 			return new Set(rows.map((r) => r.targetId));
 		});
 
-		return {
-			readMine,
-			cast: Effect.fn("Vote.cast")(function* (input: VoteInput) {
-				const meta = yield* loadMeta(input.targetKind, input.targetId);
+		// Shared cast body. `allowSandboxed` is the ONE eligibility difference between the
+		// public `cast` (false → reject sandboxed) and `castOnSandboxed` (true → accept) — an
+		// internal flag, never exposed: the public surface is two named methods so a caller
+		// can't pass the wrong regime, and the real authorization for the sandboxed path is
+		// the divan gate at the resolver (#1288), not this boolean.
+		const castImpl = Effect.fn("Vote.castImpl")(function* (
+			input: VoteInput,
+			allowSandboxed: boolean,
+		) {
+			const meta = yield* loadMeta(input.targetKind, input.targetId);
 
-				const now = new Date();
-				const isCast = input.value;
-				const alreadyCast = yield* probeExisting(input.targetKind, input.targetId, input.userId);
+			if (meta.sandboxed && !allowSandboxed) {
+				return yield* new VoteTargetSandboxed({
+					targetKind: input.targetKind,
+					targetId: input.targetId,
+					message: `vote target ${input.targetKind} ${input.targetId} is sandboxed`,
+				});
+			}
 
-				if (isCast === alreadyCast) {
-					// State matches intent: no write, return the cached score.
-					const score = yield* readCachedScore(input.targetKind, input.targetId);
-					return {
-						targetKind: input.targetKind,
-						targetId: input.targetId,
-						score,
-						myVote: alreadyCast,
-						changed: false,
-					} satisfies VoteResult;
-				}
+			const now = new Date();
+			const isCast = input.value;
+			const alreadyCast = yield* probeExisting(input.targetKind, input.targetId, input.userId);
 
-				// State change — see `buildBatchStatements` for the atomic batch.
-				const karmaDelta = isCast ? 1 : -1;
-
-				yield* batch((db) =>
-					buildBatchStatements(db, input, meta, isCast, karmaDelta, now, karmaBump),
-				);
-
-				const newScore = yield* readCachedScore(input.targetKind, input.targetId);
-
+			if (isCast === alreadyCast) {
+				// State matches intent: no write, return the cached score.
+				const score = yield* readCachedScore(input.targetKind, input.targetId);
 				return {
 					targetKind: input.targetKind,
 					targetId: input.targetId,
-					score: newScore,
-					myVote: isCast,
-					changed: true,
+					authorId: meta.authorId,
+					score,
+					myVote: alreadyCast,
+					changed: false,
 				} satisfies VoteResult;
-			}),
+			}
+
+			// State change — see `buildBatchStatements` for the atomic batch.
+			const karmaDelta = isCast ? 1 : -1;
+
+			yield* batch((db) =>
+				buildBatchStatements(db, input, meta, isCast, karmaDelta, now, karmaBump),
+			);
+
+			const newScore = yield* readCachedScore(input.targetKind, input.targetId);
+
+			return {
+				targetKind: input.targetKind,
+				targetId: input.targetId,
+				authorId: meta.authorId,
+				score: newScore,
+				myVote: isCast,
+				changed: true,
+			} satisfies VoteResult;
+		});
+
+		return {
+			readMine,
+			cast: (input: VoteInput) => castImpl(input, false),
+			castOnSandboxed: (input: VoteInput) =>
+				// `castImpl` with the sandbox gate open never surfaces VoteTargetSandboxed, so the
+				// divan path's error channel is VoteTargetNotFound only (matches the interface).
+				castImpl(input, true) as Effect.Effect<VoteResult, VoteTargetNotFound>,
 			clearTarget: Effect.fn("Vote.clearTarget")(function* (kind: TargetKind, targetId: string) {
 				yield* batch((db) => buildClearTargetStatements(db, kind, targetId));
 			}),
