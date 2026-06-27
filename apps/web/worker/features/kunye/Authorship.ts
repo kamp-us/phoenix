@@ -6,8 +6,9 @@
  * the GLOBAL account-level standing read from {@link Kunye} against the
  * {@link authorshipLadder} and denies with {@link RequiresLevel} (`FORBIDDEN`).
  *
- * #1203 wires these into the sözlük term/entry create paths; this module is the
- * capability definitions only.
+ * #1203 makes the floored standing a server-managed `user.tier` column (read via
+ * {@link Kunye.tierOf}); wiring these capabilities into the sözlük term/entry create
+ * paths is a separate follow-up child. This module is the capability definitions only.
  */
 import {Capability, type Principal} from "@kampus/authz";
 import {Effect} from "effect";

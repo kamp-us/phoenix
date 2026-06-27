@@ -40,6 +40,30 @@ import {
 	verificationEmail,
 } from "./email-templates.ts";
 
+type AdditionalUserFields = NonNullable<NonNullable<BetterAuthOptions["user"]>["additionalFields"]>;
+
+/**
+ * The better-auth `user.additionalFields` shape. **Every field is `input:false`** —
+ * server-managed, so no client/session/registration write can set or escalate it:
+ *
+ *   - `username` — written only by the server-side `setUsername` mutation (through
+ *     `Pasaport`), immutable once set.
+ *   - `role` — the moderation capability (ADR 0098), granted only by the offline D1
+ *     grant script; NOT the better-auth admin plugin.
+ *   - `tier` — the authorship tier (ADR 0107 §4), born `çaylak`, promoted to `yazar`
+ *     only by the server promotion path (#1206) / founding seed. A fresh registration
+ *     defaults to `çaylak` (the `user.tier` column default) — `input:false` is what
+ *     keeps it un-escalatable at sign-up.
+ *
+ * Extracted as a pure value so the `input:false` invariant is unit-assertable
+ * (`additional-user-fields.unit.test.ts`) rather than buried in the Layer's Effect.
+ */
+export const additionalUserFields = {
+	username: {type: "string", required: false, input: false},
+	role: {type: "string", required: false, input: false},
+	tier: {type: "string", required: false, input: false},
+} satisfies AdditionalUserFields;
+
 /**
  * The better-auth origin/cookie config for one deploy class (ADR 0088). Pure over
  * the `environment` literal so the per-env derivation is unit-testable without the
@@ -138,25 +162,8 @@ export const BetterAuthLive = Layer.effect(
 							await sendEmail(changeEmailConfirmationEmail(user.email, newEmail, url));
 						},
 					},
-					additionalFields: {
-						username: {
-							type: "string",
-							required: false,
-							// Public API can't write `username` — only the server-side
-							// `setUsername` mutation (through `Pasaport`) can.
-							input: false,
-						},
-						// Server-managed moderation capability (ADR 0098). `input:false`:
-						// no client write reaches it — granted only by the offline D1
-						// script, read at the point of use via `Moderator.required`. NOT
-						// the better-auth admin plugin (deferred to #873) — a plain
-						// server-managed column on the `username` shape.
-						role: {
-							type: "string",
-							required: false,
-							input: false,
-						},
-					},
+					// All server-managed, all `input:false` — see `additionalUserFields`.
+					additionalFields: additionalUserFields,
 				},
 				plugins: [
 					// Emits the `set-auth-token` response header that the SPA's `authClient`

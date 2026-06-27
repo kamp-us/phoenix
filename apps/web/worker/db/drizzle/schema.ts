@@ -7,6 +7,7 @@
  */
 import {sql} from "drizzle-orm";
 import {index, integer, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
+import {STORED_TIERS} from "../../features/kunye/standing.ts";
 import {REPORT_STATUSES, RESOLUTIONS} from "../../features/report/resolution.ts";
 import {TARGET_KINDS} from "../target-kind.ts";
 
@@ -45,6 +46,17 @@ export const user = sqliteTable("user", {
 	role: text("role", {enum: ["member", "moderator"]})
 		.notNull()
 		.default("member"),
+	// Server-managed authorship tier (ADR 0107 §4) — the GLOBAL account-level
+	// earned standing on the `visitor < çaylak < yazar` ladder. The column holds
+	// only `çaylak | yazar` (an account is always ≥ çaylak; `visitor` is the
+	// no-account read, never stored). Born `çaylak`; promoted to `yazar` only by
+	// the server promotion path (#1206) / founding seed — declared `input:false`
+	// to better-auth (`better-auth-live.ts`), so no client/session write can set
+	// or escalate it. Read at the point of use via `Kunye.tierOf` (through
+	// Pasaport), never trusted from session state.
+	tier: text("tier", {enum: [...STORED_TIERS]})
+		.notNull()
+		.default("çaylak"),
 	emailVerified: integer("email_verified", {mode: "boolean"}),
 	// Public handle: 3–30 chars, lowercase ASCII + digits + `-`, no leading/
 	// trailing `-`. UNIQUE allows multiple NULLs (SQLite) so unbooted accounts coexist.

@@ -1,13 +1,29 @@
 /**
- * The earned-authorship ladder and its pure karma→tier derivation — the rank
- * vocabulary the rest of künye and the `Authorship` capability (#1235) share.
- * Kept pure (no service, no Effect) so the ladder ordering and the threshold
- * boundaries are unit-testable in isolation.
+ * The earned-authorship ladder and its rank vocabulary — the names the rest of
+ * künye and the `Authorship` capability (#1235) share. Kept pure (no service, no
+ * Effect) so the ladder ordering and the stored-tier value-set are unit-testable
+ * in isolation.
+ *
+ * Since #1203 the authorship tier is a **server-managed `user.tier` column** read
+ * through pasaport (not derived from karma), so `Kunye.tierOf` reads {@link Tier}
+ * off the stored {@link StoredTier} (visitor = the no-account case). The karma→tier
+ * math below (`tierForKarma`/`KARMA_THRESHOLDS`) no longer feeds `tierOf`; it is
+ * kept as the future promotion/karma surface's input — see its docstring.
  */
 import {Scale} from "@kampus/authz";
 
 /** A rank on the earned-authorship ladder, lowest-first. */
 export type Tier = "visitor" | "çaylak" | "yazar";
+
+/**
+ * The two **stored** account-level authorship tiers — the value-set of the
+ * server-managed `user.tier` column (#1203). `visitor` is deliberately absent: it
+ * is never stored, only the read-time rank of a no-account / `Unauthenticated`
+ * principal. An authenticated account is therefore always `≥ çaylak`. This is the
+ * "make invalid states unrepresentable" split — the column cannot hold `visitor`.
+ */
+export const STORED_TIERS = ["çaylak", "yazar"] as const;
+export type StoredTier = (typeof STORED_TIERS)[number];
 
 /**
  * The `visitor < çaylak < yazar` ladder (ADR 0107 §4) — the canonical kamp.us
@@ -18,14 +34,16 @@ export const authorshipLadder = Scale(["visitor", "çaylak", "yazar"]);
 
 /**
  * Provisional earned-ladder boundaries: the minimum `total_karma` for each rank.
- * The real values are a product decision owned by #1203/#1235 (the authorship
- * tier model), which supersedes this karma derivation when the tier becomes a
- * server-managed column read through pasaport. These defaults keep every rank
- * reachable so the standing read is testable.
+ *
+ * **Ownership (since #1203):** these no longer derive the live tier — `Kunye.tierOf`
+ * reads the stored `user.tier` column. The karma→tier math survives as the input the
+ * karma-triggered **promotion** path (#1206) uses to decide *when* to flip the stored
+ * column, and the **karma surface** (#1208) refines the real thresholds. Kept here so
+ * that math lives in one pure, testable place rather than being re-derived later.
  */
 export const KARMA_THRESHOLDS = {çaylak: 1, yazar: 100} as const;
 
-/** Map earned karma onto the ladder rank. */
+/** Map earned karma onto the ladder rank — the promotion (#1206) / karma (#1208) input. */
 export const tierForKarma = (karma: number): Tier =>
 	karma >= KARMA_THRESHOLDS.yazar
 		? "yazar"
