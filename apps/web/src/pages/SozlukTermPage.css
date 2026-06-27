@@ -63,13 +63,13 @@
 	background: var(--surface);
 	cursor: pointer;
 	padding: 0;
+	transition: transform var(--motion-fast) var(--ease-standard);
+}
+.kp-sozluk-definition__vote-btn:active {
+	transform: scale(0.92);
 }
 .kp-sozluk-definition__vote-btn .triangle {
-	width: 0;
-	height: 0;
-	border-left: 6px solid transparent;
-	border-right: 6px solid transparent;
-	border-bottom: 9px solid currentColor;
+	font-size: 13px;
 }
 .kp-sozluk-definition__vote-btn:hover {
 	color: var(--accent);
@@ -79,6 +79,10 @@
 	color: var(--accent-fg);
 	background: var(--accent);
 	border-color: var(--accent);
+}
+.kp-sozluk-definition__vote-btn:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 1px;
 }
 .kp-sozluk-definition__vote-count {
 	font: var(--t-meta);

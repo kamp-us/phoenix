@@ -50,6 +50,10 @@
 	padding: 0;
 	font: inherit;
 	cursor: pointer;
+	transition: transform var(--motion-fast) var(--ease-standard);
+}
+.kp-comment__upvote:active {
+	transform: scale(0.92);
 }
 .kp-comment__upvote:hover {
 	color: var(--accent);
@@ -57,12 +61,13 @@
 .kp-comment__upvote--active {
 	color: var(--accent);
 }
+.kp-comment__upvote:focus-visible {
+	outline: var(--focus-ring);
+	outline-offset: 1px;
+	border-radius: var(--r-sm);
+}
 .kp-comment__upvote .triangle {
-	width: 0;
-	height: 0;
-	border-left: 4px solid transparent;
-	border-right: 4px solid transparent;
-	border-bottom: 6px solid currentColor;
+	font-size: 10px;
 }
 
 .kp-comment__collapser {

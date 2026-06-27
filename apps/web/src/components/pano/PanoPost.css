@@ -44,6 +44,10 @@
 	border: 0;
 	cursor: pointer;
 	padding: 0;
+	transition: transform var(--motion-fast) var(--ease-standard);
+}
+.kp-pano-post__vote-btn:active {
+	transform: scale(0.92);
 }
 .kp-pano-post__vote-btn:hover {
 	color: var(--accent);
@@ -58,11 +62,7 @@
 }
 
 .kp-pano-post__vote-btn .triangle {
-	width: 0;
-	height: 0;
-	border-left: 6px solid transparent;
-	border-right: 6px solid transparent;
-	border-bottom: 9px solid currentColor;
+	font-size: 13px;
 }
 
 .kp-pano-post__vote-count {

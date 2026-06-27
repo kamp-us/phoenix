@@ -1,8 +1,10 @@
 import {useFateClient} from "react-fate";
 import {Link} from "react-router";
 import {Tag, type TagKind} from "../ui/atoms";
+import {useVoteFlash} from "../useVoteFlash";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
 import {currentLocationReturnTo, useGatedToggle, useVoteToggle} from "./useVoteToggle";
+import "../vote-cue.css";
 import "./PanoPost.css";
 
 /** Presentational vote control; the parent owns the mutation + auth gate. */
@@ -17,6 +19,7 @@ export function VoteControl({
 	onToggle?: () => void;
 	testIdSuffix?: string;
 }) {
+	const {flashing, endFlash} = useVoteFlash(count);
 	return (
 		<div className="kp-pano-post__vote">
 			<button
@@ -30,7 +33,8 @@ export function VoteControl({
 				<span className="triangle" />
 			</button>
 			<span
-				className="kp-pano-post__vote-count"
+				className={`kp-pano-post__vote-count${flashing ? " kp-vote-flash" : ""}`}
+				onAnimationEnd={endFlash}
 				data-testid={testIdSuffix ? `post-score-${testIdSuffix}` : undefined}
 			>
 				{count}

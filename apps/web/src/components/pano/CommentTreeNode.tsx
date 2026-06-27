@@ -13,7 +13,9 @@ import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {EditedIndicator} from "../ui/EditedIndicator";
 import {Menu} from "../ui/Menu";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
+import {useVoteFlash} from "../useVoteFlash";
 import {currentLocationReturnTo, useVoteToggle} from "./useVoteToggle";
+import "../vote-cue.css";
 import "./PanoComment.css";
 
 export const CommentTreeNodeView = view<Comment>()({
@@ -73,6 +75,7 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 		!isDeleted && props.currentUserId != null && data.authorId === props.currentUserId;
 	const voted = data.myVote === true;
 	const score = data.score;
+	const {flashing, endFlash} = useVoteFlash(score);
 	const editing = editComposer != null;
 
 	const highlight = props.activeCommentId === data.id;
@@ -123,7 +126,13 @@ export function CommentTreeNode(props: CommentTreeNodeProps) {
 						data-testid={`comment-vote-${localId}`}
 					>
 						<span className="triangle" />{" "}
-						<span data-testid={`comment-score-${localId}`}>{score}</span>
+						<span
+							className={flashing ? "kp-vote-flash" : undefined}
+							onAnimationEnd={endFlash}
+							data-testid={`comment-score-${localId}`}
+						>
+							{score}
+						</span>
 					</button>
 				) : null}
 				<button

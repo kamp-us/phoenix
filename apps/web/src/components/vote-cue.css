@@ -1,0 +1,37 @@
+/* Shared vote-state cue — the cross-site half of issue #1213.
+   The vote-state channel must not be color alone (WCAG 1.4.1): the triangle's
+   FILL is the redundant non-color signal — hollow (△) when not voted, filled
+   (▲) when `aria-pressed` is true. Landed once here so all three vote sites
+   (pano post, pano comment, sözlük definition) inherit the same cue; each site's
+   own CSS only sizes the glyph and owns its button's press/focus. */
+
+.triangle {
+	display: inline-block;
+	line-height: 1;
+	vertical-align: middle;
+}
+.triangle::before {
+	content: "\25B3"; /* △ hollow — not voted */
+}
+[aria-pressed="true"] .triangle::before {
+	content: "\25B2"; /* ▲ filled — voted; the non-color (1.4.1) cue, color merely reinforces */
+}
+
+/* Count flash on cast — re-armed per cast by the `useVoteFlash` hook toggling
+   this class (cleared on `animationend`), so it replays on every score change. */
+.kp-vote-flash {
+	display: inline-block;
+	animation: kp-vote-flash var(--motion-base) var(--ease-standard);
+}
+@keyframes kp-vote-flash {
+	0% {
+		transform: scale(1);
+	}
+	40% {
+		transform: scale(1.35);
+		color: var(--accent);
+	}
+	100% {
+		transform: scale(1);
+	}
+}

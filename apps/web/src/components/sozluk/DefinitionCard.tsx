@@ -14,6 +14,8 @@ import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
 import {useVoteToggle} from "../pano/useVoteToggle";
 import {Button} from "../ui/Button";
+import {useVoteFlash} from "../useVoteFlash";
+import "../vote-cue.css";
 import {CopyLinkButton} from "../ui/CopyLinkButton";
 import {Dialog} from "../ui/Dialog";
 import {EditedIndicator} from "../ui/EditedIndicator";
@@ -78,6 +80,7 @@ export function DefinitionCard(props: DefinitionCardProps) {
 	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
 
 	const voted = definition.myVote === true;
+	const {flashing, endFlash} = useVoteFlash(definition.score);
 	const cls = props.top ? "kp-sozluk-definition kp-sozluk-definition--top" : "kp-sozluk-definition";
 	const isAuthor = !!session.data?.user && session.data.user.id === definition.authorId;
 
@@ -216,7 +219,8 @@ export function DefinitionCard(props: DefinitionCardProps) {
 					<span className="triangle" />
 				</button>
 				<span
-					className="kp-sozluk-definition__vote-count"
+					className={`kp-sozluk-definition__vote-count${flashing ? " kp-vote-flash" : ""}`}
+					onAnimationEnd={endFlash}
 					data-testid={`definition-score-${definition.id}`}
 				>
 					{definition.score}
