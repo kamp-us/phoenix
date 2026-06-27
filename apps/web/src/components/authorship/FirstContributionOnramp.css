@@ -1,0 +1,35 @@
+/* FirstContributionOnramp (#1210) — the çaylak first-contribution nudge. A faint
+   accent callout with a left rule that SIGNALS the callout; the meaning is in the
+   text, never the color (a11y: never color-alone). No animation — reduced-motion
+   is satisfied by default and by the global reset (styles/global.css). */
+
+.kp-onramp {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	padding: var(--s-3);
+	margin-bottom: var(--s-3);
+	border: 1px solid var(--border);
+	border-left: 3px solid var(--accent);
+	border-radius: var(--r-sm);
+	background: var(--accent-faint);
+}
+
+.kp-onramp__heading {
+	margin: 0;
+	font: var(--t-body);
+	font-weight: 600;
+	color: var(--text-primary);
+}
+
+.kp-onramp__body {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-onramp__actions {
+	display: flex;
+	gap: var(--s-2);
+	margin-top: var(--s-1);
+}
