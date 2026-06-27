@@ -5,12 +5,15 @@
  */
 
 import {list} from "@nkzw/fate/server";
+import {divanBacklogItemDataView, divanCaylakDataView} from "../divan/views.ts";
 import {postDataView} from "../pano/views.ts";
 import {profileDataView, userDataView} from "../pasaport/views.ts";
 import {openReportDataView} from "../report/views.ts";
 import {termDataView} from "../sozluk/views.ts";
 import {landingStatsDataView} from "../stats/views.ts";
 
+export type {DivanBacklogItem, DivanCaylak} from "../divan/views.ts";
+export {divanBacklogItemDataView, divanCaylakDataView} from "../divan/views.ts";
 export type {Comment, Post, Tag} from "../pano/views.ts";
 export {commentDataView, postDataView, tagDataView} from "../pano/views.ts";
 export type {
@@ -79,4 +82,9 @@ export const Root: Record<string, unknown> = {
 	// The moderation queue (ADR 0098) — a `Moderator.required`-gated list root. The
 	// orderBy is nominal: the `report.listOpen` resolver owns the oldest-first order.
 	"report.listOpen": list(openReportDataView, {orderBy: [{firstReportedAt: "asc"}]}),
+	// The divan proving-ground reads (#1287, epic #1202) — yazar-OR-mod-gated, behind
+	// the `PHOENIX_AUTHORSHIP_LOOP` flag. The orderBy is nominal: the `divan.*`
+	// resolvers own the order (roster by pending desc, backlog newest-first).
+	"divan.roster": list(divanCaylakDataView, {orderBy: [{totalCount: "desc"}]}),
+	"divan.backlog": list(divanBacklogItemDataView, {orderBy: [{createdAt: "desc"}]}),
 };

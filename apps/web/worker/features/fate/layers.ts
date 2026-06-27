@@ -20,6 +20,7 @@ import * as ManagedRuntime from "effect/ManagedRuntime";
 import type {Database} from "../../db/Database.ts";
 import type {Drizzle} from "../../db/Drizzle.ts";
 import {DrizzleLive} from "../../db/Drizzle.ts";
+import {type Divan, DivanLive} from "../divan/Divan.ts";
 import {type Flags, FlagsLive} from "../flagship/Flags.ts";
 import type {Flagship} from "../flagship/Flagship.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
@@ -60,7 +61,11 @@ export type WorkerFateServices =
 	| Kunye
 	// The authorship-vouch ledger (#1206) — the `user.vouch` mutation's recorded-act
 	// store, the D1 write side of the çaylak→yazar promotion's vouch path.
-	| VouchLedger;
+	| VouchLedger
+	// The divan read model (#1287) — the yazar-OR-mod-gated proving-ground roster over
+	// the `sandboxBacklogWhere` backlog (#1205), composing the Sözlük/Pano sandboxed
+	// reads. Gated at the fate resolver + behind `PHOENIX_AUTHORSHIP_LOOP`.
+	| Divan;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -148,10 +153,17 @@ export const makeFateLayer: Layer.Layer<
 	never,
 	Database | BetterAuth.BetterAuth | Flagship | RuntimeContext
 > = Layer.mergeAll(
-	Layer.mergeAll(SozlukLive, PanoLive).pipe(
-		Layer.provideMerge(VoteLive),
-		Layer.provideMerge(BookmarkLive),
-		Layer.provide(KarmaBumpFromPasaport),
+	// `DivanLive` composes the Sözlük + pano sandboxed reads (#1287), so it is provided
+	// THIS content group's `Sozluk`/`Pano` outputs via `provideMerge` (which keeps them
+	// in the output for the routes too) — one built instance, not a second copy.
+	DivanLive.pipe(
+		Layer.provideMerge(
+			Layer.mergeAll(SozlukLive, PanoLive).pipe(
+				Layer.provideMerge(VoteLive),
+				Layer.provideMerge(BookmarkLive),
+				Layer.provide(KarmaBumpFromPasaport),
+			),
+		),
 	),
 	StatsLive,
 	// SearchLive and ReportLive depend only on Drizzle (the FTS read / the report

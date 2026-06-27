@@ -27,6 +27,7 @@ This file names the *what*.
 
 | Term | Definition | Not |
 |---|---|---|
+| divan | The proving-ground reviewer surface (`features/divan`): the gated destination where the established community (yazar + moderatör) reviews a çaylak's sandboxed work and promotes (mod-direct) or vouches (kefil) them toward yazar — work "goes before the divan". Reads the `sandboxBacklogWhere` backlog over a yazar-OR-mod gate. Turkish for "council/court". | a widening of inline çaylak visibility — it is a gated **destination** that reads the sandbox backlog, not a change to who sees sandboxed items inline |
 | imge | Product (designed — ADR 0044; **not built**): an imgur-style image/video host backed by Cloudflare R2, auth'd against the pasaport user; agents upload via an `apiKey` credential. Originating need: hosting report-agent screenshots + pano/sözlük markdown images. | |
 | pano | HN-style link & discussion aggregator with threaded comments. Turkish for "board". | "board", "pinboard" |
 | pasaport | Identity/auth/profiles/karma domain; wraps better-auth. Turkish for "passport". | "auth" (broader) |
