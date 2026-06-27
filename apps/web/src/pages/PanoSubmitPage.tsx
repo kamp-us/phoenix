@@ -4,15 +4,45 @@ import {Link, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Button} from "../components/ui/Button";
+import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {codeOf} from "../fate/wire";
 import {FlagGate} from "../flags/FlagGate";
 import {PANO_DRAFT_SAVE} from "../flags/keys";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
+import {useDraftAutosave} from "../lib/useDraftAutosave";
 import "./PanoSubmitPage.css";
 
 type Mode = "link" | "text";
+
+/** The submit route — keys the autosaved draft, matching the auth `returnTo` below (#1214). */
+const PANO_SUBMIT_ROUTE = "/pano/yeni";
+
+/** The client-side autosave draft for the pano submit form (localStorage, not the server `saveDraft`). */
+interface PanoDraft {
+	mode: Mode;
+	url: string;
+	title: string;
+	body: string;
+	tags: string[];
+}
+
+function isPanoDraft(value: unknown): value is PanoDraft {
+	if (value === null || typeof value !== "object") return false;
+	const v = value as Record<string, unknown>;
+	return (
+		(v.mode === "link" || v.mode === "text") &&
+		typeof v.url === "string" &&
+		typeof v.title === "string" &&
+		typeof v.body === "string" &&
+		Array.isArray(v.tags) &&
+		v.tags.every((t) => typeof t === "string")
+	);
+}
+
+const isPanoDraftEmpty = (d: PanoDraft): boolean =>
+	d.url.trim() === "" && d.title.trim() === "" && d.body.trim() === "" && d.tags.length === 0;
 
 // The five kinds + their CSS modifier (`cls`) come from the shared typed home
 // `src/lib/panoTags.ts` (#1030) — the same module the server allow-list imports,
@@ -65,6 +95,28 @@ export function PanoSubmitPage() {
 
 	const fate = useFateClient();
 	const [isInFlight, setInFlight] = React.useState(false);
+
+	const draftValue = React.useMemo<PanoDraft>(
+		() => ({mode, url, title, body, tags: Array.from(selectedTags)}),
+		[mode, url, title, body, selectedTags],
+	);
+	const draft = useDraftAutosave({
+		route: PANO_SUBMIT_ROUTE,
+		value: draftValue,
+		isEmpty: isPanoDraftEmpty,
+		isValid: isPanoDraft,
+	});
+
+	function restoreDraft() {
+		const d = draft.offered;
+		if (!d) return;
+		setMode(d.mode);
+		setUrl(d.url);
+		setTitle(d.title);
+		setBody(d.body);
+		setSelectedTags(new Set(d.tags));
+		draft.accept();
+	}
 
 	const host = hostOf(url);
 	const showPreview = mode === "link" && host.length > 0;
@@ -145,6 +197,7 @@ export function PanoSubmitPage() {
 				setError(messageForCode(codeOf(callError), callError.message));
 				return;
 			}
+			draft.clear(); // submitted successfully — the autosaved draft is spent
 			const newId = result?.slug ?? result?.id;
 			if (newId) navigate(`/pano/${newId}`);
 		} catch (caught) {
@@ -215,6 +268,10 @@ export function PanoSubmitPage() {
 							yazı
 						</button>
 					</div>
+
+					{draft.offered ? (
+						<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
+					) : null}
 
 					<form className="kp-pano-submit__form" onSubmit={onSubmit}>
 						{mode === "link" ? (

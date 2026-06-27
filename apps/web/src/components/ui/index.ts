@@ -7,6 +7,7 @@ export {Collapsible} from "./Collapsible";
 export type {CopyLinkButtonProps} from "./CopyLinkButton";
 export {CopyLinkButton} from "./CopyLinkButton";
 export {Dialog} from "./Dialog";
+export {DraftRestoreBanner} from "./DraftRestoreBanner";
 export {Field, FieldError, Form, Hint, Input, Label, Textarea} from "./Form";
 export {Menu} from "./Menu";
 export type {ReportButtonProps, ReportOutcome} from "./ReportButton";

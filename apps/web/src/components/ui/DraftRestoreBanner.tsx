@@ -1,0 +1,49 @@
+import {Button} from "./Button";
+import "./DraftRestoreBanner.css";
+
+/**
+ * The "you have a saved draft — restore it?" affordance, shown when a draft survived
+ * the auth round-trip. The draft is OFFERED, never silently re-injected (issue #1214):
+ * the user explicitly restores or discards it. Real semantics — a labelled `<section>`
+ * landmark with two native buttons (full keyboard path + visible focus from `kp-btn`);
+ * state is conveyed by text, not color alone. Copy is lowercase Turkish.
+ */
+export function DraftRestoreBanner({
+	onRestore,
+	onDismiss,
+}: {
+	onRestore: () => void;
+	onDismiss: () => void;
+}) {
+	return (
+		<section
+			className="kp-draft-restore"
+			aria-label="kaydedilmiş taslak"
+			data-testid="draft-restore"
+		>
+			<p className="kp-draft-restore__text">
+				kaydedilmiş bir taslağın var. geri yüklemek ister misin?
+			</p>
+			<div className="kp-draft-restore__actions">
+				<Button
+					type="button"
+					variant="primary"
+					size="sm"
+					onClick={onRestore}
+					data-testid="draft-restore-accept"
+				>
+					taslağı geri yükle
+				</Button>
+				<Button
+					type="button"
+					variant="tertiary"
+					size="sm"
+					onClick={onDismiss}
+					data-testid="draft-restore-dismiss"
+				>
+					yoksay
+				</Button>
+			</div>
+		</section>
+	);
+}
