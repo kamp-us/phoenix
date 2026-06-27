@@ -12,8 +12,12 @@ import {openReportDataView} from "../report/views.ts";
 import {termDataView} from "../sozluk/views.ts";
 import {landingStatsDataView} from "../stats/views.ts";
 
-export type {DivanBacklogItem, DivanCaylak} from "../divan/views.ts";
-export {divanBacklogItemDataView, divanCaylakDataView} from "../divan/views.ts";
+export type {DivanBacklogItem, DivanCaylak, DivanVoteReceipt} from "../divan/views.ts";
+export {
+	divanBacklogItemDataView,
+	divanCaylakDataView,
+	divanVoteReceiptDataView,
+} from "../divan/views.ts";
 export type {Comment, Post, Tag} from "../pano/views.ts";
 export {commentDataView, postDataView, tagDataView} from "../pano/views.ts";
 export type {

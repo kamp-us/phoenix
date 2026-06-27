@@ -26,7 +26,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
-import type {VoteTargetNotFound} from "../vote/errors.ts";
+import type {VoteTargetNotFound, VoteTargetSandboxed} from "../vote/errors.ts";
 import type {Vote} from "../vote/Vote.ts";
 import {type CommentConnectionPage, type CommentRow, toCommentRow} from "./comment-fields.ts";
 import {
@@ -703,14 +703,24 @@ export const makeCommentOperations = (deps: CommentOperationsDeps) => {
 				value: isVote,
 			})
 			.pipe(
-				Effect.catchTag("vote/VoteTargetNotFound", (_e: VoteTargetNotFound) =>
-					Effect.fail(
-						new CommentNotFound({
-							commentId: input.commentId,
-							message: `comment ${input.commentId} not found`,
-						}),
-					),
-				),
+				// A sandboxed comment reads as not-found to the inline voter — only the divan-gated
+				// path (#1288) may score sandboxed content; the race-soft-deleted case is the same.
+				Effect.catchTags({
+					"vote/VoteTargetNotFound": (_e: VoteTargetNotFound) =>
+						Effect.fail(
+							new CommentNotFound({
+								commentId: input.commentId,
+								message: `comment ${input.commentId} not found`,
+							}),
+						),
+					"vote/VoteTargetSandboxed": (_e: VoteTargetSandboxed) =>
+						Effect.fail(
+							new CommentNotFound({
+								commentId: input.commentId,
+								message: `comment ${input.commentId} not found`,
+							}),
+						),
+				}),
 			);
 
 		const now = new Date();

@@ -33,7 +33,7 @@ import {
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
 import {syncPostSearch} from "../search/fts-sync.ts";
-import type {VoteTargetNotFound} from "../vote/errors.ts";
+import type {VoteTargetNotFound, VoteTargetSandboxed} from "../vote/errors.ts";
 import type {Vote} from "../vote/Vote.ts";
 import type {Bookmark} from "./Bookmark.ts";
 import {
@@ -886,14 +886,18 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 				value: isVote,
 			})
 			.pipe(
-				Effect.catchTag("vote/VoteTargetNotFound", (_e: VoteTargetNotFound) =>
-					Effect.fail(
-						new PostNotFound({
-							postId: input.postId,
-							message: `post ${input.postId} not found`,
-						}),
-					),
-				),
+				// A sandboxed post reads as not-found to the inline voter — only the divan-gated
+				// path (#1288) may score sandboxed content; the race-soft-deleted case is the same.
+				Effect.catchTags({
+					"vote/VoteTargetNotFound": (_e: VoteTargetNotFound) =>
+						Effect.fail(
+							new PostNotFound({postId: input.postId, message: `post ${input.postId} not found`}),
+						),
+					"vote/VoteTargetSandboxed": (_e: VoteTargetSandboxed) =>
+						Effect.fail(
+							new PostNotFound({postId: input.postId, message: `post ${input.postId} not found`}),
+						),
+				}),
 			);
 
 		const now = new Date();

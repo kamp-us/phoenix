@@ -157,6 +157,115 @@ function recordingBatchAccess(): {access: DrizzleAccess; batches: ReadonlyArray<
 	return {access, batches};
 }
 
+// A recording write-path seam: `run` replays the pre/post-batch reads (loadMeta,
+// probe, post-batch score) and `batch` records the produced statement array against a
+// chainable db proxy, so a state-changing cast can be asserted (it reaches the write and
+// its batch carries the karma statement) without a real engine.
+function recordingCastAccess(reads: ReadonlyArray<unknown>): {
+	access: DrizzleAccess;
+	batches: ReadonlyArray<unknown>[];
+} {
+	const state = {i: 0};
+	const batches: ReadonlyArray<unknown>[] = [];
+	const chainable: Record<string, (...a: unknown[]) => unknown> = {};
+	const dbProxy: unknown = new Proxy(chainable, {get: () => () => dbProxy});
+	const access: DrizzleAccess = {
+		run: <A>(fn: (db: DrizzleDb) => Promise<A>) => {
+			void fn;
+			return Effect.succeed(reads[state.i++] as A);
+		},
+		batch: <T extends Readonly<[unknown, ...unknown[]]>>(fn: (db: never) => T) => {
+			batches.push(fn(dbProxy as never) as ReadonlyArray<unknown>);
+			return Effect.succeed([] as never);
+		},
+	};
+	return {access, batches};
+}
+
+// A KarmaBump that RECORDS each bump (recipient + delta) and returns a sentinel
+// statement, so a cast's karma credit is observable: who got karma and by how much.
+function recordingKarma(): {
+	layer: Layer.Layer<KarmaBump>;
+	calls: {userId: string; delta: number}[];
+} {
+	const calls: {userId: string; delta: number}[] = [];
+	const layer = Layer.succeed(KarmaBump, {
+		statement: ((_db: unknown, userId: string, delta: number) => {
+			calls.push({userId, delta});
+			return {__karma: true} as never;
+		}) as KarmaBump["Service"]["statement"],
+	});
+	return {layer, calls};
+}
+
+const sandboxedMeta = {authorId: "caylak-1", createdAtMs: 0, sandboxed: true};
+const liveMeta = {authorId: "author-1", createdAtMs: 0, sandboxed: false};
+
+describe("Vote.cast — sandbox eligibility (#1288, mocked Drizzle seam)", () => {
+	it.effect("cast REJECTS a sandboxed target with VoteTargetSandboxed before any write", () =>
+		// loadMeta → a still-sandboxed row; the eligibility guard short-circuits before the
+		// probe/batch (the throwing batch proves no write).
+		Effect.gen(function* () {
+			const vote = yield* Vote;
+			const exit = yield* Effect.exit(
+				vote.cast({userId: "voter-1", targetKind: "definition", targetId: "def-sb", value: true}),
+			);
+			assert.isTrue(exit._tag === "Failure", "cast on a sandboxed target fails");
+			assert.match(String(exit._tag === "Failure" ? exit.cause : ""), /VoteTargetSandboxed/);
+		}).pipe(Effect.provide(voteLayer(scriptedAccess([sandboxedMeta]).access))),
+	);
+
+	it.effect("castOnSandboxed ACCEPTS a sandboxed target — scores + credits the author", () => {
+		// reads: loadMeta (sandboxed) → probe (not yet cast) → post-batch score. The cast
+		// reaches the atomic batch; the recording karma proves +1 credited to the AUTHOR.
+		const {access, batches} = recordingCastAccess([sandboxedMeta, false, 1]);
+		const {layer: karma, calls} = recordingKarma();
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const result = yield* vote.castOnSandboxed({
+				userId: "yazar-1",
+				targetKind: "definition",
+				targetId: "def-sb",
+				value: true,
+			});
+			assert.isTrue(result.changed, "the sandboxed vote is a real state change");
+			assert.strictEqual(result.score, 1);
+			assert.strictEqual(batches.length, 1, "scoring + karma land in one atomic batch (ADR 0014)");
+			assert.strictEqual(batches[0]?.length, 4, "vote + score-cache + user_vote + karma");
+			assert.deepStrictEqual(
+				calls,
+				[{userId: "caylak-1", delta: 1}],
+				"karma credited to the content author, +1 (D2 global karma, D3 equal weight)",
+			);
+		}).pipe(
+			Effect.provide(
+				VoteLive.pipe(Layer.provide(karma), Layer.provide(Layer.succeed(Drizzle, access))),
+			),
+		);
+	});
+
+	it.effect("cast on a LIVE target is unaffected — the inline path still scores + credits", () => {
+		const {access, batches} = recordingCastAccess([liveMeta, false, 1]);
+		const {layer: karma, calls} = recordingKarma();
+		return Effect.gen(function* () {
+			const vote = yield* Vote;
+			const result = yield* vote.cast({
+				userId: "voter-1",
+				targetKind: "definition",
+				targetId: "def-live",
+				value: true,
+			});
+			assert.isTrue(result.changed);
+			assert.strictEqual(batches[0]?.length, 4, "live vote still writes the full batch");
+			assert.deepStrictEqual(calls, [{userId: "author-1", delta: 1}]);
+		}).pipe(
+			Effect.provide(
+				VoteLive.pipe(Layer.provide(karma), Layer.provide(Layer.succeed(Drizzle, access))),
+			),
+		);
+	});
+});
+
 describe("Vote.clearTarget — cleanup batch shape (ADR 0096 §3, mocked Drizzle seam)", () => {
 	for (const kind of TARGET_KINDS) {
 		it.effect(`${kind}: one batch of exactly two statements, karma KEPT`, () => {
