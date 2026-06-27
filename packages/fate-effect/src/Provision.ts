@@ -12,13 +12,9 @@
  *
  * Between the pair and the build-time services sits the generic per-request
  * provision seam (ADR 0107 §7): `context.requestServices`, an opaque bag of
- * EXTRA per-request service VALUES the app provides (a `CurrentActor` derived
- * from `CurrentUser`, say). It is provided over the build-time `services` so
- * a per-request value wins there too, and the package stays vocab-free — it
- * never names the app's service, never imports authz. An app DECLARES the
- * tags it fills here to `FateServer.layer` (which then excludes them from the
- * build-time R via `FateServerRequirements`); a declared-but-unprovided
- * service fails loudly at run ("Service not found"), never silently.
+ * EXTRA per-request service VALUES the app provides, provided over the
+ * build-time `services` so a per-request value wins there too. See
+ * `RequestContext.ts` for the contract.
  *
  * erased→kernel: the trailing cast re-pins the erased entry effect's
  * requirements to `never` so a runtime can run it. The erased shapes carry

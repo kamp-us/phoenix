@@ -1,16 +1,10 @@
 /**
  * `Resource` — a generic recursive tree node, the scope a `Relation`-backed
- * capability is proved *over* (ADR 0107: ReBAC authority is resource-scoped).
- *
- * A node is a `(type, id)` pair with an optional `parent`, so authority granted
- * on an ancestor covers its descendants: a `moderates` tuple on `platform`
- * covers a report filed under it. This recursion is also the documented
- * **nested-platform / enterprise** reach (ADR 0107 "reachable on the recursive
- * `Resource` primitive") — designed-for, not built.
- *
- * Vocab-free: `type`/`id` are caller-supplied strings; the tree names no kamp.us
- * resource. {@link covers} is the ancestry relation the relation discharge
- * walks.
+ * capability is proved *over* (ADR 0107: ReBAC authority is resource-scoped). A
+ * node is a `(type, id)` with an optional `parent`, so authority on an ancestor
+ * covers its descendants: a `moderates` tuple on `platform` covers a report
+ * filed under it (the recursion is also ADR 0107's nested-platform reach —
+ * designed-for, not built). Vocab-free: `type`/`id` are caller-supplied strings.
  */
 
 /** A node in the resource tree — a `(type, id)` with an optional `parent`. */

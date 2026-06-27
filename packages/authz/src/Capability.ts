@@ -1,42 +1,21 @@
 /**
  * `Capability` — the class-as-capability builders (ADR 0107 §3). One class
- * declaration, mirroring `HttpApiMiddleware.Service`, yields from a single name:
- * the proof **tag** (a `Context.Key<Self, Grant<Self>>` — v4, *not* the v3
- * `Context.Tag`), the {@link Grant} type it proves, the **discharge verb** that
- * mints the proof by running a check, and **`.provide`** that flows the proof
- * into an effect's requirements (R) channel. Declared once:
- *
- * ```ts
- * class OpenTerm extends Capability.Level<OpenTerm>()("kunye/OpenTerm", {
- *   scale, min: "yazar", read, deny,
- * }) {}
- *
- * // an op declares the proof in its R; omitting `.provide` is a compile error:
- * const openTerm: Effect.Effect<Term, never, OpenTerm> = ...;
- * openTerm.pipe(OpenTerm.provide(grant)); // R: never — discharged
- * ```
- *
- * Enforcement is **capability-as-Effect**: the proof rides the context channel
- * via `Capability.provide(grant)` (the `provideService` of the effect-smol
- * `HttpApiMiddleware` Authorization fixture — check → provide a typed proof),
- * never a field on the op's domain input. An op that declares the capability in
- * its R **fails to compile** unless the proof is provided at composition.
+ * declaration yields, from a single name, the proof tag (a v4
+ * `Context.Key<Self, Grant<Self>>`), the {@link Grant} it proves, a discharge
+ * verb that mints the proof by running a check, and `.provide` that flows the
+ * proof into an effect's R channel. The non-obvious part: enforcement is by the
+ * R channel, not a domain field — an op that declares the capability in its R
+ * fails to compile unless the proof is provided at composition.
  *
  * Three builders, the asymmetric axes of ADR 0107 §4:
- *   - {@link Class} — the generic base: `.authorize(check)` discharges a
- *     caller-supplied boolean check.
- *   - {@link Level} — the ordered ladder: `.require` reads the actor's standing
- *     and discharges when it `gte` the floor.
- *   - {@link Relation} — ReBAC: `.over(resource)` discharges when the actor (or
- *     an admitted agent's root) holds the relation over the resource's ancestry.
+ *   - {@link Class} — generic: `.authorize(check)` discharges a boolean check.
+ *   - {@link Level} — ordered ladder: `.require` discharges when standing `gte` the floor.
+ *   - {@link Relation} — ReBAC: `.over(resource)` discharges over the resource's ancestry.
  *
- * The two specializations dispatch **exhaustively on the {@link Actor}** through
- * {@link matchActor}: `Unauthenticated` denies, `Human` checks directly, and
- * `Agent` reads its human root's standing and consults {@link AgentAuthority}
- * (the dormant v1 seam — its Layer is fail-closed, so v1 grants no agent
- * authority). All errors are the instance-supplied `deny()` thunk: the
- * mechanism names no wire code; `features/kunye` supplies the
- * `Schema.TaggedErrorClass` + `FateWireCode` errors.
+ * Both specializations dispatch exhaustively on the {@link Actor} via
+ * {@link matchActor}, consulting {@link AgentAuthority} (dormant, fail-closed in
+ * v1) on the agent arm; the `deny()` thunk is instance-supplied (the mechanism
+ * names no wire code). See .patterns/authz-capability-as-effect.md.
  */
 import {Context, Effect} from "effect";
 import {matchActor, type Principal} from "./Actor.ts";
@@ -48,10 +27,9 @@ import {RelationStore} from "./Relation.ts";
 import {ancestry, type Resource} from "./Resource.ts";
 
 /**
- * The `.provide` seam shared by every capability class: the `provideService` of
- * a {@link Grant} into an effect's R channel. Discharging it removes the
- * capability from the requirements, so an op that declares the capability but
- * never provides the proof **fails to compile**.
+ * The `.provide` seam shared by every capability class: `provideService` of a
+ * {@link Grant} into R, removing the capability from requirements — so an op
+ * that declares it but never provides the proof fails to compile.
  */
 export interface CapabilityProvide<Self> {
 	provide(
@@ -61,15 +39,13 @@ export interface CapabilityProvide<Self> {
 
 /**
  * The shared face of every capability class: a v4 `Context.Key<Self,
- * Grant<Self>>` proof tag (the `Context.Service` Effect-side, kept as an
- * *exact* intersection member so the Effect-`Unify` machinery lines up), the
- * class constructor, and `.provide`.
+ * Grant<Self>>` proof tag, the class constructor, and `.provide`.
  *
- * It is an intersection rather than an `interface extends Context.Service`
- * on purpose: extending the service would fold `.provide`/the discharge verbs
- * into the type's `EffectUnify`, which then fails to match the bare service the
- * class actually is. Keeping the statics in their own object members leaves the
- * Effect-typed member pure.
+ * Intentionally an intersection, NOT `interface extends Context.Service`:
+ * extending the service folds `.provide`/the discharge verbs into the type's
+ * `EffectUnify`, which then fails to match the bare service the class actually
+ * is. Keeping the statics as their own members leaves the Effect-typed member
+ * pure.
  */
 export type CapabilityTag<Self> = Context.Service<Self, Grant<Self>> &
 	(new (
@@ -103,51 +79,37 @@ export type RelationCapability<Self, DenyError> = CapabilityTag<Self> & {
 
 /** Config for {@link Class}. */
 export interface ClassConfig<DenyError> {
-	/** The error to raise when the check does not pass. */
 	readonly deny: () => DenyError;
 }
 
 /** Config for {@link Level}. */
 export interface LevelConfig<Name extends string, DenyError, ReadError, ReadReqs> {
-	/** The ordered ladder the floor is compared on. */
+	/** The ordered ladder the `min` floor is compared on. */
 	readonly scale: Scale<Name>;
 	/** The minimum standing this right requires (the floor). */
 	readonly min: Name;
 	/** Read a principal's current standing on the ladder. */
 	readonly read: (principal: Principal) => Effect.Effect<Name, ReadError, ReadReqs>;
-	/** The error to raise when standing is insufficient or the actor anonymous. */
 	readonly deny: () => DenyError;
 }
 
 /** Config for {@link Relation}. */
 export interface RelationConfig<DenyError> {
-	/** The relation name (the ReBAC verb, e.g. the instance's `moderates`). */
+	/** The relation name (the ReBAC verb, e.g. `moderates`). */
 	readonly relation: string;
-	/** The error to raise when the relation is absent or the actor anonymous. */
 	readonly deny: () => DenyError;
 }
 
 /**
- * Bridge a freshly-built capability class to its augmented public type.
- *
- * A capability class genuinely carries `.provide` + its discharge verb *and* is
- * a `Context.Service`. But effect-smol pins a bare service class's
- * `[Unify.unifySymbol]` to its *un-augmented* self-type, so TS rejects the
- * structural match to the augmented `Capability*`-family type (TS2375/TS2352) —
- * and inferring `typeof Tag` instead leaks effect-internal symbols past
- * `composite`'s nameability check (TS4023). effect-smol's own
- * `HttpApiMiddleware.Service` resorts to `as any` for the identical reason. This
- * is the *one* audited coercion in the package: a single cast across an
- * `unknown` boundary (the plugin's permitted single-cast form, not `as any`),
- * sound by construction and pinned by `Capability.typetest.ts` + the unit tests.
- *
- * It is also what lets each builder satisfy the `@effect/language-service`
- * `classSelfMismatch` rule (run as an error by `@effect/tsgo`): each internal class
- * names itself as its Service `Self` — `class Tag extends Context.Service<Tag,
- * Grant<Self>>` — the canonical effect-class convention the rule enforces, with the
- * *external* `Self`-parameterized public type produced by this cast. The cost is a
- * local skew the cast erases: the internal `.provide` excludes `Tag` and is re-typed
- * to exclude `Self` for consumers.
+ * Bridge a freshly-built capability class to its augmented public type — the
+ * ONE audited coercion in the package: a single cast across an `unknown`
+ * boundary (the plugin's permitted single-cast form, not `as any`), pinned by
+ * `Capability.typetest.ts` + the unit tests. It is what lets each internal class
+ * name ITSELF as its Service `Self` (`class Tag extends Context.Service<Tag,
+ * …>` — the effect-class `classSelfMismatch` convention, run as an error by
+ * `@effect/tsgo`) while consumers see the external `Self`-parameterized type.
+ * Full derivation — the effect-smol `Unify` limit `HttpApiMiddleware.Service`
+ * hits the same way — is in .patterns/authz-capability-as-effect.md.
  */
 const sealCapability = <T>(tag: unknown): T => tag as T;
 
@@ -164,11 +126,7 @@ const makeClass =
 		config: ClassConfig<DenyError>,
 	): ClassCapability<Self, DenyError> => {
 		const {deny} = config;
-		// The Service `Self` is `Tag` (the canonical effect-class convention the
-		// language-service enforces); its Shape stays `Grant<Self>`, and `sealCapability`
-		// bridges this internal `Tag` identity to the external `Self`-parameterized public
-		// type. `.provide` therefore excludes `Tag` here and is re-typed to exclude `Self`
-		// by that cast.
+		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability`.
 		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
 			static provide(grant: Grant<Self>) {
 				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Tag>> =>

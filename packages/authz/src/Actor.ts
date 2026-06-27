@@ -1,18 +1,13 @@
 /**
  * `Actor` — who is making a request, the root input every capability check
- * dispatches on (ADR 0107 §6).
+ * dispatches on (ADR 0107 §6). Three-armed: `Unauthenticated`, an authenticated
+ * `Human`, and an authenticated `Agent` carrying its human `root`.
  *
- * The shape is deliberately three-armed: `Unauthenticated` (anonymous traffic),
- * an authenticated `Human`, and an authenticated `Agent` carrying its human
- * `root`. The Human/Agent split is the **dormant agent seam**: v1 is
- * humans-only, but every discharge verb already dispatches the `Agent` arm
- * through the {@link AgentAuthority} port, so v1.1's "an agent's authority ⊆ its
- * human root" attenuation is a Layer swap, never an edit to this mechanism.
- *
- * Vocab-free by construction: a `Human`/`Agent` is a bare `id` (and, for an
- * agent, its `root` id) — no kamp.us noun, no session, no karma. Adapters
- * (`features/kunye`) build an `Actor` from the pasaport session and provide it
- * through {@link CurrentActor}.
+ * The Human/Agent split is the dormant agent seam: v1 is humans-only, but every
+ * discharge verb already routes the `Agent` arm through the {@link AgentAuthority}
+ * port, so v1.1's "an agent's authority ⊆ its human root" attenuation is a Layer
+ * swap, never an edit to this mechanism. Vocab-free: bare ids, no kamp.us noun —
+ * adapters (`features/kunye`) build an `Actor` from the pasaport session.
  */
 
 /** An authenticated human principal — a bare account id. */

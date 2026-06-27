@@ -2,10 +2,9 @@
  * The minimal drizzle schema the founder seed touches — a local slice, NOT a
  * `@kampus/web` import (the worker's `schema.ts` isn't an exported subpath, and
  * pulling the whole worker graph into a `packages/` CLI is the anti-pattern
- * `@kampus/moderator-grant` avoids the same way). Only the `user` columns the
- * cohort read needs (`id` + `role`) and the `relation_tuple` columns the seed
- * writes. The canonical schema lives at `apps/web/worker/db/drizzle/schema.ts`;
- * `relation_tuple` is added by migration `0010_relation_tuple`.
+ * `@kampus/moderator-grant` avoids the same way). Canonical schema:
+ * `apps/web/worker/db/drizzle/schema.ts`; `relation_tuple` is added by migration
+ * `0010_relation_tuple`.
  */
 import {index, primaryKey, sqliteTable, text} from "drizzle-orm/sqlite-core";
 

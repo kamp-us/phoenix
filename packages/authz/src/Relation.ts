@@ -1,14 +1,11 @@
 /**
  * `Relation` — the ReBAC primitive: a `(subject, relation, object)` tuple, and
- * the {@link RelationStore} port that answers whether a tuple exists (ADR 0107
- * §4/§5). This is the assigned, resource-scoped authority axis (`moderates`,
- * `admin`), deliberately asymmetric to the ordered `Level` axis.
- *
- * The port is **vocab-free and storage-blind**: it names no relation, no D1,
- * no tuple table. `features/kunye` provides `RelationStoreLive` over the
- * `relation_tuple` D1 table; this module only declares the question
- * (`has(tuple)`), and the relation discharge (`Capability.Relation.over`) walks
- * resource {@link ancestry} asking it once per ancestor.
+ * the {@link RelationStore} port answering whether a tuple exists (ADR 0107
+ * §4/§5). The assigned, resource-scoped authority axis (`moderates`, `admin`),
+ * asymmetric to the ordered `Level` axis. Storage-blind: `features/kunye`
+ * provides `RelationStoreLive` over the `relation_tuple` D1 table; this module
+ * only declares `has(tuple)`, and the discharge walks resource {@link ancestry}
+ * asking it once per ancestor.
  */
 import {Context, type Effect} from "effect";
 import type {Resource} from "./Resource.ts";

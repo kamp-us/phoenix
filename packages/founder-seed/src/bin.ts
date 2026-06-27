@@ -1,13 +1,8 @@
 /**
- * `founder-seed` — the offline D1 CLI that mints the founder cohort (the
- * `role='moderator'` users) as `(id, "moderates", "platform")` relation tuples
- * (ADR 0107). The offline tuple-assignment path: a server-side direct-D1 script,
- * never a runtime worker route (the deleted `/api/admin/*` fail-open shape). The
- * `effect/unstable/cli` tooling idiom, mirroring `@kampus/moderator-grant`;
- * transport is the D1 REST query API over alchemy's already-installed
- * `@distilled.cloud/cloudflare` (zero new deps).
- *
- * Parameterized on the TARGET stage's D1 (never prod-hardcoded):
+ * `founder-seed` — the offline D1 CLI bin around {@link seedFounders} (ADR 0107).
+ * Transport is the D1 REST query API over alchemy's already-installed
+ * `@distilled.cloud/cloudflare` (zero new deps). Parameterized on the TARGET
+ * stage's D1, never prod-hardcoded:
  *   node src/bin.ts seed --database-id <uuid> [--account-id <acct>]
  *   node src/bin.ts list --database-id <uuid>
  *   $CLOUDFLARE_API_TOKEN  the minted token (carries D1 Write) — read by CredentialsFromEnv
