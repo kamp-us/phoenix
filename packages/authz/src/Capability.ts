@@ -140,6 +140,14 @@ export interface RelationConfig<DenyError> {
  * is the *one* audited coercion in the package: a single cast across an
  * `unknown` boundary (the plugin's permitted single-cast form, not `as any`),
  * sound by construction and pinned by `Capability.typetest.ts` + the unit tests.
+ *
+ * It is also what lets each builder satisfy the `@effect/language-service`
+ * `classSelfMismatch` rule (run as an error by `@effect/tsgo`): each internal class
+ * names itself as its Service `Self` — `class Tag extends Context.Service<Tag,
+ * Grant<Self>>` — the canonical effect-class convention the rule enforces, with the
+ * *external* `Self`-parameterized public type produced by this cast. The cost is a
+ * local skew the cast erases: the internal `.provide` excludes `Tag` and is re-typed
+ * to exclude `Self` for consumers.
  */
 const sealCapability = <T>(tag: unknown): T => tag as T;
 
@@ -156,9 +164,14 @@ const makeClass =
 		config: ClassConfig<DenyError>,
 	): ClassCapability<Self, DenyError> => {
 		const {deny} = config;
-		class Tag extends Context.Service<Self, Grant<Self>>()(id) {
+		// The Service `Self` is `Tag` (the canonical effect-class convention the
+		// language-service enforces); its Shape stays `Grant<Self>`, and `sealCapability`
+		// bridges this internal `Tag` identity to the external `Self`-parameterized public
+		// type. `.provide` therefore excludes `Tag` here and is re-typed to exclude `Self`
+		// by that cast.
+		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
 			static provide(grant: Grant<Self>) {
-				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Self>> =>
+				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Tag>> =>
 					Effect.provideService(self, Tag, grant);
 			}
 
@@ -190,9 +203,10 @@ const makeLevel =
 	): LevelCapability<Self, DenyError, ReadError, ReadReqs> => {
 		const {scale, min, read, deny} = config;
 		type Branch = Effect.Effect<Grant<Self>, DenyError | ReadError, AgentAuthority | ReadReqs>;
-		class Tag extends Context.Service<Self, Grant<Self>>()(id) {
+		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability` (see makeClass).
+		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
 			static provide(grant: Grant<Self>) {
-				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Self>> =>
+				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Tag>> =>
 					Effect.provideService(self, Tag, grant);
 			}
 
@@ -241,9 +255,10 @@ const makeRelation =
 	): RelationCapability<Self, DenyError> => {
 		const {relation, deny} = config;
 		type Branch = Effect.Effect<Grant<Self>, DenyError, AgentAuthority>;
-		class Tag extends Context.Service<Self, Grant<Self>>()(id) {
+		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability` (see makeClass).
+		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
 			static provide(grant: Grant<Self>) {
-				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Self>> =>
+				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Tag>> =>
 					Effect.provideService(self, Tag, grant);
 			}
 

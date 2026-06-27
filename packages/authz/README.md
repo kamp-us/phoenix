@@ -5,6 +5,10 @@ It names **no** kamp.us noun, no fate, no D1. The kamp.us capability instances
 (`OpenTerm`/`AddEntry`/`Moderate`/`Admin`), the wire-coded errors, and the `*Live`
 adapter Layers live in `features/kunye`, not here.
 
+> The shape of this mechanism — builder → discharge verb → sealed `Grant` → `.provide`,
+> the compile-error guarantee, and the one audited cast — is the
+> [authz-capability-as-effect.md](../../.patterns/authz-capability-as-effect.md) pattern.
+
 ## What it is
 
 A privileged op requires an unforgeable proof, `Grant`, in its requirements (R)
