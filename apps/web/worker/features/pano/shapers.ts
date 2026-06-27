@@ -1,35 +1,27 @@
 /**
  * Pano wire-entity shapers — `Post` / `Comment`. Every `{__typename, …}` literal
- * is built here once so the read/list/write paths can't drift. Shapers take
- * already-resolved field values, not service rows: each source (`PostPage`,
- * `PostSummaryRow`, a vote result) carries different field names, so that mapping
- * stays at the call site and the shaper owns only the wire shape. See
- * `.patterns/fate-connections.md`, `.patterns/fate-effect-operations.md`.
+ * is built here once so the read/list/write paths can't drift. The wire field set is
+ * NOT restated here: `PostFields` / `CommentFields` derive from the one column→field
+ * map per entity (`post-fields.ts` / `comment-fields.ts`), so the row mapper, this
+ * wire shaper, and the `*View` field list all trace back to a single structure —
+ * rename a column reader in the map and every site follows (#1126 AC#1, the Pano
+ * parallel of the Definition slice in `sozluk/definition-fields.ts`).
+ *
+ * The map's keys ARE the wire field names, so a shaper just stamps `__typename` + the
+ * `updatedAt ?? createdAt` fallback + the `myVote` / `isSaved` / `isDraft` viewer-scalar
+ * defaults onto the map's already-wire-named values; the per-source row→wire NAMING
+ * lives in the map, not at each call site. The detail-page / write / vote results that
+ * carry their own field names map onto `PostFields` at their call site (`toPostFromPage`,
+ * the mutation shapers). See `.patterns/fate-connections.md`,
+ * `.patterns/fate-effect-operations.md`.
  */
 
+import type {CommentFields} from "./comment-fields.ts";
 import type {PostPage} from "./Pano.ts";
+import type {PostFields} from "./post-fields.ts";
 import type {Comment, Post} from "./views.ts";
 
-export interface PostFields {
-	id: string;
-	slug: string | null;
-	title: string;
-	url: string | null;
-	host: string | null;
-	body: string | null;
-	author: string;
-	authorId: string;
-	score: number;
-	commentCount: number;
-	createdAt: Date;
-	// Summary/keyset rows and fresh writes/votes carry no `updatedAt`; the shaper
-	// owns the `updatedAt ?? createdAt` fallback so every path yields the same shape.
-	updatedAt?: Date | null;
-	myVote?: boolean | null;
-	isSaved?: boolean | null;
-	isDraft?: boolean | null;
-	tags: ReadonlyArray<{kind: string; label: string}>;
-}
+export type {CommentFields, PostFields};
 
 export const toPost = (r: PostFields): Post => ({
 	__typename: "Post",
@@ -77,19 +69,6 @@ export const toPostFromPage = (
 		isSaved,
 		tags: page.tags,
 	});
-
-export interface CommentFields {
-	id: string;
-	parentId: string | null;
-	author: string;
-	authorId: string;
-	body: string;
-	score: number;
-	createdAt: Date;
-	updatedAt?: Date | null;
-	deletedAt?: Date | null;
-	myVote?: boolean | null;
-}
 
 export const toComment = (r: CommentFields): Comment => ({
 	__typename: "Comment",

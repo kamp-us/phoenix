@@ -51,6 +51,21 @@ export interface CommentRow extends IntrinsicRow {
 	myVote?: boolean | null;
 }
 
+/**
+ * `CommentFields` — the wire shaper's input (`toComment` in `shapers.ts`): the
+ * intrinsic wire-named fields derived from this one column→field map so the wire
+ * shaper's field set can't drift from the row mapper / `commentViewFields` (the third
+ * hand-synced restatement #1126 AC#1 collapses). A fresh write/vote carries no
+ * `updatedAt`, and `deletedAt` / `myVote` are stamped at the call site (the tombstone
+ * override + the viewer scalar), so those ride as optional — the map stays the single
+ * source for the field set.
+ */
+export type CommentFields = Omit<IntrinsicRow, "updatedAt" | "deletedAt"> & {
+	updatedAt?: Date | null;
+	deletedAt?: Date | null;
+	myVote?: boolean | null;
+};
+
 export interface CommentConnectionPage {
 	rows: CommentRow[];
 	hasNextPage: boolean;
