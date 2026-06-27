@@ -67,8 +67,9 @@ export default Alchemy.Stack(
 		// Scoped to exactly what `alchemy deploy` touches: the worker (its DOs and
 		// uploaded `dist/client` assets ride on the script), the alchemy
 		// state-store worker, the D1 database, KV (state-store metadata), tail
-		// logs, and read access to account settings. No R2/Queues — phoenix uses
-		// neither; drop or add groups here if that changes.
+		// logs, read access to account settings, and Workers R2 Storage for
+		// imge's object bucket (#106, ADR 0044). No Queues — phoenix doesn't use
+		// them yet; add groups here as usage grows.
 		//
 		// Secrets Store Read+Write is NOT optional: `Cloudflare.state()` (the
 		// hosted state store) keeps its worker's bearer token + AES encryption key
@@ -85,6 +86,7 @@ export default Alchemy.Stack(
 					permissionGroups: [
 						"Workers Scripts Write",
 						"Workers KV Storage Write",
+						"Workers R2 Storage Write",
 						"D1 Write",
 						"Workers Tail Read",
 						"Account Settings Read",
