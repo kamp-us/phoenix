@@ -18,17 +18,34 @@ import {useSession} from "../auth/client";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Button} from "../components/ui/Button";
+import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {Screen} from "../fate/Screen";
 import {useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton} from "../fate/wire";
 import type {FateWireCode} from "../lib/fateWireCodes";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
+import {useDraftAutosave} from "../lib/useDraftAutosave";
 import {NotFoundPage} from "./NotFoundPage";
 import "./SozlukTermPage.css";
 
 const PAGE_SIZE = 50;
 const BODY_MAX = 10_000;
+
+/** The client-side autosave draft for the definition composer (localStorage, keyed by `/sozluk/<slug>`). */
+interface DefinitionDraft {
+	body: string;
+}
+
+function isDefinitionDraft(value: unknown): value is DefinitionDraft {
+	return (
+		value !== null &&
+		typeof value === "object" &&
+		typeof (value as DefinitionDraft).body === "string"
+	);
+}
+
+const isDefinitionDraftEmpty = (d: DefinitionDraft): boolean => d.body.trim() === "";
 
 /**
  * `live: {append: "visible"}` makes a server-pushed `appendNode` (a new
@@ -264,6 +281,21 @@ function Composer({
 	const [error, setError] = React.useState<string | null>(null);
 	const [isInFlight, setInFlight] = React.useState(false);
 
+	const draftValue = React.useMemo<DefinitionDraft>(() => ({body}), [body]);
+	const draft = useDraftAutosave({
+		route: `/sozluk/${slug}`,
+		value: draftValue,
+		isEmpty: isDefinitionDraftEmpty,
+		isValid: isDefinitionDraft,
+	});
+
+	function restoreDraft() {
+		if (!draft.offered) return;
+		setBody(draft.offered.body);
+		setError(null);
+		draft.accept();
+	}
+
 	const trimmed = body.trim();
 	const tooLong = body.length > BODY_MAX;
 	const disabled = isInFlight || trimmed.length === 0 || tooLong;
@@ -287,6 +319,7 @@ function Composer({
 				return;
 			}
 			setBody("");
+			draft.clear(); // submitted successfully — the autosaved draft is spent
 			const createdId = result?.id != null ? String(result.id) : null;
 			if (onTermCreated) {
 				// Fresh-slug branch: the term now exists, but the first mount's render-path
@@ -323,6 +356,9 @@ function Composer({
 			<header className="kp-sozluk-composer__head">
 				<span className="kp-sozluk-composer__title">sen nasıl tanımlardın?</span>
 			</header>
+			{draft.offered ? (
+				<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
+			) : null}
 			<textarea
 				className="kp-sozluk-composer__textarea"
 				placeholder="markdown destekli. ```js ... ``` kod bloğu için. kişisel deneyim, örnek, hatıra; kuru sözlük tanımı zaten Wikipedia'da var."

@@ -1,0 +1,23 @@
+.kp-draft-restore {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--s-2);
+	padding: var(--s-3);
+	margin-bottom: var(--s-3);
+	border: 1px solid var(--border);
+	border-radius: var(--r-sm);
+	background: var(--surface-sunken);
+}
+
+.kp-draft-restore__text {
+	margin: 0;
+	font: var(--t-body-sm);
+	color: var(--text-secondary);
+}
+
+.kp-draft-restore__actions {
+	display: flex;
+	gap: var(--s-2);
+}
