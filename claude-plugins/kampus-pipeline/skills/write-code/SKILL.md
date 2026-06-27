@@ -734,6 +734,19 @@ linked issue left dangling even if force-merged (#647; PR #573 shipped `Refs #56
 jammed). The whole downstream merge stage depends on this exact token, so spell out `Fixes #N`
 verbatim and never substitute a near-synonym that GitHub doesn't treat as closing.
 
+**The inverse half — a closing keyword is a *targeted* directive, never sprinkled.** Emit a
+closing keyword for the **single** issue this PR closes and **nothing else**: *every other*
+issue you name in the body — a sibling, a related issue, a "see also", a parent-epic mention
+in prose — takes a **non-closing** form (`addresses #M`, `relates to #M`, `see #M`, or a bare
+`#M` with no preceding closing verb). GitHub parses a closing keyword + `#M` **anywhere** in
+the body as a close directive with no "first ref" or "same line" exception, so a sibling-ref
+`fixes #M` buried in prose silently auto-closes an issue the PR never touched (#1259). The
+canonical statement of this rule — both halves (arm the seam for the target / never arm it for
+any other ref) and the full case-insensitive landmine keyword set — lives in the contract's
+[§9 The PR-body closing-keyword seam](../gh-issue-intake-formats.md); read it there and don't
+re-derive it. Operationally: one closing keyword, on the target, full stop — and the `(c)`
+guard below mechanizes "the closing-keyword set is exactly `{N}`" as the pre-push self-check.
+
 ```bash
 wt_preflight && git push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); same per-run branch from Step 4
 gh pr create \
@@ -769,12 +782,25 @@ gh api repos/$REPO/issues/<N>/timeline \
 gh api repos/$REPO/pulls/<PR> --jq '.body' \
   | grep -qiE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#<N>\b' \
   && echo "closing seam armed" || echo "BROKEN SEAM — body has no closing keyword for #<N>"
+# (c) the INVERSE GUARD, REST-only: NO closing keyword targets any issue OTHER than #N.
+#     The set {issue numbers preceded by a closing keyword in the body} must be exactly {N};
+#     a stray member is a sibling-ref directive that auto-closes an issue this PR never fixed (#1259).
+STRAY=$(gh api repos/$REPO/pulls/<PR> --jq '.body' \
+  | grep -ioE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#[0-9]+' \
+  | grep -oE '[0-9]+' | sort -u | grep -vx '<N>')
+[ -z "$STRAY" ] \
+  && echo "no stray close directives — closing-keyword set is exactly {#<N>}" \
+  || echo "STRAY CLOSE DIRECTIVE(S) on $(printf '#%s ' $STRAY)— rewrite these sibling refs to a non-closing form (addresses/relates to/see #M) before opening/patching the PR"
 ```
 
 If (b) reports a broken seam, the body's mention was non-closing (a `Refs`/bare-`#N` slip):
 **fix it before stopping** — re-`create` is gone, so patch the body via REST
 (`gh api -X PATCH repos/$REPO/pulls/<PR> -f body="…"` with a real `Fixes #N`) and re-check,
-since shipping the PR with a broken seam is exactly the #647 stall.
+since shipping the PR with a broken seam is exactly the #647 stall. If (c) reports a **stray**
+close directive, a sibling/related `#M` carries a closing keyword that will wrongly auto-close
+`#M` on merge — patch the body the same way to downgrade each stray `#M` to its non-closing
+form (`addresses`/`relates to`/`see #M`) and re-run (c), since shipping it is exactly the
+#1259 silent-auto-close.
 
 ---
 
