@@ -10,7 +10,7 @@
 	box-shadow: var(--shadow-md);
 	max-width: 280px;
 	z-index: 80;
-	animation: kp-tooltip-pop 100ms ease-out;
+	animation: kp-tooltip-pop var(--motion-fast) var(--ease-standard);
 }
 
 @keyframes kp-tooltip-pop {

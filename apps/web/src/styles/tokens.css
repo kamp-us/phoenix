@@ -487,6 +487,15 @@
 	--r-lg: 6px;
 	--r-pill: 9999px;
 
+	/* motion — duration + easing scale for UI transitions/animations.
+	   Components consume these instead of hardcoding ms; the global
+	   prefers-reduced-motion rule (global.css) neutralizes all of them. */
+	--motion-fast: 120ms;
+	--motion-base: 160ms;
+	--motion-slow: 280ms;
+	--ease-standard: ease-out;
+	--ease-emphasized: cubic-bezier(0.32, 0.72, 0, 1);
+
 	--content-w: 980px;
 
 	/* density — compact (default) */

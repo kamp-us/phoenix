@@ -9,10 +9,39 @@
 	background: var(--surface);
 }
 
+/* Skip-to-content — present for everyone (kept in the a11y tree + tab order),
+   parked off-screen until focused, then slides into the top-left corner. */
+.kp-skip-link {
+	position: fixed;
+	top: var(--s-2);
+	left: var(--s-2);
+	z-index: 100;
+	padding: var(--s-2) var(--s-3);
+	background: var(--accent);
+	color: var(--accent-fg);
+	font: var(--t-body-sm);
+	font-weight: 600;
+	border-radius: var(--r-sm);
+	text-decoration: none;
+	transform: translateY(-150%);
+	transition: transform var(--motion-fast) var(--ease-standard);
+}
+.kp-skip-link:focus {
+	transform: translateY(0);
+	outline: var(--focus-ring);
+	outline-offset: var(--focus-ring-offset);
+	text-decoration: none;
+}
+
 .kp-shell__main {
 	flex: 1;
 	width: 100%;
 	min-width: 0;
+}
+/* Programmatic focus target for the skip link — it's a container, not an
+   interactive control, so suppress the ring the tabindex=-1 would otherwise draw. */
+.kp-shell__main:focus {
+	outline: none;
 }
 
 /* Page wrappers — pages opt into the constrained content column.
