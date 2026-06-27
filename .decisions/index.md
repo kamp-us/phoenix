@@ -112,3 +112,4 @@ One row per ADR. Read the file for the why.
 | [0105](0105-delete-runfateop-harness.md) | Delete the zero-consumer `runFateOp` op-test harness | accepted | 2026-06-21 |
 | [0106](0106-iac-provisions-flags-dashboard-owns-serving.md) | IaC Provisions Feature Flags; the Dashboard Owns Their Serving | accepted | 2026-06-21 |
 | [0107](0107-capability-authz-framework.md) | Capability-as-Effect authorization framework (packages/authz + künye) | accepted | 2026-06-26 |
+| [0108](0108-hand-authored-flat-d1-migrations.md) | Hand-Authored Flat D1 Migrations Are the Sanctioned Path; Defer the drizzle-kit v7 Cutover | accepted | 2026-06-27 |
