@@ -3,7 +3,7 @@
  * the moderation capability (ADR 0107) meet the content paths, kept out of the
  * sözlük/pano domain services so they stay vocabulary-free about authorship.
  *
- * Two helpers, both resolver-level:
+ * Three helpers, all resolver-level:
  *   - {@link sandboxedAtForAuthor} — the create-time decision: should a new piece
  *     of content by this author land sandboxed? Gated behind the #1204
  *     authorship-loop flag (default-off ⇒ today's behavior, zero regression), then
@@ -11,6 +11,9 @@
  *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id plus a
  *     non-throwing moderator probe of `Moderate.over(platform)`, resolved once per
  *     read and handed to the `SandboxVisibility` predicates.
+ *   - {@link publishIfLive} — the create-time live-broadcast gate: suppress the
+ *     public fate-live fan-out for a sandboxed row, so sandboxed content never
+ *     leaks to non-author/anonymous subscribers via the (viewer-blind) live topics.
  */
 
 import {CurrentUser} from "@kampus/fate-effect";
@@ -63,3 +66,32 @@ export const currentSandboxViewer = Effect.gen(function* () {
 	);
 	return {viewerId: user?.id ?? null, canSeeSandboxed} satisfies SandboxViewer;
 });
+
+/**
+ * Gate a create-time live broadcast on the new content's sandbox state: run the
+ * public `publish` only when the row is live (`sandboxedAt === null`); for a
+ * sandboxed row, do nothing.
+ *
+ * The fate-live fan-out is the leak surface (#1205, AC#2): a `publish` here resolves
+ * a full-payload node frame and relays it to EVERY subscriber of a public topic —
+ * keyed only by `{id: slug}` / `{id: postId}` / the global feed, never by viewer
+ * identity, with no per-viewer re-resolution (ADRs 0023/0025/0037). The static read
+ * paths already filter sandboxed content (`sandboxVisibleWhere` / `isVisibleTo`), but
+ * the create-time broadcast bypasses them, so a sandboxed çaylak's node would be
+ * pushed live to non-author members and anonymous viewers. Routing every create-time
+ * publish through this gate makes "broadcast a sandboxed node to a public topic"
+ * structurally unreachable — a future create mutation reusing it cannot reintroduce
+ * the leak.
+ *
+ * The author and moderators still see sandboxed content through the sandbox-aware
+ * READ paths and the promotion-backlog queue (`listSandboxed*`); the live echo is an
+ * optimization, not the source of truth. Suppressing it for sandboxed rows costs the
+ * author an instant own-content echo (they see it on next read) — a deliberate
+ * trade: the viewer-blind topic model can't deliver an author-only live push without
+ * also leaking to others, and correctness outranks the echo. A viewer-keyed live
+ * delivery is a deferred optimization, not in scope for #1205.
+ */
+export const publishIfLive = (
+	sandboxedAt: Date | null,
+	publish: Effect.Effect<void>,
+): Effect.Effect<void> => (sandboxedAt === null ? publish : Effect.void);

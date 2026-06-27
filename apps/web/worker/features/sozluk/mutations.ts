@@ -14,7 +14,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
-import {sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {publishIfLive, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -90,8 +90,13 @@ export const mutations = {
 			// Fresh write: not yet voted by anyone.
 			const definition = shapeDefinition({...result, myVote: null});
 			// Append the node to the term's `Term.definitions` topic (same key
-			// `definition.delete` removes from) so every open term page updates live.
-			yield* live.definition.term(input.termSlug).appendNode(definition.id, {node: definition});
+			// `definition.delete` removes from) so every open term page updates live —
+			// but only when the definition is live: the topic is viewer-blind, so a
+			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
+			yield* publishIfLive(
+				sandboxedAt,
+				live.definition.term(input.termSlug).appendNode(definition.id, {node: definition}),
+			);
 			return definition;
 		}),
 	),
