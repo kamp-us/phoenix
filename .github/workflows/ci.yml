@@ -196,10 +196,25 @@ jobs:
           BASE_REF: ${{ github.base_ref }}
         run: |
           set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$BASE_REF"
-          base="$(git merge-base "origin/$BASE_REF" HEAD)"
-          CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRD "$base...HEAD")"
-          LOCKFILE_DIFF="$(git diff "$base...HEAD" -- pnpm-lock.yaml)"
+          # Full base fetch (no `--depth=1`): the `fetch-depth: 0` checkout above already
+          # has HEAD's full history, but a shallow `--depth=1` base re-fetch can land a base
+          # commit sharing NO ancestor with HEAD on a branch whose base drifted behind a
+          # fast-moving `main`, so `git merge-base` came back empty under `set -e` and
+          # false-red the whole `changes` job (issue #1154). A full base fetch restores a
+          # real merge-base.
+          git fetch --no-tags origin "$BASE_REF"
+          # Fail SAFE to running, not red, if a merge-base still can't be found (orphan/grafted
+          # history): an empty base degrades to the two-dot range against `origin/$BASE_REF`,
+          # which yields a superset diff → `worker_relevant=true` (the step's existing
+          # fail-safe-to-running stance), never a hard step failure.
+          if base="$(git merge-base "origin/$BASE_REF" HEAD)" && [ -n "$base" ]; then
+            range="$base...HEAD"
+          else
+            echo "::warning::worker-relevance: no merge-base with origin/$BASE_REF — degrading to a full diff (fail-safe to running)"
+            range="origin/$BASE_REF..HEAD"
+          fi
+          CHANGED_FILES="$(git diff --name-only --diff-filter=ACMRD "$range")"
+          LOCKFILE_DIFF="$(git diff "$range" -- pnpm-lock.yaml)"
           export CHANGED_FILES LOCKFILE_DIFF
           node packages/worker-relevance/src/bin.ts
 
