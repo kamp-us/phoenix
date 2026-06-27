@@ -300,3 +300,28 @@ export const contentReport = sqliteTable(
 		index("content_report_target").on(t.targetKind, t.targetId),
 	],
 );
+
+/**
+ * ReBAC relation-tuple store (ADR 0107) — the `(subject, relation, object)` triples
+ * that back the `Relation` capability axis (`moderates`, `admin`). A tuple's presence
+ * IS the grant: `RelationStore` reads the existence check `(subject, relation, object)`,
+ * served directly by the composite primary key. There is **no runtime write path** —
+ * tuples are minted offline (the founder seed mints the `role='moderator'` cohort as
+ * `(id, "moderates", "platform")`), the same fail-closed shape `user.role` has
+ * (CLAUDE.md "Sözlük seed"; the deleted `/api/admin/*` fail-open routes). The
+ * `(object, relation)` reverse index serves the "subjects holding relation R on object
+ * O" listing read (e.g. the platform's moderators), mirroring the reverse-lookup index
+ * on `content_report` / `user_vote`.
+ */
+export const relationTuple = sqliteTable(
+	"relation_tuple",
+	{
+		subject: text("subject").notNull(),
+		relation: text("relation").notNull(),
+		object: text("object").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.subject, t.relation, t.object]}),
+		index("relation_tuple_object").on(t.object, t.relation),
+	],
+);
