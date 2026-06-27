@@ -46,12 +46,22 @@ This file names the *what*.
 | contribution | An item in a profile's activity feed (a definition/post/comment); a discriminant-tagged fate view. | |
 | definition | A community-written meaning under a sözlük term; upvotable; its `score` is its net up-vote tally. | |
 | karma | Reputation points; the vote engine writes karma deltas atomically with votes (same Drizzle batch). | "rep" (use karma) |
-| künye | Per-user Durable Object holding karma; powers invite-only access, karma-gated privileges, agent registration. Turkish for "byline/credits". (Planned achievement system.) | |
+| künye | Two roles. **(1) Reputation DO** — per-user Durable Object holding karma; powers invite-only access, karma-gated privileges, agent registration (planned achievement system). **(2) The kamp.us authz home (ADR 0107)** — `apps/web/worker/features/kunye/` hosts the capability **instances** (`Authorship`, `Moderate`, `Admin`), the adapter **Layers** that fill `packages/authz`'s ports (`CurrentActorLive` ← pasaport session, `RelationStoreLive` ← D1 relation tuples, `AgentAuthorityV1`), and the earned-standing service — the authz / earned-standing half of the split. Turkish for "byline/credits". | authn/identity (that is **pasaport**); the vocab-free authz *mechanism* (that is **`packages/authz`**) |
 | post | A pano submission (link or text). | |
 | profile | A user's public page with a contributions feed; carries `totalKarma`. | |
 | score | A definition/post/comment's net up-vote tally; a denormalized cache bumped inside the vote batch. | |
 | tag | A label on a pano post. | |
 | term | A sözlük dictionary entry (has a slug + title). | "word" |
+
+## Authz (capabilities — ADR 0107)
+
+The vocab-free *mechanism* lives in `packages/authz`; the kamp.us *instances + standing* live in **künye** (`apps/web/worker/features/kunye/`). Depth is in [`.patterns/authz-capability-as-effect.md`](../.patterns/authz-capability-as-effect.md) + ADR [0107](../.decisions/0107-capability-authz-framework.md); this names the nouns.
+
+| Term | Definition | Not |
+|---|---|---|
+| `packages/authz` | The vocab-free capability-as-Effect authorization **mechanism**: a privileged op requires an unforgeable `Grant` proof, obtained only by discharging a typed check and flowed through the Effect context (R) channel — omitting `.provide` is a compile error. Two axes: `Level` (the earned authorship ladder `visitor < çaylak < yazar`, a global account-level standing) and `Relation` (assigned, resource-scoped authority — `moderates`, `admin`). Declares the ports (`CurrentActor`, `RelationStore`, `AgentAuthority`) and names no kamp.us noun, no fate, no D1. | a central PDP / a stringly `decide(action)` boundary; better-auth's AC model (authn only); the kamp.us instances (those are **künye**) |
+| capability | A class-as-capability named by *what it authorizes* (`Authorship`, `Moderate`, `Admin`) — the class is at once the proof tag, the `Grant` type, the discharge verb, and `.provide`. The kamp.us instances are künye-owned. | a level compared at the callsite; a `user.role` string check (retired, ADR 0107) |
+| AgentAuthority | The dormant **agent-attenuation seam** (ADR 0107 §6): an authz port that *combines* an agent's own + human-root standing so an agent's authority ⊆ its human root. v1 is humans-only — `features/kunye/AgentAuthorityV1` fills it **fail-closed** (an agent is admitted nothing); **v1.1 swaps that one Layer** for the real policy with no edit to `packages/authz`. The framework's additive-completeness litmus. | a capability/right; a check at the callsite; a `packages/authz` edit point |
 
 ## Backend architecture (Effect)
 
