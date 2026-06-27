@@ -153,3 +153,49 @@
 	font: var(--t-meta);
 	margin-top: var(--s-2);
 }
+
+/* The çaylak→yazar promotion surface (#1206), dark behind the #1204 flag. */
+.kp-promotion {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-2);
+	padding: var(--s-3) 0;
+	border-bottom: 1px solid var(--border-faint);
+	margin-bottom: var(--s-4);
+}
+
+.kp-promotion__buttons {
+	display: flex;
+	gap: var(--s-2);
+	flex-wrap: wrap;
+}
+
+.kp-promotion__action {
+	font: var(--t-meta);
+	color: var(--text-primary);
+	background: var(--bg);
+	border: 1px solid var(--border-strong, var(--border-faint));
+	border-radius: var(--radius-2, 6px);
+	padding: var(--s-2) var(--s-3);
+	cursor: pointer;
+}
+
+.kp-promotion__action:hover {
+	background: var(--accent-soft);
+}
+
+.kp-promotion__action:focus-visible {
+	outline: 2px solid var(--accent);
+	outline-offset: 2px;
+}
+
+.kp-promotion__action:disabled {
+	opacity: 0.6;
+	cursor: progress;
+}
+
+.kp-promotion__status {
+	margin: 0;
+	font: var(--t-meta);
+	color: var(--text-primary);
+}

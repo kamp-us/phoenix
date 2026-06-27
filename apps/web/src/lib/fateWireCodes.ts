@@ -19,6 +19,11 @@
  */
 export const FATE_WIRE_CODES = [
 	"UNAUTHORIZED",
+	// The earned-ladder (Level) denial — actor's standing is below a right's floor
+	// (`kunye/RequiresLevel`, ADR 0107). First surfaced on the wire by `user.vouch`
+	// (#1206): a non-yazar vouch attempt. Distinct from `UNAUTHORIZED` (the invisible
+	// ReBAC/moderation denial) — FORBIDDEN is the visible-progression public ladder.
+	"FORBIDDEN",
 	"DEFINITION_NOT_FOUND",
 	"POST_NOT_FOUND",
 	"COMMENT_NOT_FOUND",

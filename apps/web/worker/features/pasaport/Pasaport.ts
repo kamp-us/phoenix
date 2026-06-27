@@ -15,8 +15,8 @@ import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
-import {sandboxBacklogWhere} from "../lifecycle/SandboxVisibility.ts";
 import type {StoredTier} from "../kunye/standing.ts";
+import {sandboxBacklogWhere} from "../lifecycle/SandboxVisibility.ts";
 import {
 	UserNotFound,
 	UsernameAlreadySet,
@@ -655,18 +655,14 @@ export const makePasaportLive = (auth: Auth) =>
 					yield* batch((db) => buildAnonymizeStatements(db, userId, email, now));
 				}),
 
-				promoteToYazar: Effect.fn("Pasaport.promoteToYazar")(function* (input: {
-					userId: string;
-				}) {
+				promoteToYazar: Effect.fn("Pasaport.promoteToYazar")(function* (input: {userId: string}) {
 					const now = new Date();
 					// One atomic batch (ADR 0014, the `anonymizeAccount` precedent): the
 					// tier flip and the backlog sweep commit together or not at all, so a
 					// half-swept promotion (tier flipped, backlog still sandboxed — or the
 					// reverse) is unrepresentable. The first statement is the conditional
 					// tier UPDATE; its `changes` count is `1` iff the account was a çaylak.
-					const result = yield* batch((db) =>
-						buildPromotionStatements(db, input.userId, now),
-					);
+					const result = yield* batch((db) => buildPromotionStatements(db, input.userId, now));
 					return {promoted: result[0].meta.changes > 0};
 				}),
 			};
@@ -755,10 +751,7 @@ function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
 		.where(and(eq(schema.user.id, userId), eq(schema.user.tier, "çaylak")));
 
 	const sweep = (
-		table:
-			| typeof schema.definitionRecord
-			| typeof schema.postRecord
-			| typeof schema.commentRecord,
+		table: typeof schema.definitionRecord | typeof schema.postRecord | typeof schema.commentRecord,
 	) =>
 		db
 			.update(table)
