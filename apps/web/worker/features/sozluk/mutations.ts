@@ -14,6 +14,7 @@ import {CurrentUser, Fate, Unauthorized} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {WorkerLivePublisher} from "../fate-live/protocol.ts";
+import {sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {
 	BodyRequired,
 	BodyTooLong,
@@ -75,11 +76,15 @@ export const mutations = {
 			const user = yield* CurrentUser.required;
 			const sozluk = yield* Sozluk;
 			const live = sozlukLive(yield* WorkerLivePublisher);
+			// A çaylak's new definition lands sandboxed when the authorship-loop flag
+			// is on; flag-off / yazar ⇒ live, exactly as today (#1205).
+			const sandboxedAt = yield* sandboxedAtForAuthor(user.id, new Date());
 			const result = yield* sozluk.addDefinition({
 				termSlug: input.termSlug,
 				authorId: user.id,
 				authorName: user.name ?? user.email,
 				body: input.body,
+				sandboxedAt,
 				...(input.termTitle ? {termTitle: input.termTitle} : {}),
 			});
 			// Fresh write: not yet voted by anyone.

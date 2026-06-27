@@ -6,11 +6,12 @@
  * `.patterns/fate-connections.md`.
  */
 
-import {CurrentUser, Fate} from "@kampus/fate-effect";
+import {Fate} from "@kampus/fate-effect";
 import {hasNestedSelection} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Pano} from "./Pano.ts";
 import {toComment, toPostFromPage} from "./shapers.ts";
 import type {Comment} from "./views.ts";
@@ -30,15 +31,16 @@ export const queries = {
 		{args: PostArgs, type: PostView},
 		Effect.fn("post")(function* ({args, select}) {
 			const pano = yield* Pano;
-			const page = yield* pano.getPost(args.idOrSlug);
+			// Resolve the sandbox viewer once (identity + moderator probe); a
+			// sandboxed post is hidden from anyone but its author + a moderator (#1205).
+			const sandboxViewer = yield* currentSandboxViewer;
+			const viewerId = sandboxViewer.viewerId;
+			const page = yield* pano.getPost(args.idOrSlug, {sandboxViewer});
 			if (!page) return null;
-
-			const {user} = yield* CurrentUser;
-			const viewerId = user?.id ?? null;
 
 			// Stamp `myVote` + `isSaved` by batching the single post through the same
 			// `user_vote` / `post_bookmark` read — no per-row resolver.
-			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId});
+			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId, sandboxViewer});
 
 			const base = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
 
@@ -53,6 +55,7 @@ export const queries = {
 			const connection = yield* pano.listCommentsKeyset(page.id, {
 				...keysetInput(args.comments, COMMENTS_PAGE_SIZE),
 				viewerId,
+				sandboxViewer,
 			});
 			const comments = toConnection<(typeof connection.rows)[number], Comment>(
 				connection,

@@ -53,10 +53,12 @@ describe("shared read-model schema", () => {
 				"removed_at",
 				"removed_by",
 				"removed_reason",
+				"sandboxed_at",
 				"last_event_id",
 			].sort(),
 		);
 		expect(cols).toContain("removed_at");
+		expect(cols).toContain("sandboxed_at");
 	});
 
 	it("post_record column set carries is_draft (ADR 0093) and the removed_at triad", () => {
@@ -82,12 +84,14 @@ describe("shared read-model schema", () => {
 				"removed_at",
 				"removed_by",
 				"removed_reason",
+				"sandboxed_at",
 				"is_draft",
 				"last_event_id",
 			].sort(),
 		);
 		expect(cols).toContain("is_draft");
 		expect(cols).toContain("removed_at");
+		expect(cols).toContain("sandboxed_at");
 	});
 
 	it("comment_record column set carries the ADR 0096 removed_at triad", () => {
@@ -108,9 +112,11 @@ describe("shared read-model schema", () => {
 				"removed_at",
 				"removed_by",
 				"removed_reason",
+				"sandboxed_at",
 				"last_event_id",
 			].sort(),
 		);
 		expect(cols).toContain("removed_at");
+		expect(cols).toContain("sandboxed_at");
 	});
 });

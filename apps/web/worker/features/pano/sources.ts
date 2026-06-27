@@ -6,7 +6,8 @@
  * `E = never` — infra failures die inside the domain service (the boundary rule
  * in `.patterns/feature-services.md`). See `.patterns/fate-effect-sources.md`.
  */
-import {CurrentUser, Fate} from "@kampus/fate-effect";
+import {Fate} from "@kampus/fate-effect";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Pano, tagLabel} from "./Pano.ts";
 import {CommentView, PostView, TagView} from "./views.ts";
 
@@ -16,8 +17,8 @@ export const postSource = Fate.source(
 	{
 		byIds: function* (ids) {
 			const pano = yield* Pano;
-			const {user} = yield* CurrentUser;
-			return yield* pano.getPostsByIds(ids, {viewerId: user?.id ?? null});
+			const sandboxViewer = yield* currentSandboxViewer;
+			return yield* pano.getPostsByIds(ids, {viewerId: sandboxViewer.viewerId, sandboxViewer});
 		},
 	},
 );
@@ -28,8 +29,8 @@ export const commentSource = Fate.source(
 	{
 		byIds: function* (ids) {
 			const pano = yield* Pano;
-			const {user} = yield* CurrentUser;
-			return yield* pano.getCommentsByIds(ids, {viewerId: user?.id ?? null});
+			const sandboxViewer = yield* currentSandboxViewer;
+			return yield* pano.getCommentsByIds(ids, {viewerId: sandboxViewer.viewerId, sandboxViewer});
 		},
 	},
 );

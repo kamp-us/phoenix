@@ -41,6 +41,7 @@ const baseRecord = (bodyExcerpt: string | null): PostRecord => ({
 	removedAt: null,
 	removedBy: null,
 	removedReason: null,
+	sandboxedAt: null,
 	isDraft: null,
 	lastEventId: "",
 });

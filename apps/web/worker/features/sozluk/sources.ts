@@ -5,7 +5,8 @@
  * connections come from custom resolvers (ADR 0019). Reads are silent and
  * `E = never` — see `.patterns/fate-effect-sources.md`.
  */
-import {CurrentUser, Fate} from "@kampus/fate-effect";
+import {Fate} from "@kampus/fate-effect";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Sozluk} from "./Sozluk.ts";
 import {DefinitionView, TermView} from "./views.ts";
 
@@ -15,8 +16,11 @@ export const definitionSource = Fate.source(
 	{
 		byIds: function* (ids) {
 			const sozluk = yield* Sozluk;
-			const {user} = yield* CurrentUser;
-			return yield* sozluk.getDefinitionsByIds(ids, {viewerId: user?.id ?? null});
+			const sandboxViewer = yield* currentSandboxViewer;
+			return yield* sozluk.getDefinitionsByIds(ids, {
+				viewerId: sandboxViewer.viewerId,
+				sandboxViewer,
+			});
 		},
 	},
 );

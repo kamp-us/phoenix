@@ -29,6 +29,7 @@ const baseRecord = (): DefinitionRecord => ({
 	removedAt: null,
 	removedBy: null,
 	removedReason: null,
+	sandboxedAt: null,
 	lastEventId: "",
 });
 

@@ -100,6 +100,14 @@ export const definitionRecord = sqliteTable(
 		removedAt: timestamp("removed_at"),
 		removedBy: text("removed_by"),
 		removedReason: text("removed_reason"),
+		// The çaylak mod-only sandbox marker (#1205) — on the SAME ADR 0096 lifecycle
+		// substrate as the removal triad, not a parallel scheme. `sandboxed_at` null ⇒
+		// not sandboxed; a çaylak's new content is stamped sandboxed (visible to the
+		// author + moderators only) until promotion (#1206). Projected to
+		// `EntityLifecycle.Sandboxed`: the closed union makes sandboxed-AND-removed
+		// unrepresentable, and `toColumns` never emits `sandboxed_at` AND `removed_at`
+		// both non-null. Services never read this raw.
+		sandboxedAt: timestamp("sandboxed_at"),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
@@ -107,6 +115,9 @@ export const definitionRecord = sqliteTable(
 		index("definition_record_author_created").on(t.authorId, t.createdAt),
 		// WHERE term_slug = ? AND removed_at IS NULL (term page).
 		index("definition_record_term_score").on(t.termSlug, t.score),
+		// WHERE sandboxed_at IS NOT NULL AND removed_at IS NULL — the moderator
+		// sandbox queue / a çaylak's promotion backlog (#1206 read-model seam).
+		index("definition_record_sandboxed").on(t.sandboxedAt),
 	],
 );
 
@@ -145,6 +156,8 @@ export const postRecord = sqliteTable(
 		removedAt: timestamp("removed_at"),
 		removedBy: text("removed_by"),
 		removedReason: text("removed_reason"),
+		// The çaylak mod-only sandbox marker (#1205) — see `definition_record`.
+		sandboxedAt: timestamp("sandboxed_at"),
 		// Draft (taslak) marker — nullable, no default, mirroring the `removedAt`
 		// soft-state shape: existing/published rows are `null` (= not a draft). A
 		// partial unique index (`post_record_one_draft_per_author`, migration 0004)
@@ -162,6 +175,8 @@ export const postRecord = sqliteTable(
 		// express per-column ordering, and SQLite must walk forward for the
 		// newest-first profile feed read.
 		index("post_record_author_created").on(t.authorId, sql`${t.createdAt} DESC`),
+		// The moderator sandbox queue / promotion backlog (#1206 read-model seam).
+		index("post_record_sandboxed").on(t.sandboxedAt),
 	],
 );
 
@@ -199,6 +214,8 @@ export const commentRecord = sqliteTable(
 		removedAt: timestamp("removed_at"),
 		removedBy: text("removed_by"),
 		removedReason: text("removed_reason"),
+		// The çaylak mod-only sandbox marker (#1205) — see `definition_record`.
+		sandboxedAt: timestamp("sandboxed_at"),
 		lastEventId: text("last_event_id").notNull().default(""),
 	},
 	(t) => [
@@ -208,5 +225,7 @@ export const commentRecord = sqliteTable(
 		index("comment_record_post").on(t.postId),
 		// Reply-aware soft-delete children-of-parent check.
 		index("comment_record_parent").on(t.parentId),
+		// The moderator sandbox queue / promotion backlog (#1206 read-model seam).
+		index("comment_record_sandboxed").on(t.sandboxedAt),
 	],
 );
