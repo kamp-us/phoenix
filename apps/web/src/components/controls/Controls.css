@@ -15,6 +15,6 @@
 }
 .kp-controls__label {
 	font: var(--t-micro);
-	color: var(--text-faint);
+	color: var(--text-muted);
 	text-transform: lowercase;
 }
