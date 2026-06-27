@@ -24,11 +24,14 @@ Three prior threads converge here and are resolved by this decision:
   `Moderator.required` capability reading the `user.role` column. This ADR supersedes its
   *role/Moderator-capability* mechanism (the invisible-denial / fresh-read / fail-closed
   *invariants* are preserved and carried forward).
-- The admin cluster (#873/#966/#967/#972) planned to adopt **better-auth's AC model** as
-  the platform authz substrate. **Rejected.** better-auth is **authn only** (sessions,
-  apiKeys, the admin *user-management UI*); all authorization is this framework. This is
-  the answer to the open #966 "admin role taxonomy" ADR: **admin is one relation-backed
-  capability instance**, not a second authz system.
+- The admin cluster (#873/#966/#967/#972) planned to adopt **better-auth's AC model** as the
+  platform authz substrate, recorded in **ADR [0102](0102-admin-via-better-auth-plugin.md)**
+  (admin = a better-auth admin-plugin role/AC model mounted on the worker). **Both are
+  superseded here.** better-auth is **authn only** (sessions, apiKeys, the admin
+  *user-management UI*); all authorization is this framework. This is the answer to the open
+  #966 "admin role taxonomy" ADR: **admin is one relation-backed capability instance**, not a
+  second authz system. (0102's CLI-as-client surface intent stands; its better-auth-plugin
+  *authorization* substrate does not.)
 - The künye milestone (#41 et al.) framed künye as a reputation DO. This ADR fixes künye's
   role precisely: **pasaport = authn/identity; künye = authz/earned-standing; `packages/authz`
   = the vocab-free mechanism.**
@@ -106,8 +109,8 @@ the same primitives.
 **Harder / banned.** No central PDP; a stringly `decide(action: string)` / `check(rel: string)`
 public boundary is banned (erases types + the error channel). `user.role` is **retired as an
 authority source** — moderation moves to a `moderates` tuple store (founders offline-seeded);
-the column may remain only as a vestigial display flag. better-auth's AC model is **not** used
-for authorization.
+the column may remain only as a vestigial display flag. better-auth's AC model / admin plugin
+is **not** used for authorization (it stays for authn + the user-management UI surface).
 
 **Explicitly out of scope (reachable, deliberately deferred).**
 - **Agents** — seamed but dormant in v1 (humans-only); v1.1 is the `AgentAuthority` Layer + the
@@ -123,6 +126,14 @@ for authorization.
 **Migration.** A `relation_tuple` (subject, relation, object) D1 table + an offline seed minting
 the ~20 founders as `(id, "moderates", "platform")`. The current `report/Moderator.ts` rewrites
 to a `Capability.Relation` instance; `report.resolve` threads the `Grant` proof.
+
+**Backlog reconciliation.** Closes #966 (this ADR answers it), #972 (this ADR is the
+reconciliation), #146 (this ADR decides künye's enforcement surface), #967 + #969 (their
+better-auth-AC framing is superseded; the surviving Admin-capability + assignment work becomes
+sub-issues of the authz/künye framework epic). Reshapes #873 (the admin *dashboard* survives as
+product work consuming the `Admin` capability; the better-auth admin-plugin authorization does
+not). Re-points #1203 (onto the `Authorship` capability), #150 (unblocked — this is its
+enforcement-surface ADR), #145 (agent identity informed by the agent seam, v1.1).
 
 **Process.** Conversation-authored platform ADR (the ADR [0075](0075-issueless-doc-pr-merge-seam.md)
 issueless exception). The sözlük **term/entry** domain split used in examples here is a separate
