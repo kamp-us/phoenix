@@ -583,6 +583,27 @@ preview-deploy/teardown checks are informational; every other red, including any
 run-evidence (lint/format/typecheck, unit/integration/e2e) check, stays gating — see ADR
 [0061](https://github.com/kamp-us/phoenix/blob/main/.decisions/0061-ship-it-gating-check-set.md).
 
+An **empty** check set is ambiguous and must not be read as green on its face: it is either
+"CI ran and every check passed" or "no run ever fired for this head." Disambiguate it against
+the workflow runs GitHub actually recorded for the head SHA — **both reads fail safe toward
+"do *not* nudge"** (the Step-3z remedy close→reopens a live PR; never do that on a guessed
+absence):
+
+```bash
+HEAD_SHA=$(gh api repos/$REPO/pulls/$PR --jq '.head.sha')
+# (a) Does this repo run Actions at all? A CI-less / foreign repo's empty check set is genuine,
+#     not a dropped trigger — it degrades to the PASS-only path (Step 3.5 portability), no nudge.
+NWF=$(gh api "repos/$REPO/actions/workflows?per_page=100" --jq '.workflows | length' 2>/dev/null)
+# (b) Workflow runs recorded for THIS exact head SHA (the same head_sha bind Step 3.5 uses).
+NRUNS=$(gh api "repos/$REPO/actions/runs?head_sha=$HEAD_SHA&per_page=100" \
+  --jq '.workflow_runs | length' 2>/dev/null)
+# An empty capture = the lookup itself failed (network/auth/rate-limit), NOT a confirmed zero —
+# never nudge on an unconfirmed absence: assume "runs exist" / "no Actions", fall through, and
+# let the Step 3.5 backstop guard the merge.
+[ -z "$NRUNS" ] && NRUNS=1
+[ -z "$NWF" ]   && NWF=0
+```
+
 Classify in this order (`skipping`/`cancel` are non-blocking — neither a failure nor an
 in-flight wait):
 
@@ -593,7 +614,12 @@ in-flight wait):
 2. **Else, any check pending** (no gating red, some unfinished) → report `checks pending —
    not yet merge-ready` and stop. The caller re-invokes you after CI settles; blocking on a
    multi-minute poll inside this atomic stage is out of scope.
-3. **Else proceed to Step 4** — every gating check is green. If a *known-informational*
+3. **Else, the repo runs Actions (`NWF ≥ 1`) but the head SHA has zero workflow runs
+   (`NRUNS == 0`)** → the **dropped-trigger state** (Step 3z). This is **not** green: an empty
+   check set with *no runs behind it* is "CI never fired," not "CI ran and passed." Do **not**
+   fall through to Step 4 — go to [Step 3z](#step-3z--the-dropped-trigger-state-zero-workflow-runs--bounded-nudge),
+   which surfaces the distinct reason and performs the bounded close→reopen nudge.
+4. **Else proceed to Step 4** — every gating check is green. If a *known-informational*
    check is red, it does not block: note it in the ledger (`informational check red (deploy
    (web)) — not gating`, or `informational check red (cleanup (web, …)) — not gating`) and
    continue. Step 3.5 remains the SHA-bound backstop that the gating suite actually passed
@@ -603,6 +629,67 @@ The gating set is, by construction, the suite the run-evidence bundle attests SH
 Step 3.5 (lint / format / typecheck, unit tests, validate skill frontmatter, integration
 when it runs) — Step 3 is the cheap early read, Step 3.5 is the authority; if the two ever
 disagree, Step 3.5 wins.
+
+---
+
+## Step 3z — The dropped-trigger state (zero workflow runs) + bounded nudge
+
+GitHub occasionally drops a `pull_request: synchronize` event server-side: the push updates
+the head ref, but **no Actions runs ever fire for that SHA** (diagnosed in #1016 — a docs-only
+push to PR #1013's head got zero runs for ~6 min until a close→reopen re-emitted the trigger,
+after which the full suite ran, passed, and the PR merged). The symptom at Step 3 is an
+**empty gating-check set with zero workflow runs behind the head SHA**: no red, nothing
+pending, so the naïve read falls through to "every gating check is green" — a **false green**.
+It is not green; there is no CI behind this commit at all.
+
+This is a **distinct state**, and naming it precisely is the whole fix:
+
+- it is **not** `checks pending` — there pending runs *exist*; here none fired;
+- it is **not** a run-evidence-producer failure — Step 3.5's `unverified (no run-evidence
+  bundle)` is "runs fired, but no bundle"; here **no runs fired at all**.
+
+So its surfaced reason names the cause — **`no runs fired (dropped trigger)`** — never the
+misleading `no run-evidence bundle`. (Before this state existed, a zero-runs head fell through
+to a false green and was only caught — with that misleading reason — by Step 3.5's backstop;
+the merge was still safely refused, but the drain loop got no actionable "just nudge it"
+signal and could hang indefinitely on a never-run PR.)
+
+**The remedy is a bounded close→reopen nudge.** Closing then reopening the PR re-emits the
+`pull_request` trigger with the **head ref unchanged**, so the dropped workflows fire.
+**ship-it performs the nudge itself** — it is a discrete server-side PR action like the merge,
+not a wait-loop — then **stops**; the *re-read after CI settles is the caller re-invoking
+ship-it*, the same atomic contract as `checks pending` (Step 3 owns no poll). The nudge is
+**bounded to at most once per head SHA**, enforced statelessly against the PR's own
+reopened-event history so a genuinely-stuck producer can never loop:
+
+```bash
+# Have we ALREADY nudged this exact head? A nudge leaves a `reopened` event; count the ones
+# that landed AFTER this head SHA was pushed (its committer date is the proxy for "since this
+# commit"). >=1 ⇒ we already close→reopened this head and runs STILL didn't fire ⇒ the producer
+# is genuinely stuck, not a dropped webhook ⇒ do NOT nudge again — refuse and hand to a human.
+HEAD_PUSHED=$(gh api "repos/$REPO/commits/$HEAD_SHA" --jq '.commit.committer.date')
+NUDGES=$(gh api "repos/$REPO/issues/$PR/events?per_page=100" \
+  --jq "[.[] | select(.event==\"reopened\") | .created_at | select(. > \"$HEAD_PUSHED\")] | length")
+
+if [ "${NUDGES:-0}" -ge 1 ]; then
+  echo "unverified (no runs fired — nudge exhausted, producer may be stuck)"; exit 0   # refuse, hand to human
+fi
+
+# First (and only) nudge for this head: close then reopen over REST (never `gh pr close/reopen`
+# or `gh pr edit` — Projects-classic breaks their GraphQL path in this org). The head ref is
+# untouched, so every SHA-bound review verdict (Step 2) survives the reopen.
+gh api -X PATCH "repos/$REPO/pulls/$PR" -f state=closed >/dev/null
+gh api -X PATCH "repos/$REPO/pulls/$PR" -f state=open   >/dev/null
+echo "nudged (close→reopen) — CI re-triggered, not yet merge-ready"; exit 0   # stop; caller re-invokes after CI settles
+```
+
+The nudge **never bypasses verification** — it only restores the *missing runs*. A nudged PR
+is handed back to the normal gate on the next invocation; the merge still requires a
+current-head PASS (Step 2), green gating checks (Step 3), **and** a commit-bound, all-`pass`
+run-evidence bundle (Step 3.5, guard 2). The close→reopen re-triggers CI; it does not advance
+the merge by itself. Like Step 3's red and Step 2's FAIL, both Step 3z outcomes —
+`nudged (close→reopen) …` and `unverified (no runs fired — nudge exhausted …)` — are a
+**successful run that declines to merge**, not an error.
 
 ---
 
@@ -714,7 +801,11 @@ The four refusal reasons are **distinct and load-bearing** — each names *why* 
 didn't clear, so the report (and a human reading it) knows whether it's a missing producer
 run, a producer/consumer schema skew, a stale push, or a real failing check:
 
-- `unverified (no run-evidence bundle)` — no head-SHA run / no artifact / empty manifest.
+- `unverified (no run-evidence bundle)` — runs fired for this head, but the run-evidence
+  producer yielded no artifact / an empty manifest. (The *zero-runs* case — the head SHA had
+  **no** workflow runs at all — is caught earlier in [Step 3z](#step-3z--the-dropped-trigger-state-zero-workflow-runs--bounded-nudge)
+  with its own `no runs fired (dropped trigger)` reason + nudge, so it never reaches here as a
+  misleading "no bundle.")
 - `unverified (unsupported bundle schemaVersion: <v>)` — a schema major the gate can't read.
 - `unverified (stale run-evidence bundle: commit <c> != head <h>)` — bundle isn't for this commit.
 - `run-evidence checks failed (<names>)` — at least one `checks[]` entry is `fail` (or none present).
@@ -930,7 +1021,11 @@ If you refused to merge, the reason line is the whole point: `blocking — manua
 review-skill PASS)`, `unverified (verdict
 not bound to current head)` (a SHA-less or stale-head verdict — Step 2b, ADR 0058), `latest
 verdict is FAIL (<gate>)`, `routed to heal-ci` (a gating red check, handed to the self-heal lane),
-`checks pending`, `no linked issue`, or a run-evidence refusal (Step 3.5):
+`checks pending`, the dropped-trigger outcomes (Step 3z): `nudged (close→reopen) — CI
+re-triggered, not yet merge-ready` (the head SHA had zero workflow runs; ship-it close→reopened
+it once to re-emit the trigger and stopped — re-invoke after CI settles) or `unverified (no runs
+fired — nudge exhausted, producer may be stuck)` (already nudged once and still zero runs →
+handed to a human), `no linked issue`, or a run-evidence refusal (Step 3.5):
 `unverified (no run-evidence bundle)`, `unverified (unsupported bundle schemaVersion: <v>)`,
 `unverified (stale run-evidence bundle: …)`, or `run-evidence checks failed (<names>)`. A
 refusal is a successful run — shipping the wrong PR is the only failure mode that matters.
