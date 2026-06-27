@@ -18,6 +18,13 @@
  * returns `null` for `myAuthorshipStanding` when the flag is off (belt-and-suspenders),
  * and a null standing renders nothing — so the block never queries off the safe path.
  *
+ * Honest promotion-path framing ({@link caylakPromotionPath}, #1323): an UNVOUCHED
+ * çaylak does NOT see a karma progress bar — the unassisted bar is 100 but no amount
+ * of karma promotes without a vouch (`resolveTandem` short-circuits on the vouch
+ * half), so a 100-karma goal would depict a path that doesn't exist. The unvouched
+ * state surfaces the vouch-needed framing instead; once `vouchExists` is true the
+ * block draws the real reduced bar (15), the already-honest path.
+ *
  * Imperative fetch (`request` + `readView`), not the suspending `useRequest`: the
  * block sits inside the header and must NOT suspend the whole header on a secondary
  * read, and must NOT query unless the three gates pass — the same reasoning as
@@ -59,6 +66,43 @@ export function shouldShowCaylakStatus(
 /** The vouch-exists readout — a bare yes/no, NEVER who vouched (one-way glass). */
 export function vouchExistsLabel(vouchExists: boolean): string {
 	return vouchExists ? "var" : "yok";
+}
+
+/**
+ * The unvouched çaylak's path-to-yazar copy. Karma is necessary-but-not-sufficient:
+ * `resolveTandem` short-circuits on the vouch half (`if (!hasActiveFor) return …`),
+ * so an unvouched çaylak's karma is never even read and NO amount of karma promotes
+ * them — the only routes are a yazar's vouch (then the reduced 15-bar) or a mod
+ * action. Surfacing the unassisted 100-bar here would depict a goal that maps to no
+ * live promotion trigger (#1323), so the unvouched state shows this framing instead.
+ * Lowercase Turkish; karma is a brand noun.
+ */
+export const VOUCH_NEEDED_COPY = {
+	message: "bir yazar sana kefil olmalı",
+	hint: "ya da bir moderatör seni doğrudan yükseltebilir",
+} as const;
+
+/**
+ * The çaylak status block's promotion-path rendering split, factored DOM-free so the
+ * unvouched-vs-vouched contract is unit-testable without a DOM (the pure-extraction
+ * idiom of {@link shouldShowCaylakStatus}). The shape makes the invalid state
+ * unrepresentable: the karma bar carries no copy, and the vouch-needed framing only
+ * exists where there is no honest bar to draw.
+ *
+ * - **Unvouched** (`vouchExists === false`): no karma bar — the unassisted 100-bar
+ *   would imply karma alone promotes, which it does not (#1323). Show the
+ *   vouch-needed framing.
+ * - **Vouched** (`vouchExists === true`): the real reduced bar (`standing.bar` is
+ *   `VOUCH_PROMOTION_KARMA_BAR` = 15), the already-honest path — unchanged.
+ */
+export type CaylakPromotionPath =
+	| {readonly kind: "karma-bar"}
+	| {readonly kind: "vouch-needed"; readonly message: string; readonly hint: string};
+
+export function caylakPromotionPath(vouchExists: boolean): CaylakPromotionPath {
+	return vouchExists
+		? {kind: "karma-bar"}
+		: {kind: "vouch-needed", message: VOUCH_NEEDED_COPY.message, hint: VOUCH_NEEDED_COPY.hint};
 }
 
 /**
@@ -149,6 +193,8 @@ export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 
 	if (!show || !standing) return null;
 
+	const path = caylakPromotionPath(standing.vouchExists);
+
 	return (
 		<section
 			className="kp-caylak-status"
@@ -158,14 +204,21 @@ export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
 			<h2 id={headingId} className="kp-caylak-status__heading">
 				yazarlığa giden yol
 			</h2>
-			<div className="kp-caylak-status__karma">
-				<Karma
-					value={standing.karma}
-					target={standing.bar}
-					label="karma"
-					testId="caylak-status-karma"
-				/>
-			</div>
+			{path.kind === "karma-bar" ? (
+				<div className="kp-caylak-status__karma">
+					<Karma
+						value={standing.karma}
+						target={standing.bar}
+						label="karma"
+						testId="caylak-status-karma"
+					/>
+				</div>
+			) : (
+				<div className="kp-caylak-status__vouch-needed" data-testid="caylak-status-vouch-needed">
+					<p className="kp-caylak-status__vouch-message">{path.message}</p>
+					<p className="kp-caylak-status__vouch-hint">{path.hint}</p>
+				</div>
+			)}
 			<dl className="kp-caylak-status__facts">
 				<div className="kp-caylak-status__fact">
 					<dt className="kp-caylak-status__term">destek</dt>
