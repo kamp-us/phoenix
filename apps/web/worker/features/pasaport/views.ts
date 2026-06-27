@@ -81,14 +81,39 @@ export class AccountDeletionReceiptView extends FateDataView<AccountDeletionRece
 	deleted: true,
 }) {}
 
+// The çaylak→yazar promotion acknowledgement (#1206) — NOT a re-resolved entity
+// (the promotion's effects, the flipped tier + the swept backlog, are read through
+// the existing `Profile` / content views). The mutation returns a small typed ack:
+// `promoted` = did the tier flip this call; `vouchRecorded` = was a new vouch
+// persisted this call (vouch path only — the mod path never records a vouch). The
+// `id` carries the target so two targets resolve as distinct receipts. Mirrors
+// `AccountDeletionReceipt`; see `.patterns/fate-effect-data-views.md`.
+export type PromotionReceiptViewRow = ViewRow<{
+	id: string;
+	userId: string;
+	promoted: boolean;
+	vouchRecorded: boolean;
+}>;
+
+export class PromotionReceiptView extends FateDataView<PromotionReceiptViewRow>()(
+	"PromotionReceipt",
+)({
+	id: true,
+	userId: true,
+	promoted: true,
+	vouchRecorded: true,
+}) {}
+
 // The plain kernel `dataView()` values, for cross-feature surfaces (the
 // `fate/views.ts` `Root` map + barrel re-exports).
 export const userDataView = UserView.view;
 export const contributionDataView = ContributionView.view;
 export const profileDataView = ProfileView.view;
 export const accountDeletionReceiptDataView = AccountDeletionReceiptView.view;
+export const promotionReceiptDataView = PromotionReceiptView.view;
 
 export type User = WorkerEntity<typeof UserView>;
 export type Contribution = WorkerEntity<typeof ContributionView, "createdAt">;
 export type Profile = WorkerEntity<typeof ProfileView, never, {contributions?: Contribution[]}>;
 export type AccountDeletionReceipt = WorkerEntity<typeof AccountDeletionReceiptView>;
+export type PromotionReceipt = WorkerEntity<typeof PromotionReceiptView>;

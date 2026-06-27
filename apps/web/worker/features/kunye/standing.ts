@@ -50,3 +50,16 @@ export const tierForKarma = (karma: number): Tier =>
 		: karma >= KARMA_THRESHOLDS.çaylak
 			? "çaylak"
 			: "visitor";
+
+/**
+ * The **reduced** karma bar a vouched çaylak must clear for a yazar's vouch to
+ * promote them to yazar (#1206 — the author-vouch tandem). Deliberately far below
+ * the unassisted `KARMA_THRESHOLDS.yazar` bar: a yazar putting their standing
+ * behind a çaylak buys down the karma cost, so the tandem (vouch + this reduced
+ * bar) is an easier path than grinding karma alone. The vouch is required — this
+ * bar never auto-promotes on its own (no karma-AUTO-promotion; North Star #1194).
+ *
+ * Provisional product-tunable, #1206/#1208-owned (like {@link KARMA_THRESHOLDS}) —
+ * a named constant, not a magic number inline at the check site.
+ */
+export const VOUCH_PROMOTION_KARMA_BAR = 10 as const;

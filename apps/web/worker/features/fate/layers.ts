@@ -25,6 +25,7 @@ import type {Flagship} from "../flagship/Flagship.ts";
 import {AgentAuthorityV1} from "../kunye/AgentAuthorityV1.ts";
 import {type Kunye, KunyeLive} from "../kunye/Kunye.ts";
 import {RelationStoreLive} from "../kunye/RelationStore.ts";
+import {type VouchLedger, VouchLedgerLive} from "../kunye/VouchLedger.ts";
 import {type Bookmark, BookmarkLive} from "../pano/Bookmark.ts";
 import {type Pano, PanoLive} from "../pano/Pano.ts";
 import {karmaBumpStatement} from "../pasaport/karma.ts";
@@ -56,7 +57,10 @@ export type WorkerFateServices =
 	// Künye standing (ADR 0107 §4) — the earned-authorship read side. Mounted now
 	// that the çaylak sandbox (#1205) is its first consumer (`Kunye.tierOf` decides
 	// sandbox-on-create); previously declared but dormant.
-	| Kunye;
+	| Kunye
+	// The authorship-vouch ledger (#1206) — the `user.vouch` mutation's recorded-act
+	// store, the D1 write side of the çaylak→yazar promotion's vouch path.
+	| VouchLedger;
 
 export type WorkerRuntime = ManagedRuntime.ManagedRuntime<WorkerFateServices | FateServer, never>;
 
@@ -165,6 +169,9 @@ export const makeFateLayer: Layer.Layer<
 	// through `Pasaport`, discharged by the `provideMerge(PasaportFromTag)` below
 	// (which keeps `Pasaport` an output for the routes too).
 	KunyeLive,
+	// The authorship-vouch ledger (#1206) — the `user.vouch` recorded-act store.
+	// Reads/writes the `authorship_vouch` table off the same `Drizzle` seam below.
+	VouchLedgerLive,
 	// `Flags` is the dark-ship read surface the pano draft-save gate consumes (#746).
 	// `FlagsLive` needs only `Flagship` (a new R seam, discharged at the composition
 	// root like `Database`); `getBoolean`'s `RuntimeContext`/`FlagsContext` are per-call,

@@ -13,11 +13,18 @@ import {landingStatsDataView} from "../stats/views.ts";
 
 export type {Comment, Post, Tag} from "../pano/views.ts";
 export {commentDataView, postDataView, tagDataView} from "../pano/views.ts";
-export type {AccountDeletionReceipt, Contribution, Profile, User} from "../pasaport/views.ts";
+export type {
+	AccountDeletionReceipt,
+	Contribution,
+	Profile,
+	PromotionReceipt,
+	User,
+} from "../pasaport/views.ts";
 export {
 	accountDeletionReceiptDataView,
 	contributionDataView,
 	profileDataView,
+	promotionReceiptDataView,
 	userDataView,
 } from "../pasaport/views.ts";
 export type {OpenReport, ReportReceipt, ResolveReceipt} from "../report/views.ts";

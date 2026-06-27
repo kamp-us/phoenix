@@ -15,6 +15,7 @@ import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import {sandboxBacklogWhere} from "../lifecycle/SandboxVisibility.ts";
 import type {StoredTier} from "../kunye/standing.ts";
 import {
 	UserNotFound,
@@ -191,6 +192,19 @@ export class Pasaport extends Context.Service<
 		// already-scrubbed row). The caller is always the target — there is no
 		// "delete user X".
 		readonly anonymizeAccount: (input: {userId: string}) => Effect.Effect<void>;
+
+		// Promote a çaylak to yazar (#1206) — the server-side writer of the
+		// `input:false` `user.tier` column (#1203). In ONE atomic D1 batch (ADR
+		// 0014, the `anonymizeAccount` precedent): flip the tier `çaylak → yazar`
+		// AND resolve the account's sandboxed backlog (#1205) — `sandboxed_at := null`
+		// on its still-sandboxed, not-removed content, so the now-yazar's backlog goes
+		// live. Atomic, so "tier flipped but backlog half-swept" is unrepresentable;
+		// idempotent, because both writes are conditional (tier flips only from çaylak,
+		// the sweep touches only sandboxed-not-removed rows) so re-running is a no-op.
+		// The AUTHORITY (a mod, or a valid vouch) is discharged at the resolver, never
+		// here — `promoted: true` iff the tier flip actually fired (the account was a
+		// çaylak), `false` on an already-yazar / unknown account.
+		readonly promoteToYazar: (input: {userId: string}) => Effect.Effect<{promoted: boolean}>;
 	}
 >()("@kampus/pasaport/Pasaport") {}
 
@@ -640,6 +654,21 @@ export const makePasaportLive = (auth: Auth) =>
 					// does, so the world never sees a half-anonymized account.
 					yield* batch((db) => buildAnonymizeStatements(db, userId, email, now));
 				}),
+
+				promoteToYazar: Effect.fn("Pasaport.promoteToYazar")(function* (input: {
+					userId: string;
+				}) {
+					const now = new Date();
+					// One atomic batch (ADR 0014, the `anonymizeAccount` precedent): the
+					// tier flip and the backlog sweep commit together or not at all, so a
+					// half-swept promotion (tier flipped, backlog still sandboxed — or the
+					// reverse) is unrepresentable. The first statement is the conditional
+					// tier UPDATE; its `changes` count is `1` iff the account was a çaylak.
+					const result = yield* batch((db) =>
+						buildPromotionStatements(db, input.userId, now),
+					);
+					return {promoted: result[0].meta.changes > 0};
+				}),
 			};
 		}),
 	);
@@ -700,5 +729,51 @@ function buildAnonymizeStatements(db: DrizzleDb, userId: string, email: string |
 		dropAccounts,
 		dropApikeys,
 		scrubUser,
+	] as const;
+}
+
+/**
+ * The atomic çaylak→yazar promotion (#1206). In order:
+ *  1.   Flip `user.tier` `çaylak → yazar`. The `tier = 'çaylak'` WHERE is the
+ *       idempotency guard: an already-yazar (or unknown) account matches 0 rows, so
+ *       re-running promotes nothing — and it is the read of `changes` that reports
+ *       `promoted`.
+ *  2–4. Resolve the account's sandboxed backlog (#1205): `sandboxed_at := null` on
+ *       its definitions / posts / comments that are still sandboxed and not removed.
+ *       The WHERE is exactly the #1205 {@link sandboxBacklogWhere} read model scoped
+ *       to this author, so the sweep flips precisely the rows the moderator queue
+ *       showed — leaving live rows (already null) and removed rows (`removed_at` set)
+ *       untouched, so a mixed backlog lands consistent and a re-run is a no-op.
+ *
+ * Every statement is a query-builder statement (no raw correlated subquery) so D1's
+ * `batch()` executor accepts the whole array (the `buildAnonymizeStatements` rule).
+ */
+function buildPromotionStatements(db: DrizzleDb, userId: string, now: Date) {
+	const promoteTier = db
+		.update(schema.user)
+		.set({tier: "yazar", updatedAt: now})
+		.where(and(eq(schema.user.id, userId), eq(schema.user.tier, "çaylak")));
+
+	const sweep = (
+		table:
+			| typeof schema.definitionRecord
+			| typeof schema.postRecord
+			| typeof schema.commentRecord,
+	) =>
+		db
+			.update(table)
+			.set({sandboxedAt: null, updatedAt: now})
+			.where(
+				sandboxBacklogWhere(
+					{sandboxedAt: table.sandboxedAt, removedAt: table.removedAt, authorId: table.authorId},
+					{authorId: userId},
+				),
+			);
+
+	return [
+		promoteTier,
+		sweep(schema.definitionRecord),
+		sweep(schema.postRecord),
+		sweep(schema.commentRecord),
 	] as const;
 }

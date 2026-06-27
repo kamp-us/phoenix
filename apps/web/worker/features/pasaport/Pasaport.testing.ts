@@ -30,6 +30,7 @@ const failOnContact: PasaportShape = {
 	lookupProfileById: die("lookupProfileById"),
 	listContributions: die("listContributions"),
 	anonymizeAccount: die("anonymizeAccount"),
+	promoteToYazar: die("promoteToYazar"),
 };
 
 export const makePasaportStub = (overrides: Partial<PasaportShape> = {}): Layer.Layer<Pasaport> =>
