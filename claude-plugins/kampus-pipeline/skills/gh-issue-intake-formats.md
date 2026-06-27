@@ -1064,6 +1064,30 @@ and stalled every code-lane merge — #219), this contract pins **one** rule bot
   prefix but **not** the `@ <sha>` tail is a legacy verdict → the consumer treats it as
   `unverified` (ADR 0058 rule 3). Every matcher site — `ship-it` (merge gate) and `write-code`
   (fix round-trip) — cites this rule so they can't diverge again.
+- **Forbidden emit forms** (what an emitter MUST NOT write): the matcher above is anchored, so
+  an emitter that freelances any of the shapes below produces a verdict **no consumer can read**
+  — `ship-it` resolves the PR to `unverified` and silently refuses to merge a genuine,
+  current-head PASS (the #1095 stall: a real PASS posted as `<!-- review-code: PASS sha:… -->`
+  sat unmerged). The emit contract is the mirror of the matcher — emit the canonical first line
+  and **none** of these:
+  - **HTML-comment-wrapped** — `<!-- review-code: PASS @ <sha> — merge-ready -->`. The `<!--`
+    is non-whitespace ahead of the namespace token, so it fails the `^\s*\**\s*` anchor (the
+    `\**` absorbs only Markdown emphasis, never `<!--`). The marker must be **live body text**,
+    not an HTML comment — the verdict-marker contract has no HTML-comment form (the only
+    sanctioned HTML comment in these formats is the unrelated AC-append provenance tag of §2).
+  - **`sha:` (or any non-`@`) SHA delimiter** — `review-code: PASS sha:<sha>`. The matcher
+    captures the bound SHA only from the literal `@ <sha>` tail; `sha:<sha>` matches only the
+    looser SHA-less prefix → `unverified`. The delimiter is `@`, never `sha:`/`SHA=`/`commit:`.
+  - **Heading-only / prose-only verdict** — `## review-code verdict: PASS` with no marker line.
+    A heading is not the contract: it carries no `@ <sha>` and isn't anchored at the namespace
+    token. The recognizable first line is required *in addition to* any human-facing heading.
+  - **Marker not on the literal first line** — the `^` anchor pins the marker to the **start of
+    the comment body**; a marker buried after a preamble paragraph never matches. It leads the
+    body.
+  These are emitter bugs, not matcher gaps — the fix is always to **emit the canonical shape**,
+  never to loosen the anchored matcher to chase a malformed marker (ADR 0058 forbids weakening
+  the SHA-binding). §6/§6.5 inherit this forbidden-forms list for `review-doc` / `review-skill`
+  via the same matcher contract.
 
 ### Field notes
 
