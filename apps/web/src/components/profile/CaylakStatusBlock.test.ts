@@ -5,7 +5,7 @@
  * pure values (the pure-extraction idiom of `flagGateChild` / `shouldShowOnramp`).
  */
 import {describe, expect, it} from "vitest";
-import {shouldShowCaylakStatus, STANDING_FIELDS, vouchExistsLabel} from "./CaylakStatusBlock";
+import {STANDING_FIELDS, shouldShowCaylakStatus, vouchExistsLabel} from "./CaylakStatusBlock";
 
 describe("shouldShowCaylakStatus — the three-gate AND (flag + çaylak + own profile)", () => {
 	it("shows only when the flag is on AND the viewer is a çaylak AND it is their own profile", () => {
