@@ -12,15 +12,16 @@ import * as Schema from "effect/Schema";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../../src/flags/keys.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
-import {Denied, RequiresLevel} from "../kunye/errors.ts";
+import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import {Moderate, requireModeration} from "../kunye/moderate.ts";
-import {VOUCH_PROMOTION_KARMA_BAR} from "../kunye/standing.ts";
+import {VOUCH_CONCURRENT_CAP} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {requireVouch, Vouch, voucherOf} from "../kunye/vouch.ts";
 import {UserNotFound, UsernameAlreadySet, UsernameInvalidErrors, UsernameTaken} from "./errors.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toAccountDeletionReceipt, toPromotionReceipt, toUser} from "./shapers.ts";
+import {resolveTandem} from "./tandem.ts";
 import {AccountDeletionReceiptView, PromotionReceiptView, UserView} from "./views.ts";
 
 /**
@@ -59,6 +60,12 @@ const PromoteInput = Schema.Struct({
 });
 
 const VouchInput = Schema.Struct({
+	candidateId: Schema.String,
+});
+
+// Withdraw names the same target as a vouch — the voucher is the discharged-`Vouch`
+// actor, never an arg, so a yazar can only withdraw their OWN vouch for `candidateId`.
+const WithdrawVouchInput = Schema.Struct({
 	candidateId: Schema.String,
 });
 
@@ -136,15 +143,16 @@ export const mutations = {
 		}),
 	),
 
-	// Author-vouch promotion (#1206) — the tandem. The `Vouch` capability gates it
-	// (`requireVouch`): a non-yazar → the public `RequiresLevel` (`FORBIDDEN`). A
-	// çaylak therefore can't vouch and a yazar self-vouch is inert (already yazar),
-	// so self-promotion is impossible across both paths. Same #1204 dark-ship gate.
+	// Author-vouch promotion (#1206, tandem extended in #1289) — the `Vouch` capability
+	// gates it (`requireVouch`): a non-yazar → the public `RequiresLevel` (`FORBIDDEN`).
+	// A çaylak therefore can't vouch and a yazar self-vouch is inert (already yazar), so
+	// self-promotion is impossible across both paths. The concurrent-vouch cap (D5) adds
+	// `VouchLimitReached` past the floor. Same #1204 dark-ship gate.
 	"user.vouch": Fate.mutation(
 		{
 			input: VouchInput,
 			type: PromotionReceiptView,
-			error: Schema.Union([RequiresLevel]),
+			error: Schema.Union([RequiresLevel, VouchLimitReached]),
 		},
 		Effect.fn("user.vouch")(function* ({input}) {
 			if (!(yield* authorshipLoopOn)) {
@@ -155,6 +163,29 @@ export const mutations = {
 				});
 			}
 			return yield* requireVouch(vouchGated(input));
+		}),
+	),
+
+	// Withdraw a vouch (#1289) — the `Vouch`-gated inverse of `user.vouch`: a yazar
+	// retracts their own active vouch for `candidateId`, deleting the row and returning
+	// the cap slot. Same yazar floor (`requireVouch`) and #1204 dark-ship gate; the
+	// receipt is a plain ack (`promoted:false`, `vouchRecorded:false`) — withdrawing
+	// never promotes.
+	"user.withdrawVouch": Fate.mutation(
+		{
+			input: WithdrawVouchInput,
+			type: PromotionReceiptView,
+			error: Schema.Union([RequiresLevel]),
+		},
+		Effect.fn("user.withdrawVouch")(function* ({input}) {
+			if (!(yield* authorshipLoopOn)) {
+				return toPromotionReceipt({
+					userId: input.candidateId,
+					promoted: false,
+					vouchRecorded: false,
+				});
+			}
+			return yield* requireVouch(withdrawGated(input));
 		}),
 	),
 };
@@ -172,31 +203,50 @@ const promoteGated = Effect.fn("user.promoteGated")(function* (input: typeof Pro
 });
 
 // The post-gate vouch body — runnable only with a `Vouch` `Grant` in R
-// (`requireVouch` provides it). Records the vouch (the vouching actor preserved via
-// `voucherOf`), then applies the tandem: promote ONLY when the candidate clears the
-// reduced karma bar (`VOUCH_PROMOTION_KARMA_BAR`, read from `user_profile.total_karma`
-// via `Kunye.karmaOf`). Below the bar the vouch is still recorded but no tier flips —
-// and there is no auto-trigger on a later karma change (the re-evaluation only
-// happens on another vouch act), so no karma-AUTO-promotion (North Star #1194).
+// (`requireVouch` provides it). Enforces the concurrent-vouch cap (D5), records the
+// vouch (the vouching actor preserved via `voucherOf`), then runs the order-independent
+// `resolveTandem` — the SAME promotion path the karma side (#1288) fires, so a vouch
+// placed while karma is already over the bar promotes immediately and a below-bar vouch
+// is recorded but flips nothing (it waits for the karma-side trigger). The cap is
+// checked only for a NEW vouch: a re-vouch of an already-vouched candidate is the
+// idempotent no-op (`has` true) and never consumes a fresh slot.
 const vouchGated = Effect.fn("user.vouchGated")(function* (input: typeof VouchInput.Type) {
 	const grant = yield* Vouch;
 	const voucherId = yield* voucherOf(grant);
 
 	const ledger = yield* VouchLedger;
+	const alreadyVouched = yield* ledger.has({voucherId, candidateId: input.candidateId});
+	if (!alreadyVouched && (yield* ledger.activeCountFor(voucherId)) >= VOUCH_CONCURRENT_CAP) {
+		return yield* Effect.fail(
+			new VouchLimitReached({
+				message: `En fazla ${VOUCH_CONCURRENT_CAP} kişiye aynı anda kefil olabilirsin.`,
+				cap: VOUCH_CONCURRENT_CAP,
+			}),
+		);
+	}
+
 	const {recorded} = yield* ledger.record({
 		voucherId,
 		candidateId: input.candidateId,
 		now: new Date(),
 	});
 
-	const kunye = yield* Kunye;
-	const karma = yield* kunye.karmaOf(input.candidateId);
-
-	let promoted = false;
-	if (karma >= VOUCH_PROMOTION_KARMA_BAR) {
-		const pasaport = yield* Pasaport;
-		promoted = (yield* pasaport.promoteToYazar({userId: input.candidateId})).promoted;
-	}
-
+	const {promoted} = yield* resolveTandem(input.candidateId);
 	return toPromotionReceipt({userId: input.candidateId, promoted, vouchRecorded: recorded});
+});
+
+// The post-gate withdraw body — runnable only with a `Vouch` `Grant` in R. Deletes the
+// voucher's own vouch for `candidateId` (returning the cap slot); idempotent, and never
+// promotes. Withdrawing the only active vouch before the bar is crossed is what
+// prevents a later karma-side promotion — `resolveTandem` then reads no active vouch.
+const withdrawGated = Effect.fn("user.withdrawGated")(function* (
+	input: typeof WithdrawVouchInput.Type,
+) {
+	const grant = yield* Vouch;
+	const voucherId = yield* voucherOf(grant);
+
+	const ledger = yield* VouchLedger;
+	yield* ledger.withdraw({voucherId, candidateId: input.candidateId});
+
+	return toPromotionReceipt({userId: input.candidateId, promoted: false, vouchRecorded: false});
 });

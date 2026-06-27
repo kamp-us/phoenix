@@ -24,6 +24,10 @@ export const FATE_WIRE_CODES = [
 	// (#1206): a non-yazar vouch attempt. Distinct from `UNAUTHORIZED` (the invisible
 	// ReBAC/moderation denial) — FORBIDDEN is the visible-progression public ladder.
 	"FORBIDDEN",
+	// The concurrent-vouch cap (D5) is reached — a yazar already holds the maximum
+	// active vouches (`kunye/VouchLimitReached`, #1289). Past the `FORBIDDEN` yazar
+	// floor: the actor IS a yazar, the act is just rationed.
+	"VOUCH_LIMIT_REACHED",
 	"DEFINITION_NOT_FOUND",
 	"POST_NOT_FOUND",
 	"COMMENT_NOT_FOUND",

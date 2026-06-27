@@ -59,7 +59,22 @@ export const tierForKarma = (karma: number): Tier =>
  * bar) is an easier path than grinding karma alone. The vouch is required — this
  * bar never auto-promotes on its own (no karma-AUTO-promotion; North Star #1194).
  *
- * Provisional product-tunable, #1206/#1208-owned (like {@link KARMA_THRESHOLDS}) —
- * a named constant, not a magic number inline at the check site.
+ * Provisional product-tunable (D4, epic #1202) — #1289 pins it at the confirmed
+ * `≈15 net` (was `10` in #1206). A named constant, not a magic number inline at the
+ * check site; the order-independent tandem resolver (#1289) reads it from here.
  */
-export const VOUCH_PROMOTION_KARMA_BAR = 10 as const;
+export const VOUCH_PROMOTION_KARMA_BAR = 15 as const;
+
+/**
+ * The **concurrent-vouch cap** (D5, epic #1202 / #1289): the maximum number of
+ * *active* vouches a single yazar may hold at once. A vouch is "spent" while its
+ * çaylak is still pending (the row exists and the candidate is still çaylak) and
+ * "returns" a slot on promotion (the candidate becomes yazar) or on withdrawal (the
+ * row is deleted). A yazar already holding this many active vouches is denied a
+ * further one until a slot frees — so a yazar's stake is rationed and a single
+ * actor can't blanket-vouch the whole roster.
+ *
+ * Provisional product-tunable, pinned in code (not a magic number) like
+ * {@link VOUCH_PROMOTION_KARMA_BAR}.
+ */
+export const VOUCH_CONCURRENT_CAP = 3 as const;
