@@ -85,7 +85,9 @@ a.kp-tag:hover {
 	position: absolute;
 	inset: 0;
 	background: linear-gradient(90deg, transparent, var(--accent-faint), transparent);
-	animation: kp-skeleton-shimmer 1.4s linear infinite;
+	/* A slow continuous sweep — five --motion-slow beats. The global
+	   prefers-reduced-motion rule (global.css) drops the iteration to 1. */
+	animation: kp-skeleton-shimmer calc(var(--motion-slow) * 5) linear infinite;
 }
 @keyframes kp-skeleton-shimmer {
 	from {

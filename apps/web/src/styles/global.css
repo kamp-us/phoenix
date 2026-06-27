@@ -69,3 +69,21 @@ select {
 	--focus-ring: 2px solid var(--accent-9);
 	--focus-ring-offset: 2px;
 }
+
+/* Reduced motion — global, unconditional a11y baseline (WCAG 2.3.3).
+   When the user asks the OS for less motion we collapse every non-essential
+   animation/transition to a near-instant state change: the infinite skeleton
+   shimmer stops looping, pops/fades land immediately, smooth scroll is off.
+   Near-zero (not 0) keeps animationend/transitionend listeners firing. */
+@media (prefers-reduced-motion: reduce) {
+	/* biome-ignore-start lint/complexity/noImportantStyles: !important is load-bearing here — the universal reset must override component-level `animation`/`transition` shorthands, which outrank `*` in specificity. */
+	*,
+	*::before,
+	*::after {
+		animation-duration: 0.01ms !important;
+		animation-iteration-count: 1 !important;
+		transition-duration: 0.01ms !important;
+		scroll-behavior: auto !important;
+	}
+	/* biome-ignore-end lint/complexity/noImportantStyles: see start */
+}

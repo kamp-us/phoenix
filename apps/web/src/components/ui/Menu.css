@@ -9,7 +9,7 @@
 	box-shadow: var(--shadow-md);
 	padding: var(--s-1) 0;
 	z-index: 70;
-	animation: kp-menu-pop 120ms ease-out;
+	animation: kp-menu-pop var(--motion-fast) var(--ease-standard);
 }
 
 .kp-menu__item {
