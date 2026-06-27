@@ -7,7 +7,7 @@
 import {list} from "@nkzw/fate/server";
 import {divanBacklogItemDataView, divanCaylakDataView} from "../divan/views.ts";
 import {postDataView} from "../pano/views.ts";
-import {profileDataView, userDataView} from "../pasaport/views.ts";
+import {authorshipStandingDataView, profileDataView, userDataView} from "../pasaport/views.ts";
 import {openReportDataView} from "../report/views.ts";
 import {termDataView} from "../sozluk/views.ts";
 import {landingStatsDataView} from "../stats/views.ts";
@@ -22,6 +22,7 @@ export type {Comment, Post, Tag} from "../pano/views.ts";
 export {commentDataView, postDataView, tagDataView} from "../pano/views.ts";
 export type {
 	AccountDeletionReceipt,
+	AuthorshipStanding,
 	Contribution,
 	Profile,
 	PromotionReceipt,
@@ -29,6 +30,7 @@ export type {
 } from "../pasaport/views.ts";
 export {
 	accountDeletionReceiptDataView,
+	authorshipStandingDataView,
 	contributionDataView,
 	profileDataView,
 	promotionReceiptDataView,
@@ -82,6 +84,10 @@ export const Root: Record<string, unknown> = {
 	searchTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
 	searchPosts: list(postDataView, {orderBy: [{id: "asc"}]}),
 	profile: profileDataView,
+	// The çaylak-self "yazarlığa giden yol" aggregate (#1316, epic #1202) — a query
+	// root keyed on `CurrentUser` (self-only), aggregate-only (one-way-glass), behind
+	// `PHOENIX_AUTHORSHIP_LOOP`. Resolved inline by the `myAuthorshipStanding` resolver.
+	myAuthorshipStanding: authorshipStandingDataView,
 	landingStats: landingStatsDataView,
 	// The moderation queue (ADR 0098) — a `Moderator.required`-gated list root. The
 	// orderBy is nominal: the `report.listOpen` resolver owns the oldest-first order.

@@ -10,6 +10,7 @@ import {Pasaport} from "./Pasaport.ts";
 import {toProfile} from "./shapers.ts";
 import {
 	AccountDeletionReceiptView,
+	AuthorshipStandingView,
 	ContributionView,
 	ProfileView,
 	PromotionReceiptView,
@@ -59,3 +60,10 @@ export const accountDeletionReceiptSource = Fate.syntheticSource(AccountDeletion
 // ZERO capabilities so source-completeness accepts the view-reachable result type;
 // mirrors `accountDeletionReceiptSource`.
 export const promotionReceiptSource = Fate.syntheticSource(PromotionReceiptView);
+
+// `AuthorshipStanding` has no fetch path — it is the çaylak-self standing aggregate
+// (#1316), delivered inline by the `myAuthorshipStanding` resolver and never read by
+// id (it is per-viewer, keyed on `CurrentUser`, not a global entity). Registered with
+// ZERO capabilities so source-completeness accepts the view-reachable result type;
+// mirrors `promotionReceiptSource`.
+export const authorshipStandingSource = Fate.syntheticSource(AuthorshipStandingView);

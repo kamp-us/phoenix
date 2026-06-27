@@ -11,7 +11,13 @@ import {
 	type ContributionRow,
 	type ProfileRow,
 } from "./Pasaport.ts";
-import type {AccountDeletionReceipt, Profile, PromotionReceipt, User} from "./views.ts";
+import type {
+	AccountDeletionReceipt,
+	AuthorshipStanding,
+	Profile,
+	PromotionReceipt,
+	User,
+} from "./views.ts";
 
 export interface UserFields {
 	id: string;
@@ -73,6 +79,25 @@ export const toPromotionReceipt = (r: {
 	vouchRecorded: r.vouchRecorded,
 });
 
+// The single spelling of the çaylak-self authorship-standing aggregate (#1316).
+// `id` === the user id (the client normalization key). Aggregate scalars only — the
+// one-way-glass invariant is structural in `AuthorshipStanding` (no identity field
+// exists to fill here).
+export const toAuthorshipStanding = (r: {
+	userId: string;
+	karma: number;
+	bar: number;
+	vouchExists: boolean;
+	inReviewCount: number;
+}): AuthorshipStanding => ({
+	__typename: "AuthorshipStanding",
+	id: r.userId,
+	karma: r.karma,
+	bar: r.bar,
+	vouchExists: r.vouchExists,
+	inReviewCount: r.inReviewCount,
+});
+
 // Flatten a discriminated `ContributionNode` onto the flat `ContributionRow`
 // (ADR 0018: fate has no union type). Every variant column starts `null`, then
 // the node's own fields overlay — so the null-padding is derived from the
@@ -82,13 +107,14 @@ export function toContributionRow(node: ContributionNode): ContributionRow {
 	const variantColumns = Object.fromEntries(
 		CONTRIBUTION_VARIANT_FIELD_NAMES.map((name) => [name, null]),
 	);
-	const {kind, id, score, createdAt, ...variantFields} = node;
+	const {kind, id, score, createdAt, sandboxed, ...variantFields} = node;
 	return {
 		...variantColumns,
 		kind,
 		id,
 		score,
 		createdAt,
+		sandboxed,
 		...variantFields,
 	} as ContributionRow;
 }

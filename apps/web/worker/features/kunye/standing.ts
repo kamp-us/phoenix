@@ -66,6 +66,17 @@ export const tierForKarma = (karma: number): Tier =>
 export const VOUCH_PROMOTION_KARMA_BAR = 15 as const;
 
 /**
+ * The karma bar a çaylak must clear to reach yazar, given whether they hold an
+ * active vouch. A vouched çaylak clears the reduced tandem bar
+ * ({@link VOUCH_PROMOTION_KARMA_BAR}); an unvouched one faces the full unassisted
+ * `KARMA_THRESHOLDS.yazar`. Pure so the "which bar applies" rule is the single
+ * testable source the çaylak-self standing read (#1316) reads — the frontend never
+ * hardcodes a bar, because *which* bar is live depends on vouch-exists.
+ */
+export const promotionBarFor = (vouchExists: boolean): number =>
+	vouchExists ? VOUCH_PROMOTION_KARMA_BAR : KARMA_THRESHOLDS.yazar;
+
+/**
  * The **concurrent-vouch cap** (D5, epic #1202 / #1289): the maximum number of
  * *active* vouches a single yazar may hold at once. A vouch is "spent" while its
  * çaylak is still pending (the row exists and the candidate is still çaylak) and

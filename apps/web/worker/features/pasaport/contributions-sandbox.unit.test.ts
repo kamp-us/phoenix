@@ -184,7 +184,11 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 			for (const {sql} of queries) {
 				const s = sql.toLowerCase();
 				assert.match(s, /"removed_at" is null/, "removal guard still applies");
-				assert.notInclude(s, "sandboxed_at", "a moderator gets no sandbox filter");
+				// The column IS projected (for the per-item `sandboxed` flag, #1316), but the
+				// moderator's WHERE carries NO sandbox FILTER — no `sandboxed_at IS NULL` and
+				// no viewer-own-content OR arm — so they see every row.
+				assert.notMatch(s, /"sandboxed_at" is null/, "a moderator gets no sandbox filter");
+				assert.notInclude(s, " or ", "no viewer-own-content OR arm for a moderator");
 			}
 		}),
 	);
@@ -199,6 +203,51 @@ describe("Pasaport.listContributions — every feed read filters the sandbox (th
 			for (const {sql} of queries) {
 				assert.match(sql.toLowerCase(), /"sandboxed_at" is null/, "missing viewer ⇒ public-only");
 			}
+		}),
+	);
+});
+
+// The per-item review-state flag (#1316) the #1291 status block badges "incelemede"
+// off. Derived in the feed map as `sandboxed: sandboxed_at != null` — a bare
+// boolean carrying no reviewer identity. Scripts feed rows (a sandboxed + a live
+// one) and asserts each output node's flag, as the AUTHOR viewing their own profile
+// (the only viewer who sees their own sandboxed content, #1309).
+describe("Pasaport.listContributions — the per-item sandboxed flag (#1316)", () => {
+	const sandboxedDef = {
+		id: "d-sandboxed",
+		createdAt: new Date("2026-01-02T00:00:00Z"),
+		score: 0,
+		sandboxedAt: new Date("2026-01-03T00:00:00Z"),
+		bodyExcerpt: "in review",
+		termSlug: "s",
+		termTitle: "T",
+	};
+	const liveDef = {
+		id: "d-live",
+		createdAt: new Date("2026-01-01T00:00:00Z"),
+		score: 0,
+		sandboxedAt: null,
+		bodyExcerpt: "live",
+		termSlug: "s",
+		termTitle: "T",
+	};
+
+	it.effect("flags a sandboxed item `sandboxed: true` and a live item `sandboxed: false`", () =>
+		Effect.gen(function* () {
+			// Order: def/post/comment feed SELECTs, then the three COUNT(*) totals.
+			const {access} = scriptedAccess([[sandboxedDef, liveDef], [], [], 2, 0, 0]);
+			const connection = yield* Effect.gen(function* () {
+				const pasaport = yield* Pasaport;
+				return yield* pasaport.listContributions({
+					authorId: AUTHOR,
+					first: 10,
+					sandboxViewer: viewers.author,
+				});
+			}).pipe(Effect.provide(pasaportOver(access)));
+
+			const byId = new Map(connection.rows.map((r) => [r.node.id, r.node]));
+			assert.strictEqual(byId.get("d-sandboxed")?.sandboxed, true, "sandboxed item flagged true");
+			assert.strictEqual(byId.get("d-live")?.sandboxed, false, "live item flagged false");
 		}),
 	);
 });

@@ -73,10 +73,17 @@ export interface ProfileRow {
 }
 
 // The shared discriminant + identity fields every contribution variant carries.
+// `sandboxed` is the per-item review-state flag (#1316) — `sandboxed_at IS NOT NULL`,
+// true only for a çaylak's still-in-review content (and only ever surfaced to the
+// author themselves + a moderator, since the feed filters sandboxed rows for anyone
+// else). It carries NO reviewer identity — just the item's own lifecycle state — so
+// #1291 can key an "incelemede" badge. Always `false` while the authorship loop is
+// dark (nothing is sandboxed on create when the flag is off).
 interface ContributionBase {
 	id: string;
 	createdAt: Date;
 	score: number;
+	sandboxed: boolean;
 }
 
 /**
@@ -207,6 +214,12 @@ export class Pasaport extends Context.Service<
 			sandboxViewer?: SandboxViewer | undefined;
 		}) => Effect.Effect<ContributionConnection>;
 
+		// The count of an author's OWN content still in review — sandboxed (#1205)
+		// and not removed — the `inReviewCount` aggregate the çaylak-self standing
+		// read (#1316) exposes. A bare count over `sandboxBacklogWhere` scoped to the
+		// author; it carries no per-item or per-reviewer detail (one-way-glass).
+		readonly countInReview: (authorId: string) => Effect.Effect<number>;
+
 		// Account deletion = anonymize-to-`@[silinen]` (ADR 0097). For the calling
 		// user, in ONE atomic D1 batch: re-attribute every authored content row to
 		// the `silinen` sentinel (content stays Live, karma KEPT), tear down the
@@ -331,6 +344,34 @@ export const makePasaportLive = (auth: Auth) =>
 											viewer,
 										)
 									: undefined,
+							),
+						)
+						.then((r) => Number(r[0]?.n ?? 0)),
+				);
+
+			// `COUNT(*)` of one author's still-in-review rows in a contribution table:
+			// the `sandboxBacklogWhere` read model (#1205) scoped to the author —
+			// sandboxed AND not removed. The çaylak-self `inReviewCount` (#1316) sums
+			// this across the three tables. Aggregate-only, no per-item leak.
+			const countBacklogByAuthor = (
+				table:
+					| typeof schema.definitionRecord
+					| typeof schema.postRecord
+					| typeof schema.commentRecord,
+				authorId: string,
+			): Effect.Effect<number> =>
+				run((db) =>
+					db
+						.select({n: sql<number>`COUNT(*)`})
+						.from(table)
+						.where(
+							sandboxBacklogWhere(
+								{
+									sandboxedAt: table.sandboxedAt,
+									removedAt: table.removedAt,
+									authorId: table.authorId,
+								},
+								{authorId},
 							),
 						)
 						.then((r) => Number(r[0]?.n ?? 0)),
@@ -561,6 +602,13 @@ export const makePasaportLive = (auth: Auth) =>
 					);
 				}),
 
+				countInReview: Effect.fn("Pasaport.countInReview")(function* (authorId: string) {
+					const defs = yield* countBacklogByAuthor(schema.definitionRecord, authorId);
+					const posts = yield* countBacklogByAuthor(schema.postRecord, authorId);
+					const comments = yield* countBacklogByAuthor(schema.commentRecord, authorId);
+					return defs + posts + comments;
+				}),
+
 				listContributions: Effect.fn("Pasaport.listContributions")(function* (input: {
 					authorId: string;
 					after?: string | null | undefined;
@@ -613,6 +661,7 @@ export const makePasaportLive = (auth: Auth) =>
 								id: schema.definitionRecord.id,
 								createdAt: schema.definitionRecord.createdAt,
 								score: schema.definitionRecord.score,
+								sandboxedAt: schema.definitionRecord.sandboxedAt,
 								bodyExcerpt: schema.definitionRecord.bodyExcerpt,
 								termSlug: schema.definitionRecord.termSlug,
 								termTitle: schema.definitionRecord.termTitle,
@@ -630,6 +679,7 @@ export const makePasaportLive = (auth: Auth) =>
 								slug: schema.postRecord.slug,
 								createdAt: schema.postRecord.createdAt,
 								score: schema.postRecord.score,
+								sandboxedAt: schema.postRecord.sandboxedAt,
 								title: schema.postRecord.title,
 								bodyExcerpt: schema.postRecord.bodyExcerpt,
 							})
@@ -645,6 +695,7 @@ export const makePasaportLive = (auth: Auth) =>
 								id: schema.commentRecord.id,
 								createdAt: schema.commentRecord.createdAt,
 								score: schema.commentRecord.score,
+								sandboxedAt: schema.commentRecord.sandboxedAt,
 								bodyExcerpt: schema.commentRecord.bodyExcerpt,
 								postId: schema.commentRecord.postId,
 								postTitle: schema.commentRecord.postTitle,
@@ -675,6 +726,7 @@ export const makePasaportLive = (auth: Auth) =>
 							id: d.id,
 							createdAt: d.createdAt ?? new Date(0),
 							score: d.score,
+							sandboxed: d.sandboxedAt != null,
 							bodyExcerpt: d.bodyExcerpt,
 							termSlug: d.termSlug,
 							termTitle: d.termTitle,
@@ -684,6 +736,7 @@ export const makePasaportLive = (auth: Auth) =>
 							id: p.id,
 							createdAt: p.createdAt ?? new Date(0),
 							score: p.score,
+							sandboxed: p.sandboxedAt != null,
 							title: p.title,
 							slug: p.slug,
 							bodyExcerpt: p.bodyExcerpt,
@@ -693,6 +746,7 @@ export const makePasaportLive = (auth: Auth) =>
 							id: c.id,
 							createdAt: c.createdAt ?? new Date(0),
 							score: c.score,
+							sandboxed: c.sandboxedAt != null,
 							bodyExcerpt: c.bodyExcerpt,
 							postId: c.postId,
 							postTitle: c.postTitle,
