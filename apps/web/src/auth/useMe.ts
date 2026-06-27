@@ -17,6 +17,7 @@
 import {useCallback, useEffect, useState} from "react";
 import {useFateClient, view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
+import type {Tier} from "../../worker/features/kunye/standing";
 import {useSession} from "./client";
 
 export interface MeUser {
@@ -25,6 +26,11 @@ export interface MeUser {
 	name: string | null;
 	image: string | null;
 	username: string | null;
+	// The trusted account-level authorship rank (#1297): always present, read off
+	// the stored column server-side via `Kunye.tierOf` — never the session field.
+	// The frontend gates rendering of authorship affordances on the
+	// `phoenix-authorship-loop` flag, not on this value.
+	tier: Tier;
 }
 
 export type MeStatus = "idle" | "loading" | "ok" | "error";
@@ -35,6 +41,7 @@ const MeView = view<User>()({
 	name: true,
 	image: true,
 	username: true,
+	tier: true,
 });
 
 export function useMe(): {
@@ -70,6 +77,7 @@ export function useMe(): {
 							name: user.name,
 							image: user.image,
 							username: user.username,
+							tier: user.tier,
 						}
 					: null,
 			);

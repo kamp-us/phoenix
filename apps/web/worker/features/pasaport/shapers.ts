@@ -4,6 +4,7 @@
  * (`.patterns/fate-effect-operations.md`).
  */
 
+import type {Tier} from "../kunye/standing.ts";
 import {
 	CONTRIBUTION_VARIANT_FIELD_NAMES,
 	type ContributionNode,
@@ -18,6 +19,10 @@ export interface UserFields {
 	name: string | null;
 	image: string | null;
 	username: string | null;
+	// The read-time authorship rank, resolved through `Kunye.tierOf` (#1297) — never
+	// the untrusted session field. `Tier` (not `StoredTier`) so a row-missing principal
+	// shapes as `visitor`.
+	tier: Tier;
 }
 
 export const toUser = (r: UserFields): User => ({
@@ -27,6 +32,7 @@ export const toUser = (r: UserFields): User => ({
 	name: r.name,
 	image: r.image,
 	username: r.username,
+	tier: r.tier,
 });
 
 // Stamps the client normalization key `id` === `userId` (a `Profile` is
