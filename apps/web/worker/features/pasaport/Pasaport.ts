@@ -15,6 +15,7 @@ import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, keysetAfter} from "../../db/keyset.ts";
 import {keysetKeys, orderByColumns} from "../../db/ordering.ts";
+import type {StoredTier} from "../kunye/standing.ts";
 import {
 	UserNotFound,
 	UsernameAlreadySet,
@@ -41,6 +42,10 @@ export interface UserRow {
 	// Server-managed moderation capability (ADR 0098), read here so `Moderator.required`
 	// reads authority from D1 at the point of use rather than from session state.
 	role: "member" | "moderator";
+	// Server-managed authorship tier (ADR 0107 §4), read here so `Kunye.tierOf`
+	// resolves the GLOBAL account-level standing off D1 at the point of use rather
+	// than from session state. `çaylak | yazar` only — an account is always ≥ çaylak.
+	tier: StoredTier;
 }
 
 export interface SetUsernameResult {
@@ -362,6 +367,7 @@ export const makePasaportLive = (auth: Auth) =>
 						image: row.image ?? null,
 						username: row.username ?? null,
 						role: row.role,
+						tier: row.tier,
 					} satisfies UserRow;
 				}),
 
@@ -381,6 +387,7 @@ export const makePasaportLive = (auth: Auth) =>
 								image: row.image ?? null,
 								username: row.username ?? null,
 								role: row.role,
+								tier: row.tier,
 							}) satisfies UserRow,
 					);
 				}),

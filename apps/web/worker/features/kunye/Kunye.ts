@@ -2,10 +2,14 @@
  * `Kunye` — the GLOBAL account-level earned-standing service (ADR 0107 §4): an
  * account's authorship `tier` on the `visitor < çaylak < yazar` ladder, its
  * `karma`, and the agent-attenuation `root` seam. Standing is read **fresh at
- * the point of use** from the pasaport karma surface (`user_profile.total_karma`,
- * ADR 0050), never trusted from session state — the "richer reads behind a
- * domain service" rule, so a `CurrentUserInfo` carrying only id/email/name/image
- * cannot smuggle a stale rank.
+ * the point of use** from pasaport, never trusted from session state — the
+ * "richer reads behind a domain service" rule, so a `CurrentUserInfo` carrying
+ * only id/email/name/image cannot smuggle a stale rank.
+ *
+ * `tierOf` reads the **server-managed `user.tier` column** (#1203) — an
+ * authenticated account is `≥ çaylak`, a no-account principal is `visitor`. (The
+ * karma→tier derivation it once used is retired from this read; that math now
+ * belongs to the promotion (#1206) / karma (#1208) children — see `standing.ts`.)
  *
  * It is the read side the `Capability.Level` instances (#1235's `Authorship`)
  * discharge against: their `read: (principal) => Effect<rank>` thunk is
@@ -13,9 +17,16 @@
  */
 import {Context, Effect, Layer} from "effect";
 import {Pasaport} from "../pasaport/Pasaport.ts";
-import {type Tier, tierForKarma} from "./standing.ts";
+import type {Tier} from "./standing.ts";
 
-export {authorshipLadder, KARMA_THRESHOLDS, type Tier, tierForKarma} from "./standing.ts";
+export {
+	authorshipLadder,
+	KARMA_THRESHOLDS,
+	STORED_TIERS,
+	type StoredTier,
+	type Tier,
+	tierForKarma,
+} from "./standing.ts";
 
 export class Kunye extends Context.Service<
 	Kunye,
@@ -44,7 +55,9 @@ export const KunyeLive = Layer.effect(Kunye)(
 
 		return {
 			karmaOf,
-			tierOf: (id) => Effect.map(karmaOf(id), tierForKarma),
+			// The stored `user.tier` column read fresh through pasaport (#1203). No
+			// account row ⇒ `visitor`; an account is its stored `çaylak | yazar`.
+			tierOf: (id) => Effect.map(pasaport.getUserById(id), (user): Tier => user?.tier ?? "visitor"),
 			rootOf: (id) => Effect.succeed(id),
 		};
 	}),
