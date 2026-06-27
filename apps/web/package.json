@@ -54,6 +54,7 @@
 		"@effect/tsgo": "catalog:",
 		"@effect/vitest": "catalog:",
 		"@kampus/d1-rest": "workspace:*",
+		"@kampus/founder-seed": "workspace:*",
 		"@playwright/test": "catalog:",
 		"@types/node": "catalog:",
 		"@types/react": "catalog:",

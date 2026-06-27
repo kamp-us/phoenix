@@ -227,6 +227,9 @@ importers:
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../../packages/d1-rest
+      '@kampus/founder-seed':
+        specifier: workspace:*
+        version: link:../../packages/founder-seed
       '@playwright/test':
         specifier: 'catalog:'
         version: 1.59.1
@@ -440,6 +443,9 @@ importers:
       '@effect/platform-node':
         specifier: 'catalog:'
         version: 4.0.0-beta.78(effect@4.0.0-beta.78)(ioredis@5.10.1)
+      '@kampus/authz':
+        specifier: workspace:*
+        version: link:../authz
       '@kampus/d1-rest':
         specifier: workspace:*
         version: link:../d1-rest

@@ -4,7 +4,7 @@
  * (`makeD1Rest` + `makeSeedDb`, the bin's path) against a per-file isolated, migrated D1
  * (`_d1.ts`, incl. `0010_relation_tuple`), and asserts the seed's real-DB facts:
  *
- *   - the seed mints the `role='moderator'` cohort as `(id, "moderates", "platform")`
+ *   - the seed mints the `role='moderator'` cohort as `(id, "moderates", key(platform))`
  *     tuples and reports `inserted === founders`; `listFounderTuples` reads exactly
  *     those rows back;
  *   - a re-run is idempotent — `inserted === 0`, no duplicate tuple (the `onConflictDoNothing`
@@ -61,7 +61,7 @@ describe("seedFounders on real D1 — mints the moderator cohort as platform-mod
 		expect(subjects).toEqual(["u-alice", "u-bob"]);
 		for (const t of tuples) {
 			expect(t.relation).toBe("moderates");
-			expect(t.object).toBe("platform");
+			expect(t.object).toBe("platform:platform");
 		}
 	});
 

@@ -1,17 +1,21 @@
 # @kampus/founder-seed
 
 Offline direct-D1 CLI that mints the **founder cohort** as `(id, "moderates",
-"platform")` relation tuples and lists the current founder tuples (issue #1231,
-ADR [0107](../../.decisions/0107-capability-authz-framework.md)).
+"platform:platform")` relation tuples and lists the current founder tuples (issue
+#1231, ADR [0107](../../.decisions/0107-capability-authz-framework.md)).
 
 The `Relation` capability axis is backed by the `relation_tuple` D1 table (ADR
 0107): a tuple's presence IS the grant. Founders — the existing
 `role='moderator'` cohort (ADR 0098's offline grant cohort) — are minted as
-`(id, "moderates", "platform")` tuples by a **server-side direct-D1 script, never
-a runtime worker route** — per CLAUDE.md's "Sözlük seed" section, the admin
-mutation routes were deleted as a fail-open hole, so tuple assignment is a CLI run
-against the bound database by an operator who holds the D1 write token. There is no
-in-product way to write a relation tuple; this package is that path for founders.
+`(id, "moderates", "platform:platform")` tuples by a **server-side direct-D1
+script, never a runtime worker route** — per CLAUDE.md's "Sözlük seed" section, the
+admin mutation routes were deleted as a fail-open hole, so tuple assignment is a CLI
+run against the bound database by an operator who holds the D1 write token. There is
+no in-product way to write a relation tuple; this package is that path for founders.
+
+The `object` key is `@kampus/authz`'s canonical `key(platform)` (`"platform:platform"`)
+— the SAME encoding the worker's `RelationStoreLive` reads with, so a seeded founder
+discharges `Moderate.over(platform)` end to end (the write→read seam).
 
 It's authored as Node tooling — an Effect CLI (`effect/unstable/cli`), mirroring
 `@kampus/moderator-grant` — not Python, not an ad-hoc script.
@@ -20,8 +24,8 @@ It's authored as Node tooling — an Effect CLI (`effect/unstable/cli`), mirrori
 
 | Command | Effect                                                                 |
 | ------- | ---------------------------------------------------------------------- |
-| `seed`  | mints the `role='moderator'` cohort as `(id, "moderates", "platform")` tuples |
-| `list`  | prints the current founder tuples `(subject, "moderates", "platform")` |
+| `seed`  | mints the `role='moderator'` cohort as `(id, "moderates", "platform:platform")` tuples |
+| `list`  | prints the current founder tuples `(subject, "moderates", "platform:platform")` |
 
 `seed` reports a `{founders, inserted}` count so the three outcomes read
 distinctly: an empty cohort (`founders: 0, inserted: 0`), a first real seed

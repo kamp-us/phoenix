@@ -1,21 +1,30 @@
 /**
  * The pure core of the founder-seed CLI (ADR 0107): mint the founder cohort
  * (`role='moderator'` users, ADR 0098's offline grant cohort) as
- * `(id, "moderates", "platform")` relation tuples — the day-one moderation
+ * `(id, "moderates", key(platform))` relation tuples — the day-one moderation
  * authority on the `Relation` axis. This is the offline tuple-assignment path,
  * NOT a runtime worker route (the deleted `/api/admin/*` fail-open shape,
  * CLAUDE.md "Sözlük seed"). Idempotent: `onConflictDoNothing` against the
  * composite PK, so a re-run mints nothing new and never duplicates a grant.
+ *
+ * The `object` key is `@kampus/authz`'s canonical `key(platform)` — the SAME
+ * encoding the worker's `RelationStoreLive` reads with, so a discharge of
+ * `Moderate.over(platform)` finds these seeded tuples (the write→read seam, ADR
+ * 0107). Never a bare `"platform"` literal: that would not match the `type:id`
+ * read key, leaving the seeded founder denied.
  */
+import {key, platform} from "@kampus/authz";
 import {and, eq, sql} from "drizzle-orm";
 import {drizzle} from "drizzle-orm/d1";
 import {seedSchema as schema} from "./schema.ts";
 
 // The founder grant is exactly this relation on this object — hardcoded so an invalid
-// founder tuple (any other relation/object) is unrepresentable. General per-resource
-// assignment (admin, per-community roles) lives on the Admin child, not here.
+// founder tuple (any other relation/object) is unrepresentable. The object is the
+// canonical `key(platform)` (`"platform:platform"`), shared with the worker read so
+// the write and read keys cannot diverge. General per-resource assignment (admin,
+// per-community roles) lives on the Admin child, not here.
 export const MODERATES = "moderates";
-export const PLATFORM = "platform";
+export const PLATFORM = key(platform);
 
 export interface SeedResult {
 	/** Size of the `role='moderator'` cohort read (the founders to mint). */
@@ -35,7 +44,7 @@ export type SeedDb = ReturnType<typeof drizzle<typeof schema>>;
 export const makeSeedDb = (d1: D1Database): SeedDb => drizzle(d1, {schema});
 
 /**
- * Mint the founder cohort (`role='moderator'`) as `(id, "moderates", "platform")`
+ * Mint the founder cohort (`role='moderator'`) as `(id, "moderates", key(platform))`
  * tuples. Returns `{founders, inserted}` so the caller reports the cases
  * distinctly — a re-run reads `inserted: 0` (idempotent).
  */
@@ -54,7 +63,7 @@ export const seedFounders = async (db: SeedDb): Promise<SeedResult> => {
 	return {founders: founders.length, inserted: result.meta.changes};
 };
 
-/** List the founder tuples `(subject, "moderates", "platform")` — the audit read the CLI prints. */
+/** List the founder tuples `(subject, "moderates", key(platform))` — the audit read the CLI prints. */
 export const listFounderTuples = async (db: SeedDb): Promise<ReadonlyArray<FounderTuple>> => {
 	const rows = await db
 		.select({

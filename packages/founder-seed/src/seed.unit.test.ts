@@ -2,7 +2,7 @@
  * seed statement-building — the pure core, asserted without a DB (ADR 0082 unit
  * tier). The cohort read + the tuple insert resolve their SQL+params via drizzle's
  * `.toSQL()` with no session call, so these pin the statement shape (the cohort read
- * filters `role='moderator'`; the insert writes `(subject, "moderates", "platform")`
+ * filters `role='moderator'`; the insert writes `(subject, "moderates", key(platform))`
  * with `onConflictDoNothing`; the list filters the founder relation/object) without
  * booting a SQL engine. Whether the INSERT actually mints exactly the cohort once,
  * no-ops idempotently on a re-run, and reads back through `listFounderTuples` is
@@ -35,7 +35,7 @@ describe("the founder cohort read filters role='moderator'", () => {
 	});
 });
 
-describe("the founder insert mints (subject, 'moderates', 'platform') idempotently", () => {
+describe("the founder insert mints (subject, 'moderates', key(platform)) idempotently", () => {
 	it("inserts the tuple columns with ON CONFLICT DO NOTHING", () => {
 		const {sql: text, params} = db
 			.insert(schema.relationTuple)
@@ -48,21 +48,21 @@ describe("the founder insert mints (subject, 'moderates', 'platform') idempotent
 		assert.match(text, /insert into "relation_tuple"/i);
 		assert.match(text, /"subject".*"relation".*"object"/i);
 		assert.match(text, /on conflict do nothing/i);
-		// every founder's grant is exactly (id, "moderates", "platform")
+		// every founder's grant is exactly (id, "moderates", key(platform))
 		assert.include(params as unknown[], "u-alice");
 		assert.include(params as unknown[], "u-bob");
 		assert.include(params as unknown[], "moderates");
-		assert.include(params as unknown[], "platform");
+		assert.include(params as unknown[], "platform:platform");
 	});
 
-	it("the grant constants are exactly moderates/platform", () => {
+	it("the grant constants are exactly moderates / key(platform) — the canonical write key", () => {
 		assert.strictEqual(MODERATES, "moderates");
-		assert.strictEqual(PLATFORM, "platform");
+		assert.strictEqual(PLATFORM, "platform:platform");
 	});
 });
 
 describe("listFounderTuples reads the founder relation/object, ordered by subject", () => {
-	it("selects the tuple columns WHERE relation='moderates' AND object='platform' ORDER BY subject ASC", () => {
+	it("selects the tuple columns WHERE relation='moderates' AND object=key(platform) ORDER BY subject ASC", () => {
 		const {sql: text, params} = db
 			.select({
 				subject: schema.relationTuple.subject,
@@ -82,6 +82,6 @@ describe("listFounderTuples reads the founder relation/object, ordered by subjec
 		assert.match(text, /where .*"relation" = \?.* and .*"object" = \?/i);
 		assert.match(text, /order by "relation_tuple"\."subject" asc/i);
 		assert.include(params as unknown[], "moderates");
-		assert.include(params as unknown[], "platform");
+		assert.include(params as unknown[], "platform:platform");
 	});
 });
