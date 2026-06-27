@@ -8,7 +8,13 @@
 import {Fate} from "@kampus/fate-effect";
 import {Pasaport} from "./Pasaport.ts";
 import {toProfile} from "./shapers.ts";
-import {AccountDeletionReceiptView, ContributionView, ProfileView, UserView} from "./views.ts";
+import {
+	AccountDeletionReceiptView,
+	ContributionView,
+	ProfileView,
+	PromotionReceiptView,
+	UserView,
+} from "./views.ts";
 
 export const userSource = Fate.source(
 	UserView,
@@ -47,3 +53,9 @@ export const contributionSource = Fate.syntheticSource(ContributionView);
 // with ZERO capabilities so source-completeness accepts the view-reachable result
 // type; mirrors `reportReceiptSource`.
 export const accountDeletionReceiptSource = Fate.syntheticSource(AccountDeletionReceiptView);
+
+// `PromotionReceipt` has no fetch path — it is the `user.promote` / `user.vouch`
+// ack, returned inline by the mutation and never read by id (#1206). Registered with
+// ZERO capabilities so source-completeness accepts the view-reachable result type;
+// mirrors `accountDeletionReceiptSource`.
+export const promotionReceiptSource = Fate.syntheticSource(PromotionReceiptView);

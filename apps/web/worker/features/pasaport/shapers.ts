@@ -10,7 +10,7 @@ import {
 	type ContributionRow,
 	type ProfileRow,
 } from "./Pasaport.ts";
-import type {AccountDeletionReceipt, Profile, User} from "./views.ts";
+import type {AccountDeletionReceipt, Profile, PromotionReceipt, User} from "./views.ts";
 
 export interface UserFields {
 	id: string;
@@ -51,6 +51,20 @@ export const toAccountDeletionReceipt = (): AccountDeletionReceipt => ({
 	__typename: "AccountDeletionReceipt",
 	id: "account:deleted",
 	deleted: true,
+});
+
+// The single spelling of the çaylak→yazar promotion ack (#1206). The `id` carries
+// the target user so two targets resolve as distinct receipts.
+export const toPromotionReceipt = (r: {
+	userId: string;
+	promoted: boolean;
+	vouchRecorded: boolean;
+}): PromotionReceipt => ({
+	__typename: "PromotionReceipt",
+	id: `promotion:${r.userId}`,
+	userId: r.userId,
+	promoted: r.promoted,
+	vouchRecorded: r.vouchRecorded,
 });
 
 // Flatten a discriminated `ContributionNode` onto the flat `ContributionRow`

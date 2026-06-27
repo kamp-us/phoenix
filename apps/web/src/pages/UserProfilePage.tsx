@@ -8,9 +8,12 @@ import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import {useParams} from "react-router";
 import type {Profile} from "../../worker/features/fate/views";
 import {ContributionRow, ContributionView} from "../components/profile/ContributionRow";
+import {PromotionActions} from "../components/profile/PromotionActions";
 import {UserProfileHeader, UserProfileHeaderView} from "../components/profile/UserProfileHeader";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
+import {FlagGate} from "../flags/FlagGate";
+import {PHOENIX_AUTHORSHIP_LOOP} from "../flags/keys";
 import {NotFoundPage} from "./NotFoundPage";
 import "./UserProfilePage.css";
 
@@ -65,10 +68,20 @@ function UserProfileContent({username}: {username: string}) {
 		<div className="kp-user-profile" data-testid="user-profile-page">
 			<div className="kp-user-profile__inner">
 				<UserProfileHeader profile={profile} fallbackHandle={username} />
+				{/* The çaylak→yazar promotion surface (#1206), dark behind the #1204
+				    authorship-loop flag; the server is the sole authority. */}
+				<FlagGate flag={PHOENIX_AUTHORSHIP_LOOP}>
+					<ProfilePromotion profile={profile} />
+				</FlagGate>
 				<ContributionsList profile={profile} />
 			</div>
 		</div>
 	);
+}
+
+function ProfilePromotion({profile}: {profile: ViewRef<"Profile">}) {
+	const {userId} = useView(UserProfileHeaderView, profile);
+	return <PromotionActions userId={userId} />;
 }
 
 function ContributionsList({profile}: {profile: ViewRef<"Profile">}) {

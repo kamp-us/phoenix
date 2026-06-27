@@ -35,7 +35,7 @@ import {
 	wireCodeOfClass,
 } from "@kampus/fate-effect";
 import {describe, expect, it} from "vitest";
-import {Denied} from "../kunye/errors.ts";
+import {Denied, RequiresLevel} from "../kunye/errors.ts";
 import {
 	CommentBodyRequired,
 	CommentBodyTooLong,
@@ -108,6 +108,9 @@ const EXPECTED_CODE = new Map<new (...args: never[]) => unknown, string>([
 	// künye moderation gate + the package-side gate the SPA already decodes for writes
 	[Denied, "UNAUTHORIZED"],
 	[Unauthorized, "UNAUTHORIZED"],
+	// künye earned-ladder denial — first reachable from fateConfig via `user.vouch` (#1206).
+	// Has an extra required field (`need`), so it is pinned here but NOT in ROUND_TRIP_CLASSES.
+	[RequiresLevel, "FORBIDDEN"],
 ]);
 
 const ORACLE_ENTRIES = [...EXPECTED_CODE.entries()] as ReadonlyArray<[unknown, string]>;

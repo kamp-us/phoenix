@@ -337,3 +337,30 @@ export const relationTuple = sqliteTable(
 		index("relation_tuple_object").on(t.object, t.relation),
 	],
 );
+
+/**
+ * Authorship-vouch ledger (ADR 0107, #1206) — the recorded act of a `yazar`
+ * vouching for a `çaylak`'s promotion. A vouch is a durable record, not a
+ * relation_tuple: relation_tuple has NO runtime write path (offline-minted only),
+ * whereas a vouch IS a runtime write by a signed-in yazar, so it gets its own
+ * table with the vouching actor preserved.
+ *
+ * The composite PK `(voucher_id, candidate_id)` makes a re-vouch by the same yazar
+ * for the same çaylak an idempotent no-op (`onConflictDoNothing`) — and makes
+ * "a vouch with no voucher" or "a vouch with no candidate" unrepresentable (both
+ * NOT NULL). The `candidate_id` reverse index serves the "who vouched for this
+ * çaylak" read. There is no FK to `user` so a later account-anonymize doesn't
+ * cascade-erase the historical vouching act (the actor id is kept verbatim).
+ */
+export const authorshipVouch = sqliteTable(
+	"authorship_vouch",
+	{
+		voucherId: text("voucher_id").notNull(),
+		candidateId: text("candidate_id").notNull(),
+		createdAt: timestamp("created_at").notNull(),
+	},
+	(t) => [
+		primaryKey({columns: [t.voucherId, t.candidateId]}),
+		index("authorship_vouch_candidate").on(t.candidateId),
+	],
+);
