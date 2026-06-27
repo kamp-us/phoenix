@@ -2,6 +2,7 @@ import * as React from "react";
 import {useFateClient} from "react-fate";
 import {Link, useNavigate} from "react-router";
 import {useSession} from "../auth/client";
+import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
@@ -95,6 +96,10 @@ export function PanoSubmitPage() {
 
 	const fate = useFateClient();
 	const [isInFlight, setInFlight] = React.useState(false);
+	const urlRef = React.useRef<HTMLInputElement>(null);
+	const titleRef = React.useRef<HTMLInputElement>(null);
+	// CTA focus target: the URL field leads in link mode, the title field otherwise.
+	const focusFirstField = () => (mode === "link" ? urlRef : titleRef).current?.focus();
 
 	const draftValue = React.useMemo<PanoDraft>(
 		() => ({mode, url, title, body, tags: Array.from(selectedTags)}),
@@ -273,12 +278,15 @@ export function PanoSubmitPage() {
 						<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
 					) : null}
 
+					<FirstContributionOnramp surface="pano" onStart={focusFirstField} />
+
 					<form className="kp-pano-submit__form" onSubmit={onSubmit}>
 						{mode === "link" ? (
 							<>
 								<div className="kp-pano-submit__field">
 									<label htmlFor="submit-url">URL</label>
 									<input
+										ref={urlRef}
 										id="submit-url"
 										data-testid="pano-submit-url"
 										type="url"
@@ -302,6 +310,7 @@ export function PanoSubmitPage() {
 						<div className="kp-pano-submit__field">
 							<label htmlFor="submit-title">başlık</label>
 							<input
+								ref={titleRef}
 								id="submit-title"
 								data-testid="pano-submit-title"
 								type="text"

@@ -15,6 +15,7 @@ import {useFateClient, useLiveListView, useRequest, useView, type ViewRef, view}
 import {useNavigate, useParams} from "react-router";
 import type {Term} from "../../worker/features/fate/views";
 import {useSession} from "../auth/client";
+import {FirstContributionOnramp} from "../components/authorship/FirstContributionOnramp";
 import {DefinitionCard, DefinitionView} from "../components/sozluk/DefinitionCard";
 import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermHeader";
 import {Button} from "../components/ui/Button";
@@ -280,6 +281,7 @@ function Composer({
 	const [body, setBody] = React.useState("");
 	const [error, setError] = React.useState<string | null>(null);
 	const [isInFlight, setInFlight] = React.useState(false);
+	const bodyRef = React.useRef<HTMLTextAreaElement>(null);
 
 	const draftValue = React.useMemo<DefinitionDraft>(() => ({body}), [body]);
 	const draft = useDraftAutosave({
@@ -353,6 +355,7 @@ function Composer({
 
 	return (
 		<form className="kp-sozluk-composer" onSubmit={onSubmit}>
+			<FirstContributionOnramp surface="sozluk" onStart={() => bodyRef.current?.focus()} />
 			<header className="kp-sozluk-composer__head">
 				<span className="kp-sozluk-composer__title">sen nasıl tanımlardın?</span>
 			</header>
@@ -360,6 +363,7 @@ function Composer({
 				<DraftRestoreBanner onRestore={restoreDraft} onDismiss={draft.dismiss} />
 			) : null}
 			<textarea
+				ref={bodyRef}
 				className="kp-sozluk-composer__textarea"
 				placeholder="markdown destekli. ```js ... ``` kod bloğu için. kişisel deneyim, örnek, hatıra; kuru sözlük tanımı zaten Wikipedia'da var."
 				value={body}
