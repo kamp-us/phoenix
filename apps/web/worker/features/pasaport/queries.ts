@@ -63,7 +63,14 @@ export const queries = {
 		{args: ProfileArgs, type: ProfileView},
 		Effect.fn("profile")(function* ({args, select}) {
 			const pasaport = yield* Pasaport;
-			const row = yield* pasaport.lookupProfile(args.username);
+			// Resolve the sandbox viewer once (identity + moderator probe) and thread
+			// the SAME viewer into BOTH the headline counts (`lookupProfile` ->
+			// `hydrateProfile`, #1312) and the contribution feed (#1309), so a visitor
+			// never sees this author's sandboxed content and the header counts agree
+			// with the feed for that viewer. Only the author + a moderator see the full
+			// (live + sandboxed) counts.
+			const sandboxViewer = yield* currentSandboxViewer;
+			const row = yield* pasaport.lookupProfile(args.username, {sandboxViewer});
 			if (!row) return null;
 
 			// `id` === `userId` is stamped once, in `toProfile`.
@@ -73,10 +80,6 @@ export const queries = {
 				return base;
 			}
 
-			// Resolve the sandbox viewer once (identity + moderator probe) and thread
-			// it into the feed so a visitor never sees this author's sandboxed content
-			// (#1309) — only the author themselves + a moderator do.
-			const sandboxViewer = yield* currentSandboxViewer;
 			const connection = yield* pasaport.listContributions({
 				authorId: row.userId,
 				sandboxViewer,

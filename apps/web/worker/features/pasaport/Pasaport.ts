@@ -178,9 +178,21 @@ export class Pasaport extends Context.Service<
 			UsernameInvalid | UsernameTaken | UsernameAlreadySet | UserNotFound
 		>;
 
-		readonly lookupProfile: (username: string) => Effect.Effect<ProfileRow | null>;
+		// `viewer` threads the request viewer so the profile's HEADLINE counts
+		// (`definitionCount`/`postCount`/`commentCount`) apply the #1205 sandbox filter
+		// (#1312): public/anonymous/other-member see counts of the author's LIVE content
+		// only, while the author themselves + a moderator see the full count including
+		// sandboxed. Omitted ⇒ anonymous (public-only), the fail-safe default — so the
+		// headline counts agree with the (#1309-fixed) feed for the same viewer.
+		readonly lookupProfile: (
+			username: string,
+			viewer?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+		) => Effect.Effect<ProfileRow | null>;
 
-		readonly lookupProfileById: (userId: string) => Effect.Effect<ProfileRow | null>;
+		readonly lookupProfileById: (
+			userId: string,
+			viewer?: {viewerId?: string | null | undefined; sandboxViewer?: SandboxViewer | undefined},
+		) => Effect.Effect<ProfileRow | null>;
 
 		// The contribution feed for a profile page. `sandboxViewer`/`viewerId` thread
 		// the request viewer so the feed applies the #1205 sandbox filter (#1309): a
@@ -350,17 +362,25 @@ export const makePasaportLive = (auth: Auth) =>
 				);
 			});
 
-			const hydrateProfile = Effect.fn("Pasaport.hydrateProfile")(function* (row: {
-				userId: string;
-				username: string;
-				displayName: string | null;
-				image: string | null;
-				totalKarma: number;
-			}) {
+			// `viewer` is REQUIRED (always a resolved {@link SandboxViewer} — the lookup
+			// methods resolve it fail-safe before calling), so the headline counts can
+			// never skip the #1205 sandbox filter (#1312). It is passed straight to
+			// `countByAuthor`, the SAME viewer-aware count the #1309 feed uses for its
+			// `totalCount`, so the header and feed agree per-viewer.
+			const hydrateProfile = Effect.fn("Pasaport.hydrateProfile")(function* (
+				row: {
+					userId: string;
+					username: string;
+					displayName: string | null;
+					image: string | null;
+					totalKarma: number;
+				},
+				viewer: SandboxViewer,
+			) {
 				const authorId = row.userId;
-				const defCount = yield* countByAuthor(schema.definitionRecord, authorId);
-				const postCount = yield* countByAuthor(schema.postRecord, authorId);
-				const commentCount = yield* countByAuthor(schema.commentRecord, authorId);
+				const defCount = yield* countByAuthor(schema.definitionRecord, authorId, viewer);
+				const postCount = yield* countByAuthor(schema.postRecord, authorId, viewer);
+				const commentCount = yield* countByAuthor(schema.commentRecord, authorId, viewer);
 
 				return {
 					userId: row.userId,
@@ -483,7 +503,13 @@ export const makePasaportLive = (auth: Auth) =>
 					} satisfies SetUsernameResult;
 				}),
 
-				lookupProfile: Effect.fn("Pasaport.lookupProfile")(function* (username: string) {
+				lookupProfile: Effect.fn("Pasaport.lookupProfile")(function* (
+					username: string,
+					viewer?: {
+						viewerId?: string | null | undefined;
+						sandboxViewer?: SandboxViewer | undefined;
+					},
+				) {
 					const rows = yield* run((db) =>
 						db
 							.select({
@@ -499,10 +525,21 @@ export const makePasaportLive = (auth: Auth) =>
 					);
 					const row = rows[0];
 					if (!row || row.username == null) return null;
-					return yield* hydrateProfile({...row, username: row.username});
+					// Resolve the viewer fail-safe (missing ⇒ anonymous) so the counts are
+					// never computed sandbox-blind (#1312).
+					return yield* hydrateProfile(
+						{...row, username: row.username},
+						resolveSandboxViewer(viewer ?? {}),
+					);
 				}),
 
-				lookupProfileById: Effect.fn("Pasaport.lookupProfileById")(function* (userId: string) {
+				lookupProfileById: Effect.fn("Pasaport.lookupProfileById")(function* (
+					userId: string,
+					viewer?: {
+						viewerId?: string | null | undefined;
+						sandboxViewer?: SandboxViewer | undefined;
+					},
+				) {
 					const rows = yield* run((db) =>
 						db
 							.select({
@@ -518,7 +555,10 @@ export const makePasaportLive = (auth: Auth) =>
 					);
 					const row = rows[0];
 					if (!row || row.username == null) return null;
-					return yield* hydrateProfile({...row, username: row.username});
+					return yield* hydrateProfile(
+						{...row, username: row.username},
+						resolveSandboxViewer(viewer ?? {}),
+					);
 				}),
 
 				listContributions: Effect.fn("Pasaport.listContributions")(function* (input: {
