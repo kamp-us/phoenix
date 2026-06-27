@@ -2,6 +2,8 @@ import {useEffect} from "react";
 import {Outlet, Route, Routes, useLocation, useNavigate, useParams} from "react-router";
 import {authClient, clearBearerToken, useSession} from "./auth/client";
 import {useMe} from "./auth/useMe";
+import {shouldShowDivanEntry} from "./components/divan/divanGating";
+import {useDivanAccess} from "./components/divan/useDivanAccess";
 import {AppShell, Main} from "./components/layout/AppShell";
 import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
@@ -14,6 +16,7 @@ import {safeReturnTo} from "./lib/returnTo";
 import {searchTarget} from "./lib/searchTarget";
 import {ThemeProvider, useTheme} from "./lib/theme";
 import {AuthPage} from "./pages/AuthPage";
+import {DivanPage} from "./pages/DivanPage";
 import {LandingPage} from "./pages/LandingPage";
 import {NotFoundPage} from "./pages/NotFoundPage";
 import {PanoFeed} from "./pages/PanoFeed";
@@ -40,6 +43,11 @@ function Layout() {
 	const {value: authorshipLoop} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const karmaState = useProfileStats(authorshipLoop ? me?.username : null);
 	const selfKarma = karmaState.status === "ok" ? karmaState.stats.totalKarma : undefined;
+	// The yazar/mod-only divan entry (#1290), dark behind the same authorship-loop
+	// flag. `useDivanAccess` probes the server's gated read (yazar OR mod), so the
+	// entry is server-authoritative — invisible to çaylak/visitor, absent when off.
+	const divanAccess = useDivanAccess();
+	const showDivan = shouldShowDivanEntry(authorshipLoop, divanAccess);
 
 	useEffect(() => {
 		if (!session.data) return;
@@ -86,6 +94,7 @@ function Layout() {
 							{to: "/sozluk", label: "sözlük"},
 							{to: "/pano", label: "pano"},
 						]}
+						divanTo={showDivan ? "/divan" : undefined}
 						{...userProps}
 						karma={selfKarma}
 						onSearchSubmit={(query) => {
@@ -144,6 +153,9 @@ export function App() {
 					<Route path="/sozluk/:slug" element={<SozlukTermPage />} />
 					<Route path="/search" element={<SearchPage />} />
 					<Route path="/auth" element={<AuthPage />} />
+					{/* The divan reviewer workspace (#1290) — the page self-gates on the
+					    authorship-loop flag (off ⇒ 404), so the route is dark by default. */}
+					<Route path="/divan" element={<DivanPage />} />
 					<Route path="/profile" element={<ProfilePage />} />
 					<Route path="/u/:username" element={<UserProfilePage />} />
 					<Route path="*" element={<NotFoundPage />} />

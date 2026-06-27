@@ -13,6 +13,7 @@ export function Topbar({
 	brandName = "kamp.us",
 	brandTo = "/",
 	nav = [],
+	divanTo,
 	user,
 	karma,
 	actions,
@@ -23,6 +24,14 @@ export function Topbar({
 	brandName?: string;
 	brandTo?: string;
 	nav?: NavItem[];
+	/**
+	 * The yazar/mod-only divan entry's href (#1290). Rendered only when set — the
+	 * Layout passes it solely when the authorship-loop flag is on AND the server
+	 * granted divan access (yazar OR mod), so it is invisible to çaylak/visitor and
+	 * absent when the flag is off. Kept distinct from `nav` so the gated entry never
+	 * leaks into the always-on nav list.
+	 */
+	divanTo?: string;
 	/** `username` drives the @username link; null means the bootstrap CTA. */
 	user?: {name: string; src?: string; username?: string | null};
 	/**
@@ -70,6 +79,11 @@ export function Topbar({
 						{n.label}
 					</NavLink>
 				))}
+				{divanTo ? (
+					<NavLink key={divanTo} to={divanTo} data-testid="topbar-divan-link">
+						divan
+					</NavLink>
+				) : null}
 			</nav>
 			<span className="kp-topbar__spacer" />
 			<form
