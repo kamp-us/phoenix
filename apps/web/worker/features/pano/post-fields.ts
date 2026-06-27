@@ -146,3 +146,32 @@ export const toPostPage = (p: PostRecord): PostPage => toRow(p, "body");
  * `stampViewerScalars`, not here.
  */
 export const toPostSummaryRow = (p: PostRecord): PostSummaryRow => toRow(p, "bodyExcerpt");
+
+/**
+ * The keyset/feed projection (`listPostsConnection`) selects a column SUBSET of
+ * `post_record` — it omits `body`, `updatedAt`, `isDraft` — yet the summary row
+ * it builds must agree with the by-id path field-for-field: `body` collapses to
+ * `null` for an empty excerpt, not `""` (#1170). The subset is exactly the
+ * `bodyExcerpt`-source intrinsic columns, so this routes it through the SAME
+ * `intrinsicFields` map (the by-id path's `toPostSummaryRow`), instead of letting
+ * the projection hand-sync its own divergent `body`. `updatedAt`/`isDraft` ride
+ * as `undefined` — the optional `PostSummaryRow` fields the subset omits.
+ */
+export type PostKeysetRow = Pick<
+	PostRecord,
+	| "id"
+	| "slug"
+	| "title"
+	| "url"
+	| "host"
+	| "bodyExcerpt"
+	| "authorId"
+	| "authorName"
+	| "score"
+	| "commentCount"
+	| "createdAt"
+	| "tags"
+>;
+
+export const toPostSummaryKeysetRow = (p: PostKeysetRow): PostSummaryRow =>
+	toRow(p as PostRecord, "bodyExcerpt");
