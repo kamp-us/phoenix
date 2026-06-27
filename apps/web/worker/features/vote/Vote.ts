@@ -39,6 +39,13 @@ export interface VoteInput {
 export interface VoteResult {
 	targetKind: TargetKind;
 	targetId: string;
+	/**
+	 * The target's author — the karma recipient of this cast. Surfaced so a caller can
+	 * fire an author-keyed downstream effect (e.g. the divan vote path re-evaluating the
+	 * çaylak→yazar promotion tandem on a bar-crossing vote, #1288/#1289) on the
+	 * **server-derived** author, never a client-supplied one.
+	 */
+	authorId: string;
 	score: number;
 	/** Whether the voter holds an upvote on this target after the write. */
 	myVote: boolean;
@@ -202,6 +209,7 @@ export const VoteLive = Layer.effect(Vote)(
 				return {
 					targetKind: input.targetKind,
 					targetId: input.targetId,
+					authorId: meta.authorId,
 					score,
 					myVote: alreadyCast,
 					changed: false,
@@ -220,6 +228,7 @@ export const VoteLive = Layer.effect(Vote)(
 			return {
 				targetKind: input.targetKind,
 				targetId: input.targetId,
+				authorId: meta.authorId,
 				score: newScore,
 				myVote: isCast,
 				changed: true,

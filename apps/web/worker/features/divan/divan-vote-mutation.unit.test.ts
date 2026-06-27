@@ -8,8 +8,10 @@
  * cast lands crediting the author; a çaylak / visitor / anonymous actor gets the invisible
  * `UNAUTHORIZED` and NEVER reaches the cast (the non-gated rejection — a compile-error gate,
  * not an `if`, ADR 0107). Plus the #1204 dark-ship: flag OFF ⇒ the path is inert (no gate
- * check, no cast). The yazar/mod disjunction itself is `gate.unit.test.ts`; the score+karma
- * batch is `vote/Vote.unit.test.ts` and the integration tier.
+ * check, no cast). And the karma-side promotion trigger (#1289): a vote that crosses the bar
+ * WITH an active vouch fires `resolveTandem` → the author is promoted; with no active vouch it
+ * is not. The yazar/mod disjunction itself is `gate.unit.test.ts`; the score+karma batch is
+ * `vote/Vote.unit.test.ts` and the integration tier; the tandem invariant is `tandem.unit.test.ts`.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {
@@ -27,6 +29,10 @@ import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import type {Tier} from "../kunye/standing.ts";
+import {makeVouchLedgerStub} from "../kunye/VouchLedger.testing.ts";
+import type {VouchLedger} from "../kunye/VouchLedger.ts";
+import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
+import type {Pasaport} from "../pasaport/Pasaport.ts";
 import type {VoteInput, VoteResult} from "../vote/Vote.ts";
 import {Vote} from "../vote/Vote.ts";
 import {mutations} from "./mutations.ts";
@@ -59,17 +65,37 @@ const relationStoreOf = (holders: ReadonlyArray<string>): Layer.Layer<RelationSt
 			Effect.succeed(tuple.relation === "moderates" && holders.includes(tuple.subject)),
 	});
 
-const kunyeOf = (tierById: Record<string, Tier>): Layer.Layer<Kunye> =>
+const kunyeOf = (
+	tierById: Record<string, Tier>,
+	karmaById: Record<string, number> = {},
+): Layer.Layer<Kunye> =>
 	Layer.succeed(Kunye, {
 		tierOf: (id: string) => Effect.succeed(tierById[id] ?? "visitor"),
-		karmaOf: () => Effect.die(new Error("divan vote must not read karma")),
+		karmaOf: (id: string) => Effect.succeed(karmaById[id] ?? 0),
 		rootOf: (id: string) => Effect.succeed(id),
 	});
 
-// A `Vote` whose `castOnSandboxed` RECORDS each cast and returns a fixed receipt; every other
-// method fails on contact (the divan vote uses only `castOnSandboxed`). The recorded `userId`
-// proves WHO is credited and that the gate passed before any write.
-const voteStubOf = (casts: VoteInput[]): Layer.Layer<Vote> =>
+// `VouchLedger` answering `hasActiveFor` from a fixed set (the candidates with ≥1 active vouch).
+const vouchActiveFor = (active: ReadonlyArray<string>): Layer.Layer<VouchLedger> =>
+	makeVouchLedgerStub({hasActiveFor: (id: string) => Effect.succeed(active.includes(id))});
+
+// A `Pasaport` whose `promoteToYazar` RECORDS each promoted userId (every other method fails on
+// contact), so "a vote crossed the bar with an active vouch → the çaylak is promoted" is observable.
+const pasaportRecording = (): {layer: Layer.Layer<Pasaport>; promoted: string[]} => {
+	const promoted: string[] = [];
+	const layer = makePasaportStub({
+		promoteToYazar: ({userId}: {userId: string}) => {
+			promoted.push(userId);
+			return Effect.succeed({promoted: true});
+		},
+	});
+	return {layer, promoted};
+};
+
+// A `Vote` whose `castOnSandboxed` RECORDS each cast and returns a receipt naming the (server-
+// derived) `authorId` it credited; every other method fails on contact. The recorded `userId`
+// proves WHO voted and that the gate passed before any write.
+const voteStubOf = (casts: VoteInput[], authorId = "u-author"): Layer.Layer<Vote> =>
 	Layer.succeed(Vote, {
 		cast: () => Effect.die(new Error("divan.vote must use castOnSandboxed, not cast")),
 		castOnSandboxed: (input: VoteInput) => {
@@ -77,6 +103,7 @@ const voteStubOf = (casts: VoteInput[]): Layer.Layer<Vote> =>
 			return Effect.succeed({
 				targetKind: input.targetKind,
 				targetId: input.targetId,
+				authorId,
 				score: 1,
 				myVote: input.value,
 				changed: true,
@@ -133,6 +160,8 @@ describe("divan.vote — gated sandboxed vote", () => {
 			Effect.provide(
 				Layer.mergeAll(
 					voteStubOf(casts),
+					vouchActiveFor([]), // no active vouch → resolveTandem short-circuits, no promote
+					makePasaportStub(),
 					relationStoreOf([]),
 					kunyeOf({"u-yazar": "yazar"}),
 					agentAuthorityStub,
@@ -154,10 +183,60 @@ describe("divan.vote — gated sandboxed vote", () => {
 			Effect.provide(
 				Layer.mergeAll(
 					voteStubOf(casts),
+					vouchActiveFor([]),
+					makePasaportStub(),
 					relationStoreOf(["u-mod"]),
 					kunyeOf({"u-mod": "çaylak"}),
 					agentAuthorityStub,
 					requestContext(human("u-mod"), true),
+				),
+			),
+		);
+	});
+
+	it.effect(
+		"a bar-crossing vote WITH an active vouch promotes the author (the tandem, #1289)",
+		() => {
+			const casts: VoteInput[] = [];
+			const {layer: pasaport, promoted} = pasaportRecording();
+			return Effect.gen(function* () {
+				yield* castVote("definition:def-1", true);
+				// the vote credited "u-author" (server-derived); with an active vouch + karma ≥ bar the
+				// tandem fires and flips the çaylak → yazar.
+				assert.deepStrictEqual(promoted, ["u-author"]);
+			}).pipe(
+				Effect.provide(
+					Layer.mergeAll(
+						voteStubOf(casts, "u-author"),
+						vouchActiveFor(["u-author"]),
+						pasaport,
+						relationStoreOf([]),
+						kunyeOf({"u-yazar": "yazar"}, {"u-author": 15}), // at VOUCH_PROMOTION_KARMA_BAR
+						agentAuthorityStub,
+						requestContext(human("u-yazar"), true),
+					),
+				),
+			);
+		},
+	);
+
+	it.effect("a bar-crossing vote with NO active vouch does NOT promote (the tandem holds)", () => {
+		const casts: VoteInput[] = [];
+		return Effect.gen(function* () {
+			// the vote lands and credits the author, but with no active vouch the tandem never flips a
+			// tier — `Pasaport.promoteToYazar` fail-on-contact proves it is never reached.
+			const receipt = yield* castVote("definition:def-1", true);
+			assert.strictEqual((receipt as {myVote: boolean}).myVote, true);
+		}).pipe(
+			Effect.provide(
+				Layer.mergeAll(
+					voteStubOf(casts, "u-author"),
+					vouchActiveFor([]), // no active vouch → short-circuit before karma + promote
+					makePasaportStub(),
+					relationStoreOf([]),
+					kunyeOf({"u-yazar": "yazar"}, {"u-author": 99}),
+					agentAuthorityStub,
+					requestContext(human("u-yazar"), true),
 				),
 			),
 		);
@@ -172,6 +251,8 @@ describe("divan.vote — gated sandboxed vote", () => {
 			Effect.provide(
 				Layer.mergeAll(
 					voteFailOnContact,
+					makeVouchLedgerStub(),
+					makePasaportStub(),
 					relationStoreOf([]),
 					kunyeOf({"u-caylak": "çaylak"}),
 					agentAuthorityStub,
@@ -190,6 +271,8 @@ describe("divan.vote — gated sandboxed vote", () => {
 			Effect.provide(
 				Layer.mergeAll(
 					voteFailOnContact,
+					makeVouchLedgerStub(),
+					makePasaportStub(),
 					relationStoreOf([]),
 					kunyeOf({}),
 					agentAuthorityStub,
@@ -205,10 +288,12 @@ describe("divan.vote — gated sandboxed vote", () => {
 			assert.strictEqual((receipt as {myVote: boolean}).myVote, false);
 			assert.strictEqual((receipt as {score: number}).score, 0);
 		}).pipe(
-			// Both the cast seam and the gate's authority seam fail-on-contact: neither is reached.
+			// The cast, the gate's authority seam, and the promote seam all fail-on-contact: none reached.
 			Effect.provide(
 				Layer.mergeAll(
 					voteFailOnContact,
+					makeVouchLedgerStub(),
+					makePasaportStub(),
 					Layer.succeed(RelationStore, {
 						has: () => Effect.die(new Error("flag OFF must not check authority")),
 					}),

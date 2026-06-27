@@ -17,6 +17,11 @@
  * sandboxed target, so the divan is the only surface that can score sandboxed content. The
  * karma + scoring batch is the shared Vote engine unchanged: GLOBAL `user_profile.total_karma`
  * (D2, ADR 0050) and `+1` per vote with the gate admitting yazar and mod identically (D3).
+ *
+ * After a vote moves the author's karma it fires `resolveTandem` (#1289) — the karma side of the
+ * order-independent çaylak→yazar promotion tandem — so a bar-crossing vote with an already-active
+ * vouch auto-promotes. `resolveTandem` holds no authority of its own (it only re-checks the
+ * completed-tandem invariant), so it stays inside this same divan-gated path.
  */
 import {CurrentUser, Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
@@ -26,6 +31,7 @@ import {TARGET_KINDS, type TargetKind} from "../../db/target-kind.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
+import {resolveTandem} from "../pasaport/tandem.ts";
 import {Vote} from "../vote/Vote.ts";
 import {requireDivanAccess, ViewDivan} from "./gate.ts";
 import {DivanVoteReceiptView} from "./views.ts";
@@ -100,6 +106,13 @@ const voteGated = Effect.fn("divan.voteGated")(function* (
 				Effect.fail(new Denied({message: "Oy verilecek içerik bulunamadı."})),
 			),
 		);
+	// The karma-side promotion trigger (#1289): a vote that moved the AUTHOR's karma may have
+	// crossed the reduced bar — re-evaluate the order-independent tandem so a bar-crossing vote
+	// with an already-active vouch auto-promotes the çaylak. `resolveTandem` reads both halves
+	// fresh, is idempotent, and holds no authority of its own (it only checks the completed-tandem
+	// invariant), so it stays inside this divan-gated path with no new authority surface. Keyed on
+	// the SERVER-derived `result.authorId`, never a client-supplied id. Only on a real karma move.
+	if (result.changed) yield* resolveTandem(result.authorId);
 	return {
 		__typename: "DivanVoteReceipt" as const,
 		id: `${result.targetKind}:${result.targetId}`,
