@@ -1,0 +1,215 @@
+/**
+ * The `Divan` read-model service (#1287) over stub Sözlük/Pano (ADR 0082 unit tier,
+ * no DB). The stubs re-express the `listSandboxed*` contract — they return ONLY
+ * sandboxed, not-removed rows, optionally scoped to one author — so the test proves
+ * the divan, composing them, yields a person-grouped roster that excludes removed and
+ * live content, and that `backlogOf` scopes to one çaylak newest-first.
+ *
+ * Removed-exclusion is the `sandboxBacklogWhere` predicate's job in the REAL reads
+ * (it carries `removed_at IS NULL`); here the stub honors that contract and the test
+ * asserts the divan faithfully reflects it. Each stub is the `definition-mutation`
+ * `Proxy`-over-`Partial` idiom: scripted reads, every other method dies on contact.
+ */
+import {assert, describe, it} from "@effect/vitest";
+import {Effect, Layer} from "effect";
+import {type CommentRow, Pano, type PostSummaryRow} from "../pano/Pano.ts";
+import type {DefinitionRow} from "../sozluk/definition-fields.ts";
+import {Sozluk} from "../sozluk/Sozluk.ts";
+import {Divan, DivanLive} from "./Divan.ts";
+
+interface Raw {
+	readonly id: string;
+	readonly authorId: string;
+	readonly sandboxed: boolean;
+	readonly removed: boolean;
+	readonly createdAt: Date;
+	readonly text: string;
+}
+
+const at = (iso: string) => new Date(iso);
+
+// The `sandboxBacklogWhere` contract the real `listSandboxed*` reads enforce:
+// still-sandboxed, not-removed, optionally one author's backlog.
+const backlog = (rows: ReadonlyArray<Raw>, opts: {authorId?: string} = {}) =>
+	rows.filter(
+		(r) =>
+			r.sandboxed && !r.removed && (opts.authorId === undefined || r.authorId === opts.authorId),
+	);
+
+const asDefinition = (r: Raw): DefinitionRow => ({
+	id: r.id,
+	body: r.text,
+	score: 0,
+	author: "anon",
+	authorId: r.authorId,
+	createdAt: r.createdAt,
+	updatedAt: r.createdAt,
+});
+
+const asPost = (r: Raw): PostSummaryRow => ({
+	id: r.id,
+	slug: r.id,
+	title: r.text,
+	url: null,
+	host: null,
+	body: null,
+	author: "anon",
+	authorId: r.authorId,
+	score: 0,
+	commentCount: 0,
+	createdAt: r.createdAt,
+	tags: [],
+});
+
+const asComment = (r: Raw): CommentRow => ({
+	id: r.id,
+	parentId: null,
+	author: "anon",
+	authorId: r.authorId,
+	body: r.text,
+	score: 0,
+	createdAt: r.createdAt,
+	updatedAt: r.createdAt,
+	deletedAt: null,
+});
+
+const die = (label: string) => () => Effect.die(new Error(`${label} not exercised in Divan test`));
+
+const sozlukStub = (defs: ReadonlyArray<Raw>): Layer.Layer<Sozluk> =>
+	Layer.succeed(
+		Sozluk,
+		new Proxy(
+			{
+				listSandboxedDefinitions: (opts: {authorId?: string} = {}) =>
+					Effect.succeed(backlog(defs, opts).map(asDefinition)),
+			} as Partial<typeof Sozluk.Service>,
+			{
+				get(target, prop) {
+					if (prop in target) return (target as Record<string, unknown>)[prop as string];
+					return die(`Sozluk.${String(prop)}`);
+				},
+			},
+		) as typeof Sozluk.Service,
+	);
+
+const panoStub = (posts: ReadonlyArray<Raw>, comments: ReadonlyArray<Raw>): Layer.Layer<Pano> =>
+	Layer.succeed(
+		Pano,
+		new Proxy(
+			{
+				listSandboxedPosts: (opts: {authorId?: string} = {}) =>
+					Effect.succeed(backlog(posts, opts).map(asPost)),
+				listSandboxedComments: (opts: {authorId?: string} = {}) =>
+					Effect.succeed(backlog(comments, opts).map(asComment)),
+			} as Partial<typeof Pano.Service>,
+			{
+				get(target, prop) {
+					if (prop in target) return (target as Record<string, unknown>)[prop as string];
+					return die(`Pano.${String(prop)}`);
+				},
+			},
+		) as typeof Pano.Service,
+	);
+
+const DEFS: ReadonlyArray<Raw> = [
+	{
+		id: "d1",
+		authorId: "cyl-a",
+		sandboxed: true,
+		removed: false,
+		createdAt: at("2026-06-25T01:00:00Z"),
+		text: "tanım 1",
+	},
+	{
+		id: "d2",
+		authorId: "cyl-a",
+		sandboxed: true,
+		removed: true,
+		createdAt: at("2026-06-25T02:00:00Z"),
+		text: "kaldırılmış",
+	},
+	{
+		id: "d3",
+		authorId: "cyl-b",
+		sandboxed: true,
+		removed: false,
+		createdAt: at("2026-06-25T03:00:00Z"),
+		text: "tanım 3",
+	},
+	{
+		id: "d4",
+		authorId: "yzr",
+		sandboxed: false,
+		removed: false,
+		createdAt: at("2026-06-25T04:00:00Z"),
+		text: "canlı",
+	},
+];
+const POSTS: ReadonlyArray<Raw> = [
+	{
+		id: "p1",
+		authorId: "cyl-a",
+		sandboxed: true,
+		removed: false,
+		createdAt: at("2026-06-25T05:00:00Z"),
+		text: "gönderi",
+	},
+];
+const COMMENTS: ReadonlyArray<Raw> = [
+	{
+		id: "c1",
+		authorId: "cyl-b",
+		sandboxed: true,
+		removed: false,
+		createdAt: at("2026-06-25T06:00:00Z"),
+		text: "yorum",
+	},
+	{
+		id: "c2",
+		authorId: "cyl-b",
+		sandboxed: true,
+		removed: true,
+		createdAt: at("2026-06-25T07:00:00Z"),
+		text: "kaldırılmış yorum",
+	},
+];
+
+const layer = DivanLive.pipe(
+	Layer.provideMerge(Layer.mergeAll(sozlukStub(DEFS), panoStub(POSTS, COMMENTS))),
+);
+
+const run = <A>(eff: Effect.Effect<A, never, Divan>): A =>
+	Effect.runSync(eff.pipe(Effect.provide(layer)));
+
+describe("Divan.roster — person-grouped, removed & live excluded", () => {
+	it("groups by author with per-kind counts; removed and live rows are excluded", () => {
+		const roster = run(Effect.flatMap(Divan, (d) => d.roster()));
+		assert.deepStrictEqual(roster, [
+			{authorId: "cyl-a", definitionCount: 1, postCount: 1, commentCount: 0, totalCount: 2},
+			{authorId: "cyl-b", definitionCount: 1, postCount: 0, commentCount: 1, totalCount: 2},
+		]);
+	});
+});
+
+describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", () => {
+	it("returns only that author's sandboxed-not-removed items, newest first", () => {
+		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf("cyl-a")));
+		assert.deepStrictEqual(
+			items.map((i) => ({kind: i.kind, id: i.id})),
+			[
+				{kind: "post", id: "p1"},
+				{kind: "definition", id: "d1"},
+			],
+		);
+	});
+
+	it("excludes a removed item from the scoped backlog", () => {
+		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf("cyl-b")));
+		// cyl-b has c1 (06:00, sandboxed), c2 (07:00, REMOVED), d3 (03:00, sandboxed):
+		// the removed c2 is absent; the rest newest-first.
+		assert.deepStrictEqual(
+			items.map((i) => i.id),
+			["c1", "d3"],
+		);
+	});
+});

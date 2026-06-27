@@ -27,6 +27,7 @@
  * See `.patterns/fate-connections.md`, `.patterns/fate-effect-sources.md`.
  */
 import {FateServer} from "@kampus/fate-effect";
+import {fateModule as divanModule} from "../divan/fate-module.ts";
 import {liveBusConfig} from "../fate-live/event-bus.ts";
 import {fateModule as panoModule} from "../pano/fate-module.ts";
 import {fateModule as pasaportModule} from "../pasaport/fate-module.ts";
@@ -36,7 +37,15 @@ import {fateModule as sozlukModule} from "../sozluk/fate-module.ts";
 import {fateModule as statsModule} from "../stats/fate-module.ts";
 import {mergeFateModules} from "./module.ts";
 
-const modules = [statsModule, pasaportModule, sozlukModule, panoModule, searchModule, reportModule];
+const modules = [
+	statsModule,
+	pasaportModule,
+	sozlukModule,
+	panoModule,
+	searchModule,
+	reportModule,
+	divanModule,
+];
 
 export const fateConfig = FateServer.config({
 	...mergeFateModules(modules),
