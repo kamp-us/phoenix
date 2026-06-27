@@ -7,15 +7,20 @@
  * shaper owns only the wire shape.
  *
  * `Definition` is the one exception — its row mapper (`toDefinitionRow`), this
- * wire shaper, and the `DefinitionView` field list all derive from the single
- * column→field map in `definition-fields.ts` (#1126 AC#1, deferred from #1159),
- * so a one-field change touches that map, not three sites. `toDefinition` here
- * just stamps `__typename` + the `myVote` viewer-scalar default onto the map's
- * already-wire-named fields.
+ * wire shaper's input type (`DefinitionRow`), and the `DefinitionView` field list
+ * all derive from the single column→field map in `definition-fields.ts` (#1126
+ * AC#1, deferred from #1159; the sözlük mirror of pano's #1161 collapse in PR
+ * #1265), so a one-field change touches that map, not a parallel restatement.
+ * `toDefinition` here takes the map-derived `DefinitionRow` and just stamps
+ * `__typename` + the `myVote` viewer-scalar default onto its already-wire-named
+ * fields.
  */
 
+import type {DefinitionRow} from "./definition-fields.ts";
 import type {TermPage} from "./Sozluk.ts";
 import type {Definition, Term} from "./views.ts";
+
+export type {DefinitionRow};
 
 export interface TermFields {
 	slug: string;
@@ -66,21 +71,12 @@ export const toTermFromPage = (page: TermPage): Term =>
 		lastActivityAt: page.lastEdit,
 	});
 
-export interface DefinitionFields {
-	id: string;
-	body: string;
-	score: number;
-	author: string;
-	authorId: string;
-	createdAt: Date;
-	updatedAt: Date;
-	myVote?: boolean | null;
-}
-
-// The wire fields are exactly `definition-fields.ts`'s field set (TS pins the
-// shape against `Definition`); this stamps `__typename` + the `myVote`
-// viewer-scalar default onto the map's already-wire-named values.
-export const toDefinition = (r: DefinitionFields): Definition => ({
+// `toDefinition`'s input is the map-derived `DefinitionRow` (the intrinsic
+// wire-named fields + the optional `myVote` viewer scalar) — not a parallel
+// interface — so the wire shaper's field set can't drift from the row mapper
+// (`toDefinitionRow`) or `definitionViewFields`. This stamps `__typename` + the
+// `myVote` viewer-scalar default onto the map's already-wire-named values.
+export const toDefinition = (r: DefinitionRow): Definition => ({
 	__typename: "Definition",
 	id: r.id,
 	body: r.body,
