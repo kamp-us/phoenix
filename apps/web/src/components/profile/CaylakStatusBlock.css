@@ -21,6 +21,27 @@
 	display: flex;
 }
 
+/* Unvouched state (#1323): no karma bar — a yazar's vouch (or a mod action) must
+   come first, so we surface the path framing in words instead of an unreachable
+   100-karma goal. */
+.kp-caylak-status__vouch-needed {
+	display: flex;
+	flex-direction: column;
+	gap: var(--s-1);
+}
+
+.kp-caylak-status__vouch-message {
+	font: var(--t-h-feed);
+	color: var(--text-primary);
+	margin: 0;
+}
+
+.kp-caylak-status__vouch-hint {
+	font: var(--t-meta);
+	color: var(--text-muted);
+	margin: 0;
+}
+
 .kp-caylak-status__facts {
 	display: flex;
 	gap: var(--s-4);

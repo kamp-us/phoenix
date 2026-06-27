@@ -5,7 +5,13 @@
  * pure values (the pure-extraction idiom of `flagGateChild` / `shouldShowOnramp`).
  */
 import {describe, expect, it} from "vitest";
-import {STANDING_FIELDS, shouldShowCaylakStatus, vouchExistsLabel} from "./CaylakStatusBlock";
+import {
+	caylakPromotionPath,
+	STANDING_FIELDS,
+	shouldShowCaylakStatus,
+	VOUCH_NEEDED_COPY,
+	vouchExistsLabel,
+} from "./CaylakStatusBlock";
 
 describe("shouldShowCaylakStatus — the three-gate AND (flag + çaylak + own profile)", () => {
 	it("shows only when the flag is on AND the viewer is a çaylak AND it is their own profile", () => {
@@ -46,6 +52,37 @@ describe("vouchExistsLabel — a bare yes/no, never an identity", () => {
 		for (const v of [true, false]) {
 			const label = vouchExistsLabel(v);
 			expect(label).toBe(label.toLocaleLowerCase("tr-TR"));
+		}
+	});
+});
+
+describe("caylakPromotionPath — the unvouched-vs-vouched rendering split (#1323)", () => {
+	it("an UNVOUCHED çaylak gets the vouch-needed framing, NOT a karma bar (no karma-auto-promotion)", () => {
+		const path = caylakPromotionPath(false);
+		expect(path.kind).toBe("vouch-needed");
+		if (path.kind === "vouch-needed") {
+			expect(path.message).toBe(VOUCH_NEEDED_COPY.message);
+			expect(path.hint).toBe(VOUCH_NEEDED_COPY.hint);
+		}
+	});
+
+	it("a VOUCHED çaylak keeps the real reduced karma bar (the already-honest path) — unchanged", () => {
+		expect(caylakPromotionPath(true)).toEqual({kind: "karma-bar"});
+	});
+
+	it("never carries promotion copy on the karma-bar branch (invalid state unrepresentable)", () => {
+		expect(caylakPromotionPath(true)).not.toHaveProperty("message");
+	});
+
+	it("the unvouched copy communicates that a vouch (or a mod action) is required", () => {
+		// the vouch path ('kefil') and the mod alternative are both surfaced
+		expect(VOUCH_NEEDED_COPY.message).toMatch(/kefil/);
+		expect(VOUCH_NEEDED_COPY.hint).toMatch(/moderatör/);
+	});
+
+	it("keeps the unvouched copy lowercase Turkish (karma is a brand noun)", () => {
+		for (const text of [VOUCH_NEEDED_COPY.message, VOUCH_NEEDED_COPY.hint]) {
+			expect(text).toBe(text.toLocaleLowerCase("tr-TR"));
 		}
 	});
 });
