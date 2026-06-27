@@ -248,6 +248,7 @@ The Turkish product/brand nouns this repo uses:
 | **bildir** | the report / notify surface — the brand lexeme surfaces in the **user-facing copy** (the `ReportButton` labels `bildir` / `bildirildi` / `zaten bildirildi`); the technical surface (`features/report` dir, `Report` service, `content_report` table) is English per this convention |
 | **künye** | the per-user identity DO (karma, invite-only access, privileges) |
 | **imge** | the image surface |
+| **divan** | the proving-ground reviewer surface — the gated `/divan` destination where yazar + moderatör review a çaylak's sandboxed work ("work goes before the divan") |
 
 > This is the brand-noun seed. The full domain-noun glossary (the entities and their
 > precise definitions) lives in its own `.glossary/TERMS.md`; this table fixes only the
