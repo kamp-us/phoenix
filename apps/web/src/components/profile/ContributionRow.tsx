@@ -13,6 +13,11 @@ export const ContributionView = view<Contribution>()({
 	id: true,
 	score: true,
 	createdAt: true,
+	// The per-item review-state flag (#1316): `true` for a still-sandboxed item, so
+	// the owner's profile can badge it "incelemede" (#1291). A bare boolean — carries
+	// no reviewer identity (one-way glass). Sent only to the author/moderator, so a
+	// non-owner viewer never receives a sandboxed row in the first place.
+	sandboxed: true,
 	bodyExcerpt: true,
 	termSlug: true,
 	termTitle: true,
@@ -35,16 +40,29 @@ function formatDate(value: Date | string | null | undefined): string {
 
 export interface ContributionRowProps {
 	node: ViewRef<"Contribution">;
+	/**
+	 * Render the "incelemede" badge on a still-sandboxed item (#1291). The caller
+	 * gates this on the çaylak-status gate (flag + own profile + çaylak), so the
+	 * badge only appears for the owner's own pending items. Default `false`.
+	 */
+	sandboxBadge?: boolean;
 }
 
-export function ContributionRow({node}: ContributionRowProps) {
+export function ContributionRow({node, sandboxBadge = false}: ContributionRowProps) {
 	const c = useView(ContributionView, node);
+	const badge =
+		sandboxBadge && c.sandboxed ? (
+			<span className="kp-user-profile__badge" data-testid="incelemede-badge">
+				incelemede
+			</span>
+		) : null;
 
 	if (c.kind === "definition") {
 		return (
 			<li className="kp-user-profile__row" data-testid="contribution-definition">
 				<div className="kp-user-profile__row-head">
 					<span className="kp-user-profile__kind kp-user-profile__kind--definition">tanım</span>
+					{badge}
 					<Link to={`/sozluk/${c.termSlug}`} className="kp-user-profile__row-title">
 						{c.termTitle}
 					</Link>
@@ -61,6 +79,7 @@ export function ContributionRow({node}: ContributionRowProps) {
 			<li className="kp-user-profile__row" data-testid="contribution-post">
 				<div className="kp-user-profile__row-head">
 					<span className="kp-user-profile__kind kp-user-profile__kind--post">başlık</span>
+					{badge}
 					<Link to={`/pano/${c.id}`} className="kp-user-profile__row-title">
 						{c.title}
 					</Link>
@@ -79,6 +98,7 @@ export function ContributionRow({node}: ContributionRowProps) {
 			<li className="kp-user-profile__row" data-testid="contribution-comment">
 				<div className="kp-user-profile__row-head">
 					<span className="kp-user-profile__kind kp-user-profile__kind--comment">yorum</span>
+					{badge}
 					<Link to={`/pano/${c.postId}`} className="kp-user-profile__row-title">
 						{c.postTitle}
 					</Link>
