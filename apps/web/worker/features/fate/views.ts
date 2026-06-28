@@ -73,28 +73,26 @@ export const Root: Record<string, unknown> = {
 	// `insert` reaches (filtered feeds are distinct, independently-paginated
 	// connections). See `.patterns/fate-mutations-client.md`.
 	posts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
-	// The viewer's saved posts, newest-save-first. The orderBy mirrors the
-	// `post_bookmark` keyset (created_at desc, post_id desc) the `savedPosts`
-	// resolver owns — nominal here, but kept in lockstep with the service ORDER BY
-	// (ADR 0019). Reuses `postDataView` so `isSaved`/`myVote` come for free.
-	savedPosts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
-	// Search roots (ADR 0080) — per-type, reusing the Term/Post views. The orderBy
-	// is nominal: the search service ranks by bm25 and owns the keyset, so this
-	// declares the root as a `list` but never drives the order (the resolver does).
-	searchTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
-	searchPosts: list(postDataView, {orderBy: [{id: "asc"}]}),
+	// The viewer's saved posts; the `savedPosts` resolver owns the order (the
+	// `post_bookmark` keyset, ADR 0019). Reuses `postDataView` so `isSaved`/`myVote`
+	// come for free.
+	savedPosts: list(postDataView),
+	// Search roots (ADR 0080) — per-type, reusing the Term/Post views. The search
+	// service ranks by bm25 and owns the keyset (the resolver owns the order).
+	searchTerms: list(termDataView),
+	searchPosts: list(postDataView),
 	profile: profileDataView,
 	// The çaylak-self "yazarlığa giden yol" aggregate (#1316, epic #1202) — a query
 	// root keyed on `CurrentUser` (self-only), aggregate-only (one-way-glass), behind
 	// `PHOENIX_AUTHORSHIP_LOOP`. Resolved inline by the `myAuthorshipStanding` resolver.
 	myAuthorshipStanding: authorshipStandingDataView,
 	landingStats: landingStatsDataView,
-	// The moderation queue (ADR 0098) — a `Moderator.required`-gated list root. The
-	// orderBy is nominal: the `report.listOpen` resolver owns the oldest-first order.
-	"report.listOpen": list(openReportDataView, {orderBy: [{firstReportedAt: "asc"}]}),
+	// The moderation queue (ADR 0098) — a `Moderator.required`-gated list root; the
+	// `report.listOpen` resolver owns the oldest-first order.
+	"report.listOpen": list(openReportDataView),
 	// The divan proving-ground reads (#1287, epic #1202) — yazar-OR-mod-gated, behind
-	// the `PHOENIX_AUTHORSHIP_LOOP` flag. The orderBy is nominal: the `divan.*`
-	// resolvers own the order (roster by pending desc, backlog newest-first).
-	"divan.roster": list(divanCaylakDataView, {orderBy: [{totalCount: "desc"}]}),
-	"divan.backlog": list(divanBacklogItemDataView, {orderBy: [{createdAt: "desc"}]}),
+	// the `PHOENIX_AUTHORSHIP_LOOP` flag; the `divan.*` resolvers own the order
+	// (roster by pending desc, backlog newest-first).
+	"divan.roster": list(divanCaylakDataView),
+	"divan.backlog": list(divanBacklogItemDataView),
 };
