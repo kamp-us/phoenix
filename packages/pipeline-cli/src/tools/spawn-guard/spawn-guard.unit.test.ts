@@ -1,5 +1,11 @@
 import {assert, describe, it} from "@effect/vitest";
-import {ALLOWLIST, decideSpawn, formatSessionCost, isOnAllowlist} from "./spawn-guard.ts";
+import {
+	ALLOWLIST,
+	DEFAULT_PIN,
+	decideSpawn,
+	formatSessionCost,
+	isOnAllowlist,
+} from "./spawn-guard.ts";
 
 describe("isOnAllowlist — only the opus-4.8 family", () => {
 	it("accepts the canonical opus-4.8 ids", () => {
@@ -41,6 +47,8 @@ describe("decideSpawn — allowlist guard (allow / allow-inherit / deny)", () =>
 		const d = decideSpawn(null, "claude-opus-4-8");
 		assert.strictEqual(d.kind, "allow-inherit");
 		assert.strictEqual(d.kind === "allow-inherit" ? d.pin : "", "claude-opus-4-8");
+		// pin came from the env, not the committed default
+		assert.strictEqual(d.kind === "allow-inherit" ? d.defaulted : true, false);
 	});
 
 	it("ALLOW-INHERITS an unset request even with the full pin id as the pin (#776 — never rewrite to it)", () => {
@@ -58,20 +66,36 @@ describe("decideSpawn — allowlist guard (allow / allow-inherit / deny)", () =>
 		}
 	});
 
-	it("DENIES when both request and pin are unset (ADR 0092 fail-closed)", () => {
+	it("ALLOW-INHERITS an unset request with NO env pin via the committed DEFAULT_PIN (#943 durable default, ADR 0116)", () => {
+		// A fresh clone / CI / cron with no WORKFLOW_MODEL in-shell no longer re-hits the
+		// #776 fail-closed-on-unset symptom — the absent pin falls back to the committed default.
 		const d = decideSpawn(null, null);
-		assert.strictEqual(d.kind, "deny");
-		if (d.kind === "deny") {
-			assert.strictEqual(d.requested, null);
-			assert.isFalse(d.explicitOffAllowlist);
+		assert.strictEqual(d.kind, "allow-inherit");
+		if (d.kind === "allow-inherit") {
+			assert.strictEqual(d.pin, DEFAULT_PIN);
+			assert.isTrue(d.defaulted); // pin came from the committed default, not the env
 		}
 	});
 
-	it("DENIES an off-allowlist request with no pin (never a silent allow)", () => {
+	it("an empty/whitespace env pin counts as absent and still defaults (not a misconfiguration)", () => {
+		for (const blank of ["", "   "]) {
+			const d = decideSpawn(null, blank);
+			assert.strictEqual(d.kind, "allow-inherit");
+			assert.strictEqual(d.kind === "allow-inherit" ? d.defaulted : false, true);
+		}
+	});
+
+	it("the committed DEFAULT_PIN is itself on the allowlist (else the default would deny)", () => {
+		assert.isTrue(isOnAllowlist(DEFAULT_PIN));
+	});
+
+	it("DENIES an off-allowlist request even with no env pin (never a silent allow; #943 durable default reclassifies the reason)", () => {
 		const d = decideSpawn("claude-fable-5", null);
 		assert.strictEqual(d.kind, "deny");
-		// no valid pin ⇒ the fail-closed default reason, not the explicit-off-allowlist one
-		assert.strictEqual(d.kind === "deny" ? d.explicitOffAllowlist : true, false);
+		// Post-#943: the absent env pin falls back to the valid DEFAULT_PIN, so effectivePin is
+		// on the allowlist and the off-allowlist REQUEST is the explicit-off-allowlist deny — not
+		// the bare fail-closed-on-unset one. Still denied; only the reason flag reclassifies.
+		assert.strictEqual(d.kind === "deny" ? d.explicitOffAllowlist : false, true);
 	});
 
 	it("DENIES when the pin itself is off-allowlist (a misconfigured pin can't smuggle a bad model)", () => {

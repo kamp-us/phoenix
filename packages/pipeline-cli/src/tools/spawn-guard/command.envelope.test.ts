@@ -58,9 +58,14 @@ describe("spawn-guard guard CLI — PreToolUse envelope", () => {
 		assert.include(out.hookSpecificOutput.permissionDecisionReason, "claude-fable-5");
 	}, 30_000);
 
-	it("DENIES an unset model with no pin (fail-closed on absent)", async () => {
+	it("ALLOWS an unset model with NO env pin via the committed default (#943: durable, shell-independent)", async () => {
+		// The runner strips WORKFLOW_MODEL (see `run`), so this exercises the fresh-clone / CI /
+		// cron path: no pin in-shell, yet the unset spawn resolves to allow-inherit via DEFAULT_PIN.
 		const {stdout} = await run(["guard"], envelope(null));
-		assert.strictEqual(JSON.parse(stdout).hookSpecificOutput.permissionDecision, "deny");
+		const out = JSON.parse(stdout);
+		assert.strictEqual(out.hookSpecificOutput.permissionDecision, "allow");
+		assert.notProperty(out.hookSpecificOutput, "updatedInput");
+		assert.include(out.systemMessage, "committed default pin");
 	}, 30_000);
 
 	it("ALLOWS an unset model with an allowlisted pin WITHOUT rewriting it (#776: inherit the session model — the Task tool's `model` accepts only short names, so injecting the full pin id failed the schema and blocked every spawn)", async () => {
