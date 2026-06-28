@@ -36,11 +36,12 @@
  * atom carries its own AA-contrast, reduced-motion-safe progress bar; no animation of
  * its own. Copy is lowercase Turkish (karma is a brand noun).
  */
-import {useCallback, useEffect, useId, useState} from "react";
-import {useFateClient, view} from "react-fate";
+import {useId} from "react";
+import {view} from "react-fate";
 import type {AuthorshipStanding} from "../../../worker/features/fate/views";
 import type {Tier} from "../../../worker/features/kunye/standing";
 import {useMe} from "../../auth/useMe";
+import {useImperativeView} from "../../fate/useImperativeView";
 import {PHOENIX_AUTHORSHIP_LOOP} from "../../flags/keys";
 import {useFlag} from "../../flags/useFlag";
 import {Karma} from "../karma/Karma";
@@ -120,12 +121,14 @@ export const STANDING_FIELDS = {
 
 const StandingView = view<AuthorshipStanding>()(STANDING_FIELDS);
 
-interface Standing {
-	readonly karma: number;
-	readonly bar: number;
-	readonly vouchExists: boolean;
-	readonly inReviewCount: number;
-}
+/**
+ * The aggregate-only standing shape, derived from the codegen'd
+ * `AuthorshipStanding` Entity (ADR 0022) — a `Pick` over the four aggregate
+ * scalars, never a hand-restated interface. The one-way-glass invariant is
+ * structural on the backend type (#1316): there is no reviewer/voter/voucher
+ * identity field to pick, so a leak stays unrepresentable.
+ */
+type Standing = Pick<AuthorshipStanding, "karma" | "bar" | "vouchExists" | "inReviewCount">;
 
 /**
  * Fetches `myAuthorshipStanding` imperatively, but only when `enabled` (the three
@@ -134,43 +137,8 @@ interface Standing {
  * read error degrades to "no block", never a thrown header.
  */
 function useAuthorshipStanding(enabled: boolean): Standing | null {
-	const fate = useFateClient();
-	const [standing, setStanding] = useState<Standing | null>(null);
-
-	const refetch = useCallback(async () => {
-		if (!enabled) {
-			setStanding(null);
-			return;
-		}
-		try {
-			const {myAuthorshipStanding: ref} = await fate.request({
-				myAuthorshipStanding: {view: StandingView},
-			});
-			const snapshot = ref ? await fate.readView(StandingView, ref) : null;
-			// `readView` only statically narrows `id`; the selected scalars are present
-			// at runtime, so we read through the known aggregate shape.
-			const data = (snapshot?.data ?? null) as Standing | null;
-			setStanding(
-				data
-					? {
-							karma: data.karma,
-							bar: data.bar,
-							vouchExists: data.vouchExists,
-							inReviewCount: data.inReviewCount,
-						}
-					: null,
-			);
-		} catch (err) {
-			console.error("[useAuthorshipStanding]", err);
-			setStanding(null);
-		}
-	}, [enabled, fate]);
-
-	useEffect(() => {
-		void refetch();
-	}, [refetch]);
-
-	return standing;
+	const {state} = useImperativeView("myAuthorshipStanding", StandingView, {enabled});
+	return state.status === "ok" ? state.data : null;
 }
 
 export interface CaylakStatusBlockProps {

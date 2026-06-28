@@ -4,40 +4,36 @@
  * `username` additional field doesn't reliably round-trip through Better Auth's
  * session inference right after a setUsername write.
  *
- * Imperative (`request` + `readView`), not the suspending `useRequest`: this
- * runs in the `Layout` shell above any `<Screen>` Suspense boundary, and must
- * NOT query while unauthenticated — fate's `me` throws `UNAUTHORIZED` for
- * anonymous viewers, so the `!session.data` short-circuit keeps them off the wire.
+ * Imperative (`request` + `readView` via `useImperativeView`), not the suspending
+ * `useRequest`: this runs in the `Layout` shell above any `<Screen>` Suspense
+ * boundary, and must NOT query while unauthenticated — fate's `me` throws
+ * `UNAUTHORIZED` for anonymous viewers, so the `enabled: !!session.data` gate
+ * keeps them off the wire.
  *
  * Returns a discriminated `idle | loading | ok | error` `status` so a failed
  * fetch is distinguishable from a signed-out / not-yet-loaded `me` — both are
  * `null`, but only one is an error (#448). `loading` is retained as a derived
- * convenience for existing consumers.
+ * convenience for existing consumers, and `me` persists across a `loading`
+ * refetch (cleared only on signed-out/error) so a session-update re-read doesn't
+ * flash the header to a logged-out state.
  */
-import {useCallback, useEffect, useState} from "react";
-import {useFateClient, view} from "react-fate";
+import {useRef} from "react";
+import {view} from "react-fate";
 import type {User} from "../../worker/features/fate/views";
-import type {Tier} from "../../worker/features/kunye/standing";
+import {useImperativeView} from "../fate/useImperativeView";
 import {useSession} from "./client";
 
-export interface MeUser {
-	id: string;
-	email: string;
-	name: string | null;
-	image: string | null;
-	username: string | null;
-	// The trusted account-level authorship rank (#1297): always present, read off
-	// the stored column server-side via `Kunye.tierOf` — never the session field.
-	// The frontend gates rendering of authorship affordances on the
-	// `phoenix-authorship-loop` flag, not on this value.
-	tier: Tier;
-	// The trusted SELF moderator signal (#1320): always present, read server-side
-	// off the `moderates` relation tuple — never inferred from `tier`. The divan
-	// "yazar yap" (promote) affordance keys off this so a dual-role yazar+moderator
-	// (who reads `tier: "yazar"`) still sees it. (UI wiring is the #1320 frontend
-	// half in `CaylakDetail.tsx`; this is the minimal type plumbing only.)
-	isModerator: boolean;
-}
+/**
+ * The `me` shape, derived from the codegen'd `User` Entity (ADR 0022) — a `Pick`
+ * over the exact scalars `MeView` selects, never a hand-restated interface. `tier`
+ * and `isModerator` are trusted account-level signals read server-side (the stored
+ * column via `Kunye.tierOf` / the `moderates` relation), surfaced on the row, never
+ * inferred from the session.
+ */
+export type MeUser = Pick<
+	User,
+	"id" | "email" | "name" | "image" | "username" | "tier" | "isModerator"
+>;
 
 export type MeStatus = "idle" | "loading" | "ok" | "error";
 
@@ -58,48 +54,21 @@ export function useMe(): {
 	refetch: () => Promise<void>;
 } {
 	const session = useSession();
-	const fate = useFateClient();
-	const [me, setMe] = useState<MeUser | null>(null);
-	const [status, setStatus] = useState<MeStatus>("idle");
+	const {state, refetch} = useImperativeView("me", MeView, {
+		enabled: !!session.data,
+		// Refetch on every session identity change (e.g. after a setUsername write),
+		// not just on a signed-in/out flip.
+		deps: [session.data],
+	});
 
-	const refetch = useCallback(async () => {
-		// fate `me` throws `UNAUTHORIZED` for anonymous viewers — never query while signed out.
-		if (!session.data) {
-			setMe(null);
-			setStatus("idle");
-			return;
-		}
-		setStatus("loading");
-		try {
-			const {me: ref} = await fate.request({me: {view: MeView}});
-			const snapshot = ref ? await fate.readView(MeView, ref) : null;
-			// `readView` only statically narrows `id`; the selected scalars are
-			// present at runtime, so we read through the known `MeUser` shape.
-			const user = (snapshot?.data ?? null) as MeUser | null;
-			setMe(
-				user
-					? {
-							id: user.id,
-							email: user.email,
-							name: user.name,
-							image: user.image,
-							username: user.username,
-							tier: user.tier,
-							isModerator: user.isModerator,
-						}
-					: null,
-			);
-			setStatus("ok");
-		} catch (err) {
-			console.error("[useMe]", err);
-			setMe(null);
-			setStatus("error");
-		}
-	}, [session.data, fate]);
+	// `me` persists across a `loading` refetch; cleared only when signed out (idle)
+	// or on a read error, mirroring the pre-helper behavior (no flash to null).
+	const meRef = useRef<MeUser | null>(null);
+	if (state.status === "ok") {
+		meRef.current = state.data;
+	} else if (state.status !== "loading") {
+		meRef.current = null;
+	}
 
-	useEffect(() => {
-		void refetch();
-	}, [refetch]);
-
-	return {me, status, loading: status === "loading", refetch};
+	return {me: meRef.current, status: state.status, loading: state.status === "loading", refetch};
 }

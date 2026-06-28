@@ -4,28 +4,34 @@
  * (`UserProfilePage`), selecting only the count scalars — no `contributions`
  * connection, so the resolver skips its keyset query.
  *
- * Imperative (`request` + `readView`), not the suspending `useRequest`, for the
- * same reason as `useMe`: `ProfilePage` renders directly under the `Layout`
- * shell, above any `<Screen>` Suspense boundary, so it must drive fate itself
- * rather than suspend. A null/empty username (user not yet bootstrapped) short-
- * circuits off the wire and leaves the state idle.
+ * Imperative (`request` + `readView` via `useImperativeView`), not the suspending
+ * `useRequest`, for the same reason as `useMe`: `ProfilePage` renders directly
+ * under the `Layout` shell, above any `<Screen>` Suspense boundary, so it must
+ * drive fate itself rather than suspend. A null/empty username (user not yet
+ * bootstrapped) leaves `enabled` false, so the read short-circuits off the wire
+ * and the state stays idle.
  *
  * Returns a discriminated `idle | loading | ok | error` state so a failed fetch
  * is distinguishable from a genuine zero-activity user — the consumer renders an
  * honest error instead of a misleading `0` (#448), mirroring the `SozlukHome`
  * `loading | ok | error` status convention.
  */
-import {useCallback, useEffect, useState} from "react";
-import {useFateClient, view} from "react-fate";
+import {useMemo} from "react";
+import {view} from "react-fate";
 import type {Profile} from "../../worker/features/fate/views";
+import {useImperativeView} from "../fate/useImperativeView";
 
-export interface ProfileStats {
-	postCount: number;
-	commentCount: number;
-	definitionCount: number;
-	/** `user_profile.total_karma` (ADR 0050) — surfaced ambiently on the owner's profile (#1208). */
-	totalKarma: number;
-}
+/**
+ * The projected count shape, derived from the codegen'd `Profile` Entity (ADR
+ * 0022) — a `Pick` over the four count scalars, never a hand-restated interface.
+ * `totalKarma` is `user_profile.total_karma` (ADR 0050), surfaced ambiently on the
+ * owner's profile (#1208). The selected `userId` normalization key is dropped here
+ * by projection — `toProfileStatsState` performs that narrowing.
+ */
+export type ProfileStats = Pick<
+	Profile,
+	"postCount" | "commentCount" | "definitionCount" | "totalKarma"
+>;
 
 export type ProfileStatsState =
 	| {status: "idle"}
@@ -63,33 +69,13 @@ export function toProfileStatsState(data: ProfileStats | null): ProfileStatsStat
 }
 
 export function useProfileStats(username: string | null | undefined): ProfileStatsState {
-	const fate = useFateClient();
-	const [state, setState] = useState<ProfileStatsState>({status: "idle"});
+	// Memoize so the args object is a stable refetch dependency — a fresh object
+	// each render would re-run the read every render.
+	const args = useMemo(() => (username ? {username} : undefined), [username]);
+	const {state} = useImperativeView("profile", ProfileStatsView, {
+		args,
+		enabled: !!username,
+	});
 
-	const refetch = useCallback(async () => {
-		if (!username) {
-			setState({status: "idle"});
-			return;
-		}
-		setState({status: "loading"});
-		try {
-			const {profile: ref} = await fate.request({
-				profile: {view: ProfileStatsView, args: {username}},
-			});
-			const snapshot = ref ? await fate.readView(ProfileStatsView, ref) : null;
-			// `readView` statically narrows only `userId`; the selected count
-			// scalars are present at runtime, read through the known shape.
-			const data = (snapshot?.data ?? null) as ProfileStats | null;
-			setState(toProfileStatsState(data));
-		} catch (err) {
-			console.error("[useProfileStats]", err);
-			setState({status: "error"});
-		}
-	}, [username, fate]);
-
-	useEffect(() => {
-		void refetch();
-	}, [refetch]);
-
-	return state;
+	return state.status === "ok" ? toProfileStatsState(state.data) : state;
 }
