@@ -13,7 +13,7 @@
  * capability instances; the vocab-free mechanism is `@kampus/authz`. Tuples are
  * minted offline (`@kampus/admin-grant`), never by a runtime worker route.
  */
-import {Capability, type Grant, matchActor, platform} from "@kampus/authz";
+import {Capability, Grant, matchActor, platform} from "@kampus/authz";
 import {Effect} from "effect";
 import {Denied} from "./errors.ts";
 
@@ -28,12 +28,12 @@ export {platform};
 /**
  * Gate `body` behind platform-admin authority: discharge `Admin.over(platform)`
  * (the invisible {@link Denied} on failure) and thread the resulting `Grant` into
- * `body`'s R-channel via `Admin.provide`. So `body` can read `yield* Admin` for the
+ * `body`'s R-channel via `Grant.provide`. So `body` can read `yield* Admin` for the
  * authority-checked admin identity, and "running an admin op without a `Grant`" is a
  * compile error — the proof is required by R, not a forgeable field (ADR 0107 §3).
  */
 export const requireAdmin = <A, E, R>(body: Effect.Effect<A, E, Admin | R>) =>
-	Admin.over(platform).pipe(Effect.flatMap((grant) => body.pipe(Admin.provide(grant))));
+	Admin.over(platform).pipe(Effect.flatMap((grant) => body.pipe(Grant.provide(grant))));
 
 /**
  * The admin's account id from a discharged `Admin` grant — the authority-checked

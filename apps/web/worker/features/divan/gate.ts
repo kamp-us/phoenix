@@ -26,7 +26,7 @@
  * cannot distinguish "not standing" from "not signed in" — the divan is a private
  * destination, like the moderation queue.
  */
-import {Capability, type Principal, platform} from "@kampus/authz";
+import {Capability, Grant, type Principal, platform} from "@kampus/authz";
 import {Effect} from "effect";
 import {Denied, RequiresLevel} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
@@ -83,11 +83,11 @@ export class ViewDivan extends Capability.Class<ViewDivan>()("divan/ViewDivan", 
 /**
  * Gate `body` behind divan access: discharge {@link ViewDivan} (the invisible
  * {@link Denied} on failure) and thread the resulting grant into `body`'s R channel
- * via `ViewDivan.provide`. So `body` reads `yield* ViewDivan` for the gate proof,
+ * via `Grant.provide`. So `body` reads `yield* ViewDivan` for the gate proof,
  * and "reading the divan without a grant" is a compile error — the same shape as
  * `requireModeration`, here over the disjunctive capability.
  */
 export const requireDivanAccess = <A, E, R>(body: Effect.Effect<A, E, ViewDivan | R>) =>
 	ViewDivan.authorize(standsInDivan).pipe(
-		Effect.flatMap((grant) => body.pipe(ViewDivan.provide(grant))),
+		Effect.flatMap((grant) => body.pipe(Grant.provide(grant))),
 	);

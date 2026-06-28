@@ -1,13 +1,13 @@
 /**
  * Type-level assertion (no runtime — checked by `tsgo`, not vitest): an admin-gated
  * op that declares `Admin` in its requirements channel **fails to compile** unless
- * the matching `Grant` is provided via `.provide` (ADR 0107 §1, the "forgot to
+ * the matching `Grant` is provided via `Grant.provide` (ADR 0107 §1, the "forgot to
  * authorize is a compile error" guarantee — acceptance criterion #2). Falsifiable by
- * reading the R channel — omit `.provide` and the capability stays required; provide
+ * reading the R channel — omit `Grant.provide` and the capability stays required; provide
  * it (or gate through `requireAdmin`) and R collapses, leaving only the discharge
  * ports. Mirrors `Authorship.typetest.ts`, here over the `Admin` instance.
  */
-import type {AgentAuthority, CurrentActor, Grant, RelationStore} from "@kampus/authz";
+import {type AgentAuthority, type CurrentActor, Grant, type RelationStore} from "@kampus/authz";
 import {Effect} from "effect";
 import {expectTypeOf} from "vitest";
 import {Admin, platform, requireAdmin} from "./admin.ts";
@@ -26,10 +26,10 @@ const adminOp: Effect.Effect<string, never, Admin> = Effect.gen(function* () {
 
 /** Providing the proof discharges its requirement — R collapses to `never`. */
 export const adminDischarged: Effect.Effect<string, never, never> = adminOp.pipe(
-	Admin.provide(adminGrant),
+	Grant.provide(adminGrant),
 );
 
-// Omit `.provide` → `Admin` stays required in R; provide it → R is `never`.
+// Omit `Grant.provide` → `Admin` stays required in R; provide it → R is `never`.
 expectTypeOf<RequirementsOf<typeof adminOp>>().toEqualTypeOf<Admin>();
 expectTypeOf<RequirementsOf<typeof adminDischarged>>().toEqualTypeOf<never>();
 

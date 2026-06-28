@@ -1,11 +1,13 @@
 /**
  * Type-level assertion (no runtime — checked by `tsgo`, not vitest): an op that
  * declares a capability in its requirements channel **fails to compile** unless
- * the proof is provided via `.provide` at composition. This is the
+ * the proof is discharged via `Grant.provide` at composition. This is the
  * "forgot to authorize is a compile error" guarantee of ADR 0107 §1, made
- * falsifiable by inspecting the **R channel** with `expectTypeOf`: omit `.provide`
- * and the capability stays required in R (≠ `never`); provide it and R collapses to
- * `never`. The assertion is a real `tsgo` error the moment either half stops holding.
+ * falsifiable by inspecting the **R channel** with `expectTypeOf`: omit
+ * `Grant.provide` and the capability stays required in R (≠ `never`); provide it
+ * and R collapses to `never`. The assertion is a real `tsgo` error the moment
+ * either half stops holding. (#1270 collapsed the per-capability `.provide` to a
+ * single generic `Grant.provide`; the forgot-to-provide guarantee is unchanged.)
  *
  * It reads R off the effect type rather than asserting an *assignment* (the prior
  * `@ts-expect-error`'d `leaked` form): assigning a service-requiring effect to an
@@ -18,7 +20,7 @@ import {expectTypeOf} from "vitest";
 import type {AgentAuthority} from "./AgentAuthority.ts";
 import {Capability} from "./Capability.ts";
 import type {CurrentActor} from "./CurrentActor.ts";
-import type {Grant} from "./Grant.ts";
+import {Grant} from "./Grant.ts";
 import {Scale} from "./Level.ts";
 
 /** The requirements (R) channel of an effect type. */
@@ -42,10 +44,10 @@ const op: Effect.Effect<string, never, OpenTerm> = Effect.gen(function* () {
 });
 
 /** Providing the proof discharges the requirement — R collapses to `never`. */
-export const discharged: Effect.Effect<string, never, never> = op.pipe(OpenTerm.provide(grant));
+export const discharged: Effect.Effect<string, never, never> = op.pipe(Grant.provide(grant));
 
 // The authorization gate, as an R-channel assertion:
-//   - omit `.provide` → `OpenTerm` stays required in R (the proof is mandatory);
+//   - omit `Grant.provide` → `OpenTerm` stays required in R (the proof is mandatory);
 //   - provide it → R collapses to `never` (the requirement is discharged).
 // Either half breaking is a `tsgo` error here.
 expectTypeOf<RequirementsOf<typeof op>>().toEqualTypeOf<OpenTerm>();

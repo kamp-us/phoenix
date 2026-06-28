@@ -14,7 +14,7 @@
  * (no tuple), and a yazar "promoting themselves" is a no-op (already yazar). The two
  * authority paths are the only triggers, both gated by the framework.
  */
-import {Capability, type Grant, matchActor, type Principal} from "@kampus/authz";
+import {Capability, Grant, matchActor, type Principal} from "@kampus/authz";
 import {Effect} from "effect";
 import {RequiresLevel} from "./errors.ts";
 import {authorshipLadder, Kunye} from "./Kunye.ts";
@@ -34,13 +34,13 @@ export class Vouch extends Capability.Level<Vouch>()("kunye/Vouch", {
 /**
  * Gate `body` behind yazar standing: discharge `Vouch.require` (the public
  * {@link RequiresLevel} on failure) and thread the resulting `Grant` into `body`'s
- * R-channel via `Vouch.provide`. So `body` can read `yield* Vouch` for the
+ * R-channel via `Grant.provide`. So `body` can read `yield* Vouch` for the
  * authority-checked voucher identity, and "vouching without a `Grant`" is a compile
  * error — the proof is required by R, not a forgeable field (ADR 0107 §3). Mirrors
  * {@link ../kunye/moderate.ts | requireModeration}.
  */
 export const requireVouch = <A, E, R>(body: Effect.Effect<A, E, Vouch | R>) =>
-	Vouch.require.pipe(Effect.flatMap((grant) => body.pipe(Vouch.provide(grant))));
+	Vouch.require.pipe(Effect.flatMap((grant) => body.pipe(Grant.provide(grant))));
 
 /**
  * The voucher's account id from a discharged `Vouch` grant — the vouching actor the

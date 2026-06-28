@@ -138,3 +138,22 @@ enforcement-surface ADR), #145 (agent identity informed by the agent seam, v1.1)
 **Process.** Conversation-authored platform ADR (the ADR [0075](0075-issueless-doc-pr-merge-seam.md)
 issueless exception). The sözlük **term/entry** domain split used in examples here is a separate
 sözlük-domain decision (informs #1203), not part of this framework decision.
+
+## Amendments
+
+Forward notes — the decision above stands; only the discharge-verb *spelling* is refined.
+
+- **#1270 — discharge verb collapsed to a single `Grant.provide(grant)` (2026-06-28).** §1 and
+  §3 above show the proof flowing into the R channel via a per-capability `Cap.provide(grant)`
+  (one `.provide` static per right). That detail is superseded: the per-capability `.provide` is
+  removed and replaced by one canonical, generic `Grant.provide(grant)` that reads the
+  capability `Context.Key` the grant carries (stamped non-enumerably on the grant by `mint`) and
+  `provideService`s it under that key. The forgot-to-provide guarantee and the `Grant` seal are
+  unchanged (still a compile error; still not-a-Schema, `mint` still package-internal); routing
+  by the grant's own key makes a wrong-capability grant fail *loud at runtime* (vs the old
+  static verb providing any grant under the named key). Read `packages/authz/README.md` and
+  [.patterns/authz-capability-as-effect.md](../.patterns/authz-capability-as-effect.md) for the
+  current authoring surface. Caveat surfaced by this work: the **wrong-proof** case is not yet a
+  *compile* error — the sealed `CapabilityTag` drops effect's nominal id brand, so `Grant<X>`/
+  `Grant<Y>` unify (§2's "wrong right's proof is the wrong type" holds at runtime, not the type
+  level). Tracked as **#1483** (a `type:decision`-class framework question), out of #1270's scope.
