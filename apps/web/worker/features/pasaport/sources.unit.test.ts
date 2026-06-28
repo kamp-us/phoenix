@@ -41,7 +41,6 @@ const storedUser = (id: string): UserRow => ({
 	name: `User ${id}`,
 	image: null,
 	username: id,
-	role: "member",
 	tier: "çaylak",
 });
 

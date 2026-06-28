@@ -58,7 +58,6 @@ const storedUser = (tier: StoredTier): UserRow => ({
 	name: "U One",
 	image: null,
 	username: "u-one",
-	role: "member",
 	tier,
 });
 

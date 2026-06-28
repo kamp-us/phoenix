@@ -23,7 +23,6 @@ const row = (over: Partial<UserRow> & {id: string}): UserRow => ({
 	name: null,
 	image: null,
 	username: null,
-	role: "member",
 	tier: "çaylak",
 	...over,
 });

@@ -45,9 +45,6 @@ export interface UserRow {
 	name: string | null;
 	image: string | null;
 	username: string | null;
-	// Server-managed moderation capability (ADR 0098), read here so `Moderator.required`
-	// reads authority from D1 at the point of use rather than from session state.
-	role: "member" | "moderator";
 	// Server-managed authorship tier (ADR 0107 §4), read here so `Kunye.tierOf`
 	// resolves the GLOBAL account-level standing off D1 at the point of use rather
 	// than from session state. `çaylak | yazar` only — an account is always ≥ çaylak.
@@ -468,7 +465,6 @@ export const makePasaportLive = (auth: Auth) =>
 						name: row.name ?? null,
 						image: row.image ?? null,
 						username: row.username ?? null,
-						role: row.role,
 						tier: row.tier,
 					} satisfies UserRow;
 				}),
@@ -488,7 +484,6 @@ export const makePasaportLive = (auth: Auth) =>
 								name: row.name ?? null,
 								image: row.image ?? null,
 								username: row.username ?? null,
-								role: row.role,
 								tier: row.tier,
 							}) satisfies UserRow,
 					);
