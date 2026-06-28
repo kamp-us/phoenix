@@ -77,8 +77,10 @@ export class VouchLedger extends Context.Service<
 
 		/**
 		 * Whether `candidateId` has **≥1 active vouch** from any yazar — the vouch half
-		 * of the order-independent tandem (#1289). `true` once any unwithdrawn vouch row
-		 * names this candidate.
+		 * of the order-independent tandem (#1289). Active mirrors {@link activeCountFor}:
+		 * a vouch row names this candidate AND the candidate is still `çaylak`, so an
+		 * already-promoted (`yazar`) candidate reads `false` (its row persists but no
+		 * longer counts as active).
 		 */
 		readonly hasActiveFor: (candidateId: string) => Effect.Effect<boolean>;
 
@@ -190,12 +192,20 @@ export const VouchLedgerLive = Layer.effect(VouchLedger)(
 				return row?.n ?? 0;
 			}),
 
+			// Tier-filtered like `activeCountFor` (same inner-join): an already-promoted
+			// (`yazar`) candidate's persisted row no longer counts as active (#1324).
 			hasActiveFor: Effect.fn("VouchLedger.hasActiveFor")(function* (candidateId: string) {
 				const row = yield* run((db) =>
 					db
 						.select({voucherId: schema.authorshipVouch.voucherId})
 						.from(schema.authorshipVouch)
-						.where(eq(schema.authorshipVouch.candidateId, candidateId))
+						.innerJoin(schema.user, eq(schema.user.id, schema.authorshipVouch.candidateId))
+						.where(
+							and(
+								eq(schema.authorshipVouch.candidateId, candidateId),
+								eq(schema.user.tier, "çaylak"),
+							),
+						)
 						.limit(1)
 						.get(),
 				);
