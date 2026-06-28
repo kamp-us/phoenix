@@ -68,9 +68,18 @@ interface DeliverResult {
 
 /**
  * The unified LiveDO RPC surface — both roles' typed methods plus the SSE
- * `fetch`. A misrouted call (e.g. `register` on a `connection:` instance) hits
- * an instance whose role doesn't match and harmlessly returns an empty/no-op
- * result — void has no role guard either.
+ * `fetch`. Each method belongs to one role: connection-role (`openStream`/`fetch`,
+ * `subscribe`, `unsubscribe`, `deliver`, `check`) vs topic-role (`register`,
+ * `unregister`, `publish`, `alarm`). A misrouted call returns the method's no-op
+ * shape WITHOUT mutating storage — and this holds *uniformly*: the topic-role
+ * methods early-return on `role.kind !== "topic"`, `openStream`/`subscribe`/
+ * `unsubscribe` on `role.kind !== "connection"`, and `deliver`/`check` on the
+ * absent connection queue (only a connection's `openStream` sets `framesQueue`).
+ * The real invariant is addressing-correctness: production reaches an instance
+ * only via {@link connectionOf}/{@link topicOf}, which always target the matching
+ * role, so a misroute is unreachable in practice — the role guards make the
+ * documented no-op total and refactor-proof rather than convention-only. See
+ * ADR 0037.
  */
 export interface LiveRpcSurface {
 	readonly subscribe: (input: {
@@ -230,6 +239,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		readonly maxQueuedEventsPerConnection: number;
 	}) =>
 		Effect.gen(function* () {
+			if (role.kind !== "connection") {
+				return HttpServerResponse.empty({status: 404});
+			}
 			// A (re)connect bumps the persisted generation so any subscriber row a
 			// topic DO still holds from the prior stream is detected stale on the next
 			// deliver/check. The counter survives eviction, so a reconnect after
@@ -610,6 +622,9 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 
 	const unregister: LiveRpcSurface["unregister"] = (input) =>
 		Effect.gen(function* () {
+			if (role.kind !== "topic") {
+				return {ok: true} as const;
+			}
 			yield* state.storage.delete(subscriberKey(input.row));
 			return {ok: true} as const;
 		});

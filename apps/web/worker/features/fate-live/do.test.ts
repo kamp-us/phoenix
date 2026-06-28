@@ -1177,3 +1177,96 @@ describe("LiveDO replay buffer count-cap overflow prune", () => {
 		await stream.cancel();
 	});
 });
+
+describe("LiveDO role-guard: a misrouted RPC no-ops without mutating storage (#1368)", () => {
+	// Mirror live-do.ts's internal KV-key contract so the test can assert storage
+	// was (not) touched directly: GENERATION_KEY is the connection-role generation
+	// slot; subscriberKey is the topic-role subscriber row key.
+	const GENERATION_KEY = "connection:generation";
+	const subscriberKey = (row: SubscriberRow): string =>
+		`sub:${row.topicKey}:${row.connectionId}:${row.subId}:${row.generation}:${row.revision}`;
+
+	function makeConnectionWithState(cell: LiveCell, connectionId: string) {
+		const name = makeConnectionName(connectionId);
+		const fake = makeDurableObjectStateForTest({id: name});
+		const instance = makeLiveInstance(fake.state, cell.live as never);
+		cell.register(name, instance);
+		return {instance, fake};
+	}
+
+	const guardRow = (topicKey: string, connectionId: string): SubscriberRow => ({
+		topicKey,
+		connectionId,
+		subId: "sub-guard",
+		generation: 1,
+		revision: 1,
+		updatedAt: Date.now(),
+	});
+
+	it("openStream on a topic instance no-ops: no SSE stream, generation never persisted", async () => {
+		const cell = makeLiveCell();
+		const {instance: topic, fake} = makeTopic(cell, "Post:guard-open");
+
+		const res = await run(
+			topic.openStream({
+				ownerId: "owner",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+
+		// No-op shape: not the `text/event-stream` a connection's openStream returns.
+		const web = HttpServerResponse.toWeb(res);
+		expect(web.status).toBe(404);
+		expect(web.headers.get("content-type") ?? "").not.toContain("text/event-stream");
+
+		// No mutation: the generation slot was never written (a connection's
+		// openStream would have persisted 1).
+		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBeUndefined();
+	});
+
+	it("openStream on the matching connection instance still streams + persists generation (correct-role unchanged)", async () => {
+		const cell = makeLiveCell();
+		const {instance: connection, fake} = makeConnectionWithState(cell, "conn-open");
+
+		const res = await run(
+			connection.openStream({
+				ownerId: "owner",
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		const stream = await reader(res);
+		expect(await stream.next()).toContain("connected");
+		expect(await run(fake.state.storage.get<number>(GENERATION_KEY))).toBe(1);
+
+		await stream.cancel();
+	});
+
+	it("unregister on a connection instance no-ops: a seeded subscriber key survives", async () => {
+		const cell = makeLiveCell();
+		const {instance: connection, fake} = makeConnectionWithState(cell, "conn-unreg");
+		const row = guardRow("Post:guard-unreg", "conn-unreg");
+		const key = subscriberKey(row);
+		// Seed the connection's OWN KV with the row's key — an unguarded unregister
+		// would `delete` it on this wrong-role call.
+		await run(fake.state.storage.put(key, row));
+
+		const res = await run(connection.unregister({row}));
+		expect(res.ok).toBe(true);
+
+		expect(await run(fake.state.storage.get<SubscriberRow>(key))).toEqual(row);
+	});
+
+	it("unregister on the matching topic instance still deletes the row (correct-role unchanged)", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Post:guard-unreg-ok";
+		const {instance: topic, fake} = makeTopic(cell, topicKey);
+		const row = guardRow(topicKey, "conn-x");
+		await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now()}));
+		const key = subscriberKey(row);
+		expect(await run(fake.state.storage.get<SubscriberRow>(key))).toEqual(row);
+
+		const res = await run(topic.unregister({row}));
+		expect(res.ok).toBe(true);
+		expect(await run(fake.state.storage.get<SubscriberRow>(key))).toBeUndefined();
+	});
+});
