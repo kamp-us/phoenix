@@ -925,15 +925,19 @@ chore (workflow Steps 4–7), never a `write-code` step.
 
 ---
 
-## Step 4c — Self-deslop your own freshly-generated diff (a pre-push self-check, never a gate)
+## Step 4c — Self-deslop your own freshly-generated diff (a cheap pre-push pre-pass, never a gate)
 
 Before you push (Step 5), run the **`deslop-comments` discipline over the lines this diff
 changed** — and only those lines. AI-generated code reliably over-comments: narration of
 obvious control flow, comments that restate the symbol they sit on, separator/banner
 comments, and docblocks that re-derive a *why* an ADR already owns. CLAUDE.md's "Comments
-earn their place or die" is the standing rule, but nothing in the autonomous loop enforced
-it on fresh churn — so the wall landed in merged PRs (#1242). This step is that
-enforcement, run by the author on its own output at the cheapest point.
+earn their place or die" is the standing rule. This step is a **cheap author-side pre-pass**
+that cuts the obvious slop before push — but it is **no longer the enforcement**: the
+authority that keeps slop out of merged diffs is now the **independent `review-code`
+comment-discipline gate** (Step 3d of `review-code`, ADR
+[0119](https://github.com/kamp-us/phoenix/blob/main/.decisions/0119-comment-discipline-is-an-independent-review-criterion.md)).
+Running it here is still worth it (every line you cut is one fewer the gate FAILs on, saving
+a repair round), but the bias-removing judge is the fresh-eyes reviewer, not you.
 
 **Apply the existing skill — don't re-derive its rubric.** The category rules (CUT /
 COLLAPSE / MIGRATE / KEEP), the one test ("would the next agent be wrong, slower, or
@@ -964,16 +968,21 @@ commit) so the pushed head carries the cleaned diff.
 > `review-*` verdict marker. The independent gate still judges the result with fresh eyes —
 > this step only keeps the wall out of what it judges.
 
-> **Placement rationale (why self-deslop here, not in the review gate).** The deslop
-> discipline is wired into write-code as a pre-push self-check — placement (a) — rather than
-> as a `review-code` comment-density finding (b) or both (c). Reason: it is the lightest fit
-> that closes #1242's invocation gap. write-code already sanctions self-checking the diff
-> before push, so a deslop pass adds **no new gate round-trip** and **no new firewall
-> surface**; routing it through `review-code` instead would promote a *style* convention into
-> a fail→repair gating loop and pull a non-gate-critical concern into the §CP-classified
-> review skill. Comment density is a self-correctable authoring concern, not a correctness
-> contract the independent gate must adjudicate — so it belongs at the author's seat. A full
-> ADR isn't warranted for a within-skill placement call; this note is the record.
+> **Placement rationale — superseded by ADR 0119 (the enforcement moved to the gate).** #1348
+> first wired the deslop discipline here as the author's self-check *and* the sole enforcement —
+> placement (a) over a `review-code` finding (b) or both (c) — arguing comment density was "a
+> self-correctable authoring concern, not a correctness contract the gate must adjudicate." That
+> premise was **falsified** by merged-PR evidence (#1380/#1378 landed ~29% comment lines despite
+> Step 4c running): self-deslop is **author-biased** — the agent that just wrote each justification
+> is the worst judge of its own slop, the same self-evaluation bias the pipeline pays a separate
+> reviewer to remove for correctness. ADR
+> [0119](https://github.com/kamp-us/phoenix/blob/main/.decisions/0119-comment-discipline-is-an-independent-review-criterion.md)
+> resolves #1394 by moving the **judging authority to the independent `review-code` gate** (its
+> Step 3d, a standing diff-hygiene criterion like `lint`/`typecheck`), where fresh eyes remove the
+> bias by construction. Step 4c is **retained but demoted** to the cheap author-side pre-pass above
+> — it cuts obvious slop early so fewer repair rounds are spent on it, but it is no longer *the*
+> enforcement. The firewall is unchanged: the gate judges, the author fixes via the normal repair
+> loop, an independent re-review re-gates.
 
 ---
 

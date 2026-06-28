@@ -901,6 +901,67 @@ nothing to the conjunctive verdict, by design, and is **never** a silent PASS be
 > is the same portability / graceful-absence contract the cycle-doc probe (Step 3b, formats §1) and
 > the milestone default follow — absence is a first-class state, not a defect.
 
+### Step 3d — Comment-discipline gate: the fresh-eyes judge of comment slop (ADR 0119)
+
+CLAUDE.md's **"Comments earn their place or die"** is a standing rule, but until ADR
+[0119](https://github.com/kamp-us/phoenix/blob/main/.decisions/0119-comment-discipline-is-an-independent-review-criterion.md)
+the only enforcement was `write-code` Step 4c — the *author* self-deslopping its own diff. That
+is structurally author-biased: the agent that just wrote each justification, believing every line
+earned its place, is the worst judge of its own slop, so slop kept landing in merged PRs (#1242
+goal unmet; evidence #1380/#1378, ~29% comment lines with the same invariant re-derived 3×). This
+step gives comment-discipline the **same fresh-eyes pass correctness already gets** — *you*, the
+independent reviewer, are the judge; the author only fixes via the normal repair loop. It is a
+**standing diff-hygiene criterion** like `lint`/`typecheck`, **not** an ADR 0079 fan-out dimension
+(those are correctness axes routed by tracing to the issue goal; comment hygiene does not trace to
+the goal — a working feature with slop is still slop).
+
+**Apply the `deslop-comments` rubric verbatim — do not re-derive it, and never a comment-ratio
+threshold.** The one test, the CUT / COLLAPSE / MIGRATE / KEEP categories, and the load-bearing
+KEEP carve-out live in
+[`../deslop-comments/SKILL.md`](../deslop-comments/SKILL.md) — read it and judge by it. The KEEP
+carve-out **bounds this gate**: a local invariant at its enforcement site, a workaround + its
+forcing constraint, a deliberate-looking-wrong guard, a pragma rationale, and an ADR pointer are
+**not** slop and never FAIL. A density heuristic cannot tell those from narration slop (the
+#1380 comments were themselves "borderline load-bearing"), which is exactly why the judge is a
+reviewer applying the rubric, not a number.
+
+**Scope: the diff's added/changed comment lines only.** Judge the comments *this PR adds or
+touches* — never pre-existing comments elsewhere in the files it edits (a drive-by deslop of
+untouched code is out of scope and would widen the diff). The signature failure mode is *scanning
+nothing and reading green*, so follow §ZS (ADR 0092): **emit what you scanned**, **FAIL on the
+relevant-but-zero-match** case, and express a no-comment diff as an **explicit not-applicable
+skip** — distinct from a FAIL.
+
+```bash
+# the added lines this PR introduced on comment-bearing code files, off the diff Step 2 already
+# loaded (the reviewer judges WHICH are comments per the deslop-comments rubric — a regex can't,
+# which is the point). Emit the scanned scope (§ZS #1) so a future drift that silently stops
+# finding added comment lines is visible in the run output rather than reading green.
+ADDED_ON_CODE="$(gh pr diff $PR \
+  | awk '/^\+\+\+ b\/.*\.(ts|tsx|js|jsx|css)$/{f=substr($0,7);next} /^\+\+\+ /{f=""} f && /^\+[^+]/{print f": "substr($0,2)}')"
+echo "comment-discipline: scanned $(printf '%s\n' "$ADDED_ON_CODE" | grep -c . || echo 0) added line(s) on comment-bearing files"
+```
+
+Three outcomes, folded into the per-criterion table exactly like Step 3b/3c:
+
+- **Slop found ⇒ FAIL.** Name the concrete sites and the rubric verdict (CUT / COLLAPSE / MIGRATE)
+  per site, so `write-code`'s repair round knows exactly what to deslop. It drains like any other
+  `[FAIL]` row (the existing bounded loop), and the independent re-review re-gates the cleaned head.
+- **Added comments, all earn their place ⇒ PASS** for this facet — cite that the added comments
+  pass the one test (or are KEEP-category load-bearing notes).
+- **Diff adds no comments ⇒ explicit not-applicable skip** (the §ZS #3 out-of-surface case): emit
+  `comment-discipline: not applicable — no comment lines added/changed in this PR` and **omit the
+  row** from the conjunctive table, exactly as Step 3b/3c omit theirs.
+
+```
+- [PASS] comment-discipline — the 4 added comments are load-bearing (worker/...:NN biome-ignore rationale; ...:NN local invariant); no narration/restatement/re-derivation slop (deslop-comments rubric)
+- [FAIL] comment-discipline — worker/...:NN docblock re-derives ADR 0013's why → COLLAPSE to a pointer; worker/...:NN restates the symbol name → CUT; src/...:NN narrates obvious control flow → CUT (deslop-comments CUT/COLLAPSE)
+```
+
+This row is governed by the conjunctive rule (Step 3): a `[FAIL]` comment-discipline facet fails the
+PR until the diff is deslopped. The author is the *fixer*; you are the *judge* — the split-role
+firewall holds, and the author bias #1394 named is gone by construction.
+
 ---
 
 ## Step 4a — Pass path: signal merge-ready (do NOT merge)
