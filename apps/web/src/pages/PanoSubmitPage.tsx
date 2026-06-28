@@ -6,10 +6,10 @@ import {FirstContributionOnramp} from "../components/authorship/FirstContributio
 import {PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
-import {codeOf} from "../fate/wire";
+import {useDraftSubmit} from "../fate/useDraftSubmit";
+import type {WireMessageOverrides} from "../fate/wireMessages";
 import {FlagGate} from "../flags/FlagGate";
 import {PANO_DRAFT_SAVE} from "../flags/keys";
-import type {FateWireCode} from "../lib/fateWireCodes";
 import {POST_TAG_KINDS, tagClass, tagLabel} from "../lib/panoTags";
 import {authRedirectPath} from "../lib/returnTo";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
@@ -61,34 +61,19 @@ const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const TITLE_MIN = 5;
 
-/** Turkish copy for the wire codes the submit form surfaces inline. */
-const messageForCode = (code: FateWireCode, fallback: string): string => {
-	switch (code) {
-		case "TITLE_REQUIRED":
-			return "başlık boş olamaz";
-		case "TITLE_TOO_LONG":
-			return `başlık en fazla ${TITLE_MAX} karakter olabilir`;
-		case "BODY_TOO_LONG":
-			return `metin en fazla ${BODY_MAX} karakter olabilir`;
-		case "TAGS_REQUIRED":
-			return "en az bir etiket seç";
-		case "TAG_INVALID":
-			return "geçersiz etiket";
-		case "URL_INVALID":
-			return "geçersiz bağlantı";
-		case "TOO_SHORT":
-			return `başlık en az ${TITLE_MIN} karakter olmalı`;
-		case "DRAFTS_DISABLED":
-			return "taslaklar şu an devre dışı";
-		case "VALIDATION_ERROR":
-			return "girdiğin bilgiler geçersiz";
-		case "USER_NOT_FOUND":
-			return "kullanıcı bulunamadı";
-		case "BAD_REQUEST":
-			return "geçersiz istek";
-		default:
-			return fallback;
-	}
+/** Submit-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
+const PANO_SUBMIT_OVERRIDES: WireMessageOverrides = {
+	TITLE_REQUIRED: "başlık boş olamaz",
+	TITLE_TOO_LONG: `başlık en fazla ${TITLE_MAX} karakter olabilir`,
+	BODY_TOO_LONG: `metin en fazla ${BODY_MAX} karakter olabilir`,
+	TAGS_REQUIRED: "en az bir etiket seç",
+	TAG_INVALID: "geçersiz etiket",
+	URL_INVALID: "geçersiz bağlantı",
+	TOO_SHORT: `başlık en az ${TITLE_MIN} karakter olmalı`,
+	DRAFTS_DISABLED: "taslaklar şu an devre dışı",
+	VALIDATION_ERROR: "girdiğin bilgiler geçersiz",
+	USER_NOT_FOUND: "kullanıcı bulunamadı",
+	BAD_REQUEST: "geçersiz istek",
 };
 
 export function PanoSubmitPage() {
@@ -99,11 +84,15 @@ export function PanoSubmitPage() {
 	const [title, setTitle] = React.useState("");
 	const [body, setBody] = React.useState("");
 	const [selectedTags, setSelectedTags] = React.useState<Set<string>>(new Set());
-	const [error, setError] = React.useState<string | null>(null);
 	const [draftSaved, setDraftSaved] = React.useState(false);
 
 	const fate = useFateClient();
-	const [isInFlight, setInFlight] = React.useState(false);
+	const {
+		error,
+		setError,
+		inFlight: isInFlight,
+		run,
+	} = useDraftSubmit({overrides: PANO_SUBMIT_OVERRIDES, redirectPath: () => "/pano/yeni"});
 	const urlRef = React.useRef<HTMLInputElement>(null);
 	const titleRef = React.useRef<HTMLInputElement>(null);
 	// CTA focus target: the URL field leads in link mode, the title field otherwise.
@@ -171,58 +160,48 @@ export function PanoSubmitPage() {
 		const trimmedUrl = url.trim();
 		const user = session.data.user;
 		const now = new Date();
-		setInFlight(true);
-		try {
-			// `insert: "before"` declaratively prepends the new post into the
-			// registered no-filter feed root list — NO imperative connection-key
-			// updater. The optimistic temp record (temp id fate reconciles to the
-			// server id) makes the prepend show during the in-flight window.
-			const {result, error: callError} = await fate.mutations.post.submit({
-				input: {
-					title: trimmedTitle,
-					tags: Array.from(selectedTags).map((kind) => ({kind})),
-					...(mode === "link" && trimmedUrl ? {url: trimmedUrl} : {}),
-					...(body.trim() ? {body} : {}),
-				},
-				view: PanoPostCardView,
-				insert: "before",
-				optimistic: {
-					id: `optimistic:${Date.now()}`,
-					slug: null,
-					title: trimmedTitle,
-					url: mode === "link" && trimmedUrl ? trimmedUrl : null,
-					host: mode === "link" && trimmedUrl ? hostOf(trimmedUrl) : null,
-					author: user.name ?? user.email,
-					authorId: user.id,
-					// Submitting a post is NOT a self-upvote: the server inserts it at
-					// score 0 with no viewer vote (Pano.submitPost). The optimistic record
-					// must mirror that, else its score:1/myVote:true reconciles onto the
-					// server-id'd Post and bleeds a phantom self-upvote into the
-					// freshly-navigated detail page (#707).
-					score: 0,
-					myVote: null,
-					commentCount: 0,
-					createdAt: now,
-					tags: Array.from(selectedTags).map((kind) => ({kind, label: kind})),
-				},
-			});
-			if (callError) {
-				setError(messageForCode(codeOf(callError), callError.message));
-				return;
-			}
-			draft.clear(); // submitted successfully — the autosaved draft is spent
-			const newId = result?.slug ?? result?.id;
-			if (newId) navigate(`/pano/${newId}`);
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath("/pano/yeni"));
-				return;
-			}
-			setError(messageForCode(code, "gönderi paylaşılamadı"));
-		} finally {
-			setInFlight(false);
-		}
+		await run(
+			() =>
+				// `insert: "before"` declaratively prepends the new post into the
+				// registered no-filter feed root list — NO imperative connection-key
+				// updater. The optimistic temp record (temp id fate reconciles to the
+				// server id) makes the prepend show during the in-flight window.
+				fate.mutations.post.submit({
+					input: {
+						title: trimmedTitle,
+						tags: Array.from(selectedTags).map((kind) => ({kind})),
+						...(mode === "link" && trimmedUrl ? {url: trimmedUrl} : {}),
+						...(body.trim() ? {body} : {}),
+					},
+					view: PanoPostCardView,
+					insert: "before",
+					optimistic: {
+						id: `optimistic:${Date.now()}`,
+						slug: null,
+						title: trimmedTitle,
+						url: mode === "link" && trimmedUrl ? trimmedUrl : null,
+						host: mode === "link" && trimmedUrl ? hostOf(trimmedUrl) : null,
+						author: user.name ?? user.email,
+						authorId: user.id,
+						// Submitting a post is NOT a self-upvote: the server inserts it at
+						// score 0 with no viewer vote (Pano.submitPost). The optimistic record
+						// must mirror that, else its score:1/myVote:true reconciles onto the
+						// server-id'd Post and bleeds a phantom self-upvote into the
+						// freshly-navigated detail page (#707).
+						score: 0,
+						myVote: null,
+						commentCount: 0,
+						createdAt: now,
+						tags: Array.from(selectedTags).map((kind) => ({kind, label: kind})),
+					},
+				}),
+			"gönderi paylaşılamadı",
+			(result) => {
+				draft.clear(); // submitted successfully — the autosaved draft is spent
+				const newId = result?.slug ?? result?.id;
+				if (newId) navigate(`/pano/${newId}`);
+			},
+		);
 	}
 
 	async function onSaveDraft() {
@@ -233,32 +212,20 @@ export function PanoSubmitPage() {
 			return;
 		}
 		const trimmedUrl = url.trim();
-		setInFlight(true);
-		try {
-			const {error: callError} = await fate.mutations.post.saveDraft({
-				input: {
-					title: trimmedTitle,
-					...(mode === "link" && trimmedUrl ? {url: trimmedUrl} : {}),
-					...(body.trim() ? {body} : {}),
-					tags: Array.from(selectedTags).map((kind) => ({kind})),
-				},
-				view: PanoPostCardView,
-			});
-			if (callError) {
-				setError(messageForCode(codeOf(callError), callError.message));
-				return;
-			}
-			setDraftSaved(true);
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath("/pano/yeni"));
-				return;
-			}
-			setError(messageForCode(code, "taslak kaydedilemedi"));
-		} finally {
-			setInFlight(false);
-		}
+		await run(
+			() =>
+				fate.mutations.post.saveDraft({
+					input: {
+						title: trimmedTitle,
+						...(mode === "link" && trimmedUrl ? {url: trimmedUrl} : {}),
+						...(body.trim() ? {body} : {}),
+						tags: Array.from(selectedTags).map((kind) => ({kind})),
+					},
+					view: PanoPostCardView,
+				}),
+			"taslak kaydedilemedi",
+			() => setDraftSaved(true),
+		);
 	}
 
 	return (

@@ -11,24 +11,31 @@
  */
 
 import {checkUsername, normalizeUsername} from "../../worker/features/pasaport/username-rule";
+import type {WireMessageOverrides} from "../fate/wireMessages";
 import type {FateWireCode} from "../lib/fateWireCodes";
+
+/**
+ * The username surface's per-code copy. Unlike the other write surfaces (which
+ * defer non-overridden codes to the shared {@link WIRE_MESSAGES} base, #1421), the
+ * username form deliberately collapses *every* non-validation failure to one
+ * generic line ({@link USERNAME_GENERIC}) — "couldn't set the username" is the
+ * right surface message for an auth/server failure here, so this is a meaningful
+ * per-surface default, not the #1422 silent-absorb. Only these five reasons get
+ * distinct copy.
+ */
+const USERNAME_OVERRIDES: WireMessageOverrides = {
+	TOO_SHORT: "kullanıcı adı en az 3 karakter olmalı",
+	TOO_LONG: "kullanıcı adı en fazla 30 karakter olabilir",
+	INVALID_FORMAT: "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir",
+	TAKEN: "bu kullanıcı adı alınmış, başka bir tane dene",
+	ALREADY_SET: "kullanıcı adın zaten ayarlanmış",
+};
+
+const USERNAME_GENERIC = "kullanıcı adı ayarlanamadı";
 
 /** Map a server wire code (or a local rule reason) to its inline Turkish message. */
 export function messageForCode(code: FateWireCode | null): string {
-	switch (code) {
-		case "TOO_SHORT":
-			return "kullanıcı adı en az 3 karakter olmalı";
-		case "TOO_LONG":
-			return "kullanıcı adı en fazla 30 karakter olabilir";
-		case "INVALID_FORMAT":
-			return "kullanıcı adı yalnızca küçük harf, rakam ve - içerebilir";
-		case "TAKEN":
-			return "bu kullanıcı adı alınmış, başka bir tane dene";
-		case "ALREADY_SET":
-			return "kullanıcı adın zaten ayarlanmış";
-		default:
-			return "kullanıcı adı ayarlanamadı";
-	}
+	return (code != null && USERNAME_OVERRIDES[code]) || USERNAME_GENERIC;
 }
 
 /**

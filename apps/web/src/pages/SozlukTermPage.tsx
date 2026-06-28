@@ -21,9 +21,10 @@ import {SozlukTermHeader, TermHeaderView} from "../components/sozluk/SozlukTermH
 import {Button} from "../components/ui/Button";
 import {DraftRestoreBanner} from "../components/ui/DraftRestoreBanner";
 import {Screen} from "../fate/Screen";
+import {useDraftSubmit} from "../fate/useDraftSubmit";
 import {useReadbackRefetch} from "../fate/useReadbackRefetch";
-import {codeOf, LoadMoreButton} from "../fate/wire";
-import type {FateWireCode} from "../lib/fateWireCodes";
+import {LoadMoreButton} from "../fate/wire";
+import type {WireMessageOverrides} from "../fate/wireMessages";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {useDraftAutosave} from "../lib/useDraftAutosave";
@@ -68,15 +69,10 @@ const TermView = view<Term>()({
 	definitions: DefinitionConnectionView,
 });
 
-const messageForCode = (code: FateWireCode, fallback: string): string => {
-	switch (code) {
-		case "BODY_REQUIRED":
-			return "tanım boş olamaz";
-		case "BODY_TOO_LONG":
-			return `tanım en fazla ${BODY_MAX} karakter olabilir`;
-		default:
-			return fallback;
-	}
+/** Definition-composer copy that overrides the shared {@link WIRE_MESSAGES} base. */
+const SOZLUK_OVERRIDES: WireMessageOverrides = {
+	BODY_REQUIRED: "tanım boş olamaz",
+	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
 };
 
 export function SozlukTermPage() {
@@ -279,8 +275,12 @@ function Composer({
 	const session = useSession();
 	const navigate = useNavigate();
 	const [body, setBody] = React.useState("");
-	const [error, setError] = React.useState<string | null>(null);
-	const [isInFlight, setInFlight] = React.useState(false);
+	const {
+		error,
+		setError,
+		inFlight: isInFlight,
+		run,
+	} = useDraftSubmit({overrides: SOZLUK_OVERRIDES, redirectPath: () => `/sozluk/${slug}`});
 	const bodyRef = React.useRef<HTMLTextAreaElement>(null);
 
 	const draftValue = React.useMemo<DefinitionDraft>(() => ({body}), [body]);
@@ -309,48 +309,37 @@ function Composer({
 			return;
 		}
 		if (disabled) return;
-		setError(null);
-		setInFlight(true);
-		try {
-			const {result, error: callError} = await fate.mutations.definition.add({
-				input: {termSlug: slug, termTitle: slug.replace(/-/g, " "), body},
-				view: DefinitionView,
-			});
-			if (callError) {
-				setError(messageForCode(codeOf(callError), callError.message));
-				return;
-			}
-			setBody("");
-			draft.clear(); // submitted successfully — the autosaved draft is spent
-			const createdId = result?.id != null ? String(result.id) : null;
-			if (onTermCreated) {
-				// Fresh-slug branch: the term now exists, but the first mount's render-path
-				// `useRequest({term…}, network-only)` left a fulfilled `data:null` handle for
-				// this requestKey, and the remount's render path (`revalidateExisting:false`)
-				// reuses it WITHOUT refetching — so a bare remount reads back the cached null
-				// and the list branch never mounts (#817). Force a real network re-read first
-				// (imperative `request` passes `revalidateExisting:true`, re-executing the
-				// handle and repopulating the store), THEN remount so it reads the real term.
-				await fate.request(
-					{term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
-					{mode: "network-only"},
-				);
-				// Carry the mutation's own returned id across the remount so the list branch
-				// arms its deterministic read-back on it (#730).
-				onTermCreated(createdId);
-			} else if (createdId != null) {
-				onConfirm?.(createdId);
-			}
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath(`/sozluk/${slug}`));
-				return;
-			}
-			setError(messageForCode(code, "tanım eklenemedi"));
-		} finally {
-			setInFlight(false);
-		}
+		await run(
+			() =>
+				fate.mutations.definition.add({
+					input: {termSlug: slug, termTitle: slug.replace(/-/g, " "), body},
+					view: DefinitionView,
+				}),
+			"tanım eklenemedi",
+			async (result) => {
+				setBody("");
+				draft.clear(); // submitted successfully — the autosaved draft is spent
+				const createdId = result?.id != null ? String(result.id) : null;
+				if (onTermCreated) {
+					// Fresh-slug branch: the term now exists, but the first mount's render-path
+					// `useRequest({term…}, network-only)` left a fulfilled `data:null` handle for
+					// this requestKey, and the remount's render path (`revalidateExisting:false`)
+					// reuses it WITHOUT refetching — so a bare remount reads back the cached null
+					// and the list branch never mounts (#817). Force a real network re-read first
+					// (imperative `request` passes `revalidateExisting:true`, re-executing the
+					// handle and repopulating the store), THEN remount so it reads the real term.
+					await fate.request(
+						{term: {view: TermView, args: {slug, definitions: {first: PAGE_SIZE}}}},
+						{mode: "network-only"},
+					);
+					// Carry the mutation's own returned id across the remount so the list branch
+					// arms its deterministic read-back on it (#730).
+					onTermCreated(createdId);
+				} else if (createdId != null) {
+					onConfirm?.(createdId);
+				}
+			},
+		);
 	}
 
 	return (
