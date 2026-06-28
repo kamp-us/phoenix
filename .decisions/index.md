@@ -115,3 +115,4 @@ One row per ADR. Read the file for the why.
 | [0108](0108-hand-authored-flat-d1-migrations.md) | Hand-Authored Flat D1 Migrations Are the Sanctioned Path; Defer the drizzle-kit v7 Cutover | accepted | 2026-06-27 |
 | [0109](0109-worktree-deps-provision-not-share.md) | Worktree Deps Are Provisioned by a Real pnpm install, Never a Filesystem Share; the Correct Install Is Deferred to a Full-PATH Context | accepted | 2026-06-27 |
 | [0110](0110-plugin-carries-no-version-continuous-ship.md) | The kampus-pipeline plugin carries no `version` — continuous-ship, content-addressed by commit SHA | accepted | 2026-06-27 |
+| [0111](0111-blocking-set-verdicts-sha-less-by-design.md) | Blocking-set (§CP) review verdicts are deliberately SHA-less in the first line — the SHA is bound in the body, and a delegated control-plane merge actor confirms by reading the body, not the first-line marker | accepted | 2026-06-27 |
