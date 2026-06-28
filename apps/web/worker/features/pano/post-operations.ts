@@ -25,7 +25,7 @@ import * as schema from "../../db/drizzle/schema.ts";
 import {computeHotScore} from "../../db/hotScore.ts";
 import {emptyKeysetPage, forwardPage, keysetAfter, resolveCursor} from "../../db/keyset.ts";
 import {stampViewerScalars} from "../fate/viewer-scalars.ts";
-import {isVisibleTo, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
+import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import * as Removal from "../lifecycle/removal.ts";
 import {
 	resolveSandboxViewer,
@@ -47,6 +47,7 @@ import {
 	UrlInvalid,
 } from "./errors.ts";
 import {excerpt} from "./excerpt.ts";
+import {postVisibleTo, postVisibleWhere} from "./PostVisibility.ts";
 import type {PersistPanoStats} from "./pano-stats.ts";
 import {
 	type PostConnectionPage,
@@ -324,10 +325,19 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 			}),
 		);
 		if (!meta) return null;
-		// A sandboxed post (#1205) is hidden from anyone but its author + a
-		// moderator — the in-memory mirror of the list reads' SQL predicate, since
-		// this single-row read uses the relational query builder.
-		if (!isVisibleTo(Removal.fromColumns(meta), meta.authorId, resolveSandboxViewer(opts))) {
+		// The in-memory visibility decision via the ADR 0113 seam (`postVisibleTo`) —
+		// the mirror of the SQL `postVisibleWhere` the batch read uses, applied here
+		// because this single-row read uses the relational query builder. It composes
+		// the lifecycle + sandbox gate with the author-only draft arm, so a draft the
+		// viewer doesn't own reads as not-found while the author reads their own.
+		if (
+			!postVisibleTo(
+				Removal.fromColumns(meta),
+				Boolean(meta.isDraft),
+				meta.authorId,
+				resolveSandboxViewer(opts),
+			)
+		) {
 			return null;
 		}
 		return rowToPostPage(meta);
@@ -463,10 +473,11 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 					and(
 						inArray(schema.postRecord.id, [...ids]),
 						isNull(schema.postRecord.removedAt),
-						sandboxVisibleWhere(
+						postVisibleWhere(
 							{
 								sandboxedAt: schema.postRecord.sandboxedAt,
 								authorId: schema.postRecord.authorId,
+								isDraft: schema.postRecord.isDraft,
 							},
 							resolveSandboxViewer(opts),
 						),
@@ -475,9 +486,10 @@ export const makePostOperations = (deps: PostOperationsDeps) => {
 		);
 		// `myVote`/`isSaved` are the viewer scalars, finalized via `stampViewerScalars`
 		// (one `user_vote` + one `post_bookmark` read for the whole batch); the row's
-		// intrinsic fields come from the `post-fields.ts` column→field map — incl.
-		// `isDraft`, read off the row itself (a by-id read returns the author's own
-		// draft, read-your-writes), not a viewer-presence read.
+		// intrinsic fields come from the `post-fields.ts` column→field map. The
+		// draft/ownership gate is enforced in SQL by `postVisibleWhere` above — a draft
+		// the viewer doesn't own never reaches this batch — so a surviving `isDraft` row
+		// is the author's own: read-your-writes, now verified rather than assumed.
 		const intrinsic = fetched.map(toPostSummaryRow);
 		return yield* stampViewerScalars(intrinsic, viewerId, postViewerScalars);
 	});
