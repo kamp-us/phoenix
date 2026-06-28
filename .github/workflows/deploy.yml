@@ -21,6 +21,29 @@ env:
   STAGE: ${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.number) || 'prod' }}
 
 jobs:
+  # Single source of the per-app deploy roster (ADR 0057, #1434). The `app` /
+  # `pnpm-name` / `needs-auth` set is declared ONCE here and consumed by BOTH `deploy`
+  # and `cleanup` via `fromJSON(needs.app-roster.outputs.matrix)`, so an app added to
+  # deploy can't be silently missed in cleanup — the deploy/cleanup-drift that leaks a
+  # worker + D1 + DOs on PR close, the exact class the teardown-verify step (#813)
+  # exists to catch. GitHub Actions has no YAML-anchor reuse across jobs, so a roster
+  # job emitting the matrix JSON is the single-source mechanism; adding an app is one
+  # declaration edit here, not a two-site shotgun.
+  app-roster:
+    name: resolve app roster
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.roster.outputs.matrix }}
+    steps:
+      # `app` is the apps/ dir; `pnpm-name` its workspace package; `needs-auth` whether
+      # the app's worker binds BETTER_AUTH_SECRET (@kampus/web reads it `Effect.orDie`
+      # in config.ts, so its deploy/destroy passes the secret; a future auth-less app
+      # sets `needs-auth: false` so its deploy never requires it — ADR 0057).
+      - id: roster
+        run: |
+          set -euo pipefail
+          echo 'matrix={"include":[{"app":"web","pnpm-name":"@kampus/web","needs-auth":true}]}' >> "$GITHUB_OUTPUT"
+
   deploy:
     # Defense-in-depth: never run a secret-bearing deploy for a fork PR. A
     # same-repo (non-fork) PR can only be opened by someone with push access, so
@@ -36,6 +59,7 @@ jobs:
       github.event.action != 'closed' &&
       (github.event_name == 'push' ||
        github.event.pull_request.head.repo.full_name == github.repository)
+    needs: app-roster
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -44,16 +68,9 @@ jobs:
       # Each app is an independent worker + stack (ADR 0057) — one app's deploy
       # failing must not cancel the other's. `fail-fast: false` keeps both running.
       fail-fast: false
-      matrix:
-        include:
-          # `app` is the apps/ dir; `pnpm-name` is its workspace package.
-          # `needs-auth` says whether the app's worker binds BETTER_AUTH_SECRET:
-          # @kampus/web has auth (config.ts reads it `Effect.orDie`), so its
-          # deploy/destroy passes the secret. A future auth-less app would set
-          # `needs-auth: false` so its deploy never requires the secret (ADR 0057).
-          - app: web
-            pnpm-name: "@kampus/web"
-            needs-auth: true
+      # The roster is single-sourced in the `app-roster` job (#1434) and shared with
+      # `cleanup`, so deploy and teardown can never drift onto different app sets.
+      matrix: ${{ fromJSON(needs.app-roster.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4.2.2
         with:
@@ -280,6 +297,7 @@ jobs:
     if: >-
       github.event_name == 'pull_request' && github.event.action == 'closed' &&
       github.event.pull_request.head.repo.full_name == github.repository
+    needs: app-roster
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -288,11 +306,10 @@ jobs:
       # Tear down every app's preview stage; one destroy failing must not skip
       # the other (a half-torn-down PR would leak a worker + D1 + DOs).
       fail-fast: false
-      matrix:
-        include:
-          - app: web
-            pnpm-name: "@kampus/web"
-            needs-auth: true
+      # Same single-sourced roster as `deploy` (#1434): cleanup reads the EXACT app
+      # set deploy used, so an app added to deploy is torn down automatically — no
+      # second matrix to keep in sync, killing the deploy/cleanup-drift stage leak.
+      matrix: ${{ fromJSON(needs.app-roster.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v4.2.2
 
