@@ -927,11 +927,13 @@ For a **non-blocking** PR (every other class), land an **explicit, recognizable 
 signal** so the next actor (human or authorized downstream step) knows it's verified and can
 merge. Two forms, either is valid — both must carry the per-criterion table as evidence.
 
-First, **resolve the head SHA you actually reviewed** and **write the verdict to a per-PR
-temp file** (`VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"`) so multi-line markdown +
-backticks survive the shell — both forms below read it back via `cat`. The PR number is in
-the path so back-to-back runs never collide on a fixed file (a prior run's unread verdict
-would otherwise stall the write or leak into this run). The SHA goes into the marker's first
+First, **resolve the head SHA you actually reviewed** and **write the verdict to a per-run
+temp file** (`VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"`) so multi-line markdown +
+backticks survive the shell — both forms below read it back via `cat`. Allocate it with
+`mktemp`, not a fixed `/tmp/review-code-verdict-${PR}.md`: the PR number alone isn't unique —
+two reviews of the *same* PR running concurrently (the operator fans review-* out in
+parallel) would collide on it, one run's unread verdict stalling the write or leaking into
+the other (#1465). The SHA goes into the marker's first
 line (`review-code: PASS @ <sha> — merge-ready`) — it is **load-bearing**: `ship-it` refuses
 any verdict not bound to the PR's current head (ADR
 [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md), issue #258). See the
@@ -960,7 +962,7 @@ tolerated because `ship-it`'s consumer SHA-refuses any marker without an `@ <sha
 current head (Step 2b), so they can never authorize a merge.
 
 ```bash
-VERDICT_FILE="/tmp/review-code-verdict-${PR}.md"
+VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"
 BODY="$(cat "$VERDICT_FILE")"   # first line: review-code: PASS @ <HEAD_SHA> — merge-ready
 if gh api -X POST repos/$REPO/pulls/$PR/reviews \
      -f event=APPROVE -f body="$BODY"; then
@@ -1113,8 +1115,9 @@ straddle a head move:
 
 ```bash
 HEAD_SHA="$(gh api repos/$REPO/pulls/$PR --jq .head.sha)"   # resolve ONCE, before authoring the verdict file (mirror the PASS path)
-# … author /tmp/review-code-verdict-${PR}.md now, embedding `review-code: FAIL @ $HEAD_SHA — not merge-ready` as its first line …
-BODY="$(cat "/tmp/review-code-verdict-${PR}.md")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready (the SHA resolved just above)
+VERDICT_FILE="$(mktemp /tmp/review-code-verdict.XXXXXX)"   # per-run temp, not a fixed/PR-namespaced path (#1465)
+# … author "$VERDICT_FILE" now, embedding `review-code: FAIL @ $HEAD_SHA — not merge-ready` as its first line …
+BODY="$(cat "$VERDICT_FILE")"   # first line: review-code: FAIL @ <HEAD_SHA> — not merge-ready (the SHA resolved just above)
 ME="$(gh api user --jq .login)"
 # --arg is a jq flag, not a gh-api one (ADR 0055), so pipe gh api straight into standalone jq
 # (a direct pipe is binary-safe — a shell var can't hold the NUL/control bytes a comment body may carry):
