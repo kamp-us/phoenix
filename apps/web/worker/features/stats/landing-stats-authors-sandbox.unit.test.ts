@@ -1,21 +1,21 @@
 /**
- * `Stats.getLandingStats` author-UNION sandbox-visibility wiring (#1391) — the
- * security fix: the public landing `totalAuthors` counter must NOT count a çaylak
- * who only has sandboxed (un-promoted) content. The counter is a distinct-author
- * UNION across the three record tables; every arm must carry the #1205
- * `sandboxed_at IS NULL` clause beside its existing `removed_at IS NULL` guard,
- * agreeing with the per-product `total_authors` columns (`makePersistPanoStats`,
- * `recomputeSozlukStats`) that already exclude sandboxed rows.
+ * `Stats.getLandingStats` author-UNION public-live wiring (#1407, subsuming #1391).
+ * The public landing `totalAuthors` counter is a distinct-author UNION across the
+ * three record tables; every arm must reflect LIVE content only, so a çaylak with
+ * only sandboxed rows — and a pano author with only draft posts — must NOT count.
+ *
+ * #1407 folds this onto the shared visibility seam: each arm now sources its filter
+ * from `publicLiveWhere`/`publicLivePostWhere` for the anonymous viewer instead of a
+ * hand-written `removed_at IS NULL AND sandboxed_at IS NULL` clause (#1391's point
+ * fix, now replaced — not layered). For the anonymous viewer `publicLiveWhere`
+ * reduces to removed+sandbox, and the post arm's `publicLivePostWhere` adds the
+ * draft exclusion, so the post arm carries `is_draft IS NOT 1` on top.
  *
  * Unit-tier per ADR 0082: row-level filtering is the integration tier's job; what
- * THIS test proves is that the author UNION WIRES the sandbox clause into every arm.
+ * THIS test proves is that the author UNION WIRES the seam predicate into every arm.
  * The counter reads resolve through `db.run(sql).then()` (a Promise, no `.toSQL()`),
- * so — like `profile-counts-sandbox.unit.test.ts` — the compiled SQL is captured off
- * a RECORDING D1 binding whose `prepare(sql)` records every executed statement.
- *
- * The negative the fix closes: each arm filters `sandboxed_at IS NULL`, so an author
- * whose ONLY rows are sandboxed contributes zero `author_id` to every arm ⇒ excluded
- * from the distinct count; a live author's rows survive every guard ⇒ still counted.
+ * so the compiled SQL is captured off a RECORDING D1 binding whose `prepare(sql)`
+ * records every executed statement.
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
@@ -75,27 +75,33 @@ const recordAuthorUnion = Effect.gen(function* () {
 	return (union as RecordedQuery).sql;
 });
 
-describe("Stats.getLandingStats — public totalAuthors excludes sandbox-only authors (#1391)", () => {
-	it.effect(
-		"every UNION arm filters removed_at AND sandboxed_at (sandbox-only author not counted)",
-		() =>
-			Effect.gen(function* () {
-				const sql = (yield* recordAuthorUnion).toLowerCase();
-				// One arm per content table; each must carry BOTH guards so a sandbox-only
-				// author drops out of every arm ⇒ out of the distinct-author count.
-				const guards = sql.match(/removed_at is null and sandboxed_at is null/g) ?? [];
-				assert.strictEqual(
-					guards.length,
-					3,
-					"all three UNION arms carry the removed+sandboxed guard",
-				);
-				assert.include(sql, "definition_record where removed_at is null and sandboxed_at is null");
-				assert.include(sql, "post_record where removed_at is null and sandboxed_at is null");
-				assert.include(sql, "comment_record where removed_at is null and sandboxed_at is null");
-			}),
+describe("Stats.getLandingStats — public totalAuthors excludes sandbox-only/draft-only authors (#1407)", () => {
+	it.effect("every UNION arm sources the public-live filter from the shared seam", () =>
+		Effect.gen(function* () {
+			const sql = (yield* recordAuthorUnion).toLowerCase();
+			// One arm per content table; each carries BOTH the removed and the sandbox
+			// guard (the seam's anonymous-viewer reduction), so a sandbox-only author
+			// drops out of every arm ⇒ out of the distinct-author count.
+			const removed = sql.match(/"removed_at" is null/g) ?? [];
+			const sandboxed = sql.match(/"sandboxed_at" is null/g) ?? [];
+			assert.strictEqual(removed.length, 3, "all three arms carry the removed_at guard");
+			assert.strictEqual(sandboxed.length, 3, "all three arms carry the sandboxed_at guard");
+			assert.include(sql, `"definition_record"."sandboxed_at" is null`);
+			assert.include(sql, `"post_record"."sandboxed_at" is null`);
+			assert.include(sql, `"comment_record"."sandboxed_at" is null`);
+		}),
 	);
 
-	it.effect("a live author still counts — no arm gates sandboxed_at IS NOT NULL", () =>
+	it.effect("the post arm additionally excludes drafts (draft-only author not counted)", () =>
+		Effect.gen(function* () {
+			const sql = (yield* recordAuthorUnion).toLowerCase();
+			// The post-aware seam (`publicLivePostWhere`) adds the draft gate, so a pano
+			// author whose only post is an unpublished draft contributes no author_id.
+			assert.include(sql, `"post_record"."is_draft" is not 1`);
+		}),
+	);
+
+	it.effect("a live author still counts — no arm inverts the sandbox mask", () =>
 		Effect.gen(function* () {
 			const sql = (yield* recordAuthorUnion).toLowerCase();
 			// The mask is `sandboxed_at IS NULL` (keep live), never `IS NOT NULL` (which

@@ -10,6 +10,10 @@
 import {sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
+import * as schema from "../../db/drizzle/schema.ts";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
+import {publicLiveWhere} from "../lifecycle/SandboxVisibility.ts";
+import {publicLivePostWhere} from "../pano/PostVisibility.ts";
 
 export interface LandingStats {
 	totalDefinitions: number;
@@ -48,18 +52,44 @@ export const StatsLive = Layer.effect(Stats)(
 				);
 				// Distinct-author UNION across the record tables: cheaper than reading
 				// both per-product `total_authors` columns, since neither is a strict
-				// subset of the other. Public stats count LIVE content only, so each arm
-				// excludes sandboxed çaylak rows (#1205) like removed ones — else a
-				// sandbox-only author would inflate the public landing total.
+				// subset of the other. Each arm sources the public-live filter from the
+				// shared seam (#1359/#1407) for the anonymous viewer — definition/comment
+				// via `publicLiveWhere` (removed + sandbox), the post arm via the
+				// post-aware `publicLivePostWhere` so a draft-only author is excluded too.
+				const defWhere = publicLiveWhere(
+					{
+						removedAt: schema.definitionRecord.removedAt,
+						sandboxedAt: schema.definitionRecord.sandboxedAt,
+						authorId: schema.definitionRecord.authorId,
+					},
+					anonymousViewer,
+				);
+				const postWhere = publicLivePostWhere(
+					{
+						removedAt: schema.postRecord.removedAt,
+						sandboxedAt: schema.postRecord.sandboxedAt,
+						authorId: schema.postRecord.authorId,
+						isDraft: schema.postRecord.isDraft,
+					},
+					anonymousViewer,
+				);
+				const commentWhere = publicLiveWhere(
+					{
+						removedAt: schema.commentRecord.removedAt,
+						sandboxedAt: schema.commentRecord.sandboxedAt,
+						authorId: schema.commentRecord.authorId,
+					},
+					anonymousViewer,
+				);
 				const authorsRow = yield* run((db) =>
 					db
 						.run(
 							sql`SELECT COUNT(DISTINCT author_id) as n FROM (
-								SELECT author_id FROM definition_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
+								SELECT author_id FROM definition_record WHERE ${defWhere}
 								UNION
-								SELECT author_id FROM post_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
+								SELECT author_id FROM post_record WHERE ${postWhere}
 								UNION
-								SELECT author_id FROM comment_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
+								SELECT author_id FROM comment_record WHERE ${commentWhere}
 							)`,
 						)
 						.then((r) => (r.results[0] as {n: number} | undefined) ?? null),
