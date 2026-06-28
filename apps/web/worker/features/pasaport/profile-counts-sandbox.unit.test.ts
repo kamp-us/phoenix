@@ -173,6 +173,22 @@ const recordFeedCounts = (sandboxViewer: SandboxViewer) =>
 		return recorded;
 	});
 
+// Run `lookupProfileById` (the by-id relation fetch path the `profileSource.byId`
+// loader drives) for `AUTHOR` as seen by `sandboxViewer`; return the three recorded
+// headline-count statements. Same shape as `recordHeaderCounts` (1 profile-row SELECT
+// then 3 counts) — the SAME `hydrateProfile`/`countByAuthor`, reached by id rather than
+// by username (#1406).
+const recordByIdCounts = (sandboxViewer: SandboxViewer) =>
+	Effect.gen(function* () {
+		const {binding, recorded} = recordingD1();
+		const {access} = scriptedAccess(binding, [...lookupResults]);
+		yield* Effect.gen(function* () {
+			const pasaport = yield* Pasaport;
+			yield* pasaport.lookupProfileById(AUTHOR, {sandboxViewer});
+		}).pipe(Effect.provide(pasaportOver(access)));
+		return recorded;
+	});
+
 describe("Pasaport headline counts — every count filters the sandbox (the #1312 leak)", () => {
 	it.effect("hydrateProfile issues one COUNT per content kind (definition/post/comment)", () =>
 		Effect.gen(function* () {
@@ -274,4 +290,74 @@ describe("Pasaport — headline counts AGREE with the feed totalCount per-viewer
 			}),
 		);
 	}
+});
+
+const normQuery = (qs: RecordedQuery[]) => qs.map((q) => ({sql: q.sql, params: q.params}));
+
+describe("Pasaport — counts AGREE across fetch paths (root by-username vs by-id, #1406)", () => {
+	// `profileSource.byId` (the relation `.ref` path) computes its counts via the SAME
+	// `lookupProfileById`→`hydrateProfile`→`countByAuthor` as the root `queries.profile`
+	// by-username read, so for any given viewer the three count statements are
+	// byte-identical — the by-id path can never disagree with the root query for the same
+	// viewer+profile. This pins AC#1: byId resolves the same definition/post/comment count
+	// as the root query.
+	for (const [name, sandboxViewer] of Object.entries(viewers)) {
+		it.effect(`${name} — by-username header count SQL === by-id count SQL`, () =>
+			Effect.gen(function* () {
+				const header = yield* recordHeaderCounts(sandboxViewer);
+				const byId = yield* recordByIdCounts(sandboxViewer);
+				assert.deepStrictEqual(
+					normQuery(header),
+					normQuery(byId),
+					"the same viewer-aware count backs both the by-username and the by-id read",
+				);
+			}),
+		);
+	}
+});
+
+describe("Pasaport — countByAuthor routes through the #1359/0113 seam (#1406)", () => {
+	// The post count carries the draft arm (`is_draft`) via `postVisibleWhere` (ADR 0113),
+	// while definition/comment counts route through `sandboxVisibleWhere` (no draft
+	// dimension on those tables). The three counts fire in def/post/comment order, so the
+	// MIDDLE statement is the post count.
+	it.effect("only the post count carries the draft arm (is_draft); def/comment do not", () =>
+		Effect.gen(function* () {
+			const counts = yield* recordByIdCounts(viewers.otherMember);
+			assert.strictEqual(counts.length, 3, "definition + post + comment counts");
+			const [defCount, postCount, commentCount] = counts;
+			assert.notInclude(defCount.sql.toLowerCase(), "is_draft", "definitions have no draft");
+			assert.match(postCount.sql.toLowerCase(), /"is_draft" is not 1/, "posts carry the draft arm");
+			assert.notInclude(commentCount.sql.toLowerCase(), "is_draft", "comments have no draft");
+		}),
+	);
+
+	it.effect(
+		"another member — post count excludes the author's drafts (is_draft, no own-arm match)",
+		() =>
+			Effect.gen(function* () {
+				const [, postCount] = yield* recordByIdCounts(viewers.otherMember);
+				const s = postCount.sql.toLowerCase();
+				// The draft arm's own-content branch is keyed to the VIEWER (`author_id =
+				// :viewerId`), bound to OTHER — never the profiled author — so none of the
+				// çaylak's drafts are counted for a visitor.
+				assert.match(s, /"is_draft" is not 1[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/);
+				assert.include(
+					postCount.params as unknown[],
+					OTHER,
+					"draft own-arm bound to the viewer id",
+				);
+			}),
+	);
+
+	it.effect("the author viewing own profile — post count INCLUDES their own drafts", () =>
+		Effect.gen(function* () {
+			const [, postCount] = yield* recordByIdCounts(viewers.author);
+			const s = postCount.sql.toLowerCase();
+			// viewerId === authorId, so the draft own-arm `author_id = :viewerId` matches
+			// every one of the author's rows — drafts included — so they count their own.
+			assert.match(s, /"is_draft" is not 1[)\s]*or[\s(]*"[a-z_]+"\."author_id" = \?/);
+			assert.include(postCount.params as unknown[], AUTHOR, "draft own-arm bound to the author");
+		}),
+	);
 });
