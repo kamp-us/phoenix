@@ -1520,6 +1520,35 @@ the operational pre-push self-check (its `(a)` cross-reference / `(b)` target-se
 reads the armed `Fixes|Closes|Resolves #N` to resolve the linked issue it closes on merge.
 Both cite this section as the canonical statement of the rule; neither re-derives it.
 
+### `Part of #N` — the canonical non-closing partial-split marker
+
+The closing-keyword set above auto-closes its target on merge. The **partial-split** case is its
+deliberate inverse: a code/skills PR that **advances** an issue while a sibling lane finishes the
+rest, so the issue must **stay open** after the PR merges. The canonical marker for that case is a
+plain `Part of #N` line — and `Part of` is **not** a GitHub closing keyword, which is exactly why
+it fits: a PR that closes nothing on its target carries `Part of #N` instead of a closing
+`Fixes #N`.
+
+- **GitHub does not auto-close from it.** `Part of` is absent from the closing-keyword set, so
+  GitHub renders a timeline cross-reference but populates **no** `closingIssuesReferences` and
+  **does not** auto-close `#N` on merge — the issue stays open for the sibling lane, by construction.
+- **`ship-it` Step 1 recognizes it as a valid linked-but-non-closing reference.** Without this, a
+  PR that intentionally closes nothing would trip Step 1's "no linked issue" refusal (the seam it
+  uses to reject a code-class PR with no auto-close directive). Step 1's relaxed code-class path
+  treats a literal `Part of #N` as a legitimate intentional partial-split — merge the PR, leave
+  `#N` open — instead of refusing it (the #1342 consumer, landed in PR #1347).
+
+**Single-sourced — producer + consumer + contract, no re-definition.** This marker mirrors the
+closing-keyword seam's own single-sourcing: `write-code` Step 5 (the **producer** — emits
+`Part of #N` when the PR is an intentional partial-split, the issue staying open for a sibling lane)
+and `ship-it` Step 1 (the **consumer** — recognizes it as merge-without-close) each cite **this
+section** rather than re-deriving the marker, so the two halves can't drift. The default is still a
+closing `Fixes #N` (full close); `Part of #N` is the **explicit** partial-split case. Because
+`Part of` is not a closing keyword, it is also invisible to the one-close-keyword-per-PR inverse
+guard above — `Part of #N` is never mistaken for a stray closing reference, and a PR that carries
+`Part of #N` (and no `Fixes`) has a closing-keyword set of exactly `{}`, which is correct: it closes
+nothing.
+
 ---
 
 ## Relationship between the formats
