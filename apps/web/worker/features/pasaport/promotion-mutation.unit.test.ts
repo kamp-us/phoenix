@@ -175,9 +175,7 @@ describe("user.vouch — author-vouch tandem", () => {
 					Layer.mergeAll(
 						makePasaportStub({promoteToYazar: () => Effect.succeed({promoted: true})}),
 						makeVouchLedgerStub({
-							has: () => Effect.succeed(false),
-							activeCountFor: () => Effect.succeed(0),
-							record: () => Effect.succeed({recorded: true}),
+							castVouch: () => Effect.succeed({outcome: "recorded" as const}),
 							hasActiveFor: () => Effect.succeed(true),
 						}),
 						kunyeOf(yazarVoucher.tier, {"u-caylak": 25}), // above VOUCH_PROMOTION_KARMA_BAR
@@ -199,9 +197,7 @@ describe("user.vouch — author-vouch tandem", () => {
 				Layer.mergeAll(
 					makePasaportStub(),
 					makeVouchLedgerStub({
-						has: () => Effect.succeed(false),
-						activeCountFor: () => Effect.succeed(0),
-						record: () => Effect.succeed({recorded: true}),
+						castVouch: () => Effect.succeed({outcome: "recorded" as const}),
 						hasActiveFor: () => Effect.succeed(true),
 					}),
 					kunyeOf(yazarVoucher.tier, {"u-caylak": 1}), // below the bar
@@ -212,22 +208,22 @@ describe("user.vouch — author-vouch tandem", () => {
 		),
 	);
 
-	// The concurrent-vouch cap (D5): a yazar already holding VOUCH_CONCURRENT_CAP active
-	// vouches is denied a 4th NEW one — public VOUCH_LIMIT_REACHED, no record, no write.
+	// The concurrent-vouch cap (D5): the cap is owned by `VouchLedger.castVouch` (#1362),
+	// so a yazar at the cap gets a `capReached` outcome the resolver maps to the public
+	// VOUCH_LIMIT_REACHED. The default `has`/`activeCountFor` are fail-on-contact, proving
+	// the resolver no longer re-derives the cap from the active count.
 	it.effect("a yazar at the concurrent-vouch cap is denied a 4th — VOUCH_LIMIT_REACHED", () =>
 		Effect.gen(function* () {
 			const exit = yield* vouch("u-fourth").pipe(Effect.exit);
 			assert.isTrue(Exit.isFailure(exit));
 			if (Exit.isFailure(exit)) assert.strictEqual(wireCodeOf(exit.cause), "VOUCH_LIMIT_REACHED");
 		}).pipe(
-			// record + hasActiveFor + Pasaport fail-on-contact: a denied vouch records nothing
-			// and never reaches the tandem.
+			// hasActiveFor + Pasaport fail-on-contact: a denied vouch never reaches the tandem.
 			Effect.provide(
 				Layer.mergeAll(
 					makePasaportStub(),
 					makeVouchLedgerStub({
-						has: () => Effect.succeed(false), // a NEW candidate
-						activeCountFor: () => Effect.succeed(3), // already at the cap
+						castVouch: () => Effect.succeed({outcome: "capReached" as const}),
 					}),
 					kunyeOf(yazarVoucher.tier, {}),
 					agentAuthorityStub,
@@ -237,9 +233,9 @@ describe("user.vouch — author-vouch tandem", () => {
 		),
 	);
 
-	// Re-vouching an already-vouched candidate is the idempotent no-op — it does NOT
-	// consume a fresh slot, so the cap is not consulted even when the yazar is at it
-	// (`activeCountFor` is fail-on-contact here, proving it's skipped).
+	// Re-vouching an already-vouched candidate is the idempotent `alreadyVouched` outcome —
+	// a success that consumes no fresh slot, so `vouchRecorded` is false and no tier flips
+	// below the bar.
 	it.effect("re-vouching an already-vouched candidate is allowed (idempotent, no fresh slot)", () =>
 		Effect.gen(function* () {
 			const receipt = yield* vouch("u-existing");
@@ -250,8 +246,7 @@ describe("user.vouch — author-vouch tandem", () => {
 				Layer.mergeAll(
 					makePasaportStub(),
 					makeVouchLedgerStub({
-						has: () => Effect.succeed(true), // already vouched ⇒ skip the cap check
-						record: () => Effect.succeed({recorded: false}),
+						castVouch: () => Effect.succeed({outcome: "alreadyVouched" as const}),
 						hasActiveFor: () => Effect.succeed(true),
 					}),
 					kunyeOf(yazarVoucher.tier, {"u-existing": 1}), // below the bar ⇒ no promote

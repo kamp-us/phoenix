@@ -24,25 +24,45 @@ import {and, eq, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
+import {VOUCH_CONCURRENT_CAP} from "./standing.ts";
 
 export interface VouchKey {
 	voucherId: string;
 	candidateId: string;
 }
 
+/**
+ * The three outcomes of {@link VouchLedger.castVouch}, the single cap-enforcing write:
+ *
+ *  - `recorded` — a NEW vouch row was inserted (the voucher was under the cap).
+ *  - `alreadyVouched` — the row already existed: an idempotent re-vouch, a success that
+ *    consumes no fresh slot (so it is allowed even when the voucher is at the cap).
+ *  - `capReached` — no row existed and the cap blocked the insert; the caller surfaces
+ *    {@link ./errors.ts | VouchLimitReached}.
+ *
+ * The split lets the resolver map `capReached` to the denial and `recorded`/`alreadyVouched`
+ * to a success — without the resolver ever re-deriving the cap arithmetic (ADR 0013).
+ */
+export type VouchOutcome = "recorded" | "alreadyVouched" | "capReached";
+
 export class VouchLedger extends Context.Service<
 	VouchLedger,
 	{
 		/**
-		 * Record `voucherId` vouching for `candidateId`. Idempotent on the composite
-		 * PK — a re-vouch by the same yazar for the same çaylak is a no-op success
-		 * (`recorded: false`).
+		 * Record `voucherId` vouching for `candidateId`, **enforcing the
+		 * {@link ./standing.ts | VOUCH_CONCURRENT_CAP} as part of the write** — the
+		 * single, atomic vouch-insertion seam (#1362). The cap-check and the insert are
+		 * one guarded `INSERT … SELECT … WHERE active_count < cap` statement, so two
+		 * concurrent vouches can never both pass the cap and both insert (the
+		 * check-then-act race the inline resolver enforcement had). Idempotent on the
+		 * composite PK — a re-vouch is `alreadyVouched`, never a fresh slot. The cap
+		 * invariant lives here, not at the resolver (ADR 0013); see {@link VouchOutcome}.
 		 */
-		readonly record: (input: {
+		readonly castVouch: (input: {
 			voucherId: string;
 			candidateId: string;
 			now: Date;
-		}) => Effect.Effect<{recorded: boolean}>;
+		}) => Effect.Effect<{outcome: VouchOutcome}>;
 
 		/** Whether `voucherId` has already vouched for `candidateId` (the row exists). */
 		readonly has: (input: VouchKey) => Effect.Effect<boolean>;
@@ -75,27 +95,65 @@ export const VouchLedgerLive = Layer.effect(VouchLedger)(
 	Effect.gen(function* () {
 		// `orDieAccess`: infra failures die as defects, so public signatures carry no
 		// `DrizzleError` and `R` stays `never` (`.patterns/feature-services.md`).
-		const {run} = orDieAccess(yield* Drizzle);
+		const {run, batch} = orDieAccess(yield* Drizzle);
+
+		// The cap-enforcing insert is ONE guarded statement, so the cap check and the
+		// insert are not separable round-trips another vouch can interleave between
+		// (#1362's check-then-act race). The guard is `INSERT … SELECT <values> WHERE
+		// (active-count subquery) < cap`: SQLite evaluates the count subquery and
+		// performs the insert inside a single write statement, and D1 serializes writers
+		// onto its one primary SQLite — so a concurrent vouch's statement runs after this
+		// one commits and its subquery sees this row. Same single-statement-guard family
+		// as `Pasaport.promoteToYazar`'s conditional `UPDATE … WHERE tier = 'çaylak'`
+		// (ADR 0014). It runs in a batch with an existence probe so the zero-insert case
+		// — cap-blocked vs. idempotent re-vouch — is disambiguated atomically, in the same
+		// transaction, without a second round-trip that could read a different world.
+		const castVouch = Effect.fn("VouchLedger.castVouch")(function* (input: {
+			voucherId: string;
+			candidateId: string;
+			now: Date;
+		}) {
+			// `{mode: "timestamp"}` stores epoch SECONDS (drizzle integer codec); a raw
+			// `sql` SELECT bypasses that codec, so encode the seconds the column expects here.
+			const createdAtSeconds = Math.floor(input.now.getTime() / 1000);
+			const [insertResult, existing] = yield* batch((db) => {
+				const activeCount = db
+					.select({n: sql<number>`count(*)`})
+					.from(schema.authorshipVouch)
+					.innerJoin(schema.user, eq(schema.user.id, schema.authorshipVouch.candidateId))
+					.where(
+						and(
+							eq(schema.authorshipVouch.voucherId, input.voucherId),
+							eq(schema.user.tier, "çaylak"),
+						),
+					);
+				const guardedInsert = db
+					.insert(schema.authorshipVouch)
+					.select(
+						sql`select ${input.voucherId}, ${input.candidateId}, ${createdAtSeconds} where (${activeCount}) < ${VOUCH_CONCURRENT_CAP}`,
+					)
+					.onConflictDoNothing();
+				const existenceProbe = db
+					.select({voucherId: schema.authorshipVouch.voucherId})
+					.from(schema.authorshipVouch)
+					.where(
+						and(
+							eq(schema.authorshipVouch.voucherId, input.voucherId),
+							eq(schema.authorshipVouch.candidateId, input.candidateId),
+						),
+					)
+					.limit(1);
+				return [guardedInsert, existenceProbe] as const;
+			});
+			if (insertResult.meta.changes > 0) return {outcome: "recorded" as const};
+			// Zero rows inserted: the row already existed (idempotent re-vouch) or the cap
+			// blocked a new one. The cap was already enforced atomically above — this only
+			// labels which zero-insert case occurred, so it can't reopen the race.
+			return {outcome: existing.length > 0 ? ("alreadyVouched" as const) : ("capReached" as const)};
+		});
 
 		return {
-			record: Effect.fn("VouchLedger.record")(function* (input: {
-				voucherId: string;
-				candidateId: string;
-				now: Date;
-			}) {
-				const result = yield* run((db) =>
-					db
-						.insert(schema.authorshipVouch)
-						.values({
-							voucherId: input.voucherId,
-							candidateId: input.candidateId,
-							createdAt: input.now,
-						})
-						.onConflictDoNothing()
-						.run(),
-				);
-				return {recorded: result.meta.changes > 0};
-			}),
+			castVouch,
 
 			has: Effect.fn("VouchLedger.has")(function* (input: VouchKey) {
 				const row = yield* run((db) =>
