@@ -42,6 +42,21 @@ export const isModerator = (subject: string): Effect.Effect<boolean, never, Rela
 	});
 
 /**
+ * The batched form of {@link isModerator}: which of `subjects` are platform
+ * moderators, answered in ONE {@link RelationStore} set-membership read over the
+ * `(moderates, platform)` tuple — the by-id loader's join, without the per-row
+ * `has` that would make it an in-batch N+1. Same direct-tuple key as `isModerator`,
+ * so the batched and single reads can't drift.
+ */
+export const moderatorsAmong = (
+	subjects: ReadonlyArray<string>,
+): Effect.Effect<ReadonlySet<string>, never, RelationStore> =>
+	Effect.gen(function* () {
+		const store = yield* RelationStore;
+		return yield* store.hasSubjects({subjects, relation: "moderates", object: platform});
+	});
+
+/**
  * Gate `body` behind platform-moderation authority: discharge
  * `Moderate.over(platform)` (the invisible {@link Denied} on failure) and thread
  * the resulting `Grant` into `body`'s R-channel via `Moderate.provide`. So `body`

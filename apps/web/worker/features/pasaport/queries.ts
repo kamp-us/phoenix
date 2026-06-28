@@ -15,12 +15,12 @@ import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Kunye} from "../kunye/Kunye.ts";
-import {isModerator} from "../kunye/moderate.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {promotionBarFor} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {Pasaport} from "./Pasaport.ts";
-import {toAuthorshipStanding, toContributionRow, toProfile, toUser} from "./shapers.ts";
+import {toAuthorshipStanding, toContributionRow, toProfile} from "./shapers.ts";
+import {toTrustedUser} from "./trusted-user.ts";
 import type {Contribution} from "./views.ts";
 import {AuthorshipStandingView, ProfileView, UserView} from "./views.ts";
 
@@ -48,29 +48,28 @@ export const queries = {
 		Effect.fn("me")(function* () {
 			const user = yield* CurrentUser.required;
 			const pasaport = yield* Pasaport;
-			const kunye = yield* Kunye;
-			// The TRUSTED authorship rank: read fresh from the stored `user.tier`
-			// column through `Kunye.tierOf`, never the `input:false` session field
-			// (#1297). A row-missing principal ranks `visitor`, so this also covers
-			// the fallback branch below.
-			const tier = yield* kunye.tierOf(user.id);
-			// The SELF moderator signal (#1320): server-authoritative off the `moderates`
-			// relation tuple, keyed on the CURRENT user — the viewer's own status, never
-			// another's. Fills `isModerator` identically to the `setUsername` write path.
-			const isMod = yield* isModerator(user.id);
 			const fresh = yield* pasaport.getUserById(user.id);
+			// `toTrustedUser` resolves the trusted standing (tier via `Kunye.tierOf`,
+			// the moderator signal via the `moderates` tuple) — one shared home for the
+			// `User` shape `setUsername` and the by-id loader also build. The session
+			// supplies email/name/image; the canonical row, when present, overrides them
+			// so a fresh `username` round-trips before better-auth's session catches up.
 			if (!fresh) {
-				return toUser({
+				return yield* toTrustedUser({
 					id: user.id,
 					email: user.email,
 					name: user.name ?? null,
 					image: user.image ?? null,
 					username: null,
-					tier,
-					isModerator: isMod,
 				});
 			}
-			return toUser({...fresh, tier, isModerator: isMod});
+			return yield* toTrustedUser({
+				id: fresh.id,
+				email: fresh.email,
+				name: fresh.name,
+				image: fresh.image,
+				username: fresh.username,
+			});
 		}),
 	),
 	// `contributions` is delivered inline (not via a source `connection`

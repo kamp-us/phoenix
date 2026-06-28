@@ -23,7 +23,7 @@ import {
 } from "@kampus/authz";
 import {Effect, Exit} from "effect";
 import {Denied} from "./errors.ts";
-import {Moderate, moderatorOf} from "./moderate.ts";
+import {Moderate, moderatorOf, moderatorsAmong} from "./moderate.ts";
 
 // Provide the three ports off a fixture (the holder set the `moderates` tuple
 // proves membership against) and run `Moderate.over(platform)` to an Exit.
@@ -41,6 +41,14 @@ const discharge = (
 						tuple.relation === "moderates" &&
 							tuple.object.type === "platform" &&
 							holders.includes(tuple.subject),
+					),
+				hasSubjects: ({subjects, relation, object}) =>
+					Effect.succeed(
+						new Set(
+							relation === "moderates" && object.type === "platform"
+								? subjects.filter((subject) => holders.includes(subject))
+								: [],
+						),
 					),
 			}),
 		),
@@ -82,5 +90,45 @@ describe("Moderate.over(platform)", () => {
 			const id = Effect.runSync(moderatorOf(exit.value));
 			assert.strictEqual(id, "u-mod");
 		}
+	});
+});
+
+// `moderatorsAmong` is the batched form of `isModerator` (#1360): ONE
+// `RelationStore.hasSubjects` read over the `(moderates, platform)` tuple, so the
+// by-id loader joins moderator standing without a per-row probe. The fixture
+// answers membership off the same holder set `has` proves against, keyed on the
+// `moderates` relation and the platform object, so batch and single reads agree.
+describe("moderatorsAmong", () => {
+	const storeOf = (holders: ReadonlyArray<string>) =>
+		Effect.provideService(RelationStore, {
+			has: (tuple) =>
+				Effect.succeed(
+					tuple.relation === "moderates" &&
+						tuple.object.type === "platform" &&
+						holders.includes(tuple.subject),
+				),
+			hasSubjects: ({subjects, relation, object}) =>
+				Effect.succeed(
+					new Set(
+						relation === "moderates" && object.type === "platform"
+							? subjects.filter((subject) => holders.includes(subject))
+							: [],
+					),
+				),
+		});
+
+	it("returns exactly the subjects that hold the moderates tuple", () => {
+		const mods = Effect.runSync(moderatorsAmong(["u1", "u2", "u3"]).pipe(storeOf(["u1", "u3"])));
+		assert.deepStrictEqual([...mods].sort(), ["u1", "u3"]);
+	});
+
+	it("is empty when none of the subjects moderate", () => {
+		const mods = Effect.runSync(moderatorsAmong(["u1", "u2"]).pipe(storeOf(["someone-else"])));
+		assert.strictEqual(mods.size, 0);
+	});
+
+	it("is empty for an empty subject set", () => {
+		const mods = Effect.runSync(moderatorsAmong([]).pipe(storeOf(["u1"])));
+		assert.strictEqual(mods.size, 0);
 	});
 });
