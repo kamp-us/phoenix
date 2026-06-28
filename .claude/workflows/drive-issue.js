@@ -6,11 +6,18 @@
 // reviewed-ready because the shipper itself refuses them (we do not re-encode that
 // rule here). Saved workflows are not plugin-distributable, so this lives repo-local
 // in `.claude/workflows/`, not in the kampus-pipeline plugin.
+//
+// Pre-spawn claim (ADR 0115 §3, orchestrated path): the Implement branch acquires the
+// agent-distinguishable claim BEFORE the coder dispatch and spawns the coder only on a
+// win, threading the winning claim token through so the coder treats it as its delegated
+// own instead of re-racing. A lost claim aborts the dispatch and returns `{ skipped }`
+// before any branch or build — closing the collision window the old in-coder self-assign
+// (write-code Step 3, mid-run) left open.
 
 export const meta = {
 	name: "drive-issue",
 	description:
-		"Drive one triaged issue through the kampus pipeline: epics route planner -> reviewer(review-plan); everything else runs coder -> reviewer -> repair(freeze-after-2) -> shipper, stopping at reviewed-ready when the shipper refuses a control-plane PR.",
+		"Drive one triaged issue through the kampus pipeline: epics route planner -> reviewer(review-plan); everything else atomically claims the issue pre-spawn (ADR 0115) and only on a win runs coder -> reviewer -> repair(freeze-after-2) -> shipper, stopping at reviewed-ready when the shipper refuses a control-plane PR; a lost claim skips before any work starts.",
 	phases: ["Classify", "Plan", "Implement", "Review", "Repair", "Ship"],
 };
 
@@ -97,13 +104,64 @@ if (klass.isEpic) {
 	return { epic: true, planVerdict };
 }
 
-// 3. Implement branch — coder -> reviewer -> repair(freeze-after-2) -> shipper.
+// 3. Implement branch — pre-spawn claim -> coder -> reviewer -> repair(freeze-after-2) -> shipper.
 phase("Implement");
+
+// 3a. Pre-spawn atomic claim (ADR 0115 §3, orchestrated path). Acquire the
+// agent-distinguishable claim BEFORE the coder is spawned, closing the window in which a
+// second orchestrator also picks #N while the old mid-run self-assign (write-code Step 3)
+// was still pending. The claim agent is the orchestrator's hand — the workflow runtime can
+// only `agent()`, so it delegates the §7/#1452 claim primitive to a thin claim-only agent
+// and threads the winning token onward. It is the ONE contract's third surface, not a fourth
+// hand-rolled copy. On a lost claim we abort the dispatch (no coder spawns) and return a
+// structured `{ skipped }` outcome a caller can tell apart from a successful build.
+log(`Acquiring the pre-spawn claim on issue #${issue} before dispatching the coder`);
+const claim = await agent(
+	`Acquire the kampus pipeline pre-spawn claim on issue #${issue} for the orchestrator, then STOP — ` +
+		`do not branch, implement, or open a PR; this is the claim only. Follow ADR 0115 ` +
+		`(.decisions/0115-agent-distinguishable-claim-marker.md) §1-§3 and the single §7 claim primitive in ` +
+		`claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md verbatim — do NOT hand-roll a fourth copy. ` +
+		`All GitHub ops via \`gh api\` REST, never GraphQL; resolve the repo as ` +
+		`\${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}. Procedure: ` +
+		`(1) read your own claim token TOKEN="$CLAUDE_CODE_SESSION_ID" — if it is empty, ABORT (fail-closed, ADR 0115 §"Trust + fail-closed") ` +
+		`and return { won: false, token: "", reason: "no CLAUDE_CODE_SESSION_ID — cannot post an agent-distinguishable claim" }; ` +
+		`(2) Rule-0 defer: read the issue's assignees and its existing claim comments — if an authorized claim ` +
+		`(\`claim: <session> · <ts>\` from an account with write+ on the repo, ADR 0055 trust root) from a DIFFERENT session already owns it, ` +
+		`back off WITHOUT posting and return { won: false, token: "", reason: "already claimed by another agent" }; ` +
+		`(3) self-assign (the coarse availability gate) then post the claim comment \`claim: <TOKEN> · <ISO-8601-UTC>\` via ` +
+		`\`gh api repos/$REPO/issues/${issue}/comments\`; (4) detect-and-tiebreak: the winner is the EARLIEST authorized claim ` +
+		`(min created_at, then min comment id) — empty authorized set ⇒ no winner (fail-closed); recognize ownership by comparing that ` +
+		`winning claim's embedded session id to your TOKEN; (5) if the winner is NOT you, RETRACT your own claim comment, self-unassign, ` +
+		`and return { won: false, token: "", reason: "lost the claim tiebreak to an earlier authorized claim" }. ` +
+		`On a confirmed win return { won: true, token: "<TOKEN>", reason: "" }.`,
+	{
+		schema: {
+			type: "object",
+			properties: {
+				won: { type: "boolean" },
+				token: { type: "string" },
+				reason: { type: "string" },
+			},
+			required: ["won", "token"],
+			additionalProperties: false,
+		},
+	},
+);
+
+if (!claim.won) {
+	log(`Issue #${issue}: claim lost to a co-racer — skipping before any work starts (${claim.reason ?? "already claimed"})`);
+	return { skipped: true, issue, reason: claim.reason ?? "already claimed by another agent" };
+}
+log(`Claim acquired on issue #${issue} (token ${claim.token}); dispatching the coder with the delegated claim`);
+
 log(`Implementing issue #${issue} with the coder agent`);
 const built = await agent(
-	`Implement issue #${issue}. You are the coder — load and follow the write-code skill: claim the issue, ` +
-		`implement it on a branch, open a PR that closes it with \`Fixes #${issue}\`, leave a progress comment, ` +
-		`and hand off to the parent epic. Do not review or merge your own work. ` +
+	`Implement issue #${issue}. You are the coder — load and follow the write-code skill: implement it on a branch, ` +
+		`open a PR that closes it with \`Fixes #${issue}\`, leave a progress comment, and hand off to the parent epic. ` +
+		`Do not review or merge your own work. NOTE: the orchestrator has ALREADY claimed this issue pre-spawn per ` +
+		`ADR 0115 §3 — your delegated claim token is "${claim.token}". The claim comment whose session id equals this token ` +
+		`is YOURS; recognize it as your delegated claim and do NOT re-race or post a second claim (ADR 0115 §3 "Delegated ownership") ` +
+		`— proceed straight to implementing. ` +
 		`Return { pr: <PR number>, headSha: "<head commit sha of the PR>" }.`,
 	{
 		agentType: "coder",
