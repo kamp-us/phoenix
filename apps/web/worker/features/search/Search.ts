@@ -22,8 +22,8 @@ import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, resolveCursor} from "../../db/keyset.ts";
 import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
-import {sandboxVisibleWhere} from "../lifecycle/SandboxVisibility.ts";
 import type {PostSummaryRow} from "../pano/Pano.ts";
+import {postVisibleWhere} from "../pano/PostVisibility.ts";
 import {type TermSummaryRow, termSummaryColumns, toTermSummaryRow} from "../sozluk/term-summary.ts";
 import {toMatchExpression} from "./normalize.ts";
 
@@ -57,10 +57,11 @@ export interface SearchOpts {
 }
 
 /**
- * `searchPosts` carries a {@link SandboxViewer} so the FTS read masks çaylak
- * sandboxed posts (#1205) the same way every other pano read does — omitted reads
- * as the least-privileged {@link anonymousViewer} (public-only), the fail-safe
- * default. Terms have no sandbox dimension, so `searchTerms` needs no viewer.
+ * `searchPosts` carries a {@link SandboxViewer} so the FTS read masks posts through
+ * the pano visibility seam (ADR 0113) the same way every other pano read does —
+ * sandboxed and draft posts excluded per viewer. Omitted reads as the least-privileged
+ * {@link anonymousViewer} (public-only), the fail-safe default. Terms have no sandbox
+ * or draft dimension, so `searchTerms` needs no viewer.
  */
 export interface SearchPostsOpts extends SearchOpts {
 	viewer?: SandboxViewer | undefined;
@@ -78,7 +79,7 @@ export class Search extends Context.Service<
 
 		/**
 		 * bm25-ranked keyset page of post-title matches (full `PostSummaryRow`s),
-		 * masked to the viewer's sandbox-visible set (#1358) — see {@link SearchPostsOpts}.
+		 * masked to the viewer's visible set via the pano seam — see {@link SearchPostsOpts}.
 		 */
 		readonly searchPosts: (opts: SearchPostsOpts) => Effect.Effect<PostSearchPage>;
 	}
@@ -167,13 +168,14 @@ const ftsKeysetKeys = async (
 };
 
 /**
- * The viewer's sandbox read-mask as an FTS-query predicate: the post id must be in
- * the set of non-removed, sandbox-visible posts for this viewer. `post_search` holds
- * only `id`/`norm` (no lifecycle columns), so the mask is expressed as `id IN
- * (<visible post ids>)` joining back to `post_record` — the same {@link
- * sandboxVisibleWhere} predicate the other three pano reads AND in (#1205), keyed by
- * the FTS row's id. A moderator viewer drops the sandbox arm (sees all), but every
- * viewer still excludes removed posts (ADR 0096), matching the hydrate's prior guard.
+ * The viewer's post read-mask as an FTS-query predicate: the post id must be in the
+ * set of non-removed, visible posts for this viewer. `post_search` holds only
+ * `id`/`norm` (no lifecycle columns), so the mask is expressed as `id IN (<visible
+ * post ids>)` joining back to `post_record`. The visibility predicate is sourced from
+ * the one pano seam — {@link postVisibleWhere} (ADR 0113): the shared sandbox arm AND
+ * the author-only draft arm, so a çaylak's sandboxed post and another author's draft
+ * are both excluded unless the viewer is its author (sandbox: or a moderator). The
+ * caller keeps the orthogonal `removed_at IS NULL` removal guard (ADR 0096) beside it.
  */
 const postVisibleFilter = (db: DrizzleDb, viewer: SandboxViewer): SQL => {
 	const visibleIds = db
@@ -182,8 +184,12 @@ const postVisibleFilter = (db: DrizzleDb, viewer: SandboxViewer): SQL => {
 		.where(
 			and(
 				isNull(schema.postRecord.removedAt),
-				sandboxVisibleWhere(
-					{sandboxedAt: schema.postRecord.sandboxedAt, authorId: schema.postRecord.authorId},
+				postVisibleWhere(
+					{
+						sandboxedAt: schema.postRecord.sandboxedAt,
+						authorId: schema.postRecord.authorId,
+						isDraft: schema.postRecord.isDraft,
+					},
 					viewer,
 				),
 			),

@@ -41,9 +41,9 @@ export const lists = {
 	searchPosts: Fate.list(
 		{args: SearchArgs, type: PostView},
 		Effect.fn("searchPosts")(function* ({args}) {
-			// Resolve the sandbox viewer once (identity + moderator probe); search hides
-			// çaylak-sandboxed posts from anyone but their author + a mod (#1358), the
-			// same mask `posts`/`getPost` apply (#1205).
+			// Resolve the sandbox viewer once (identity + moderator probe); search masks
+			// posts through the pano visibility seam (ADR 0113) — çaylak-sandboxed posts
+			// hidden from anyone but their author + a mod, and drafts from any non-author.
 			const sandboxViewer = yield* currentSandboxViewer;
 			const search = yield* Search;
 			const page = yield* search.searchPosts({
