@@ -64,11 +64,39 @@ const reachableFromOriginMain = (head: string | null): boolean => {
 	return runGit(["merge-base", "--is-ancestor", head, "origin/main"]).ok;
 };
 
+/**
+ * Has `head`'s content already squash-merged into `origin/main`? A squash merge
+ * (ADR 0048) rewrites the branch's commits into one new commit, so the branch tip is
+ * NOT a commit-ancestor of `origin/main` and `--is-ancestor` misses it (#1328). This
+ * detects it by patch-id equivalence: synthesize a single dangling commit carrying the
+ * branch's *cumulative* diff against its merge-base with `origin/main`, then ask `git
+ * cherry` whether that change already exists upstream. A leading `-` means equivalent
+ * (squash-merged); `+` means genuinely unmerged. Every git failure collapses to
+ * `false` (fail-safe KEEP), so an unconfigured committer identity or a missing
+ * `origin/main` never causes a spurious remove.
+ *
+ * Why a synthetic single commit and not bare `git cherry origin/main <branch>`:
+ * per-commit patch-ids don't match a squash that fused several commits into one, so
+ * the cumulative-diff commit is what makes the equivalence detectable.
+ */
+const squashMergedToOriginMain = (head: string | null): boolean => {
+	if (head === null) return false;
+	const base = runGit(["merge-base", "origin/main", head]);
+	if (!base.ok) return false;
+	const tree = runGit(["rev-parse", `${head}^{tree}`]);
+	if (!tree.ok) return false;
+	const dangling = runGit(["commit-tree", tree.stdout.trim(), "-p", base.stdout.trim(), "-m", "_"]);
+	if (!dangling.ok) return false;
+	const cherry = runGit(["cherry", "origin/main", dangling.stdout.trim()]);
+	if (!cherry.ok) return false;
+	return cherry.stdout.trimStart().startsWith("-");
+};
+
 const executeFlag = Flag.boolean("execute").pipe(
 	Flag.withDescription("actually remove the removable worktrees (default: dry-run, print only)"),
 );
 
-const reasonLine = (path: string, reason: string): string => `  ${reason.padEnd(18)} ${path}`;
+const reasonLine = (path: string, reason: string): string => `  ${reason.padEnd(20)} ${path}`;
 
 const worktreeSweep = Command.make(
 	"worktree-sweep",
@@ -85,12 +113,17 @@ const worktreeSweep = Command.make(
 		const parsed = parseWorktreeList(listed.stdout);
 		const records: ReadonlyArray<WorktreeRecord> = parsed
 			.filter((p) => !p.bare)
-			.map((p) => ({
-				path: p.path,
-				branch: p.branch,
-				isDirty: worktreeIsDirty(p.path),
-				reachableFromOriginMain: reachableFromOriginMain(p.head),
-			}));
+			.map((p) => {
+				const reachable = reachableFromOriginMain(p.head);
+				return {
+					path: p.path,
+					branch: p.branch,
+					isDirty: worktreeIsDirty(p.path),
+					reachableFromOriginMain: reachable,
+					// Only probe the costlier squash signal when ancestry already missed.
+					squashMergedToOriginMain: reachable ? false : squashMergedToOriginMain(p.head),
+				};
+			});
 
 		const plan = computeWorktreeSweepPlan(records);
 

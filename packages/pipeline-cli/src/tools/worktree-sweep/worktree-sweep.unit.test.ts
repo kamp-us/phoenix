@@ -15,6 +15,7 @@ const record = (over: Partial<WorktreeRecord> = {}): WorktreeRecord => ({
 	branch: "umut/1234-thing",
 	isDirty: false,
 	reachableFromOriginMain: true,
+	squashMergedToOriginMain: false,
 	...over,
 });
 
@@ -49,9 +50,21 @@ describe("classifyWorktree — KEEP branches (the safety cases)", () => {
 
 	it("keeps an UNMERGED managed worktree (protects a live agent's in-flight PR branch)", () => {
 		const d = classifyWorktree(
-			record({branch: "umut/1288-vote", isDirty: false, reachableFromOriginMain: false}),
+			record({
+				branch: "umut/1288-vote",
+				isDirty: false,
+				reachableFromOriginMain: false,
+				squashMergedToOriginMain: false,
+			}),
 		);
 		assert.deepStrictEqual(d, {kind: "keep", reason: "unmerged"});
+	});
+
+	it("keeps a DIRTY worktree even when its branch squash-merged (never --force discards work)", () => {
+		const d = classifyWorktree(
+			record({isDirty: true, reachableFromOriginMain: false, squashMergedToOriginMain: true}),
+		);
+		assert.deepStrictEqual(d, {kind: "keep", reason: "dirty"});
 	});
 
 	it("dirty wins over unmerged (still kept, reported as dirty)", () => {
@@ -79,6 +92,28 @@ describe("classifyWorktree — REMOVE branches (clean AND reachable)", () => {
 		);
 		assert.deepStrictEqual(d, {kind: "remove", reason: "detached-reachable"});
 	});
+
+	// The #1328 case: a squash merge (ADR 0048) rewrites the branch's commits into one
+	// new commit on origin/main, so the worktree's tip is NOT a commit-ancestor — yet its
+	// content has already landed. Clean + content-merged ⇒ removable.
+	it("removes a clean, squash-merged worktree as squash-merged-clean (not ancestor-reachable)", () => {
+		const d = classifyWorktree(
+			record({
+				branch: "umut/1234-thing",
+				isDirty: false,
+				reachableFromOriginMain: false,
+				squashMergedToOriginMain: true,
+			}),
+		);
+		assert.deepStrictEqual(d, {kind: "remove", reason: "squash-merged-clean"});
+	});
+
+	it("ancestor-reachability wins over the squash signal (reported as merged-clean)", () => {
+		const d = classifyWorktree(
+			record({reachableFromOriginMain: true, squashMergedToOriginMain: true}),
+		);
+		assert.deepStrictEqual(d, {kind: "remove", reason: "merged-clean"});
+	});
 });
 
 describe("computeWorktreeSweepPlan — partition", () => {
@@ -89,11 +124,18 @@ describe("computeWorktreeSweepPlan — partition", () => {
 			record({path: wtPath("b"), isDirty: true}), // dirty → keep
 			record({path: wtPath("c"), reachableFromOriginMain: false}), // unmerged → keep
 			record({path: wtPath("d"), branch: null, reachableFromOriginMain: true}), // detached-reachable → remove
+			// squash-merged-and-clean: tip not an ancestor, but content landed → remove (#1328)
+			record({
+				path: wtPath("e"),
+				branch: "umut/2-squashed",
+				reachableFromOriginMain: false,
+				squashMergedToOriginMain: true,
+			}),
 		];
 		const plan = computeWorktreeSweepPlan(records);
 		assert.deepStrictEqual(
 			new Set(plan.toRemove.map((p) => p.worktree.path)),
-			new Set([wtPath("a"), wtPath("d")]),
+			new Set([wtPath("a"), wtPath("d"), wtPath("e")]),
 		);
 		assert.strictEqual(plan.kept.length, 3);
 		const keepReason = (path: string) => plan.kept.find((k) => k.worktree.path === path)?.reason;
