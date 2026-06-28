@@ -161,6 +161,25 @@ export default defineConfig({
 					environment: "jsdom",
 					setupFiles: ["./tests/client/setup.ts"],
 					exclude: ["node_modules/**", "dist/**"],
+					// Bound the fork worker's V8 heap (#1470). An effect-driven hook
+					// under `renderHook` can enter an unbounded *passive*-update loop
+					// (effect -> setState -> re-render -> effect ...): React's "Maximum
+					// update depth exceeded" guard only catches updates scheduled
+					// synchronously within a commit, never passive-effect updates spread
+					// across ticks -- so a buggy test (or an unmemoized `args`/`deps`, the
+					// exact footgun `useImperativeView` warns about) spins forever.
+					// Uncapped, the fork ballooned to ~4.8GB RSS and hung ~66s before
+					// Vitest force-terminated it -- an opaque "the seam OOMs" that drove
+					// agents to route AROUND this tier back to pure-core tests, defeating
+					// #1419. Capping old-space turns the runaway into a fast, contained
+					// heap-OOM crash (~7s, well under a GB) so the failure reads as the
+					// test's bug, not infra. The limit sits comfortably above every
+					// legitimate jsdom+React render here.
+					pool: "forks",
+					// Vitest 4 reads per-project fork exec args off a top-level `execArgv`
+					// (poolOptions was removed in the v4 pool rework), passed to the fork as
+					// node flags.
+					execArgv: ["--max-old-space-size=512"],
 					sequence: {groupOrder: 2},
 				},
 			},
