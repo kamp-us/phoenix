@@ -375,85 +375,107 @@ recomputation will let it through.
 
 ---
 
-## Step 3 — Claim by self-assigning (assign → observe-own-write → tiebreak)
+## Step 3 — Claim by writing your session-id claim marker (the agent-distinguishable claim, ADR 0115)
 
-Claiming is self-assignment, and it backs Step 1's "skip assigned issues" rule so other
-write-code agents step over a claimed issue. But GitHub's `assignees` is **last-write-wins
-and additive, not compare-and-swap**: a bare `POST` self → re-read does **not** lock. Two
-agents that both saw #N unassigned in Step 1 both `POST` themselves seconds apart,
-co-assigning `[A, B]`, and a best-effort re-read only catches whichever agent happens to
-read *after* the other's write lands — the window between the two `POST`s lets both pass and
-both implement #N. That is the TOCTOU this step closes (#260).
+Claiming backs Step 1's "skip assigned issues" rule so other write-code agents step over a
+claimed issue. But the bare GitHub assignee **cannot** be the claim: it is **last-write-wins,
+additive, not compare-and-swap** (two agents that both saw #N unassigned co-assign `[A, B]`,
+#260) — and worse, **every draining agent here pushes as the single git identity `usirin`**,
+so the old `min(login)` tiebreak degenerated to a no-op (both co-racers compute
+`min == usirin == me` and both implement #N; the #1431 double-implement). The fix is the
+**agent-distinguishable claim marker** (ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md), #1452):
+a claim **comment** stamped with your `CLAUDE_CODE_SESSION_ID`, the per-agent UUID the
+runtime exposes that the shared login cannot provide.
 
-The fix uses the **one atomic signal GitHub does give us**: the assignee `POST` **returns
-the updated issue with the full `assignees` array** — your own write's observed result, not
-a separate best-effort re-read that can miss the window. So you detect a concurrent claim
-from your *own* `POST` response, and break the tie **deterministically** so exactly one of
-two co-assignees proceeds:
+**Single-source the primitive — do not re-derive it.** The canonical claim-comment grammar,
+the `CLAIM_RE` matcher, the write+ ACL trust root (ADR 0055), and the earliest-authorized-claim
+tiebreak are defined once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7
+(the agent-distinguishable claim marker). This step is the **issue-claim consumer** of that
+primitive — it writes the claim and resolves ownership by §7's rules; it never invents a second
+grammar or a second `CLAIM_RE`. The marker is the one line:
 
-```bash
-ME=$(gh api user --jq '.login')
-
-# Best-effort fast-path, NOT the lock: a cheap re-read at claim time that lets the common case
-# (#N already owned by a prior winner) back off without needlessly evicting them. It is itself a
-# best-effort read — a co-racer's POST can land in the gap between this read and my own POST, so an
-# empty PRE does NOT prove I'm unraced. The sole resolver remains the checkpoint GET below; PRE
-# only spares an already-settled owner an eviction it doesn't deserve.
-PRE=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
-if [ -n "$PRE" ]; then
-  # Already owned before I touched it — never evict a pre-existing owner. Back off, re-pick.
-  exit 0  # → re-run Step 1
-fi
-
-# POST self; capture the FULL assignees list the write returns (single observable write).
-ASSIGNEES=$(gh api -X POST repos/$REPO/issues/<N>/assignees \
-  -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
-
-# Provisional tiebreak among co-racers: min-login. NOTE the POST echo is NOT a snapshot both
-# racers share — it returns only the assignees present when THIS POST was processed, so staggered
-# POSTs see DIFFERENT sets: if B lands first it sees [B] (B believes it won), and A's later POST
-# sees [A, B] (A also believes it won). Both can transiently compute themselves winner here. The
-# echo alone does NOT decide the race — it only flags "I may be a co-racer winner; go evict + verify".
-WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
-if [ "$WINNER" = "$ME" ]; then
-  # I am a provisional winner. Evict the co-assignees so the issue reads single-owner for the
-  # picker's "skip assigned" invariant.
-  for a in $ASSIGNEES; do
-    [ "$a" = "$ME" ] && continue
-    gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$a"
-  done
-  # CHECKPOINT — THIS is what resolves the race, not the POST echo. Re-read canonical issue state
-  # (a fresh GET, not the stale POST echo) and re-confirm I am still min(assignees). Required for
-  # ordinary co-racer correctness, not just for late stragglers: in the staggered case B saw [B]
-  # and entered here as a false winner; A (min) evicted B, so B's GET re-reads [A], CUR_MIN==A!=B,
-  # and B aborts. The agent whose GET shows min==ME proceeds; any agent evicted out of min aborts.
-  # Do NOT prune this as redundant — without it both staggered co-racers proceed (double-pick).
-  STILL=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
-  CUR_MIN=$(printf '%s\n' $STILL | head -n1)
-  # Displaced at the checkpoint → self-clean before backing off, exactly like the loser
-  # branch. Every non-winner removes itself; back-off never leaves a stale self-assignment
-  # for another agent's eviction loop to clean up (which would widen the transient window).
-  [ "$CUR_MIN" = "$ME" ] || { gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
-  # claim won and confirmed — proceed to implement
-else
-  # I lost the tiebreak: remove myself and re-pick (do NOT implement — do NOT co-occupy).
-  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"
-  # back off → re-run Step 1, pick the next issue
-fi
+```
+claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
 ```
 
-**The operating rule.** The min-login among co-racers is **provisional** — the `POST` echo only
-*detects* that you may be racing, it does not *resolve* the race. The sole resolver is the
-post-eviction **checkpoint GET** of canonical issue state: keep it, never prune it as "redundant"
-(without it both staggered co-racers proceed — a double-pick). The residual is the transient
-2-assignee window before an eviction lands; Step 1 tolerates it by skipping on **any** non-null
-assignee, so it's passed over, never double-picked. This is a **detect-and-tiebreak, not a
-lock** — don't reintroduce the "it's the lock" framing.
+The claim is **two layers** (§7): the **assignee** stays as the coarse, login-blind
+availability gate the Step-1 picker reads (`skip on any non-null assignee`), and the
+**session-id claim comment** is the fine, agent-distinguishable resolver. You self-assign
+*and* post the claim comment; the comment, not the assignee, decides who owns the work.
 
-See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the full race-case
-derivation — the staggered-co-racer walkthrough (B echoes `[B]`, A echoes `[A, B]`, the checkpoint
-GET resolves), the straggler, the transient window, and why it's detect-and-tiebreak, not a kernel
-mutex — and the shared claim semantics this step implements.
+### Delegated claim — the orchestrated path (recognize, don't re-race)
+
+If the orchestrator (`.claude/workflows/drive-issue.js`) claimed pre-spawn and **threaded a
+claim token into your prompt** ("your delegated claim token is `<token>`"), the claim is
+**already yours** — the orchestrator posted it on your behalf (ADR 0115 §3, Delegated
+ownership). Do **not** post a second, redundant claim and do **not** re-race. Confirm the
+delegation by resolving §7's tiebreak once — the **earliest authorized claim**'s embedded
+session id must equal the threaded token — then proceed straight to implementing:
+
+```bash
+# Orchestrated path: confirm the delegated claim is the earliest authorized claim, then proceed.
+# WINSID is resolved by the §7 CLAIM_RE + write+ ACL + min(created_at, comment id) resolver — do
+# NOT re-derive that grammar here; run §7's canonical resolution snippet against issue <N>.
+[ "$WINSID" = "$DELEGATED_TOKEN" ] || { echo "delegated token is not the earliest authorized claim — abort, do not implement." >&2; exit 1; }
+# delegation confirmed — skip the direct-path claim below and go implement
+```
+
+### Direct path — claim it yourself (no orchestrator)
+
+When `write-code` is invoked directly (no threaded token), make the claim here, before you
+branch or build, using your own `CLAUDE_CODE_SESSION_ID` as the token:
+
+```bash
+# 0. Fail-closed on a missing token: the claim comment is the ONLY agent-distinguishable signal
+#    under the shared `usirin` login — with no token a co-racer is unresolvable, so NEVER claim
+#    (and never fall back to the login-keyed assignee as ownership — that is the §7 degeneracy).
+if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
+  echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable claim. BACK OFF, re-pick." >&2
+  exit 0   # → re-run Step 1
+fi
+CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'   # the §7 single source — cited, not re-derived
+
+# 1. Rule-0 defer: if an AUTHORIZED claim from a DIFFERENT session already owns #N, back off
+#    WITHOUT posting (a fresh arrival never evicts a pre-existing owner; §7). Resolve the current
+#    earliest-authorized-claim session per §7 (CLAIM_RE + write+ ACL + min(created_at, id)); call it WINSID0.
+[ -n "$WINSID0" ] && [ "$WINSID0" != "$CLAUDE_CODE_SESSION_ID" ] && { echo "#$N already claimed by another agent — back off, re-pick."; exit 0; }
+
+# 2. Self-assign (the coarse availability gate), then POST the claim comment (the fine resolver).
+ME=$(gh api user --jq '.login')
+gh api -X POST repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null
+MYCLAIM=$(gh api repos/$REPO/issues/<N>/comments \
+  -f "body=claim: $CLAUDE_CODE_SESSION_ID · $(date -u +%Y-%m-%dT%H:%M:%SZ)" --jq .id)
+[ -n "$MYCLAIM" ] || { echo "failed to post claim on #$N — back off, re-pick." >&2; gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
+
+# 3. Checkpoint GET — resolve co-racers to ONE winner: the EARLIEST AUTHORIZED claim wins (§7).
+#    Re-run §7's canonical resolution against #N to get WINSID (its embedded session id).
+#    Proceed to implement IFF the earliest authorized claim is mine; else RETRACT my own claim
+#    comment AND self-unassign, then re-pick (never co-occupy, never delete another agent's claim).
+if [ "$WINSID" != "$CLAUDE_CODE_SESSION_ID" ]; then
+  gh api -X DELETE repos/$REPO/issues/<N>/comments/$MYCLAIM >/dev/null 2>&1
+  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null 2>&1
+  echo "lost the claim tiebreak on #$N to an earlier authorized claim — back off, re-pick."
+  exit 0   # → re-run Step 1
+fi
+# claim won and confirmed (earliest authorized claim is mine) — proceed to implement
+```
+
+**The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
+(re-reading the issue's comments and resolving the earliest authorized claim per §7) **resolves**
+it — keep it, never prune it as "redundant" (without it both staggered co-racers proceed, a
+double-pick). The winner is the **earliest authorized claim** (min `created_at`, then min comment
+`id`), recognized because its embedded session id equals your `CLAUDE_CODE_SESSION_ID`; because
+earliest-claim-wins, Rule 0 (defer to a pre-existing owner) and the tiebreak are **the same
+fact**. Every loser retracts its **own** claim comment and self-unassigns, then re-picks — never
+co-occupy, and **never** delete another agent's claim or fall back to the login-keyed assignee as
+ownership. This is **detect-and-tiebreak, not a lock**; the residual transient 2-assignee /
+2-claim window is tolerated by Step 1's "skip on any non-null assignee."
+
+See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the canonical
+`CLAIM_RE`, the full write+-ACL resolution snippet, the staggered-co-racer / straggler / transient
+derivation, and the pre-spawn / delegated-ownership protocol — this step implements that contract,
+it does not re-derive it.
 
 Now **route by type** before implementing — a `type:decision` or `type:investigation`
 issue is not a "write code and open a PR" issue. See [Type routing](#type-routing)

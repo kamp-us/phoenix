@@ -1387,76 +1387,183 @@ erode ADR 0053) — see [ADR 0111](https://github.com/kamp-us/phoenix/blob/main/
 
 ---
 
-## 7. Issue-claim semantics — assignee is a detect-and-tiebreak, not a lock
+## 7. Issue-claim semantics — a session-id-stamped claim comment (the agent-distinguishable claim marker, ADR 0115)
 
-`write-code` claims an issue by **self-assigning** (Step 3); the picker's "skip assigned
-issues" rule (Step 1) reads that claim. This section pins what the claim does and does not
-guarantee, so the writer (`write-code` Step 3) and any future reader of an assignee agree.
+This section is the **single source** of the agent-distinguishable claim primitive (ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md),
+#1452): the canonical claim-comment grammar, the `CLAIM_RE` matcher, and the
+earliest-authorized-claim tiebreak. **Three lock surfaces adopt it verbatim and none
+re-derive it** — `write-code`'s issue claim (Step 3), the orchestrator's pre-spawn claim
+(`.claude/workflows/drive-issue.js`), and the `status:planning` epic-lock's planning-claim
+comment (§The `status:planning` epic-lock; `plan-epic`/`review-plan`). The
+mis-attribution guard (`write-code` #1456) reads this same surface to prove a target is its
+own before mutating it. Every consumer cites the `CLAIM_RE` and tiebreak defined **here**.
 
-**Assignee is last-write-wins, not compare-and-swap.** GitHub's `POST
-/issues/{N}/assignees` is **additive** — it co-assigns, it does not displace an existing
-assignee, and there is no conditional/`If-Match` variant. So a naive read-unassigned →
-`POST` self → re-read is a **TOCTOU**, not a lock: two agents that both saw #N unassigned
-co-assign `[A, B]` and a best-effort re-read catches only whichever reads after the other's
-write (#260). A bare self-assign therefore **cannot** be relied on as mutual exclusion.
+### Why the bare assignee login cannot be the claim
 
-**The one atomic signal detects the race; a checkpoint GET resolves it.** The `POST` returns the
-full `assignees` array — but only the assignees present **when that POST is processed**, *not* a
-snapshot the racers share. So the POST echo is the **detector** (it reveals you may be racing),
-not the **resolver**. The claim is made safe by observing your own write, then resolving the
-symmetry against canonical issue state:
+`write-code` claims by **self-assigning** and the picker's "skip assigned issues" rule
+(Step 1) reads it — but the assignee is **last-write-wins, not compare-and-swap**. GitHub's
+`POST /issues/{N}/assignees` is **additive** (it co-assigns, never displaces, with no
+`If-Match`), so two agents that both saw #N unassigned co-assign `[A, B]` (#260). Worse,
+**every draining agent in this pipeline pushes as the single git identity `usirin`** —
+`ME=$(gh api user --jq '.login')` is always `usirin` — so the previous design's
+`lexicographic-min(login)` tiebreak **degenerates to a no-op**: two co-racers both compute
+`min == usirin == me` and both proceed (the #1431 double-implement root cause, ADR 0115
+§Context). The login is **agent-indistinguishable**; the fix is a per-agent identifier the
+runtime already exposes.
 
-0. **Defer to a pre-existing owner.** Re-read the assignees just before claiming; if #N is
-   already assigned, back off without `POST`ing — a fresh arrival **never evicts an owner that
-   was there before it**. This is what stops a late picker that slipped past Step 1 from
-   evicting an already-implementing winner.
-1. `POST` self as assignee; capture the returned `assignees` list (one observable write — no
-   separate best-effort re-read).
-2. Compute the **lexicographic-min login** of that list. **This is provisional.** Because the
-   echo reflects only the assignees present at *this* POST's processing time, two staggered
-   co-racers see **different** sets and **may both** compute themselves as min: if B's POST lands
-   first it echoes `[B]` (B thinks it won) and A's later POST echoes `[A, B]` (A thinks it won
-   too). The min-login from the echo therefore does **not** decide the race — it only flags a
-   candidate. The tiebreak applies **only among co-racers** (agents that read #N unassigned and
-   `POST`ed in the same window), never against a prior owner.
-3. **The checkpoint GET resolves it.** A provisional winner evicts its co-assignees via `DELETE`,
-   then **re-confirms against a fresh read of the issue's current assignees** — a `GET`, *not* the
-   step-1 POST echo (the POST echo is exactly the stale snapshot that can show a false win) — that
-   it is still `min(assignees)`, aborting and re-picking if not. This GET is **load-bearing for
-   ordinary co-racer correctness, not merely a straggler guard**: in the staggered case A (min)
-   evicts B, so B's checkpoint GET re-reads `[A]`, sees `min == A != B`, and aborts. Every loser
-   **`DELETE`s itself and re-picks** — it does **not** implement, and a co-window claim is
-   **never silently co-occupied**.
+### The two layers — coarse availability gate + fine agent-distinguishable claim
 
-**What it guarantees vs. what it doesn't.** The full race-case derivation:
+The claim is **two layers** (ADR 0115 §1):
 
-- **Staggered co-racers.** Both may pass the provisional `min == me` test off their own echo;
-  the checkpoint GET breaks the tie because both re-read the *same* canonical state — exactly one
-  finds `min == me`, the other finds it was evicted out of min and aborts. The POST echo detects,
-  the GET resolves. Prune the checkpoint as "redundant" and both staggered racers proceed — the
-  exact double-pick this section closes.
-- **Straggler.** A late agent C that slipped past Step 1 and `POST`s **after** a winner already
-  owns #N sees `[winner, C]`. The naive "recompute min, lower login wins" rule is **wrong here**:
-  if C sorts below the winner it would evict-and-take while the winner keeps implementing — two
-  implementers. Rule 0 prevents it: C, re-reading the assignees and seeing #N already owned
-  **before it ever `POST`s**, backs off without self-assigning at all — there is nothing to
-  evict and nothing of its own to remove (self-`DELETE` is reserved for the co-racer loser and
-  displaced-winner paths, which do `POST` first). Rule 3's checkpoint closes it from the other side: a
-  winner somehow displaced catches it at the GET and aborts. Together these make the claim
-  **non-revocable from the loser/straggler side** once a winner is established, so "exactly one
-  implements" holds against late arrivals too, not only co-window racers.
-- **Transient window.** Because `assignees` isn't a CAS, the eviction DELETEs are themselves
-  last-write-wins, so the issue may *transiently* show 2 assignees before an eviction lands. The
-  picker tolerates exactly this — it skips on **any non-null assignee**, so a transiently
-  double-assigned issue is passed over, never double-picked (safe degradation).
+- **Coarse availability gate — the assignee field (unchanged).** Self-assign stays as the
+  cheap, list-visible "is this taken at all?" signal the Step-1 picker reads (`skip on any
+  non-null assignee`). It is **login-blind by design** and decides nothing about *which*
+  agent owns the work — it only narrows the field and tolerates a transient double-assign.
+- **Fine, agent-distinguishable resolution — the claim comment (the resolver).** A
+  structured issue comment carrying the claiming agent's `CLAUDE_CODE_SESSION_ID` — the
+  per-session UUID Claude Code exposes in every (sub)agent's environment (read today by
+  `report`'s footer; ADR 0115 §Grounding). Two concurrent subagents under the same `usirin`
+  login carry two distinct session UUIDs, so the comment **is** the distinguishing key the
+  login is not.
 
-So: of any set of co-window racers, exactly one proceeds — deterministically, the rest back off;
-no interleaving leaves two past the claim, none backs all of them off (no livelock). It is still
-**detect-and-tiebreak, not a kernel mutex**: true single-writer exclusion (no transient
-multi-assignment, no after-the-fact eviction) would need a **designated single picker** or a
-conditional write the assignee API doesn't offer; this mechanism does not claim that, and the
-"it's the lock" framing is wrong — it's the duplicate-implementation race that's closed, by
-guaranteeing exactly one implementer.
+### The canonical claim marker + `CLAIM_RE` — single-sourced here
+
+The claim comment is **one line, emphasis-tolerant**, exactly as the SHA-bound verdict
+markers (§5/§6) are. Its **canonical grammar**:
+
+```
+claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
+```
+
+- **Token source:** the claiming process's `CLAUDE_CODE_SESSION_ID` environment variable
+  (the orchestrator's when it claims pre-spawn; the coder's when `write-code` is invoked
+  directly — see §The pre-spawn claim protocol).
+- **Write surface:** an issue comment, posted via `gh api repos/$REPO/issues/{N}/comments`
+  (REST, never GraphQL): `gh api repos/$REPO/issues/<N>/comments -f "body=claim: $CLAUDE_CODE_SESSION_ID · $(date -u +%Y-%m-%dT%H:%M:%SZ)"`.
+- **Read surface — the canonical `CLAIM_RE`.** A claim comment is matched by this **one**
+  anchored, case-insensitive, emphasis-tolerant regex; every consumer cites it and **none
+  re-hard-codes the grammar** (it pairs with §5/§6's marker-matcher discipline):
+
+  ```
+  CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'
+  ```
+
+  The `[0-9a-f-]{36}` body matches a `CLAUDE_CODE_SESSION_ID` UUID; the embedded session id
+  is captured with the paired form `(?i)^\s*\**\s*claim:\s*(?<s>[0-9a-f-]{36})`. The
+  `\**` absorbs any leading bold-marker exactly as the verdict matchers do.
+
+### The tiebreak — earliest *authorized* claim wins, recognized by session id
+
+The session id is the **identity** key, **not** the ordering key. The single winner is
+selected by the **server-assigned ordering of the authorized claim comments**: the canonical
+winner is the claim with the **minimum `(created_at, comment id)`** — the **earliest
+authorized claim**, with the strictly-monotonic, server-assigned, globally-unique comment
+`id` as the unique sub-key when timestamps tie. An agent recognizes ownership by comparing
+that winning claim's embedded session id to its own token:
+
+```
+won  ==  earliest-authorized-claim.session  ==  $CLAUDE_CODE_SESSION_ID
+```
+
+"**Authorized**" is the ADR [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+trust root — the same write+ collaborator gate `ship-it` Step 2 and the `write-code` repair
+scan apply: keep only claim markers **authored by an account holding `write+` on the repo**.
+A forged claim from a non-collaborator is **ignored**; an **empty authorized set resolves no
+winner — fail-closed**, never a false win. The canonical resolution (read tolerantly per the
+§Reading stance):
+
+```bash
+cf=$(mktemp); gh api "repos/$REPO/issues/<N>/comments?per_page=100" --paginate > "$cf"
+CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'
+# authors of any claim marker on the issue
+claimAuthors=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re)) | .user.login] | unique | .[]' "$cf")
+# keep only write+ collaborators (the ADR 0055 trust root) — a forged claim is ignored, empty ⇒ no winner
+authorized='[]'
+while IFS= read -r a; do
+  [ -z "$a" ] && continue
+  perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
+  case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
+done <<<"$claimAuthors"
+# the EARLIEST authorized claim — min (created_at, comment id) — is the canonical winner; read its session.
+WINSID=$(jq -r --argjson authorized "$authorized" '
+  [.[] | select(.user.login | IN($authorized[]))
+       | select(.body | test("(?i)^\\s*\\**\\s*claim:\\s*[0-9a-f-]{36}\\b"))
+       | {sid: (.body | capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})").s), at: .created_at, id: .id}]
+  | sort_by([.at, .id]) | first | .sid // ""' "$cf")
+# you won iff the earliest authorized claim is yours
+[ -n "$WINSID" ] && [ "$WINSID" = "$CLAUDE_CODE_SESSION_ID" ] && echo "claim is mine" || echo "not mine — back off"
+```
+
+This swaps the degenerate `lexicographic-min(login)` for `earliest(authorized claim)`,
+resolved by the same **checkpoint GET against canonical issue state, fail-closed** shape the
+old design used. The race-case derivation transfers and is *strengthened* (ADR 0115 §2):
+
+- **Staggered co-racers.** Each posts a claim comment; the server stamps each a unique,
+  monotonic `id`. The checkpoint GET re-reads the same canonical comment set, so exactly one
+  finds the earliest authorized claim's session equals its own and proceeds; every other
+  recomputes the same earliest claim, sees it is not theirs, **retracts its own claim
+  comment** (`DELETE` the comment it posted), and re-picks. The comment-post detects, the GET
+  resolves — same shape as the old assignee race, but the key is now agent-distinguishable.
+- **Straggler / Rule-0 defer collapses into the tiebreak.** A late arrival's comment has a
+  strictly larger `id`, so it is **never** the earliest authorized claim — it loses by
+  construction, **and** Rule 0 (defer to a pre-existing owner — re-read before posting and
+  back off if an authorized claim from a *different* session already owns it) tells it to
+  back off before posting at all. Because **earliest-claim-wins, Rule 0 and the tiebreak are
+  the same fact**: the pre-existing owner *is* the minimum. This removes the
+  straggler-evicts-owner tension the old `min(login)` needed a separate non-revocability
+  argument to close — a lower login could belong to a later arrival; a lower comment id
+  cannot.
+- **Transient window.** As before, the assignee field may transiently show two assignees and
+  the comments two claims before a loser retracts; the picker skips on **any non-null
+  assignee**, so a transiently double-claimed issue is passed over, never double-picked (safe
+  degradation).
+
+This remains **detect-and-tiebreak, not a kernel mutex** (the epic's honest non-goal): the
+comment/assignee APIs offer no conditional write, so true single-writer exclusion is off the
+table. The guarantee is the one that matters — of any set of co-window racers, exactly one
+proceeds, deterministically, and every loser self-retracts its claim comment (and any
+self-assignee) and re-picks. Don't reintroduce the "it's the lock" framing, and **never fall
+back to the bare assignee login as an ownership signal** — that is the degeneracy ADR 0115
+removes.
+
+### Fail-closed on a missing token
+
+If `CLAUDE_CODE_SESSION_ID` is **absent** from the agent's environment, the claim **cannot
+be posted** and the agent must **abort the claim** — it never falls back to a login-keyed
+marker (the bare assignee is a *coarse availability gate only*, never an ownership claim).
+This is the same fail-closed posture every consumer carries: no token ⇒ no claim ⇒ back off,
+never mutate unclaimed.
+
+### The pre-spawn claim protocol — claim before the work (ADR 0115 §3)
+
+The claim moves **ahead of work** — the collision window is open while the claim is mid-run,
+so closing it means claiming before any branch, build, or spawn:
+
+- **Orchestrated path (the common case).** `.claude/workflows/drive-issue.js` acquires the
+  claim in a pre-step **before** the `agent(coder, …)` dispatch (delegated to a thin
+  claim-only agent that runs this §7 primitive verbatim): self-assign, post the claim
+  comment, run the tiebreak, and **only on a win spawn the coder**, threading the winning
+  claim **token** into the coder's prompt. On a lost claim it aborts the dispatch — no coder
+  spawns.
+- **Delegated ownership.** The orchestrator and the coder are distinct sessions (the spawned
+  coder carries `CLAUDE_CODE_CHILD_SESSION=1` and its own id), so the claim token is
+  **whoever posted the claim** — the orchestrator. The orchestrator threads its token to the
+  coder; `write-code` Step 3 then **recognizes the existing claim as its delegated own** (the
+  threaded token equals the earliest authorized claim's session) and proceeds **without
+  posting a second, redundant claim** or re-racing.
+- **Direct path (no orchestrator).** When `write-code` is invoked directly, its claim is
+  made at **Step 3** using the coder's own `CLAUDE_CODE_SESSION_ID` as the token, before it
+  branches or builds. Either way the claim precedes the work.
+
+### Staleness / reclaim — owner-defer (ADR 0115 §5)
+
+A claim whose agent crashed mid-run is **sticky until a human clears it** (un-assigns the
+issue / removes the claim, re-opening it to the picker). Automatic TTL/hybrid reclaim is an
+**explicitly deferred follow-up** — GitHub exposes no TTL primitive, and an automated
+reclaim risks evicting a slow-but-live agent, re-introducing the exact double-implement this
+design prevents. The marker's `<ISO-8601-UTC>` field (and server `created_at`) is the field
+a future policy would key on, so the marker is forward-compatible without committing now.
 
 ---
 
