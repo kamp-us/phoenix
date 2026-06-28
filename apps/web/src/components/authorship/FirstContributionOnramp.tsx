@@ -40,8 +40,7 @@ export type OnrampSurface = "sozluk" | "pano";
  * authorship flag is on AND the viewer is a çaylak — is unit-testable without a
  * DOM (the pure-extraction idiom of `flagGateChild`). Only a çaylak's first entry
  * is sandboxed, so the honest-framing copy is truthful for a çaylak alone; a
- * yazar/visitor or a flag-off read is `false`. A gate that dropped either half
- * (showed for a yazar, or ignored the flag) would fail exactly this function.
+ * yazar/visitor or a flag-off read is `false`.
  */
 export function shouldShowOnramp(flagOn: boolean, tier: Tier | undefined): boolean {
 	return flagOn && tier === "çaylak";
@@ -66,9 +65,8 @@ export interface FirstContributionOnrampProps {
 }
 
 export function FirstContributionOnramp({surface, onStart}: FirstContributionOnrampProps) {
-	// Default `false`: the on-ramp stays dark until the server evaluates the flag on
-	// AND the viewer is a çaylak — every flag failure mode (loading/error/undeclared)
-	// resolves to `false`, so the gate degrades to today's behavior.
+	// Fail-closed default `false`: every flag failure mode (loading/error/undeclared)
+	// degrades to today's behavior.
 	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const {me} = useMe();
 	const headingId = useId();
