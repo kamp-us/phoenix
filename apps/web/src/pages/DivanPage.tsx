@@ -81,7 +81,11 @@ function DivanWorkspace() {
 								fallback={<p className="kp-divan__loading">yükleniyor…</p>}
 								error={({code}) => <AccessError code={code} />}
 							>
-								<CaylakDetail authorId={selectedId} viewerTier={me?.tier} />
+								<CaylakDetail
+									authorId={selectedId}
+									viewerTier={me?.tier}
+									viewerIsModerator={me?.isModerator ?? false}
+								/>
 							</Screen>
 						)}
 					</section>
