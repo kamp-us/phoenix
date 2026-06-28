@@ -89,11 +89,13 @@ describe("decideSpawn — allowlist guard (allow / allow-inherit / deny)", () =>
 		assert.isTrue(isOnAllowlist(DEFAULT_PIN));
 	});
 
-	it("DENIES an off-allowlist request with no pin (never a silent allow)", () => {
+	it("DENIES an off-allowlist request even with no env pin (never a silent allow; #943 durable default reclassifies the reason)", () => {
 		const d = decideSpawn("claude-fable-5", null);
 		assert.strictEqual(d.kind, "deny");
-		// no valid pin ⇒ the fail-closed default reason, not the explicit-off-allowlist one
-		assert.strictEqual(d.kind === "deny" ? d.explicitOffAllowlist : true, false);
+		// Post-#943: the absent env pin falls back to the valid DEFAULT_PIN, so effectivePin is
+		// on the allowlist and the off-allowlist REQUEST is the explicit-off-allowlist deny — not
+		// the bare fail-closed-on-unset one. Still denied; only the reason flag reclassifies.
+		assert.strictEqual(d.kind === "deny" ? d.explicitOffAllowlist : false, true);
 	});
 
 	it("DENIES when the pin itself is off-allowlist (a misconfigured pin can't smuggle a bad model)", () => {
