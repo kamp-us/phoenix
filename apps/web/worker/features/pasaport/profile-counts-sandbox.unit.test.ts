@@ -294,6 +294,14 @@ describe("Pasaport — headline counts AGREE with the feed totalCount per-viewer
 
 const normQuery = (qs: RecordedQuery[]) => qs.map((q) => ({sql: q.sql, params: q.params}));
 
+// Length-guarded indexed access (noUncheckedIndexedAccess): the recorded count set
+// fires in def/post/comment order, so index 0/1/2 is the definition/post/comment read.
+const nthQuery = (qs: RecordedQuery[], i: number): RecordedQuery => {
+	const q = qs[i];
+	if (!q) throw new Error(`expected a recorded count statement at index ${i}`);
+	return q;
+};
+
 describe("Pasaport — counts AGREE across fetch paths (root by-username vs by-id, #1406)", () => {
 	// `profileSource.byId` (the relation `.ref` path) computes its counts via the SAME
 	// `lookupProfileById`→`hydrateProfile`→`countByAuthor` as the root `queries.profile`
@@ -325,7 +333,9 @@ describe("Pasaport — countByAuthor routes through the #1359/0113 seam (#1406)"
 		Effect.gen(function* () {
 			const counts = yield* recordByIdCounts(viewers.otherMember);
 			assert.strictEqual(counts.length, 3, "definition + post + comment counts");
-			const [defCount, postCount, commentCount] = counts;
+			const defCount = nthQuery(counts, 0);
+			const postCount = nthQuery(counts, 1);
+			const commentCount = nthQuery(counts, 2);
 			assert.notInclude(defCount.sql.toLowerCase(), "is_draft", "definitions have no draft");
 			assert.match(postCount.sql.toLowerCase(), /"is_draft" is not 1/, "posts carry the draft arm");
 			assert.notInclude(commentCount.sql.toLowerCase(), "is_draft", "comments have no draft");
@@ -336,7 +346,7 @@ describe("Pasaport — countByAuthor routes through the #1359/0113 seam (#1406)"
 		"another member — post count excludes the author's drafts (is_draft, no own-arm match)",
 		() =>
 			Effect.gen(function* () {
-				const [, postCount] = yield* recordByIdCounts(viewers.otherMember);
+				const postCount = nthQuery(yield* recordByIdCounts(viewers.otherMember), 1);
 				const s = postCount.sql.toLowerCase();
 				// The draft arm's own-content branch is keyed to the VIEWER (`author_id =
 				// :viewerId`), bound to OTHER — never the profiled author — so none of the
@@ -352,7 +362,7 @@ describe("Pasaport — countByAuthor routes through the #1359/0113 seam (#1406)"
 
 	it.effect("the author viewing own profile — post count INCLUDES their own drafts", () =>
 		Effect.gen(function* () {
-			const [, postCount] = yield* recordByIdCounts(viewers.author);
+			const postCount = nthQuery(yield* recordByIdCounts(viewers.author), 1);
 			const s = postCount.sql.toLowerCase();
 			// viewerId === authorId, so the draft own-arm `author_id = :viewerId` matches
 			// every one of the author's rows — drafts included — so they count their own.

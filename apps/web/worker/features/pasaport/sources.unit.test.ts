@@ -82,7 +82,10 @@ const pasaportWithProfile = (row: ProfileRow | null) =>
 // so a test can assert `profileSource.byId` threads the resolved sandbox viewer
 // (#1406) rather than calling the loader sandbox-blind.
 const pasaportCapturingViewer = (row: ProfileRow | null) => {
-	const captured: {viewer?: {sandboxViewer?: SandboxViewer}} = {};
+	// `viewer` admits `undefined` (exactOptionalPropertyTypes) since the loader's option
+	// arg is itself optional — the anonymous case threads `{sandboxViewer: anonymous}`,
+	// never a bare `undefined`, but the field type must permit what the param can be.
+	const captured: {viewer: {sandboxViewer?: SandboxViewer} | undefined} = {viewer: undefined};
 	const pasaport = {
 		lookupProfileById: (_userId: string, viewer?: {sandboxViewer?: SandboxViewer}) => {
 			captured.viewer = viewer;
