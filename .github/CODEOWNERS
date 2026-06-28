@@ -12,7 +12,13 @@
 /claude-plugins/kampus-pipeline/skills/review-skill/               @usirin
 /claude-plugins/kampus-pipeline/skills/review-plan/                @usirin
 /claude-plugins/kampus-pipeline/skills/gh-issue-intake-formats.md  @usirin
+# Control-plane: the plugin hook surface — the install.sh + guard.sh dispatch wrapper (the dir)
+# and the foreign-repo hook manifest (hooks.json). The §CP `hooks(/|\.json$)` branch covers both,
+# so each gets its own literal row (ADR 0103, #1003).
+/claude-plugins/kampus-pipeline/hooks/                            @usirin
+/claude-plugins/kampus-pipeline/hooks.json                        @usirin
 # Control-plane: enforcement guard packages — the platform half of the §CP regex (ADR 0100).
 # The standalone *-guard packages were folded into pipeline-cli and deleted (#1003); ci-required
 # stays standalone (ADR 0092) and keeps its own owner line.
 /packages/ci-required/          @usirin
+/packages/pipeline-cli/         @usirin
