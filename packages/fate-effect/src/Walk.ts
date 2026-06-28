@@ -155,8 +155,6 @@ const isConnectionResult = (value: unknown): value is AnyRow & {readonly items: 
 	typeof value.pagination.hasNext === "boolean" &&
 	typeof value.pagination.hasPrevious === "boolean";
 
-// --- the selection plan (fate's createViewPlan/assignPath) -------------------------
-
 /** One node of the selection tree — fate's `SelectedNode`, walk-relevant half. */
 interface SelectionNode {
 	readonly view: ViewLike;
@@ -245,8 +243,6 @@ const buildSelectionPlan = (view: ViewLike, select: ReadonlyArray<string>): Sele
 	}
 	return {root, selectedPaths};
 };
-
-// --- view callbacks (fate's promise-shaped resolver/computed functions) ------------
 
 /**
  * fate's `toProtocolError` mask for walk-internal throws: a
@@ -534,8 +530,6 @@ const toConnectionResult = (
 		return result ?? row;
 	});
 
-// --- the batched source loads (Request.Class + RequestResolver) --------------------
-
 /**
  * One byId operation's load: the source entry (batch grouping is by entry
  * identity) and the operation's coerced ids. Success is the rows fate's
@@ -568,8 +562,6 @@ const uniqueIdsOf = (group: ReadonlyArray<SourceRowsEntry>): Array<string> => {
 	}
 	return ids;
 };
-
-// --- the walk surface ---------------------------------------------------------------
 
 /**
  * What `makeWalk` hands the dispatch loop: the interpreted byId plane. Every

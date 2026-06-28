@@ -61,8 +61,6 @@ export const mutationWireType = (
 	return type;
 };
 
-// --- compiled operation records ------------------------------------------------------
-
 /** The resolver argument bag fate hands a compiled operation. */
 export interface CompiledResolverOptions<Input> {
 	readonly ctx: FateRequestContext;
@@ -99,8 +97,6 @@ export interface CompiledMutationDefinition {
 	readonly type: string;
 	readonly resolve: (options: CompiledResolverOptions<unknown>) => Promise<unknown>;
 }
-
-// --- the identity-keyed source resolver ------------------------------------------------
 
 export type KernelSourceDefinition = SourceDefinition<AnyRow, unknown>;
 

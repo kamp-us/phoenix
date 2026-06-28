@@ -66,8 +66,6 @@ import {InputValidationError} from "./Operation.ts";
 import type {FateSourceServices, SourceConnectionInput} from "./Source.ts";
 import {FateWireCode, INTERNAL_WIRE_CODE, wireCodeOfClass} from "./WireError.ts";
 
-// --- the erased entry shapes (what the config records may contain) ----------
-
 /**
  * Any `Fate.query` entry, type-erased: the supertype every
  * `FateQuery<D, A, E, R>` is assignable to (handler parameters at `never`,
@@ -153,8 +151,6 @@ export interface AnyFateSourceEntry {
 	readonly handlers: AnyFateSourceHandlers;
 }
 
-// --- the config shape ---------------------------------------------------------
-
 /** What `config.queries` accepts: `Fate.query` entries. */
 export type FateQueriesRecord = Record<string, AnyFateQuery>;
 
@@ -205,8 +201,6 @@ export interface AnyFateServerConfig {
 	readonly live: FateLiveOption | undefined;
 }
 
-// --- the R-channel math ---------------------------------------------------------
-
 /** The union of `FateOperationServices` across one record's entries. */
 export type FateRecordServices<Ops> = {[K in keyof Ops]: FateOperationServices<Ops[K]>}[keyof Ops];
 
@@ -249,8 +243,6 @@ export type FateServerRequirements<C extends AnyFateServerConfig, PR = never> = 
 	FateConfigServices<C>,
 	CurrentUser | LivePublisher | PR
 >;
-
-// --- init-time validation -------------------------------------------------------
 
 /**
  * An invalid `FateServer` config, raised as a DEFECT at layer construction:
@@ -384,8 +376,6 @@ export const collectConfigIssues = (config: AnyFateServerConfig): Array<string> 
 	return issues;
 };
 
-// --- the declared wire vocabulary -----------------------------------------------
-
 /**
  * Collect every `FateWireCode` annotation reachable from one Schema AST node:
  * the node's own annotation plus (for a union) each member's. Structural
@@ -439,8 +429,6 @@ export const declaredWireCodes = (config: AnyFateServerConfig): ReadonlySet<stri
 	}
 	return codes;
 };
-
-// --- the service ---------------------------------------------------------------
 
 /**
  * What the `FateServer` service holds: the (validated) config records,

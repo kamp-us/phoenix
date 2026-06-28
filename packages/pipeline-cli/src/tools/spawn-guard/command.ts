@@ -5,12 +5,12 @@
  * registry (epic #994, Phase 2 / #998). Three harness-event surfaces:
  *
  *   - `guard`      — a PreToolUse hook on Task/Workflow. Reads the hook envelope on
- *     stdin (`tool_input.model`), resolves the `WORKFLOW_MODEL` pin from the env,
- *     and renders the `decideSpawn` outcome as a permission decision: **allow** an
- *     allowlisted model, **allow** an unset request to inherit the session model
- *     when the pin is allowlisted (#776), or **deny** otherwise. Per ADR 0092 it
- *     fails closed — an unset/unknown model with no valid pin is a `deny`, and the
- *     `systemMessage` always emits *what it checked*.
+ *     stdin (`tool_input.model`), resolves the `WORKFLOW_MODEL` pin from the env (an
+ *     absent pin falls back to the committed `DEFAULT_PIN`, ADR 0116), and renders the
+ *     `decideSpawn` outcome as a permission decision: **allow** an allowlisted model,
+ *     **allow** an unset request to inherit the session model (#776/#943), or **deny**
+ *     an off-allowlist request. Per ADR 0092 it still fails closed on a *present* bad
+ *     model, and the `systemMessage` always emits *what it checked*.
  *   - `statusline` — a statusLine command. Reads the statusLine payload on stdin
  *     and prints one compact per-session cost line (Claude Code renders stdout as
  *     the statusline). An unparseable payload prints a stable placeholder.
@@ -81,7 +81,7 @@ const guard = Command.make(
 				yield* Console.log(
 					JSON.stringify({
 						hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "allow"},
-						systemMessage: `spawn-guard: allow unset (inherit session model; pin ${decision.pin} on allowlist) — ${decision.checked}`,
+						systemMessage: `spawn-guard: allow unset (inherit session model; ${decision.defaulted ? "committed default pin" : "WORKFLOW_MODEL pin"} ${decision.pin} on allowlist) — ${decision.checked}`,
 					}),
 				);
 				return;

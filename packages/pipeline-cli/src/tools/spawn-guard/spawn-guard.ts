@@ -6,12 +6,18 @@
  *
  *  1. `decideSpawn(requested, pin)` — the allowlist guard. The harness spawns a
  *     subagent (Task/Workflow) on some model; this decides allow / allow-inherit / deny.
- *     Per ADR 0092 it **fails closed**: an unset OR off-allowlist model is a DENY,
- *     never a silent allow. When the request is unset and the `WORKFLOW_MODEL` pin is
- *     itself on the allowlist, the spawn is allowed to **inherit** the session model
- *     (the Task tool rejects the full pin id, so the guard can't rewrite it in — #776);
- *     an explicit off-allowlist request is denied even when a valid pin exists, so a bad
- *     model can't smuggle past, and a pin that is itself off-allowlist gives no inheritance.
+ *     Per ADR 0092 it **fails closed**: an off-allowlist model is a DENY, never a silent
+ *     allow. When the request is unset, the spawn is allowed to **inherit** the session
+ *     model (the Task tool rejects the full pin id, so the guard can't rewrite it in —
+ *     #776). The inherit decision used to hinge on the `WORKFLOW_MODEL` env pin being
+ *     allowlisted — but that pin is uncommitted and operator-shell-only, so a fresh
+ *     clone / CI / cron / new operator without it re-hit the #776 fail-closed-on-unset
+ *     symptom. So an **absent** pin now falls back to a committed `DEFAULT_PIN` (ADR
+ *     0116): unset spawns resolve to allow-inherit durably, independent of the launching
+ *     shell — the spawn still inherits the session model, only the gate stops blocking it.
+ *     An explicit off-allowlist request is still denied even when a valid pin exists, so a
+ *     bad model can't smuggle past, and a **present-but-off-allowlist** pin (a real
+ *     misconfiguration, not an absence) still denies rather than silently defaulting.
  *  2. `formatSessionCost(input)` — the statusline cost renderer. Takes the cost/token
  *     figures Claude Code hands a statusLine command and returns one compact line.
  *
@@ -24,9 +30,23 @@
 /** Canonical model IDs allowed for a spawned subagent (claude-api skill, opus-4.8 family). */
 export const ALLOWLIST: ReadonlyArray<string> = ["claude-opus-4-8", "claude-opus-4-8[1m]"] as const;
 
+/**
+ * The committed, allowlisted pin an unset `WORKFLOW_MODEL` falls back to (ADR 0116).
+ * Durable in source, so an unset spawn resolves to allow-inherit regardless of the
+ * launching shell — the fix for the #943 fragility where the inherit path depended on
+ * an uncommitted, operator-shell-only env pin. Must stay a member of `ALLOWLIST`.
+ */
+export const DEFAULT_PIN = "claude-opus-4-8[1m]";
+
 export type SpawnDecision =
 	| {readonly kind: "allow"; readonly model: string; readonly checked: string}
-	| {readonly kind: "allow-inherit"; readonly pin: string; readonly checked: string}
+	| {
+			readonly kind: "allow-inherit";
+			readonly pin: string;
+			// true when `pin` came from the committed DEFAULT_PIN (no env pin), not WORKFLOW_MODEL.
+			readonly defaulted: boolean;
+			readonly checked: string;
+	  }
 	| {
 			readonly kind: "deny";
 			readonly requested: string | null;
@@ -54,17 +74,21 @@ export const isOnAllowlist = (model: string | null | undefined): boolean => {
  *   or null when the spawn left it unset.
  * - `pin` — the resolved `WORKFLOW_MODEL` env value, or null when unset.
  *
- * Rules (fail-closed, ADR 0092). This core owns the full allow/inherit/deny decision —
- * `bin.ts` only renders it, never re-derives the outcome:
+ * Rules (fail-closed, ADR 0092; durable default pin, ADR 0116). This core owns the full
+ * allow/inherit/deny decision — `bin.ts` only renders it, never re-derives the outcome.
+ * The **effective pin** is the env `WORKFLOW_MODEL` when set, else the committed
+ * `DEFAULT_PIN` — so an *absent* pin no longer fails closed (the #943 fragility), but a
+ * *present-but-wrong* pin still surfaces as a misconfiguration:
  * - requested on allowlist → **allow** (the explicit, valid choice stands).
- * - requested unset, pin on allowlist → **allow-inherit**: the spawn inherits the
- *   session model. The guard can't rewrite the request to the pin id (the Task tool
+ * - requested unset, effective pin on allowlist → **allow-inherit**: the spawn inherits
+ *   the session model. The guard can't rewrite the request to the pin id (the Task tool
  *   rejects the full id `claude-opus-4-8[1m]`, #776), so an unset request rides the
- *   already-allowlisted session model rather than a forced pin.
+ *   already-allowlisted session model rather than a forced pin. An absent env pin resolves
+ *   to `DEFAULT_PIN`, so this holds on a fresh clone / CI / cron with no `WORKFLOW_MODEL`.
  * - otherwise → **deny**. An explicit off-allowlist request is denied even when a valid
- *   pin exists (the pin can't override it, #776; `explicitOffAllowlist` flags this), and
- *   an unset/off-allowlist request with no valid pin is denied too — an unset model is a
- *   deny, not a pass, the silent-default leak this guard exists to kill.
+ *   pin exists (the pin can't override it, #776; `explicitOffAllowlist` flags this), and a
+ *   request paired with a **present** off-allowlist pin is denied — a misconfigured env pin
+ *   never silently falls back to the default; only an *absent* pin defaults.
  */
 export const decideSpawn = (
 	requested: string | null | undefined,
@@ -72,16 +96,20 @@ export const decideSpawn = (
 ): SpawnDecision => {
 	const req = norm(requested);
 	const p = norm(pin);
-	const checked = `allowlist=[${ALLOWLIST.join(", ")}] requested=${req ?? "<unset>"} WORKFLOW_MODEL=${p ?? "<unset>"}`;
+	// An absent env pin falls back to the committed default; a present pin is honored as-is
+	// (so a misconfigured WORKFLOW_MODEL still denies rather than masking under the default).
+	const defaulted = p === null;
+	const effectivePin = p ?? DEFAULT_PIN;
+	const checked = `allowlist=[${ALLOWLIST.join(", ")}] requested=${req ?? "<unset>"} WORKFLOW_MODEL=${p ?? "<unset>"} effectivePin=${effectivePin}${defaulted ? "(default)" : ""}`;
 
 	if (req !== null && isOnAllowlist(req)) {
 		return {kind: "allow", model: req, checked};
 	}
-	if (isOnAllowlist(p)) {
-		// p is on the allowlist ⇒ non-null. An unset request inherits the session model;
-		// an explicit off-allowlist request is denied — the pin can't rewrite it in (#776).
+	if (isOnAllowlist(effectivePin)) {
+		// effectivePin is on the allowlist ⇒ non-null. An unset request inherits the session
+		// model; an explicit off-allowlist request is denied — the pin can't rewrite it in (#776).
 		if (req === null) {
-			return {kind: "allow-inherit", pin: p as string, checked};
+			return {kind: "allow-inherit", pin: effectivePin, defaulted, checked};
 		}
 		return {kind: "deny", requested: req, explicitOffAllowlist: true, checked};
 	}

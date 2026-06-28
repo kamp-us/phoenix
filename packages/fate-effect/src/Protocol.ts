@@ -43,8 +43,6 @@ import {FateRequestError} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 
-// --- the canonical schemas (the drift pin's subject) ----------------------------
-
 /** fate's four operation kinds (`FateOperationKind`, not exported by name). */
 export const PROTOCOL_OPERATION_KINDS = ["byId", "list", "mutation", "query"] as const;
 
@@ -132,8 +130,6 @@ export interface ProtocolNamedOperation {
 
 /** What {@link decodeProtocolRequest} yields per operation. */
 export type DecodedProtocolOperation = ProtocolByIdOperation | ProtocolNamedOperation;
-
-// --- the staged request gate (fate's assertProtocolRequest) ----------------------
 
 /**
  * Stage 1 — the envelope: fate checks `isRecord(value) && value.version === 1
@@ -230,8 +226,6 @@ export const decodeProtocolRequest = (
 		);
 		return yield* Effect.forEach(envelope.operations, decodeOperation);
 	});
-
-// --- the response encoder ---------------------------------------------------------
 
 const encodeResponse = Schema.encodeEffect(ProtocolResponse);
 
