@@ -95,7 +95,10 @@ jobs:
             --timing-json \
             --shell -- \
             "set -euo pipefail
-             corepack enable
+             export NPM_CONFIG_PREFIX=\"\$HOME/.npm-global\"
+             export PATH=\"\$HOME/.npm-global/bin:\$PATH\"
+             PNPM_VER=\$(node -p \"require('./package.json').packageManager.split('@')[1].split('+')[0]\")
+             npm install -g \"pnpm@\$PNPM_VER\"
              pnpm install --frozen-lockfile --store-dir .pnpm-store
              cd apps/web
              pnpm exec vitest run --config vitest.config.ts --project unit --reporter=junit --outputFile=test-results/junit.xml" \
