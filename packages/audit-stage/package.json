@@ -1,0 +1,35 @@
+{
+	"name": "@kampus/audit-stage",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Ephemeral rite-audit stage lifecycle (#1512, epic #1510) — one command deploys an isolated audit stage, seeds it, mints a login-able test-mod, runs the audit hook, and tears the stage down with teardown guaranteed on every exit path. A pure unit-tested orchestration core + a thin Effect bin (the founder-seed/preview-seed idiom).",
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"scripts": {
+		"typecheck": "tsgo -p tsconfig.json",
+		"test": "vitest run --project unit",
+		"test:unit": "vitest run --project unit",
+		"run-audit": "node src/bin.ts run"
+	},
+	"dependencies": {
+		"@effect/platform-node": "catalog:",
+		"@kampus/d1-rest": "workspace:*",
+		"@kampus/founder-seed": "workspace:*",
+		"@kampus/preview-seed": "workspace:*",
+		"effect": "catalog:"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "catalog:",
+		"@effect/tsgo": "catalog:",
+		"@effect/vitest": "catalog:",
+		"@types/node": "catalog:",
+		"@typescript/native-preview": "catalog:",
+		"typescript": "catalog:",
+		"vitest": "catalog:"
+	},
+	"volta": {
+		"node": "26.2.0"
+	}
+}
