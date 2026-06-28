@@ -25,7 +25,7 @@ import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied} from "../kunye/errors.ts";
 import {Divan} from "./Divan.ts";
 import {requireDivanAccess, ViewDivan} from "./gate.ts";
-import type {DivanCaylakEntry, DivanItem} from "./roster.ts";
+import type {DivanItem, DivanRosterRow} from "./roster.ts";
 import {
 	type DivanBacklogItem,
 	DivanBacklogItemView,
@@ -55,10 +55,13 @@ const emptyConnection = <T>(): ConnectionResult<T> => ({
 
 // The handler stamps `__typename` (the inline-resolved entity carries no source that
 // would stamp it) — the one spelling of each literal. See `report/shapers.ts`.
-const toCaylak = (e: DivanCaylakEntry): DivanCaylak => ({
+const toCaylak = (e: DivanRosterRow): DivanCaylak => ({
 	__typename: "DivanCaylak",
 	id: e.authorId,
 	authorId: e.authorId,
+	username: e.username,
+	displayName: e.displayName,
+	totalKarma: e.totalKarma,
 	definitionCount: e.definitionCount,
 	postCount: e.postCount,
 	commentCount: e.commentCount,

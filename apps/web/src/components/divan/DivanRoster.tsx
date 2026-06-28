@@ -6,9 +6,12 @@
  * sort, this surface renders it as given). Selecting a row opens that çaylak's
  * detail.
  *
- * Each row surfaces the çaylak's **karma-on-others** via the reusable `<Karma>`
- * atom (through {@link CaylakIdentity}, wrapped per-row in a {@link Screen} so one
- * since-deleted profile degrades to a fallback handle, never breaks the list).
+ * Each row surfaces the çaylak's handle + **karma-on-others** through
+ * {@link CaylakIdentity}, fed from the identity fields the `divan.roster` view now
+ * carries inline (#1423) — so the roster's SINGLE batched `useRequest` resolves every
+ * row's identity, with NO per-row by-id `Profile` read and NO per-row Suspense
+ * boundary (ADR 0021's no-waterfalls contract). A since-deleted profile arrives as a
+ * null handle and degrades to the bare "çaylak" label, never breaking the list.
  *
  * a11y: a real list of `<button>` rows (full keyboard path + visible focus + AA
  * contrast); the selected row carries `aria-current`; the pending counts are
@@ -16,14 +19,16 @@
  */
 import {useListView, useRequest, useView, type ViewRef, view} from "react-fate";
 import type {DivanCaylak} from "../../../worker/features/fate/views";
-import {Screen} from "../../fate/Screen";
-import {CaylakIdentity, IdentityFallback} from "./CaylakIdentity";
+import {CaylakIdentity} from "./CaylakIdentity";
 
 const ROSTER_PAGE_SIZE = 50;
 
 const RosterRowView = view<DivanCaylak>()({
 	id: true,
 	authorId: true,
+	username: true,
+	displayName: true,
+	totalKarma: true,
 	definitionCount: true,
 	postCount: true,
 	commentCount: true,
@@ -82,9 +87,12 @@ function RosterRow({
 				aria-current={selected ? "true" : undefined}
 				data-testid={`divan-caylak-${data.authorId}`}
 			>
-				<Screen fallback={<IdentityFallback />} error={() => <IdentityFallback />}>
-					<CaylakIdentity authorId={data.authorId} />
-				</Screen>
+				<CaylakIdentity
+					authorId={data.authorId}
+					displayName={data.displayName}
+					username={data.username}
+					totalKarma={data.totalKarma}
+				/>
 				<span className="kp-divan__counts">
 					{data.totalCount} içerik · {data.definitionCount} tanım, {data.postCount} gönderi,{" "}
 					{data.commentCount} yorum
