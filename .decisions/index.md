@@ -117,3 +117,4 @@ One row per ADR. Read the file for the why.
 | [0110](0110-plugin-carries-no-version-continuous-ship.md) | The kampus-pipeline plugin carries no `version` — continuous-ship, content-addressed by commit SHA | accepted | 2026-06-27 |
 | [0111](0111-blocking-set-verdicts-sha-less-by-design.md) | Blocking-set (§CP) review verdicts are deliberately SHA-less in the first line — the SHA is bound in the body, and a delegated control-plane merge actor confirms by reading the body, not the first-line marker | accepted | 2026-06-27 |
 | [0112](0112-token-measurement-no-quality-compromise-methodology.md) | Token-Cost Reduction Methodology — A Frozen Task Set, a Reproducible Token Meter, and a No-Quality-Compromise Gate (Quality Regression Vetoes the Lever) | accepted | 2026-06-27 |
+| [0113](0113-draft-composes-at-pano-seam.md) | Draft-Private-to-Author Composes at the Pano Read Seam, Not the Shared Lifecycle Union | accepted | 2026-06-27 |
