@@ -103,7 +103,18 @@ export class Phoenix extends Cloudflare.Worker<
 				runWorkerFirst: [...workerFirstGlobs],
 			},
 			compatibility: {flags: ["nodejs_compat"]},
-			observability: {enabled: true},
+			// Workers Observability, declared explicitly rather than leaning on alchemy's
+			// default-on (Worker.ts `observability ?? {enabled, logs:{enabled,invocationLogs}}`)
+			// so the captured-exception behavior is legible in source. `headSamplingRate: 1`
+			// keeps full capture at phoenix's current low volume. Source maps are uploaded
+			// unconditionally by the bundler (`sourcemap: "hidden"` → `.map` parts), so worker
+			// stack traces de-minify with no flag to set here. Field names are the alchemy/CF
+			// camelCase (`WorkerObservability`), not wrangler snake_case.
+			observability: {
+				enabled: true,
+				headSamplingRate: 1,
+				logs: {enabled: true, invocationLogs: true},
+			},
 		};
 
 		// The custom domain is deploy-time-only AND production-only: skip it at runtime
