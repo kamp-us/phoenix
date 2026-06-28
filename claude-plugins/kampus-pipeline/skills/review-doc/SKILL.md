@@ -616,6 +616,17 @@ Every check passed but Step 0 classified the PR **blocking** (it touches `.claud
 **not** a merge-ready go-ahead — it is advice. `ship-it` refuses this PR regardless; a human
 merges it.
 
+> **The first-line `@ <sha>` is SHA-less by design; the SHA lives in the body; a delegated merge
+> actor confirms from the body, not the first-line marker (ADR
+> [0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md)).**
+> The advisory line omits the first-line `@ <sha>` so it never enters `ship-it`'s `PASS @ <sha> —
+> merge-ready` namespace — that omission is what makes `ship-it` refuse the §CP merge (ADR 0053).
+> It is *not* a dropped binding: you still record the reviewed head `@ <sha>` + the per-AC PASS in
+> the verdict **body** below. A delegated control-plane merge actor must **not** try to bind your
+> first-line marker (it would read as `unverified`); it confirms by reading the body's `@ <sha>`
+> against the PR's current head + the per-AC PASS, then applies `ship-it`'s just-in-time guards and
+> merges by hand.
+
 ```markdown
 review-doc: advisory — blocking-set PR (manual merge)
 
