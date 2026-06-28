@@ -44,7 +44,7 @@ worker/features/
 ├── pano/               # same fragments + fate-module.ts, scoped to pano
 ├── pasaport/           # same, scoped to pasaport
 ├── vote/               # mutation-only feature — no fate fragments, no module
-├── stats/              # query-only feature — queries.ts/views.ts + a queries-only module
+├── stats/              # query-only feature — queries.ts/views.ts + a {queries, roots} module
 └── fate/
     ├── module.ts       # the `FateModule` type + `mergeFateModules`/`mergeFateRoots` (the root merges)
     ├── config.ts       # exports + registers the `modules` array, merges, adds `live`
@@ -57,17 +57,30 @@ feature's own fragments and names them in one value:
 
 ```ts
 // worker/features/sozluk/fate-module.ts
-import type {FateModule} from "../fate/module.ts";
+import {list} from "@nkzw/fate/server";
+import type {FateModule, FateRootsRecord} from "../fate/module.ts";
 import {lists} from "./lists.ts";
 import {mutations} from "./mutations.ts";
 import {queries} from "./queries.ts";
 import {definitionSource, termSource} from "./sources.ts";
+import {termDataView} from "./views.ts";
+
+// This feature's slice of the client `Root` map — declared next to the views it
+// composes (FateRootsRecord = Record<string, unknown>, to keep the dataView symbol
+// off the module export, TS2883/TS4023).
+const roots: FateRootsRecord = {
+  term: termDataView,
+  recentTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
+  popularTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
+  landingTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
+};
 
 export const fateModule = {
   queries,
   lists,
   mutations,
   sources: [definitionSource, termSource],
+  roots,
 } satisfies FateModule;
 ```
 
@@ -165,8 +178,9 @@ feature has every file, and `fate-module.ts` names only the fragments it has:
   of its own.
 - **Query-only features** (`stats/`) carry only `queries.ts` and `views.ts` —
   no `mutations.ts`, no `lists.ts`, no `sources.ts`. Its `fate-module.ts` is just
-  `{queries} satisfies FateModule`.
-- **Search** is lists-only (`{lists}`); **report** is lists + mutations +
+  `{queries, roots} satisfies FateModule` (the `landingStats` root slice).
+- **Search** is lists-only among the operation records (`{lists, roots}` — its
+  `searchTerms`/`searchPosts` root slice); **report** is lists + mutations +
   synthetic sources, no queries. Every field on `FateModule` is optional for
   exactly this reason.
 - **Pasaport** is in between: `queries.ts`/`mutations.ts`/`views.ts`/
