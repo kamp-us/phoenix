@@ -157,17 +157,56 @@ concurrently on one epic they interleave: a re-plan supersedes child C at the sa
 the gate flips C `triaged` (pickable), and `write-code` picks a dropped story (#264). The
 `status:planning` label serializes them:
 
-- A mutator (`plan-epic` on any run; `review-plan` before its gate flip or its first
-  `rePlan`) **acquires the lock first** — re-read the epic's labels, and if `status:planning`
-  is absent `POST` it; if **present, back off** (don't mutate — another run is planning this
-  epic). Hold it to **PASS-or-park**, then `DELETE` it on every exit path (including failure).
-- This is **detect-and-serialize, not a mutex** — `POST .../labels` is **not** compare-and-swap
-  (no `If-Match`), so two mutators that both read it absent in the same window both acquire
-  (the §7 / #260 TOCTOU, one layer up over the whole child set). The lock narrows the window;
-  the residual is backstopped by the epic-body **splice + recheck** (§1 "Updating it safely",
-  #261) and the convergence loop's signature checkpoint. Don't claim a lock guarantee the label
-  API can't give — claim "the common flip-vs-supersede / concurrent-re-plan interleaving is
-  serialized." See ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md).
+The lock is **two layers**, exactly mirroring the issue-claim of §7 one level up over the
+whole child set — a coarse availability label gated by a fine, agent-distinguishable claim
+comment (the agent-distinguishable claim marker, ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md), #1452):
+
+- **Coarse availability gate — the `status:planning` label.** A mutator (`plan-epic` on any
+  run; `review-plan` before its gate flip or its first `rePlan`) re-reads the epic's labels: if
+  `status:planning` is **present, back off** (don't mutate — defer to a holder already there,
+  the §7 Rule-0 "a fresh arrival never evicts an owner that was there before it"); if **absent,
+  `POST` it**. The label is the cheap, list-visible "is this epic being planned **at all**?"
+  signal — but because `POST .../labels` is **additive, not compare-and-swap** (no `If-Match`),
+  two runs that both read it absent in the same window both `POST` the same single shared label,
+  and under the one shared `usirin` login the label's author cannot tell them apart. So the label
+  **alone** says only *whether* the epic is being planned, never *which* run holds the lock — the
+  same post-`/labels` TOCTOU that double-planned #1359 (stray child #1403).
+
+- **Fine, agent-distinguishable resolution — the planning-claim comment (ADR 0115).** Right
+  after `POST`ing the label, the mutator posts the §7 claim-comment primitive **on the epic** —
+  `claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>`, the emphasis-tolerant marker §7 defines —
+  then runs the **same checkpoint-GET resolution** §7 uses: list the epic's comments, keep claim
+  markers **authored by a write+ collaborator** (the ADR
+  [0055](https://github.com/kamp-us/phoenix/blob/main/.decisions/0055-acl-sourced-review-authz.md)
+  trust root), and the **earliest authorized claim** — minimum `(created_at, comment id)` — is
+  the canonical winner (ADR 0115 §2). The run whose `CLAUDE_CODE_SESSION_ID` equals that earliest
+  claim's embedded session proceeds to mutate; every other backs off. **Fail-closed:** if
+  `CLAUDE_CODE_SESSION_ID` is absent the claim can't be posted and the run **aborts the acquire**
+  (it never falls back to the login-keyed label as an ownership signal — that is the degeneracy
+  ADR 0115 removes); if no authorized claim resolves, no run wins.
+
+- **The loser retracts its own claim, never the shared label.** A co-acquire loser **`DELETE`s
+  its own planning-claim comment** and backs off — it does **not** `DELETE` the `status:planning`
+  label, which the **winner still holds**. Unlike §7's per-login assignees (where each agent
+  removes *its own* assignee), the label is a **single shared token both runs `POST`ed**, so
+  deleting it would unlock the winner and reopen the double-plan. The release-on-every-exit
+  discipline is unchanged for the **winner**: it holds the label **PASS-or-park**, then `DELETE`s
+  both its own claim comment and the label on **every** terminal path including failure. **Only
+  release a lock you won**, never the held label you backed off from.
+
+This swaps the label's degenerate "any non-null = held, but which run?" for **earliest authorized
+claim wins**, resolved by the same detect-and-serialize, fail-closed shape as §7 — and because
+earliest-claim-wins, **Rule 0 (defer to a holder) and the tiebreak are the same fact** (the
+pre-existing planner *is* the minimum, ADR 0115 §2). It remains **detect-and-serialize, not a
+mutex** — neither the label nor the comment API offers a conditional write, so the residual
+co-acquire window (both posting in the same instant) is narrowed and resolved, not eliminated;
+it stays backstopped by the epic-body **splice + recheck** (§1 "Updating it safely", #261) and
+the convergence loop's signature checkpoint. Don't claim a lock guarantee the API can't give —
+claim "of any set of co-acquirers, exactly one plans; every loser self-retracts and backs off."
+See ADR [0059](https://github.com/kamp-us/phoenix/blob/main/.decisions/0059-epic-plan-lock.md)
+(the lock) and ADR [0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md)
+(the agent-distinguishable claim, #1452).
 
 ## Milestone — the one *optional* intake dimension
 
