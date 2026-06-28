@@ -15,7 +15,7 @@ import {ALCHEMY_PHASE} from "alchemy/Phase";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
-import {AppConfig, betterAuthSecret, environment} from "./config.ts";
+import {AppConfig, envBindings} from "./config.ts";
 import {Database, DatabaseLive} from "./db/Database.ts";
 import {customHostname, resolveStateMode} from "./env.ts";
 import {makeFateRuntime, PhoenixFateLive} from "./features/fate/layers.ts";
@@ -79,13 +79,14 @@ export class Phoenix extends Cloudflare.Worker<
 			// the Vite proxy in `apps/web/vite.config.ts` point at the wrong worker.
 			// `strictPort: true` makes collisions fail loudly instead of misrouting.
 			dev: {port: 1337, strictPort: true},
-			// Env bindings, per-key from the `effect/Config` constants in `config.ts`:
-			// `ENVIRONMENT` → `plain_text`, `BETTER_AUTH_SECRET` → `secret_text`. Alchemy
-			// resolves each at deploy and runtime reads the same value off the auto-wired
-			// ConfigProvider.
+			// Env bindings spread from `config.ts`'s `envBindings`, keyed by the
+			// single-sourced binding names (`ENV_BINDINGS`): `ENVIRONMENT` → `plain_text`,
+			// `BETTER_AUTH_SECRET` → `secret_text`. The names are NOT restated here — they
+			// come from the same `as const` the `Config` constructors read under, so a
+			// key↔name mismatch is unrepresentable (#1432). Alchemy resolves each at deploy
+			// and runtime reads the same value off the auto-wired ConfigProvider.
 			env: {
-				ENVIRONMENT: environment,
-				BETTER_AUTH_SECRET: betterAuthSecret,
+				...envBindings,
 				// The Flagship app resource maps to the native `Flagship` runtime binding
 				// via `InferEnv` (epic #488); the worker `bind()`s it in init below.
 				FLAGS: FlagshipResource,
