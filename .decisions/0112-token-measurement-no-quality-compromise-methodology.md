@@ -111,5 +111,3 @@ This methodology is the reusable standard for future pipeline cost work: reuse t
   stay the place a future agent reads to run the apparatus. Per-lever numbers stay on their
   lever children — this record deliberately carries none, so it doesn't go stale as the
   pattern docs' measured numbers are refreshed.
-</content>
-</invoke>
