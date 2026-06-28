@@ -11,7 +11,8 @@ seam (#1432). Never `yield* Cloudflare.WorkerEnvironment` raw, never cast.
 both the `Config` constructors and the `env:` block reference — so a name string is
 written exactly once. Each var is one `Config` constant; `AppConfig = Config.all`
 aggregates them into the single yieldable read. The `ENVIRONMENT` taxonomy itself
-(the three classes, the `Environment` type, the `isProduction` gate, the
+(the deploy classes `development | preview | production | audit`, the `Environment`
+type, the `isProduction` gate, the
 `stage → ENVIRONMENT` map) is owned by [`worker/environment.ts`](../apps/web/worker/environment.ts)
 — the single module the deploy gates and the runtime `Config` both reuse (ADR 0088,
 #1433), so `config.ts` imports the literal set rather than re-spelling it:
@@ -28,7 +29,8 @@ export const ENV_BINDINGS = {
 } as const;
 
 // One constant per var. Non-redacted → plain_text binding, fail-closed default.
-// Three deploy classes (ADR 0088): local `development`, deployed `preview`, `production`.
+// Deploy classes (ADR 0088): local `development`, deployed `preview`, `production`,
+// and the isolated `audit` stage (#1511).
 export const environment = Config.literals(ENVIRONMENTS, ENV_BINDINGS.environment).pipe(
 	Config.withDefault(DEFAULT_ENVIRONMENT),
 );

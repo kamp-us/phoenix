@@ -12,6 +12,17 @@ tags: [infra, deploy, auth, environment]
 ADR's dashboard deploy leg is gone. The `preview` environment decision is unchanged and
 fully stands; only the second-app leg it described no longer exists.
 
+**Note (#1511, epic #1510 — the rite-audit harness):** a fourth class, **`audit`**, joins
+the taxonomy for the dedicated isolated audit stage. It is a non-production deployed class
+(served from `*.kampusinfra.workers.dev`, sharing `preview`'s auth topology) that exists so
+the `phoenix-authorship-loop` flag's environment-targeting force-on rule (`equals environment
+== audit`) can serve `on` non-interactively for the audit stage while `production` can never
+match it. `isProduction` is unchanged (`=== "production"`), so `audit` provisions no email
+subdomain / apex domain; `environmentForStage` maps only the `audit` stage to `audit`
+(`prod`→`production` is untouched); and `parseDeployEnvironment` stays fail-loud on
+genuinely-unknown values — `audit` is now a *known* class, not a relaxation of the #1433
+guard.
+
 ## Context
 
 `ENVIRONMENT` was a two-value `Config.literals(["development", "production"])`

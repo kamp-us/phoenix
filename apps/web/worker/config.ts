@@ -30,11 +30,11 @@ export const ENV_BINDINGS = {
 } as const;
 
 /**
- * The deploy environment — three classes (ADR 0088), the taxonomy owned by
+ * The deploy environment — the deploy classes (ADR 0088), the taxonomy owned by
  * `environment.ts`. Non-redacted (→ `plain_text` binding), fail-closed: defaults to
  * "production" when unset, so a missing var closes every dev gate. `development` is local
  * `alchemy dev`; `preview` is a deployed per-PR stage on `*.kampusinfra.workers.dev`;
- * `production` is prod.
+ * `production` is prod; `audit` is the isolated rite-audit stage (#1511).
  *
  * The `withDefault` is kept deliberately (#1432). Its job is fail-closed-to-prod for a
  * genuinely *unset* var (ADR 0088), NOT masking a name typo: with the binding name now

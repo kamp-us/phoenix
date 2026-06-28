@@ -16,6 +16,7 @@ import type {FateServer} from "@kampus/fate-effect";
 import {type BaseRuntimeContext, RuntimeContext} from "alchemy";
 import * as Layer from "effect/Layer";
 import * as HttpRouter from "effect/unstable/http/HttpRouter";
+import type {Environment} from "../config.ts";
 import type {WorkerFateServices} from "../features/fate/layers.ts";
 import type {LiveConnections, LiveTopics} from "../features/fate-live/topics.ts";
 import {FlagsDevOverrideLive, FlagsLive} from "../features/flagship/Flags.ts";
@@ -68,7 +69,7 @@ export const makeAppLive = (options: {
 	 * the override branch is structurally absent from every deployed stage's flag
 	 * path — not merely guarded, but never built.
 	 */
-	readonly environment: "development" | "preview" | "production";
+	readonly environment: Environment;
 }) => {
 	// The health route's only worker-level requirement is the `Flagship` client
 	// (its `ConfigProvider` is auto-wired at worker scope); discharge it here.

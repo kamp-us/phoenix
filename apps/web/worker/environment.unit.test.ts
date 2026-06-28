@@ -5,6 +5,8 @@
  */
 import {describe, expect, it} from "vitest";
 import {
+	AUDIT_ENVIRONMENT,
+	AUDIT_STAGE,
 	DEFAULT_ENVIRONMENT,
 	ENVIRONMENTS,
 	environmentForStage,
@@ -15,19 +17,25 @@ import {
 	UnknownEnvironmentError,
 } from "./environment.ts";
 
-describe("the taxonomy (ADR 0088)", () => {
-	it("is exactly the three deploy classes", () => {
-		expect(ENVIRONMENTS).toEqual(["development", "preview", "production"]);
+describe("the taxonomy (ADR 0088, + the `audit` class #1511)", () => {
+	it("is exactly the four deploy classes", () => {
+		expect(ENVIRONMENTS).toEqual(["development", "preview", "production", "audit"]);
 	});
 
 	it("fail-closes to production when ENVIRONMENT is unset", () => {
 		expect(DEFAULT_ENVIRONMENT).toBe("production");
 	});
 
+	it("the audit class is its own literal, distinct from production", () => {
+		expect(AUDIT_ENVIRONMENT).toBe("audit");
+		expect(AUDIT_ENVIRONMENT).not.toBe("production");
+	});
+
 	it("recognizes each class and rejects anything else", () => {
 		expect(isEnvironment("development")).toBe(true);
 		expect(isEnvironment("preview")).toBe(true);
 		expect(isEnvironment("production")).toBe(true);
+		expect(isEnvironment("audit")).toBe(true);
 		expect(isEnvironment("prod")).toBe(false);
 		expect(isEnvironment("")).toBe(false);
 	});
@@ -38,6 +46,8 @@ describe("isProduction (the one shared predicate)", () => {
 		expect(isProduction("production")).toBe(true);
 		expect(isProduction("preview")).toBe(false);
 		expect(isProduction("development")).toBe(false);
+		// The audit class is NEVER production — the prod-never invariant at the taxonomy layer.
+		expect(isProduction("audit")).toBe(false);
 	});
 });
 
@@ -46,6 +56,7 @@ describe("parseDeployEnvironment (fail-loud guard, #1433)", () => {
 		expect(parseDeployEnvironment("production")).toBe("production");
 		expect(parseDeployEnvironment("preview")).toBe("preview");
 		expect(parseDeployEnvironment("development")).toBe("development");
+		expect(parseDeployEnvironment("audit")).toBe("audit");
 	});
 
 	it("treats a genuinely absent value as undefined (caller defaults), NOT as a class", () => {
@@ -88,9 +99,21 @@ describe("environmentForStage (the single owner of the prod→production map)", 
 		expect(environmentForStage("prod")).toBe("production");
 	});
 
+	it("maps the dedicated audit stage to the `audit` class (#1511)", () => {
+		expect(environmentForStage(AUDIT_STAGE)).toBe("audit");
+		expect(environmentForStage("audit")).toBe("audit");
+	});
+
 	it("maps every other stage (per-PR previews) to `preview`", () => {
 		expect(environmentForStage("pr-1433")).toBe("preview");
 		expect(environmentForStage("it-abc123")).toBe("preview");
 		expect(environmentForStage("dev_umut")).toBe("preview");
+	});
+
+	it("never maps a non-prod stage to production (prod-never at the stage layer)", () => {
+		// The audit stage and every preview stay non-production: only `prod` is production,
+		// so the audit force-on rule can never reach a production deploy.
+		expect(environmentForStage(AUDIT_STAGE)).not.toBe("production");
+		expect(environmentForStage("pr-1")).not.toBe("production");
 	});
 });
