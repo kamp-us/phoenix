@@ -13,6 +13,8 @@
 import {assert, describe, it} from "@effect/vitest";
 import {Effect, Layer} from "effect";
 import {type CommentRow, Pano, type PostSummaryRow} from "../pano/Pano.ts";
+import {makePasaportStub} from "../pasaport/Pasaport.testing.ts";
+import type {ProfileIdentityRow} from "../pasaport/Pasaport.ts";
 import type {DefinitionRow} from "../sozluk/definition-fields.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
 import {Divan, DivanLive} from "./Divan.ts";
@@ -111,6 +113,20 @@ const panoStub = (posts: ReadonlyArray<Raw>, comments: ReadonlyArray<Raw>): Laye
 		) as typeof Pano.Service,
 	);
 
+// The batched identity read the roster joins on: returns only the requested ids that
+// have a profile row, so an author absent here degrades to null handle + 0 karma.
+const pasaportStub = (identities: ReadonlyArray<ProfileIdentityRow>) =>
+	makePasaportStub({
+		getProfileIdentitiesByIds: (ids) =>
+			Effect.succeed(identities.filter((i) => ids.includes(i.userId))),
+	});
+
+// cyl-a has a full profile; cyl-b is deliberately ABSENT so the roster join exercises
+// the missing-profile degradation (null handle + 0 karma → the "çaylak" label client-side).
+const IDENTITIES: ReadonlyArray<ProfileIdentityRow> = [
+	{userId: "cyl-a", username: "ada", displayName: "Ada Lovelace", totalKarma: 7},
+];
+
 const DEFS: ReadonlyArray<Raw> = [
 	{
 		id: "d1",
@@ -175,18 +191,39 @@ const COMMENTS: ReadonlyArray<Raw> = [
 ];
 
 const layer = DivanLive.pipe(
-	Layer.provideMerge(Layer.mergeAll(sozlukStub(DEFS), panoStub(POSTS, COMMENTS))),
+	Layer.provideMerge(
+		Layer.mergeAll(sozlukStub(DEFS), panoStub(POSTS, COMMENTS), pasaportStub(IDENTITIES)),
+	),
 );
 
 const run = <A>(eff: Effect.Effect<A, never, Divan>): A =>
 	Effect.runSync(eff.pipe(Effect.provide(layer)));
 
 describe("Divan.roster — person-grouped, removed & live excluded", () => {
-	it("groups by author with per-kind counts; removed and live rows are excluded", () => {
+	it("groups by author with per-kind counts + inline identity; removed and live rows are excluded", () => {
 		const roster = run(Effect.flatMap(Divan, (d) => d.roster()));
 		assert.deepStrictEqual(roster, [
-			{authorId: "cyl-a", definitionCount: 1, postCount: 1, commentCount: 0, totalCount: 2},
-			{authorId: "cyl-b", definitionCount: 1, postCount: 0, commentCount: 1, totalCount: 2},
+			{
+				authorId: "cyl-a",
+				username: "ada",
+				displayName: "Ada Lovelace",
+				totalKarma: 7,
+				definitionCount: 1,
+				postCount: 1,
+				commentCount: 0,
+				totalCount: 2,
+			},
+			// cyl-b has no profile row → the join degrades to null handle + 0 karma.
+			{
+				authorId: "cyl-b",
+				username: null,
+				displayName: null,
+				totalKarma: 0,
+				definitionCount: 1,
+				postCount: 0,
+				commentCount: 1,
+				totalCount: 2,
+			},
 		]);
 	});
 });
@@ -207,6 +244,7 @@ describe("Divan preview — a short excerpt, never the full node", () => {
 					},
 				]),
 				panoStub([], []),
+				pasaportStub(IDENTITIES),
 			),
 		),
 	);

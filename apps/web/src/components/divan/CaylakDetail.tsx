@@ -30,7 +30,7 @@ import {Screen} from "../../fate/Screen";
 import {codeOf} from "../../fate/wire";
 import {Button} from "../ui/Button";
 import {ReportButton, type ReportOutcome} from "../ui/ReportButton";
-import {CaylakIdentity, IdentityFallback} from "./CaylakIdentity";
+import {CaylakIdentityById, IdentityFallback} from "./CaylakIdentity";
 import {
 	itemKindLabel,
 	parseBacklogItemId,
@@ -94,7 +94,7 @@ export function CaylakDetail({
 		>
 			<header className="kp-divan__detail-head">
 				<Screen fallback={<IdentityFallback />} error={() => <IdentityFallback />}>
-					<CaylakIdentity authorId={authorId} />
+					<CaylakIdentityById authorId={authorId} />
 				</Screen>
 				<ReviewerActions
 					authorId={authorId}

@@ -21,9 +21,10 @@
  */
 import {Context, Effect, Layer} from "effect";
 import {Pano} from "../pano/Pano.ts";
+import {Pasaport} from "../pasaport/Pasaport.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
 import {excerpt} from "../text/index.ts";
-import {buildRoster, type DivanCaylakEntry, type DivanItem} from "./roster.ts";
+import {buildRoster, type DivanItem, type DivanRosterRow} from "./roster.ts";
 
 const preview = (text: string | null | undefined): string => excerpt(text ?? "");
 
@@ -31,7 +32,7 @@ export class Divan extends Context.Service<
 	Divan,
 	{
 		/** The pending-çaylak roster: every çaylak with ≥1 sandboxed, not-removed item. */
-		readonly roster: () => Effect.Effect<ReadonlyArray<DivanCaylakEntry>>;
+		readonly roster: () => Effect.Effect<ReadonlyArray<DivanRosterRow>>;
 		/** One çaylak's sandboxed backlog (newest first) — the detail-view items. */
 		readonly backlogOf: (authorId: string) => Effect.Effect<ReadonlyArray<DivanItem>>;
 	}
@@ -41,6 +42,7 @@ export const DivanLive = Layer.effect(Divan)(
 	Effect.gen(function* () {
 		const sozluk = yield* Sozluk;
 		const pano = yield* Pano;
+		const pasaport = yield* Pasaport;
 
 		// Fetch the three sandboxed backlogs (optionally one author's) and collapse the
 		// per-domain rows onto the normalized `DivanItem` shape. The `sandboxBacklogWhere`
@@ -86,8 +88,29 @@ export const DivanLive = Layer.effect(Divan)(
 			return items;
 		});
 
+		// Join each grouped roster entry to its çaylak's identity (handle + karma) in ONE
+		// batched profile read — so the single `divan.roster` fate request carries every
+		// row's identity in-batch and the client fires NO per-row by-id `Profile` read
+		// (ADR 0021's no-waterfalls contract, #1423). A çaylak with no profile row (or no
+		// username yet) degrades to nulls + 0 karma; the client renders the "çaylak"
+		// fallback label.
+		const roster = Effect.fn("Divan.roster")(function* () {
+			const entries = buildRoster(yield* collect());
+			const identities = yield* pasaport.getProfileIdentitiesByIds(entries.map((e) => e.authorId));
+			const byId = new Map(identities.map((i) => [i.userId, i]));
+			return entries.map((e): DivanRosterRow => {
+				const identity = byId.get(e.authorId);
+				return {
+					...e,
+					username: identity?.username ?? null,
+					displayName: identity?.displayName ?? null,
+					totalKarma: identity?.totalKarma ?? 0,
+				};
+			});
+		});
+
 		return {
-			roster: () => Effect.map(collect(), buildRoster),
+			roster,
 			backlogOf: (authorId) =>
 				Effect.map(collect({authorId}), (items) =>
 					[...items].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
