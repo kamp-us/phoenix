@@ -538,15 +538,15 @@ claim_is_mine() {
   local N="$1" cf am authorized winner perm a
   cf=$(mktemp)
   gh api "repos/$REPO/issues/$N/comments?per_page=100" > "$cf"   # PR comments share the issues endpoint
-  # claim grammar (ADR 0115 §1):  claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
-  # matched emphasis-tolerant exactly like the review-* markers (leading \** absorbs bolding, §5).
-  # SINGLE backslashes: this regex is passed by jq --arg (a raw value), not a jq string literal —
-  # so \s/\** reach oniguruma directly (a jq-literal would need \\s; the --arg path must not).
-  CLAIM_RE='^\s*\**\s*claim:\s*\**\s*(?<sid>[0-9A-Za-z-]{8,})'
+  # claim grammar + matcher are SINGLE-SOURCED from gh-issue-intake-formats.md §7 (ADR 0115 §1/§2):
+  # the canonical marker `claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>` and the ONE `CLAIM_RE`
+  # every consumer shares — cited verbatim here, NEVER re-derived (don't reintroduce a broader
+  # inline grammar; the §7 matcher is the single source the Step-3 write and §7 resolver also use).
+  CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'   # the §7 single source — cited, not re-derived
   # AUTHORIZED authors only — write+ collaborators (ADR 0055 trust root, same set ship-it Step 2 /
   # the repair scan build). A forged claim from a non-collaborator is ignored; an EMPTY authorized
   # set resolves NO claim ⇒ the guard refuses — fail-closed, never a false win.
-  am=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re;"i")) | .user.login] | unique | .[]' "$cf")
+  am=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re)) | .user.login] | unique | .[]' "$cf")
   authorized='[]'
   while IFS= read -r a; do
     [ -z "$a" ] && continue
@@ -554,11 +554,12 @@ claim_is_mine() {
     case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
   done <<<"$am"
   # WINNER = the EARLIEST authorized claim — min (created_at, comment id), the server-assigned
-  # ordering (ADR 0115 §2), NOT lexicographic-min(session). Extract its embedded session id.
+  # ordering (ADR 0115 §2), NOT lexicographic-min(session). Extract its embedded session id with
+  # §7's paired capture form (group `s`) — the same single source, no second grammar.
   winner=$(jq -r --argjson authorized "$authorized" --arg re "$CLAIM_RE" \
-    '[.[] | select(.user.login | IN($authorized[])) | select(.body | test($re;"i"))]
+    '[.[] | select(.user.login | IN($authorized[])) | select(.body | test($re))]
      | sort_by([.created_at, .id]) | first
-     | (.body // "" | (capture($re;"i") // {sid:null}).sid) // ""' "$cf")
+     | (.body // "" | (capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})") // {s:null}).s) // ""' "$cf")
   if [ -z "$winner" ]; then
     echo "mis-attribution guard FAILED (fail-closed): #$N carries no authorized claim marker — refusing to mutate (ADR 0115 §1/§2: absent ⇒ no owner, never a false win)." >&2
     return 1
