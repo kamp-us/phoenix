@@ -19,13 +19,36 @@
  * anchored, and exhaustively unit-tested.
  */
 
-/** A Cloudflare resource as listed at the boundary, reduced to what the plan needs. */
-export interface CfResource {
-	/** Worker scripts and D1 databases are the two leaking kinds; each is swept by its own anchor. */
-	readonly kind: "worker" | "d1";
-	/** The physical CF name, e.g. `phoenix-phoenix-it-report-1a2b3c4d` (see name shape below). */
-	readonly name: string;
-}
+/**
+ * A Cloudflare resource as listed at the boundary, reduced to what the plan needs — a
+ * discriminated union so each kind carries exactly the identity its delete path needs and
+ * nothing it doesn't (a flagship-flag can't exist without its parent app's id; a worker
+ * never carries one). The pure core only ever reads the stage-bearing name; the extra
+ * `appId`/`appName` coordinates are boundary delete-keys it ignores.
+ *
+ * Worker scripts and D1 databases leak by stage in their OWN physical name. Flagship
+ * resources leak the same way per closed PR preview, but a flag's KEY is stage-invariant
+ * (the same `key` declared on every stage's app — `apps/web/worker/features/flagship/resources.ts`),
+ * so a flag's stage lives in its PARENT app's physical name (`appName`), never in `name`.
+ */
+export type CfResource =
+	/** A Worker script; `name` is its physical name (carries the stage). */
+	| {readonly kind: "worker"; readonly name: string}
+	/** A D1 database; `name` is its physical name (carries the stage). */
+	| {readonly kind: "d1"; readonly name: string}
+	/** A Flagship app; `name` is its physical name (carries the stage), `appId` is the delete key (apps delete by server id, not name). */
+	| {readonly kind: "flagship-app"; readonly name: string; readonly appId: string}
+	/**
+	 * A Flagship flag; `name` is its stage-invariant `key`, `appName` is the parent app's
+	 * physical name (the stage-bearer the core decodes), `appId` the parent app's server id
+	 * (a flag is a sub-resource of an app — its delete path is `apps/{appId}/flags/{key}`).
+	 */
+	| {
+			readonly kind: "flagship-flag";
+			readonly name: string;
+			readonly appId: string;
+			readonly appName: string;
+	  };
 
 /**
  * The protection set: the resources that must NEVER be deleted, expressed as the
@@ -79,6 +102,15 @@ export interface SweepPlan {
 const STACK = "phoenix";
 const WORKER_PREFIX = `${STACK}-${STACK}-`;
 const D1_PREFIX = `${STACK}-${STACK}-db-`;
+/**
+ * The Flagship app physical-name prefix. The app is `Cloudflare.FlagshipApp("phoenix_flags")`
+ * (`apps/web/worker/features/flagship/resources.ts`), so alchemy's `createPhysicalName`
+ * yields the same `${stack}-${id}-${stage}-${suffix}` shape as workers/D1, `_`→`-`
+ * lowercased: id `phoenix_flags` → `phoenix-flags`, giving prefix `phoenix-phoenix-flags-`.
+ * Both flagship kinds decode their stage off this one app prefix — a flag's stage is its
+ * parent app's, never in the flag key.
+ */
+export const FLAGSHIP_APP_NAME_PREFIX = `${STACK}-${STACK}-flags-`;
 
 /**
  * Decode a physical CF name back to its stage (the `<stage>` between the
@@ -91,11 +123,21 @@ const D1_PREFIX = `${STACK}-${STACK}-db-`;
  * resource can never enter the delete set (it falls through to a kept `unrecognized`).
  */
 const decodeStage = (resource: CfResource): string | undefined => {
-	const prefix = resource.kind === "d1" ? D1_PREFIX : WORKER_PREFIX;
-	if (!resource.name.startsWith(prefix)) {
+	// Each kind names its stage-bearer + prefix. A flag's stage lives in its PARENT app's
+	// physical name (`appName`), not its stage-invariant key — so a flag decodes off the
+	// flagship app prefix applied to `appName`, never `name`.
+	const {prefix, stageBearer} =
+		resource.kind === "d1"
+			? {prefix: D1_PREFIX, stageBearer: resource.name}
+			: resource.kind === "flagship-app"
+				? {prefix: FLAGSHIP_APP_NAME_PREFIX, stageBearer: resource.name}
+				: resource.kind === "flagship-flag"
+					? {prefix: FLAGSHIP_APP_NAME_PREFIX, stageBearer: resource.appName}
+					: {prefix: WORKER_PREFIX, stageBearer: resource.name};
+	if (!stageBearer.startsWith(prefix)) {
 		return undefined;
 	}
-	const rest = resource.name.slice(prefix.length);
+	const rest = stageBearer.slice(prefix.length);
 	const lastDash = rest.lastIndexOf("-");
 	// A name with no suffix segment (no dash after the prefix) is malformed for our
 	// scheme — treat as unrecognized rather than guess a stage.

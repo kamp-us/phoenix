@@ -2,17 +2,18 @@
 /**
  * `orphan-sweep sweep` — the operable surface for the integration-stage leak (#690).
  *
- * Lists the account's Worker + D1 resources and the repo's open PRs (behind the
- * injectable `Cloudflare` / `Github` services so the pure core stays IO-free), computes
- * the deletion plan via `computeSweepPlan`, prints it, and — ONLY with `--execute` —
- * deletes the planned set. DRY-RUN by default: with no flag it prints what it WOULD
+ * Lists the account's Worker + D1 + Flagship app/flag resources and the repo's open PRs
+ * (behind the injectable `Cloudflare` / `Github` services so the pure core stays IO-free),
+ * computes the deletion plan via `computeSweepPlan`, prints it, and — ONLY with `--execute`
+ * — deletes the planned set. DRY-RUN by default: with no flag it prints what it WOULD
  * delete and exits 0 without touching the account.
  *
  * The catastrophe guard lives in the pure core (`orphan-sweep.ts`): prod, named-dev
  * (`--protect`), and open-PR resources are NEVER in the plan, so `--execute` can only
  * ever delete an orphan `it-*` (and, with `--sweep-closed-previews`, a closed PR's
- * `pr-<n>`). Credentials come from the environment at runtime
- * (`$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID`), never from source.
+ * `pr-<n>`) — across all resource kinds, the Flagship apps/flags included. Credentials
+ * come from the environment at runtime (`$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID`),
+ * never from source.
  *
  * Wired per effect-smol's CLI guidance (mirrors `@kampus/flake-rate`): `effect/unstable/cli`
  * for typed args/flags, the live `Cloudflare` + `Github` provided over `NodeServices.layer`

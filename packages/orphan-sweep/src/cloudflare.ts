@@ -1,6 +1,6 @@
 /**
- * The Cloudflare boundary: list the account's Worker scripts + D1 databases, and
- * (only when the bin asks) delete one. Shells the CF REST API via `curl` over
+ * The Cloudflare boundary: list the account's Worker scripts + D1 databases + Flagship
+ * apps/flags, and (only when the bin asks) delete one. Shells the CF REST API via `curl` over
  * `ChildProcessSpawner` — the SAME transport `.github/workflows/deploy.yml` uses for
  * its `/d1/database?name=` lookup, and the same `runGh`-shaped boundary
  * `@kampus/flake-rate` uses for `gh`. REST only; Schema decodes the untrusted envelope
@@ -15,7 +15,7 @@
 import {Config, Context, Effect, Layer, Stream} from "effect";
 import * as Schema from "effect/Schema";
 import {ChildProcess, ChildProcessSpawner} from "effect/unstable/process";
-import type {CfResource} from "./orphan-sweep.ts";
+import {type CfResource, FLAGSHIP_APP_NAME_PREFIX} from "./orphan-sweep.ts";
 
 const CF_API = "https://api.cloudflare.com/client/v4";
 
@@ -73,8 +73,26 @@ const D1ListResponse = Schema.Struct({
 	result: Schema.NullOr(Schema.Array(Schema.Struct({uuid: Schema.String, name: Schema.String}))),
 });
 
+// Flagship list envelopes (the standard CF `{success, errors, result}` wrapper). Grounded
+// in `@distilled.cloud/cloudflare/flagship` (the SDK alchemy's FlagshipApp/Flag resource
+// uses): apps carry `{id, name}` (id = the appId delete-key, name = the physical name that
+// carries the stage), flags carry `{key}`. Lenient on every field but the ones we key on.
+const FlagshipAppListResponse = Schema.Struct({
+	success: Schema.Boolean,
+	errors: Schema.Array(Schema.Unknown),
+	result: Schema.NullOr(Schema.Array(Schema.Struct({id: Schema.String, name: Schema.String}))),
+});
+
+const FlagshipFlagListResponse = Schema.Struct({
+	success: Schema.Boolean,
+	errors: Schema.Array(Schema.Unknown),
+	result: Schema.NullOr(Schema.Array(Schema.Struct({key: Schema.String}))),
+});
+
 const decodeScripts = Schema.decodeUnknownEffect(ScriptListResponse);
 const decodeD1 = Schema.decodeUnknownEffect(D1ListResponse);
+const decodeFlagshipApps = Schema.decodeUnknownEffect(FlagshipAppListResponse);
+const decodeFlagshipFlags = Schema.decodeUnknownEffect(FlagshipFlagListResponse);
 
 const collect = (stream: Stream.Stream<Uint8Array, unknown>): Effect.Effect<string> =>
 	Stream.decodeText(stream).pipe(
@@ -142,10 +160,10 @@ const curlArgs = (token: string, method: string, url: string): ReadonlyArray<str
 ];
 
 /**
- * `Cloudflare` — the IO shell. `listResources` returns every Worker script + D1 db on
- * the account as `CfResource[]` (the pure core's input); `deleteResource` removes one
- * (called only on `--execute`, for resources the plan already vetted). Built by
- * `CloudflareLive`, whose `R` is `ChildProcessSpawner`.
+ * `Cloudflare` — the IO shell. `listResources` returns every Worker script + D1 db +
+ * Flagship app/flag on the account as `CfResource[]` (the pure core's input);
+ * `deleteResource` removes one (called only on `--execute`, for resources the plan already
+ * vetted). Built by `CloudflareLive`, whose `R` is `ChildProcessSpawner`.
  */
 export class Cloudflare extends Context.Service<
 	Cloudflare,
@@ -186,11 +204,57 @@ const listD1 = Effect.fn("Cloudflare.listD1")(function* (creds: Creds) {
 });
 
 /**
+ * List Flagship apps + their flags as `CfResource[]`. Apps enumerate via
+ * `GET /accounts/{acct}/flagship/apps`; flags are a per-app sub-resource
+ * (`GET /accounts/{acct}/flagship/apps/{appId}/flags`) with no account-wide endpoint, so
+ * we fan out one flag-list per app — but ONLY for apps whose physical name carries our
+ * `phoenix-phoenix-flags-` prefix, so a foreign account app never costs an extra call.
+ * Every app is still emitted as a `flagship-app` resource (a foreign one is kept
+ * `unrecognized` by the pure core, exactly like a foreign worker).
+ *
+ * Each app's flags are emitted BEFORE the app itself, so the bin's in-order delete loop
+ * removes a stage's flags before its parent app — a flag delete needs the app to still
+ * exist (its path is `apps/{appId}/flags/{key}`), and deleting the app may cascade its
+ * flags.
+ */
+const listFlagship = Effect.fn("Cloudflare.listFlagship")(function* (creds: Creds) {
+	// `?per_page=1000` lifts the default page so an account accumulating leaked preview apps
+	// isn't paged out of the first page (the leak this sweep bounds is exactly accumulation).
+	const appsUrl = `${CF_API}/accounts/${creds.accountId}/flagship/apps?per_page=1000`;
+	const appsArgs = curlArgs(creds.token, "GET", appsUrl);
+	const apps = yield* decodeFlagshipApps(yield* parseJson(appsArgs, yield* runCurl(appsArgs)));
+	yield* checkSuccess(appsUrl, apps.success, apps.errors);
+
+	const resources: Array<CfResource> = [];
+	for (const app of apps.result ?? []) {
+		if (app.name.startsWith(FLAGSHIP_APP_NAME_PREFIX)) {
+			const flagsUrl = `${CF_API}/accounts/${creds.accountId}/flagship/apps/${app.id}/flags?per_page=1000`;
+			const flagsArgs = curlArgs(creds.token, "GET", flagsUrl);
+			const flags = yield* decodeFlagshipFlags(
+				yield* parseJson(flagsArgs, yield* runCurl(flagsArgs)),
+			);
+			yield* checkSuccess(flagsUrl, flags.success, flags.errors);
+			for (const flag of flags.result ?? []) {
+				resources.push({
+					kind: "flagship-flag",
+					name: flag.key,
+					appId: app.id,
+					appName: app.name,
+				});
+			}
+		}
+		resources.push({kind: "flagship-app", name: app.name, appId: app.id});
+	}
+	return resources;
+});
+
+/**
  * Delete one resource. A worker is keyed by its script name (= its physical name); a D1
  * must be deleted by UUID, so we re-resolve the uuid by name first (the list result
- * carries it, but the plan only carries names to keep the core pure). Deletes are
- * idempotent-ish: a 404 (already gone) folds to success so a re-run after a partial
- * sweep is safe.
+ * carries it, but the plan only carries names to keep the core pure). A Flagship app
+ * deletes by its server `appId`, a flag by `(appId, key)` — both already on the resource.
+ * Deletes are idempotent-ish: a 404 (already gone) folds to success so a re-run after a
+ * partial sweep is safe.
  */
 const deleteWorker = Effect.fn("Cloudflare.deleteWorker")(function* (creds: Creds, name: string) {
 	const url = `${CF_API}/accounts/${creds.accountId}/workers/scripts/${name}`;
@@ -210,6 +274,23 @@ const deleteD1 = Effect.fn("Cloudflare.deleteD1")(function* (creds: Creds, name:
 		return; // already gone — idempotent
 	}
 	const url = `${CF_API}/accounts/${creds.accountId}/d1/database/${match.uuid}`;
+	yield* runCurl(curlArgs(creds.token, "DELETE", url));
+});
+
+const deleteFlagshipApp = Effect.fn("Cloudflare.deleteFlagshipApp")(function* (
+	creds: Creds,
+	appId: string,
+) {
+	const url = `${CF_API}/accounts/${creds.accountId}/flagship/apps/${appId}`;
+	yield* runCurl(curlArgs(creds.token, "DELETE", url));
+});
+
+const deleteFlagshipFlag = Effect.fn("Cloudflare.deleteFlagshipFlag")(function* (
+	creds: Creds,
+	appId: string,
+	flagKey: string,
+) {
+	const url = `${CF_API}/accounts/${creds.accountId}/flagship/apps/${appId}/flags/${encodeURIComponent(flagKey)}`;
 	yield* runCurl(curlArgs(creds.token, "DELETE", url));
 });
 
@@ -251,16 +332,24 @@ export const CloudflareLive: Layer.Layer<
 			listResources: () =>
 				credsRef.pipe(
 					Effect.flatMap((creds) =>
-						Effect.all([withSpawner(listWorkers(creds)), withSpawner(listD1(creds))]),
+						Effect.all([
+							withSpawner(listWorkers(creds)),
+							withSpawner(listD1(creds)),
+							withSpawner(listFlagship(creds)),
+						]),
 					),
-					Effect.map(([workers, d1s]) => [...workers, ...d1s]),
+					Effect.map(([workers, d1s, flagship]) => [...workers, ...d1s, ...flagship]),
 				),
 			deleteResource: (resource: CfResource) =>
 				credsRef.pipe(
 					Effect.flatMap((creds) =>
 						resource.kind === "worker"
 							? withSpawner(deleteWorker(creds, resource.name))
-							: withSpawner(deleteD1(creds, resource.name)),
+							: resource.kind === "d1"
+								? withSpawner(deleteD1(creds, resource.name))
+								: resource.kind === "flagship-app"
+									? withSpawner(deleteFlagshipApp(creds, resource.appId))
+									: withSpawner(deleteFlagshipFlag(creds, resource.appId, resource.name)),
 					),
 				),
 		};
