@@ -123,5 +123,6 @@ One row per ADR. Read the file for the why.
 | [0116](0116-spawn-guard-durable-default-pin.md) | Spawn-Guard's Unset-Inherit Path Falls Back to a Committed DEFAULT_PIN, Not an Uncommitted Operator-Shell WORKFLOW_MODEL | accepted | 2026-06-27 |
 | [0117](0117-stats-write-at-source-mutation-site.md) | Denormalized Aggregate Stats Are Written at the Source-Mutation Site, Not Behind the Query Feature | accepted | 2026-06-28 |
 | [0118](0118-error-crash-monitoring-sentry-saas.md) | Error/crash monitoring is Sentry's free SaaS tier (worker + SPA + Effect), with GlitchTip as the same-protocol self-host escape hatch | accepted | 2026-06-28 |
+| [0119](0119-comment-discipline-is-an-independent-review-criterion.md) | Comment-Discipline Is an Independent review-code Criterion, Not the Author's Self-Check — the Fresh-Eyes Judge Removes the Author Bias | accepted | 2026-06-28 |
 | [0121](0121-email-verification-non-gating-v1.md) | Email verification stays non-gating under v1 — a sent-but-advisory signal, not an access gate | accepted | 2026-06-28 |
 | [0122](0122-username-immutable-v1.md) | Username stays immutable under v1 — a deliberate set-once @handle, not a changeable field | accepted | 2026-06-28 |

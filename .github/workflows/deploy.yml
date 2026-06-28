@@ -110,12 +110,10 @@ jobs:
           echo "rebuilt merge of head $PR_HEAD_SHA into base $PR_BASE_REF"
 
       - uses: pnpm/action-setup@v4.1.0
-        with:
-          version: 10.27.0
 
       - uses: actions/setup-node@v4.4.0
         with:
-          node-version: 26.2.0
+          node-version-file: package.json
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -299,12 +297,10 @@ jobs:
       - uses: actions/checkout@v4.2.2
 
       - uses: pnpm/action-setup@v4.1.0
-        with:
-          version: 10.27.0
 
       - uses: actions/setup-node@v4.4.0
         with:
-          node-version: 26.2.0
+          node-version-file: package.json
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
@@ -383,6 +379,86 @@ jobs:
             exit 1
           fi
           echo "teardown verified: no worker prefixed '${WORKER_NAME_PREFIX}' survives for stage ${STAGE}"
+
+      # Same false-green class as the worker check above (issue #813), extended to the
+      # Flagship resource class (issue #1505). Each preview deploy provisions a per-stage
+      # `phoenix_flags` FlagshipApp + its flags off `Cloudflare.FlagshipApp("phoenix_flags")`
+      # (apps/web/worker/features/flagship/resources.ts). `alchemy destroy` deletes the app
+      # via a REAL DELETE (`/accounts/{id}/flagship/apps/{appId}`) — the alchemy FlagshipApp
+      # resource `delete` calls Cloudflare's deleteApp, NOT a no-op — but ONLY over what the
+      # stage's state records, so the SAME lost-state exit-0 no-op that leaked workers leaks
+      # the app + its flags here too. The worker check above does not see Flagship apps, so a
+      # leaked preview app survives a green teardown unnoticed. Verify it the same way: list
+      # this account's Flagship apps and FAIL if any carries this stage's app-name prefix, then
+      # (mirroring the worker check) attempt to reclaim each survivor — delete its flags, then
+      # the app. The prefix is the alchemy physical name `${stack}-${id}-${stage}-` for the app
+      # whose logical id is `phoenix_flags`: createPhysicalName lowercases and DNS-sanitizes, so
+      # `_`→`-` makes the id `phoenix-flags`, giving `phoenix-phoenix-flags-${STAGE}-` (the same
+      # scheme the D1 prefix `phoenix-phoenix-db-${STAGE}-` at the deploy job uses). The trailing
+      # dash anchors the stage so `pr-12-` never matches `pr-120-…` (#1296). Default `if:
+      # success()` like the worker check — a destroy that already errored reds the job; this
+      # catches the SILENT exit-0 no-op. STAGE is always `pr-<n>` here (cleanup is closed-PR-only).
+      - name: Verify teardown — no surviving preview Flagship app/flags (${{ matrix.app }})
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FLAGSHIP_APP_NAME_PREFIX: phoenix-phoenix-flags-${{ env.STAGE }}-
+        run: |
+          set -uo pipefail
+          # Belt-and-suspenders prod guard: the job-level "never destroy prod" check already
+          # aborts on STAGE=prod before destroy, but never enumerate+delete against a prod-shaped
+          # prefix even if this step is ever reached out of order.
+          if [ "$STAGE" = "prod" ]; then
+            echo "::error::refusing to run Flagship teardown verification against the prod stage"
+            exit 1
+          fi
+          api="https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_ID}"
+          auth="Authorization: Bearer ${CLOUDFLARE_API_TOKEN}"
+          listed=""
+          survivor_ids=""
+          # Retry to absorb Cloudflare's eventual-consistency window after the delete, exactly
+          # like the worker check (a just-deleted app can linger in the list API for seconds).
+          for attempt in 1 2 3 4 5; do
+            if resp="$(curl -sf "${api}/flagship/apps" -H "$auth")"; then
+              listed=yes
+              survivor_ids="$(echo "$resp" | jq -r --arg p "$FLAGSHIP_APP_NAME_PREFIX" \
+                '[.result[]? | select((.name // "") | startswith($p)) | .id] | .[]')"
+              [ -z "$survivor_ids" ] && break
+            fi
+            sleep $((attempt * 3))
+          done
+          # A list that never succeeded must NOT pass silently (that would re-introduce a
+          # false-green) — fail so the verification gap is visible, like the worker check.
+          if [ -z "$listed" ]; then
+            echo "::error::could not list Flagship apps to verify teardown for stage ${STAGE}"
+            exit 1
+          fi
+          if [ -z "$survivor_ids" ]; then
+            echo "teardown verified: no Flagship app prefixed '${FLAGSHIP_APP_NAME_PREFIX}' survives for stage ${STAGE}"
+            exit 0
+          fi
+          # Survivors found: alchemy destroy reported success but left a leaked Flagship app
+          # (the #813/#1505 false-green). Reclaim each — delete its flags, then the app — and
+          # fail the job so the leak surfaces instead of accumulating.
+          echo "::error::teardown FALSE-GREEN (issue #1505) — Flagship app(s) survived destroy for stage ${STAGE}:"
+          echo "$survivor_ids"
+          while IFS= read -r appId; do
+            [ -z "$appId" ] && continue
+            echo "reclaiming leaked Flagship app ${appId}"
+            if flags="$(curl -sf "${api}/flagship/apps/${appId}/flags" -H "$auth")"; then
+              echo "$flags" | jq -r '.result[]?.key // empty' | while IFS= read -r flagKey; do
+                [ -z "$flagKey" ] && continue
+                echo "  deleting flag ${flagKey}"
+                curl -sf -X DELETE "${api}/flagship/apps/${appId}/flags/${flagKey}" -H "$auth" >/dev/null \
+                  || echo "  ::warning::failed to delete flag ${flagKey} on app ${appId}"
+              done
+            fi
+            curl -sf -X DELETE "${api}/flagship/apps/${appId}" -H "$auth" >/dev/null \
+              && echo "  deleted app ${appId}" \
+              || echo "  ::warning::failed to delete app ${appId}"
+          done <<< "$survivor_ids"
+          echo "alchemy destroy reported success but left a live Flagship app. Failing so the leak surfaces."
+          exit 1
 
       # Flip the sticky preview comment to "torn down" so it never points at a
       # destroyed stage. Each matrix job rewrites only its own app line; the last
