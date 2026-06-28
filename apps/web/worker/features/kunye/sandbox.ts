@@ -11,9 +11,13 @@
  *   - {@link currentSandboxViewer} — the read-time viewer: the signed-in id plus a
  *     non-throwing moderator probe of `Moderate.over(platform)`, resolved once per
  *     read and handed to the `SandboxVisibility` predicates.
- *   - {@link publishIfLive} — the create-time live-broadcast gate: suppress the
- *     public fate-live fan-out for a sandboxed row, so sandboxed content never
- *     leaks to non-author/anonymous subscribers via the (viewer-blind) live topics.
+ *   - {@link PublishDecision} / {@link decidePublish} / {@link alwaysLive} — the
+ *     create-time live-broadcast gate, type-level: a node broadcast to a public
+ *     fate-live topic requires a `PublishDecision`, constructible only from the
+ *     sandbox state (gated) or the explicit always-Live restore hatch, so sandboxed
+ *     content cannot leak to non-author/anonymous subscribers via the (viewer-blind)
+ *     live topics — and a create path cannot *forget* the check (ADR 0107's
+ *     make-the-mistake-untypeable, applied to the sandbox/fate-live boundary, #1280).
  */
 
 import {CurrentUser} from "@kampus/fate-effect";
@@ -67,21 +71,41 @@ export const currentSandboxViewer = Effect.gen(function* () {
 	return {viewerId: user?.id ?? null, canSeeSandboxed} satisfies SandboxViewer;
 });
 
+// The brand makes `PublishDecision` opaque: a value with the phantom `never`
+// property is unconstructible outside this module, so the only way to obtain one is
+// `decidePublish` or `alwaysLive` below. A node-broadcasting publish requires one
+// (`live.ts`), so omitting the sandbox check is a missing-argument compile error,
+// not a code-review catch — the #1280 hardening.
+declare const PublishDecisionBrand: unique symbol;
+
 /**
- * Gate a create-time live broadcast on the new content's sandbox state: run the
- * public `publish` only when the row is live (`sandboxedAt === null`); for a
- * sandboxed row, do nothing.
+ * Whether a brand-new content node may be broadcast to a public (viewer-blind)
+ * fate-live topic. The type-level form of the #1205 gate: every node-broadcasting
+ * publish (`appendNode` / `prependNode`, in each feature's `live.ts`) takes one, and
+ * it is constructible ONLY from {@link decidePublish} (the sandbox-gated create path)
+ * or {@link alwaysLive} (the explicit always-Live escape hatch). So a future create
+ * mutation cannot broadcast a node without first discharging the sandbox check —
+ * ADR 0107's make-the-mistake-untypeable, applied here.
+ */
+export interface PublishDecision {
+	readonly broadcast: boolean;
+	readonly [PublishDecisionBrand]: never;
+}
+
+const branded = (broadcast: boolean): PublishDecision => ({broadcast}) as PublishDecision;
+
+/**
+ * The sandbox-gated decision a create path discharges: broadcast iff the new row is
+ * live (`sandboxedAt === null`); a sandboxed row resolves to suppress.
  *
- * The fate-live fan-out is the leak surface (#1205, AC#2): a `publish` here resolves
- * a full-payload node frame and relays it to EVERY subscriber of a public topic —
- * keyed only by `{id: slug}` / `{id: postId}` / the global feed, never by viewer
- * identity, with no per-viewer re-resolution (ADRs 0023/0025/0037). The static read
- * paths already filter sandboxed content (`sandboxVisibleWhere` / `isVisibleTo`), but
- * the create-time broadcast bypasses them, so a sandboxed çaylak's node would be
- * pushed live to non-author members and anonymous viewers. Routing every create-time
- * publish through this gate makes "broadcast a sandboxed node to a public topic"
- * structurally unreachable — a future create mutation reusing it cannot reintroduce
- * the leak.
+ * The fate-live fan-out is the leak surface (#1205 AC#2): a node publish relays a
+ * full-payload frame to EVERY subscriber of a public topic — keyed only by
+ * `{id: slug}` / `{id: postId}` / the global feed, never by viewer identity, with no
+ * per-viewer re-resolution (ADRs 0023/0025/0037). The static read paths filter
+ * sandboxed content (`sandboxVisibleWhere` / `isVisibleTo`), but the create-time
+ * broadcast bypasses them, so a sandboxed çaylak's node would reach non-author
+ * members and anonymous viewers. Routing every node broadcast through a
+ * `PublishDecision` makes that unreachable by type.
  *
  * The author and moderators still see sandboxed content through the sandbox-aware
  * READ paths and the promotion-backlog queue (`listSandboxed*`); the live echo is an
@@ -91,7 +115,25 @@ export const currentSandboxViewer = Effect.gen(function* () {
  * also leaking to others, and correctness outranks the echo. A viewer-keyed live
  * delivery is a deferred optimization, not in scope for #1205.
  */
-export const publishIfLive = (
-	sandboxedAt: Date | null,
+export const decidePublish = (sandboxedAt: Date | null): PublishDecision =>
+	branded(sandboxedAt === null);
+
+/**
+ * The always-Live escape hatch — a node broadcast that has no sandbox state to
+ * discharge because it is Live by construction: the `Removed → Live` restore paths
+ * (`EntityLifecycle.restore`, ADR 0096 §4), which re-enter already-public content.
+ * Named + greppable on purpose: it is the deliberate, reviewable opt-out, not an
+ * omission a create path can fall into (a create path has a `sandboxedAt` and must
+ * route through {@link decidePublish}).
+ */
+export const alwaysLive: PublishDecision = branded(true);
+
+/**
+ * Run a node broadcast only when the decision permits it; suppress otherwise. The
+ * `appendNode` / `prependNode` wrappers in each feature's `live.ts` gate every
+ * create-time broadcast through this — the one place the decision is consumed.
+ */
+export const broadcastIf = (
+	decision: PublishDecision,
 	publish: Effect.Effect<void>,
-): Effect.Effect<void> => (sandboxedAt === null ? publish : Effect.void);
+): Effect.Effect<void> => (decision.broadcast ? publish : Effect.void);

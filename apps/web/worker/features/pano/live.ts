@@ -11,10 +11,16 @@
  * the view. The `changed` hint stays a per-resolver argument: it is mutation-
  * specific (which fields a write touched), not a property of the entity, and it
  * does not reach the wire (`live-publisher.ts` builds `{data}` only).
+ *
+ * `appendNode` / `prependNode` (the create-time node broadcasts, the #1205 leak
+ * surface) take a `PublishDecision` and gate through `broadcastIf` — so a resolver
+ * cannot broadcast a node to these viewer-blind public topics without discharging the
+ * sandbox check (#1280). `deleteEdge` carries no node payload, so it stays ungated.
  */
 
 import type {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {LiveTopic} from "../fate-live/protocol.ts";
+import {broadcastIf, type PublishDecision} from "../kunye/sandbox.ts";
 import {CommentView, PostView} from "./views.ts";
 
 const POST = PostView.typeName;
@@ -24,12 +30,14 @@ const COMMENT = CommentView.typeName;
 const onTopic = (topic: ReturnType<WorkerLivePublisher["topic"]>, nodeType: string) => ({
 	appendNode: (
 		id: string | number,
-		options?: {node?: unknown; cursor?: string; eventId?: string},
-	) => topic.appendNode(nodeType, id, options),
+		options: {node?: unknown; cursor?: string; eventId?: string},
+		decision: PublishDecision,
+	) => broadcastIf(decision, topic.appendNode(nodeType, id, options)),
 	prependNode: (
 		id: string | number,
-		options?: {node?: unknown; cursor?: string; eventId?: string},
-	) => topic.prependNode(nodeType, id, options),
+		options: {node?: unknown; cursor?: string; eventId?: string},
+		decision: PublishDecision,
+	) => broadcastIf(decision, topic.prependNode(nodeType, id, options)),
 	deleteEdge: (id: string | number, options?: {eventId?: string}) =>
 		topic.deleteEdge(nodeType, id, options),
 });

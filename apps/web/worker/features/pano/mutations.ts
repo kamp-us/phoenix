@@ -19,7 +19,7 @@ import {WorkerLivePublisher} from "../fate-live/protocol.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {PANO_DRAFT_SAVE} from "../flagship/resources.ts";
-import {publishIfLive, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
+import {alwaysLive, decidePublish, sandboxedAtForAuthor} from "../kunye/sandbox.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {
 	CommentNotFound,
@@ -180,7 +180,7 @@ export const mutations = {
 			// feed-sort variant, via the global topic). Inline node, no DB work —
 			// but only when the post is live: the feed topic is viewer-blind, so a
 			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
-			yield* publishIfLive(sandboxedAt, live.post.feed.prependNode(post.id, {node: post}));
+			yield* live.post.feed.prependNode(post.id, {node: post}, decidePublish(sandboxedAt));
 			return post;
 		}),
 	),
@@ -388,7 +388,9 @@ export const mutations = {
 			if (!page) return null;
 			const [stamped] = yield* pano.getPostsByIds([page.id], {viewerId: user.id});
 			const post = toPostFromPage(page, stamped?.myVote ?? null, stamped?.isSaved ?? null);
-			yield* live.post.feed.appendNode(post.id, {node: post});
+			// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
+			// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
+			yield* live.post.feed.appendNode(post.id, {node: post}, alwaysLive);
 			return post;
 		}),
 	),
@@ -417,10 +419,9 @@ export const mutations = {
 			// Append to the `Post.comments` topic keyed by the parent post id — but
 			// only when the comment is live: the thread topic is viewer-blind, so a
 			// sandboxed node would leak to non-author/anonymous subscribers (#1205 AC#2).
-			yield* publishIfLive(
-				sandboxedAt,
-				live.comment.thread(input.postId).appendNode(comment.id, {node: comment}),
-			);
+			yield* live.comment
+				.thread(input.postId)
+				.appendNode(comment.id, {node: comment}, decidePublish(sandboxedAt));
 			return comment;
 		}),
 	),
@@ -535,7 +536,9 @@ export const mutations = {
 			const [comment] = yield* pano.getCommentsByIds([input.id], {viewerId: user.id});
 			if (comment) {
 				const node = toComment(comment);
-				yield* live.comment.thread(postId).appendNode(node.id, {node});
+				// Restore re-enters already-public content (`Removed → Live`, ADR 0096 §4):
+				// Live by construction, no sandbox state to discharge → `alwaysLive` (#1280).
+				yield* live.comment.thread(postId).appendNode(node.id, {node}, alwaysLive);
 			}
 			const page = yield* pano.getPost(postId);
 			if (!page) return null;
