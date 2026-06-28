@@ -9,6 +9,7 @@
 
 import {type Entity, Fate, FateDataView, FateExecutor, FateServer} from "@kampus/fate-effect";
 import type {ConnectionResult} from "@nkzw/fate/server";
+import {list} from "@nkzw/fate/server";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 
@@ -37,6 +38,10 @@ export type Definition = Entity<typeof DefinitionView>;
 /** Client-exposed roots (the `views.ts` convention: annotated for nameability). */
 export const Root: Record<string, unknown> = {
 	term: termDataView,
+	// A `list` root with no `orderBy`: the resolver owns ordering, so the option is
+	// inert and dropped (#1333). The plugin keys the root's kind on the `list()`
+	// wrapper, never on `orderBy`, so this still generates a `list` client root.
+	terms: list(termDataView),
 };
 
 /** The build-time stand-in for a D1 binding: ANY access throws. */

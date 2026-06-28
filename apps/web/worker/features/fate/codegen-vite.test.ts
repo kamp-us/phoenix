@@ -53,6 +53,12 @@ describe("fate vite plugin × FateExecutor.toCodegenServer", () => {
 			expect(generated).toContain(
 				"'term': clientRoot<FateAPI['queries']['term']['output'], 'Term'>('Term'),",
 			);
+			// A `list` root declared with no `orderBy` (the resolver owns ordering, #1333)
+			// still generates a `list` client root — the plugin keys on the `list()`
+			// wrapper, not the inert option.
+			expect(generated).toContain(
+				"'terms': clientRoot<FateAPI['lists']['terms']['output'], 'Term'>('Term'),",
+			);
 			// The schema walk picked up the kernel views.
 			expect(generated).toContain("type: 'Term',");
 			expect(generated).toContain("type: 'Definition',");
