@@ -12,6 +12,7 @@
  */
 import {Component, type ErrorInfo, type ReactNode, Suspense} from "react";
 import type {FateWireCode} from "../lib/fateWireCodes";
+import {captureBoundaryError} from "../lib/sentry";
 
 /**
  * The fate wire `code` a screen branches on — the same {@link FateWireCode}
@@ -50,6 +51,9 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
 
 	override componentDidCatch(error: Error, info: ErrorInfo): void {
 		console.error("[fate Screen] caught error", error, info);
+		// Forward to Sentry too (ADR 0118); inert until a DSN is set, so this is a
+		// no-op alongside the console.error above until then.
+		captureBoundaryError(error, info.componentStack);
 	}
 
 	override render(): ReactNode {
