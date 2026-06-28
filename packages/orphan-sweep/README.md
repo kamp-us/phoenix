@@ -24,9 +24,14 @@ and irreversible (ADR 0032: these are real remote D1s, never emulated). So the p
 4. A **`pr-<n>`** preview is kept for an OPEN PR; a CLOSED PR's preview is deleted only
    with `--sweep-closed-previews` (off by default — #690's mandate is the `it-*` leak).
 
+This holds **identically across every resource kind** — Worker scripts, D1 databases, and
+**Flagship apps + flags** (#1505/#1506). A leaked preview Flagship app and its flags decode
+their stage the same way and flow through the same deny-by-default protection, so an OPEN
+PR's preview flags are **never** swept and a closed PR's are reclaimed only behind the gate.
+
 The match anchors are exact (`it-` start, not substring; `^pr-\d+$`), and the protection
 ordering is exhaustively unit-tested in `src/orphan-sweep.unit.test.ts` — the load-bearing
-test is that prod / named-dev / open-PR can never enter the delete set.
+test is that prod / named-dev / open-PR can never enter the delete set, in any kind.
 
 ## Physical name shape
 
@@ -37,8 +42,20 @@ Grounded in `.github/workflows/deploy.yml` ("Resolve web preview D1 id") and
 
 - worker = `phoenix-phoenix-<stage>-<suffix>`
 - D1 = `phoenix-phoenix-db-<stage>-<suffix>`
+- Flagship app = `phoenix-phoenix-flags-<stage>-<suffix>` (the app is
+  `Cloudflare.FlagshipApp("phoenix_flags")`, id `phoenix_flags` → `phoenix-flags`)
 
 An integration stage is `it-…`, prod is `prod`, a preview is `pr-<n>`.
+
+A Flagship **flag** carries no stage in its own name: its `key` is stage-invariant (the
+same key declared on every stage's app — `apps/web/worker/features/flagship/resources.ts`),
+so the sweep decodes a flag's stage from its **parent app's** physical name, and deletes it
+by `(appId, key)`. The Flagship list/delete surface is grounded in the
+`@distilled.cloud/cloudflare/flagship` SDK that alchemy's `FlagshipApp`/`FlagshipFlag`
+resource uses: list apps `GET /accounts/{acct}/flagship/apps`, list flags
+`GET /accounts/{acct}/flagship/apps/{appId}/flags`, delete app
+`DELETE /accounts/{acct}/flagship/apps/{appId}`, delete flag
+`DELETE /accounts/{acct}/flagship/apps/{appId}/flags/{flagKey}`.
 
 ## Shape
 
@@ -48,8 +65,15 @@ An integration stage is `it-…`, prod is `prod`, a preview is `pr-<n>`.
 - **`src/report.ts`** — pure rendering of the plan.
 - **`src/cloudflare.ts`** — the CF REST boundary. Schema decodes the untrusted
   list envelopes; the `Cloudflare` `Context.Service` shells `curl` over
-  `ChildProcessSpawner` to list workers + D1 and delete one. Credentials come from
-  `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` at runtime, never from source.
+  `ChildProcessSpawner` to list workers + D1 + Flagship apps/flags and delete one.
+  Credentials come from `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` at runtime,
+  never from source. The Flagship enumeration fans out one flag-list call per
+  `phoenix-phoenix-flags-` app, so on an account with hundreds of apps it must survive a
+  transient rate limit: each call captures the HTTP status in-band (`curl -w`, not `-f`)
+  and a retryable status (429 + 5xx) is re-driven with bounded, jittered exponential
+  backoff before the list aborts (#1506). A non-retryable HTTP error surfaces its status
+  **and** the CF error body (`CfHttpError`) instead of an opaque empty error; the bearer
+  token stays redacted in every error surface.
 - **`src/github.ts`** — the `gh api` boundary for the OPEN PR numbers (the previews to
   keep). REST only (GraphQL is broken on the kamp-us org). Mirrors `@kampus/flake-rate`.
 - **`src/bin.ts`** — the `effect/unstable/cli` `sweep` command. **DRY-RUN by default**:

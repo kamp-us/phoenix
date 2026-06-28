@@ -17,6 +17,28 @@ const d1 = (stage: string, suffix = "1a2b3c4d"): CfResource => ({
 	name: `phoenix-phoenix-db-${stage}-${suffix}`,
 });
 
+// A Flagship app's physical name shares the alchemy `${stack}-${id}-${stage}-${suffix}`
+// shape; id `phoenix_flags` → `phoenix-flags`, so the prefix is `phoenix-phoenix-flags-`.
+const flagshipAppName = (stage: string, suffix = "1a2b3c4d"): string =>
+	`phoenix-phoenix-flags-${stage}-${suffix}`;
+const flagshipApp = (stage: string, suffix = "1a2b3c4d"): CfResource => ({
+	kind: "flagship-app",
+	name: flagshipAppName(stage, suffix),
+	appId: `app-${stage}`,
+});
+// A flag's KEY is stage-invariant (the same key on every stage's app), so its stage lives
+// in the PARENT app's physical name (`appName`), never in `name`.
+const flagshipFlag = (
+	stage: string,
+	key = "phoenix-flags-targeting-demo",
+	suffix = "1a2b3c4d",
+): CfResource => ({
+	kind: "flagship-flag",
+	name: key,
+	appId: `app-${stage}`,
+	appName: flagshipAppName(stage, suffix),
+});
+
 const protection = (over: Partial<Protection> = {}): Protection => ({
 	protectedStages: ["prod"],
 	openPrNumbers: [],
@@ -182,5 +204,87 @@ describe("computeSweepPlan — edge cases", () => {
 			new Set([worker("it-report-aaaa").name, d1("it-report-aaaa").name]),
 		);
 		assert.strictEqual(plan.kept.length, 6);
+	});
+});
+
+describe("computeSweepPlan — Flagship apps/flags flow through the SAME protection (#1506)", () => {
+	it("sweeps a CLOSED pr's flagship app + flag only under the closed-preview gate", () => {
+		const app = flagshipApp("pr-99");
+		const flag = flagshipFlag("pr-99");
+		const on = computeSweepPlan([flag, app], protection({sweepClosedPreviews: true}));
+		assert.deepStrictEqual(new Set(deletedNames(on)), new Set([flag.name, app.name]));
+		for (const d of on.toDelete) assert.strictEqual(d.reason, "closed-preview");
+
+		const off = computeSweepPlan([flag, app], protection({sweepClosedPreviews: false}));
+		assert.strictEqual(off.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(off, app.name), "preview-sweep-disabled");
+		assert.strictEqual(keptReasonFor(off, flag.name), "preview-sweep-disabled");
+	});
+
+	it("KEEPS an OPEN pr's flagship app + flag even with closed-preview sweeping ON", () => {
+		const app = flagshipApp("pr-5");
+		const flag = flagshipFlag("pr-5");
+		const plan = computeSweepPlan(
+			[flag, app],
+			protection({openPrNumbers: [5], sweepClosedPreviews: true}),
+		);
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, app.name), "open-pr");
+		assert.strictEqual(keptReasonFor(plan, flag.name), "open-pr");
+	});
+
+	it("NEVER sweeps the prod flagship app + flag (protected-stage wins)", () => {
+		const app = flagshipApp("prod");
+		const flag = flagshipFlag("prod");
+		const plan = computeSweepPlan([flag, app], protection({sweepClosedPreviews: true}));
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, app.name), "protected-stage");
+		assert.strictEqual(keptReasonFor(plan, flag.name), "protected-stage");
+	});
+
+	it("decodes the flag's stage off its PARENT app name, not its stage-invariant key", () => {
+		const plan = computeSweepPlan([flagshipFlag("pr-77")], protection({sweepClosedPreviews: true}));
+		assert.strictEqual(plan.toDelete[0]?.stage, "pr-77");
+	});
+
+	it("sweeps an orphan it-* flagship app + flag as orphan-integration (no gate needed)", () => {
+		const app = flagshipApp("it-report-aaaa");
+		const flag = flagshipFlag("it-report-aaaa");
+		const plan = computeSweepPlan([flag, app], protection());
+		assert.deepStrictEqual(new Set(deletedNames(plan)), new Set([flag.name, app.name]));
+		for (const d of plan.toDelete) assert.strictEqual(d.reason, "orphan-integration");
+	});
+
+	it("keeps a foreign flagship app + flag as unrecognized (prefix not ours)", () => {
+		const foreignApp: CfResource = {
+			kind: "flagship-app",
+			name: "someone-else-flags-prod-abcd",
+			appId: "x",
+		};
+		const foreignFlag: CfResource = {
+			kind: "flagship-flag",
+			name: "their-key",
+			appId: "x",
+			appName: "someone-else-flags-pr-1-abcd",
+		};
+		const plan = computeSweepPlan(
+			[foreignApp, foreignFlag],
+			protection({sweepClosedPreviews: true}),
+		);
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, foreignApp.name), "unrecognized");
+		assert.strictEqual(keptReasonFor(plan, foreignFlag.name), "unrecognized");
+	});
+
+	it("a flag named `prod-…` (open pr) is kept even though its KEY looks prod-ish", () => {
+		// The flag's key is `phoenix-flags-targeting-demo` (shares the flagship app prefix),
+		// but the stage decodes from `appName` = pr-3 — so kind+field choice, not the key, drives it.
+		const flag = flagshipFlag("pr-3");
+		const plan = computeSweepPlan(
+			[flag],
+			protection({openPrNumbers: [3], sweepClosedPreviews: true}),
+		);
+		assert.strictEqual(plan.toDelete.length, 0);
+		assert.strictEqual(keptReasonFor(plan, flag.name), "open-pr");
 	});
 });
