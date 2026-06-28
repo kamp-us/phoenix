@@ -239,6 +239,79 @@ multiplied N× (above).
 the Rank-4 N× fan-out multiplication. The remaining two are honestly out, grounded in the audit's
 measured cross-session-cache finding, not shipped as speculation.
 
+## 5. Applied-lever results — #1373 read economics (measured-negative on the frozen set)
+
+The **read-economics lever** ([#1373](https://github.com/kamp-us/phoenix/issues/1373), the sibling
+of the fan-out child [#1374](https://github.com/kamp-us/phoenix/issues/1374)) acts on the audit's
+**Rank 5** ([token-economics-audit.md](./token-economics-audit.md)) — *full-file `Read` vs excerpt*,
+explicitly named there as **the smallest controllable surface on the frozen set**, "situational, not
+headline." The lever: where a pipeline skill has a sub-agent `Read` a **whole file** when an
+`offset`/`limit` excerpt or an `Explore` sub-agent (excerpts, not whole files) carries the same
+signal, prefer the cheaper read — **without losing grounding**. The discipline (per the lever brief):
+apply only where the baseline-vs-after number shows a real reduction **and** the §3 rubric confirms
+accuracy held; a measured-negative is a legitimate, recorded outcome — honesty over a forced edit.
+
+### Measurement — the read surface, per frozen-set transcript (reproduces §2 billed exactly)
+
+Per-`tool_result` size attributed by tool-use id over the three §1/§2 baseline sub-agent transcripts
+(`triage agent-af3afc3fc26976`, `write-code agent-a734c4b6dc387a613`, `review-code agent-ad29433525afd436`).
+The four-component `usage` reconstruction reproduces each recorded `billed_tokens` exactly
+(592,499 / 2,076,940 / 1,325,645), so the read attribution rests on the same anchored numbers.
+
+| Stage | `Read` calls | `Read` tok (≈chars/4) | what was read | excerptable **source** Read |
+|---|---:|---:|---|---|
+| triage #1227 | 1 | ~9,084 | `triage/SKILL.md` **whole** (the agent's own procedure) | **none** |
+| write-code #1223 | 3 | ~14,680 | `write-code/SKILL.md` whole + `biome.jsonc` whole (~505 tok) + `biome.jsonc` again **already `limit=20`** | **`biome.jsonc` (~505 tok)** |
+| review-code #1199 | 1 | ~133 | `ship-it/SKILL.md` **already `offset=744 limit=12`** | **none** (uses `Agent`/Explore + scoped `gh api` Bash diffs) |
+
+For comparison, non-`Read` context ingest on the same runs: triage Bash ~1,677 tok; write-code Bash
+~4,457 tok; review-code Bash ~8,645 tok + 2 `Agent`(Explore) sub-agents ~911 tok. Review-code pulls
+its diff context through scoped `gh api` Bash and Explore sub-agents — **not** whole-file source
+`Read`s.
+
+### The finding — the lever has no purchase on the frozen set, and the agents already practice it
+
+1. **The only *large* whole-file `Read`s are the skills themselves** (triage `9,084` tok, write-code's
+   skill). A skill is the agent's own decision procedure; it cannot be excerpted by a read-guidance
+   line without the agent losing the very rules it must follow — and it is the **Rank-1/3 skill-bloat
+   surface the §4 thin-core lever (#1374) already targets**, explicitly out of scope for read-economics.
+2. **The only genuine source/context `Read` is write-code's `biome.jsonc` (~505 tok)** — already tiny;
+   an excerpt saves a rounding error, and the agent's **second** read of it already used `limit=20`.
+3. **review-code is already the read-economics exemplar** — it excerpts the skill (`offset=744 limit=12`,
+   133 tok), reaches for `Explore` `Agent` sub-agents, and scopes diff context via `gh api` Bash rather
+   than whole-file source `Read`s. There is nothing to convert.
+
+This is **stronger than the audit predicted**: not only are the frozen inputs' source files tiny, but
+where excerpting *does* apply the agents on these runs **already** use `offset`/`limit` and `Explore`
+sub-agents. A read-guidance tightening in the skills would change **zero** bytes of these three runs'
+context and therefore measure **≈0 tok/run** against every §2 baseline row.
+
+### AC3 — surfaces explicitly left whole-file, with reason
+
+Per the lever's AC3 ("surfaces where excerpting risks grounding are explicitly left whole-file with a
+stated reason"):
+
+- **The skill `Read` (triage, write-code)** — left whole-file: the agent needs its *complete* decision
+  procedure; excerpting it would drop guards and flip the §3 oracle. (Its size is the Rank-1/3
+  skill-bloat surface, addressed by the §4 thin-core split, not by read-economics.)
+- **`biome.jsonc` (write-code)** — left whole-file: at ~505 tok the whole file *is* the excerpt; a
+  read-guidance line is dominated by noise.
+- **review-code diff context** — already excerpted (scoped `gh api` Bash + `Explore` sub-agents); no
+  whole-file source `Read` exists to tighten.
+
+### Net recorded delta (against the §2 baseline)
+
+| Lever | Measured before/after | Quality gate (§3) | Outcome |
+|---|---|---|---|
+| read-economics (excerpt/Explore over whole-file `Read`) | **≈0 tok/run** on every §2 row — the only large `Read`s are the skills (Rank-1/3, sibling lever); the only source `Read` is `biome.jsonc` ~505 tok; review-code already excerpts (`offset/limit` + `Explore` + scoped Bash) | trivially PRESERVED — **no change applied**, so no oracle input moved | **NOT SHIPPED — measured-negative recorded** |
+
+**Net: read-economics yields ≈0 on the frozen set and is not worth a skill change here.** A
+read-guidance edit would be a forced change with no measured win — the brief's explicit anti-pattern —
+so none is made. The Rank-5 verdict is confirmed empirically: the lever is **situational** (real only
+on source-heavy tasks the frozen set doesn't exercise), not a frozen-set win. This mirrors §4's
+sub-levers 2 & 3: a quality-neutral lever with no measurable reduction on the measured inputs is
+recorded as not-shipped, grounded in the numbers, never shipped as speculation.
+
 ## Tooling gap (follow-up)
 
 Per-stage token spend **is** individually attributable offline — each stage sub-agent has its own
