@@ -1,6 +1,6 @@
 /**
  * The deploy-environment taxonomy (ADR 0088) and the predicates the IaC↔CI↔runtime
- * seam shares — the ONE module owning `development | preview | production`, the
+ * seam shares — the ONE module owning `development | preview | production | audit`, the
  * `stage → ENVIRONMENT` map (the `prod`→`production` spelling), and the fail-closed
  * `isProduction` gate. Before #1433 these were re-derived independently at five sites
  * (deploy.yml, config.ts, email-resources.ts, env.ts, alchemy.run.ts) with no shared
@@ -15,11 +15,31 @@
  * runtime moment alone.
  */
 
-/** The three deploy classes (ADR 0088), as the canonical literal tuple every site reuses. */
-export const ENVIRONMENTS = ["development", "preview", "production"] as const;
+/**
+ * The deploy classes (ADR 0088), as the canonical literal tuple every site reuses.
+ * `audit` is the dedicated isolated stage the rite-audit harness deploys (#1511,
+ * epic #1510): a non-production deployed stage, distinct from a per-PR `preview`,
+ * that exists so a force-on targeting rule can serve `phoenix-authorship-loop` ON
+ * non-interactively without ever reaching production (the rule keys on this class;
+ * see `features/flagship/resources.ts`). It is NOT production — `isProduction`
+ * stays `=== "production"`, so an audit stage provisions no email subdomain / apex
+ * domain, exactly like a preview.
+ */
+export const ENVIRONMENTS = ["development", "preview", "production", "audit"] as const;
 
-/** The deploy environment — one of the three classes (ADR 0088). */
+/** The deploy environment — one of the deploy classes (ADR 0088). */
 export type Environment = (typeof ENVIRONMENTS)[number];
+
+/**
+ * The dedicated audit deploy class (#1511, epic #1510). Single-sourced here so the
+ * stage→ENVIRONMENT map (`environmentForStage`) and the authorship-loop force-on
+ * targeting rule (`features/flagship/resources.ts`) name the SAME literal — the
+ * rule serves `on` iff the request's `environment` attribute equals this value.
+ */
+export const AUDIT_ENVIRONMENT: Environment = "audit";
+
+/** The alchemy stage name that deploys the dedicated audit class (#1511). */
+export const AUDIT_STAGE = "audit";
 
 /**
  * The fail-closed default when `ENVIRONMENT` is unset at runtime (ADR 0088): a missing
@@ -28,7 +48,7 @@ export type Environment = (typeof ENVIRONMENTS)[number];
  */
 export const DEFAULT_ENVIRONMENT: Environment = "production";
 
-/** Is `value` one of the taxonomy's three classes? */
+/** Is `value` one of the taxonomy's deploy classes? */
 export const isEnvironment = (value: string): value is Environment =>
 	(ENVIRONMENTS as readonly string[]).includes(value);
 
@@ -85,9 +105,12 @@ export const isProductionDeploy = (env: {readonly ENVIRONMENT?: string | undefin
  * Map an alchemy stage name → its deploy `ENVIRONMENT` class — the single owner of the
  * `prod`→`production` spelling. `.github/workflows/deploy.yml` calls this (via node) so
  * the mapping lives here, not inlined in a YAML expression (#1433). The main-push stage
- * `prod` is `production`; every other stage (the per-PR `pr-<n>` previews, ephemeral
- * `it-*` integration stages) is `preview`. Local `alchemy dev` sets `development` via
- * `.env` and is never a deployed stage.
+ * `prod` is `production`; the dedicated `audit` stage is `audit` (the rite-audit harness,
+ * #1511); every other stage (the per-PR `pr-<n>` previews, ephemeral `it-*` integration
+ * stages) is `preview`. Local `alchemy dev` sets `development` via `.env` and is never a
+ * deployed stage. `prod`→`production` is the load-bearing invariant: only `prod` maps to
+ * `production`, so the audit force-on rule (which keys on `audit`) can never match a prod
+ * deploy.
  */
 export const environmentForStage = (stage: string): Environment =>
-	stage === "prod" ? "production" : "preview";
+	stage === "prod" ? "production" : stage === AUDIT_STAGE ? "audit" : "preview";

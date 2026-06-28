@@ -44,6 +44,17 @@ describe("deriveAuthUrlConfig", () => {
 		);
 	});
 
+	it("audit shares preview's deployed workers.dev topology, never the prod apex (#1511)", () => {
+		const config = deriveAuthUrlConfig("audit");
+
+		// The rite-audit stage is served from `*.kampusinfra.workers.dev`, so it must use
+		// the dynamic allowedHosts mechanism — NOT fall through to the production apex pin.
+		assert.deepStrictEqual(config.baseURL, {
+			allowedHosts: ["*.kampusinfra.workers.dev"],
+		});
+		assert.notStrictEqual(config.baseURL, `https://${PHOENIX_APEX_HOSTNAME}`);
+	});
+
 	it("development names the localhost browser origins behind the Vite proxy", () => {
 		const config = deriveAuthUrlConfig("development");
 
@@ -55,7 +66,7 @@ describe("deriveAuthUrlConfig", () => {
 	});
 
 	it("no environment trusts a blanket .kamp.us origin (ADR 0085 no CSRF widening)", () => {
-		for (const environment of ["development", "preview", "production"] as const) {
+		for (const environment of ["development", "preview", "production", "audit"] as const) {
 			const serialized = JSON.stringify(deriveAuthUrlConfig(environment));
 			// `phoenix.kamp.us` (production) is allowed; a bare `.kamp.us` / `*.kamp.us`
 			// blanket is the leak ADR 0085 forbids.

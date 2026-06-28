@@ -56,6 +56,20 @@ users) outright, and a lower-priority `conditions: []` rule applies a percentage
 else. See `demoTargetingFlag` in
 [`worker/features/flagship/resources.ts`](../apps/web/worker/features/flagship/resources.ts).
 
+### Environment-scoped force-on (the audit-only / prod-never seam)
+
+`equals` on the `environment` attribute is the sanctioned shape for an **environment-scoped force-on**:
+a single rule serving `on` only for a named deploy class. `authorshipLoopFlag`'s `AUTHORSHIP_LOOP_RULES`
+([#1511](https://github.com/kamp-us/phoenix/issues/1511), epic
+[#1510](https://github.com/kamp-us/phoenix/issues/1510)) is the live consumer: `{attribute:
+"environment", operator: "equals", value: "audit"}` serves the loop `on` for the dedicated `audit`
+deploy class (ADR [0088](../.decisions/0088-preview-deploy-environment.md)) and nothing else. The
+**prod-never** property is structural, not conventional: `production` carries `environment:
+"production"`, which `equals "audit"` cannot match, and `environmentForStage` maps only the `audit`
+stage to `audit` (`prod`→`production`, every other stage→`preview`) — so no env value or config can
+fire the rule on a prod deploy. The default stays `off`, so this rule is a non-interactive force-on for
+the isolated audit stage with **zero production behavior change**.
+
 ## IaC vs dashboard-managed flags
 
 A flag is either declared as a `FlagshipFlag` resource in the alchemy stack (Infrastructure-as-Code) or
@@ -75,6 +89,7 @@ reviewable in the repo.
 | Flag | Mode | Why |
 |---|---|---|
 | `phoenix-flags-targeting-demo` | **IaC** (`demoTargetingFlag`) | The #511 demonstrator: internal-role targeting + 25% consistent-hash rollout, declared in-stack so the rule is reviewable. |
+| `phoenix-authorship-loop` | **IaC** (`authorshipLoopFlag`) | Default-off dark-ship (#1204) + an environment force-on rule (#1511): `equals environment == audit` serves `on` for the rite-audit stage only; prod-never is structural (the rule can't match `production`). |
 | `phoenix-flags-probe` | Neither (undeclared) | The #508 dark-ship probe reads its safe default; intentionally undeclared. |
 
 The flag schema / naming + lifecycle convention (the flag-key naming grammar, value-type discipline,
