@@ -375,90 +375,254 @@ recomputation will let it through.
 
 ---
 
-## Step 3 — Claim by self-assigning (assign → observe-own-write → tiebreak)
+## Step 3 — Claim by writing your session-id claim marker (the agent-distinguishable claim, ADR 0115)
 
-Claiming is self-assignment, and it backs Step 1's "skip assigned issues" rule so other
-write-code agents step over a claimed issue. But GitHub's `assignees` is **last-write-wins
-and additive, not compare-and-swap**: a bare `POST` self → re-read does **not** lock. Two
-agents that both saw #N unassigned in Step 1 both `POST` themselves seconds apart,
-co-assigning `[A, B]`, and a best-effort re-read only catches whichever agent happens to
-read *after* the other's write lands — the window between the two `POST`s lets both pass and
-both implement #N. That is the TOCTOU this step closes (#260).
+Claiming backs Step 1's "skip assigned issues" rule so other write-code agents step over a
+claimed issue. But the bare GitHub assignee **cannot** be the claim: it is **last-write-wins,
+additive, not compare-and-swap** (two agents that both saw #N unassigned co-assign `[A, B]`,
+#260) — and worse, **every draining agent here pushes as the single git identity `usirin`**,
+so the old `min(login)` tiebreak degenerated to a no-op (both co-racers compute
+`min == usirin == me` and both implement #N; the #1431 double-implement). The fix is the
+**agent-distinguishable claim marker** (ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md), #1452):
+a claim **comment** stamped with your `CLAUDE_CODE_SESSION_ID`, the per-agent UUID the
+runtime exposes that the shared login cannot provide.
 
-The fix uses the **one atomic signal GitHub does give us**: the assignee `POST` **returns
-the updated issue with the full `assignees` array** — your own write's observed result, not
-a separate best-effort re-read that can miss the window. So you detect a concurrent claim
-from your *own* `POST` response, and break the tie **deterministically** so exactly one of
-two co-assignees proceeds:
+**Single-source the primitive — do not re-derive it.** The canonical claim-comment grammar,
+the `CLAIM_RE` matcher, the write+ ACL trust root (ADR 0055), and the earliest-authorized-claim
+tiebreak are defined once in [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7
+(the agent-distinguishable claim marker). This step is the **issue-claim consumer** of that
+primitive — it writes the claim and resolves ownership by §7's rules; it never invents a second
+grammar or a second `CLAIM_RE`. The marker is the one line:
 
-```bash
-ME=$(gh api user --jq '.login')
-
-# Best-effort fast-path, NOT the lock: a cheap re-read at claim time that lets the common case
-# (#N already owned by a prior winner) back off without needlessly evicting them. It is itself a
-# best-effort read — a co-racer's POST can land in the gap between this read and my own POST, so an
-# empty PRE does NOT prove I'm unraced. The sole resolver remains the checkpoint GET below; PRE
-# only spares an already-settled owner an eviction it doesn't deserve.
-PRE=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
-if [ -n "$PRE" ]; then
-  # Already owned before I touched it — never evict a pre-existing owner. Back off, re-pick.
-  exit 0  # → re-run Step 1
-fi
-
-# POST self; capture the FULL assignees list the write returns (single observable write).
-ASSIGNEES=$(gh api -X POST repos/$REPO/issues/<N>/assignees \
-  -f "assignees[]=$ME" --jq '[.assignees[].login] | sort | join(" ")')
-
-# Provisional tiebreak among co-racers: min-login. NOTE the POST echo is NOT a snapshot both
-# racers share — it returns only the assignees present when THIS POST was processed, so staggered
-# POSTs see DIFFERENT sets: if B lands first it sees [B] (B believes it won), and A's later POST
-# sees [A, B] (A also believes it won). Both can transiently compute themselves winner here. The
-# echo alone does NOT decide the race — it only flags "I may be a co-racer winner; go evict + verify".
-WINNER=$(printf '%s\n' $ASSIGNEES | head -n1)
-if [ "$WINNER" = "$ME" ]; then
-  # I am a provisional winner. Evict the co-assignees so the issue reads single-owner for the
-  # picker's "skip assigned" invariant.
-  for a in $ASSIGNEES; do
-    [ "$a" = "$ME" ] && continue
-    gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$a"
-  done
-  # CHECKPOINT — THIS is what resolves the race, not the POST echo. Re-read canonical issue state
-  # (a fresh GET, not the stale POST echo) and re-confirm I am still min(assignees). Required for
-  # ordinary co-racer correctness, not just for late stragglers: in the staggered case B saw [B]
-  # and entered here as a false winner; A (min) evicted B, so B's GET re-reads [A], CUR_MIN==A!=B,
-  # and B aborts. The agent whose GET shows min==ME proceeds; any agent evicted out of min aborts.
-  # Do NOT prune this as redundant — without it both staggered co-racers proceed (double-pick).
-  STILL=$(gh api repos/$REPO/issues/<N> --jq '[.assignees[].login] | sort | join(" ")')
-  CUR_MIN=$(printf '%s\n' $STILL | head -n1)
-  # Displaced at the checkpoint → self-clean before backing off, exactly like the loser
-  # branch. Every non-winner removes itself; back-off never leaves a stale self-assignment
-  # for another agent's eviction loop to clean up (which would widen the transient window).
-  [ "$CUR_MIN" = "$ME" ] || { gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
-  # claim won and confirmed — proceed to implement
-else
-  # I lost the tiebreak: remove myself and re-pick (do NOT implement — do NOT co-occupy).
-  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"
-  # back off → re-run Step 1, pick the next issue
-fi
+```
+claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
 ```
 
-**The operating rule.** The min-login among co-racers is **provisional** — the `POST` echo only
-*detects* that you may be racing, it does not *resolve* the race. The sole resolver is the
-post-eviction **checkpoint GET** of canonical issue state: keep it, never prune it as "redundant"
-(without it both staggered co-racers proceed — a double-pick). The residual is the transient
-2-assignee window before an eviction lands; Step 1 tolerates it by skipping on **any** non-null
-assignee, so it's passed over, never double-picked. This is a **detect-and-tiebreak, not a
-lock** — don't reintroduce the "it's the lock" framing.
+The claim is **two layers** (§7): the **assignee** stays as the coarse, login-blind
+availability gate the Step-1 picker reads (`skip on any non-null assignee`), and the
+**session-id claim comment** is the fine, agent-distinguishable resolver. You self-assign
+*and* post the claim comment; the comment, not the assignee, decides who owns the work.
 
-See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the full race-case
-derivation — the staggered-co-racer walkthrough (B echoes `[B]`, A echoes `[A, B]`, the checkpoint
-GET resolves), the straggler, the transient window, and why it's detect-and-tiebreak, not a kernel
-mutex — and the shared claim semantics this step implements.
+### Delegated claim — the orchestrated path (recognize, don't re-race)
+
+If the orchestrator (`.claude/workflows/drive-issue.js`) claimed pre-spawn and **threaded a
+claim token into your prompt** ("your delegated claim token is `<token>`"), the claim is
+**already yours** — the orchestrator posted it on your behalf (ADR 0115 §3, Delegated
+ownership). Do **not** post a second, redundant claim and do **not** re-race. Confirm the
+delegation by resolving §7's tiebreak once — the **earliest authorized claim**'s embedded
+session id must equal the threaded token — then proceed straight to implementing:
+
+```bash
+# Orchestrated path: confirm the delegated claim is the earliest authorized claim, then proceed.
+# WINSID is resolved by the §7 CLAIM_RE + write+ ACL + min(created_at, comment id) resolver — do
+# NOT re-derive that grammar here; run §7's canonical resolution snippet against issue <N>.
+[ "$WINSID" = "$DELEGATED_TOKEN" ] || { echo "delegated token is not the earliest authorized claim — abort, do not implement." >&2; exit 1; }
+# delegation confirmed — skip the direct-path claim below and go implement
+```
+
+### Direct path — claim it yourself (no orchestrator)
+
+When `write-code` is invoked directly (no threaded token), make the claim here, before you
+branch or build, using your own `CLAUDE_CODE_SESSION_ID` as the token:
+
+```bash
+# 0. Fail-closed on a missing token: the claim comment is the ONLY agent-distinguishable signal
+#    under the shared `usirin` login — with no token a co-racer is unresolvable, so NEVER claim
+#    (and never fall back to the login-keyed assignee as ownership — that is the §7 degeneracy).
+if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
+  echo "no CLAUDE_CODE_SESSION_ID in env — cannot post an agent-distinguishable claim. BACK OFF, re-pick." >&2
+  exit 0   # → re-run Step 1
+fi
+CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'   # the §7 single source — cited, not re-derived
+
+# 1. Rule-0 defer: if an AUTHORIZED claim from a DIFFERENT session already owns #N, back off
+#    WITHOUT posting (a fresh arrival never evicts a pre-existing owner; §7). Resolve the current
+#    earliest-authorized-claim session per §7 (CLAIM_RE + write+ ACL + min(created_at, id)); call it WINSID0.
+[ -n "$WINSID0" ] && [ "$WINSID0" != "$CLAUDE_CODE_SESSION_ID" ] && { echo "#$N already claimed by another agent — back off, re-pick."; exit 0; }
+
+# 2. Self-assign (the coarse availability gate), then POST the claim comment (the fine resolver).
+ME=$(gh api user --jq '.login')
+gh api -X POST repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null
+MYCLAIM=$(gh api repos/$REPO/issues/<N>/comments \
+  -f "body=claim: $CLAUDE_CODE_SESSION_ID · $(date -u +%Y-%m-%dT%H:%M:%SZ)" --jq .id)
+[ -n "$MYCLAIM" ] || { echo "failed to post claim on #$N — back off, re-pick." >&2; gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME"; exit 0; }
+
+# 3. Checkpoint GET — resolve co-racers to ONE winner: the EARLIEST AUTHORIZED claim wins (§7).
+#    Re-run §7's canonical resolution against #N to get WINSID (its embedded session id).
+#    Proceed to implement IFF the earliest authorized claim is mine; else RETRACT my own claim
+#    comment AND self-unassign, then re-pick (never co-occupy, never delete another agent's claim).
+if [ "$WINSID" != "$CLAUDE_CODE_SESSION_ID" ]; then
+  gh api -X DELETE repos/$REPO/issues/<N>/comments/$MYCLAIM >/dev/null 2>&1
+  gh api -X DELETE repos/$REPO/issues/<N>/assignees -f "assignees[]=$ME" >/dev/null 2>&1
+  echo "lost the claim tiebreak on #$N to an earlier authorized claim — back off, re-pick."
+  exit 0   # → re-run Step 1
+fi
+# claim won and confirmed (earliest authorized claim is mine) — proceed to implement
+```
+
+**The operating rule.** Posting the claim comment **detects** a race; the **checkpoint GET**
+(re-reading the issue's comments and resolving the earliest authorized claim per §7) **resolves**
+it — keep it, never prune it as "redundant" (without it both staggered co-racers proceed, a
+double-pick). The winner is the **earliest authorized claim** (min `created_at`, then min comment
+`id`), recognized because its embedded session id equals your `CLAUDE_CODE_SESSION_ID`; because
+earliest-claim-wins, Rule 0 (defer to a pre-existing owner) and the tiebreak are **the same
+fact**. Every loser retracts its **own** claim comment and self-unassigns, then re-picks — never
+co-occupy, and **never** delete another agent's claim or fall back to the login-keyed assignee as
+ownership. This is **detect-and-tiebreak, not a lock**; the residual transient 2-assignee /
+2-claim window is tolerated by Step 1's "skip on any non-null assignee."
+
+See [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md) §7 for the canonical
+`CLAIM_RE`, the full write+-ACL resolution snippet, the staggered-co-racer / straggler / transient
+derivation, and the pre-spawn / delegated-ownership protocol — this step implements that contract,
+it does not re-derive it.
 
 Now **route by type** before implementing — a `type:decision` or `type:investigation`
 issue is not a "write code and open a PR" issue. See [Type routing](#type-routing)
 and branch there if the issue carries one of those types. Everything else
 (`type:feature`, `type:chore`, `type:bug`) is the implement-and-PR path below.
+
+---
+
+<a id="mis-attribution-guard"></a>
+## Step 3.5 — The mis-attribution guard (verify the target is mine before mutating it)
+
+The claim (Step 3) guarantees you *won* a unit of work; this guard guarantees you only ever
+*operate on* a number you won. They are complements: without it, a mis-attributed issue/PR
+number — a wrong `<N>` substituted into a `gh api … /comments`, a `git push` to the wrong
+branch, a close on the wrong issue — silently mutates **another agent's live work**. That is
+the #1404 near-miss this step closes (a coder nearly killed another agent's live PR via a
+mis-attributed number); it is the `write-code` adoption of ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md)
+§4 (surface #1456).
+
+**Before any mutating action that targets an issue/PR number** — open a PR against it (Step 5),
+comment on it (Step 6 progress, Step 7 handoff), `git switch`/`git push` its branch (repair
+R2/R3), or close it (type routing) — verify the target carries **your own** session-stamped
+claim, and **refuse — loudly, fail-closed — if that claim is absent or another agent's**. The
+guard **reuses the §1 claim-marker read** (ADR 0115 §1/§2); it introduces **no second claim
+mechanism**.
+
+### Your claim token — `MY_CLAIM` (own session id, or the orchestrator's delegated token)
+
+The token this run owns its work *under* is `MY_CLAIM`, resolved once at the top of the run:
+
+- **Direct path** — `write-code` invoked directly: `MY_CLAIM` is the coder's own
+  `CLAUDE_CODE_SESSION_ID` (the same token the Step-3 claim writes — ADR 0115 §3 direct path).
+- **Orchestrated path** — dispatched by the orchestrator, which **pre-claims before spawn**
+  (`.claude/workflows/drive-issue.js`, ADR 0115 §3) and **threads its winning claim token into
+  the spawn prompt**: `MY_CLAIM` is that **threaded delegated token**. `write-code` **recognizes
+  the threaded claim as its delegated own and does not re-race** (it posts no second claim) — the
+  guard treats a target whose earliest authorized claim equals the threaded token as *mine*.
+
+```bash
+# the claim token this run owns work under: the orchestrator's threaded delegated token if it
+# pre-claimed, else my own session id (the direct-path Step-3 self-claim). Fail-closed: with
+# NEITHER set there is no agent-distinguishable identity to verify ownership under — abort, never
+# fall back to the bare assignee login (that login degeneracy is the exact defect ADR 0115 removes).
+MY_CLAIM="${THREADED_CLAIM_TOKEN:-$CLAUDE_CODE_SESSION_ID}"
+: "${MY_CLAIM:?mis-attribution guard: no claim token — CLAUDE_CODE_SESSION_ID absent and none threaded; refusing to claim or mutate (ADR 0115 Consequences — never a login fallback)}"
+```
+
+### `claim_is_mine <N>` — MANDATED before every issue/PR-number mutation
+
+Define the guard once and gate **every** number-targeting mutation on it, exactly as
+[`wt_preflight`](#per-mutation-preflight) gates every git mutation — a green `claim_is_mine`
+is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
+
+```bash
+# claim_is_mine <N>: resolve the EARLIEST AUTHORIZED claim marker on #N (issue or PR) and assert
+# its embedded session id == MY_CLAIM. Returns 0 only on a proven-own claim; non-zero (REFUSE) on
+# an absent OR a foreign claim. Reuses the ADR 0115 §1/§2 marker read — no second claim mechanism.
+claim_is_mine() {
+  local N="$1" cf am authorized winner perm a
+  cf=$(mktemp)
+  gh api "repos/$REPO/issues/$N/comments?per_page=100" > "$cf"   # PR comments share the issues endpoint
+  # claim grammar + matcher are SINGLE-SOURCED from gh-issue-intake-formats.md §7 (ADR 0115 §1/§2):
+  # the canonical marker `claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>` and the ONE `CLAIM_RE`
+  # every consumer shares — cited verbatim here, NEVER re-derived (don't reintroduce a broader
+  # inline grammar; the §7 matcher is the single source the Step-3 write and §7 resolver also use).
+  CLAIM_RE='(?i)^\s*\**\s*claim:\s*[0-9a-f-]{36}\b'   # the §7 single source — cited, not re-derived
+  # AUTHORIZED authors only — write+ collaborators (ADR 0055 trust root, same set ship-it Step 2 /
+  # the repair scan build). A forged claim from a non-collaborator is ignored; an EMPTY authorized
+  # set resolves NO claim ⇒ the guard refuses — fail-closed, never a false win.
+  am=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re)) | .user.login] | unique | .[]' "$cf")
+  authorized='[]'
+  while IFS= read -r a; do
+    [ -z "$a" ] && continue
+    perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
+    case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
+  done <<<"$am"
+  # WINNER = the EARLIEST authorized claim — min (created_at, comment id), the server-assigned
+  # ordering (ADR 0115 §2), NOT lexicographic-min(session). Extract its embedded session id with
+  # §7's paired capture form (group `s`) — the same single source, no second grammar.
+  winner=$(jq -r --argjson authorized "$authorized" --arg re "$CLAIM_RE" \
+    '[.[] | select(.user.login | IN($authorized[])) | select(.body | test($re))]
+     | sort_by([.created_at, .id]) | first
+     | (.body // "" | (capture("(?i)^\\s*\\**\\s*claim:\\s*(?<s>[0-9a-f-]{36})") // {s:null}).s) // ""' "$cf")
+  if [ -z "$winner" ]; then
+    echo "mis-attribution guard FAILED (fail-closed): #$N carries no authorized claim marker — refusing to mutate (ADR 0115 §1/§2: absent ⇒ no owner, never a false win)." >&2
+    return 1
+  fi
+  if [ "$winner" != "$MY_CLAIM" ]; then
+    echo "mis-attribution guard FAILED (fail-closed): #$N is claimed by ANOTHER agent (earliest authorized claim session=$winner ≠ mine=$MY_CLAIM) — refusing to push/comment/close work I did not claim (ADR 0115 §4 / #1456; the #1404 near-miss)." >&2
+    return 1
+  fi
+  echo "mis-attribution guard: #$N earliest authorized claim == mine ($MY_CLAIM) — proceeding."
+}
+
+claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
+```
+
+The guard is **fail-closed by construction** — it proceeds **only** on positive evidence of an
+authorized claim whose session is `MY_CLAIM`; an absent claim, an unauthorized-only claim, and a
+foreign claim all **refuse**. It is **observable** (it prints the resolved owner vs `MY_CLAIM`) and
+**idempotent** (a read-only GET). **Never** route around it by widening the comparison or treating
+the bare assignee as the owner — the assignee is a coarse availability gate only (ADR 0115 §1), and
+a login-keyed ownership check is the degeneracy this guard exists to remove.
+
+> **Which `<N>` to guard at each site.** The guarded number is the **work-target whose mutation
+> could clobber another agent**: Step 5 guards the **issue** you open the PR against; Step 6 the
+> **issue** you comment on; **Step 7 guards the child you own** (the handoff to the parent epic is
+> predicated on owning the child — gate on `claim_is_mine <child>`, not the epic, which you never
+> claim); repair R2/R3 guard the **PR's linked issue `#N`** (the claim lives on the issue, so
+> resolving `Fixes #N` and confirming its claim is `MY_CLAIM` is what proves the PR is yours to
+> push); the **repair escalation** sites — both the N=3 cap block and the freeze-after-round-K
+> block — guard the **PR's linked issue `#N`** too (the escalation comment + `status:needs-triage`
+> relabel are number-targeting mutations reachable as a fresh stateless repair's *first* mutation,
+> escalating instead of running R2/R3, so the R2/R3 guards never fire — gate the escalation itself);
+> type-routing closes guard the **issue** you close.
+
+> **Composition + ship-ordering (the one honest caveat).** This guard is the **read-side
+> complement** of the claim *write*: it verifies the marker that the claim surface posts — the
+> Step-3 issue self-claim and the §7 contract (surface #1453), or the orchestrator's pre-spawn
+> claim threaded as `MY_CLAIM` (surface #1454). It is **live-correct only once a claim marker is
+> posted ahead of the mutation** — which the integrated pipeline always does (orchestrator
+> pre-claims, or `write-code` self-claims at its claim step). Landing this guard **ahead of** a
+> claim-marker-posting surface would, by its own fail-closed contract, refuse `write-code`'s own
+> mutations (no marker yet to verify) — so its ship is sequenced **with or after** #1453/#1454, a
+> control-plane ship decision, not a fail-open hedge to weaken here.
+
+### Rehearsal — a mis-attributed number is refused (the #1404 reproduction)
+
+The guard handed a number it did **not** claim refuses to mutate it. Walk the three resolutions:
+
+1. **Foreign claim — REFUSE.** Agent B (its own session `B-sid`) holds the earliest authorized
+   claim on issue `#900`. Agent A (`MY_CLAIM = A-sid`) is handed `#900` by a mis-attributed number
+   and reaches a mutation. `claim_is_mine 900` resolves `winner = B-sid`; `B-sid != A-sid` ⇒
+   **FAILED (fail-closed): #900 is claimed by ANOTHER agent** — A pushes/closes nothing. This is
+   the #1404 near-miss, now structurally unreachable.
+2. **Absent claim — REFUSE.** The number names an issue with **no** authorized claim marker (or
+   only a forged claim from a non-collaborator, which the ADR 0055 author-gate drops). `winner` is
+   empty ⇒ **FAILED (fail-closed): no authorized claim marker** — A cannot prove ownership, so it
+   refuses rather than mutate an unclaimed number.
+3. **My own claim — PROCEED.** The earliest authorized claim on `#N` carries `A-sid` (A's own
+   Step-3 self-claim) **or** the token threaded to A by the orchestrator (delegated own). `winner
+   == MY_CLAIM` ⇒ the guard prints `earliest authorized claim == mine` and the single guarded
+   mutation runs.
+
+Exactly one of three outcomes, decided by a re-read of canonical issue state against `MY_CLAIM` —
+the same detect-and-tiebreak shape (ADR 0115 §2), here read-only and on the *acting* side.
 
 ---
 
@@ -860,6 +1024,9 @@ ships normally.
 
 ```bash
 wt_preflight && git push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); same per-run branch from Step 4
+# The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
+# PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
+claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
 # The body carries `Fixes #N` always; ADD the `Flag: <FLAG_KEY>` line BELOW it ONLY when Step 4b
 # fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it entirely for an ungated PR.
 gh pr create \
@@ -951,7 +1118,8 @@ is the per-issue ledger for the next agent (a successor write-code run, or
 
 ```bash
 BODY="$(cat /tmp/write-code-progress.md)"   # the four-section comment
-gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
+# gate the comment on the mis-attribution guard (Step 3.5) — only comment on an issue whose claim is mine
+claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -1001,7 +1169,9 @@ silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
 BODY="$(cat /tmp/write-code-handoff.md)"   # ### Handoff: #N — <title> + the three fields
-gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
+# the handoff to the parent epic is predicated on OWNING THE CHILD — gate on claim_is_mine <child>
+# (Step 3.5), not the epic (which you never claim): only hand off about work whose claim is mine.
+claim_is_mine "<N>" && gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -1273,6 +1443,10 @@ orphan the PR and the gate's history):
 
 ```bash
 git fetch origin
+# mis-attribution guard (Step 3.5): confirm the PR's linked issue #N is MINE before touching its
+# branch — so a mis-dispatched repair never pushes to another agent's live PR (the #1404 class).
+# In orchestrated repair the original claim token is threaded as MY_CLAIM (ADR 0115 §3 delegated own).
+claim_is_mine "$N" || { echo "refusing to repair PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
 wt_preflight && git switch <the PR's head branch>   # gate the branch switch ([per-mutation preflight]); gh api .../pulls/$PR --jq '.head.ref'
 # apply the fixes addressing exactly the enumerated findings
 ```
@@ -1301,6 +1475,10 @@ cross-task signal a sibling should know the gate now enforces. Pushing new commi
 makes the **stateless** gate re-run — you do **not** re-trigger or self-approve it:
 
 ```bash
+# re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd
+# reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
+# exactly as wt_preflight is before every git op; gate both the push and the progress comment.
+claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
 wt_preflight && git push origin HEAD   # gate the push ([per-mutation preflight])
 gh api repos/$REPO/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
 ```
@@ -1366,6 +1544,12 @@ If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix a
 FAIL), **stop fixing and escalate** instead of pushing again:
 
 ```bash
+# mis-attribution guard (Step 3.5): escalation is a number-targeting mutation on #N (comment +
+# relabel), reachable as a fresh stateless repair's FIRST mutation when the PR is already at the
+# N=3 cap (write-code escalates INSTEAD OF running R2/R3, so the R2/R3 guards never fire). Gate it
+# fail-closed so a mis-dispatched repair never comments-on/relabels another agent's live issue (the
+# #1404 class — the relabel is more disruptive than a comment).
+claim_is_mine "$N" || { echo "refusing to escalate PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
 gh api repos/$REPO/issues/$N/comments -f body="$(cat <<'EOF'
 ### Repair escalation — PR #<PR> still FAILing after 3 rounds
 
@@ -1425,8 +1609,11 @@ done
 
 If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the
 **escalation path** (the same `### Repair escalation` comment + `status:needs-triage` label as
-the N=3 block), naming the frozen appended criterion as the still-open finding and noting it
-was appended in/after the final round — then **stop, do not push**. The escalation comment's
+the N=3 block — and therefore the **same `claim_is_mine "$N"` fail-closed gate** that block
+carries, MANDATED before its comment+relabel exactly as in the N=3 case: a frozen-AC escalation
+is just as reachable as a mis-dispatched repair's first mutation, so it must not comment-on or
+relabel an issue whose claim isn't mine), naming the frozen appended criterion as the still-open
+finding and noting it was appended in/after the final round — then **stop, do not push**. The escalation comment's
 "Needs a human decision" framing fits exactly: a criterion that arrived with no budget left to
 drain it is the human's call (accept the PR as-is, extend the AC's life by a fresh triage, or
 drop the criterion). This keeps **append-rate bounded by fix-rate** — a gate cannot keep a
@@ -1451,6 +1638,11 @@ indistinguishable from "still FAILing after the cap" to the picker, so the same 
   re-trigger; a separate reviewer judges the new head.
 - **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
   gate history stay intact.
+- **Mis-attribution guard before every push/comment ([Step 3.5](#mis-attribution-guard)).**
+  Confirm the PR's linked issue `#N` carries **your own** claim (`claim_is_mine "$N"` — the
+  orchestrator threads the original claim as `MY_CLAIM` for delegated repair, ADR 0115 §3) before
+  the R2 branch switch and the R3 push/comment, so a mis-dispatched repair never clobbers another
+  agent's live PR (the #1404 class). Fail-closed: an absent or foreign claim refuses.
 - **Idempotent.** Re-running on an already-fixed / PASS PR (one with no latest FAIL, or one
   whose latest FAIL is bound to a now-stale head) is a clean no-op (Step R1).
 - **SHA-bound verdicts (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)).**
@@ -1569,6 +1761,9 @@ a **diagnosis** and the *routing* of its findings, not a feature branch:
    they close because the question is answered. Close it:
 
    ```bash
+   # closing #N is a number-targeting mutation — gate it on the mis-attribution guard (Step 3.5)
+   # so a mis-attributed number never closes another agent's live issue (the #1404 class).
+   claim_is_mine "<N>" || { echo "refusing to close #<N> — not my claim (Step 3.5)"; exit 1; }
    gh api repos/$REPO/issues/<N>/comments -f body="$DIAGNOSIS"
    gh api -X PATCH repos/$REPO/issues/<N> -f state=closed -f state_reason=completed
    ```
@@ -1603,7 +1798,9 @@ A single invocation does one unit of work end to end, in one of the two modes:
 
 - **Initial build** (issue number / no arg): pick (Step 1 — including the pre-pick
   resume-my-failed-PR scan — +Step 2 if a sub-issue), claim (Step 3), then either
-  implement→PR→progress→handoff (Steps 4–7) or the type-routed path, and **hard-stop at
+  implement→PR→progress→handoff (Steps 4–7) or the type-routed path — **gating every
+  number-targeting mutation on the [mis-attribution guard](#mis-attribution-guard) (Step 3.5:
+  verify the target carries my own claim, fail-closed)** — and **hard-stop at
   PR-open (Step 8) — hand the review gate to a separate reviewer; never review your own PR.**
   Report a short ledger: the issue picked (and why — bucket + age, the milestone tiebreaker or
   `work milestone N` scope if either applied, or the sub-issue eligibility derivation), the
