@@ -328,19 +328,49 @@ writes and `review-code` relies on) and pin it as a shell var Step 5 reads back:
 ISSUE=<N>
 ```
 
-If there **is** a linked issue, honor it as today regardless of class — resolve it; Step 4's
-squash-merge auto-closes it via `Fixes #<ISSUE>`, with Step 5's explicit-close fallback.
+If there **is** a linked issue (a closing keyword + `#N`), honor it as today regardless of
+class — resolve it; Step 4's squash-merge auto-closes it via `Fixes #<ISSUE>`, with Step 5's
+explicit-close fallback.
+
+**Intentional partial-split — an explicit non-closing `Part of #N`.** A closing keyword is not
+the only legitimate way a code/skills PR references its issue. When the body carries **no**
+closing keyword but **does** carry an explicit non-closing **`Part of #N`** reference
+(case-insensitive, naming a real open issue number), this is an *intentional* non-closing
+state, the **opposite** of a forgotten seam: a backend-then-frontend partial split
+deliberately advances one half while a sibling lane finishes the other, so the linked issue is
+kept **open on purpose** until that sibling closes it. Recognize it as a **valid linked
+reference that merges without auto-closing**: pin it for the report and **leave `ISSUE`
+unset**, so Step 4's squash neither expects nor performs an auto-close and Step 5's
+explicit-close fallback never fires — `#N` stays open for the sibling lane.
+
+```bash
+PART_OF=<N>   # the partial-split issue this PR advances but deliberately does NOT close; ISSUE stays unset
+```
+
+Do **not** refuse this as `no linked issue`: every actual merge-safety guard is unaffected
+(Step 0's control-plane class, Step 2/2b's current-head PASS, Step 3's green CI, Step 3.5's
+run-evidence all still hold) — only the missing-closing-keyword check is relaxed, and **only**
+for this one explicit marker. This is a **parallel** allowance to the docs-only carve-out below
+(ADR [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)),
+not the same one: docs-only is *issueless* (nothing to close); a partial split *names an issue
+it intentionally keeps open*. The `Part of #N` marker is a non-closing mention by construction —
+GitHub never populates `closingIssuesReferences` from it (only a closing keyword does;
+[gh-issue-intake-formats.md §9](../gh-issue-intake-formats.md)) — which is exactly why the merge
+leaves `#N` open.
 
 If there is **no** linked issue, the rule is **class-aware** — reuse the artifact classes
 Step 0 already computed (do **not** re-derive them; ADR
 [0075](https://github.com/kamp-us/phoenix/blob/main/.decisions/0075-issueless-doc-pr-merge-seam.md)):
 
-- **A code or skills class is present** (anything other than docs-only) → stop and report `no
-  linked issue`. In this pipeline `write-code` always writes `Fixes #N`, so a missing link on a
-  PR carrying code is a broken seam, not a normal state — an unlinked code PR has nothing to
-  auto-close on merge and would leave dangling work. (Distinct from the
-  *linked-but-didn't-auto-close* case Step 5 handles: there the seam fired but GitHub didn't,
-  which is recoverable; here the seam is absent on a code PR, an anomaly worth stopping on.)
+- **A code or skills class is present** (anything other than docs-only) **with no issue
+  reference at all** — neither a closing keyword **nor** the explicit `Part of #N` partial-split
+  marker above → stop and report `no linked issue`. In this pipeline `write-code` always writes
+  `Fixes #N` (or, for a deliberate partial split, `Part of #N`), so a code PR that names **no**
+  issue at all is a broken seam, not a normal state — it has nothing to auto-close on merge and
+  would leave dangling work. (Distinct from the *linked-but-didn't-auto-close* case Step 5
+  handles: there the seam fired but GitHub didn't, which is recoverable; here no issue is named
+  on a code PR, an anomaly worth stopping on. Also distinct from the partial-split above, where
+  `Part of #N` names the issue **on purpose** to keep it open — that merges, this refuses.)
 - **Docs-only** (Step 0 classed `docs` with **no** code and **no** skills class present) → a
   missing `Fixes #N` is a **legitimate state, not a broken seam**. A conversation-authored
   ADR/doc records a settled choice that was never tracked work, so there is nothing for a
@@ -880,8 +910,11 @@ When `ISSUE` is set, it should now read `state: closed`, `state_reason: complete
 didn't auto-close (a missing/garbled `Fixes #N`), close it explicitly with a one-line note
 pointing at the merged PR — but record that the seam was broken so it can be fixed upstream.
 
-When `ISSUE` is **unset** (the docs-only no-link path, Step 1) there is no issue to confirm
-— skip the issue query entirely and report `issue: n/a (docs-only, no linked issue)`.
+When `ISSUE` is **unset** there is no issue to auto-close — skip the close-confirmation query
+and report by whichever Step 1 path left it unset: `issue: n/a (docs-only, no linked issue)`
+for the ADR-0075 docs path, or — when Step 1 pinned `PART_OF` (an explicit `Part of #N`
+partial split) — `issue: #<PART_OF> left open (intentional partial split, not auto-closed)`,
+confirming the partial-split issue stays open for the sibling lane.
 
 ### Step 5b — Surface the release queue (a dark merge is deployed, not released)
 
