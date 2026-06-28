@@ -51,9 +51,7 @@ import "./CaylakStatusBlock.css";
  * authorship flag is on AND the viewer is a çaylak AND they are looking at their
  * OWN profile — is unit-testable without a DOM (the pure-extraction idiom of
  * `flagGateChild` / `shouldShowOnramp`). Reused to gate the per-item "incelemede"
- * badge in the contributions feed, so the badge and the block share one gate. A
- * gate that dropped any of the three halves (showed for a yazar, ignored the flag,
- * or rendered on another user's profile) would fail exactly this function.
+ * badge in the contributions feed, so the badge and the block share one gate.
  */
 export function shouldShowCaylakStatus(
 	flagOn: boolean,
@@ -110,7 +108,7 @@ export function caylakPromotionPath(vouchExists: boolean): CaylakPromotionPath {
  * four aggregate scalars. There is deliberately NO reviewer / voter / voucher
  * identity key — the one-way-glass invariant is structural on the backend type
  * (#1316) and mirrored here, so a leak can't be reintroduced by widening the
- * selection. The unit test pins this key set.
+ * selection.
  */
 export const STANDING_FIELDS = {
 	id: true,
@@ -181,10 +179,8 @@ export interface CaylakStatusBlockProps {
 }
 
 export function CaylakStatusBlock({profileUserId}: CaylakStatusBlockProps) {
-	// Default `false`: the block stays dark until the server evaluates the flag on
-	// AND the viewer is a çaylak on their own profile — every flag failure mode
-	// (loading/error/undeclared) resolves to `false`, so the gate degrades to
-	// today's behavior.
+	// Fail-closed default `false`: every flag failure mode (loading/error/undeclared)
+	// degrades to today's behavior.
 	const {value: flagOn} = useFlag(PHOENIX_AUTHORSHIP_LOOP, false);
 	const {me} = useMe();
 	const headingId = useId();

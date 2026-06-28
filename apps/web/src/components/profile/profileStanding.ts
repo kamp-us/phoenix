@@ -8,7 +8,7 @@
  * idiom of `shouldShowOnramp` / `shouldShowCaylakStatus`) so the per-tier mapping
  * is unit-testable without a DOM (`apps/web/src` has no jsdom).
  *
- * Two load-bearing invariants the test pins:
+ * Two load-bearing invariants:
  *   - **No false label, ever.** When there is no honest tier to show — the tier is
  *     still loading/errored (`undefined`), or it is the read-time `visitor` rank an
  *     authenticated account never legitimately holds — the function returns `null`,
