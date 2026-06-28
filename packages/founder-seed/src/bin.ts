@@ -40,17 +40,17 @@ const seed = Command.make(
 		const account = yield* resolveAccount(accountId);
 		const db = makeDb(account, databaseId);
 		const res = yield* Effect.promise(() => seedFounders(db));
-		yield* res.founders === 0
+		yield* res.cohort === 0
 			? Console.log(
-					`founder-seed: no founders (role='moderator' cohort is empty) — nothing to mint (D1 ${databaseId})`,
+					`founder-seed: empty cohort (FOUNDER_COHORT is unset) — nothing to mint (D1 ${databaseId})`,
 				)
 			: Console.log(
-					`founder-seed: ok — ${res.founders} founder(s), ${res.inserted} new tuple(s) minted (D1 ${databaseId})`,
+					`founder-seed: ok — cohort ${res.cohort}, ${res.matched} matched, ${res.promoted} promoted to moderator+yazar, ${res.inserted} new tuple(s) minted (D1 ${databaseId})`,
 				);
 	}),
 ).pipe(
 	Command.withDescription(
-		'Mint the founder cohort (role=\'moderator\') as (id, "moderates", "platform:platform") tuples — idempotent',
+		"Mint the founding cohort as moderator (role + platform-moderates tuple) and yazar (tier) — idempotent",
 	),
 );
 
