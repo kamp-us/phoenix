@@ -1,13 +1,13 @@
 /**
  * Type-level assertion (no runtime — checked by `tsgo`, not vitest): an op that
  * declares `OpenTerm` / `AddEntry` in its requirements channel **fails to
- * compile** unless the matching `Grant` is provided via `.provide` (ADR 0107 §1,
- * the "forgot to authorize is a compile error" guarantee). Falsifiable by
- * reading the R channel — omit `.provide` and the capability stays required;
+ * compile** unless the matching `Grant` is provided via `Grant.provide` (ADR 0107
+ * §1, the "forgot to authorize is a compile error" guarantee). Falsifiable by
+ * reading the R channel — omit `Grant.provide` and the capability stays required;
  * provide it and R collapses to `never`. Mirrors `packages/authz`'s
  * `Capability.typetest.ts`, here over the real künye instances.
  */
-import type {AgentAuthority, CurrentActor, Grant} from "@kampus/authz";
+import {type AgentAuthority, type CurrentActor, Grant} from "@kampus/authz";
 import {Effect} from "effect";
 import {expectTypeOf} from "vitest";
 import {AddEntry, OpenTerm} from "./Authorship.ts";
@@ -34,13 +34,13 @@ const addOp: Effect.Effect<string, never, AddEntry> = Effect.gen(function* () {
 
 /** Providing each proof discharges its requirement — R collapses to `never`. */
 export const openDischarged: Effect.Effect<string, never, never> = openOp.pipe(
-	OpenTerm.provide(openTermGrant),
+	Grant.provide(openTermGrant),
 );
 export const addDischarged: Effect.Effect<string, never, never> = addOp.pipe(
-	AddEntry.provide(addEntryGrant),
+	Grant.provide(addEntryGrant),
 );
 
-// Omit `.provide` → the capability stays required in R; provide it → R is `never`.
+// Omit `Grant.provide` → the capability stays required in R; provide it → R is `never`.
 expectTypeOf<RequirementsOf<typeof openOp>>().toEqualTypeOf<OpenTerm>();
 expectTypeOf<RequirementsOf<typeof openDischarged>>().toEqualTypeOf<never>();
 expectTypeOf<RequirementsOf<typeof addOp>>().toEqualTypeOf<AddEntry>();

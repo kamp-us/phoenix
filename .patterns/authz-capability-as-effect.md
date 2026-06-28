@@ -10,11 +10,12 @@ live in `apps/web/worker/features/kunye/`, never in the package.
 Read [effect-context-service.md](./effect-context-service.md) first — a capability *is* a
 v4 `Context.Service` class, so the service-class rules there all apply here.
 
-## The shape: builder → discharge verb → sealed `Grant` → `.provide`
+## The shape: builder → discharge verb → sealed `Grant` → `Grant.provide`
 
 One class declaration is the whole capability. Extending a builder yields, from a single
-name, the proof **tag**, the `Grant` type it proves, the **discharge verb**, and
-**`.provide`**:
+name, the proof **tag**, the `Grant` type it proves, and the **discharge verb**. Discharge
+into an op's R channel is the **one canonical `Grant.provide(grant)`** — generic over every
+capability, not a per-class member (collapsed in #1270):
 
 ```ts
 // in features/kunye — the instance names the kamp.us noun + wire error
@@ -34,8 +35,9 @@ const openTerm: Effect.Effect<Term, never, OpenTerm> = Effect.gen(function* () {
 	// …
 });
 
-// 3. `.provide` discharges it — and ONLY this collapses R to `never`
-openTerm.pipe(OpenTerm.provide(grant)); // R: never
+// 3. `Grant.provide` discharges it — and ONLY this collapses R to `never`.
+//    It reads the capability Key the grant carries, so one verb fits every right.
+openTerm.pipe(Grant.provide(grant)); // R: never
 ```
 
 Three builders, the deliberately asymmetric axes of ADR 0107 §4:
@@ -55,20 +57,31 @@ code: every denial is the instance-supplied `deny()` thunk.
 
 **1. Forgot-to-check is a compile error.** The proof rides the **context channel**, never a
 field on the op's domain input. An op that declares the capability in its R **cannot reach
-`R = never`** (the only shape a runnable program has) without `.provide(grant)`, and the
+`R = never`** (the only shape a runnable program has) without `Grant.provide(grant)`, and the
 only source of a `Grant<Cap>` is that capability's discharge verb. This is the
 `provideService` idiom of effect-smol's `HttpApiMiddleware` Authorization fixture (check →
-provide a typed proof). The guarantee is pinned by `Capability.typetest.ts`, which asserts
-the **R channel** with `expectTypeOf`: omit `.provide` and the capability stays required in
-R; provide it and R collapses to `never`. (It reads the channel rather than asserting an
-assignment — assigning a service-requiring effect to an `R = never` annotation trips the
-language-service's `effect(missingEffectContext)` diagnostic, which `@ts-expect-error`
+provide a typed proof). `Grant.provide` is generic over `Grant<C>` — it reads the capability
+`Context.Key` the grant carries (stamped non-enumerably by `mint`) and removes `C` from R, so
+it routes a proof by the grant's *own* key: a grant for capability X discharges only X's
+requirement, and a wrong-capability grant leaves the op's requirement unsatisfied (a fail-loud
+runtime defect). The guarantee pinned by `Capability.typetest.ts` is **forgot-to-provide**, an
+**R channel** assertion with `expectTypeOf`: omit `Grant.provide` and the capability stays
+required in R; provide it and R collapses to `never`. (It reads the channel rather than
+asserting an assignment — assigning a service-requiring effect to an `R = never` annotation
+trips the language-service's `effect(missingEffectContext)` diagnostic, which `@ts-expect-error`
 does not catch.)
 
+> **Known gap (#1483):** the **wrong-proof** case is not yet a *compile* error. The sealed
+> `CapabilityTag` drops effect's id-based nominal brand, so `Grant<X>`/`Grant<Y>` unify for any
+> two capabilities — the "wrong right's proof is the wrong *type*" claim below holds at runtime
+> (the grant's own key won't discharge a different requirement) but not yet at the type level.
+
 **2. `Grant` is sealed two ways** (`Grant.ts`):
-- **Its constructor never escapes** — only the `Grant` *type* and `isGrant` are on the
-  barrel; `mint` is package-internal. A consumer can hold and pass a proof but cannot
-  fabricate one.
+- **Its constructor never escapes** — the `Grant` *type*, the `Grant.provide` discharge verb,
+  and `isGrant` are on the barrel; `mint` is package-internal. A consumer can hold, pass, and
+  discharge a proof but cannot fabricate one. The capability `Context.Key` `Grant.provide`
+  needs is stamped onto the grant **non-enumerably** at mint, so it neither widens the `Grant`
+  type nor opens a decode path — a Key reference is not decodable.
 - **It is not a `Schema`** — a decodable proof would be forgeable (decode a crafted payload
   → a valid-looking proof). It is a plain object branded by an unexported `unique symbol`;
   no external value inhabits `Grant<M>`. The brand is phantom-keyed by the capability tag,
@@ -84,15 +97,16 @@ plugin's permitted single-cast form, **not** `as any`):
 
 - A bare `Context.Service` class pins its `[Unify.unifySymbol]` to its *un-augmented*
   self-type, so TS rejects the structural match to the augmented `Capability*`-family type
-  (the `.provide` + discharge verb), and inferring `typeof Tag` leaks effect-internal
-  symbols past nameability. effect-smol's own `HttpApiMiddleware.Service` resorts to `as any`
-  for the identical reason; this cast is the tighter, sound form.
+  (the discharge verb), and inferring `typeof Tag` leaks effect-internal symbols past
+  nameability. effect-smol's own `HttpApiMiddleware.Service` resorts to `as any` for the
+  identical reason; this cast is the tighter, sound form.
 - Each internal builder class **names itself as its Service `Self`** —
   `class Tag extends Context.Service<Tag, Grant<Self>>` — the canonical effect-class
   convention the `@effect/language-service` `classSelfMismatch` rule enforces (run as an
   error by `@effect/tsgo`). The *external* `Self`-parameterized public type is produced by
-  the cast. The local cost the cast erases: the internal `.provide` excludes `Tag` and is
-  re-typed to exclude the external `Self` for consumers.
+  the cast: the internal discharge verb mints a `Grant<Tag>`, re-typed to the external
+  `Grant<Self>` for consumers. (`Grant.provide` itself is generic and outside the class, so
+  the cast no longer carries a per-class provide.)
 
 The cast lives at exactly one seam and is pinned by `Capability.typetest.ts` + the unit
 tests — never sprinkle `as` casts to route around a builder typing wrinkle; extend

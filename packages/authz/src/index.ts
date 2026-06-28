@@ -6,7 +6,8 @@
  * kamp.us instances + `*Live` adapter Layers live in `features/kunye`.
  *
  * Deliberate omission: {@link Grant}'s constructor (`mint`) is NOT re-exported —
- * only the `Grant` *type* escapes, so a consumer can hold a proof but never
+ * the `Grant` *type* and the `Grant.provide` discharge verb escape, but no
+ * construction path, so a consumer can hold and discharge a proof but never
  * fabricate one (the seal, ADR 0107 §1).
  */
 export {
@@ -33,8 +34,10 @@ export {
 	type RelationConfig,
 } from "./Capability.ts";
 export {CurrentActor} from "./CurrentActor.ts";
-// `Grant` (the type) and `isGrant` escape; `mint` does NOT — the seal.
-export {type Grant, type GrantScope, isGrant} from "./Grant.ts";
+// The `Grant` type + the `Grant.provide` discharge verb + `isGrant` escape; `mint`
+// does NOT — the seal. `Grant` is a merged type+value: `Grant<M>` types the proof,
+// `Grant.provide(grant)` discharges it.
+export {Grant, type GrantScope, isGrant} from "./Grant.ts";
 export {Scale} from "./Level.ts";
 export {type Relation, RelationStore} from "./Relation.ts";
 export {ancestry, covers, key, platform, type Resource, resource, sameNode} from "./Resource.ts";

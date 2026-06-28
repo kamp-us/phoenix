@@ -5,7 +5,7 @@ It names **no** kamp.us noun, no fate, no D1. The kamp.us capability instances
 (`OpenTerm`/`AddEntry`/`Moderate`/`Admin`), the wire-coded errors, and the `*Live`
 adapter Layers live in `features/kunye`, not here.
 
-> The shape of this mechanism — builder → discharge verb → sealed `Grant` → `.provide`,
+> The shape of this mechanism — builder → discharge verb → sealed `Grant` → `Grant.provide`,
 > the compile-error guarantee, and the one audited cast — is the
 > [authz-capability-as-effect.md](../../.patterns/authz-capability-as-effect.md) pattern.
 
@@ -13,9 +13,11 @@ adapter Layers live in `features/kunye`, not here.
 
 A privileged op requires an unforgeable proof, `Grant`, in its requirements (R)
 channel. The only way to obtain one is to discharge a check; **omitting the proof is a
-compile error**. The proof flows through context via `.provide(grant)` — the
-`provideService` idiom of effect-smol's `HttpApiMiddleware` Authorization fixture
-(check → provide a typed proof), never a field on the op's domain input.
+compile error**. The proof flows through context via the single canonical
+`Grant.provide(grant)` — the `provideService` idiom of effect-smol's `HttpApiMiddleware`
+Authorization fixture (check → provide a typed proof), never a field on the op's domain
+input. (`Grant.provide` is generic over `Grant<C>`: it reads the capability `Context.Key`
+the grant carries and discharges it — one verb across every capability, not one per right.)
 
 | Piece | Role |
 | --- | --- |
@@ -23,8 +25,8 @@ compile error**. The proof flows through context via `.provide(grant)` — the
 | `Resource` | a generic recursive tree; `covers`/`ancestry` give relation authority its scope |
 | `Scale` (Level) | an ordered ladder with `gte` — the RBAC/MLS-shaped earned-standing axis |
 | `Relation` + `RelationStore` | the ReBAC `(subject, relation, object)` primitive + its storage-blind port |
-| `Grant` | the **sealed** proof: constructor never exported (only the type escapes), **not** a `Schema` (a decodable proof would be forgeable) |
-| `Capability.Class` / `.Level` / `.Relation` | the class-as-capability builders — one declaration yields the proof tag, the `Grant` type, the discharge verb, and `.provide` |
+| `Grant` | the **sealed** proof: constructor never exported (the type + the `Grant.provide` discharge verb escape, never `mint`), **not** a `Schema` (a decodable proof would be forgeable) |
+| `Capability.Class` / `.Level` / `.Relation` | the class-as-capability builders — one declaration yields the proof tag, the `Grant` type, and the discharge verb (discharge into R is the shared `Grant.provide`) |
 | `CurrentActor` / `RelationStore` / `AgentAuthority` | the ports (`Context.Service`s), adapted in `features/kunye` |
 
 Capabilities key off **`Context.Key<Self, Grant<Self>>`** (effect-smol v4) — `Context.Tag`
@@ -43,8 +45,8 @@ class OpenTerm extends Capability.Level<OpenTerm>()("kunye/OpenTerm", {
 // discharge → a proof, or a typed denial
 const grant = yield* OpenTerm.require;
 
-// the privileged op declares the proof in R; `.provide` discharges it
-openTerm.pipe(OpenTerm.provide(grant)); // R: never
+// the privileged op declares the proof in R; `Grant.provide` discharges it
+openTerm.pipe(Grant.provide(grant)); // R: never
 ```
 
 `.require` discharges a `Level`, `.over(resource)` a `Relation`, `.authorize(check)` the
@@ -58,4 +60,6 @@ v1.1 is that one Layer swapped, with no edit here.
 `pnpm test` — pure-primitive unit tests: the `Grant` seal, `Scale` ordering, `Resource`
 ancestry/covers, the builders' exhaustive Actor dispatch + `Grant` provision into context.
 `Capability.typetest.ts` is the compile-error assertion (checked by `pnpm typecheck`):
-omitting `.provide` fails to compile.
+omitting `Grant.provide` fails to compile. (`Grant.provide` routes each proof by the
+capability `Context.Key` the grant carries, so a wrong-capability grant fails to discharge
+at runtime; the type-level wrong-proof distinction is a known gap — see #1483.)

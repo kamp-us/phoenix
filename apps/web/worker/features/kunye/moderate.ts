@@ -11,7 +11,7 @@
  * invariant). The instance lives here — künye owns the kamp.us capability
  * instances; the vocab-free mechanism is `@kampus/authz`.
  */
-import {Capability, type Grant, matchActor, platform, RelationStore} from "@kampus/authz";
+import {Capability, Grant, matchActor, platform, RelationStore} from "@kampus/authz";
 import {Effect} from "effect";
 import {Denied} from "./errors.ts";
 
@@ -59,13 +59,13 @@ export const moderatorsAmong = (
 /**
  * Gate `body` behind platform-moderation authority: discharge
  * `Moderate.over(platform)` (the invisible {@link Denied} on failure) and thread
- * the resulting `Grant` into `body`'s R-channel via `Moderate.provide`. So `body`
+ * the resulting `Grant` into `body`'s R-channel via `Grant.provide`. So `body`
  * can read `yield* Moderate` for the authority-checked moderator identity, and
  * "moderating without a `Grant`" is a compile error — the proof is required by R,
  * not a forgeable field (ADR 0107 §3).
  */
 export const requireModeration = <A, E, R>(body: Effect.Effect<A, E, Moderate | R>) =>
-	Moderate.over(platform).pipe(Effect.flatMap((grant) => body.pipe(Moderate.provide(grant))));
+	Moderate.over(platform).pipe(Effect.flatMap((grant) => body.pipe(Grant.provide(grant))));
 
 /**
  * The moderator's account id from a discharged `Moderate` grant — the

@@ -1,11 +1,12 @@
 /**
  * `Capability` — the class-as-capability builders (ADR 0107 §3). One class
  * declaration yields, from a single name, the proof tag (a v4
- * `Context.Key<Self, Grant<Self>>`), the {@link Grant} it proves, a discharge
- * verb that mints the proof by running a check, and `.provide` that flows the
- * proof into an effect's R channel. The non-obvious part: enforcement is by the
- * R channel, not a domain field — an op that declares the capability in its R
- * fails to compile unless the proof is provided at composition.
+ * `Context.Key<Self, Grant<Self>>`), the {@link Grant} it proves, and a discharge
+ * verb that mints the proof by running a check. The proof flows into an op's R
+ * channel via the one canonical `Grant.provide(grant)` (ADR 0107; #1270). The
+ * non-obvious part: enforcement is by the R channel, not a domain field — an op
+ * that declares the capability in its R fails to compile unless the proof is
+ * provided at composition.
  *
  * Three builders, the asymmetric axes of ADR 0107 §4:
  *   - {@link Class} — generic: `.authorize(check)` discharges a boolean check.
@@ -27,32 +28,21 @@ import {RelationStore} from "./Relation.ts";
 import {ancestry, type Resource} from "./Resource.ts";
 
 /**
- * The `.provide` seam shared by every capability class: `provideService` of a
- * {@link Grant} into R, removing the capability from requirements — so an op
- * that declares it but never provides the proof fails to compile.
- */
-export interface CapabilityProvide<Self> {
-	provide(
-		grant: Grant<Self>,
-	): <A, E, R>(self: Effect.Effect<A, E, R>) => Effect.Effect<A, E, Exclude<R, Self>>;
-}
-
-/**
  * The shared face of every capability class: a v4 `Context.Key<Self,
- * Grant<Self>>` proof tag, the class constructor, and `.provide`.
+ * Grant<Self>>` proof tag and the class constructor. (Discharge is `Grant.provide`,
+ * not a per-class member — collapsed in #1270.)
  *
  * Intentionally an intersection, NOT `interface extends Context.Service`:
- * extending the service folds `.provide`/the discharge verbs into the type's
- * `EffectUnify`, which then fails to match the bare service the class actually
- * is. Keeping the statics as their own members leaves the Effect-typed member
- * pure.
+ * extending the service folds the discharge verbs into the type's `EffectUnify`,
+ * which then fails to match the bare service the class actually is. Keeping the
+ * statics as their own members leaves the Effect-typed member pure.
  */
 export type CapabilityTag<Self> = Context.Service<Self, Grant<Self>> &
 	(new (
 		_: never,
 	) => Context.ServiceClass.Shape<string, Grant<Self>>) & {
 		readonly key: string;
-	} & CapabilityProvide<Self>;
+	};
 
 /** The generic base capability — discharged by a caller-supplied check. */
 export type ClassCapability<Self, DenyError> = CapabilityTag<Self> & {
@@ -128,18 +118,13 @@ const makeClass =
 		const {deny} = config;
 		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability`.
 		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
-			static provide(grant: Grant<Self>) {
-				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Tag>> =>
-					Effect.provideService(self, Tag, grant);
-			}
-
 			static authorize<E, R>(
 				check: Effect.Effect<boolean, E, R>,
 			): Effect.Effect<Grant<Self>, DenyError | E, CurrentActor | R> {
 				return Effect.gen(function* () {
 					const {actor} = yield* CurrentActor;
 					const passed = yield* check;
-					if (passed) return mint<Self>(actor, {capability: id});
+					if (passed) return mint<Self>(actor, {capability: id}, Tag);
 					return yield* Effect.fail(deny());
 				});
 			}
@@ -163,11 +148,6 @@ const makeLevel =
 		type Branch = Effect.Effect<Grant<Self>, DenyError | ReadError, AgentAuthority | ReadReqs>;
 		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability` (see makeClass).
 		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
-			static provide(grant: Grant<Self>) {
-				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Tag>> =>
-					Effect.provideService(self, Tag, grant);
-			}
-
 			static readonly require: Effect.Effect<
 				Grant<Self>,
 				DenyError | ReadError,
@@ -179,7 +159,7 @@ const makeLevel =
 					onHuman: (subject) =>
 						Effect.gen(function* () {
 							const level = yield* read(subject);
-							if (scale.gte(level, min)) return mint<Self>(actor, {capability: id, level});
+							if (scale.gte(level, min)) return mint<Self>(actor, {capability: id, level}, Tag);
 							return yield* Effect.fail(deny());
 						}),
 					onAgent: (acting) =>
@@ -188,7 +168,7 @@ const makeLevel =
 							const authority = yield* AgentAuthority;
 							const admitted = yield* authority.admits({agent: acting, capability: id});
 							if (scale.gte(rootLevel, min) && admitted) {
-								return mint<Self>(actor, {capability: id, level: rootLevel});
+								return mint<Self>(actor, {capability: id, level: rootLevel}, Tag);
 							}
 							return yield* Effect.fail(deny());
 						}),
@@ -215,11 +195,6 @@ const makeRelation =
 		type Branch = Effect.Effect<Grant<Self>, DenyError, AgentAuthority>;
 		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability` (see makeClass).
 		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
-			static provide(grant: Grant<Self>) {
-				return <A, E, R>(self: Effect.Effect<A, E, R>): Effect.Effect<A, E, Exclude<R, Tag>> =>
-					Effect.provideService(self, Tag, grant);
-			}
-
 			static over(
 				object: Resource,
 			): Effect.Effect<Grant<Self>, DenyError, CurrentActor | RelationStore | AgentAuthority> {
@@ -238,7 +213,7 @@ const makeRelation =
 						onHuman: (subject) =>
 							Effect.gen(function* () {
 								if (yield* heldBy(subject.id)) {
-									return mint<Self>(actor, {capability: id, resource: object});
+									return mint<Self>(actor, {capability: id, resource: object}, Tag);
 								}
 								return yield* Effect.fail(deny());
 							}),
@@ -248,7 +223,7 @@ const makeRelation =
 								const authority = yield* AgentAuthority;
 								const admitted = yield* authority.admits({agent: acting, capability: id});
 								if (rootHolds && admitted) {
-									return mint<Self>(actor, {capability: id, resource: object});
+									return mint<Self>(actor, {capability: id, resource: object}, Tag);
 								}
 								return yield* Effect.fail(deny());
 							}),
@@ -262,8 +237,8 @@ const makeRelation =
 /**
  * The class-as-capability builders. Each is `<Self>()(id, config)` — the
  * effect-class `Self`-type curry, so `class X extends Capability.Level<X>()(…)`
- * names the proof tag, the `Grant` type, the discharge verb, and `.provide`
- * from the one declaration.
+ * names the proof tag, the `Grant` type, and the discharge verb from the one
+ * declaration. The proof is discharged with the canonical `Grant.provide(grant)`.
  */
 export const Capability = {
 	Class: makeClass,

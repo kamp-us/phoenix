@@ -2,7 +2,7 @@
  * Unit — the class-as-capability builders end to end: the exhaustive Actor
  * dispatch of each discharge verb, `Level` ordering through `.require`,
  * `Relation` ancestry through `.over`, the dormant `AgentAuthority` seam
- * (fail-closed), and `Grant` provision into the context channel via `.provide`.
+ * (fail-closed), and `Grant` provision into the context channel via `Grant.provide`.
  */
 import {Effect, Exit} from "effect";
 import {describe, expect, it} from "vitest";
@@ -10,7 +10,7 @@ import {type Actor, agent, human, unauthenticated} from "./Actor.ts";
 import {AgentAuthority} from "./AgentAuthority.ts";
 import {Capability} from "./Capability.ts";
 import {CurrentActor} from "./CurrentActor.ts";
-import {isGrant} from "./Grant.ts";
+import {Grant, isGrant} from "./Grant.ts";
 import {Scale} from "./Level.ts";
 import {RelationStore} from "./Relation.ts";
 import {resource} from "./Resource.ts";
@@ -187,7 +187,7 @@ describe("Capability.Class — .authorize", () => {
 	});
 });
 
-describe("Grant provision into context — .provide", () => {
+describe("Grant provision into context — Grant.provide", () => {
 	// An op that declares the proof in its R channel and reads it back.
 	const op: Effect.Effect<string, never, AddEntry> = Effect.gen(function* () {
 		const proof = yield* AddEntry;
@@ -196,8 +196,8 @@ describe("Grant provision into context — .provide", () => {
 
 	it("discharges the requirement: the provided proof flows through R", () => {
 		const grant = grantOf(run(AddEntry.require, {actor: human("yzr")}));
-		// after `.provide(grant)` the op needs nothing — R is `never`, runnable.
-		const discharged: Effect.Effect<string, never, never> = op.pipe(AddEntry.provide(grant));
+		// after `Grant.provide(grant)` the op needs nothing — R is `never`, runnable.
+		const discharged: Effect.Effect<string, never, never> = op.pipe(Grant.provide(grant));
 		expect(Effect.runSync(discharged)).toBe("test/AddEntry");
 	});
 });
