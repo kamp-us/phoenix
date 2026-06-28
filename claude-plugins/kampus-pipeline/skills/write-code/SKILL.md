@@ -462,6 +462,143 @@ and branch there if the issue carries one of those types. Everything else
 
 ---
 
+<a id="mis-attribution-guard"></a>
+## Step 3.5 — The mis-attribution guard (verify the target is mine before mutating it)
+
+The claim (Step 3) guarantees you *won* a unit of work; this guard guarantees you only ever
+*operate on* a number you won. They are complements: without it, a mis-attributed issue/PR
+number — a wrong `<N>` substituted into a `gh api … /comments`, a `git push` to the wrong
+branch, a close on the wrong issue — silently mutates **another agent's live work**. That is
+the #1404 near-miss this step closes (a coder nearly killed another agent's live PR via a
+mis-attributed number); it is the `write-code` adoption of ADR
+[0115](https://github.com/kamp-us/phoenix/blob/main/.decisions/0115-agent-distinguishable-claim-marker.md)
+§4 (surface #1456).
+
+**Before any mutating action that targets an issue/PR number** — open a PR against it (Step 5),
+comment on it (Step 6 progress, Step 7 handoff), `git switch`/`git push` its branch (repair
+R2/R3), or close it (type routing) — verify the target carries **your own** session-stamped
+claim, and **refuse — loudly, fail-closed — if that claim is absent or another agent's**. The
+guard **reuses the §1 claim-marker read** (ADR 0115 §1/§2); it introduces **no second claim
+mechanism**.
+
+### Your claim token — `MY_CLAIM` (own session id, or the orchestrator's delegated token)
+
+The token this run owns its work *under* is `MY_CLAIM`, resolved once at the top of the run:
+
+- **Direct path** — `write-code` invoked directly: `MY_CLAIM` is the coder's own
+  `CLAUDE_CODE_SESSION_ID` (the same token the Step-3 claim writes — ADR 0115 §3 direct path).
+- **Orchestrated path** — dispatched by the orchestrator, which **pre-claims before spawn**
+  (`.claude/workflows/drive-issue.js`, ADR 0115 §3) and **threads its winning claim token into
+  the spawn prompt**: `MY_CLAIM` is that **threaded delegated token**. `write-code` **recognizes
+  the threaded claim as its delegated own and does not re-race** (it posts no second claim) — the
+  guard treats a target whose earliest authorized claim equals the threaded token as *mine*.
+
+```bash
+# the claim token this run owns work under: the orchestrator's threaded delegated token if it
+# pre-claimed, else my own session id (the direct-path Step-3 self-claim). Fail-closed: with
+# NEITHER set there is no agent-distinguishable identity to verify ownership under — abort, never
+# fall back to the bare assignee login (that login degeneracy is the exact defect ADR 0115 removes).
+MY_CLAIM="${THREADED_CLAIM_TOKEN:-$CLAUDE_CODE_SESSION_ID}"
+: "${MY_CLAIM:?mis-attribution guard: no claim token — CLAUDE_CODE_SESSION_ID absent and none threaded; refusing to claim or mutate (ADR 0115 Consequences — never a login fallback)}"
+```
+
+### `claim_is_mine <N>` — MANDATED before every issue/PR-number mutation
+
+Define the guard once and gate **every** number-targeting mutation on it, exactly as
+[`wt_preflight`](#per-mutation-preflight) gates every git mutation — a green `claim_is_mine`
+is the **only** sanctioned path to a mutation that names `<N>`, no bypass:
+
+```bash
+# claim_is_mine <N>: resolve the EARLIEST AUTHORIZED claim marker on #N (issue or PR) and assert
+# its embedded session id == MY_CLAIM. Returns 0 only on a proven-own claim; non-zero (REFUSE) on
+# an absent OR a foreign claim. Reuses the ADR 0115 §1/§2 marker read — no second claim mechanism.
+claim_is_mine() {
+  local N="$1" cf am authorized winner perm a
+  cf=$(mktemp)
+  gh api "repos/$REPO/issues/$N/comments?per_page=100" > "$cf"   # PR comments share the issues endpoint
+  # claim grammar (ADR 0115 §1):  claim: <CLAUDE_CODE_SESSION_ID> · <ISO-8601-UTC>
+  # matched emphasis-tolerant exactly like the review-* markers (leading \** absorbs bolding, §5).
+  # SINGLE backslashes: this regex is passed by jq --arg (a raw value), not a jq string literal —
+  # so \s/\** reach oniguruma directly (a jq-literal would need \\s; the --arg path must not).
+  CLAIM_RE='^\s*\**\s*claim:\s*\**\s*(?<sid>[0-9A-Za-z-]{8,})'
+  # AUTHORIZED authors only — write+ collaborators (ADR 0055 trust root, same set ship-it Step 2 /
+  # the repair scan build). A forged claim from a non-collaborator is ignored; an EMPTY authorized
+  # set resolves NO claim ⇒ the guard refuses — fail-closed, never a false win.
+  am=$(jq -r --arg re "$CLAIM_RE" '[.[] | select(.body | test($re;"i")) | .user.login] | unique | .[]' "$cf")
+  authorized='[]'
+  while IFS= read -r a; do
+    [ -z "$a" ] && continue
+    perm=$(gh api "repos/$REPO/collaborators/$a/permission" --jq .permission 2>/dev/null)
+    case "$perm" in admin|maintain|write) authorized=$(jq -c --arg a "$a" '. + [$a]' <<<"$authorized") ;; esac
+  done <<<"$am"
+  # WINNER = the EARLIEST authorized claim — min (created_at, comment id), the server-assigned
+  # ordering (ADR 0115 §2), NOT lexicographic-min(session). Extract its embedded session id.
+  winner=$(jq -r --argjson authorized "$authorized" --arg re "$CLAIM_RE" \
+    '[.[] | select(.user.login | IN($authorized[])) | select(.body | test($re;"i"))]
+     | sort_by([.created_at, .id]) | first
+     | (.body // "" | (capture($re;"i") // {sid:null}).sid) // ""' "$cf")
+  if [ -z "$winner" ]; then
+    echo "mis-attribution guard FAILED (fail-closed): #$N carries no authorized claim marker — refusing to mutate (ADR 0115 §1/§2: absent ⇒ no owner, never a false win)." >&2
+    return 1
+  fi
+  if [ "$winner" != "$MY_CLAIM" ]; then
+    echo "mis-attribution guard FAILED (fail-closed): #$N is claimed by ANOTHER agent (earliest authorized claim session=$winner ≠ mine=$MY_CLAIM) — refusing to push/comment/close work I did not claim (ADR 0115 §4 / #1456; the #1404 near-miss)." >&2
+    return 1
+  fi
+  echo "mis-attribution guard: #$N earliest authorized claim == mine ($MY_CLAIM) — proceeding."
+}
+
+claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="…"   # the guard gates the mutation; never run it ungated
+```
+
+The guard is **fail-closed by construction** — it proceeds **only** on positive evidence of an
+authorized claim whose session is `MY_CLAIM`; an absent claim, an unauthorized-only claim, and a
+foreign claim all **refuse**. It is **observable** (it prints the resolved owner vs `MY_CLAIM`) and
+**idempotent** (a read-only GET). **Never** route around it by widening the comparison or treating
+the bare assignee as the owner — the assignee is a coarse availability gate only (ADR 0115 §1), and
+a login-keyed ownership check is the degeneracy this guard exists to remove.
+
+> **Which `<N>` to guard at each site.** The guarded number is the **work-target whose mutation
+> could clobber another agent**: Step 5 guards the **issue** you open the PR against; Step 6 the
+> **issue** you comment on; **Step 7 guards the child you own** (the handoff to the parent epic is
+> predicated on owning the child — gate on `claim_is_mine <child>`, not the epic, which you never
+> claim); repair R2/R3 guard the **PR's linked issue `#N`** (the claim lives on the issue, so
+> resolving `Fixes #N` and confirming its claim is `MY_CLAIM` is what proves the PR is yours to
+> push); type-routing closes guard the **issue** you close.
+
+> **Composition + ship-ordering (the one honest caveat).** This guard is the **read-side
+> complement** of the claim *write*: it verifies the marker that the claim surface posts — the
+> Step-3 issue self-claim and the §7 contract (surface #1453), or the orchestrator's pre-spawn
+> claim threaded as `MY_CLAIM` (surface #1454). It is **live-correct only once a claim marker is
+> posted ahead of the mutation** — which the integrated pipeline always does (orchestrator
+> pre-claims, or `write-code` self-claims at its claim step). Landing this guard **ahead of** a
+> claim-marker-posting surface would, by its own fail-closed contract, refuse `write-code`'s own
+> mutations (no marker yet to verify) — so its ship is sequenced **with or after** #1453/#1454, a
+> control-plane ship decision, not a fail-open hedge to weaken here.
+
+### Rehearsal — a mis-attributed number is refused (the #1404 reproduction)
+
+The guard handed a number it did **not** claim refuses to mutate it. Walk the three resolutions:
+
+1. **Foreign claim — REFUSE.** Agent B (its own session `B-sid`) holds the earliest authorized
+   claim on issue `#900`. Agent A (`MY_CLAIM = A-sid`) is handed `#900` by a mis-attributed number
+   and reaches a mutation. `claim_is_mine 900` resolves `winner = B-sid`; `B-sid != A-sid` ⇒
+   **FAILED (fail-closed): #900 is claimed by ANOTHER agent** — A pushes/closes nothing. This is
+   the #1404 near-miss, now structurally unreachable.
+2. **Absent claim — REFUSE.** The number names an issue with **no** authorized claim marker (or
+   only a forged claim from a non-collaborator, which the ADR 0055 author-gate drops). `winner` is
+   empty ⇒ **FAILED (fail-closed): no authorized claim marker** — A cannot prove ownership, so it
+   refuses rather than mutate an unclaimed number.
+3. **My own claim — PROCEED.** The earliest authorized claim on `#N` carries `A-sid` (A's own
+   Step-3 self-claim) **or** the token threaded to A by the orchestrator (delegated own). `winner
+   == MY_CLAIM` ⇒ the guard prints `earliest authorized claim == mine` and the single guarded
+   mutation runs.
+
+Exactly one of three outcomes, decided by a re-read of canonical issue state against `MY_CLAIM` —
+the same detect-and-tiebreak shape (ADR 0115 §2), here read-only and on the *acting* side.
+
+---
+
 ## Step 4 — Implement on a branch
 
 write-code **MUST run in an isolated git worktree** — when spawned as a subagent, via
@@ -860,6 +997,9 @@ ships normally.
 
 ```bash
 wt_preflight && git push -u origin "$BRANCH"   # gate the push ([per-mutation preflight]); same per-run branch from Step 4
+# The PR opens AGAINST issue #N (Fixes #N) — gate it on the mis-attribution guard (Step 3.5): open a
+# PR closing only an issue whose claim is mine, never one mis-attributed to another agent's #N.
+claim_is_mine "<N>" || { echo "refusing to open a PR against #<N> — not my claim (Step 3.5)"; exit 1; }
 # The body carries `Fixes #N` always; ADD the `Flag: <FLAG_KEY>` line BELOW it ONLY when Step 4b
 # fired (a dark ship behind a flag — newly-declared OR prior-PR). Omit it entirely for an ungated PR.
 gh pr create \
@@ -951,7 +1091,8 @@ is the per-issue ledger for the next agent (a successor write-code run, or
 
 ```bash
 BODY="$(cat /tmp/write-code-progress.md)"   # the four-section comment
-gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
+# gate the comment on the mis-attribution guard (Step 3.5) — only comment on an issue whose claim is mine
+claim_is_mine "<N>" && gh api repos/$REPO/issues/<N>/comments -f body="$BODY"
 ```
 
 Assemble the comment from a temp file so multi-line markdown and backticks survive the
@@ -1001,7 +1142,9 @@ silently. A blocked handoff is a fail-loud condition, never a silent no-op.
 
 ```bash
 BODY="$(cat /tmp/write-code-handoff.md)"   # ### Handoff: #N — <title> + the three fields
-gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
+# the handoff to the parent epic is predicated on OWNING THE CHILD — gate on claim_is_mine <child>
+# (Step 3.5), not the epic (which you never claim): only hand off about work whose claim is mine.
+claim_is_mine "<N>" && gh api repos/$REPO/issues/<EPIC>/comments -f body="$BODY"
 ```
 
 Distill, don't dump — the fine detail lives in the child's progress comments and PR.
@@ -1273,6 +1416,10 @@ orphan the PR and the gate's history):
 
 ```bash
 git fetch origin
+# mis-attribution guard (Step 3.5): confirm the PR's linked issue #N is MINE before touching its
+# branch — so a mis-dispatched repair never pushes to another agent's live PR (the #1404 class).
+# In orchestrated repair the original claim token is threaded as MY_CLAIM (ADR 0115 §3 delegated own).
+claim_is_mine "$N" || { echo "refusing to repair PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
 wt_preflight && git switch <the PR's head branch>   # gate the branch switch ([per-mutation preflight]); gh api .../pulls/$PR --jq '.head.ref'
 # apply the fixes addressing exactly the enumerated findings
 ```
@@ -1301,6 +1448,10 @@ cross-task signal a sibling should know the gate now enforces. Pushing new commi
 makes the **stateless** gate re-run — you do **not** re-trigger or self-approve it:
 
 ```bash
+# re-assert the mis-attribution guard (Step 3.5) before the resubmit push — a between-calls cwd
+# reset can't move the claim, but the guard is MANDATED before every number-targeting mutation,
+# exactly as wt_preflight is before every git op; gate both the push and the progress comment.
+claim_is_mine "$N" || { echo "refusing to push/comment — PR #$PR linked issue #$N not my claim (Step 3.5)"; exit 1; }
 wt_preflight && git push origin HEAD   # gate the push ([per-mutation preflight])
 gh api repos/$REPO/issues/$N/comments -f body="$(cat /tmp/write-code-repair-progress.md)"
 ```
@@ -1451,6 +1602,11 @@ indistinguishable from "still FAILing after the cap" to the picker, so the same 
   re-trigger; a separate reviewer judges the new head.
 - **Same branch, never a new one.** Fix on the PR's existing head branch so the PR and its
   gate history stay intact.
+- **Mis-attribution guard before every push/comment ([Step 3.5](#mis-attribution-guard)).**
+  Confirm the PR's linked issue `#N` carries **your own** claim (`claim_is_mine "$N"` — the
+  orchestrator threads the original claim as `MY_CLAIM` for delegated repair, ADR 0115 §3) before
+  the R2 branch switch and the R3 push/comment, so a mis-dispatched repair never clobbers another
+  agent's live PR (the #1404 class). Fail-closed: an absent or foreign claim refuses.
 - **Idempotent.** Re-running on an already-fixed / PASS PR (one with no latest FAIL, or one
   whose latest FAIL is bound to a now-stale head) is a clean no-op (Step R1).
 - **SHA-bound verdicts (ADR [0058](https://github.com/kamp-us/phoenix/blob/main/.decisions/0058-sha-bound-verdict-contract.md)).**
@@ -1569,6 +1725,9 @@ a **diagnosis** and the *routing* of its findings, not a feature branch:
    they close because the question is answered. Close it:
 
    ```bash
+   # closing #N is a number-targeting mutation — gate it on the mis-attribution guard (Step 3.5)
+   # so a mis-attributed number never closes another agent's live issue (the #1404 class).
+   claim_is_mine "<N>" || { echo "refusing to close #<N> — not my claim (Step 3.5)"; exit 1; }
    gh api repos/$REPO/issues/<N>/comments -f body="$DIAGNOSIS"
    gh api -X PATCH repos/$REPO/issues/<N> -f state=closed -f state_reason=completed
    ```
@@ -1603,7 +1762,9 @@ A single invocation does one unit of work end to end, in one of the two modes:
 
 - **Initial build** (issue number / no arg): pick (Step 1 — including the pre-pick
   resume-my-failed-PR scan — +Step 2 if a sub-issue), claim (Step 3), then either
-  implement→PR→progress→handoff (Steps 4–7) or the type-routed path, and **hard-stop at
+  implement→PR→progress→handoff (Steps 4–7) or the type-routed path — **gating every
+  number-targeting mutation on the [mis-attribution guard](#mis-attribution-guard) (Step 3.5:
+  verify the target carries my own claim, fail-closed)** — and **hard-stop at
   PR-open (Step 8) — hand the review gate to a separate reviewer; never review your own PR.**
   Report a short ledger: the issue picked (and why — bucket + age, the milestone tiebreaker or
   `work milestone N` scope if either applied, or the sub-issue eligibility derivation), the
