@@ -6,6 +6,7 @@
  * relation/by-id callers). See `.patterns/fate-effect-sources.md`.
  */
 import {Fate} from "@kampus/fate-effect";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {toProfile} from "./shapers.ts";
 import {getUsersWithModerationByIds} from "./trusted-user.ts";
@@ -37,7 +38,11 @@ export const profileSource = Fate.source(
 	{
 		byId: function* (userId) {
 			const pasaport = yield* Pasaport;
-			const row = yield* pasaport.lookupProfileById(userId);
+			// Thread the SAME request sandbox viewer the root `queries.profile` resolves,
+			// so the by-id relation path computes identical sandbox/draft-aware headline
+			// counts — counts agree on every fetch path (#1406).
+			const sandboxViewer = yield* currentSandboxViewer;
+			const row = yield* pasaport.lookupProfileById(userId, {sandboxViewer});
 			// `toProfile` stamps the client normalization key `id` (=== `userId`);
 			// the service row carries only `userId`.
 			return row ? toProfile(row) : row;

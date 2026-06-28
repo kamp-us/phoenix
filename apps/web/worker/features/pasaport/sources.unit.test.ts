@@ -17,9 +17,11 @@
  */
 
 import {it} from "@effect/vitest";
-import {RelationStore} from "@kampus/authz";
+import {AgentAuthority, CurrentActor, human, RelationStore, unauthenticated} from "@kampus/authz";
+import {CurrentUser, type CurrentUserInfo} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import {assert} from "vitest";
+import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
 import type {ProfileRow, UserRow} from "./Pasaport.ts";
 import {Pasaport} from "./Pasaport.ts";
 import {profileSource, userSource} from "./sources.ts";
@@ -75,6 +77,67 @@ const profileRow = (userId: string): ProfileRow => ({
 
 const pasaportWithProfile = (row: ProfileRow | null) =>
 	({lookupProfileById: () => Effect.succeed(row)}) as never;
+
+// A `Pasaport` whose `lookupProfileById` records the `viewer` option it was handed,
+// so a test can assert `profileSource.byId` threads the resolved sandbox viewer
+// (#1406) rather than calling the loader sandbox-blind.
+const pasaportCapturingViewer = (row: ProfileRow | null) => {
+	// `viewer` admits `undefined` (exactOptionalPropertyTypes) since the loader's option
+	// arg is itself optional — the anonymous case threads `{sandboxViewer: anonymous}`,
+	// never a bare `undefined`, but the field type must permit what the param can be.
+	const captured: {viewer: {sandboxViewer?: SandboxViewer} | undefined} = {viewer: undefined};
+	const pasaport = {
+		lookupProfileById: (_userId: string, viewer?: {sandboxViewer?: SandboxViewer}) => {
+			captured.viewer = viewer;
+			return Effect.succeed(row);
+		},
+	} as never;
+	return {pasaport, captured};
+};
+
+// A `moderates`-tuple `RelationStore` (the `Moderate.over(platform)` probe shape, per
+// `moderate.unit.test.ts`): a subject in `holders` holds the platform-moderation tuple.
+const moderatesStore = (holders: ReadonlySet<string>) =>
+	({
+		has: (tuple: {relation: string; object: {type: string}; subject: string}) =>
+			Effect.succeed(
+				tuple.relation === "moderates" &&
+					tuple.object.type === "platform" &&
+					holders.has(tuple.subject),
+			),
+		hasSubjects: ({
+			subjects,
+			relation,
+			object,
+		}: {
+			subjects: ReadonlyArray<string>;
+			relation: string;
+			object: {type: string};
+		}) =>
+			Effect.succeed(
+				new Set(
+					relation === "moderates" && object.type === "platform"
+						? subjects.filter((subject) => holders.has(subject))
+						: [],
+				),
+			),
+	}) as never;
+
+// The full request context `currentSandboxViewer` resolves from: the signed-in user
+// (`CurrentUser`), the actor + moderation ports the `Moderate.over(platform)` probe
+// discharges against (`CurrentActor`/`AgentAuthority`/`RelationStore`). Anonymous ⇒
+// `{user: undefined}` + the `unauthenticated` actor.
+const withRequestViewer = <A, E, R>(
+	effect: Effect.Effect<A, E, R>,
+	user: CurrentUserInfo | undefined,
+	moderatorIds: ReadonlySet<string> = new Set(),
+) =>
+	effect.pipe(
+		Effect.provideService(CurrentUser, {user}),
+		Effect.provideService(CurrentActor, {actor: user ? human(user.id) : unauthenticated}),
+		Effect.provideService(AgentAuthority, {admits: () => Effect.succeed(false)}),
+		Effect.provideService(RelationStore, moderatesStore(moderatorIds)),
+	);
 
 // --- userSource.byIds: the per-row moderator merge --------------------------
 
@@ -150,8 +213,11 @@ it.effect(
 
 it.effect("profileSource.byId wraps the row via toProfile (stamps id === userId)", () =>
 	Effect.gen(function* () {
-		const profile = yield* profileById("u1").pipe(
-			Effect.provideService(Pasaport, pasaportWithProfile(profileRow("u1"))),
+		const profile = yield* withRequestViewer(
+			profileById("u1").pipe(
+				Effect.provideService(Pasaport, pasaportWithProfile(profileRow("u1"))),
+			),
+			{id: "u1", email: "u1@kamp.us", name: "U One", image: null},
 		);
 		// `toProfile` stamps `__typename` (not on the handler's view-row return type) and
 		// `id === userId`; widen to a record to assert the full runtime shape.
@@ -174,13 +240,65 @@ it.effect(
 	"profileSource.byId is silent on a miss: an absent userId returns null, never a failure",
 	() =>
 		Effect.gen(function* () {
-			const exit = yield* profileById("ghost").pipe(
-				Effect.provideService(Pasaport, pasaportWithProfile(null)),
-				Effect.exit,
-			);
+			const exit = yield* withRequestViewer(
+				profileById("ghost").pipe(Effect.provideService(Pasaport, pasaportWithProfile(null))),
+				{id: "u1", email: "u1@kamp.us", name: "U One", image: null},
+			).pipe(Effect.exit);
 			assert.isTrue(exit._tag === "Success");
 			if (exit._tag === "Success") {
 				assert.isNull(exit.value);
 			}
 		}),
+);
+
+// --- profileSource.byId: threads the resolved sandbox viewer (#1406) ---------
+
+it.effect(
+	"profileSource.byId threads the resolved currentSandboxViewer into lookupProfileById",
+	() =>
+		Effect.gen(function* () {
+			// The author is signed in but NOT a moderator ⇒ the resolved viewer is keyed to
+			// their id with `canSeeSandboxed: false`. Threading this (vs. calling the loader
+			// sandbox-blind) is what makes the by-id counts agree with the root query (#1406).
+			const {pasaport, captured} = pasaportCapturingViewer(profileRow("u1"));
+			yield* withRequestViewer(profileById("u1").pipe(Effect.provideService(Pasaport, pasaport)), {
+				id: "u1",
+				email: "u1@kamp.us",
+				name: "U One",
+				image: null,
+			});
+			assert.deepStrictEqual(captured.viewer?.sandboxViewer, {
+				viewerId: "u1",
+				canSeeSandboxed: false,
+			});
+		}),
+);
+
+it.effect("profileSource.byId resolves an anonymous viewer when no user is signed in", () =>
+	Effect.gen(function* () {
+		const {pasaport, captured} = pasaportCapturingViewer(profileRow("u1"));
+		yield* withRequestViewer(
+			profileById("u1").pipe(Effect.provideService(Pasaport, pasaport)),
+			undefined,
+		);
+		assert.deepStrictEqual(captured.viewer?.sandboxViewer, {
+			viewerId: null,
+			canSeeSandboxed: false,
+		});
+	}),
+);
+
+it.effect("profileSource.byId resolves canSeeSandboxed for a moderator viewer", () =>
+	Effect.gen(function* () {
+		const {pasaport, captured} = pasaportCapturingViewer(profileRow("u1"));
+		yield* withRequestViewer(
+			profileById("u1").pipe(Effect.provideService(Pasaport, pasaport)),
+			{id: "mod", email: "mod@kamp.us", name: "Mod", image: null},
+			new Set(["mod"]),
+		);
+		assert.deepStrictEqual(captured.viewer?.sandboxViewer, {
+			viewerId: "mod",
+			canSeeSandboxed: true,
+		});
+	}),
 );

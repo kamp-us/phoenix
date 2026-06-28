@@ -9,7 +9,7 @@
  * `Pasaport` no longer mounts the handler itself.
  */
 import type {Auth as BetterAuth} from "better-auth";
-import {and, eq, inArray, isNull, sql} from "drizzle-orm";
+import {and, eq, inArray, isNull, type SQL, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -22,6 +22,7 @@ import {
 	sandboxBacklogWhere,
 	sandboxVisibleWhere,
 } from "../lifecycle/SandboxVisibility.ts";
+import {postVisibleWhere} from "../pano/PostVisibility.ts";
 import {
 	UserNotFound,
 	UsernameAlreadySet,
@@ -337,11 +338,31 @@ export const makePasaportLive = (auth: Auth) =>
 			// carry domain errors only and every method's `R` stays `never`.
 			const {run, batch} = orDieAccess(yield* Drizzle);
 
+			// The per-viewer visibility predicate a count routes through — the ONE seam
+			// (ADR 0113), never a by-path-divergent hand-written clause (#1406). The post
+			// table folds in the `post_record`-only draft arm (`postVisibleWhere`), so a
+			// non-author's count excludes the author's unpublished drafts; definition and
+			// comment have no draft dimension and route through `sandboxVisibleWhere`.
+			const countVisibleWhere = (
+				table:
+					| typeof schema.definitionRecord
+					| typeof schema.postRecord
+					| typeof schema.commentRecord,
+				viewer: SandboxViewer,
+			): SQL | undefined =>
+				table === schema.postRecord
+					? postVisibleWhere(
+							{sandboxedAt: table.sandboxedAt, authorId: table.authorId, isDraft: table.isDraft},
+							viewer,
+						)
+					: sandboxVisibleWhere({sandboxedAt: table.sandboxedAt, authorId: table.authorId}, viewer);
+
 			// `COUNT(*)` of one author's non-removed rows in a contribution table.
 			// Calls `run` directly so callers keep `R = never`. A `viewer` narrows the
-			// count to that viewer's sandbox-visible set (#1309) — so the feed's
-			// `totalCount` matches the rows it actually returns and never leaks the
-			// COUNT of an author's sandboxed content; omitted ⇒ no sandbox narrowing.
+			// count to that viewer's sandbox+draft-visible set via `countVisibleWhere`
+			// (#1309/#1406) — so the feed's `totalCount` matches the rows it actually
+			// returns and never leaks the COUNT of an author's sandboxed/draft content;
+			// omitted ⇒ no narrowing.
 			const countByAuthor = (
 				table:
 					| typeof schema.definitionRecord
@@ -358,12 +379,7 @@ export const makePasaportLive = (auth: Auth) =>
 							and(
 								eq(table.authorId, authorId),
 								isNull(table.removedAt),
-								viewer
-									? sandboxVisibleWhere(
-											{sandboxedAt: table.sandboxedAt, authorId: table.authorId},
-											viewer,
-										)
-									: undefined,
+								viewer ? countVisibleWhere(table, viewer) : undefined,
 							),
 						)
 						.then((r) => Number(r[0]?.n ?? 0)),
