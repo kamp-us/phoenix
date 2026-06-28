@@ -164,7 +164,7 @@ ever drives an epic.
 
 ## Step 1 — Run the deterministic gate action
 
-The gate action is built: `epic-ledger`'s `runGate(epicNumber)` (`packages/epic-ledger/src/gate.ts`).
+The gate action is built: `epic-ledger`'s `runGate(epicNumber)` (`packages/pipeline-cli/src/tools/epic-ledger/gate.ts`).
 Given an epic number it fetches the `EpicLedger` via the `Github` capability, runs
 `validateLedger`, and on a **clean** ledger flips every `status:planned` child to
 `status:triaged` and posts a PASS verdict; on **≥1 hard defect** it posts a per-defect
@@ -210,7 +210,7 @@ $GATE <EPIC> --dry-run  # read-only: validate + print, no mutation
 ```
 
 `runGate(<EPIC>)` is the underlying action the CLI calls (`epic-ledger`'s `runGate`,
-`packages/epic-ledger/src/gate.ts`). Use `--dry-run` first when you want to see the verdict
+`packages/pipeline-cli/src/tools/epic-ledger/gate.ts`). Use `--dry-run` first when you want to see the verdict
 before any label moves; the bare form is the real gate. Both fetch the *current* ledger live,
 so a re-run after a re-plan picks up the new structure.
 
@@ -337,7 +337,7 @@ built to hold.
 
 On a **FAIL**, the ledger has hard defects and nothing flipped. Repair is **not** your job
 (you don't hand-edit a ledger). Instead, drive the **re-plan convergence loop**
-(`epic-ledger`'s `runConvergenceLoop(epicNumber)`, `packages/epic-ledger/src/loop.ts`):
+(`epic-ledger`'s `runConvergenceLoop(epicNumber)`, `packages/pipeline-cli/src/tools/epic-ledger/loop.ts`):
 
 1. **Re-invoke `plan-epic` on the epic** (through the `RePlanner` capability — see below),
    then **re-run the gate**.
@@ -453,8 +453,8 @@ This skill is one of a suite (`report` → `triage` → `plan-epic` → **`revie
 shared label semantics and the body/comment/dependency/story formats live in
 [`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md); the gate architecture is
 ADR [0047](https://github.com/kamp-us/phoenix/blob/main/.decisions/0047-review-plan-gate.md); the deterministic floor, the gate
-action, and the convergence loop are the `epic-ledger` package (`packages/epic-ledger`,
-published as `@kampus/epic-ledger` — ADR 0064). Your
+action, and the convergence loop are the `epic-ledger` tool (`packages/pipeline-cli/src/tools/epic-ledger`,
+published as part of `@kampus/pipeline-cli` — ADR 0064, consolidated by ADR 0103). Your
 input is a `plan-epic`-output epic whose children are `status:planned`; your output — the
 `planned → triaged` flip on a clean ledger (or a parked epic on an unfixable one), plus the
 verdict and any advisory caveats — is what makes `write-code`'s existing `status:triaged`
@@ -467,8 +467,9 @@ in, the PR it produces is AC-verified going out.
 When the suite ships as an installable plugin, `review-plan` is **repo-agnostic like every
 other skill** — there is no longer a single phoenix-pinned exception. Its deterministic gate
 is the `epic-ledger` floor, resolved **in-repo first, published fallback** (Step 1): phoenix
-runs the on-disk `packages/epic-ledger` bin, and a foreign install runs the published
-`@kampus/epic-ledger` CLI via `pnpm dlx`. So a non-phoenix install **runs** the gate instead
+runs the on-disk `packages/pipeline-cli/src/tools/epic-ledger` tool via the `pipeline-cli` bin,
+and a foreign install runs the published `@kampus/pipeline-cli` CLI via `pnpm dlx`. So a
+non-phoenix install **runs** the gate instead
 of degrading. The published version tracks the in-repo source (a gate-logic change bumps the
 `package.json` version and cuts a matching `epic-ledger-v*` release in the same change), so
 both worlds gate against the same floor. See ADR

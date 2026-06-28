@@ -735,7 +735,7 @@ it does **not** replace the PASS-marker read (Step 2) or the CI-green read (Step
 three must hold. The bundle is the evidence *behind* the marker, not a substitute for it.
 
 **Portability preflight (ADR [0086](https://github.com/kamp-us/phoenix/blob/main/.decisions/0086-ship-it-foreign-repo-degradation.md)).** The bundle is produced by phoenix CI
-(`.github/workflows/run-evidence.yml` + `packages/crabbox-manifest`), which the plugin does
+(`.github/workflows/run-evidence.yml` + `packages/pipeline-cli/src/tools/crabbox-manifest`), which the plugin does
 **not** ship. A foreign repo that installed the pipeline therefore produces *no* bundle ever,
 and a hard guard would make ship-it decline every merge there. So guard 2 is **conditional on
 the repo producing run-evidence at all**: if this repo defines no `run-evidence` workflow, the
@@ -850,7 +850,7 @@ clear — proceed to Step 4. Like Step 2's FAIL and Step 3's red, a bundle refus
 **successful run that declines to merge**, not an error.
 
 > **Verified against fixtures (AC #5).** The assertion logic is exercised against manifests
-> the producer package's fixtures fold into — `packages/crabbox-manifest/src/fixtures.ts`
+> the producer tool's fixtures fold into — `packages/pipeline-cli/src/tools/crabbox-manifest/fixtures.ts`
 > provides `passingRunSummary` (every command `exitCode: 0` → all `checks[]` `pass`) and
 > `failingRunSummary` (the `test` command `exitCode: 1` → a `fail` check), which the adapter
 > emits as `schemaVersion: 1` manifests stamped with `--commit`. Construct the two cases and
@@ -861,13 +861,13 @@ clear — proceed to Step 4. Like Step 2's FAIL and Step 3's red, a bundle refus
 > `schemaVersion: 2` trips assertion 2. Each refusal is distinct — no silent pass.
 
 ```bash
-# build a passing + failing manifest from the package fixtures, then run the four assertions
+# build a passing + failing manifest from the tool fixtures, then run the four assertions
 # against each (commit-mismatch and missing-bundle are the same passing manifest mutated):
-cd packages/crabbox-manifest
+cd packages/pipeline-cli/src/tools/crabbox-manifest
 HEAD_SHA=deadbeef
-pnpm adapter --run-summary <(node -e 'console.log(JSON.stringify(require("./src/fixtures").passingRunSummary()))') \
+node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.stringify(require("./fixtures.ts").passingRunSummary()))') \
   --commit "$HEAD_SHA" --environment test --output /tmp/pass.json   # all checks pass → clears
-pnpm adapter --run-summary <(node -e 'console.log(JSON.stringify(require("./src/fixtures").failingRunSummary()))') \
+node ../../bin.ts crabbox-manifest --run-summary <(node -e 'console.log(JSON.stringify(require("./fixtures.ts").failingRunSummary()))') \
   --commit "$HEAD_SHA" --environment test --output /tmp/fail.json   # test exit 1 → assertion 4 refuses
 # /tmp/pass.json with commit != $HEAD_SHA → assertion 3 (stale); rm /tmp/pass.json → assertion 1
 ```
