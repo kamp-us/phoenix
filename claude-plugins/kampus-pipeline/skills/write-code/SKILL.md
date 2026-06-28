@@ -564,7 +564,11 @@ a login-keyed ownership check is the degeneracy this guard exists to remove.
 > predicated on owning the child — gate on `claim_is_mine <child>`, not the epic, which you never
 > claim); repair R2/R3 guard the **PR's linked issue `#N`** (the claim lives on the issue, so
 > resolving `Fixes #N` and confirming its claim is `MY_CLAIM` is what proves the PR is yours to
-> push); type-routing closes guard the **issue** you close.
+> push); the **repair escalation** sites — both the N=3 cap block and the freeze-after-round-K
+> block — guard the **PR's linked issue `#N`** too (the escalation comment + `status:needs-triage`
+> relabel are number-targeting mutations reachable as a fresh stateless repair's *first* mutation,
+> escalating instead of running R2/R3, so the R2/R3 guards never fire — gate the escalation itself);
+> type-routing closes guard the **issue** you close.
 
 > **Composition + ship-ordering (the one honest caveat).** This guard is the **read-side
 > complement** of the claim *write*: it verifies the marker that the claim surface posts — the
@@ -1517,6 +1521,12 @@ If this PR has **already had 3 FAIL→fix rounds** (you'd be pushing a 4th fix a
 FAIL), **stop fixing and escalate** instead of pushing again:
 
 ```bash
+# mis-attribution guard (Step 3.5): escalation is a number-targeting mutation on #N (comment +
+# relabel), reachable as a fresh stateless repair's FIRST mutation when the PR is already at the
+# N=3 cap (write-code escalates INSTEAD OF running R2/R3, so the R2/R3 guards never fire). Gate it
+# fail-closed so a mis-dispatched repair never comments-on/relabels another agent's live issue (the
+# #1404 class — the relabel is more disruptive than a comment).
+claim_is_mine "$N" || { echo "refusing to escalate PR #$PR — its linked issue #$N is not my claim (Step 3.5)"; exit 1; }
 gh api repos/$REPO/issues/$N/comments -f body="$(cat <<'EOF'
 ### Repair escalation — PR #<PR> still FAILing after 3 rounds
 
@@ -1576,8 +1586,11 @@ done
 
 If **any** `ac:review-*` row in the current FAIL table is frozen (`round >= 3`), take the
 **escalation path** (the same `### Repair escalation` comment + `status:needs-triage` label as
-the N=3 block), naming the frozen appended criterion as the still-open finding and noting it
-was appended in/after the final round — then **stop, do not push**. The escalation comment's
+the N=3 block — and therefore the **same `claim_is_mine "$N"` fail-closed gate** that block
+carries, MANDATED before its comment+relabel exactly as in the N=3 case: a frozen-AC escalation
+is just as reachable as a mis-dispatched repair's first mutation, so it must not comment-on or
+relabel an issue whose claim isn't mine), naming the frozen appended criterion as the still-open
+finding and noting it was appended in/after the final round — then **stop, do not push**. The escalation comment's
 "Needs a human decision" framing fits exactly: a criterion that arrived with no budget left to
 drain it is the human's call (accept the PR as-is, extend the AC's life by a fresh triage, or
 drop the criterion). This keeps **append-rate bounded by fix-rate** — a gate cannot keep a
