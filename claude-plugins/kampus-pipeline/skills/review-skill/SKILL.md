@@ -556,8 +556,19 @@ Every check passed but Step 0 classified the PR **blocking** (it touches a gate-
 or any §CP path — the common case for a skill PR that edits a gate). Post the **same
 evidence**, but the first line is the **canonical advisory line** (§6.6) — **not** a
 merge-ready go-ahead. `ship-it` refuses this PR regardless; a human merges it. The advisory
-line carries **no `@ <sha>`** by design (it authorizes nothing, so there is nothing to bind),
-keeping your verdict out of `ship-it`'s PASS namespace.
+line carries **no first-line `@ <sha>`** by design (it authorizes nothing, so there is nothing to
+bind), keeping your verdict out of `ship-it`'s PASS namespace.
+
+> **The first-line `@ <sha>` is SHA-less by design; the SHA lives in the body; a delegated merge
+> actor confirms from the body, not the first-line marker (ADR
+> [0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md)).**
+> The advisory line omits the first-line `@ <sha>` so it never enters `ship-it`'s `PASS @ <sha> —
+> merge-ready` namespace — that omission is what makes `ship-it` refuse the §CP merge (ADR 0053).
+> It is *not* a dropped binding: you still record the reviewed head `@ <sha>` + the per-AC PASS in
+> the verdict **body** below. A delegated control-plane merge actor must **not** try to bind your
+> first-line marker (it would read as `unverified`); it confirms by reading the body's `@ <sha>`
+> against the PR's current head + the per-AC PASS, then applies `ship-it`'s just-in-time guards and
+> merges by hand.
 
 ```markdown
 review-skill: advisory — blocking-set PR (manual merge)

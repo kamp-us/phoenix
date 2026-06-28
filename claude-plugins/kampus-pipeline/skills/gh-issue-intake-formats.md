@@ -1332,6 +1332,20 @@ visible, evidence-bearing verdict on the PR. (`review-code`'s historical binding
 caveat shape is the one being retired in favor of this; the reconciliation is part of #424's
 build.)
 
+**The first-line `@ <sha>` is omitted by design — the SHA is bound in the body, and a
+delegated merge actor confirms from the body, not the first-line marker (ADR 0111).** The
+advisory line deliberately withholds the first-line `@ <sha>` so it never enters `ship-it`'s
+`PASS @ <sha> — merge-ready` namespace — that withholding is exactly what makes `ship-it` refuse
+the §CP merge (ADR 0053). It is **not** a missing binding: the head SHA the reviewer inspected is
+still recorded in the verdict **body** (the re-review `@ <sha>` line + the per-AC PASS table), per
+ADR 0058. So a **delegated** control-plane merge actor — an operator hand-merging a banked §CP PR
+on the maintainer's authority — must **not** try to bind the first-line marker (it will read as
+`unverified`, the SHA-less-by-design form #977 hit). It confirms the verdict by **reading the body**:
+the `@ <sha>` against the PR's current head + every AC marked PASS, then applies `ship-it`'s
+just-in-time guards (head freshness, mergeable, no failing required check) and merges by hand. A
+namespace-isolated bindable first-line SHA was rejected (it would invite automated §CP merging and
+erode ADR 0053) — see [ADR 0111](https://github.com/kamp-us/phoenix/blob/main/.decisions/0111-blocking-set-verdicts-sha-less-by-design.md).
+
 ---
 
 ## 7. Issue-claim semantics — assignee is a detect-and-tiebreak, not a lock

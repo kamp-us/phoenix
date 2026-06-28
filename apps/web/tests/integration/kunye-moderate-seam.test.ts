@@ -82,7 +82,7 @@ afterEach(async () => {
 describe("founder-seed write → Moderate.over(platform) read — the key-alignment seam (real D1)", () => {
 	it("a seeded founder discharges a Grant; a non-founder is denied (invisible Denied)", async () => {
 		await seedFounderUser(FOUNDER);
-		const res = await seedFounders(makeSeedDb(d1));
+		const res = await seedFounders(makeSeedDb(d1), [FOUNDER]);
 		expect(res.inserted).toBeGreaterThanOrEqual(1);
 
 		const granted = await discharge(FOUNDER);
@@ -98,7 +98,7 @@ describe("founder-seed write → Moderate.over(platform) read — the key-alignm
 
 	it("a revoked founder tuple denies the very next discharge (fresh per call)", async () => {
 		await seedFounderUser(FOUNDER);
-		await seedFounders(makeSeedDb(d1));
+		await seedFounders(makeSeedDb(d1), [FOUNDER]);
 		expect(Exit.isSuccess(await discharge(FOUNDER))).toBe(true);
 
 		await d1.prepare("DELETE FROM relation_tuple WHERE subject = ?").bind(FOUNDER).run();
