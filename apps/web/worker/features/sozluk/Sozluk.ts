@@ -297,6 +297,16 @@ export class Sozluk extends Context.Service<
 			after?: string | null;
 		}) => Effect.Effect<TermConnectionPage>;
 
+		/**
+		 * The public landing "sözlüğe son eklenenler" read (#1424): the most recent
+		 * terms, scoped to LIVE content. A term surfaces only via a not-removed,
+		 * not-sandboxed definition — the same record-level `removed_at IS NULL AND
+		 * sandboxed_at IS NULL` mask the public `landingStats` counts carry (#1391,
+		 * #1205) — so a çaylak's sandbox-only term never leaks onto the public front
+		 * door, even one whose `term_record` summary row exists with a zero live count.
+		 */
+		readonly getLandingTerms: (limit: number) => Effect.Effect<TermSummaryRow[]>;
+
 		readonly lookupDefinitionTermSlug: (definitionId: string) => Effect.Effect<string | null>;
 
 		readonly addDefinition: (
@@ -755,6 +765,47 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			return {...page, totalCount} satisfies TermConnectionPage;
 		});
 
+		const getLandingTerms = Effect.fn("Sozluk.getLandingTerms")(function* (limit: number) {
+			const n = Math.max(1, Math.min(limit, 50));
+			// Rank terms by their most recent LIVE definition. The mask lives on the
+			// `definition_record` arm (`removed_at IS NULL AND sandboxed_at IS NULL`),
+			// mirroring `landingStats` (#1391): a term with only sandboxed definitions
+			// contributes no row here, so its `term_record` summary (which can persist
+			// with a zero live count) never reaches the public front door (#1205, #1424).
+			const slugRows = yield* run((db) =>
+				db
+					.select({
+						termSlug: schema.definitionRecord.termSlug,
+						lastCreated: sql<number>`max(${schema.definitionRecord.createdAt})`,
+					})
+					.from(schema.definitionRecord)
+					.where(
+						and(
+							isNull(schema.definitionRecord.removedAt),
+							isNull(schema.definitionRecord.sandboxedAt),
+						),
+					)
+					.groupBy(schema.definitionRecord.termSlug)
+					.orderBy(desc(sql`max(${schema.definitionRecord.createdAt})`))
+					.limit(n),
+			);
+			const slugs = slugRows.map((r) => r.termSlug);
+			if (slugs.length === 0) return [];
+
+			const summaries = yield* run((db) =>
+				db
+					.select(termSummaryColumns)
+					.from(schema.termRecord)
+					.where(inArray(schema.termRecord.slug, slugs)),
+			);
+			const bySlug = new Map(summaries.map((r) => [r.slug, toTermSummaryRow(r)]));
+			// Re-order to the recency keyset (`inArray` loses the order).
+			return slugs.flatMap((slug) => {
+				const row = bySlug.get(slug);
+				return row ? [row] : [];
+			});
+		});
+
 		const lookupDefinitionTermSlug = Effect.fn("Sozluk.lookupDefinitionTermSlug")(function* (
 			definitionId: string,
 		) {
@@ -1093,6 +1144,7 @@ export const SozlukLive = Layer.effect(Sozluk)(
 			getTermSummariesByIds,
 			listTermSummaries,
 			listTermSummariesConnection,
+			getLandingTerms,
 			lookupDefinitionTermSlug,
 			addDefinition,
 			editDefinition,

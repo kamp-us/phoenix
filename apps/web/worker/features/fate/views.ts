@@ -87,6 +87,11 @@ export const Root: Record<string, unknown> = {
 	// `PHOENIX_AUTHORSHIP_LOOP`. Resolved inline by the `myAuthorshipStanding` resolver.
 	myAuthorshipStanding: authorshipStandingDataView,
 	landingStats: landingStatsDataView,
+	// The public landing lists (#1424) — live-only recent posts/terms, batched into
+	// the landing screen's one `useRequest` beside `landingStats` (ADR 0021). The
+	// `landingPosts`/`landingTerms` resolvers own the recency order + the sandbox mask.
+	landingPosts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
+	landingTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
 	// The moderation queue (ADR 0098) — a `Moderator.required`-gated list root; the
 	// `report.listOpen` resolver owns the oldest-first order.
 	"report.listOpen": list(openReportDataView),

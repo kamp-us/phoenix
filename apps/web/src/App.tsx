@@ -9,7 +9,6 @@ import {Footer} from "./components/layout/Footer";
 import {Topbar} from "./components/layout/Topbar";
 import {ToastProvider} from "./components/ui/Toast";
 import {Provider as TooltipProvider} from "./components/ui/Tooltip";
-import {LANDING_TERMS, POSTS} from "./fixtures";
 import {PHOENIX_AUTHORSHIP_LOOP} from "./flags/keys";
 import {useFlag} from "./flags/useFlag";
 import {safeReturnTo} from "./lib/returnTo";
@@ -143,7 +142,7 @@ export function App() {
 		<ThemeProvider>
 			<Routes>
 				<Route element={<Layout />}>
-					<Route path="/" element={<LandingPage posts={POSTS} terms={LANDING_TERMS} />} />
+					<Route path="/" element={<LandingPage />} />
 					<Route path="/pano" element={<PanoFeed />} />
 					<Route path="/pano/yeni" element={<PanoSubmitPage />} />
 					<Route path="/pano/site/:host" element={<PanoSiteFeedRoute />} />

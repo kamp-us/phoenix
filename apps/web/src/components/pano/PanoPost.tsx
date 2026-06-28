@@ -1,6 +1,4 @@
 import {useFateClient} from "react-fate";
-import {Link} from "react-router";
-import {Tag, type TagKind} from "../ui/atoms";
 import {useVoteFlash} from "../useVoteFlash";
 import {PostSaveView, PostVoteView} from "./PanoPostHeader";
 import {currentLocationReturnTo, useGatedToggle, useVoteToggle} from "./useVoteToggle";
@@ -126,90 +124,5 @@ export function PostSaveButton({postId, isSaved}: {postId: string; isSaved: bool
 		>
 			{saved ? "kaydedildi" : "kaydet"}
 		</button>
-	);
-}
-
-export type PanoPostData = {
-	id: string;
-	rank?: number;
-	title: string;
-	href: string;
-	url?: string;
-	host?: string;
-	tags?: {kind: TagKind; label: string; href?: string}[];
-	author: string;
-	agoLabel: string;
-	commentCount: number;
-	score: number;
-	myVote?: boolean | null;
-	isSaved?: boolean | null;
-};
-
-export function PanoPost({post, onHide}: {post: PanoPostData; onHide?: (id: string) => void}) {
-	const siteLabel = post.host ?? (post.url ? null : "yazı");
-
-	return (
-		<article className="kp-pano-post">
-			<span className="kp-pano-post__rank">
-				{post.rank != null ? String(post.rank).padStart(2, "0") : ""}
-			</span>
-			<PostVoteWidget postId={post.id} score={post.score} myVote={post.myVote ?? null} />
-			<div className="kp-pano-post__body">
-				<div className="kp-pano-post__title-row">
-					{post.tags?.length ? (
-						<span className="kp-pano-post__tags">
-							{post.tags.map((t, i) => (
-								<Tag key={i} kind={t.kind} href={t.href}>
-									{t.label}
-								</Tag>
-							))}
-						</span>
-					) : null}
-					<a className="kp-pano-post__title kp-prose" href={post.url ?? post.href}>
-						{post.title}
-					</a>
-					{post.host ? (
-						<Link className="kp-pano-post__site" to={`/pano/site/${post.host}`}>
-							{post.host}
-						</Link>
-					) : siteLabel ? (
-						<span className="kp-pano-post__site">{siteLabel}</span>
-					) : null}
-				</div>
-				<div className="kp-pano-post__meta">
-					<span className="author">@{post.author}</span>
-					<span className="dot">·</span>
-					<span>{post.agoLabel}</span>
-					<span className="dot">·</span>
-					<a href={`${post.href}#comments`}>{post.commentCount} yorum</a>
-					<span className="dot">·</span>
-					<PostSaveButton postId={post.id} isSaved={post.isSaved ?? null} />
-					{onHide ? (
-						<>
-							<span className="dot">·</span>
-							<button type="button" onClick={() => onHide(post.id)}>
-								gizle
-							</button>
-						</>
-					) : null}
-				</div>
-			</div>
-		</article>
-	);
-}
-
-export function PanoPostList({
-	posts,
-	onHide,
-}: {
-	posts: PanoPostData[];
-	onHide?: (id: string) => void;
-}) {
-	return (
-		<div className="kp-pano-list">
-			{posts.map((p) => (
-				<PanoPost key={p.id} post={p} onHide={onHide} />
-			))}
-		</div>
 	);
 }
