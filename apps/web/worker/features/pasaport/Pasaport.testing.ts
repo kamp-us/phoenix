@@ -1,6 +1,6 @@
 /**
  * `makePasaportStub` — the shared `Pasaport` test double. Defaults every one of
- * the 9 `Pasaport` methods to fail-on-contact (`Effect.die`) and takes a partial
+ * the 10 `Pasaport` methods to fail-on-contact (`Effect.die`) and takes a partial
  * override of the method(s) under test, returning the `Layer.succeed(Pasaport, …)`
  * layer. One place the interface shape lives — adding a method to `Pasaport` is a
  * single edit here, not shotgun surgery across every hand-rolled stub.
@@ -25,6 +25,7 @@ const failOnContact: PasaportShape = {
 	validateSession: die("validateSession"),
 	getUserById: die("getUserById"),
 	getUsersByIds: die("getUsersByIds"),
+	getProfileIdentitiesByIds: die("getProfileIdentitiesByIds"),
 	setUsername: die("setUsername"),
 	lookupProfile: die("lookupProfile"),
 	lookupProfileById: die("lookupProfileById"),

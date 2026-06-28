@@ -9,7 +9,7 @@
  * `Pasaport` no longer mounts the handler itself.
  */
 import type {Auth as BetterAuth} from "better-auth";
-import {and, eq, isNull, sql} from "drizzle-orm";
+import {and, eq, inArray, isNull, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
@@ -49,6 +49,20 @@ export interface UserRow {
 	// resolves the GLOBAL account-level standing off D1 at the point of use rather
 	// than from session state. `çaylak | yazar` only — an account is always ≥ çaylak.
 	tier: StoredTier;
+}
+
+/**
+ * The minimal identity tuple a batched roster read needs per çaylak — the display
+ * handle + karma, keyed by `userId`. A projection of {@link ProfileRow} (no counts,
+ * no image) for callers that join identity onto many users in ONE read; `username` is
+ * nullable here (an un-bootstrapped çaylak has no username yet). See
+ * `getProfileIdentitiesByIds`.
+ */
+export interface ProfileIdentityRow {
+	userId: string;
+	username: string | null;
+	displayName: string | null;
+	totalKarma: number;
 }
 
 export interface SetUsernameResult {
@@ -173,6 +187,15 @@ export class Pasaport extends Context.Service<
 
 		// Single `WHERE id IN (...)`; order is not guaranteed (fate re-associates by id).
 		readonly getUsersByIds: (userIds: ReadonlyArray<string>) => Effect.Effect<UserRow[]>;
+
+		// Batched identity-only profile read (handle + karma) for many users in ONE
+		// `WHERE user_id IN (...)`; the divan roster joins it onto its grouped rows so
+		// the client never fires a per-row by-id `Profile` read (#1423). Order is not
+		// guaranteed (the caller re-associates by `userId`); users with no profile row
+		// are simply absent.
+		readonly getProfileIdentitiesByIds: (
+			userIds: ReadonlyArray<string>,
+		) => Effect.Effect<ProfileIdentityRow[]>;
 
 		readonly setUsername: (input: {
 			userId: string;
@@ -486,6 +509,32 @@ export const makePasaportLive = (auth: Auth) =>
 								username: row.username ?? null,
 								tier: row.tier,
 							}) satisfies UserRow,
+					);
+				}),
+
+				getProfileIdentitiesByIds: Effect.fn("Pasaport.getProfileIdentitiesByIds")(function* (
+					userIds: ReadonlyArray<string>,
+				) {
+					if (userIds.length === 0) return [];
+					const rows = yield* run((db) =>
+						db
+							.select({
+								userId: schema.userProfile.userId,
+								username: schema.userProfile.username,
+								displayName: schema.userProfile.displayName,
+								totalKarma: schema.userProfile.totalKarma,
+							})
+							.from(schema.userProfile)
+							.where(inArray(schema.userProfile.userId, [...userIds])),
+					);
+					return rows.map(
+						(row) =>
+							({
+								userId: row.userId,
+								username: row.username ?? null,
+								displayName: row.displayName ?? null,
+								totalKarma: row.totalKarma,
+							}) satisfies ProfileIdentityRow,
 					);
 				}),
 

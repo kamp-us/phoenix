@@ -50,6 +50,28 @@ export interface DivanCaylakEntry {
 }
 
 /**
+ * The identity a roster row carries about its çaylak — the display handle
+ * (`displayName`/`username`) + their karma-on-others. Joined onto the counts in
+ * `Divan.roster` via a SINGLE batched profile read, so the roster's one fate request
+ * resolves every row's identity in-batch — no per-row by-id `Profile` read on the
+ * client (ADR 0021's no-waterfalls contract, #1423). Deliberately minimal: only the
+ * fields the roster row renders, never a widening of `Profile` onto this mod-gated
+ * surface. `username`/`displayName` are nullable (a çaylak may not have set a username
+ * yet); the client falls back to the bare "çaylak" label.
+ */
+export interface CaylakIdentityFields {
+	readonly username: string | null;
+	readonly displayName: string | null;
+	readonly totalKarma: number;
+}
+
+/**
+ * A roster row as delivered to the client: the per-kind counts + the çaylak's
+ * identity, both resolved in the same batched read.
+ */
+export type DivanRosterRow = DivanCaylakEntry & CaylakIdentityFields;
+
+/**
  * Group sandboxed backlog items by author into the pending-çaylak roster. Only
  * authors with ≥1 item appear (a person with no pending work is not on the queue),
  * sorted by total pending desc then authorId for a stable order. Items with a blank
