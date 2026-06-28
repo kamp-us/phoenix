@@ -1270,3 +1270,173 @@ describe("LiveDO role-guard: a misrouted RPC no-ops without mutating storage (#1
 		expect(await run(fake.state.storage.get<SubscriberRow>(key))).toBeUndefined();
 	});
 });
+
+// The platform-fired reap `alarm()` is a deep module (probe → partial-reap → reschedule)
+// whose reachable branches the fan-out tests above never reach: `do.test.ts`'s pre-#1369
+// alarm coverage hit only the unreachable→reap-all (die) path. These exercise the
+// connection-reports-stale partial reap, the reschedule-while-rows-remain re-arm, and
+// `check` itself (call-only-from-alarm), against the real instance over the DO-state fake.
+describe("LiveDO alarm reap branches (#1369)", () => {
+	// How many subscriber rows the topic still holds (the set the alarm reaps off).
+	const subRowCount = (
+		fake: ReturnType<typeof makeDurableObjectStateForTest>,
+		topicKey: string,
+	): Promise<number> =>
+		run(
+			fake.state.storage
+				.list<SubscriberRow>({prefix: `sub:${topicKey}:`})
+				.pipe(Effect.map((map) => map.size)),
+		);
+
+	it("partial reap: the alarm reaps EXACTLY the stale rows a reachable connection reports, not all", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Term:partial-reap";
+		const {instance: topic, fake} = makeTopic(cell, topicKey);
+
+		// A reachable connection with ONE live subscription. Its `check` reports
+		// staleness per-row, so the alarm must reap only the rows it names.
+		const connection = makeConnection(cell, "conn-partial");
+		const ownerId = "owner-partial";
+		await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		await run(
+			connection.subscribe({subId: "sub-keep", topics: [topicKey], ownerId, limits: LIMITS}),
+		);
+
+		// A second row for the SAME connection whose subId has no live subscription: same
+		// generation (clears the generation gate), so the staleness verdict is the
+		// subscription miss — a partial reap, NOT the reach-failure reap-all.
+		const staleRow: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-partial",
+			subId: "sub-stale",
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		await run(topic.register({row: staleRow, limits: LIMITS, subscribedAt: Date.now()}));
+		expect(await subRowCount(fake, topicKey)).toBe(2);
+
+		await run(topic.alarm());
+
+		// Exactly the stale row is gone; the live one survives (a reap-all clears both).
+		expect(await subRowCount(fake, topicKey)).toBe(1);
+		const pub = await run(topic.publish({topicKey, frame: entityFrame, limits: LIMITS}));
+		expect(pub.delivered).toBe(1);
+	});
+
+	it("reschedule: rows remaining after a reap re-arm the alarm", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Term:reschedule";
+		const {instance: topic, fake} = makeTopic(cell, topicKey);
+
+		const connection = makeConnection(cell, "conn-resched");
+		const ownerId = "owner-resched";
+		await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		await run(
+			connection.subscribe({subId: "sub-live", topics: [topicKey], ownerId, limits: LIMITS}),
+		);
+
+		// One reapable (no live subscription) + one live row, so the reap leaves rows behind.
+		const orphanRow: SubscriberRow = {
+			topicKey,
+			connectionId: "conn-resched",
+			subId: "sub-orphan",
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		await run(topic.register({row: orphanRow, limits: LIMITS, subscribedAt: Date.now()}));
+
+		// The platform clears the alarm before firing the handler; the fake does not, so
+		// stamp a sentinel and assert the handler RE-arms it past the sentinel.
+		await run(fake.state.storage.setAlarm(1));
+		await run(topic.alarm());
+
+		expect(await subRowCount(fake, topicKey)).toBe(1); // the live row remains
+		const rearmed = await run(fake.state.storage.getAlarm());
+		expect(rearmed).not.toBeNull();
+		expect(rearmed as number).toBeGreaterThan(1);
+	});
+
+	it("no reschedule: a reap that empties the topic leaves the alarm un-armed", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Term:empty-reap";
+		const {instance: topic, fake} = makeTopic(cell, topicKey);
+
+		// A row for a connection NOT in the cell → its probe dies → reap-all, zero left.
+		const row: SubscriberRow = {
+			topicKey,
+			connectionId: "gone",
+			subId: "sub-gone",
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		await run(topic.register({row, limits: LIMITS, subscribedAt: Date.now()}));
+
+		await run(fake.state.storage.setAlarm(1));
+		await run(topic.alarm());
+
+		expect(await subRowCount(fake, topicKey)).toBe(0);
+		// Nothing remains, so the handler must NOT reschedule — the sentinel stands.
+		expect(await run(fake.state.storage.getAlarm())).toBe(1);
+	});
+
+	it("check: classifies stale-by-generation and stale-by-revision against a live connection", async () => {
+		const cell = makeLiveCell();
+		const topicKey = "Term:check-direct";
+		makeTopic(cell, topicKey); // subscribe registers into the topic; it must be reachable.
+		const connection = makeConnection(cell, "conn-check");
+		const ownerId = "owner-check";
+		await run(
+			connection.openStream({
+				ownerId,
+				maxQueuedEventsPerConnection: LIMITS.maxQueuedEventsPerConnection,
+			}),
+		);
+		await run(
+			connection.subscribe({subId: "sub-fresh", topics: [topicKey], ownerId, limits: LIMITS}),
+		);
+
+		const base = {topicKey, connectionId: "conn-check", subId: "sub-fresh", updatedAt: Date.now()};
+		// 0: fresh — matches the live subscription's generation (1) + revision (1).
+		const fresh: SubscriberRow = {...base, generation: 1, revision: 1};
+		// 1: stale by generation — the connection's current generation is 1.
+		const oldGen: SubscriberRow = {...base, generation: 0, revision: 1};
+		// 2: stale by revision — live revision is 1, this row claims a newer one.
+		const oldRev: SubscriberRow = {...base, generation: 1, revision: 2};
+
+		const {stale} = await run(connection.check({subscriptions: [fresh, oldGen, oldRev]}));
+		expect(stale).toEqual([1, 2]);
+	});
+
+	it("check: a connection with no open stream reports every probed row stale", async () => {
+		const cell = makeLiveCell();
+		// Never `openStream`'d → `framesQueue` undefined → the no-open-stream all-stale branch.
+		const connection = makeConnection(cell, "conn-closed");
+		const topicKey = "Term:check-closed";
+		const base = {
+			topicKey,
+			connectionId: "conn-closed",
+			generation: 1,
+			revision: 1,
+			updatedAt: Date.now(),
+		};
+		const rows: ReadonlyArray<SubscriberRow> = [
+			{...base, subId: "a"},
+			{...base, subId: "b"},
+		];
+		const {stale} = await run(connection.check({subscriptions: rows}));
+		expect(stale).toEqual([0, 1]);
+	});
+});
