@@ -26,9 +26,10 @@ import {Button} from "../components/ui/Button";
 import {Dialog} from "../components/ui/Dialog";
 import type {ReportOutcome} from "../components/ui/ReportButton";
 import {Screen} from "../fate/Screen";
+import {useDraft, useDraftSubmit} from "../fate/useDraftSubmit";
 import {useReadbackRefetch} from "../fate/useReadbackRefetch";
 import {codeOf, LoadMoreButton, toIsoOrNull} from "../fate/wire";
-import type {FateWireCode} from "../lib/fateWireCodes";
+import {messageForCode, type WireMessageOverrides} from "../fate/wireMessages";
 import {authRedirectPath} from "../lib/returnTo";
 import {submitOnCmdEnter} from "../lib/submitShortcut";
 import {NotFoundPage} from "./NotFoundPage";
@@ -121,127 +122,36 @@ function useReportHandler() {
 	);
 }
 
-const postErrorMessage = (code: FateWireCode, fallback: string): string => {
-	switch (code) {
-		case "TITLE_REQUIRED":
-			return "başlık boş olamaz";
-		case "TITLE_TOO_LONG":
-			return `başlık en fazla ${TITLE_MAX} karakter olabilir`;
-		case "BODY_TOO_LONG":
-			return `metin en fazla ${BODY_MAX} karakter olabilir`;
-		case "POST_NOT_FOUND":
-			return "başlık bulunamadı";
-		default:
-			return fallback;
-	}
+/** Post-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
+const POST_OVERRIDES: WireMessageOverrides = {
+	TITLE_REQUIRED: "başlık boş olamaz",
+	TITLE_TOO_LONG: `başlık en fazla ${TITLE_MAX} karakter olabilir`,
+	BODY_TOO_LONG: `metin en fazla ${BODY_MAX} karakter olabilir`,
+	POST_NOT_FOUND: "başlık bulunamadı",
 };
 
-const commentErrorMessage = (code: FateWireCode, fallback: string): string => {
-	switch (code) {
-		case "BODY_REQUIRED":
-			return "yorum boş olamaz";
-		case "BODY_TOO_LONG":
-			return `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`;
-		case "COMMENT_NOT_FOUND":
-			return "yorum bulunamadı";
-		case "PARENT_NOT_FOUND":
-			return "yanıtlanan yorum bulunamadı";
-		default:
-			return fallback;
-	}
+/** Comment-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
+const COMMENT_OVERRIDES: WireMessageOverrides = {
+	BODY_REQUIRED: "yorum boş olamaz",
+	BODY_TOO_LONG: `yorum en fazla ${COMMENT_BODY_MAX} karakter olabilir`,
+	COMMENT_NOT_FOUND: "yorum bulunamadı",
+	PARENT_NOT_FOUND: "yanıtlanan yorum bulunamadı",
 };
 
 const currentLocationPath = () => `${window.location.pathname}${window.location.search}`;
 
-/**
- * The "in-flight + error + UNAUTHORIZED-redirect" submit envelope shared by every
- * form on this page. `run` flips `inFlight`, maps a returned wire error, and on
- * an `UNAUTHORIZED` throw navigates to the auth redirect. Single-field composers
- * layer `useDraft` on top; the two-field post-edit form uses this directly.
- */
-function useDraftSubmit(options: {
-	errorMessage: (code: FateWireCode, fallback: string) => string;
-	redirectPath: () => string;
-}) {
-	const [error, setError] = React.useState<string | null>(null);
-	const [inFlight, setInFlight] = React.useState(false);
-	const navigate = useNavigate();
-
-	const run = async (
-		mutate: () => Promise<{error?: {message: string} | null}>,
-		failureFallback: string,
-		onSuccess: () => void,
-	) => {
-		setError(null);
-		setInFlight(true);
-		try {
-			const {error: callError} = await mutate();
-			if (callError) {
-				setError(options.errorMessage(codeOf(callError), callError.message));
-				return;
-			}
-			onSuccess();
-		} catch (caught) {
-			const code = codeOf(caught);
-			if (code === "UNAUTHORIZED") {
-				navigate(authRedirectPath(options.redirectPath()));
-				return;
-			}
-			setError(options.errorMessage(code, failureFallback));
-		} finally {
-			setInFlight(false);
-		}
-	};
-
-	return {error, setError, inFlight, run};
-}
-
-/**
- * Shared single-body draft (validated textarea + the `useDraftSubmit` envelope),
- * used by the comment-add and comment-edit composers. `validate` returns one of
- * the page's `*ErrorMessage` strings — messages are not restated here.
- */
-function useDraft(options: {
-	initialBody: string;
-	validate: (trimmed: string, body: string) => string | null;
-	redirectPath: () => string;
-	run: (body: string) => Promise<{error?: {message: string} | null}>;
-	errorMessage: (code: FateWireCode, fallback: string) => string;
-	failureFallback: string;
-	onSuccess: () => void;
-}) {
-	const [body, setBody] = React.useState(options.initialBody);
-	const {error, setError, inFlight, run} = useDraftSubmit({
-		errorMessage: options.errorMessage,
-		redirectPath: options.redirectPath,
-	});
-
-	const submit = async (e: React.SyntheticEvent) => {
-		e.preventDefault();
-		const trimmed = body.trim();
-		const validationError = options.validate(trimmed, body);
-		if (validationError != null) {
-			setError(validationError);
-			return;
-		}
-		await run(() => options.run(body), options.failureFallback, options.onSuccess);
-	};
-
-	return {body, setBody, error, setError, inFlight, submit};
-}
-
-/** Client-side comment-body validation. Messages come from `commentErrorMessage` (single source). */
+/** Client-side comment-body validation. Messages come from the shared registry. */
 const validateCommentBody = (trimmed: string, body: string): string | null => {
-	if (trimmed.length === 0) return commentErrorMessage("BODY_REQUIRED", "");
-	if (body.length > COMMENT_BODY_MAX) return commentErrorMessage("BODY_TOO_LONG", "");
+	if (trimmed.length === 0) return messageForCode("BODY_REQUIRED", COMMENT_OVERRIDES);
+	if (body.length > COMMENT_BODY_MAX) return messageForCode("BODY_TOO_LONG", COMMENT_OVERRIDES);
 	return null;
 };
 
-/** Client-side post-edit validation. Messages come from `postErrorMessage` (single source). */
+/** Client-side post-edit validation. Messages come from the shared registry. */
 const validatePostFields = (trimmedTitle: string, body: string): string | null => {
-	if (trimmedTitle.length === 0) return postErrorMessage("TITLE_REQUIRED", "");
-	if (trimmedTitle.length > TITLE_MAX) return postErrorMessage("TITLE_TOO_LONG", "");
-	if (body.length > BODY_MAX) return postErrorMessage("BODY_TOO_LONG", "");
+	if (trimmedTitle.length === 0) return messageForCode("TITLE_REQUIRED", POST_OVERRIDES);
+	if (trimmedTitle.length > TITLE_MAX) return messageForCode("TITLE_TOO_LONG", POST_OVERRIDES);
+	if (body.length > BODY_MAX) return messageForCode("BODY_TOO_LONG", POST_OVERRIDES);
 	return null;
 };
 
@@ -304,12 +214,12 @@ function PostContentInner({post, idOrSlug}: {post: ViewRef<"Post">; idOrSlug: st
 		setError: setEditError,
 		inFlight: editInFlight,
 		run: runEdit,
-	} = useDraftSubmit({errorMessage: postErrorMessage, redirectPath: postRedirectPath});
+	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
 	const {
 		error: deleteError,
 		inFlight: deleteInFlight,
 		run: runDelete,
-	} = useDraftSubmit({errorMessage: postErrorMessage, redirectPath: postRedirectPath});
+	} = useDraftSubmit({overrides: POST_OVERRIDES, redirectPath: postRedirectPath});
 
 	const isAuthor = !!session.data?.user && session.data.user.id === data.authorId;
 
@@ -553,7 +463,7 @@ function Comments(props: CommentsProps) {
 		inFlight: deleteInFlight,
 		run: runDelete,
 	} = useDraftSubmit({
-		errorMessage: commentErrorMessage,
+		overrides: COMMENT_OVERRIDES,
 		redirectPath: () => `/pano/${props.postId}`,
 	});
 
@@ -746,7 +656,7 @@ function CommentComposer({
 			createdId.current = result?.id != null ? String(result.id) : null;
 			return {error: callError};
 		},
-		errorMessage: commentErrorMessage,
+		overrides: COMMENT_OVERRIDES,
 		failureFallback: "yorum eklenemedi",
 		onSuccess: () => {
 			setBody("");
@@ -850,7 +760,7 @@ function CommentEditComposer({
 		redirectPath: currentLocationPath,
 		run: (value) =>
 			fate.mutations.comment.edit({input: {id: commentId, body: value}, view: CommentTreeNodeView}),
-		errorMessage: commentErrorMessage,
+		overrides: COMMENT_OVERRIDES,
 		failureFallback: "yorum güncellenemedi",
 		onSuccess: onEdited,
 	});

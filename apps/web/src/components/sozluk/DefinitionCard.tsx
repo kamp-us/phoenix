@@ -7,9 +7,10 @@ import {useFateClient, useLiveView, type ViewRef, view} from "react-fate";
 import {useNavigate} from "react-router";
 import type {Definition, ReportReceipt} from "../../../worker/features/fate/views";
 import {useSession} from "../../auth/client";
+import {useDraftSubmit} from "../../fate/useDraftSubmit";
 import {codeOf, toIso} from "../../fate/wire";
+import {messageForCode, type WireMessageOverrides} from "../../fate/wireMessages";
 import {formatAgoTR} from "../../lib/datetime";
-import type {FateWireCode} from "../../lib/fateWireCodes";
 import {renderMarkdownInline, splitMarkdownBlocks} from "../../lib/markdown";
 import {authRedirectPath} from "../../lib/returnTo";
 import {useVoteToggle} from "../pano/useVoteToggle";
@@ -41,17 +42,11 @@ const ReportReceiptView = view<ReportReceipt>()({
 	created: true,
 });
 
-const messageForCode = (code: FateWireCode, fallback: string): string => {
-	switch (code) {
-		case "BODY_REQUIRED":
-			return "tanım boş olamaz";
-		case "BODY_TOO_LONG":
-			return `tanım en fazla ${BODY_MAX} karakter olabilir`;
-		case "DEFINITION_NOT_FOUND":
-			return "tanım bulunamadı";
-		default:
-			return fallback;
-	}
+/** Definition-form copy that overrides the shared {@link WIRE_MESSAGES} base. */
+const DEFINITION_OVERRIDES: WireMessageOverrides = {
+	BODY_REQUIRED: "tanım boş olamaz",
+	BODY_TOO_LONG: `tanım en fazla ${BODY_MAX} karakter olabilir`,
+	DEFINITION_NOT_FOUND: "tanım bulunamadı",
 };
 
 export interface DefinitionCardProps {
@@ -73,11 +68,19 @@ export function DefinitionCard(props: DefinitionCardProps) {
 
 	const [editing, setEditing] = React.useState(false);
 	const [editBody, setEditBody] = React.useState(definition.body);
-	const [editError, setEditError] = React.useState<string | null>(null);
 	const [confirmDelete, setConfirmDelete] = React.useState(false);
-	const [deleteError, setDeleteError] = React.useState<string | null>(null);
-	const [editInFlight, setEditInFlight] = React.useState(false);
-	const [deleteInFlight, setDeleteInFlight] = React.useState(false);
+	const editRedirectPath = () => `/sozluk/${props.slug}`;
+	const {
+		error: editError,
+		setError: setEditError,
+		inFlight: editInFlight,
+		run: runEdit,
+	} = useDraftSubmit({overrides: DEFINITION_OVERRIDES, redirectPath: editRedirectPath});
+	const {
+		error: deleteError,
+		inFlight: deleteInFlight,
+		run: runDelete,
+	} = useDraftSubmit({overrides: DEFINITION_OVERRIDES, redirectPath: editRedirectPath});
 
 	const voted = definition.myVote === true;
 	const {flashing, endFlash} = useVoteFlash(definition.score);
@@ -118,67 +121,38 @@ export function DefinitionCard(props: DefinitionCardProps) {
 		e.preventDefault();
 		const trimmed = editBody.trim();
 		if (trimmed.length === 0) {
-			setEditError("tanım boş olamaz");
+			setEditError(messageForCode("BODY_REQUIRED", DEFINITION_OVERRIDES));
 			return;
 		}
 		if (editBody.length > BODY_MAX) {
-			setEditError(`tanım en fazla ${BODY_MAX} karakter olabilir`);
+			setEditError(messageForCode("BODY_TOO_LONG", DEFINITION_OVERRIDES));
 			return;
 		}
-		setEditError(null);
-		setEditInFlight(true);
-		try {
-			const {error} = await fate.mutations.definition.edit({
-				input: {id: definition.id, body: editBody},
-				view: DefinitionView,
-			});
-			if (error) {
-				setEditError(messageForCode(codeOf(error), error.message));
-				return;
-			}
-			setEditing(false);
-		} catch (error) {
-			const code = codeOf(error);
-			if (code === "UNAUTHORIZED") {
-				redirectIfSignedOut();
-				return;
-			}
-			setEditError(messageForCode(code, "tanım güncellenemedi"));
-		} finally {
-			setEditInFlight(false);
-		}
+		await runEdit(
+			() =>
+				fate.mutations.definition.edit({
+					input: {id: definition.id, body: editBody},
+					view: DefinitionView,
+				}),
+			"tanım güncellenemedi",
+			() => setEditing(false),
+		);
 	}
 
 	async function onDeleteConfirm() {
-		setDeleteError(null);
-		setDeleteInFlight(true);
-		try {
-			// `definition.delete` is a **`Term`** mutation (it returns the re-resolved
-			// parent so counts update), so fate's `delete: true` can't be used — it
-			// would `deleteRecord("Term", definitionId)`, the wrong entity. And the
-			// definition lives in the *nested* `Term.definitions` connection, whose
-			// membership `insert`/`delete` can't touch. The resolver instead publishes
-			// `live.topic("Term.definitions", {id: slug}).deleteEdge`, which the
-			// list's `useLiveListView` consumes — the card drops out in place (this
-			// client's own view included), no reload.
-			const {error} = await fate.mutations.definition.delete({
-				input: {id: definition.id},
-			});
-			if (error) {
-				setDeleteError(messageForCode(codeOf(error), error.message));
-				return;
-			}
-			setConfirmDelete(false);
-		} catch (error) {
-			const code = codeOf(error);
-			if (code === "UNAUTHORIZED") {
-				redirectIfSignedOut();
-				return;
-			}
-			setDeleteError(messageForCode(code, "tanım silinemedi"));
-		} finally {
-			setDeleteInFlight(false);
-		}
+		// `definition.delete` is a **`Term`** mutation (it returns the re-resolved
+		// parent so counts update), so fate's `delete: true` can't be used — it
+		// would `deleteRecord("Term", definitionId)`, the wrong entity. And the
+		// definition lives in the *nested* `Term.definitions` connection, whose
+		// membership `insert`/`delete` can't touch. The resolver instead publishes
+		// `live.topic("Term.definitions", {id: slug}).deleteEdge`, which the
+		// list's `useLiveListView` consumes — the card drops out in place (this
+		// client's own view included), no reload.
+		await runDelete(
+			() => fate.mutations.definition.delete({input: {id: definition.id}}),
+			"tanım silinemedi",
+			() => setConfirmDelete(false),
+		);
 	}
 
 	async function onReport(): Promise<ReportOutcome> {
