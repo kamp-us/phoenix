@@ -20,9 +20,15 @@
  * single-fork model). `forks` + `disableConsoleIntercept` are retained for
  * stability against the alchemy deploy's child-process logging.
  */
+import react from "@vitejs/plugin-react";
 import {defineConfig} from "vitest/config";
 
 export default defineConfig({
+	// The `client` project below renders `*.test.tsx` through React's JSX runtime,
+	// so the JSX transform must be present — this config is loaded standalone
+	// (`--config vitest.config.ts`), not merged with `vite.config.ts`. The plugin
+	// only rewrites JSX/TSX, so it's inert for the `.ts` worker/unit tiers.
+	plugins: [react()],
 	test: {
 		// Run-scoped shared integration stage (ADR 0104 step 7, #1027): deploy the phoenix
 		// Stack ONCE per run in globalSetup and `provide` its handle to forked files
@@ -140,6 +146,22 @@ export default defineConfig({
 					],
 					exclude: ["node_modules/**", "dist/**"],
 					sequence: {groupOrder: 1},
+				},
+			},
+			{
+				test: {
+					// The SPA component/DOM tier (#1419): renders the client's real React
+					// shells (the `Screen` error boundary, hook drivers) and queries the
+					// DOM. It's a sibling of `unit`, not a replacement — `unit` keeps its
+					// pure-core `*.test.ts`; this tier owns the `*.test.tsx` that need a
+					// `jsdom` document. Worker-side tiers are untouched: the `unit` glob is
+					// `*.test.ts` (never `.tsx`), so a file lands in exactly one tier.
+					name: "client",
+					include: ["src/**/*.test.tsx"],
+					environment: "jsdom",
+					setupFiles: ["./tests/client/setup.ts"],
+					exclude: ["node_modules/**", "dist/**"],
+					sequence: {groupOrder: 2},
 				},
 			},
 		],
