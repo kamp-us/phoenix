@@ -21,6 +21,7 @@ import {toPostSort} from "../../../src/lib/panoFeedSort.ts";
 import {emptyKeysetPage} from "../../db/keyset.ts";
 import {toConnection} from "../fate/connection.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
+import {anonymousViewer} from "../lifecycle/EntityLifecycle.ts";
 import {Bookmark} from "./Bookmark.ts";
 import {Pano, type PostSummaryRow} from "./Pano.ts";
 import {toPost} from "./shapers.ts";
@@ -39,7 +40,31 @@ const SavedPostsArgs = Schema.Struct({
 	after: Schema.optional(Schema.String),
 });
 
+const LANDING_POSTS_DEFAULT = 5;
+const LandingPostsArgs = Schema.Struct({first: Schema.optional(Schema.Number)});
+
 export const lists = {
+	// The public landing "panoda son 24 saat" column (#1424) — most-recent posts,
+	// pinned to the ANONYMOUS sandbox viewer so the front door shows LIVE content
+	// only (`sandboxed_at IS NULL`, via `listPostsConnection`'s `sandboxVisibleWhere`),
+	// matching the public `landingStats` counts (#1391); a signed-in çaylak's own
+	// sandboxed post never surfaces here. Display-only — no `myVote`/`isSaved` stamping.
+	landingPosts: Fate.list(
+		{args: LandingPostsArgs, type: PostView},
+		Effect.fn("landingPosts")(function* ({args}) {
+			const pano = yield* Pano;
+			const page = yield* pano.listPostsConnection({
+				sort: "new",
+				first: args.first ?? LANDING_POSTS_DEFAULT,
+				sandboxViewer: anonymousViewer,
+			});
+			return toConnection<PostSummaryRow, Post>(
+				page,
+				(row) => row.id,
+				(row) => toPost(row),
+			);
+		}),
+	),
 	posts: Fate.list(
 		{args: PostsArgs, type: PostView},
 		Effect.fn("posts")(function* ({args}) {

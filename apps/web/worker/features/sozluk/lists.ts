@@ -30,6 +30,9 @@ const pageArgs = {
 const TermsArgs = Schema.Struct({sort: Schema.optional(Schema.String), ...pageArgs});
 const TermPageArgs = Schema.Struct(pageArgs);
 
+const LANDING_TERMS_DEFAULT = 5;
+const LandingTermsArgs = Schema.Struct({first: Schema.optional(Schema.Number)});
+
 const toTermConnection = (page: KeysetPage<TermSummaryRow>) =>
 	toConnection(page, (row) => row.slug, toTerm);
 
@@ -64,6 +67,16 @@ export const lists = {
 		{args: TermPageArgs, type: TermView},
 		Effect.fn("popularTerms")(function* ({args}) {
 			return yield* listTerms("popular", args);
+		}),
+	),
+	// The public landing "son eklenenler" column (#1424) — live-only recent terms,
+	// masked in `Sozluk.getLandingTerms`; a single non-paginated page.
+	landingTerms: Fate.list(
+		{args: LandingTermsArgs, type: TermView},
+		Effect.fn("landingTerms")(function* ({args}) {
+			const sozluk = yield* Sozluk;
+			const rows = yield* sozluk.getLandingTerms(args.first ?? LANDING_TERMS_DEFAULT);
+			return toTermConnection({rows, hasNextPage: false, endCursor: null});
 		}),
 	),
 };

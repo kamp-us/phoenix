@@ -14,6 +14,11 @@ const roots: FateRootsRecord = {
 	// `terms` resolver (which the request-key→root-name mapping forbids).
 	recentTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
 	popularTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
+	// The public landing terms (#1424) — live-only recent terms, batched into the
+	// landing screen's one `useRequest` beside `landingStats` (ADR 0021). The
+	// `landingTerms` resolver owns the recency order + the sandbox mask
+	// (`Sozluk.getLandingTerms`, the #1205 definition-arm mask).
+	landingTerms: list(termDataView, {orderBy: [{slug: "asc"}]}),
 };
 
 export const fateModule = {

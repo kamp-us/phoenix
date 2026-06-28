@@ -17,6 +17,10 @@ const roots: FateRootsRecord = {
 	// `post_bookmark` keyset, ADR 0019). Reuses `postDataView` so `isSaved`/`myVote`
 	// come for free.
 	savedPosts: list(postDataView),
+	// The public landing posts (#1424) — live-only recent posts, batched into the
+	// landing screen's one `useRequest` beside `landingStats` (ADR 0021). The
+	// `landingPosts` resolver owns the recency order + the sandbox mask.
+	landingPosts: list(postDataView, {orderBy: [{createdAt: "desc"}, {id: "desc"}]}),
 };
 
 export const fateModule = {

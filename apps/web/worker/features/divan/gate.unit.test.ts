@@ -1,8 +1,8 @@
 /**
  * The divan disjunctive gate (#1287, epic #1202) through the REAL capability seams
  * — not a re-implemented `tier === "yazar" || isMod` check. {@link requireDivanAccess}
- * discharges `ViewDivan`, whose check OR-s two genuine discharges: `OpenTerm.require`
- * (the Authorship yazar-floor `Level`) and `Moderate.over(platform)` (the `moderates`
+ * discharges `ViewDivan`, whose check OR-s two genuine discharges: `DivanStanding.require`
+ * (the divan's OWN yazar-floor `Level`) and `Moderate.over(platform)` (the `moderates`
  * `Relation`). The matrix proves both arms AND the disjunction independence: a mod who
  * is NOT a yazar still passes, a yazar who is NOT a mod still passes; a çaylak, a
  * visitor, and the anonymous actor are denied the invisible `Denied`.
@@ -15,15 +15,16 @@ import {
 	type Actor,
 	AgentAuthority,
 	CurrentActor,
+	type Grant,
 	human,
 	RelationStore,
 	unauthenticated,
 } from "@kampus/authz";
 import {Effect, Exit} from "effect";
-import type {Denied} from "../kunye/errors.ts";
+import type {Denied, RequiresLevel} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
 import type {Tier} from "../kunye/standing.ts";
-import {requireDivanAccess, ViewDivan} from "./gate.ts";
+import {DivanStanding, requireDivanAccess, ViewDivan} from "./gate.ts";
 
 /** Run the gate over `body = succeed("ok")` for one actor, scripting standing + mods. */
 const access = (
@@ -59,7 +60,7 @@ const access = (
 	);
 
 describe("divan gate — yazar OR mod, collapse-to-allow", () => {
-	it("a yazar (not a mod) is allowed — the Authorship arm alone passes", () => {
+	it("a yazar (not a mod) is allowed — the DivanStanding arm alone passes", () => {
 		assert.isTrue(Exit.isSuccess(access(human("u"), {tier: "yazar", mods: []})));
 	});
 
@@ -117,5 +118,43 @@ describe("divan gate — yazar OR mod, collapse-to-allow", () => {
 			),
 		);
 		assert.isTrue(Exit.isSuccess(exit));
+	});
+});
+
+/** Discharge `DivanStanding.require` for one actor at the given standing, no mods involved. */
+const standing = (actor: Actor, tier: Tier): Exit.Exit<Grant<DivanStanding>, RequiresLevel> =>
+	Effect.runSyncExit(
+		DivanStanding.require.pipe(
+			Effect.provideService(CurrentActor, {actor}),
+			Effect.provideService(AgentAuthority, {admits: () => Effect.succeed(false)}),
+			Effect.provideService(Kunye, {
+				tierOf: () => Effect.succeed(tier),
+				karmaOf: () => Effect.die(new Error("standing must not read karma")),
+				rootOf: (id: string) => Effect.succeed(id),
+			}),
+		),
+	);
+
+describe("DivanStanding — the divan's own yazar floor (no longer borrowing OpenTerm)", () => {
+	it("a yazar discharges the grant", () => {
+		assert.isTrue(Exit.isSuccess(standing(human("u"), "yazar")));
+	});
+
+	it("a çaylak is below the floor — denied", () => {
+		assert.isTrue(Exit.isFailure(standing(human("u"), "çaylak")));
+	});
+
+	it("a visitor is below the floor — denied", () => {
+		assert.isTrue(Exit.isFailure(standing(human("u"), "visitor")));
+	});
+
+	it("the anonymous actor is denied regardless of scripted standing", () => {
+		assert.isTrue(Exit.isFailure(standing(unauthenticated, "yazar")));
+	});
+
+	it("the denial names the yazar floor (RequiresLevel, FORBIDDEN)", () => {
+		const exit = standing(human("u"), "çaylak");
+		assert.isTrue(Exit.isFailure(exit));
+		assert.match(String(Exit.isFailure(exit) ? exit.cause : ""), /kunye\/RequiresLevel/);
 	});
 });
