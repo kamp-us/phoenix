@@ -15,7 +15,7 @@
  */
 import {assert, describe, it} from "@effect/vitest";
 import {Effect} from "effect";
-import {createDrizzle, makeDrizzleAccess} from "../../db/Drizzle.ts";
+import {createDrizzle, makeDrizzleAccess, orDieAccess} from "../../db/Drizzle.ts";
 import {makePersistPanoStats} from "./pano-stats.ts";
 
 function recordingD1(): {binding: D1Database; recorded: {sql: string}[]} {
@@ -52,7 +52,9 @@ function recordingD1(): {binding: D1Database; recorded: {sql: string}[]} {
 
 const recordCounts = Effect.gen(function* () {
 	const {binding, recorded} = recordingD1();
-	const access = makeDrizzleAccess(createDrizzle(binding));
+	// `makePersistPanoStats` takes the OR-DIE run (error channel `never`); compose
+	// `orDieAccess` over the raw access so the test's `run` matches that signature.
+	const access = orDieAccess(makeDrizzleAccess(createDrizzle(binding)));
 	yield* makePersistPanoStats(access.run)(new Date("2024-06-01T00:00:00.000Z"));
 	return recorded.map((q) => q.sql.toLowerCase());
 });
