@@ -7,9 +7,11 @@
  *
  * `checkIndex` is the CI gate: it succeeds (exit 0) when the committed `index.md`
  * matches the freshly-built one, and fails `CheckFailed` (exit non-zero) on a stale
- * index OR a duplicate ADR id (folded in by `build`). `generateIndex` rewrites the
- * index. A directory/file IO failure is an `IoError` (also non-zero — both failures,
- * undistinguished, per the bin's contract).
+ * index, a duplicate ADR id, or a filename/front-matter number mismatch (all folded
+ * in by `build` — `buildIndex` parses every file, so a `NumberMismatchError` from
+ * `parseAdrFile` and a `DuplicateIdError` both surface here). `generateIndex`
+ * rewrites the index. A directory/file IO failure is an `IoError` (also non-zero —
+ * both failures, undistinguished, per the bin's contract).
  */
 import {readdirSync, readFileSync, writeFileSync} from "node:fs";
 import {join} from "node:path";

@@ -2,9 +2,11 @@ name: decisions-index
 
 # The CI gate for ADR 0066: `.decisions/index.md` is generated output, so this
 # job fails a PR when the committed index is stale (does not match the generated
-# one) OR when two ADR files share an `id` (the sibling number-collision class).
-# It reuses pipeline-cli's `decisions-index check` mode — the derivation lives once
-# in the tool (buildIndex), never re-grepped here.
+# one), when two ADR files share an `id`, or when a file's `NNNN[a]` filename prefix
+# disagrees with its front-matter `id` (the number-collision class — #1471). The
+# filename invariant makes the id check also catch two files sharing a `0114-*.md`
+# prefix. It reuses pipeline-cli's `decisions-index check` mode — the derivation
+# lives once in the tool (buildIndex), never re-grepped here.
 on:
   pull_request:
 
@@ -14,7 +16,7 @@ concurrency:
 
 jobs:
   check:
-    name: check .decisions/index.md is fresh + no duplicate ADR id
+    name: check .decisions/index.md is fresh + no duplicate/mismatched ADR number
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.2.2
@@ -30,7 +32,8 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Exit 1 on a stale index or a duplicate ADR id (reason on stderr); any
-      # other non-zero means the run could not complete. See ADR 0066.
+      # Exit 1 on a stale index, a duplicate ADR id, or a filename/front-matter
+      # number mismatch (reason on stderr); any other non-zero means the run could
+      # not complete. See ADR 0066.
       - name: Check decisions index
         run: node packages/pipeline-cli/src/bin.ts decisions-index check
