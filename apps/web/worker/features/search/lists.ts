@@ -11,6 +11,7 @@ import {Fate} from "@kampus/fate-effect";
 import {Effect} from "effect";
 import * as Schema from "effect/Schema";
 import {toConnection} from "../fate/connection.ts";
+import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {toPost} from "../pano/shapers.ts";
 import type {Post} from "../pano/views.ts";
 import {PostView} from "../pano/views.ts";
@@ -40,11 +41,16 @@ export const lists = {
 	searchPosts: Fate.list(
 		{args: SearchArgs, type: PostView},
 		Effect.fn("searchPosts")(function* ({args}) {
+			// Resolve the sandbox viewer once (identity + moderator probe); search hides
+			// çaylak-sandboxed posts from anyone but their author + a mod (#1358), the
+			// same mask `posts`/`getPost` apply (#1205).
+			const sandboxViewer = yield* currentSandboxViewer;
 			const search = yield* Search;
 			const page = yield* search.searchPosts({
 				query: args.query,
 				...(args.first !== undefined ? {first: args.first} : {}),
 				...(args.after !== undefined ? {after: args.after} : {}),
+				viewer: sandboxViewer,
 			});
 			return toConnection<(typeof page.rows)[number], Post>(
 				page,

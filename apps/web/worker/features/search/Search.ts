@@ -16,11 +16,13 @@
  * cursor miss → empty page (the shared connection semantic).
  */
 
-import {sql} from "drizzle-orm";
+import {and, isNull, type SQL, sql} from "drizzle-orm";
 import {Context, Effect, Layer} from "effect";
 import {Drizzle, type DrizzleDb, orDieAccess} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import {forwardPage, resolveCursor} from "../../db/keyset.ts";
+import {anonymousViewer, type SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
+import {sandboxVisibleWhere} from "../lifecycle/SandboxVisibility.ts";
 import type {PostSummaryRow} from "../pano/Pano.ts";
 import {type TermSummaryRow, termSummaryColumns, toTermSummaryRow} from "../sozluk/term-summary.ts";
 import {toMatchExpression} from "./normalize.ts";
@@ -54,6 +56,16 @@ export interface SearchOpts {
 	after?: string | null | undefined;
 }
 
+/**
+ * `searchPosts` carries a {@link SandboxViewer} so the FTS read masks çaylak
+ * sandboxed posts (#1205) the same way every other pano read does — omitted reads
+ * as the least-privileged {@link anonymousViewer} (public-only), the fail-safe
+ * default. Terms have no sandbox dimension, so `searchTerms` needs no viewer.
+ */
+export interface SearchPostsOpts extends SearchOpts {
+	viewer?: SandboxViewer | undefined;
+}
+
 export class Search extends Context.Service<
 	Search,
 	{
@@ -64,8 +76,11 @@ export class Search extends Context.Service<
 		 */
 		readonly searchTerms: (opts: SearchOpts) => Effect.Effect<TermSearchPage>;
 
-		/** bm25-ranked keyset page of post-title matches (full `PostSummaryRow`s). */
-		readonly searchPosts: (opts: SearchOpts) => Effect.Effect<PostSearchPage>;
+		/**
+		 * bm25-ranked keyset page of post-title matches (full `PostSummaryRow`s),
+		 * masked to the viewer's sandbox-visible set (#1358) — see {@link SearchPostsOpts}.
+		 */
+		readonly searchPosts: (opts: SearchPostsOpts) => Effect.Effect<PostSearchPage>;
 	}
 >()("@kampus/search/Search") {}
 
@@ -80,10 +95,12 @@ const resolveCursorRank = async (
 	keyColumn: string,
 	match: string,
 	key: string,
+	visibleFilter: SQL | undefined,
 ): Promise<number | null> => {
+	const visible = visibleFilter ? sql` AND ${visibleFilter}` : sql``;
 	const row = await db
 		.run(
-			sql`SELECT bm25(${sql.raw(ftsTable)}) AS rank FROM ${sql.raw(ftsTable)} WHERE ${sql.raw(ftsTable)} MATCH ${match} AND ${sql.raw(keyColumn)} = ${key}`,
+			sql`SELECT bm25(${sql.raw(ftsTable)}) AS rank FROM ${sql.raw(ftsTable)} WHERE ${sql.raw(ftsTable)} MATCH ${match} AND ${sql.raw(keyColumn)} = ${key}${visible}`,
 		)
 		.then((r) => r.results[0] as {rank: number} | undefined);
 	return row?.rank ?? null;
@@ -99,18 +116,24 @@ const ftsKeysetKeys = async (
 	db: DrizzleDb,
 	ftsTable: string,
 	keyColumn: string,
-	opts: {match: string; first: number; after: string | null},
+	opts: {match: string; first: number; after: string | null; visibleFilter?: SQL | undefined},
 ): Promise<{
 	keys: string[];
 	hasNextPage: boolean;
 	endCursor: string | null;
 	totalCount: number;
 }> => {
-	const {match, first, after} = opts;
+	const {match, first, after, visibleFilter} = opts;
+	// The viewer's visibility predicate rides EVERY query over the FTS table — count,
+	// cursor-rank, and the keyed fetch — not just the hydrate. Masking the hydrate
+	// alone would leave `totalCount` and the keyset counting/slotting rows the viewer
+	// can't see (the #1312 count/pagination leak); applied here, count, cursor, keys,
+	// and rows all reflect the same visible set (#1358).
+	const visible = visibleFilter ? sql` AND ${visibleFilter}` : sql``;
 
 	const totalCount = await db
 		.run(
-			sql`SELECT count(*) AS n FROM ${sql.raw(ftsTable)} WHERE ${sql.raw(ftsTable)} MATCH ${match}`,
+			sql`SELECT count(*) AS n FROM ${sql.raw(ftsTable)} WHERE ${sql.raw(ftsTable)} MATCH ${match}${visible}`,
 		)
 		.then((r) => Number((r.results[0] as {n: number} | undefined)?.n ?? 0));
 
@@ -118,7 +141,7 @@ const ftsKeysetKeys = async (
 	// cursor-miss decision (ADR 0082). bm25 rank `0` is a valid hit, not a miss.
 	const cursor = resolveCursor<number>(
 		after,
-		after ? await resolveCursorRank(db, ftsTable, keyColumn, match, after) : null,
+		after ? await resolveCursorRank(db, ftsTable, keyColumn, match, after, visibleFilter) : null,
 	);
 	if (cursor.kind === "miss") {
 		return {keys: [], hasNextPage: false, endCursor: null, totalCount};
@@ -135,12 +158,37 @@ const ftsKeysetKeys = async (
 
 	const fetched = await db
 		.run(
-			sql`SELECT ${sql.raw(keyColumn)} AS key FROM ${sql.raw(ftsTable)} WHERE ${sql.raw(ftsTable)} MATCH ${match}${after_} ORDER BY ${rankExpr} ASC, ${sql.raw(keyColumn)} ASC LIMIT ${first + 1}`,
+			sql`SELECT ${sql.raw(keyColumn)} AS key FROM ${sql.raw(ftsTable)} WHERE ${sql.raw(ftsTable)} MATCH ${match}${visible}${after_} ORDER BY ${rankExpr} ASC, ${sql.raw(keyColumn)} ASC LIMIT ${first + 1}`,
 		)
 		.then((r) => (r.results as Array<{key: string}>).map((row) => row.key));
 
 	const page = forwardPage(fetched, first, (key: string) => key);
 	return {keys: page.rows, hasNextPage: page.hasNextPage, endCursor: page.endCursor, totalCount};
+};
+
+/**
+ * The viewer's sandbox read-mask as an FTS-query predicate: the post id must be in
+ * the set of non-removed, sandbox-visible posts for this viewer. `post_search` holds
+ * only `id`/`norm` (no lifecycle columns), so the mask is expressed as `id IN
+ * (<visible post ids>)` joining back to `post_record` — the same {@link
+ * sandboxVisibleWhere} predicate the other three pano reads AND in (#1205), keyed by
+ * the FTS row's id. A moderator viewer drops the sandbox arm (sees all), but every
+ * viewer still excludes removed posts (ADR 0096), matching the hydrate's prior guard.
+ */
+const postVisibleFilter = (db: DrizzleDb, viewer: SandboxViewer): SQL => {
+	const visibleIds = db
+		.select({id: schema.postRecord.id})
+		.from(schema.postRecord)
+		.where(
+			and(
+				isNull(schema.postRecord.removedAt),
+				sandboxVisibleWhere(
+					{sandboxedAt: schema.postRecord.sandboxedAt, authorId: schema.postRecord.authorId},
+					viewer,
+				),
+			),
+		);
+	return sql`id IN (${visibleIds})`;
 };
 
 export const SearchLive = Layer.effect(Search)(
@@ -178,15 +226,21 @@ export const SearchLive = Layer.effect(Search)(
 			return {rows, hasNextPage, endCursor, totalCount} satisfies TermSearchPage;
 		});
 
-		const searchPosts = Effect.fn("Search.searchPosts")(function* (opts: SearchOpts) {
+		const searchPosts = Effect.fn("Search.searchPosts")(function* (opts: SearchPostsOpts) {
 			const match = toMatchExpression(opts.query);
 			if (match === null) return emptyPage<PostSummaryRow>();
 
 			const first = clampFirst(opts.first);
 			const after = opts.after ?? null;
+			const viewer = opts.viewer ?? anonymousViewer;
 
 			const {keys, hasNextPage, endCursor, totalCount} = yield* run((db) =>
-				ftsKeysetKeys(db, "post_search", "id", {match, first, after}),
+				ftsKeysetKeys(db, "post_search", "id", {
+					match,
+					first,
+					after,
+					visibleFilter: postVisibleFilter(db, viewer),
+				}),
 			);
 			if (keys.length === 0) {
 				return {rows: [], hasNextPage, endCursor, totalCount} satisfies PostSearchPage;
