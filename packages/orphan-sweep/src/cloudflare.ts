@@ -325,10 +325,15 @@ const listFlagship = Effect.fn("Cloudflare.listFlagship")(function* (creds: Cred
 		if (app.name.startsWith(FLAGSHIP_APP_NAME_PREFIX)) {
 			const flagsUrl = `${CF_API}/accounts/${creds.accountId}/flagship/apps/${app.id}/flags?per_page=1000`;
 			const flagsArgs = curlArgs(creds.token, "GET", flagsUrl);
+			// `allow: [404]` keeps a flags-sub-resource 404 (an app present in the apps list but
+			// mid-deletion / in a no-flags state) from aborting the whole ~210-app fan-out (#1506):
+			// the 404 envelope (`success:false`, `result:null`) folds to ZERO flags. Only a 2xx
+			// (CF returns `success:true`) or that tolerated 404 reaches the decode — any other
+			// non-2xx already surfaced as a `CfHttpError` in `runCurlOk` — so `result ?? []` is the
+			// empty flag set, and the app itself is still emitted as a `flagship-app` below.
 			const flags = yield* decodeFlagshipFlags(
-				yield* parseJson(flagsArgs, yield* runCurlOk(flagsUrl, flagsArgs)),
+				yield* parseJson(flagsArgs, yield* runCurlOk(flagsUrl, flagsArgs, {allow: [404]})),
 			);
-			yield* checkSuccess(flagsUrl, flags.success, flags.errors);
 			for (const flag of flags.result ?? []) {
 				resources.push({
 					kind: "flagship-flag",

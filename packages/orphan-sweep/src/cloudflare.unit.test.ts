@@ -187,4 +187,33 @@ describe("CloudflareLive — transient-fault resilience + error surfacing (#1506
 			assert.isFalse(surfaces.includes(TOKEN), "the bearer token must not appear in the error");
 		}
 	});
+
+	it("tolerates a per-app flags 404 — the app is still swept and the enumeration does not abort", async () => {
+		// listWorkers (empty) → listD1 (empty) → listFlagship apps (one prefixed app) → that app's
+		// /flags sub-resource 404s (the app exists in the apps list but is mid-deletion / in a
+		// no-flags state). The 404 folds to zero flags, the app is STILL emitted as a flagship-app
+		// resource, and the whole 210-app-style fan-out COMPLETES instead of aborting (#1506).
+		const APP_ID = "app-404-flags";
+		const APP_NAME = "phoenix-phoenix-flags-pr-999";
+		const exit = await runListSeq([
+			{stdout: EMPTY_OK}, // listWorkers
+			{stdout: EMPTY_OK}, // listD1
+			{
+				stdout: withStatus(
+					`{"success":true,"errors":[],"result":[{"id":"${APP_ID}","name":"${APP_NAME}"}]}`,
+					200,
+				),
+			}, // listFlagship apps
+			{
+				stdout: withStatus(
+					`{"success":false,"errors":[{"code":7003,"message":"Could not route to flags"}],"result":null}`,
+					404,
+				),
+			}, // the app's /flags sub-resource → 404
+		]);
+		assert.strictEqual(exit._tag, "Success");
+		if (exit._tag === "Success") {
+			assert.deepStrictEqual(exit.value, [{kind: "flagship-app", name: APP_NAME, appId: APP_ID}]);
+		}
+	});
 });
