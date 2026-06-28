@@ -14,7 +14,7 @@ import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Denied, RequiresLevel, VouchLimitReached} from "../kunye/errors.ts";
 import {Kunye} from "../kunye/Kunye.ts";
-import {Moderate, requireModeration} from "../kunye/moderate.ts";
+import {isModerator, Moderate, requireModeration} from "../kunye/moderate.ts";
 import {VOUCH_CONCURRENT_CAP} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
 import {requireVouch, Vouch, voucherOf} from "../kunye/vouch.ts";
@@ -89,8 +89,10 @@ export const mutations = {
 			const result = yield* pasaport.setUsername({userId: user.id, value: input.value});
 			// email comes from the session; the rest from the service result. `tier` is
 			// the TRUSTED rank from `Kunye.tierOf` (stored column), never the session
-			// field (#1297) — keeping this `User` shape identical to the `me` query's.
+			// field (#1297); `isModerator` is the SELF mod signal off the `moderates`
+			// relation tuple (#1320) — both keep this `User` shape identical to `me`'s.
 			const tier = yield* kunye.tierOf(user.id);
+			const isMod = yield* isModerator(user.id);
 			return toUser({
 				id: result.userId,
 				email: user.email,
@@ -98,6 +100,7 @@ export const mutations = {
 				image: result.image,
 				username: result.username,
 				tier,
+				isModerator: isMod,
 			});
 		}),
 	),

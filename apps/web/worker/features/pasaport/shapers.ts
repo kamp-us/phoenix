@@ -29,6 +29,10 @@ export interface UserFields {
 	// the untrusted session field. `Tier` (not `StoredTier`) so a row-missing principal
 	// shapes as `visitor`.
 	tier: Tier;
+	// The SELF moderator signal (#1320), resolved off the `moderates` relation tuple
+	// (`kunye/moderate.ts`'s `isModerator`) — server-authoritative, the viewer's own
+	// status, never a `user.role` column (ADR 0107).
+	isModerator: boolean;
 }
 
 export const toUser = (r: UserFields): User => ({
@@ -39,6 +43,7 @@ export const toUser = (r: UserFields): User => ({
 	image: r.image,
 	username: r.username,
 	tier: r.tier,
+	isModerator: r.isModerator,
 });
 
 // Stamps the client normalization key `id` === `userId` (a `Profile` is

@@ -15,6 +15,7 @@ import {connectionArgs, keysetInput, toConnection} from "../fate/connection.ts";
 import {Flags} from "../flagship/Flags.ts";
 import {provideRequestFlags} from "../flagship/FlagsContext.ts";
 import {Kunye} from "../kunye/Kunye.ts";
+import {isModerator} from "../kunye/moderate.ts";
 import {currentSandboxViewer} from "../kunye/sandbox.ts";
 import {promotionBarFor} from "../kunye/standing.ts";
 import {VouchLedger} from "../kunye/VouchLedger.ts";
@@ -53,6 +54,10 @@ export const queries = {
 			// (#1297). A row-missing principal ranks `visitor`, so this also covers
 			// the fallback branch below.
 			const tier = yield* kunye.tierOf(user.id);
+			// The SELF moderator signal (#1320): server-authoritative off the `moderates`
+			// relation tuple, keyed on the CURRENT user — the viewer's own status, never
+			// another's. Fills `isModerator` identically to the `setUsername` write path.
+			const isMod = yield* isModerator(user.id);
 			const fresh = yield* pasaport.getUserById(user.id);
 			if (!fresh) {
 				return toUser({
@@ -62,9 +67,10 @@ export const queries = {
 					image: user.image ?? null,
 					username: null,
 					tier,
+					isModerator: isMod,
 				});
 			}
-			return toUser({...fresh, tier});
+			return toUser({...fresh, tier, isModerator: isMod});
 		}),
 	),
 	// `contributions` is delivered inline (not via a source `connection`
