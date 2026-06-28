@@ -76,16 +76,19 @@ describe("vouchVisible / canVouch — the yazar vouch affordance, gated on detai
 	});
 });
 
-describe("promoteVisible — the mod-only yazar-yap affordance", () => {
-	it("shows for a non-yazar holder of divan access (a mod by the gate's other arm)", () => {
-		// On the detail (server-gated), a çaylak/visitor present can only be a mod.
-		expect(promoteVisible("çaylak")).toBe(true);
-		expect(promoteVisible("visitor")).toBe(true);
+describe("promoteVisible — the mod-only yazar-yap affordance, keyed on isModerator", () => {
+	it("shows for a moderator (the trusted server-authoritative signal)", () => {
+		expect(promoteVisible(true)).toBe(true);
 	});
 
-	it("hides from a yazar (who cannot promote) and until the tier loads", () => {
-		expect(promoteVisible("yazar")).toBe(false);
-		expect(promoteVisible(undefined)).toBe(false);
+	it("shows for a dual-role yazar+moderator — the #1320 bug (tier-keying hid it)", () => {
+		// isModerator is independent of tier; a founding author-mod (#1207) reads
+		// tier "yazar" yet must still see promote.
+		expect(promoteVisible(true)).toBe(true);
+	});
+
+	it("hides from a non-moderator (a yazar-only viewer keeps only kefil ol)", () => {
+		expect(promoteVisible(false)).toBe(false);
 	});
 });
 

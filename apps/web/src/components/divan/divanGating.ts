@@ -6,23 +6,24 @@
  * `phoenix-authorship-loop` flag (#1204).
  *
  * The role model the gates encode (mirroring the backend `requireDivanAccess`
- * disjunction, divan/gate.ts): the divan is reached by yazar OR mod. The frontend
- * has only two trusted signals — the flag value and `useMe().me.tier` — plus the
- * server's own access verdict (the gated `divan.roster` read either resolves or
- * denies with the invisible `UNAUTHORIZED`). There is NO client-readable mod flag
- * (`role` is not on the `User` view), so:
+ * disjunction, divan/gate.ts): the divan is reached by yazar OR mod. The frontend's
+ * trusted signals are the flag value and `useMe().me` — both `tier` and the
+ * server-authoritative `isModerator` (#1320, read off the `moderates` relation
+ * tuple) — plus the server's own access verdict (the gated `divan.roster` read
+ * either resolves or denies with the invisible `UNAUTHORIZED`). So:
  *
  *   - **Access** (topbar entry + page) is server-authoritative: the
  *     `useDivanAccess` probe asks the gated read whether THIS user stands, which
  *     answers the yazar-OR-mod question without a client authority guess.
  *   - **vouch** ("kefil ol") is the yazar power (`requireVouch` = yazar floor), so
  *     it gates on the trusted `tier === "yazar"`.
- *   - **promote** ("yazar yap") is the mod power (`user.promote` is `Moderate`-gated).
- *     On the detail — reached only past the server gate — a holder who is NOT a
- *     yazar can only have passed as a mod, so the promote affordance shows for a
- *     non-yazar access-holder. The server remains the sole authority (the shipped
- *     `PromotionActions` convention, #1206): an unauthorized call comes back the
- *     invisible denial.
+ *   - **promote** ("yazar yap") is the mod power (`user.promote` is `Moderate`-gated),
+ *     so it gates on the trusted `isModerator` signal — NOT on `tier`. Keying off
+ *     `tier` ("non-yazar present must be a mod") wrongly hid promote from a dual-role
+ *     yazar+moderator, who reads `tier: "yazar"` (#1320, #1207's founding cohort);
+ *     `isModerator` shows it to the actual moderator regardless of tier. The server
+ *     remains the sole authority (the shipped `PromotionActions` convention, #1206):
+ *     an unauthorized call comes back the invisible denial.
  */
 import {TARGET_KINDS, type TargetKind} from "../../../worker/db/target-kind";
 import type {Tier} from "../../../worker/features/kunye/standing";
@@ -65,14 +66,14 @@ export function canVouch(tier: Tier | undefined, detailOpened: boolean): boolean
 }
 
 /**
- * Show the mod **"yazar yap"** (promote) affordance for a NON-yazar holder of
- * divan access. On the detail — rendered only after the server granted access — a
- * non-yazar present can only be a mod (the gate's other arm), so this targets mods
- * without a client `role` read; a pure yazar (who cannot promote) is correctly not
- * shown it. `tier` undefined (me not yet loaded) hides it until the tier resolves.
+ * Show the mod **"yazar yap"** (promote) affordance iff the viewer is a platform
+ * moderator (the trusted server-authoritative `isModerator` signal, #1320). Keyed
+ * off `isModerator` — never `tier` — so a dual-role yazar+moderator (who reads
+ * `tier: "yazar"`, #1207's founding cohort) still sees promote, while a yazar-only
+ * viewer does not. `false`/not-yet-loaded `me` resolves to hidden.
  */
-export function promoteVisible(tier: Tier | undefined): boolean {
-	return tier !== undefined && tier !== "yazar";
+export function promoteVisible(isModerator: boolean): boolean {
+	return isModerator;
 }
 
 /**

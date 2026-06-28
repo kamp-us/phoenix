@@ -75,9 +75,11 @@ const PromotionReceiptView = view<PromotionReceipt>()({
 export function CaylakDetail({
 	authorId,
 	viewerTier,
+	viewerIsModerator,
 }: {
 	readonly authorId: string;
 	readonly viewerTier: Tier | undefined;
+	readonly viewerIsModerator: boolean;
 }) {
 	const result = useRequest({
 		"divan.backlog": {list: BacklogConnectionView, args: {authorId, first: BACKLOG_PAGE_SIZE}},
@@ -94,7 +96,11 @@ export function CaylakDetail({
 				<Screen fallback={<IdentityFallback />} error={() => <IdentityFallback />}>
 					<CaylakIdentity authorId={authorId} />
 				</Screen>
-				<ReviewerActions authorId={authorId} viewerTier={viewerTier} />
+				<ReviewerActions
+					authorId={authorId}
+					viewerTier={viewerTier}
+					viewerIsModerator={viewerIsModerator}
+				/>
 			</header>
 
 			<h3 className="kp-divan__detail-title">incelemedeki içerikler</h3>
@@ -115,9 +121,11 @@ export function CaylakDetail({
 function ReviewerActions({
 	authorId,
 	viewerTier,
+	viewerIsModerator,
 }: {
 	readonly authorId: string;
 	readonly viewerTier: Tier | undefined;
+	readonly viewerIsModerator: boolean;
 }) {
 	const fate = useFateClient();
 	const [vouchOpen, setVouchOpen] = useState(false);
@@ -150,7 +158,7 @@ function ReviewerActions({
 		}
 	}
 
-	const showPromote = promoteVisible(viewerTier);
+	const showPromote = promoteVisible(viewerIsModerator);
 	const showVouch = vouchVisible(viewerTier);
 
 	if (!showPromote && !showVouch) return null;
