@@ -27,12 +27,18 @@ import type {User} from "../../worker/features/fate/views";
 
 const PinView = view<User>()({id: true});
 
-export function useGlobalLivePin(userId: string | null): void {
+// `retryTick` bumps on a cold-start LIVE_UNAVAILABLE/503 back-off (ADR 0095): it is
+// in the effect deps, so each bump tears down the failed subscription and
+// re-subscribes — fate's native client rebuilds the whole EventSource connect when
+// the pin is the only operation, so a bump retries the entire connect on the next
+// mount, exactly as ADR 0095 specifies. The back-off scheduling + bounded budget
+// live in `FateProvider`, which owns both the client and this pin.
+export function useGlobalLivePin(userId: string | null, retryTick = 0): void {
 	const client = useFateClient();
 
 	useEffect(() => {
 		if (userId == null) return;
 		const ref = client.ref("User", userId, PinView);
 		return client.subscribeLiveView(PinView, ref);
-	}, [client, userId]);
+	}, [client, userId, retryTick]);
 }
