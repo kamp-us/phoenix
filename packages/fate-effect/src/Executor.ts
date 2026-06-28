@@ -128,8 +128,6 @@ interface CompileOptions {
 	readonly services: Context.Context<never>;
 }
 
-// --- the single conversion point ----------------------------------------------------
-
 /**
  * Run one resolver effect: steps 2–4 of the module doc's pipeline —
  * provision (`provideRequestPair`), the worker runtime (the package's ONE
@@ -154,8 +152,6 @@ const runResolve = <A>(
 			// failure if one exists, otherwise the squashed defect.
 			throw encodeWireError(failureOf(exit.cause));
 		});
-
-// --- compiled operation records ------------------------------------------------------
 
 /**
  * One adapter for both args-shaped categories — queries and lists were
@@ -188,8 +184,6 @@ const adaptMutation = (
 	type: mutationWireType(name, entry),
 	resolve: ({ctx, input, select}) => runResolve(options, ctx, entry.resolve({input, select})),
 });
-
-// --- compiled sources ------------------------------------------------------------------
 
 /**
  * Adapt a `Fate.source` entry's spanned Effect handlers to fate's
@@ -264,8 +258,6 @@ export const compileFateSources = (
 	options: CompileOptions,
 ): CompiledFateSources =>
 	buildSourceResolver(sources, (entry) => adaptSourceHandlers(options, entry.handlers));
-
-// --- the compile step + fetch handler -----------------------------------------------
 
 /**
  * Compile a validated `FateServer` service into a real `createFateServer`

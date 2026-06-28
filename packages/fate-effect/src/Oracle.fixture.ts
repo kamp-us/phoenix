@@ -33,8 +33,6 @@ import type {FateRequestContext} from "./RequestContext.ts";
 import {FateServer} from "./Server.ts";
 import {FateWireCode} from "./WireError.ts";
 
-// --- span observation channel ------------------------------------------------------
-//
 // The term handler and Term source log the span they run under; the
 // observability suites reset `spanLog` and assert nesting. The oracle suites
 // never read it — the pushes are inert there.
@@ -49,8 +47,6 @@ export const logSpan = Effect.gen(function* () {
 		parent: Option.isSome(span.parent) ? span.parent.value.spanId : undefined,
 	});
 });
-
-// --- fixture rows + views (sozluk-shaped) ------------------------------------------
 
 export type TermRow = {
 	slug: string;
@@ -78,8 +74,6 @@ export class DefinitionView extends FateDataView<DefinitionRow>()("Definition")(
 	votes: true,
 }) {}
 
-// --- the in-memory database (the integration seam: mutable state behind a service) ----------
-
 export class SozlukDb extends Context.Service<
 	SozlukDb,
 	{
@@ -97,8 +91,6 @@ export const SozlukDbLive = Layer.sync(SozlukDb, () => ({
 	definitions: [],
 }));
 
-// --- fixture errors -----------------------------------------------------------------
-
 export class BodyRequired extends Schema.TaggedErrorClass<BodyRequired>()(
 	"test/BodyRequired",
 	{message: Schema.String},
@@ -110,8 +102,6 @@ export class DefinitionNotFound extends Schema.TaggedErrorClass<DefinitionNotFou
 	{message: Schema.String},
 	{[FateWireCode]: "VOTE_TARGET_NOT_FOUND"},
 ) {}
-
-// --- the operation config (sozluk's shapes over the in-memory db) -------------------
 
 export const termSource = Fate.source(
 	TermView,
@@ -236,8 +226,6 @@ export const sozlukConfig = FateServer.config({
 	mutations: sozlukMutations,
 	sources: [termSource, definitionSource],
 });
-
-// --- the dual-stack harness ---------------------------------------------------------
 
 export const user = (id: string): CurrentUserInfo => ({id, email: `${id}@kamp.us`, name: id});
 
