@@ -7,6 +7,7 @@
  */
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import {isProductionDeploy} from "./environment.ts";
 
 /**
  * The one field of alchemy's `ALCHEMY_EXEC_OPTIONS` blob the selector reads. The
@@ -90,11 +91,12 @@ export const PHOENIX_APEX_HOSTNAME = "phoenix.kamp.us" as const;
  * stages) gets **no** custom domain (`undefined`), so its `worker.url` stays the
  * `*.workers.dev` preview URL.
  *
- * The prod test is the `ENVIRONMENT` literal — a deploy is production iff
- * `environment === "production"`, the same fail-closed gate the email IaC uses
- * (`isProductionDeploy`), independent of the stage name. The `stage` arg is unused
- * (kept for call-site symmetry / future named-stage domains) — there is deliberately
- * NO `<stage>.phoenix.kamp.us` per-stage subdomain anymore.
+ * The prod test is the shared `isProductionDeploy` predicate owned by
+ * `environment.ts` (ADR 0088) — the ONE gate every deploy/runtime site calls (#1433),
+ * not a copied `=== "production"`. A deploy is production iff its `ENVIRONMENT` is the
+ * `production` class, independent of the stage name. The `stage` arg is unused (kept for
+ * call-site symmetry / future named-stage domains) — there is deliberately NO
+ * `<stage>.phoenix.kamp.us` per-stage subdomain anymore.
  *
  * Why production-only and not per-stage: #594's AC asked for `<stage>.phoenix.kamp.us`
  * per non-prod stage "so isolated deploys don't collide on the apex", but that itself
@@ -110,4 +112,5 @@ export const customHostname = (
 	// biome-ignore lint/correctness/noUnusedFunctionParameters: kept for call-site symmetry; see docblock
 	stage: string,
 	environment: string,
-): string | undefined => (environment === "production" ? PHOENIX_APEX_HOSTNAME : undefined);
+): string | undefined =>
+	isProductionDeploy({ENVIRONMENT: environment}) ? PHOENIX_APEX_HOSTNAME : undefined;

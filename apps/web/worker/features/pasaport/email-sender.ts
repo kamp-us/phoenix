@@ -26,7 +26,8 @@
 import {RuntimeContext} from "alchemy";
 import {SendEmail, type SendEmailBinding} from "alchemy/Cloudflare";
 import {Context, Effect, Layer} from "effect";
-import {type Environment, environment} from "../../config.ts";
+import {environment} from "../../config.ts";
+import {type Environment, isProduction} from "../../environment.ts";
 
 /**
  * A transactional message. Invalid states are unrepresentable: `to` + `subject`
@@ -120,7 +121,7 @@ export const EmailSenderCloudflareLive = Layer.effect(
 export const emailSenderLayerFor = (
 	env: Environment,
 ): Layer.Layer<EmailSender, never, RuntimeContext | SendEmailBinding> =>
-	env === "production" ? EmailSenderCloudflareLive : EmailSenderLog;
+	isProduction(env) ? EmailSenderCloudflareLive : EmailSenderLog;
 
 /**
  * The resolved-from-Config layer used at the worker entry. Reads `ENVIRONMENT`

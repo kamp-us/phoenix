@@ -8,17 +8,21 @@ raw, never cast.
 ## The surface
 
 `worker/config.ts`. Each var is one `Config` constant; `AppConfig = Config.all`
-aggregates them into the single yieldable read:
+aggregates them into the single yieldable read. The `ENVIRONMENT` taxonomy itself
+(the three classes, the `Environment` type, the `isProduction` gate, the
+`stage → ENVIRONMENT` map) is owned by [`worker/environment.ts`](../apps/web/worker/environment.ts)
+— the single module the deploy gates and the runtime `Config` both reuse (ADR 0088,
+#1433), so `config.ts` imports the literal set rather than re-spelling it:
 
 ```ts
 import * as Config from "effect/Config";
+import {DEFAULT_ENVIRONMENT, ENVIRONMENTS, type Environment} from "./environment.ts";
 
 // One constant per var. Non-redacted → plain_text binding, fail-closed default.
 // Three deploy classes (ADR 0088): local `development`, deployed `preview`, `production`.
-export const environment = Config.literals(
-	["development", "preview", "production"],
-	"ENVIRONMENT",
-).pipe(Config.withDefault("production"));
+export const environment = Config.literals(ENVIRONMENTS, "ENVIRONMENT").pipe(
+	Config.withDefault(DEFAULT_ENVIRONMENT),
+);
 
 // The single read surface. Add a var: a const above + a key here.
 export const AppConfig = Config.all({environment});
@@ -92,6 +96,25 @@ env block — the better-auth session key is minted by `Random`, never bound fro
 
 `worker/env.ts` keeps the deploy-time helpers — `resolveStateMode` /
 `isOfflinePath` (the state-store selector `alchemy.run.ts` calls) and
-`resolveDeployEnv`. These run in the alchemy CLI process over `process.env` at
+`customHostname`. These run in the alchemy CLI process over `process.env` at
 deploy time — a different moment from the runtime `Config` reads, with no
 `Config` equivalent (the state store is chosen before any worker exists).
+
+## The `ENVIRONMENT` taxonomy is owned in one place
+
+The `development | preview | production` taxonomy is read at THREE moments — the
+worker runtime (via the `Config` above), the alchemy CLI at deploy time (over
+`process.env`), and `.github/workflows/deploy.yml` (node strips its types). So it
+lives in a pure, dependency-free module, [`worker/environment.ts`](../apps/web/worker/environment.ts),
+not duplicated per site (ADR 0088, #1433):
+
+- `isProduction(env: Environment)` — the ONE fail-closed prod gate; every TS site
+  (`customHostname`, `emailSenderLayerFor`, `alchemy.run.ts`'s email/domain branches)
+  calls it instead of an inline `=== "production"`.
+- `isProductionDeploy(process.env)` — the deploy-time gate over `process.env.ENVIRONMENT`;
+  fail-LOUD on a non-empty unknown value (throws `UnknownEnvironmentError`) so a CI
+  misconfiguration (e.g. emitting the stage spelling `prod`) fails the deploy instead of
+  silently downgrading to non-prod (the ADR 0092 fail-closed posture).
+- `environmentForStage(stage)` — the single owner of the `prod`→`production` map;
+  `deploy.yml` invokes it under node (`environmentForStage(process.env.STAGE)`) rather than
+  inlining the spelling in a YAML expression.

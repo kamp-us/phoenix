@@ -15,6 +15,10 @@
  * adapter is only selected under `ENVIRONMENT=production` — so the binding is
  * recorded for prod deploys and absent everywhere else, the same ENVIRONMENT gate
  * this subdomain is on.
+ *
+ * The prod gate itself (`isProductionDeploy`) is owned by `worker/environment.ts`
+ * (ADR 0088), the single module every deploy/runtime gate shares (#1433); this file
+ * only consumes it (via `alchemy.run.ts`).
  */
 import {adopt} from "alchemy/AdoptPolicy";
 import * as Cloudflare from "alchemy/Cloudflare";
@@ -41,13 +45,3 @@ export const provisionEmailSending = Effect.gen(function* () {
 	});
 	return {zoneId: zone.zoneId, sendingEnabled: sending.enabled};
 });
-
-/**
- * Is this a production deploy? The stack runs at the alchemy CLI moment, so it
- * reads the deploy-time `process.env.ENVIRONMENT` (the same var the worker's
- * `effect/Config` binds at runtime). Fail-closed: anything but the explicit
- * `production` literal is treated as non-production, so a preview/dev deploy
- * never provisions the subdomain.
- */
-export const isProductionDeploy = (env: {readonly ENVIRONMENT?: string | undefined}): boolean =>
-	env.ENVIRONMENT === "production";
