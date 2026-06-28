@@ -214,9 +214,25 @@ code or a `.glossary/**` touch, none of it blocking), it needs *both* gates: you
 class here and emit the `review-doc` marker; `review-code` verifies the code class — `apps/**`,
 `packages/**`, **and `.glossary/**`** — and emits its own. `ship-it`
 requires the latest PASS in **each** namespace present before it merges, so don't try to
-cover the code half — verify the docs, emit `review-doc`, and note that `review-code` must
-also pass. (A `.glossary/TERMS.md` touch riding a code PR is **not** a doc class for you — it is
-part of the code class `review-code` owns; don't verdict it.)
+cover the code half — verify the docs, emit `review-doc`. (A `.glossary/TERMS.md` touch riding a
+code PR is **not** a doc class for you — it is part of the code class `review-code` owns; don't
+verdict it.)
+
+**But a mixed-class PR's review is not complete until every present namespace has a current-head
+verdict — resolve them all in one pass (the routing-completeness rule).** It is not enough to
+emit `review-doc` and merely *note* that `review-code` "must also pass": a note left to a later
+pass is exactly the gap that costs a mixed PR an extra review→ship round-trip — a single
+namespace's PASS lands, `ship-it` fail-closes on the still-missing other namespace, and the PR
+bounces back for a second review pass (#1460 / the PR #1442 incident: a `review-code: PASS` with
+no `review-doc`, refused at merge for the empty docs namespace). Routing by artifact class means
+"run the matching gate for **every** non-blocking class the diff spans," not "pick one and stop."
+So after you verify the docs and emit `review-doc`, **ensure `review-code` (and `review-skill`,
+for any skills class present) is also run against this same head before the review is reported
+complete** — load and follow the sibling gate(s) in this pass, or have the routing dispatch fan
+out to them, so the PR reaches `ship-it` with a current-head PASS standing in each present
+namespace. `ship-it`'s per-present-class requirement (its Step 2) is unchanged — it remains the
+**fail-closed late catch** for a genuinely-missing namespace, not the *first* place the second
+namespace is discovered.
 
 ---
 
