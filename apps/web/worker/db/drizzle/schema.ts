@@ -38,11 +38,11 @@ export const user = sqliteTable("user", {
 	type: text("type", {enum: ["human", "bot", "system"]})
 		.notNull()
 		.default("human"),
-	// Server-managed moderation capability (ADR 0098). Born `member`; flipped to
-	// `moderator` only by the offline grant script — declared `input:false` to
-	// better-auth (`better-auth-live.ts`), so no client write can reach it. Read at
-	// the point of use via `Moderator.required` (through Pasaport), never trusted
-	// from session state. Reconciled onto the platform role/AC model under #873.
+	// Vestigial moderation role (was ADR 0098's authority source). ADR 0107 §4 moved
+	// moderation authority off this column onto the `moderates` relation tuple — read
+	// at the point of use via the `Moderate` capability (`RelationStore`), never
+	// `role`. Declared `input:false` to better-auth (`better-auth-live.ts`), so no
+	// client write can reach it; retained for back-compat, not read as authority.
 	role: text("role", {enum: ["member", "moderator"]})
 		.notNull()
 		.default("member"),

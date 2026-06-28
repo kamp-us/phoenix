@@ -333,7 +333,8 @@ export class Sozluk extends Context.Service<
 		/**
 		 * Moderator soft-delete (ADR 0098 §6) — the same 0096 substrate write as
 		 * `deleteDefinition`, but gated on discharged moderator authority (the caller
-		 * proved `Moderator.required`), NOT author ownership: `removed_by` is the
+		 * holds a `Moderate` grant — the `moderates` relation tuple, ADR 0107 §4), NOT
+		 * author ownership: `removed_by` is the
 		 * resolver and the reason is `Moderated({reportId})`. A missing target is a
 		 * no-op (`removed: false`), so resolving a stale report can't fail.
 		 */

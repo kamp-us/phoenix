@@ -34,7 +34,8 @@ export type ReportReceipt = WorkerEntity<typeof ReportReceiptView>;
 /**
  * `OpenReport` — one moderation-queue entry (ADR 0098 §5): an open-reported target
  * with its distinct-reporter (repeat-offender) count. Private moderation state, so
- * the `report.listOpen` root list is gated behind `Moderator.required`; no source
+ * the `report.listOpen` root list is gated behind the `Moderate` capability (the
+ * `moderates` relation tuple, ADR 0107 §4); no source
  * fetch path (the list resolver returns it inline). `id` is `<targetKind>:<targetId>`.
  */
 export type OpenReportViewRow = ViewRow<{

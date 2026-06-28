@@ -93,7 +93,8 @@ export class Report extends Context.Service<
 		/**
 		 * The moderation queue (ADR 0098 §5): open reports grouped by target,
 		 * oldest-first, each carrying its distinct-reporter (repeat-offender) count.
-		 * Private moderation state — the resolver gates it behind `Moderator.required`.
+		 * Private moderation state — the resolver gates it behind the `Moderate`
+		 * capability (`requireModeration`, ADR 0107 §4).
 		 */
 		readonly listOpen: (opts?: {limit?: number}) => Effect.Effect<ReadonlyArray<OpenReportGroup>>;
 
@@ -102,7 +103,8 @@ export class Report extends Context.Service<
 		 * `(targetKind, targetId)` to the decided terminal status in one batch,
 		 * stamping the audit triad (`resolverId`/`resolvedAt`/`resolution`) on each.
 		 * Idempotent: zero open reports ⇒ `collapsed: 0`, no write. The author-side
-		 * authority check lives in the resolver (`Moderator.required`), not here.
+		 * authority check lives in the resolver (`requireModeration` discharging the
+		 * `Moderate` capability), not here.
 		 */
 		readonly resolveTarget: (input: ResolveTargetInput) => Effect.Effect<ResolveTargetResult>;
 
