@@ -23,6 +23,7 @@ import {
 	Drizzle,
 	type DrizzleAccess,
 	type DrizzleDb,
+	makeDrizzleAccess,
 	relations,
 	type Stmt,
 } from "../../db/Drizzle.ts";
@@ -162,4 +163,84 @@ describe("VouchLedger.castVouch — the cap is enforced atomically with the inse
 			assert.strictEqual(outcome, "capReached");
 		}),
 	);
+});
+
+// A no-op D1 that records the rendered `{sql, params}` of the statement `.get()` prepares
+// and binds — `hasActiveFor` runs a real drizzle read over it, so this captures the actual
+// compiled SQL at the binding boundary without an engine (ADR 0082/0104/0105).
+function capturingRun(): {
+	access: DrizzleAccess;
+	statement: () => {sql: string; params: unknown[]};
+} {
+	let captured: {sql: string; params: unknown[]} | undefined;
+	// biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; this records the prepared SQL/params, nothing executes.
+	const capturingD1 = {
+		prepare(sql: string) {
+			const params: unknown[] = [];
+			const record = () => {
+				captured = {sql, params: [...params]};
+			};
+			return {
+				bind(...p: unknown[]) {
+					params.push(...p);
+					return this;
+				},
+				async all() {
+					record();
+					return {results: []};
+				},
+				async first() {
+					record();
+					return null;
+				},
+				async run() {
+					record();
+					return {};
+				},
+				async raw() {
+					record();
+					return [];
+				},
+			};
+		},
+		async batch() {
+			return [];
+		},
+	} as unknown as D1Database;
+	const db = drizzle(capturingD1, {schema, relations});
+	const access: DrizzleAccess = makeDrizzleAccess(db);
+	return {
+		access,
+		statement: () => {
+			assert.isDefined(captured, "hasActiveFor never issued a read");
+			return captured as {sql: string; params: unknown[]};
+		},
+	};
+}
+
+const hasActiveFor = (cap: ReturnType<typeof capturingRun>, candidateId: string) =>
+	Effect.gen(function* () {
+		const ledger = yield* VouchLedger;
+		return yield* ledger.hasActiveFor(candidateId);
+	}).pipe(Effect.provide(ledgerOver(cap.access)));
+
+describe("VouchLedger.hasActiveFor — active is tier-filtered, symmetric with activeCountFor (#1324)", () => {
+	// The behavioral contract — a yazar candidate whose only vouch row is leftover yields
+	// `false` — is pinned structurally here: the read inner-joins `user` and binds the
+	// `çaylak` tier, so a `tier = 'yazar'` row can't match the join filter and drops out,
+	// exactly as it does for `activeCountFor`. No engine runs (ADR 0082/0104/0105).
+	it.effect("the read inner-joins `user` and filters tier = 'çaylak' on the candidate", () => {
+		const cap = capturingRun();
+		return Effect.gen(function* () {
+			yield* hasActiveFor(cap, "cand");
+			const {sql, params} = cap.statement();
+			const lower = sql.toLowerCase();
+			assert.match(lower, /from\s+"authorship_vouch"/);
+			// the tier-join to `user` — the symmetry with activeCountFor that excludes a yazar.
+			assert.match(lower, /inner\s+join\s+"user"/);
+			assert.match(lower, /"candidate_id"\s*=\s*\?/);
+			// the candidate id and the çaylak tier are bound params of THIS one read.
+			assert.includeMembers(params as unknown[], ["cand", "çaylak"]);
+		});
+	});
 });
