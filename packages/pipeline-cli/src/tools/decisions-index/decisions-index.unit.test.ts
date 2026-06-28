@@ -6,6 +6,8 @@ import {
 	FrontmatterError,
 	findDuplicateId,
 	findRootDir,
+	NumberMismatchError,
+	numberFromFile,
 	parseAdrFile,
 	parseFrontmatter,
 	renderIndex,
@@ -74,6 +76,34 @@ describe("parseAdrFile", () => {
 			text: "---\nid: 0099\ntitle: T\ndate: 2026-01-01\n---\n",
 		};
 		assert.throws(() => parseAdrFile(bad), FrontmatterError);
+	});
+
+	it("throws NumberMismatchError when the filename prefix disagrees with the id", () => {
+		// filename says 0114, front-matter says 0115 — the drift that would let a
+		// filename-NNNN collision hide behind distinct ids (#1471).
+		const bad: AdrFile = {file: "0114-x.md", text: adr("0115", "T", "accepted", "d").text};
+		assert.throws(() => parseAdrFile(bad), NumberMismatchError);
+	});
+
+	it("accepts a lettered id whose filename prefix matches (0034a-…)", () => {
+		const entry = parseAdrFile(adr("0034a", "T", "accepted", "d", "slug"));
+		assert.strictEqual(entry.id, "0034a");
+		assert.strictEqual(entry.file, "0034a-slug.md");
+	});
+});
+
+describe("numberFromFile — the filename NNNN[a] prefix", () => {
+	it("extracts a zero-padded number prefix", () => {
+		assert.strictEqual(numberFromFile("0114-test-import-closure.md"), "0114");
+	});
+
+	it("extracts a lettered number prefix", () => {
+		assert.strictEqual(numberFromFile("0034a-bar.md"), "0034a");
+	});
+
+	it("returns null for a name that does not lead with a number-slug", () => {
+		assert.strictEqual(numberFromFile("index.md"), null);
+		assert.strictEqual(numberFromFile("notes.md"), null);
 	});
 });
 
@@ -215,5 +245,23 @@ describe("buildIndex — end-to-end (the stale-detection seam)", () => {
 			{file: "0064-b.md", text: adr("0064", "b", "accepted", "d").text},
 		];
 		assert.throws(() => buildIndex(files), DuplicateIdError);
+	});
+
+	it("catches two files sharing a 0114-*.md filename prefix (the #1471 collision)", () => {
+		// Both branches allocated 0114 (filename and front-matter agree on each), then
+		// landed on main together — the single-tree state the next `check` must reject.
+		const files: ReadonlyArray<AdrFile> = [
+			{file: "0114-test-import-closure.md", text: adr("0114", "a", "accepted", "d").text},
+			{file: "0114-spawn-guard-pin.md", text: adr("0114", "b", "accepted", "d").text},
+		];
+		assert.throws(() => buildIndex(files), DuplicateIdError);
+	});
+
+	it("throws NumberMismatchError before rendering when a filename prefix drifts from its id", () => {
+		const files: ReadonlyArray<AdrFile> = [
+			{file: "0114-a.md", text: adr("0114", "a", "accepted", "d").text},
+			{file: "0115-b.md", text: adr("0114", "b", "accepted", "d").text},
+		];
+		assert.throws(() => buildIndex(files), NumberMismatchError);
 	});
 });

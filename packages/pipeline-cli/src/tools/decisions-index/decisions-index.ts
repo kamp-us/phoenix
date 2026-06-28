@@ -10,7 +10,20 @@
  *
  * `buildIndex` folds the sibling problem in: a **duplicate `id`** across files is
  * a `DuplicateIdError`, so the same gate that catches a stale index catches two
- * PRs racing the same ADR number.
+ * same-numbered ADR files coexisting on `main`.
+ *
+ * The ADR number lives on **two axes** that must agree: the filename `NNNN[a]`
+ * prefix (what `/adr` allocates and what humans/git key on) and the front-matter
+ * `id`. `parseAdrFile` enforces filename-prefix == `id` (`NumberMismatchError`), so
+ * the two can never drift. That single invariant upgrades the front-matter-keyed
+ * `findDuplicateId` into a **filename-NNNN** duplicate guard for free: two files
+ * sharing a `0114-*.md` prefix necessarily share `id: 0114` (or one mismatches its
+ * own filename and is rejected first), so the collision the ledger's filename
+ * primary key suffers is caught at `check` time. This is the within-tree half of
+ * the #1471 fix; the residual it does NOT catch is two *stale* concurrent PR
+ * branches that each add a `0114-*.md` the other can't see — that only becomes a
+ * single-tree duplicate once both land on `main`, where the next `check` then fails
+ * loudly (a cross-open-PR pre-merge guard is out of scope; see ADR 0066 / #1471).
  *
  * Two non-obvious points, both load-bearing and pinned by the unit tests:
  *  - `title`/`status` render **verbatim** from front-matter — they may carry
@@ -63,6 +76,28 @@ export class FrontmatterError extends Error {
 	}
 }
 
+/**
+ * A file whose filename `NNNN[a]` prefix disagrees with its front-matter `id`. The
+ * two name the same ADR number on two axes; letting them drift would let a
+ * filename-NNNN collision hide behind distinct `id`s (and vice-versa), so the
+ * invariant is enforced at parse time and this is the rejection.
+ */
+export class NumberMismatchError extends Error {
+	readonly file: string;
+	readonly filePrefix: string;
+	readonly id: string;
+	constructor(file: string, filePrefix: string, id: string) {
+		super(
+			`${file}: filename number \`${filePrefix}\` does not match front-matter \`id: ${id}\` ` +
+				"(the filename prefix and the front-matter id must name the same ADR number)",
+		);
+		this.name = "NumberMismatchError";
+		this.file = file;
+		this.filePrefix = filePrefix;
+		this.id = id;
+	}
+}
+
 const FRONTMATTER_FIELDS = ["id", "title", "status", "date"] as const;
 
 /**
@@ -109,7 +144,22 @@ export const parseFrontmatter = (
 	return out;
 };
 
-/** Parse one ADR file into an entry, or throw `FrontmatterError` if a field is missing. */
+/**
+ * The `NNNN[a]` ADR number at the head of a `.decisions/` base name
+ * (`0114-foo.md` → `0114`, `0034a-bar.md` → `0034a`), or `null` if the name does
+ * not lead with a number-slug prefix. Pure: the base name is the only input.
+ */
+export const numberFromFile = (file: string): string | null => {
+	const m = file.match(/^(\d+[A-Za-z]*)-/);
+	return m?.[1] ?? null;
+};
+
+/**
+ * Parse one ADR file into an entry. Throws `FrontmatterError` if an index field is
+ * missing, or `NumberMismatchError` if the filename `NNNN[a]` prefix disagrees with
+ * the front-matter `id` — the invariant that keeps the filename and front-matter
+ * naming the same ADR number (so `findDuplicateId` also guards filename collisions).
+ */
 export const parseAdrFile = ({file, text}: AdrFile): AdrEntry => {
 	const fm = parseFrontmatter(text);
 	for (const field of FRONTMATTER_FIELDS) {
@@ -117,8 +167,13 @@ export const parseAdrFile = ({file, text}: AdrFile): AdrEntry => {
 			throw new FrontmatterError(file, `missing front-matter field \`${field}\``);
 		}
 	}
+	const id = fm.id as string;
+	const filePrefix = numberFromFile(file);
+	if (filePrefix !== null && filePrefix !== id) {
+		throw new NumberMismatchError(file, filePrefix, id);
+	}
 	return {
-		id: fm.id as string,
+		id,
 		title: fm.title as string,
 		status: fm.status as string,
 		date: fm.date as string,
