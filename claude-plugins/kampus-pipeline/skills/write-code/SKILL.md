@@ -817,6 +817,24 @@ any other ref) and the full case-insensitive landmine keyword set — lives in t
 re-derive it. Operationally: one closing keyword, on the target, full stop — and the `(c)`
 guard below mechanizes "the closing-keyword set is exactly `{N}`" as the pre-push self-check.
 
+**The partial-split case — emit `Part of #N` instead of `Fixes #N` when the issue must stay open.**
+The default is a closing `Fixes #N` (full close); the **explicit** exception is an intentional
+**partial-split** PR — one that advances an issue while a **sibling lane** finishes the rest, so
+the issue must **stay open** after this PR merges. For that PR, emit a plain `Part of #N` line
+naming the exact issue number **instead of** a closing keyword — `Part of` is **not** a GitHub
+closing keyword, so it links the PR to `#N` (a timeline cross-reference) without populating
+`closingIssuesReferences` and without auto-closing `#N` on merge, which is precisely the
+partial-split intent. `ship-it` Step 1 recognizes a literal `Part of #N` as a valid
+linked-but-non-closing reference and merges the PR without closing `#N` (the #1342 consumer, PR
+#1347) — so this is the one producer token that gets a partial-split PR through the gate without a
+human hand-editing the body. The marker is defined once in the contract's
+[§9 The PR-body closing-keyword seam](../gh-issue-intake-formats.md) (its `Part of #N` subsection);
+cite §9, don't re-derive it here. This is consistent with the `(c)` inverse guard: because
+`Part of` is not a closing keyword, a `Part of #N`-only PR has a closing-keyword set of exactly
+`{}` — `Part of #N` is never a stray close directive — which is correct, it closes nothing. Use
+this **only** for a genuine partial-split (sibling lane left to finish); a PR that fully completes
+its issue emits the closing `Fixes #N` as always.
+
 **If Step 4b fired, add a plain `Flag: <FLAG_KEY>` line to the body.** This is the producer half
 of ship-it's release-queue detector (§Step 4b): whenever the change ships gated behind a flag — the
 newly-declared shape **and** the prior-PR shape, one consistent rule — emit a body line naming the
