@@ -1,21 +1,25 @@
 /**
- * `Search.searchPosts` sandbox-visibility wiring (#1358) — the security fix: site
- * search must NOT leak a çaylak's sandboxed (pre-review) post to a non-author /
- * non-moderator searcher. `searchPosts` is a fourth read into `post_record`; like
- * the other three pano reads it must AND the #1205 {@link sandboxVisibleWhere}
- * predicate into the read, resolved against the request viewer.
+ * `Search.searchPosts` visibility wiring — site search must NOT leak a çaylak's
+ * sandboxed (pre-review) post nor another author's draft to a searcher not entitled to
+ * see it. `searchPosts` is a fourth read into `post_record`; like the other three pano
+ * reads it sources its mask from the one pano seam — {@link postVisibleWhere} (ADR
+ * 0113), the sandbox arm AND the author-only draft arm — resolved against the request
+ * viewer. This subsumes the #1358 hand-written sandbox-only mask: the sandbox masking
+ * is now sourced from the seam (not a search-local predicate) and the draft dimension
+ * rides along with it.
  *
- * The FTS index keeps sandboxed rows (so an author/moderator CAN find their own via
+ * The FTS index keeps sandboxed/draft rows (so an author CAN find their own via
  * search), so the mask is a read-time filter — and it must ride EVERY query over the
  * FTS table, not just the hydrate: `totalCount` and the keyset would otherwise count
  * and slot rows the viewer can't see (the #1312 count/pagination leak). This test
  * drives the real `SearchLive` service over a recording D1 *client* (no SQL engine,
  * ADR 0082) and asserts the rendered SQL of the count + keyset queries carries the
  * viewer's predicate. The predicate SEMANTICS (who sees what) are already proven by
- * `SandboxVisibility.unit.test.ts`; what THIS proves is that `searchPosts` WIRES that
- * predicate into both the count and the keyset for every viewer kind.
+ * `SandboxVisibility.unit.test.ts` and `PostVisibility.unit.test.ts`; what THIS proves
+ * is that `searchPosts` WIRES that predicate into both the count and the keyset for
+ * every viewer kind.
  *
- * The viewer matrix (the leak is closed iff):
+ * The sandbox viewer matrix (the leak is closed iff):
  *   - anonymous / public — `sandboxed_at IS NULL` (live only, no viewer arm).
  *   - other member — `sandboxed_at IS NULL OR author_id = :viewerId`; the viewer is
  *     not the çaylak, so the author arm matches none of their rows → live only.
@@ -24,6 +28,12 @@
  *   - moderator — no sandbox arm at all (`canSeeSandboxed` ⇒ `undefined`, dropped by
  *     `and()`) → sees everything. The always-on filter is a no-op for them; every
  *     viewer still excludes removed posts.
+ *
+ * The draft arm rides the SAME read but has NO moderator exemption (ADR 0113 §2): a
+ * draft is `is_draft IS NOT 1` (public) OR `author_id = :viewerId` (own) for every
+ * signed-in viewer including a moderator, and `is_draft IS NOT 1` for anonymous — so a
+ * moderator does NOT surface another author's draft, the cell that distinguishes draft
+ * from sandbox.
  */
 import {Effect, Layer} from "effect";
 import {describe, expect, it} from "vitest";
@@ -144,5 +154,35 @@ describe("searchPosts — sandbox read-mask wired into BOTH count and keyset (#1
 		const keyset = keysetQuery(prepared);
 		expect(keyset).toMatch(/"sandboxed_at" is null/i);
 		expect(keyset).not.toMatch(/"author_id" =/i);
+	});
+});
+
+describe("searchPosts — draft read-mask wired via the seam, no moderator exemption (#1408)", () => {
+	it("anonymous/public: `is_draft is not 1` (no author arm) on count AND keyset", async () => {
+		const sqls = await renderSearchSql(anonymous);
+		for (const q of [countQuery(sqls), keysetQuery(sqls)]) {
+			expect(q).toBeDefined();
+			expect(q).toMatch(/"is_draft" is not 1/i);
+		}
+	});
+
+	it("other member: `is_draft is not 1 or author_id = :viewerId` — another author's draft is masked out", async () => {
+		const sqls = await renderSearchSql(otherMember);
+		for (const q of [countQuery(sqls), keysetQuery(sqls)]) {
+			expect(q).toBeDefined();
+			expect(q).toMatch(/"is_draft" is not 1[\s)]*or[\s(]*"post_record"\."author_id" = \?/i);
+		}
+	});
+
+	it("the author: the draft arm carries their author_id — they DO surface their own drafts", async () => {
+		const keyset = keysetQuery(await renderSearchSql(author));
+		expect(keyset).toMatch(/"is_draft" is not 1[\s)]*or[\s(]*"post_record"\."author_id" = \?/i);
+	});
+
+	it("moderator: NO draft exemption — still `is_draft is not 1 or author_id = :viewerId` (a mod does not see others' drafts)", async () => {
+		const keyset = keysetQuery(await renderSearchSql(moderator));
+		// the load-bearing draft≠sandbox cell: the sandbox arm is dropped for a mod, but
+		// the draft arm is NOT — an unpublished draft is author-only with no mod exemption.
+		expect(keyset).toMatch(/"is_draft" is not 1[\s)]*or[\s(]*"post_record"\."author_id" = \?/i);
 	});
 });
