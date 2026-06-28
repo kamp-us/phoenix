@@ -14,6 +14,7 @@ import type {NodeServices} from "@effect/platform-node";
 import type {Command} from "effect/unstable/cli";
 import {changelogDeriveCommand} from "./tools/changelog-derive/command.ts";
 import {ciRequiredCommand} from "./tools/ci-required/command.ts";
+import {codeownersCpCommand} from "./tools/codeowners-cp/command.ts";
 import {crabboxManifestCommand} from "./tools/crabbox-manifest/command.ts";
 import {decisionsIndexCommand} from "./tools/decisions-index/command.ts";
 import {docLinksCommand} from "./tools/doc-links/command.ts";
@@ -74,4 +75,5 @@ export const registeredTools: ReadonlyArray<RegisteredTool> = [
 	changelogDeriveCommand,
 	structuredOutputGuardCommand,
 	worktreeSweepCommand,
+	codeownersCpCommand,
 ];

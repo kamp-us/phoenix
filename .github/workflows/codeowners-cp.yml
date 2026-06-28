@@ -1,0 +1,40 @@
+name: codeowners-cp
+
+# CI gate for #955: the §CP control-plane set lives as one anchored regex
+# (CONTROL_PLANE_RE in gh-issue-intake-formats.md), but .github/CODEOWNERS enumerates
+# the same paths literally. The two drift silently — a §CP path added to the regex
+# without a CODEOWNERS row is control-plane-by-regex yet outside
+# require_code_owner_review (under-protected; #934/#953). This job reads the §CP set
+# FROM the canonical regex and fails the PR when any §CP path lacks a covering
+# CODEOWNERS row. It reuses pipeline-cli's `codeowners-cp check` mode — the scan lives
+# once in the tool. Fail-closed (ADR 0092): an unparseable source or a zero-scope
+# regex also reds the build.
+on:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  check:
+    name: check §CP paths are all owned in CODEOWNERS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.2.2
+
+      - uses: pnpm/action-setup@v4.1.0
+        with:
+          version: 10.27.0
+
+      - uses: actions/setup-node@v4.4.0
+        with:
+          node-version: 26.2.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # Exit 1 when a §CP path has no covering CODEOWNERS owner (the path → reason
+      # report is on stderr); any other non-zero means the run could not complete. #955.
+      - name: Check §CP CONTROL_PLANE_RE ↔ CODEOWNERS are in sync
+        run: node packages/pipeline-cli/src/bin.ts codeowners-cp check
