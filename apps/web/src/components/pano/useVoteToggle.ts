@@ -1,6 +1,6 @@
 /**
  * The shared vote/save-toggle seam, lifted ABOVE {@link useToggleAction} so the
- * three vote sites (`PanoPost`, `CommentTreeNode`, `DefinitionCard`) and the pano
+ * three vote sites (`PanoPostCard`, `CommentTreeNode`, `DefinitionCard`) and the pano
  * save toggle no longer hand-copy the same interaction body. `useToggleAction`
  * owns the serialize-and-supersede race (#818/#825); this owns the *semantics*
  * that used to be duplicated at every call site:
