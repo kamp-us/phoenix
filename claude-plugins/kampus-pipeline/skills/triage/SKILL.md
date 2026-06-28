@@ -27,16 +27,12 @@ For each `status:needs-triage` issue, you produce exactly one of three outcomes:
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
-The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL
-issue queries. Every read and write goes through `gh api`. This is not a style
-preference; GraphQL calls error out on this org.
-
-**Resolve the target repo once, up front.** This skill is repo-agnostic — every
-`gh api` call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run
-per the shared contract's **Target repo resolution**
-([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
-if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
-behavior is unchanged with no config (ADR 0062 §1).
+Every read and write goes through `gh api` — the org's legacy Projects-classic
+integration errors out GraphQL issue queries, so this is a hard constraint, not a style
+call. Resolve the target repo once, up front (this skill is repo-agnostic — every call
+targets `$REPO`); the full resolution rule is the shared contract's **Target repo
+resolution** ([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), ADR 0062 §1),
+defaulting to `kamp-us/phoenix` with no config:
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
@@ -51,25 +47,22 @@ gh api "repos/$REPO/issues?state=open&labels=status:needs-triage&per_page=100" \
 
 ## The glossary — read `.glossary/`, use the canonical terms
 
-As you classify, enrich, or rewrite an issue body, reach for the repo-owned vocabulary
-register rather than inventing names (the one-concept-named-four-ways drift the audit
-found, #851): [`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
+As you classify, enrich, or rewrite a body, reach for the repo-owned vocabulary register
+rather than inventing names (the one-concept-named-four-ways drift, #851; ADR 0099):
+[`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
 (domain nouns) and [`.glossary/LANGUAGE.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/LANGUAGE.md)
-(architecture vocabulary). Point at the glossary, never copy a definition into this skill —
-the register is the single source. (ADR 0099.)
+(architecture vocabulary) — the single source; never copy a definition into this skill.
 
 ---
 
 ## Step 0 — Claim the issue before you mutate it (concurrent-sweep guard)
 
-Triage sweeps run concurrently — the same several accounts that file `report` agents
-also run triage sweeps. Two simultaneous sweeps that both picked #N off the opening
-snapshot will **both** rewrite-on-top its body (Step 4, a last-write-wins `PATCH` — one
-sweep's enrichment silently clobbers the other's, no error, the labels still read
-triaged) and **both** split the same bundle (Step 3, producing duplicate children). The
-Step 3 pre-create re-query guards against a *report agent* having filed the same
-observation; it does **not** guard against a *sibling sweep* mutating the same issue in
-the same window. So claim #N before you touch it.
+Triage sweeps run concurrently (the same accounts that file `report` agents also sweep).
+Two sweeps that both picked #N off the opening snapshot will **both** rewrite-on-top its
+body (Step 4's last-write-wins `PATCH` silently clobbers one enrichment, no error) and
+**both** split the same bundle (Step 3, duplicate children). The Step 3 pre-create
+re-query guards against a *report agent* twin, **not** against a *sibling sweep* mutating
+the same issue in-window. So claim #N before you touch it.
 
 **Claim by self-assigning — the same detect-and-tiebreak `write-code` uses** (Step 3
 there; the shared semantics are pinned in
@@ -127,14 +120,12 @@ release too — see Step 6.)
 
 ## Step 1 — Read the issue and its context
 
-Don't classify from the title. Read the body, then read enough of the codebase to
-know what the issue is actually about — the files it names, the ADR/pattern docs it
-cites, the related issues. That context is what lets you classify correctly, write a
-faithful enrichment, and pick a real priority. A triage that skips the codebase
-produces labels nobody downstream can trust.
-
-Note **who filed it** and **what shape it's in** — you'll need both for the
-human-vs-agent judgment (Step 5) and the classification (Step 2).
+Don't classify from the title. Read the body, then read enough of the codebase to know
+what the issue is actually about — the files it names, the ADR/pattern docs it cites, the
+related issues. That context is what lets you classify correctly, enrich faithfully, and
+pick a real priority; a triage that skips the codebase produces labels nobody downstream
+can trust. Note **who filed it** and **what shape it's in** — both feed the human-vs-agent
+judgment (Step 5) and the classification (Step 2).
 
 ---
 
@@ -500,45 +491,14 @@ milestone, it doesn't assign it).
 
 ### Close not-planned (kill, last resort, agent issues only)
 
-Close an issue **only** when it's an *agent-filed* issue that is genuinely
-unsalvageable — a duplicate of an existing issue, an observation that's no longer true
-(the code moved on), a non-actionable note with nothing to enrich into, or noise.
-Salvage first: if there's a real unit hiding in it, enrich and triage it instead.
-
-Every kill is auditable and reversible. Always:
-
-1. **If the reason is "duplicate of #M": preserve the loser's content on the
-   survivor first.** A bare cross-link is not enough — the closed issue often
-   carries context the survivor lacks (an independent verification, extra pointers,
-   a sharper acceptance idea). Copy the duplicate's full body **verbatim** into a
-   comment on #M, wrapped in a `<details><summary>#N (closed duplicate) — full
-   body</summary>…</details>` block, and fold anything load-bearing into #M's
-   enrichment. Nothing a reporter wrote should require clicking into a closed issue
-   to read.
-2. Post a **reason comment** — *why* it's unsalvageable, specifically (e.g. "Duplicate
-   of #33, which already tracks this hang" or "The function this references was
-   removed in #30; no longer applicable"). One sentence of real reasoning, so the
-   maintainer reviewing kills can judge it.
-3. Apply `closed-by-triage` so every kill shows up in one query.
-4. Close as **not planned** (state `closed`, reason `not_planned`).
-
-```bash
-# step 1 only when closing as a duplicate of #M:
-gh api "repos/$REPO/issues/<N>" --jq '.body' > /tmp/dup-<N>.md   # then wrap in <details> and:
-gh api "repos/$REPO/issues/<M>/comments" -f body="$(cat /tmp/dup-comment-<N>.md)"
-# steps 2-4, every kill:
-gh api "repos/$REPO/issues/<N>/comments" -f body="Closing not-planned: <specific reason>."
-gh api "repos/$REPO/issues/<N>/labels" -f "labels[]=closed-by-triage"
-gh api -X PATCH "repos/$REPO/issues/<N>" -f state=closed -f state_reason=not_planned
-```
-
-The maintainer audits all kills with one query, so over-closing is caught and
-reopened cheaply:
-
-```bash
-gh api "repos/$REPO/issues?state=closed&labels=closed-by-triage" \
-  --jq '.[] | "#\(.number) \(.title)"'
-```
+The third outcome is **rare** — close an issue **only** when it's an *agent-filed* issue
+that is genuinely unsalvageable (a duplicate, an observation the code moved past, a
+non-actionable note, or noise), and **salvage first**. Because it's off the common
+triaged / needs-info path, its full protocol — the duplicate-content-preservation step,
+the auditable reason-comment + `closed-by-triage` + `not_planned` close, and the kill-audit
+query — lives in a contract you `Read` only once you've decided to close:
+[`close-not-planned.md`](./close-not-planned.md). Open it and follow it for any kill (and
+for a Step 3 empty-husk close). **Never close a human-filed issue** (Step 5).
 
 ### Release the claim (every outcome)
 
@@ -574,14 +534,12 @@ sweeping:
    up on the same sweep or a follow-up; they're triaged (claim → Steps 1–6 → release)
    like any other issue.
 4. **Re-list the queue before declaring the sweep done.** Report agents file
-   concurrently, so issues land mid-sweep; a sweep that only processes the opening
-   snapshot routinely leaves fresh arrivals behind. An issue currently *claimed* by a
-   sibling sweep still shows `status:needs-triage` (the claim is an assignee, not a
-   label), so it reappears in this listing; Step 0's Rule-0 back-off skips it while the
-   sibling holds it, and once that sweep releases, a later pass picks it up. Loop until
-   the listing comes back empty of issues you can claim — every *completed* outcome
-   (triaged / needs-info / closed) removes `status:needs-triage`, so a listing with
-   nothing left to claim is the complete termination test.
+   concurrently, so issues land mid-sweep and a snapshot-only sweep leaves fresh arrivals
+   behind. An issue *claimed* by a sibling sweep still shows `status:needs-triage` (the
+   claim is an assignee, not a label), so it reappears here; Step 0's Rule-0 back-off skips
+   it until that sweep releases. Loop until the listing has no issue you can claim — every
+   *completed* outcome (triaged / needs-info / closed) removes `status:needs-triage`, so
+   that is the termination test.
 5. Report a short ledger back: per issue, the outcome (type+priority+triaged, plus the
    milestone if one was a clear match / needs-info / closed) in one line each. Don't
    narrate every REST call — the labels, milestone, and comments on the issues are the
