@@ -7,7 +7,8 @@ import {openReportSource, reportReceiptSource, resolveReceiptSource} from "./sou
 import {openReportDataView} from "./views.ts";
 
 const roots: FateRootsRecord = {
-	// The moderation queue (ADR 0098) — a `Moderator.required`-gated list root; the
+	// The moderation queue (ADR 0098) — a `Moderate`-capability-gated list root (the
+	// `moderates` relation tuple, ADR 0107 §4); the
 	// `report.listOpen` resolver owns the oldest-first order.
 	"report.listOpen": list(openReportDataView),
 };
