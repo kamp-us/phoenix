@@ -32,7 +32,7 @@ import {Effect, Layer} from "effect";
 import {Drizzle, type DrizzleAccess, type DrizzleDb, relations} from "../../db/Drizzle.ts";
 import * as schema from "../../db/drizzle/schema.ts";
 import type {SandboxViewer} from "../lifecycle/EntityLifecycle.ts";
-import {type Auth, makePasaportLive, Pasaport} from "./Pasaport.ts";
+import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
 // biome-ignore lint/plugin: `D1Database` is a host binding that can't be structurally constructed in a fake; only `.toSQL()` rendering is exercised, the scripted `run` never executes a query.
 const noopD1 = {
@@ -59,7 +59,7 @@ const noopD1 = {
 } as unknown as D1Database;
 const renderDb = drizzle(noopD1, {schema, relations});
 
-const inertAuth = {} as Auth;
+const inertAuth = {} as BetterAuthInstance;
 
 const hasToSQL = (v: unknown): v is {toSQL: () => {sql: string; params: unknown[]}} =>
 	typeof v === "object" && v !== null && typeof (v as {toSQL?: unknown}).toSQL === "function";

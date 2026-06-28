@@ -32,7 +32,7 @@ import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
 import {resolveWire} from "../fate/resolve-wire.testing.ts";
 import {ACCOUNT_DELETE_CONFIRMATION, mutations} from "./mutations.ts";
-import {type Auth, makePasaportLive, Pasaport} from "./Pasaport.ts";
+import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
 // A `Drizzle` whose every call throws — so any path that reaches the DB seam
 // fails the test. The reserved-username guard short-circuits before any read, and
@@ -44,7 +44,7 @@ const throwingAccess: DrizzleAccess = {
 
 // `auth` is unused by `setUsername`'s reserved-username guard (it short-circuits
 // before any session/DB use), so a never-cast inert instance satisfies the type.
-const inertAuth = {} as Auth;
+const inertAuth = {} as BetterAuthInstance;
 
 const pasaportLayer = (access: DrizzleAccess) =>
 	makePasaportLive(inertAuth).pipe(Layer.provide(Layer.succeed(Drizzle, access)));

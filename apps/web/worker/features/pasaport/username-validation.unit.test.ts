@@ -20,7 +20,7 @@ import {it} from "@effect/vitest";
 import {Cause, Effect, Exit, Layer} from "effect";
 import {assert} from "vitest";
 import {Drizzle, type DrizzleAccess} from "../../db/Drizzle.ts";
-import {type Auth, makePasaportLive, Pasaport} from "./Pasaport.ts";
+import {type BetterAuthInstance, makePasaportLive, Pasaport} from "./Pasaport.ts";
 
 // Every DB call dies, so any path that reaches the seam fails the test: the
 // length/format gate short-circuits before any read, and running to completion
@@ -32,7 +32,7 @@ const throwingAccess: DrizzleAccess = {
 
 // `setUsername`'s validation gate uses neither the session nor the DB, so a
 // never-cast inert instance satisfies the type.
-const inertAuth = {} as Auth;
+const inertAuth = {} as BetterAuthInstance;
 
 const pasaportLayer = makePasaportLive(inertAuth).pipe(
 	Layer.provide(Layer.succeed(Drizzle, throwingAccess)),

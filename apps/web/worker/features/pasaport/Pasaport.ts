@@ -35,10 +35,12 @@ import {
 import {contributionOrdering} from "./ordering.ts";
 import {checkUsername} from "./username-rule.ts";
 
-// Phoenix never specializes the better-auth options at the type level, so this
-// is the unparameterized `Auth` — matching the `BetterAuth` tag's `auth` field.
-export type Auth = BetterAuth;
-export type Session = NonNullable<Awaited<ReturnType<Auth["api"]["getSession"]>>>;
+// The worker-level better-auth instance handle (NOT the per-request session — that
+// is `CurrentUser`, ADR 0042). Phoenix never specializes the better-auth options at
+// the type level, so this is the unparameterized better-auth `Auth` — matching the
+// `BetterAuth` tag's `auth` field.
+export type BetterAuthInstance = BetterAuth;
+export type Session = NonNullable<Awaited<ReturnType<BetterAuthInstance["api"]["getSession"]>>>;
 
 export interface UserRow {
 	id: string;
@@ -330,7 +332,7 @@ function decodeCursor(cursor: string): {createdAt: Date; id: string} | null {
  * sharing the single auth instance with the `/api/auth/*` route keeps session
  * cookies signed and validated by the same secret.
  */
-export const makePasaportLive = (auth: Auth) =>
+export const makePasaportLive = (auth: BetterAuthInstance) =>
 	Layer.effect(Pasaport)(
 		Effect.gen(function* () {
 			// `orDieAccess`: every DB call site dies on `DrizzleError` (infra
