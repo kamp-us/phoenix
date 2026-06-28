@@ -35,17 +35,13 @@ their own PR — #664).
 
 ## All GitHub ops via `gh api` REST — never GraphQL
 
-The kamp-us org runs a legacy Projects-classic integration that breaks GraphQL issue
-queries. Every issue/PR/label read and write goes through `gh api`. Branch, commit,
-and PR-open go through `git` and `gh` per repo conventions. This is not a style
-preference — GraphQL calls error out on this org.
-
-**Resolve the target repo once, up front.** This skill is repo-agnostic — every `gh api`
-call targets `$REPO`, not a hardcoded repo. Resolve it at the top of your run per the shared
-contract's **Target repo resolution**
-([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md)): `$CLAUDE_PIPELINE_REPO`
-if set, else the current repository. In phoenix this defaults to `kamp-us/phoenix`, so the
-behavior is unchanged with no config (ADR 0062 §1).
+Every issue/PR/label read and write goes through `gh api` — the org's legacy
+Projects-classic integration errors out GraphQL issue queries, so this is a hard
+constraint, not a style call (branch/commit/PR-open use `git`/`gh` per repo conventions).
+Resolve the target repo once, up front (this skill is repo-agnostic — every call targets
+`$REPO`); the full resolution rule is the shared contract's **Target repo resolution**
+([`../gh-issue-intake-formats.md`](../gh-issue-intake-formats.md), ADR 0062 §1), defaulting
+to `kamp-us/phoenix` with no config.
 
 ```bash
 REPO="${CLAUDE_PIPELINE_REPO:-$(gh repo view --json nameWithOwner -q .nameWithOwner)}"
@@ -72,13 +68,12 @@ slightly different bullet style still means what it means), write canonically.
 
 ## The glossary — read `.glossary/`, use the canonical terms
 
-Before you draft a PR title/body, a progress comment, an epic handoff, or any
-identifier you introduce, read the repo-owned vocabulary register and reach for its
-names rather than inventing your own (the one-concept-named-four-ways drift the audit
-found, #851): [`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
+Before you draft a PR title/body, a progress comment, an epic handoff, or any identifier
+you introduce, read the repo-owned vocabulary register and reach for its names rather than
+inventing your own (the one-concept-named-four-ways drift, #851; ADR 0099):
+[`.glossary/TERMS.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/TERMS.md)
 (domain nouns) and [`.glossary/LANGUAGE.md`](https://github.com/kamp-us/phoenix/blob/main/.glossary/LANGUAGE.md)
-(architecture vocabulary). Point at the glossary, never copy a definition into this skill —
-the register is the single source. (ADR 0099.)
+(architecture vocabulary) — the single source; never copy a definition into this skill.
 
 ---
 

@@ -141,6 +141,104 @@ rejected regardless of the token win. The gate is what makes "quality preserved"
 than asserted; every Phase-2/3 lever child runs this same rubric on the same frozen set and reports
 both the token before/after (§2) and the rubric pass/fail (§3).
 
+## 4. Applied-lever results — #1374 fan-out economics
+
+The **fan-out-economics lever** ([#1374](https://github.com/kamp-us/phoenix/issues/1374), the
+sibling of the read-economics child [#1373](https://github.com/kamp-us/phoenix/issues/1373))
+acts on the audit's headline: **43–60% of every stage's billed spend is resident scaffolding
+re-read every turn, and a fanned-out batch re-pays that scaffolding N× with zero sharing**
+([token-economics-audit.md](./token-economics-audit.md) Ranks 1/3/4). The brief named three
+coupled sub-levers; each is reported below against the §1/§2 recorded baseline (offline
+four-component reconstruction from the actual sub-agent transcripts — `triage agent-af3afc3fc26976`,
+19 turns, billed 592,499; `write-code agent-a734c4b6dc387a61`, 42 turns, billed 2,076,940), with
+the §3 rubric as the no-compromise gate. The frozen inputs are unchanged, so each row is
+apples-to-apples against the baseline.
+
+### Sub-lever 1 — tighter prompts + thin-core skill surface (SHIPPED)
+
+The audit's Rank-1 lever: shrink the resident scaffolding each fanned agent re-pays, **without
+dropping a load-bearing instruction**, by (a) deslopping verbose restatement to the
+[CLAUDE.md comment-discipline](../CLAUDE.md) ("collapse a docblock that re-derives an ADR's *why*
+to a pointer"), and (b) extending the established thin-core / lazily-`Read`-contract split (the
+`gh-issue-intake-formats` / preflight-detail precedent) by lifting one **off-hot-path** block out
+of the resident core. Applied to the two non-gate, baseline-measured skills:
+
+| Skill (resident core) | on-disk before | after | resident Δ | what moved |
+|---|---:|---:|---:|---|
+| `triage/SKILL.md` | 8,583 tok | 8,077 tok | **−506 tok** (−42 ln) | deslop + the **rare** close-not-planned protocol lifted to [`triage/close-not-planned.md`](../claude-plugins/kampus-pipeline/skills/triage/close-not-planned.md) (681 tok), `Read` **on-demand only on a kill** — never resident on the common triaged / needs-info paths |
+| `write-code/SKILL.md` | 26,277 tok | 26,213 tok | **−64 tok** (−5 ln) | deslop of the `gh api` + glossary boilerplate (within the resident first-~837-line window — see the caveat below) |
+
+**Translating the resident Δ to billed tokens, grounded in the transcript.** `cache_read` is the
+resident prefix re-charged every turn (§2). The per-turn `cache_read` series of the triage baseline
+shows the skill enters the cached prefix at **turn 10** (`cache_read` steps 12,981 → 29,023 as the
+~16k skill+context block becomes resident) and stays resident through turn 19 — **10 of 19 turns**.
+So a −506 tok core shifts the entire tail of that series down by 506:
+
+```
+triage, per fanned agent:
+  cache_read saved   = 506 tok × 10 resident turns      = 5,060 tok
+  one-time ingest    = 506 tok (the turn-10 cache_creation) ≈   506 tok
+  billed saved/run   ≈ 5,566 tok   (vs baseline billed 592,499 → ~586,933, −0.94%/run)
+```
+
+The per-run figure is modest **by design** — it is one disciplined, quality-safe extraction, not an
+aggressive cut. Its weight is the **Rank-4 multiplier**: the triage loop fans **1–9 agents per
+batch** (one per issue), each re-paying the scaffolding with no sharing, so the saving is paid back
+N×:
+
+```
+9-issue triage batch:  9 × 5,566 ≈ 50,094 tok saved, before any issue-specific work
+```
+
+This is the fan-out lever's actual mechanism (audit Rank 4): the realized cross-fan-out win is the
+**indirect N× multiplication of every scaffolding token trimmed**, not a shared cache. write-code's
+−64 tok is reported transparently as a small contribution; its larger structural smell — the skill
+exceeds a single `Read`'s return cap, so the baseline `agent-a734c4b6dc387a61` `Read` it once with
+no pagination and operated on the **truncated first ~837 lines** — means trims *past* that window do
+not reduce *this* initial-build baseline's resident prefix (it was already truncated away). Only
+trims inside the resident window (where the boilerplate deslop lands) count against this baseline;
+the full thin-core restructure that would bring write-code under the `Read` cap is left as the
+forward Rank-3 lever, not forced here.
+
+**Quality gate (§3) — PRESERVED, by construction.** The trim relocated and compressed; it removed
+**no decision rule**. For the triage oracle (`#1227` → `type:decision` + `p2` + `status:triaged`):
+the type table, the boundaries-that-bite, the priority table, the enrich/split rules, the
+human-vs-agent judgment, and the Step-0 claim protocol are all byte-substance-unchanged, and the
+extracted close-not-planned path is **never on `#1227`'s outcome** (a triaged decision, not a kill),
+so the classifier's inputs — and thus its output — are identical. For the write-code oracle (`#1223`
+→ `Fixes #1223` + green CI + `review-code: PASS`): only `gh api`/glossary prose changed, no step of
+the build procedure. `validate-skills` passes (16 skills valid), and every cross-reference still
+resolves (Step 3 → Step 6 → the contract). The gate here is the structural no-rule-dropped argument
+plus this PR's independent review — not a paid oracle re-run (per the lever brief, an expensive
+re-run is not required to measure a relocation whose decision path is provably unchanged).
+
+### Sub-levers 2 & 3 — shared-context reuse / cache-window scheduling (EVALUATED, NOT SHIPPED)
+
+Both target *cross-spawn* reuse, and both are blocked by the same measured fact the audit already
+established (Rank 4): **separate sub-agent sessions share no prompt-prefix cache.** A 5-min cache TTL
+(sub-lever 3) and a "pass the shared context once" scheme (sub-lever 2) only pay off *within one
+session's* turn sequence — which the harness already caches automatically. Across the fan-out the
+agents are independent sessions by construction, so neither can reduce billed tokens without
+collapsing N issues into one shared session — which would **break the one-agent-per-issue isolation
+AC3 forbids** (one issue's context must never leak into another's verdict). There is therefore **no
+quality-neutral, isolation-preserving token reduction** to measure for 2 or 3; shipping a
+speculative scheduler change with no measured win would violate the "real reduction **and** rubric
+pass" bar. Per the lever's own discipline (*ship only what wins; under-claiming beats a regression*),
+they are recorded as not-applicable-as-direct-levers, and the realized fan-out win is sub-lever 1
+multiplied N× (above).
+
+### Net recorded delta (against the §2 baseline)
+
+| Lever | Measured before/after | Quality gate (§3) | Outcome |
+|---|---|---|---|
+| 1 — thin-core skill / tighter prompts | triage core −506 tok → **≈5,566 tok/run**, **≈50k/9-issue batch**; write-code core −64 tok | PRESERVED (no rule dropped; oracle inputs unchanged) | **SHIPPED** |
+| 2 — shared-context reuse | no isolation-preserving reduction (separate sessions, no shared prefix cache) | n/a (would break AC3 isolation) | not shipped |
+| 3 — cache-window scheduling | no cross-session reduction (5-min TTL is intra-session only) | n/a | not shipped |
+
+**Net: 1 of 3 sub-levers shipped** — a real, quality-preserved scaffolding reduction whose value is
+the Rank-4 N× fan-out multiplication. The remaining two are honestly out, grounded in the audit's
+measured cross-session-cache finding, not shipped as speculation.
+
 ## Tooling gap (follow-up)
 
 Per-stage token spend **is** individually attributable offline — each stage sub-agent has its own
@@ -151,5 +249,3 @@ A small `pipeline-cli` reporter that, given a stage agent's transcript, emits th
 line (reusing `spawn-guard`'s pure core read-only) would make matched before/after measurement a
 one-command step. Filed as report residue ([#1382](https://github.com/kamp-us/phoenix/issues/1382));
 not built here to keep this child a non-control-plane doc artifact.
-</content>
-</invoke>
