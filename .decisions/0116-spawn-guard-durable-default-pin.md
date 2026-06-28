@@ -1,12 +1,12 @@
 ---
-id: 0114
+id: 0116
 title: Spawn-Guard's Unset-Inherit Path Falls Back to a Committed DEFAULT_PIN, Not an Uncommitted Operator-Shell WORKFLOW_MODEL
 status: accepted
 date: 2026-06-27
 tags: [pipeline, control-plane, spawn-guard, harness]
 ---
 
-# 0114 — Spawn-Guard's Unset-Inherit Path Falls Back to a Committed `DEFAULT_PIN`
+# 0116 — Spawn-Guard's Unset-Inherit Path Falls Back to a Committed `DEFAULT_PIN`
 
 ## Context
 

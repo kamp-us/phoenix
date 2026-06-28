@@ -6,7 +6,7 @@
  *
  *   - `guard`      — a PreToolUse hook on Task/Workflow. Reads the hook envelope on
  *     stdin (`tool_input.model`), resolves the `WORKFLOW_MODEL` pin from the env (an
- *     absent pin falls back to the committed `DEFAULT_PIN`, ADR 0114), and renders the
+ *     absent pin falls back to the committed `DEFAULT_PIN`, ADR 0116), and renders the
  *     `decideSpawn` outcome as a permission decision: **allow** an allowlisted model,
  *     **allow** an unset request to inherit the session model (#776/#943), or **deny**
  *     an off-allowlist request. Per ADR 0092 it still fails closed on a *present* bad

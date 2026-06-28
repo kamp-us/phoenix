@@ -13,7 +13,7 @@
  *     allowlisted — but that pin is uncommitted and operator-shell-only, so a fresh
  *     clone / CI / cron / new operator without it re-hit the #776 fail-closed-on-unset
  *     symptom. So an **absent** pin now falls back to a committed `DEFAULT_PIN` (ADR
- *     0114): unset spawns resolve to allow-inherit durably, independent of the launching
+ *     0116): unset spawns resolve to allow-inherit durably, independent of the launching
  *     shell — the spawn still inherits the session model, only the gate stops blocking it.
  *     An explicit off-allowlist request is still denied even when a valid pin exists, so a
  *     bad model can't smuggle past, and a **present-but-off-allowlist** pin (a real
@@ -31,7 +31,7 @@
 export const ALLOWLIST: ReadonlyArray<string> = ["claude-opus-4-8", "claude-opus-4-8[1m]"] as const;
 
 /**
- * The committed, allowlisted pin an unset `WORKFLOW_MODEL` falls back to (ADR 0114).
+ * The committed, allowlisted pin an unset `WORKFLOW_MODEL` falls back to (ADR 0116).
  * Durable in source, so an unset spawn resolves to allow-inherit regardless of the
  * launching shell — the fix for the #943 fragility where the inherit path depended on
  * an uncommitted, operator-shell-only env pin. Must stay a member of `ALLOWLIST`.
@@ -74,7 +74,7 @@ export const isOnAllowlist = (model: string | null | undefined): boolean => {
  *   or null when the spawn left it unset.
  * - `pin` — the resolved `WORKFLOW_MODEL` env value, or null when unset.
  *
- * Rules (fail-closed, ADR 0092; durable default pin, ADR 0114). This core owns the full
+ * Rules (fail-closed, ADR 0092; durable default pin, ADR 0116). This core owns the full
  * allow/inherit/deny decision — `bin.ts` only renders it, never re-derives the outcome.
  * The **effective pin** is the env `WORKFLOW_MODEL` when set, else the committed
  * `DEFAULT_PIN` — so an *absent* pin no longer fails closed (the #943 fragility), but a

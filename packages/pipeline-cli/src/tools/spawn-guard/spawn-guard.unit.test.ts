@@ -66,7 +66,7 @@ describe("decideSpawn — allowlist guard (allow / allow-inherit / deny)", () =>
 		}
 	});
 
-	it("ALLOW-INHERITS an unset request with NO env pin via the committed DEFAULT_PIN (#943 durable default, ADR 0114)", () => {
+	it("ALLOW-INHERITS an unset request with NO env pin via the committed DEFAULT_PIN (#943 durable default, ADR 0116)", () => {
 		// A fresh clone / CI / cron with no WORKFLOW_MODEL in-shell no longer re-hits the
 		// #776 fail-closed-on-unset symptom — the absent pin falls back to the committed default.
 		const d = decideSpawn(null, null);

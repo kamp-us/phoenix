@@ -120,3 +120,4 @@ One row per ADR. Read the file for the why.
 | [0113](0113-draft-composes-at-pano-seam.md) | Draft-Private-to-Author Composes at the Pano Read Seam, Not the Shared Lifecycle Union | accepted | 2026-06-27 |
 | [0114](0114-test-import-closure-gates-test-consumed-packages.md) | Gate Worker-Irrelevant-but-Test-Consumed `packages/**` via a Computed Test-Import Closure in `@kampus/worker-relevance` | accepted | 2026-06-28 |
 | [0115](0115-agent-distinguishable-claim-marker.md) | The agent-distinguishable claim marker — a session-id-stamped claim comment (tiebreak on earliest authorized claim, recognized by `CLAUDE_CODE_SESSION_ID`) claimed pre-spawn, the one contract three lock surfaces adopt | accepted | 2026-06-27 |
+| [0116](0116-spawn-guard-durable-default-pin.md) | Spawn-Guard's Unset-Inherit Path Falls Back to a Committed DEFAULT_PIN, Not an Uncommitted Operator-Shell WORKFLOW_MODEL | accepted | 2026-06-27 |
