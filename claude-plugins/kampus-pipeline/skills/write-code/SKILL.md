@@ -754,8 +754,36 @@ Ground the implementation in the codebase the way the repo expects: the ADRs in
 are *how the current code is shaped* — read the relevant ones before writing, and
 follow them over intuition (per `CLAUDE.md`). Implement the issue's acceptance
 criteria; they are the literal checklist `review-code` will verify, so build to make
-every box checkable from the outside. Run `pnpm typecheck` and the test suite as the
-repo conventions require before you open the PR.
+every box checkable from the outside. Run the **pre-push typecheck** (below) and the
+test suite as the repo conventions require before you open the PR.
+
+### Pre-push typecheck — run the EXACT CI command (`pnpm typecheck`), never a hand-rolled `tsc`
+
+Run **`pnpm typecheck`** — the *exact* command CI's `lint / format / typecheck` job runs
+(`.github/workflows/ci.yml`) — and **refuse to push on any non-zero exit.** This is the
+**only** typecheck that predicts the gate, because it is *byte-for-byte the gate's own
+command*:
+
+```bash
+pnpm typecheck
+```
+
+`pnpm typecheck` fans out (`turbo run typecheck`) to each app's project-aware checker — for
+`apps/web` that is `pnpm fate:generate && tsgo -b tsconfig.worker.json tsconfig.node.json &&
+tsgo -p tsconfig.app.json …` — so it covers the **full workspace under the real project graph,
+including every newly-added test file**, with the repo's strict flags
+(`noUncheckedIndexedAccess`, `exactOptionalPropertyTypes`) in force. **Do NOT** substitute a
+hand-rolled `tsc -p tsconfig.json` (or any bare `tsc`): the repo's checker is **`tsgo`**
+(`@effect/tsgo` / `@typescript/native-preview`), a *different engine* than stock `tsc`, and a
+root-`tsconfig.json` `tsc` run uses a *different, partial project scope* that **omits the
+app's test files** — so a type error in a new test file passes your self-check and only
+surfaces when CI (or `review-code`) re-runs the real `pnpm typecheck` at head, costing a full
+FAIL → repair round-trip the pre-push gate exists to prevent (#1479; the #1406 / #1407
+incidents — new test files that failed `TS18048` / `TS2412` / `TS2345` only under the gate's
+`tsgo`). **New test files are full TS under the same flags and the same project as production
+code — a test-file type error is a real gate failure, not noise.** So run `pnpm typecheck`
+**after your final test edits**, over the whole workspace, and treat a non-zero exit as a
+hard "do not push" — never report "typecheck clean" off a narrower or different-engine run.
 
 For **lint**, run **`pnpm lint:worktree`**, not `pnpm lint`. Bare `pnpm lint`
 (`biome check .`) self-no-ops from inside the worktree: `.` resolves to the
@@ -1456,7 +1484,8 @@ before this switch, then gate every later `git commit`/`git push` on `wt_preflig
 as the initial build does.
 
 Ground the fixes the same way the initial build does — ADRs in `.decisions/` for the *why*,
-patterns in `.patterns/` for *how the code is shaped* — and run `pnpm typecheck` / the test
+patterns in `.patterns/` for *how the code is shaped* — and run the **pre-push typecheck**
+(`pnpm typecheck`, the exact CI command — never a hand-rolled `tsc`; see Step 4) / the test
 suite plus **`pnpm lint:worktree`** from Step 4 (never `pnpm lint` / `biome check .`,
 which self-no-ops from inside a worktree — #236, #553) before pushing, exactly as Step 4 requires.
 
