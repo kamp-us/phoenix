@@ -829,11 +829,13 @@ linked-but-non-closing reference and merges the PR without closing `#N` (the #13
 #1347) — so this is the one producer token that gets a partial-split PR through the gate without a
 human hand-editing the body. The marker is defined once in the contract's
 [§9 The PR-body closing-keyword seam](../gh-issue-intake-formats.md) (its `Part of #N` subsection);
-cite §9, don't re-derive it here. This is consistent with the `(c)` inverse guard: because
-`Part of` is not a closing keyword, a `Part of #N`-only PR has a closing-keyword set of exactly
-`{}` — `Part of #N` is never a stray close directive — which is correct, it closes nothing. Use
-this **only** for a genuine partial-split (sibling lane left to finish); a PR that fully completes
-its issue emits the closing `Fixes #N` as always.
+cite §9, don't re-derive it here. This reconciles with **both** halves of the Step 5 self-check:
+with the `(b)` armed-seam check, which treats a `Part of #N` marker as a *correctly-armed*
+partial-split seam (not a broken one) so it never drives you to patch in a closing `Fixes #N`;
+and with the `(c)` inverse guard, because `Part of` is not a closing keyword, so a `Part of #N`-only
+PR has a closing-keyword set of exactly `{}` — `Part of #N` is never a stray close directive —
+which is correct, it closes nothing. Use this **only** for a genuine partial-split (sibling lane
+left to finish); a PR that fully completes its issue emits the closing `Fixes #N` as always.
 
 **If Step 4b fired, add a plain `Flag: <FLAG_KEY>` line to the body.** This is the producer half
 of ship-it's release-queue detector (§Step 4b): whenever the change ships gated behind a flag — the
@@ -889,11 +891,18 @@ itself**: read the PR body back and assert it matches a recognized closing keywo
 # (a) the cross-reference landed (a closing OR non-closing mention both show here — necessary, not sufficient)
 gh api repos/$REPO/issues/<N>/timeline \
   --jq '.[] | select(.event == "cross-referenced") | .event'
-# (b) the SUFFICIENT check, REST-only: the body carries a real CLOSING keyword for #N
-#     (the same keyword set ship-it Step 1 resolves: fix(es|ed)/close[sd]?/resolve[sd]?)
-gh api repos/$REPO/pulls/<PR> --jq '.body' \
-  | grep -qiE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#<N>\b' \
-  && echo "closing seam armed" || echo "BROKEN SEAM — body has no closing keyword for #<N>"
+# (b) the SUFFICIENT check, REST-only: the seam is armed iff the body carries EITHER a real
+#     CLOSING keyword for #N (full-close PR — the same set ship-it Step 1 resolves:
+#     fix(es|ed)/close[sd]?/resolve[sd]?) OR a `Part of #N` partial-split marker (the §9
+#     non-closing link that keeps #N OPEN by design). Only NEITHER is a truly broken seam.
+BODY=$(gh api repos/$REPO/pulls/<PR> --jq '.body')
+if printf '%s' "$BODY" | grep -qiE '\b(fix(e[sd])?|close[sd]?|resolve[sd]?)\s+#<N>\b'; then
+  echo "closing seam armed"
+elif printf '%s' "$BODY" | grep -qiE '\bpart of\s+#<N>\b'; then
+  echo "partial-split seam armed — Part of #<N>, no closing keyword by design (§9; #<N> stays open)"
+else
+  echo "BROKEN SEAM — body links #<N> with neither a closing keyword nor a 'Part of #<N>' marker"
+fi
 # (c) the INVERSE GUARD, REST-only: NO closing keyword targets any issue OTHER than #N.
 #     The set {issue numbers preceded by a closing keyword in the body} must be exactly {N};
 #     a stray member is a sibling-ref directive that auto-closes an issue this PR never fixed (#1259).
@@ -914,10 +923,15 @@ if [ -n "$FLAG_KEY" ]; then
 fi
 ```
 
-If (b) reports a broken seam, the body's mention was non-closing (a `Refs`/bare-`#N` slip):
-**fix it before stopping** — re-`create` is gone, so patch the body via REST
-(`gh api -X PATCH repos/$REPO/pulls/<PR> -f body="…"` with a real `Fixes #N`) and re-check,
-since shipping the PR with a broken seam is exactly the #647 stall. If (c) reports a **stray**
+If (b) reports a broken seam, the body links `#N` with **neither** a closing keyword **nor**
+a `Part of #N` marker (a `Refs`/bare-`#N` slip): **fix it before stopping** — re-`create` is
+gone, so patch the body via REST (`gh api -X PATCH repos/$REPO/pulls/<PR> -f body="…"`) with a
+real `Fixes #N` for a full close, **or** — for an intentional partial-split that must keep `#N`
+open — a `Part of #N` marker (§9), then re-check, since shipping the PR with a broken seam is
+exactly the #647 stall. **Do not** apply this remediation to a PR whose body already carries
+`Part of #N`: `(b)` reports `partial-split seam armed` there, not a broken seam, so it does **not**
+need fixing — adding a `Fixes #N` to a `Part of #N`-only partial-split would auto-close on merge
+the very issue the split must keep open, re-introducing the premature-auto-close class. If (c) reports a **stray**
 close directive, a sibling/related `#M` carries a closing keyword that will wrongly auto-close
 `#M` on merge — patch the body the same way to downgrade each stray `#M` to its non-closing
 form (`addresses`/`relates to`/`see #M`) and re-run (c), since shipping it is exactly the
