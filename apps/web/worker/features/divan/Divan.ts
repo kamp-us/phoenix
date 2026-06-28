@@ -22,10 +22,10 @@
 import {Context, Effect, Layer} from "effect";
 import {Pano} from "../pano/Pano.ts";
 import {Sozluk} from "../sozluk/Sozluk.ts";
+import {excerpt} from "../text/index.ts";
 import {buildRoster, type DivanCaylakEntry, type DivanItem} from "./roster.ts";
 
-/** Coerce a nullable body/title onto the non-null preview string. */
-const preview = (text: string | null | undefined): string => text ?? "";
+const preview = (text: string | null | undefined): string => excerpt(text ?? "");
 
 export class Divan extends Context.Service<
 	Divan,

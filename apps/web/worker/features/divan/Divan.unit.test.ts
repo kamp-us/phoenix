@@ -191,6 +191,38 @@ describe("Divan.roster — person-grouped, removed & live excluded", () => {
 	});
 });
 
+describe("Divan preview — a short excerpt, never the full node", () => {
+	const longBody = "söz ".repeat(200).trim(); // ~799 chars, well past the 280 excerpt cap
+	const longLayer = DivanLive.pipe(
+		Layer.provideMerge(
+			Layer.mergeAll(
+				sozlukStub([
+					{
+						id: "d-long",
+						authorId: "cyl-a",
+						sandboxed: true,
+						removed: false,
+						createdAt: at("2026-06-25T01:00:00Z"),
+						text: longBody,
+					},
+				]),
+				panoStub([], []),
+			),
+		),
+	);
+
+	it("truncates a long body to the ellipsis excerpt form", () => {
+		const items = Effect.runSync(
+			Effect.flatMap(Divan, (d) => d.backlogOf("cyl-a")).pipe(Effect.provide(longLayer)),
+		);
+		const item = items[0];
+		if (item === undefined) throw new Error("expected one backlog item");
+		assert.isBelow(item.preview.length, longBody.length);
+		assert.isTrue(item.preview.endsWith("…"));
+		assert.strictEqual(item.preview.length, 280);
+	});
+});
+
 describe("Divan.backlogOf — one çaylak's sandboxed backlog, newest first", () => {
 	it("returns only that author's sandboxed-not-removed items, newest first", () => {
 		const items = run(Effect.flatMap(Divan, (d) => d.backlogOf("cyl-a")));
