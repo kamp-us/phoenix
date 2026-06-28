@@ -67,7 +67,13 @@ resource uses: list apps `GET /accounts/{acct}/flagship/apps`, list flags
   list envelopes; the `Cloudflare` `Context.Service` shells `curl` over
   `ChildProcessSpawner` to list workers + D1 + Flagship apps/flags and delete one.
   Credentials come from `$CLOUDFLARE_API_TOKEN` / `$CLOUDFLARE_ACCOUNT_ID` at runtime,
-  never from source.
+  never from source. The Flagship enumeration fans out one flag-list call per
+  `phoenix-phoenix-flags-` app, so on an account with hundreds of apps it must survive a
+  transient rate limit: each call captures the HTTP status in-band (`curl -w`, not `-f`)
+  and a retryable status (429 + 5xx) is re-driven with bounded, jittered exponential
+  backoff before the list aborts (#1506). A non-retryable HTTP error surfaces its status
+  **and** the CF error body (`CfHttpError`) instead of an opaque empty error; the bearer
+  token stays redacted in every error surface.
 - **`src/github.ts`** — the `gh api` boundary for the OPEN PR numbers (the previews to
   keep). REST only (GraphQL is broken on the kamp-us org). Mirrors `@kampus/flake-rate`.
 - **`src/bin.ts`** — the `effect/unstable/cli` `sweep` command. **DRY-RUN by default**:
