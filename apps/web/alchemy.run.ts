@@ -37,16 +37,14 @@ import * as Cloudflare from "alchemy/Cloudflare";
 import * as Effect from "effect/Effect";
 import {PhoenixDb} from "./worker/db/resources.ts";
 import {resolveStateMode} from "./worker/env.ts";
+import {isProductionDeploy} from "./worker/environment.ts";
 import {
 	authorshipLoopFlag,
 	demoTargetingFlag,
 	Flagship,
 	panoDraftSaveFlag,
 } from "./worker/features/flagship/resources.ts";
-import {
-	isProductionDeploy,
-	provisionEmailSending,
-} from "./worker/features/pasaport/email-resources.ts";
+import {provisionEmailSending} from "./worker/features/pasaport/email-resources.ts";
 import PhoenixLive, {Phoenix} from "./worker/index.ts";
 
 export default Alchemy.Stack(

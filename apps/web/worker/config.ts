@@ -10,20 +10,21 @@
  * alchemy CLI process, a different moment from these runtime reads.
  */
 import * as Config from "effect/Config";
+import {DEFAULT_ENVIRONMENT, ENVIRONMENTS, type Environment} from "./environment.ts";
 
 /**
- * The deploy environment — three classes (ADR 0088). Non-redacted (→ `plain_text`
- * binding), fail-closed: defaults to "production" when unset, so a missing var
- * closes every dev gate. `development` is local `alchemy dev`; `preview` is a
- * deployed per-PR stage on `*.kampusinfra.workers.dev`; `production` is prod.
+ * The deploy environment — three classes (ADR 0088), the taxonomy owned by
+ * `environment.ts`. Non-redacted (→ `plain_text` binding), fail-closed: defaults to
+ * "production" when unset, so a missing var closes every dev gate. `development` is local
+ * `alchemy dev`; `preview` is a deployed per-PR stage on `*.kampusinfra.workers.dev`;
+ * `production` is prod.
  */
-export const environment = Config.literals(
-	["development", "preview", "production"],
-	"ENVIRONMENT",
-).pipe(Config.withDefault("production"));
+export const environment = Config.literals(ENVIRONMENTS, "ENVIRONMENT").pipe(
+	Config.withDefault(DEFAULT_ENVIRONMENT),
+);
 
-/** The three deploy classes the `environment` Config resolves to (ADR 0088). */
-export type Environment = "development" | "preview" | "production";
+/** Re-exported from the taxonomy owner (`environment.ts`) for the runtime read sites. */
+export type {Environment};
 
 /**
  * The better-auth session-signing secret. Redacted → `secret_text` binding (a
