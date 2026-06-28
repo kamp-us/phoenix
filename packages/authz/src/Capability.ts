@@ -36,23 +36,39 @@ import {ancestry, type Resource} from "./Resource.ts";
  * extending the service folds the discharge verbs into the type's `EffectUnify`,
  * which then fails to match the bare service the class actually is. Keeping the
  * statics as their own members leaves the Effect-typed member pure.
+ *
+ * Parameterized by the `Id` string literal as well as `Self`, mirroring
+ * effect-smol's `Context.ServiceClass<Self, Identifier, Shape>` (Context.ts):
+ * carrying `Id` keeps each capability **nominally distinct**. Widening the three
+ * id sites to `string` (the pre-#1483 seal) collapsed two capabilities to the
+ * same structural type, so `Grant<X>`/`Grant<Y>` unified and a wrong-right proof
+ * was undetectable at compile time. With `Id` carried, `Grant<X>` ≢ `Grant<Y>`
+ * (the brand propagates through `Grant<out M = Self>`). The brand is phantom —
+ * type-level only, erased at emit; no runtime property is added (the
+ * unforgeable-proof seal lives in `Grant.ts`'s runtime `mint`/`provide`).
  */
-export type CapabilityTag<Self> = Context.Service<Self, Grant<Self>> &
+export type CapabilityTag<Self, Id extends string> = Context.ServiceClass<Self, Id, Grant<Self>> &
 	(new (
 		_: never,
-	) => Context.ServiceClass.Shape<string, Grant<Self>>) & {
-		readonly key: string;
+	) => Context.ServiceClass.Shape<Id, Grant<Self>>) & {
+		readonly key: Id;
 	};
 
 /** The generic base capability — discharged by a caller-supplied check. */
-export type ClassCapability<Self, DenyError> = CapabilityTag<Self> & {
+export type ClassCapability<Self, Id extends string, DenyError> = CapabilityTag<Self, Id> & {
 	authorize<E, R>(
 		check: Effect.Effect<boolean, E, R>,
 	): Effect.Effect<Grant<Self>, DenyError | E, CurrentActor | R>;
 };
 
 /** A `Level`-axis capability — discharged by reading standing against a floor. */
-export type LevelCapability<Self, DenyError, ReadError, ReadReqs> = CapabilityTag<Self> & {
+export type LevelCapability<
+	Self,
+	Id extends string,
+	DenyError,
+	ReadError,
+	ReadReqs,
+> = CapabilityTag<Self, Id> & {
 	readonly require: Effect.Effect<
 		Grant<Self>,
 		DenyError | ReadError,
@@ -61,7 +77,7 @@ export type LevelCapability<Self, DenyError, ReadError, ReadReqs> = CapabilityTa
 };
 
 /** A `Relation`-axis capability — discharged over a resource's ancestry. */
-export type RelationCapability<Self, DenyError> = CapabilityTag<Self> & {
+export type RelationCapability<Self, Id extends string, DenyError> = CapabilityTag<Self, Id> & {
 	over(
 		object: Resource,
 	): Effect.Effect<Grant<Self>, DenyError, CurrentActor | RelationStore | AgentAuthority>;
@@ -114,7 +130,7 @@ const makeClass =
 	<const Id extends string, DenyError>(
 		id: Id,
 		config: ClassConfig<DenyError>,
-	): ClassCapability<Self, DenyError> => {
+	): ClassCapability<Self, Id, DenyError> => {
 		const {deny} = config;
 		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability`.
 		class Tag extends Context.Service<Tag, Grant<Self>>()(id) {
@@ -143,7 +159,7 @@ const makeLevel =
 	<const Id extends string, Name extends string, DenyError, ReadError, ReadReqs>(
 		id: Id,
 		config: LevelConfig<Name, DenyError, ReadError, ReadReqs>,
-	): LevelCapability<Self, DenyError, ReadError, ReadReqs> => {
+	): LevelCapability<Self, Id, DenyError, ReadError, ReadReqs> => {
 		const {scale, min, read, deny} = config;
 		type Branch = Effect.Effect<Grant<Self>, DenyError | ReadError, AgentAuthority | ReadReqs>;
 		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability` (see makeClass).
@@ -190,7 +206,7 @@ const makeRelation =
 	<const Id extends string, DenyError>(
 		id: Id,
 		config: RelationConfig<DenyError>,
-	): RelationCapability<Self, DenyError> => {
+	): RelationCapability<Self, Id, DenyError> => {
 		const {relation, deny} = config;
 		type Branch = Effect.Effect<Grant<Self>, DenyError, AgentAuthority>;
 		// Self-identity is `Tag`, bridged to the external `Self` by `sealCapability` (see makeClass).

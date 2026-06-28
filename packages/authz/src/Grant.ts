@@ -70,8 +70,9 @@ export const isGrant = (value: unknown): value is Grant<unknown> =>
  * key, a grant for capability X discharges only X's requirement — a wrong-capability
  * grant leaves the op's requirement unsatisfied (a fail-loud runtime defect, where
  * the old static verb silently provided any grant under the *named* capability's key).
- * (The type-level brand does NOT yet distinguish capabilities — `Grant<X>`/`Grant<Y>`
- * unify, so wrong-proof is not a compile error; pre-existing gap, see #1483.)
+ * The type-level brand also distinguishes capabilities: the sealed `CapabilityTag` carries
+ * each capability's `id` literal, so `Grant<X>` ≢ `Grant<Y>` and a wrong-proof is a compile
+ * error too (#1483 — the brand is phantom, no runtime change here).
  */
 const provide =
 	<C>(grant: Grant<C>) =>

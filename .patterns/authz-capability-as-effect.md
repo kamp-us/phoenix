@@ -64,17 +64,20 @@ provide a typed proof). `Grant.provide` is generic over `Grant<C>` — it reads 
 `Context.Key` the grant carries (stamped non-enumerably by `mint`) and removes `C` from R, so
 it routes a proof by the grant's *own* key: a grant for capability X discharges only X's
 requirement, and a wrong-capability grant leaves the op's requirement unsatisfied (a fail-loud
-runtime defect). The guarantee pinned by `Capability.typetest.ts` is **forgot-to-provide**, an
-**R channel** assertion with `expectTypeOf`: omit `Grant.provide` and the capability stays
-required in R; provide it and R collapses to `never`. (It reads the channel rather than
-asserting an assignment — assigning a service-requiring effect to an `R = never` annotation
-trips the language-service's `effect(missingEffectContext)` diagnostic, which `@ts-expect-error`
-does not catch.)
+runtime defect). `Capability.typetest.ts` pins **two** guarantees as **R channel** assertions
+with `expectTypeOf`: **forgot-to-provide** — omit `Grant.provide` and the capability stays
+required in R, provide it and R collapses to `never` — and **wrong-proof** — `Grant<X>` ≢
+`Grant<Y>` for two distinct capabilities (#1483). (It reads the channel rather than asserting an
+assignment — assigning a service-requiring effect to an `R = never` annotation trips the
+language-service's `effect(missingEffectContext)` diagnostic, which `@ts-expect-error` does not
+catch.)
 
-> **Known gap (#1483):** the **wrong-proof** case is not yet a *compile* error. The sealed
-> `CapabilityTag` drops effect's id-based nominal brand, so `Grant<X>`/`Grant<Y>` unify for any
-> two capabilities — the "wrong right's proof is the wrong *type*" claim below holds at runtime
-> (the grant's own key won't discharge a different requirement) but not yet at the type level.
+The **wrong-proof** distinction holds **both** at runtime (the grant's own `Context.Key` won't
+discharge a different requirement) **and** at compile time: the sealed `CapabilityTag<Self, Id>`
+carries each capability's `id` string literal (mirroring effect-smol's `Context.ServiceClass<Self,
+Identifier, Shape>`), so two capabilities are nominally distinct and `Grant<X>` ≢ `Grant<Y>`
+(#1483 closed). The `Id` brand is phantom — type-level only, erased at emit — so the runtime seal
+in `Grant.ts` is unchanged.
 
 **2. `Grant` is sealed two ways** (`Grant.ts`):
 - **Its constructor never escapes** — the `Grant` *type*, the `Grant.provide` discharge verb,

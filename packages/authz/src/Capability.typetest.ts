@@ -35,7 +35,16 @@ class OpenTerm extends Capability.Level<OpenTerm>()("test/OpenTerm", {
 	deny: () => new Error("requires yazar"),
 }) {}
 
+/** A second, distinct capability — its proof must NOT be the same type as OpenTerm's. */
+class OtherCap extends Capability.Level<OtherCap>()("test/OtherCap", {
+	scale: ladder,
+	min: "yazar",
+	read: () => Effect.succeed("yazar" as const),
+	deny: () => new Error("requires yazar"),
+}) {}
+
 declare const grant: Grant<OpenTerm>;
+declare const wrongGrant: Grant<OtherCap>;
 
 /** A privileged op declares the proof in its R channel and reads it back. */
 const op: Effect.Effect<string, never, OpenTerm> = Effect.gen(function* () {
@@ -52,6 +61,13 @@ export const discharged: Effect.Effect<string, never, never> = op.pipe(Grant.pro
 // Either half breaking is a `tsgo` error here.
 expectTypeOf<RequirementsOf<typeof op>>().toEqualTypeOf<OpenTerm>();
 expectTypeOf<RequirementsOf<typeof discharged>>().toEqualTypeOf<never>();
+
+// The wrong-proof gate (#1483): a proof of one right is NOT a proof of another. The
+// sealed `CapabilityTag` carries each capability's `id` literal, so `Grant<X>` ≢ `Grant<Y>`
+// for distinct capabilities. Pre-fix these unified (the seal widened `id` to `string`),
+// which made this assertion fail; carrying the `Id` literal makes the distinction a
+// tsgo-checked fact.
+expectTypeOf(grant).not.toEqualTypeOf(wrongGrant);
 
 /** The discharge verb requires the ports — never the proof it produces. */
 export const required: Effect.Effect<
