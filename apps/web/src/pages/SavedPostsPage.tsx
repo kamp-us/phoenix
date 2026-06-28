@@ -11,8 +11,12 @@
  * reads that live `isSaved` and removes itself the moment it flips false. The
  * server connection therefore needs no per-viewer `deleteEdge` plumbing — the
  * drop is driven entirely by the entity update the card already subscribes to.
+ *
+ * The list count + empty-state derive from that SAME live `isSaved` rule (`savedReconcile`),
+ * not edge-`node` truthiness: since the un-save leaves the edge/node truthy, a node-presence
+ * count would over-report vanished rows and never trip the empty state until reload (#1417).
  */
-import type * as React from "react";
+import {type ReactNode, useCallback, useEffect, useState} from "react";
 import {useLiveListView, useLiveView, useRequest, type ViewRef} from "react-fate";
 import {Navigate} from "react-router";
 import {useSession} from "../auth/client";
@@ -21,6 +25,7 @@ import {PanoPostCard, PanoPostCardView} from "../components/pano/PanoPostCard";
 import {Screen} from "../fate/Screen";
 import {LoadMoreButton} from "../fate/wire";
 import {authRedirectPath} from "../lib/returnTo";
+import {countSavedRows, isRowSaved} from "./savedReconcile";
 
 const PAGE_SIZE = 20;
 
@@ -69,29 +74,45 @@ type SavedConnection = ReturnType<
 function SavedRows({connection}: {connection: SavedConnection}) {
 	const [items, loadNext] = useLiveListView(SavedConnectionView, connection);
 
-	// `items.length` counts edges still in the connection; an un-saved row stays
-	// an edge but renders nothing (`SavedRow` returns null), so the count would
-	// over-report. Drive the meta + empty state off the still-saved count instead.
-	const savedNodes = items.filter(({node}) => node);
+	// Each row reads its `isSaved` via its own `useLiveView` hook, and lifting that read
+	// into a parent loop would vary the hook count as pagination grows `items` — illegal.
+	// So rows report their live `isSaved` up here; the count + empty-state then use the
+	// SAME rule the row drops on (`savedReconcile`), never edge-`node` truthiness (#1417).
+	const [savedById, setSavedById] = useState<ReadonlyMap<string | number, boolean>>(
+		() => new Map(),
+	);
+	const reportSaved = useCallback((id: string | number, saved: boolean) => {
+		setSavedById((prev) => {
+			if (prev.get(id) === saved) return prev;
+			const next = new Map(prev);
+			next.set(id, saved);
+			return next;
+		});
+	}, []);
 
-	if (savedNodes.length === 0) {
-		return (
-			<SavedChrome meta="0 kayıt">
+	// A genuinely deleted entity has no node — that's edge presence (a row can't render),
+	// NOT saved-ness, which is the live `isSaved` below.
+	const nodes = items.flatMap(({node}) => (node ? [node] : []));
+	const count = countSavedRows(
+		nodes.map((node) => node.id),
+		savedById,
+	);
+
+	return (
+		<SavedChrome meta={count === 0 ? "0 kayıt" : `${count} kayıt`}>
+			{/* Rows stay mounted even at count 0 so each keeps reporting its live `isSaved`;
+			    an unsaved row renders null, so the empty-state message is the only visible
+			    content when the still-saved count reaches 0. */}
+			<div className="kp-pano-list">
+				{nodes.map((node) => (
+					<SavedRow key={node.id} post={node} onReconcile={reportSaved} />
+				))}
+			</div>
+			{count === 0 ? (
 				<p style={{font: "var(--t-meta)", color: "var(--text-muted)"}}>
 					henüz kaydedilen yok — bir başlığı <strong>kaydet</strong> ile saklayabilirsin.
 				</p>
-			</SavedChrome>
-		);
-	}
-
-	return (
-		<SavedChrome meta={`${savedNodes.length} kayıt`}>
-			<div className="kp-pano-list">
-				{savedNodes.map(({node}) => (
-					<SavedRow key={node.id} post={node} />
-				))}
-			</div>
-			{loadNext ? (
+			) : loadNext ? (
 				<div style={{marginTop: "var(--s-3)", display: "flex", justifyContent: "center"}}>
 					<LoadMoreButton loadNext={loadNext} />
 				</div>
@@ -102,16 +123,27 @@ function SavedRows({connection}: {connection: SavedConnection}) {
 
 /**
  * One saved row. Reads the post's live `isSaved` so an un-save (from this card's
- * own `PostSaveButton`, or another client/tab) drops the row immediately. Ranks
+ * own `PostSaveButton`, or another client/tab) drops the row immediately, and
+ * reports that same saved-ness up so the list count + empty-state track it. Ranks
  * are omitted — a saved list has no ordinal meaning, it's a personal collection.
  */
-function SavedRow({post}: {post: ViewRef<"Post">}) {
+function SavedRow({
+	post,
+	onReconcile,
+}: {
+	post: ViewRef<"Post">;
+	onReconcile: (id: string | number, saved: boolean) => void;
+}) {
 	const data = useLiveView(PanoPostCardView, post);
-	if (data.isSaved === false) return null;
+	const saved = isRowSaved(data.isSaved);
+	useEffect(() => {
+		onReconcile(data.id, saved);
+	}, [data.id, saved, onReconcile]);
+	if (!saved) return null;
 	return <PanoPostCard post={post} />;
 }
 
-function SavedChrome({meta, children}: {meta: React.ReactNode; children: React.ReactNode}) {
+function SavedChrome({meta, children}: {meta: ReactNode; children: ReactNode}) {
 	return (
 		<>
 			<Subnav title="kaydedilenler" meta={meta} />

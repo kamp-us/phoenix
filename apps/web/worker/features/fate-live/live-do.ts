@@ -27,7 +27,7 @@ import * as Queue from "effect/Queue";
 import * as Stream from "effect/Stream";
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse";
 import type {BufferedFrame, DeliverFrame, LiveLimits, SubscriberRow} from "./protocol.ts";
-import {encodeFrame, SSE_HEADERS} from "./protocol.ts";
+import {defaultLiveLimits, encodeFrame, SSE_HEADERS} from "./protocol.ts";
 
 const GENERATION_KEY = "connection:generation";
 
@@ -35,6 +35,16 @@ const GENERATION_KEY = "connection:generation";
 const BUFFER_SEQ_KEY = "topic:buffer:seq";
 
 const PRUNE_ALARM_DELAY_MS = 60_000;
+
+/**
+ * KV key under which the topic role stamps the probe timeout the request path
+ * threaded. The platform-fired `alarm()` has no worker call to thread `LiveLimits`
+ * through, so the most recent `register` persists `deliveryAttemptTimeoutMs` here for
+ * the alarm to read back — closing the decision-2B hole ("the DO never invents its
+ * own", see {@link LiveLimits}) at the alarm seam instead of duplicating the
+ * literal. See ADR 0037.
+ */
+const REAP_PROBE_TIMEOUT_KEY = "topic:reap:probe-timeout-ms";
 
 /**
  * Defensive margin on the cross-DO replay bound: `subscribedAt` is the connection
@@ -429,12 +439,17 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 		return grouped;
 	};
 
-	const ensureAlarm = Effect.gen(function* () {
-		const existing = yield* state.storage.getAlarm();
-		if (existing == null) {
-			yield* state.storage.setAlarm(Date.now() + PRUNE_ALARM_DELAY_MS);
-		}
-	});
+	const ensureAlarm = (limits: LiveLimits) =>
+		Effect.gen(function* () {
+			// Stamp the threaded probe budget so the platform-fired `alarm()` reaps on the
+			// same `deliveryAttemptTimeoutMs` the request path uses (decision 2B), never a
+			// DO-invented literal — see {@link REAP_PROBE_TIMEOUT_KEY}.
+			yield* state.storage.put(REAP_PROBE_TIMEOUT_KEY, limits.deliveryAttemptTimeoutMs);
+			const existing = yield* state.storage.getAlarm();
+			if (existing == null) {
+				yield* state.storage.setAlarm(Date.now() + PRUNE_ALARM_DELAY_MS);
+			}
+		});
 
 	const loadBuffer = (topicKey: string) =>
 		Effect.map(state.storage.list<BufferedFrame>({prefix: bufferPrefix(topicKey)}), (map) => [
@@ -606,7 +621,7 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 				yield* state.storage.delete(stale);
 			}
 			yield* state.storage.put(subscriberKey(row), row);
-			yield* ensureAlarm;
+			yield* ensureAlarm(input.limits);
 			// Catch up the just-registered connection on frames a publish that beat this
 			// register would have missed it on (#714). Replay reaches ONLY this
 			// connection, which fan-out could not have — see {@link replayBuffer}.
@@ -703,7 +718,12 @@ export const makeLiveInstance = (state: LiveDoState, live: LiveNamespace) => {
 			}
 			const entries = yield* loadRows(role.topicKey);
 			const grouped = groupByConnection(entries);
-			const probeTimeout = 1_500;
+			// The probe budget the last `register` threaded (decision 2B); the shared
+			// `defaultLiveLimits` is the fallback when no row has armed the alarm yet —
+			// never a DO-invented literal. See {@link REAP_PROBE_TIMEOUT_KEY}.
+			const probeTimeout =
+				(yield* state.storage.get<number>(REAP_PROBE_TIMEOUT_KEY)) ??
+				defaultLiveLimits.deliveryAttemptTimeoutMs;
 			const perConnection = yield* Effect.forEach(
 				grouped,
 				([connectionId, items]) =>

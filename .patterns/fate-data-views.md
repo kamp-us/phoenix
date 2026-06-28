@@ -11,8 +11,9 @@ Data views are pure declarations — no Effect, no DB. They describe shape and s
 execution lives in sources ([fate-effect-sources.md](./fate-effect-sources.md)) and operations
 ([fate-effect-operations.md](./fate-effect-operations.md)). Per-feature views live in their
 owning feature (`features/<feature>/views.ts` — sozluk's is the reference);
-`worker/features/fate/views.ts` is the re-export barrel plus the cross-feature `Root` map
-([per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md)).
+`worker/features/fate/views.ts` is the type/view re-export barrel, and the cross-feature
+`Root` map is assembled there from each feature's own `roots` slice
+(`mergeFateRoots(modules)`, [per-feature-fate-aggregators.md](./per-feature-fate-aggregators.md)).
 
 ## Field selection vocabulary
 

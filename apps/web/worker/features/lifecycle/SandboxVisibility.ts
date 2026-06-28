@@ -55,6 +55,30 @@ export const sandboxVisibleWhere = (
 	return isNull(cols.sandboxedAt);
 };
 
+/**
+ * The columns the public-live aggregate predicate filters on: the sandbox pair plus
+ * the ADR 0096 `removed_at`, so the removal guard folds into the same predicate
+ * rather than being hand-written beside it at every count call site.
+ */
+export interface PublicLiveColumns extends SandboxColumns {
+	readonly removedAt: SQLWrapper;
+}
+
+/**
+ * The single public-live aggregate filter (#1359 seam): removed-excluded AND
+ * sandbox-masked-for-this-viewer, in one predicate. This is the `and()` of the
+ * caller's former `isNull(removedAt)` guard with {@link sandboxVisibleWhere} — for an
+ * anonymous viewer it reduces to exactly `removed_at IS NULL AND sandboxed_at IS NULL`,
+ * the form the landing-count paths (#1407) re-derive by hand today and fold onto this.
+ *
+ * For the **post** table the draft dimension is excluded too — that arm is pano-local
+ * (ADR 0113: `is_draft` lives only on `post_record`), so the post-aware aggregate
+ * `publicLivePostWhere` in `features/pano/PostVisibility.ts` `and()`s the draft arm onto
+ * this. Definition/comment reads, which have no draft concept, route through this directly.
+ */
+export const publicLiveWhere = (cols: PublicLiveColumns, viewer: SandboxViewer): SQL | undefined =>
+	and(isNull(cols.removedAt), sandboxVisibleWhere(cols, viewer));
+
 /** The lifecycle columns the moderator sandbox queue reads. */
 export interface SandboxBacklogColumns {
 	readonly sandboxedAt: SQLWrapper;
