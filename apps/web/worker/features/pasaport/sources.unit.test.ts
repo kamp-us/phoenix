@@ -57,7 +57,11 @@ const pasaportWithCorpus = {
 // subject — the tuple `isModerator` reads (`kunye/moderate.ts`). Membership in
 // `moderatorIds` ⇒ `true`.
 const relationStoreFor = (moderatorIds: ReadonlySet<string>) =>
-	({has: ({subject}: {subject: string}) => Effect.succeed(moderatorIds.has(subject))}) as never;
+	({
+		has: ({subject}: {subject: string}) => Effect.succeed(moderatorIds.has(subject)),
+		hasSubjects: ({subjects}: {subjects: ReadonlyArray<string>}) =>
+			Effect.succeed(new Set(subjects.filter((id) => moderatorIds.has(id)))),
+	}) as never;
 
 const profileRow = (userId: string): ProfileRow => ({
 	userId,
