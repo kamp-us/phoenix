@@ -312,6 +312,97 @@ on source-heavy tasks the frozen set doesn't exercise), not a frozen-set win. Th
 sub-levers 2 & 3: a quality-neutral lever with no measurable reduction on the measured inputs is
 recorded as not-shipped, grounded in the numbers, never shipped as speculation.
 
+## 6. Applied-lever results — #1487 worktree dep-provision (measured-negative on the structural lever)
+
+The **worktree dep-provision lever** ([#1487](https://github.com/kamp-us/phoenix/issues/1487),
+a child of epic [#1356](https://github.com/kamp-us/phoenix/issues/1356)) targets the per-spawn
+cost of provisioning a fresh `isolation:worktree` agent's deps: `node_modules` is gitignored and
+per-checkout (#504), so a linked worktree the harness creates with `git worktree add` arrives
+dead-on-arrival for `pnpm typecheck`/`lint`/`build` until a real `pnpm install` rebuilds the
+virtual-store `@kampus/*` links worktree-local (a filesystem `node_modules` *share* is rejected
+outright by [ADR 0109](../.decisions/0109-worktree-deps-provision-not-share.md) — the virtual
+store holds relative links into workspace source, so a share silently checks the *primary's*
+source). The hypothesised overhead: the model emitting and iterating on install output once per
+fanned agent, scaling N× with fan-out width.
+
+### Measurement — the install cost, and where it is paid
+
+Measured directly on this repo (`pnpm v10.27.0`, the pinned major; a warm machine-global pnpm
+store — `pnpm store path`, hardlinked into every worktree's `node_modules`, so no download
+happens):
+
+| What | Measured |
+|---|---|
+| `pnpm install --prefer-offline --ignore-scripts` from a node_modules-less worktree, warm store | **4.5 s** wall-clock (`real`; ADR 0109's ~3.7 s, same order), exit 0 |
+| install stdout (the tool_result an agent would ingest if it ran the install in-band) | **681 bytes / 22 lines / ≈170 tokens** (`Lockfile is up to date … Done in 4.4s`) |
+
+But the decisive finding is **where that cost is paid**. Empirically, on a current
+`isolation:worktree` spawn, the worktree **arrives already provisioned**: its `node_modules` is
+timestamped at worktree-creation time (before the agent's first turn), and its virtual-store links
+resolve **worktree-local** and correct (`.pnpm/node_modules/@kampus/authz -> ../../../../packages/authz`,
+the ADR 0109 correctness probe). The harness provisions out-of-band, at `git worktree add` time —
+so the install runs **outside the agent's metered transcript**: no `pnpm install` Bash call appears
+in the agent's turns, and no install-output is ingested into any `cost.total_tokens`-billed turn.
+
+So against the §2 baseline the provisioning lever measures **≈0 billed tokens/run**: the apparatus
+meters `cost.total_tokens` over the agent's own assistant turns (§2), and a creation-time provision
+contributes none. The 4.5 s is wall-clock latency the harness pays before the agent starts, not a
+metered token cost.
+
+### The finding — the structural lever is harness-owned and already satisfied
+
+1. **The pnpm store is already shared and warm by construction.** It is machine-global
+   (`pnpm store path`), hardlinked into every worktree's `node_modules`, so "warm the store once so
+   installs are fast" — the ADR 0109 §2 fast-path condition — is **already** met by pnpm's
+   architecture. No in-repo change warms it further (this is distinct from #681, the CI-shard store
+   cache, which has no machine-global store to lean on).
+2. **`drive-issue.js` has no provisioning seam.** The executor sets `isolation: "worktree"` on the
+   `agent()` call, but it does **not** create the worktree — the harness does, *inside* that atomic
+   `agent()` call. There is no point between `git worktree add` and agent-start at which
+   `drive-issue.js` could run an install. A provisioning step in the executor is therefore not
+   expressible.
+3. **Auto-provision-at-spawn is harness-owned** ([ADR 0109 §4](../.decisions/0109-worktree-deps-provision-not-share.md)),
+   and is **empirically already happening** in the current harness (finding above). The gap ADR 0109
+   §4 named — "the repo provides the correct entrypoint; *automatic* provisioning at the stripped
+   spawn is harness-owned and deferred" — is, on this spawn path, closed by the harness.
+
+The structural lever (a repo-side / `drive-issue.js` provisioning step) is therefore **harness-external
+and already realized** — there is no in-repo structural change that lowers the metered cost, mirroring
+§5's read-economics measured-negative.
+
+### The one residual in-repo lever — don't reflexively reinstall (the behavior #1487 actually observed)
+
+#1487's report observed agents that **re-ran `pnpm install`** in an already-provisioned worktree, and
+one that **symlinked the primary's `node_modules`** in (the ADR 0109 correctness anti-pattern). That
+redundant install — not the provisioning itself — is the only realizable saving: ≈170 tokens of
+ingested output + the command, plus potentially one dedicated Bash turn (whose marginal billed cost is
+`cache_read`-dominated for a heavy stage, §2), per spawn that does it; scaled to a ~25-agent drain,
+≈4.25k tokens of direct output plus up to ~25 redundant turns. The drift-resistant, quality-neutral fix
+is **documentation, not a harness change**: [`worktree-agent-constraints.md`](./worktree-agent-constraints.md)
+now records that a worktree arrives auto-provisioned and that an agent must **verify before installing**
+(install only if `node_modules` is absent) and **never symlink** the primary's `node_modules`. This
+*reinforces* ADR 0109's no-share rule; it never weakens it.
+
+### Quality gate (§3) — PRESERVED, by construction
+
+Dep-provisioning is deterministic environment setup that touches **no reasoning or output**: the
+`@kampus/*` links it rebuilds are identical whether the install runs at creation or on first use, so
+every stage's decision artifact (triage classification, write-code's `Fixes #N` + green CI +
+`review-code: PASS`, review-code's verdict + AC findings) is byte-identical across before/after. There
+is no oracle input to move; the §3 gate is trivially preserved. Per ADR 0112 §4 the quality bar holds.
+
+### Net recorded delta (against the §2 baseline)
+
+| Lever | Measured before/after | Quality gate (§3) | Outcome |
+|---|---|---|---|
+| worktree dep-provision (auto-provision / share-the-store) | **≈0 billed tokens/run** — provisioning runs out-of-band at `git worktree add`, outside the agent's metered turns; the store is already machine-global + hardlinked; `drive-issue.js` has no provisioning seam. Install itself: 4.5 s wall-clock, ≈170 tok output, warm store | trivially PRESERVED (deterministic env setup; no decision artifact moves) | **NO-GO on the structural lever — measured-negative recorded.** Harness-external (ADR 0109 §4) and already realized. |
+| residual: reflexive-reinstall avoidance | ≈170 tok + up to one turn per spawn that redundantly installs (≈4.25k tok + ~25 turns over a 25-agent drain); also closes the ADR 0109 symlink anti-pattern | PRESERVED | **doc lever shipped** — [`worktree-agent-constraints.md`](./worktree-agent-constraints.md): verify-before-install, never symlink |
+
+**Net: the structural per-spawn dep-provision lever is a measured-negative** — the harness already
+provisions out-of-band at ≈0 metered tokens and the store is already shared, so no in-repo structural
+change wins. The only realizable in-repo saving is removing the *redundant* reinstall/symlink behavior
+the report observed, addressed by documentation (above), not a harness change this repo cannot make.
+
 ## Tooling gap (follow-up)
 
 Per-stage token spend **is** individually attributable offline — each stage sub-agent has its own

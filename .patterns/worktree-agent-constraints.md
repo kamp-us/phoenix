@@ -154,6 +154,37 @@ hook **consumer**, never a hook **generator**. Two operational corollaries:
   untracked, so this is a one-time **operator** step, not a committed change — the
   `prepare` guard then prevents the pollution from recurring.
 
+## Your worktree arrives auto-provisioned — verify before installing, never symlink
+
+A current `isolation:worktree` spawn arrives with `node_modules` **already provisioned** by the
+harness at `git worktree add` time (a real, version-pinned `pnpm install` — its virtual-store
+`@kampus/*` links resolve worktree-local and correct, per
+[ADR 0109](../.decisions/0109-worktree-deps-provision-not-share.md)). That provisioning runs
+**out-of-band, before your first turn**, so it costs your metered run nothing
+([token-economics-measurement.md §6](./token-economics-measurement.md)).
+
+So **do not reflexively run `pnpm install`** on entry — it is redundant setup overhead (≈170 tokens
+of ingested output, plus a wasted Bash turn) that the harness already paid for you, and it is the
+recurring per-spawn cost the token-economics audit ([#1487](https://github.com/kamp-us/phoenix/issues/1487))
+flagged. **Verify, then install only if actually missing:**
+
+```bash
+# install ONLY if the worktree truly arrived without deps (the rare non-auto-provisioned path);
+# otherwise the harness already provisioned it — running install again is pure overhead.
+[ -d node_modules/.pnpm ] || pnpm install --prefer-offline --ignore-scripts
+```
+
+Just run the real command you need (`pnpm typecheck` / `pnpm lint:worktree` / `pnpm build`) — if it
+fails because deps are genuinely absent, *then* install with the line above, with `--ignore-scripts`
+(a worktree shares `.git/hooks`, so a bare install would regenerate the **shared** hooks — #1243).
+
+**Never symlink the primary checkout's `node_modules` into your worktree.** It looks like a shortcut
+to skip the install, but it is **silently incorrect**: pnpm's virtual store holds *relative* links
+into workspace source, so a shared `node_modules` resolves every `@kampus/*` dependency to the
+**primary** checkout's source — your edits under `packages/*` become invisible to `typecheck`/`build`,
+which then check the wrong tree (ADR 0109's rejected-share trap). A real `pnpm install` is the only
+correct provision; the symlink is a correctness bug, not an optimization.
+
 ## Sanctioned bulk-cleanup of accumulated worktrees
 
 The harness does not auto-remove a worktree that made commits, so agent worktrees
