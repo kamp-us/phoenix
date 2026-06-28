@@ -157,7 +157,7 @@ export const definitionVote = sqliteTable(
 
 /**
  * Single-row stats table for the landing page (id = 1 is the only row).
- * Maintained by the `SozlukStatsChanged` projection step.
+ * Maintained inline by `recomputeSozlukStats` (D1-direct, see ADR 0009).
  */
 export const sozlukStats = sqliteTable("sozluk_stats", {
 	id: integer("id").primaryKey().default(1),
@@ -213,7 +213,8 @@ export const commentVote = sqliteTable(
 );
 
 /**
- * Single-row stats for the landing page. Maintained by `PanoStatsChanged`.
+ * Single-row stats for the landing page. Maintained inline by
+ * `recomputePanoStats` / `makePersistPanoStats` (D1-direct, see ADR 0009).
  */
 export const panoStats = sqliteTable("pano_stats", {
 	id: integer("id").primaryKey().default(1),
@@ -226,8 +227,8 @@ export const panoStats = sqliteTable("pano_stats", {
 /**
  * Per-user-per-target vote presence table powering the `myVote` view field.
  * Up-only in the MVP — presence of a row means voted, absence means not; there
- * is no `value` column. Maintained by `VoteRecorded` (insert on vote, delete on
- * retract).
+ * is no `value` column. Maintained inline by `Vote.cast`'s atomic batch (insert
+ * on vote, delete on retract; D1-direct, see ADR 0009).
  */
 export const userVote = sqliteTable(
 	"user_vote",
@@ -246,8 +247,8 @@ export const userVote = sqliteTable(
 
 /**
  * Per-user denormalized profile row. `total_karma` is the running sum of upvotes
- * received across all of this user's contributions, maintained by `VoteRecorded`
- * and `UserProfileChanged`.
+ * received across all of this user's contributions, maintained inline by
+ * `Vote.cast`'s atomic batch (D1-direct, see ADR 0009).
  */
 export const userProfile = sqliteTable(
 	"user_profile",

@@ -2,7 +2,7 @@
  * `Stats.getLandingStats` author-UNION sandbox-visibility wiring (#1391) — the
  * security fix: the public landing `totalAuthors` counter must NOT count a çaylak
  * who only has sandboxed (un-promoted) content. The counter is a distinct-author
- * UNION across the three view tables; every arm must carry the #1205
+ * UNION across the three record tables; every arm must carry the #1205
  * `sandboxed_at IS NULL` clause beside its existing `removed_at IS NULL` guard,
  * agreeing with the per-product `total_authors` columns (`makePersistPanoStats`,
  * `recomputeSozlukStats`) that already exclude sandboxed rows.
