@@ -48,16 +48,18 @@ export const StatsLive = Layer.effect(Stats)(
 				);
 				// Distinct-author UNION across the view tables: cheaper than reading
 				// both per-product `total_authors` columns, since neither is a strict
-				// subset of the other.
+				// subset of the other. Public stats count LIVE content only, so each arm
+				// excludes sandboxed çaylak rows (#1205) like removed ones — else a
+				// sandbox-only author would inflate the public landing total.
 				const authorsRow = yield* run((db) =>
 					db
 						.run(
 							sql`SELECT COUNT(DISTINCT author_id) as n FROM (
-								SELECT author_id FROM definition_record WHERE removed_at IS NULL
+								SELECT author_id FROM definition_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
 								UNION
-								SELECT author_id FROM post_record WHERE removed_at IS NULL
+								SELECT author_id FROM post_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
 								UNION
-								SELECT author_id FROM comment_record WHERE removed_at IS NULL
+								SELECT author_id FROM comment_record WHERE removed_at IS NULL AND sandboxed_at IS NULL
 							)`,
 						)
 						.then((r) => (r.results[0] as {n: number} | undefined) ?? null),
