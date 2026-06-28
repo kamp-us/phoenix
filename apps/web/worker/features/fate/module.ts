@@ -19,6 +19,14 @@ import type {
 	FateSourcesList,
 } from "@kampus/fate-effect";
 
+/**
+ * The client-exposed root map a feature contributes — its slice of `fate/views.ts`'s
+ * `Root`. Annotated `Record<string, unknown>` (never the precise `dataView`/`list`
+ * literal) so a feature's `roots` doesn't surface fate's internal `DataView` symbol
+ * across its `fateModule` export (TS2883/TS4023), matching `Root`'s own annotation.
+ */
+export type FateRootsRecord = Record<string, unknown>;
+
 export interface FateModule<
 	Q extends FateQueriesRecord = FateQueriesRecord,
 	L extends FateListsRecord = FateListsRecord,
@@ -29,6 +37,10 @@ export interface FateModule<
 	readonly lists?: L;
 	readonly mutations?: M;
 	readonly sources?: S;
+	// The feature's client roots. Merged into `Root` by `mergeFateRoots` for codegen,
+	// NOT threaded into `FateServer.config` (`mergeFateModules` ignores it — `roots`
+	// stays empty on `createFateServer`, see `views.ts`).
+	readonly roots?: FateRootsRecord;
 }
 
 /** One module's record for category `K`, or `never` if it omits that category. */
@@ -78,6 +90,14 @@ const mergeCategory = (
 // fire on a direct cast from the concrete `flatMap` result; see `no-type-assertions`).
 const mergeSources = (modules: ReadonlyArray<FateModule>): FateSourcesList =>
 	modules.flatMap((m) => m.sources ?? []);
+
+// `Root` is the cross-feature client-root map (`createSchema(views, Root)`); each
+// feature owns its slice on its `fateModule`, so registering a feature in `config.ts`'s
+// `modules` array is the single source that drives both the served config and `Root`.
+// Spread (not concat) — a feature's roots are keyed by their resolver names, which
+// `collectConfigIssues` already pins for uniqueness, so order is not load-bearing.
+export const mergeFateRoots = (modules: ReadonlyArray<FateModule>): FateRootsRecord =>
+	Object.assign({}, ...modules.map((m) => m.roots ?? {}));
 
 export const mergeFateModules = <const Modules extends ReadonlyArray<FateModule>>(
 	modules: Modules,

@@ -9,12 +9,18 @@ merges them once (`fate/module.ts`'s `mergeFateModules`) into the single records
 locality (ADR 0036) compatible with fate's "one map per aggregator" wire
 contract — and it preserves the SPA's import surface untouched.
 
-`views.ts` is the one remaining **barrel** under `worker/features/fate/`: it owns
-the cross-feature `Root` map and re-exports every feature's entity types so the
-SPA imports from one stable path. The three operation barrels (`queries.ts` /
-`lists.ts` / `mutations.ts`) and the `sources.ts` barrel are gone — registering a
-feature is now one array entry in `config.ts`, not a spread line per central
-barrel (the registration-friction collapse, [issue #1034](https://github.com/kamp-us/phoenix/issues/1034)).
+`views.ts` is the one remaining **barrel** under `worker/features/fate/`: it
+re-exports every feature's entity types + view consts so the SPA imports from one
+stable path. The client-exposed `Root` map is **not** hand-listed there — each
+feature owns its slice on its `fate-module.ts` (`roots`), and `views.ts` derives
+`Root` from the same `config.ts` registry that drives the served config
+(`mergeFateRoots(modules)`), so a feature's roots are named **once** (on its
+module), not twice (barrel re-export + a parallel `Root` entry — the double-listing
+collapse, [issue #1338](https://github.com/kamp-us/phoenix/issues/1338)). The three
+operation barrels (`queries.ts` / `lists.ts` / `mutations.ts`) and the `sources.ts`
+barrel are gone — registering a feature is now one array entry in `config.ts`, not a
+spread line per central barrel (the registration-friction collapse,
+[issue #1034](https://github.com/kamp-us/phoenix/issues/1034)).
 
 Read this with [feature-services.md](./feature-services.md) (the per-feature
 service shape these fragments orchestrate) and
@@ -34,15 +40,15 @@ worker/features/
 │   ├── shapers.ts      # exports `toTerm`, `toDefinition`, ...
 │   ├── sources.ts      # exports `termSource`, `definitionSource` (`Fate.source` entries)
 │   ├── mutations.ts    # exports `mutations = { "definition.add": ... }`
-│   └── fate-module.ts  # bundles this feature's {queries, lists, mutations, sources}
+│   └── fate-module.ts  # bundles this feature's {queries, lists, mutations, sources, roots}
 ├── pano/               # same fragments + fate-module.ts, scoped to pano
 ├── pasaport/           # same, scoped to pasaport
 ├── vote/               # mutation-only feature — no fate fragments, no module
 ├── stats/              # query-only feature — queries.ts/views.ts + a queries-only module
 └── fate/
-    ├── module.ts       # the `FateModule` type + `mergeFateModules` (the root's merge)
-    ├── config.ts       # registers the `modules` array, merges, adds `live`
-    ├── views.ts        # barrel + cross-feature `Root`/`LiveEntities`
+    ├── module.ts       # the `FateModule` type + `mergeFateModules`/`mergeFateRoots` (the root merges)
+    ├── config.ts       # exports + registers the `modules` array, merges, adds `live`
+    ├── views.ts        # type/view barrel + `Root = mergeFateRoots(modules)` + `LiveEntities`
     └── connection.ts   # leaf: the cross-feature `toConnection`/`KeysetPage` envelope
 ```
 
@@ -70,8 +76,8 @@ precise entry types so the root's R-channel math infers exactly as the
 hand-written barrels did. The composition root then lists the modules once:
 
 ```ts
-// worker/features/fate/config.ts
-const modules = [statsModule, pasaportModule, sozlukModule, panoModule, searchModule, reportModule];
+// worker/features/fate/config.ts — `modules` is exported so `views.ts` derives `Root` off it
+export const modules = [statsModule, pasaportModule, sozlukModule, panoModule, searchModule, reportModule, divanModule];
 
 export const fateConfig = FateServer.config({
   ...mergeFateModules(modules),
@@ -112,7 +118,10 @@ untouched; the fate-facing fragments are:
 - **`shapers.ts`** — the row → entity field-set mappers the resolvers return
   through.
 - **`fate-module.ts`** — the manifest bundling this feature's operation records
-  + source array into one `FateModule` the root registers.
+  + source array + its `roots` (the feature's slice of the client `Root` map,
+  declared next to the views it composes) into one `FateModule` the root registers.
+  Annotate `roots` as `Record<string, unknown>` (`FateRootsRecord`) so the `dataView`
+  symbol doesn't surface across the module export (TS2883/TS4023).
 
 Two handler conventions hold across every fragment: the per-request services
 are `CurrentUser` and `LivePublisher` only ([fate-effect-server.md](./fate-effect-server.md)),
@@ -190,11 +199,12 @@ compose at all?" Two answers:
    per-feature manifests collapse into that shape. (The same records feed fate's
    own `createFateServer` at codegen and as the differential oracle's baseline,
    [fate-effect-compiler.md](./fate-effect-compiler.md).)
-2. **The genuinely cross-feature pieces have a home.** `views.ts` owns `Root`
-   (the client-exposed root map, which spans every feature's screens) and
-   `LiveEntities` (the entity-name → entity-type registry the live bus types
-   against). Neither belongs to a single feature; the `views.ts` barrel is where
-   they live.
+2. **The genuinely cross-feature pieces have a home.** `views.ts` assembles `Root`
+   (the client-exposed root map, which spans every feature's screens — now
+   `mergeFateRoots(modules)` over each feature's own `roots`, not a hand-listed map)
+   and `LiveEntities` (the entity-name → entity-type registry the live bus types
+   against). Neither belongs to a single feature; the `views.ts` barrel is where the
+   assembly lives, even though the per-feature slices that feed it live on the modules.
 
 A cross-feature **definition** that features import back, however, must NOT
 live in a barrel — that's how a barrel becomes a cycle seed. The `toConnection`/

@@ -37,7 +37,10 @@ import {fateModule as sozlukModule} from "../sozluk/fate-module.ts";
 import {fateModule as statsModule} from "../stats/fate-module.ts";
 import {mergeFateModules} from "./module.ts";
 
-const modules = [
+// The one feature registry. Drives BOTH the served config (`mergeFateModules` below)
+// and the client `Root` map (`views.ts` → `mergeFateRoots`), so registering a feature
+// is this single array entry — its queries/lists/mutations/sources AND its roots.
+export const modules = [
 	statsModule,
 	pasaportModule,
 	sozlukModule,
