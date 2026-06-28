@@ -162,11 +162,14 @@ jobs:
           CI: "true"
           # ENVIRONMENT comes from the "Resolve deploy ENVIRONMENT from stage" step above
           # (via $GITHUB_ENV) — owned by apps/web/worker/environment.ts, not inlined here (#1433).
+          # CI-secret roster: the four secrets below are enumerated canonically in
+          # infra/ci-credentials/github.ts (the provisioner that mints/pushes them);
+          # keep this set in sync with that roster (#1432).
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           ALCHEMY_PASSWORD: ${{ secrets.ALCHEMY_PASSWORD }}
           # The session-signing secret, bound only by apps with auth. `config.ts`
-          # reads it via `Config.redacted("BETTER_AUTH_SECRET")` → a `secret_text`
+          # reads it via `Config.redacted(ENV_BINDINGS.betterAuthSecret)` → a `secret_text`
           # binding the worker reads at runtime; the value must be present at deploy
           # time. A future auth-less app sets `needs-auth: false` and never reads it.
           BETTER_AUTH_SECRET: ${{ matrix.needs-auth && secrets.BETTER_AUTH_SECRET || '' }}

@@ -25,14 +25,26 @@
  * `Cloudflare.state()` means the token's ID is tracked, so a rescope is a clean
  * diff rather than an orphaned token.
  *
- * Provisions the full set of repo secrets the deploy workflow consumes:
+ * == THE CI-SECRET ROSTER (canonical list, #1432) ==
+ * This stack provisions the full set of repo secrets the deploy workflow consumes.
+ * GitHub Actions and turbo can't import TS, so the roster CAN'T be single-sourced as
+ * a shared constant — instead this docblock is the ONE authoritative list, and every
+ * other site that enumerates the set carries a `CI-secret roster` cross-pointer back
+ * here. The consuming sites, all to be kept in sync with this list:
+ *   - `.github/workflows/deploy.yml`         — passes all four into deploy + destroy.
+ *   - `turbo.json` (`test.passThroughEnv`)   — the three Cloudflare/alchemy names the
+ *                                              integration tests need (no auth secret).
+ *   - `apps/web/worker/db/drizzle.config.ts` — the two `CLOUDFLARE_*` names `db:migrate`
+ *                                              reads off `process.env`.
+ *
+ * The roster:
  *   - CLOUDFLARE_API_TOKEN   — the minted scoped token (never echoed to your shell)
  *   - CLOUDFLARE_ACCOUNT_ID  — which account to deploy into
  *   - ALCHEMY_PASSWORD       — encrypts/decrypts secrets in the Cloudflare-hosted
  *                              alchemy state store
  *   - BETTER_AUTH_SECRET     — the session-signing secret. The worker reads it at
  *                              runtime as a `secret_text` binding (`config.ts`:
- *                              `Config.redacted("BETTER_AUTH_SECRET")`), so the
+ *                              `Config.redacted(ENV_BINDINGS.betterAuthSecret)`), so the
  *                              deploy needs the value. Minted here as a stable
  *                              `Random` (persisted in this stack's state) and
  *                              pushed so CI can bind it on every deploy.

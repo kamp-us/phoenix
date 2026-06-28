@@ -27,6 +27,9 @@
 		"test": {
 			"dependsOn": ["^build"],
 			"cache": true,
+			// CI-secret roster: these three are a subset (no BETTER_AUTH_SECRET — tests
+			// don't sign sessions) of the four CI secrets enumerated canonically in
+			// infra/ci-credentials/github.ts (the provisioner); keep in sync (#1432).
 			"passThroughEnv": ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "ALCHEMY_PASSWORD"]
 		},
 		"lint": {

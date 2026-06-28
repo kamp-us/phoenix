@@ -1,13 +1,15 @@
 # Worker environment
 
 How runtime code reads the worker's env: one `effect/Config` surface. A var is
-declared ONCE as a `Config` constant; that same constant binds the worker's
-`env:` block and answers the runtime read. Never `yield* Cloudflare.WorkerEnvironment`
-raw, never cast.
+declared ONCE as a `Config` constant, and its binding NAME is declared ONCE in
+`ENV_BINDINGS` — so neither the value nor the name drifts across the bind↔read
+seam (#1432). Never `yield* Cloudflare.WorkerEnvironment` raw, never cast.
 
 ## The surface
 
-`worker/config.ts`. Each var is one `Config` constant; `AppConfig = Config.all`
+`worker/config.ts`. The binding NAMES live in one `as const`, `ENV_BINDINGS`, that
+both the `Config` constructors and the `env:` block reference — so a name string is
+written exactly once. Each var is one `Config` constant; `AppConfig = Config.all`
 aggregates them into the single yieldable read. The `ENVIRONMENT` taxonomy itself
 (the three classes, the `Environment` type, the `isProduction` gate, the
 `stage → ENVIRONMENT` map) is owned by [`worker/environment.ts`](../apps/web/worker/environment.ts)
@@ -18,30 +20,46 @@ aggregates them into the single yieldable read. The `ENVIRONMENT` taxonomy itsel
 import * as Config from "effect/Config";
 import {DEFAULT_ENVIRONMENT, ENVIRONMENTS, type Environment} from "./environment.ts";
 
+// The binding NAMES, declared once. The Config constructors read under these and
+// the env: block binds under these (computed keys), so name drift is unrepresentable.
+export const ENV_BINDINGS = {
+	environment: "ENVIRONMENT",
+	betterAuthSecret: "BETTER_AUTH_SECRET",
+} as const;
+
 // One constant per var. Non-redacted → plain_text binding, fail-closed default.
 // Three deploy classes (ADR 0088): local `development`, deployed `preview`, `production`.
-export const environment = Config.literals(ENVIRONMENTS, "ENVIRONMENT").pipe(
+export const environment = Config.literals(ENVIRONMENTS, ENV_BINDINGS.environment).pipe(
 	Config.withDefault(DEFAULT_ENVIRONMENT),
 );
 
-// The single read surface. Add a var: a const above + a key here.
+// The Config-backed bindings keyed by their NAME — index.ts spreads this into env:.
+export const envBindings = {
+	[ENV_BINDINGS.environment]: environment,
+	[ENV_BINDINGS.betterAuthSecret]: betterAuthSecret,
+};
+
+// The single read surface. Add a var: a name in ENV_BINDINGS + a const + a key here.
 export const AppConfig = Config.all({environment});
 ```
 
 ## Binding it
 
-The worker's `env:` block (`index.ts`) references the SAME constant, per-key:
+The worker's `env:` block (`index.ts`) spreads `envBindings`, so the names are
+never restated there — the binding key and the `Config` read both resolve from the
+SAME `ENV_BINDINGS` literal, making a key↔name mismatch a structural impossibility,
+not a runtime hazard (#1432):
 
 ```ts
-env: {ENVIRONMENT: environment},
+env: {...envBindings, FLAGS: FlagshipResource},
 ```
 
-Per-key — not `env: AppConfig` — because alchemy's binding model maps each `env`
-key to one native binding; a `Config.all` aggregate has no single binding name.
-At deploy time alchemy resolves the `Config` from the deploy-time `process.env`
-(`deploy.yml` sets `production` for the prod stage and `preview` for every
-per-PR stage, the `dev:worker` script sets `development`, default `production`)
-and binds it.
+Per-key (a spread of name-keyed entries) — not `env: AppConfig` — because alchemy's
+binding model maps each `env` key to one native binding; a `Config.all` aggregate has
+no single binding name. At deploy time alchemy resolves each `Config` from the
+deploy-time `process.env` (`deploy.yml` sets `production` for the prod stage and
+`preview` for every per-PR stage, the `dev:worker` script sets `development`, default
+`production`) and binds it.
 
 **A non-redacted `Config` binds `plain_text`, not `secret_text`.** Source fact:
 `alchemy/lib/Cloudflare/Workers/WorkerAsyncBindings.js` `toBinding` resolves a
