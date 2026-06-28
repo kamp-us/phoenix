@@ -2,7 +2,7 @@
  * Stats — the landing-page aggregate service. One read-only method,
  * `getLandingStats`, returns the SPA's four counters: three from per-product
  * single-row tables (`sozluk_stats`, `pano_stats`, maintained inline by the
- * feature services), the fourth a distinct-author UNION across the view tables.
+ * feature services), the fourth a distinct-author UNION across the record tables.
  *
  * Reads go through `run`/`orDieAccess`, so infra failures die here (the
  * domain-boundary rule) and the public signature carries no error.
@@ -46,7 +46,7 @@ export const StatsLive = Layer.effect(Stats)(
 								(r.results[0] as {total_posts: number; total_comments: number} | undefined) ?? null,
 						),
 				);
-				// Distinct-author UNION across the view tables: cheaper than reading
+				// Distinct-author UNION across the record tables: cheaper than reading
 				// both per-product `total_authors` columns, since neither is a strict
 				// subset of the other. Public stats count LIVE content only, so each arm
 				// excludes sandboxed çaylak rows (#1205) like removed ones — else a
